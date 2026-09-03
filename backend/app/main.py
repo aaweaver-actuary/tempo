@@ -3,14 +3,14 @@ import uuid
 from contextlib import asynccontextmanager
 from datetime import date, datetime
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import connection, initialize
 from .models import ImportResult, ReviewRequest, Settings
 from .services.cards import card_id
-from .services.pgn import parse_pgn
-from .services.scheduler import schedule_review
+from .services.pgn import parse_pgn, prefix_through_user_moves
+from .services.scheduler import schedule_review, unlock_ready
 
 
 @asynccontextmanager
@@ -65,9 +65,14 @@ def today_queue() -> dict[str, object]:
 
 
 @app.post("/api/imports/pgn", response_model=ImportResult)
-async def import_pgn(file: UploadFile = File(...)) -> ImportResult:
+async def import_pgn(
+    file: UploadFile = File(...),
+    trained_color: str = Form("white"),
+) -> ImportResult:
     if not file.filename or not file.filename.lower().endswith(".pgn"):
         raise HTTPException(status_code=400, detail="Choose a .pgn file")
+    if trained_color not in {"white", "black"}:
+        raise HTTPException(status_code=400, detail="trained_color must be white or black")
     raw_pgn = (await file.read()).decode("utf-8-sig")
     games_found, lines = parse_pgn(raw_pgn)
     if not lines:
@@ -84,7 +89,14 @@ async def import_pgn(file: UploadFile = File(...)) -> ImportResult:
             (repertoire_id, file.filename.rsplit(".", 1)[0], file.filename, datetime.now().isoformat()),
         )
         for line in lines:
-            moves = line.moves[:depth]
+            moves = prefix_through_user_moves(
+                line.starting_fen,
+                line.moves,
+                trained_color,
+                depth,
+            )
+            if not moves:
+                continue
             identifier = card_id(line.starting_fen, moves)
             if identifier in unique_ids:
                 continue
@@ -116,16 +128,35 @@ def review_card(identifier: str, review: ReviewRequest) -> dict[str, object]:
             raise HTTPException(status_code=404, detail="Card not found")
         schedule = schedule_review(review.rating, **dict(card))
         database.execute(
-            "UPDATE cards SET due_date = ?, interval_days = ?, ease = ?, repetitions = ?, lapses = ?, state = ? WHERE id = ?",
-            (schedule.due_date.isoformat(), schedule.interval_days, schedule.ease, schedule.repetitions, schedule.lapses, schedule.state, identifier),
-        )
-        database.execute(
             "INSERT INTO reviews (card_id, rating, reviewed_at, previous_interval, next_interval) VALUES (?, ?, ?, ?, ?)",
             (identifier, review.rating, datetime.now().isoformat(), card["interval_days"], schedule.interval_days),
         )
-        if schedule.state == "mature":
+        successful_days = database.execute(
+            "SELECT COUNT(DISTINCT date(reviewed_at)) AS count FROM reviews WHERE card_id = ? AND rating != 'again'",
+            (identifier,),
+        ).fetchone()["count"]
+        recent_ratings = [
+            row["rating"]
+            for row in database.execute(
+                "SELECT rating FROM reviews WHERE card_id = ? ORDER BY reviewed_at DESC, id DESC LIMIT 2",
+                (identifier,),
+            ).fetchall()
+        ]
+        state = "mature" if unlock_ready(schedule.interval_days, successful_days, recent_ratings) else "learning"
+        database.execute(
+            "UPDATE cards SET due_date = ?, interval_days = ?, ease = ?, repetitions = ?, lapses = ?, state = ? WHERE id = ?",
+            (schedule.due_date.isoformat(), schedule.interval_days, schedule.ease, schedule.repetitions, schedule.lapses, state, identifier),
+        )
+        if state == "mature":
             database.execute(
                 "UPDATE cards SET state = 'new', due_date = ? WHERE unlock_after_card_id = ? AND state = 'locked'",
                 (date.today().isoformat(), identifier),
             )
-    return {"card_id": identifier, "next_due": schedule.due_date, "interval_days": schedule.interval_days, "state": schedule.state}
+    return {
+        "card_id": identifier,
+        "next_due": schedule.due_date,
+        "interval_days": schedule.interval_days,
+        "state": state,
+        "requeue_today": schedule.requeue_today,
+        "requeue_after_cards": schedule.requeue_after_cards,
+    }

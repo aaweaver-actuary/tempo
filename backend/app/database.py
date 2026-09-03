@@ -43,7 +43,7 @@ def initialize() -> None:
         CREATE TABLE IF NOT EXISTS cards (
             id TEXT PRIMARY KEY,
             repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
-            kind TEXT NOT NULL CHECK (kind IN ('prefix', 'response')),
+            kind TEXT NOT NULL CHECK (kind IN ('prefix', 'response', 'checkpoint')),
             start_fen TEXT NOT NULL,
             moves_json TEXT NOT NULL,
             state TEXT NOT NULL DEFAULT 'new' CHECK (state IN ('locked', 'new', 'learning', 'mature')),
@@ -56,6 +56,10 @@ def initialize() -> None:
         )
         """,
         """
+        CREATE INDEX IF NOT EXISTS idx_cards_due_state
+        ON cards(due_date, state)
+        """,
+        """
         CREATE TABLE IF NOT EXISTS reviews (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
@@ -65,8 +69,13 @@ def initialize() -> None:
             next_interval INTEGER NOT NULL
         )
         """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_reviews_card_reviewed_at
+        ON reviews(card_id, reviewed_at)
+        """,
     ]
     with connection() as database:
         for statement in statements:
             database.execute(statement)
         database.execute("INSERT OR IGNORE INTO settings (id) VALUES (1)")
+        database.execute("PRAGMA optimize")

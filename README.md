@@ -4,14 +4,17 @@ Tempo is an initial product mockup and technical skeleton for a fully local ches
 
 ## What works in this pass
 
-- Interactive opening drill for `1. e4 c5 2. Nf3 d6 3. d4 cxd4`, using click-to-move or drag-and-drop.
-- Legal-move markers, last-move highlighting, wrong-move feedback, hint highlighting, automatic opponent replies, and end-of-card ratings.
+- Interactive six-user-move opening drills, using click-to-move or drag-and-drop.
+- Equal-sized responsive ranks, legal-move markers, last-move highlighting, automatic opponent replies, and end-of-card ratings.
+- Teaching arrows on first exposure and immediately after a wrong attempted move; picking up and replacing a piece does nothing.
+- One-click Lichess analysis for the exact current move history, plus a repertoire tree browser for stepping through positions and branches.
 - Representative Train, Repertoire, Progress, PGN import, import-success, wrong-answer, and completed-card states.
 - Demo review counts persist in browser storage and reset when the local calendar day changes.
 - Docker Compose skeleton with a React + TypeScript web app and a FastAPI backend.
 - Local SQLite schema for settings, repertoires, cards, locked child cards, and review history.
-- PGN variation parsing and stable SHA-256 card IDs derived from normalized starting FEN plus move text.
-- A provisional daily-bucket scheduler and unlock hook for child cards when a parent reaches maturity.
+- PGN variation parsing and stable SHA-256 card IDs derived from canonical starting FEN plus normalized UCI moves.
+- A daily-bucket scheduler where “Again” reshuffles the card behind four other reviews in today’s queue.
+- A conservative descendant gate and unlock hook for child cards when a parent reaches maturity.
 
 ## Run locally
 
@@ -33,12 +36,26 @@ backend/app/services/      PGN, identity, and scheduling logic
 docker-compose.yml         Local two-service runtime
 ```
 
-## Unresolved decisions that materially affect implementation
+## Settled product decisions
 
-1. **Depth unit and side:** Does “6 moves” mean six plies or six full moves, and how is the trained color chosen for each PGN or chapter?
-2. **Maturity rule:** Which signal unlocks a child card—interval length, consecutive successes, stability/difficulty, or a combination—and can a lapse relock descendants?
-3. **Fixed-day handling of “Again”:** Should a failed card repeat inside today’s already-fixed session, or become due only on a later calendar day?
-4. **Branch acceptance:** If several repertoire responses are valid from one position, should any valid move pass the card, or should separate cards test each intended branch?
-5. **Canonical identity:** Should hashing use SAN or UCI moves, and should FEN clock fields be removed so equivalent positions and transpositions merge predictably?
-6. **Re-import semantics:** When a revised PGN removes or renames lines, should Tempo archive missing cards, preserve their history, or keep them active until explicitly deleted?
-7. **Calendar edge cases:** How should timezone changes, daylight-saving transitions, missed days, and manually changed system clocks affect the next daily queue?
+- Initial depth is six **user moves**. Opponent replies are included as needed but do not count toward the six.
+- “Again” stays in today’s fixed session and is reinserted after four other cards rather than repeated immediately.
+- Each repertoire branch gets its own card. Another move that is valid elsewhere in the repertoire is neutral—not a failure—but the teaching arrow redirects the learner to the branch currently being tested.
+- Card identity hashes the canonical starting position (piece placement, turn, castling, and en-passant state) plus normalized UCI moves. FEN clock fields are ignored because they do not change the tested position.
+- Calendar rollover should follow Anki-like local-day behavior; unusual clock and timezone cases are intentionally low priority.
+
+## Recommended maturity and depth policy
+
+The optimization target is practical recall from the beginning of a playable line, not maximum theoretical depth. A child card unlocks only when its parent has:
+
+1. successful reviews on three distinct calendar days;
+2. a current scheduled interval of at least 14 days; and
+3. no “Again” among its two most recent reviews.
+
+All ancestors are therefore mature before a deeper child can appear. A later lapse pauses further unlocking along that branch but does not relock descendants the learner has already encountered.
+
+Local response cards alone can become disconnected fragments, so Tempo should also create a low-frequency **integration checkpoint** after every four newly learned user moves. A checkpoint tests the line from the repertoire’s starting FEN through the newest frontier. New descendants beyond that checkpoint remain locked until the checkpoint matures. This preserves fast, focused response cards while regularly proving that the learner can still reach the deep position from the start.
+
+## Remaining implementation decision
+
+- When a revised PGN removes or renames lines, decide whether missing cards are archived automatically or retained until explicitly deleted. Review history should be preserved either way.
