@@ -1,0 +1,8 @@
+node_modules
+dist
+.next
+.git
+.wrangler
+data
+backend/__pycache__
+backend/.pytest_cache
