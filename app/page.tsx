@@ -397,6 +397,27 @@ const alternateTactics: PracticeCard[] = [
   demoCards[2],
 ];
 
+type PackagedPuzzle = {
+  DeckId: string;
+  DeckPosition: number;
+  PuzzleId: string;
+  FEN: string;
+  Moves: string;
+  Rating: number;
+};
+
+function packagedPuzzleCard(record: PackagedPuzzle): PracticeCard | null {
+  const board = new Chess(record.FEN);
+  const uciMoves = record.Moves.split(/\s+/).filter(Boolean);
+  try {
+    const setup = uciMoves.shift()!;
+    board.move({ from: setup.slice(0, 2) as Square, to: setup.slice(2, 4) as Square, promotion: setup[4] });
+    const startingFen = board.fen();
+    const moves = uciMoves.map((uci) => board.move({ from: uci.slice(0, 2) as Square, to: uci.slice(2, 4) as Square, promotion: uci[4] }).san);
+    return { id: `lichess-${record.PuzzleId}`, kind: 'puzzle', title: `Puzzle ${record.DeckPosition}`, subtitle: `Lichess · ${record.Rating}`, startingFen, moves, userMoveTarget: Math.ceil(moves.length / 2), sourceUrl: `https://lichess.org/training/${record.PuzzleId}` };
+  } catch { return null; }
+}
+
 function TacticsView({ theme, pieceSet }: { theme: BoardTheme; pieceSet: PieceSet }) {
   const [motif, setMotif] = useState('hangingPiece');
   const [stage, setStage] = useState('easy');
@@ -405,9 +426,12 @@ function TacticsView({ theme, pieceSet }: { theme: BoardTheme; pieceSet: PieceSe
   const [hint, setHint] = useState(false);
   const [failed, setFailed] = useState(false);
   const [outcome, setOutcome] = useState<'correct' | 'wrong' | null>(null);
+  const [catalog, setCatalog] = useState<PackagedPuzzle[]>([]);
+  useEffect(() => { fetch('/data/tactics-decks.json').then((response) => response.json()).then(setCatalog).catch(() => setCatalog([])); }, []);
   const progressKey = tacticProgressKey(motif, stage);
   const currentProgress = progress[progressKey] ?? { clean: 0, index: 0 };
-  const deck = [tacticExamples[motif] ?? demoCards[2], ...alternateTactics];
+  const packagedDeck = useMemo(() => catalog.filter((record) => record.DeckId === `${motif}-${stage}`).sort((a, b) => a.DeckPosition - b.DeckPosition).map(packagedPuzzleCard).filter((card): card is PracticeCard => Boolean(card)), [catalog, motif, stage]);
+  const deck = packagedDeck.length ? packagedDeck : [tacticExamples[motif] ?? demoCards[2], ...alternateTactics];
   const puzzle = deck[currentProgress.index % deck.length];
   const [fen, setFen] = useState(puzzle.startingFen);
 
