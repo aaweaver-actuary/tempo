@@ -111,12 +111,14 @@ function loadMaia(onProgress?: (progress: number) => void) {
   if (!maiaReady) maiaReady = (async () => {
     ort.env.wasm.wasmPaths = '/ort/'; ort.env.wasm.numThreads = Math.min(2, navigator.hardwareConcurrency || 1);
     onProgress?.(5);
-    const response = await fetch('/maia3/maia3_simplified.onnx');
-    if (!response.ok) throw new Error('Could not load Maia model');
-    const reader = response.body?.getReader(); const chunks: Uint8Array[] = []; let received = 0; const total = Number(response.headers.get('content-length') || 0);
-    if (reader) { while (true) { const { done, value } = await reader.read(); if (done) break; chunks.push(value); received += value.length; if (total) onProgress?.(Math.min(90, Math.round(received / total * 90))); } }
-    const data = reader ? new Uint8Array(received) : new Uint8Array(await response.arrayBuffer());
-    if (reader) { let offset=0; for (const chunk of chunks) { data.set(chunk,offset); offset+=chunk.length; } }
+    const chunks: Uint8Array[] = [];
+    for (let index=0; index<6; index++) {
+      const response = await fetch(`/maia3/parts/part-${String(index).padStart(2,'0')}`);
+      if (!response.ok) throw new Error('Could not load Maia model');
+      chunks.push(new Uint8Array(await response.arrayBuffer())); onProgress?.(Math.round((index+1)/6*90));
+    }
+    const data = new Uint8Array(chunks.reduce((sum,chunk)=>sum+chunk.length,0)); let offset=0;
+    for (const chunk of chunks) { data.set(chunk,offset); offset+=chunk.length; }
     const session = await ort.InferenceSession.create(data, { executionProviders: ['wasm'] }); onProgress?.(100); return session;
   })();
   return maiaReady;

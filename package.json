@@ -6,8 +6,6 @@
     "node": ">=22.13.0"
   },
   "scripts": {
-    "predev": "node scripts/prepare-maia.mjs",
-    "prebuild": "node scripts/prepare-maia.mjs",
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "vinext start",

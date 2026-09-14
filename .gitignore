@@ -36,7 +36,6 @@ next-env.d.ts
 /.wrangler/
 /outputs/
 /work/
-/public/maia3/maia3_simplified.onnx
 
 # local API state
 __pycache__/
