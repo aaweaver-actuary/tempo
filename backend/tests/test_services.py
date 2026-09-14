@@ -5,7 +5,7 @@ from pathlib import Path
 from app.services.analysis import MAIA_VERSION, STOCKFISH_VERSION, explorer_url
 from app.services.cards import card_id
 from app.services.puzzles import load_packaged_decks, validate_puzzle_record
-from app.services.pgn import prefix_through_user_moves
+from app.services.pgn import parse_pgn, prefix_through_user_moves
 from app.services.scheduler import schedule_review, unlock_ready
 from app.services.endgames import generate_position, normalized_material
 from app.services.game_analysis import classify_swings
@@ -71,6 +71,11 @@ class SchedulerTests(unittest.TestCase):
 
 
 class PackagedContentTests(unittest.TestCase):
+    def test_pgn_import_collects_main_lines_and_variations(self) -> None:
+        games, lines = parse_pgn('[Event "Imported"]\n\n1. e4 (1. d4 d5) e5 2. Nf3 *')
+        self.assertEqual(games, 1)
+        self.assertEqual({tuple(line.moves) for line in lines}, {("e2e4", "e7e5", "g1f3"), ("d2d4", "d7d5")})
+
     def test_twelve_decks_have_one_hundred_cards_each(self) -> None:
         path = Path(__file__).parents[2] / "public" / "data" / "tactics-decks.json"
         decks = load_packaged_decks(path)

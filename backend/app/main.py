@@ -56,14 +56,15 @@ def queue_today():
     return {"local_date":day,"cards":cards,"count":len(cards)}
 
 @app.post("/api/imports/pgn",response_model=ImportResult)
-async def import_pgn(file:UploadFile=File(...),trained_color:str=Form("white")):
+async def import_pgn(file:UploadFile=File(...),trained_color:str=Form("white"),initial_depth:int|None=Form(None)):
     if not file.filename or not file.filename.lower().endswith('.pgn'): raise HTTPException(400,"Choose a .pgn file")
     if trained_color not in {"white","black"}: raise HTTPException(400,"trained_color must be white or black")
     games,lines=parse_pgn((await file.read()).decode("utf-8-sig"))
     if not lines: raise HTTPException(422,"No playable lines were found")
     rid,seen,created=str(uuid.uuid4()),set(),0; now=datetime.now(timezone.utc).isoformat()
     with connection() as db:
-        depth=db.execute("SELECT initial_depth FROM settings WHERE id=1").fetchone()[0]
+        saved_depth=db.execute("SELECT initial_depth FROM settings WHERE id=1").fetchone()[0]
+        depth=max(2,min(20,initial_depth if initial_depth is not None else saved_depth))
         db.execute("INSERT INTO repertoires VALUES(?,?,?,?)",(rid,file.filename.rsplit('.',1)[0],file.filename,now))
         for line in lines:
             db.execute("INSERT OR IGNORE INTO repertoire_lines VALUES(?,?,?,?,?,?,?)",(card_id(line.starting_fen,line.moves),rid,file.filename,trained_color,line.starting_fen,json.dumps(line.moves),now))
@@ -73,6 +74,23 @@ async def import_pgn(file:UploadFile=File(...),trained_color:str=Form("white")):
             if cid in seen: continue
             seen.add(cid); created+=db.execute("INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES(?,?,'prefix',?,?,?)",(cid,rid,line.starting_fen,json.dumps(moves),date.today().isoformat())).rowcount
     return ImportResult(repertoire_id=rid,source_name=file.filename,games_found=games,unique_lines=len(seen),cards_created=created,duplicates_merged=max(0,len(lines)-created))
+
+@app.get("/api/repertoires")
+def list_repertoires():
+    with connection() as db:
+        rows=db.execute("""
+            SELECT r.id,r.name,r.source_name,r.created_at,
+                   COUNT(DISTINCT l.id) AS line_count,
+                   COUNT(DISTINCT c.id) AS card_count,
+                   COUNT(DISTINCT CASE WHEN c.due_date<=date('now') AND c.archived=0 THEN c.id END) AS due_count
+            FROM repertoires r
+            LEFT JOIN repertoire_lines l ON l.repertoire_id=r.id
+            LEFT JOIN cards c ON c.repertoire_id=r.id
+            WHERE r.id NOT IN ('__tactics__','__endgames__')
+            GROUP BY r.id,r.name,r.source_name,r.created_at
+            ORDER BY r.created_at DESC
+        """).fetchall()
+    return {"repertoires":[dict(row) for row in rows]}
 
 def requeue(db,day,cid,after,attempt):
     cycle=db.execute("SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue WHERE queue_date=? AND card_id=?",(day,cid)).fetchone()[0]

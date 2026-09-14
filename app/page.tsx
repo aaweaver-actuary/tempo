@@ -1,31 +1,19 @@
 'use client';
 /* eslint-disable react-hooks/refs, react-hooks/set-state-in-effect */
 
-import { Chessground } from '@lichess-org/chessground';
-import type { Api } from '@lichess-org/chessground/api';
 import type { DrawShape } from '@lichess-org/chessground/draw';
 import type { Key } from '@lichess-org/chessground/types';
 import { Chess, Move, Square } from 'chess.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { MoveNavigator, OutcomeFlash } from './components/board-controls';
+import { Chessboard, type BoardTheme, type PieceSet } from './components/chessboard';
 import { analyzeWithMaia, analyzeWithStockfish, type EngineMove } from './lib/analysis-engines';
 import { generateLegalEndgameFen, type EndgameMaterial } from './lib/endgame-generator';
+import type { LocalRepertoire, PracticeCard } from './lib/domain';
+import { parsePgnImport } from './lib/pgn-import';
 import { advanceTacticProgress, readTacticProgress, tacticProgressKey, writeTacticProgress } from './lib/tactics-progress';
 
 const STANDARD_FEN = new Chess().fen();
-type BoardTheme = 'brown' | 'blue' | 'green';
-type PieceSet = 'cburnett' | 'merida';
-type PracticeCard = {
-  id: string;
-  kind: 'opening' | 'puzzle';
-  title: string;
-  subtitle: string;
-  startingFen: string;
-  moves: string[];
-  userMoveTarget: number;
-  nextMove?: string;
-  sourceUrl?: string;
-};
-
 const demoCards = [
   {
     id: 'open-sicilian-prefix',
@@ -77,8 +65,8 @@ const analysisLines = [
   { title: 'King’s Indian · Main line', side: 'Black', moves: ['d4', 'Nf6', 'c4', 'g6', 'Nc3', 'Bg7', 'e4', 'd6'] },
 ];
 
-function uciLine(sanMoves: string[]) {
-  const chess = new Chess();
+function uciLine(sanMoves: string[], startingFen = STANDARD_FEN) {
+  const chess = new Chess(startingFen);
   return sanMoves.map((san) => {
     const move = chess.move(san);
     return `${move.from}${move.to}${move.promotion ?? ''}`;
@@ -92,10 +80,6 @@ function localDayKey(date = new Date()) {
   return `${year}-${month}-${day}`;
 }
 
-function moveForSan(chess: Chess, san: string): Move | undefined {
-  return chess.moves({ verbose: true }).find((move) => move.san === san);
-}
-
 function fenAfterMoves(moves: string[], count: number, startingFen = STANDARD_FEN) {
   const chess = new Chess(startingFen);
   for (const move of moves.slice(0, count)) chess.move(move);
@@ -107,91 +91,6 @@ function lichessAnalysisUrl(moves: string[], startingFen = STANDARD_FEN) {
   const chess = new Chess(startingFen);
   for (const move of moves) chess.move(move);
   return `https://lichess.org/analysis/standard/${encodeURIComponent(chess.fen())}`;
-}
-
-function Chessboard({
-  fen,
-  expectedSan,
-  lastMove,
-  locked,
-  showHint,
-  theme,
-  pieceSet,
-  shapes = [],
-  onMove,
-}: {
-  fen: string;
-  expectedSan?: string;
-  lastMove?: [string, string];
-  locked: boolean;
-  showHint: boolean;
-  theme: BoardTheme;
-  pieceSet: PieceSet;
-  shapes?: DrawShape[];
-  onMove: (from: Square, to: Square) => void;
-}) {
-  const elementRef = useRef<HTMLDivElement>(null);
-  const apiRef = useRef<Api | null>(null);
-  const onMoveRef = useRef(onMove);
-  onMoveRef.current = onMove;
-  const chess = useMemo(() => new Chess(fen), [fen]);
-  const hintMove = expectedSan ? moveForSan(chess, expectedSan) : undefined;
-
-  useEffect(() => {
-    if (!elementRef.current) return;
-    apiRef.current = Chessground(elementRef.current);
-    return () => { apiRef.current?.destroy(); apiRef.current = null; };
-  }, []);
-
-  useEffect(() => {
-    const destinations = new Map<Key, Key[]>();
-    for (const move of chess.moves({ verbose: true })) {
-      const from = move.from as Key;
-      destinations.set(from, [...(destinations.get(from) ?? []), move.to as Key]);
-    }
-    const autoShapes: DrawShape[] = [
-      ...shapes,
-      ...(showHint && hintMove ? [{ orig: hintMove.from as Key, dest: hintMove.to as Key, brush: 'yellow' }] : []),
-    ];
-    apiRef.current?.set({
-      fen,
-      orientation: 'white',
-      turnColor: chess.turn() === 'w' ? 'white' : 'black',
-      lastMove: lastMove as Key[] | undefined,
-      coordinates: true,
-      viewOnly: locked,
-      animation: { enabled: true, duration: 180 },
-      movable: {
-        free: false,
-        color: locked ? undefined : chess.turn() === 'w' ? 'white' : 'black',
-        dests: destinations,
-        showDests: true,
-        events: { after: (from, to) => onMoveRef.current(from as Square, to as Square) },
-      },
-      draggable: { enabled: !locked, showGhost: true },
-      selectable: { enabled: !locked },
-      drawable: {
-        enabled: true,
-        visible: true,
-        autoShapes,
-        brushes: {
-          green: { key: 'g', color: '#4f8a59', opacity: .88, lineWidth: 10 },
-          red: { key: 'r', color: '#b45f50', opacity: .88, lineWidth: 10 },
-          blue: { key: 'b', color: '#4e7ca8', opacity: .88, lineWidth: 10 },
-          yellow: { key: 'y', color: '#d0a83f', opacity: .92, lineWidth: 11 },
-          maia: { key: 'm', color: '#8a62a5', opacity: .9, lineWidth: 10 },
-        },
-      },
-    });
-  }, [chess, fen, hintMove, lastMove, locked, shapes, showHint]);
-
-  return (
-    <div className="board-frame" aria-label="Interactive chessboard">
-      <div className={`chessground-shell theme-${theme} pieces-${pieceSet}`}>
-        <div className="cg-wrap" ref={elementRef} />
-      </div>
-    </div>
-  );
 }
 
 function TreeBrowser({ onClose, theme, pieceSet }: { onClose: () => void; theme: BoardTheme; pieceSet: PieceSet }) {
@@ -244,7 +143,7 @@ async function connectLichess() {
   location.assign(url.toString());
 }
 
-function AnalysisView({ theme, pieceSet, onTheme, onPieces }: { theme: BoardTheme; pieceSet: PieceSet; onTheme: (value: BoardTheme) => void; onPieces: (value: PieceSet) => void }) {
+function AnalysisView({ theme, pieceSet, imported, onTheme, onPieces }: { theme: BoardTheme; pieceSet: PieceSet; imported: LocalRepertoire[]; onTheme: (value: BoardTheme) => void; onPieces: (value: PieceSet) => void }) {
   const [history, setHistory] = useState<{ san: string; uci: string; fen: string }[]>([]);
   const [cursor, setCursor] = useState(0);
   const [explorerOn, setExplorerOn] = useState(() => typeof window === 'undefined' || localStorage.getItem('tempo-explorer-on') !== 'false');
@@ -271,9 +170,13 @@ function AnalysisView({ theme, pieceSet, onTheme, onPieces }: { theme: BoardThem
   const previousUci = visibleHistory.at(-1)?.uci;
   const lastMove: [string, string] | undefined = previousUci ? [previousUci.slice(0, 2), previousUci.slice(2, 4)] : undefined;
   const playedUci = visibleHistory.map((move) => move.uci);
-  const lineMatches = analysisLines.filter((line) => playedUci.every((move, index) => uciLine(line.moves)[index] === move));
+  const availableLines = useMemo(() => [
+    ...analysisLines.map((line) => ({ ...line, startingFen: STANDARD_FEN })),
+    ...imported.flatMap((repertoire) => repertoire.cards.map((card) => ({ title: card.title, side: repertoire.side, moves: card.moves, startingFen: card.startingFen }))),
+  ], [imported]);
+  const lineMatches = availableLines.filter((line) => line.startingFen === STANDARD_FEN && playedUci.every((move, index) => uciLine(line.moves, line.startingFen)[index] === move));
   const coveredReplies = new Set(lineMatches.flatMap((line) => {
-    const uci = uciLine(line.moves)[cursor];
+    const uci = uciLine(line.moves, line.startingFen)[cursor];
     return uci ? [uci] : [];
   }));
 
@@ -425,15 +328,26 @@ function MoveRows({ moves, covered, detail, onPlay }: { moves: EngineMove[]; cov
   return <div className="candidate-list">{moves.map((move, index) => <button className="candidate-row" key={move.uci} onClick={() => onPlay?.(move.uci)}><span>{index + 1}</span><strong>{move.san}</strong><small>{detail === 'probability' ? `${Math.round((move.probability ?? 0) * 100)}%` : move.score}</small><em className={covered.has(move.uci) ? 'covered' : 'gap'}>{covered.has(move.uci) ? 'Covered' : 'Gap'}</em></button>)}</div>;
 }
 
-function RepertoireView({ onImport, onBrowse }: { onImport: () => void; onBrowse: () => void }) {
-  const initial = [
-    { side: 'White', title: '1. e4 Main Lines', detail: '842 positions · 168 cards', progress: 76, due: 8 },
-    { side: 'Black', title: 'Sicilian Defense', detail: '516 positions · 103 cards', progress: 58, due: 4 },
-    { side: 'Black', title: 'King’s Indian', detail: '284 positions · 61 cards', progress: 33, due: 0 },
+function RepertoireView({ imported, onImport, onBrowse }: { imported: LocalRepertoire[]; onImport: () => void; onBrowse: () => void }) {
+  const bundled = [
+    { id: 'sample-white', side: 'White' as const, title: '1. e4 Main Lines', sourceName: 'Tempo examples', detail: '4 lines · 2 cards due', progress: 76, due: 2, pgn: '[Event "1. e4 Main Lines"]\n[Result "*"]\n\n1. e4 c5 2. Nf3 d6 3. d4 cxd4 *' },
+    { id: 'sample-black', side: 'Black' as const, title: 'Sicilian Defense', sourceName: 'Tempo examples', detail: '2 lines · 1 card due', progress: 58, due: 1, pgn: '[Event "Sicilian Defense"]\n[Result "*"]\n\n1. e4 c5 2. Nf3 d6 *' },
   ];
-  const [repertoires,setRepertoires]=useState(initial);
-  function rename(index:number) { const value=window.prompt('Repertoire nickname',repertoires[index].title); if(!value?.trim())return; setRepertoires(current=>current.map((item,i)=>i===index?{...item,title:value.trim()}:item)); }
-  function exportPgn(title?:string) { const selected=title?[title]:repertoires.map(item=>item.title); const text=selected.map((name,index)=>`[Event "${name}"]\n[Site "Tempo"]\n[Result "*"]\n\n${index%2?'1. d4 Nf6 2. c4 g6 *':'1. e4 c5 2. Nf3 d6 3. d4 cxd4 *'}`).join('\n\n'); const url=URL.createObjectURL(new Blob([text],{type:'application/x-chess-pgn'})); const link=document.createElement('a');link.href=url;link.download=title?`${title}.pgn`:'tempo-repertoires.pgn';link.click();URL.revokeObjectURL(url); }
+  const importedItems = useMemo(() => imported.map((item) => ({ ...item, detail: `${item.cards.length} unique ${item.cards.length === 1 ? 'line' : 'lines'} · imported locally`, progress: 0, due: item.cards.length })), [imported]);
+  const [repertoires, setRepertoires] = useState([...bundled, ...importedItems]);
+  useEffect(() => {
+    setRepertoires((current) => [...current.filter((item) => !item.id.startsWith('repertoire-')), ...importedItems]);
+  }, [importedItems]);
+  function rename(index:number) {
+    const value=window.prompt('Repertoire nickname',repertoires[index].title);
+    if(!value?.trim()) return;
+    setRepertoires((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, title: value.trim() } : item));
+  }
+  function exportPgn(item?: typeof repertoires[number]) {
+    const text = item ? item.pgn : repertoires.map((entry) => entry.pgn).join('\n\n');
+    const url=URL.createObjectURL(new Blob([text],{type:'application/x-chess-pgn'}));
+    const link=document.createElement('a'); link.href=url; link.download=item?`${item.title}.pgn`:'tempo-repertoires.pgn'; link.click(); URL.revokeObjectURL(url);
+  }
   return (
     <section className="library-page" id="repertoire">
       <div className="page-heading">
@@ -442,23 +356,16 @@ function RepertoireView({ onImport, onBrowse }: { onImport: () => void; onBrowse
       </div>
       <div className="library-grid">
         {repertoires.map((item,index) => (
-          <article className="repertoire-card" key={item.title}>
+          <article className="repertoire-card" key={item.id}>
             <div className="repertoire-top"><span className="side-badge">{item.side}</span><span>{item.due ? `${item.due} due` : 'Up to date'}</span></div>
             <div className="mini-board" aria-hidden="true">{Array.from({ length: 16 }).map((_, index) => <i key={index} />)}</div>
-            <div className="repertoire-name"><h2>{item.title}</h2><button onClick={()=>rename(index)} title="Rename repertoire">✎</button></div><p>{item.detail}</p>
+            <div className="repertoire-name"><h2>{item.title}</h2><button onClick={()=>rename(index)} title="Rename repertoire">✎</button></div><p>{item.detail}</p><small className="source-name">{item.sourceName}</small>
             <div className="maturity-row"><span>Maturity</span><strong>{item.progress}%</strong></div>
             <div className="maturity-track"><span style={{ width: `${item.progress}%` }} /></div>
-            <div className="repertoire-actions"><button className="browse-button" onClick={onBrowse}>Browse tree</button><button onClick={()=>exportPgn(item.title)}>⇩ PGN</button></div>
+            <div className="repertoire-actions"><button className="browse-button" onClick={onBrowse}>Browse tree</button><button onClick={()=>exportPgn(item)}>⇩ PGN</button></div>
           </article>
         ))}
         <button className="new-repertoire-card" onClick={onImport}><span>＋</span><strong>Add a repertoire</strong><small>PGN files stay on this computer</small></button>
-      </div>
-      <div className="unlock-explainer">
-        <div><span className="step-number done">1</span><strong>Shared prefix</strong><small>One card for the opening’s first 6 moves</small></div>
-        <i />
-        <div><span className="step-number active">2</span><strong>Reach maturity</strong><small>3 successful days · 14-day interval</small></div>
-        <i />
-        <div><span className="step-number">3</span><strong>Focused response</strong><small>Train only the opponent move and your reply</small></div>
       </div>
     </section>
   );
@@ -497,14 +404,23 @@ function TacticsView({ theme, pieceSet }: { theme: BoardTheme; pieceSet: PieceSe
   const [step, setStep] = useState(0);
   const [hint, setHint] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [outcome, setOutcome] = useState<'correct'|'wrong'|null>(null);
+  const [outcome, setOutcome] = useState<'correct' | 'wrong' | null>(null);
   const progressKey = tacticProgressKey(motif, stage);
   const currentProgress = progress[progressKey] ?? { clean: 0, index: 0 };
   const deck = [tacticExamples[motif] ?? demoCards[2], ...alternateTactics];
   const puzzle = deck[currentProgress.index % deck.length];
   const [fen, setFen] = useState(puzzle.startingFen);
-  useEffect(()=>{setFen(puzzle.startingFen);setStep(0);setHint(false);setFailed(false);setOutcome(null);},[puzzle]);
-  function restart() { setFen(puzzle.startingFen); setStep(0); setHint(false); setFailed(false); setOutcome(null); }
+
+  const resetAttempt = useCallback((markFailed = false) => {
+    setFen(puzzle.startingFen);
+    setStep(0);
+    setHint(markFailed);
+    setFailed(markFailed);
+    setOutcome(null);
+  }, [puzzle]);
+
+  useEffect(() => { resetAttempt(); }, [resetAttempt]);
+
   function finish() {
     const clean = !failed;
     setOutcome(clean ? 'correct' : 'wrong');
@@ -516,39 +432,210 @@ function TacticsView({ theme, pieceSet }: { theme: BoardTheme; pieceSet: PieceSe
       });
     }, 750);
   }
+
   function movePiece(from: Square, to: Square) {
     if (outcome || step % 2 || step >= puzzle.moves.length) return;
-    const board=new Chess(fen); let move:Move;
-    try { move=board.move({from,to,promotion:'q'}); } catch { return; }
-    if (board.isCheckmate() || move.san===puzzle.moves[step]) {
-      const next=step+1;
-      if (next>=puzzle.moves.length) { finish(); return; }
-      const replyBoard=new Chess(board.fen()); replyBoard.move(puzzle.moves[next]); setFen(replyBoard.fen()); setStep(next+1); setHint(false);
-      if (next+1>=puzzle.moves.length) finish();
-    } else { setFailed(true); setHint(true); }
+    const board = new Chess(fen);
+    let move: Move;
+    try { move = board.move({ from, to, promotion: 'q' }); } catch { return; }
+    if (!board.isCheckmate() && move.san !== puzzle.moves[step]) {
+      setFailed(true);
+      setHint(true);
+      return;
+    }
+    setFen(board.fen());
+    const replyIndex = step + 1;
+    if (replyIndex >= puzzle.moves.length) { finish(); return; }
+    const replyBoard = new Chess(board.fen());
+    replyBoard.move(puzzle.moves[replyIndex]);
+    setFen(replyBoard.fen());
+    setStep(replyIndex + 1);
+    setHint(false);
+    if (replyIndex + 1 >= puzzle.moves.length) finish();
   }
-  const current=tacticMotifs.find((item)=>item[0]===motif)!;
-  const target=stage==='focused'?250:100;
-  return <section className="tactics-page"><div className="workspace-title"><div><h1>Tactics</h1><span>{currentProgress.clean} clean solves in {current[1].toLowerCase()} · {stage}</span></div><div className="stage-tabs">{['easy','medium','hard','focused'].map((item,index)=><button key={item} disabled={index>0 && (progress[tacticProgressKey(motif,['easy','medium','hard'][index-1])]?.clean ?? 0)<100} className={stage===item?'active':''} onClick={()=>setStage(item)}>{item==='focused'?'Focused · 250':`${item[0].toUpperCase()+item.slice(1)} · 100`}</button>)}</div></div><div className="tactics-workspace"><aside className="motif-rail">{tacticMotifs.map(([id,name,icon])=>{const itemProgress=progress[tacticProgressKey(id,stage)]?.clean ?? 0; return <button className={motif===id?'active':''} key={id} onClick={()=>setMotif(id)}><b>{icon}</b><span>{name}</span><small>{itemProgress ? `${itemProgress} / ${stage==='focused'?250:100}` : 'Not started'}</small></button>})}</aside><div className="board-column centered-board"><Chessboard fen={fen} expectedSan={puzzle.moves[step]} locked={Boolean(outcome) || step>=puzzle.moves.length} showHint={hint} theme={theme} pieceSet={pieceSet} onMove={movePiece}/><div className="board-tools"><button onClick={()=>{setFailed(true);setHint(true);}}>⌁ <span>Show move</span></button><button onClick={()=>{setFailed(true);restart();}}>↻ <span>Restart</span></button>{puzzle.sourceUrl&&<a href={puzzle.sourceUrl} target="_blank" rel="noreferrer">↗ <span>Original</span></a>}</div>{outcome&&<div className={`outcome-flash ${outcome}`} role="status" aria-live="assertive">{outcome==='correct'?'✓':'×'}</div>}</div><aside className="study-panel tactic-study"><span className="pill puzzle">{stage}</span><h2>{current[1]}</h2><p className="tactic-rating">Puzzle {currentProgress.index+1} of {target}</p>{!outcome&&<div className={`feedback ${failed?'wrong':'ready'}`} role="status"><span className="feedback-icon">{failed?'×':'●'}</span><div><strong>{failed?'Follow the arrow':'Your move'}</strong></div></div>}<div className="stage-progress"><span style={{width:`${Math.min(100,currentProgress.clean/target*100)}%`}}/></div><small>Easy → Medium → Hard → Focused</small></aside></div></section>;
+
+  const current = tacticMotifs.find((item) => item[0] === motif)!;
+  const target = stage === 'focused' ? 250 : 100;
+  const previousStages = ['easy', 'medium', 'hard'];
+  return (
+    <section className="tactics-page">
+      <div className="workspace-title">
+        <div><h1>Tactics</h1><span>{currentProgress.clean} clean solves in {current[1].toLowerCase()} · {stage}</span></div>
+        <div className="stage-tabs">{['easy', 'medium', 'hard', 'focused'].map((item, index) => (
+          <button key={item} disabled={index > 0 && (progress[tacticProgressKey(motif, previousStages[index - 1])]?.clean ?? 0) < 100} className={stage === item ? 'active' : ''} onClick={() => setStage(item)}>
+            {item === 'focused' ? 'Focused · 250' : `${item[0].toUpperCase() + item.slice(1)} · 100`}
+          </button>
+        ))}</div>
+      </div>
+      <div className="tactics-workspace">
+        <aside className="motif-rail">{tacticMotifs.map(([id, name, icon]) => {
+          const clean = progress[tacticProgressKey(id, stage)]?.clean ?? 0;
+          return <button className={motif === id ? 'active' : ''} key={id} onClick={() => setMotif(id)}><b>{icon}</b><span>{name}</span><small>{clean ? `${clean} / ${stage === 'focused' ? 250 : 100}` : 'Not started'}</small></button>;
+        })}</aside>
+        <div className="board-column centered-board">
+          <Chessboard fen={fen} expectedSan={puzzle.moves[step]} locked={Boolean(outcome) || step >= puzzle.moves.length} showHint={hint} theme={theme} pieceSet={pieceSet} onMove={movePiece}/>
+          <div className="board-tools"><button onClick={() => { setFailed(true); setHint(true); }}>⌁ <span>Show move</span></button><button onClick={() => resetAttempt(true)}>↻ <span>Restart</span></button>{puzzle.sourceUrl && <a href={puzzle.sourceUrl} target="_blank" rel="noreferrer">↗ <span>Original</span></a>}</div>
+          {outcome && (
+            <OutcomeFlash outcome={outcome}/>
+          )}
+        </div>
+        <aside className="study-panel tactic-study">
+          <span className="pill puzzle">{stage}</span><h2>{current[1]}</h2><p className="tactic-rating">Puzzle {currentProgress.index + 1} of {target}</p>
+          {!outcome && <div className={`feedback ${failed ? 'wrong' : 'ready'}`} role="status"><span className="feedback-icon">{failed ? '×' : '●'}</span><div><strong>{failed ? 'Follow the arrow' : 'Your move'}</strong></div></div>}
+          <div className="stage-progress"><span style={{ width: `${Math.min(100, currentProgress.clean / target * 100)}%` }}/></div><small>Easy → Medium → Hard → Focused</small>
+        </aside>
+      </div>
+    </section>
+  );
 }
+
+const endgameTemplates: EndgameMaterial[] = [
+  { white: 'KQ', black: 'K', name: 'Queen + king' },
+  { white: 'KR', black: 'K', name: 'Rook + king' },
+  { white: 'KQR', black: 'K', name: 'Queen + rook' },
+  { white: 'KQQ', black: 'K', name: 'Two queens' },
+];
 
 function EndgamesView({ theme, pieceSet }: { theme: BoardTheme; pieceSet: PieceSet }) {
-  const templates:EndgameMaterial[]=[{white:'KQ',black:'K',name:'Queen + king'},{white:'KR',black:'K',name:'Rook + king'},{white:'KQR',black:'K',name:'Queen + rook'},{white:'KQQ',black:'K',name:'Two queens'}];
-  const [selected,setSelected]=useState(1); const [goal,setGoal]=useState<'win'|'draw'|null>(null); const [status,setStatus]=useState('Classify the position before playing.');
-  const [fen,setFen]=useState(()=>generateLegalEndgameFen(templates[1]));
-  function newPosition(index=selected) { setFen(generateLegalEndgameFen(templates[index])); setGoal(null); setStatus('Classify the position before playing.'); }
-  function classify(value:'win'|'draw') { setGoal(value); setStatus(value==='win'?'Correct · now convert the win.':'This position is winning. Try again.'); }
-  function play(from:Square,to:Square) { if(goal!=='win') return; const board=new Chess(fen); try { board.move({from,to,promotion:'q'}); setFen(board.fen()); setStatus(board.isCheckmate()?'Converted · template review complete.':'Winning status preserved · best defense is preparing…'); } catch {} }
-  return <section className="endgames-page"><div className="workspace-title"><div><h1>Endgames</h1><span>Exact seven-piece practice</span></div><button className="primary-button">＋ New material set</button></div><div className="endgame-workspace"><aside className="template-list">{templates.map((template,index)=><button className={selected===index?'active':''} key={template.name} onClick={()=>{setSelected(index);newPosition(index)}}><strong>{template.name}</strong><small>{template.white} vs {template.black} · White</small></button>)}</aside><div className="board-column centered-board"><Chessboard fen={fen} locked={!goal || status.startsWith('Converted')} showHint={false} theme={theme} pieceSet={pieceSet} onMove={play}/><div className="board-tools"><button onClick={()=>newPosition()}>⤨ <span>New position</span></button><button>⚙ <span>Edit material</span></button></div></div><aside className="study-panel endgame-study"><span className="pill">Material template</span><h2>{templates[selected].name}</h2><p>White to move · exact tablebase</p><div className="classification"><button className={goal==='win'?'active':''} onClick={()=>classify('win')}>Win</button><button className={goal==='draw'?'active':''} onClick={()=>classify('draw')}>Draw</button></div><div className="feedback ready"><span className="feedback-icon">●</span><div><strong>{goal?'Play the position':'Win or draw?'}</strong><p>{status}</p></div></div><small>A draw is secured after 20 accurate user moves. Any worsened tablebase result fails immediately.</small></aside></div></section>;
+  const [selected, setSelected] = useState(1);
+  const [goal, setGoal] = useState<'win' | 'draw' | null>(null);
+  const [status, setStatus] = useState('Classify the position before playing.');
+  const [fen, setFen] = useState(() => generateLegalEndgameFen(endgameTemplates[1]));
+
+  function newPosition(index = selected) {
+    setFen(generateLegalEndgameFen(endgameTemplates[index]));
+    setGoal(null);
+    setStatus('Classify the position before playing.');
+  }
+
+  function classify(value: 'win' | 'draw') {
+    setGoal(value);
+    setStatus(value === 'win' ? 'Correct · now convert the win.' : 'This position is winning. Try again.');
+  }
+
+  function play(from: Square, to: Square) {
+    if (goal !== 'win') return;
+    const board = new Chess(fen);
+    try {
+      board.move({ from, to, promotion: 'q' });
+      setFen(board.fen());
+      setStatus(board.isCheckmate() ? 'Converted · template review complete.' : 'Winning status preserved · best defense is preparing…');
+    } catch { /* Chessground restricts this to legal moves. */ }
+  }
+
+  return (
+    <section className="endgames-page">
+      <div className="workspace-title"><div><h1>Endgames</h1><span>Exact seven-piece practice</span></div><button className="primary-button">＋ New material set</button></div>
+      <div className="endgame-workspace">
+        <aside className="template-list">{endgameTemplates.map((template, index) => <button className={selected === index ? 'active' : ''} key={template.name} onClick={() => { setSelected(index); newPosition(index); }}><strong>{template.name}</strong><small>{template.white} vs {template.black} · White</small></button>)}</aside>
+        <div className="board-column centered-board"><Chessboard fen={fen} locked={!goal || status.startsWith('Converted')} showHint={false} theme={theme} pieceSet={pieceSet} onMove={play}/><div className="board-tools"><button onClick={() => newPosition()}>⤨ <span>New position</span></button><button>⚙ <span>Edit material</span></button></div></div>
+        <aside className="study-panel endgame-study"><span className="pill">Material template</span><h2>{endgameTemplates[selected].name}</h2><p>White to move · exact tablebase</p><div className="classification"><button className={goal === 'win' ? 'active' : ''} onClick={() => classify('win')}>Win</button><button className={goal === 'draw' ? 'active' : ''} onClick={() => classify('draw')}>Draw</button></div><div className="feedback ready"><span className="feedback-icon">●</span><div><strong>{goal ? 'Play the position' : 'Win or draw?'}</strong><p>{status}</p></div></div><small>A draw is secured after 20 accurate user moves. Any worsened tablebase result fails immediately.</small></aside>
+      </div>
+    </section>
+  );
 }
 
-function CardEditor({ card, onClose, onSave }: { card: PracticeCard; onClose:()=>void; onSave:(card:PracticeCard)=>void }) {
-  const [fen,setFen]=useState(card.startingFen); const [moves,setMoves]=useState(card.moves.join(' ')); const [mode,setMode]=useState<'preserve'|'reset'>('preserve'); const [piece,setPiece]=useState('B'); const [error,setError]=useState('');
-  const symbols:Record<string,string>={K:'♔',Q:'♕',R:'♖',B:'♗',N:'♘',P:'♙',k:'♚',q:'♛',r:'♜',b:'♝',n:'♞',p:'♟','':'×'};
-  let editor=new Chess(); try { editor=new Chess(fen); } catch {}
-  function place(square:Square) { try { const board=new Chess(fen); board.remove(square); if(piece) board.put({type:piece.toLowerCase() as 'p'|'n'|'b'|'r'|'q'|'k',color:piece===piece.toUpperCase()?'w':'b'},square); setFen(board.fen()); setError(''); } catch { setError('That placement does not form a legal position yet.'); } }
-  function save() { try { const board=new Chess(fen); for(const san of moves.trim().split(/\s+/).filter(Boolean)) board.move(san); onSave({...card,startingFen:fen,moves:moves.trim().split(/\s+/).filter(Boolean)}); onClose(); } catch { setError('The position or solution contains an illegal move.'); } }
-  return <div className="modal-backdrop" onMouseDown={onClose}><section className="card-editor" role="dialog" aria-modal="true" onMouseDown={e=>e.stopPropagation()}><button className="close-button" onClick={onClose}>×</button><div className="editor-heading"><div><p className="eyebrow">Card repair</p><h2>Edit {card.title}</h2></div>{card.sourceUrl&&<button onClick={()=>{setFen('q5nr/1ppknQpp/3p4/1P2p3/4P3/B1PP1b2/B5PP/5K2 w - - 1 18');setMoves('Be6+ Kd8 Qf8#');}}>Restore Lichess original</button>}</div><div className="editor-layout"><div><div className="piece-palette">{Object.entries(symbols).map(([id,symbol])=><button className={piece===id?'active':''} key={id||'remove'} onClick={()=>setPiece(id)}>{symbol}</button>)}</div><div className="position-editor">{editor.board().flat().map((value,index)=>{const square=`${'abcdefgh'[index%8]}${8-Math.floor(index/8)}` as Square;return <button key={square} onClick={()=>place(square)} aria-label={`Edit ${square}`}>{value?symbols[value.color==='w'?value.type.toUpperCase():value.type]:''}</button>})}</div></div><div className="editor-fields"><label>FEN<textarea value={fen} onChange={e=>setFen(e.target.value)}/></label><label>Solution moves<textarea value={moves} onChange={e=>setMoves(e.target.value)} /></label><fieldset><legend>Scheduling history</legend><label><input type="radio" checked={mode==='preserve'} onChange={()=>setMode('preserve')}/> Preserve history</label><label><input type="radio" checked={mode==='reset'} onChange={()=>setMode('reset')}/> Reset as a new card</label></fieldset>{error&&<p className="editor-error">{error}</p>}<div className="editor-actions"><button onClick={onClose}>Cancel</button><button className="primary-button" onClick={save}>Validate & save</button></div></div></div></section></div>;
+const pieceSymbols: Record<string, string> = { K:'♔', Q:'♕', R:'♖', B:'♗', N:'♘', P:'♙', k:'♚', q:'♛', r:'♜', b:'♝', n:'♞', p:'♟', '':'×' };
+
+function editFenSquare(fen: string, square: Square, piece: string) {
+  const [placement, ...state] = fen.trim().split(/\s+/);
+  const rows = placement.split('/').map((row) => row.split('').flatMap((value) => /\d/.test(value) ? Array(Number(value)).fill('') : [value]));
+  const rank = 8 - Number(square[1]);
+  const file = square.charCodeAt(0) - 97;
+  rows[rank][file] = piece;
+  const compact = rows.map((row) => {
+    let empty = 0;
+    let result = '';
+    for (const value of row) {
+      if (!value) { empty += 1; continue; }
+      if (empty) { result += empty; empty = 0; }
+      result += value;
+    }
+    return result + (empty || '');
+  }).join('/');
+  return `${compact} ${state.join(' ')}`;
+}
+
+function moveFenPiece(fen: string, from: Square, to: Square) {
+  const chess = new Chess(fen);
+  const piece = chess.get(from);
+  if (!piece) return fen;
+  const symbol = piece.color === 'w' ? piece.type.toUpperCase() : piece.type;
+  return editFenSquare(editFenSquare(fen, from, ''), to, symbol);
+}
+
+function CardEditor({ card, theme, pieceSet, onClose, onSave }: { card: PracticeCard; theme: BoardTheme; pieceSet: PieceSet; onClose: () => void; onSave: (card: PracticeCard) => void }) {
+  const [fen, setFen] = useState(card.startingFen);
+  const [solution, setSolution] = useState(card.moves);
+  const [cursor, setCursor] = useState(0);
+  const [tab, setTab] = useState<'position' | 'solution'>('position');
+  const [historyMode, setHistoryMode] = useState<'preserve' | 'reset'>('preserve');
+  const [piece, setPiece] = useState('B');
+  const [error, setError] = useState('');
+  const previewFen = useMemo(() => { try { return fenAfterMoves(solution, cursor, fen); } catch { return fen; } }, [cursor, fen, solution]);
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); onClose(); return; }
+      if (event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLInputElement) return;
+      if (event.key === 'ArrowLeft') { event.preventDefault(); setCursor((value) => Math.max(0, value - 1)); }
+      if (event.key === 'ArrowRight') { event.preventDefault(); setCursor((value) => Math.min(solution.length, value + 1)); }
+      if (event.key === 'ArrowUp') { event.preventDefault(); setCursor(0); }
+      if (event.key === 'ArrowDown') { event.preventDefault(); setCursor(solution.length); }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [onClose, solution.length]);
+
+  function playSolution(from: Square, to: Square) {
+    const board = new Chess(previewFen);
+    try {
+      const move = board.move({ from, to, promotion: 'q' });
+      setSolution((moves) => [...moves.slice(0, cursor), move.san]);
+      setCursor((value) => value + 1);
+      setError('');
+    } catch { setError('That move is not legal from this position.'); }
+  }
+
+  function restoreOriginal() {
+    setFen('q5nr/1ppknQpp/3p4/1P2p3/4P3/B1PP1b2/B5PP/5K2 w - - 1 18');
+    setSolution(['Be6+', 'Kd8', 'Qf8#']);
+    setCursor(0);
+    setError('');
+  }
+
+  function save() {
+    try {
+      const board = new Chess(fen);
+      for (const san of solution) board.move(san);
+      onSave({ ...card, startingFen: fen, moves: solution });
+      onClose();
+    } catch { setError('The position or solution contains an illegal move.'); }
+  }
+
+  return (
+    <div className="modal-backdrop" onMouseDown={onClose}>
+      <section className="card-editor" role="dialog" aria-modal="true" aria-labelledby="card-editor-title" onMouseDown={(event) => event.stopPropagation()}>
+        <button className="close-button" onClick={onClose} aria-label="Close card editor">×</button>
+        <div className="editor-heading"><div><p className="eyebrow">Card repair</p><h2 id="card-editor-title">Edit {card.title}</h2></div>{card.sourceUrl && <button onClick={restoreOriginal}>Restore Lichess original</button>}</div>
+        <div className="editor-tabs"><button className={tab === 'position' ? 'active' : ''} onClick={() => setTab('position')}>Position</button><button className={tab === 'solution' ? 'active' : ''} onClick={() => setTab('solution')}>Solution</button></div>
+        <div className="editor-layout">
+          <div className="editor-board-column">
+            {tab === 'position' && <div className="piece-palette">{Object.entries(pieceSymbols).map(([id, symbol]) => <button className={piece === id ? 'active' : ''} key={id || 'remove'} onClick={() => setPiece(id)} aria-label={id ? `Place ${id}` : 'Remove piece'}>{symbol}</button>)}</div>}
+            <Chessboard fen={tab === 'position' ? fen : previewFen} locked={false} showHint={false} theme={theme} pieceSet={pieceSet} editMode={tab === 'position'} onSquareSelect={(square) => { if (tab === 'position') setFen((current) => editFenSquare(current, square, piece)); }} onFreeMove={(from, to) => setFen((current) => moveFenPiece(current, from, to))} onMove={playSolution}/>
+            {tab === 'solution' && <><MoveNavigator cursor={cursor} length={solution.length} onChange={setCursor}/><div className="solution-line">{solution.length ? solution.map((move, index) => <button className={index < cursor ? 'shown' : ''} key={`${move}-${index}`} onClick={() => setCursor(index + 1)}>{index % 2 === 0 ? `${Math.floor(index / 2) + 1}.` : ''}{move}</button>) : <span>Play the solution on the board.</span>}</div></>}
+          </div>
+          <div className="editor-fields">
+            <label>FEN<textarea value={fen} onChange={(event) => { setFen(event.target.value); setCursor(0); }}/></label>
+            <p className="editor-key-help">←/→ step · ↑ start · ↓ end · Esc close</p>
+            <fieldset><legend>Scheduling history</legend><label><input type="radio" checked={historyMode === 'preserve'} onChange={() => setHistoryMode('preserve')}/> Preserve history</label><label><input type="radio" checked={historyMode === 'reset'} onChange={() => setHistoryMode('reset')}/> Reset as a new card</label></fieldset>
+            {error && <p className="editor-error">{error}</p>}
+            <div className="editor-actions"><button onClick={onClose}>Cancel</button><button className="primary-button" onClick={save}>Validate & save</button></div>
+          </div>
+        </div>
+      </section>
+    </div>
+  );
 }
 
 function GamesView({ onAnalyze, theme, pieceSet }: { onAnalyze: () => void; theme: BoardTheme; pieceSet: PieceSet }) {
@@ -595,7 +682,7 @@ function GamesView({ onAnalyze, theme, pieceSet }: { onAnalyze: () => void; them
   </section>;
 }
 
-function ProgressView({ reviewed }: { reviewed: number }) {
+function ProgressView({ reviewed, cardsLeft, totalCards }: { reviewed: number; cardsLeft: number; totalCards: number }) {
   const days = [
     ['Thu', 16], ['Fri', 22], ['Sat', 8], ['Sun', 28], ['Mon', 19], ['Tue', 31], ['Today', Math.max(8, reviewed)],
   ];
@@ -603,14 +690,14 @@ function ProgressView({ reviewed }: { reviewed: number }) {
     <section className="progress-page" id="progress">
       <div className="page-heading compact"><div><p className="eyebrow">Quiet consistency</p><h1>Progress</h1><p>Review volume matters less than returning when each card is due.</p></div><span className="streak">12 day streak</span></div>
       <div className="metric-grid">
-        <article><span>Due today</span><strong>12</strong><small>One focused session</small></article>
-        <article><span>Mature cards</span><strong>184</strong><small>＋18 this month</small></article>
-        <article><span>Recall rate</span><strong>91%</strong><small>Last 30 days</small></article>
-        <article><span>Next unlock</span><strong>2</strong><small>Cards near maturity</small></article>
+        <article><span>Due today</span><strong>{cardsLeft}</strong><small>{cardsLeft ? 'Continue today’s queue' : 'Queue complete'}</small></article>
+        <article><span>Cards available</span><strong>{totalCards}</strong><small>Across local repertoires and examples</small></article>
+        <article><span>Reviewed today</span><strong>{reviewed}</strong><small>Completed attempts</small></article>
+        <article><span>Clean passes</span><strong>{typeof window === 'undefined' ? 0 : JSON.parse(localStorage.getItem('tempo-first-clean-passes') ?? '[]').length}</strong><small>Cards recalled without guidance</small></article>
       </div>
       <div className="analytics-grid">
         <article className="chart-card">
-          <div className="chart-heading"><div><span>Review activity</span><strong>132 cards this week</strong></div><small>7 days</small></div>
+          <div className="chart-heading"><div><span>Review activity</span><strong>{reviewed} cards today</strong></div><small>7 days</small></div>
           <div className="bar-chart">{days.map(([label, value]) => <div className="bar-column" key={label}><span style={{ height: `${Number(value) * 3.3}px` }} /><small>{label}</small></div>)}</div>
         </article>
         <article className="maturity-card"><span>Maturity</span><h2>Most of your repertoire is becoming stable.</h2><div className="donut"><strong>72%</strong><small>learning or mature</small></div><ul><li><i className="new" />New <strong>96</strong></li><li><i className="learning" />Learning <strong>88</strong></li><li><i className="mature" />Mature <strong>184</strong></li></ul></article>
@@ -619,21 +706,51 @@ function ProgressView({ reviewed }: { reviewed: number }) {
   );
 }
 
-function ImportDialog({ onClose }: { onClose: () => void }) {
-  const [fileName, setFileName] = useState('');
+function ImportDialog({ onClose, onImported, onViewRepertoire }: { onClose: () => void; onImported: (repertoire: LocalRepertoire) => void; onViewRepertoire: () => void }) {
+  const [file, setFile] = useState<File | null>(null);
   const [initialDepth, setInitialDepth] = useState(6);
   const [trainedColor, setTrainedColor] = useState<'white' | 'black'>('white');
   const [finished, setFinished] = useState(false);
+  const [summary, setSummary] = useState({ lines: 0, duplicates: 0, backend: false });
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState('');
+
+  async function importFile() {
+    if (!file) return;
+    setWorking(true);
+    setError('');
+    try {
+      const parsed = parsePgnImport(file.name, await file.text(), trainedColor, initialDepth);
+      onImported(parsed.repertoire);
+      let backend = false;
+      if (['localhost', '127.0.0.1'].includes(location.hostname)) {
+        const data = new FormData();
+        data.append('file', file);
+        data.append('trained_color', trainedColor);
+        data.append('initial_depth', String(initialDepth));
+        try {
+          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000'}/api/imports/pgn`, { method: 'POST', body: data });
+          backend = response.ok;
+        } catch { /* The browser-local import remains usable without the service. */ }
+      }
+      setSummary({ lines: parsed.cards.length, duplicates: parsed.duplicateLines, backend });
+      setFinished(true);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'Tempo could not read this PGN.');
+    } finally { setWorking(false); }
+  }
+
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section className="import-dialog" role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}>
         <button className="close-button" onClick={onClose} aria-label="Close import dialog">×</button>
-        {finished ? <div className="import-finished"><span>✓</span><h2 id="import-title">Ready to train</h2><p><strong>{fileName}</strong> would add 24 unique cards and merge 7 shared prefixes in the full local app.</p><button className="primary-button" onClick={onClose}>View repertoire</button></div> : <>
+        {finished ? <div className="import-finished"><span>✓</span><h2 id="import-title">Imported</h2><p><strong>{file?.name}</strong> added {summary.lines} unique {summary.lines === 1 ? 'line' : 'lines'}{summary.duplicates ? ` and merged ${summary.duplicates} duplicate ${summary.duplicates === 1 ? 'line' : 'lines'}` : ''}. {summary.backend ? 'The local database and today’s practice are updated.' : 'This browser’s repertoire and practice queue are updated.'}</p><button className="primary-button" onClick={() => { onClose(); onViewRepertoire(); }}>View imported repertoire</button></div> : <>
           <p className="eyebrow">Local import</p><h2 id="import-title">Add PGN repertoire</h2><p className="dialog-copy">Your file is parsed on this computer. Re-uploading the same positions updates the repertoire without duplicating cards.</p>
-          <label className={`drop-zone${fileName ? ' has-file' : ''}`}><input type="file" accept=".pgn" onChange={(event) => setFileName(event.target.files?.[0]?.name ?? '')} /><span>{fileName ? '♟' : '⇧'}</span><strong>{fileName || 'Choose a PGN file'}</strong><small>{fileName ? 'Ready to preview' : 'or drop it here · .pgn only'}</small></label>
+          <label className={`drop-zone${file ? ' has-file' : ''}`}><input type="file" accept=".pgn" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setError(''); }} /><span>{file ? '♟' : '⇧'}</span><strong>{file?.name || 'Choose a PGN file'}</strong><small>{file ? 'Ready to import' : '.pgn files only'}</small></label>
           <div className="color-setting"><span><strong>Side to train</strong><small>Only your moves count toward line depth</small></span><span className="color-toggle"><button className={trainedColor === 'white' ? 'active' : ''} onClick={() => setTrainedColor('white')}>White</button><button className={trainedColor === 'black' ? 'active' : ''} onClick={() => setTrainedColor('black')}>Black</button></span></div>
           <label className="depth-setting"><span><strong>Initial line depth</strong><small>New prefix cards test this many user moves</small></span><span className="stepper"><button onClick={() => setInitialDepth(Math.max(2, initialDepth - 1))}>−</button><b>{initialDepth} user moves</b><button onClick={() => setInitialDepth(Math.min(20, initialDepth + 1))}>＋</button></span></label>
-          <div className="dialog-footer"><span><i className="status-dot" /> Stored locally</span><button className="primary-button" disabled={!fileName} onClick={() => setFinished(true)}>Preview import</button></div>
+          {error && <p className="editor-error">{error}</p>}
+          <div className="dialog-footer"><span><i className="status-dot" /> Stored locally</span><button className="primary-button" disabled={!file || working} onClick={() => void importFile()}>{working ? 'Importing…' : 'Import repertoire'}</button></div>
         </>}
       </section>
     </div>
@@ -643,6 +760,7 @@ function ImportDialog({ onClose }: { onClose: () => void }) {
 export default function Home() {
   const [view, setView] = useState<View>('train');
   const [practiceCards,setPracticeCards]=useState<PracticeCard[]>([...demoCards]);
+  const [importedRepertoires, setImportedRepertoires] = useState<LocalRepertoire[]>([]);
   const [activeCardIndex, setActiveCardIndex] = useState(0);
   const [fen, setFen] = useState(demoCards[0].startingFen);
   const [step, setStep] = useState(0);
@@ -663,7 +781,7 @@ export default function Home() {
   const [queueNotice, setQueueNotice] = useState('');
   const [boardTheme, setBoardTheme] = useState<BoardTheme>('brown');
   const [pieceSet, setPieceSet] = useState<PieceSet>('cburnett');
-  const card = practiceCards[activeCardIndex];
+  const card = practiceCards[activeCardIndex] ?? practiceCards[0];
   const repertoireLine = card.moves;
 
   useEffect(() => {
@@ -683,11 +801,31 @@ export default function Home() {
     setReviewed(Number(localStorage.getItem('tempo-reviewed') ?? 0));
     setSeenMoves(new Set(JSON.parse(localStorage.getItem('tempo-seen-moves') ?? '[]')));
     setFirstCleanPasses(new Set(JSON.parse(localStorage.getItem('tempo-first-clean-passes') ?? '[]')));
+    const savedRepertoires = JSON.parse(localStorage.getItem('tempo-imported-repertoires') ?? '[]') as LocalRepertoire[];
+    setImportedRepertoires(savedRepertoires);
+    const savedCards = [...new Map(savedRepertoires.flatMap((repertoire) => repertoire.cards).map((savedCard) => [savedCard.id, savedCard])).values()];
+    setPracticeCards([...demoCards, ...savedCards]);
     const storedQueue = JSON.parse(localStorage.getItem('tempo-daily-queue') ?? JSON.stringify(Array.from({ length: 12 }, (_, index) => index % demoCards.length))) as number[];
     setDailyQueue(storedQueue); setCardsLeft(storedQueue.length); setActiveCardIndex(storedQueue[0] ?? 0);
     setBoardTheme((localStorage.getItem('tempo-board-theme') as BoardTheme | null) ?? 'brown');
     setPieceSet((localStorage.getItem('tempo-piece-set') as PieceSet | null) ?? 'cburnett');
   }, []);
+
+  function addImportedRepertoire(repertoire: LocalRepertoire) {
+    const repertoires = [...importedRepertoires.filter((item) => item.id !== repertoire.id), repertoire];
+    setImportedRepertoires(repertoires);
+    localStorage.setItem('tempo-imported-repertoires', JSON.stringify(repertoires));
+    const existingIds = new Set(practiceCards.map((item) => item.id));
+    const additions = repertoire.cards.filter((item) => !existingIds.has(item.id));
+    const cards = [...practiceCards, ...additions];
+    setPracticeCards(cards);
+    const addedIndexes = additions.map((item) => cards.findIndex((cardItem) => cardItem.id === item.id));
+    const queue = [...dailyQueue, ...addedIndexes];
+    setDailyQueue(queue);
+    setCardsLeft(queue.length);
+    localStorage.setItem('tempo-daily-queue', JSON.stringify(queue));
+    localStorage.setItem('tempo-cards-left', String(queue.length));
+  }
 
   function resetLine(nextCard = card) {
     setFen(nextCard.startingFen); setStep(0); setFeedback('ready'); setLastMove(undefined); setLocked(false); setShowHint(false); setAttemptFailed(false);
@@ -811,13 +949,13 @@ export default function Home() {
       {view === 'endgames' && (
         <EndgamesView theme={boardTheme} pieceSet={pieceSet}/>
       )}
-      {view === 'repertoire' && <RepertoireView onImport={() => setShowImport(true)} onBrowse={() => setShowTree(true)} />}
-      {view === 'analysis' && <AnalysisView theme={boardTheme} pieceSet={pieceSet} onTheme={changeBoardTheme} onPieces={changePieceSet} />}
+      {view === 'repertoire' && <RepertoireView imported={importedRepertoires} onImport={() => setShowImport(true)} onBrowse={() => setShowTree(true)} />}
+      {view === 'analysis' && <AnalysisView theme={boardTheme} pieceSet={pieceSet} imported={importedRepertoires} onTheme={changeBoardTheme} onPieces={changePieceSet} />}
       {view === 'games' && <GamesView onAnalyze={() => setView('analysis')} theme={boardTheme} pieceSet={pieceSet} />}
-      {view === 'progress' && <ProgressView reviewed={reviewed} />}
-      {showImport && <ImportDialog onClose={() => setShowImport(false)} />}
+      {view === 'progress' && <ProgressView reviewed={reviewed} cardsLeft={cardsLeft} totalCards={practiceCards.length} />}
+      {showImport && <ImportDialog onClose={() => setShowImport(false)} onImported={addImportedRepertoire} onViewRepertoire={() => setView('repertoire')} />}
       {showTree && <TreeBrowser onClose={() => setShowTree(false)} theme={boardTheme} pieceSet={pieceSet} />}
-      {editorCard && <CardEditor card={editorCard} onClose={()=>setEditorCard(null)} onSave={(updated)=>{setPracticeCards(current=>current.map(item=>item.id===updated.id?updated:item));resetLine(updated);setSuggestShorter(false);}}/>}
+      {editorCard && <CardEditor card={editorCard} theme={boardTheme} pieceSet={pieceSet} onClose={()=>setEditorCard(null)} onSave={(updated)=>{setPracticeCards(current=>current.map(item=>item.id===updated.id?updated:item));resetLine(updated);setSuggestShorter(false);}}/>}
       <footer className="source-footer">Board interaction by <a href="https://github.com/lichess-org/chessground" target="_blank" rel="noreferrer">Chessground</a> · Cburnett and Merida pieces from Lichess · Puzzle positions from the public-domain <a href="https://database.lichess.org/#puzzles" target="_blank" rel="noreferrer">Lichess database</a></footer>
     </main>
   );
