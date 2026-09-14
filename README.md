@@ -4,9 +4,10 @@ Tempo is an initial product mockup and technical skeleton for a fully local ches
 
 ## What works in this pass
 
-- Interactive six-user-move opening drills, using click-to-move or drag-and-drop.
-- Equal-sized responsive ranks, legal-move markers, last-move highlighting, automatic opponent replies, and end-of-card ratings.
+- Interactive opening and tactics drills using Lichess's Chessground board, with click-to-move or drag-and-drop.
+- Fluid responsive sizing, Cburnett and Merida piece sets, three board palettes, legal-move markers, last-move highlighting, automatic opponent replies, and native SVG teaching arrows.
 - Teaching arrows on first exposure and immediately after a wrong attempted move; picking up and replacing a piece does nothing.
+- Answers remain hidden: the move trail reveals only moves already played.
 - One-click Lichess analysis for the exact current move history, plus a repertoire tree browser for stepping through positions and branches.
 - Representative Train, Repertoire, Progress, PGN import, import-success, wrong-answer, and completed-card states.
 - Demo review counts persist in browser storage and reset when the local calendar day changes.
@@ -15,6 +16,7 @@ Tempo is an initial product mockup and technical skeleton for a fully local ches
 - PGN variation parsing and stable SHA-256 card IDs derived from canonical starting FEN plus normalized UCI moves.
 - A daily-bucket scheduler where “Again” reshuffles the card behind four other reviews in today’s queue.
 - A conservative descendant gate and unlock hook for child cards when a parent reaches maturity.
+- A representative Lichess puzzle interleaved with opening cards, tactics-deck controls, and a local SQLite skeleton for motif/rating-filtered puzzle decks.
 
 ## Run locally
 
@@ -43,6 +45,13 @@ docker-compose.yml         Local two-service runtime
 - Each repertoire branch gets its own card. Another move that is valid elsewhere in the repertoire is neutral—not a failure—but the teaching arrow redirects the learner to the branch currently being tested.
 - Card identity hashes the canonical starting position (piece placement, turn, castling, and en-passant state) plus normalized UCI moves. FEN clock fields are ignored because they do not change the tested position.
 - Calendar rollover should follow Anki-like local-day behavior; unusual clock and timezone cases are intentionally low priority.
+- Tactics use the same daily queue and review controls, but have a separate daily cap so puzzles cannot crowd out opening work. Lichess's first UCI move is applied as the setup move; the remaining moves form the card answer.
+
+## Lichess assets and puzzle data
+
+Tempo now uses the official `@lichess-org/chessground` package instead of a hand-built board. The default Cburnett set and optional Merida set come from Lichess. Chessground is GPL-3.0-or-later; both piece sets are GPL-2.0-or-later. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+
+The Lichess puzzle database is public domain and provides FEN, UCI solution moves, rating, popularity, motifs, and source-game URLs. The intended local workflow downloads or imports a filtered subset—not the entire multi-million-row database—then builds decks by motif and rating. Opening and puzzle scheduling stay independent even when their due cards are shuffled into one session.
 
 ## Recommended maturity and depth policy
 

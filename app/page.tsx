@@ -1,29 +1,60 @@
 'use client';
 
+import { Chessground } from '@lichess-org/chessground';
+import type { Api } from '@lichess-org/chessground/api';
+import type { DrawShape } from '@lichess-org/chessground/draw';
+import type { Key } from '@lichess-org/chessground/types';
 import { Chess, Move, Square } from 'chess.js';
-import { DragEvent, useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 const USER_MOVES_PER_PREFIX = 6;
+const STANDARD_FEN = new Chess().fen();
+type BoardTheme = 'brown' | 'blue' | 'green';
+type PieceSet = 'cburnett' | 'merida';
+type PracticeCard = {
+  id: string;
+  kind: 'opening' | 'puzzle';
+  title: string;
+  subtitle: string;
+  startingFen: string;
+  moves: string[];
+  userMoveTarget: number;
+  nextMove?: string;
+  sourceUrl?: string;
+};
+
 const demoCards = [
   {
     id: 'open-sicilian-prefix',
+    kind: 'opening',
     title: 'Open Sicilian',
     subtitle: 'Najdorf setup',
+    startingFen: STANDARD_FEN,
     moves: ['e4', 'c5', 'Nf3', 'd6', 'd4', 'cxd4', 'Nxd4', 'Nf6', 'Nc3', 'a6', 'Be3', 'e6'],
+    userMoveTarget: 6,
     nextMove: '7. Qd2',
   },
   {
     id: 'french-classical-prefix',
+    kind: 'opening',
     title: 'French Defense',
     subtitle: 'Classical variation',
+    startingFen: STANDARD_FEN,
     moves: ['e4', 'e6', 'd4', 'd5', 'Nc3', 'Nf6', 'e5', 'Nfd7', 'f4', 'c5', 'Nf3', 'Nc6'],
+    userMoveTarget: 6,
     nextMove: '7. Be3',
   },
-];
-const pieces: Record<string, string> = {
-  wp: '♙', wn: '♘', wb: '♗', wr: '♖', wq: '♕', wk: '♔',
-  bp: '♟', bn: '♞', bb: '♝', br: '♜', bq: '♛', bk: '♚',
-};
+  {
+    id: 'lichess-puzzle-00sHx',
+    kind: 'puzzle',
+    title: 'Mate in two',
+    subtitle: 'Mate · middlegame · short',
+    startingFen: 'q5nr/1ppknQpp/3p4/1P2p3/4P3/B1PP1b2/6PP/5K2 w - - 1 18',
+    moves: ['Be6+', 'Kd8', 'Qf8#'],
+    userMoveTarget: 2,
+    sourceUrl: 'https://lichess.org/training/00sHx',
+  },
+] satisfies PracticeCard[];
 
 type Feedback = 'ready' | 'correct' | 'wrong' | 'complete';
 type View = 'train' | 'repertoire' | 'progress';
@@ -39,35 +70,17 @@ function moveForSan(chess: Chess, san: string): Move | undefined {
   return chess.moves({ verbose: true }).find((move) => move.san === san);
 }
 
-function fenAfterMoves(moves: string[], count: number) {
-  const chess = new Chess();
+function fenAfterMoves(moves: string[], count: number, startingFen = STANDARD_FEN) {
+  const chess = new Chess(startingFen);
   for (const move of moves.slice(0, count)) chess.move(move);
   return chess.fen();
 }
 
-function lichessAnalysisUrl(moves: string[]) {
-  if (moves.length === 0) return 'https://lichess.org/analysis/standard';
-  const chess = new Chess();
+function lichessAnalysisUrl(moves: string[], startingFen = STANDARD_FEN) {
+  if (moves.length === 0 && startingFen === STANDARD_FEN) return 'https://lichess.org/analysis/standard';
+  const chess = new Chess(startingFen);
   for (const move of moves) chess.move(move);
-  const pgn = chess.pgn();
-  return `https://lichess.org/analysis/pgn/${encodeURIComponent(pgn)}?color=white`;
-}
-
-function arrowGeometry(from: Square, to: Square) {
-  const point = (square: Square) => ({
-    x: (square.charCodeAt(0) - 97 + 0.5) * 12.5,
-    y: (8 - Number(square[1]) + 0.5) * 12.5,
-  });
-  const start = point(from);
-  const end = point(to);
-  const dx = end.x - start.x;
-  const dy = end.y - start.y;
-  return {
-    left: `${start.x}%`,
-    top: `${start.y}%`,
-    width: `${Math.sqrt(dx * dx + dy * dy)}%`,
-    transform: `rotate(${Math.atan2(dy, dx)}rad)`,
-  };
+  return `https://lichess.org/analysis/standard/${encodeURIComponent(chess.fen())}`;
 }
 
 function Chessboard({
@@ -76,6 +89,8 @@ function Chessboard({
   lastMove,
   locked,
   showHint,
+  theme,
+  pieceSet,
   onMove,
 }: {
   fen: string;
@@ -83,100 +98,73 @@ function Chessboard({
   lastMove?: [string, string];
   locked: boolean;
   showHint: boolean;
+  theme: BoardTheme;
+  pieceSet: PieceSet;
   onMove: (from: Square, to: Square) => void;
 }) {
+  const elementRef = useRef<HTMLDivElement>(null);
+  const apiRef = useRef<Api | null>(null);
+  const onMoveRef = useRef(onMove);
+  onMoveRef.current = onMove;
   const chess = useMemo(() => new Chess(fen), [fen]);
-  const [selected, setSelected] = useState<Square | null>(null);
-  const legalTargets = selected
-    ? chess.moves({ square: selected, verbose: true }).map((move) => move.to)
-    : [];
   const hintMove = expectedSan ? moveForSan(chess, expectedSan) : undefined;
 
-  function chooseSquare(square: Square) {
-    if (locked) return;
-    if (selected) {
-      if (square === selected) {
-        setSelected(null);
-        return;
-      }
-      const targetPiece = chess.get(square);
-      if (targetPiece?.color === chess.turn()) {
-        setSelected(square);
-        return;
-      }
-      onMove(selected, square);
-      setSelected(null);
-      return;
-    }
-    const piece = chess.get(square);
-    setSelected(piece?.color === chess.turn() ? square : null);
-  }
+  useEffect(() => {
+    if (!elementRef.current) return;
+    apiRef.current = Chessground(elementRef.current);
+    return () => { apiRef.current?.destroy(); apiRef.current = null; };
+  }, []);
 
-  function drop(event: DragEvent<HTMLButtonElement>, to: Square) {
-    event.preventDefault();
-    const from = event.dataTransfer.getData('text/plain') as Square;
-    if (from && from !== to) onMove(from, to);
-    setSelected(null);
-  }
+  useEffect(() => {
+    const destinations = new Map<Key, Key[]>();
+    for (const move of chess.moves({ verbose: true })) {
+      const from = move.from as Key;
+      destinations.set(from, [...(destinations.get(from) ?? []), move.to as Key]);
+    }
+    const autoShapes: DrawShape[] = showHint && hintMove
+      ? [{ orig: hintMove.from as Key, dest: hintMove.to as Key, brush: 'yellow' }]
+      : [];
+    apiRef.current?.set({
+      fen,
+      orientation: 'white',
+      turnColor: chess.turn() === 'w' ? 'white' : 'black',
+      lastMove: lastMove as Key[] | undefined,
+      coordinates: true,
+      viewOnly: locked,
+      animation: { enabled: true, duration: 180 },
+      movable: {
+        free: false,
+        color: locked ? undefined : chess.turn() === 'w' ? 'white' : 'black',
+        dests: destinations,
+        showDests: true,
+        events: { after: (from, to) => onMoveRef.current(from as Square, to as Square) },
+      },
+      draggable: { enabled: !locked, showGhost: true },
+      selectable: { enabled: !locked },
+      drawable: { enabled: true, visible: true, autoShapes },
+    });
+  }, [chess, fen, hintMove, lastMove, locked, showHint]);
 
   return (
     <div className="board-frame" aria-label="Interactive chessboard">
-      <div className="board">
-        {chess.board().flatMap((rank, rankIndex) =>
-          rank.map((piece, fileIndex) => {
-            const square = `${String.fromCharCode(97 + fileIndex)}${8 - rankIndex}` as Square;
-            const isDark = (rankIndex + fileIndex) % 2 === 1;
-            const isTarget = legalTargets.includes(square);
-            const isLast = lastMove?.includes(square);
-            const isHint = showHint && !!hintMove && [hintMove.from, hintMove.to].includes(square);
-            return (
-              <button
-                className={`square ${isDark ? 'dark' : 'light'}${selected === square ? ' selected' : ''}${isLast ? ' last' : ''}${isHint ? ' hinted' : ''}`}
-                key={square}
-                onClick={() => chooseSquare(square)}
-                onDragOver={(event) => event.preventDefault()}
-                onDrop={(event) => drop(event, square)}
-                aria-label={`${square}${piece ? `, ${piece.color === 'w' ? 'white' : 'black'} ${piece.type}` : ''}`}
-              >
-                {fileIndex === 0 && <span className="rank-label">{8 - rankIndex}</span>}
-                {rankIndex === 7 && <span className="file-label">{String.fromCharCode(97 + fileIndex)}</span>}
-                {isTarget && <span className={`move-dot${piece ? ' capture' : ''}`} />}
-                {piece && (
-                  <span
-                    className={`piece ${piece.color === 'w' ? 'white-piece' : 'black-piece'}`}
-                    draggable={!locked && piece.color === chess.turn()}
-                    onDragStart={(event) => event.dataTransfer.setData('text/plain', square)}
-                  >
-                    {pieces[`${piece.color}${piece.type}`]}
-                  </span>
-                )}
-              </button>
-            );
-          }),
-        )}
-        {showHint && hintMove && (
-          <span
-            className="teaching-arrow"
-            style={arrowGeometry(hintMove.from, hintMove.to)}
-            aria-hidden="true"
-          />
-        )}
+      <div className={`chessground-shell theme-${theme} pieces-${pieceSet}`}>
+        <div className="cg-wrap" ref={elementRef} />
       </div>
     </div>
   );
 }
 
-function ProgressStrip({ current }: { current: number }) {
+function ProgressStrip({ current, total = USER_MOVES_PER_PREFIX }: { current: number; total?: number }) {
   return (
-    <div className="progress-strip" aria-label={`${current} of ${USER_MOVES_PER_PREFIX} user moves complete`}>
-      {Array.from({ length: USER_MOVES_PER_PREFIX }).map((_, index) => (
+    <div className="progress-strip" style={{ gridTemplateColumns: `repeat(${total}, 1fr)` }} aria-label={`${current} of ${total} user moves complete`}>
+      {Array.from({ length: total }).map((_, index) => (
         <div className={`progress-segment${index < current ? ' filled' : ''}`} key={index} />
       ))}
     </div>
   );
 }
 
-function TreeBrowser({ onClose }: { onClose: () => void }) {
+function TreeBrowser({ onClose, theme, pieceSet }: { onClose: () => void; theme: BoardTheme; pieceSet: PieceSet }) {
   const line = demoCards[0].moves;
   const [ply, setPly] = useState(0);
   return (
@@ -185,7 +173,7 @@ function TreeBrowser({ onClose }: { onClose: () => void }) {
         <button className="close-button" onClick={onClose} aria-label="Close repertoire browser">×</button>
         <div className="tree-heading"><div><p className="eyebrow">Repertoire browser</p><h2 id="tree-title">1. e4 Main Lines</h2></div><span>{ply === 0 ? 'Starting position' : `${ply} plies from start`}</span></div>
         <div className="tree-layout">
-          <div className="tree-board"><Chessboard fen={fenAfterMoves(line, ply)} locked showHint={false} onMove={() => undefined} /></div>
+          <div className="tree-board"><Chessboard fen={fenAfterMoves(line, ply)} locked showHint={false} theme={theme} pieceSet={pieceSet} onMove={() => undefined} /></div>
           <div className="tree-panel">
             <div className="tree-path"><button className={ply === 0 ? 'current' : ''} onClick={() => setPly(0)}>Start</button>{line.map((move, index) => <button className={ply === index + 1 ? 'current' : ''} key={`${move}-${index}`} onClick={() => setPly(index + 1)}><span>{index % 2 === 0 ? `${Math.floor(index / 2) + 1}.` : '…'}</span>{move}</button>)}</div>
             <div className="branch-list"><span>Branches from the first move</span><button className="selected"><b>1… c5</b><small>Open Sicilian · 168 cards</small></button><button><b>1… e6</b><small>French Defense · 74 cards</small></button><button><b>1… c6</b><small>Caro-Kann · 51 cards</small></button></div>
@@ -194,6 +182,25 @@ function TreeBrowser({ onClose }: { onClose: () => void }) {
         </div>
       </section>
     </div>
+  );
+}
+
+function TacticsDecks() {
+  const [included, setIncluded] = useState(true);
+  return (
+    <section className="tactics-section" aria-labelledby="tactics-title">
+      <div className="tactics-heading">
+        <div><p className="eyebrow">Puzzle practice</p><h2 id="tactics-title">Tactics decks</h2><p>Curated from the public-domain Lichess puzzle database, then scheduled beside opening cards.</p></div>
+        <button className={included ? 'included' : ''} onClick={() => setIncluded((value) => !value)}>{included ? 'Included in daily queue' : 'Add to daily queue'}</button>
+      </div>
+      <div className="tactics-grid">
+        <article><span className="tactic-icon">⌁</span><div><strong>Healthy mix</strong><small>650–1600 rating · 18 motifs</small></div><b>6 due</b></article>
+        <article><span className="tactic-icon">♘</span><div><strong>Forks & discoveries</strong><small>Pattern-focused · 240 puzzles</small></div><b>3 due</b></article>
+        <article><span className="tactic-icon">#</span><div><strong>Mate patterns</strong><small>Mate in 1–3 · 180 puzzles</small></div><b>2 due</b></article>
+        <button className="new-tactics-deck"><span>＋</span><div><strong>Build a motif deck</strong><small>Choose themes, rating, and mix</small></div></button>
+      </div>
+      <p className="source-note">Puzzle positions remain local after import. The daily queue can cap puzzle cards separately so opening recall keeps priority.</p>
+    </section>
   );
 }
 
@@ -229,6 +236,7 @@ function RepertoireView({ onImport, onBrowse }: { onImport: () => void; onBrowse
         <i />
         <div><span className="step-number">3</span><strong>Focused response</strong><small>Train only the opponent move and your reply</small></div>
       </div>
+      <TacticsDecks />
     </section>
   );
 }
@@ -279,10 +287,9 @@ function ImportDialog({ onClose }: { onClose: () => void }) {
 }
 
 export default function Home() {
-  const initialFen = new Chess().fen();
   const [view, setView] = useState<View>('train');
   const [activeCardIndex, setActiveCardIndex] = useState(0);
-  const [fen, setFen] = useState(initialFen);
+  const [fen, setFen] = useState(demoCards[0].startingFen);
   const [step, setStep] = useState(0);
   const [feedback, setFeedback] = useState<Feedback>('ready');
   const [lastMove, setLastMove] = useState<[string, string]>();
@@ -294,6 +301,8 @@ export default function Home() {
   const [showTree, setShowTree] = useState(false);
   const [seenMoves, setSeenMoves] = useState<Set<string>>(new Set());
   const [queueNotice, setQueueNotice] = useState('');
+  const [boardTheme, setBoardTheme] = useState<BoardTheme>('brown');
+  const [pieceSet, setPieceSet] = useState<PieceSet>('cburnett');
   const card = demoCards[activeCardIndex];
   const repertoireLine = card.moves;
 
@@ -307,10 +316,22 @@ export default function Home() {
     setCardsLeft(Number(localStorage.getItem('tempo-cards-left') ?? 12));
     setReviewed(Number(localStorage.getItem('tempo-reviewed') ?? 0));
     setSeenMoves(new Set(JSON.parse(localStorage.getItem('tempo-seen-moves') ?? '[]')));
+    setBoardTheme((localStorage.getItem('tempo-board-theme') as BoardTheme | null) ?? 'brown');
+    setPieceSet((localStorage.getItem('tempo-piece-set') as PieceSet | null) ?? 'cburnett');
   }, []);
 
-  function resetLine() {
-    setFen(initialFen); setStep(0); setFeedback('ready'); setLastMove(undefined); setLocked(false); setShowHint(false);
+  function resetLine(nextCard = card) {
+    setFen(nextCard.startingFen); setStep(0); setFeedback('ready'); setLastMove(undefined); setLocked(false); setShowHint(false);
+  }
+
+  function changeBoardTheme(value: BoardTheme) {
+    setBoardTheme(value);
+    localStorage.setItem('tempo-board-theme', value);
+  }
+
+  function changePieceSet(value: PieceSet) {
+    setPieceSet(value);
+    localStorage.setItem('tempo-piece-set', value);
   }
 
   function rateCard(rating: 'again' | 'hard' | 'good' | 'easy') {
@@ -321,8 +342,9 @@ export default function Home() {
       setQueueNotice('');
     }
     setReviewed((count) => { const next = count + 1; localStorage.setItem('tempo-reviewed', String(next)); return next; });
-    setActiveCardIndex((index) => (index + 1) % demoCards.length);
-    resetLine();
+    const nextIndex = (activeCardIndex + 1) % demoCards.length;
+    setActiveCardIndex(nextIndex);
+    resetLine(demoCards[nextIndex]);
   }
 
   function markMoveSeen(moveStep: number) {
@@ -358,16 +380,17 @@ export default function Home() {
   }
 
   const feedbackCopy = {
-    ready: { title: step === 0 ? 'Your move' : 'Find the continuation', body: step === 0 ? 'Play White’s first move.' : 'Continue the line for White.' },
+    ready: { title: step === 0 ? 'Your move' : 'Find the continuation', body: card.kind === 'puzzle' ? 'Find the strongest continuation.' : step === 0 ? 'Recall White’s first move.' : 'Continue the line for White.' },
     correct: { title: 'That’s it', body: 'Black is replying…' },
     wrong: { title: 'Try that position again', body: 'That move is legal, but it isn’t in this repertoire.' },
     complete: { title: 'Line recalled', body: 'Rate how difficult that felt.' },
   }[feedback];
 
-  const userMovesComplete = Math.min(USER_MOVES_PER_PREFIX, Math.ceil(step / 2));
+  const userMovesComplete = Math.min(card.userMoveTarget, Math.ceil(step / 2));
   const currentMoveKey = `${card.id}:${step}`;
   const showTeachingArrow = step % 2 === 0 && step < repertoireLine.length && (showHint || feedback === 'wrong' || !seenMoves.has(currentMoveKey));
-  const analysisUrl = lichessAnalysisUrl(repertoireLine.slice(0, step));
+  const analysisUrl = lichessAnalysisUrl(repertoireLine.slice(0, step), card.startingFen);
+  const revealedMoves = repertoireLine.slice(0, feedback === 'complete' ? repertoireLine.length : step);
 
   const dateLabel = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(new Date());
 
@@ -385,23 +408,24 @@ export default function Home() {
         <section className="training-header"><div><p className="eyebrow">Today · {dateLabel}</p><h1>{cardsLeft === 0 ? 'You’re done for today' : 'Daily training'}</h1></div><div className="session-count"><strong>{cardsLeft}</strong><span>cards left</span></div></section>
         <section className="training-grid" id="train">
           <div className="board-column">
-            <Chessboard fen={fen} expectedSan={repertoireLine[step]} lastMove={lastMove} locked={locked || step >= repertoireLine.length || cardsLeft === 0} showHint={showTeachingArrow} onMove={tryMove} />
-            <div className="board-tools"><button onClick={() => setShowHint((value) => !value)} disabled={feedback === 'complete' || cardsLeft === 0}>⌁ <span>{showHint ? 'Hide move' : 'Show move'}</span></button><button onClick={resetLine}>↻ <span>Restart line</span></button><a href={analysisUrl} target="_blank" rel="noreferrer">↗ <span>Analyze on Lichess</span></a><span className="board-note">Drag a piece or tap two squares</span></div>
+            <Chessboard fen={fen} expectedSan={repertoireLine[step]} lastMove={lastMove} locked={locked || step >= repertoireLine.length || cardsLeft === 0} showHint={showTeachingArrow} theme={boardTheme} pieceSet={pieceSet} onMove={tryMove} />
+            <div className="board-tools"><button onClick={() => setShowHint((value) => !value)} disabled={feedback === 'complete' || cardsLeft === 0}>⌁ <span>{showHint ? 'Hide move' : 'Show move'}</span></button><button onClick={() => resetLine()}>↻ <span>Restart</span></button><a href={analysisUrl} target="_blank" rel="noreferrer">↗ <span>Analyze</span></a><label>Board<select value={boardTheme} onChange={(event) => changeBoardTheme(event.target.value as BoardTheme)}><option value="brown">Brown</option><option value="blue">Blue</option><option value="green">Green</option></select></label><label>Pieces<select value={pieceSet} onChange={(event) => changePieceSet(event.target.value as PieceSet)}><option value="cburnett">Cburnett</option><option value="merida">Merida</option></select></label></div>
           </div>
           <aside className="study-panel">
-            <div className="card-meta"><span className="pill">Review</span><span>Prefix card · 6 user moves</span>{queueNotice && <em>{queueNotice}</em>}</div>
-            <div className="opening-title"><p>White repertoire</p><h2>{card.title}</h2><span>{card.subtitle}</span></div>
+            <div className="card-meta"><span className={`pill${card.kind === 'puzzle' ? ' puzzle' : ''}`}>{card.kind === 'puzzle' ? 'Puzzle' : 'Review'}</span><span>{card.kind === 'puzzle' ? `${card.userMoveTarget}-move tactic` : 'Prefix card · 6 user moves'}</span>{queueNotice && <em>{queueNotice}</em>}</div>
+            <div className="opening-title"><p>{card.kind === 'puzzle' ? 'Tactics · mixed into today’s queue' : 'White repertoire'}</p><h2>{card.title}</h2><span>{card.subtitle}</span></div>
             <div className={`feedback ${feedback}`} role="status" aria-live="polite"><span className="feedback-icon">{feedback === 'wrong' ? '×' : feedback === 'complete' ? '✓' : '●'}</span><div><strong>{feedbackCopy.title}</strong><p>{feedbackCopy.body}</p></div></div>
-            <div className="move-progress"><div className="progress-label"><span>Card progress</span><strong>{userMovesComplete} / {USER_MOVES_PER_PREFIX} user moves</strong></div><ProgressStrip current={userMovesComplete} /></div>
-            <div className="line-preview" aria-label="Moves in this card">{Array.from({ length: USER_MOVES_PER_PREFIX }).flatMap((_, index) => [<span className={step === index * 2 ? 'current' : ''} key={`white-${index}`}><b>{index + 1}.</b> {repertoireLine[index * 2]}</span>, <span key={`black-${index}`}>{repertoireLine[index * 2 + 1]}</span>])}</div>
-            {feedback === 'complete' ? <div className="ratings"><button onClick={() => rateCard('again')}><strong>Again</strong><span>later today</span></button><button onClick={() => rateCard('hard')}><strong>Hard</strong><span>2 days</span></button><button className="primary" onClick={() => rateCard('good')}><strong>Good</strong><span>5 days</span></button><button onClick={() => rateCard('easy')}><strong>Easy</strong><span>12 days</span></button></div> : <div className="next-up"><span>Next unlock</span><p>After 3 successful days and a 14-day interval, learn <strong>{card.nextMove}</strong> as a focused card.</p></div>}
+            <div className="move-progress"><div className="progress-label"><span>Card progress</span><strong>{userMovesComplete} / {card.userMoveTarget} user moves</strong></div><ProgressStrip current={userMovesComplete} total={card.userMoveTarget} /></div>
+            <div className={`move-trail${revealedMoves.length ? '' : ' empty'}`} aria-live="polite"><span>Moves played</span>{revealedMoves.length ? <ol>{revealedMoves.map((move, index) => <li key={`${move}-${index}`}><b>{index % 2 === 0 ? `${Math.floor(index / 2) + 1}.` : '…'}</b>{move}</li>)}</ol> : <p>Nothing is revealed until you play it.</p>}</div>
+            {feedback === 'complete' ? <div className="ratings"><button onClick={() => rateCard('again')}><strong>Again</strong><span>later today</span></button><button onClick={() => rateCard('hard')}><strong>Hard</strong><span>2 days</span></button><button className="primary" onClick={() => rateCard('good')}><strong>Good</strong><span>5 days</span></button><button onClick={() => rateCard('easy')}><strong>Easy</strong><span>12 days</span></button></div> : card.kind === 'opening' ? <div className="next-up"><span>Next unlock</span><p>After 3 successful days and a 14-day interval, learn <strong>{card.nextMove}</strong> as a focused card.</p></div> : <div className="next-up puzzle-note"><span>Motif deck</span><p>This puzzle is interleaved with opening reviews. Its rating and interval are tracked independently.</p>{card.sourceUrl && <a href={card.sourceUrl} target="_blank" rel="noreferrer">View original puzzle ↗</a>}</div>}
           </aside>
         </section>
       </>}
       {view === 'repertoire' && <RepertoireView onImport={() => setShowImport(true)} onBrowse={() => setShowTree(true)} />}
       {view === 'progress' && <ProgressView reviewed={reviewed} />}
       {showImport && <ImportDialog onClose={() => setShowImport(false)} />}
-      {showTree && <TreeBrowser onClose={() => setShowTree(false)} />}
+      {showTree && <TreeBrowser onClose={() => setShowTree(false)} theme={boardTheme} pieceSet={pieceSet} />}
+      <footer className="source-footer">Board interaction by <a href="https://github.com/lichess-org/chessground" target="_blank" rel="noreferrer">Chessground</a> · Cburnett and Merida pieces from Lichess</footer>
     </main>
   );
 }

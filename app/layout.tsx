@@ -1,4 +1,7 @@
 import type { Metadata } from 'next';
+import '@lichess-org/chessground/assets/chessground.base.css';
+import '@lichess-org/chessground/assets/chessground.brown.css';
+import '@lichess-org/chessground/assets/chessground.cburnett.css';
 import './globals.css';
 
 export const metadata: Metadata = {

@@ -73,6 +73,37 @@ def initialize() -> None:
         CREATE INDEX IF NOT EXISTS idx_reviews_card_reviewed_at
         ON reviews(card_id, reviewed_at)
         """,
+        """
+        CREATE TABLE IF NOT EXISTS puzzle_decks (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            themes_json TEXT NOT NULL,
+            min_rating INTEGER NOT NULL,
+            max_rating INTEGER NOT NULL,
+            daily_limit INTEGER NOT NULL DEFAULT 5,
+            created_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS puzzles (
+            id TEXT PRIMARY KEY,
+            deck_id TEXT NOT NULL REFERENCES puzzle_decks(id) ON DELETE CASCADE,
+            source_fen TEXT NOT NULL,
+            start_fen TEXT NOT NULL,
+            moves_json TEXT NOT NULL,
+            rating INTEGER NOT NULL,
+            popularity INTEGER NOT NULL,
+            themes_json TEXT NOT NULL,
+            game_url TEXT NOT NULL,
+            state TEXT NOT NULL DEFAULT 'new' CHECK (state IN ('new', 'learning', 'mature')),
+            due_date TEXT NOT NULL,
+            interval_days INTEGER NOT NULL DEFAULT 0
+        )
+        """,
+        """
+        CREATE INDEX IF NOT EXISTS idx_puzzles_deck_due_state
+        ON puzzles(deck_id, due_date, state)
+        """,
     ]
     with connection() as database:
         for statement in statements:
