@@ -99,8 +99,12 @@ class PackagedContentTests(unittest.TestCase):
         self.assertEqual(solution, ["a2e6", "d7d8", "f7f8"])
 
     def test_endgame_generator_is_legal_and_seven_piece_bounded(self) -> None:
-        fen = generate_position("KQR", "K", "white", seed=4)
-        self.assertTrue(chess.Board(fen).is_valid())
+        for seed in range(40):
+            board = chess.Board(generate_position("KQR", "K", "white", seed=seed))
+            self.assertTrue(board.is_valid())
+            idle_king = board.king(not board.turn)
+            self.assertIsNotNone(idle_king)
+            self.assertFalse(board.is_attacked_by(board.turn, idle_king))
         self.assertEqual(normalized_material("Q & K"), "KQ")
         with self.assertRaises(ValueError):
             generate_position("KPPPPPP", "KPPPPP", "white")

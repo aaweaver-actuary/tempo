@@ -34,6 +34,8 @@ def generate_position(white_material: str, black_material: str, trained_color: s
                 board.set_piece_at(square, chess.Piece(chess.KING if symbol == "K" else PIECES[symbol], color))
         board.turn = chess.WHITE if trained_color == "white" else chess.BLACK
         board.clear_stack()
+        # is_valid() also rejects STATUS_OPPOSITE_CHECK: the non-moving king
+        # cannot already be attacked in a historically legal position.
         if board.is_valid() and not board.is_game_over(claim_draw=True):
             return board.fen()
     raise ValueError("Could not generate a legal position for that material")

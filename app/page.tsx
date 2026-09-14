@@ -8,6 +8,8 @@ import type { Key } from '@lichess-org/chessground/types';
 import { Chess, Move, Square } from 'chess.js';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { analyzeWithMaia, analyzeWithStockfish, type EngineMove } from './lib/analysis-engines';
+import { generateLegalEndgameFen, type EndgameMaterial } from './lib/endgame-generator';
+import { advanceTacticProgress, readTacticProgress, tacticProgressKey, writeTacticProgress } from './lib/tactics-progress';
 
 const STANDARD_FEN = new Chess().fen();
 type BoardTheme = 'brown' | 'blue' | 'green';
@@ -475,41 +477,69 @@ const tacticMotifs = [
   ['calculation2','2-move calculation','2×'],['calculation3','3-move calculation','3×'],['calculation4','4-move calculation','4×'],['trappedPiece','Trapped pieces','▣'],
 ];
 const hangingSample:PracticeCard={id:'hanging-sample',kind:'puzzle',title:'Loose queen',subtitle:'Hanging piece',startingFen:'4k3/8/8/8/3q4/3R4/8/4K3 w - - 0 1',moves:['Rxd4'],userMoveTarget:1};
+const tacticExamples: Record<string, PracticeCard> = {
+  hangingPiece: hangingSample,
+  fork: { id:'fork-sample',kind:'puzzle',title:'Knight fork',subtitle:'Fork',startingFen:'3q3k/8/8/4N3/8/8/8/4K3 w - - 0 1',moves:['Nf7+'],userMoveTarget:1 },
+  pin: { id:'pin-sample',kind:'puzzle',title:'Create the pin',subtitle:'Pin',startingFen:'4k3/8/2n5/8/2B5/8/8/4K3 w - - 0 1',moves:['Bb5'],userMoveTarget:1 },
+  skewer: { id:'skewer-sample',kind:'puzzle',title:'Skewer king and queen',subtitle:'Skewer',startingFen:'4k3/8/8/7q/8/8/2B5/4K3 w - - 0 1',moves:['Bg6+'],userMoveTarget:1 },
+  discoveredAttack: { id:'discovery-sample',kind:'puzzle',title:'Open the file',subtitle:'Discovery',startingFen:'4k3/8/8/8/4B3/8/8/4R1K1 w - - 0 1',moves:['Bd5+'],userMoveTarget:1 },
+};
+const alternateTactics: PracticeCard[] = [
+  { id:'loose-rook',kind:'puzzle',title:'Loose rook',subtitle:'Material',startingFen:'4k3/8/5r2/8/8/2B5/8/4K3 w - - 0 1',moves:['Bxf6'],userMoveTarget:1 },
+  { id:'loose-knight',kind:'puzzle',title:'Loose knight',subtitle:'Material',startingFen:'4k3/8/8/3n4/8/8/8/3QK3 w - - 0 1',moves:['Qxd5'],userMoveTarget:1 },
+  demoCards[2],
+];
 
 function TacticsView({ theme, pieceSet }: { theme: BoardTheme; pieceSet: PieceSet }) {
   const [motif, setMotif] = useState('hangingPiece');
   const [stage, setStage] = useState('easy');
-  const [solved, setSolved] = useState(() => Number(typeof window === 'undefined' ? 0 : localStorage.getItem('tempo-tactics-solved') ?? 0));
-  const [fen, setFen] = useState(hangingSample.startingFen);
+  const [progress, setProgress] = useState(readTacticProgress);
   const [step, setStep] = useState(0);
   const [hint, setHint] = useState(false);
   const [failed, setFailed] = useState(false);
-  const [status, setStatus] = useState('Find the best move. Cards enter training only after you work them here.');
-  const puzzle = motif==='hangingPiece'?hangingSample:demoCards[2];
-  useEffect(()=>{setFen(puzzle.startingFen);setStep(0);setHint(false);setFailed(false);},[puzzle]);
-  function restart() { setFen(puzzle.startingFen); setStep(0); setHint(false); setFailed(false); setStatus('Find the best move.'); }
+  const [outcome, setOutcome] = useState<'correct'|'wrong'|null>(null);
+  const progressKey = tacticProgressKey(motif, stage);
+  const currentProgress = progress[progressKey] ?? { clean: 0, index: 0 };
+  const deck = [tacticExamples[motif] ?? demoCards[2], ...alternateTactics];
+  const puzzle = deck[currentProgress.index % deck.length];
+  const [fen, setFen] = useState(puzzle.startingFen);
+  useEffect(()=>{setFen(puzzle.startingFen);setStep(0);setHint(false);setFailed(false);setOutcome(null);},[puzzle]);
+  function restart() { setFen(puzzle.startingFen); setStep(0); setHint(false); setFailed(false); setOutcome(null); }
+  function finish() {
+    const clean = !failed;
+    setOutcome(clean ? 'correct' : 'wrong');
+    window.setTimeout(() => {
+      setProgress((current) => {
+        const next = advanceTacticProgress(current, progressKey, clean);
+        writeTacticProgress(next);
+        return next;
+      });
+    }, 750);
+  }
   function movePiece(from: Square, to: Square) {
-    if (step % 2 || step >= puzzle.moves.length) return;
+    if (outcome || step % 2 || step >= puzzle.moves.length) return;
     const board=new Chess(fen); let move:Move;
     try { move=board.move({from,to,promotion:'q'}); } catch { return; }
     if (board.isCheckmate() || move.san===puzzle.moves[step]) {
       const next=step+1;
-      if (next>=puzzle.moves.length) { const count=solved+1; setSolved(count); localStorage.setItem('tempo-tactics-solved',String(count)); setStatus(failed ? 'Added to normal review · it will return today.' : 'Clean solve · first review in 7 days.'); setTimeout(restart,900); return; }
+      if (next>=puzzle.moves.length) { finish(); return; }
       const replyBoard=new Chess(board.fen()); replyBoard.move(puzzle.moves[next]); setFen(replyBoard.fen()); setStep(next+1); setHint(false);
-      if (next+1>=puzzle.moves.length) { const count=solved+1; setSolved(count); localStorage.setItem('tempo-tactics-solved',String(count)); setStatus(failed ? 'Added to normal review · it will return today.' : 'Clean solve · first review in 7 days.'); setTimeout(restart,900); }
-    } else { setFailed(true); setHint(true); setStatus('That card is now a normal review. Follow the arrow, then finish it.'); }
+      if (next+1>=puzzle.moves.length) finish();
+    } else { setFailed(true); setHint(true); }
   }
   const current=tacticMotifs.find((item)=>item[0]===motif)!;
-  return <section className="tactics-page"><div className="workspace-title"><div><h1>Tactics</h1><span>{solved} clean discoveries</span></div><div className="stage-tabs">{['easy','medium','hard','focused'].map((item,index)=><button key={item} disabled={index>0 && solved<100*index} className={stage===item?'active':''} onClick={()=>setStage(item)}>{item==='focused'?'Focused · 250':`${item[0].toUpperCase()+item.slice(1)} · 100`}</button>)}</div></div><div className="tactics-workspace"><aside className="motif-rail">{tacticMotifs.map(([id,name,icon])=><button className={motif===id?'active':''} key={id} onClick={()=>setMotif(id)}><b>{icon}</b><span>{name}</span><small>{id===motif ? `${Math.min(solved,100)} / ${stage==='focused'?250:100}` : 'Not started'}</small></button>)}</aside><div className="board-column centered-board"><Chessboard fen={fen} expectedSan={puzzle.moves[step]} locked={step>=puzzle.moves.length} showHint={hint} theme={theme} pieceSet={pieceSet} onMove={movePiece}/><div className="board-tools"><button onClick={()=>{setFailed(true);setHint(true);setStatus('Added to normal review · follow the arrow.');}}>⌁ <span>Show move</span></button><button onClick={restart}>↻ <span>Restart</span></button>{puzzle.sourceUrl&&<a href={puzzle.sourceUrl} target="_blank" rel="noreferrer">↗ <span>Original</span></a>}</div></div><aside className="study-panel tactic-study"><span className="pill puzzle">{stage}</span><h2>{current[1]}</h2><p className="tactic-rating">Puzzle 1 of {stage==='focused'?250:100} · rated 1760</p><div className={`feedback ${failed?'wrong':'ready'}`} role="status"><span className="feedback-icon">{failed?'×':'●'}</span><div><strong>{failed?'Guided solve':'Your move'}</strong><p>{status}</p></div></div><div className="stage-progress"><span style={{width:`${Math.min(100,solved)}%`}}/></div><small>Easy → Medium → Hard → Focused</small></aside></div></section>;
+  const target=stage==='focused'?250:100;
+  return <section className="tactics-page"><div className="workspace-title"><div><h1>Tactics</h1><span>{currentProgress.clean} clean solves in {current[1].toLowerCase()} · {stage}</span></div><div className="stage-tabs">{['easy','medium','hard','focused'].map((item,index)=><button key={item} disabled={index>0 && (progress[tacticProgressKey(motif,['easy','medium','hard'][index-1])]?.clean ?? 0)<100} className={stage===item?'active':''} onClick={()=>setStage(item)}>{item==='focused'?'Focused · 250':`${item[0].toUpperCase()+item.slice(1)} · 100`}</button>)}</div></div><div className="tactics-workspace"><aside className="motif-rail">{tacticMotifs.map(([id,name,icon])=>{const itemProgress=progress[tacticProgressKey(id,stage)]?.clean ?? 0; return <button className={motif===id?'active':''} key={id} onClick={()=>setMotif(id)}><b>{icon}</b><span>{name}</span><small>{itemProgress ? `${itemProgress} / ${stage==='focused'?250:100}` : 'Not started'}</small></button>})}</aside><div className="board-column centered-board"><Chessboard fen={fen} expectedSan={puzzle.moves[step]} locked={Boolean(outcome) || step>=puzzle.moves.length} showHint={hint} theme={theme} pieceSet={pieceSet} onMove={movePiece}/><div className="board-tools"><button onClick={()=>{setFailed(true);setHint(true);}}>⌁ <span>Show move</span></button><button onClick={()=>{setFailed(true);restart();}}>↻ <span>Restart</span></button>{puzzle.sourceUrl&&<a href={puzzle.sourceUrl} target="_blank" rel="noreferrer">↗ <span>Original</span></a>}</div>{outcome&&<div className={`outcome-flash ${outcome}`} role="status" aria-live="assertive">{outcome==='correct'?'✓':'×'}</div>}</div><aside className="study-panel tactic-study"><span className="pill puzzle">{stage}</span><h2>{current[1]}</h2><p className="tactic-rating">Puzzle {currentProgress.index+1} of {target}</p>{!outcome&&<div className={`feedback ${failed?'wrong':'ready'}`} role="status"><span className="feedback-icon">{failed?'×':'●'}</span><div><strong>{failed?'Follow the arrow':'Your move'}</strong></div></div>}<div className="stage-progress"><span style={{width:`${Math.min(100,currentProgress.clean/target*100)}%`}}/></div><small>Easy → Medium → Hard → Focused</small></aside></div></section>;
 }
 
 function EndgamesView({ theme, pieceSet }: { theme: BoardTheme; pieceSet: PieceSet }) {
-  const templates=[['KQ','K','Queen + king','8/8/8/8/8/3K4/8/5Q1k w - - 0 1'],['KR','K','Rook + king','8/8/8/8/8/3K4/8/5R1k w - - 0 1'],['KQR','K','Queen + rook','8/8/8/8/8/2QK4/R7/7k w - - 0 1'],['KQQ','K','Two queens','8/8/8/8/8/2QK4/Q7/7k w - - 0 1']];
+  const templates:EndgameMaterial[]=[{white:'KQ',black:'K',name:'Queen + king'},{white:'KR',black:'K',name:'Rook + king'},{white:'KQR',black:'K',name:'Queen + rook'},{white:'KQQ',black:'K',name:'Two queens'}];
   const [selected,setSelected]=useState(1); const [goal,setGoal]=useState<'win'|'draw'|null>(null); const [status,setStatus]=useState('Classify the position before playing.');
-  const [fen,setFen]=useState('8/8/8/8/8/3K4/8/5R1k w - - 0 1');
+  const [fen,setFen]=useState(()=>generateLegalEndgameFen(templates[1]));
+  function newPosition(index=selected) { setFen(generateLegalEndgameFen(templates[index])); setGoal(null); setStatus('Classify the position before playing.'); }
   function classify(value:'win'|'draw') { setGoal(value); setStatus(value==='win'?'Correct · now convert the win.':'This position is winning. Try again.'); }
   function play(from:Square,to:Square) { if(goal!=='win') return; const board=new Chess(fen); try { board.move({from,to,promotion:'q'}); setFen(board.fen()); setStatus(board.isCheckmate()?'Converted · template review complete.':'Winning status preserved · best defense is preparing…'); } catch {} }
-  return <section className="endgames-page"><div className="workspace-title"><div><h1>Endgames</h1><span>Exact seven-piece practice</span></div><button className="primary-button">＋ New material set</button></div><div className="endgame-workspace"><aside className="template-list">{templates.map(([white,black,name,position],index)=><button className={selected===index?'active':''} key={name} onClick={()=>{setSelected(index);setFen(position);setGoal(null);setStatus('Classify the position before playing.')}}><strong>{name}</strong><small>{white} vs {black} · White</small></button>)}</aside><div className="board-column centered-board"><Chessboard fen={fen} locked={!goal || status.startsWith('Converted')} showHint={false} theme={theme} pieceSet={pieceSet} onMove={play}/><div className="board-tools"><button onClick={()=>{setFen(templates[selected][3]);setGoal(null);setStatus('New legal position generated. Classify it.')}}>⤨ <span>New position</span></button><button>⚙ <span>Edit material</span></button></div></div><aside className="study-panel endgame-study"><span className="pill">Material template</span><h2>{templates[selected][2]}</h2><p>White to move · exact tablebase</p><div className="classification"><button className={goal==='win'?'active':''} onClick={()=>classify('win')}>Win</button><button className={goal==='draw'?'active':''} onClick={()=>classify('draw')}>Draw</button></div><div className="feedback ready"><span className="feedback-icon">●</span><div><strong>{goal?'Play the position':'Win or draw?'}</strong><p>{status}</p></div></div><small>A draw is secured after 20 accurate user moves. Any worsened tablebase result fails immediately.</small></aside></div></section>;
+  return <section className="endgames-page"><div className="workspace-title"><div><h1>Endgames</h1><span>Exact seven-piece practice</span></div><button className="primary-button">＋ New material set</button></div><div className="endgame-workspace"><aside className="template-list">{templates.map((template,index)=><button className={selected===index?'active':''} key={template.name} onClick={()=>{setSelected(index);newPosition(index)}}><strong>{template.name}</strong><small>{template.white} vs {template.black} · White</small></button>)}</aside><div className="board-column centered-board"><Chessboard fen={fen} locked={!goal || status.startsWith('Converted')} showHint={false} theme={theme} pieceSet={pieceSet} onMove={play}/><div className="board-tools"><button onClick={()=>newPosition()}>⤨ <span>New position</span></button><button>⚙ <span>Edit material</span></button></div></div><aside className="study-panel endgame-study"><span className="pill">Material template</span><h2>{templates[selected].name}</h2><p>White to move · exact tablebase</p><div className="classification"><button className={goal==='win'?'active':''} onClick={()=>classify('win')}>Win</button><button className={goal==='draw'?'active':''} onClick={()=>classify('draw')}>Draw</button></div><div className="feedback ready"><span className="feedback-icon">●</span><div><strong>{goal?'Play the position':'Win or draw?'}</strong><p>{status}</p></div></div><small>A draw is secured after 20 accurate user moves. Any worsened tablebase result fails immediately.</small></aside></div></section>;
 }
 
 function CardEditor({ card, onClose, onSave }: { card: PracticeCard; onClose:()=>void; onSave:(card:PracticeCard)=>void }) {
