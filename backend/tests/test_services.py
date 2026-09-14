@@ -76,11 +76,13 @@ class PackagedContentTests(unittest.TestCase):
         self.assertEqual(games, 1)
         self.assertEqual({tuple(line.moves) for line in lines}, {("e2e4", "e7e5", "g1f3"), ("d2d4", "d7d5")})
 
-    def test_twelve_decks_have_one_hundred_cards_each(self) -> None:
+    def test_all_tactic_decks_have_the_requested_sizes_and_unique_ids(self) -> None:
         path = Path(__file__).parents[2] / "public" / "data" / "tactics-decks.json"
         decks = load_packaged_decks(path)
-        self.assertEqual(len(decks), 12)
-        self.assertTrue(all(len(cards) == 100 for cards in decks.values()))
+        self.assertEqual(len(decks), 52)
+        self.assertTrue(all(len(cards) == (250 if deck_id.endswith("-focused") else 100) for deck_id, cards in decks.items()))
+        puzzle_ids = [str(card["PuzzleId"]) for cards in decks.values() for card in cards]
+        self.assertEqual(len(puzzle_ids), len(set(puzzle_ids)))
 
     def test_analysis_integrations_are_current_and_fen_safe(self) -> None:
         self.assertEqual(STOCKFISH_VERSION, 19)

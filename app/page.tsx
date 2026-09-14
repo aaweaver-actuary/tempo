@@ -433,6 +433,7 @@ function TacticsView({ theme, pieceSet }: { theme: BoardTheme; pieceSet: PieceSe
   const packagedDeck = useMemo(() => catalog.filter((record) => record.DeckId === `${motif}-${stage}`).sort((a, b) => a.DeckPosition - b.DeckPosition).map(packagedPuzzleCard).filter((card): card is PracticeCard => Boolean(card)), [catalog, motif, stage]);
   const deck = packagedDeck.length ? packagedDeck : [tacticExamples[motif] ?? demoCards[2], ...alternateTactics];
   const puzzle = deck[currentProgress.index % deck.length];
+  const packagedRecord = catalog.find((record) => record.PuzzleId === puzzle.id.replace(/^lichess-/, ''));
   const [fen, setFen] = useState(puzzle.startingFen);
 
   const resetAttempt = useCallback((markFailed = false) => {
@@ -448,6 +449,9 @@ function TacticsView({ theme, pieceSet }: { theme: BoardTheme; pieceSet: PieceSe
   function finish() {
     const clean = !failed;
     setOutcome(clean ? 'correct' : 'wrong');
+    if(packagedRecord&&typeof window!=='undefined'&&['localhost','127.0.0.1'].includes(location.hostname)){
+      void fetch(`${process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000'}/api/tactics/attempt`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({puzzle_id:packagedRecord.PuzzleId,deck_id:packagedRecord.DeckId,correct:clean,clean,source_fen:packagedRecord.FEN,moves:packagedRecord.Moves.split(/\s+/),rating:packagedRecord.Rating})}).catch(()=>undefined);
+    }
     window.setTimeout(() => {
       setProgress((current) => {
         const next = advanceTacticProgress(current, progressKey, clean);
@@ -520,40 +524,80 @@ const endgameTemplates: EndgameMaterial[] = [
   { white: 'KQQ', black: 'K', name: 'Two queens' },
 ];
 
+type TablebaseResult = { category: string; moves?: { uci: string; san?: string; category?: string; dtz?: number }[] };
+
+async function probeTablebase(fen: string): Promise<TablebaseResult> {
+  const local = typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(location.hostname);
+  const url = local ? `${process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000'}/api/endgames/probe` : `https://tablebase.lichess.ovh/standard?fen=${encodeURIComponent(fen)}`;
+  const response = await fetch(url, local ? { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fen }) } : undefined);
+  if (!response.ok) throw new Error('Tablebase unavailable');
+  return response.json();
+}
+
+function tablebaseCategoryForWhite(fen: string, category: string): 'win' | 'draw' | 'loss' {
+  const normalized = category.includes('win') ? 'win' : category.includes('loss') ? 'loss' : 'draw';
+  if (new Chess(fen).turn() === 'w') return normalized;
+  return normalized === 'win' ? 'loss' : normalized === 'loss' ? 'win' : 'draw';
+}
+
 function EndgamesView({ theme, pieceSet }: { theme: BoardTheme; pieceSet: PieceSet }) {
   const [selected, setSelected] = useState(1);
-  const [goal, setGoal] = useState<'win' | 'draw' | null>(null);
-  const [status, setStatus] = useState('Classify the position before playing.');
-  const [fen, setFen] = useState(() => generateLegalEndgameFen(endgameTemplates[1]));
+  const [classification, setClassification] = useState<'win' | 'draw' | null>(null);
+  const [target, setTarget] = useState<'win' | 'draw'>('win');
+  const [status, setStatus] = useState('Finding a legal tablebase position…');
+  const [fen, setFen] = useState(STANDARD_FEN);
+  const [busy,setBusy]=useState(true);
+  const [userMoves,setUserMoves]=useState(0);
+  const [complete,setComplete]=useState(false);
 
-  function newPosition(index = selected) {
-    setFen(generateLegalEndgameFen(endgameTemplates[index]));
-    setGoal(null);
-    setStatus('Classify the position before playing.');
-  }
+  const newPosition = useCallback(async (index = selected) => {
+    setBusy(true); setClassification(null); setComplete(false); setUserMoves(0); setStatus('Finding a legal tablebase position…');
+    for(let attempt=0;attempt<24;attempt+=1){
+      const candidate=generateLegalEndgameFen(endgameTemplates[index]);
+      try {
+        const result=await probeTablebase(candidate);
+        const category=tablebaseCategoryForWhite(candidate,result.category);
+        if(category==='loss')continue;
+        setFen(candidate); setTarget(category); setStatus('Classify the position before playing.'); setBusy(false); return;
+      } catch { /* Try another legal position before reporting the service unavailable. */ }
+    }
+    setStatus('The tablebase could not provide a position. Try again when online.'); setBusy(false);
+  },[selected]);
+
+  useEffect(()=>{void newPosition(selected);},[newPosition,selected]);
 
   function classify(value: 'win' | 'draw') {
-    setGoal(value);
-    setStatus(value === 'win' ? 'Correct · now convert the win.' : 'This position is winning. Try again.');
+    setClassification(value);
+    setStatus(value === target ? `Correct · now ${target === 'win' ? 'convert the win' : 'hold the draw'}.` : `This position is a ${target}. Try the classification again.`);
   }
 
-  function play(from: Square, to: Square) {
-    if (goal !== 'win') return;
+  async function play(from: Square, to: Square) {
+    if (classification !== target || busy || complete) return;
     const board = new Chess(fen);
+    try { board.move({ from, to, promotion: 'q' }); } catch { return; }
+    setFen(board.fen()); setBusy(true);
+    if(board.isCheckmate()){setComplete(true);setStatus('Converted · template review complete.');setBusy(false);return;}
     try {
-      board.move({ from, to, promotion: 'q' });
-      setFen(board.fen());
-      setStatus(board.isCheckmate() ? 'Converted · template review complete.' : 'Winning status preserved · best defense is preparing…');
-    } catch { /* Chessground restricts this to legal moves. */ }
+      const afterUser=await probeTablebase(board.fen());
+      const userCategory=tablebaseCategoryForWhite(board.fen(),afterUser.category);
+      if((target==='win'&&userCategory!=='win')||(target==='draw'&&userCategory==='loss')){setComplete(true);setStatus(`Failed · the position is now a ${userCategory}.`);setBusy(false);return;}
+      const defense=afterUser.moves?.[0]?.uci;
+      if(defense){board.move({from:defense.slice(0,2) as Square,to:defense.slice(2,4) as Square,promotion:defense[4]});setFen(board.fen());}
+      const count=userMoves+1;setUserMoves(count);
+      if(board.isGameOver()){const success=target==='draw'&&!board.isCheckmate();setComplete(true);setStatus(success?'Draw secured · template review complete.':'The defender held the position.');}
+      else if(target==='draw'&&count>=20){setComplete(true);setStatus('Draw held for 20 moves · template review complete.');}
+      else setStatus(`${target==='win'?'Winning':'Drawing'} status preserved · tablebase defense played.`);
+    } catch { setStatus('The tablebase response failed. Your move remains on the board.'); }
+    setBusy(false);
   }
 
   return (
     <section className="endgames-page">
       <div className="workspace-title"><div><h1>Endgames</h1><span>Exact seven-piece practice</span></div><button className="primary-button">＋ New material set</button></div>
       <div className="endgame-workspace">
-        <aside className="template-list">{endgameTemplates.map((template, index) => <button className={selected === index ? 'active' : ''} key={template.name} onClick={() => { setSelected(index); newPosition(index); }}><strong>{template.name}</strong><small>{template.white} vs {template.black} · White</small></button>)}</aside>
-        <div className="board-column centered-board"><Chessboard fen={fen} locked={!goal || status.startsWith('Converted')} showHint={false} theme={theme} pieceSet={pieceSet} onMove={play}/><div className="board-tools"><button onClick={() => newPosition()}>⤨ <span>New position</span></button><button>⚙ <span>Edit material</span></button></div></div>
-        <aside className="study-panel endgame-study"><span className="pill">Material template</span><h2>{endgameTemplates[selected].name}</h2><p>White to move · exact tablebase</p><div className="classification"><button className={goal === 'win' ? 'active' : ''} onClick={() => classify('win')}>Win</button><button className={goal === 'draw' ? 'active' : ''} onClick={() => classify('draw')}>Draw</button></div><div className="feedback ready"><span className="feedback-icon">●</span><div><strong>{goal ? 'Play the position' : 'Win or draw?'}</strong><p>{status}</p></div></div><small>A draw is secured after 20 accurate user moves. Any worsened tablebase result fails immediately.</small></aside>
+        <aside className="template-list">{endgameTemplates.map((template, index) => <button className={selected === index ? 'active' : ''} key={template.name} onClick={() => setSelected(index)}><strong>{template.name}</strong><small>{template.white} vs {template.black} · White</small></button>)}</aside>
+        <div className="board-column centered-board"><Chessboard fen={fen} locked={busy || classification !== target || complete} showHint={false} theme={theme} pieceSet={pieceSet} onMove={(from,to)=>void play(from,to)}/><div className="board-tools"><button onClick={() => void newPosition()}>⤨ <span>New position</span></button><button>⚙ <span>Edit material</span></button></div></div>
+        <aside className="study-panel endgame-study"><span className="pill">Material template</span><h2>{endgameTemplates[selected].name}</h2><p>White to move · exact tablebase</p><div className="classification"><button className={classification === 'win' ? 'active' : ''} disabled={busy} onClick={() => classify('win')}>Win</button><button className={classification === 'draw' ? 'active' : ''} disabled={busy} onClick={() => classify('draw')}>Draw</button></div><div className={`feedback ${complete&&status.startsWith('Failed')?'wrong':'ready'}`}><span className="feedback-icon">{busy?'…':complete?'✓':'●'}</span><div><strong>{classification === target ? 'Play the position' : 'Win or draw?'}</strong><p>{status}</p></div></div><small>{target==='draw'?`${userMoves} / 20 accurate user moves`:'Checkmate completes the card.'}</small></aside>
       </div>
     </section>
   );
@@ -662,6 +706,34 @@ function CardEditor({ card, theme, pieceSet, onClose, onSave }: { card: Practice
   );
 }
 
+type GameViewRecord = {
+  id: string; source: string; date: string; speed: string; color: string; result: string; opening: string;
+  status: string; detail: string; flag: string; flagPly: number; moves: string[]; startFen: string;
+};
+
+function importedGameRecord(value: Record<string, unknown>): GameViewRecord | null {
+  const startFen = String(value.start_fen || STANDARD_FEN);
+  const uciMoves = Array.isArray(value.moves) ? value.moves.map(String) : [];
+  const board = new Chess(startFen);
+  const moves: string[] = [];
+  try {
+    for (const uci of uciMoves) moves.push(board.move({ from: uci.slice(0, 2) as Square, to: uci.slice(2, 4) as Square, promotion: uci[4] }).san);
+  } catch { return null; }
+  const major = typeof value.major_mistake_ply === 'number' ? value.major_mistake_ply : null;
+  const missed = typeof value.missed_punishment_ply === 'number' ? value.missed_punishment_ply : null;
+  const divergence = typeof value.divergence_ply === 'number' ? value.divergence_ply : null;
+  const flagPly = major ?? missed ?? divergence ?? 0;
+  const status = String(value.classification || 'no applicable repertoire');
+  const flag = major !== null ? `First major mistake · move ${Math.floor(major / 2) + 1}` : missed !== null ? `Missed punishment · move ${Math.floor(missed / 2) + 1}` : divergence !== null ? `First repertoire divergence · move ${Math.floor(divergence / 2) + 1}` : 'No flagged position';
+  return {
+    id: String(value.id), source: String(value.provider) === 'chess.com' ? 'Chess.com' : 'Lichess',
+    date: String(value.played_at || '').slice(0, 10), speed: String(value.speed || 'unknown'),
+    color: String(value.color || ''), result: String(value.result || '*'), opening: String(value.opening_name || 'Unclassified opening'),
+    status, detail: divergence !== null ? `Diverged at move ${Math.floor(divergence / 2) + 1}` : status,
+    flag, flagPly, moves, startFen,
+  };
+}
+
 function GamesView({ onAnalyze, theme, pieceSet }: { onAnalyze: () => void; theme: BoardTheme; pieceSet: PieceSet }) {
   const [lichess, setLichess] = useState(() => typeof window === 'undefined' ? '' : localStorage.getItem('tempo-lichess-username') ?? '');
   const [chesscom, setChesscom] = useState(() => typeof window === 'undefined' ? '' : localStorage.getItem('tempo-chesscom-username') ?? '');
@@ -670,11 +742,37 @@ function GamesView({ onAnalyze, theme, pieceSet }: { onAnalyze: () => void; them
   const [syncing, setSyncing] = useState(false);
   const [syncNote, setSyncNote] = useState(() => typeof window === 'undefined' ? 'Last 90 days · rated blitz, rapid, and classical' : localStorage.getItem('tempo-last-sync-note') ?? 'Last 90 days · rated blitz, rapid, and classical');
   const [lastSync,setLastSync]=useState(()=>typeof window==='undefined'?'':localStorage.getItem('tempo-last-sync')??'');
-  const [selected,setSelected]=useState(sampleGames[0]); const [cursor,setCursor]=useState(sampleGames[0].flagPly); const [engineOn,setEngineOn]=useState(true); const [engineText,setEngineText]=useState('Quick scan found a 124cp swing.');
-  const games = sampleGames.filter((game) => (source === 'All' || game.source === source) && (status === 'All' || game.status === status));
-  const gameFen=fenAfterMoves(selected.moves,Math.min(cursor,selected.moves.length));
-  const gameLast=cursor ? uciLine(selected.moves)[cursor-1] : undefined;
   const localApi=typeof window!=='undefined' && ['localhost','127.0.0.1'].includes(location.hostname) ? (process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000') : '';
+  const demoRecords = useMemo(() => sampleGames.map((game) => ({ ...game, startFen: STANDARD_FEN })), []);
+  const [records,setRecords]=useState<GameViewRecord[]>(demoRecords);
+  const [selectedId,setSelectedId]=useState(demoRecords[0].id);
+  const [cursor,setCursor]=useState(demoRecords[0].flagPly);
+  const [engineOn,setEngineOn]=useState(true);
+  const [engineText,setEngineText]=useState('Select a flagged position to analyze.');
+  const [gamesLoaded,setGamesLoaded]=useState(false);
+  const selected=records.find((game)=>game.id===selectedId) ?? records[0] ?? { id:'',source:'',date:'',speed:'',color:'',result:'',opening:'No synced game selected',status:'',detail:'',flag:'Sync an account to review games.',flagPly:0,moves:[],startFen:STANDARD_FEN };
+  const games = records.filter((game) => (source === 'All' || game.source === source) && (status === 'All' || game.status === status));
+  const gameFen=fenAfterMoves(selected.moves,Math.min(cursor,selected.moves.length),selected.startFen);
+  const gameLast=cursor ? uciLine(selected.moves,selected.startFen)[cursor-1] : undefined;
+  const applicable=records.filter((game)=>game.status!=='no applicable repertoire');
+  const covered=records.filter((game)=>game.status==='covered').length;
+  const opponentGaps=records.filter((game)=>game.status==='opponent repertoire gap').length;
+  const deviations=records.filter((game)=>game.status==='player deviation').length;
+  const noRepertoire=records.filter((game)=>game.status==='no applicable repertoire').length;
+
+  const loadGames=useCallback(async()=>{
+    if(!localApi)return;
+    try {
+      const response=await fetch(`${localApi}/api/games/summary`);
+      if(!response.ok)throw new Error();
+      const body=await response.json() as {games:Record<string,unknown>[]};
+      const loaded=body.games.map(importedGameRecord).filter((game):game is GameViewRecord=>Boolean(game));
+      setRecords(loaded); setSelectedId((current)=>loaded.some((game)=>game.id===current)?current:(loaded[0]?.id??''));
+      setCursor(loaded[0]?.flagPly??0); setGamesLoaded(true);
+    } catch { setRecords([]); setSelectedId(''); setCursor(0); setGamesLoaded(true); }
+  },[localApi]);
+
+  useEffect(()=>{void loadGames();},[loadGames]);
 
   function saveAccounts() {
     localStorage.setItem('tempo-lichess-username', lichess.trim());
@@ -688,21 +786,22 @@ function GamesView({ onAnalyze, theme, pieceSet }: { onAnalyze: () => void; them
     try {
       const response = await fetch(`${localApi}/api/games/sync`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ lichess_username: lichess, chesscom_username: chesscom, days: 90, speeds: ['blitz', 'rapid', 'classical'], rated_only: true }) });
       if (!response.ok) throw new Error();
-      const data = await response.json(); const time=new Date(data.synced_at).toISOString(); setLastSync(time); localStorage.setItem('tempo-last-sync',time); const note=`${data.imported} new games · local cache is up to date`; setSyncNote(note); localStorage.setItem('tempo-last-sync-note',note);
+      const data = await response.json(); const time=new Date(data.synced_at).toISOString(); setLastSync(time); localStorage.setItem('tempo-last-sync',time); const note=`${data.imported} new games · local cache is up to date`; setSyncNote(note); localStorage.setItem('tempo-last-sync-note',note); await loadGames();
     } catch { setSyncNote('Saved. Start the local service to sync live games; the comparison preview remains available.'); }
     setSyncing(false);
-  },[chesscom,lichess,localApi,syncing]);
+  },[chesscom,lichess,loadGames,localApi,syncing]);
   const syncRef=useRef(sync); syncRef.current=sync;
-  useEffect(()=>{ const run=()=>{if(document.visibilityState==='visible') void syncRef.current()}; const timer=window.setInterval(run,180000); window.addEventListener('focus',run); window.addEventListener('online',run); run(); return()=>{clearInterval(timer);window.removeEventListener('focus',run);window.removeEventListener('online',run)}; },[]); // sync once on mount and then while visible
+  useEffect(()=>{ const run=()=>{if((localStorage.getItem('tempo-lichess-username')||localStorage.getItem('tempo-chesscom-username'))&&document.visibilityState==='visible') void syncRef.current()}; const timer=window.setInterval(run,180000); window.addEventListener('focus',run); window.addEventListener('online',run); run(); return()=>{clearInterval(timer);window.removeEventListener('focus',run);window.removeEventListener('online',run)}; },[]); // sync once on mount and then while visible
 
-  useEffect(()=>{if(!engineOn)return;setEngineText('Analyzing selected position…');analyzeWithStockfish(gameFen).then(lines=>setEngineText(lines[0]?`${lines[0].san} · ${lines[0].score}`:'No line')).catch(()=>setEngineText('Local engine unavailable'));},[engineOn,gameFen]);
+  useEffect(()=>{let active=true;if(!engineOn||!selected.id){setEngineText('Select a synced game to analyze.');return()=>{active=false;};}setEngineText('Analyzing selected position…');analyzeWithStockfish(gameFen).then(lines=>{if(active)setEngineText(lines[0]?`${lines[0].san} · ${lines[0].score}`:'No line');}).catch(()=>{if(active)setEngineText('Local engine unavailable');});return()=>{active=false;};},[engineOn,gameFen,selected.id]);
+  useEffect(()=>{const onKey=(event:KeyboardEvent)=>{if(event.target instanceof HTMLInputElement||event.target instanceof HTMLSelectElement)return;if(event.key==='ArrowLeft'){event.preventDefault();setCursor((value)=>Math.max(0,value-1));}if(event.key==='ArrowRight'){event.preventDefault();setCursor((value)=>Math.min(selected.moves.length,value+1));}if(event.key==='Home'){event.preventDefault();setCursor(0);}if(event.key==='End'){event.preventDefault();setCursor(selected.moves.length);}};window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);},[selected.moves.length]);
 
   return <section className="games-page" id="games">
     <div className="page-heading compact"><div><h1>Games</h1><p>{lastSync?`Last synced at ${new Date(lastSync).toLocaleTimeString([],{hour:'numeric',minute:'2-digit'})}`:'Automatic local sync checks every 3 minutes'}</p></div><button className="primary-button sync-button" onClick={()=>void sync()} disabled={syncing}>{syncing&&<i/>}{syncing ? 'Syncing games' : '↻ Sync games'}</button></div>
+    <div className="game-review"><div className="game-board"><Chessboard fen={gameFen} lastMove={gameLast?[gameLast.slice(0,2),gameLast.slice(2,4)]:undefined} locked showHint={false} theme={theme} pieceSet={pieceSet} onMove={()=>undefined}/><div className="board-tools"><button disabled={!selected.id||cursor===0} onClick={()=>setCursor(Math.max(0,cursor-1))}>← Back</button><button disabled={!selected.id||cursor===selected.moves.length} onClick={()=>setCursor(Math.min(selected.moves.length,cursor+1))}>Forward →</button><button disabled={!selected.id} onClick={()=>setCursor(selected.flagPly)}>⚑ First mistake</button><button className={engineOn?'active':''} onClick={()=>setEngineOn(!engineOn)}>Stockfish</button></div></div><div className="game-side-scroll"><aside className="game-inspector"><span className="pill">Quick scan</span><h2>{selected.opening}</h2><strong>{selected.flag}</strong><p>{engineText}</p><div className="game-moves">{selected.moves.map((move,index)=><button className={`${index<cursor?'shown':''}${index===selected.flagPly?' flagged':''}`} onClick={()=>setCursor(index+1)} key={`${move}-${index}`}>{index%2===0?`${Math.floor(index/2)+1}.`:''}{move}</button>)}</div><button className="primary-button" disabled={!selected.id} onClick={onAnalyze}>Open gap in builder</button></aside>
     <section className="account-strip"><label><span>Lichess username</span><input value={lichess} onChange={(e) => setLichess(e.target.value)} placeholder="Optional" /></label><label><span>Chess.com username</span><input value={chesscom} onChange={(e) => setChesscom(e.target.value)} placeholder="Optional" /></label><button onClick={saveAccounts}>Save locally</button><small>{syncNote}</small></section>
-    <div className="games-metrics"><article><span>Repertoire adherence</span><strong>78%</strong><small>31 of 40 applicable games</small></article><article><span>Opponent gaps</span><strong>6</strong><small>3 recurring moves</small></article><article><span>Your deviations</span><strong>3</strong><small>French occurs twice</small></article><article><span>No repertoire</span><strong>4</strong><small>Mostly English openings</small></article></div>
-    <div className="game-review"><div className="game-board"><Chessboard fen={gameFen} lastMove={gameLast?[gameLast.slice(0,2),gameLast.slice(2,4)]:undefined} locked showHint={false} theme={theme} pieceSet={pieceSet} onMove={()=>undefined}/><div className="board-tools"><button onClick={()=>setCursor(Math.max(0,cursor-1))}>← Back</button><button onClick={()=>setCursor(Math.min(selected.moves.length,cursor+1))}>Forward →</button><button onClick={()=>setCursor(selected.flagPly)}>⚑ First mistake</button><button className={engineOn?'active':''} onClick={()=>setEngineOn(!engineOn)}>Stockfish</button></div></div><aside className="game-inspector"><span className="pill">Quick scan</span><h2>{selected.opening}</h2><strong>{selected.flag}</strong><p>{engineText}</p><div className="game-moves">{selected.moves.map((move,index)=><button className={`${index<cursor?'shown':''}${index===selected.flagPly?' flagged':''}`} onClick={()=>setCursor(index+1)} key={`${move}-${index}`}>{index%2===0?`${Math.floor(index/2)+1}.`:''}{move}</button>)}</div><button className="primary-button" onClick={onAnalyze}>Open gap in builder</button></aside></div>
-    <div className="games-workspace"><aside className="gap-list"><span>Recurring repairs</span><button onClick={onAnalyze}><b>French · 7… Nc6</b><small>3 games · add a response</small></button><button onClick={onAnalyze}><b>King’s Indian · 7. d5</b><small>2 games · opponent gap</small></button><button onClick={onAnalyze}><b>Sicilian · 6… e5</b><small>2 personal deviations</small></button></aside><section className="game-list"><div className="game-filters"><select value={source} onChange={(e) => setSource(e.target.value)}><option>All</option><option>Lichess</option><option>Chess.com</option></select><select value={status} onChange={(e) => setStatus(e.target.value)}><option>All</option><option>covered</option><option>opponent gap</option><option>player deviation</option><option>no repertoire</option></select><span>90 days · rated · blitz / rapid / classical</span></div>{games.map((game) => <button className={`game-row${selected.id===game.id?' selected':''}`} key={game.id} onClick={()=>{setSelected(game);setCursor(game.flagPly)}}><span><b>{game.opening}</b><small>{game.source} · {game.date} · {game.speed} · {game.color} · {game.result}</small></span><span><em className={game.status.replace(' ','-')}>{game.status}</em><small>{game.detail}</small></span><i>Review →</i></button>)}</section></div>
+    <div className="games-metrics"><article><span>Repertoire adherence</span><strong>{applicable.length?`${Math.round(covered/applicable.length*100)}%`:'—'}</strong><small>{covered} of {applicable.length} applicable games</small></article><article><span>Opponent gaps</span><strong>{opponentGaps}</strong><small>Missing opponent responses</small></article><article><span>Your deviations</span><strong>{deviations}</strong><small>First off-repertoire moves</small></article><article><span>No repertoire</span><strong>{noRepertoire}</strong><small>Games without an applicable line</small></article></div>
+    <div className="games-workspace"><aside className="gap-list"><span>Recurring repairs</span>{records.filter((game)=>game.status.includes('gap')||game.status.includes('deviation')).slice(0,4).map((game)=><button key={game.id} onClick={onAnalyze}><b>{game.opening}</b><small>{game.detail} · open builder</small></button>)}{!records.some((game)=>game.status.includes('gap')||game.status.includes('deviation'))&&<p>No recurring repairs yet.</p>}</aside><section className="game-list"><div className="game-filters"><select value={source} onChange={(e) => setSource(e.target.value)}><option>All</option><option>Lichess</option><option>Chess.com</option></select><select value={status} onChange={(e) => setStatus(e.target.value)}><option>All</option><option>covered</option><option>opponent repertoire gap</option><option>player deviation</option><option>no applicable repertoire</option></select><span>90 days · rated · blitz / rapid / classical</span></div>{games.map((game) => <button className={`game-row${selected.id===game.id?' selected':''}`} key={game.id} onClick={()=>{setSelectedId(game.id);setCursor(game.flagPly)}}><span><b>{game.opening}</b><small>{game.source} · {game.date} · {game.speed} · {game.color} · {game.result}</small></span><span><em className={game.status.replaceAll(' ','-')}>{game.status}</em><small>{game.detail}</small></span><i>Review →</i></button>)}{gamesLoaded&&!games.length&&<div className="games-empty"><strong>No matching synced games.</strong><span>Add a username above or change the filters.</span></div>}</section></div></div></div>
   </section>;
 }
 
@@ -807,6 +906,8 @@ export default function Home() {
   const [pieceSet, setPieceSet] = useState<PieceSet>('cburnett');
   const card = practiceCards[activeCardIndex] ?? practiceCards[0];
   const repertoireLine = card.moves;
+
+  useEffect(() => { window.scrollTo({ top: 0, behavior: 'auto' }); }, [view]);
 
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -939,9 +1040,10 @@ export default function Home() {
   const revealedMoves = repertoireLine.slice(0, feedback === 'complete' ? repertoireLine.length : step);
 
   const dateLabel = new Intl.DateTimeFormat('en-US', { month: 'long', day: 'numeric' }).format(new Date());
+  const boardWorkspace = ['train','tactics','endgames','analysis','games'].includes(view);
 
   return (
-    <main className="app-shell">
+    <main className={`app-shell${boardWorkspace ? ' board-workspace-shell' : ''}`}>
       <header className="topbar">
         <button className="brand" onClick={() => setView('train')} aria-label="Tempo home"><span className="brand-mark">T</span><span>Tempo</span></button>
         <nav className="nav" aria-label="Primary navigation">
@@ -980,7 +1082,7 @@ export default function Home() {
       {showImport && <ImportDialog onClose={() => setShowImport(false)} onImported={addImportedRepertoire} onViewRepertoire={() => setView('repertoire')} />}
       {showTree && <TreeBrowser onClose={() => setShowTree(false)} theme={boardTheme} pieceSet={pieceSet} />}
       {editorCard && <CardEditor card={editorCard} theme={boardTheme} pieceSet={pieceSet} onClose={()=>setEditorCard(null)} onSave={(updated)=>{setPracticeCards(current=>current.map(item=>item.id===updated.id?updated:item));resetLine(updated);setSuggestShorter(false);}}/>}
-      <footer className="source-footer">Board interaction by <a href="https://github.com/lichess-org/chessground" target="_blank" rel="noreferrer">Chessground</a> · Cburnett and Merida pieces from Lichess · Puzzle positions from the public-domain <a href="https://database.lichess.org/#puzzles" target="_blank" rel="noreferrer">Lichess database</a></footer>
+      {!boardWorkspace&&<footer className="source-footer">Board interaction by <a href="https://github.com/lichess-org/chessground" target="_blank" rel="noreferrer">Chessground</a> · Cburnett and Merida pieces from Lichess · Puzzle positions from the public-domain <a href="https://database.lichess.org/#puzzles" target="_blank" rel="noreferrer">Lichess database</a></footer>}
     </main>
   );
 }

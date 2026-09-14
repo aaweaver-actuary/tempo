@@ -44,8 +44,8 @@ def load_packaged_decks(path: str | Path) -> dict[str, list[dict[str, object]]]:
     for record in records:
         deck_id = str(record["DeckId"])
         decks.setdefault(deck_id, []).append(record)
-    if any(len(cards) != 100 for cards in decks.values()):
-        raise ValueError("Every packaged tactics deck must contain exactly 100 cards")
+    if any(len(cards) != (250 if deck_id.endswith("-focused") else 100) for deck_id, cards in decks.items()):
+        raise ValueError("Packaged tactics decks must contain 100 fundamentals or 250 focused cards")
     return decks
 
 

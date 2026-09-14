@@ -22,7 +22,7 @@ async def lifespan(_: FastAPI):
     initialize(); yield
 
 app=FastAPI(title="Tempo local API",version="0.2.0",lifespan=lifespan)
-app.add_middleware(CORSMiddleware,allow_origins=["http://localhost:3000","http://127.0.0.1:3000"],allow_methods=["*"],allow_headers=["*"])
+app.add_middleware(CORSMiddleware,allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",allow_methods=["*"],allow_headers=["*"])
 
 @app.get("/api/health")
 def health(): return {"status":"ok","storage":"local-sqlite","scheduler":"FSRS 6"}
