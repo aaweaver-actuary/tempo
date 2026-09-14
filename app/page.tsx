@@ -57,7 +57,30 @@ const demoCards = [
 ] satisfies PracticeCard[];
 
 type Feedback = 'ready' | 'correct' | 'wrong' | 'complete';
-type View = 'train' | 'repertoire' | 'progress';
+type View = 'train' | 'repertoire' | 'analysis' | 'progress';
+
+type ExplorerMove = {
+  uci: string;
+  san: string;
+  white: number;
+  draws: number;
+  black: number;
+};
+
+const analysisLines = [
+  { title: 'Open Sicilian · Najdorf', side: 'White', moves: ['e4', 'c5', 'Nf3', 'd6', 'd4', 'cxd4', 'Nxd4', 'Nf6', 'Nc3', 'a6'] },
+  { title: 'French · Classical', side: 'White', moves: ['e4', 'e6', 'd4', 'd5', 'Nc3', 'Nf6', 'e5', 'Nfd7'] },
+  { title: 'Caro-Kann · Advance', side: 'White', moves: ['e4', 'c6', 'd4', 'd5', 'e5', 'Bf5', 'Nf3', 'e6'] },
+  { title: 'King’s Indian · Main line', side: 'Black', moves: ['d4', 'Nf6', 'c4', 'g6', 'Nc3', 'Bg7', 'e4', 'd6'] },
+];
+
+function uciLine(sanMoves: string[]) {
+  const chess = new Chess();
+  return sanMoves.map((san) => {
+    const move = chess.move(san);
+    return `${move.from}${move.to}${move.promotion ?? ''}`;
+  });
+}
 
 function localDayKey(date = new Date()) {
   const year = date.getFullYear();
@@ -186,22 +209,134 @@ function TreeBrowser({ onClose, theme, pieceSet }: { onClose: () => void; theme:
 }
 
 function TacticsDecks() {
-  const [included, setIncluded] = useState(true);
+  const [activeDecks, setActiveDecks] = useState<Set<string>>(new Set(['fork-easy']));
+  const motifs = [
+    { id: 'fork', icon: '♘', title: 'Forks' },
+    { id: 'pin', icon: '⌖', title: 'Pins' },
+    { id: 'skewer', icon: '⇥', title: 'Skewers' },
+    { id: 'discoveredAttack', icon: '✦', title: 'Discoveries' },
+  ];
+  const tiers = [
+    { id: 'easy', label: 'Easy', range: '700–1100' },
+    { id: 'medium', label: 'Medium', range: '1101–1500' },
+    { id: 'hard', label: 'Hard', range: '1501–2000' },
+  ];
+
+  useEffect(() => {
+    const saved = localStorage.getItem('tempo-tactics-decks');
+    if (saved) setActiveDecks(new Set(JSON.parse(saved)));
+  }, []);
+
+  function toggleDeck(id: string) {
+    setActiveDecks((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      localStorage.setItem('tempo-tactics-decks', JSON.stringify([...next]));
+      return next;
+    });
+  }
+
   return (
     <section className="tactics-section" aria-labelledby="tactics-title">
       <div className="tactics-heading">
-        <div><p className="eyebrow">Puzzle practice</p><h2 id="tactics-title">Tactics decks</h2><p>Curated from the public-domain Lichess puzzle database, then scheduled beside opening cards.</p></div>
-        <button className={included ? 'included' : ''} onClick={() => setIncluded((value) => !value)}>{included ? 'Included in daily queue' : 'Add to daily queue'}</button>
+        <div><p className="eyebrow">Puzzle practice</p><h2 id="tactics-title">Tactical fundamentals</h2><p>Four motifs, three stages, and 100 real positions per deck. Pick only what you want to learn; the daily session handles the mixing.</p></div>
+        <span className="pack-count">12 decks · 1,200 cards</span>
       </div>
-      <div className="tactics-grid">
-        <article><span className="tactic-icon">⌁</span><div><strong>Healthy mix</strong><small>650–1600 rating · 18 motifs</small></div><b>6 due</b></article>
-        <article><span className="tactic-icon">♘</span><div><strong>Forks & discoveries</strong><small>Pattern-focused · 240 puzzles</small></div><b>3 due</b></article>
-        <article><span className="tactic-icon">#</span><div><strong>Mate patterns</strong><small>Mate in 1–3 · 180 puzzles</small></div><b>2 due</b></article>
-        <button className="new-tactics-deck"><span>＋</span><div><strong>Build a motif deck</strong><small>Choose themes, rating, and mix</small></div></button>
+      <div className="motif-grid">
+        {motifs.map((motif) => <article className="motif-card" key={motif.id}>
+          <div className="motif-title"><span className="tactic-icon">{motif.icon}</span><div><strong>{motif.title}</strong><small>Learn the pattern, then raise the difficulty.</small></div></div>
+          <div className="deck-tiers">{tiers.map((tier) => {
+            const id = `${motif.id}-${tier.id}`;
+            const active = activeDecks.has(id);
+            return <button className={active ? 'active' : ''} key={id} onClick={() => toggleDeck(id)}><span><b>{tier.label}</b><small>{tier.range}</small></span><em>{active ? '✓ In queue' : '＋ Add'}</em><i>100</i></button>;
+          })}</div>
+        </article>)}
       </div>
-      <p className="source-note">Puzzle positions remain local after import. The daily queue can cap puzzle cards separately so opening recall keeps priority.</p>
+      <p className="source-note">The selected puzzle IDs, positions, solutions, and themes are packaged locally. Popular, well-played puzzles were chosen deterministically from the public-domain Lichess database.</p>
     </section>
   );
+}
+
+function AnalysisView({ theme, pieceSet, onTheme, onPieces }: { theme: BoardTheme; pieceSet: PieceSet; onTheme: (value: BoardTheme) => void; onPieces: (value: PieceSet) => void }) {
+  const [fen, setFen] = useState(STANDARD_FEN);
+  const [history, setHistory] = useState<{ san: string; uci: string; fen: string }[]>([]);
+  const [lastMove, setLastMove] = useState<[string, string]>();
+  const [explorerOn, setExplorerOn] = useState(true);
+  const [stockfishOn, setStockfishOn] = useState(false);
+  const [maiaOn, setMaiaOn] = useState(true);
+  const [maiaElo, setMaiaElo] = useState('1500');
+  const [explorerMoves, setExplorerMoves] = useState<ExplorerMove[]>([]);
+  const [explorerState, setExplorerState] = useState<'loading' | 'ready' | 'offline'>('loading');
+  const playedUci = history.map((move) => move.uci);
+  const lineMatches = analysisLines.filter((line) => {
+    const lineUci = uciLine(line.moves);
+    return playedUci.every((move, index) => lineUci[index] === move);
+  });
+
+  useEffect(() => {
+    if (!explorerOn) return;
+    const controller = new AbortController();
+    setExplorerState('loading');
+    const url = `https://explorer.lichess.org/lichess?variant=standard&speeds=rapid,classical&ratings=1200,1400,1600,1800,2000,2200,2500&fen=${encodeURIComponent(fen)}`;
+    fetch(url, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error('Explorer unavailable');
+        return response.json();
+      })
+      .then((data: { moves?: ExplorerMove[] }) => { setExplorerMoves((data.moves ?? []).slice(0, 6)); setExplorerState('ready'); })
+      .catch((error) => { if (error.name !== 'AbortError') setExplorerState('offline'); });
+    return () => controller.abort();
+  }, [fen, explorerOn]);
+
+  function playMove(from: Square, to: Square) {
+    const chess = new Chess(fen);
+    try {
+      const move = chess.move({ from, to, promotion: 'q' });
+      const uci = `${move.from}${move.to}${move.promotion ?? ''}`;
+      setHistory((current) => [...current, { san: move.san, uci, fen: chess.fen() }]);
+      setFen(chess.fen());
+      setLastMove([move.from, move.to]);
+    } catch { /* Chessground only offers legal destinations. */ }
+  }
+
+  function reset() { setFen(STANDARD_FEN); setHistory([]); setLastMove(undefined); }
+  function undo() {
+    const next = history.slice(0, -1);
+    setHistory(next);
+    setFen(next.at(-1)?.fen ?? STANDARD_FEN);
+    const previous = next.at(-1)?.uci;
+    setLastMove(previous ? [previous.slice(0, 2), previous.slice(2, 4)] : undefined);
+  }
+
+  const coveredReplies = new Set(lineMatches.flatMap((line) => {
+    const uci = uciLine(line.moves)[history.length];
+    return uci ? [uci] : [];
+  }));
+  const maxGames = Math.max(1, ...explorerMoves.map((move) => move.white + move.draws + move.black));
+
+  return <section className="analysis-page" id="analysis">
+    <div className="analysis-heading"><div><p className="eyebrow">Explore and repair</p><h1>Analysis board</h1><p>Play any line. Repertoire matches narrow with every move, while public games reveal likely gaps.</p></div><div className="analysis-switches"><button className={stockfishOn ? 'on' : ''} onClick={() => setStockfishOn((value) => !value)}><i /> Stockfish 19</button><button className={maiaOn ? 'on' : ''} onClick={() => setMaiaOn((value) => !value)}><i /> Maia 3</button></div></div>
+    <div className="analysis-layout">
+      <div className="analysis-board-column">
+        <Chessboard fen={fen} lastMove={lastMove} locked={false} showHint={false} theme={theme} pieceSet={pieceSet} onMove={playMove} />
+        <div className="board-tools"><button onClick={undo} disabled={!history.length}>↶ <span>Undo</span></button><button onClick={reset}>↻ <span>Reset</span></button><a href={`https://lichess.org/analysis/standard/${encodeURIComponent(fen)}`} target="_blank" rel="noreferrer">↗ <span>Open in Lichess</span></a><label>Board<select value={theme} onChange={(event) => onTheme(event.target.value as BoardTheme)}><option value="brown">Brown</option><option value="blue">Blue</option><option value="green">Green</option></select></label><label>Pieces<select value={pieceSet} onChange={(event) => onPieces(event.target.value as PieceSet)}><option value="cburnett">Cburnett</option><option value="merida">Merida</option></select></label></div>
+        <div className="analysis-moves"><span>{history.length ? history.map((move, index) => `${index % 2 === 0 ? `${Math.floor(index / 2) + 1}.` : ''}${move.san}`).join(' ') : 'Make a move to search your repertoire'}</span><button onClick={() => navigator.clipboard?.writeText(fen)}>Copy FEN</button></div>
+      </div>
+      <aside className="analysis-sidebar">
+        <section className="analysis-panel repertoire-results"><div className="panel-heading"><div><span>Position search</span><strong>{lineMatches.length ? `${lineMatches.length} repertoire ${lineMatches.length === 1 ? 'match' : 'matches'}` : 'Repertoire gap'}</strong></div><b className={lineMatches.length ? 'covered' : 'gap'}>{lineMatches.length ? 'Covered' : 'Uncovered'}</b></div>
+          {lineMatches.length ? lineMatches.map((line) => <div className="line-result" key={line.title}><span>{line.side}</span><strong>{line.title}</strong><small>{line.moves.slice(history.length, history.length + 3).join(' · ') || 'Exact line endpoint'}</small></div>) : <div className="empty-result"><strong>No saved line reaches this position.</strong><p>Add a response here without leaving the board.</p><button>＋ Add to repertoire</button></div>}
+        </section>
+        <section className="analysis-panel explorer-panel"><div className="panel-heading"><div><span>Lichess opening explorer</span><strong>What people play here</strong></div><button className={`tiny-switch${explorerOn ? ' on' : ''}`} onClick={() => setExplorerOn((value) => !value)}>{explorerOn ? 'Live' : 'Off'}</button></div>
+          {!explorerOn ? <p className="panel-message">Explorer is paused.</p> : explorerState === 'loading' ? <p className="panel-message">Loading public games…</p> : explorerState === 'offline' ? <p className="panel-message">Explorer is unavailable. Your board and repertoire search still work offline.</p> : <div className="explorer-list">{explorerMoves.map((move) => { const games = move.white + move.draws + move.black; const covered = coveredReplies.has(move.uci); return <div className="explorer-row" key={move.uci}><strong>{move.san}</strong><span><i style={{ width: `${Math.max(8, games / maxGames * 100)}%` }} /></span><small>{games.toLocaleString()} games</small><em className={covered ? 'covered' : 'gap'}>{covered ? 'In repertoire' : 'Gap'}</em></div>; })}</div>}
+        </section>
+        <section className="analysis-panel engine-panel"><div className="panel-heading"><div><span>Move guidance</span><strong>Machine strength + human realism</strong></div></div>
+          <div className={`engine-source${stockfishOn ? ' active' : ''}`}><div><b>Stockfish 19</b><small>{stockfishOn ? 'Local engine slot enabled' : 'Off'}</small></div><em>{stockfishOn ? 'WASM bundle ready to connect' : 'Turn on'}</em></div>
+          <div className={`engine-source${maiaOn ? ' active' : ''}`}><div><b>Maia 3</b><small>{maiaOn ? 'Human move model selected' : 'Off'}</small></div>{maiaOn ? <label>Player level<select value={maiaElo} onChange={(event) => setMaiaElo(event.target.value)}><option>1100</option><option>1500</option><option>1900</option></select></label> : <em>Turn on</em>}</div>
+          <p className="engine-note">The interfaces are in place; engine/model files remain an explicit local download so the hosted mock stays lightweight.</p>
+        </section>
+      </aside>
+    </div>
+  </section>;
 }
 
 function RepertoireView({ onImport, onBrowse }: { onImport: () => void; onBrowse: () => void }) {
@@ -399,7 +534,7 @@ export default function Home() {
       <header className="topbar">
         <button className="brand" onClick={() => setView('train')} aria-label="Tempo home"><span className="brand-mark">T</span><span>Tempo</span></button>
         <nav className="nav" aria-label="Primary navigation">
-          {(['train', 'repertoire', 'progress'] as View[]).map((item) => <button className={view === item ? 'active' : ''} key={item} onClick={() => setView(item)}>{item[0].toUpperCase() + item.slice(1)}</button>)}
+          {(['train', 'repertoire', 'analysis', 'progress'] as View[]).map((item) => <button className={view === item ? 'active' : ''} key={item} onClick={() => setView(item)}>{item[0].toUpperCase() + item.slice(1)}</button>)}
         </nav>
         <button className="local-status" onClick={() => setShowImport(true)}><span className="status-dot" /> Saved locally</button>
       </header>
@@ -413,7 +548,7 @@ export default function Home() {
           </div>
           <aside className="study-panel">
             <div className="card-meta"><span className={`pill${card.kind === 'puzzle' ? ' puzzle' : ''}`}>{card.kind === 'puzzle' ? 'Puzzle' : 'Review'}</span><span>{card.kind === 'puzzle' ? `${card.userMoveTarget}-move tactic` : 'Prefix card · 6 user moves'}</span>{queueNotice && <em>{queueNotice}</em>}</div>
-            <div className="opening-title"><p>{card.kind === 'puzzle' ? 'Tactics · mixed into today’s queue' : 'White repertoire'}</p><h2>{card.title}</h2><span>{card.subtitle}</span></div>
+            <div className="opening-title"><p>{card.kind === 'puzzle' ? 'Tactics · today’s queue' : 'White repertoire'}</p><h2>{card.title}</h2><span>{card.subtitle}</span></div>
             <div className={`feedback ${feedback}`} role="status" aria-live="polite"><span className="feedback-icon">{feedback === 'wrong' ? '×' : feedback === 'complete' ? '✓' : '●'}</span><div><strong>{feedbackCopy.title}</strong><p>{feedbackCopy.body}</p></div></div>
             <div className="move-progress"><div className="progress-label"><span>Card progress</span><strong>{userMovesComplete} / {card.userMoveTarget} user moves</strong></div><ProgressStrip current={userMovesComplete} total={card.userMoveTarget} /></div>
             <div className={`move-trail${revealedMoves.length ? '' : ' empty'}`} aria-live="polite"><span>Moves played</span>{revealedMoves.length ? <ol>{revealedMoves.map((move, index) => <li key={`${move}-${index}`}><b>{index % 2 === 0 ? `${Math.floor(index / 2) + 1}.` : '…'}</b>{move}</li>)}</ol> : <p>Nothing is revealed until you play it.</p>}</div>
@@ -422,10 +557,11 @@ export default function Home() {
         </section>
       </>}
       {view === 'repertoire' && <RepertoireView onImport={() => setShowImport(true)} onBrowse={() => setShowTree(true)} />}
+      {view === 'analysis' && <AnalysisView theme={boardTheme} pieceSet={pieceSet} onTheme={changeBoardTheme} onPieces={changePieceSet} />}
       {view === 'progress' && <ProgressView reviewed={reviewed} />}
       {showImport && <ImportDialog onClose={() => setShowImport(false)} />}
       {showTree && <TreeBrowser onClose={() => setShowTree(false)} theme={boardTheme} pieceSet={pieceSet} />}
-      <footer className="source-footer">Board interaction by <a href="https://github.com/lichess-org/chessground" target="_blank" rel="noreferrer">Chessground</a> · Cburnett and Merida pieces from Lichess</footer>
+      <footer className="source-footer">Board interaction by <a href="https://github.com/lichess-org/chessground" target="_blank" rel="noreferrer">Chessground</a> · Cburnett and Merida pieces from Lichess · Puzzle positions from the public-domain <a href="https://database.lichess.org/#puzzles" target="_blank" rel="noreferrer">Lichess database</a></footer>
     </main>
   );
 }

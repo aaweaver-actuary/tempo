@@ -9,14 +9,15 @@ Tempo is an initial product mockup and technical skeleton for a fully local ches
 - Teaching arrows on first exposure and immediately after a wrong attempted move; picking up and replacing a piece does nothing.
 - Answers remain hidden: the move trail reveals only moves already played.
 - One-click Lichess analysis for the exact current move history, plus a repertoire tree browser for stepping through positions and branches.
-- Representative Train, Repertoire, Progress, PGN import, import-success, wrong-answer, and completed-card states.
+- Representative Train, Repertoire, Analysis, Progress, PGN import, import-success, wrong-answer, and completed-card states.
 - Demo review counts persist in browser storage and reset when the local calendar day changes.
 - Docker Compose skeleton with a React + TypeScript web app and a FastAPI backend.
 - Local SQLite schema for settings, repertoires, cards, locked child cards, and review history.
 - PGN variation parsing and stable SHA-256 card IDs derived from canonical starting FEN plus normalized UCI moves.
 - A daily-bucket scheduler where “Again” reshuffles the card behind four other reviews in today’s queue.
 - A conservative descendant gate and unlock hook for child cards when a parent reaches maturity.
-- A representative Lichess puzzle interleaved with opening cards, tactics-deck controls, and a local SQLite skeleton for motif/rating-filtered puzzle decks.
+- Twelve packaged Lichess tactics decks: forks, pins, skewers, and discovered attacks at easy, medium, and hard levels, with 100 cards in every deck.
+- A playable analysis board with live repertoire filtering, Lichess Opening Explorer results, gap highlighting, and explicit local adapters for Stockfish 19 and Maia 3.
 
 ## Run locally
 
@@ -51,7 +52,9 @@ docker-compose.yml         Local two-service runtime
 
 Tempo now uses the official `@lichess-org/chessground` package instead of a hand-built board. The default Cburnett set and optional Merida set come from Lichess. Chessground is GPL-3.0-or-later; both piece sets are GPL-2.0-or-later. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-The Lichess puzzle database is public domain and provides FEN, UCI solution moves, rating, popularity, motifs, and source-game URLs. The intended local workflow downloads or imports a filtered subset—not the entire multi-million-row database—then builds decks by motif and rating. Opening and puzzle scheduling stay independent even when their due cards are shuffled into one session.
+The Lichess puzzle database is public domain and provides FEN, UCI solution moves, rating, popularity, motifs, and source-game URLs. Tempo includes 1,200 deterministic records in `public/data/tactics-decks.json`: 100 for each motif/difficulty pair. Easy is rating 700–1100, medium is 1101–1500, and hard is 1501–2000; all selected puzzles have popularity of at least 70, at least 100 plays, and rating deviation no greater than 110. Opening and puzzle scheduling stay independent even when their due cards are shuffled into one session.
+
+The analysis screen calls the public Lichess Opening Explorer directly. Stockfish 19 and Maia 3 are represented by local WASM and ONNX adapter boundaries; their large runtime/model files are intentionally not embedded in the hosted mockup and should be an explicit download in the fully local app.
 
 ## Recommended maturity and depth policy
 

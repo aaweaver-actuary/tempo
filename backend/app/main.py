@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .database import connection, initialize
 from .models import ImportResult, ReviewRequest, Settings
 from .services.cards import card_id
+from .services.analysis import AnalysisCapabilities
 from .services.pgn import parse_pgn, prefix_through_user_moves
 from .services.scheduler import schedule_review, unlock_ready
 
@@ -31,6 +32,11 @@ app.add_middleware(
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "storage": "local-sqlite"}
+
+
+@app.get("/api/analysis/capabilities")
+def analysis_capabilities() -> AnalysisCapabilities:
+    return AnalysisCapabilities()
 
 
 @app.get("/api/settings", response_model=Settings)

@@ -1,4 +1,6 @@
 from dataclasses import dataclass
+import json
+from pathlib import Path
 
 import chess
 
@@ -33,3 +35,15 @@ def parse_lichess_puzzle_row(row: dict[str, str]) -> LichessPuzzle:
         themes=tuple(filter(None, row.get("Themes", "").split())),
         game_url=row.get("GameUrl", ""),
     )
+
+
+def load_packaged_decks(path: str | Path) -> dict[str, list[dict[str, object]]]:
+    """Load the deterministic 100-card motif packs bundled with the local app."""
+    records = json.loads(Path(path).read_text(encoding="utf-8"))
+    decks: dict[str, list[dict[str, object]]] = {}
+    for record in records:
+        deck_id = str(record["DeckId"])
+        decks.setdefault(deck_id, []).append(record)
+    if any(len(cards) != 100 for cards in decks.values()):
+        raise ValueError("Every packaged tactics deck must contain exactly 100 cards")
+    return decks
