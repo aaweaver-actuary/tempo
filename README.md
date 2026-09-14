@@ -1,6 +1,6 @@
 # Tempo
 
-Tempo is an initial product mockup and technical skeleton for a fully local chess-opening spaced-repetition trainer. The interface is deliberately board-first: a large responsive chessboard, immediate move feedback, optional hints, compact progress, and a fixed daily queue.
+Tempo is a functional local-first chess-opening spaced-repetition trainer. The interface is deliberately board-first: a large responsive chessboard, immediate move feedback, guided corrections, compact progress, and a fixed daily queue.
 
 ## What works in this pass
 
@@ -9,15 +9,16 @@ Tempo is an initial product mockup and technical skeleton for a fully local ches
 - Teaching arrows on first exposure and immediately after a wrong attempted move; picking up and replacing a piece does nothing.
 - Answers remain hidden: the move trail reveals only moves already played.
 - One-click Lichess analysis for the exact current move history, plus a repertoire tree browser for stepping through positions and branches.
-- Representative Train, Repertoire, Analysis, Progress, PGN import, import-success, wrong-answer, and completed-card states.
-- Demo review counts persist in browser storage and reset when the local calendar day changes.
+- Train, Repertoire, Analysis, Games, Progress, PGN import, wrong-answer, guided-review, and completed-card states.
+- Binary Correct/Again grading with automatic clean solves, first-pass reinforcement at the end of the day, Again placement after four cards, and persisted queue ordering.
 - Docker Compose skeleton with a React + TypeScript web app and a FastAPI backend.
 - Local SQLite schema for settings, repertoires, cards, locked child cards, and review history.
 - PGN variation parsing and stable SHA-256 card IDs derived from canonical starting FEN plus normalized UCI moves.
-- A daily-bucket scheduler where “Again” reshuffles the card behind four other reviews in today’s queue.
-- A conservative descendant gate and unlock hook for child cards when a parent reaches maturity.
+- FSRS 6 scheduling at 92% desired retention, capped lateness benefit, 2.5× interval growth, and a 365-day maximum.
+- A stability-based descendant gate requiring three successful review days and no recent lapse.
 - Twelve packaged Lichess tactics decks: forks, pins, skewers, and discovered attacks at easy, medium, and hard levels, with 100 cards in every deck.
-- A playable analysis board with live repertoire filtering, Lichess Opening Explorer results, gap highlighting, and explicit local adapters for Stockfish 19 and Maia 3.
+- A playable analysis board with live repertoire filtering, authenticated Lichess and Masters Explorer results, real local Stockfish 19 and Maia 3 analysis, branch editing, 80/90/95% coverage targets, persistent preferences, source-aware arrows, and keyboard history navigation.
+- Incremental Lichess and Chess.com game ingestion, locally cached normalized PGNs, divergence classification, comparison summaries, and a Games workspace for sending gaps to Analysis.
 
 ## Run locally
 
@@ -27,7 +28,7 @@ docker compose up --build
 
 Open `http://localhost:3000`. The local API is available at `http://localhost:8000`, and all durable data is stored in `./data/tempo.db` on the host computer.
 
-The hosted mockup is intentionally sample-data-only. The Docker Compose path is the intended fully local product shape; its next implementation pass should connect the existing screens to the FastAPI endpoints.
+The hosted private Site uses local browser storage and representative game data. Docker Compose runs the full local FastAPI + SQLite path, including provider sync and durable review state.
 
 ## Structure
 
@@ -54,7 +55,7 @@ Tempo now uses the official `@lichess-org/chessground` package instead of a hand
 
 The Lichess puzzle database is public domain and provides FEN, UCI solution moves, rating, popularity, motifs, and source-game URLs. Tempo includes 1,200 deterministic records in `public/data/tactics-decks.json`: 100 for each motif/difficulty pair. Easy is rating 700–1100, medium is 1101–1500, and hard is 1501–2000; all selected puzzles have popularity of at least 70, at least 100 plays, and rating deviation no greater than 110. Opening and puzzle scheduling stay independent even when their due cards are shuffled into one session.
 
-The analysis screen calls the public Lichess Opening Explorer directly. Stockfish 19 and Maia 3 are represented by local WASM and ONNX adapter boundaries; their large runtime/model files are intentionally not embedded in the hosted mockup and should be an explicit download in the fully local app.
+Lichess now requires authentication for Opening Explorer requests. Tempo uses Lichess's PKCE flow, requests no account permissions, and keeps the access token in session storage. Stockfish 19 runs locally in WebAssembly; Maia 3 runs locally through its simplified ONNX model. Engine inputs and repertoire data do not leave the browser.
 
 ## Recommended maturity and depth policy
 

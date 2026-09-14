@@ -6,6 +6,8 @@
     "node": ">=22.13.0"
   },
   "scripts": {
+    "predev": "node scripts/prepare-maia.mjs",
+    "prebuild": "node scripts/prepare-maia.mjs",
     "dev": "vinext dev",
     "build": "vinext build",
     "start": "vinext start",
@@ -13,8 +15,10 @@
   },
   "dependencies": {
     "@lichess-org/chessground": "^10.1.1",
+    "@lichess-org/stockfish-web": "^0.5.0",
     "chess.js": "^1.4.0",
     "next": "16.2.6",
+    "onnxruntime-web": "^1.23.0",
     "react": "19.2.6",
     "react-dom": "19.2.6"
   },
