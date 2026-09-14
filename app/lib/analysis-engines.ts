@@ -9,10 +9,11 @@ export type EngineMove = {
   san: string;
   score?: string;
   probability?: number;
+  cp?: number;
+  mate?: number;
 };
 
 type StockfishModule = { uci: (command: string) => void; listen: (line: string) => void; setNnueBuffer: (data: Uint8Array) => void };
-let stockfishEngine: StockfishModule | undefined;
 let stockfishReady: Promise<StockfishModule> | undefined;
 
 async function loadStockfish() {
@@ -21,14 +22,13 @@ async function loadStockfish() {
       const source = await fetch('/engines/sf_19_smallnet.js').then((response) => response.text());
       const scriptBlob = new Blob([source], { type: 'text/javascript' });
       const moduleUrl = URL.createObjectURL(scriptBlob);
-      const module = await import(/* @vite-ignore */ moduleUrl);
-      const engine = await module.default({ locateFile: (file: string) => `/engines/${file}`, mainScriptUrlOrBlob: scriptBlob, listen: () => undefined, onError: (message: string) => console.error(message) }) as StockfishModule;
+      const stockfishModule = await import(/* @vite-ignore */ moduleUrl);
+      const engine = await stockfishModule.default({ locateFile: (file: string) => `/engines/${file}`, mainScriptUrlOrBlob: scriptBlob, listen: () => undefined, onError: (message: string) => console.error(message) }) as StockfishModule;
       URL.revokeObjectURL(moduleUrl);
       const response = await fetch('/engines/nn-61e7af4bb97d.nnue');
       if (!response.ok) throw new Error('Could not load Stockfish evaluation network');
       engine.setNnueBuffer(new Uint8Array(await response.arrayBuffer()));
-      engine.uci('uci'); engine.uci('setoption name Threads value 1'); engine.uci('setoption name Hash value 32'); engine.uci('setoption name MultiPV value 3');
-      stockfishEngine = engine;
+      engine.uci('uci'); engine.uci('setoption name Threads value 1'); engine.uci('setoption name Hash value 32'); engine.uci('setoption name MultiPV value 5');
       return engine;
     })();
   }
@@ -51,7 +51,7 @@ export async function analyzeWithStockfish(fen: string): Promise<EngineMove[]> {
         let move: Move | null = null;
         try { move = chess.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || 'q' }); } catch { return; }
         const score = mate ? `M${mate}` : cp ? `${Number(cp) >= 0 ? '+' : ''}${(Number(cp) / 100).toFixed(2)}` : '—';
-        lines.set(multipv, { uci, san: move.san, score });
+        lines.set(multipv, { uci, san: move.san, score, cp: cp === undefined ? undefined : Number(cp), mate: mate === undefined ? undefined : Number(mate) });
       }
       if (line.startsWith('bestmove ')) {
         window.clearTimeout(timeout);

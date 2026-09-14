@@ -15,7 +15,7 @@ async function initialize() {
   engine.uci('uci')
   engine.uci('setoption name Threads value 1')
   engine.uci('setoption name Hash value 32')
-  engine.uci('setoption name MultiPV value 3')
+  engine.uci('setoption name MultiPV value 5')
   engine.uci('isready')
 }
 

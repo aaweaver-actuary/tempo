@@ -159,6 +159,88 @@ def initialize() -> None:
             moves_json TEXT NOT NULL,
             game_url TEXT,
             opening_name TEXT
+            ,analysis_state TEXT NOT NULL DEFAULT 'pending'
+            ,analysis_version INTEGER NOT NULL DEFAULT 0
+            ,major_mistake_ply INTEGER
+            ,missed_punishment_ply INTEGER
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS card_revisions (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            card_id TEXT NOT NULL,
+            revision INTEGER NOT NULL,
+            start_fen TEXT NOT NULL,
+            moves_json TEXT NOT NULL,
+            history_mode TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            UNIQUE(card_id, revision)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS tactic_progress (
+            puzzle_id TEXT PRIMARY KEY,
+            deck_id TEXT NOT NULL,
+            card_id TEXT,
+            clean_pass_at TEXT,
+            admitted_at TEXT,
+            admission_mode TEXT NOT NULL DEFAULT 'light'
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_tactic_progress_deck_clean ON tactic_progress(deck_id, clean_pass_at)",
+        """
+        CREATE TABLE IF NOT EXISTS endgame_templates (
+            id TEXT PRIMARY KEY,
+            card_id TEXT NOT NULL UNIQUE,
+            name TEXT NOT NULL,
+            white_material TEXT NOT NULL,
+            black_material TEXT NOT NULL,
+            trained_color TEXT NOT NULL,
+            goal_mix TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS endgame_attempts (
+            id TEXT PRIMARY KEY,
+            template_id TEXT NOT NULL REFERENCES endgame_templates(id) ON DELETE CASCADE,
+            start_fen TEXT NOT NULL,
+            target TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'active',
+            user_moves INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            completed_at TEXT
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS tablebase_cache (
+            fen_key TEXT PRIMARY KEY,
+            response_json TEXT NOT NULL,
+            fetched_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS game_sync_state (
+            provider TEXT PRIMARY KEY,
+            status TEXT NOT NULL DEFAULT 'idle',
+            cursor TEXT,
+            last_started_at TEXT,
+            last_success_at TEXT,
+            last_error TEXT,
+            retry_after TEXT
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS game_move_analysis (
+            game_id TEXT NOT NULL REFERENCES imported_games(id) ON DELETE CASCADE,
+            ply INTEGER NOT NULL,
+            eval_before_cp INTEGER,
+            eval_after_cp INTEGER,
+            loss_cp INTEGER,
+            label TEXT,
+            depth INTEGER NOT NULL,
+            PRIMARY KEY(game_id, ply)
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_imported_games_account_date ON imported_games(provider, username, played_at)",
@@ -181,9 +263,10 @@ def initialize() -> None:
         database.execute("INSERT OR IGNORE INTO settings (id) VALUES (1)")
         # Existing local databases are migrated in place; user review history is never rebuilt.
         columns = {
-            "settings": {"lichess_username": "TEXT NOT NULL DEFAULT ''", "chesscom_username": "TEXT NOT NULL DEFAULT ''"},
-            "cards": {"fsrs_card_json": "TEXT", "first_correct_at": "TEXT", "reinforcement_pending": "INTEGER NOT NULL DEFAULT 0", "stability": "REAL NOT NULL DEFAULT 0", "guided_review": "INTEGER NOT NULL DEFAULT 0", "maximum_interval": "INTEGER NOT NULL DEFAULT 365"},
+            "settings": {"lichess_username": "TEXT NOT NULL DEFAULT ''", "chesscom_username": "TEXT NOT NULL DEFAULT ''", "auto_sync_minutes": "INTEGER NOT NULL DEFAULT 3", "engine_line_window_cp": "INTEGER NOT NULL DEFAULT 30", "major_mistake_cp": "INTEGER NOT NULL DEFAULT 100", "light_first_interval_days": "INTEGER NOT NULL DEFAULT 7", "draw_hold_user_moves": "INTEGER NOT NULL DEFAULT 20"},
+            "cards": {"fsrs_card_json": "TEXT", "first_correct_at": "TEXT", "reinforcement_pending": "INTEGER NOT NULL DEFAULT 0", "stability": "REAL NOT NULL DEFAULT 0", "guided_review": "INTEGER NOT NULL DEFAULT 0", "maximum_interval": "INTEGER NOT NULL DEFAULT 365", "content_type": "TEXT NOT NULL DEFAULT 'opening'", "scheduling_mode": "TEXT NOT NULL DEFAULT 'normal'", "hard_correct_streak": "INTEGER NOT NULL DEFAULT 0", "recent_attempts_json": "TEXT NOT NULL DEFAULT '[]'", "archived": "INTEGER NOT NULL DEFAULT 0", "superseded_by": "TEXT", "source_ref": "TEXT", "source_fen": "TEXT", "revision": "INTEGER NOT NULL DEFAULT 1"},
             "reviews": {"internal_rating": "TEXT NOT NULL DEFAULT 'again'", "guided": "INTEGER NOT NULL DEFAULT 0"},
+            "imported_games": {"analysis_state": "TEXT NOT NULL DEFAULT 'pending'", "analysis_version": "INTEGER NOT NULL DEFAULT 0", "major_mistake_ply": "INTEGER", "missed_punishment_ply": "INTEGER"},
         }
         for table, additions in columns.items():
             existing = {row[1] for row in database.execute(f"PRAGMA table_info({table})")}

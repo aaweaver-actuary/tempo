@@ -4,9 +4,12 @@ from pathlib import Path
 
 from app.services.analysis import MAIA_VERSION, STOCKFISH_VERSION, explorer_url
 from app.services.cards import card_id
-from app.services.puzzles import load_packaged_decks
+from app.services.puzzles import load_packaged_decks, validate_puzzle_record
 from app.services.pgn import prefix_through_user_moves
 from app.services.scheduler import schedule_review, unlock_ready
+from app.services.endgames import generate_position, normalized_material
+from app.services.game_analysis import classify_swings
+import chess
 
 
 class CardIdentityTests(unittest.TestCase):
@@ -55,6 +58,17 @@ class SchedulerTests(unittest.TestCase):
         self.assertLessEqual(third.interval_days, max(2, round(max(1, second.interval_days) * 2.5)))
         self.assertLessEqual(third.interval_days, 365)
 
+    def test_hard_track_enters_and_recovers_on_fixed_cadence(self) -> None:
+        entered = schedule_review("again", recent_attempts=["again", "correct", "again", "correct"])
+        self.assertEqual(entered.scheduling_mode, "hard")
+        self.assertTrue(entered.suggest_shorter_prefix)
+        first = schedule_review("correct", fsrs_card_json=entered.fsrs_card_json, first_correct_at="seen", scheduling_mode="hard", recent_attempts=list(entered.recent_attempts))
+        self.assertEqual(first.interval_days, 1)
+        second = schedule_review("correct", fsrs_card_json=first.fsrs_card_json, first_correct_at="seen", scheduling_mode="hard", hard_correct_streak=1, recent_attempts=list(first.recent_attempts))
+        self.assertEqual(second.interval_days, 3)
+        third = schedule_review("correct", fsrs_card_json=second.fsrs_card_json, first_correct_at="seen", scheduling_mode="hard", hard_correct_streak=2, recent_attempts=list(second.recent_attempts))
+        self.assertEqual(third.scheduling_mode, "normal")
+
 
 class PackagedContentTests(unittest.TestCase):
     def test_twelve_decks_have_one_hundred_cards_each(self) -> None:
@@ -76,6 +90,25 @@ class PackagedContentTests(unittest.TestCase):
         black = prefix_through_user_moves("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", moves, "black", 6)
         self.assertEqual(white[-1], "f1e1")
         self.assertEqual(black[-1], "b7b5")
+
+    def test_00shx_canonical_training_position_keeps_both_bishops(self) -> None:
+        fen, solution = validate_puzzle_record({"FEN":"q3k1nr/1pp1nQpp/3p4/1P2p3/4P3/B1PP1b2/B5PP/5K2 b k - 0 17","Moves":"e8d7 a2e6 d7d8 f7f8"})
+        board = chess.Board(fen)
+        self.assertEqual(board.piece_at(chess.A2), chess.Piece(chess.BISHOP, chess.WHITE))
+        self.assertEqual(board.piece_at(chess.A3), chess.Piece(chess.BISHOP, chess.WHITE))
+        self.assertEqual(solution, ["a2e6", "d7d8", "f7f8"])
+
+    def test_endgame_generator_is_legal_and_seven_piece_bounded(self) -> None:
+        fen = generate_position("KQR", "K", "white", seed=4)
+        self.assertTrue(chess.Board(fen).is_valid())
+        self.assertEqual(normalized_material("Q & K"), "KQ")
+        with self.assertRaises(ValueError):
+            generate_position("KPPPPPP", "KPPPPP", "white")
+
+    def test_game_analysis_finds_mistake_and_missed_punishment(self) -> None:
+        result = classify_swings([{"ply":0,"before_cp":150,"after_cp":20,"opponent_created_chance":True}], "white", 100)
+        self.assertEqual(result["major_mistake_ply"], 0)
+        self.assertEqual(result["missed_punishment_ply"], 0)
 
 
 if __name__ == "__main__":
