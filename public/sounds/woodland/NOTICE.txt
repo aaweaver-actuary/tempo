@@ -1,0 +1,7 @@
+Move.mp3 and Capture.mp3 are unmodified files from the Lichess Woodland sound set.
+
+Source: https://github.com/lichess-org/lila/tree/master/public/sound/woodland
+Copyright: the Lichess authors and the respective asset contributors
+License: GNU Affero General Public License version 3 or later
+License text: https://github.com/lichess-org/lila/blob/master/LICENSE
+Copying information: https://github.com/lichess-org/lila/blob/master/COPYING.md

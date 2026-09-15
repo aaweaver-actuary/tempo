@@ -107,9 +107,28 @@ function preprocessMaia(fen: string) {
 }
 
 let maiaReady: Promise<ort.InferenceSession> | undefined;
+const MAIA_INITIALIZATION_TIMEOUT_MS = 45_000;
+
+function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
+  return new Promise((resolve, reject) => {
+    const timeout = window.setTimeout(() => reject(new Error(message)), milliseconds);
+    promise.then((value) => {
+      window.clearTimeout(timeout);
+      resolve(value);
+    }, (error) => {
+      window.clearTimeout(timeout);
+      reject(error);
+    });
+  });
+}
+
 function loadMaia(onProgress?: (progress: number) => void) {
   if (!maiaReady) maiaReady = (async () => {
-    ort.env.wasm.wasmPaths = '/ort/'; ort.env.wasm.numThreads = Math.min(2, navigator.hardwareConcurrency || 1);
+    ort.env.wasm.wasmPaths = {
+      mjs: new URL('/ort/ort-wasm-simd-threaded.mjs', location.origin).href,
+      wasm: new URL('/ort/ort-wasm-simd-threaded.wasm', location.origin).href,
+    };
+    ort.env.wasm.numThreads = crossOriginIsolated ? Math.min(2, navigator.hardwareConcurrency || 1) : 1;
     onProgress?.(5);
     const chunks: Uint8Array[] = [];
     for (let index=0; index<6; index++) {
@@ -119,8 +138,17 @@ function loadMaia(onProgress?: (progress: number) => void) {
     }
     const data = new Uint8Array(chunks.reduce((sum,chunk)=>sum+chunk.length,0)); let offset=0;
     for (const chunk of chunks) { data.set(chunk,offset); offset+=chunk.length; }
-    const session = await ort.InferenceSession.create(data, { executionProviders: ['wasm'] }); onProgress?.(100); return session;
-  })();
+    const session = await withTimeout(
+      ort.InferenceSession.create(data, { executionProviders: ['wasm'] }),
+      MAIA_INITIALIZATION_TIMEOUT_MS,
+      'Maia initialization timed out. Check that the ONNX Runtime and model versions match, then retry.',
+    );
+    onProgress?.(100);
+    return session;
+  })().catch((error) => {
+    maiaReady = undefined;
+    throw error;
+  });
   return maiaReady;
 }
 

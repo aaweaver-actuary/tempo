@@ -25,21 +25,37 @@ type ChessboardProps = {
   onFreeMove?: (from: Square, to: Square) => void;
   onMove: (from: Square, to: Square) => void;
   orientation?: 'white' | 'black';
+  onFlip?: () => void;
 };
 
 function moveForSan(chess: Chess, san: string): Move | undefined {
   return chess.moves({ verbose: true }).find((move) => move.san === san);
 }
 
-export function Chessboard({ fen, expectedSan, lastMove, locked, showHint, theme, pieceSet, shapes = [], editMode = false, onSquareSelect, onFreeMove, onMove, orientation = 'white' }: ChessboardProps) {
+export function Chessboard({ fen, expectedSan, lastMove, locked, showHint, theme, pieceSet, shapes = [], editMode = false, onSquareSelect, onFreeMove, onMove, orientation = 'white', onFlip }: ChessboardProps) {
   const elementRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<Api | null>(null);
   const onMoveRef = useRef(onMove);
   const onFreeMoveRef = useRef(onFreeMove);
   const onSquareSelectRef = useRef(onSquareSelect);
   const [boardSize, setBoardSize] = useState<number>();
+  const [flipped, setFlipped] = useState(false);
+  const visualOrientation = flipped ? (orientation === 'white' ? 'black' : 'white') : orientation;
   const chess = useMemo(() => { try { return new Chess(fen); } catch { return new Chess(); } }, [fen]);
   const hintMove = expectedSan ? moveForSan(chess, expectedSan) : undefined;
+
+  useEffect(() => {
+    const flip = (event: KeyboardEvent) => {
+      const target=event.target as HTMLElement|null;
+      if (event.key.toLowerCase() !== 'f' || target?.matches('input,textarea,select,[contenteditable="true"]')) return;
+      const dialog=document.querySelector('[role="dialog"]');
+      if (dialog && !elementRef.current?.closest('[role="dialog"]')) return;
+      event.preventDefault();
+      if (onFlip) onFlip(); else setFlipped((current)=>!current);
+    };
+    window.addEventListener('keydown',flip);
+    return ()=>window.removeEventListener('keydown',flip);
+  },[onFlip]);
 
   useEffect(() => {
     onMoveRef.current = onMove;
@@ -65,7 +81,7 @@ export function Chessboard({ fen, expectedSan, lastMove, locked, showHint, theme
     ];
     apiRef.current?.set({
       fen,
-      orientation,
+      orientation: visualOrientation,
       turnColor: chess.turn() === 'w' ? 'white' : 'black',
       lastMove: lastMove as Key[] | undefined,
       coordinates: true,
@@ -77,7 +93,10 @@ export function Chessboard({ fen, expectedSan, lastMove, locked, showHint, theme
         dests: editMode ? undefined : destinations,
         showDests: true,
         events: { after: (from, to) => {
-          playMoveSound();
+          const target = chess.get(to as Square);
+          const source = chess.get(from as Square);
+          const enPassant = source?.type === 'p' && from[0] !== to[0] && !target;
+          playMoveSound(false, Boolean(target) || enPassant);
           if (editMode) onFreeMoveRef.current?.(from as Square, to as Square);
           else onMoveRef.current(from as Square, to as Square);
         } },
@@ -98,7 +117,7 @@ export function Chessboard({ fen, expectedSan, lastMove, locked, showHint, theme
         },
       },
     });
-  }, [chess, editMode, fen, hintMove, lastMove, locked, orientation, shapes, showHint]);
+  }, [chess, editMode, fen, hintMove, lastMove, locked, shapes, showHint, visualOrientation]);
 
   useLayoutEffect(() => {
     const element = elementRef.current?.parentElement?.parentElement;

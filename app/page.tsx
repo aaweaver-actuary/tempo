@@ -89,7 +89,22 @@ const demoCards = [
 ] satisfies PracticeCard[];
 
 type Feedback = 'ready' | 'correct' | 'branch' | 'wrong' | 'complete';
-type View = 'train' | 'tactics' | 'endgames' | 'repertoire' | 'analysis' | 'games' | 'progress';
+type View = 'train' | 'tactics' | 'endgames' | 'repertoire' | 'analysis' | 'games' | 'progress' | 'settings';
+
+function trainedColor(card: PracticeCard): 'white' | 'black' {
+  if (card.orientation) return card.orientation;
+  return card.kind === 'opening' ? 'white' : new Chess(card.startingFen).turn() === 'b' ? 'black' : 'white';
+}
+
+function initialTrainingState(card: PracticeCard) {
+  const position = new Chess(card.startingFen);
+  const turn = position.turn() === 'b' ? 'black' : 'white';
+  if (card.kind === 'opening' && turn !== trainedColor(card) && card.moves[0]) {
+    const move = position.move(card.moves[0]);
+    return { fen: position.fen(), step: 1, lastMove: [move.from, move.to] as [string, string] };
+  }
+  return { fen: card.startingFen, step: 0, lastMove: undefined };
+}
 
 type ExplorerMove = {
   uci: string;
@@ -98,6 +113,16 @@ type ExplorerMove = {
   draws: number;
   black: number;
 };
+
+type AnalysisLine = {
+  id: string; repertoireId: string; repertoireName: string; title: string;
+  side: 'White' | 'Black'; moves: string[]; startingFen: string;
+};
+
+function lineMoveName(line: Pick<AnalysisLine, 'title' | 'moves' | 'startingFen'>) {
+  if (line.title && !/^(analysis branch|line|variation)$/i.test(line.title.trim())) return line.title;
+  try { return sanLine(line.startingFen, line.moves).join(' '); } catch { return line.moves.join(' '); }
+}
 
 const analysisLines = [
   { title: 'Open Sicilian · Najdorf', side: 'White', moves: ['e4', 'c5', 'Nf3', 'd6', 'd4', 'cxd4', 'Nxd4', 'Nf6', 'Nc3', 'a6'] },
@@ -184,20 +209,20 @@ async function connectLichess() {
   location.assign(url.toString());
 }
 
-function AnalysisView({ theme, pieceSet, imported, onTheme, onPieces }: { theme: BoardTheme; pieceSet: PieceSet; imported: LocalRepertoire[]; onTheme: (value: BoardTheme) => void; onPieces: (value: PieceSet) => void }) {
+function AnalysisView({ theme, pieceSet, imported }: { theme: BoardTheme; pieceSet: PieceSet; imported: LocalRepertoire[] }) {
   const [history, setHistory] = useState<{ san: string; uci: string; fen: string }[]>([]);
   const [cursor, setCursor] = useState(0);
   const [explorerOn, setExplorerOn] = useState(() => typeof window === 'undefined' || localStorage.getItem('tempo-explorer-on') !== 'false');
   const [stockfishOn, setStockfishOn] = useState(() => typeof window !== 'undefined' && localStorage.getItem('tempo-stockfish-on') === 'true');
   const [maiaOn, setMaiaOn] = useState(() => typeof window !== 'undefined' && localStorage.getItem('tempo-maia-on') === 'true');
-  const [maiaElo, setMaiaElo] = useState(() => typeof window === 'undefined' ? '1500' : localStorage.getItem('tempo-maia-elo') ?? '1500');
-  const [coverageTarget, setCoverageTarget] = useState(() => typeof window === 'undefined' ? 90 : Number(localStorage.getItem('tempo-coverage-target') ?? 90));
-  const [engineWindowCp, setEngineWindowCp] = useState(() => typeof window === 'undefined' ? 30 : Number(localStorage.getItem('tempo-engine-window-cp') ?? 30));
+  const [maiaElo] = useState(() => typeof window === 'undefined' ? '1500' : localStorage.getItem('tempo-maia-elo') ?? '1500');
+  const [coverageTarget] = useState(() => typeof window === 'undefined' ? 90 : Number(localStorage.getItem('tempo-coverage-target') ?? 90));
+  const [engineWindowCp] = useState(() => typeof window === 'undefined' ? 30 : Number(localStorage.getItem('tempo-engine-window-cp') ?? 30));
   const [lichessToken, setLichessToken] = useState(() => typeof window === 'undefined' ? '' : sessionStorage.getItem('tempo-lichess-token') ?? '');
   const [explorerMoves, setExplorerMoves] = useState<ExplorerMove[]>([]);
   const [mastersMoves, setMastersMoves] = useState<ExplorerMove[]>([]);
-  const [explorerSpeeds, setExplorerSpeeds] = useState(() => typeof window === 'undefined' ? 'blitz,rapid,classical' : localStorage.getItem('tempo-explorer-speeds') ?? 'blitz,rapid,classical');
-  const [explorerRatings, setExplorerRatings] = useState(() => typeof window === 'undefined' ? '1600,1800,2000,2200,2500' : localStorage.getItem('tempo-explorer-ratings') ?? '1600,1800,2000,2200,2500');
+  const [explorerSpeeds] = useState(() => typeof window === 'undefined' ? 'blitz,rapid,classical' : localStorage.getItem('tempo-explorer-speeds') ?? 'blitz,rapid,classical');
+  const [explorerRatings] = useState(() => typeof window === 'undefined' ? '1600,1800,2000,2200,2500' : localStorage.getItem('tempo-explorer-ratings') ?? '1600,1800,2000,2200,2500');
   const [branchStart, setBranchStart] = useState<number | null>(null);
   const [branchNote, setBranchNote] = useState('');
   const [explorerState, setExplorerState] = useState<'auth' | 'loading' | 'ready' | 'error'>(lichessToken ? 'loading' : 'auth');
@@ -206,16 +231,26 @@ function AnalysisView({ theme, pieceSet, imported, onTheme, onPieces }: { theme:
   const [maiaMoves, setMaiaMoves] = useState<EngineMove[]>([]);
   const [maiaState, setMaiaState] = useState<'off' | 'loading' | 'ready' | 'error'>(maiaOn ? 'loading' : 'off');
   const [maiaProgress, setMaiaProgress] = useState(0);
+  const [backendLines, setBackendLines] = useState<AnalysisLine[]>([]);
+  const [orientation, setOrientation] = useState<'white' | 'black'>(() => typeof window === 'undefined' ? 'white' : (localStorage.getItem('tempo-builder-orientation') as 'white' | 'black' | null) ?? 'white');
+  const [activeRepertoire, setActiveRepertoire] = useState(() => typeof window === 'undefined' ? '' : localStorage.getItem('tempo-active-repertoire-white') ?? '');
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchIndex, setSearchIndex] = useState(0);
+  const [hoveredMove, setHoveredMove] = useState<string | null>(null);
+  const arrowMetric=(typeof window==='undefined'?'stockfish':localStorage.getItem('tempo-arrow-metric')??'stockfish') as 'stockfish'|'lichess'|'masters';
   const visibleHistory = history.slice(0, cursor);
   const fen = visibleHistory.at(-1)?.fen ?? STANDARD_FEN;
   const previousUci = visibleHistory.at(-1)?.uci;
   const lastMove: [string, string] | undefined = previousUci ? [previousUci.slice(0, 2), previousUci.slice(2, 4)] : undefined;
   const playedUci = visibleHistory.map((move) => move.uci);
-  const availableLines = useMemo(() => [
-    ...analysisLines.map((line) => ({ ...line, startingFen: STANDARD_FEN })),
-    ...imported.flatMap((repertoire) => repertoire.cards.map((card) => ({ title: card.title, side: repertoire.side, moves: card.moves, startingFen: card.startingFen }))),
-  ], [imported]);
-  const lineMatches = availableLines.filter((line) => line.startingFen === STANDARD_FEN && playedUci.every((move, index) => uciLine(line.moves, line.startingFen)[index] === move));
+  const availableLines = useMemo<AnalysisLine[]>(() => [
+    ...backendLines,
+    ...analysisLines.map((line, index) => ({ id:`sample-${index}`, repertoireId:`sample-${line.side.toLowerCase()}`, repertoireName:`${line.side} examples`, ...line, startingFen: STANDARD_FEN })),
+    ...imported.flatMap((repertoire) => repertoire.cards.map((card) => ({ id:card.id, repertoireId:repertoire.id, repertoireName:repertoire.title, title:card.title, side: repertoire.side, moves: card.moves, startingFen: card.startingFen }))),
+  ], [backendLines, imported]);
+  const repertoires = [...new Map(availableLines.map((line) => [line.repertoireId, { id:line.repertoireId, name:line.repertoireName, side:line.side }])).values()];
+  const selectedRepertoire = repertoires.find((item) => item.id === activeRepertoire && item.side.toLowerCase() === orientation) ?? repertoires.find((item) => item.side.toLowerCase() === orientation);
+  const lineMatches = availableLines.filter((line) => (!selectedRepertoire || line.repertoireId === selectedRepertoire.id) && line.startingFen.split(' ').slice(0,4).join(' ') === STANDARD_FEN.split(' ').slice(0,4).join(' ') && playedUci.every((move, index) => uciLine(line.moves, line.startingFen)[index] === move));
   const coveredReplies = new Set(lineMatches.flatMap((line) => {
     const uci = uciLine(line.moves, line.startingFen)[cursor];
     return uci ? [uci] : [];
@@ -225,6 +260,29 @@ function AnalysisView({ theme, pieceSet, imported, onTheme, onPieces }: { theme:
     localStorage.setItem(key, String(value));
     setter(value);
   }
+
+  useEffect(() => {
+    if (!usesLocalApi()) return;
+    void fetch(`${API_URL}/api/repertoire/lines`).then((response) => response.ok ? response.json() : Promise.reject())
+      .then((body: { lines: Array<{ id:string; repertoire_id:string; repertoire_name:string; name:string; trained_color:'white'|'black'; start_fen:string; moves:string[] }> }) => {
+        setBackendLines(body.lines.map((line) => ({ id:line.id, repertoireId:line.repertoire_id, repertoireName:line.repertoire_name, title:line.name, side:line.trained_color === 'black' ? 'Black' : 'White', startingFen:line.start_fen, moves:line.moves })));
+      }).catch(() => undefined);
+  }, []);
+
+  useEffect(() => {
+    if (!selectedRepertoire) return;
+    if (activeRepertoire !== selectedRepertoire.id) setActiveRepertoire(selectedRepertoire.id);
+    localStorage.setItem(`tempo-active-repertoire-${orientation}`, selectedRepertoire.id);
+  }, [activeRepertoire, orientation, selectedRepertoire]);
+
+  const flipBuilder = useCallback(() => {
+    setOrientation((current) => {
+      const next = current === 'white' ? 'black' : 'white';
+      localStorage.setItem('tempo-builder-orientation', next);
+      setActiveRepertoire(localStorage.getItem(`tempo-active-repertoire-${next}`) ?? '');
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     const params = new URLSearchParams(location.search);
@@ -253,12 +311,17 @@ function AnalysisView({ theme, pieceSet, imported, onTheme, onPieces }: { theme:
       if (event.key === 'ArrowRight') { event.preventDefault(); setCursor((value) => Math.min(history.length, value + 1)); }
       if (event.key === 'Home') { event.preventDefault(); setCursor(0); }
       if (event.key === 'End') { event.preventDefault(); setCursor(history.length); }
+      if (event.key === 'Escape' && searchOpen) { event.preventDefault(); setSearchOpen(false); }
+      if (event.key === 'ArrowDown' && searchOpen) { event.preventDefault(); setSearchIndex((value)=>Math.min(Math.max(0,lineMatches.length-1),value+1)); }
+      if (event.key === 'ArrowUp' && searchOpen) { event.preventDefault(); setSearchIndex((value)=>Math.max(0,value-1)); }
+      if (event.key === 'Enter' && searchOpen && lineMatches[searchIndex]) { event.preventDefault(); setSearchOpen(false); }
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [history.length]);
+  }, [flipBuilder, history.length, lineMatches, searchIndex, searchOpen]);
 
   useEffect(() => {
+    setExplorerMoves([]); setMastersMoves([]);
     if (!explorerOn || !lichessToken) { setExplorerState(lichessToken ? 'ready' : 'auth'); return; }
     const controller = new AbortController();
     setExplorerState('loading');
@@ -279,7 +342,7 @@ function AnalysisView({ theme, pieceSet, imported, onTheme, onPieces }: { theme:
   useEffect(() => {
     if (!stockfishOn) { setStockfishState('off'); setStockfishMoves([]); return; }
     let current = true;
-    setStockfishState('loading');
+    setStockfishMoves([]); setStockfishState('loading');
     analyzeWithStockfish(fen).then((moves) => { if (current) { setStockfishMoves(moves); setStockfishState('ready'); } }).catch((error) => { console.error('Stockfish 19:', error); if (current) setStockfishState('error'); });
     return () => { current = false; };
   }, [fen, stockfishOn]);
@@ -287,7 +350,7 @@ function AnalysisView({ theme, pieceSet, imported, onTheme, onPieces }: { theme:
   useEffect(() => {
     if (!maiaOn) { setMaiaState('off'); setMaiaMoves([]); return; }
     let current = true;
-    setMaiaState('loading');
+    setMaiaMoves([]); setMaiaProgress(0); setMaiaState('loading');
     analyzeWithMaia(fen, Number(maiaElo), setMaiaProgress).then((moves) => { if (current) { setMaiaMoves(moves); setMaiaState('ready'); } }).catch((error) => { console.error('Maia 3:', error); if (current) setMaiaState('error'); });
     return () => { current = false; };
   }, [fen, maiaElo, maiaOn]);
@@ -314,8 +377,9 @@ function AnalysisView({ theme, pieceSet, imported, onTheme, onPieces }: { theme:
   }
 
   const target = coverageTarget / 100;
-  const explorerCandidates = candidatesThrough(explorerMoves, (move) => move.white + move.draws + move.black, target);
-  const maiaCandidates = candidatesThrough(maiaMoves, (move) => move.probability ?? 0, target);
+  const explorerCandidates = candidatesThrough(explorerMoves, (move) => move.white + move.draws + move.black, target).filter((move) => !coveredReplies.has(move.uci));
+  const mastersCandidates = candidatesThrough(mastersMoves, (move) => move.white + move.draws + move.black, target).filter((move) => !coveredReplies.has(move.uci));
+  const maiaCandidates = candidatesThrough(maiaMoves, (move) => move.probability ?? 0, target).filter((move) => !coveredReplies.has(move.uci));
   const explorerTotal = explorerMoves.reduce((sum, move) => sum + move.white + move.draws + move.black, 0);
   const explorerCovered = explorerMoves.filter((move) => coveredReplies.has(move.uci)).reduce((sum, move) => sum + move.white + move.draws + move.black, 0);
   const maiaCovered = maiaMoves.filter((move) => coveredReplies.has(move.uci)).reduce((sum, move) => sum + (move.probability ?? 0), 0);
@@ -325,67 +389,122 @@ function AnalysisView({ theme, pieceSet, imported, onTheme, onPieces }: { theme:
     if (topEngine?.mate !== undefined) return move.mate !== undefined;
     if (topEngine?.cp === undefined || move.cp === undefined) return index === 0;
     return topEngine.cp - move.cp <= engineWindowCp;
-  });
+  }).filter((move) => !coveredReplies.has(move.uci));
   const arrowSources = new Map<string, Set<string>>();
   for (const move of explorerCandidates) arrowSources.set(move.uci, new Set([...(arrowSources.get(move.uci) ?? []), 'L']));
+  for (const move of mastersCandidates) arrowSources.set(move.uci, new Set([...(arrowSources.get(move.uci) ?? []), 'D']));
   for (const move of engineCandidates) arrowSources.set(move.uci, new Set([...(arrowSources.get(move.uci) ?? []), 'S']));
   for (const move of maiaCandidates) arrowSources.set(move.uci, new Set([...(arrowSources.get(move.uci) ?? []), 'M']));
   for (const move of coveredReplies) arrowSources.set(move, new Set([...(arrowSources.get(move) ?? []), 'R']));
-  const shapes: DrawShape[] = [...arrowSources.entries()].slice(0, 9).map(([uci, sources]) => ({
+  const trainedTurn = new Chess(fen).turn() === (orientation === 'white' ? 'w' : 'b');
+  const repertoireMoves = [...coveredReplies].map((uci) => {
+    const board=new Chess(fen); const move=board.move({from:uci.slice(0,2) as Square,to:uci.slice(2,4) as Square,promotion:uci[4]||'q'});
+    return {uci,san:move.san};
+  });
+  const practicalMoves=arrowMetric==='masters'?mastersMoves:explorerMoves;
+  const practicalScores=new Map(practicalMoves.map((move)=>{const total=move.white+move.draws+move.black; const won=orientation==='white'?move.white:move.black; return [move.uci,total>=100?(won+move.draws/2)/total:undefined];}));
+  const bestPractical=Math.max(0,...[...practicalScores.values()].filter((value):value is number=>value!==undefined));
+  const shapes: DrawShape[] = (hoveredMove ? [[hoveredMove, new Set([''])] as const] : [...arrowSources.entries()].slice(0, 9)).map(([uci, sources]) => {
+    const engineIndex = engineCandidates.findIndex((move) => move.uci === uci);
+    const practical=practicalScores.get(uci);
+    const graded=arrowMetric==='stockfish'?(engineIndex===0?'green':engineIndex>0?'blue':'red'):(practical===undefined?'blue':practical===bestPractical?'green':bestPractical-practical<=.05?'blue':'red');
+    const brush = sources.has('R') ? 'yellow' : !trainedTurn ? 'blue' : graded;
+    return {
     orig: uci.slice(0, 2) as Key,
     dest: uci.slice(2, 4) as Key,
-    brush: sources.has('R') ? 'yellow' : 'blue',
-    label: { text: [...sources].filter((source) => source !== 'R').join('·') || 'R' },
-  }));
+    brush,
+    label: hoveredMove ? undefined : { text: [...sources].filter((source) => source !== 'R').join('·') || 'R' },
+  }; });
 
   function reset() { setHistory([]); setCursor(0); }
   function disconnectLichess() { sessionStorage.removeItem('tempo-lichess-token'); setLichessToken(''); setExplorerMoves([]); }
 
   return <section className="analysis-page" id="analysis">
-    <div className="analysis-heading compact-analysis"><h1>Builder</h1><div className="analysis-switches"><button className={stockfishOn ? 'on' : ''} onClick={() => rememberToggle('tempo-stockfish-on', !stockfishOn, setStockfishOn)}><i /> Stockfish 19</button><button className={maiaOn ? 'on' : ''} onClick={() => rememberToggle('tempo-maia-on', !maiaOn, setMaiaOn)}><i /> Maia 3</button><label>Within <input aria-label="Engine centipawn window" type="number" min="0" max="300" value={engineWindowCp} onChange={(event) => { const value=Number(event.target.value); setEngineWindowCp(value); localStorage.setItem('tempo-engine-window-cp',String(value)); }} /> cp</label></div></div>
+    <div className="analysis-heading compact-analysis"><h1>Builder</h1><div className="analysis-switches"><select aria-label="Active repertoire" value={selectedRepertoire?.id ?? ''} onChange={(event) => { const selected=repertoires.find((item)=>item.id===event.target.value); if(!selected)return; const side=selected.side.toLowerCase() as 'white'|'black'; setOrientation(side); setActiveRepertoire(selected.id); localStorage.setItem(`tempo-active-repertoire-${side}`,selected.id); localStorage.setItem('tempo-builder-orientation',side); }}><option value="" disabled>Choose repertoire</option>{repertoires.map((item)=><option key={item.id} value={item.id}>{item.name} · {item.side}</option>)}</select><button title="Flip board (F)" onClick={flipBuilder}>⇅ {orientation === 'white' ? 'White' : 'Black'}</button><button className={stockfishOn ? 'on' : ''} onClick={() => rememberToggle('tempo-stockfish-on', !stockfishOn, setStockfishOn)}><i /> Stockfish 19</button><button className={maiaOn ? 'on' : ''} onClick={() => rememberToggle('tempo-maia-on', !maiaOn, setMaiaOn)}><i /> Maia 3</button></div></div>
     <div className="analysis-layout">
       <div className="analysis-board-column">
-        <Chessboard fen={fen} lastMove={lastMove} locked={false} showHint={false} theme={theme} pieceSet={pieceSet} shapes={shapes} onMove={playMove} />
-        <div className="arrow-legend"><span><i className="known" /> Covered</span><span><i className="candidate" /> Gap</span><span tabIndex={0} title="R: already in your repertoire"><b>R</b> Repertoire</span><span tabIndex={0} title="L: Lichess opening explorer"><b>L</b> Lichess</span><span tabIndex={0} title="S: Stockfish engine line"><b>S</b> Stockfish</span><span tabIndex={0} title="M: Maia human-likelihood model"><b>M</b> Maia</span></div>
-        <div className="board-tools"><button onClick={() => setCursor((value) => Math.max(0, value - 1))} disabled={!cursor}>← <span>Back</span></button><button onClick={() => setCursor((value) => Math.min(history.length, value + 1))} disabled={cursor === history.length}>→ <span>Forward</span></button><button onClick={reset}>↻ <span>Reset</span></button><a href={`https://lichess.org/analysis/standard/${encodeURIComponent(fen)}`} target="_blank" rel="noreferrer">↗ <span>Open in Lichess</span></a><label>Board<select value={theme} onChange={(event) => onTheme(event.target.value as BoardTheme)}><option value="brown">Brown</option><option value="blue">Blue</option><option value="green">Green</option></select></label><label>Pieces<select value={pieceSet} onChange={(event) => onPieces(event.target.value as PieceSet)}><option value="cburnett">Cburnett</option><option value="merida">Merida</option></select></label></div>
+        <Chessboard fen={fen} lastMove={lastMove} locked={false} showHint={false} theme={theme} pieceSet={pieceSet} shapes={shapes} onMove={playMove} orientation={orientation} onFlip={flipBuilder} />
+        <div className="arrow-legend"><span><i className="known" /> Covered</span><span><i className="candidate" /> Gap</span><span tabIndex={0} title="R: already in your repertoire"><b>R</b> Repertoire</span><span tabIndex={0} title="L: Lichess opening explorer"><b>L</b> Lichess</span><span tabIndex={0} title="D: Lichess Masters database"><b>D</b> Masters</span><span tabIndex={0} title="S: Stockfish engine line"><b>S</b> Stockfish</span><span tabIndex={0} title="M: Maia human-likelihood model"><b>M</b> Maia</span></div>
+        <div className="board-tools"><button onClick={() => setCursor((value) => Math.max(0, value - 1))} disabled={!cursor}>← <span>Back</span></button><button onClick={() => setCursor((value) => Math.min(history.length, value + 1))} disabled={cursor === history.length}>→ <span>Forward</span></button><button onClick={reset}>↻ <span>Reset</span></button><a href={`https://lichess.org/analysis/standard/${encodeURIComponent(fen)}`} target="_blank" rel="noreferrer">↗ <span>Open in Lichess</span></a></div>
         <div className="analysis-moves"><span>{history.length ? history.map((move, index) => <button className={index < cursor ? 'shown' : ''} key={`${move.uci}-${index}`} onClick={() => setCursor(index + 1)}>{index % 2 === 0 ? `${Math.floor(index / 2) + 1}.` : ''}{move.san}</button>) : 'Make a move to search your repertoire'}</span><small>←/→ move · Home/End jump</small><button onClick={() => navigator.clipboard?.writeText(fen)}>Copy FEN</button></div>
         <div className="branch-editor"><span><b>{branchStart === null ? 'Branch editor' : `Drafting from ply ${branchStart}`}</b><small>{branchNote || 'Select an opponent move, then play your response and any continuation.'}</small></span>{branchStart === null ? <button onClick={() => { setBranchStart(cursor); setBranchNote(''); }}>＋ Add branch here</button> : <><button className="save" onClick={saveBranch}>Save branch</button><button onClick={() => { setHistory((h) => h.slice(0, branchStart)); setCursor(branchStart); setBranchStart(null); }}>Cancel</button></>}</div>
       </div>
       <aside className="analysis-sidebar">
-        <section className="analysis-panel coverage-panel"><div className="panel-heading"><div><span>Coverage target</span><strong>Cover the likely {coverageTarget}%</strong></div><select value={coverageTarget} onChange={(event) => { const value = Number(event.target.value); setCoverageTarget(value); localStorage.setItem('tempo-coverage-target', String(value)); }}><option value="80">80%</option><option value="90">90%</option><option value="95">95%</option></select></div><div className="coverage-summary"><div><span>Lichess coverage</span><strong>{explorerTotal ? Math.round(explorerCovered / explorerTotal * 100) : '—'}%</strong></div><div><span>Maia coverage</span><strong>{maiaMoves.length ? Math.round(maiaCovered * 100) : '—'}%</strong></div><div><span>Responses saved</span><strong>{coveredReplies.size}</strong></div></div></section>
-        <section className="analysis-panel repertoire-results"><div className="panel-heading"><div><span>Position search</span><strong>{lineMatches.length ? `${lineMatches.length} repertoire ${lineMatches.length === 1 ? 'match' : 'matches'}` : 'Repertoire gap'}</strong></div><b className={lineMatches.length ? 'covered' : 'gap'}>{lineMatches.length ? 'Covered' : 'Uncovered'}</b></div>{lineMatches.length ? lineMatches.map((line) => <div className="line-result" key={line.title}><span>{line.side}</span><strong>{line.title}</strong><small>{line.moves.slice(cursor, cursor + 3).join(' · ') || 'Exact line endpoint'}</small></div>) : <div className="empty-result"><strong>No saved line reaches this position.</strong><p>Add a response here without leaving the board.</p><button>＋ Add to repertoire</button></div>}</section>
+        <section className="analysis-panel repertoire-panel"><div className="panel-heading"><div><span>Active repertoire</span><strong>{selectedRepertoire?.name??'No repertoire selected'}</strong></div></div>{repertoireMoves.length?<MoveRows moves={repertoireMoves} covered={coveredReplies} detail="score" onPlay={playUci} onHover={setHoveredMove}/>:<p className="panel-message">No saved response at this position.</p>}</section>
+        <section className="analysis-panel coverage-panel"><div className="panel-heading"><div><span>Coverage</span><strong>Likely {coverageTarget}% · change in Settings</strong></div></div><div className="coverage-summary"><div><span>Lichess coverage</span><strong>{explorerTotal ? Math.round(explorerCovered / explorerTotal * 100) : '—'}%</strong></div><div><span>Maia coverage</span><strong>{maiaMoves.length ? Math.round(maiaCovered * 100) : '—'}%</strong></div><div><span>Responses saved</span><strong>{coveredReplies.size}</strong></div></div></section>
+        <button className="analysis-panel repertoire-results position-preview" onClick={()=>{setSearchIndex(0);setSearchOpen(true);}}><div className="panel-heading"><div><span>Position search</span><strong>{lineMatches.length ? `${lineMatches.length} repertoire ${lineMatches.length === 1 ? 'match' : 'matches'}` : 'Repertoire gap'}</strong></div><b className={lineMatches.length ? 'covered' : 'gap'}>{lineMatches.length ? 'Browse' : 'Add'}</b></div>{lineMatches.slice(0,2).map((line)=><span className="line-result" key={line.id}><strong>{lineMoveName(line)}</strong></span>)}</button>
         <section className="analysis-panel explorer-panel"><div className="panel-heading"><div><span>Lichess opening explorer</span><strong>Human games · {coverageTarget}% set</strong></div><button className={`tiny-switch${explorerOn ? ' on' : ''}`} onClick={() => rememberToggle('tempo-explorer-on', !explorerOn, setExplorerOn)}>{explorerOn ? 'Live' : 'Off'}</button></div>
-          <div className="explorer-filters"><label>Games<select value={explorerSpeeds} onChange={(e) => { setExplorerSpeeds(e.target.value); localStorage.setItem('tempo-explorer-speeds',e.target.value); }}><option value="blitz,rapid,classical">Blitz + rapid + classical</option><option value="rapid,classical">Rapid + classical</option><option value="classical">Classical only</option></select></label><label>Ratings<select value={explorerRatings} onChange={(e) => { setExplorerRatings(e.target.value); localStorage.setItem('tempo-explorer-ratings',e.target.value); }}><option value="1600,1800,2000,2200,2500">1600+</option><option value="2000,2200,2500">2000+</option><option value="2200,2500">2200+</option></select></label></div>
-          {!explorerOn ? <p className="panel-message">Explorer is paused.</p> : explorerState === 'auth' ? <div className="connect-panel"><p>Lichess now requires a signed-in connection for Explorer data.</p><button onClick={connectLichess}>Connect Lichess</button><small>No account permissions are requested.</small></div> : explorerState === 'loading' ? <p className="panel-message">Loading Lichess and Masters data…</p> : explorerState === 'error' ? <div className="connect-panel"><p>The Lichess connection needs to be refreshed.</p><button onClick={connectLichess}>Reconnect</button></div> : <><div className="source-status"><span>Connected · Lichess + Masters</span><button onClick={disconnectLichess}>Disconnect</button></div><MoveRows moves={explorerCandidates.map((move) => ({ ...move, probability: explorerTotal ? (move.white + move.draws + move.black) / explorerTotal : 0 }))} covered={coveredReplies} detail="probability" onPlay={playUci} /><p className="masters-note">Masters: {mastersMoves.slice(0,3).map((move) => move.san).join(' · ') || 'No games at this position'}</p></>}
+          {!explorerOn ? <p className="panel-message">Explorer is paused.</p> : explorerState === 'auth' ? <div className="connect-panel"><p>Connect Lichess to load Explorer data.</p><button onClick={connectLichess}>Connect Lichess</button></div> : explorerState === 'loading' ? <p className="panel-message">Loading Lichess data…</p> : explorerState === 'error' ? <div className="connect-panel"><p>The Lichess connection needs to be refreshed.</p><button onClick={connectLichess}>Reconnect</button></div> : <><div className="source-status"><span>Connected</span><button onClick={disconnectLichess}>Disconnect</button></div><MoveRows moves={explorerCandidates.map((move) => ({ ...move, probability: explorerTotal ? (move.white + move.draws + move.black) / explorerTotal : 0 }))} covered={coveredReplies} detail="results" onPlay={playUci} onHover={setHoveredMove} /></>}
         </section>
-        <section className="analysis-panel engine-panel"><div className="panel-heading"><div><span>Stockfish 19</span><strong>Engine lines</strong></div><b className={`engine-badge ${stockfishState}`}>{stockfishState === 'loading' ? 'Analyzing…' : stockfishState === 'ready' ? 'Local' : stockfishState === 'error' ? 'Could not start' : 'Off'}</b></div>{stockfishState === 'ready' && <MoveRows moves={engineCandidates} covered={coveredReplies} detail="score" onPlay={playUci} />}</section>
-        <section className="analysis-panel engine-panel"><div className="panel-heading"><div><span>Maia 3</span><strong>Likely moves at your level</strong></div><label className="elo-select">Elo<select value={maiaElo} onChange={(event) => { setMaiaElo(event.target.value); localStorage.setItem('tempo-maia-elo', event.target.value); }}><option>1100</option><option>1500</option><option>1900</option></select></label></div>{maiaState === 'loading' ? <p className="panel-message">{maiaProgress ? `Loading local model · ${maiaProgress}%` : 'Starting local Maia model…'}</p> : maiaState === 'error' ? <p className="panel-message error">Maia could not start in this browser.</p> : maiaState === 'ready' ? <MoveRows moves={maiaCandidates} covered={coveredReplies} detail="probability" onPlay={playUci} /> : <p className="panel-message">Maia is off.</p>}</section>
+        <section className="analysis-panel explorer-panel"><div className="panel-heading"><div><span>Masters database</span><strong>Master games · {coverageTarget}% set</strong></div></div><MoveRows moves={mastersCandidates} covered={coveredReplies} detail="results" onPlay={playUci} onHover={setHoveredMove}/></section>
+        <section className="analysis-panel engine-panel"><div className="panel-heading"><div><span>Stockfish 19</span><strong>Engine lines</strong></div><b className={`engine-badge ${stockfishState}`}>{stockfishState === 'loading' ? 'Analyzing…' : stockfishState === 'ready' ? 'Local' : stockfishState === 'error' ? 'Could not start' : 'Off'}</b></div>{stockfishState === 'ready' && <MoveRows moves={engineCandidates} covered={coveredReplies} detail="score" onPlay={playUci} onHover={setHoveredMove}/>}</section>
+        <section className="analysis-panel engine-panel"><div className="panel-heading"><div><span>Maia 3</span><strong>Likely moves at {maiaElo}</strong></div></div>{maiaState === 'loading' ? <p className="panel-message">{maiaProgress ? `Downloading model · ${maiaProgress}%` : 'Initializing local Maia…'}</p> : maiaState === 'error' ? <p className="panel-message error">Maia could not start. Toggle it off and on to retry.</p> : maiaState === 'ready' ? <MoveRows moves={maiaCandidates} covered={coveredReplies} detail="probability" onPlay={playUci} onHover={setHoveredMove}/> : <p className="panel-message">Maia is off.</p>}</section>
       </aside>
     </div>
+    {searchOpen&&<div className="modal-backdrop" onMouseDown={()=>setSearchOpen(false)}><section className="position-search-modal" role="dialog" aria-modal="true" aria-label="Position search" onMouseDown={(event)=>event.stopPropagation()}><button className="close-button" onClick={()=>setSearchOpen(false)} aria-label="Close position search">×</button><h2>Position search</h2><p>{lineMatches.length} matching branches</p><div className="position-search-list">{lineMatches.map((line,index)=><button className={index===searchIndex?'active':''} key={line.id} onMouseEnter={()=>setSearchIndex(index)} onClick={()=>setSearchOpen(false)}><span>{line.side} · {line.repertoireName}</span><strong>{lineMoveName(line)}</strong><small>{line.moves.slice(cursor,cursor+4).join(' · ')||'Exact line endpoint'}</small></button>)}</div></section></div>}
   </section>;
 }
 
-function MoveRows({ moves, covered, detail, onPlay }: { moves: EngineMove[]; covered: Set<string>; detail: 'probability' | 'score'; onPlay?: (uci: string) => void }) {
-  return <div className="candidate-list">{moves.map((move, index) => <button className="candidate-row" key={move.uci} onClick={() => onPlay?.(move.uci)}><span>{index + 1}</span><strong>{move.san}</strong><small>{detail === 'probability' ? `${Math.round((move.probability ?? 0) * 100)}%` : move.score}</small><em className={covered.has(move.uci) ? 'covered' : 'gap'}>{covered.has(move.uci) ? 'Covered' : 'Gap'}</em></button>)}</div>;
+function MoveRows({ moves, covered, detail, onPlay, onHover }: { moves: Array<EngineMove & Partial<ExplorerMove>>; covered: Set<string>; detail: 'probability' | 'score' | 'results'; onPlay?: (uci: string) => void; onHover?: (uci: string | null) => void }) {
+  return <div className="candidate-list">{moves.map((move, index) => {
+    const games=(move.white??0)+(move.draws??0)+(move.black??0);
+    const result=games?`${Math.round((move.white??0)/games*100)}W · ${Math.round((move.draws??0)/games*100)}D · ${Math.round((move.black??0)/games*100)}L`:'';
+    const value=detail==='probability'?`${Math.round((move.probability??0)*100)}%`:detail==='results'?result:(move.score??'Repertoire');
+    return <button className="candidate-row" key={move.uci} onClick={() => onPlay?.(move.uci)} onMouseEnter={()=>onHover?.(move.uci)} onMouseLeave={()=>onHover?.(null)} onFocus={()=>onHover?.(move.uci)} onBlur={()=>onHover?.(null)}><span>{index+1}</span><strong>{move.san}</strong><small>{value}</small><em className={covered.has(move.uci)?'covered':'gap'}>{detail==='results'&&games?games.toLocaleString():covered.has(move.uci)?'Covered':'Gap'}</em></button>;
+  })}</div>;
 }
 
-function RepertoireView({ imported, onImport, onBrowse }: { imported: LocalRepertoire[]; onImport: () => void; onBrowse: () => void }) {
-  const bundled = [
-    { id: 'sample-white', side: 'White' as const, title: '1. e4 Main Lines', sourceName: 'Tempo examples', detail: '4 lines · 2 cards due', progress: 76, due: 2, pgn: '[Event "1. e4 Main Lines"]\n[Result "*"]\n\n1. e4 c5 2. Nf3 d6 3. d4 cxd4 *' },
-    { id: 'sample-black', side: 'Black' as const, title: 'Sicilian Defense', sourceName: 'Tempo examples', detail: '2 lines · 1 card due', progress: 58, due: 1, pgn: '[Event "Sicilian Defense"]\n[Result "*"]\n\n1. e4 c5 2. Nf3 d6 *' },
-  ];
-  const importedItems = useMemo(() => imported.map((item) => ({ ...item, detail: `${item.cards.length} unique ${item.cards.length === 1 ? 'line' : 'lines'} · imported locally`, progress: 0, due: item.cards.length })), [imported]);
-  const [repertoires, setRepertoires] = useState([...bundled, ...importedItems]);
-  useEffect(() => {
-    setRepertoires((current) => [...current.filter((item) => !item.id.startsWith('repertoire-')), ...importedItems]);
-  }, [importedItems]);
-  function rename(index:number) {
-    const value=window.prompt('Repertoire nickname',repertoires[index].title);
-    if(!value?.trim()) return;
-    setRepertoires((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, title: value.trim() } : item));
+type RepertoireItem = { id: string; side: 'White' | 'Black'; title: string; sourceName: string; detail: string; progress: number; due: number; pgn?: string; backend?: boolean };
+
+function RepertoireView({ imported, onImport, onBrowse, onDeleteLocal, onRenameLocal, onQueueChanged }: { imported: LocalRepertoire[]; onImport: () => void; onBrowse: () => void; onDeleteLocal: (id: string, sourceName?: string) => void; onRenameLocal: (id: string, name: string) => void; onQueueChanged: () => Promise<void> }) {
+  const [samples, setSamples] = useState<RepertoireItem[]>([
+    { id: 'sample-white', side: 'White', title: '1. e4 Main Lines', sourceName: 'Tempo examples', detail: '4 example lines', progress: 76, due: 0, pgn: '[Event "1. e4 Main Lines"]\n[Result "*"]\n\n1. e4 c5 2. Nf3 d6 3. d4 cxd4 *' },
+    { id: 'sample-black', side: 'Black', title: 'Sicilian Defense', sourceName: 'Tempo examples', detail: '2 example lines', progress: 58, due: 0, pgn: '[Event "Sicilian Defense"]\n[Result "*"]\n\n1. e4 c5 2. Nf3 d6 *' },
+  ]);
+  const [backendItems, setBackendItems] = useState<RepertoireItem[]>([]);
+
+  const loadBackend = useCallback(async () => {
+    if (!usesLocalApi()) return;
+    try {
+      const response = await fetch(`${API_URL}/api/repertoires`);
+      if (!response.ok) return;
+      const body = await response.json() as { repertoires: { id: string; name: string; source_name: string; line_count: number; card_count: number; due_count: number; trained_color?: 'white' | 'black' }[] };
+      setBackendItems(body.repertoires.map((item) => ({ id: item.id, side: item.trained_color === 'black' ? 'Black' : 'White', title: item.name, sourceName: item.source_name, detail: `${item.line_count} unique ${item.line_count === 1 ? 'line' : 'lines'} · ${item.card_count} cards`, progress: 0, due: item.due_count, backend: true })));
+    } catch { /* Browser-local repertoires remain available. */ }
+  }, []);
+
+  useEffect(() => { void loadBackend(); }, [loadBackend]);
+  const backendSources = new Set(backendItems.map((item) => item.sourceName));
+  const importedItems: RepertoireItem[] = imported.filter((item) => !backendSources.has(item.sourceName)).map((item) => ({ id: item.id, side: item.side, title: item.title, sourceName: item.sourceName, detail: `${item.cards.length} unique ${item.cards.length === 1 ? 'line' : 'lines'} · stored in this browser`, progress: 0, due: 0, pgn: item.pgn }));
+  const repertoires = [...samples, ...backendItems, ...importedItems];
+
+  async function rename(item: RepertoireItem) {
+    const value=window.prompt('Repertoire nickname',item.title)?.trim();
+    if(!value) return;
+    if (item.backend) {
+      const response = await fetch(`${API_URL}/api/repertoires/${item.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: value }) });
+      if (response.ok) await loadBackend();
+    } else if (item.id.startsWith('sample-')) setSamples((current) => current.map((entry) => entry.id === item.id ? { ...entry, title: value } : entry));
+    else onRenameLocal(item.id, value);
   }
-  function exportPgn(item?: typeof repertoires[number]) {
-    const text = item ? item.pgn : repertoires.map((entry) => entry.pgn).join('\n\n');
+
+  async function remove(item: RepertoireItem) {
+    if (!window.confirm(`Delete “${item.title}”? Its cards and review history will also be removed.`)) return;
+    if (item.backend) {
+      const response = await fetch(`${API_URL}/api/repertoires/${item.id}`, { method: 'DELETE' });
+      if (!response.ok) return;
+      onDeleteLocal(item.id, item.sourceName);
+      await onQueueChanged();
+      await loadBackend();
+    } else if (item.id.startsWith('sample-')) setSamples((current) => current.filter((entry) => entry.id !== item.id));
+    else onDeleteLocal(item.id, item.sourceName);
+  }
+
+  function exportPgn(item?: RepertoireItem) {
+    if ((item?.backend || (!item && backendItems.length)) && usesLocalApi()) {
+      const link=document.createElement('a'); link.href=item ? `${API_URL}/api/repertoires/${item.id}/export.pgn` : `${API_URL}/api/repertoires/export.pgn`; link.click(); return;
+    }
+    const text = item?.pgn ?? repertoires.flatMap((entry) => entry.pgn ? [entry.pgn] : []).join('\n\n');
     const url=URL.createObjectURL(new Blob([text],{type:'application/x-chess-pgn'}));
     const link=document.createElement('a'); link.href=url; link.download=item?`${item.title}.pgn`:'tempo-repertoires.pgn'; link.click(); URL.revokeObjectURL(url);
   }
@@ -396,14 +515,14 @@ function RepertoireView({ imported, onImport, onBrowse }: { imported: LocalReper
         <div className="heading-actions"><button onClick={()=>exportPgn()}>⇩ Export all PGN</button><button className="primary-button" onClick={onImport}>＋ Import PGN</button></div>
       </div>
       <div className="library-grid">
-        {repertoires.map((item,index) => (
+        {repertoires.map((item) => (
           <article className="repertoire-card" key={item.id}>
             <div className="repertoire-top"><span className="side-badge">{item.side}</span><span>{item.due ? `${item.due} due` : 'Up to date'}</span></div>
             <div className="mini-board" aria-hidden="true">{Array.from({ length: 16 }).map((_, index) => <i key={index} />)}</div>
-            <div className="repertoire-name"><h2>{item.title}</h2><button onClick={()=>rename(index)} title="Rename repertoire">✎</button></div><p>{item.detail}</p><small className="source-name">{item.sourceName}</small>
+            <div className="repertoire-name"><h2>{item.title}</h2><button onClick={()=>void rename(item)} title="Rename repertoire">✎</button></div><p>{item.detail}</p><small className="source-name">{item.sourceName}</small>
             <div className="maturity-row"><span>Maturity</span><strong>{item.progress}%</strong></div>
             <div className="maturity-track"><span style={{ width: `${item.progress}%` }} /></div>
-            <div className="repertoire-actions"><button className="browse-button" onClick={onBrowse}>Browse tree</button><button onClick={()=>exportPgn(item)}>⇩ PGN</button></div>
+            <div className="repertoire-actions"><button className="browse-button" onClick={onBrowse}>Browse tree</button><button onClick={()=>exportPgn(item)}>⇩ PGN</button><button className="delete-repertoire" onClick={()=>void remove(item)}>Delete</button></div>
           </article>
         ))}
         <button className="new-repertoire-card" onClick={onImport}><span>＋</span><strong>Add a repertoire</strong><small>PGN files stay on this computer</small></button>
@@ -467,6 +586,10 @@ function TacticsView({ theme, pieceSet, onQueueChanged }: { theme: BoardTheme; p
   const [hint, setHint] = useState(false);
   const [failed, setFailed] = useState(false);
   const [outcome, setOutcome] = useState<'correct' | 'wrong' | null>(null);
+  const [boardAttempt, setBoardAttempt] = useState(0);
+  const finishingRef = useRef(false);
+  const attemptTokenRef = useRef(0);
+  const advanceTimerRef = useRef<number | undefined>(undefined);
   const [catalog, setCatalog] = useState<PackagedPuzzle[]>([]);
   useEffect(() => { fetch('/data/tactics-decks.json').then((response) => response.json()).then(setCatalog).catch(() => setCatalog([])); }, []);
   const progressKey = tacticProgressKey(motif, stage);
@@ -479,27 +602,44 @@ function TacticsView({ theme, pieceSet, onQueueChanged }: { theme: BoardTheme; p
   const [fen, setFen] = useState(puzzle.startingFen);
 
   const resetAttempt = useCallback((markFailed = false) => {
+    attemptTokenRef.current += 1;
+    finishingRef.current = false;
     setFen(puzzle.startingFen);
     setStep(0);
     setHint(markFailed);
     setFailed(markFailed);
     setOutcome(null);
+    setBoardAttempt((value) => value + 1);
   }, [puzzle]);
 
   useEffect(() => { resetAttempt(); }, [resetAttempt]);
+  useEffect(() => () => { if (advanceTimerRef.current) window.clearTimeout(advanceTimerRef.current); }, []);
 
   function finish() {
+    if (finishingRef.current) return;
+    finishingRef.current = true;
     const clean = !failed;
+    const completedKey = progressKey;
+    const token = ++attemptTokenRef.current;
     setOutcome(clean ? 'correct' : 'wrong');
     if(packagedRecord&&typeof window!=='undefined'&&['localhost','127.0.0.1'].includes(location.hostname)){
       void fetch(`${API_URL}/api/tactics/attempt`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({puzzle_id:packagedRecord.PuzzleId,deck_id:packagedRecord.DeckId,correct:clean,clean,source_fen:packagedRecord.FEN,moves:packagedRecord.Moves.split(/\s+/),rating:packagedRecord.Rating})}).then((response)=>{if(response.ok)onQueueChanged();}).catch(()=>undefined);
     }
-    window.setTimeout(() => {
+    advanceTimerRef.current = window.setTimeout(() => {
       setProgress((current) => {
-        const next = advanceTacticProgress(current, progressKey, clean);
+        const next = advanceTacticProgress(current, completedKey, clean);
         writeTacticProgress(next);
         return next;
       });
+      if (attemptTokenRef.current === token) {
+        finishingRef.current = false;
+        setFen(puzzle.startingFen);
+        setStep(0);
+        setHint(false);
+        setFailed(false);
+        setOutcome(null);
+        setBoardAttempt((value) => value + 1);
+      }
     }, 750);
   }
 
@@ -511,6 +651,7 @@ function TacticsView({ theme, pieceSet, onQueueChanged }: { theme: BoardTheme; p
     if (!board.isCheckmate() && move.san !== puzzle.moves[step]) {
       setFailed(true);
       setHint(true);
+      setBoardAttempt((value) => value + 1);
       return;
     }
     setFen(board.fen());
@@ -544,7 +685,7 @@ function TacticsView({ theme, pieceSet, onQueueChanged }: { theme: BoardTheme; p
           return <button className={motif === id ? 'active' : ''} key={id} onClick={() => setMotif(id)}><b>{icon}</b><span>{name}</span><small>{clean ? `${clean} / ${stage === 'focused' ? 250 : 100}` : 'Not started'}</small></button>;
         })}</aside>
         <div className="board-column centered-board">
-          <Chessboard fen={fen} expectedSan={puzzle.moves[step]} locked={Boolean(outcome) || step >= puzzle.moves.length} showHint={hint} theme={theme} pieceSet={pieceSet} onMove={movePiece} orientation={puzzleSide}/>
+          <Chessboard key={`${puzzle.id}:${boardAttempt}`} fen={fen} expectedSan={puzzle.moves[step]} locked={Boolean(outcome) || step >= puzzle.moves.length} showHint={hint} theme={theme} pieceSet={pieceSet} onMove={movePiece} orientation={puzzleSide}/>
           <div className="board-tools"><button onClick={() => { setFailed(true); setHint(true); }}>⌁ <span>Show move</span></button><button onClick={() => resetAttempt(true)}>↻ <span>Restart</span></button>{puzzle.sourceUrl && <a href={puzzle.sourceUrl} target="_blank" rel="noreferrer">↗ <span>Original</span></a>}</div>
           {outcome && (
             <OutcomeFlash outcome={outcome}/>
@@ -898,12 +1039,54 @@ function ProgressView({ reviewed, cardsLeft, totalCards }: { reviewed: number; c
   );
 }
 
+type TempoSettings = {
+  initial_depth: number; timezone: string; new_cards_per_day: number; lichess_username: string; chesscom_username: string;
+  auto_sync_minutes: number; engine_line_window_cp: number; major_mistake_cp: number; light_first_interval_days: number; draw_hold_user_moves: number;
+  board_theme: BoardTheme; piece_set: PieceSet; sound: boolean; sound_volume: number; coverage_target: number; maia_elo: string; explorer_speeds: string; explorer_ratings: string; arrow_metric: 'stockfish'|'lichess'|'masters';
+};
+
+function SettingsView({ theme, pieceSet, sound, onTheme, onPieces, onSound }: { theme: BoardTheme; pieceSet: PieceSet; sound: boolean; onTheme: (value: BoardTheme) => void; onPieces: (value: PieceSet) => void; onSound: (value: boolean) => void }) {
+  const [values, setValues] = useState<TempoSettings>({ initial_depth: 6, timezone: 'local', new_cards_per_day: 10, lichess_username: '', chesscom_username: '', auto_sync_minutes: 3, engine_line_window_cp: 30, major_mistake_cp: 100, light_first_interval_days: 7, draw_hold_user_moves: 20, board_theme: theme, piece_set: pieceSet, sound, sound_volume:.72, coverage_target: 90, maia_elo: '1500', explorer_speeds: 'blitz,rapid,classical', explorer_ratings: '1600,1800,2000,2200,2500', arrow_metric:'stockfish' });
+  const [status, setStatus] = useState('');
+
+  useEffect(() => {
+    setValues((current) => ({ ...current, board_theme: theme, piece_set: pieceSet, sound, sound_volume:Number(localStorage.getItem('tempo-sound-volume')??.72), arrow_metric:(localStorage.getItem('tempo-arrow-metric') as TempoSettings['arrow_metric']|null)??'stockfish', engine_line_window_cp:Number(localStorage.getItem('tempo-engine-window-cp')??30), coverage_target: Number(localStorage.getItem('tempo-coverage-target') ?? 90), maia_elo: localStorage.getItem('tempo-maia-elo') ?? '1500', explorer_speeds: localStorage.getItem('tempo-explorer-speeds') ?? 'blitz,rapid,classical', explorer_ratings: localStorage.getItem('tempo-explorer-ratings') ?? '1600,1800,2000,2200,2500', lichess_username: localStorage.getItem('tempo-lichess-username') ?? '', chesscom_username: localStorage.getItem('tempo-chesscom-username') ?? '' }));
+    if (usesLocalApi()) void fetch(`${API_URL}/api/settings`).then((response) => response.ok ? response.json() : Promise.reject()).then((saved) => setValues((current) => ({ ...current, ...saved }))).catch(() => undefined);
+  }, [pieceSet, sound, theme]);
+
+  function update<K extends keyof TempoSettings>(key: K, value: TempoSettings[K]) { setValues((current) => ({ ...current, [key]: value })); }
+
+  async function save() {
+    onTheme(values.board_theme); onPieces(values.piece_set); onSound(values.sound);
+    localStorage.setItem('tempo-coverage-target', String(values.coverage_target)); localStorage.setItem('tempo-maia-elo', values.maia_elo);
+    localStorage.setItem('tempo-explorer-speeds', values.explorer_speeds); localStorage.setItem('tempo-explorer-ratings', values.explorer_ratings);
+    localStorage.setItem('tempo-engine-window-cp',String(values.engine_line_window_cp)); localStorage.setItem('tempo-arrow-metric',values.arrow_metric); localStorage.setItem('tempo-sound-volume',String(values.sound_volume));
+    localStorage.setItem('tempo-lichess-username', values.lichess_username.trim()); localStorage.setItem('tempo-chesscom-username', values.chesscom_username.trim());
+    if (usesLocalApi()) {
+      const backend = { initial_depth: values.initial_depth, timezone: values.timezone, new_cards_per_day: values.new_cards_per_day, lichess_username: values.lichess_username.trim(), chesscom_username: values.chesscom_username.trim(), auto_sync_minutes: values.auto_sync_minutes, engine_line_window_cp: values.engine_line_window_cp, major_mistake_cp: values.major_mistake_cp, light_first_interval_days: values.light_first_interval_days, draw_hold_user_moves: values.draw_hold_user_moves };
+      try { const response = await fetch(`${API_URL}/api/settings`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(backend) }); if (!response.ok) throw new Error(); setStatus('Saved. The new-card limit applies when the next daily queue is created.'); }
+      catch { setStatus('Browser settings saved. The local service could not be reached.'); }
+    } else setStatus('Saved in this browser.');
+  }
+
+  return <section className="settings-page">
+    <div className="page-heading compact"><div><h1>Settings</h1><p>Training, boards, analysis, games, and scheduling—all in one place.</p></div><button className="primary-button" onClick={() => void save()}>Save settings</button></div>
+    <div className="settings-grid">
+      <section className="settings-card"><h2>Training</h2><label><span>Initial prefix length<small>User moves per opening card</small></span><input type="number" min="2" max="20" value={values.initial_depth} onChange={(event) => update('initial_depth', Number(event.target.value))}/></label><label><span>New cards per day<small>Reviews are always shown; only unseen cards are limited</small></span><input type="number" min="0" max="100" value={values.new_cards_per_day} onChange={(event) => update('new_cards_per_day', Number(event.target.value))}/></label><label><span>Light first interval<small>Days after a clean tactics discovery</small></span><input type="number" min="1" max="90" value={values.light_first_interval_days} onChange={(event) => update('light_first_interval_days', Number(event.target.value))}/></label><label><span>Draw hold length<small>User moves required in endgame studies</small></span><input type="number" min="5" max="100" value={values.draw_hold_user_moves} onChange={(event) => update('draw_hold_user_moves', Number(event.target.value))}/></label></section>
+      <section className="settings-card"><h2>Board</h2><label><span>Board colors</span><select value={values.board_theme} onChange={(event) => update('board_theme', event.target.value as BoardTheme)}><option value="brown">Brown</option><option value="blue">Blue</option><option value="green">Green</option></select></label><label><span>Piece set</span><select value={values.piece_set} onChange={(event) => update('piece_set', event.target.value as PieceSet)}><option value="cburnett">Cburnett</option><option value="merida">Merida</option></select></label><label><span>Woodland sounds<small>Separate wooden move and capture sounds</small></span><button className={`setting-switch${values.sound ? ' on' : ''}`} onClick={() => update('sound', !values.sound)}>{values.sound ? 'On' : 'Off'}</button></label><label><span>Sound volume</span><input type="range" min="0" max="1" step="0.05" value={values.sound_volume} onChange={(event)=>update('sound_volume',Number(event.target.value))}/></label></section>
+      <section className="settings-card"><h2>Analysis</h2><label><span>Coverage target</span><select value={values.coverage_target} onChange={(event) => update('coverage_target', Number(event.target.value))}><option value="80">80%</option><option value="90">90%</option><option value="95">95%</option></select></label><label><span>Candidate colors</span><select value={values.arrow_metric} onChange={(event)=>update('arrow_metric',event.target.value as TempoSettings['arrow_metric'])}><option value="stockfish">Stockfish quality</option><option value="lichess">Lichess practical score</option><option value="masters">Masters practical score</option></select></label><label><span>Engine move window<small>Centipawns from the best move</small></span><input type="number" min="0" max="300" value={values.engine_line_window_cp} onChange={(event) => update('engine_line_window_cp', Number(event.target.value))}/></label><label><span>Maia strength</span><select value={values.maia_elo} onChange={(event) => update('maia_elo', event.target.value)}><option>1100</option><option>1500</option><option>1900</option></select></label><label><span>Explorer games</span><select value={values.explorer_speeds} onChange={(event) => update('explorer_speeds', event.target.value)}><option value="blitz,rapid,classical">Blitz + rapid + classical</option><option value="rapid,classical">Rapid + classical</option><option value="classical">Classical only</option></select></label><label><span>Explorer ratings</span><select value={values.explorer_ratings} onChange={(event) => update('explorer_ratings', event.target.value)}><option value="1600,1800,2000,2200,2500">1600+</option><option value="2000,2200,2500">2000+</option><option value="2200,2500">2200+</option></select></label></section>
+      <section className="settings-card"><h2>Games</h2><label><span>Lichess username</span><input value={values.lichess_username} onChange={(event) => update('lichess_username', event.target.value)} placeholder="Optional"/></label><label><span>Chess.com username</span><input value={values.chesscom_username} onChange={(event) => update('chesscom_username', event.target.value)} placeholder="Optional"/></label><label><span>Automatic sync<small>Minutes while Tempo is open</small></span><input type="number" min="2" max="60" value={values.auto_sync_minutes} onChange={(event) => update('auto_sync_minutes', Number(event.target.value))}/></label><label><span>Major mistake threshold<small>Centipawn loss</small></span><input type="number" min="25" max="1000" value={values.major_mistake_cp} onChange={(event) => update('major_mistake_cp', Number(event.target.value))}/></label></section>
+    </div>
+    {status && <p className="settings-status" role="status">✓ {status}</p>}
+  </section>;
+}
+
 function ImportDialog({ onClose, onImported, onViewRepertoire, onDatabaseUpdated }: { onClose: () => void; onImported: (repertoire: LocalRepertoire) => void; onViewRepertoire: () => void; onDatabaseUpdated: () => Promise<void> }) {
   const [file, setFile] = useState<File | null>(null);
   const [initialDepth, setInitialDepth] = useState(6);
   const [trainedColor, setTrainedColor] = useState<'white' | 'black'>('white');
   const [finished, setFinished] = useState(false);
-  const [summary, setSummary] = useState({ lines: 0, duplicates: 0, backend: false });
+  const [summary, setSummary] = useState({ lines: 0, duplicates: 0, admitted: 0, backend: false });
   const [working, setWorking] = useState(false);
   const [error, setError] = useState('');
 
@@ -915,6 +1098,7 @@ function ImportDialog({ onClose, onImported, onViewRepertoire, onDatabaseUpdated
       const parsed = parsePgnImport(file.name, await file.text(), trainedColor, initialDepth);
       onImported(parsed.repertoire);
       let backend = false;
+      let admitted = 0;
       if (['localhost', '127.0.0.1'].includes(location.hostname)) {
         const data = new FormData();
         data.append('file', file);
@@ -923,10 +1107,10 @@ function ImportDialog({ onClose, onImported, onViewRepertoire, onDatabaseUpdated
         try {
           const response = await fetch(`${API_URL}/api/imports/pgn`, { method: 'POST', body: data });
           backend = response.ok;
-          if (backend) await onDatabaseUpdated();
+          if (backend) { admitted=((await response.json()) as {cards_admitted_today?:number}).cards_admitted_today??0; await onDatabaseUpdated(); }
         } catch { /* The browser-local import remains usable without the service. */ }
       }
-      setSummary({ lines: parsed.cards.length, duplicates: parsed.duplicateLines, backend });
+      setSummary({ lines: parsed.cards.length, duplicates: parsed.duplicateLines, admitted, backend });
       setFinished(true);
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : 'Tempo could not read this PGN.');
@@ -937,7 +1121,7 @@ function ImportDialog({ onClose, onImported, onViewRepertoire, onDatabaseUpdated
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section className="import-dialog" role="dialog" aria-modal="true" aria-labelledby="import-title" onMouseDown={(event) => event.stopPropagation()}>
         <button className="close-button" onClick={onClose} aria-label="Close import dialog">×</button>
-        {finished ? <div className="import-finished"><span>✓</span><h2 id="import-title">Imported</h2><p><strong>{file?.name}</strong> added {summary.lines} unique {summary.lines === 1 ? 'line' : 'lines'}{summary.duplicates ? ` and merged ${summary.duplicates} duplicate ${summary.duplicates === 1 ? 'line' : 'lines'}` : ''}. {summary.backend ? 'The local database and today’s practice are updated.' : 'This browser’s repertoire and practice queue are updated.'}</p><button className="primary-button" onClick={() => { onClose(); onViewRepertoire(); }}>View imported repertoire</button></div> : <>
+        {finished ? <div className="import-finished"><span>✓</span><h2 id="import-title">Imported</h2><p><strong>{file?.name}</strong> added {summary.lines} unique {summary.lines === 1 ? 'line' : 'lines'}{summary.duplicates ? ` and merged ${summary.duplicates} duplicate ${summary.duplicates === 1 ? 'line' : 'lines'}` : ''}. {summary.backend ? `${summary.admitted} cards are in today’s queue; remaining new cards will follow your daily limit.` : 'This browser’s repertoire and practice queue are updated.'}</p><button className="primary-button" onClick={() => { onClose(); onViewRepertoire(); }}>View imported repertoire</button></div> : <>
           <p className="eyebrow">Local import</p><h2 id="import-title">Add PGN repertoire</h2><p className="dialog-copy">Your file is parsed on this computer. Re-uploading the same positions updates the repertoire without duplicating cards.</p>
           <label className={`drop-zone${file ? ' has-file' : ''}`}><input type="file" accept=".pgn" onChange={(event) => { setFile(event.target.files?.[0] ?? null); setError(''); }} /><span>{file ? '♟' : '⇧'}</span><strong>{file?.name || 'Choose a PGN file'}</strong><small>{file ? 'Ready to import' : '.pgn files only'}</small></label>
           <div className="color-setting"><span><strong>Side to train</strong><small>Only your moves count toward line depth</small></span><span className="color-toggle"><button className={trainedColor === 'white' ? 'active' : ''} onClick={() => setTrainedColor('white')}>White</button><button className={trainedColor === 'black' ? 'active' : ''} onClick={() => setTrainedColor('black')}>Black</button></span></div>
@@ -994,7 +1178,8 @@ export default function Home() {
       setActiveCardIndex(0);
       const first = playable[0];
       if (first) {
-        setFen(first.startingFen); setStep(0); setFeedback('ready'); setLastMove(undefined);
+        const start = initialTrainingState(first);
+        setFen(start.fen); setStep(start.step); setFeedback('ready'); setLastMove(start.lastMove);
         setLocked(false); setShowHint(false); setAttemptFailed(false);
       }
     } catch { setDatabaseQueue(false); }
@@ -1022,9 +1207,15 @@ export default function Home() {
     const savedRepertoires = JSON.parse(localStorage.getItem('tempo-imported-repertoires') ?? '[]') as LocalRepertoire[];
     setImportedRepertoires(savedRepertoires);
     const savedCards = [...new Map(savedRepertoires.flatMap((repertoire) => repertoire.cards).map((savedCard) => [savedCard.id, savedCard])).values()];
-    setPracticeCards([...demoCards, ...savedCards]);
+    const loadedCards = [...demoCards, ...savedCards];
+    setPracticeCards(loadedCards);
     const storedQueue = JSON.parse(localStorage.getItem('tempo-daily-queue') ?? JSON.stringify(Array.from({ length: 12 }, (_, index) => index % demoCards.length))) as number[];
     setDailyQueue(storedQueue); setCardsLeft(storedQueue.length); setActiveCardIndex(storedQueue[0] ?? 0);
+    const loadedCard = loadedCards[storedQueue[0] ?? 0];
+    if (loadedCard) {
+      const start = initialTrainingState(loadedCard);
+      setFen(start.fen); setStep(start.step); setLastMove(start.lastMove);
+    }
     setBoardTheme((localStorage.getItem('tempo-board-theme') as BoardTheme | null) ?? 'brown');
     setPieceSet((localStorage.getItem('tempo-piece-set') as PieceSet | null) ?? 'cburnett');
     setSoundOn(moveSoundEnabled());
@@ -1047,8 +1238,30 @@ export default function Home() {
     localStorage.setItem('tempo-cards-left', String(queue.length));
   }
 
+  function renameLocalRepertoire(id: string, name: string) {
+    const next = importedRepertoires.map((item) => item.id === id ? { ...item, title: name } : item);
+    setImportedRepertoires(next);
+    localStorage.setItem('tempo-imported-repertoires', JSON.stringify(next));
+  }
+
+  function deleteLocalRepertoire(id: string, sourceName?: string) {
+    const removed = importedRepertoires.find((item) => item.id === id || (sourceName && item.sourceName === sourceName));
+    const nextRepertoires = importedRepertoires.filter((item) => item.id !== id && (!sourceName || item.sourceName !== sourceName));
+    setImportedRepertoires(nextRepertoires);
+    localStorage.setItem('tempo-imported-repertoires', JSON.stringify(nextRepertoires));
+    if (!removed) return;
+    const removedIds = new Set(removed.cards.map((item) => item.id));
+    const queuedIds = dailyQueue.map((index) => practiceCards[index]?.id).filter((cardId): cardId is string => Boolean(cardId) && !removedIds.has(cardId));
+    const nextCards = practiceCards.filter((item) => !removedIds.has(item.id));
+    const nextQueue = queuedIds.map((cardId) => nextCards.findIndex((item) => item.id === cardId)).filter((index) => index >= 0);
+    setPracticeCards(nextCards); setDailyQueue(nextQueue); setCardsLeft(nextQueue.length); setActiveCardIndex(nextQueue[0] ?? 0);
+    localStorage.setItem('tempo-daily-queue', JSON.stringify(nextQueue)); localStorage.setItem('tempo-cards-left', String(nextQueue.length));
+    resetLine(nextCards[nextQueue[0] ?? 0] ?? demoCards[0]);
+  }
+
   function resetLine(nextCard = card) {
-    setFen(nextCard.startingFen); setStep(0); setFeedback('ready'); setLastMove(undefined); setLocked(false); setShowHint(false); setAttemptFailed(false);
+    const start = initialTrainingState(nextCard);
+    setFen(start.fen); setStep(start.step); setFeedback('ready'); setLastMove(start.lastMove); setLocked(false); setShowHint(false); setAttemptFailed(false);
   }
 
   function changeBoardTheme(value: BoardTheme) {
@@ -1059,6 +1272,11 @@ export default function Home() {
   function changePieceSet(value: PieceSet) {
     setPieceSet(value);
     localStorage.setItem('tempo-piece-set', value);
+  }
+
+  function changeSound(value: boolean) {
+    setSoundOn(value); localStorage.setItem('tempo-move-sound', String(value));
+    if (value) playMoveSound(true);
   }
 
   async function rateCard(outcome: 'again' | 'correct') {
@@ -1102,7 +1320,8 @@ export default function Home() {
   }
 
   function tryMove(from: Square, to: Square) {
-    if (locked || step >= repertoireLine.length || step % 2 === 1 || card.kind === 'endgame') return;
+    const currentTurn = new Chess(fen).turn() === 'b' ? 'black' : 'white';
+    if (locked || step >= repertoireLine.length || currentTurn !== trainedColor(card) || card.kind === 'endgame') return;
     const position = new Chess(fen);
     let move: Move | null = null;
     try { move = position.move({ from, to, promotion: 'q' }); } catch {
@@ -1127,20 +1346,23 @@ export default function Home() {
       const reply = replyPosition.move(repertoireLine[opponentStep]);
       const nextStep = opponentStep + 1;
       setFen(replyPosition.fen()); setLastMove([reply.from, reply.to]); setStep(nextStep); setLocked(false); setFeedback(nextStep >= repertoireLine.length ? 'complete' : 'ready');
+      playMoveSound();
       if (nextStep >= repertoireLine.length) setTimeout(() => rateCard(attemptFailed ? 'again' : 'correct'), 650);
     }, 420);
   }
 
+  const opponentName = trainedColor(card) === 'white' ? 'Black' : 'White';
+  const playerName = trainedColor(card) === 'white' ? 'White' : 'Black';
   const feedbackCopy = {
-    ready: { title: step === 0 ? 'Your move' : 'Find the continuation', body: card.kind === 'puzzle' ? 'Find the strongest continuation.' : step === 0 ? 'Recall White’s first move.' : 'Continue the line for White.' },
-    correct: { title: 'That’s it', body: 'Black is replying…' },
+    ready: { title: 'Your move', body: card.kind === 'puzzle' ? 'Find the strongest continuation.' : `Continue the line for ${playerName}.` },
+    correct: { title: 'That’s it', body: `${opponentName} is replying…` },
     branch: { title: 'Also in your repertoire', body: 'That move is valid. Replay the arrowed move for the branch being tested.' },
     wrong: { title: 'Try that position again', body: 'That move is legal, but it isn’t in this repertoire.' },
     complete: { title: attemptFailed ? 'Guided line complete' : 'Line recalled', body: attemptFailed ? 'Again will return after four other cards.' : 'Correct is being recorded automatically.' },
   }[feedback];
 
   const currentMoveKey = `${card.id}:${step}`;
-  const showTeachingArrow = step % 2 === 0 && step < repertoireLine.length && (showHint || feedback === 'wrong' || !seenMoves.has(currentMoveKey));
+  const showTeachingArrow = step < repertoireLine.length && new Chess(fen).turn() === (trainedColor(card) === 'white' ? 'w' : 'b') && (showHint || feedback === 'wrong' || !seenMoves.has(currentMoveKey));
   const analysisUrl = lichessAnalysisUrl(repertoireLine.slice(0, step), card.startingFen);
   const revealedMoves = repertoireLine.slice(0, feedback === 'complete' ? repertoireLine.length : step);
 
@@ -1152,10 +1374,10 @@ export default function Home() {
       <header className="topbar">
         <button className="brand" onClick={() => setView('train')} aria-label="Tempo home"><span className="brand-mark">T</span><span>Tempo</span></button>
         <nav className="nav" aria-label="Primary navigation">
-          {(['train','tactics','endgames','repertoire','analysis','games','progress'] as View[]).map((item) => <button className={view === item ? 'active' : ''} key={item} onClick={() => setView(item)}>{item[0].toUpperCase() + item.slice(1)}</button>)}
+          {(['train','tactics','endgames','repertoire','analysis','games','progress','settings'] as View[]).map((item) => <button className={view === item ? 'active' : ''} key={item} onClick={() => setView(item)}>{item[0].toUpperCase() + item.slice(1)}</button>)}
         </nav>
         <div className="top-actions">
-          <button className="sound-toggle" aria-pressed={soundOn} aria-label={`${soundOn ? 'Turn off' : 'Turn on'} board sounds`} onClick={() => { const next = !soundOn; setSoundOn(next); localStorage.setItem('tempo-move-sound', String(next)); if (next) playMoveSound(true); }}><span aria-hidden="true">{soundOn ? '🔊' : '🔇'}</span><span>Sound</span></button>
+          <button className="sound-toggle" aria-pressed={soundOn} aria-label={`${soundOn ? 'Turn off' : 'Turn on'} board sounds`} onClick={() => changeSound(!soundOn)}><span aria-hidden="true">{soundOn ? '🔊' : '🔇'}</span><span>Sound</span></button>
           <button className="local-status" onClick={() => setShowImport(true)}><span className="status-dot" /> Saved locally</button>
         </div>
       </header>
@@ -1165,7 +1387,7 @@ export default function Home() {
         <section className="training-grid" id="train">
           <div className="board-column">
             <Chessboard fen={fen} expectedSan={repertoireLine[step]} lastMove={lastMove} locked={locked || step >= repertoireLine.length || cardsLeft === 0} showHint={showTeachingArrow} theme={boardTheme} pieceSet={pieceSet} onMove={tryMove} orientation={card.orientation} />
-            <div className="board-tools"><button onClick={() => { if(!attemptFailed){setAttemptFailed(true);setQueueNotice('Again recorded · finish with guidance');} setShowHint((value) => !value); }} disabled={feedback === 'complete' || cardsLeft === 0}>⌁ <span>{showHint ? 'Hide move' : 'Show move'}</span></button><button onClick={() => { resetLine(); setAttemptFailed(true); setShowHint(true); setQueueNotice('Again recorded · restarted in guided mode'); }}>↻ <span>Restart</span></button><a href={analysisUrl} onClick={()=>{if(!attemptFailed) rateCard('again')}} target="_blank" rel="noreferrer">↗ <span>Analyze</span></a><button onClick={()=>setEditorCard(card)}>✎ <span>Edit card</span></button><label>Board<select value={boardTheme} onChange={(event) => changeBoardTheme(event.target.value as BoardTheme)}><option value="brown">Brown</option><option value="blue">Blue</option><option value="green">Green</option></select></label><label>Pieces<select value={pieceSet} onChange={(event) => changePieceSet(event.target.value as PieceSet)}><option value="cburnett">Cburnett</option><option value="merida">Merida</option></select></label></div>
+            <div className="board-tools"><button onClick={() => { if(!attemptFailed){setAttemptFailed(true);setQueueNotice('Again recorded · finish with guidance');} setShowHint((value) => !value); }} disabled={feedback === 'complete' || cardsLeft === 0}>⌁ <span>{showHint ? 'Hide move' : 'Show move'}</span></button><button onClick={() => { resetLine(); setAttemptFailed(true); setShowHint(true); setQueueNotice('Again recorded · restarted in guided mode'); }}>↻ <span>Restart</span></button><a href={analysisUrl} onClick={()=>{if(!attemptFailed) rateCard('again')}} target="_blank" rel="noreferrer">↗ <span>Analyze</span></a><button onClick={()=>setEditorCard(card)}>✎ <span>Edit card</span></button></div>
           </div>
           <aside className="study-panel">
             <div className="card-meta"><span className={`pill${card.kind === 'puzzle' ? ' puzzle' : ''}`}>{card.kind === 'puzzle' ? 'Puzzle' : 'Review'}</span>{queueNotice && <em>{queueNotice}</em>}</div>
@@ -1183,14 +1405,15 @@ export default function Home() {
       {view === 'endgames' && (
         <EndgamesView theme={boardTheme} pieceSet={pieceSet} onQueueChanged={()=>void refreshDatabaseQueue()}/>
       )}
-      {view === 'repertoire' && <RepertoireView imported={importedRepertoires} onImport={() => setShowImport(true)} onBrowse={() => setShowTree(true)} />}
-      {view === 'analysis' && <AnalysisView theme={boardTheme} pieceSet={pieceSet} imported={importedRepertoires} onTheme={changeBoardTheme} onPieces={changePieceSet} />}
+      {view === 'repertoire' && <RepertoireView imported={importedRepertoires} onImport={() => setShowImport(true)} onBrowse={() => setShowTree(true)} onDeleteLocal={deleteLocalRepertoire} onRenameLocal={renameLocalRepertoire} onQueueChanged={refreshDatabaseQueue} />}
+      {view === 'analysis' && <AnalysisView theme={boardTheme} pieceSet={pieceSet} imported={importedRepertoires} />}
       {view === 'games' && <GamesView onAnalyze={() => setView('analysis')} theme={boardTheme} pieceSet={pieceSet} />}
       {view === 'progress' && <ProgressView reviewed={reviewed} cardsLeft={cardsLeft} totalCards={practiceCards.length} />}
+      {view === 'settings' && <SettingsView theme={boardTheme} pieceSet={pieceSet} sound={soundOn} onTheme={changeBoardTheme} onPieces={changePieceSet} onSound={changeSound} />}
       {showImport && <ImportDialog onClose={() => setShowImport(false)} onImported={addImportedRepertoire} onDatabaseUpdated={refreshDatabaseQueue} onViewRepertoire={() => setView('repertoire')} />}
       {showTree && <TreeBrowser onClose={() => setShowTree(false)} theme={boardTheme} pieceSet={pieceSet} />}
       {editorCard && <CardEditor card={editorCard} theme={boardTheme} pieceSet={pieceSet} onClose={()=>setEditorCard(null)} onSave={(updated)=>{setPracticeCards(current=>current.map(item=>item.id===updated.id?updated:item));resetLine(updated);setSuggestShorter(false);}}/>}
-      {!boardWorkspace&&<footer className="source-footer">Board interaction by <a href="https://github.com/lichess-org/chessground" target="_blank" rel="noreferrer">Chessground</a> · Cburnett and Merida pieces from Lichess · Puzzle positions from the public-domain <a href="https://database.lichess.org/#puzzles" target="_blank" rel="noreferrer">Lichess database</a></footer>}
+      {!boardWorkspace&&<footer className="source-footer">Board interaction by <a href="https://github.com/lichess-org/chessground" target="_blank" rel="noreferrer">Chessground</a> · Woodland sounds and chess assets from <a href="https://github.com/lichess-org/lila" target="_blank" rel="noreferrer">Lichess</a> under AGPL-3.0+ · Puzzle positions from the public-domain <a href="https://database.lichess.org/#puzzles" target="_blank" rel="noreferrer">Lichess database</a></footer>}
     </main>
   );
 }
