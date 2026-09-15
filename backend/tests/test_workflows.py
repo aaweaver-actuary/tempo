@@ -11,6 +11,22 @@ PGN = b'''[Event "Persistent repertoire"]
 1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6 5. d3 d6 6. O-O O-O *
 '''
 
+THREE_LINES = b'''[Event "King pawn"]
+[Result "*"]
+
+1. e4 e5 2. Nf3 Nc6 *
+
+[Event "Queen pawn"]
+[Result "*"]
+
+1. d4 d5 2. c4 e6 *
+
+[Event "English"]
+[Result "*"]
+
+1. c4 e5 2. Nc3 Nf6 *
+'''
+
 
 def test_import_becomes_main_and_survives_reload(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
@@ -64,3 +80,66 @@ def test_tactic_and_endgame_are_admitted_to_scheduler(tmp_path, monkeypatch):
 
         queue = client.get("/api/queue/today").json()["cards"]
         assert {card["content_type"] for card in queue} == {"tactic", "endgame"}
+
+
+def test_new_card_limit_due_counts_and_repertoire_deletion(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        settings = client.get("/api/settings").json()
+        settings["new_cards_per_day"] = 2
+        assert client.put("/api/settings", json=settings).status_code == 200
+
+        imported = client.post("/api/imports/pgn", files={"file": ("three.pgn", THREE_LINES, "application/x-chess-pgn")}, data={"trained_color": "black", "initial_depth": "2"})
+        assert imported.status_code == 200
+        assert imported.json()["cards_created"] == 3
+        repertoire_id = imported.json()["repertoire_id"]
+
+        queue = client.get("/api/queue/today").json()["cards"]
+        assert len(queue) == 2
+        assert all(card["trained_color"] == "black" for card in queue)
+        assert all(len(card["moves"]) == 4 for card in queue)
+        repertoire = client.get("/api/repertoires").json()["repertoires"][0]
+        assert repertoire["card_count"] == 3
+        assert repertoire["due_count"] == 2
+
+        assert client.delete(f"/api/repertoires/{repertoire_id}").json()["deleted"] is True
+        assert client.get("/api/repertoires").json()["repertoires"] == []
+        assert client.get("/api/queue/today").json()["count"] == 0
+
+
+def test_legacy_eager_queue_is_reconciled_without_reviews(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        settings = client.get("/api/settings").json()
+        settings["new_cards_per_day"] = 1
+        client.put("/api/settings", json=settings)
+        client.post("/api/imports/pgn", files={"file": ("legacy.pgn", THREE_LINES, "application/x-chess-pgn")}, data={"trained_color": "white", "initial_depth": "2"})
+        with database.connection() as db:
+            day = db.execute("SELECT queue_date FROM daily_queue LIMIT 1").fetchone()[0]
+            maximum = db.execute("SELECT MAX(position) FROM daily_queue WHERE queue_date=?", (day,)).fetchone()[0]
+            unseen = db.execute("SELECT id FROM cards WHERE state='new' ORDER BY id").fetchall()
+            for offset, card in enumerate(unseen, 1):
+                db.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?)", (day, card[0], maximum + offset))
+        queue = client.get("/api/queue/today").json()
+        assert queue["count"] == 1
+        with database.connection() as db:
+            assert db.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 0
+
+
+def test_overlapping_repertoires_share_card_history_when_one_is_deleted(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        first = client.post("/api/imports/pgn", files={"file": ("first.pgn", PGN, "application/x-chess-pgn")}, data={"trained_color": "white", "initial_depth": "2"}).json()
+        card_id_value = client.get("/api/queue/today").json()["cards"][0]["id"]
+        client.post(f"/api/cards/{card_id_value}/review", json={"outcome": "correct", "guided": False})
+
+        second = client.post("/api/imports/pgn", files={"file": ("second.pgn", PGN, "application/x-chess-pgn")}, data={"trained_color": "white", "initial_depth": "2"}).json()
+        assert second["cards_created"] == 0
+        with database.connection() as db:
+            assert db.execute("SELECT COUNT(*) FROM repertoire_cards WHERE card_id=?", (card_id_value,)).fetchone()[0] == 2
+
+        client.delete(f"/api/repertoires/{first['repertoire_id']}")
+        with database.connection() as db:
+            assert db.execute("SELECT COUNT(*) FROM cards WHERE id=?", (card_id_value,)).fetchone()[0] == 1
+            assert db.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (card_id_value,)).fetchone()[0] == 1
+            assert db.execute("SELECT repertoire_id FROM cards WHERE id=?", (card_id_value,)).fetchone()[0] == second["repertoire_id"]

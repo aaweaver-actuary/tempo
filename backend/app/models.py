@@ -87,3 +87,4 @@ class ImportResult(BaseModel):
     unique_lines: int
     cards_created: int
     duplicates_merged: int
+    cards_admitted_today: int = 0

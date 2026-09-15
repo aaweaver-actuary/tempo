@@ -68,6 +68,13 @@ def initialize() -> None:
         ON cards(due_date, state)
         """,
         """
+        CREATE TABLE IF NOT EXISTS repertoire_cards (
+            repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+            card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+            PRIMARY KEY(repertoire_id, card_id)
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS reviews (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
@@ -264,7 +271,7 @@ def initialize() -> None:
         # Existing local databases are migrated in place; user review history is never rebuilt.
         columns = {
             "settings": {"lichess_username": "TEXT NOT NULL DEFAULT ''", "chesscom_username": "TEXT NOT NULL DEFAULT ''", "auto_sync_minutes": "INTEGER NOT NULL DEFAULT 3", "engine_line_window_cp": "INTEGER NOT NULL DEFAULT 30", "major_mistake_cp": "INTEGER NOT NULL DEFAULT 100", "light_first_interval_days": "INTEGER NOT NULL DEFAULT 7", "draw_hold_user_moves": "INTEGER NOT NULL DEFAULT 20"},
-            "cards": {"fsrs_card_json": "TEXT", "first_correct_at": "TEXT", "reinforcement_pending": "INTEGER NOT NULL DEFAULT 0", "stability": "REAL NOT NULL DEFAULT 0", "guided_review": "INTEGER NOT NULL DEFAULT 0", "maximum_interval": "INTEGER NOT NULL DEFAULT 365", "content_type": "TEXT NOT NULL DEFAULT 'opening'", "scheduling_mode": "TEXT NOT NULL DEFAULT 'normal'", "hard_correct_streak": "INTEGER NOT NULL DEFAULT 0", "recent_attempts_json": "TEXT NOT NULL DEFAULT '[]'", "archived": "INTEGER NOT NULL DEFAULT 0", "superseded_by": "TEXT", "source_ref": "TEXT", "source_fen": "TEXT", "revision": "INTEGER NOT NULL DEFAULT 1"},
+            "cards": {"fsrs_card_json": "TEXT", "first_correct_at": "TEXT", "reinforcement_pending": "INTEGER NOT NULL DEFAULT 0", "stability": "REAL NOT NULL DEFAULT 0", "guided_review": "INTEGER NOT NULL DEFAULT 0", "maximum_interval": "INTEGER NOT NULL DEFAULT 365", "content_type": "TEXT NOT NULL DEFAULT 'opening'", "scheduling_mode": "TEXT NOT NULL DEFAULT 'normal'", "hard_correct_streak": "INTEGER NOT NULL DEFAULT 0", "recent_attempts_json": "TEXT NOT NULL DEFAULT '[]'", "archived": "INTEGER NOT NULL DEFAULT 0", "superseded_by": "TEXT", "source_ref": "TEXT", "source_fen": "TEXT", "revision": "INTEGER NOT NULL DEFAULT 1", "introduced_at": "TEXT"},
             "reviews": {"internal_rating": "TEXT NOT NULL DEFAULT 'again'", "guided": "INTEGER NOT NULL DEFAULT 0"},
             "imported_games": {"analysis_state": "TEXT NOT NULL DEFAULT 'pending'", "analysis_version": "INTEGER NOT NULL DEFAULT 0", "major_mistake_ply": "INTEGER", "missed_punishment_ply": "INTEGER"},
             "repertoires": {"is_main": "INTEGER NOT NULL DEFAULT 0"},
@@ -274,4 +281,6 @@ def initialize() -> None:
             for name, definition in additions.items():
                 if name not in existing:
                     database.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+        database.execute("""INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id)
+                            SELECT repertoire_id,id FROM cards WHERE content_type='opening'""")
         database.execute("PRAGMA optimize")

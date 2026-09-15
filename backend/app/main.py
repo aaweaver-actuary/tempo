@@ -1,4 +1,4 @@
-import io, json, uuid
+import hashlib, io, json, uuid
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 
@@ -40,10 +40,36 @@ def put_settings(s: Settings):
     with connection() as db: db.execute("UPDATE settings SET initial_depth=?,timezone=?,new_cards_per_day=?,lichess_username=?,chesscom_username=?,auto_sync_minutes=?,engine_line_window_cp=?,major_mistake_cp=?,light_first_interval_days=?,draw_hold_user_moves=? WHERE id=1",(s.initial_depth,s.timezone,s.new_cards_per_day,s.lichess_username,s.chesscom_username,s.auto_sync_minutes,s.engine_line_window_cp,s.major_mistake_cp,s.light_first_interval_days,s.draw_hold_user_moves))
     return s
 
+def reconcile_unseen_queue(db, day, limit):
+    """Trim legacy queues that eagerly admitted every unseen card."""
+    rows = db.execute("""
+        SELECT q.id,q.card_id FROM daily_queue q
+        JOIN cards c ON c.id=q.card_id
+        WHERE q.queue_date=? AND q.status='queued' AND c.state='new'
+          AND c.introduced_at IS NULL
+          AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)
+        ORDER BY q.position,q.id
+    """, (day,)).fetchall()
+    introduced=db.execute("SELECT COUNT(*) FROM cards WHERE introduced_at=?",(day,)).fetchone()[0]
+    allowed=max(0,limit-introduced)
+    for row in rows[:allowed]:
+        db.execute("UPDATE cards SET introduced_at=?,state='learning' WHERE id=?",(day,row["card_id"]))
+    for row in rows[allowed:]:
+        db.execute("DELETE FROM daily_queue WHERE id=?", (row["id"],))
+
 def seed_queue(db,day):
+    limit=db.execute("SELECT new_cards_per_day FROM settings WHERE id=1").fetchone()[0]
+    reconcile_unseen_queue(db,day,limit)
     maximum=db.execute("SELECT COALESCE(MAX(position),-1) FROM daily_queue WHERE queue_date=?",(day,)).fetchone()[0]
-    rows=db.execute("SELECT id FROM cards WHERE due_date<=? AND state!='locked' AND archived=0 AND id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?) ORDER BY due_date,id",(day,day)).fetchall()
+    rows=db.execute("SELECT id FROM cards WHERE due_date<=? AND state IN ('learning','mature') AND archived=0 AND id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?) ORDER BY due_date,id",(day,day)).fetchall()
     for offset,row in enumerate(rows,1): db.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?)",(day,row[0],maximum+offset))
+    maximum+=len(rows)
+    introduced=db.execute("SELECT COUNT(*) FROM cards WHERE introduced_at=?",(day,)).fetchone()[0]
+    remaining=max(0,limit-introduced)
+    new_rows=db.execute("SELECT id FROM cards WHERE due_date<=? AND state='new' AND introduced_at IS NULL AND archived=0 ORDER BY due_date,id LIMIT ?",(day,remaining)).fetchall()
+    for offset,row in enumerate(new_rows,1):
+        db.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?)",(day,row[0],maximum+offset))
+        db.execute("UPDATE cards SET introduced_at=?,state='learning' WHERE id=?",(day,row[0]))
 
 @app.get("/api/queue/today")
 def queue_today():
@@ -52,9 +78,12 @@ def queue_today():
         seed_queue(db,day)
         rows=db.execute("""SELECT q.id queue_entry_id,q.position,q.cycle,q.attempt_state,c.*,
                                   r.name repertoire_name,r.source_name repertoire_source,r.is_main,
-                                  (SELECT l.trained_color FROM repertoire_lines l WHERE l.repertoire_id=c.repertoire_id ORDER BY l.created_at LIMIT 1) trained_color
+                                  (SELECT l.trained_color FROM repertoire_lines l WHERE l.repertoire_id=r.id ORDER BY l.created_at LIMIT 1) trained_color
                            FROM daily_queue q JOIN cards c ON c.id=q.card_id
-                           JOIN repertoires r ON r.id=c.repertoire_id
+                           JOIN repertoires r ON r.id=COALESCE(
+                               (SELECT rc.repertoire_id FROM repertoire_cards rc JOIN repertoires linked ON linked.id=rc.repertoire_id
+                                WHERE rc.card_id=c.id ORDER BY linked.is_main DESC,linked.created_at DESC LIMIT 1),
+                               c.repertoire_id)
                            WHERE q.queue_date=? AND q.status='queued'
                            ORDER BY q.position,q.id""",(day,)).fetchall()
     cards=[{**dict(r),"moves":json.loads(r["moves_json"])} for r in rows]
@@ -76,33 +105,50 @@ async def import_pgn(file:UploadFile=File(...),trained_color:str=Form("white"),i
         db.execute("UPDATE repertoires SET is_main=0 WHERE id NOT IN ('__tactics__','__endgames__')")
         db.execute("INSERT INTO repertoires(id,name,source_name,created_at,is_main) VALUES(?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET is_main=1,source_name=excluded.source_name",(rid,file.filename.rsplit('.',1)[0],file.filename,now))
         for line in lines:
-            line_id=card_id(line.starting_fen,line.moves)
+            moves_json=json.dumps(line.moves)
+            existing_line=db.execute("SELECT id FROM repertoire_lines WHERE repertoire_id=? AND start_fen=? AND moves_json=?",(rid,line.starting_fen,moves_json)).fetchone()
+            line_id=existing_line["id"] if existing_line else hashlib.sha256(f"{rid}\0{card_id(line.starting_fen,line.moves)}".encode()).hexdigest()
             db.execute("INSERT OR IGNORE INTO repertoire_lines VALUES(?,?,?,?,?,?,?)",(line_id,rid,file.filename,trained_color,line.starting_fen,json.dumps(line.moves),now))
-            db.execute("UPDATE repertoire_lines SET repertoire_id=? WHERE id=?",(rid,line_id))
             moves=prefix_through_user_moves(line.starting_fen,line.moves,trained_color,depth)
             if not moves: continue
             cid=card_id(line.starting_fen,moves)
             if cid in seen: continue
             seen.add(cid); created+=db.execute("INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES(?,?,'prefix',?,?,?)",(cid,rid,line.starting_fen,json.dumps(moves),date.today().isoformat())).rowcount
-            db.execute("UPDATE cards SET repertoire_id=? WHERE id=? AND content_type='opening'",(rid,cid))
-    return ImportResult(repertoire_id=rid,source_name=file.filename,games_found=games,unique_lines=len(seen),cards_created=created,duplicates_merged=max(0,len(lines)-created))
+            db.execute("INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)",(rid,cid))
+        seed_queue(db,date.today().isoformat())
+        admitted=db.execute("""SELECT COUNT(DISTINCT q.card_id) FROM daily_queue q JOIN repertoire_cards rc ON rc.card_id=q.card_id
+                               WHERE q.queue_date=? AND q.status='queued' AND rc.repertoire_id=?""",(date.today().isoformat(),rid)).fetchone()[0]
+    return ImportResult(repertoire_id=rid,source_name=file.filename,games_found=games,unique_lines=len(seen),cards_created=created,duplicates_merged=max(0,len(lines)-created),cards_admitted_today=admitted)
 
 @app.get("/api/repertoires")
 def list_repertoires():
     with connection() as db:
+        seed_queue(db,date.today().isoformat())
         rows=db.execute("""
             SELECT r.id,r.name,r.source_name,r.created_at,r.is_main,
                    COUNT(DISTINCT l.id) AS line_count,
                    COUNT(DISTINCT c.id) AS card_count,
-                   COUNT(DISTINCT CASE WHEN c.due_date<=date('now') AND c.archived=0 THEN c.id END) AS due_count
+                   (SELECT l2.trained_color FROM repertoire_lines l2 WHERE l2.repertoire_id=r.id ORDER BY l2.created_at LIMIT 1) AS trained_color,
+                   COUNT(DISTINCT CASE WHEN q.queue_date=? AND q.status='queued' THEN q.card_id END) AS due_count
             FROM repertoires r
             LEFT JOIN repertoire_lines l ON l.repertoire_id=r.id
-            LEFT JOIN cards c ON c.repertoire_id=r.id
+            LEFT JOIN repertoire_cards rc ON rc.repertoire_id=r.id
+            LEFT JOIN cards c ON c.id=rc.card_id
+            LEFT JOIN daily_queue q ON q.card_id=c.id
             WHERE r.id NOT IN ('__tactics__','__endgames__')
             GROUP BY r.id,r.name,r.source_name,r.created_at
             ORDER BY r.created_at DESC
-        """).fetchall()
+        """,(date.today().isoformat(),)).fetchall()
     return {"repertoires":[dict(row) for row in rows]}
+
+@app.get("/api/repertoire/lines")
+def repertoire_lines():
+    with connection() as db:
+        rows=db.execute("""SELECT l.id,l.repertoire_id,l.name,l.trained_color,l.start_fen,l.moves_json,
+                                  r.name repertoire_name,r.is_main
+                           FROM repertoire_lines l JOIN repertoires r ON r.id=l.repertoire_id
+                           WHERE r.id NOT IN ('__tactics__','__endgames__') ORDER BY r.created_at,l.created_at""").fetchall()
+    return {"lines":[{**dict(row),"moves":json.loads(row["moves_json"])} for row in rows]}
 
 @app.put("/api/repertoires/{identifier}/main")
 def make_main_repertoire(identifier:str):
@@ -111,6 +157,21 @@ def make_main_repertoire(identifier:str):
             raise HTTPException(404,"Repertoire not found")
         db.execute("UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__')",(identifier,))
     return {"id":identifier,"is_main":True}
+
+@app.delete("/api/repertoires/{identifier}")
+def delete_repertoire(identifier:str):
+    if identifier in {"__tactics__","__endgames__"}: raise HTTPException(400,"This system repertoire cannot be deleted")
+    with connection() as db:
+        if not db.execute("SELECT 1 FROM repertoires WHERE id=?",(identifier,)).fetchone(): raise HTTPException(404,"Repertoire not found")
+        shared=db.execute("""SELECT c.id,(SELECT rc2.repertoire_id FROM repertoire_cards rc2
+                                          WHERE rc2.card_id=c.id AND rc2.repertoire_id!=? LIMIT 1) replacement
+                             FROM cards c WHERE c.repertoire_id=? AND EXISTS(
+                                 SELECT 1 FROM repertoire_cards rc3 WHERE rc3.card_id=c.id AND rc3.repertoire_id!=?)""",(identifier,identifier,identifier)).fetchall()
+        for card in shared: db.execute("UPDATE cards SET repertoire_id=? WHERE id=?",(card["replacement"],card["id"]))
+        db.execute("DELETE FROM repertoires WHERE id=?",(identifier,))
+        replacement=db.execute("SELECT id FROM repertoires WHERE id NOT IN ('__tactics__','__endgames__') ORDER BY created_at DESC LIMIT 1").fetchone()
+        if replacement: db.execute("UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__')",(replacement[0],))
+    return {"deleted":True,"id":identifier}
 
 def requeue(db,day,cid,after,attempt):
     cycle=db.execute("SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue WHERE queue_date=? AND card_id=?",(day,cid)).fetchone()[0]
@@ -271,7 +332,8 @@ def tactic_attempt(request:TacticAttemptRequest):
         db.execute("INSERT OR IGNORE INTO repertoires(id,name,source_name,created_at) VALUES('__tactics__','Tactics','Lichess puzzle database',?)",(now.isoformat(),))
         clean_at=now.isoformat() if request.correct and request.clean else None
         db.execute("INSERT INTO tactic_progress(puzzle_id,deck_id,card_id,clean_pass_at,admitted_at,admission_mode) VALUES(?,?,?,?,?,?) ON CONFLICT(puzzle_id) DO UPDATE SET clean_pass_at=COALESCE(tactic_progress.clean_pass_at,excluded.clean_pass_at),card_id=excluded.card_id,admitted_at=COALESCE(tactic_progress.admitted_at,excluded.admitted_at),admission_mode=excluded.admission_mode",(request.puzzle_id,request.deck_id,cid,clean_at,now.isoformat(),"light" if request.correct and request.clean else "normal"))
-        db.execute("INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type,scheduling_mode,source_ref,source_fen) VALUES(?, '__tactics__','checkpoint',?,?,?,?,?,?,?)",(cid,training_fen,json.dumps(solution),(now.date()+timedelta(days=7) if request.correct and request.clean else now.date()).isoformat(),"tactic","light" if request.correct and request.clean else "normal",request.puzzle_id,request.source_fen))
+        db.execute("INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type,scheduling_mode,source_ref,source_fen,state) VALUES(?, '__tactics__','checkpoint',?,?,?,?,?,?,?,'learning')",(cid,training_fen,json.dumps(solution),(now.date()+timedelta(days=7) if request.correct and request.clean else now.date()).isoformat(),"tactic","light" if request.correct and request.clean else "normal",request.puzzle_id,request.source_fen))
+        db.execute("UPDATE cards SET state='learning' WHERE id=?",(cid,))
         if not request.correct:
             requeue(db,now.date().isoformat(),cid,4,"guided")
     return {"card_id":cid,"mode":"light" if request.correct and request.clean else "normal","next_due":(now.date()+timedelta(days=7) if request.correct and request.clean else now.date())}
