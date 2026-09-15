@@ -51,5 +51,6 @@ export function parsePgnImport(fileName: string, pgn: string, trainedColor: 'whi
     pgn,
     cards: uniqueCards,
   };
-  return { repertoire, cards: uniqueCards, duplicateLines: cards.length - uniqueCards.length };
+  repertoire.cards = uniqueCards.map((card) => ({ ...card, repertoireId: repertoire.id, revision: 1 }));
+  return { repertoire, cards: repertoire.cards, duplicateLines: cards.length - uniqueCards.length };
 }

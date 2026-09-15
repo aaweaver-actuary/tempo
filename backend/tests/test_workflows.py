@@ -143,3 +143,24 @@ def test_overlapping_repertoires_share_card_history_when_one_is_deleted(tmp_path
             assert db.execute("SELECT COUNT(*) FROM cards WHERE id=?", (card_id_value,)).fetchone()[0] == 1
             assert db.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (card_id_value,)).fetchone()[0] == 1
             assert db.execute("SELECT repertoire_id FROM cards WHERE id=?", (card_id_value,)).fetchone()[0] == second["repertoire_id"]
+
+
+def test_position_annotations_are_scoped_and_round_trip_through_pgn(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        imported = client.post("/api/imports/pgn", files={"file": ("notes.pgn", PGN, "application/x-chess-pgn")}, data={"trained_color": "white"}).json()
+        repertoire_id = imported["repertoire_id"]
+        fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+        saved = client.put(f"/api/repertoires/{repertoire_id}/annotations", json={
+            "fen": fen,
+            "comment": "Watch the loose diagonal.",
+            "arrows": [{"from": "c1", "to": "g5", "color": "yellow"}],
+            "squares": [{"square": "d4", "color": "red"}],
+        })
+        assert saved.status_code == 200
+        listed = client.get(f"/api/repertoires/{repertoire_id}/annotations", params={"fen": fen}).json()["annotations"]
+        assert listed[0]["comment"] == "Watch the loose diagonal."
+        exported = client.get(f"/api/repertoires/{repertoire_id}/export.pgn").text
+        assert "Watch the loose diagonal." in exported
+        assert "%cal Yc1g5" in exported
+        assert "%csl Rd4" in exported

@@ -16,6 +16,7 @@ import {
   LocalRepertoire,
   Feedback,
   BackendQueueCard,
+  PositionAnnotation,
 } from "../types";
 import { practiceCardFromQueue, trainedColor } from "../utils/cards";
 import { usesLocalApi, localDayKey } from "../utils/local";
@@ -30,6 +31,7 @@ import SettingsView from "./settings_view";
 import TacticsView from "./tactics_view";
 import { dateLabel } from "../utils/dates";
 import { initialTrainingState } from "../page";
+import { annotationToShapes, loadPositionAnnotation } from "../utils/position-annotations";
 
 export default function Home() {
   const [view, setView] = useState<View>("train");
@@ -59,6 +61,7 @@ export default function Home() {
     new Set(),
   );
   const [attemptFailed, setAttemptFailed] = useState(false);
+  const [failureAnnotation, setFailureAnnotation] = useState<PositionAnnotation>();
   const [dailyQueue, setDailyQueue] = useState<number[]>(
     Array.from({ length: 12 }, (_, index) => index % demoCards.length),
   );
@@ -96,6 +99,7 @@ export default function Home() {
         setLocked(false);
         setShowHint(false);
         setAttemptFailed(false);
+        setFailureAnnotation(undefined);
       }
     } catch {
       setDatabaseQueue(false);
@@ -278,6 +282,7 @@ export default function Home() {
     setLocked(false);
     setShowHint(false);
     setAttemptFailed(false);
+    setFailureAnnotation(undefined);
   }
 
   function changeBoardTheme(value: BoardTheme) {
@@ -509,13 +514,24 @@ export default function Home() {
   const showTeachingArrow =
     isPlayerTurn &&
     (showHint || feedback === "wrong" || teachingEncounterKey === currentMoveKey);
-  const trainingShapes: DrawShape[] = opponentLastMove
-    ? [{
+  const trainingShapes: DrawShape[] = [
+    ...(opponentLastMove ? [{
         orig: opponentLastMove[0] as Key,
         dest: opponentLastMove[1] as Key,
         brush: "red",
-      }]
-    : [];
+      } as DrawShape] : []),
+    ...(attemptFailed ? annotationToShapes(failureAnnotation) : []),
+  ];
+
+  useEffect(() => {
+    const repertoireId = card.repertoireId;
+    if (!attemptFailed || !repertoireId) return;
+    let active = true;
+    void loadPositionAnnotation(repertoireId, fen).then((value) => {
+      if (active) setFailureAnnotation(value);
+    });
+    return () => { active = false; };
+  }, [attemptFailed, card.repertoireId, fen]);
   const analysisUrl = lichessAnalysisUrl(
     repertoireLine.slice(0, step),
     card.startingFen,
@@ -682,6 +698,12 @@ export default function Home() {
                   <p>{feedbackCopy.body}</p>
                 </div>
               </div>
+              {attemptFailed && failureAnnotation?.comment && (
+                <div className="failure-note" role="note">
+                  <strong>Note for this position</strong>
+                  <p>{failureAnnotation.comment}</p>
+                </div>
+              )}
               <div
                 className={`move-trail${revealedMoves.length ? "" : " empty"}`}
                 aria-live="polite"

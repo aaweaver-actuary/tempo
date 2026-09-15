@@ -6,6 +6,7 @@ import {
   useMemo,
   useEffect,
   useCallback,
+  useRef,
   type Dispatch,
   type SetStateAction,
 } from "react";
@@ -23,6 +24,7 @@ import {
   PieceColor,
   EngineStatus,
   BuilderSession,
+  PositionAnnotation,
 } from "../types";
 import { usesLocalApi } from "../utils/local";
 import { connectLichess } from "../utils/lichess";
@@ -32,6 +34,18 @@ import {
   canonicalizeLine,
   sanForUci,
 } from "../utils/canonical-line";
+import {
+  annotationToShapes,
+  loadPositionAnnotation,
+  savePositionAnnotation,
+  shapesToAnnotationParts,
+} from "../utils/position-annotations";
+import {
+  chessPositionDistance,
+  indexRepertoirePositions,
+  searchMaiaTranspositions,
+  type TranspositionResult,
+} from "../lib/position-similarity";
 
 type AnalysisMetric = "stockfish" | "lichess" | "masters";
 
@@ -225,6 +239,11 @@ export default function BuilderView({
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
   const [hoveredMove, setHoveredMove] = useState<string | null>(null);
+  const [annotation, setAnnotation] = useState<PositionAnnotation>();
+  const [annotationStatus, setAnnotationStatus] = useState("");
+  const [transpositions, setTranspositions] = useState<TranspositionResult[]>([]);
+  const [transpositionState, setTranspositionState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const transpositionController = useRef<AbortController | null>(null);
 
   const visibleHistory = history.slice(0, cursor);
   const fen = visibleHistory.at(-1)?.fen ?? startingFen;
@@ -277,6 +296,20 @@ export default function BuilderView({
       return uci ? [uci] : [];
     }),
   );
+  const positionIndex = useMemo(
+    () => indexRepertoirePositions(
+      availableLines.filter((line) => !selectedRepertoire || line.repertoireId === selectedRepertoire.id),
+    ),
+    [availableLines, selectedRepertoire],
+  );
+  const similarPositions = useMemo(() => positionIndex
+    .map((position) => ({ ...position, distance: chessPositionDistance(fen, position.fen) }))
+    .filter((position): position is typeof position & { distance: number } =>
+      position.distance !== undefined && position.distance <= 2 && position.nextUci !== undefined,
+    )
+    .sort((left, right) => left.distance - right.distance || left.ply - right.ply)
+    .filter((position, index, all) => all.findIndex((other) => other.fen === position.fen && other.nextUci === position.nextUci) === index)
+    .slice(0, 8), [fen, positionIndex]);
 
   function rememberToggle(
     key: string,
@@ -343,6 +376,70 @@ export default function BuilderView({
     };
     localStorage.setItem("tempo-builder-session", JSON.stringify(session));
   }, [activeRepertoire, branchStart, cursor, history, orientation, selectedRepertoire, startingFen]);
+
+  useEffect(() => {
+    let active = true;
+    const repertoireId = selectedRepertoire?.id;
+    if (!repertoireId) {
+      queueMicrotask(() => setAnnotation(undefined));
+      return;
+    }
+    void loadPositionAnnotation(repertoireId, fen).then((value) => {
+      if (active) {
+        setAnnotation(value ?? {
+          repertoireId,
+          fenKey: canonicalFenKey(fen),
+          comment: "",
+          arrows: [],
+          squares: [],
+          updatedAt: "",
+        });
+        setAnnotationStatus("");
+      }
+    });
+    return () => { active = false; };
+  }, [fen, selectedRepertoire?.id]);
+
+  const updateAnnotationShapes = useCallback((nextShapes: DrawShape[]) => {
+    const parts = shapesToAnnotationParts(nextShapes);
+    setAnnotation((current) => current ? { ...current, ...parts } : current);
+    setAnnotationStatus("Unsaved changes");
+  }, []);
+
+  async function persistAnnotation() {
+    if (!annotation) return;
+    try {
+      const saved = await savePositionAnnotation(annotation, fen);
+      setAnnotation(saved);
+      setAnnotationStatus("Saved");
+    } catch {
+      setAnnotationStatus("Could not save — try again");
+    }
+  }
+
+  async function findTranspositions() {
+    transpositionController.current?.abort();
+    const controller = new AbortController();
+    transpositionController.current = controller;
+    setTranspositionState("loading");
+    setTranspositions([]);
+    try {
+      const horizon = Number(localStorage.getItem("tempo-maia-transposition-plies") ?? "4");
+      const results = await searchMaiaTranspositions({
+        startFen: fen,
+        targets: positionIndex,
+        horizon,
+        analyze: (positionFen) => analyzeWithMaia(positionFen, Number(maiaElo)),
+        signal: controller.signal,
+      });
+      if (!controller.signal.aborted) {
+        setTranspositions(results);
+        setTranspositionState("ready");
+      }
+    } catch (error) {
+      if (!controller.signal.aborted) setTranspositionState("error");
+    }
+  }
 
   const flipBuilder = useCallback(() => {
     setOrientation((current) => {
@@ -790,6 +887,8 @@ export default function BuilderView({
             theme={theme}
             pieceSet={pieceSet}
             shapes={shapes}
+            drawnShapes={annotationToShapes(annotation)}
+            onDrawnShapesChange={updateAnnotationShapes}
             onMove={playMove}
             orientation={orientation}
             onFlip={flipBuilder}
@@ -966,6 +1065,62 @@ export default function BuilderView({
                 <strong>{coveredReplies.size}</strong>
               </div>
             </div>
+          </section>
+          <section className="analysis-panel annotation-panel">
+            <div className="panel-heading">
+              <div><span>Position note</span><strong>Shown only after a mistake</strong></div>
+            </div>
+            <textarea
+              aria-label="Position comment"
+              placeholder="Add a reminder for this exact position…"
+              value={annotation?.comment ?? ""}
+              onChange={(event) => {
+                const comment = event.target.value;
+                setAnnotation((current) => current ? { ...current, comment } : current);
+                setAnnotationStatus("Unsaved changes");
+              }}
+            />
+            <small>Right-drag an arrow or right-click a square on the board to add graphical notes.</small>
+            <div className="annotation-actions">
+              <span role="status">{annotationStatus}</span>
+              <button onClick={() => {
+                setAnnotation((current) => current ? { ...current, comment: "", arrows: [], squares: [] } : current);
+                setAnnotationStatus("Unsaved changes");
+              }}>Clear</button>
+              <button className="save" onClick={() => void persistAnnotation()}>Save note</button>
+            </div>
+          </section>
+          <section className="analysis-panel similarity-panel">
+            <div className="panel-heading">
+              <div><span>Consistency</span><strong>Similar repertoire positions</strong></div>
+              <b>{similarPositions.length}</b>
+            </div>
+            {similarPositions.length ? (
+              <div className="similar-position-list">
+                {similarPositions.map((position) => (
+                  <button key={`${position.lineId}-${position.ply}-${position.nextUci}`} onClick={() => position.nextUci && playUci(position.nextUci)}>
+                    <span>{position.distance === 0 ? "Exact" : `${position.distance} relocation${position.distance === 1 ? "" : "s"}`}</span>
+                    <strong>{position.nextUci ? sanForUci(fen, position.nextUci) ?? position.nextUci : "Endpoint"}</strong>
+                    <small>{position.repertoireName} · ply {position.ply}</small>
+                  </button>
+                ))}
+              </div>
+            ) : <p className="panel-message">No compatible distance-one or distance-two positions.</p>}
+          </section>
+          <section className="analysis-panel transposition-panel">
+            <div className="panel-heading"><div><span>Maia paths</span><strong>Likely transpositions</strong></div></div>
+            <button className="find-transpositions" disabled={!maiaOn || transpositionState === "loading"} onClick={() => void findTranspositions()}>
+              {transpositionState === "loading" ? "Searching…" : "Find likely paths"}
+            </button>
+            {transpositionState === "error" && <p className="panel-message error">Maia could not complete this search.</p>}
+            {transpositionState === "ready" && !transpositions.length && <p className="panel-message">No likely transposition within the configured horizon.</p>}
+            {transpositions.map((result) => (
+              <button className="transposition-result" key={`${result.lineId}-${result.ply}-${result.path.join("-")}`} onClick={() => result.path[0] && playUci(result.path[0])}>
+                <strong>{result.distance === 0 ? "Exact transposition" : `Distance ${result.distance}`}</strong>
+                <span>{result.path.join(" · ")}</span>
+                <small>{Math.round(result.probability * 100)}% path · {result.repertoireName}</small>
+              </button>
+            ))}
           </section>
           <button
             className="analysis-panel repertoire-results position-preview"

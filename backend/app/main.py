@@ -8,7 +8,7 @@ from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import connection, initialize
-from .models import AccountSettings, BranchRequest, CardRevisionRequest, EndgameProbeRequest, EndgameTemplateRequest, GameAnalysisRequest, GameSyncRequest, ImportResult, RepertoireRenameRequest, ReviewRequest, Settings, TacticAttemptRequest
+from .models import AccountSettings, BranchRequest, CardRevisionRequest, EndgameProbeRequest, EndgameTemplateRequest, GameAnalysisRequest, GameSyncRequest, ImportResult, PositionAnnotationRequest, RepertoireRenameRequest, ReviewRequest, Settings, TacticAttemptRequest
 from .services.analysis import AnalysisCapabilities
 from .services.cards import card_id
 from .services.pgn import parse_pgn, prefix_through_user_moves
@@ -109,6 +109,11 @@ async def import_pgn(file:UploadFile=File(...),trained_color:str=Form("white"),i
             existing_line=db.execute("SELECT id FROM repertoire_lines WHERE repertoire_id=? AND start_fen=? AND moves_json=?",(rid,line.starting_fen,moves_json)).fetchone()
             line_id=existing_line["id"] if existing_line else hashlib.sha256(f"{rid}\0{card_id(line.starting_fen,line.moves)}".encode()).hexdigest()
             db.execute("INSERT OR IGNORE INTO repertoire_lines VALUES(?,?,?,?,?,?,?)",(line_id,rid,file.filename,trained_color,line.starting_fen,json.dumps(line.moves),now))
+            for annotation in line.annotations:
+                db.execute("""INSERT INTO position_annotations(repertoire_id,fen_key,comment,arrows_json,squares_json,updated_at)
+                              VALUES(?,?,?,?,?,?) ON CONFLICT(repertoire_id,fen_key) DO UPDATE SET
+                              comment=excluded.comment,arrows_json=excluded.arrows_json,squares_json=excluded.squares_json,updated_at=excluded.updated_at""",
+                           (rid,annotation.fen_key,annotation.comment,json.dumps(annotation.arrows),json.dumps(annotation.squares),now))
             moves=prefix_through_user_moves(line.starting_fen,line.moves,trained_color,depth)
             if not moves: continue
             cid=card_id(line.starting_fen,moves)
@@ -149,6 +154,41 @@ def repertoire_lines():
                            FROM repertoire_lines l JOIN repertoires r ON r.id=l.repertoire_id
                            WHERE r.id NOT IN ('__tactics__','__endgames__') ORDER BY r.created_at,l.created_at""").fetchall()
     return {"lines":[{**dict(row),"moves":json.loads(row["moves_json"])} for row in rows]}
+
+def fen_key(fen: str) -> str:
+    try:
+        return " ".join(chess.Board(fen).fen().split()[:4])
+    except ValueError as error:
+        raise HTTPException(422, f"Invalid FEN: {error}")
+
+@app.get("/api/repertoires/{identifier}/annotations")
+def list_annotations(identifier: str, fen: str | None = None):
+    with connection() as db:
+        if not db.execute("SELECT 1 FROM repertoires WHERE id=?", (identifier,)).fetchone():
+            raise HTTPException(404, "Repertoire not found")
+        if fen:
+            rows = db.execute("SELECT * FROM position_annotations WHERE repertoire_id=? AND fen_key=?", (identifier, fen_key(fen))).fetchall()
+        else:
+            rows = db.execute("SELECT * FROM position_annotations WHERE repertoire_id=? ORDER BY updated_at", (identifier,)).fetchall()
+    return {"annotations": [{"repertoireId": row["repertoire_id"], "fenKey": row["fen_key"], "comment": row["comment"], "arrows": json.loads(row["arrows_json"]), "squares": json.loads(row["squares_json"]), "updatedAt": row["updated_at"]} for row in rows]}
+
+@app.put("/api/repertoires/{identifier}/annotations")
+def save_annotation(identifier: str, request: PositionAnnotationRequest):
+    key = fen_key(request.fen)
+    now = datetime.now(timezone.utc).isoformat()
+    arrows = [item.model_dump(by_alias=True) for item in request.arrows]
+    squares = [item.model_dump() for item in request.squares]
+    with connection() as db:
+        if not db.execute("SELECT 1 FROM repertoires WHERE id=?", (identifier,)).fetchone():
+            raise HTTPException(404, "Repertoire not found")
+        if not request.comment.strip() and not arrows and not squares:
+            db.execute("DELETE FROM position_annotations WHERE repertoire_id=? AND fen_key=?", (identifier, key))
+        else:
+            db.execute("""INSERT INTO position_annotations(repertoire_id,fen_key,comment,arrows_json,squares_json,updated_at)
+                          VALUES(?,?,?,?,?,?) ON CONFLICT(repertoire_id,fen_key) DO UPDATE SET
+                          comment=excluded.comment,arrows_json=excluded.arrows_json,squares_json=excluded.squares_json,updated_at=excluded.updated_at""",
+                       (identifier,key,request.comment.strip(),json.dumps(arrows),json.dumps(squares),now))
+    return {"repertoireId": identifier, "fenKey": key, "comment": request.comment.strip(), "arrows": arrows, "squares": squares, "updatedAt": now}
 
 @app.put("/api/repertoires/{identifier}/main")
 def make_main_repertoire(identifier:str):
@@ -277,12 +317,24 @@ def export_repertoires(repertoire_id:str|None=None):
     with connection() as db:
         query="SELECT l.*,r.name repertoire_name FROM repertoire_lines l JOIN repertoires r ON r.id=l.repertoire_id"
         rows=db.execute(query+(" WHERE l.repertoire_id=?" if repertoire_id else "")+(" ORDER BY l.created_at"),((repertoire_id,) if repertoire_id else ())).fetchall()
+        annotation_rows=db.execute("SELECT * FROM position_annotations"+(" WHERE repertoire_id=?" if repertoire_id else ""),((repertoire_id,) if repertoire_id else ())).fetchall()
+    annotations={(row["repertoire_id"],row["fen_key"]):row for row in annotation_rows}
+    color_code={"green":"G","red":"R","blue":"B","yellow":"Y"}
+    def apply_annotation(node, repertoire, board):
+        row=annotations.get((repertoire," ".join(board.fen().split()[:4])))
+        if not row: return
+        parts=[]
+        if row["comment"].strip(): parts.append(row["comment"].strip())
+        arrows=json.loads(row["arrows_json"]); squares=json.loads(row["squares_json"])
+        if arrows: parts.append("[%cal "+",".join(f"{color_code.get(item['color'],'G')}{item['from']}{item['to']}" for item in arrows)+"]")
+        if squares: parts.append("[%csl "+",".join(f"{color_code.get(item['color'],'G')}{item['square']}" for item in squares)+"]")
+        node.comment=" ".join(parts)
     stream=io.StringIO()
     for row in rows:
         game=chess.pgn.Game(); game.headers["Event"]=row["repertoire_name"]; game.headers["SetUp"]="1"; game.headers["FEN"]=row["start_fen"]
-        board=game.board(); node=game
+        board=game.board(); node=game; apply_annotation(node,row["repertoire_id"],board)
         for value in json.loads(row["moves_json"]):
-            move=chess.Move.from_uci(value); node=node.add_main_variation(move); board.push(move)
+            move=chess.Move.from_uci(value); node=node.add_main_variation(move); board.push(move); apply_annotation(node,row["repertoire_id"],board)
         print(game,file=stream,end="\n\n")
     return PlainTextResponse(stream.getvalue(),media_type="application/x-chess-pgn",headers={"Content-Disposition":"attachment; filename=tempo-repertoire.pgn"})
 

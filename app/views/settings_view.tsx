@@ -21,6 +21,7 @@ type SettingsValues = {
   sound_volume: number;
   coverage_target: number;
   maia_elo: string;
+  maia_transposition_plies: number;
   explorer_speeds: string;
   explorer_ratings: string;
   arrow_metric: "stockfish" | "lichess" | "masters";
@@ -58,6 +59,7 @@ export default function SettingsView({
     sound_volume: 0.72,
     coverage_target: 90,
     maia_elo: "1500",
+    maia_transposition_plies: 4,
     explorer_speeds: "blitz,rapid,classical",
     explorer_ratings: "1600,1800,2000,2200,2500",
     arrow_metric: "stockfish",
@@ -85,6 +87,7 @@ export default function SettingsView({
           localStorage.getItem("tempo-coverage-target") ?? 90,
         ),
         maia_elo: localStorage.getItem("tempo-maia-elo") ?? "1500",
+        maia_transposition_plies: Number(localStorage.getItem("tempo-maia-transposition-plies") ?? 4),
         explorer_speeds:
           localStorage.getItem("tempo-explorer-speeds") ??
           "blitz,rapid,classical",
@@ -124,6 +127,7 @@ export default function SettingsView({
       String(values.coverage_target),
     );
     localStorage.setItem("tempo-maia-elo", values.maia_elo);
+    localStorage.setItem("tempo-maia-transposition-plies", String(values.maia_transposition_plies));
     localStorage.setItem("tempo-explorer-speeds", values.explorer_speeds);
     localStorage.setItem("tempo-explorer-ratings", values.explorer_ratings);
     localStorage.setItem(
@@ -357,6 +361,16 @@ export default function SettingsView({
               <option>1500</option>
               <option>1900</option>
             </select>
+          </label>
+          <label>
+            <span>Transposition search<small>Maia lookahead plies</small></span>
+            <input
+              type="number"
+              min="2"
+              max="8"
+              value={values.maia_transposition_plies}
+              onChange={(event) => update("maia_transposition_plies", Number(event.target.value))}
+            />
           </label>
           <label>
             <span>Explorer games</span>

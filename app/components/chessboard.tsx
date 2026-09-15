@@ -20,6 +20,8 @@ type ChessboardProps = {
   theme: BoardTheme;
   pieceSet: PieceSet;
   shapes?: DrawShape[];
+  drawnShapes?: DrawShape[];
+  onDrawnShapesChange?: (shapes: DrawShape[]) => void;
   editMode?: boolean;
   onSquareSelect?: (square: Square) => void;
   onFreeMove?: (from: Square, to: Square) => void;
@@ -32,7 +34,7 @@ function moveForSan(chess: Chess, san: string): Move | undefined {
   return chess.moves({ verbose: true }).find((move) => move.san === san);
 }
 
-export function Chessboard({ fen, expectedSan, lastMove, locked, showHint, theme, pieceSet, shapes = [], editMode = false, onSquareSelect, onFreeMove, onMove, orientation = 'white', onFlip }: ChessboardProps) {
+export function Chessboard({ fen, expectedSan, lastMove, locked, showHint, theme, pieceSet, shapes = [], drawnShapes = [], onDrawnShapesChange, editMode = false, onSquareSelect, onFreeMove, onMove, orientation = 'white', onFlip }: ChessboardProps) {
   const elementRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<Api | null>(null);
   const onMoveRef = useRef(onMove);
@@ -107,7 +109,9 @@ export function Chessboard({ fen, expectedSan, lastMove, locked, showHint, theme
       drawable: {
         enabled: true,
         visible: true,
+        shapes: drawnShapes,
         autoShapes,
+        onChange: onDrawnShapesChange,
         brushes: {
           green: { key: 'g', color: '#4f8a59', opacity: .88, lineWidth: 10 },
           red: { key: 'r', color: '#b45f50', opacity: .88, lineWidth: 10 },
@@ -117,7 +121,7 @@ export function Chessboard({ fen, expectedSan, lastMove, locked, showHint, theme
         },
       },
     });
-  }, [chess, editMode, fen, hintMove, lastMove, locked, shapes, showHint, visualOrientation]);
+  }, [chess, drawnShapes, editMode, fen, hintMove, lastMove, locked, onDrawnShapesChange, shapes, showHint, visualOrientation]);
 
   useLayoutEffect(() => {
     const element = elementRef.current?.parentElement?.parentElement;

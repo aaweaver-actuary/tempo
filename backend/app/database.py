@@ -135,6 +135,18 @@ def initialize() -> None:
         """,
         "CREATE INDEX IF NOT EXISTS idx_daily_queue_order ON daily_queue(queue_date, status, position)",
         """
+        CREATE TABLE IF NOT EXISTS position_annotations (
+            repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+            fen_key TEXT NOT NULL,
+            comment TEXT NOT NULL DEFAULT '',
+            arrows_json TEXT NOT NULL DEFAULT '[]',
+            squares_json TEXT NOT NULL DEFAULT '[]',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(repertoire_id, fen_key)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_position_annotations_fen ON position_annotations(fen_key)",
+        """
         CREATE TABLE IF NOT EXISTS repertoire_lines (
             id TEXT PRIMARY KEY,
             repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,

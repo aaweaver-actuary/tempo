@@ -1,4 +1,3 @@
-import { get } from "http";
 import { BoardTheme, PieceSet } from "../components/chessboard";
 import { EngineStatus } from "../types";
 
@@ -43,6 +42,7 @@ export type AnalysisEngineSettings = {
 export type MaiaSettings = {
   state: EngineStatus;
   elo: string;
+  transposition_plies: number;
 };
 
 export type TempoSettings = {
@@ -103,6 +103,7 @@ export class Settings {
       maia: {
         state: "ready",
         elo: "1500",
+        transposition_plies: 4,
       },
       timezone: "local",
       major_mistake_cp: 100,

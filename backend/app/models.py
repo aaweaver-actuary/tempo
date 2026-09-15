@@ -42,6 +42,24 @@ class RepertoireRenameRequest(BaseModel):
     name: str = Field(min_length=1, max_length=80)
 
 
+class AnnotationArrow(BaseModel):
+    from_square: str = Field(alias="from", pattern=r"^[a-h][1-8]$")
+    to: str = Field(pattern=r"^[a-h][1-8]$")
+    color: Literal["green", "red", "blue", "yellow"] = "green"
+
+
+class AnnotationSquare(BaseModel):
+    square: str = Field(pattern=r"^[a-h][1-8]$")
+    color: Literal["green", "red", "blue", "yellow"] = "green"
+
+
+class PositionAnnotationRequest(BaseModel):
+    fen: str
+    comment: str = Field(default="", max_length=4000)
+    arrows: list[AnnotationArrow] = Field(default_factory=list)
+    squares: list[AnnotationSquare] = Field(default_factory=list)
+
+
 class TacticAttemptRequest(BaseModel):
     puzzle_id: str
     deck_id: str

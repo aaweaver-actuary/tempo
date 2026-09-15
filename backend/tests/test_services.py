@@ -76,6 +76,13 @@ class PackagedContentTests(unittest.TestCase):
         self.assertEqual(games, 1)
         self.assertEqual({tuple(line.moves) for line in lines}, {("e2e4", "e7e5", "g1f3"), ("d2d4", "d7d5")})
 
+    def test_pgn_import_reads_comments_arrows_and_squares(self) -> None:
+        _, lines = parse_pgn('[Event "Notes"]\n\n1. e4 {Keep the center. [%cal Ge2e4,Rd8h4] [%csl Ye5]} e5 *')
+        annotation = lines[0].annotations[0]
+        self.assertEqual(annotation.comment, "Keep the center.")
+        self.assertEqual(annotation.arrows[0], {"from": "e2", "to": "e4", "color": "green"})
+        self.assertEqual(annotation.squares[0], {"square": "e5", "color": "yellow"})
+
     def test_all_tactic_decks_have_the_requested_sizes_and_unique_ids(self) -> None:
         path = Path(__file__).parents[2] / "public" / "data" / "tactics-decks.json"
         decks = load_packaged_decks(path)

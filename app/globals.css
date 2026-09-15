@@ -221,6 +221,22 @@ button { color: inherit; }
 .analysis-panel { display:inline-block; width:100%; margin:0 0 12px; padding:17px; break-inside:avoid; border:1px solid var(--line); border-radius:11px; background:var(--panel); vertical-align:top; }
 .import-diagnostics { border-color:#d5aa84; background:#fff8ee; }
 .import-diagnostics p { margin:7px 0 0; color:var(--rust); font-size:12px; line-height:1.4; }
+.annotation-panel textarea { width:100%; min-height:86px; resize:vertical; padding:10px; border:1px solid var(--line); border-radius:7px; background:#fff; color:var(--ink); font:13px/1.45 Arial,sans-serif; }
+.annotation-panel > small { display:block; margin-top:8px; color:var(--muted); font-size:11px; line-height:1.4; }
+.annotation-actions { display:flex; align-items:center; justify-content:flex-end; gap:7px; margin-top:12px; }
+.annotation-actions span { flex:1; color:var(--muted); font-size:11px; }
+.annotation-actions button { padding:7px 9px; border:1px solid var(--line); border-radius:6px; background:#fff; color:var(--ink); cursor:pointer; font-size:11px; font-weight:700; }
+.annotation-actions button.save { border-color:var(--green-dark); background:var(--green-dark); color:#fff; }
+.failure-note { padding:14px; border-left:4px solid var(--rust); border-radius:7px; background:#fff4ef; }
+.failure-note strong { font-size:12px; }
+.failure-note p { margin:6px 0 0; color:var(--ink); font:14px/1.5 Georgia,serif; }
+.similar-position-list { display:grid; gap:6px; }
+.similar-position-list button,.transposition-result { width:100%; display:grid; grid-template-columns:1fr auto; gap:3px 9px; padding:9px; border:1px solid var(--line); border-radius:7px; background:#fff; color:var(--ink); text-align:left; cursor:pointer; }
+.similar-position-list span,.similar-position-list small,.transposition-result span,.transposition-result small { color:var(--muted); font-size:10px; }
+.similar-position-list small,.transposition-result small { grid-column:1/-1; }
+.find-transpositions { width:100%; padding:9px; border:1px solid var(--line); border-radius:7px; background:#edf1ea; color:var(--green-dark); cursor:pointer; font-weight:700; }
+.find-transpositions:disabled { opacity:.55; cursor:not-allowed; }
+.transposition-result { margin-top:7px; }
 .panel-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 14px; }
 .panel-heading span, .panel-heading strong { display: block; }
 .panel-heading span { margin-bottom: 4px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
