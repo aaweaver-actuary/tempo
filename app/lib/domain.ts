@@ -1,6 +1,6 @@
 export type PracticeCard = {
   id: string;
-  kind: 'opening' | 'puzzle';
+  kind: 'opening' | 'puzzle' | 'endgame';
   title: string;
   subtitle: string;
   startingFen: string;
@@ -8,6 +8,8 @@ export type PracticeCard = {
   userMoveTarget: number;
   nextMove?: string;
   sourceUrl?: string;
+  backendId?: string;
+  queueEntryId?: number;
 };
 
 export type LocalRepertoire = {

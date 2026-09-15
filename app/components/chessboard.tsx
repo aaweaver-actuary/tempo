@@ -5,7 +5,7 @@ import type { Api } from '@lichess-org/chessground/api';
 import type { DrawShape } from '@lichess-org/chessground/draw';
 import type { Key } from '@lichess-org/chessground/types';
 import { Chess, type Move, type Square } from 'chess.js';
-import { useEffect, useMemo, useRef } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 
 export type BoardTheme = 'brown' | 'blue' | 'green';
 export type PieceSet = 'cburnett' | 'merida';
@@ -35,6 +35,7 @@ export function Chessboard({ fen, expectedSan, lastMove, locked, showHint, theme
   const onMoveRef = useRef(onMove);
   const onFreeMoveRef = useRef(onFreeMove);
   const onSquareSelectRef = useRef(onSquareSelect);
+  const [boardSize, setBoardSize] = useState<number>();
   const chess = useMemo(() => { try { return new Chess(fen); } catch { return new Chess(); } }, [fen]);
   const hintMove = expectedSan ? moveForSan(chess, expectedSan) : undefined;
 
@@ -93,8 +94,31 @@ export function Chessboard({ fen, expectedSan, lastMove, locked, showHint, theme
     });
   }, [chess, editMode, fen, hintMove, lastMove, locked, shapes, showHint]);
 
+  useLayoutEffect(() => {
+    const element = elementRef.current?.parentElement?.parentElement;
+    const parent = element?.parentElement;
+    if (!element || !parent) return;
+    const fit = () => {
+      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+      const top = element.getBoundingClientRect().top;
+      const availableHeight = Math.max(120, viewportHeight - Math.max(0, top) - 12);
+      const availableWidth = parent.clientWidth;
+      setBoardSize(Math.floor(Math.min(availableWidth, availableHeight, 760)));
+    };
+    const observer = new ResizeObserver(fit);
+    observer.observe(parent);
+    window.addEventListener('resize', fit);
+    window.visualViewport?.addEventListener('resize', fit);
+    requestAnimationFrame(fit);
+    return () => {
+      observer.disconnect();
+      window.removeEventListener('resize', fit);
+      window.visualViewport?.removeEventListener('resize', fit);
+    };
+  }, []);
+
   return (
-    <div className="board-frame" aria-label="Interactive chessboard" data-fen={fen}>
+    <div className="board-frame" aria-label="Interactive chessboard" data-fen={fen} style={boardSize ? { width: boardSize, height: boardSize } : undefined}>
       <div className={`chessground-shell theme-${theme} pieces-${pieceSet}`}>
         <div className="cg-wrap" ref={elementRef}/>
       </div>

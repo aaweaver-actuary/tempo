@@ -14,6 +14,42 @@ import { parsePgnImport } from './lib/pgn-import';
 import { advanceTacticProgress, readTacticProgress, tacticProgressKey, writeTacticProgress } from './lib/tactics-progress';
 
 const STANDARD_FEN = new Chess().fen();
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000';
+
+function usesLocalApi() {
+  return typeof window !== 'undefined' && ['localhost', '127.0.0.1'].includes(location.hostname);
+}
+
+function sanLine(startingFen: string, moves: string[]) {
+  const board = new Chess(startingFen);
+  return moves.map((value) => {
+    const move = /^[a-h][1-8][a-h][1-8][qrbn]?$/.test(value)
+      ? board.move({ from: value.slice(0, 2) as Square, to: value.slice(2, 4) as Square, promotion: value[4] })
+      : board.move(value);
+    return move.san;
+  });
+}
+
+type BackendQueueCard = {
+  id: string; queue_entry_id: number; start_fen: string; moves: string[];
+  content_type: 'opening' | 'tactic' | 'endgame'; repertoire_name: string;
+  repertoire_source: string; source_ref?: string; is_main?: number;
+};
+
+function practiceCardFromQueue(card: BackendQueueCard): PracticeCard {
+  return {
+    id: `queue-${card.queue_entry_id}`,
+    backendId: card.id,
+    queueEntryId: card.queue_entry_id,
+    kind: card.content_type === 'tactic' ? 'puzzle' : card.content_type === 'endgame' ? 'endgame' : 'opening',
+    title: card.content_type === 'tactic' ? 'Tactics review' : card.content_type === 'endgame' ? 'Endgame study' : card.repertoire_name,
+    subtitle: card.content_type === 'tactic' ? `Lichess puzzle ${card.source_ref ?? ''}` : card.repertoire_source,
+    startingFen: card.start_fen,
+    moves: card.content_type === 'endgame' ? [] : sanLine(card.start_fen, card.moves),
+    userMoveTarget: Math.ceil(card.moves.length / 2),
+    sourceUrl: card.source_ref ? `https://lichess.org/training/${card.source_ref}` : undefined,
+  };
+}
 const demoCards = [
   {
     id: 'open-sicilian-prefix',
@@ -418,7 +454,7 @@ function packagedPuzzleCard(record: PackagedPuzzle): PracticeCard | null {
   } catch { return null; }
 }
 
-function TacticsView({ theme, pieceSet }: { theme: BoardTheme; pieceSet: PieceSet }) {
+function TacticsView({ theme, pieceSet, onQueueChanged }: { theme: BoardTheme; pieceSet: PieceSet; onQueueChanged: () => void }) {
   const [motif, setMotif] = useState('hangingPiece');
   const [stage, setStage] = useState('easy');
   const [progress, setProgress] = useState(readTacticProgress);
@@ -450,7 +486,7 @@ function TacticsView({ theme, pieceSet }: { theme: BoardTheme; pieceSet: PieceSe
     const clean = !failed;
     setOutcome(clean ? 'correct' : 'wrong');
     if(packagedRecord&&typeof window!=='undefined'&&['localhost','127.0.0.1'].includes(location.hostname)){
-      void fetch(`${process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000'}/api/tactics/attempt`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({puzzle_id:packagedRecord.PuzzleId,deck_id:packagedRecord.DeckId,correct:clean,clean,source_fen:packagedRecord.FEN,moves:packagedRecord.Moves.split(/\s+/),rating:packagedRecord.Rating})}).catch(()=>undefined);
+      void fetch(`${API_URL}/api/tactics/attempt`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({puzzle_id:packagedRecord.PuzzleId,deck_id:packagedRecord.DeckId,correct:clean,clean,source_fen:packagedRecord.FEN,moves:packagedRecord.Moves.split(/\s+/),rating:packagedRecord.Rating})}).then((response)=>{if(response.ok)onQueueChanged();}).catch(()=>undefined);
     }
     window.setTimeout(() => {
       setProgress((current) => {
@@ -540,7 +576,7 @@ function tablebaseCategoryForWhite(fen: string, category: string): 'win' | 'draw
   return normalized === 'win' ? 'loss' : normalized === 'loss' ? 'win' : 'draw';
 }
 
-function EndgamesView({ theme, pieceSet }: { theme: BoardTheme; pieceSet: PieceSet }) {
+function EndgamesView({ theme, pieceSet, onQueueChanged }: { theme: BoardTheme; pieceSet: PieceSet; onQueueChanged: () => void }) {
   const [selected, setSelected] = useState(1);
   const [classification, setClassification] = useState<'win' | 'draw' | null>(null);
   const [target, setTarget] = useState<'win' | 'draw'>('win');
@@ -549,6 +585,32 @@ function EndgamesView({ theme, pieceSet }: { theme: BoardTheme; pieceSet: PieceS
   const [busy,setBusy]=useState(true);
   const [userMoves,setUserMoves]=useState(0);
   const [complete,setComplete]=useState(false);
+  const [admitted,setAdmitted]=useState<Record<number,{templateId:string;cardId:string}>>({});
+
+  useEffect(()=>{
+    if(!usesLocalApi())return;
+    fetch(`${API_URL}/api/endgames/templates`).then((response)=>response.ok?response.json():Promise.reject()).then((data:{templates:Array<{id:string;card_id:string;white_material:string;black_material:string}>})=>{
+      const next:Record<number,{templateId:string;cardId:string}>={};
+      endgameTemplates.forEach((template,index)=>{const found=data.templates.find((item)=>item.white_material===template.white&&item.black_material===template.black);if(found)next[index]={templateId:found.id,cardId:found.card_id};});
+      setAdmitted(next);
+    }).catch(()=>undefined);
+  },[]);
+
+  async function admitTemplate(){
+    if(!usesLocalApi())return;
+    const template=endgameTemplates[selected];
+    const response=await fetch(`${API_URL}/api/endgames/templates`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({name:template.name,white_material:template.white,black_material:template.black,trained_color:'white',goal_mix:'both'})});
+    if(!response.ok){setStatus('Could not add this material set to training.');return;}
+    const data=await response.json() as {id:string;card_id:string};
+    setAdmitted((current)=>({...current,[selected]:{templateId:data.id,cardId:data.card_id}}));
+    setStatus('Added to your daily training.'); onQueueChanged();
+  }
+
+  function recordEndgame(outcome:'correct'|'again'){
+    const item=admitted[selected];
+    if(!item||!usesLocalApi())return;
+    void fetch(`${API_URL}/api/cards/${item.cardId}/review`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({outcome,guided:outcome==='again'})}).then(()=>onQueueChanged()).catch(()=>undefined);
+  }
 
   const newPosition = useCallback(async (index = selected) => {
     setBusy(true); setClassification(null); setComplete(false); setUserMoves(0); setStatus('Finding a legal tablebase position…');
@@ -576,16 +638,16 @@ function EndgamesView({ theme, pieceSet }: { theme: BoardTheme; pieceSet: PieceS
     const board = new Chess(fen);
     try { board.move({ from, to, promotion: 'q' }); } catch { return; }
     setFen(board.fen()); setBusy(true);
-    if(board.isCheckmate()){setComplete(true);setStatus('Converted · template review complete.');setBusy(false);return;}
+    if(board.isCheckmate()){setComplete(true);setStatus('Converted · template review complete.');setBusy(false);recordEndgame('correct');return;}
     try {
       const afterUser=await probeTablebase(board.fen());
       const userCategory=tablebaseCategoryForWhite(board.fen(),afterUser.category);
-      if((target==='win'&&userCategory!=='win')||(target==='draw'&&userCategory==='loss')){setComplete(true);setStatus(`Failed · the position is now a ${userCategory}.`);setBusy(false);return;}
+      if((target==='win'&&userCategory!=='win')||(target==='draw'&&userCategory==='loss')){setComplete(true);setStatus(`Failed · the position is now a ${userCategory}.`);setBusy(false);recordEndgame('again');return;}
       const defense=afterUser.moves?.[0]?.uci;
       if(defense){board.move({from:defense.slice(0,2) as Square,to:defense.slice(2,4) as Square,promotion:defense[4]});setFen(board.fen());}
       const count=userMoves+1;setUserMoves(count);
-      if(board.isGameOver()){const success=target==='draw'&&!board.isCheckmate();setComplete(true);setStatus(success?'Draw secured · template review complete.':'The defender held the position.');}
-      else if(target==='draw'&&count>=20){setComplete(true);setStatus('Draw held for 20 moves · template review complete.');}
+      if(board.isGameOver()){const success=target==='draw'&&!board.isCheckmate();setComplete(true);setStatus(success?'Draw secured · template review complete.':'The defender held the position.');recordEndgame(success?'correct':'again');}
+      else if(target==='draw'&&count>=20){setComplete(true);setStatus('Draw held for 20 moves · template review complete.');recordEndgame('correct');}
       else setStatus(`${target==='win'?'Winning':'Drawing'} status preserved · tablebase defense played.`);
     } catch { setStatus('The tablebase response failed. Your move remains on the board.'); }
     setBusy(false);
@@ -593,7 +655,7 @@ function EndgamesView({ theme, pieceSet }: { theme: BoardTheme; pieceSet: PieceS
 
   return (
     <section className="endgames-page">
-      <div className="workspace-title"><div><h1>Endgames</h1><span>Exact seven-piece practice</span></div><button className="primary-button">＋ New material set</button></div>
+      <div className="workspace-title"><div><h1>Endgames</h1><span>Exact seven-piece practice</span></div><button className="primary-button" disabled={Boolean(admitted[selected])||!usesLocalApi()} onClick={()=>void admitTemplate()}>{admitted[selected]?'✓ In daily training':'＋ Add to daily training'}</button></div>
       <div className="endgame-workspace">
         <aside className="template-list">{endgameTemplates.map((template, index) => <button className={selected === index ? 'active' : ''} key={template.name} onClick={() => setSelected(index)}><strong>{template.name}</strong><small>{template.white} vs {template.black} · White</small></button>)}</aside>
         <div className="board-column centered-board"><Chessboard fen={fen} locked={busy || classification !== target || complete} showHint={false} theme={theme} pieceSet={pieceSet} onMove={(from,to)=>void play(from,to)}/><div className="board-tools"><button onClick={() => void newPosition()}>⤨ <span>New position</span></button><button>⚙ <span>Edit material</span></button></div></div>
@@ -829,7 +891,7 @@ function ProgressView({ reviewed, cardsLeft, totalCards }: { reviewed: number; c
   );
 }
 
-function ImportDialog({ onClose, onImported, onViewRepertoire }: { onClose: () => void; onImported: (repertoire: LocalRepertoire) => void; onViewRepertoire: () => void }) {
+function ImportDialog({ onClose, onImported, onViewRepertoire, onDatabaseUpdated }: { onClose: () => void; onImported: (repertoire: LocalRepertoire) => void; onViewRepertoire: () => void; onDatabaseUpdated: () => Promise<void> }) {
   const [file, setFile] = useState<File | null>(null);
   const [initialDepth, setInitialDepth] = useState(6);
   const [trainedColor, setTrainedColor] = useState<'white' | 'black'>('white');
@@ -852,8 +914,9 @@ function ImportDialog({ onClose, onImported, onViewRepertoire }: { onClose: () =
         data.append('trained_color', trainedColor);
         data.append('initial_depth', String(initialDepth));
         try {
-          const response = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:8000'}/api/imports/pgn`, { method: 'POST', body: data });
+          const response = await fetch(`${API_URL}/api/imports/pgn`, { method: 'POST', body: data });
           backend = response.ok;
+          if (backend) await onDatabaseUpdated();
         } catch { /* The browser-local import remains usable without the service. */ }
       }
       setSummary({ lines: parsed.cards.length, duplicates: parsed.duplicateLines, backend });
@@ -904,8 +967,30 @@ export default function Home() {
   const [queueNotice, setQueueNotice] = useState('');
   const [boardTheme, setBoardTheme] = useState<BoardTheme>('brown');
   const [pieceSet, setPieceSet] = useState<PieceSet>('cburnett');
+  const [databaseQueue, setDatabaseQueue] = useState(false);
   const card = practiceCards[activeCardIndex] ?? practiceCards[0];
   const repertoireLine = card.moves;
+
+  const refreshDatabaseQueue = useCallback(async () => {
+    if (!usesLocalApi()) return;
+    try {
+      const response = await fetch(`${API_URL}/api/queue/today`);
+      if (!response.ok) throw new Error();
+      const body = await response.json() as { cards: BackendQueueCard[] };
+      const playable = body.cards.filter((item) => item.content_type !== 'endgame').map(practiceCardFromQueue);
+      setDatabaseQueue(true);
+      setPracticeCards(playable.length ? playable : [...demoCards]);
+      const queue = playable.map((_, index) => index);
+      setDailyQueue(queue);
+      setCardsLeft(queue.length);
+      setActiveCardIndex(0);
+      const first = playable[0];
+      if (first) {
+        setFen(first.startingFen); setStep(0); setFeedback('ready'); setLastMove(undefined);
+        setLocked(false); setShowHint(false); setAttemptFailed(false);
+      }
+    } catch { setDatabaseQueue(false); }
+  }, []);
 
   useEffect(() => { window.scrollTo({ top: 0, behavior: 'auto' }); }, [view]);
 
@@ -934,7 +1019,8 @@ export default function Home() {
     setDailyQueue(storedQueue); setCardsLeft(storedQueue.length); setActiveCardIndex(storedQueue[0] ?? 0);
     setBoardTheme((localStorage.getItem('tempo-board-theme') as BoardTheme | null) ?? 'brown');
     setPieceSet((localStorage.getItem('tempo-piece-set') as PieceSet | null) ?? 'cburnett');
-  }, []);
+    void refreshDatabaseQueue();
+  }, [refreshDatabaseQueue]);
 
   function addImportedRepertoire(repertoire: LocalRepertoire) {
     const repertoires = [...importedRepertoires.filter((item) => item.id !== repertoire.id), repertoire];
@@ -966,7 +1052,17 @@ export default function Home() {
     localStorage.setItem('tempo-piece-set', value);
   }
 
-  function rateCard(outcome: 'again' | 'correct') {
+  async function rateCard(outcome: 'again' | 'correct') {
+    if (databaseQueue && card.backendId) {
+      try {
+        const response = await fetch(`${API_URL}/api/cards/${card.backendId}/review`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ outcome, guided: attemptFailed, queue_entry_id: card.queueEntryId }) });
+        if (!response.ok) throw new Error();
+        setReviewed((count) => count + 1);
+        setQueueNotice(outcome === 'again' ? 'Guided review complete · shuffled behind 4 cards' : 'Correct · saved to your schedule');
+        await refreshDatabaseQueue();
+        return;
+      } catch { setQueueNotice('The local database could not save this result.'); return; }
+    }
     const firstClean = outcome === 'correct' && !firstCleanPasses.has(card.id);
     const nextQueue = dailyQueue.slice(1);
     if (outcome === 'again') {
@@ -997,7 +1093,7 @@ export default function Home() {
   }
 
   function tryMove(from: Square, to: Square) {
-    if (locked || step >= repertoireLine.length || step % 2 === 1) return;
+    if (locked || step >= repertoireLine.length || step % 2 === 1 || card.kind === 'endgame') return;
     const position = new Chess(fen);
     let move: Move | null = null;
     try { move = position.move({ from, to, promotion: 'q' }); } catch {
@@ -1070,16 +1166,16 @@ export default function Home() {
         </section>
       </>}
       {view === 'tactics' && (
-        <TacticsView theme={boardTheme} pieceSet={pieceSet}/>
+        <TacticsView theme={boardTheme} pieceSet={pieceSet} onQueueChanged={()=>void refreshDatabaseQueue()}/>
       )}
       {view === 'endgames' && (
-        <EndgamesView theme={boardTheme} pieceSet={pieceSet}/>
+        <EndgamesView theme={boardTheme} pieceSet={pieceSet} onQueueChanged={()=>void refreshDatabaseQueue()}/>
       )}
       {view === 'repertoire' && <RepertoireView imported={importedRepertoires} onImport={() => setShowImport(true)} onBrowse={() => setShowTree(true)} />}
       {view === 'analysis' && <AnalysisView theme={boardTheme} pieceSet={pieceSet} imported={importedRepertoires} onTheme={changeBoardTheme} onPieces={changePieceSet} />}
       {view === 'games' && <GamesView onAnalyze={() => setView('analysis')} theme={boardTheme} pieceSet={pieceSet} />}
       {view === 'progress' && <ProgressView reviewed={reviewed} cardsLeft={cardsLeft} totalCards={practiceCards.length} />}
-      {showImport && <ImportDialog onClose={() => setShowImport(false)} onImported={addImportedRepertoire} onViewRepertoire={() => setView('repertoire')} />}
+      {showImport && <ImportDialog onClose={() => setShowImport(false)} onImported={addImportedRepertoire} onDatabaseUpdated={refreshDatabaseQueue} onViewRepertoire={() => setView('repertoire')} />}
       {showTree && <TreeBrowser onClose={() => setShowTree(false)} theme={boardTheme} pieceSet={pieceSet} />}
       {editorCard && <CardEditor card={editorCard} theme={boardTheme} pieceSet={pieceSet} onClose={()=>setEditorCard(null)} onSave={(updated)=>{setPracticeCards(current=>current.map(item=>item.id===updated.id?updated:item));resetLine(updated);setSuggestShorter(false);}}/>}
       {!boardWorkspace&&<footer className="source-footer">Board interaction by <a href="https://github.com/lichess-org/chessground" target="_blank" rel="noreferrer">Chessground</a> · Cburnett and Merida pieces from Lichess · Puzzle positions from the public-domain <a href="https://database.lichess.org/#puzzles" target="_blank" rel="noreferrer">Lichess database</a></footer>}

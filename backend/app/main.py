@@ -50,7 +50,12 @@ def queue_today():
     day=date.today().isoformat()
     with connection() as db:
         seed_queue(db,day)
-        rows=db.execute("SELECT q.id queue_entry_id,q.position,q.cycle,q.attempt_state,c.* FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE q.queue_date=? AND q.status='queued' ORDER BY q.position,q.id",(day,)).fetchall()
+        rows=db.execute("""SELECT q.id queue_entry_id,q.position,q.cycle,q.attempt_state,c.*,
+                                  r.name repertoire_name,r.source_name repertoire_source,r.is_main
+                           FROM daily_queue q JOIN cards c ON c.id=q.card_id
+                           JOIN repertoires r ON r.id=c.repertoire_id
+                           WHERE q.queue_date=? AND q.status='queued'
+                           ORDER BY q.position,q.id""",(day,)).fetchall()
     cards=[{**dict(r),"moves":json.loads(r["moves_json"])} for r in rows]
     for card in cards: card.pop("moves_json",None)
     return {"local_date":day,"cards":cards,"count":len(cards)}
@@ -61,25 +66,31 @@ async def import_pgn(file:UploadFile=File(...),trained_color:str=Form("white"),i
     if trained_color not in {"white","black"}: raise HTTPException(400,"trained_color must be white or black")
     games,lines=parse_pgn((await file.read()).decode("utf-8-sig"))
     if not lines: raise HTTPException(422,"No playable lines were found")
-    rid,seen,created=str(uuid.uuid4()),set(),0; now=datetime.now(timezone.utc).isoformat()
+    seen,created=set(),0; now=datetime.now(timezone.utc).isoformat()
     with connection() as db:
         saved_depth=db.execute("SELECT initial_depth FROM settings WHERE id=1").fetchone()[0]
         depth=max(2,min(20,initial_depth if initial_depth is not None else saved_depth))
-        db.execute("INSERT INTO repertoires VALUES(?,?,?,?)",(rid,file.filename.rsplit('.',1)[0],file.filename,now))
+        existing_repertoire=db.execute("SELECT id FROM repertoires WHERE source_name=? AND id NOT IN ('__tactics__','__endgames__') ORDER BY created_at DESC LIMIT 1",(file.filename,)).fetchone()
+        rid=existing_repertoire["id"] if existing_repertoire else str(uuid.uuid4())
+        db.execute("UPDATE repertoires SET is_main=0 WHERE id NOT IN ('__tactics__','__endgames__')")
+        db.execute("INSERT INTO repertoires(id,name,source_name,created_at,is_main) VALUES(?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET is_main=1,source_name=excluded.source_name",(rid,file.filename.rsplit('.',1)[0],file.filename,now))
         for line in lines:
-            db.execute("INSERT OR IGNORE INTO repertoire_lines VALUES(?,?,?,?,?,?,?)",(card_id(line.starting_fen,line.moves),rid,file.filename,trained_color,line.starting_fen,json.dumps(line.moves),now))
+            line_id=card_id(line.starting_fen,line.moves)
+            db.execute("INSERT OR IGNORE INTO repertoire_lines VALUES(?,?,?,?,?,?,?)",(line_id,rid,file.filename,trained_color,line.starting_fen,json.dumps(line.moves),now))
+            db.execute("UPDATE repertoire_lines SET repertoire_id=? WHERE id=?",(rid,line_id))
             moves=prefix_through_user_moves(line.starting_fen,line.moves,trained_color,depth)
             if not moves: continue
             cid=card_id(line.starting_fen,moves)
             if cid in seen: continue
             seen.add(cid); created+=db.execute("INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES(?,?,'prefix',?,?,?)",(cid,rid,line.starting_fen,json.dumps(moves),date.today().isoformat())).rowcount
+            db.execute("UPDATE cards SET repertoire_id=? WHERE id=? AND content_type='opening'",(rid,cid))
     return ImportResult(repertoire_id=rid,source_name=file.filename,games_found=games,unique_lines=len(seen),cards_created=created,duplicates_merged=max(0,len(lines)-created))
 
 @app.get("/api/repertoires")
 def list_repertoires():
     with connection() as db:
         rows=db.execute("""
-            SELECT r.id,r.name,r.source_name,r.created_at,
+            SELECT r.id,r.name,r.source_name,r.created_at,r.is_main,
                    COUNT(DISTINCT l.id) AS line_count,
                    COUNT(DISTINCT c.id) AS card_count,
                    COUNT(DISTINCT CASE WHEN c.due_date<=date('now') AND c.archived=0 THEN c.id END) AS due_count
@@ -91,6 +102,14 @@ def list_repertoires():
             ORDER BY r.created_at DESC
         """).fetchall()
     return {"repertoires":[dict(row) for row in rows]}
+
+@app.put("/api/repertoires/{identifier}/main")
+def make_main_repertoire(identifier:str):
+    with connection() as db:
+        if not db.execute("SELECT 1 FROM repertoires WHERE id=? AND id NOT IN ('__tactics__','__endgames__')",(identifier,)).fetchone():
+            raise HTTPException(404,"Repertoire not found")
+        db.execute("UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__')",(identifier,))
+    return {"id":identifier,"is_main":True}
 
 def requeue(db,day,cid,after,attempt):
     cycle=db.execute("SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue WHERE queue_date=? AND card_id=?",(day,cid)).fetchone()[0]
@@ -280,12 +299,16 @@ def list_endgames():
 def create_endgame(request:EndgameTemplateRequest):
     try: white=normalized_material(request.white_material); black=normalized_material(request.black_material); sample=generate_position(white,black,request.trained_color)
     except ValueError as error: raise HTTPException(422,str(error))
-    identifier=str(uuid.uuid4()); cid=card_id(sample,[f"template:{white}:{black}:{request.trained_color}:{request.goal_mix}"]); now=datetime.now(timezone.utc).isoformat()
+    cid=card_id(chess.STARTING_FEN,[f"template:{white}:{black}:{request.trained_color}:{request.goal_mix}"]); now=datetime.now(timezone.utc).isoformat()
     with connection() as db:
         db.execute("INSERT OR IGNORE INTO repertoires(id,name,source_name,created_at) VALUES('__endgames__','Endgames','Generated material templates',?)",(now,))
+        existing=db.execute("SELECT id,card_id FROM endgame_templates WHERE white_material=? AND black_material=? AND trained_color=? AND goal_mix=? AND enabled=1",(white,black,request.trained_color,request.goal_mix)).fetchone()
+        if existing:
+            return {"id":existing["id"],"card_id":existing["card_id"],"sample_fen":sample,"already_exists":True}
+        identifier=str(uuid.uuid4())
         db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type) VALUES(?,'__endgames__','checkpoint',?,'[]',?,'endgame')",(cid,sample,date.today().isoformat()))
         db.execute("INSERT INTO endgame_templates VALUES(?,?,?,?,?,?,?,?,?)",(identifier,cid,request.name,white,black,request.trained_color,request.goal_mix,1,now))
-    return {"id":identifier,"card_id":cid,"sample_fen":sample}
+    return {"id":identifier,"card_id":cid,"sample_fen":sample,"already_exists":False}
 
 @app.post("/api/endgames/templates/{identifier}/attempt")
 async def create_endgame_attempt(identifier:str):
