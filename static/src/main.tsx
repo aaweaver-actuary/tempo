@@ -12,7 +12,12 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
 
 if ("serviceWorker" in navigator && import.meta.env.PROD) {
   window.addEventListener("load", () => {
+    let reloading = false;
+    navigator.serviceWorker.addEventListener("controllerchange", () => {
+      if (reloading || crossOriginIsolated) return;
+      reloading = true;
+      location.reload();
+    });
     void navigator.serviceWorker.register(new URL("sw.js", document.baseURI));
   });
 }
-

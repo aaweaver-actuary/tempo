@@ -2,14 +2,15 @@ let engine = null
 let currentId = null
 
 async function initialize() {
-  const { default: StockfishFactory } = await import('/engines/sf_19_smallnet.js')
+  const assetRoot = new URL('engines/', self.location.href)
+  const { default: StockfishFactory } = await import(new URL('sf_19_smallnet.js', assetRoot).href)
   engine = await StockfishFactory({
-    locateFile: (file) => `/engines/${file}`,
-    mainScriptUrlOrBlob: '/engines/sf_19_smallnet.js',
+    locateFile: (file) => new URL(file, assetRoot).href,
+    mainScriptUrlOrBlob: new URL('sf_19_smallnet.js', assetRoot).href,
   })
   engine.listen = (line) => postMessage({ type: 'line', id: currentId, line })
   engine.onError = (message) => postMessage({ type: 'error', id: currentId, message })
-  const response = await fetch('/engines/nn-61e7af4bb97d.nnue')
+  const response = await fetch(new URL('nn-61e7af4bb97d.nnue', assetRoot))
   if (!response.ok) throw new Error('Could not load Stockfish evaluation network')
   engine.setNnueBuffer(new Uint8Array(await response.arrayBuffer()))
   engine.uci('uci')

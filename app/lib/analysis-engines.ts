@@ -14,34 +14,32 @@ export type EngineMove = {
   mate?: number;
 };
 
-type StockfishModule = { uci: (command: string) => void; listen: (line: string) => void; setNnueBuffer: (data: Uint8Array) => void };
-let stockfishReady: Promise<StockfishModule> | undefined;
+let stockfishWorker: Worker | undefined;
+let stockfishRequest = 0;
 
 async function loadStockfish() {
-  if (!stockfishReady) {
-    stockfishReady = (async () => {
-      const source = await fetch(assetUrl('engines/sf_19_smallnet.js')).then((response) => response.text());
-      const scriptBlob = new Blob([source], { type: 'text/javascript' });
-      const moduleUrl = URL.createObjectURL(scriptBlob);
-      const stockfishModule = await import(/* @vite-ignore */ moduleUrl);
-      const engine = await stockfishModule.default({ locateFile: (file: string) => assetUrl(`engines/${file}`), mainScriptUrlOrBlob: scriptBlob, listen: () => undefined, onError: (message: string) => console.error(message) }) as StockfishModule;
-      URL.revokeObjectURL(moduleUrl);
-      const response = await fetch(assetUrl('engines/nn-61e7af4bb97d.nnue'));
-      if (!response.ok) throw new Error('Could not load Stockfish evaluation network');
-      engine.setNnueBuffer(new Uint8Array(await response.arrayBuffer()));
-      engine.uci('uci'); engine.uci('setoption name Threads value 1'); engine.uci('setoption name Hash value 32'); engine.uci('setoption name MultiPV value 5');
-      return engine;
-    })();
-  }
-  return stockfishReady;
+  if (!stockfishWorker) stockfishWorker = new Worker(`${assetUrl('stockfish-worker.js')}?v=2`, { type: 'module' });
+  return stockfishWorker;
 }
 
 export async function analyzeWithStockfish(fen: string): Promise<EngineMove[]> {
-  const engine = await loadStockfish();
+  const worker = await loadStockfish();
+  const id = ++stockfishRequest;
   return new Promise((resolve, reject) => {
     const lines = new Map<number, EngineMove>();
-    const timeout = window.setTimeout(() => reject(new Error('Stockfish took too long')), 15000);
-    engine.listen = (line: string) => {
+    const timeout = window.setTimeout(() => {
+      worker.removeEventListener('message', receive);
+      reject(new Error('Stockfish took too long'));
+    }, 60_000);
+    const receive = (event: MessageEvent<{ type: string; id?: number; line?: string; message?: string }>) => {
+      if (event.data.id !== id) return;
+      if (event.data.type === 'error') {
+        window.clearTimeout(timeout);
+        worker.removeEventListener('message', receive);
+        reject(new Error(event.data.message ?? 'Stockfish could not start'));
+        return;
+      }
+      for (const line of (event.data.line ?? '').split(/\r?\n/).map((value) => value.trim()).filter(Boolean)) {
       if (line.startsWith('info ') && line.includes(' pv ')) {
         const multipv = Number(line.match(/ multipv (\d+)/)?.[1] ?? 1);
         const uci = line.match(/ pv ([a-h][1-8][a-h][1-8][qrbn]?)/)?.[1];
@@ -56,10 +54,13 @@ export async function analyzeWithStockfish(fen: string): Promise<EngineMove[]> {
       }
       if (line.startsWith('bestmove ')) {
         window.clearTimeout(timeout);
+        worker.removeEventListener('message', receive);
         resolve([...lines.entries()].sort(([a], [b]) => a - b).map(([, move]) => move));
       }
+      }
     };
-    engine.uci('stop'); engine.uci(`position fen ${fen}`); engine.uci('go depth 13');
+    worker.addEventListener('message', receive);
+    worker.postMessage({ type: 'analyze', id, fen, depth: 10 });
   });
 }
 
