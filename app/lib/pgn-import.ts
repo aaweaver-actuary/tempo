@@ -1,5 +1,5 @@
 import { Chess } from 'chess.js';
-import type { LocalRepertoire, PracticeCard } from './domain';
+import type { LocalRepertoire, PracticeCard } from '../types';
 
 const STANDARD_FEN = new Chess().fen();
 
@@ -47,7 +47,7 @@ export function parsePgnImport(fileName: string, pgn: string, trainedColor: 'whi
     id: `repertoire-${stableId(`${sourceName}|${trainedColor}|${uniqueCards.map((card) => card.id).join('|')}`)}`,
     title: sourceName.replace(/\.pgn$/i, ''),
     sourceName,
-    side: trainedColor === 'white' ? 'White' : 'Black',
+    side: trainedColor === 'white' ? 'white' : 'black',
     pgn,
     cards: uniqueCards,
   };

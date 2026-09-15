@@ -162,12 +162,21 @@ export async function analyzeWithMaia(fen: string, elo: number, onProgress?: (pr
       const weights = legalIndices.map((index) => Math.exp(logits[index] - max));
       const total = weights.reduce((sum, value) => sum + value, 0);
       const position = new Chess(fen);
-      const moves = legalIndices.map((index, itemIndex) => {
+      const moves: EngineMove[] = [];
+      for (const [itemIndex, index] of legalIndices.entries()) {
         const raw = reversedMoves[String(index)];
         const uci = isBlack ? mirrorMove(raw) : raw;
         let move: Move | null = null;
-        try { move = position.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || 'q' }); position.undo(); } catch { /* filtered below */ }
-        return move ? { uci, san: move.san, probability: weights[itemIndex] / total } : undefined;
-      }).filter((move): move is EngineMove => Boolean(move));
+        try {
+          move = position.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || 'q' });
+          position.undo();
+        } catch { /* filtered below */ }
+        if (!move) continue;
+        moves.push({
+          uci,
+          san: move.san,
+          probability: weights[itemIndex] / total,
+        });
+      }
       return moves.sort((a, b) => (b.probability ?? 0) - (a.probability ?? 0));
 }
