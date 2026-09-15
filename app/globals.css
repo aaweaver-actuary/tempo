@@ -30,6 +30,9 @@ button { color: inherit; }
 .nav button.active { color: var(--ink); }
 .nav button.active::after { content: ''; position: absolute; left: 0; right: 0; bottom: -26px; height: 2px; background: var(--green-dark); }
 .local-status { justify-self: end; display: flex; align-items: center; gap: 8px; padding: 0; border: 0; background: transparent; color: var(--muted); font-size: 12px; cursor: pointer; }
+.top-actions { justify-self:end; display:flex; align-items:center; gap:18px; }
+.sound-toggle { display:flex; align-items:center; gap:6px; padding:7px 9px; border:1px solid var(--line); border-radius:8px; background:var(--panel); color:var(--muted); font-size:12px; font-weight:700; cursor:pointer; }
+.sound-toggle[aria-pressed="true"] { color:var(--green-dark); border-color:#bccab9; }
 .status-dot { width: 7px; height: 7px; border-radius: 50%; background: #6c8a6e; box-shadow: 0 0 0 4px #dfe8dc; }
 
 .training-header { max-width: 1320px; margin: 0 auto; padding: 34px clamp(20px, 4vw, 64px) 22px; display: flex; align-items: end; justify-content: space-between; }
@@ -400,6 +403,7 @@ button { color: inherit; }
 .centered-board { position:relative; align-self:stretch; }
 .centered-board .board-frame { width:min(100%,calc(100dvh - 230px)); min-width:0; margin:auto; }
 .tactic-study h2,.endgame-study h2 { margin:22px 0 5px; font:500 clamp(28px,3vw,40px) Georgia,serif; }.tactic-rating,.endgame-study>p { color:var(--muted); font-size:13px; }
+.side-to-play { margin:10px 0 2px; color:var(--ink); font-family:Georgia,serif; font-size:22px; font-weight:600; }
 .stage-progress { height:7px; margin:20px 0 8px; overflow:hidden; border-radius:5px; background:#deded7; }.stage-progress span { display:block; height:100%; background:var(--green); }
 .endgame-workspace { height:calc(100% - 76px); min-height:0; display:grid; grid-template-columns:210px minmax(340px,1fr) minmax(250px,.58fr); gap:20px; align-items:center; overflow:hidden; }
 .template-list { align-self:center; display:grid; gap:8px; }.template-list button { padding:15px; border:1px solid var(--line); border-radius:9px; background:var(--panel); text-align:left; cursor:pointer; }.template-list button.active { border-color:#8da28a; background:#e8eee5; }.template-list strong,.template-list small { display:block; }.template-list small { margin-top:5px; color:var(--muted); }
@@ -450,6 +454,8 @@ button { color: inherit; }
   .nav button { flex:0 0 auto; font-size:12px; }
   .nav button.active::after { bottom: -15px; }
   .local-status { display: none; }
+  .top-actions { gap:0; }
+  .sound-toggle span:last-child { display:none; }
   .training-header { padding-top: 25px; }
   .training-grid { padding-bottom: 65px; }
   .board-frame { padding: 6px; }

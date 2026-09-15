@@ -10,6 +10,7 @@ export type PracticeCard = {
   sourceUrl?: string;
   backendId?: string;
   queueEntryId?: number;
+  orientation?: 'white' | 'black';
 };
 
 export type LocalRepertoire = {

@@ -21,6 +21,7 @@ def test_import_becomes_main_and_survives_reload(tmp_path, monkeypatch):
         queue = client.get("/api/queue/today").json()
         assert queue["count"] == 1
         assert queue["cards"][0]["is_main"] == 1
+        assert queue["cards"][0]["trained_color"] == "white"
         assert queue["cards"][0]["moves"][-1] == "e1g1"
 
         card = queue["cards"][0]

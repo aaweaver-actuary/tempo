@@ -11,6 +11,7 @@ import { analyzeWithMaia, analyzeWithStockfish, type EngineMove } from './lib/an
 import { generateLegalEndgameFen, type EndgameMaterial } from './lib/endgame-generator';
 import type { LocalRepertoire, PracticeCard } from './lib/domain';
 import { parsePgnImport } from './lib/pgn-import';
+import { moveSoundEnabled, playMoveSound } from './lib/move-sound';
 import { advanceTacticProgress, readTacticProgress, tacticProgressKey, writeTacticProgress } from './lib/tactics-progress';
 
 const STANDARD_FEN = new Chess().fen();
@@ -34,6 +35,7 @@ type BackendQueueCard = {
   id: string; queue_entry_id: number; start_fen: string; moves: string[];
   content_type: 'opening' | 'tactic' | 'endgame'; repertoire_name: string;
   repertoire_source: string; source_ref?: string; is_main?: number;
+  trained_color?: 'white' | 'black';
 };
 
 function practiceCardFromQueue(card: BackendQueueCard): PracticeCard {
@@ -48,6 +50,9 @@ function practiceCardFromQueue(card: BackendQueueCard): PracticeCard {
     moves: card.content_type === 'endgame' ? [] : sanLine(card.start_fen, card.moves),
     userMoveTarget: Math.ceil(card.moves.length / 2),
     sourceUrl: card.source_ref ? `https://lichess.org/training/${card.source_ref}` : undefined,
+    orientation: card.content_type === 'tactic'
+      ? (new Chess(card.start_fen).turn() === 'b' ? 'black' : 'white')
+      : card.trained_color ?? 'white',
   };
 }
 const demoCards = [
@@ -450,7 +455,7 @@ function packagedPuzzleCard(record: PackagedPuzzle): PracticeCard | null {
     board.move({ from: setup.slice(0, 2) as Square, to: setup.slice(2, 4) as Square, promotion: setup[4] });
     const startingFen = board.fen();
     const moves = uciMoves.map((uci) => board.move({ from: uci.slice(0, 2) as Square, to: uci.slice(2, 4) as Square, promotion: uci[4] }).san);
-    return { id: `lichess-${record.PuzzleId}`, kind: 'puzzle', title: `Puzzle ${record.DeckPosition}`, subtitle: `Lichess · ${record.Rating}`, startingFen, moves, userMoveTarget: Math.ceil(moves.length / 2), sourceUrl: `https://lichess.org/training/${record.PuzzleId}` };
+    return { id: `lichess-${record.PuzzleId}`, kind: 'puzzle', title: `Puzzle ${record.DeckPosition}`, subtitle: `Lichess · ${record.Rating}`, startingFen, moves, userMoveTarget: Math.ceil(moves.length / 2), sourceUrl: `https://lichess.org/training/${record.PuzzleId}`, orientation: new Chess(startingFen).turn() === 'b' ? 'black' : 'white' };
   } catch { return null; }
 }
 
@@ -469,6 +474,7 @@ function TacticsView({ theme, pieceSet, onQueueChanged }: { theme: BoardTheme; p
   const packagedDeck = useMemo(() => catalog.filter((record) => record.DeckId === `${motif}-${stage}`).sort((a, b) => a.DeckPosition - b.DeckPosition).map(packagedPuzzleCard).filter((card): card is PracticeCard => Boolean(card)), [catalog, motif, stage]);
   const deck = packagedDeck.length ? packagedDeck : [tacticExamples[motif] ?? demoCards[2], ...alternateTactics];
   const puzzle = deck[currentProgress.index % deck.length];
+  const puzzleSide = puzzle.orientation ?? (new Chess(puzzle.startingFen).turn() === 'b' ? 'black' : 'white');
   const packagedRecord = catalog.find((record) => record.PuzzleId === puzzle.id.replace(/^lichess-/, ''));
   const [fen, setFen] = useState(puzzle.startingFen);
 
@@ -513,6 +519,7 @@ function TacticsView({ theme, pieceSet, onQueueChanged }: { theme: BoardTheme; p
     const replyBoard = new Chess(board.fen());
     replyBoard.move(puzzle.moves[replyIndex]);
     setFen(replyBoard.fen());
+    playMoveSound();
     setStep(replyIndex + 1);
     setHint(false);
     if (replyIndex + 1 >= puzzle.moves.length) finish();
@@ -537,14 +544,14 @@ function TacticsView({ theme, pieceSet, onQueueChanged }: { theme: BoardTheme; p
           return <button className={motif === id ? 'active' : ''} key={id} onClick={() => setMotif(id)}><b>{icon}</b><span>{name}</span><small>{clean ? `${clean} / ${stage === 'focused' ? 250 : 100}` : 'Not started'}</small></button>;
         })}</aside>
         <div className="board-column centered-board">
-          <Chessboard fen={fen} expectedSan={puzzle.moves[step]} locked={Boolean(outcome) || step >= puzzle.moves.length} showHint={hint} theme={theme} pieceSet={pieceSet} onMove={movePiece}/>
+          <Chessboard fen={fen} expectedSan={puzzle.moves[step]} locked={Boolean(outcome) || step >= puzzle.moves.length} showHint={hint} theme={theme} pieceSet={pieceSet} onMove={movePiece} orientation={puzzleSide}/>
           <div className="board-tools"><button onClick={() => { setFailed(true); setHint(true); }}>⌁ <span>Show move</span></button><button onClick={() => resetAttempt(true)}>↻ <span>Restart</span></button>{puzzle.sourceUrl && <a href={puzzle.sourceUrl} target="_blank" rel="noreferrer">↗ <span>Original</span></a>}</div>
           {outcome && (
             <OutcomeFlash outcome={outcome}/>
           )}
         </div>
         <aside className="study-panel tactic-study">
-          <span className="pill puzzle">{stage}</span><h2>{current[1]}</h2><p className="tactic-rating">Puzzle {currentProgress.index + 1} of {target}</p>
+          <span className="pill puzzle">{stage}</span><h2>{current[1]}</h2><p className="side-to-play">{puzzleSide === 'black' ? 'Black' : 'White'} to play</p><p className="tactic-rating">Puzzle {currentProgress.index + 1} of {target}</p>
           {!outcome && <div className={`feedback ${failed ? 'wrong' : 'ready'}`} role="status"><span className="feedback-icon">{failed ? '×' : '●'}</span><div><strong>{failed ? 'Follow the arrow' : 'Your move'}</strong></div></div>}
           <div className="stage-progress"><span style={{ width: `${Math.min(100, currentProgress.clean / target * 100)}%` }}/></div><small>Easy → Medium → Hard → Focused</small>
         </aside>
@@ -967,6 +974,7 @@ export default function Home() {
   const [queueNotice, setQueueNotice] = useState('');
   const [boardTheme, setBoardTheme] = useState<BoardTheme>('brown');
   const [pieceSet, setPieceSet] = useState<PieceSet>('cburnett');
+  const [soundOn, setSoundOn] = useState(true);
   const [databaseQueue, setDatabaseQueue] = useState(false);
   const card = practiceCards[activeCardIndex] ?? practiceCards[0];
   const repertoireLine = card.moves;
@@ -1019,6 +1027,7 @@ export default function Home() {
     setDailyQueue(storedQueue); setCardsLeft(storedQueue.length); setActiveCardIndex(storedQueue[0] ?? 0);
     setBoardTheme((localStorage.getItem('tempo-board-theme') as BoardTheme | null) ?? 'brown');
     setPieceSet((localStorage.getItem('tempo-piece-set') as PieceSet | null) ?? 'cburnett');
+    setSoundOn(moveSoundEnabled());
     void refreshDatabaseQueue();
   }, [refreshDatabaseQueue]);
 
@@ -1145,14 +1154,17 @@ export default function Home() {
         <nav className="nav" aria-label="Primary navigation">
           {(['train','tactics','endgames','repertoire','analysis','games','progress'] as View[]).map((item) => <button className={view === item ? 'active' : ''} key={item} onClick={() => setView(item)}>{item[0].toUpperCase() + item.slice(1)}</button>)}
         </nav>
-        <button className="local-status" onClick={() => setShowImport(true)}><span className="status-dot" /> Saved locally</button>
+        <div className="top-actions">
+          <button className="sound-toggle" aria-pressed={soundOn} aria-label={`${soundOn ? 'Turn off' : 'Turn on'} board sounds`} onClick={() => { const next = !soundOn; setSoundOn(next); localStorage.setItem('tempo-move-sound', String(next)); if (next) playMoveSound(true); }}><span aria-hidden="true">{soundOn ? '🔊' : '🔇'}</span><span>Sound</span></button>
+          <button className="local-status" onClick={() => setShowImport(true)}><span className="status-dot" /> Saved locally</button>
+        </div>
       </header>
 
       {view === 'train' && <>
         <section className="training-header"><div><p className="eyebrow">Today · {dateLabel}</p><h1>{cardsLeft === 0 ? 'You’re done for today' : 'Daily training'}</h1></div><div className="session-count"><strong>{cardsLeft}</strong><span>cards left</span></div></section>
         <section className="training-grid" id="train">
           <div className="board-column">
-            <Chessboard fen={fen} expectedSan={repertoireLine[step]} lastMove={lastMove} locked={locked || step >= repertoireLine.length || cardsLeft === 0} showHint={showTeachingArrow} theme={boardTheme} pieceSet={pieceSet} onMove={tryMove} />
+            <Chessboard fen={fen} expectedSan={repertoireLine[step]} lastMove={lastMove} locked={locked || step >= repertoireLine.length || cardsLeft === 0} showHint={showTeachingArrow} theme={boardTheme} pieceSet={pieceSet} onMove={tryMove} orientation={card.orientation} />
             <div className="board-tools"><button onClick={() => { if(!attemptFailed){setAttemptFailed(true);setQueueNotice('Again recorded · finish with guidance');} setShowHint((value) => !value); }} disabled={feedback === 'complete' || cardsLeft === 0}>⌁ <span>{showHint ? 'Hide move' : 'Show move'}</span></button><button onClick={() => { resetLine(); setAttemptFailed(true); setShowHint(true); setQueueNotice('Again recorded · restarted in guided mode'); }}>↻ <span>Restart</span></button><a href={analysisUrl} onClick={()=>{if(!attemptFailed) rateCard('again')}} target="_blank" rel="noreferrer">↗ <span>Analyze</span></a><button onClick={()=>setEditorCard(card)}>✎ <span>Edit card</span></button><label>Board<select value={boardTheme} onChange={(event) => changeBoardTheme(event.target.value as BoardTheme)}><option value="brown">Brown</option><option value="blue">Blue</option><option value="green">Green</option></select></label><label>Pieces<select value={pieceSet} onChange={(event) => changePieceSet(event.target.value as PieceSet)}><option value="cburnett">Cburnett</option><option value="merida">Merida</option></select></label></div>
           </div>
           <aside className="study-panel">

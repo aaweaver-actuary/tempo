@@ -6,6 +6,7 @@ import type { DrawShape } from '@lichess-org/chessground/draw';
 import type { Key } from '@lichess-org/chessground/types';
 import { Chess, type Move, type Square } from 'chess.js';
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { playMoveSound } from '../lib/move-sound';
 
 export type BoardTheme = 'brown' | 'blue' | 'green';
 export type PieceSet = 'cburnett' | 'merida';
@@ -23,13 +24,14 @@ type ChessboardProps = {
   onSquareSelect?: (square: Square) => void;
   onFreeMove?: (from: Square, to: Square) => void;
   onMove: (from: Square, to: Square) => void;
+  orientation?: 'white' | 'black';
 };
 
 function moveForSan(chess: Chess, san: string): Move | undefined {
   return chess.moves({ verbose: true }).find((move) => move.san === san);
 }
 
-export function Chessboard({ fen, expectedSan, lastMove, locked, showHint, theme, pieceSet, shapes = [], editMode = false, onSquareSelect, onFreeMove, onMove }: ChessboardProps) {
+export function Chessboard({ fen, expectedSan, lastMove, locked, showHint, theme, pieceSet, shapes = [], editMode = false, onSquareSelect, onFreeMove, onMove, orientation = 'white' }: ChessboardProps) {
   const elementRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<Api | null>(null);
   const onMoveRef = useRef(onMove);
@@ -63,7 +65,7 @@ export function Chessboard({ fen, expectedSan, lastMove, locked, showHint, theme
     ];
     apiRef.current?.set({
       fen,
-      orientation: 'white',
+      orientation,
       turnColor: chess.turn() === 'w' ? 'white' : 'black',
       lastMove: lastMove as Key[] | undefined,
       coordinates: true,
@@ -74,7 +76,11 @@ export function Chessboard({ fen, expectedSan, lastMove, locked, showHint, theme
         color: editMode ? 'both' : locked ? undefined : chess.turn() === 'w' ? 'white' : 'black',
         dests: editMode ? undefined : destinations,
         showDests: true,
-        events: { after: (from, to) => editMode ? onFreeMoveRef.current?.(from as Square, to as Square) : onMoveRef.current(from as Square, to as Square) },
+        events: { after: (from, to) => {
+          playMoveSound();
+          if (editMode) onFreeMoveRef.current?.(from as Square, to as Square);
+          else onMoveRef.current(from as Square, to as Square);
+        } },
       },
       draggable: { enabled: editMode || !locked, showGhost: true },
       selectable: { enabled: editMode || !locked },
@@ -92,7 +98,7 @@ export function Chessboard({ fen, expectedSan, lastMove, locked, showHint, theme
         },
       },
     });
-  }, [chess, editMode, fen, hintMove, lastMove, locked, shapes, showHint]);
+  }, [chess, editMode, fen, hintMove, lastMove, locked, orientation, shapes, showHint]);
 
   useLayoutEffect(() => {
     const element = elementRef.current?.parentElement?.parentElement;

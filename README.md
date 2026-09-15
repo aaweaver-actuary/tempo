@@ -22,6 +22,14 @@ Tempo is a functional local-first chess-opening spaced-repetition trainer. The i
 
 ## Run locally
 
+### Easiest on a Mac
+
+Double-click **Start Tempo.command** in this folder. Tempo starts its private local database and opens [http://localhost:3000](http://localhost:3000) automatically. Keep the Terminal window open while using Tempo; press Control-C there when you want to stop it.
+
+If macOS blocks the launcher the first time, right-click **Start Tempo.command**, choose **Open**, and confirm once. The launcher uses Docker Desktop when it is running and otherwise starts the included web and Python projects directly.
+
+### Docker Compose
+
 ```bash
 docker compose up --build
 ```

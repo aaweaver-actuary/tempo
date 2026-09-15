@@ -51,7 +51,8 @@ def queue_today():
     with connection() as db:
         seed_queue(db,day)
         rows=db.execute("""SELECT q.id queue_entry_id,q.position,q.cycle,q.attempt_state,c.*,
-                                  r.name repertoire_name,r.source_name repertoire_source,r.is_main
+                                  r.name repertoire_name,r.source_name repertoire_source,r.is_main,
+                                  (SELECT l.trained_color FROM repertoire_lines l WHERE l.repertoire_id=c.repertoire_id ORDER BY l.created_at LIMIT 1) trained_color
                            FROM daily_queue q JOIN cards c ON c.id=q.card_id
                            JOIN repertoires r ON r.id=c.repertoire_id
                            WHERE q.queue_date=? AND q.status='queued'

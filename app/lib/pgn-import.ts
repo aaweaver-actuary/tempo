@@ -37,6 +37,7 @@ export function parsePgnImport(fileName: string, pgn: string, trainedColor: 'whi
       startingFen,
       moves,
       userMoveTarget: Math.ceil(prefixLength / 2),
+      orientation: trainedColor,
     });
   }
   const uniqueCards = [...new Map(cards.map((card) => [card.id, card])).values()];
