@@ -46,6 +46,8 @@ export function practiceCardFromQueue(card: BackendQueueCard): PracticeCard {
           ? "black"
           : "white"
         : (card.trained_color ?? "white"),
+    revision: card.revision ?? 1,
+    repertoireId: card.repertoire_id,
   };
 }
 

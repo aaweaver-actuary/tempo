@@ -217,8 +217,10 @@ button { color: inherit; }
 .arrow-legend i.known { background: #d0a83f; }
 .arrow-legend i.candidate { background: #4e7ca8; }
 .arrow-legend b { display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); font-size: 10px; }
-.analysis-sidebar { max-height:100%; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:12px; align-items:start; overflow:auto; padding-right:3px; }
-.analysis-panel { padding: 17px; border: 1px solid var(--line); border-radius: 11px; background: var(--panel); }
+.analysis-sidebar { max-height:100%; columns:2 260px; column-gap:12px; overflow:auto; padding-right:3px; }
+.analysis-panel { display:inline-block; width:100%; margin:0 0 12px; padding:17px; break-inside:avoid; border:1px solid var(--line); border-radius:11px; background:var(--panel); vertical-align:top; }
+.import-diagnostics { border-color:#d5aa84; background:#fff8ee; }
+.import-diagnostics p { margin:7px 0 0; color:var(--rust); font-size:12px; line-height:1.4; }
 .panel-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; margin-bottom: 14px; }
 .panel-heading span, .panel-heading strong { display: block; }
 .panel-heading span { margin-bottom: 4px; color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; }
@@ -495,7 +497,7 @@ button { color: inherit; }
   .workspace-title { align-items:flex-start; flex-direction:column; }.stage-tabs { width:100%; overflow:auto; }.stage-tabs button { flex:0 0 auto; }
   .tactics-page,.endgames-page { padding-top:18px; }
   .editor-layout { grid-template-columns:1fr; }.card-editor { padding:24px 16px; }.editor-heading { align-items:flex-start; flex-direction:column; gap:10px; }
-  .analysis-sidebar { grid-template-columns:1fr; }
+  .analysis-sidebar { columns:1; }
 }
 
 @media (max-width: 1050px) {

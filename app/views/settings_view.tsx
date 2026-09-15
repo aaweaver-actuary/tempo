@@ -303,7 +303,7 @@ export default function SettingsView({
           </label>
         </section>
         <section className="settings-card">
-          <h2>Analysis</h2>
+          <h2>Builder</h2>
           <label>
             <span>Coverage target</span>
             <select

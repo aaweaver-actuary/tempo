@@ -10,7 +10,7 @@ export type View =
   | "tactics"
   | "endgames"
   | "repertoire"
-  | "analysis"
+  | "builder"
   | "games"
   | "progress"
   | "settings";
@@ -31,6 +31,64 @@ export type AnalysisLine = {
   side: PieceColor;
   moves: string[];
   startingFen: string;
+  validation?: LineValidation;
+};
+
+export type LineDiagnostic = {
+  ply: number;
+  move: string;
+  kind: "null" | "invalid" | "illegal";
+  message: string;
+};
+
+export type LineValidation = {
+  valid: boolean;
+  truncated: boolean;
+  diagnostics: LineDiagnostic[];
+};
+
+export type CanonicalLine = Omit<AnalysisLine, "moves" | "validation"> & {
+  moves: string[];
+  validation: LineValidation;
+};
+
+export type BuilderHistoryEntry = { san: string; uci: string; fen: string };
+
+export type BuilderSession = {
+  version: 1;
+  activeRepertoireByColor: Partial<Record<PieceColor, string>>;
+  orientation: PieceColor;
+  startingFen: string;
+  history: BuilderHistoryEntry[];
+  cursor: number;
+  branchStart: number | null;
+};
+
+export type AnnotationArrow = {
+  from: string;
+  to: string;
+  color: "green" | "red" | "blue" | "yellow";
+};
+
+export type AnnotationSquare = {
+  square: string;
+  color: "green" | "red" | "blue" | "yellow";
+};
+
+export type PositionAnnotation = {
+  repertoireId: string;
+  fenKey: string;
+  comment: string;
+  arrows: AnnotationArrow[];
+  squares: AnnotationSquare[];
+  updatedAt: string;
+};
+
+export type TeachingState = {
+  cardId: string;
+  revision: number;
+  ply: number;
+  taughtAt: string;
 };
 
 export type RepertoireItem = {
@@ -72,6 +130,8 @@ export type PracticeCard = {
   backendId?: string;
   queueEntryId?: number;
   orientation?: PieceColor;
+  revision?: number;
+  repertoireId?: string;
 };
 
 export type LocalRepertoire = {
@@ -94,6 +154,8 @@ export type BackendQueueCard = {
   source_ref?: string;
   is_main?: number;
   trained_color?: PieceColor;
+  revision?: number;
+  repertoire_id?: string;
 };
 
 export type GameViewRecord = {

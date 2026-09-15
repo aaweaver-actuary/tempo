@@ -9,7 +9,7 @@ Tempo is a functional local-first chess-opening spaced-repetition trainer. The i
 - Teaching arrows on first exposure and immediately after a wrong attempted move; picking up and replacing a piece does nothing.
 - Answers remain hidden: the move trail reveals only moves already played.
 - One-click Lichess analysis for the exact current move history, plus a repertoire tree browser for stepping through positions and branches.
-- Train, Repertoire, Analysis, Games, Progress, PGN import, wrong-answer, guided-review, and completed-card states.
+- Train, Repertoire, Builder, Games, Progress, PGN import, wrong-answer, guided-review, and completed-card states.
 - Binary Correct/Again grading with automatic clean solves, first-pass reinforcement at the end of the day, Again placement after four cards, and persisted queue ordering.
 - Docker Compose skeleton with a React + TypeScript web app and a FastAPI backend.
 - Local SQLite schema for settings, repertoires, cards, locked child cards, and review history.

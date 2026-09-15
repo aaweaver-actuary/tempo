@@ -14,7 +14,7 @@ export async function connectLichess() {
   const redirectUri = `${location.origin}${location.pathname}`;
   sessionStorage.setItem("tempo-lichess-verifier", verifier);
   sessionStorage.setItem("tempo-lichess-state", state);
-  sessionStorage.setItem("tempo-return-view", "analysis");
+  sessionStorage.setItem("tempo-return-view", "builder");
   const url = new URL("https://lichess.org/oauth");
   url.search = new URLSearchParams({
     response_type: "code",

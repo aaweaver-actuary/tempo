@@ -4,10 +4,6 @@ import { usesLocalApi } from "../utils/local";
 import { API_URL } from "../const";
 
 export default function RepertoireView({ imported, onImport, onBrowse, onDeleteLocal, onRenameLocal, onQueueChanged }: { imported: LocalRepertoire[]; onImport: () => void; onBrowse: () => void; onDeleteLocal: (id: string, sourceName?: string) => void; onRenameLocal: (id: string, name: string) => void; onQueueChanged: () => Promise<void> }) {
-  const [samples, setSamples] = useState<RepertoireItem[]>([
-    { id: 'sample-white', side: 'white', title: '1. e4 Main Lines', sourceName: 'Tempo examples', detail: '4 example lines', progress: 76, due: 0, pgn: '[Event "1. e4 Main Lines"]\n[Result "*"]\n\n1. e4 c5 2. Nf3 d6 3. d4 cxd4 *' },
-    { id: 'sample-black', side: 'black', title: 'Sicilian Defense', sourceName: 'Tempo examples', detail: '2 example lines', progress: 58, due: 0, pgn: '[Event "Sicilian Defense"]\n[Result "*"]\n\n1. e4 c5 2. Nf3 d6 *' },
-  ]);
   const [backendItems, setBackendItems] = useState<RepertoireItem[]>([]);
 
   const loadBackend = useCallback(async () => {
@@ -28,7 +24,7 @@ export default function RepertoireView({ imported, onImport, onBrowse, onDeleteL
   }, [loadBackend]);
   const backendSources = new Set(backendItems.map((item) => item.sourceName));
   const importedItems: RepertoireItem[] = imported.filter((item) => !backendSources.has(item.sourceName)).map((item) => ({ id: item.id, side: item.side, title: item.title, sourceName: item.sourceName, detail: `${item.cards.length} unique ${item.cards.length === 1 ? 'line' : 'lines'} · stored in this browser`, progress: 0, due: 0, pgn: item.pgn }));
-  const repertoires = [...samples, ...backendItems, ...importedItems];
+  const repertoires = [...backendItems, ...importedItems];
 
   async function rename(item: RepertoireItem) {
     const value=window.prompt('Repertoire nickname',item.title)?.trim();
@@ -36,8 +32,7 @@ export default function RepertoireView({ imported, onImport, onBrowse, onDeleteL
     if (item.backend) {
       const response = await fetch(`${API_URL}/api/repertoires/${item.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: value }) });
       if (response.ok) await loadBackend();
-    } else if (item.id.startsWith('sample-')) setSamples((current) => current.map((entry) => entry.id === item.id ? { ...entry, title: value } : entry));
-    else onRenameLocal(item.id, value);
+    } else onRenameLocal(item.id, value);
   }
 
   async function remove(item: RepertoireItem) {
@@ -48,8 +43,7 @@ export default function RepertoireView({ imported, onImport, onBrowse, onDeleteL
       onDeleteLocal(item.id, item.sourceName);
       await onQueueChanged();
       await loadBackend();
-    } else if (item.id.startsWith('sample-')) setSamples((current) => current.filter((entry) => entry.id !== item.id));
-    else onDeleteLocal(item.id, item.sourceName);
+    } else onDeleteLocal(item.id, item.sourceName);
   }
 
   function exportPgn(item?: RepertoireItem) {

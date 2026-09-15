@@ -1,6 +1,6 @@
 import { STANDARD_FEN } from "./const";
 import type { EndgameMaterial } from "./lib/endgame-generator";
-import { PracticeCard } from "./types";
+import { LocalRepertoire, PracticeCard } from "./types";
 
 export const analysisLines = [
   {
@@ -81,6 +81,43 @@ export const demoCards = [
     sourceUrl: "https://lichess.org/training/00sHx",
   },
 ] satisfies PracticeCard[];
+
+export const bundledRepertoires: LocalRepertoire[] = [
+  {
+    id: "sample-white",
+    title: "1. e4 Main Lines",
+    sourceName: "Tempo examples",
+    side: "white",
+    pgn: '[Event "1. e4 Main Lines"]\n[Result "*"]\n\n1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 a6 6. Be3 *',
+    cards: demoCards.filter((card) => card.kind === "opening").map((card) => ({
+      ...card,
+      orientation: "white",
+      repertoireId: "sample-white",
+      revision: 1,
+    })),
+  },
+  {
+    id: "sample-black",
+    title: "King’s Indian",
+    sourceName: "Tempo examples",
+    side: "black",
+    pgn: '[Event "King’s Indian"]\n[Result "*"]\n\n1. d4 Nf6 2. c4 g6 3. Nc3 Bg7 4. e4 d6 *',
+    cards: [
+      {
+        id: "sample-black-kid-prefix",
+        kind: "opening",
+        title: "King’s Indian",
+        subtitle: "Main line",
+        startingFen: STANDARD_FEN,
+        moves: ["d4", "Nf6", "c4", "g6", "Nc3", "Bg7", "e4", "d6"],
+        userMoveTarget: 4,
+        orientation: "black",
+        repertoireId: "sample-black",
+        revision: 1,
+      },
+    ],
+  },
+];
 
 export const sampleGames = [
   {

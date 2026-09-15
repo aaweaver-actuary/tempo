@@ -1,11 +1,13 @@
 import { Square, Chess, Move } from "chess.js";
+import type { DrawShape } from "@lichess-org/chessground/draw";
+import type { Key } from "@lichess-org/chessground/types";
 import { STANDARD_FEN } from "../const";
 import { useState, useCallback, useEffect } from "react";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
 import { API_URL } from "../const";
 import { ImportDialogBox } from "../import_dialog_box";
 import { moveSoundEnabled, playMoveSound } from "../lib/move-sound";
-import { demoCards } from "../samples";
+import { bundledRepertoires, demoCards } from "../samples";
 import { Settings } from "../utils/settings";
 import { TreeBrowser } from "./tree_browser";
 import {
@@ -18,7 +20,7 @@ import {
 import { practiceCardFromQueue, trainedColor } from "../utils/cards";
 import { usesLocalApi, localDayKey } from "../utils/local";
 import { lichessAnalysisUrl } from "../utils/urls";
-import AnalysisView from "./analysis_view";
+import BuilderView from "./analysis_view";
 import CardEditor from "./card_editor";
 import EndgamesView from "./endgames_view";
 import { GamesView } from "./games_view";
@@ -42,6 +44,7 @@ export default function Home() {
   const [step, setStep] = useState(0);
   const [feedback, setFeedback] = useState<Feedback>("ready");
   const [lastMove, setLastMove] = useState<[string, string]>();
+  const [opponentLastMove, setOpponentLastMove] = useState<[string, string]>();
   const [locked, setLocked] = useState(false);
   const [showHint, setShowHint] = useState(false);
   const [cardsLeft, setCardsLeft] = useState(12);
@@ -51,6 +54,7 @@ export default function Home() {
   const [editorCard, setEditorCard] = useState<PracticeCard | null>(null);
   const [suggestShorter, setSuggestShorter] = useState(false);
   const [seenMoves, setSeenMoves] = useState<Set<string>>(new Set());
+  const [teachingEncounterKey, setTeachingEncounterKey] = useState<string | null>(null);
   const [firstCleanPasses, setFirstCleanPasses] = useState<Set<string>>(
     new Set(),
   );
@@ -88,6 +92,7 @@ export default function Home() {
         setStep(start.step);
         setFeedback("ready");
         setLastMove(start.lastMove);
+        setOpponentLastMove(start.lastMove);
         setLocked(false);
         setShowHint(false);
         setAttemptFailed(false);
@@ -106,9 +111,9 @@ export default function Home() {
       const params = new URLSearchParams(window.location.search);
       if (
         params.has("code") ||
-        sessionStorage.getItem("tempo-return-view") === "analysis"
+        ["analysis", "builder"].includes(sessionStorage.getItem("tempo-return-view") ?? "")
       ) {
-        setView("analysis");
+        setView("builder");
         sessionStorage.removeItem("tempo-return-view");
       }
       const today = localDayKey();
@@ -136,10 +141,22 @@ export default function Home() {
       const savedRepertoires = JSON.parse(
         localStorage.getItem("tempo-imported-repertoires") ?? "[]",
       ) as LocalRepertoire[];
-      setImportedRepertoires(savedRepertoires);
+      const tombstones = new Set<string>(JSON.parse(
+        localStorage.getItem("tempo-repertoire-tombstones") ?? "[]",
+      ));
+      const initialized = localStorage.getItem("tempo-repertoires-initialized") === "true";
+      const seededRepertoires = initialized
+        ? savedRepertoires
+        : [
+            ...bundledRepertoires.filter((item) => !tombstones.has(item.id)),
+            ...savedRepertoires.filter((saved) => !bundledRepertoires.some((sample) => sample.id === saved.id)),
+          ];
+      localStorage.setItem("tempo-repertoires-initialized", "true");
+      localStorage.setItem("tempo-imported-repertoires", JSON.stringify(seededRepertoires));
+      setImportedRepertoires(seededRepertoires);
       const savedCards = [
         ...new Map(
-          savedRepertoires
+          seededRepertoires
             .flatMap((repertoire) => repertoire.cards)
             .map((savedCard) => [savedCard.id, savedCard]),
         ).values(),
@@ -161,6 +178,7 @@ export default function Home() {
         setFen(start.fen);
         setStep(start.step);
         setLastMove(start.lastMove);
+        setOpponentLastMove(start.lastMove);
       }
       setBoardTheme(
         (localStorage.getItem("tempo-board-theme") as BoardTheme | null) ??
@@ -224,6 +242,11 @@ export default function Home() {
       "tempo-imported-repertoires",
       JSON.stringify(nextRepertoires),
     );
+    const tombstones = new Set<string>(JSON.parse(
+      localStorage.getItem("tempo-repertoire-tombstones") ?? "[]",
+    ));
+    tombstones.add(id);
+    localStorage.setItem("tempo-repertoire-tombstones", JSON.stringify([...tombstones]));
     if (!removed) return;
     const removedIds = new Set(removed.cards.map((item) => item.id));
     const queuedIds = dailyQueue
@@ -251,6 +274,7 @@ export default function Home() {
     setStep(start.step);
     setFeedback("ready");
     setLastMove(start.lastMove);
+    setOpponentLastMove(start.lastMove);
     setLocked(false);
     setShowHint(false);
     setAttemptFailed(false);
@@ -337,7 +361,7 @@ export default function Home() {
   }
 
   function markMoveSeen(moveStep: number) {
-    const key = `${card.id}:${moveStep}`;
+    const key = `${card.backendId ?? card.id}:${card.revision ?? 1}:${moveStep}`;
     setSeenMoves((current) => {
       const next = new Set(current).add(key);
       localStorage.setItem(
@@ -401,6 +425,7 @@ export default function Home() {
     markMoveSeen(step);
     setFen(position.fen());
     setLastMove([move.from, move.to]);
+    setOpponentLastMove(undefined);
     setFeedback("correct");
     setShowHint(false);
     setQueueNotice("");
@@ -418,6 +443,7 @@ export default function Home() {
       const nextStep = opponentStep + 1;
       setFen(replyPosition.fen());
       setLastMove([reply.from, reply.to]);
+      setOpponentLastMove([reply.from, reply.to]);
       setStep(nextStep);
       setLocked(false);
       setFeedback(nextStep >= repertoireLine.length ? "complete" : "ready");
@@ -454,11 +480,42 @@ export default function Home() {
     },
   }[feedback];
 
-  const currentMoveKey = `${card.id}:${step}`;
-  const showTeachingArrow =
+  const currentMoveKey = `${card.backendId ?? card.id}:${card.revision ?? 1}:${step}`;
+  const isPlayerTurn =
     step < repertoireLine.length &&
-    new Chess(fen).turn() === (trainedColor(card) === "white" ? "w" : "b") &&
-    (showHint || feedback === "wrong" || !seenMoves.has(currentMoveKey));
+    new Chess(fen).turn() === (trainedColor(card) === "white" ? "w" : "b");
+
+  useEffect(() => {
+    queueMicrotask(() => {
+      if (!isPlayerTurn) {
+        setTeachingEncounterKey(null);
+        return;
+      }
+      if (teachingEncounterKey === currentMoveKey) return;
+      if (seenMoves.has(currentMoveKey)) {
+        setTeachingEncounterKey(null);
+        return;
+      }
+      setTeachingEncounterKey(currentMoveKey);
+      setSeenMoves((current) => {
+        if (current.has(currentMoveKey)) return current;
+        const next = new Set(current).add(currentMoveKey);
+        localStorage.setItem("tempo-seen-moves", JSON.stringify([...next]));
+        return next;
+      });
+    });
+  }, [currentMoveKey, isPlayerTurn, seenMoves, teachingEncounterKey]);
+
+  const showTeachingArrow =
+    isPlayerTurn &&
+    (showHint || feedback === "wrong" || teachingEncounterKey === currentMoveKey);
+  const trainingShapes: DrawShape[] = opponentLastMove
+    ? [{
+        orig: opponentLastMove[0] as Key,
+        dest: opponentLastMove[1] as Key,
+        brush: "red",
+      }]
+    : [];
   const analysisUrl = lichessAnalysisUrl(
     repertoireLine.slice(0, step),
     card.startingFen,
@@ -472,7 +529,7 @@ export default function Home() {
     "train",
     "tactics",
     "endgames",
-    "analysis",
+    "builder",
     "games",
   ].includes(view);
 
@@ -496,7 +553,7 @@ export default function Home() {
               "tactics",
               "endgames",
               "repertoire",
-              "analysis",
+              "builder",
               "games",
               "progress",
               "settings",
@@ -551,6 +608,7 @@ export default function Home() {
                   locked || step >= repertoireLine.length || cardsLeft === 0
                 }
                 showHint={showTeachingArrow}
+                shapes={trainingShapes}
                 theme={boardTheme}
                 pieceSet={pieceSet}
                 onMove={tryMove}
@@ -708,8 +766,8 @@ export default function Home() {
           onQueueChanged={refreshDatabaseQueue}
         />
       )}
-      {view === "analysis" && (
-        <AnalysisView
+      {view === "builder" && (
+        <BuilderView
           theme={boardTheme}
           pieceSet={pieceSet}
           imported={importedRepertoires}
@@ -718,7 +776,7 @@ export default function Home() {
       )}
       {view === "games" && (
         <GamesView
-          onAnalyze={() => setView("analysis")}
+          onAnalyze={() => setView("builder")}
           theme={boardTheme}
           pieceSet={pieceSet}
         />

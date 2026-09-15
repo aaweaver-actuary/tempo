@@ -16,17 +16,22 @@ import {
   analyzeWithStockfish,
   analyzeWithMaia,
 } from "../lib/analysis-engines";
-import { analysisLines } from "../samples";
 import {
   LocalRepertoire,
   ExplorerMove,
   AnalysisLine,
   PieceColor,
   EngineStatus,
+  BuilderSession,
 } from "../types";
 import { usesLocalApi } from "../utils/local";
 import { connectLichess } from "../utils/lichess";
 import { Settings } from "../utils/settings";
+import {
+  canonicalFenKey,
+  canonicalizeLine,
+  sanForUci,
+} from "../utils/canonical-line";
 
 type AnalysisMetric = "stockfish" | "lichess" | "masters";
 
@@ -39,14 +44,6 @@ type MoveRowItem = {
   draws?: number;
   black?: number;
 };
-
-function uciLine(moves: string[], startingFen = STANDARD_FEN): string[] {
-  const board = new Chess(startingFen);
-  return moves.map((move) => {
-    const next = board.move(move);
-    return `${next.from}${next.to}${next.promotion ?? ""}`;
-  });
-}
 
 function candidatesThrough<T extends { uci: string }>(
   moves: T[],
@@ -122,7 +119,26 @@ function getLocalStorageOrDefault(key: string, defaultValue: string) {
     : (localStorage.getItem(key) ?? defaultValue);
 }
 
-export default function AnalysisView({
+function readBuilderSession(): BuilderSession | undefined {
+  if (typeof window === "undefined") return undefined;
+  const current = localStorage.getItem("tempo-builder-session");
+  const legacy = localStorage.getItem("tempo-analysis-session");
+  const raw = current ?? legacy;
+  if (!raw) return undefined;
+  try {
+    const parsed = JSON.parse(raw) as BuilderSession;
+    if (parsed.version !== 1 || !Array.isArray(parsed.history)) return undefined;
+    if (!current) {
+      localStorage.setItem("tempo-builder-session", raw);
+      localStorage.removeItem("tempo-analysis-session");
+    }
+    return parsed;
+  } catch {
+    return undefined;
+  }
+}
+
+export default function BuilderView({
   imported,
   settings,
   theme,
@@ -133,10 +149,12 @@ export default function AnalysisView({
   theme: BoardTheme;
   pieceSet: PieceSet;
 }) {
-  const [history, setHistory] = useState<
-    { san: string; uci: string; fen: string }[]
-  >([]);
-  const [cursor, setCursor] = useState(0);
+  const initialSession = useMemo(readBuilderSession, []);
+  const [history, setHistory] = useState(initialSession?.history ?? []);
+  const [cursor, setCursor] = useState(initialSession?.cursor ?? 0);
+  const [startingFen, setStartingFen] = useState(
+    initialSession?.startingFen ?? STANDARD_FEN,
+  );
   const [explorerOn, setExplorerOn] = useState(
     getLocalStorageOrDefault("tempo-explorer-on", "true") === "true",
   );
@@ -175,7 +193,9 @@ export default function AnalysisView({
       settings.getExplorer().ratings,
     ),
   );
-  const [branchStart, setBranchStart] = useState<number | null>(null);
+  const [branchStart, setBranchStart] = useState<number | null>(
+    initialSession?.branchStart ?? null,
+  );
   const [branchNote, setBranchNote] = useState("");
   const [explorerState, setExplorerState] = useState<EngineStatus>(
     settings.getLichessStatus(),
@@ -191,11 +211,13 @@ export default function AnalysisView({
   const [maiaProgress, setMaiaProgress] = useState(0);
   const [backendLines, setBackendLines] = useState<AnalysisLine[]>([]);
   const [orientation, setOrientation] = useState<PieceColor>(() => {
-    const stored = getLocalStorageOrDefault("tempo-builder-orientation", "white");
+    const stored = initialSession?.orientation ?? getLocalStorageOrDefault("tempo-builder-orientation", "white");
     return stored === "white" || stored === "black" ? stored : "white";
   });
   const [activeRepertoire, setActiveRepertoire] = useState(() =>
-    getLocalStorageOrDefault("tempo-active-repertoire-white", ""),
+    initialSession?.activeRepertoireByColor?.[
+      initialSession.orientation ?? "white"
+    ] ?? getLocalStorageOrDefault("tempo-active-repertoire-white", ""),
   );
   const [arrowMetric, setArrowMetric] = useState<AnalysisMetric>(
     () => settings.getSettings().arrow_metric ?? "stockfish",
@@ -205,24 +227,14 @@ export default function AnalysisView({
   const [hoveredMove, setHoveredMove] = useState<string | null>(null);
 
   const visibleHistory = history.slice(0, cursor);
-  const fen = visibleHistory.at(-1)?.fen ?? STANDARD_FEN;
+  const fen = visibleHistory.at(-1)?.fen ?? startingFen;
   const previousUci = visibleHistory.at(-1)?.uci;
   const lastMove: [string, string] | undefined = previousUci
     ? [previousUci.slice(0, 2), previousUci.slice(2, 4)]
     : undefined;
   const playedUci = visibleHistory.map((move) => move.uci);
-  const availableLines = useMemo<AnalysisLine[]>(
-    () => [
-      ...backendLines,
-      ...analysisLines.map((line, index) => ({
-        id: `sample-${index}`,
-        repertoireId: `sample-${line.side.toLowerCase()}`,
-        repertoireName: `${line.side} examples`,
-        ...line,
-        side: line.side.toLowerCase() as PieceColor,
-        startingFen: STANDARD_FEN,
-      })),
-      ...imported.flatMap((repertoire) =>
+  const availableLines = useMemo<AnalysisLine[]>(() => {
+    const browserLines = imported.flatMap((repertoire) =>
         repertoire.cards.map((card) => ({
           id: card.id,
           repertoireId: repertoire.id,
@@ -232,10 +244,14 @@ export default function AnalysisView({
           moves: card.moves,
           startingFen: card.startingFen,
         })),
-      ),
-    ],
-    [backendLines, imported],
-  );
+      );
+    const source = backendLines.length ? backendLines : browserLines;
+    const canonical = source.map(canonicalizeLine);
+    return [...new Map(canonical.map((line) => [
+      `${line.repertoireId}:${canonicalFenKey(line.startingFen)}:${line.moves.join(" ")}`,
+      line,
+    ])).values()];
+  }, [backendLines, imported]);
   const repertoires = [
     ...new Map(
       availableLines.map((line) => [
@@ -252,15 +268,12 @@ export default function AnalysisView({
   const lineMatches = availableLines.filter(
     (line) =>
       (!selectedRepertoire || line.repertoireId === selectedRepertoire.id) &&
-      line.startingFen.split(" ").slice(0, 4).join(" ") ===
-        STANDARD_FEN.split(" ").slice(0, 4).join(" ") &&
-      playedUci.every(
-        (move, index) => uciLine(line.moves, line.startingFen)[index] === move,
-      ),
+      canonicalFenKey(line.startingFen) === canonicalFenKey(startingFen) &&
+      playedUci.every((move, index) => line.moves[index] === move),
   );
   const coveredReplies = new Set(
     lineMatches.flatMap((line) => {
-      const uci = uciLine(line.moves, line.startingFen)[cursor];
+      const uci = line.moves[cursor];
       return uci ? [uci] : [];
     }),
   );
@@ -312,6 +325,24 @@ export default function AnalysisView({
       selectedRepertoire.id,
     );
   }, [orientation, selectedRepertoire]);
+
+  useEffect(() => {
+    const activeRepertoireByColor: BuilderSession["activeRepertoireByColor"] = {
+      white: localStorage.getItem("tempo-active-repertoire-white") ?? undefined,
+      black: localStorage.getItem("tempo-active-repertoire-black") ?? undefined,
+      [orientation]: selectedRepertoire?.id ?? activeRepertoire,
+    };
+    const session: BuilderSession = {
+      version: 1,
+      activeRepertoireByColor,
+      orientation,
+      startingFen,
+      history,
+      cursor: Math.min(cursor, history.length),
+      branchStart,
+    };
+    localStorage.setItem("tempo-builder-session", JSON.stringify(session));
+  }, [activeRepertoire, branchStart, cursor, history, orientation, selectedRepertoire, startingFen]);
 
   const flipBuilder = useCallback(() => {
     setOrientation((current) => {
@@ -610,13 +641,7 @@ export default function AnalysisView({
   const trainedTurn =
     new Chess(fen).turn() === (orientation === "white" ? "w" : "b");
   const repertoireMoves = [...coveredReplies].map((uci) => {
-    const board = new Chess(fen);
-    const move = board.move({
-      from: uci.slice(0, 2) as Square,
-      to: uci.slice(2, 4) as Square,
-      promotion: uci[4] || "q",
-    });
-    return { uci, san: move.san };
+    return { uci, san: sanForUci(fen, uci) ?? uci };
   });
   const practicalMoves =
     arrowMetric === "masters" ? mastersMoves : explorerMoves;
@@ -674,6 +699,10 @@ export default function AnalysisView({
   function reset() {
     setHistory([]);
     setCursor(0);
+    const nextStart = availableLines.find(
+      (line) => line.repertoireId === selectedRepertoire?.id,
+    )?.startingFen;
+    if (nextStart) setStartingFen(nextStart);
   }
   function disconnectLichess() {
     sessionStorage.removeItem("tempo-lichess-token");
@@ -682,7 +711,7 @@ export default function AnalysisView({
   }
 
   return (
-    <section className="analysis-page" id="analysis">
+    <section className="analysis-page" id="builder">
       <div className="analysis-heading compact-analysis">
         <h1>Builder</h1>
         <div className="analysis-switches">
@@ -702,6 +731,21 @@ export default function AnalysisView({
                 selected.id,
               );
               localStorage.setItem("tempo-builder-orientation", side);
+              const candidateLines = availableLines.filter(
+                (line) => line.repertoireId === selected.id,
+              );
+              const compatible = candidateLines.some(
+                (line) =>
+                  canonicalFenKey(line.startingFen) === canonicalFenKey(startingFen) &&
+                  playedUci.every((move, index) => line.moves[index] === move),
+              );
+              if (!compatible) {
+                setStartingFen(candidateLines[0]?.startingFen ?? STANDARD_FEN);
+                setHistory([]);
+                setCursor(0);
+                setBranchStart(null);
+                setBranchNote("Position reset for the selected repertoire");
+              }
             }}
           >
             <option value="" disabled>
@@ -859,6 +903,18 @@ export default function AnalysisView({
           </div>
         </div>
         <aside className="analysis-sidebar">
+          {availableLines.some((line) => line.validation?.diagnostics.length) && (
+            <section className="analysis-panel import-diagnostics" role="status">
+              <div className="panel-heading"><div><span>Import diagnostics</span><strong>Some line data was skipped safely</strong></div></div>
+              {availableLines.flatMap((line) =>
+                (line.validation?.diagnostics ?? []).map((diagnostic) => (
+                  <p key={`${line.id}-${diagnostic.ply}-${diagnostic.move}`}>
+                    {line.repertoireName}: {diagnostic.message} at ply {diagnostic.ply + 1}
+                  </p>
+                )),
+              )}
+            </section>
+          )}
           <section className="analysis-panel repertoire-panel">
             <div className="panel-heading">
               <div>
