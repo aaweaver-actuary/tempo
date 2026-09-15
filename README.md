@@ -40,6 +40,12 @@ Open `http://localhost:3000`. The local API is available at `http://localhost:80
 
 The hosted private Site uses local browser storage and representative game data. Docker Compose runs the full local FastAPI + SQLite path, including provider sync and durable review state.
 
+### Static browser-only preview
+
+Double-click **Preview Tempo Static.command** to build the Rust/WebAssembly bundle when needed, serve the generated site over HTTP, and open [http://127.0.0.1:4173/tempo/](http://127.0.0.1:4173/tempo/). Keep its Terminal window open while using the preview.
+
+Do not open `static/index.html` directly. It is Vite source, not the generated application, and `file://` pages cannot run Tempo's modules, Web Workers, WebAssembly engines, or service worker. The launcher serves the deployable `pages-dist/` output with the browser security context those features require.
+
 ## Structure
 
 ```text
@@ -57,9 +63,13 @@ docker-compose.yml         Local two-service runtime
 
 ```bash
 npm run build:static
+npm run verify:static
+npm run preview:static
 ```
 
 This compiles `tempo-core` to WebAssembly and emits an offline-capable static site in `pages-dist/`. Network orchestration, IndexedDB, encrypted backups, engines, and UI state remain in TypeScript. Docker/Python stays supported as the compatibility and migration source until each deterministic service passes parity fixtures against Rust.
+
+The public deployment is [https://aaweaver-actuary.github.io/tempo/](https://aaweaver-actuary.github.io/tempo/). GitHub Actions builds and verifies the same `pages-dist/` artifact before publishing it with GitHub Pages.
 
 ## Settled product decisions
 

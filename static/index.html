@@ -3,15 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <base href="/tempo/" />
     <meta name="theme-color" content="#344737" />
     <meta name="description" content="Local-first chess opening, tactics, and endgame training." />
-    <link rel="icon" href="favicon.svg" />
     <title>Tempo — Chess practice</title>
   </head>
   <body>
     <div id="root"></div>
+    <script>
+      if (location.protocol === "file:") {
+        document.body.innerHTML = `
+          <main style="max-width:42rem;margin:12vh auto;padding:2rem;font:16px/1.6 system-ui;color:#26352a">
+            <h1 style="font:600 2rem Georgia,serif">Tempo needs a local web address</h1>
+            <p>This source file cannot run directly from disk because the chess engines use secure browser modules, WebAssembly, and workers.</p>
+            <p>Double-click <strong>Preview Tempo Static.command</strong> in the project folder, or visit <strong>https://aaweaver-actuary.github.io/tempo/</strong>.</p>
+          </main>`;
+        window.stop();
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
-
