@@ -1,8 +1,10 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useRef, useState, useEffect } from "react";
 import type { BoardTheme, PieceSet } from "../components/chessboard";
 import { API_URL } from "../const";
 import { usesLocalApi } from "../utils/local";
+import { createEncryptedBackup, restoreEncryptedBackup } from "../lib/encrypted-backup";
+import { migrateSqliteToBrowser } from "../lib/sqlite-migration";
 
 type SettingsValues = {
   initial_depth: number;
@@ -65,6 +67,7 @@ export default function SettingsView({
     arrow_metric: "stockfish",
   });
   const [status, setStatus] = useState("");
+  const backupInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -173,6 +176,47 @@ export default function SettingsView({
         );
       }
     } else setStatus("Saved in this browser.");
+  }
+
+  async function transferLocalData() {
+    setStatus("Copying and verifying the local database…");
+    try {
+      const result = await migrateSqliteToBrowser(true);
+      if (result.status === "unavailable") setStatus("Open Docker Tempo to transfer its local database.");
+      else setStatus(`Verified browser copy (${Object.values(result.counts).reduce((sum, count) => sum + count, 0)} records).`);
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "The local database could not be transferred.");
+    }
+  }
+
+  async function exportBackup() {
+    const passphrase = window.prompt("Choose a passphrase for this encrypted backup");
+    if (!passphrase) return;
+    try {
+      const blob = await createEncryptedBackup(passphrase);
+      const link = document.createElement("a");
+      link.href = URL.createObjectURL(blob);
+      link.download = `tempo-backup-${new Date().toISOString().slice(0, 10)}.tempo`;
+      link.click();
+      URL.revokeObjectURL(link.href);
+      setStatus("Encrypted backup downloaded.");
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "The backup could not be created.");
+    }
+  }
+
+  async function importBackup(file: File | undefined) {
+    if (!file) return;
+    const passphrase = window.prompt("Enter this backup’s passphrase");
+    if (!passphrase) return;
+    try {
+      const result = await restoreEncryptedBackup(file, passphrase);
+      setStatus(`Backup restored (${result.merged} records merged). Reload Tempo to use the restored data.`);
+    } catch {
+      setStatus("That backup is damaged or the passphrase is incorrect.");
+    } finally {
+      if (backupInput.current) backupInput.current.value = "";
+    }
   }
 
   return (
@@ -451,6 +495,22 @@ export default function SettingsView({
               }
             />
           </label>
+        </section>
+        <section className="settings-card">
+          <h2>Data &amp; backup</h2>
+          <p className="settings-card-copy">Keep an encrypted portable copy of browser data. Docker’s SQLite file remains unchanged during transfer.</p>
+          <div className="settings-actions">
+            {usesLocalApi() && <button onClick={() => void transferLocalData()}>Transfer Docker data</button>}
+            <button onClick={() => void exportBackup()}>Export encrypted backup</button>
+            <button onClick={() => backupInput.current?.click()}>Import encrypted backup</button>
+            <input
+              ref={backupInput}
+              type="file"
+              accept=".tempo,application/vnd.tempo.backup+json,application/json"
+              hidden
+              onChange={(event) => void importBackup(event.target.files?.[0])}
+            />
+          </div>
         </section>
       </div>
       {status && (

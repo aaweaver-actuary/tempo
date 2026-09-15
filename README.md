@@ -19,6 +19,8 @@ Tempo is a functional local-first chess-opening spaced-repetition trainer. The i
 - Twelve packaged Lichess tactics decks: forks, pins, skewers, and discovered attacks at easy, medium, and hard levels, with 100 cards in every deck.
 - A playable analysis board with live repertoire filtering, authenticated Lichess and Masters Explorer results, real local Stockfish 19 and Maia 3 analysis, branch editing, 80/90/95% coverage targets, persistent preferences, source-aware arrows, and keyboard history navigation.
 - Incremental Lichess and Chess.com game ingestion, locally cached normalized PGNs, divergence classification, comparison summaries, and a Games workspace for sending gaps to Analysis.
+- A browser-first Rust core for canonical FEN/UCI validation, stable card identity, and chess-aware position distance, compiled to WebAssembly behind a typed adapter.
+- Versioned IndexedDB stores plus verified one-time SQLite transfer and passphrase-encrypted portable backups. SQLite remains an untouched recovery source during migration.
 
 ## Run locally
 
@@ -45,8 +47,19 @@ app/                       React + TypeScript product mockup
 backend/app/main.py        FastAPI routes
 backend/app/database.py    Local SQLite schema and connection
 backend/app/services/      PGN, identity, and scheduling logic
+tempo-core/                Rust/WASM deterministic chess and scheduling core
+app/lib/tempo-db.ts        Versioned browser persistence and SQLite transfer
+static/                    GitHub Pages entry point (base path /tempo/)
 docker-compose.yml         Local two-service runtime
 ```
+
+## Static build
+
+```bash
+npm run build:static
+```
+
+This compiles `tempo-core` to WebAssembly and emits an offline-capable static site in `pages-dist/`. Network orchestration, IndexedDB, encrypted backups, engines, and UI state remain in TypeScript. Docker/Python stays supported as the compatibility and migration source until each deterministic service passes parity fixtures against Rust.
 
 ## Settled product decisions
 

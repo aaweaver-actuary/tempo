@@ -60,6 +60,11 @@ class PositionAnnotationRequest(BaseModel):
     squares: list[AnnotationSquare] = Field(default_factory=list)
 
 
+class TeachingStateRequest(BaseModel):
+    revision: int = Field(default=1, ge=1)
+    ply: int = Field(ge=0)
+
+
 class TacticAttemptRequest(BaseModel):
     puzzle_id: str
     deck_id: str

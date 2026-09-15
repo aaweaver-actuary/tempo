@@ -1,3 +1,5 @@
+import { assetUrl } from "../const";
+
 let context: AudioContext | undefined;
 let moveAudio: HTMLAudioElement | undefined;
 let captureAudio: HTMLAudioElement | undefined;
@@ -11,8 +13,8 @@ export function playMoveSound(force = false, capture = false) {
   try {
     const volume = Math.max(0, Math.min(1, Number(localStorage.getItem('tempo-sound-volume') ?? .72)));
     const audio = capture
-      ? (captureAudio ??= new Audio('/sounds/woodland/Capture.mp3'))
-      : (moveAudio ??= new Audio('/sounds/woodland/Move.mp3'));
+      ? (captureAudio ??= new Audio(assetUrl('sounds/woodland/Capture.mp3')))
+      : (moveAudio ??= new Audio(assetUrl('sounds/woodland/Move.mp3')));
     audio.currentTime = 0;
     audio.volume = volume;
     void audio.play().catch(() => undefined);

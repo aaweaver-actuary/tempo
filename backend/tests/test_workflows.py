@@ -1,4 +1,6 @@
 from fastapi.testclient import TestClient
+import hashlib
+import json
 
 from app import database
 from app.main import app
@@ -164,3 +166,32 @@ def test_position_annotations_are_scoped_and_round_trip_through_pgn(tmp_path, mo
         assert "Watch the loose diagonal." in exported
         assert "%cal Yc1g5" in exported
         assert "%csl Rd4" in exported
+
+
+def test_teaching_state_and_verified_migration_snapshot(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        imported = client.post(
+            "/api/imports/pgn",
+            files={"file": ("teaching.pgn", PGN, "application/x-chess-pgn")},
+            data={"trained_color": "white", "initial_depth": "2"},
+        )
+        assert imported.status_code == 200
+        card_id = client.get("/api/queue/today").json()["cards"][0]["id"]
+        taught = client.post(f"/api/cards/{card_id}/teaching", json={"revision": 1, "ply": 0})
+        assert taught.status_code == 200
+        assert client.post(f"/api/cards/{card_id}/teaching", json={"revision": 1, "ply": 0}).status_code == 200
+        states = client.get(f"/api/cards/{card_id}/teaching").json()["states"]
+        assert len(states) == 1
+
+        snapshot = client.get("/api/migration/snapshot").json()
+        assert snapshot["source"] == "tempo-sqlite"
+        assert snapshot["counts"]["teaching_states"] == 1
+        assert all(snapshot["counts"][name] == len(rows) for name, rows in snapshot["tables"].items())
+        canonical = json.dumps(
+            {"schemaVersion": snapshot["schemaVersion"], "tables": snapshot["tables"]},
+            sort_keys=True,
+            separators=(",", ":"),
+            default=str,
+        )
+        assert hashlib.sha256(canonical.encode()).hexdigest() == snapshot["checksum"]

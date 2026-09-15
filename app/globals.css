@@ -51,18 +51,18 @@ button { color: inherit; }
 .chessground-shell.theme-green cg-board { background-color: #e5e3ce; background-image: conic-gradient(from 90deg, #6e8268 25%, #e5e3ce 0 50%, #6e8268 0 75%, #e5e3ce 0); background-size: 25% 25%; }
 .chessground-shell cg-board { border-radius: 1px; }
 .chessground-shell .cg-wrap piece { filter: drop-shadow(0 2px 1px rgba(0, 0, 0, .18)); }
-.pieces-merida .cg-wrap piece.pawn.white { background-image: url('/pieces/merida/wP.svg'); }
-.pieces-merida .cg-wrap piece.knight.white { background-image: url('/pieces/merida/wN.svg'); }
-.pieces-merida .cg-wrap piece.bishop.white { background-image: url('/pieces/merida/wB.svg'); }
-.pieces-merida .cg-wrap piece.rook.white { background-image: url('/pieces/merida/wR.svg'); }
-.pieces-merida .cg-wrap piece.queen.white { background-image: url('/pieces/merida/wQ.svg'); }
-.pieces-merida .cg-wrap piece.king.white { background-image: url('/pieces/merida/wK.svg'); }
-.pieces-merida .cg-wrap piece.pawn.black { background-image: url('/pieces/merida/bP.svg'); }
-.pieces-merida .cg-wrap piece.knight.black { background-image: url('/pieces/merida/bN.svg'); }
-.pieces-merida .cg-wrap piece.bishop.black { background-image: url('/pieces/merida/bB.svg'); }
-.pieces-merida .cg-wrap piece.rook.black { background-image: url('/pieces/merida/bR.svg'); }
-.pieces-merida .cg-wrap piece.queen.black { background-image: url('/pieces/merida/bQ.svg'); }
-.pieces-merida .cg-wrap piece.king.black { background-image: url('/pieces/merida/bK.svg'); }
+.pieces-merida .cg-wrap piece.pawn.white { background-image: url('../pieces/merida/wP.svg'); }
+.pieces-merida .cg-wrap piece.knight.white { background-image: url('../pieces/merida/wN.svg'); }
+.pieces-merida .cg-wrap piece.bishop.white { background-image: url('../pieces/merida/wB.svg'); }
+.pieces-merida .cg-wrap piece.rook.white { background-image: url('../pieces/merida/wR.svg'); }
+.pieces-merida .cg-wrap piece.queen.white { background-image: url('../pieces/merida/wQ.svg'); }
+.pieces-merida .cg-wrap piece.king.white { background-image: url('../pieces/merida/wK.svg'); }
+.pieces-merida .cg-wrap piece.pawn.black { background-image: url('../pieces/merida/bP.svg'); }
+.pieces-merida .cg-wrap piece.knight.black { background-image: url('../pieces/merida/bN.svg'); }
+.pieces-merida .cg-wrap piece.bishop.black { background-image: url('../pieces/merida/bB.svg'); }
+.pieces-merida .cg-wrap piece.rook.black { background-image: url('../pieces/merida/bR.svg'); }
+.pieces-merida .cg-wrap piece.queen.black { background-image: url('../pieces/merida/bQ.svg'); }
+.pieces-merida .cg-wrap piece.king.black { background-image: url('../pieces/merida/bK.svg'); }
 .board-tools { display: flex; align-items: center; gap: 8px; padding-top: 14px; }
 .board-tools button, .board-tools a, .board-tools label { border: 1px solid var(--line); border-radius: 8px; background: transparent; padding: 9px 12px; color: var(--ink); cursor: pointer; font-size: 12px; font-weight: 600; text-decoration: none; }
 .board-tools button:hover, .board-tools a:hover, .board-tools label:hover { background: var(--panel); }
@@ -191,6 +191,10 @@ button { color: inherit; }
 .setting-switch { min-width:56px; padding:8px 12px; border:1px solid var(--line); border-radius:999px; background:#e4e4df; cursor:pointer; font-weight:700; }
 .setting-switch.on { border-color:#9daf9c; background:var(--sage); color:var(--green-dark); }
 .settings-status { margin:18px 0 0; color:var(--green-dark); font-size:14px; }
+.settings-card-copy { margin:0 0 14px; color:var(--muted); font-size:12px; line-height:1.5; }
+.settings-actions { display:grid; gap:8px; }
+.settings-actions button { min-height:38px; padding:8px 12px; border:1px solid var(--line); border-radius:7px; background:#fff; color:var(--ink); font-weight:700; cursor:pointer; text-align:left; }
+.settings-actions button:hover { border-color:var(--green); color:var(--green-dark); }
 
 .analysis-page { height:calc(100dvh - var(--nav-height)); max-width: 1420px; margin: 0 auto; padding: 24px clamp(20px, 4vw, 64px) 18px; overflow:hidden; }
 .analysis-heading { display: flex; align-items: end; justify-content: space-between; gap: 30px; margin-bottom: 24px; }

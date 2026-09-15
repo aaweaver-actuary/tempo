@@ -1,5 +1,6 @@
 import { Chess, Move } from 'chess.js';
 import * as ort from 'onnxruntime-web/wasm';
+import { assetUrl } from '../const';
 
 import moveIndex from './all_moves_maia3.json';
 import reversedMoveIndex from './all_moves_maia3_reversed.json';
@@ -19,13 +20,13 @@ let stockfishReady: Promise<StockfishModule> | undefined;
 async function loadStockfish() {
   if (!stockfishReady) {
     stockfishReady = (async () => {
-      const source = await fetch('/engines/sf_19_smallnet.js').then((response) => response.text());
+      const source = await fetch(assetUrl('engines/sf_19_smallnet.js')).then((response) => response.text());
       const scriptBlob = new Blob([source], { type: 'text/javascript' });
       const moduleUrl = URL.createObjectURL(scriptBlob);
       const stockfishModule = await import(/* @vite-ignore */ moduleUrl);
-      const engine = await stockfishModule.default({ locateFile: (file: string) => `/engines/${file}`, mainScriptUrlOrBlob: scriptBlob, listen: () => undefined, onError: (message: string) => console.error(message) }) as StockfishModule;
+      const engine = await stockfishModule.default({ locateFile: (file: string) => assetUrl(`engines/${file}`), mainScriptUrlOrBlob: scriptBlob, listen: () => undefined, onError: (message: string) => console.error(message) }) as StockfishModule;
       URL.revokeObjectURL(moduleUrl);
-      const response = await fetch('/engines/nn-61e7af4bb97d.nnue');
+      const response = await fetch(assetUrl('engines/nn-61e7af4bb97d.nnue'));
       if (!response.ok) throw new Error('Could not load Stockfish evaluation network');
       engine.setNnueBuffer(new Uint8Array(await response.arrayBuffer()));
       engine.uci('uci'); engine.uci('setoption name Threads value 1'); engine.uci('setoption name Hash value 32'); engine.uci('setoption name MultiPV value 5');
@@ -125,14 +126,14 @@ function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: stri
 function loadMaia(onProgress?: (progress: number) => void) {
   if (!maiaReady) maiaReady = (async () => {
     ort.env.wasm.wasmPaths = {
-      mjs: new URL('/ort/ort-wasm-simd-threaded.mjs', location.origin).href,
-      wasm: new URL('/ort/ort-wasm-simd-threaded.wasm', location.origin).href,
+      mjs: assetUrl('ort/ort-wasm-simd-threaded.mjs'),
+      wasm: assetUrl('ort/ort-wasm-simd-threaded.wasm'),
     };
     ort.env.wasm.numThreads = crossOriginIsolated ? Math.min(2, navigator.hardwareConcurrency || 1) : 1;
     onProgress?.(5);
     const chunks: Uint8Array[] = [];
     for (let index=0; index<6; index++) {
-      const response = await fetch(`/maia3/parts/part-${String(index).padStart(2,'0')}`);
+      const response = await fetch(assetUrl(`maia3/parts/part-${String(index).padStart(2,'0')}`));
       if (!response.ok) throw new Error('Could not load Maia model');
       chunks.push(new Uint8Array(await response.arrayBuffer())); onProgress?.(Math.round((index+1)/6*90));
     }

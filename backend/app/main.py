@@ -8,7 +8,7 @@ from fastapi.responses import PlainTextResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import connection, initialize
-from .models import AccountSettings, BranchRequest, CardRevisionRequest, EndgameProbeRequest, EndgameTemplateRequest, GameAnalysisRequest, GameSyncRequest, ImportResult, PositionAnnotationRequest, RepertoireRenameRequest, ReviewRequest, Settings, TacticAttemptRequest
+from .models import AccountSettings, BranchRequest, CardRevisionRequest, EndgameProbeRequest, EndgameTemplateRequest, GameAnalysisRequest, GameSyncRequest, ImportResult, PositionAnnotationRequest, RepertoireRenameRequest, ReviewRequest, Settings, TacticAttemptRequest, TeachingStateRequest
 from .services.analysis import AnalysisCapabilities
 from .services.cards import card_id
 from .services.pgn import parse_pgn, prefix_through_user_moves
@@ -189,6 +189,42 @@ def save_annotation(identifier: str, request: PositionAnnotationRequest):
                           comment=excluded.comment,arrows_json=excluded.arrows_json,squares_json=excluded.squares_json,updated_at=excluded.updated_at""",
                        (identifier,key,request.comment.strip(),json.dumps(arrows),json.dumps(squares),now))
     return {"repertoireId": identifier, "fenKey": key, "comment": request.comment.strip(), "arrows": arrows, "squares": squares, "updatedAt": now}
+
+@app.get("/api/cards/{identifier}/teaching")
+def list_teaching_states(identifier: str):
+    with connection() as db:
+        rows = db.execute("SELECT card_id,revision,ply,taught_at FROM teaching_states WHERE card_id=? ORDER BY revision,ply", (identifier,)).fetchall()
+    return {"states": [{"cardId": row["card_id"], "revision": row["revision"], "ply": row["ply"], "taughtAt": row["taught_at"]} for row in rows]}
+
+@app.post("/api/cards/{identifier}/teaching")
+def mark_teaching_state(identifier: str, request: TeachingStateRequest):
+    taught_at = datetime.now(timezone.utc).isoformat()
+    with connection() as db:
+        if not db.execute("SELECT 1 FROM cards WHERE id=? AND archived=0", (identifier,)).fetchone():
+            raise HTTPException(404, "Card not found")
+        db.execute("INSERT OR IGNORE INTO teaching_states(card_id,revision,ply,taught_at) VALUES(?,?,?,?)", (identifier,request.revision,request.ply,taught_at))
+    return {"cardId": identifier, "revision": request.revision, "ply": request.ply, "taughtAt": taught_at}
+
+@app.get("/api/migration/snapshot")
+def migration_snapshot():
+    table_names = [
+        "settings", "repertoires", "repertoire_lines", "repertoire_cards", "cards",
+        "reviews", "daily_queue", "position_annotations", "teaching_states",
+        "tactic_progress", "endgame_templates", "endgame_attempts", "game_accounts",
+        "imported_games", "game_move_analysis", "repertoire_comparisons", "game_sync_state",
+    ]
+    with connection() as db:
+        tables = {name: [dict(row) for row in db.execute(f"SELECT * FROM {name}").fetchall()] for name in table_names}
+    counts = {name: len(rows) for name, rows in tables.items()}
+    canonical = json.dumps({"schemaVersion":1,"tables":tables}, sort_keys=True, separators=(",",":"), default=str)
+    return {
+        "schemaVersion": 1,
+        "exportedAt": datetime.now(timezone.utc).isoformat(),
+        "source": "tempo-sqlite",
+        "tables": tables,
+        "counts": counts,
+        "checksum": hashlib.sha256(canonical.encode()).hexdigest(),
+    }
 
 @app.put("/api/repertoires/{identifier}/main")
 def make_main_repertoire(identifier:str):

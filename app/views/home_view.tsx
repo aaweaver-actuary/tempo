@@ -32,6 +32,7 @@ import TacticsView from "./tactics_view";
 import { dateLabel } from "../utils/dates";
 import { initialTrainingState } from "../page";
 import { annotationToShapes, loadPositionAnnotation } from "../utils/position-annotations";
+import { migrateSqliteToBrowser } from "../lib/sqlite-migration";
 
 export default function Home() {
   const [view, setView] = useState<View>("train");
@@ -194,6 +195,7 @@ export default function Home() {
       );
       setSoundOn(moveSoundEnabled());
       void refreshDatabaseQueue();
+      void migrateSqliteToBrowser().catch(() => undefined);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [refreshDatabaseQueue]);
@@ -508,8 +510,15 @@ export default function Home() {
         localStorage.setItem("tempo-seen-moves", JSON.stringify([...next]));
         return next;
       });
+      if (card.backendId) {
+        void fetch(`${API_URL}/api/cards/${card.backendId}/teaching`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ revision: card.revision ?? 1, ply: step }),
+        }).catch(() => undefined);
+      }
     });
-  }, [currentMoveKey, isPlayerTurn, seenMoves, teachingEncounterKey]);
+  }, [card.backendId, card.revision, currentMoveKey, isPlayerTurn, seenMoves, step, teachingEncounterKey]);
 
   const showTeachingArrow =
     isPlayerTurn &&

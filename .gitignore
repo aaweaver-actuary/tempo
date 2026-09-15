@@ -42,4 +42,7 @@ __pycache__/
 *.py[cod]
 /data/
 /backend/data/
+/target/
+/public/tempo-core/
+/pages-dist/
 .pytest_cache/

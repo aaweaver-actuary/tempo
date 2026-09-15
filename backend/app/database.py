@@ -147,6 +147,15 @@ def initialize() -> None:
         """,
         "CREATE INDEX IF NOT EXISTS idx_position_annotations_fen ON position_annotations(fen_key)",
         """
+        CREATE TABLE IF NOT EXISTS teaching_states (
+            card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+            revision INTEGER NOT NULL,
+            ply INTEGER NOT NULL,
+            taught_at TEXT NOT NULL,
+            PRIMARY KEY(card_id, revision, ply)
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS repertoire_lines (
             id TEXT PRIMARY KEY,
             repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,

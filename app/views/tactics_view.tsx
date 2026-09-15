@@ -2,7 +2,7 @@ import { Chess, Square, Move } from "chess.js";
 import { useState, useRef, useEffect, useMemo, useCallback } from "react";
 import { OutcomeFlash } from "../components/board-controls";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
-import { API_URL } from "../const";
+import { API_URL, assetUrl } from "../const";
 import { playMoveSound } from "../lib/move-sound";
 import {
   readTacticProgress,
@@ -40,7 +40,7 @@ export default function TacticsView({
   const advanceTimerRef = useRef<number | undefined>(undefined);
   const [catalog, setCatalog] = useState<PackagedPuzzle[]>([]);
   useEffect(() => {
-    fetch("/data/tactics-decks.json")
+    fetch(assetUrl("data/tactics-decks.json"))
       .then((response) => response.json() as Promise<PackagedPuzzle[]>)
       .then((value) => setCatalog(value))
       .catch(() => setCatalog([]));

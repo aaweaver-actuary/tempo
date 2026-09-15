@@ -8,8 +8,10 @@
   "scripts": {
     "dev": "vinext dev",
     "build": "vinext build",
+    "build:wasm": "wasm-pack build tempo-core --target web --out-dir ../public/tempo-core --release",
+    "build:static": "npm run build:wasm && vite build --config vite.static.config.ts",
     "start": "vinext start",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next"
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern pages-dist --ignore-pattern public/tempo-core"
   },
   "dependencies": {
     "@lichess-org/chessground": "^10.1.1",
