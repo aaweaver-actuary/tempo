@@ -6,3 +6,9 @@ dist
 data
 backend/__pycache__
 backend/.pytest_cache
+.venv
+target
+pages-dist
+local-dist
+test-results
+playwright-report

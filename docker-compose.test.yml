@@ -1,0 +1,16 @@
+services:
+  api:
+    build: ./backend
+    environment:
+      TEMPO_DB_PATH: /data/tempo.db
+      TZ: America/New_York
+    volumes:
+      - ${TEMPO_TEST_DATA}:/data
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "4180:80"
+    depends_on:
+      - api

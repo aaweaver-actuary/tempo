@@ -45,4 +45,8 @@ __pycache__/
 /target/
 /public/tempo-core/
 /pages-dist/
+/local-dist/
+/test-results/
+/playwright-report/
+tsconfig.tsbuildinfo
 .pytest_cache/

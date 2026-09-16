@@ -2,7 +2,11 @@
 
 Tempo is a functional local-first chess-opening spaced-repetition trainer. The interface is deliberately board-first: a large responsive chessboard, immediate move feedback, guided corrections, compact progress, and a fixed daily queue.
 
-## What works in this pass
+## Local product
+
+Docker Tempo is the full product. Python/SQLite is authoritative for repertoires, daily queues, reviews, accounts, and games. The public GitHub Pages build is a limited practice demo: it does not sync personal games or promise Docker persistence. Use **Start Tempo.command** for the full application.
+
+Every reported defect must have a named regression test before closure. Run `npm test` for the required frontend, backend, Rust, browser, and Docker checks; CI runs the same command. See [CONTRIBUTING.md](CONTRIBUTING.md) and [tests/REGRESSIONS.md](tests/REGRESSIONS.md).
 
 - Interactive opening and tactics drills using Lichess's Chessground board, with click-to-move or drag-and-drop.
 - Fluid responsive sizing, Cburnett and Merida piece sets, three board palettes, legal-move markers, last-move highlighting, automatic opponent replies, and native SVG teaching arrows.
@@ -11,7 +15,7 @@ Tempo is a functional local-first chess-opening spaced-repetition trainer. The i
 - One-click Lichess analysis for the exact current move history, plus a repertoire tree browser for stepping through positions and branches.
 - Train, Repertoire, Builder, Games, Progress, PGN import, wrong-answer, guided-review, and completed-card states.
 - Binary Correct/Again grading with automatic clean solves, first-pass reinforcement at the end of the day, Again placement after four cards, and persisted queue ordering.
-- Docker Compose skeleton with a React + TypeScript web app and a FastAPI backend.
+- Production Docker Compose with a compiled React + TypeScript application, Nginx, and a FastAPI backend.
 - Local SQLite schema for settings, repertoires, cards, locked child cards, and review history.
 - PGN variation parsing and stable SHA-256 card IDs derived from canonical starting FEN plus normalized UCI moves.
 - FSRS 6 scheduling at 92% desired retention, capped lateness benefit, 2.5× interval growth, and a 365-day maximum.
@@ -49,7 +53,7 @@ Do not open `static/index.html` directly. It is Vite source, not the generated a
 ## Structure
 
 ```text
-app/                       React + TypeScript product mockup
+app/                       React + TypeScript application
 backend/app/main.py        FastAPI routes
 backend/app/database.py    Local SQLite schema and connection
 backend/app/services/      PGN, identity, and scheduling logic
@@ -69,7 +73,7 @@ npm run preview:static
 
 This compiles `tempo-core` to WebAssembly and emits an offline-capable static site in `pages-dist/`. Network orchestration, IndexedDB, encrypted backups, engines, and UI state remain in TypeScript. Docker/Python stays supported as the compatibility and migration source until each deterministic service passes parity fixtures against Rust.
 
-The public deployment is [https://aaweaver-actuary.github.io/tempo/](https://aaweaver-actuary.github.io/tempo/). GitHub Actions builds and verifies the same `pages-dist/` artifact before publishing it with GitHub Pages.
+The public practice demo is [https://aaweaver-actuary.github.io/tempo/](https://aaweaver-actuary.github.io/tempo/). GitHub Actions runs the complete local-product suite before publishing the limited `pages-dist/` demonstration. Rust identity/validation/prefix fixtures are shared with Python; scheduling remains Python-authoritative until full parity is proven.
 
 ## Settled product decisions
 

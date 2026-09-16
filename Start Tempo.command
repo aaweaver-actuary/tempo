@@ -6,13 +6,14 @@ cd "$PROJECT_DIR"
 mkdir -p data
 
 open_when_ready() {
-  for attempt in {1..45}; do
-    if curl --silent --fail http://127.0.0.1:3000 >/dev/null 2>&1; then
+  for attempt in {1..900}; do
+    if curl --silent --fail http://127.0.0.1:3000 >/dev/null 2>&1 && curl --silent --fail http://127.0.0.1:8000/api/health >/dev/null 2>&1; then
       open http://localhost:3000
       return
     fi
     sleep 1
   done
+  echo "Tempo has not become ready yet. Check the startup messages in this window."
 }
 
 if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
