@@ -17,6 +17,7 @@
 | Repair board / keyboard navigation inconsistent | `repair uses the shared board and arrows navigate the complete solution; Escape closes` |
 | Random endgames start illegally | `random endgames never leave the nonmoving king in check` |
 | Engine not usable in production | `production Stockfish returns playable engine moves without clipping the board` |
+| Maia runtime/module loading errors, including production JavaScript MIME type | `Maia initializes matching runtime assets and returns legal playable probabilities` |
 | Board controls fall below the viewport | Board-and-controls bounds assertions in every browser workspace regression |
 | Unfinished new cards accumulate beyond tomorrow's allowance | `test_unfinished_unreviewed_cards_do_not_bypass_tomorrows_new_card_limit` |
 | Explorer/Masters practical results missing from source rows | `source rows show frequency, WDL, practical score and support keyboard preview` |
@@ -25,3 +26,15 @@
 | Rust prefix differs from Python | `prefixes_match_shared_python_golden_fixtures`; `test_prefixes_match_shared_rust_golden_fixtures` |
 
 Append every new reported issue and its test names here. All listed tests belong to the regular suites.
+
+| Refactor regression | Required regression |
+| --- | --- |
+| Application aliases fail in Vitest | `application aliases resolve in the regular frontend suite` |
+| Invalid tokens carry validated move brands | `null and malformed moves remain raw diagnostics while valid moves are canonical` |
+| Provider moves bypass domain validation | `engine candidates validate legal UCI and PV while preserving evaluations` |
+| Queue adapters lose persisted attempt identity | `queue mapping preserves identity and guided state and rejects illegal persisted lines` |
+| Training selectors loop or Black cannot respond after automatic White move | `Black training mounts without selector loops and plays from the current position` |
+| Training board resets to starting FEN during completion | `unseen tactic review has no automatic teaching arrow and retains the final mate before reinforcement` |
+| Self-reported first clean solve reveals later reinforcement plies | `self-reported first clean solves receive reinforcement without teaching later plies` |
+| Show move label and guidance toggle conflict with automatic teaching | `Show move during initial teaching records failure and keeps required guidance` |
+| A previous failed position's comment leaks into later positions | `position notes and annotations reveal only at the failed position and remain hidden in clean training` |

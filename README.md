@@ -20,9 +20,9 @@ Every reported defect must have a named regression test before closure. Run `npm
 - PGN variation parsing and stable SHA-256 card IDs derived from canonical starting FEN plus normalized UCI moves.
 - FSRS 6 scheduling at 92% desired retention, capped lateness benefit, 2.5× interval growth, and a 365-day maximum.
 - A stability-based descendant gate requiring three successful review days and no recent lapse.
-- Twelve packaged Lichess tactics decks: forks, pins, skewers, and discovered attacks at easy, medium, and hard levels, with 100 cards in every deck.
+- Thirteen tactical motifs, each with Easy, Medium, and Hard stages of 100 puzzles and a 250-puzzle focused stage. Discovery through play controls admission to the daily queue.
 - A playable analysis board with live repertoire filtering, authenticated Lichess and Masters Explorer results, real local Stockfish 19 and Maia 3 analysis, branch editing, 80/90/95% coverage targets, persistent preferences, source-aware arrows, and keyboard history navigation.
-- Incremental Lichess and Chess.com game ingestion, locally cached normalized PGNs, divergence classification, comparison summaries, and a Games workspace for sending gaps to Analysis.
+- Incremental Lichess and Chess.com game ingestion, locally cached normalized PGNs, divergence classification, comparison summaries, and a Games workspace for sending gaps to Builder.
 - A browser-first Rust core for canonical FEN/UCI validation, stable card identity, and chess-aware position distance, compiled to WebAssembly behind a typed adapter.
 - Versioned IndexedDB stores plus verified one-time SQLite transfer and passphrase-encrypted portable backups. SQLite remains an untouched recovery source during migration.
 
@@ -54,6 +54,8 @@ Do not open `static/index.html` directly. It is Vite source, not the generated a
 
 ```text
 app/                       React + TypeScript application
+app/domain/                Shared chess/product models and transport adapters
+app/state/                 Training state and focused selectors/actions
 backend/app/main.py        FastAPI routes
 backend/app/database.py    Local SQLite schema and connection
 backend/app/services/      PGN, identity, and scheduling logic
@@ -82,13 +84,13 @@ The public practice demo is [https://aaweaver-actuary.github.io/tempo/](https://
 - Each repertoire branch gets its own card. Another move that is valid elsewhere in the repertoire is neutral—not a failure—but the teaching arrow redirects the learner to the branch currently being tested.
 - Card identity hashes the canonical starting position (piece placement, turn, castling, and en-passant state) plus normalized UCI moves. FEN clock fields are ignored because they do not change the tested position.
 - Calendar rollover should follow Anki-like local-day behavior; unusual clock and timezone cases are intentionally low priority.
-- Tactics use the same daily queue and review controls, but have a separate daily cap so puzzles cannot crowd out opening work. Lichess's first UCI move is applied as the setup move; the remaining moves form the card answer.
+- Tactics enter study through the Tactics workspace. Clean discovery starts a light schedule; failed discovery reappears today. Lichess's first UCI move is applied as the setup move; the remaining moves form the card answer. The daily new-card allowance applies to opening cards, while due reviews remain in the queue.
 
 ## Lichess assets and puzzle data
 
 Tempo now uses the official `@lichess-org/chessground` package instead of a hand-built board. The default Cburnett set and optional Merida set come from Lichess. Chessground is GPL-3.0-or-later; both piece sets are GPL-2.0-or-later. See [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 
-The Lichess puzzle database is public domain and provides FEN, UCI solution moves, rating, popularity, motifs, and source-game URLs. Tempo includes 1,200 deterministic records in `public/data/tactics-decks.json`: 100 for each motif/difficulty pair. Easy is rating 700–1100, medium is 1101–1500, and hard is 1501–2000; all selected puzzles have popularity of at least 70, at least 100 plays, and rating deviation no greater than 110. Opening and puzzle scheduling stay independent even when their due cards are shuffled into one session.
+The Lichess puzzle database is public domain and provides FEN, UCI solution moves, rating, popularity, motifs, and source-game URLs. Tempo includes 7,150 globally distinct, validated records in `public/data/tactics-decks.json`: 100 in each fundamental stage and 250 in each focused stage for thirteen motifs. Focused stages cover ratings 1250–2000. Opening and puzzle scheduling stay independent even when their due cards are shuffled into one session.
 
 Lichess now requires authentication for Opening Explorer requests. Tempo uses Lichess's PKCE flow, requests no account permissions, and keeps the access token in session storage. Stockfish 19 runs locally in WebAssembly; Maia 3 runs locally through its simplified ONNX model. Engine inputs and repertoire data do not leave the browser.
 

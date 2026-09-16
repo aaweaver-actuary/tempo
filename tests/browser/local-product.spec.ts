@@ -23,7 +23,9 @@ async function boardVisible(page: Page) {
   }
 }
 async function move(page: Page, from: string, to: string) {
-  const board=page.locator(".board-frame").first(); const box=(await board.boundingBox())!;
+  const board=page.locator(".board-frame").first();
+  await expect(board).toBeVisible();
+  const box=(await board.boundingBox())!;
   const black=(await board.getAttribute("data-orientation"))==="black";
   for(const square of [from,to]) {
     const file=square.charCodeAt(0)-97,rank=Number(square[1])-1;
@@ -34,6 +36,8 @@ async function move(page: Page, from: string, to: string) {
 test.beforeEach(async ({request}) => {
   const repertoires=(await (await request.get(`${api}/repertoires`)).json()).repertoires;
   for(const item of repertoires) await request.delete(`${api}/repertoires/${item.id}`);
+  const queue=(await (await request.get(`${api}/queue/today`)).json()).cards;
+  for(const card of queue) if(card.content_type !== "opening") await request.delete(`${api}/cards/${card.id}`);
   const settings=await (await request.get(`${api}/settings`)).json();
   await request.put(`${api}/settings`,{data:{...settings,new_cards_per_day:2,initial_depth:2,lichess_username:"",chesscom_username:""}});
 });
@@ -110,13 +114,33 @@ test("production Stockfish returns playable engine moves without clipping the bo
   await boardVisible(page);
 });
 
+test("Maia initializes matching runtime assets and returns legal playable probabilities",async ({page})=>{
+  const runtime=await page.request.get("/ort/ort-wasm-simd-threaded.mjs");
+  expect(runtime.ok()).toBeTruthy();
+  expect(runtime.headers()["content-type"]).toMatch(/javascript/);
+  await page.addInitScript(()=>{localStorage.setItem("tempo-stockfish-on","false");localStorage.setItem("tempo-maia-on","true");});
+  await page.goto("/"); await nav(page,"Builder");
+  const panel=page.locator(".analysis-panel").filter({hasText:"Maia 3"});
+  const candidate=panel.locator(".candidate-list button").first();
+  await expect(candidate).toBeVisible({timeout:45_000});
+  await expect(candidate.locator("small")).toContainText(/\d+%/);
+  const startingFen=await page.locator(".board-frame").getAttribute("data-fen");
+  await candidate.click();
+  await expect(page.locator(".board-frame")).not.toHaveAttribute("data-fen",startingFen!);
+  await boardVisible(page);
+});
+
 test("help remains Again after browser reload and the returned attempt is unassisted",async ({page,request})=>{
   await request.post(`${api}/imports/pgn`,{multipart:{file:{name:"help.pgn",mimeType:"application/x-chess-pgn",buffer:Buffer.from('1. e4 e5 2. Nf3 Nc6 *')},initial_depth:"2"}});
   await page.goto("/"); await expect(page.locator(".board-frame")).toBeVisible();
   await page.getByRole("button",{name:/Show move/}).click();
   await expect.poll(async()=> (await (await request.get(`${api}/queue/today`)).json()).cards[0].attempt_failed).toBe(1);
   await page.reload(); await expect(page.locator(".outcome-flash.wrong")).toBeVisible();
-  await page.getByRole("button",{name:"Correct",exact:true}).click();
+  await expect(page.getByRole("button",{name:"Finish on the board",exact:true})).toBeDisabled();
+  await move(page,"e2","e4");
+  await expect.poll(async()=>new Chess((await page.locator(".board-frame").getAttribute("data-fen"))!).get("e5")?.type).toBe("p");
+  await page.waitForTimeout(200); await move(page,"g1","f3");
+  await expect.poll(async()=>new Chess((await page.locator(".board-frame").getAttribute("data-fen"))!).get("f3")?.type).toBe("n");
   await expect.poll(async()=> (await (await request.get(`${api}/queue/today`)).json()).cards[0].attempt_failed).toBe(0);
   await expect(page.locator(".board-frame")).toHaveAttribute("data-hint","false");
 });
