@@ -31,6 +31,19 @@ export type ExplorerMove = {
   black: NonNegativeInteger;
 };
 
+export type CandidateMove = {
+  uci: UciMove;
+  san?: SanMove;
+  probability?: number;
+  score?: string;
+  white?: number;
+  draws?: number;
+  black?: number;
+  cp?: number;
+  mate?: number;
+  pv?: UciMove[];
+};
+
 export type AnalysisLine = {
   id: LineId;
   repertoireId: RepertoireId;
@@ -44,7 +57,8 @@ export type AnalysisLine = {
 
 export type LineDiagnostic = {
   ply: number;
-  move: UciMove | SanMove;
+  // Invalid tokens, including null moves, cannot carry a validated move brand.
+  move: string;
   kind: `${ValidationIssueKind}`;
   message: string;
 };

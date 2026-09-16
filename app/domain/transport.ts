@@ -1,13 +1,6 @@
 import type {
-  CardId,
-  DeckId,
-  FenString,
   GamePhase,
   PieceColor,
-  PuzzleId,
-  QueueEntryId,
-  RepertoireId,
-  UciMove,
 } from "./shared";
 import type { QueueAttemptStateValue } from "./cards";
 import type { RepertoireSource } from "./repertoire";
@@ -24,23 +17,23 @@ export enum QueueContentTypeEnum {
 export type QueueContentType = `${QueueContentTypeEnum}`;
 
 export type PackagedPuzzle = {
-  DeckId: DeckId;
+  DeckId: string;
   DeckPosition: number;
-  PuzzleId: PuzzleId;
-  FEN: FenString;
+  PuzzleId: string;
+  FEN: string;
   Moves: RawUciMoveSequence;
   Rating: number;
 };
 
 export type BackendQueueCard = {
-  id: CardId;
-  queue_entry_id: QueueEntryId;
+  id: string;
+  queue_entry_id: number;
   cycle?: number;
   attempt_state?: QueueAttemptStateValue;
   attempt_failed?: boolean;
   recent_attempts_json?: string;
-  start_fen: FenString;
-  moves: Array<UciMove>;
+  start_fen: string;
+  moves: string[];
   content_type: GamePhase | QueueContentType;
   repertoire_name: string;
   repertoire_source: RepertoireSource;
@@ -48,5 +41,5 @@ export type BackendQueueCard = {
   is_main?: boolean;
   trained_color?: PieceColor;
   revision?: number;
-  repertoire_id?: RepertoireId;
+  repertoire_id?: string;
 };

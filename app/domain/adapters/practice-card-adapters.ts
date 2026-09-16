@@ -10,14 +10,20 @@ import {
   asSanMove,
 } from "../../types";
 import { movesToSanFormat } from "../../utils/chess";
+import { canonicalizeMoves } from "../../utils/canonical-line";
 
 // Maps queue transport records from the backend into domain practice cards.
 export function mapQueueCardToPracticeCard(
   card: BackendQueueCard,
 ): PracticeCard {
+  const startingFen = asFenString(card.start_fen);
+  const validatedLine = canonicalizeMoves(startingFen, card.moves);
+  if (validatedLine.diagnostics.length) {
+    throw new Error(`Invalid queue card ${card.id}: ${validatedLine.diagnostics[0].message}`);
+  }
   return {
     id: asCardId(`queue-${card.queue_entry_id}`),
-    backendId: card.id,
+    backendId: asCardId(card.id),
     queueEntryId: asQueueEntryId(Number(card.queue_entry_id)),
     queueCycle: card.cycle,
     queueAttemptState: card.attempt_state,
@@ -40,11 +46,11 @@ export function mapQueueCardToPracticeCard(
       card.content_type === "tactic"
         ? `Lichess puzzle ${card.source_ref ?? ""}`
         : card.repertoire_source,
-    startingFen: asFenString(card.start_fen),
+    startingFen,
     moves:
       card.content_type === "endgame"
         ? []
-        : movesToSanFormat(card.start_fen, card.moves).map(asSanMove),
+        : movesToSanFormat(startingFen, validatedLine.moves).map(asSanMove),
     userMoveTarget: Math.ceil(card.moves.length / 2),
     sourceUrl: card.source_ref
       ? `https://lichess.org/training/${card.source_ref}`
@@ -66,9 +72,9 @@ export function mapQueueCardToPracticeCard(
 export function mapPackagedPuzzleToPracticeCard(
   record: PackagedPuzzle,
 ): PracticeCard | null {
-  const board = new Chess(record.FEN);
-  const uciMoves = record.Moves.split(/\s+/).filter(Boolean);
   try {
+    const board = new Chess(asFenString(record.FEN));
+    const uciMoves = record.Moves.split(/\s+/).filter(Boolean);
     const setup = uciMoves.shift()!;
     board.move({
       from: setup.slice(0, 2) as Square,

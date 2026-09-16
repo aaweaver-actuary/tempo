@@ -1,18 +1,6 @@
 "use client";
 
-import { UciMove, SanMove } from "./domain";
-
-type CandidateMove = {
-  uci: UciMove;
-  san?: SanMove;
-  probability?: number;
-  score?: string;
-  white?: number;
-  draws?: number;
-  black?: number;
-};
-
-//
+import type { CandidateMove } from "./domain";
 export default function CandidateMovesTable({
   moves,
   covered,

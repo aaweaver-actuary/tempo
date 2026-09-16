@@ -72,7 +72,7 @@ export function asUciMove(value: string): UciMove {
   if (!isUciMove(value)) {
     throw new Error(`Invalid UCI move: ${value}`);
   }
-  return value.toLowerCase() as UciMove;
+  return value.trim().toLowerCase() as UciMove;
 }
 
 export function asSanMove(value: string): SanMove {

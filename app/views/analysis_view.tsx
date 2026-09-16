@@ -14,14 +14,17 @@ import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
 import CandidateMovesTable from "../CandidateMovesTable";
 import { STANDARD_FEN, API_URL } from "../const";
 import {
-  EngineMove,
   analyzeWithStockfish,
   analyzeWithMaia,
 } from "../lib/analysis-engines";
+import { adaptEngineMoves, adaptExplorerMoves, type RawExplorerMove } from "../domain/adapters/analysis-adapters";
 import {
   LocalRepertoire,
   ExplorerMove,
+  CandidateMove,
+  UciMove,
   AnalysisLine,
+  CanonicalLine,
   PieceColor,
   EngineStatus,
   BuilderSession,
@@ -174,11 +177,11 @@ export default function BuilderView({
   const [explorerState, setExplorerState] = useState<EngineStatus>(
     settings.getLichessStatus(),
   );
-  const [stockfishMoves, setStockfishMoves] = useState<EngineMove[]>([]);
+  const [stockfishMoves, setStockfishMoves] = useState<CandidateMove[]>([]);
   const [stockfishState, setStockfishState] = useState<EngineStatus>(
     settings.getEngine().state,
   );
-  const [maiaMoves, setMaiaMoves] = useState<EngineMove[]>([]);
+  const [maiaMoves, setMaiaMoves] = useState<CandidateMove[]>([]);
   const [maiaState, setMaiaState] = useState<EngineStatus>(
     settings.getMaia().state,
   );
@@ -221,7 +224,7 @@ export default function BuilderView({
     ? [previousUci.slice(0, 2), previousUci.slice(2, 4)]
     : undefined;
   const playedUci = visibleHistory.map((move) => move.uci);
-  const availableLines = useMemo<AnalysisLine[]>(() => {
+  const availableLines = useMemo<CanonicalLine[]>(() => {
     const browserLines = imported.flatMap((repertoire) =>
       repertoire.cards.map((card) => ({
         id: asLineId(String(card.id)),
@@ -260,10 +263,10 @@ export default function BuilderView({
       canonicalFenKey(line.startingFen) === canonicalFenKey(startingFen) &&
       playedUci.every((move, index) => line.moves[index] === move),
   );
-  const coveredReplies = new Set<string>(
+  const coveredReplies = new Set<UciMove>(
     lineMatches.flatMap((line) => {
       const uci = line.moves[cursor];
-      return uci ? [String(uci)] : [];
+      return uci ? [uci] : [];
     }),
   );
   const positionIndex = useMemo(
@@ -562,6 +565,7 @@ export default function BuilderView({
   useEffect(() => {
     const controller = new AbortController();
     queueMicrotask(() => {
+      if (controller.signal.aborted) return;
       setExplorerMoves([]);
       setMastersMoves([]);
       if (!explorerOn || !lichessToken) {
@@ -590,16 +594,17 @@ export default function BuilderView({
           return Promise.all([lichess.json(), masters.json()]);
         })
         .then((value) => {
+          if (controller.signal.aborted) return;
           const [human, masters] = value as [
-            { moves?: ExplorerMove[] },
-            { moves?: ExplorerMove[] },
+            { moves?: RawExplorerMove[] },
+            { moves?: RawExplorerMove[] },
           ];
-          setExplorerMoves(human.moves ?? []);
-          setMastersMoves(masters.moves ?? []);
+          setExplorerMoves(adaptExplorerMoves(fen, human.moves ?? []));
+          setMastersMoves(adaptExplorerMoves(fen, masters.moves ?? []));
           setExplorerState("ready");
         })
         .catch((error) => {
-          if (error.name !== "AbortError") setExplorerState("error");
+          if (!controller.signal.aborted && error.name !== "AbortError") setExplorerState("error");
         });
     });
     return () => controller.abort();
@@ -619,7 +624,7 @@ export default function BuilderView({
       analyzeWithStockfish(fen)
         .then((moves) => {
           if (current) {
-            setStockfishMoves(moves);
+            setStockfishMoves(adaptEngineMoves(fen, moves));
             setStockfishState("ready");
           }
         })
@@ -648,7 +653,7 @@ export default function BuilderView({
       analyzeWithMaia(fen, Number(maiaElo), setMaiaProgress)
         .then((moves) => {
           if (current) {
-            setMaiaMoves(moves);
+            setMaiaMoves(adaptEngineMoves(fen, moves));
             setMaiaState("ready");
           }
         })
@@ -672,7 +677,7 @@ export default function BuilderView({
       setMaiaMoves([]);
       setHoveredMove(null);
       const uci = asUciMove(`${move.from}${move.to}${move.promotion ?? ""}`);
-      if (!coveredReplies.has(uci) && branchStart === null)
+      if (!coveredReplies.has(asUciMove(uci)) && branchStart === null)
         setBranchStart(cursor);
       setHistory((current) => [
         ...current.slice(0, cursor),
@@ -784,7 +789,7 @@ export default function BuilderView({
       return topEngine.cp - move.cp <= engineWindowCp;
     })
     .filter((move) => !coveredReplies.has(move.uci));
-  const arrowSources = new Map<string, Set<string>>();
+  const arrowSources = new Map<UciMove, Set<string>>();
   for (const move of explorerCandidates)
     arrowSources.set(
       move.uci,

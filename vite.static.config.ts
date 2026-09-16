@@ -1,8 +1,10 @@
 import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/postcss";
 import { defineConfig } from "vite";
+import { moduleResolution } from "./module-resolution";
 
 export default defineConfig({
+  resolve: moduleResolution,
   root: "static",
   base: process.env.TEMPO_TARGET === "local" ? "/" : "/tempo/",
   publicDir: "../public",
