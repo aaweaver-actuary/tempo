@@ -4,7 +4,13 @@ import { API_URL } from "../const";
 import { ImportDialogBox } from "../import_dialog_box";
 import { moveSoundEnabled, playMoveSound } from "../lib/move-sound";
 import { bundledRepertoires, demoCards } from "../samples";
-import { View, LocalRepertoire, AnalysisLine } from "../types";
+import {
+  View,
+  LocalRepertoire,
+  AnalysisLine,
+  CardId,
+  asRepertoireId,
+} from "../types";
 import { canonicalFenKey, canonicalizeLine } from "../utils/canonical-line";
 import {
   indexRepertoirePositions,
@@ -171,7 +177,7 @@ export default function Home() {
           const lines: AnalysisLine[] = body.lines.map((line) =>
             canonicalizeLine({
               id: String(line.id),
-              repertoireId: String(line.repertoire_id),
+              repertoireId: asRepertoireId(String(line.repertoire_id)),
               repertoireName: String(line.repertoire_name),
               title: String(line.name ?? ""),
               side: line.trained_color === "black" ? "black" : "white",
@@ -387,7 +393,7 @@ export default function Home() {
     const queuedIds = dailyQueue
       .map((index) => practiceCards[index]?.id)
       .filter(
-        (cardId): cardId is string =>
+        (cardId): cardId is CardId =>
           Boolean(cardId) && !removedIds.has(cardId),
       );
     const nextCards = practiceCards.filter((item) => !removedIds.has(item.id));

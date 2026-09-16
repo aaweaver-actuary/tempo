@@ -1,5 +1,10 @@
 import { useState, useCallback, useEffect } from "react";
-import { LocalRepertoire, PieceColor, RepertoireItem } from "../types";
+import {
+  LocalRepertoire,
+  PieceColor,
+  RepertoireItem,
+  asRepertoireId,
+} from "../types";
 import { usesLocalApi } from "../utils/local";
 import { API_URL } from "../const";
 
@@ -13,7 +18,7 @@ export default function RepertoireView({ imported, onImport, onBrowse, onDeleteL
       const response = await fetch(`${API_URL}/api/repertoires`);
       if (!response.ok) throw new Error();
       const body = await response.json() as { repertoires: { id: string; name: string; source_name: string; line_count: number; card_count: number; due_count: number; trained_color?: PieceColor }[] };
-      setBackendItems(body.repertoires.map((item) => ({ id: item.id, side: item.trained_color === 'black' ? 'black' : 'white', title: item.name, sourceName: item.source_name, detail: `${item.line_count} unique ${item.line_count === 1 ? 'line' : 'lines'} · ${item.card_count} cards`, progress: 0, due: item.due_count, backend: true })));
+      setBackendItems(body.repertoires.map((item) => ({ id: asRepertoireId(item.id), side: item.trained_color === 'black' ? 'black' : 'white', title: item.name, sourceName: item.source_name, detail: `${item.line_count} unique ${item.line_count === 1 ? 'line' : 'lines'} · ${item.card_count} cards`, progress: 0, due: item.due_count, backend: true })));
       setError("");
     } catch { setError("Could not load repertoires from the local service."); }
   }, []);

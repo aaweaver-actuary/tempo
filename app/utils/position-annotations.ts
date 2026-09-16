@@ -1,7 +1,8 @@
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
+import type { Square } from "chess.js";
 import { API_URL } from "../const";
-import type { PositionAnnotation } from "../types";
+import { asFenKey, asIsoDateString, type PositionAnnotation } from "../types";
 import { canonicalFenKey } from "./canonical-line";
 import { usesLocalApi } from "./local";
 
@@ -10,7 +11,9 @@ const STORAGE_KEY = "tempo-position-annotations";
 function localAnnotations(): PositionAnnotation[] {
   if (typeof window === "undefined") return [];
   try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY) ?? "[]") as PositionAnnotation[];
+    return JSON.parse(
+      localStorage.getItem(STORAGE_KEY) ?? "[]",
+    ) as PositionAnnotation[];
   } catch {
     return [];
   }
@@ -27,10 +30,14 @@ export async function loadPositionAnnotation(
         `${API_URL}/api/repertoires/${encodeURIComponent(repertoireId)}/annotations?fen=${encodeURIComponent(fen)}`,
       );
       if (response.ok) {
-        const body = (await response.json()) as { annotations: PositionAnnotation[] };
+        const body = (await response.json()) as {
+          annotations: PositionAnnotation[];
+        };
         return body.annotations[0];
       }
-    } catch { return undefined; }
+    } catch {
+      return undefined;
+    }
     return undefined;
   }
   return localAnnotations().find(
@@ -42,11 +49,24 @@ export async function savePositionAnnotation(
   annotation: PositionAnnotation,
   fen: string,
 ): Promise<PositionAnnotation> {
-  const normalized = { ...annotation, fenKey: canonicalFenKey(fen), updatedAt: new Date().toISOString() };
+  const normalized = {
+    ...annotation,
+    fenKey: asFenKey(canonicalFenKey(fen)),
+    updatedAt: asIsoDateString(new Date().toISOString()),
+  };
   const local = localAnnotations().filter(
-    (item) => !(item.repertoireId === normalized.repertoireId && item.fenKey === normalized.fenKey),
+    (item) =>
+      !(
+        item.repertoireId === normalized.repertoireId &&
+        item.fenKey === normalized.fenKey
+      ),
   );
-  if (normalized.comment || normalized.arrows.length || normalized.squares.length) local.push(normalized);
+  if (
+    normalized.comment ||
+    normalized.arrows.length ||
+    normalized.squares.length
+  )
+    local.push(normalized);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(local));
   if (usesLocalApi()) {
     const response = await fetch(
@@ -54,7 +74,12 @@ export async function savePositionAnnotation(
       {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fen, comment: normalized.comment, arrows: normalized.arrows, squares: normalized.squares }),
+        body: JSON.stringify({
+          fen,
+          comment: normalized.comment,
+          arrows: normalized.arrows,
+          squares: normalized.squares,
+        }),
       },
     );
     if (!response.ok) throw new Error("Could not save this position note");
@@ -63,17 +88,53 @@ export async function savePositionAnnotation(
   return normalized;
 }
 
-export function annotationToShapes(annotation?: PositionAnnotation): DrawShape[] {
+export function annotationToShapes(
+  annotation?: PositionAnnotation,
+): DrawShape[] {
   if (!annotation) return [];
   return [
-    ...annotation.arrows.map((arrow) => ({ orig: arrow.from as Key, dest: arrow.to as Key, brush: arrow.color })),
-    ...annotation.squares.map((square) => ({ orig: square.square as Key, brush: square.color })),
+    ...annotation.arrows.map((arrow) => ({
+      orig: arrow.from as Key,
+      dest: arrow.to as Key,
+      brush: arrow.color,
+    })),
+    ...annotation.squares.map((square) => ({
+      orig: square.square as Key,
+      brush: square.color,
+    })),
   ];
 }
 
 export function shapesToAnnotationParts(shapes: DrawShape[]) {
+  const squareLike = (value: Key): Square | null =>
+    /^[a-h][1-8]$/.test(value) ? (value as Square) : null;
+
   return {
-    arrows: shapes.flatMap((shape) => shape.dest ? [{ from: shape.orig, to: shape.dest, color: (shape.brush ?? "green") as PositionAnnotation["arrows"][number]["color"] }] : []),
-    squares: shapes.flatMap((shape) => !shape.dest ? [{ square: shape.orig, color: (shape.brush ?? "green") as PositionAnnotation["squares"][number]["color"] }] : []),
+    arrows: shapes.flatMap((shape) => {
+      if (!shape.dest) return [];
+      const from = squareLike(shape.orig);
+      const to = squareLike(shape.dest);
+      if (!from || !to) return [];
+      return [
+        {
+          from,
+          to,
+          color: (shape.brush ??
+            "green") as PositionAnnotation["arrows"][number]["color"],
+        },
+      ];
+    }),
+    squares: shapes.flatMap((shape) => {
+      if (shape.dest) return [];
+      const square = squareLike(shape.orig);
+      if (!square) return [];
+      return [
+        {
+          square,
+          color: (shape.brush ??
+            "green") as PositionAnnotation["squares"][number]["color"],
+        },
+      ];
+    }),
   };
 }

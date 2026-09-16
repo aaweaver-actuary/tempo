@@ -4,6 +4,7 @@ import { expect, it, vi } from "vitest";
 import CardEditor from "../../app/views/card_editor";
 import { generateLegalEndgameFen } from "../../app/lib/endgame-generator";
 import { tablebaseCategoryForWhite } from "../../app/utils/tablebase";
+import { asCardId } from "../../app/types";
 
 vi.mock("../../app/components/chessboard", () => ({
   Chessboard: (props: { fen: string }) => (
@@ -15,7 +16,7 @@ it("repair uses the shared board and arrows navigate the complete solution; Esca
   render(
     <CardEditor
       practiceCard={{
-        id: "repair",
+        id: asCardId("repair"),
         kind: "puzzle",
         subtitle: "Test",
         title: "Test",

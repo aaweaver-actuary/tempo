@@ -19,7 +19,9 @@ export function canonicalizeMoves(
     board = new Chess();
     return {
       moves: [],
-      diagnostics: [{ ply: 0, move: "", kind: "invalid", message: "Invalid starting FEN" }],
+      diagnostics: [
+        { ply: 0, move: "", kind: "invalid", message: "Invalid starting FEN" },
+      ],
       finalFen: board.fen(),
     };
   }
@@ -65,8 +67,8 @@ export function canonicalizeLine(line: AnalysisLine): CanonicalLine {
     ...line,
     moves: result.moves,
     validation: {
-      valid: result.diagnostics.length === 0,
-      truncated: result.moves.length < line.moves.length,
+      isValid: result.diagnostics.length === 0,
+      isTruncated: result.moves.length < line.moves.length,
       diagnostics: result.diagnostics,
     },
   };

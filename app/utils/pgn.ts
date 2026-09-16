@@ -1,6 +1,6 @@
 import { Chess, Square } from "chess.js";
 import { STANDARD_FEN } from "../const";
-import { GameViewRecord } from "../types";
+import { GameViewRecord, asRepertoireId } from "../types";
 
 // Converts an imported game record from a generic object to a structured GameViewRecord.
 export function importGameAndReformatToGameViewRecord(
@@ -61,6 +61,8 @@ export function importGameAndReformatToGameViewRecord(
     moves,
     startFen,
     analysisState: String(value.analysis_state ?? "pending"),
-    repertoireId: value.repertoire_id ? String(value.repertoire_id) : undefined,
+    repertoireId: value.repertoire_id
+      ? asRepertoireId(String(value.repertoire_id))
+      : undefined,
   };
 }

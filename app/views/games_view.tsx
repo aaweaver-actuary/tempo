@@ -11,7 +11,7 @@ import { fenAfterMoves } from "../utils/fen";
 import { convertSanToUci } from "../utils/chess";
 import { usesLocalApi } from "../utils/local";
 import { lichessAnalysisUrl } from "../utils/urls";
-import type { GameViewRecord, AnalysisLine } from "../types";
+import { asRepertoireId, type GameViewRecord, type AnalysisLine } from "../types";
 import { canonicalizeLine, canonicalFenKey } from "../utils/canonical-line";
 import { indexRepertoirePositions } from "../lib/position-similarity";
 import { sampleGames } from "../samples";
@@ -63,7 +63,7 @@ export function GamesView({ onAnalyze, onSettings, onSync, syncState, theme, pie
     void fetch(`${API_URL}/api/repertoire/lines`).then(async (response) => {
       if (!response.ok) return;
       const body = await response.json() as { lines: Record<string, unknown>[] };
-      setLines(body.lines.map((line: Record<string, unknown>) => canonicalizeLine({ id: String(line.id), repertoireId: String(line.repertoire_id), repertoireName: String(line.repertoire_name), title: String(line.name), side: line.trained_color === "black" ? "black" : "white", startingFen: String(line.start_fen), moves: line.moves as string[] })));
+        setLines(body.lines.map((line: Record<string, unknown>) => canonicalizeLine({ id: String(line.id), repertoireId: asRepertoireId(String(line.repertoire_id)), repertoireName: String(line.repertoire_name), title: String(line.name), side: line.trained_color === "black" ? "black" : "white", startingFen: String(line.start_fen), moves: line.moves as string[] })));
     }).catch(() => undefined);
   }, [local]);
   const pending = records.find((game) => game.analysisState === "pending");

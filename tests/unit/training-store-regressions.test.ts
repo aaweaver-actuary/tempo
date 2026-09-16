@@ -1,11 +1,11 @@
 import { describe, expect, it } from "vitest";
 import { useTrainingStore } from "../../app/state/training-store";
-import type { PracticeCard } from "../../app/types";
+import { asCardId, type PracticeCard } from "../../app/types";
 
 describe("training store", () => {
   it("resets the current card to the correct opening start state", () => {
     const card: PracticeCard = {
-      id: "opening-1",
+      id: asCardId("opening-1"),
       kind: "opening",
       title: "Queen's Gambit",
       subtitle: "Review the opening structure",

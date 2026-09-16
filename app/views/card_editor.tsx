@@ -3,7 +3,7 @@ import { useEffect, useMemo, useState } from "react";
 import { MoveNavigator } from "../components/board-controls";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
 import { pieceSymbols } from "../const";
-import { PracticeCard, PackagedPuzzle } from "../types";
+import { PracticeCard, PackagedPuzzle, asCardId } from "../types";
 import { API_URL, assetUrl } from "../const";
 import { usesLocalApi } from "../utils/local";
 import { convertPackagedPuzzleRecordIntoPracticeCard } from "../utils/cards";
@@ -151,7 +151,7 @@ export default function CardEditor({
         };
         if (!response.ok)
           throw new Error(result.detail ?? "Could not save this card.");
-        backendId = result.card_id;
+        backendId = asCardId(result.card_id);
       }
       onSave({
         ...card,

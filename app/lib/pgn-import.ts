@@ -1,5 +1,10 @@
 import { Chess } from 'chess.js';
-import type { LocalRepertoire, PracticeCard } from '../types';
+import {
+  asCardId,
+  asRepertoireId,
+  type LocalRepertoire,
+  type PracticeCard,
+} from '../types';
 
 const STANDARD_FEN = new Chess().fen();
 
@@ -30,7 +35,7 @@ export function parsePgnImport(fileName: string, pgn: string, trainedColor: 'whi
     const moves = allMoves.slice(0, prefixLength);
     const identity = `${startingFen.split(' ').slice(0, 4).join(' ')}|${moves.join(' ')}`;
     cards.push({
-      id: `import-${stableId(identity)}`,
+      id: asCardId(`import-${stableId(identity)}`),
       kind: 'opening',
       title: headers.Opening || headers.Event || fileName.replace(/\.pgn$/i, ''),
       subtitle: headers.Variation || `Imported from ${fileName}`,
@@ -44,13 +49,17 @@ export function parsePgnImport(fileName: string, pgn: string, trainedColor: 'whi
   if (!uniqueCards.length) throw new Error('No playable main lines were found in this PGN.');
   const sourceName = fileName || 'Imported repertoire.pgn';
   const repertoire: LocalRepertoire = {
-    id: `repertoire-${stableId(`${sourceName}|${trainedColor}|${uniqueCards.map((card) => card.id).join('|')}`)}`,
+    id: asRepertoireId(`repertoire-${stableId(`${sourceName}|${trainedColor}|${uniqueCards.map((card) => card.id).join('|')}`)}`),
     title: sourceName.replace(/\.pgn$/i, ''),
     sourceName,
     side: trainedColor === 'white' ? 'white' : 'black',
     pgn,
     cards: uniqueCards,
   };
-  repertoire.cards = uniqueCards.map((card) => ({ ...card, repertoireId: repertoire.id, revision: 1 }));
+  repertoire.cards = uniqueCards.map((card) => ({
+    ...card,
+    repertoireId: repertoire.id,
+    revision: 1,
+  }));
   return { repertoire, cards: repertoire.cards, duplicateLines: cards.length - uniqueCards.length };
 }

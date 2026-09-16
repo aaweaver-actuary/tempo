@@ -1,6 +1,11 @@
 import { STANDARD_FEN } from "./const";
 import type { EndgameMaterial } from "./lib/endgame-generator";
-import { LocalRepertoire, PracticeCard } from "./types";
+import {
+  LocalRepertoire,
+  PracticeCard,
+  asCardId,
+  asRepertoireId,
+} from "./types";
 
 export const analysisLines = [
   {
@@ -27,7 +32,7 @@ export const analysisLines = [
 
 export const demoCards = [
   {
-    id: "open-sicilian-prefix",
+    id: asCardId("open-sicilian-prefix"),
     kind: "opening",
     title: "Open Sicilian",
     subtitle: "Najdorf setup",
@@ -49,7 +54,7 @@ export const demoCards = [
     nextMove: "… e6 · 7. Qd2",
   },
   {
-    id: "french-classical-prefix",
+    id: asCardId("french-classical-prefix"),
     kind: "opening",
     title: "French Defense",
     subtitle: "Classical variation",
@@ -71,7 +76,7 @@ export const demoCards = [
     nextMove: "… Nc6 · 7. Be3",
   },
   {
-    id: "lichess-puzzle-00sHx",
+    id: asCardId("lichess-puzzle-00sHx"),
     kind: "puzzle",
     title: "Mate in two",
     subtitle: "Mate · middlegame · short",
@@ -84,7 +89,7 @@ export const demoCards = [
 
 export const bundledRepertoires: LocalRepertoire[] = [
   {
-    id: "sample-white",
+    id: asRepertoireId("sample-white"),
     title: "1. e4 Main Lines",
     sourceName: "Tempo examples",
     side: "white",
@@ -92,19 +97,19 @@ export const bundledRepertoires: LocalRepertoire[] = [
     cards: demoCards.filter((card) => card.kind === "opening").map((card) => ({
       ...card,
       orientation: "white",
-      repertoireId: "sample-white",
+      repertoireId: asRepertoireId("sample-white"),
       revision: 1,
     })),
   },
   {
-    id: "sample-black",
+    id: asRepertoireId("sample-black"),
     title: "King’s Indian",
     sourceName: "Tempo examples",
     side: "black",
     pgn: '[Event "King’s Indian"]\n[Result "*"]\n\n1. d4 Nf6 2. c4 g6 3. Nc3 Bg7 4. e4 d6 *',
     cards: [
       {
-        id: "sample-black-kid-prefix",
+        id: asCardId("sample-black-kid-prefix"),
         kind: "opening",
         title: "King’s Indian",
         subtitle: "Main line",
@@ -112,7 +117,7 @@ export const bundledRepertoires: LocalRepertoire[] = [
         moves: ["d4", "Nf6", "c4", "g6", "Nc3", "Bg7", "e4", "d6"],
         userMoveTarget: 4,
         orientation: "black",
-        repertoireId: "sample-black",
+        repertoireId: asRepertoireId("sample-black"),
         revision: 1,
       },
     ],
@@ -234,7 +239,7 @@ export const tacticMotifs = [
   ["trappedPiece", "Trapped pieces", "▣"],
 ];
 export const hangingSample: PracticeCard = {
-  id: "hanging-sample",
+  id: asCardId("hanging-sample"),
   kind: "puzzle",
   title: "Loose queen",
   subtitle: "Hanging piece",
@@ -245,7 +250,7 @@ export const hangingSample: PracticeCard = {
 export const tacticExamples: Record<string, PracticeCard> = {
   hangingPiece: hangingSample,
   fork: {
-    id: "fork-sample",
+    id: asCardId("fork-sample"),
     kind: "puzzle",
     title: "Knight fork",
     subtitle: "Fork",
@@ -254,7 +259,7 @@ export const tacticExamples: Record<string, PracticeCard> = {
     userMoveTarget: 1,
   },
   pin: {
-    id: "pin-sample",
+    id: asCardId("pin-sample"),
     kind: "puzzle",
     title: "Create the pin",
     subtitle: "Pin",
@@ -263,7 +268,7 @@ export const tacticExamples: Record<string, PracticeCard> = {
     userMoveTarget: 1,
   },
   skewer: {
-    id: "skewer-sample",
+    id: asCardId("skewer-sample"),
     kind: "puzzle",
     title: "Skewer king and queen",
     subtitle: "Skewer",
@@ -272,7 +277,7 @@ export const tacticExamples: Record<string, PracticeCard> = {
     userMoveTarget: 1,
   },
   discoveredAttack: {
-    id: "discovery-sample",
+    id: asCardId("discovery-sample"),
     kind: "puzzle",
     title: "Open the file",
     subtitle: "Discovery",
@@ -283,7 +288,7 @@ export const tacticExamples: Record<string, PracticeCard> = {
 };
 export const alternateTactics: PracticeCard[] = [
   {
-    id: "loose-rook",
+    id: asCardId("loose-rook"),
     kind: "puzzle",
     title: "Loose rook",
     subtitle: "Material",
@@ -292,7 +297,7 @@ export const alternateTactics: PracticeCard[] = [
     userMoveTarget: 1,
   },
   {
-    id: "loose-knight",
+    id: asCardId("loose-knight"),
     kind: "puzzle",
     title: "Loose knight",
     subtitle: "Material",

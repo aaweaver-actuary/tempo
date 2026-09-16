@@ -26,6 +26,9 @@ import {
   EngineStatus,
   BuilderSession,
   PositionAnnotation,
+  asRepertoireId,
+  asFenKey,
+  asIsoDateString,
 } from "../types";
 import { usesLocalApi } from "../utils/local";
 import { connectLichess } from "../utils/lichess";
@@ -326,7 +329,7 @@ export default function BuilderView({
         setBackendLines(
           body.lines.map((line) => ({
             id: line.id,
-            repertoireId: line.repertoire_id,
+            repertoireId: asRepertoireId(line.repertoire_id),
             repertoireName: line.repertoire_name,
             title: line.name,
             side: line.trained_color === "black" ? "black" : "white",
@@ -348,15 +351,20 @@ export default function BuilderView({
 
   useEffect(() => {
     const activeRepertoireByColor: BuilderSession["activeRepertoireByColor"] = {
-      white: localStorage.getItem("tempo-active-repertoire-white") ?? undefined,
-      black: localStorage.getItem("tempo-active-repertoire-black") ?? undefined,
+      white: localStorage.getItem("tempo-active-repertoire-white")
+        ? asRepertoireId(localStorage.getItem("tempo-active-repertoire-white")!)
+        : undefined,
+      black: localStorage.getItem("tempo-active-repertoire-black")
+        ? asRepertoireId(localStorage.getItem("tempo-active-repertoire-black")!)
+        : undefined,
       ...(selectedRepertoire
         ? { [selectedRepertoire.side]: selectedRepertoire.id }
         : {}),
     };
     const session: BuilderSession = {
       version: 1,
-      activeRepertoireId: selectedRepertoire?.id ?? activeRepertoire,
+      activeRepertoireId: selectedRepertoire?.id
+        ?? (activeRepertoire ? asRepertoireId(activeRepertoire) : undefined),
       activeRepertoireByColor,
       orientation,
       startingFen,
@@ -387,11 +395,11 @@ export default function BuilderView({
         setAnnotation(
           value ?? {
             repertoireId,
-            fenKey: canonicalFenKey(fen),
+            fenKey: asFenKey(canonicalFenKey(fen)),
             comment: "",
             arrows: [],
             squares: [],
-            updatedAt: "",
+            updatedAt: asIsoDateString(""),
           },
         );
         setAnnotationStatus("");
