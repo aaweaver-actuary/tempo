@@ -14,8 +14,8 @@ const required = [
   "ort/ort-wasm-simd-threaded.mjs",
   "ort/ort-wasm-simd-threaded.wasm",
   "data/tactics-decks.json",
-  "sounds/woodland/Move.mp3",
-  "sounds/woodland/Capture.mp3",
+  "sounds/standard/Move.mp3",
+  "sounds/standard/Capture.mp3",
 ];
 for (let index = 0; index < 6; index += 1) required.push(`maia3/parts/part-${String(index).padStart(2, "0")}`);
 
