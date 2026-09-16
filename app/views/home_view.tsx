@@ -1,6 +1,3 @@
-import type { DrawShape } from "@lichess-org/chessground/draw";
-import type { Key } from "@lichess-org/chessground/types";
-import { STANDARD_FEN } from "../const";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { BoardTheme, PieceSet } from "../components/chessboard";
 import { API_URL } from "../const";
@@ -9,10 +6,7 @@ import { moveSoundEnabled, playMoveSound } from "../lib/move-sound";
 import { bundledRepertoires, demoCards } from "../samples";
 import {
   View,
-  PracticeCard,
   LocalRepertoire,
-  Feedback,
-  PositionAnnotation,
   AnalysisLine,
 } from "../types";
 import { canonicalFenKey, canonicalizeLine } from "../utils/canonical-line";
@@ -30,11 +24,7 @@ import ProgressView from "./progress_view";
 import RepertoireView from "./repertoire_view";
 import SettingsView from "./settings_view";
 import TacticsView from "./tactics_view";
-import { initialTrainingState } from "../page";
-import {
-  annotationToShapes,
-  loadPositionAnnotation,
-} from "../utils/position-annotations";
+import { loadPositionAnnotation } from "../utils/position-annotations";
 import { useGameSync } from "../hooks/use-game-sync";
 import { Chess, Move, Square } from "chess.js";
 import {
@@ -63,27 +53,19 @@ export default function Home() {
     activeCardIndex,
     currentFenString,
     step,
-    feedback,
-    lastMove,
-    opponentLastMove,
     isLocked,
-    boardAttempt,
-    showHint,
     cardsLeft,
     reviewed,
     showImport,
     showTree,
     editorCard,
-    suggestShorter,
     seenMoves,
     teachingEncounterKey,
     teachingReadyCard,
     firstCleanPasses,
     attemptFailed,
-    failureAnnotation,
     failureFen,
     dailyQueue,
-    queueNotice,
     boardTheme,
     pieceSet,
     soundOn,
@@ -123,7 +105,6 @@ export default function Home() {
     setDatabaseQueue,
     setServiceError,
     initializeCardState,
-    hydrateQueue,
     resetTrainingLine,
   } = useTrainingStore(selectTrainingActions);
   const reviewPending = useRef(false);
@@ -158,7 +139,28 @@ export default function Home() {
       setFailureAnnotation,
       setFailureFen,
     )();
-  }, []);
+  }, [
+    activeQueueEntry,
+    attemptGeneration,
+    reviewPending,
+    setActiveCardIndex,
+    setAttemptFailed,
+    setCardsLeft,
+    setCurrentFenString,
+    setDailyQueue,
+    setDatabaseQueue,
+    setFailureAnnotation,
+    setFailureFen,
+    setFeedback,
+    setIsLocked,
+    setLastMove,
+    setOpponentLastMove,
+    setPracticeCards,
+    setServiceError,
+    setShowHint,
+    setStep,
+    setTeachingEncounterKey,
+  ]);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
@@ -197,7 +199,7 @@ export default function Home() {
         "Could not save guided-attempt state. Keep this page open and retry.",
       ),
     );
-  }, [attemptFailed, card.queueEntryId]);
+  }, [attemptFailed, card.queueEntryId, setQueueNotice]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -307,7 +309,21 @@ export default function Home() {
       void refreshDatabaseQueue();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [refreshDatabaseQueue]);
+  }, [
+    initializeCardState,
+    refreshDatabaseQueue,
+    setActiveCardIndex,
+    setBoardTheme,
+    setCardsLeft,
+    setDailyQueue,
+    setFirstCleanPasses,
+    setImportedRepertoires,
+    setPieceSet,
+    setPracticeCards,
+    setReviewed,
+    setSeenMoves,
+    setSoundOn,
+  ]);
 
   function addImportedRepertoire(repertoire: LocalRepertoire) {
     if (usesLocalApi()) return;
@@ -660,7 +676,7 @@ export default function Home() {
     return () => {
       active = false;
     };
-  }, [card.backendId, card.kind, teachingCardKey]);
+  }, [card.backendId, card.kind, setSeenMoves, setTeachingReadyCard, teachingCardKey]);
   const isPlayerTurn =
     step < repertoireLine.length &&
     new Chess(currentFenString).turn() ===
@@ -708,28 +724,9 @@ export default function Home() {
     teachingEncounterKey,
     teachingReadyCard,
     teachingCardKey,
+    setSeenMoves,
+    setTeachingEncounterKey,
   ]);
-
-  const showTeachingArrow =
-    isPlayerTurn &&
-    (showHint ||
-      feedback === "wrong" ||
-      teachingEncounterKey === currentMoveKey);
-
-  const trainingShapes: DrawShape[] = [
-    ...(opponentLastMove
-      ? [
-          {
-            orig: opponentLastMove[0] as Key,
-            dest: opponentLastMove[1] as Key,
-            brush: "red",
-          } as DrawShape,
-        ]
-      : []),
-    ...(attemptFailed && currentFenString === failureFen
-      ? annotationToShapes(failureAnnotation)
-      : []),
-  ];
 
   useEffect(() => {
     const repertoireId = card.repertoireId;
@@ -746,11 +743,13 @@ export default function Home() {
     return () => {
       active = false;
     };
-  }, [attemptFailed, card.repertoireId, currentFenString, failureFen]);
-  const revealedMoves = repertoireLine.slice(
-    0,
-    feedback === "complete" ? repertoireLine.length : step,
-  );
+  }, [
+    attemptFailed,
+    card.repertoireId,
+    currentFenString,
+    failureFen,
+    setFailureAnnotation,
+  ]);
 
   const boardWorkspace = [
     "train",

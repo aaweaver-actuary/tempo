@@ -3,7 +3,7 @@ import type { Key } from "@lichess-org/chessground/types";
 import TrainingViewHeader from "./headers/TrainingViewHeader";
 import RetryButton from "../components/buttons/RetryButton";
 import EndgamesView from "./endgames_view";
-import { PracticeCard, Feedback, PositionAnnotation } from "../types";
+import { PracticeCard } from "../types";
 import { BoardTheme, Chessboard, PieceSet } from "../components/chessboard";
 import { OutcomeFlash } from "../components/board-controls";
 import AgainButton from "../components/buttons/AgainButton";
