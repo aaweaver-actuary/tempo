@@ -1,8 +1,10 @@
 "use client";
 
+import { UciMove, SanMove } from "./domain";
+
 type CandidateMove = {
-  uci: string;
-  san?: string;
+  uci: UciMove;
+  san?: SanMove;
   probability?: number;
   score?: string;
   white?: number;
@@ -28,8 +30,15 @@ export default function CandidateMovesTable({
   turn?: "white" | "black";
   totalGames?: number;
 }) {
-  if (!moves.length) return <p className="panel-message">No candidate moves found.</p>;
-  const population = totalGames ?? moves.reduce((sum,move) => sum+(move.white??0)+(move.draws??0)+(move.black??0),0);
+  if (!moves.length)
+    return <p className="panel-message">No candidate moves found.</p>;
+  const population =
+    totalGames ??
+    moves.reduce(
+      (sum, move) =>
+        sum + (move.white ?? 0) + (move.draws ?? 0) + (move.black ?? 0),
+      0,
+    );
   return (
     <div className="candidate-list">
       {moves.map((move, index) => {
@@ -63,7 +72,19 @@ export default function CandidateMovesTable({
                   ? "Covered"
                   : "Gap"}
             </em>
-            {detail === "results" && games > 0 && <span className="candidate-statistics">{Math.round(games/population*100)}% frequency · {result} · {turn === "white" ? "White" : "Black"} score {Math.round(((turn === "white" ? move.white??0 : move.black??0)+(move.draws??0)/2)/games*100)}%</span>}
+            {detail === "results" && games > 0 && (
+              <span className="candidate-statistics">
+                {Math.round((games / population) * 100)}% frequency · {result} ·{" "}
+                {turn === "white" ? "White" : "Black"} score{" "}
+                {Math.round(
+                  (((turn === "white" ? (move.white ?? 0) : (move.black ?? 0)) +
+                    (move.draws ?? 0) / 2) /
+                    games) *
+                    100,
+                )}
+                %
+              </span>
+            )}
           </button>
         );
       })}

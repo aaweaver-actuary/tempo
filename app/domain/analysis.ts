@@ -44,7 +44,7 @@ export type AnalysisLine = {
 
 export type LineDiagnostic = {
   ply: number;
-  move: string;
+  move: UciMove | SanMove;
   kind: `${ValidationIssueKind}`;
   message: string;
 };

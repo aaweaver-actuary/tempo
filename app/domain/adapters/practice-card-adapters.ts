@@ -76,15 +76,14 @@ export function mapPackagedPuzzleToPracticeCard(
       promotion: setup[4],
     });
     const startingFen = board.fen();
-    const moves = uciMoves.map(
-      (uci) =>
-        asSanMove(
-          board.move({
+    const moves = uciMoves.map((uci) =>
+      asSanMove(
+        board.move({
           from: uci.slice(0, 2) as Square,
           to: uci.slice(2, 4) as Square,
           promotion: uci[4],
-          }).san,
-        ),
+        }).san,
+      ),
     );
     return {
       id: asCardId(`lichess-${record.PuzzleId}`),

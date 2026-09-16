@@ -37,7 +37,9 @@ function normalizeCoverageStatus(value: unknown): GameViewRecord["status"] {
   return "unknown";
 }
 
-function normalizeAnalysisState(value: unknown): GameViewRecord["analysisState"] {
+function normalizeAnalysisState(
+  value: unknown,
+): GameViewRecord["analysisState"] {
   const normalized = String(value ?? "").toLowerCase();
   if (normalized === "pending") return "pending";
   if (normalized === "complete") return "complete";
@@ -58,10 +60,10 @@ export function importGameAndReformatToGameViewRecord(
     for (const uci of uciMoves)
       moves.push(
         asSanMove(
-        board.move({
-          from: uci.slice(0, 2) as Square,
-          to: uci.slice(2, 4) as Square,
-          promotion: uci[4],
+          board.move({
+            from: uci.slice(0, 2) as Square,
+            to: uci.slice(2, 4) as Square,
+            promotion: uci[4],
           }).san,
         ),
       );
@@ -89,12 +91,12 @@ export function importGameAndReformatToGameViewRecord(
           ? `First repertoire divergence · move ${Math.floor(divergence / 2) + 1}`
           : "No flagged position";
   return {
-  id: asGameId(String(value.id)),
+    id: asGameId(String(value.id)),
     source: String(value.provider) === "chess.com" ? "Chess.com" : "Lichess",
     date: String(value.played_at || "").slice(0, 10),
-  speed: normalizeSpeed(value.speed),
+    speed: normalizeSpeed(value.speed),
     color,
-  result: normalizeResult(value.result),
+    result: normalizeResult(value.result),
     opening: String(value.opening_name || "Unclassified opening"),
     status,
     detail:

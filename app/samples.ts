@@ -108,12 +108,14 @@ export const bundledRepertoires: LocalRepertoire[] = [
     sourceName: "Tempo examples",
     side: "white",
     pgn: '[Event "1. e4 Main Lines"]\n[Result "*"]\n\n1. e4 c5 2. Nf3 d6 3. d4 cxd4 4. Nxd4 Nf6 5. Nc3 a6 6. Be3 *',
-    cards: demoCards.filter((card) => card.kind === "opening").map((card) => ({
-      ...card,
-      orientation: "white",
-      repertoireId: sampleWhiteRepertoireId,
-      revision: 1,
-    })),
+    cards: demoCards
+      .filter((card) => card.kind === "opening")
+      .map((card) => ({
+        ...card,
+        orientation: "white",
+        repertoireId: sampleWhiteRepertoireId,
+        revision: 1,
+      })),
   },
   {
     id: sampleBlackRepertoireId,

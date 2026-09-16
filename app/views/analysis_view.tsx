@@ -367,8 +367,9 @@ export default function BuilderView({
     };
     const session: BuilderSession = {
       version: 1,
-      activeRepertoireId: selectedRepertoire?.id
-        ?? (activeRepertoire ? asRepertoireId(activeRepertoire) : undefined),
+      activeRepertoireId:
+        selectedRepertoire?.id ??
+        (activeRepertoire ? asRepertoireId(activeRepertoire) : undefined),
       activeRepertoireByColor,
       orientation,
       startingFen: asFenString(String(startingFen)),
