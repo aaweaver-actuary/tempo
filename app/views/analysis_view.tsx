@@ -11,6 +11,7 @@ import {
   type SetStateAction,
 } from "react";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
+import CandidateMovesTable from "../CandidateMovesTable";
 import { STANDARD_FEN, API_URL } from "../const";
 import {
   EngineMove,
@@ -46,18 +47,9 @@ import {
   searchMaiaTranspositions,
   type TranspositionResult,
 } from "../lib/position-similarity";
+import CloseButton from "../components/buttons/CloseButton";
 
 type AnalysisMetric = "stockfish" | "lichess" | "masters";
-
-type MoveRowItem = {
-  uci: string;
-  san?: string;
-  score?: string;
-  probability?: number;
-  white?: number;
-  draws?: number;
-  black?: number;
-};
 
 function candidatesThrough<T extends { uci: string }>(
   moves: T[],
@@ -69,64 +61,17 @@ function candidatesThrough<T extends { uci: string }>(
     .sort((left, right) => right.score - left.score);
   const total = scored.reduce((sum, value) => sum + value.score, 0);
   let cumulative = 0;
-  return scored.filter(({ score }) => {
-    if (total <= 0 || cumulative / total >= target) return false;
-    cumulative += score;
-    return true;
-  }).map(({ move }) => move);
+  return scored
+    .filter(({ score }) => {
+      if (total <= 0 || cumulative / total >= target) return false;
+      cumulative += score;
+      return true;
+    })
+    .map(({ move }) => move);
 }
 
 function lineMoveName(line: AnalysisLine): string {
   return `${line.title} · ${line.moves.length} moves`;
-}
-
-function MoveRows({
-  moves,
-  covered,
-  detail,
-  onPlay,
-  onHover,
-}: {
-  moves: MoveRowItem[];
-  covered: Set<string>;
-  detail: "score" | "results" | "probability";
-  onPlay: (uci: string) => void;
-  onHover: (uci: string | null) => void;
-}) {
-  if (!moves.length) {
-    return <p className="panel-message">No candidate moves found.</p>;
-  }
-
-  return (
-    <div className="move-rows">
-      {moves.map((move) => {
-        const total =
-          (move.white ?? 0) + (move.draws ?? 0) + (move.black ?? 0);
-        const probability = move.probability ?? 0;
-        const displayedValue =
-          detail === "probability"
-            ? `${Math.round(probability * 100)}%`
-            : detail === "score"
-              ? move.score ?? "—"
-              : String(total || "—");
-
-        return (
-          <button
-            key={move.uci}
-            className={covered.has(move.uci) ? "covered" : ""}
-            onClick={() => onPlay(move.uci)}
-            onMouseEnter={() => onHover(move.uci)}
-            onMouseLeave={() => onHover(null)}
-            onFocus={() => onHover(move.uci)}
-            onBlur={() => onHover(null)}
-          >
-            <span>{move.san ?? move.uci}</span>
-            <strong>{displayedValue}</strong>
-          </button>
-        );
-      })}
-    </div>
-  );
 }
 
 // Returns true if the window object is undefined (i.e., the code is running on the server), false otherwise.
@@ -148,7 +93,8 @@ function readBuilderSession(): BuilderSession | undefined {
   if (!raw) return undefined;
   try {
     const parsed = JSON.parse(raw) as BuilderSession;
-    if (parsed.version !== 1 || !Array.isArray(parsed.history)) return undefined;
+    if (parsed.version !== 1 || !Array.isArray(parsed.history))
+      return undefined;
     if (!current) {
       localStorage.setItem("tempo-builder-session", raw);
       localStorage.removeItem("tempo-analysis-session");
@@ -232,15 +178,20 @@ export default function BuilderView({
   const [maiaProgress, setMaiaProgress] = useState(0);
   const [backendLines, setBackendLines] = useState<AnalysisLine[]>([]);
   const [orientation, setOrientation] = useState<PieceColor>(() => {
-    const stored = initialSession?.orientation ?? getLocalStorageOrDefault("tempo-builder-orientation", "white");
+    const stored =
+      initialSession?.orientation ??
+      getLocalStorageOrDefault("tempo-builder-orientation", "white");
     return stored === "white" || stored === "black" ? stored : "white";
   });
-  const [activeRepertoire, setActiveRepertoire] = useState(() =>
-    initialSession?.activeRepertoireId ?? initialSession?.activeRepertoireByColor?.[
-      initialSession.orientation ?? "white"
-    ] ?? getLocalStorageOrDefault("tempo-active-repertoire-white", ""),
+  const [activeRepertoire, setActiveRepertoire] = useState(
+    () =>
+      initialSession?.activeRepertoireId ??
+      initialSession?.activeRepertoireByColor?.[
+        initialSession.orientation ?? "white"
+      ] ??
+      getLocalStorageOrDefault("tempo-active-repertoire-white", ""),
   );
-  const [arrowMetric, setArrowMetric] = useState<AnalysisMetric>(
+  const [arrowMetric] = useState<AnalysisMetric>(
     () => settings.getSettings().arrow_metric ?? "stockfish",
   );
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -248,8 +199,12 @@ export default function BuilderView({
   const [hoveredMove, setHoveredMove] = useState<string | null>(null);
   const [annotation, setAnnotation] = useState<PositionAnnotation>();
   const [annotationStatus, setAnnotationStatus] = useState("");
-  const [transpositions, setTranspositions] = useState<TranspositionResult[]>([]);
-  const [transpositionState, setTranspositionState] = useState<"idle" | "loading" | "ready" | "error">("idle");
+  const [transpositions, setTranspositions] = useState<TranspositionResult[]>(
+    [],
+  );
+  const [transpositionState, setTranspositionState] = useState<
+    "idle" | "loading" | "ready" | "error"
+  >("idle");
   const transpositionController = useRef<AbortController | null>(null);
 
   const visibleHistory = history.slice(0, cursor);
@@ -261,22 +216,26 @@ export default function BuilderView({
   const playedUci = visibleHistory.map((move) => move.uci);
   const availableLines = useMemo<AnalysisLine[]>(() => {
     const browserLines = imported.flatMap((repertoire) =>
-        repertoire.cards.map((card) => ({
-          id: card.id,
-          repertoireId: repertoire.id,
-          repertoireName: repertoire.title,
-          title: card.title,
-          side: repertoire.side,
-          moves: card.moves,
-          startingFen: card.startingFen,
-        })),
-      );
+      repertoire.cards.map((card) => ({
+        id: card.id,
+        repertoireId: repertoire.id,
+        repertoireName: repertoire.title,
+        title: card.title,
+        side: repertoire.side,
+        moves: card.moves,
+        startingFen: card.startingFen,
+      })),
+    );
     const source = usesLocalApi() ? backendLines : browserLines;
     const canonical = source.map(canonicalizeLine);
-    return [...new Map(canonical.map((line) => [
-      `${line.repertoireId}:${canonicalFenKey(line.startingFen)}:${line.moves.join(" ")}`,
-      line,
-    ])).values()];
+    return [
+      ...new Map(
+        canonical.map((line) => [
+          `${line.repertoireId}:${canonicalFenKey(line.startingFen)}:${line.moves.join(" ")}`,
+          line,
+        ]),
+      ).values(),
+    ];
   }, [backendLines, imported]);
   const repertoires = [
     ...new Map(
@@ -301,19 +260,43 @@ export default function BuilderView({
     }),
   );
   const positionIndex = useMemo(
-    () => indexRepertoirePositions(
-      availableLines.filter((line) => !selectedRepertoire || line.repertoireId === selectedRepertoire.id),
-    ),
+    () =>
+      indexRepertoirePositions(
+        availableLines.filter(
+          (line) =>
+            !selectedRepertoire || line.repertoireId === selectedRepertoire.id,
+        ),
+      ),
     [availableLines, selectedRepertoire],
   );
-  const similarPositions = useMemo(() => positionIndex
-    .map((position) => ({ ...position, distance: chessPositionDistance(fen, position.fen) }))
-    .filter((position): position is typeof position & { distance: number } =>
-      position.distance !== undefined && position.distance <= 2 && position.nextUci !== undefined,
-    )
-    .sort((left, right) => left.distance - right.distance || left.ply - right.ply)
-    .filter((position, index, all) => all.findIndex((other) => other.fen === position.fen && other.nextUci === position.nextUci) === index)
-    .slice(0, 8), [fen, positionIndex]);
+  const similarPositions = useMemo(
+    () =>
+      positionIndex
+        .map((position) => ({
+          ...position,
+          distance: chessPositionDistance(fen, position.fen),
+        }))
+        .filter(
+          (position): position is typeof position & { distance: number } =>
+            position.distance !== undefined &&
+            position.distance <= 2 &&
+            position.nextUci !== undefined,
+        )
+        .sort(
+          (left, right) =>
+            left.distance - right.distance || left.ply - right.ply,
+        )
+        .filter(
+          (position, index, all) =>
+            all.findIndex(
+              (other) =>
+                other.fen === position.fen &&
+                other.nextUci === position.nextUci,
+            ) === index,
+        )
+        .slice(0, 8),
+    [fen, positionIndex],
+  );
 
   function rememberToggle(
     key: string,
@@ -367,7 +350,9 @@ export default function BuilderView({
     const activeRepertoireByColor: BuilderSession["activeRepertoireByColor"] = {
       white: localStorage.getItem("tempo-active-repertoire-white") ?? undefined,
       black: localStorage.getItem("tempo-active-repertoire-black") ?? undefined,
-      ...(selectedRepertoire ? { [selectedRepertoire.side]: selectedRepertoire.id } : {}),
+      ...(selectedRepertoire
+        ? { [selectedRepertoire.side]: selectedRepertoire.id }
+        : {}),
     };
     const session: BuilderSession = {
       version: 1,
@@ -380,7 +365,15 @@ export default function BuilderView({
       branchStart,
     };
     localStorage.setItem("tempo-builder-session", JSON.stringify(session));
-  }, [activeRepertoire, branchStart, cursor, history, orientation, selectedRepertoire, startingFen]);
+  }, [
+    activeRepertoire,
+    branchStart,
+    cursor,
+    history,
+    orientation,
+    selectedRepertoire,
+    startingFen,
+  ]);
 
   useEffect(() => {
     let active = true;
@@ -391,23 +384,27 @@ export default function BuilderView({
     }
     void loadPositionAnnotation(repertoireId, fen).then((value) => {
       if (active) {
-        setAnnotation(value ?? {
-          repertoireId,
-          fenKey: canonicalFenKey(fen),
-          comment: "",
-          arrows: [],
-          squares: [],
-          updatedAt: "",
-        });
+        setAnnotation(
+          value ?? {
+            repertoireId,
+            fenKey: canonicalFenKey(fen),
+            comment: "",
+            arrows: [],
+            squares: [],
+            updatedAt: "",
+          },
+        );
         setAnnotationStatus("");
       }
     });
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [fen, selectedRepertoire?.id]);
 
   const updateAnnotationShapes = useCallback((nextShapes: DrawShape[]) => {
     const parts = shapesToAnnotationParts(nextShapes);
-    setAnnotation((current) => current ? { ...current, ...parts } : current);
+    setAnnotation((current) => (current ? { ...current, ...parts } : current));
     setAnnotationStatus("Unsaved changes");
   }, []);
 
@@ -429,7 +426,9 @@ export default function BuilderView({
     setTranspositionState("loading");
     setTranspositions([]);
     try {
-      const horizon = Number(localStorage.getItem("tempo-maia-transposition-plies") ?? "4");
+      const horizon = Number(
+        localStorage.getItem("tempo-maia-transposition-plies") ?? "4",
+      );
       const results = await searchMaiaTranspositions({
         startFen: fen,
         targets: positionIndex,
@@ -441,7 +440,7 @@ export default function BuilderView({
         setTranspositions(results);
         setTranspositionState("ready");
       }
-    } catch (error) {
+    } catch {
       if (!controller.signal.aborted) setTranspositionState("error");
     }
   }
@@ -564,10 +563,13 @@ export default function BuilderView({
           `${base}/lichess?variant=standard&speeds=${explorerSpeeds}&ratings=${explorerRatings}&fen=${encodeURIComponent(fen)}`,
           { signal: controller.signal, headers },
         ),
-        fetch(`${base}/masters?variant=standard&fen=${encodeURIComponent(fen)}`, {
-          signal: controller.signal,
-          headers,
-        }),
+        fetch(
+          `${base}/masters?variant=standard&fen=${encodeURIComponent(fen)}`,
+          {
+            signal: controller.signal,
+            headers,
+          },
+        ),
       ])
         .then(async ([lichess, masters]) => {
           if (!lichess.ok || !masters.ok)
@@ -613,7 +615,9 @@ export default function BuilderView({
           if (current) setStockfishState("error");
         });
     });
-    return () => { current = false; };
+    return () => {
+      current = false;
+    };
   }, [fen, isStockfishOn]);
 
   useEffect(() => {
@@ -640,7 +644,9 @@ export default function BuilderView({
           if (current) setMaiaState("error");
         });
     });
-    return () => { current = false; };
+    return () => {
+      current = false;
+    };
   }, [fen, maiaElo, maiaOn]);
 
   function playMove(from: Square, to: Square) {
@@ -672,15 +678,51 @@ export default function BuilderView({
     if (branchStart === null || history.length <= branchStart) return;
     const moves = history.slice(0, cursor).map((move) => move.uci);
     if (usesLocalApi()) {
-      if (!selectedRepertoire) { setBranchNote("Choose a repertoire before saving."); return; }
+      if (!selectedRepertoire) {
+        setBranchNote("Choose a repertoire before saving.");
+        return;
+      }
       try {
-        const response = await fetch(`${API_URL}/api/repertoire/branches`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repertoire_id: selectedRepertoire.id, starting_fen: startingFen, moves, trained_color: selectedRepertoire.side, name: history.slice(0, cursor).map((move) => move.san).join(" ") }) });
-        const result = await response.json() as { id: string; detail?: string };
+        const response = await fetch(`${API_URL}/api/repertoire/branches`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            repertoire_id: selectedRepertoire.id,
+            starting_fen: startingFen,
+            moves,
+            trained_color: selectedRepertoire.side,
+            name: history
+              .slice(0, cursor)
+              .map((move) => move.san)
+              .join(" "),
+          }),
+        });
+        const result = (await response.json()) as {
+          id: string;
+          detail?: string;
+        };
         if (!response.ok) throw new Error(result.detail);
-        setBackendLines((current) => [...current.filter((line) => line.id !== result.id), { id: result.id, repertoireId: selectedRepertoire.id, repertoireName: selectedRepertoire.name, title: "Branch", startingFen, moves, side: selectedRepertoire.side }]);
+        setBackendLines((current) => [
+          ...current.filter((line) => line.id !== result.id),
+          {
+            id: result.id,
+            repertoireId: selectedRepertoire.id,
+            repertoireName: selectedRepertoire.name,
+            title: "Branch",
+            startingFen,
+            moves,
+            side: selectedRepertoire.side,
+          },
+        ]);
         setBranchNote("Saved");
         setBranchStart(null);
-      } catch (error) { setBranchNote(error instanceof Error ? error.message : "Could not save. Retry with the local service running."); }
+      } catch (error) {
+        setBranchNote(
+          error instanceof Error
+            ? error.message
+            : "Could not save. Retry with the local service running.",
+        );
+      }
       return;
     }
     const stored = JSON.parse(
@@ -753,7 +795,8 @@ export default function BuilderView({
   for (const move of coveredReplies)
     arrowSources.set(move, new Set([...(arrowSources.get(move) ?? []), "R"]));
   const trainedTurn =
-    new Chess(fen).turn() === (selectedRepertoire?.side === "black" ? "b" : "w");
+    new Chess(fen).turn() ===
+    (selectedRepertoire?.side === "black" ? "b" : "w");
   const repertoireMoves = [...coveredReplies].map((uci) => {
     return { uci, san: sanForUci(fen, uci) ?? uci };
   });
@@ -850,7 +893,8 @@ export default function BuilderView({
               );
               const compatible = candidateLines.some(
                 (line) =>
-                  canonicalFenKey(line.startingFen) === canonicalFenKey(startingFen) &&
+                  canonicalFenKey(line.startingFen) ===
+                    canonicalFenKey(startingFen) &&
                   playedUci.every((move, index) => line.moves[index] === move),
               );
               if (!compatible) {
@@ -1019,13 +1063,24 @@ export default function BuilderView({
           </div>
         </div>
         <aside className="analysis-sidebar">
-          {availableLines.some((line) => line.validation?.diagnostics.length) && (
-            <section className="analysis-panel import-diagnostics" role="status">
-              <div className="panel-heading"><div><span>Import diagnostics</span><strong>Some line data was skipped safely</strong></div></div>
+          {availableLines.some(
+            (line) => line.validation?.diagnostics.length,
+          ) && (
+            <section
+              className="analysis-panel import-diagnostics"
+              role="status"
+            >
+              <div className="panel-heading">
+                <div>
+                  <span>Import diagnostics</span>
+                  <strong>Some line data was skipped safely</strong>
+                </div>
+              </div>
               {availableLines.flatMap((line) =>
                 (line.validation?.diagnostics ?? []).map((diagnostic) => (
                   <p key={`${line.id}-${diagnostic.ply}-${diagnostic.move}`}>
-                    {line.repertoireName}: {diagnostic.message} at ply {diagnostic.ply + 1}
+                    {line.repertoireName}: {diagnostic.message} at ply{" "}
+                    {diagnostic.ply + 1}
                   </p>
                 )),
               )}
@@ -1041,7 +1096,7 @@ export default function BuilderView({
               </div>
             </div>
             {repertoireMoves.length ? (
-              <MoveRows
+              <CandidateMovesTable
                 moves={repertoireMoves}
                 covered={coveredReplies}
                 detail="score"
@@ -1085,7 +1140,10 @@ export default function BuilderView({
           </section>
           <section className="analysis-panel annotation-panel">
             <div className="panel-heading">
-              <div><span>Position note</span><strong>Shown only after a mistake</strong></div>
+              <div>
+                <span>Position note</span>
+                <strong>Shown only after a mistake</strong>
+              </div>
             </div>
             <textarea
               aria-label="Position comment"
@@ -1093,49 +1151,116 @@ export default function BuilderView({
               value={annotation?.comment ?? ""}
               onChange={(event) => {
                 const comment = event.target.value;
-                setAnnotation((current) => current ? { ...current, comment } : current);
+                setAnnotation((current) =>
+                  current ? { ...current, comment } : current,
+                );
                 setAnnotationStatus("Unsaved changes");
               }}
             />
-            <small>Right-drag an arrow or right-click a square on the board to add graphical notes.</small>
+            <small>
+              Right-drag an arrow or right-click a square on the board to add
+              graphical notes.
+            </small>
             <div className="annotation-actions">
               <span role="status">{annotationStatus}</span>
-              <button onClick={() => {
-                setAnnotation((current) => current ? { ...current, comment: "", arrows: [], squares: [] } : current);
-                setAnnotationStatus("Unsaved changes");
-              }}>Clear</button>
-              <button className="save" onClick={() => void persistAnnotation()}>Save note</button>
+              <button
+                onClick={() => {
+                  setAnnotation((current) =>
+                    current
+                      ? { ...current, comment: "", arrows: [], squares: [] }
+                      : current,
+                  );
+                  setAnnotationStatus("Unsaved changes");
+                }}
+              >
+                Clear
+              </button>
+              <button className="save" onClick={() => void persistAnnotation()}>
+                Save note
+              </button>
             </div>
           </section>
           <section className="analysis-panel similarity-panel">
             <div className="panel-heading">
-              <div><span>Consistency</span><strong>Similar repertoire positions</strong></div>
+              <div>
+                <span>Consistency</span>
+                <strong>Similar repertoire positions</strong>
+              </div>
               <b>{similarPositions.length}</b>
             </div>
             {similarPositions.length ? (
               <div className="similar-position-list">
                 {similarPositions.map((position) => (
-                  <button key={`${position.lineId}-${position.ply}-${position.nextUci}`} onClick={() => position.nextUci && playUci(position.nextUci)}>
-                    <span>{position.distance === 0 ? "Exact" : `${position.distance} relocation${position.distance === 1 ? "" : "s"}`}</span>
-                    <strong>{position.nextUci ? sanForUci(fen, position.nextUci) ?? position.nextUci : "Endpoint"}</strong>
-                    <small>{position.repertoireName} · ply {position.ply}</small>
+                  <button
+                    key={`${position.lineId}-${position.ply}-${position.nextUci}`}
+                    onClick={() =>
+                      position.nextUci && playUci(position.nextUci)
+                    }
+                  >
+                    <span>
+                      {position.distance === 0
+                        ? "Exact"
+                        : `${position.distance} relocation${position.distance === 1 ? "" : "s"}`}
+                    </span>
+                    <strong>
+                      {position.nextUci
+                        ? (sanForUci(fen, position.nextUci) ?? position.nextUci)
+                        : "Endpoint"}
+                    </strong>
+                    <small>
+                      {position.repertoireName} · ply {position.ply}
+                    </small>
                   </button>
                 ))}
               </div>
-            ) : <p className="panel-message">No compatible distance-one or distance-two positions.</p>}
+            ) : (
+              <p className="panel-message">
+                No compatible distance-one or distance-two positions.
+              </p>
+            )}
           </section>
           <section className="analysis-panel transposition-panel">
-            <div className="panel-heading"><div><span>Maia paths</span><strong>Likely transpositions</strong></div></div>
-            <button className="find-transpositions" disabled={!maiaOn || transpositionState === "loading"} onClick={() => void findTranspositions()}>
-              {transpositionState === "loading" ? "Searching…" : "Find likely paths"}
+            <div className="panel-heading">
+              <div>
+                <span>Maia paths</span>
+                <strong>Likely transpositions</strong>
+              </div>
+            </div>
+            <button
+              className="find-transpositions"
+              disabled={!maiaOn || transpositionState === "loading"}
+              onClick={() => void findTranspositions()}
+            >
+              {transpositionState === "loading"
+                ? "Searching…"
+                : "Find likely paths"}
             </button>
-            {transpositionState === "error" && <p className="panel-message error">Maia could not complete this search.</p>}
-            {transpositionState === "ready" && !transpositions.length && <p className="panel-message">No likely transposition within the configured horizon.</p>}
+            {transpositionState === "error" && (
+              <p className="panel-message error">
+                Maia could not complete this search.
+              </p>
+            )}
+            {transpositionState === "ready" && !transpositions.length && (
+              <p className="panel-message">
+                No likely transposition within the configured horizon.
+              </p>
+            )}
             {transpositions.map((result) => (
-              <button className="transposition-result" key={`${result.lineId}-${result.ply}-${result.path.join("-")}`} onClick={() => result.path[0] && playUci(result.path[0])}>
-                <strong>{result.distance === 0 ? "Exact transposition" : `Distance ${result.distance}`}</strong>
+              <button
+                className="transposition-result"
+                key={`${result.lineId}-${result.ply}-${result.path.join("-")}`}
+                onClick={() => result.path[0] && playUci(result.path[0])}
+              >
+                <strong>
+                  {result.distance === 0
+                    ? "Exact transposition"
+                    : `Distance ${result.distance}`}
+                </strong>
                 <span>{result.path.join(" · ")}</span>
-                <small>{Math.round(result.probability * 100)}% path · {result.repertoireName}</small>
+                <small>
+                  {Math.round(result.probability * 100)}% path ·{" "}
+                  {result.repertoireName}
+                </small>
               </button>
             ))}
           </section>
@@ -1204,7 +1329,7 @@ export default function BuilderView({
                   <span>Connected</span>
                   <button onClick={disconnectLichess}>Disconnect</button>
                 </div>
-                <MoveRows
+                <CandidateMovesTable
                   moves={explorerCandidates.map((move) => ({
                     ...move,
                     probability: explorerTotal
@@ -1213,6 +1338,8 @@ export default function BuilderView({
                   }))}
                   covered={coveredReplies}
                   detail="results"
+                  turn={new Chess(fen).turn() === "w" ? "white" : "black"}
+                  totalGames={explorerTotal}
                   onPlay={playUci}
                   onHover={setHoveredMove}
                 />
@@ -1226,10 +1353,15 @@ export default function BuilderView({
                 <strong>Master games · {coverageTarget}% set</strong>
               </div>
             </div>
-            <MoveRows
+            <CandidateMovesTable
               moves={mastersCandidates}
               covered={coveredReplies}
               detail="results"
+              turn={new Chess(fen).turn() === "w" ? "white" : "black"}
+              totalGames={mastersMoves.reduce(
+                (sum, move) => sum + move.white + move.draws + move.black,
+                0,
+              )}
               onPlay={playUci}
               onHover={setHoveredMove}
             />
@@ -1251,7 +1383,7 @@ export default function BuilderView({
               </b>
             </div>
             {stockfishState === "ready" && (
-              <MoveRows
+              <CandidateMovesTable
                 moves={engineCandidates}
                 covered={coveredReplies}
                 detail="score"
@@ -1278,7 +1410,7 @@ export default function BuilderView({
                 Maia could not start. Toggle it off and on to retry.
               </p>
             ) : maiaState === "ready" ? (
-              <MoveRows
+              <CandidateMovesTable
                 moves={maiaCandidates}
                 covered={coveredReplies}
                 detail="probability"
@@ -1303,13 +1435,10 @@ export default function BuilderView({
             aria-label="Position search"
             onMouseDown={(event) => event.stopPropagation()}
           >
-            <button
-              className="close-button"
-              onClick={() => setIsSearchOpen(false)}
-              aria-label="Close position search"
-            >
-              ×
-            </button>
+            <CloseButton
+              onClose={() => setIsSearchOpen(false)}
+              ariaLabel="Close position search"
+            />
             <h2>Position search</h2>
             <p>{lineMatches.length} matching branches</p>
             <div className="position-search-list">

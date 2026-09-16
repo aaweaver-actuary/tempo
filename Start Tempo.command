@@ -50,7 +50,7 @@ trap cleanup EXIT INT TERM
 echo "Starting the local database and web app…"
 TEMPO_DB_PATH="$PROJECT_DIR/data/tempo.db" PYTHONPATH="$PROJECT_DIR/backend" .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 &
 API_PID=$!
-NEXT_PUBLIC_API_URL=http://127.0.0.1:8000 npm run dev -- --host 127.0.0.1 --port 3000 &
+npm run dev:local -- --host 127.0.0.1 --port 3000 --strictPort &
 WEB_PID=$!
 open_when_ready &
 

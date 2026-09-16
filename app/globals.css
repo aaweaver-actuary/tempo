@@ -43,7 +43,7 @@ button { color: inherit; }
 .session-count span { color: var(--muted); font-size: 13px; }
 
 .training-grid { height: calc(100dvh - 168px); min-height:0; max-width: 1320px; margin: 0 auto; padding: 0 clamp(20px, 4vw, 64px); display: grid; grid-template-columns: minmax(0, 1.35fr) minmax(280px, .65fr); gap: clamp(20px, 4vw, 60px); align-items: center; overflow:hidden; }
-.board-column { min-width: 0; }
+.board-column { min-width: 0; min-height:0; max-height:100%; position:relative; }
 .board-frame { position: relative; width: min(100%, 680px); min-width: 0; max-width:100%; max-height:calc(100svh - var(--nav-height) - 12px); aspect-ratio:1; margin-left: auto; background: #293028; padding: 9px; border-radius: 6px; box-shadow: 0 18px 50px rgba(45, 48, 40, .14); z-index: 2; }
 .chessground-shell { width: 100%; height:100%; overflow: hidden; }
 .chessground-shell .cg-wrap { width: 100%; height: 100%; }
@@ -398,6 +398,8 @@ button { color: inherit; }
 .ratings.binary button { min-height: 62px; }
 .candidate-row { width: 100%; border: 0; border-bottom: 1px solid var(--line); background: transparent; text-align: left; cursor: pointer; }
 .candidate-row:hover { background: #f4f2ea; }
+.candidate-list .candidate-row { grid-template-columns:18px minmax(40px,1fr) auto auto; gap:8px; }
+.candidate-row .candidate-statistics { grid-column:1 / -1; color:var(--muted); font-size:11px; line-height:1.5; }
 .explorer-filters { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 10px 0; }
 .explorer-filters label { color: var(--muted); font-size: 10px; font-weight: 700; }.explorer-filters select { width: 100%; margin-top: 4px; padding: 7px; border: 1px solid var(--line); border-radius: 6px; background: #fff; font-size: 11px; }
 .masters-note { margin: 10px 0 0; color: var(--muted); font-size: 11px; }

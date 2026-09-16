@@ -17,6 +17,11 @@
 | Repair board / keyboard navigation inconsistent | `repair uses the shared board and arrows navigate the complete solution; Escape closes` |
 | Random endgames start illegally | `random endgames never leave the nonmoving king in check` |
 | Engine not usable in production | `production Stockfish returns playable engine moves without clipping the board` |
+| Board controls fall below the viewport | Board-and-controls bounds assertions in every browser workspace regression |
+| Unfinished new cards accumulate beyond tomorrow's allowance | `test_unfinished_unreviewed_cards_do_not_bypass_tomorrows_new_card_limit` |
+| Explorer/Masters practical results missing from source rows | `source rows show frequency, WDL, practical score and support keyboard preview` |
+| Help/reload permits a false clean solve | `test_help_failure_survives_reload_and_cannot_be_graded_as_a_clean_solve`; `help remains Again after browser reload and the returned attempt is unassisted` |
+| Light admission ignores settings or reverses a lapse | `test_light_discovery_uses_settings_and_never_returns_to_light_after_a_lapse` |
 | Rust prefix differs from Python | `prefixes_match_shared_python_golden_fixtures`; `test_prefixes_match_shared_rust_golden_fixtures` |
 
 Append every new reported issue and its test names here. All listed tests belong to the regular suites.

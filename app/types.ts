@@ -1,3 +1,5 @@
+import type { BoardTheme, PieceSet } from "./components/chessboard";
+
 export type PieceColor = "white" | "black";
 export type GamePhase = "opening" | "middlegame" | "endgame";
 
@@ -135,6 +137,8 @@ export type PracticeCard = {
   queueEntryId?: number;
   queueCycle?: number;
   queueAttemptState?: string;
+  attemptFailed?: boolean;
+  suggestShorterPrefix?: boolean;
   orientation?: PieceColor;
   revision?: number;
   repertoireId?: string;
@@ -154,6 +158,8 @@ export type BackendQueueCard = {
   queue_entry_id: number;
   cycle?: number;
   attempt_state?: string;
+  attempt_failed?: boolean;
+  recent_attempts_json?: string;
   start_fen: string;
   moves: string[];
   content_type: GamePhase | "tactic";
@@ -187,3 +193,58 @@ export type GameViewRecord = {
 export type CardNameSource = "title" | "moves" | "startingFen";
 
 export type EngineStatus = "off" | "auth" | "loading" | "ready" | "error";
+
+export type ShellModal = "import" | "tree" | "editor";
+
+export type ShellState = {
+  currentView: View;
+  boardTheme: BoardTheme;
+  pieceSet: PieceSet;
+  soundOn: boolean;
+  databaseQueue: boolean;
+  serviceError: string;
+  modals: Record<ShellModal, boolean>;
+};
+
+export type QueueMode = "browser" | "local";
+
+export type TrainingQueueState = {
+  mode: QueueMode;
+  practiceCards: PracticeCard[];
+  dailyQueue: number[];
+  activeCardIndex: number;
+  cardsLeft: number;
+  reviewed: number;
+  queueNotice: string;
+  importedRepertoires: LocalRepertoire[];
+  firstCleanPasses: Set<string>;
+};
+
+export type AttemptLifecycleState = {
+  fen: string;
+  step: number;
+  feedback: Feedback;
+  lastMove: [string, string] | undefined;
+  opponentLastMove: [string, string] | undefined;
+  isLocked: boolean;
+  boardAttempt: number;
+  showHint: boolean;
+  attemptFailed: boolean;
+  failureFen: string;
+  failureAnnotation: PositionAnnotation | undefined;
+  teachingEncounterKey: string | null;
+  teachingReadyCard: string;
+};
+
+export type PersistedSettingsState = {
+  boardTheme: BoardTheme;
+  pieceSet: PieceSet;
+  soundOn: boolean;
+  coverageTarget: number;
+  maiaElo: string;
+  maiaTranspositionPlies: number;
+  explorerSpeeds: string;
+  explorerRatings: string;
+  engineWindowCp: number;
+  arrowMetric: "stockfish" | "lichess" | "masters";
+};

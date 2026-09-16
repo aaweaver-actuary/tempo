@@ -61,6 +61,9 @@ def reconcile_unseen_queue(db, day, limit):
 def seed_queue(db,day):
     db.execute("""UPDATE cards SET state='new' WHERE content_type='opening' AND state='learning'
                   AND introduced_at IS NULL AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=cards.id)""")
+    db.execute("""UPDATE cards SET state='new',introduced_at=NULL WHERE content_type='opening' AND state='learning'
+                  AND introduced_at<? AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=cards.id)
+                  AND NOT EXISTS(SELECT 1 FROM daily_queue q WHERE q.card_id=cards.id AND q.queue_date=?)""",(day,day))
     limit=db.execute("SELECT new_cards_per_day FROM settings WHERE id=1").fetchone()[0]
     reconcile_unseen_queue(db,day,limit)
     maximum=db.execute("SELECT COALESCE(MAX(position),-1) FROM daily_queue WHERE queue_date=?",(day,)).fetchone()[0]
@@ -79,7 +82,7 @@ def queue_today():
     day=date.today().isoformat()
     with connection() as db:
         seed_queue(db,day)
-        rows=db.execute("""SELECT q.id queue_entry_id,q.position,q.cycle,q.attempt_state,c.*,
+        rows=db.execute("""SELECT q.id queue_entry_id,q.position,q.cycle,q.attempt_state,q.attempt_failed,c.*,
                                   r.name repertoire_name,r.source_name repertoire_source,r.is_main,
                                   COALESCE((SELECT e.trained_color FROM endgame_templates e WHERE e.card_id=c.id), (SELECT l.trained_color FROM repertoire_lines l WHERE l.repertoire_id=r.id ORDER BY l.created_at LIMIT 1)) trained_color
                            FROM daily_queue q JOIN cards c ON c.id=q.card_id
@@ -261,6 +264,13 @@ def requeue(db,day,cid,after,attempt):
         db.execute("UPDATE daily_queue SET position=position+1 WHERE queue_date=? AND status='queued' AND position>=?",(day,position))
     db.execute("INSERT INTO daily_queue(queue_date,card_id,cycle,position,attempt_state) VALUES(?,?,?,?,?)",(day,cid,cycle,position,attempt))
 
+@app.post("/api/queue/entries/{entry_id}/fail")
+def mark_attempt_failed(entry_id:int):
+    with connection() as db:
+        if not db.execute("UPDATE daily_queue SET attempt_failed=1 WHERE id=? AND status='queued'",(entry_id,)).rowcount:
+            raise HTTPException(409,"This queue attempt is no longer active")
+    return {"attempt_failed":True}
+
 @app.post("/api/cards/{identifier}/review")
 def review(identifier:str,request:ReviewRequest):
     now=datetime.now(timezone.utc); day=date.today().isoformat()
@@ -270,6 +280,8 @@ def review(identifier:str,request:ReviewRequest):
         if entry["status"] != "queued":
             if entry["review_result_json"]: return json.loads(entry["review_result_json"])
             raise HTTPException(409,"This attempt was already completed")
+        if entry["attempt_failed"] or request.guided:
+            request=request.model_copy(update={"outcome":"again","guided":True})
         card=db.execute("SELECT interval_days,fsrs_card_json,first_correct_at,reinforcement_pending,scheduling_mode,hard_correct_streak,recent_attempts_json FROM cards WHERE id=? AND archived=0",(identifier,)).fetchone()
         if not card: raise HTTPException(404,"Card not found")
         settings=get_settings()
@@ -447,6 +459,7 @@ def tactics_catalog():
 def tactic_attempt(request:TacticAttemptRequest):
     record={"FEN":request.source_fen,"Moves":" ".join(request.moves)}
     training_fen,solution=validate_puzzle_record(record); now=datetime.now(timezone.utc); cid=card_id(training_fen,solution)
+    light_days=get_settings().light_first_interval_days
     with connection() as db:
         if request.attempt_id:
             previous=db.execute("SELECT result_json FROM tactic_discovery_attempts WHERE id=?",(request.attempt_id,)).fetchone()
@@ -454,13 +467,14 @@ def tactic_attempt(request:TacticAttemptRequest):
         db.execute("INSERT OR IGNORE INTO repertoires(id,name,source_name,created_at) VALUES('__tactics__','Tactics','Lichess puzzle database',?)",(now.isoformat(),))
         clean_at=now.isoformat() if request.correct and request.clean else None
         db.execute("INSERT INTO tactic_progress(puzzle_id,deck_id,card_id,clean_pass_at,admitted_at,admission_mode) VALUES(?,?,?,?,?,?) ON CONFLICT(puzzle_id) DO UPDATE SET clean_pass_at=COALESCE(tactic_progress.clean_pass_at,excluded.clean_pass_at),card_id=excluded.card_id,admitted_at=COALESCE(tactic_progress.admitted_at,excluded.admitted_at),admission_mode=excluded.admission_mode",(request.puzzle_id,request.deck_id,cid,clean_at,now.isoformat(),"light" if request.correct and request.clean else "normal"))
-        db.execute("INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type,scheduling_mode,source_ref,source_fen,state) VALUES(?, '__tactics__','checkpoint',?,?,?,?,?,?,?,'learning')",(cid,training_fen,json.dumps(solution),(now.date()+timedelta(days=7) if request.correct and request.clean else now.date()).isoformat(),"tactic","light" if request.correct and request.clean else "normal",request.puzzle_id,request.source_fen))
-        db.execute("UPDATE cards SET state='learning' WHERE id=?",(cid,))
+        db.execute("INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type,scheduling_mode,source_ref,source_fen,state) VALUES(?, '__tactics__','checkpoint',?,?,?,?,?,?,?,'learning')",(cid,training_fen,json.dumps(solution),(now.date()+timedelta(days=light_days) if request.correct and request.clean else now.date()).isoformat(),"tactic","light" if request.correct and request.clean else "normal",request.puzzle_id,request.source_fen))
         if not request.correct or not request.clean:
-            db.execute("UPDATE cards SET scheduling_mode='normal',due_date=? WHERE id=?",(now.date().isoformat(),cid))
+            db.execute("UPDATE cards SET state='learning',scheduling_mode=CASE WHEN scheduling_mode='light' THEN 'normal' ELSE scheduling_mode END,due_date=? WHERE id=?",(now.date().isoformat(),cid))
         if not request.correct and not db.execute("SELECT 1 FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued'",(now.date().isoformat(),cid)).fetchone():
             requeue(db,now.date().isoformat(),cid,4,"guided")
-        result={"card_id":cid,"mode":"light" if request.correct and request.clean else "normal","next_due":(now.date()+timedelta(days=7) if request.correct and request.clean else now.date()).isoformat()}
+        stored=db.execute("SELECT scheduling_mode,due_date FROM cards WHERE id=?",(cid,)).fetchone()
+        db.execute("UPDATE tactic_progress SET admission_mode=? WHERE puzzle_id=?",(stored[0],request.puzzle_id))
+        result={"card_id":cid,"mode":stored[0],"next_due":stored[1]}
         db.execute("INSERT INTO tactic_discovery_attempts VALUES(?,?,?,?,?)",(request.attempt_id or str(uuid.uuid4()),request.deck_id,request.puzzle_id,int(request.correct and request.clean),json.dumps(result)))
     return result
 

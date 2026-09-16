@@ -5,6 +5,7 @@ import { API_URL } from "./const";
 import { parsePgnImport } from "./lib/pgn-import";
 import type { LocalRepertoire } from "./types";
 import { usesLocalApi } from "./utils/local";
+import CloseButton from "./components/buttons/CloseButton";
 
 export function ImportDialogBox({
   onClose,
@@ -31,9 +32,15 @@ export function ImportDialogBox({
   const [error, setError] = useState("");
   useEffect(() => {
     if (!usesLocalApi()) return;
-    void fetch(`${API_URL}/api/settings`).then(async (response) => {
-      if (response.ok) setInitialDepth((await response.json() as { initial_depth: number }).initial_depth);
-    }).catch(() => undefined);
+    void fetch(`${API_URL}/api/settings`)
+      .then(async (response) => {
+        if (response.ok)
+          setInitialDepth(
+            ((await response.json()) as { initial_depth: number })
+              .initial_depth,
+          );
+      })
+      .catch(() => undefined);
   }, []);
 
   async function importFile() {
@@ -56,19 +63,28 @@ export function ImportDialogBox({
         data.append("file", file);
         data.append("trained_color", trainedColor);
         data.append("initial_depth", String(initialDepth));
-          const response = await fetch(`${API_URL}/api/imports/pgn`, {
-            method: "POST",
-            body: data,
-          });
-          const result = await response.json() as { detail?: string; cards_admitted_today: number; unique_lines: number; duplicates_merged: number };
-          if (!response.ok) throw new Error(result.detail ?? "The local service could not save this repertoire.");
-          backend = true;
-          if (backend) {
-            admitted = result.cards_admitted_today ?? 0;
-            lines = result.unique_lines;
-            duplicates = result.duplicates_merged;
-            await onDatabaseUpdated();
-          }
+        const response = await fetch(`${API_URL}/api/imports/pgn`, {
+          method: "POST",
+          body: data,
+        });
+        const result = (await response.json()) as {
+          detail?: string;
+          cards_admitted_today: number;
+          unique_lines: number;
+          duplicates_merged: number;
+        };
+        if (!response.ok)
+          throw new Error(
+            result.detail ??
+              "The local service could not save this repertoire.",
+          );
+        backend = true;
+        if (backend) {
+          admitted = result.cards_admitted_today ?? 0;
+          lines = result.unique_lines;
+          duplicates = result.duplicates_merged;
+          await onDatabaseUpdated();
+        }
       } else onImported(parsed.repertoire);
       setSummary({
         lines,
@@ -97,13 +113,7 @@ export function ImportDialogBox({
         aria-labelledby="import-title"
         onMouseDown={(event) => event.stopPropagation()}
       >
-        <button
-          className="close-button"
-          onClick={onClose}
-          aria-label="Close import dialog"
-        >
-          ×
-        </button>
+        <CloseButton onClose={onClose} ariaLabel="Close import dialog" />
         {finished ? (
           <div className="import-finished">
             <span>✓</span>

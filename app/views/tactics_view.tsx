@@ -20,7 +20,15 @@ import { PackagedPuzzle, PracticeCard } from "../types";
 import { convertPackagedPuzzleRecordIntoPracticeCard } from "../utils/cards";
 import { usesLocalApi } from "../utils/local";
 
-function TacticsSubHeader({ currentProgress, current, stage }: { currentProgress: { clean: number; index: number }; current: string[]; stage: string }) {
+function TacticsSubHeader({
+  currentProgress,
+  current,
+  stage,
+}: {
+  currentProgress: { clean: number; index: number };
+  current: string[];
+  stage: string;
+}) {
   return (
     <>
       <span>
@@ -63,9 +71,15 @@ export default function TacticsView({
   }, []);
   useEffect(() => {
     if (!usesLocalApi()) return;
-    void fetch(`${API_URL}/api/tactics/progress`).then(async (response) => {
-      if (response.ok) setProgress(await response.json());
-    }).catch(() => setSaveError("Could not load discovery progress. Check the local service."));
+    void fetch(`${API_URL}/api/tactics/progress`)
+      .then(async (response) => {
+        if (response.ok) setProgress(await response.json());
+      })
+      .catch(() =>
+        setSaveError(
+          "Could not load discovery progress. Check the local service.",
+        ),
+      );
   }, []);
   const progressKey = tacticProgressKey(motif, stage);
   const currentProgress = progress[progressKey] ?? { clean: 0, index: 0 };
@@ -128,29 +142,28 @@ export default function TacticsView({
     const completedKey = progressKey;
     const token = ++attemptTokenRef.current;
     setOutcome(clean ? "correct" : "wrong");
-    if (
-      packagedRecord &&
-      usesLocalApi()
-    ) {
+    if (packagedRecord && usesLocalApi()) {
       try {
-      const response = await fetch(`${API_URL}/api/tactics/attempt`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          attempt_id: discoveryId.current,
-          puzzle_id: packagedRecord.PuzzleId,
-          deck_id: packagedRecord.DeckId,
-          correct: clean,
-          clean,
-          source_fen: packagedRecord.FEN,
-          moves: packagedRecord.Moves.split(/\s+/),
-          rating: packagedRecord.Rating,
-        }),
-      });
-      if (!response.ok) throw new Error();
-      onQueueChanged();
+        const response = await fetch(`${API_URL}/api/tactics/attempt`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            attempt_id: discoveryId.current,
+            puzzle_id: packagedRecord.PuzzleId,
+            deck_id: packagedRecord.DeckId,
+            correct: clean,
+            clean,
+            source_fen: packagedRecord.FEN,
+            moves: packagedRecord.Moves.split(/\s+/),
+            rating: packagedRecord.Rating,
+          }),
+        });
+        if (!response.ok) throw new Error();
+        onQueueChanged();
       } catch {
-        setSaveError("Could not save this attempt. Retry to save it before continuing.");
+        setSaveError(
+          "Could not save this attempt. Retry to save it before continuing.",
+        );
         finishingRef.current = false;
         return;
       }
@@ -158,7 +171,12 @@ export default function TacticsView({
     advanceTimerRef.current = window.setTimeout(() => {
       if (attemptTokenRef.current !== token) return;
       setProgress((current) => {
-        const next = advanceTacticProgress(current, completedKey, clean, puzzle.id);
+        const next = advanceTacticProgress(
+          current,
+          completedKey,
+          clean,
+          puzzle.id,
+        );
         writeTacticProgress(next);
         return next;
       });
@@ -205,7 +223,13 @@ export default function TacticsView({
   const current = tacticMotifs.find((item) => item[0] === motif)!;
   const target = stage === "focused" ? 250 : 100;
   const previousStages = ["easy", "medium", "hard"];
-  if (usesLocalApi() && !packagedDeck.length) return <section className="library-page" role="status">No validated puzzles are available for this stage. Check the packaged tactics data.</section>;
+  if (usesLocalApi() && !packagedDeck.length)
+    return (
+      <section className="library-page" role="status">
+        No validated puzzles are available for this stage. Check the packaged
+        tactics data.
+      </section>
+    );
   return (
     <section className="tactics-page">
       <div className="workspace-title">
@@ -294,7 +318,12 @@ export default function TacticsView({
             )}
           </div>
           {(outcome || failed) && <OutcomeFlash outcome={outcome ?? "wrong"} />}
-          {saveError && <div role="alert">{saveError}<button onClick={() => void finish()}>Retry save</button></div>}
+          {saveError && (
+            <div role="alert">
+              {saveError}
+              <button onClick={() => void finish()}>Retry save</button>
+            </div>
+          )}
         </div>
         <aside className="study-panel tactic-study">
           <span className="pill puzzle">{stage}</span>

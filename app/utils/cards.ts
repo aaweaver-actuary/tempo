@@ -17,6 +17,8 @@ export function practiceCardFromQueue(card: BackendQueueCard): PracticeCard {
     queueEntryId: card.queue_entry_id,
     queueCycle: card.cycle,
     queueAttemptState: card.attempt_state,
+    attemptFailed: Boolean(card.attempt_failed),
+    suggestShorterPrefix: (card.recent_attempts_json?.match(/"again"/g)?.length ?? 0) >= 3,
     kind:
       card.content_type === "tactic"
         ? "puzzle"

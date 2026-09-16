@@ -203,9 +203,15 @@ export function Chessboard({
       const viewportHeight =
         window.visualViewport?.height ?? window.innerHeight;
       const top = element.getBoundingClientRect().top;
+      const controlsHeight = Array.from(parent.children).reduce((height, sibling) => {
+        if (sibling === element) return height;
+        const style = window.getComputedStyle(sibling);
+        if (["absolute", "fixed"].includes(style.position)) return height;
+        return height + sibling.getBoundingClientRect().height + (parseFloat(style.marginTop) || 0) + (parseFloat(style.marginBottom) || 0);
+      }, 0);
       const availableHeight = Math.max(
         120,
-        viewportHeight - Math.max(0, top) - 12,
+        viewportHeight - Math.max(0, top) - controlsHeight - 12,
       );
       const availableWidth = parent.clientWidth;
       setBoardSize(Math.floor(Math.min(availableWidth, availableHeight, 760)));
@@ -229,7 +235,7 @@ export function Chessboard({
       data-fen={fen}
       data-orientation={visualOrientation}
       data-hint={Boolean(showHint && hintMove)}
-      style={boardSize ? { width: boardSize, height: boardSize } : undefined}
+      style={boardSize ? { width: boardSize } : undefined}
     >
       <div className={`chessground-shell theme-${theme} pieces-${pieceSet}`}>
         <div className="cg-wrap" ref={elementRef} />

@@ -1,4 +1,4 @@
-import { lichessAnalysisUrl } from "../utils/urls";
+import { lichessAnalysisUrl } from "../../utils/urls";
 
 export default function AnalyzeThisButton({
   line,

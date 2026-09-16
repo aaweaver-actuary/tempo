@@ -7,9 +7,8 @@ import {
 } from "../components/chessboard";
 import { demoCards } from "../samples";
 import { fenAfterMoves } from "../utils/fen";
-import CloseButton from "../components/CloseButton";
-import { lichessAnalysisUrl } from "../utils/urls";
-import AnalyzeThisButton from "../components/AnalyzeThisButton";
+import CloseButton from "../components/buttons/CloseButton";
+import AnalyzeThisButton from "../components/buttons/AnalyzeThisButton";
 
 export function TreeBrowser({
   onClose,

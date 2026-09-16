@@ -16,6 +16,11 @@ async function boardVisible(page: Page) {
   expect(box!.x+box!.width).toBeLessThanOrEqual(viewport.width+1);
   expect(box!.y+box!.height).toBeLessThanOrEqual(viewport.height+1);
   expect(Math.abs(box!.width-box!.height)).toBeLessThan(2);
+  const controls=page.locator(".board-tools").first();
+  if (await controls.count()) {
+    const controlsBox=(await controls.boundingBox())!;
+    expect(controlsBox.y+controlsBox.height).toBeLessThanOrEqual(viewport.height+1);
+  }
 }
 async function move(page: Page, from: string, to: string) {
   const board=page.locator(".board-frame").first(); const box=(await board.boundingBox())!;
@@ -101,6 +106,17 @@ test("automatic game sync has a visible spinner and reports provider failure",as
 test("production Stockfish returns playable engine moves without clipping the board",async ({page})=>{
   await page.addInitScript(()=>{localStorage.setItem("tempo-stockfish-on","true");localStorage.setItem("tempo-maia-on","false");});
   await page.goto("/"); await nav(page,"Builder");
-  await expect(page.locator(".engine-panel .move-rows button").first()).toBeVisible({timeout:45_000});
+  await expect(page.locator(".engine-panel .candidate-list button").first()).toBeVisible({timeout:45_000});
   await boardVisible(page);
+});
+
+test("help remains Again after browser reload and the returned attempt is unassisted",async ({page,request})=>{
+  await request.post(`${api}/imports/pgn`,{multipart:{file:{name:"help.pgn",mimeType:"application/x-chess-pgn",buffer:Buffer.from('1. e4 e5 2. Nf3 Nc6 *')},initial_depth:"2"}});
+  await page.goto("/"); await expect(page.locator(".board-frame")).toBeVisible();
+  await page.getByRole("button",{name:/Show move/}).click();
+  await expect.poll(async()=> (await (await request.get(`${api}/queue/today`)).json()).cards[0].attempt_failed).toBe(1);
+  await page.reload(); await expect(page.locator(".outcome-flash.wrong")).toBeVisible();
+  await page.getByRole("button",{name:"Correct",exact:true}).click();
+  await expect.poll(async()=> (await (await request.get(`${api}/queue/today`)).json()).cards[0].attempt_failed).toBe(0);
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-hint","false");
 });

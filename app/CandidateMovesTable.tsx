@@ -3,19 +3,25 @@ import type { EngineMove } from "./lib/analysis-engines";
 import type { ExplorerMove } from "./types";
 
 //
-function CandidateMovesTable({
+export default function CandidateMovesTable({
   moves,
   covered,
   detail,
   onPlay,
   onHover,
+  turn = "white",
+  totalGames,
 }: {
-  moves: Array<EngineMove & Partial<ExplorerMove>>;
+  moves: Array<Pick<EngineMove, "uci"> & Partial<EngineMove> & Partial<ExplorerMove>>;
   covered: Set<string>;
   detail: "probability" | "score" | "results";
   onPlay?: (uci: string) => void;
   onHover?: (uci: string | null) => void;
+  turn?: "white" | "black";
+  totalGames?: number;
 }) {
+  if (!moves.length) return <p className="panel-message">No candidate moves found.</p>;
+  const population = totalGames ?? moves.reduce((sum,move) => sum+(move.white??0)+(move.draws??0)+(move.black??0),0);
   return (
     <div className="candidate-list">
       {moves.map((move, index) => {
@@ -27,7 +33,7 @@ function CandidateMovesTable({
           detail === "probability"
             ? `${Math.round((move.probability ?? 0) * 100)}%`
             : detail === "results"
-              ? result
+              ? games.toLocaleString()
               : (move.score ?? "Repertoire");
         return (
           <button
@@ -40,7 +46,7 @@ function CandidateMovesTable({
             onBlur={() => onHover?.(null)}
           >
             <span>{index + 1}</span>
-            <strong>{move.san}</strong>
+            <strong>{move.san ?? move.uci}</strong>
             <small>{value}</small>
             <em className={covered.has(move.uci) ? "covered" : "gap"}>
               {detail === "results" && games
@@ -49,6 +55,7 @@ function CandidateMovesTable({
                   ? "Covered"
                   : "Gap"}
             </em>
+            {detail === "results" && games > 0 && <span className="candidate-statistics">{Math.round(games/population*100)}% frequency · {result} · {turn === "white" ? "White" : "Black"} score {Math.round(((turn === "white" ? move.white??0 : move.black??0)+(move.draws??0)/2)/games*100)}%</span>}
           </button>
         );
       })}

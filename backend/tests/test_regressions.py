@@ -77,6 +77,19 @@ def test_tactic_discovery_is_idempotent_and_cursors_are_per_deck(tmp_path, monke
         assert client.get('/api/tactics/progress').json()['fork:easy']['index']==1
         assert client.get('/api/queue/today').json()['count']==1
 
+def test_light_discovery_uses_settings_and_never_returns_to_light_after_a_lapse(tmp_path,monkeypatch):
+    from datetime import timedelta
+    monkeypatch.setattr(database,'DB_PATH',tmp_path/'tempo.db')
+    with TestClient(app) as client:
+        settings=client.get('/api/settings').json();settings['light_first_interval_days']=10
+        client.put('/api/settings',json=settings)
+        payload={'puzzle_id':'one','deck_id':'fork-easy','correct':True,'clean':True,'source_fen':'8/8/8/8/8/4k3/7p/6K1 b - - 0 1','moves':['h2h1q','g1h1']}
+        light=client.post('/api/tactics/attempt',json=payload).json()
+        assert light['mode']=='light' and light['next_due']==(date.today()+timedelta(days=10)).isoformat()
+        client.post('/api/tactics/attempt',json={**payload,'correct':False,'clean':False})
+        clean_again=client.post('/api/tactics/attempt',json=payload).json()
+        assert clean_again['mode']=='normal' and clean_again['next_due']==date.today().isoformat()
+
 def test_local_sync_persists_errors_and_success_without_sample_fallback(tmp_path,monkeypatch):
     monkeypatch.setattr(database,'DB_PATH',tmp_path/'tempo.db')
     original=httpx.AsyncClient
@@ -121,3 +134,36 @@ def test_game_mistakes_respect_arbitrary_fen_side_to_move():
     from app.services.game_analysis import classify_swings
     result=classify_swings([{'ply':0,'before_cp':0,'after_cp':150}], 'black', starting_color='black')
     assert result['major_mistake_ply']==0
+
+def test_help_failure_survives_reload_and_cannot_be_graded_as_a_clean_solve(tmp_path,monkeypatch):
+    monkeypatch.setattr(database,'DB_PATH',tmp_path/'tempo.db')
+    with TestClient(app) as client:
+        client.post('/api/imports/pgn',files={'file':('one.pgn',PGN)},data={'initial_depth':2})
+        card=client.get('/api/queue/today').json()['cards'][0]
+        for _ in range(2): assert client.post(f"/api/queue/entries/{card['queue_entry_id']}/fail").status_code==200
+        assert client.get('/api/queue/today').json()['cards'][0]['attempt_failed']==1
+        client.post(f"/api/cards/{card['id']}/review",json={'outcome':'correct','queue_entry_id':card['queue_entry_id']})
+        with database.connection() as db:
+            review=db.execute('SELECT rating,guided FROM reviews').fetchone()
+            assert tuple(review)==('again',1)
+            assert db.execute('SELECT first_correct_at FROM cards WHERE id=?',(card['id'],)).fetchone()[0] is None
+        next_attempt=client.get('/api/queue/today').json()['cards'][0]
+        assert next_attempt['attempt_failed']==0 and next_attempt['queue_entry_id']!=card['queue_entry_id']
+
+def test_unfinished_unreviewed_cards_do_not_bypass_tomorrows_new_card_limit(tmp_path,monkeypatch):
+    from datetime import timedelta
+    from app.main import seed_queue
+    monkeypatch.setattr(database,'DB_PATH',tmp_path/'tempo.db')
+    with TestClient(app) as client:
+        settings=client.get('/api/settings').json();settings['new_cards_per_day']=2
+        client.put('/api/settings',json=settings)
+        client.post('/api/imports/pgn',files={'file':('one.pgn',PGN)},data={'initial_depth':2})
+        first=client.get('/api/queue/today').json()['cards'][0]
+        with database.connection() as db:
+            for i in range(5):
+                db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(?,?,'prefix',?,'[]','new',?)",(f'new-{i}',first['repertoire_id'],first['start_fen'],date.today().isoformat()))
+            seed_queue(db,date.today().isoformat())
+            tomorrow=(date.today()+timedelta(days=1)).isoformat()
+            seed_queue(db,tomorrow);seed_queue(db,tomorrow)
+            assert db.execute("SELECT COUNT(*) FROM daily_queue WHERE queue_date=? AND status='queued'",(tomorrow,)).fetchone()[0]==2
+            assert db.execute('SELECT COUNT(*) FROM reviews').fetchone()[0]==0
