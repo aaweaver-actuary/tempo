@@ -10,7 +10,7 @@ ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode><Home /></React.StrictMode>,
 );
 
-if ("serviceWorker" in navigator && import.meta.env.PROD) {
+if ("serviceWorker" in navigator && import.meta.env.PROD && import.meta.env.BASE_URL === "/tempo/") {
   window.addEventListener("load", () => {
     let reloading = false;
     navigator.serviceWorker.addEventListener("controllerchange", () => {

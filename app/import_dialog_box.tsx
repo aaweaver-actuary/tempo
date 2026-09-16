@@ -1,9 +1,10 @@
 "use client";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { JSX } from "react/jsx-runtime";
 import { API_URL } from "./const";
 import { parsePgnImport } from "./lib/pgn-import";
 import type { LocalRepertoire } from "./types";
+import { usesLocalApi } from "./utils/local";
 
 export function ImportDialogBox({
   onClose,
@@ -28,6 +29,12 @@ export function ImportDialogBox({
   });
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => {
+    if (!usesLocalApi()) return;
+    void fetch(`${API_URL}/api/settings`).then(async (response) => {
+      if (response.ok) setInitialDepth((await response.json() as { initial_depth: number }).initial_depth);
+    }).catch(() => undefined);
+  }, []);
 
   async function importFile() {
     if (!file) return;
@@ -40,33 +47,32 @@ export function ImportDialogBox({
         trainedColor,
         initialDepth,
       );
-      onImported(parsed.repertoire);
       let backend = false;
       let admitted = 0;
-      if (["localhost", "127.0.0.1"].includes(location.hostname)) {
+      let lines = parsed.cards.length;
+      let duplicates = parsed.duplicateLines;
+      if (usesLocalApi()) {
         const data = new FormData();
         data.append("file", file);
         data.append("trained_color", trainedColor);
         data.append("initial_depth", String(initialDepth));
-        try {
           const response = await fetch(`${API_URL}/api/imports/pgn`, {
             method: "POST",
             body: data,
           });
-          backend = response.ok;
+          const result = await response.json() as { detail?: string; cards_admitted_today: number; unique_lines: number; duplicates_merged: number };
+          if (!response.ok) throw new Error(result.detail ?? "The local service could not save this repertoire.");
+          backend = true;
           if (backend) {
-            admitted =
-              ((await response.json()) as { cards_admitted_today?: number })
-                .cards_admitted_today ?? 0;
+            admitted = result.cards_admitted_today ?? 0;
+            lines = result.unique_lines;
+            duplicates = result.duplicates_merged;
             await onDatabaseUpdated();
           }
-        } catch {
-          /* The browser-local import remains usable without the service. */
-        }
-      }
+      } else onImported(parsed.repertoire);
       setSummary({
-        lines: parsed.cards.length,
-        duplicates: parsed.duplicateLines,
+        lines,
+        duplicates,
         admitted,
         backend,
       });

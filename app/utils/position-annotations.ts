@@ -30,9 +30,8 @@ export async function loadPositionAnnotation(
         const body = (await response.json()) as { annotations: PositionAnnotation[] };
         return body.annotations[0];
       }
-    } catch {
-      // Browser storage remains a usable fallback if the local service is unavailable.
-    }
+    } catch { return undefined; }
+    return undefined;
   }
   return localAnnotations().find(
     (item) => item.repertoireId === repertoireId && item.fenKey === key,

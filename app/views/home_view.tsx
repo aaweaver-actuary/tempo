@@ -2,7 +2,8 @@ import { Square, Chess, Move } from "chess.js";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import { STANDARD_FEN } from "../const";
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
+import { OutcomeFlash } from "../components/board-controls";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
 import { API_URL } from "../const";
 import { ImportDialogBox } from "../import_dialog_box";
@@ -17,7 +18,10 @@ import {
   Feedback,
   BackendQueueCard,
   PositionAnnotation,
+  AnalysisLine,
 } from "../types";
+import { canonicalizeLine, canonicalFenKey } from "../utils/canonical-line";
+import { indexRepertoirePositions, IndexedPosition } from "../lib/position-similarity";
 import { practiceCardFromQueue, trainedColor } from "../utils/cards";
 import { usesLocalApi, localDayKey } from "../utils/local";
 import { lichessAnalysisUrl } from "../utils/urls";
@@ -32,10 +36,12 @@ import TacticsView from "./tactics_view";
 import { dateLabel } from "../utils/dates";
 import { initialTrainingState } from "../page";
 import { annotationToShapes, loadPositionAnnotation } from "../utils/position-annotations";
-import { migrateSqliteToBrowser } from "../lib/sqlite-migration";
+import { useGameSync } from "../hooks/use-game-sync";
 
 export default function Home() {
+  const gameSync = useGameSync();
   const [view, setView] = useState<View>("train");
+  const branchPositions = useRef<IndexedPosition[]>([]);
   const [practiceCards, setPracticeCards] = useState<PracticeCard[]>([
     ...demoCards,
   ]);
@@ -49,8 +55,9 @@ export default function Home() {
   const [lastMove, setLastMove] = useState<[string, string]>();
   const [opponentLastMove, setOpponentLastMove] = useState<[string, string]>();
   const [locked, setLocked] = useState(false);
+  const [boardAttempt, setBoardAttempt] = useState(0);
   const [showHint, setShowHint] = useState(false);
-  const [cardsLeft, setCardsLeft] = useState(12);
+  const [cardsLeft, setCardsLeft] = useState(0);
   const [reviewed, setReviewed] = useState(0);
   const [showImport, setShowImport] = useState(false);
   const [showTree, setShowTree] = useState(false);
@@ -58,11 +65,13 @@ export default function Home() {
   const [suggestShorter, setSuggestShorter] = useState(false);
   const [seenMoves, setSeenMoves] = useState<Set<string>>(new Set());
   const [teachingEncounterKey, setTeachingEncounterKey] = useState<string | null>(null);
+  const [teachingReadyCard, setTeachingReadyCard] = useState("");
   const [firstCleanPasses, setFirstCleanPasses] = useState<Set<string>>(
     new Set(),
   );
   const [attemptFailed, setAttemptFailed] = useState(false);
   const [failureAnnotation, setFailureAnnotation] = useState<PositionAnnotation>();
+  const [failureFen, setFailureFen] = useState("");
   const [dailyQueue, setDailyQueue] = useState<number[]>(
     Array.from({ length: 12 }, (_, index) => index % demoCards.length),
   );
@@ -71,7 +80,12 @@ export default function Home() {
   const [pieceSet, setPieceSet] = useState<PieceSet>("cburnett");
   const [soundOn, setSoundOn] = useState(true);
   const [databaseQueue, setDatabaseQueue] = useState(false);
-  const card = practiceCards[activeCardIndex] ?? practiceCards[0];
+  const [serviceError, setServiceError] = useState("");
+  const reviewPending = useRef(false);
+  const attemptGeneration = useRef(0);
+  const completionTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const activeQueueEntry = useRef<number | undefined>(undefined);
+  const card = practiceCards[activeCardIndex] ?? demoCards[0];
   const repertoireLine = card.moves;
 
   const refreshDatabaseQueue = useCallback(async () => {
@@ -80,15 +94,18 @@ export default function Home() {
       const response = await fetch(`${API_URL}/api/queue/today`);
       if (!response.ok) throw new Error();
       const body = (await response.json()) as { cards: BackendQueueCard[] };
-      const playable = body.cards
-        .filter((item) => item.content_type !== "endgame")
-        .map(practiceCardFromQueue);
+      const playable = body.cards.map(practiceCardFromQueue);
       setDatabaseQueue(true);
-      setPracticeCards(playable.length ? playable : [...demoCards]);
+      setServiceError("");
+      setPracticeCards(playable);
       const queue = playable.map((_, index) => index);
       setDailyQueue(queue);
       setCardsLeft(queue.length);
-      setActiveCardIndex(0);
+      const retainedIndex = reviewPending.current ? -1 : playable.findIndex((item) => item.queueEntryId === activeQueueEntry.current);
+      setActiveCardIndex(Math.max(0, retainedIndex));
+      if (retainedIndex >= 0) return;
+      attemptGeneration.current += 1;
+      activeQueueEntry.current = playable[0]?.queueEntryId;
       const first = playable[0];
       if (first) {
         const start = initialTrainingState(first);
@@ -99,17 +116,29 @@ export default function Home() {
         setOpponentLastMove(start.lastMove);
         setLocked(false);
         setShowHint(false);
+        setTeachingEncounterKey(null);
         setAttemptFailed(false);
         setFailureAnnotation(undefined);
       }
     } catch {
-      setDatabaseQueue(false);
+      setServiceError("Tempo could not reach its local service. Check that the launcher is still running, then retry.");
+      setCardsLeft(0);
+      setDailyQueue([]);
     }
   }, []);
 
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
-  }, [view]);
+    if (usesLocalApi() && view === "train") {
+      queueMicrotask(() => void refreshDatabaseQueue());
+      void fetch(`${API_URL}/api/repertoire/lines`).then(async response => {
+        if (!response.ok) return;
+        const body = await response.json() as { lines: Record<string, unknown>[] };
+        const lines: AnalysisLine[] = body.lines.map(line => canonicalizeLine({ id:String(line.id),repertoireId:String(line.repertoire_id),repertoireName:String(line.repertoire_name),title:String(line.name ?? ""),side:line.trained_color === "black" ? "black" : "white",startingFen:String(line.start_fen),moves:line.moves as string[] }));
+        branchPositions.current = indexRepertoirePositions(lines);
+      }).catch(() => { branchPositions.current = []; });
+    }
+  }, [view, refreshDatabaseQueue]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -120,6 +149,17 @@ export default function Home() {
       ) {
         setView("builder");
         sessionStorage.removeItem("tempo-return-view");
+      }
+      if (usesLocalApi()) {
+        setPracticeCards([]);
+        setDailyQueue([]);
+        setImportedRepertoires([]);
+        setSeenMoves(new Set(JSON.parse(localStorage.getItem("tempo-seen-moves") ?? "[]")));
+        setBoardTheme((localStorage.getItem("tempo-board-theme") as BoardTheme) ?? "brown");
+        setPieceSet((localStorage.getItem("tempo-piece-set") as PieceSet) ?? "cburnett");
+        setSoundOn(moveSoundEnabled());
+        void refreshDatabaseQueue();
+        return;
       }
       const today = localDayKey();
       if (localStorage.getItem("tempo-day") !== today) {
@@ -195,12 +235,12 @@ export default function Home() {
       );
       setSoundOn(moveSoundEnabled());
       void refreshDatabaseQueue();
-      void migrateSqliteToBrowser().catch(() => undefined);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [refreshDatabaseQueue]);
 
   function addImportedRepertoire(repertoire: LocalRepertoire) {
+    if (usesLocalApi()) return;
     const repertoires = [
       ...importedRepertoires.filter((item) => item.id !== repertoire.id),
       repertoire,
@@ -234,14 +274,13 @@ export default function Home() {
     localStorage.setItem("tempo-imported-repertoires", JSON.stringify(next));
   }
 
-  function deleteLocalRepertoire(id: string, sourceName?: string) {
+  function deleteLocalRepertoire(id: string) {
+    if (usesLocalApi()) return;
     const removed = importedRepertoires.find(
-      (item) =>
-        item.id === id || (sourceName && item.sourceName === sourceName),
+      (item) => item.id === id,
     );
     const nextRepertoires = importedRepertoires.filter(
-      (item) =>
-        item.id !== id && (!sourceName || item.sourceName !== sourceName),
+      (item) => item.id !== id,
     );
     setImportedRepertoires(nextRepertoires);
     localStorage.setItem(
@@ -254,7 +293,8 @@ export default function Home() {
     tombstones.add(id);
     localStorage.setItem("tempo-repertoire-tombstones", JSON.stringify([...tombstones]));
     if (!removed) return;
-    const removedIds = new Set(removed.cards.map((item) => item.id));
+    const retainedIds = new Set(nextRepertoires.flatMap((item) => item.cards.map((entry) => entry.id)));
+    const removedIds = new Set(removed.cards.filter((entry) => !retainedIds.has(entry.id)).map((item) => item.id));
     const queuedIds = dailyQueue
       .map((index) => practiceCards[index]?.id)
       .filter(
@@ -275,6 +315,8 @@ export default function Home() {
   }
 
   function resetLine(nextCard = card) {
+    attemptGeneration.current += 1;
+    clearTimeout(completionTimer.current);
     const start = initialTrainingState(nextCard);
     setFen(start.fen);
     setStep(start.step);
@@ -283,8 +325,10 @@ export default function Home() {
     setOpponentLastMove(start.lastMove);
     setLocked(false);
     setShowHint(false);
+    setTeachingEncounterKey(null);
     setAttemptFailed(false);
     setFailureAnnotation(undefined);
+    setFailureFen("");
   }
 
   function changeBoardTheme(value: BoardTheme) {
@@ -304,6 +348,9 @@ export default function Home() {
   }
 
   async function rateCard(outcome: "again" | "correct") {
+    if (reviewPending.current || cardsLeft === 0) return;
+    reviewPending.current = true;
+    setLocked(true);
     if (databaseQueue && card.backendId) {
       try {
         const response = await fetch(
@@ -320,17 +367,20 @@ export default function Home() {
         );
         if (!response.ok) throw new Error();
         setReviewed((count) => count + 1);
-        setQueueNotice(
-          outcome === "again"
-            ? "Guided review complete · shuffled behind 4 cards"
-            : "Correct · saved to your schedule",
-        );
+        setQueueNotice("");
         await refreshDatabaseQueue();
+        reviewPending.current = false;
         return;
       } catch {
+        reviewPending.current = false;
         setQueueNotice("The local database could not save this result.");
         return;
       }
+    }
+    if (usesLocalApi()) {
+      reviewPending.current = false;
+      setServiceError("Connect to the local service before reviewing.");
+      return;
     }
     const firstClean = outcome === "correct" && !firstCleanPasses.has(card.id);
     const nextQueue = dailyQueue.slice(1);
@@ -340,7 +390,7 @@ export default function Home() {
       localStorage.setItem(key, String(failures));
       if (failures >= 3) setSuggestShorter(true);
       nextQueue.splice(Math.min(4, nextQueue.length), 0, activeCardIndex);
-      setQueueNotice("Guided review complete · shuffled behind 4 cards");
+      setQueueNotice("");
     } else if (firstClean) {
       nextQueue.push(activeCardIndex);
       const nextPasses = new Set(firstCleanPasses).add(card.id);
@@ -349,10 +399,8 @@ export default function Home() {
         "tempo-first-clean-passes",
         JSON.stringify([...nextPasses]),
       );
-      setQueueNotice(
-        "First clean solve · one reinforcement at the end of today’s queue",
-      );
-    } else setQueueNotice("Correct · next review scheduled by FSRS");
+      setQueueNotice("");
+    } else setQueueNotice("");
     setDailyQueue(nextQueue);
     localStorage.setItem("tempo-daily-queue", JSON.stringify(nextQueue));
     setCardsLeft(nextQueue.length);
@@ -365,7 +413,24 @@ export default function Home() {
     const nextIndex = nextQueue[0] ?? 0;
     setActiveCardIndex(nextIndex);
     resetLine(practiceCards[nextIndex]);
+    reviewPending.current = false;
   }
+
+  function completeAttempt(finalFen: string) {
+    setFen(finalFen);
+    setLocked(true);
+    setFeedback("complete");
+    const generation = attemptGeneration.current;
+    clearTimeout(completionTimer.current);
+    completionTimer.current = setTimeout(() => {
+      if (generation === attemptGeneration.current) void rateCard(attemptFailed ? "again" : "correct");
+    }, 750);
+  }
+
+  useEffect(() => () => {
+    attemptGeneration.current += 1;
+    clearTimeout(completionTimer.current);
+  }, []);
 
   function markMoveSeen(moveStep: number) {
     const key = `${card.backendId ?? card.id}:${card.revision ?? 1}:${moveStep}`;
@@ -393,20 +458,24 @@ export default function Home() {
     try {
       move = position.move({ from, to, promotion: "q" });
     } catch {
+      setBoardAttempt((value) => value + 1);
       setFeedback("wrong");
       setShowHint(true);
       setAttemptFailed(true);
+      setFailureFen(fen);
       setQueueNotice("Again recorded · replay the guided move");
       return;
     }
     if (!move) return;
     if (position.isCheckmate()) {
-      setFeedback("complete");
-      setTimeout(() => rateCard(attemptFailed ? "again" : "correct"), 650);
+      setLastMove([move.from, move.to]);
+      setOpponentLastMove(undefined);
+      setStep(repertoireLine.length);
+      completeAttempt(position.fen());
       return;
     }
     if (move.san !== repertoireLine[step]) {
-      const alternateBranch = demoCards.some(
+      const alternateBranch = usesLocalApi() ? branchPositions.current.some(other => other.repertoireId === card.repertoireId && canonicalFenKey(other.fen) === canonicalFenKey(fen) && other.nextUci === `${move.from}${move.to}${move.promotion ?? ""}`) : demoCards.some(
         (other) =>
           other.id !== card.id &&
           other.startingFen === card.startingFen &&
@@ -416,6 +485,7 @@ export default function Home() {
           other.moves[step] === move?.san,
       );
       if (alternateBranch) {
+        setBoardAttempt((value) => value + 1);
         setFeedback("branch");
         setShowHint(true);
         setQueueNotice(
@@ -424,8 +494,10 @@ export default function Home() {
         return;
       }
       setFeedback("wrong");
+      setBoardAttempt((value) => value + 1);
       setShowHint(true);
       setAttemptFailed(true);
+      setFailureFen(fen);
       setQueueNotice("Again recorded · replay this move, then finish the line");
       return;
     }
@@ -439,12 +511,13 @@ export default function Home() {
     const opponentStep = step + 1;
     setStep(opponentStep);
     if (opponentStep >= repertoireLine.length) {
-      setFeedback("complete");
-      setTimeout(() => rateCard(attemptFailed ? "again" : "correct"), 650);
+      completeAttempt(position.fen());
       return;
     }
     setLocked(true);
+    const generation = attemptGeneration.current;
     window.setTimeout(() => {
+      if (generation !== attemptGeneration.current) return;
       const replyPosition = new Chess(position.fen());
       const reply = replyPosition.move(repertoireLine[opponentStep]);
       const nextStep = opponentStep + 1;
@@ -456,7 +529,7 @@ export default function Home() {
       setFeedback(nextStep >= repertoireLine.length ? "complete" : "ready");
       playMoveSound();
       if (nextStep >= repertoireLine.length)
-        setTimeout(() => rateCard(attemptFailed ? "again" : "correct"), 650);
+        completeAttempt(replyPosition.fen());
     }, 420);
   }
 
@@ -481,13 +554,31 @@ export default function Home() {
     },
     complete: {
       title: attemptFailed ? "Guided line complete" : "Line recalled",
-      body: attemptFailed
-        ? "Again will return after four other cards."
-        : "Correct is being recorded automatically.",
+      body: "",
     },
   }[feedback];
 
   const currentMoveKey = `${card.backendId ?? card.id}:${card.revision ?? 1}:${step}`;
+  const teachingCardKey = `${card.backendId ?? card.id}:${card.revision ?? 1}`;
+  useEffect(() => {
+    let active = true;
+    if (!card.backendId || card.kind !== "opening") {
+      queueMicrotask(() => setTeachingReadyCard(teachingCardKey));
+      return;
+    }
+    void fetch(`${API_URL}/api/cards/${card.backendId}/teaching`)
+      .then((response) => {
+        if (!response.ok) throw new Error();
+        return response.json() as Promise<{ states: { revision: number; ply: number }[] }>;
+      })
+      .then(({ states }) => {
+        if (!active) return;
+        setSeenMoves((current) => new Set([...current, ...states.map((state) => `${card.backendId}:${state.revision}:${state.ply}`)]));
+        setTeachingReadyCard(teachingCardKey);
+      })
+      .catch(() => { if (active) setTeachingReadyCard(teachingCardKey); });
+    return () => { active = false; };
+  }, [card.backendId, card.kind, teachingCardKey]);
   const isPlayerTurn =
     step < repertoireLine.length &&
     new Chess(fen).turn() === (trainedColor(card) === "white" ? "w" : "b");
@@ -498,6 +589,11 @@ export default function Home() {
         setTeachingEncounterKey(null);
         return;
       }
+      if (card.kind !== "opening") {
+        setTeachingEncounterKey(null);
+        return;
+      }
+      if (teachingReadyCard !== teachingCardKey) return;
       if (teachingEncounterKey === currentMoveKey) return;
       if (seenMoves.has(currentMoveKey)) {
         setTeachingEncounterKey(null);
@@ -518,7 +614,7 @@ export default function Home() {
         }).catch(() => undefined);
       }
     });
-  }, [card.backendId, card.revision, currentMoveKey, isPlayerTurn, seenMoves, step, teachingEncounterKey]);
+  }, [card.kind, card.backendId, card.revision, currentMoveKey, isPlayerTurn, seenMoves, step, teachingEncounterKey, teachingReadyCard, teachingCardKey]);
 
   const showTeachingArrow =
     isPlayerTurn &&
@@ -529,18 +625,21 @@ export default function Home() {
         dest: opponentLastMove[1] as Key,
         brush: "red",
       } as DrawShape] : []),
-    ...(attemptFailed ? annotationToShapes(failureAnnotation) : []),
+    ...(attemptFailed && fen === failureFen ? annotationToShapes(failureAnnotation) : []),
   ];
 
   useEffect(() => {
     const repertoireId = card.repertoireId;
-    if (!attemptFailed || !repertoireId) return;
+    if (!attemptFailed || !repertoireId || fen !== failureFen) {
+      queueMicrotask(() => setFailureAnnotation(undefined));
+      return;
+    }
     let active = true;
     void loadPositionAnnotation(repertoireId, fen).then((value) => {
       if (active) setFailureAnnotation(value);
     });
     return () => { active = false; };
-  }, [attemptFailed, card.repertoireId, fen]);
+  }, [attemptFailed, card.repertoireId, fen, failureFen]);
   const analysisUrl = lichessAnalysisUrl(
     repertoireLine.slice(0, step),
     card.startingFen,
@@ -608,6 +707,7 @@ export default function Home() {
           </button>
         </div>
       </header>
+      {!usesLocalApi() && <div className="demo-banner">Tempo practice demo · <a href="https://github.com/aaweaver-actuary/tempo#running-locally">Run full local Tempo</a></div>}
 
       {view === "train" && (
         <>
@@ -615,7 +715,7 @@ export default function Home() {
             <div>
               <p className="eyebrow">Today · {dateLabel}</p>
               <h1>
-                {cardsLeft === 0 ? "You’re done for today" : "Daily training"}
+                {serviceError ? "Local service unavailable" : cardsLeft === 0 ? "You’re done for today" : "Daily training"}
               </h1>
             </div>
             <div className="session-count">
@@ -623,9 +723,12 @@ export default function Home() {
               <span>cards left</span>
             </div>
           </section>
-          <section className="training-grid" id="train">
+          {serviceError && <div role="alert">{serviceError} <button onClick={() => void refreshDatabaseQueue()}>Retry</button></div>}
+          {cardsLeft > 0 && card.kind === "endgame" && <EndgamesView key={card.queueEntryId} scheduledCard={card} onReview={(outcome) => void rateCard(outcome)} theme={boardTheme} pieceSet={pieceSet} onQueueChanged={() => void refreshDatabaseQueue()} />}
+          {cardsLeft > 0 && card.kind !== "endgame" && <section className="training-grid" id="train">
             <div className="board-column">
               <Chessboard
+                key={`${card.queueEntryId ?? card.id}:${boardAttempt}`}
                 fen={fen}
                 expectedSan={repertoireLine[step]}
                 lastMove={lastMove}
@@ -639,6 +742,7 @@ export default function Home() {
                 onMove={tryMove}
                 orientation={card.orientation}
               />
+              {(attemptFailed || feedback === "complete") && <OutcomeFlash outcome={attemptFailed ? "wrong" : "correct"} />}
               <div className="board-tools">
                 <button
                   onClick={() => {
@@ -647,6 +751,7 @@ export default function Home() {
                       setQueueNotice("Again recorded · finish with guidance");
                     }
                     setShowHint((value) => !value);
+                    setFailureFen(fen);
                   }}
                   disabled={feedback === "complete" || cardsLeft === 0}
                 >
@@ -657,6 +762,7 @@ export default function Home() {
                     resetLine();
                     setAttemptFailed(true);
                     setShowHint(true);
+                    setFailureFen(card.startingFen);
                     setQueueNotice("Again recorded · restarted in guided mode");
                   }}
                 >
@@ -678,12 +784,14 @@ export default function Home() {
               </div>
             </div>
             <aside className="study-panel">
+              <p className="side-to-play">{playerName.toLowerCase()} to play</p>
               <div className="card-meta">
                 <span
                   className={`pill${card.kind === "puzzle" ? " puzzle" : ""}`}
                 >
                   {card.kind === "puzzle" ? "Puzzle" : "Review"}
                 </span>
+                {card.queueAttemptState === "reinforcement" && <span className="pill">Reinforcement</span>}
                 {queueNotice && <em>{queueNotice}</em>}
               </div>
               <div className="opening-title">
@@ -751,6 +859,7 @@ export default function Home() {
                 <button
                   onClick={() => {
                     setAttemptFailed(true);
+                    setFailureFen(fen);
                     setShowHint(true);
                     setQueueNotice(
                       "Again recorded · finish the line with guidance",
@@ -770,7 +879,7 @@ export default function Home() {
                 </button>
               </div>
             </aside>
-          </section>
+          </section>}
         </>
       )}
       {view === "tactics" && (
@@ -791,7 +900,12 @@ export default function Home() {
         <RepertoireView
           imported={importedRepertoires}
           onImport={() => setShowImport(true)}
-          onBrowse={() => setShowTree(true)}
+          onBrowse={(id) => {
+            const existing = JSON.parse(localStorage.getItem("tempo-builder-session") ?? "null");
+            if (existing) localStorage.setItem("tempo-builder-session", JSON.stringify({ ...existing, activeRepertoireId: id }));
+            else localStorage.setItem("tempo-active-repertoire-white", id);
+            setView("builder");
+          }}
           onDeleteLocal={deleteLocalRepertoire}
           onRenameLocal={renameLocalRepertoire}
           onQueueChanged={refreshDatabaseQueue}
@@ -807,7 +921,18 @@ export default function Home() {
       )}
       {view === "games" && (
         <GamesView
-          onAnalyze={() => setView("builder")}
+          syncState={gameSync.state}
+          onSync={() => void gameSync.sync(true)}
+          onSettings={() => setView("settings")}
+          onAnalyze={(game, gameCursor) => {
+            const position = new Chess(game.startFen);
+            const history = game.moves.slice(0, gameCursor).map((san) => {
+              const move = position.move(san);
+              return { san: move.san, uci: `${move.from}${move.to}${move.promotion ?? ""}`, fen: position.fen() };
+            });
+            localStorage.setItem("tempo-builder-session", JSON.stringify({ version: 1, activeRepertoireId: game.repertoireId, activeRepertoireByColor: {}, orientation: game.color, startingFen: game.startFen, history, cursor: history.length, branchStart: history.length }));
+            setView("builder");
+          }}
           theme={boardTheme}
           pieceSet={pieceSet}
         />
@@ -856,6 +981,8 @@ export default function Home() {
             );
             resetLine(updated);
             setSuggestShorter(false);
+            activeQueueEntry.current = undefined;
+            if (usesLocalApi()) void refreshDatabaseQueue();
           }}
         />
       )}

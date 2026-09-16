@@ -19,6 +19,7 @@ type TempoCoreModule = {
   validate_uci_line: (fen: string, moves: string[]) => RustValidatedLine;
   card_id: (fen: string, moves: string[]) => string;
   position_distance: (leftFen: string, rightFen: string) => number;
+  prefix: (fen: string, moves: string[], color: string, depth: number) => string[];
 };
 
 let corePromise: Promise<TempoCoreModule> | undefined;
@@ -46,4 +47,5 @@ export const tempoCore = {
   validateLine: async (fen: string, moves: string[]) => (await loadTempoCore()).validate_uci_line(fen, moves),
   cardId: async (fen: string, moves: string[]) => (await loadTempoCore()).card_id(fen, moves),
   positionDistance: async (leftFen: string, rightFen: string) => (await loadTempoCore()).position_distance(leftFen, rightFen),
+  prefix: async (fen: string, moves: string[], color: "white" | "black", depth: number) => (await loadTempoCore()).prefix(fen, moves, color, depth),
 };

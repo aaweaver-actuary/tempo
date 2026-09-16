@@ -71,6 +71,7 @@ button { color: inherit; }
 .board-tools select { max-width: 82px; border: 0; background: transparent; color: var(--ink); font-size: 12px; font-weight: 700; cursor: pointer; outline: 0; }
 
 .study-panel { min-height:0; max-height:100%; padding:8px 3px 3px; display:flex; flex-direction:column; overflow:auto; }
+.outcome-flash { pointer-events:none; }
 .card-meta { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 11px; }
 .card-meta em { margin-left: auto; color: var(--green-dark); font-size: 10px; font-style: normal; font-weight: 700; }
 .pill { padding: 5px 8px; border: 1px solid #bccab9; border-radius: 99px; color: var(--green-dark); font-weight: 700; letter-spacing: .06em; text-transform: uppercase; }
@@ -222,6 +223,10 @@ button { color: inherit; }
 .arrow-legend i.candidate { background: #4e7ca8; }
 .arrow-legend b { display: grid; place-items: center; width: 18px; height: 18px; border: 1px solid var(--line); border-radius: 4px; color: var(--ink); font-size: 10px; }
 .analysis-sidebar { max-height:100%; columns:2 260px; column-gap:12px; overflow:auto; padding-right:3px; }
+.demo-banner { flex:0 0 auto; text-align:center; padding:8px; color:var(--muted); font-size:12px; }
+.demo-banner a { color:var(--green-dark); font-weight:700; }
+.scheduled-endgame .endgame-workspace { grid-template-columns:minmax(0,1fr) minmax(260px,.65fr); }
+@media (max-width:620px) { .scheduled-endgame .endgame-workspace { grid-template-columns:1fr; grid-template-rows:auto minmax(0,1fr); } }
 .analysis-panel { display:inline-block; width:100%; margin:0 0 12px; padding:17px; break-inside:avoid; border:1px solid var(--line); border-radius:11px; background:var(--panel); vertical-align:top; }
 .import-diagnostics { border-color:#d5aa84; background:#fff8ee; }
 .import-diagnostics p { margin:7px 0 0; color:var(--rust); font-size:12px; line-height:1.4; }

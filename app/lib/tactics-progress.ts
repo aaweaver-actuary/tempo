@@ -1,4 +1,4 @@
-export type TacticProgress = Record<string, { clean: number; index: number }>;
+export type TacticProgress = Record<string, { clean: number; index: number; cleanIds?: string[] }>;
 
 export function tacticProgressKey(motif: string, stage: string) {
   return `${motif}:${stage}`;
@@ -14,7 +14,8 @@ export function writeTacticProgress(progress: TacticProgress) {
   localStorage.setItem('tempo-tactics-progress-v2', JSON.stringify(progress));
 }
 
-export function advanceTacticProgress(progress: TacticProgress, key: string, clean: boolean) {
+export function advanceTacticProgress(progress: TacticProgress, key: string, clean: boolean, puzzleId?: string) {
   const current = progress[key] ?? { clean: 0, index: 0 };
-  return { ...progress, [key]: { clean: current.clean + (clean ? 1 : 0), index: current.index + 1 } };
+  const cleanIds = [...new Set([...(current.cleanIds ?? []), ...(clean && puzzleId ? [puzzleId] : [])])];
+  return { ...progress, [key]: { clean: puzzleId ? cleanIds.length : current.clean + (clean ? 1 : 0), cleanIds, index: current.index + 1 } };
 }

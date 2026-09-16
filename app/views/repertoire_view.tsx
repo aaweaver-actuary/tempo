@@ -3,17 +3,19 @@ import { LocalRepertoire, PieceColor, RepertoireItem } from "../types";
 import { usesLocalApi } from "../utils/local";
 import { API_URL } from "../const";
 
-export default function RepertoireView({ imported, onImport, onBrowse, onDeleteLocal, onRenameLocal, onQueueChanged }: { imported: LocalRepertoire[]; onImport: () => void; onBrowse: () => void; onDeleteLocal: (id: string, sourceName?: string) => void; onRenameLocal: (id: string, name: string) => void; onQueueChanged: () => Promise<void> }) {
+export default function RepertoireView({ imported, onImport, onBrowse, onDeleteLocal, onRenameLocal, onQueueChanged }: { imported: LocalRepertoire[]; onImport: () => void; onBrowse: (id: string) => void; onDeleteLocal: (id: string) => void; onRenameLocal: (id: string, name: string) => void; onQueueChanged: () => Promise<void> }) {
   const [backendItems, setBackendItems] = useState<RepertoireItem[]>([]);
+  const [error, setError] = useState("");
 
   const loadBackend = useCallback(async () => {
     if (!usesLocalApi()) return;
     try {
       const response = await fetch(`${API_URL}/api/repertoires`);
-      if (!response.ok) return;
+      if (!response.ok) throw new Error();
       const body = await response.json() as { repertoires: { id: string; name: string; source_name: string; line_count: number; card_count: number; due_count: number; trained_color?: PieceColor }[] };
       setBackendItems(body.repertoires.map((item) => ({ id: item.id, side: item.trained_color === 'black' ? 'black' : 'white', title: item.name, sourceName: item.source_name, detail: `${item.line_count} unique ${item.line_count === 1 ? 'line' : 'lines'} · ${item.card_count} cards`, progress: 0, due: item.due_count, backend: true })));
-    } catch { /* Browser-local repertoires remain available. */ }
+      setError("");
+    } catch { setError("Could not load repertoires from the local service."); }
   }, []);
 
   useEffect(() => {
@@ -23,7 +25,7 @@ export default function RepertoireView({ imported, onImport, onBrowse, onDeleteL
     return () => window.clearTimeout(timer);
   }, [loadBackend]);
   const backendSources = new Set(backendItems.map((item) => item.sourceName));
-  const importedItems: RepertoireItem[] = imported.filter((item) => !backendSources.has(item.sourceName)).map((item) => ({ id: item.id, side: item.side, title: item.title, sourceName: item.sourceName, detail: `${item.cards.length} unique ${item.cards.length === 1 ? 'line' : 'lines'} · stored in this browser`, progress: 0, due: 0, pgn: item.pgn }));
+  const importedItems: RepertoireItem[] = (usesLocalApi() ? [] : imported.filter((item) => !backendSources.has(item.sourceName))).map((item) => ({ id: item.id, side: item.side, title: item.title, sourceName: item.sourceName, detail: `${item.cards.length} unique ${item.cards.length === 1 ? 'line' : 'lines'} · stored in this browser`, progress: 0, due: 0, pgn: item.pgn }));
   const repertoires = [...backendItems, ...importedItems];
 
   async function rename(item: RepertoireItem) {
@@ -40,10 +42,10 @@ export default function RepertoireView({ imported, onImport, onBrowse, onDeleteL
     if (item.backend) {
       const response = await fetch(`${API_URL}/api/repertoires/${item.id}`, { method: 'DELETE' });
       if (!response.ok) return;
-      onDeleteLocal(item.id, item.sourceName);
+      onDeleteLocal(item.id);
       await onQueueChanged();
       await loadBackend();
-    } else onDeleteLocal(item.id, item.sourceName);
+    } else onDeleteLocal(item.id);
   }
 
   function exportPgn(item?: RepertoireItem) {
@@ -56,6 +58,7 @@ export default function RepertoireView({ imported, onImport, onBrowse, onDeleteL
   }
   return (
     <section className="library-page" id="repertoire">
+      {error && <p role="alert">{error}<button onClick={() => void loadBackend()}>Retry</button></p>}
       <div className="page-heading">
         <div><p className="eyebrow">Your source material</p><h1>Repertoire</h1><p>Upload PGNs once. Tempo turns transpositions and shared prefixes into one clean set of cards.</p></div>
         <div className="heading-actions"><button onClick={()=>exportPgn()}>⇩ Export all PGN</button><button className="primary-button" onClick={onImport}>＋ Import PGN</button></div>
@@ -66,9 +69,7 @@ export default function RepertoireView({ imported, onImport, onBrowse, onDeleteL
             <div className="repertoire-top"><span className="side-badge">{item.side}</span><span>{item.due ? `${item.due} due` : 'Up to date'}</span></div>
             <div className="mini-board" aria-hidden="true">{Array.from({ length: 16 }).map((_, index) => <i key={index} />)}</div>
             <div className="repertoire-name"><h2>{item.title}</h2><button onClick={()=>void rename(item)} title="Rename repertoire">✎</button></div><p>{item.detail}</p><small className="source-name">{item.sourceName}</small>
-            <div className="maturity-row"><span>Maturity</span><strong>{item.progress}%</strong></div>
-            <div className="maturity-track"><span style={{ width: `${item.progress}%` }} /></div>
-            <div className="repertoire-actions"><button className="browse-button" onClick={onBrowse}>Browse tree</button><button onClick={()=>exportPgn(item)}>⇩ PGN</button><button className="delete-repertoire" onClick={()=>void remove(item)}>Delete</button></div>
+            <div className="repertoire-actions"><button className="browse-button" onClick={() => onBrowse(item.id)}>Browse tree</button><button onClick={()=>exportPgn(item)}>⇩ PGN</button><button className="delete-repertoire" onClick={()=>void remove(item)}>Delete</button></div>
           </article>
         ))}
         <button className="new-repertoire-card" onClick={onImport}><span>＋</span><strong>Add a repertoire</strong><small>PGN files stay on this computer</small></button>

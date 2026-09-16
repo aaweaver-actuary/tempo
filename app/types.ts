@@ -1,9 +1,10 @@
-import { BoardTheme, PieceSet } from "./components/chessboard";
-
 export type PieceColor = "white" | "black";
 export type GamePhase = "opening" | "middlegame" | "endgame";
 
 export type Feedback = "ready" | "correct" | "branch" | "wrong" | "complete";
+
+type CardId = string;
+type DeckId = string;
 
 export type View =
   | "train"
@@ -57,6 +58,7 @@ export type BuilderHistoryEntry = { san: string; uci: string; fen: string };
 export type BuilderSession = {
   version: 1;
   activeRepertoireByColor: Partial<Record<PieceColor, string>>;
+  activeRepertoireId?: string;
   orientation: PieceColor;
   startingFen: string;
   history: BuilderHistoryEntry[];
@@ -64,15 +66,17 @@ export type BuilderSession = {
   branchStart: number | null;
 };
 
+export type ArrowColors = "green" | "red" | "blue" | "yellow";
+
 export type AnnotationArrow = {
   from: string;
   to: string;
-  color: "green" | "red" | "blue" | "yellow";
+  color: ArrowColors;
 };
 
 export type AnnotationSquare = {
   square: string;
-  color: "green" | "red" | "blue" | "yellow";
+  color: ArrowColors;
 };
 
 export type PositionAnnotation = {
@@ -85,7 +89,7 @@ export type PositionAnnotation = {
 };
 
 export type TeachingState = {
-  cardId: string;
+  cardId: CardId;
   revision: number;
   ply: number;
   taughtAt: string;
@@ -104,7 +108,7 @@ export type RepertoireItem = {
 };
 
 export type PackagedPuzzle = {
-  DeckId: string;
+  DeckId: DeckId;
   DeckPosition: number;
   PuzzleId: string;
   FEN: string;
@@ -129,6 +133,8 @@ export type PracticeCard = {
   sourceUrl?: string;
   backendId?: string;
   queueEntryId?: number;
+  queueCycle?: number;
+  queueAttemptState?: string;
   orientation?: PieceColor;
   revision?: number;
   repertoireId?: string;
@@ -146,6 +152,8 @@ export type LocalRepertoire = {
 export type BackendQueueCard = {
   id: string;
   queue_entry_id: number;
+  cycle?: number;
+  attempt_state?: string;
   start_fen: string;
   moves: string[];
   content_type: GamePhase | "tactic";
@@ -172,6 +180,8 @@ export type GameViewRecord = {
   flagPly: number;
   moves: string[];
   startFen: string;
+  analysisState?: string;
+  repertoireId?: string;
 };
 
 export type CardNameSource = "title" | "moves" | "startingFen";

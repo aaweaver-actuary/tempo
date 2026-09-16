@@ -17,6 +17,19 @@ import {
   tacticMotifs,
 } from "../samples";
 import { PackagedPuzzle, PracticeCard } from "../types";
+import { convertPackagedPuzzleRecordIntoPracticeCard } from "../utils/cards";
+import { usesLocalApi } from "../utils/local";
+
+function TacticsSubHeader({ currentProgress, current, stage }: { currentProgress: { clean: number; index: number }; current: string[]; stage: string }) {
+  return (
+    <>
+      <span>
+        {currentProgress.clean} clean solves in {current[1].toLowerCase()} ·{" "}
+        {stage}
+      </span>
+    </>
+  );
+}
 
 export default function TacticsView({
   theme,
@@ -36,6 +49,9 @@ export default function TacticsView({
   const [outcome, setOutcome] = useState<"correct" | "wrong" | null>(null);
   const [boardAttempt, setBoardAttempt] = useState(0);
   const finishingRef = useRef(false);
+  const failedRef = useRef(false);
+  const discoveryId = useRef("");
+  const [saveError, setSaveError] = useState("");
   const attemptTokenRef = useRef(0);
   const advanceTimerRef = useRef<number | undefined>(undefined);
   const [catalog, setCatalog] = useState<PackagedPuzzle[]>([]);
@@ -45,6 +61,12 @@ export default function TacticsView({
       .then((value) => setCatalog(value))
       .catch(() => setCatalog([]));
   }, []);
+  useEffect(() => {
+    if (!usesLocalApi()) return;
+    void fetch(`${API_URL}/api/tactics/progress`).then(async (response) => {
+      if (response.ok) setProgress(await response.json());
+    }).catch(() => setSaveError("Could not load discovery progress. Check the local service."));
+  }, []);
   const progressKey = tacticProgressKey(motif, stage);
   const currentProgress = progress[progressKey] ?? { clean: 0, index: 0 };
   const packagedDeck = useMemo(
@@ -52,17 +74,8 @@ export default function TacticsView({
       catalog
         .filter((record) => record.DeckId === `${motif}-${stage}`)
         .sort((a, b) => a.DeckPosition - b.DeckPosition)
-        .map((record): PracticeCard => ({
-          id: record.PuzzleId,
-          kind: "puzzle",
-          title: record.DeckId,
-          subtitle: `${record.DeckId} · ${record.Rating}`,
-          startingFen: record.FEN,
-          moves: record.Moves.split(/\s+/),
-          userMoveTarget: Math.max(1, record.Moves.split(/\s+/).length),
-          sourceUrl: `https://lichess.org/training/${record.PuzzleId}`,
-          orientation: "white",
-        })),
+        .map(convertPackagedPuzzleRecordIntoPracticeCard)
+        .filter((card): card is PracticeCard => card !== null),
     [catalog, motif, stage],
   );
   const deck = packagedDeck.length
@@ -79,8 +92,12 @@ export default function TacticsView({
 
   const resetAttempt = useCallback(
     (markFailed = false) => {
+      window.clearTimeout(advanceTimerRef.current);
       attemptTokenRef.current += 1;
       finishingRef.current = false;
+      discoveryId.current = crypto.randomUUID();
+      setSaveError("");
+      failedRef.current = markFailed;
       setFen(puzzle.startingFen);
       setStep(0);
       setHint(markFailed);
@@ -104,22 +121,23 @@ export default function TacticsView({
     [],
   );
 
-  function finish() {
+  async function finish() {
     if (finishingRef.current) return;
     finishingRef.current = true;
-    const clean = !failed;
+    const clean = !failedRef.current;
     const completedKey = progressKey;
     const token = ++attemptTokenRef.current;
     setOutcome(clean ? "correct" : "wrong");
     if (
       packagedRecord &&
-      typeof window !== "undefined" &&
-      ["localhost", "127.0.0.1"].includes(location.hostname)
+      usesLocalApi()
     ) {
-      void fetch(`${API_URL}/api/tactics/attempt`, {
+      try {
+      const response = await fetch(`${API_URL}/api/tactics/attempt`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          attempt_id: discoveryId.current,
           puzzle_id: packagedRecord.PuzzleId,
           deck_id: packagedRecord.DeckId,
           correct: clean,
@@ -128,32 +146,27 @@ export default function TacticsView({
           moves: packagedRecord.Moves.split(/\s+/),
           rating: packagedRecord.Rating,
         }),
-      })
-        .then((response) => {
-          if (response.ok) onQueueChanged();
-        })
-        .catch(() => undefined);
+      });
+      if (!response.ok) throw new Error();
+      onQueueChanged();
+      } catch {
+        setSaveError("Could not save this attempt. Retry to save it before continuing.");
+        finishingRef.current = false;
+        return;
+      }
     }
     advanceTimerRef.current = window.setTimeout(() => {
+      if (attemptTokenRef.current !== token) return;
       setProgress((current) => {
-        const next = advanceTacticProgress(current, completedKey, clean);
+        const next = advanceTacticProgress(current, completedKey, clean, puzzle.id);
         writeTacticProgress(next);
         return next;
       });
-      if (attemptTokenRef.current === token) {
-        finishingRef.current = false;
-        setFen(puzzle.startingFen);
-        setStep(0);
-        setHint(false);
-        setFailed(false);
-        setOutcome(null);
-        setBoardAttempt((value) => value + 1);
-      }
     }, 750);
   }
 
   function movePiece(from: Square, to: Square) {
-    if (outcome || step % 2 || step >= puzzle.moves.length) return;
+    if (finishingRef.current || step % 2 || step >= puzzle.moves.length) return;
     const board = new Chess(fen);
     let move: Move;
     try {
@@ -162,15 +175,22 @@ export default function TacticsView({
       return;
     }
     if (!board.isCheckmate() && move.san !== puzzle.moves[step]) {
+      failedRef.current = true;
       setFailed(true);
       setHint(true);
       setBoardAttempt((value) => value + 1);
       return;
     }
     setFen(board.fen());
+    if (board.isCheckmate()) {
+      setStep(puzzle.moves.length);
+      void finish();
+      return;
+    }
     const replyIndex = step + 1;
     if (replyIndex >= puzzle.moves.length) {
-      finish();
+      setStep(replyIndex);
+      void finish();
       return;
     }
     const replyBoard = new Chess(board.fen());
@@ -178,22 +198,29 @@ export default function TacticsView({
     setFen(replyBoard.fen());
     playMoveSound();
     setStep(replyIndex + 1);
-    setHint(false);
-    if (replyIndex + 1 >= puzzle.moves.length) finish();
+    setHint(failedRef.current);
+    if (replyIndex + 1 >= puzzle.moves.length) void finish();
   }
 
   const current = tacticMotifs.find((item) => item[0] === motif)!;
   const target = stage === "focused" ? 250 : 100;
   const previousStages = ["easy", "medium", "hard"];
+  if (usesLocalApi() && !packagedDeck.length) return <section className="library-page" role="status">No validated puzzles are available for this stage. Check the packaged tactics data.</section>;
   return (
     <section className="tactics-page">
       <div className="workspace-title">
         <div>
           <h1>Tactics</h1>
-          <span>
-            {currentProgress.clean} clean solves in {current[1].toLowerCase()} ·{" "}
-            {stage}
-          </span>
+          <TacticsSubHeader
+            currentProgress={
+              progress[tacticProgressKey(motif, stage)] ?? {
+                clean: 0,
+                index: 0,
+              }
+            }
+            current={current}
+            stage={stage}
+          />
         </div>
         <div className="stage-tabs">
           {["easy", "medium", "hard", "focused"].map((item, index) => (
@@ -250,6 +277,7 @@ export default function TacticsView({
           <div className="board-tools">
             <button
               onClick={() => {
+                failedRef.current = true;
                 setFailed(true);
                 setHint(true);
               }}
@@ -265,7 +293,8 @@ export default function TacticsView({
               </a>
             )}
           </div>
-          {outcome && <OutcomeFlash outcome={outcome} />}
+          {(outcome || failed) && <OutcomeFlash outcome={outcome ?? "wrong"} />}
+          {saveError && <div role="alert">{saveError}<button onClick={() => void finish()}>Retry save</button></div>}
         </div>
         <aside className="study-panel tactic-study">
           <span className="pill puzzle">{stage}</span>

@@ -1,12 +1,12 @@
 import { Chess } from "chess.js";
 import type { TablebaseResult } from "../types";
+import { API_URL } from "../const";
+import { usesLocalApi } from "./local";
 
 export async function probeTablebase(fen: string): Promise<TablebaseResult> {
-  const local =
-    typeof window !== "undefined" &&
-    ["localhost", "127.0.0.1"].includes(location.hostname);
+  const local = usesLocalApi();
   const url = local
-    ? `${process.env.NEXT_PUBLIC_API_URL ?? "http://127.0.0.1:8000"}/api/endgames/probe`
+    ? `${API_URL}/api/endgames/probe`
     : `https://tablebase.lichess.ovh/standard?fen=${encodeURIComponent(fen)}`;
   const response = await fetch(
     url,
@@ -26,7 +26,7 @@ export function tablebaseCategoryForWhite(
   fen: string,
   category: string,
 ): "win" | "draw" | "loss" {
-  const normalized = category.includes("win")
+  const normalized = ["cursed-win", "blessed-loss"].includes(category) ? "draw" : category.includes("win")
     ? "win"
     : category.includes("loss")
       ? "loss"

@@ -60,5 +60,7 @@ export function importGameAndReformatToGameViewRecord(
     flagPly,
     moves,
     startFen,
+    analysisState: String(value.analysis_state ?? "pending"),
+    repertoireId: value.repertoire_id ? String(value.repertoire_id) : undefined,
   };
 }

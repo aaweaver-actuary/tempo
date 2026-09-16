@@ -12,6 +12,7 @@ export type EngineMove = {
   probability?: number;
   cp?: number;
   mate?: number;
+  pv?: string[];
 };
 
 let stockfishWorker: Worker | undefined;
@@ -22,7 +23,15 @@ async function loadStockfish() {
   return stockfishWorker;
 }
 
-export async function analyzeWithStockfish(fen: string): Promise<EngineMove[]> {
+let stockfishTail: Promise<unknown> = Promise.resolve();
+
+export function analyzeWithStockfish(fen: string, depth = 10): Promise<EngineMove[]> {
+  const result = stockfishTail.then(() => stockfishAnalysis(fen, depth));
+  stockfishTail = result.catch(() => undefined);
+  return result;
+}
+
+async function stockfishAnalysis(fen: string, depth: number): Promise<EngineMove[]> {
   const worker = await loadStockfish();
   const id = ++stockfishRequest;
   return new Promise((resolve, reject) => {
@@ -50,7 +59,8 @@ export async function analyzeWithStockfish(fen: string): Promise<EngineMove[]> {
         let move: Move | null = null;
         try { move = chess.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || 'q' }); } catch { return; }
         const score = mate ? `M${mate}` : cp ? `${Number(cp) >= 0 ? '+' : ''}${(Number(cp) / 100).toFixed(2)}` : '—';
-        lines.set(multipv, { uci, san: move.san, score, cp: cp === undefined ? undefined : Number(cp), mate: mate === undefined ? undefined : Number(mate) });
+        const pv = line.split(' pv ')[1]?.trim().split(/\s+/) ?? [uci];
+        lines.set(multipv, { uci, san: move.san, score, pv, cp: cp === undefined ? undefined : Number(cp), mate: mate === undefined ? undefined : Number(mate) });
       }
       if (line.startsWith('bestmove ')) {
         window.clearTimeout(timeout);
@@ -60,7 +70,7 @@ export async function analyzeWithStockfish(fen: string): Promise<EngineMove[]> {
       }
     };
     worker.addEventListener('message', receive);
-    worker.postMessage({ type: 'analyze', id, fen, depth: 10 });
+    worker.postMessage({ type: 'analyze', id, fen, depth });
   });
 }
 

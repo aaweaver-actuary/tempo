@@ -168,7 +168,7 @@ export default function SettingsView({
         });
         if (!response.ok) throw new Error();
         setStatus(
-          "Saved. The new-card limit applies when the next daily queue is created.",
+          "Saved.",
         );
       } catch {
         setStatus(
@@ -183,7 +183,7 @@ export default function SettingsView({
     try {
       const result = await migrateSqliteToBrowser(true);
       if (result.status === "unavailable") setStatus("Open Docker Tempo to transfer its local database.");
-      else setStatus(`Verified browser copy (${Object.values(result.counts).reduce((sum, count) => sum + count, 0)} records).`);
+      else setStatus(`Verified browser copy (${Object.values(result.counts ?? {}).reduce((sum, count) => sum + count, 0)} records).`);
     } catch (error) {
       setStatus(error instanceof Error ? error.message : "The local database could not be transferred.");
     }

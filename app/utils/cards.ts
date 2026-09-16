@@ -15,6 +15,8 @@ export function practiceCardFromQueue(card: BackendQueueCard): PracticeCard {
     id: `queue-${card.queue_entry_id}`,
     backendId: card.id,
     queueEntryId: card.queue_entry_id,
+    queueCycle: card.cycle,
+    queueAttemptState: card.attempt_state,
     kind:
       card.content_type === "tactic"
         ? "puzzle"

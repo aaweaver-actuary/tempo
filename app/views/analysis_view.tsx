@@ -66,9 +66,14 @@ function candidatesThrough<T extends { uci: string }>(
 ): T[] {
   const scored = moves
     .map((move) => ({ move, score: weight(move) }))
-    .sort((left, right) => right.score - left.score)
-    .filter(({ score }) => score >= target * 1000 || score >= target);
-  return scored.map(({ move }) => move);
+    .sort((left, right) => right.score - left.score);
+  const total = scored.reduce((sum, value) => sum + value.score, 0);
+  let cumulative = 0;
+  return scored.filter(({ score }) => {
+    if (total <= 0 || cumulative / total >= target) return false;
+    cumulative += score;
+    return true;
+  }).map(({ move }) => move);
 }
 
 function lineMoveName(line: AnalysisLine): string {
@@ -112,6 +117,8 @@ function MoveRows({
             onClick={() => onPlay(move.uci)}
             onMouseEnter={() => onHover(move.uci)}
             onMouseLeave={() => onHover(null)}
+            onFocus={() => onHover(move.uci)}
+            onBlur={() => onHover(null)}
           >
             <span>{move.san ?? move.uci}</span>
             <strong>{displayedValue}</strong>
@@ -229,7 +236,7 @@ export default function BuilderView({
     return stored === "white" || stored === "black" ? stored : "white";
   });
   const [activeRepertoire, setActiveRepertoire] = useState(() =>
-    initialSession?.activeRepertoireByColor?.[
+    initialSession?.activeRepertoireId ?? initialSession?.activeRepertoireByColor?.[
       initialSession.orientation ?? "white"
     ] ?? getLocalStorageOrDefault("tempo-active-repertoire-white", ""),
   );
@@ -264,7 +271,7 @@ export default function BuilderView({
           startingFen: card.startingFen,
         })),
       );
-    const source = backendLines.length ? backendLines : browserLines;
+    const source = usesLocalApi() ? backendLines : browserLines;
     const canonical = source.map(canonicalizeLine);
     return [...new Map(canonical.map((line) => [
       `${line.repertoireId}:${canonicalFenKey(line.startingFen)}:${line.moves.join(" ")}`,
@@ -280,10 +287,7 @@ export default function BuilderView({
     ).values(),
   ];
   const selectedRepertoire =
-    repertoires.find(
-      (item) =>
-        item.id === activeRepertoire && item.side.toLowerCase() === orientation,
-    ) ?? repertoires.find((item) => item.side.toLowerCase() === orientation);
+    repertoires.find((item) => item.id === activeRepertoire) ?? repertoires[0];
   const lineMatches = availableLines.filter(
     (line) =>
       (!selectedRepertoire || line.repertoireId === selectedRepertoire.id) &&
@@ -354,7 +358,7 @@ export default function BuilderView({
   useEffect(() => {
     if (!selectedRepertoire) return;
     localStorage.setItem(
-      `tempo-active-repertoire-${orientation}`,
+      `tempo-active-repertoire-${selectedRepertoire.side}`,
       selectedRepertoire.id,
     );
   }, [orientation, selectedRepertoire]);
@@ -363,10 +367,11 @@ export default function BuilderView({
     const activeRepertoireByColor: BuilderSession["activeRepertoireByColor"] = {
       white: localStorage.getItem("tempo-active-repertoire-white") ?? undefined,
       black: localStorage.getItem("tempo-active-repertoire-black") ?? undefined,
-      [orientation]: selectedRepertoire?.id ?? activeRepertoire,
+      ...(selectedRepertoire ? { [selectedRepertoire.side]: selectedRepertoire.id } : {}),
     };
     const session: BuilderSession = {
       version: 1,
+      activeRepertoireId: selectedRepertoire?.id ?? activeRepertoire,
       activeRepertoireByColor,
       orientation,
       startingFen,
@@ -445,9 +450,6 @@ export default function BuilderView({
     setOrientation((current) => {
       const next = current === "white" ? "black" : "white";
       localStorage.setItem("tempo-builder-orientation", next);
-      setActiveRepertoire(
-        localStorage.getItem(`tempo-active-repertoire-${next}`) ?? "",
-      );
       return next;
     });
   }, []);
@@ -589,13 +591,14 @@ export default function BuilderView({
   }, [fen, explorerOn, lichessToken, explorerRatings, explorerSpeeds]);
 
   useEffect(() => {
+    let current = true;
     queueMicrotask(() => {
+      if (!current) return;
       if (!isStockfishOn) {
         setStockfishState("off");
         setStockfishMoves([]);
         return;
       }
-      let current = true;
       setStockfishMoves([]);
       setStockfishState("loading");
       analyzeWithStockfish(fen)
@@ -609,20 +612,19 @@ export default function BuilderView({
           console.error("Stockfish 19:", error);
           if (current) setStockfishState("error");
         });
-      return () => {
-        current = false;
-      };
     });
+    return () => { current = false; };
   }, [fen, isStockfishOn]);
 
   useEffect(() => {
+    let current = true;
     queueMicrotask(() => {
+      if (!current) return;
       if (!maiaOn) {
         setMaiaState("off");
         setMaiaMoves([]);
         return;
       }
-      let current = true;
       setMaiaMoves([]);
       setMaiaProgress(0);
       setMaiaState("loading");
@@ -637,16 +639,19 @@ export default function BuilderView({
           console.error("Maia 3:", error);
           if (current) setMaiaState("error");
         });
-      return () => {
-        current = false;
-      };
     });
+    return () => { current = false; };
   }, [fen, maiaElo, maiaOn]);
 
   function playMove(from: Square, to: Square) {
     const chess = new Chess(fen);
     try {
       const move = chess.move({ from, to, promotion: "q" });
+      setStockfishMoves([]);
+      setExplorerMoves([]);
+      setMastersMoves([]);
+      setMaiaMoves([]);
+      setHoveredMove(null);
       const uci = `${move.from}${move.to}${move.promotion ?? ""}`;
       if (!coveredReplies.has(uci) && branchStart === null)
         setBranchStart(cursor);
@@ -663,16 +668,28 @@ export default function BuilderView({
   function playUci(uci: string) {
     playMove(uci.slice(0, 2) as Square, uci.slice(2, 4) as Square);
   }
-  function saveBranch() {
+  async function saveBranch() {
     if (branchStart === null || history.length <= branchStart) return;
+    const moves = history.slice(0, cursor).map((move) => move.uci);
+    if (usesLocalApi()) {
+      if (!selectedRepertoire) { setBranchNote("Choose a repertoire before saving."); return; }
+      try {
+        const response = await fetch(`${API_URL}/api/repertoire/branches`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ repertoire_id: selectedRepertoire.id, starting_fen: startingFen, moves, trained_color: selectedRepertoire.side, name: history.slice(0, cursor).map((move) => move.san).join(" ") }) });
+        const result = await response.json() as { id: string; detail?: string };
+        if (!response.ok) throw new Error(result.detail);
+        setBackendLines((current) => [...current.filter((line) => line.id !== result.id), { id: result.id, repertoireId: selectedRepertoire.id, repertoireName: selectedRepertoire.name, title: "Branch", startingFen, moves, side: selectedRepertoire.side }]);
+        setBranchNote("Saved");
+        setBranchStart(null);
+      } catch (error) { setBranchNote(error instanceof Error ? error.message : "Could not save. Retry with the local service running."); }
+      return;
+    }
     const stored = JSON.parse(
       localStorage.getItem("tempo-saved-branches") ?? "[]",
     ) as string[][];
-    const moves = history.map((move) => move.uci);
     if (!stored.some((line) => line.join(" ") === moves.join(" ")))
       stored.push(moves);
     localStorage.setItem("tempo-saved-branches", JSON.stringify(stored));
-    setBranchNote("Saved and deduplicated · response cards updated");
+    setBranchNote("Draft saved in this demo browser");
     setBranchStart(null);
   }
 
@@ -736,7 +753,7 @@ export default function BuilderView({
   for (const move of coveredReplies)
     arrowSources.set(move, new Set([...(arrowSources.get(move) ?? []), "R"]));
   const trainedTurn =
-    new Chess(fen).turn() === (orientation === "white" ? "w" : "b");
+    new Chess(fen).turn() === (selectedRepertoire?.side === "black" ? "b" : "w");
   const repertoireMoves = [...coveredReplies].map((uci) => {
     return { uci, san: sanForUci(fen, uci) ?? uci };
   });

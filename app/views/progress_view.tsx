@@ -1,105 +1,42 @@
 "use client";
-export default function ProgressView({
-  reviewed,
-  cardsLeft,
-  totalCards,
-}: {
-  reviewed: number;
-  cardsLeft: number;
+import { useEffect, useState } from "react";
+import { API_URL } from "../const";
+import { usesLocalApi } from "../utils/local";
+
+type Progress = {
+  states: Record<string, number>;
+  activity: { date: string; count: number }[];
+  reviewedToday: number;
+  cleanCards: number;
+  dueToday: number;
   totalCards: number;
-}) {
-  const days = [
-    ["Thu", 16],
-    ["Fri", 22],
-    ["Sat", 8],
-    ["Sun", 28],
-    ["Mon", 19],
-    ["Tue", 31],
-    ["Today", Math.max(8, reviewed)],
-  ];
-  return (
-    <section className="progress-page" id="progress">
-      <div className="page-heading compact">
-        <div>
-          <p className="eyebrow">Quiet consistency</p>
-          <h1>Progress</h1>
-          <p>
-            Review volume matters less than returning when each card is due.
-          </p>
-        </div>
-        <span className="streak">12 day streak</span>
-      </div>
-      <div className="metric-grid">
-        <article>
-          <span>Due today</span>
-          <strong>{cardsLeft}</strong>
-          <small>
-            {cardsLeft ? "Continue today’s queue" : "Queue complete"}
-          </small>
-        </article>
-        <article>
-          <span>Cards available</span>
-          <strong>{totalCards}</strong>
-          <small>Across local repertoires and examples</small>
-        </article>
-        <article>
-          <span>Reviewed today</span>
-          <strong>{reviewed}</strong>
-          <small>Completed attempts</small>
-        </article>
-        <article>
-          <span>Clean passes</span>
-          <strong>
-            {typeof window === "undefined"
-              ? 0
-              : JSON.parse(
-                  localStorage.getItem("tempo-first-clean-passes") ?? "[]",
-                ).length}
-          </strong>
-          <small>Cards recalled without guidance</small>
-        </article>
-      </div>
-      <div className="analytics-grid">
-        <article className="chart-card">
-          <div className="chart-heading">
-            <div>
-              <span>Review activity</span>
-              <strong>{reviewed} cards today</strong>
-            </div>
-            <small>7 days</small>
-          </div>
-          <div className="bar-chart">
-            {days.map(([label, value]) => (
-              <div className="bar-column" key={label}>
-                <span style={{ height: `${Number(value) * 3.3}px` }} />
-                <small>{label}</small>
-              </div>
-            ))}
-          </div>
-        </article>
-        <article className="maturity-card">
-          <span>Maturity</span>
-          <h2>Most of your repertoire is becoming stable.</h2>
-          <div className="donut">
-            <strong>72%</strong>
-            <small>learning or mature</small>
-          </div>
-          <ul>
-            <li>
-              <i className="new" />
-              New <strong>96</strong>
-            </li>
-            <li>
-              <i className="learning" />
-              Learning <strong>88</strong>
-            </li>
-            <li>
-              <i className="mature" />
-              Mature <strong>184</strong>
-            </li>
-          </ul>
-        </article>
-      </div>
-    </section>
-  );
+};
+
+export default function ProgressView({ reviewed, cardsLeft, totalCards }: { reviewed: number; cardsLeft: number; totalCards: number }) {
+  const [data, setData] = useState<Progress>({ states: {}, activity: [], reviewedToday: reviewed, cleanCards: 0, dueToday: cardsLeft, totalCards });
+  const [error, setError] = useState("");
+  useEffect(() => {
+    if (!usesLocalApi()) return;
+    let active = true;
+    void fetch(`${API_URL}/api/progress`).then(async (response) => {
+      if (!response.ok) throw new Error();
+      const summary = await response.json() as Progress;
+      if (active) setData(summary);
+    }).catch(() => { if (active) setError("Could not load review history. Check the local service."); });
+    return () => { active = false; };
+  }, []);
+  const maximum = Math.max(1, ...data.activity.map((day) => day.count));
+  return <section className="progress-page" id="progress">
+    <div className="page-heading compact"><h1>Progress</h1></div>
+    {error && <p role="alert">{error}</p>}
+    <div className="metric-grid">
+      {[["Due today", data.dueToday], ["Cards available", data.totalCards], ["Reviewed today", data.reviewedToday], ["Cards recalled cleanly", data.cleanCards]].map(([label, count]) => <article key={label}><span>{label}</span><strong>{count}</strong></article>)}
+    </div>
+    <div className="analytics-grid">
+      <article className="chart-card"><div className="chart-heading"><strong>Review activity</strong><small>Last 7 days</small></div>
+        <div className="bar-chart">{data.activity.map((day) => <div className="bar-column" key={day.date}><b>{day.count}</b><span style={{ height: `${day.count / maximum * 130}px` }} /><small>{new Date(`${day.date}T12:00:00`).toLocaleDateString([], { weekday: "short" })}</small></div>)}</div>
+      </article>
+      <article className="maturity-card"><h2>Card maturity</h2><ul>{["new", "learning", "mature", "locked"].map((state) => <li key={state}>{state}<strong>{data.states[state] ?? 0}</strong></li>)}</ul></article>
+    </div>
+  </section>;
 }
