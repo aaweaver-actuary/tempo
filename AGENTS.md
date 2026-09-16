@@ -1,5 +1,15 @@
 # Tempo working rules
 
+## Mandatory first-read naming rule
+
+Treat this naming rule as canonical for this project before starting substantial implementation or refactoring work.
+
+- Prefer expressive names by default.
+- Name length and specificity should be very roughly inversely proportional to scope and reuse.
+- Small local variables should be highly specific and explicit about what they represent or how they are used.
+- Broadly shared globals, widely reused constants, or ubiquitous cross-module symbols may be somewhat terser when their meaning is already stable and well understood.
+- Never use terseness to hide ambiguity; if a reader can _POSSIBLY_ misinterpret a name, make it more explicit.
+
 Read `CONTRIBUTING.md` before changing behavior. Every user-raised defect, now and in future work, requires a specific named regression test in the regular suite before it can be closed. Record coverage in `tests/REGRESSIONS.md`. Never bypass or silently skip those tests to release a change.
 
 Local Docker Tempo is the full product. SQLite is authoritative for cards, reviews, queues, repertoires, games, and sync metadata. A service failure must show an actionable error and never substitute sample records or false success. GitHub Pages is a clearly marked practice demo.
