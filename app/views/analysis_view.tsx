@@ -26,9 +26,13 @@ import {
   EngineStatus,
   BuilderSession,
   PositionAnnotation,
+  asFenString,
   asRepertoireId,
   asFenKey,
   asIsoDateString,
+  asLineId,
+  asSanMove,
+  asUciMove,
 } from "../types";
 import { usesLocalApi } from "../utils/local";
 import { connectLichess } from "../utils/lichess";
@@ -220,13 +224,13 @@ export default function BuilderView({
   const availableLines = useMemo<AnalysisLine[]>(() => {
     const browserLines = imported.flatMap((repertoire) =>
       repertoire.cards.map((card) => ({
-        id: card.id,
+        id: asLineId(String(card.id)),
         repertoireId: repertoire.id,
         repertoireName: repertoire.title,
         title: card.title,
         side: repertoire.side,
         moves: card.moves,
-        startingFen: card.startingFen,
+        startingFen: asFenString(String(card.startingFen)),
       })),
     );
     const source = usesLocalApi() ? backendLines : browserLines;
@@ -256,10 +260,10 @@ export default function BuilderView({
       canonicalFenKey(line.startingFen) === canonicalFenKey(startingFen) &&
       playedUci.every((move, index) => line.moves[index] === move),
   );
-  const coveredReplies = new Set(
+  const coveredReplies = new Set<string>(
     lineMatches.flatMap((line) => {
       const uci = line.moves[cursor];
-      return uci ? [uci] : [];
+      return uci ? [String(uci)] : [];
     }),
   );
   const positionIndex = useMemo(
@@ -328,13 +332,13 @@ export default function BuilderView({
         };
         setBackendLines(
           body.lines.map((line) => ({
-            id: line.id,
+            id: asLineId(line.id),
             repertoireId: asRepertoireId(line.repertoire_id),
             repertoireName: line.repertoire_name,
             title: line.name,
             side: line.trained_color === "black" ? "black" : "white",
-            startingFen: line.start_fen,
-            moves: line.moves,
+            startingFen: asFenString(line.start_fen),
+            moves: line.moves.map(asSanMove),
           })),
         );
       })
@@ -367,7 +371,7 @@ export default function BuilderView({
         ?? (activeRepertoire ? asRepertoireId(activeRepertoire) : undefined),
       activeRepertoireByColor,
       orientation,
-      startingFen,
+      startingFen: asFenString(String(startingFen)),
       history,
       cursor: Math.min(cursor, history.length),
       branchStart,
@@ -666,12 +670,12 @@ export default function BuilderView({
       setMastersMoves([]);
       setMaiaMoves([]);
       setHoveredMove(null);
-      const uci = `${move.from}${move.to}${move.promotion ?? ""}`;
+      const uci = asUciMove(`${move.from}${move.to}${move.promotion ?? ""}`);
       if (!coveredReplies.has(uci) && branchStart === null)
         setBranchStart(cursor);
       setHistory((current) => [
         ...current.slice(0, cursor),
-        { san: move.san, uci, fen: chess.fen() },
+        { san: asSanMove(move.san), uci, fen: asFenString(chess.fen()) },
       ]);
       setCursor((value) => value + 1);
     } catch {
@@ -713,11 +717,11 @@ export default function BuilderView({
         setBackendLines((current) => [
           ...current.filter((line) => line.id !== result.id),
           {
-            id: result.id,
+            id: asLineId(result.id),
             repertoireId: selectedRepertoire.id,
             repertoireName: selectedRepertoire.name,
             title: "Branch",
-            startingFen,
+            startingFen: asFenString(String(startingFen)),
             moves,
             side: selectedRepertoire.side,
           },
@@ -806,7 +810,7 @@ export default function BuilderView({
     new Chess(fen).turn() ===
     (selectedRepertoire?.side === "black" ? "b" : "w");
   const repertoireMoves = [...coveredReplies].map((uci) => {
-    return { uci, san: sanForUci(fen, uci) ?? uci };
+    return { uci, san: asSanMove(sanForUci(fen, uci) ?? uci) };
   });
   const practicalMoves =
     arrowMetric === "masters" ? mastersMoves : explorerMoves;
@@ -826,10 +830,11 @@ export default function BuilderView({
       (value): value is number => value !== undefined,
     ),
   );
+  const hoveredShape = hoveredMove
+    ? ([asUciMove(hoveredMove), new Set([""])] as const)
+    : undefined;
   const shapes: DrawShape[] = (
-    hoveredMove
-      ? [[hoveredMove, new Set([""])] as const]
-      : [...arrowSources.entries()].slice(0, 9)
+    hoveredShape ? [hoveredShape] : [...arrowSources.entries()].slice(0, 9)
   ).map(([uci, sources]) => {
     const engineIndex = engineCandidates.findIndex((move) => move.uci === uci);
     const practical = practicalScores.get(uci);

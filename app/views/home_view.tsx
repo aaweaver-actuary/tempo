@@ -9,7 +9,10 @@ import {
   LocalRepertoire,
   AnalysisLine,
   CardId,
+  asFenString,
+  asLineId,
   asRepertoireId,
+  asSanMove,
 } from "../types";
 import { canonicalFenKey, canonicalizeLine } from "../utils/canonical-line";
 import {
@@ -176,13 +179,15 @@ export default function Home() {
           };
           const lines: AnalysisLine[] = body.lines.map((line) =>
             canonicalizeLine({
-              id: String(line.id),
+              id: asLineId(String(line.id)),
               repertoireId: asRepertoireId(String(line.repertoire_id)),
               repertoireName: String(line.repertoire_name),
               title: String(line.name ?? ""),
               side: line.trained_color === "black" ? "black" : "white",
-              startingFen: String(line.start_fen),
-              moves: line.moves as string[],
+              startingFen: asFenString(String(line.start_fen)),
+              moves: (Array.isArray(line.moves) ? line.moves : []).map((move) =>
+                asSanMove(String(move)),
+              ),
             }),
           );
           branchPositions.current = indexRepertoirePositions(lines);

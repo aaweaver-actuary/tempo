@@ -4,8 +4,10 @@ import {
   PackagedPuzzle,
   PracticeCard,
   asCardId,
+  asFenString,
   asQueueEntryId,
   asRepertoireId,
+  asSanMove,
 } from "../../types";
 import { movesToSanFormat } from "../../utils/chess";
 
@@ -38,11 +40,11 @@ export function mapQueueCardToPracticeCard(
       card.content_type === "tactic"
         ? `Lichess puzzle ${card.source_ref ?? ""}`
         : card.repertoire_source,
-    startingFen: card.start_fen,
+    startingFen: asFenString(card.start_fen),
     moves:
       card.content_type === "endgame"
         ? []
-        : movesToSanFormat(card.start_fen, card.moves),
+        : movesToSanFormat(card.start_fen, card.moves).map(asSanMove),
     userMoveTarget: Math.ceil(card.moves.length / 2),
     sourceUrl: card.source_ref
       ? `https://lichess.org/training/${card.source_ref}`
@@ -76,18 +78,20 @@ export function mapPackagedPuzzleToPracticeCard(
     const startingFen = board.fen();
     const moves = uciMoves.map(
       (uci) =>
-        board.move({
+        asSanMove(
+          board.move({
           from: uci.slice(0, 2) as Square,
           to: uci.slice(2, 4) as Square,
           promotion: uci[4],
-        }).san,
+          }).san,
+        ),
     );
     return {
       id: asCardId(`lichess-${record.PuzzleId}`),
       kind: "puzzle",
       title: `Puzzle ${record.DeckPosition}`,
       subtitle: `Lichess · ${record.Rating}`,
-      startingFen,
+      startingFen: asFenString(startingFen),
       moves,
       userMoveTarget: Math.ceil(moves.length / 2),
       sourceUrl: `https://lichess.org/training/${record.PuzzleId}`,

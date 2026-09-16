@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { useTrainingStore } from "../../app/state/training-store";
-import { asCardId, type PracticeCard } from "../../app/types";
+import { asCardId, asFenString, asSanMove, type PracticeCard } from "../../app/types";
 
 describe("training store", () => {
   it("resets the current card to the correct opening start state", () => {
@@ -9,8 +9,8 @@ describe("training store", () => {
       kind: "opening",
       title: "Queen's Gambit",
       subtitle: "Review the opening structure",
-      startingFen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
-      moves: ["d4", "d5", "c4"],
+      startingFen: asFenString("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"),
+      moves: [asSanMove("d4"), asSanMove("d5"), asSanMove("c4")],
       userMoveTarget: 0,
       orientation: "white",
     };

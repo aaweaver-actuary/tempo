@@ -1,5 +1,10 @@
 import { Chess, type Square } from "chess.js";
-import type { CanonicalLine, AnalysisLine, LineDiagnostic } from "../types";
+import {
+  asUciMove,
+  type CanonicalLine,
+  type AnalysisLine,
+  type LineDiagnostic,
+} from "../types";
 
 const UCI_MOVE = /^[a-h][1-8][a-h][1-8][qrbn]?$/i;
 const NULL_MOVES = new Set(["0000", "--", "Z0"]);
@@ -11,7 +16,7 @@ export function canonicalFenKey(fen: string): string {
 export function canonicalizeMoves(
   startingFen: string,
   inputMoves: readonly string[],
-): { moves: string[]; diagnostics: LineDiagnostic[]; finalFen: string } {
+): { moves: ReturnType<typeof asUciMove>[]; diagnostics: LineDiagnostic[]; finalFen: string } {
   let board: Chess;
   try {
     board = new Chess(startingFen);
@@ -26,7 +31,7 @@ export function canonicalizeMoves(
     };
   }
 
-  const moves: string[] = [];
+  const moves: ReturnType<typeof asUciMove>[] = [];
   const diagnostics: LineDiagnostic[] = [];
   for (let index = 0; index < inputMoves.length; index += 1) {
     const value = String(inputMoves[index] ?? "").trim();
@@ -47,7 +52,7 @@ export function canonicalizeMoves(
             promotion: value[4]?.toLowerCase() || undefined,
           })
         : board.move(value);
-      moves.push(`${played.from}${played.to}${played.promotion ?? ""}`);
+      moves.push(asUciMove(`${played.from}${played.to}${played.promotion ?? ""}`));
     } catch {
       diagnostics.push({
         ply: index,
@@ -62,7 +67,10 @@ export function canonicalizeMoves(
 }
 
 export function canonicalizeLine(line: AnalysisLine): CanonicalLine {
-  const result = canonicalizeMoves(line.startingFen, line.moves);
+  const result = canonicalizeMoves(
+    line.startingFen,
+    line.moves.map(String),
+  );
   return {
     ...line,
     moves: result.moves,

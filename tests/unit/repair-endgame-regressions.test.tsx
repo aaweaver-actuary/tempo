@@ -4,7 +4,7 @@ import { expect, it, vi } from "vitest";
 import CardEditor from "../../app/views/card_editor";
 import { generateLegalEndgameFen } from "../../app/lib/endgame-generator";
 import { tablebaseCategoryForWhite } from "../../app/utils/tablebase";
-import { asCardId } from "../../app/types";
+import { asCardId, asFenString, asSanMove } from "../../app/types";
 
 vi.mock("../../app/components/chessboard", () => ({
   Chessboard: (props: { fen: string }) => (
@@ -20,8 +20,8 @@ it("repair uses the shared board and arrows navigate the complete solution; Esca
         kind: "puzzle",
         subtitle: "Test",
         title: "Test",
-        startingFen: new Chess().fen(),
-        moves: ["e4", "e5"],
+        startingFen: asFenString(new Chess().fen()),
+        moves: [asSanMove("e4"), asSanMove("e5")],
         userMoveTarget: 2,
       }}
       boardTheme="brown"

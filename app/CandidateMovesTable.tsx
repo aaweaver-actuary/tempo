@@ -1,6 +1,14 @@
 "use client";
-import type { EngineMove } from "./lib/analysis-engines";
-import type { ExplorerMove } from "./types";
+
+type CandidateMove = {
+  uci: string;
+  san?: string;
+  probability?: number;
+  score?: string;
+  white?: number;
+  draws?: number;
+  black?: number;
+};
 
 //
 export default function CandidateMovesTable({
@@ -12,7 +20,7 @@ export default function CandidateMovesTable({
   turn = "white",
   totalGames,
 }: {
-  moves: Array<Pick<EngineMove, "uci"> & Partial<EngineMove> & Partial<ExplorerMove>>;
+  moves: CandidateMove[];
   covered: Set<string>;
   detail: "probability" | "score" | "results";
   onPlay?: (uci: string) => void;

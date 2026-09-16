@@ -16,7 +16,7 @@ import {
   alternateTactics,
   tacticMotifs,
 } from "../samples";
-import { PackagedPuzzle, PracticeCard } from "../types";
+import { asFenString, PackagedPuzzle, PracticeCard } from "../types";
 import { convertPackagedPuzzleRecordIntoPracticeCard } from "../utils/cards";
 import { usesLocalApi } from "../utils/local";
 
@@ -199,7 +199,7 @@ export default function TacticsView({
       setBoardAttempt((value) => value + 1);
       return;
     }
-    setFen(board.fen());
+    setFen(asFenString(board.fen()));
     if (board.isCheckmate()) {
       setStep(puzzle.moves.length);
       void finish();
@@ -213,7 +213,7 @@ export default function TacticsView({
     }
     const replyBoard = new Chess(board.fen());
     replyBoard.move(puzzle.moves[replyIndex]);
-    setFen(replyBoard.fen());
+    setFen(asFenString(replyBoard.fen()));
     playMoveSound();
     setStep(replyIndex + 1);
     setHint(failedRef.current);

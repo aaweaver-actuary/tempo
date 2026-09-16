@@ -1,7 +1,9 @@
 import { Chess } from 'chess.js';
 import {
   asCardId,
+  asFenString,
   asRepertoireId,
+  asSanMove,
   type LocalRepertoire,
   type PracticeCard,
 } from '../types';
@@ -31,8 +33,8 @@ export function parsePgnImport(fileName: string, pgn: string, trainedColor: 'whi
     const allMoves = chess.history();
     const prefixLength = Math.min(allMoves.length, initialDepth * 2 - (trainedColor === 'white' ? 1 : 0));
     if (!prefixLength) continue;
-    const startingFen = headers.FEN || STANDARD_FEN;
-    const moves = allMoves.slice(0, prefixLength);
+    const startingFen = asFenString(headers.FEN || STANDARD_FEN);
+    const moves = allMoves.slice(0, prefixLength).map(asSanMove);
     const identity = `${startingFen.split(' ').slice(0, 4).join(' ')}|${moves.join(' ')}`;
     cards.push({
       id: asCardId(`import-${stableId(identity)}`),

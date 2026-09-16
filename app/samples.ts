@@ -1,11 +1,23 @@
 import { STANDARD_FEN } from "./const";
 import type { EndgameMaterial } from "./lib/endgame-generator";
 import {
+  GameViewRecord,
   LocalRepertoire,
   PracticeCard,
   asCardId,
+  asFenString,
+  asGameId,
   asRepertoireId,
+  asSanMove,
 } from "./types";
+
+const standardFen = asFenString(STANDARD_FEN);
+const sampleWhiteRepertoireId = asRepertoireId("sample-white");
+const sampleBlackRepertoireId = asRepertoireId("sample-black");
+
+function sanLine(...moves: string[]) {
+  return moves.map(asSanMove);
+}
 
 export const analysisLines = [
   {
@@ -36,8 +48,8 @@ export const demoCards = [
     kind: "opening",
     title: "Open Sicilian",
     subtitle: "Najdorf setup",
-    startingFen: STANDARD_FEN,
-    moves: [
+    startingFen: standardFen,
+    moves: sanLine(
       "e4",
       "c5",
       "Nf3",
@@ -49,17 +61,17 @@ export const demoCards = [
       "Nc3",
       "a6",
       "Be3",
-    ],
+    ),
     userMoveTarget: 6,
-    nextMove: "… e6 · 7. Qd2",
+    nextMove: asSanMove("e6"),
   },
   {
     id: asCardId("french-classical-prefix"),
     kind: "opening",
     title: "French Defense",
     subtitle: "Classical variation",
-    startingFen: STANDARD_FEN,
-    moves: [
+    startingFen: standardFen,
+    moves: sanLine(
       "e4",
       "e6",
       "d4",
@@ -71,17 +83,19 @@ export const demoCards = [
       "f4",
       "c5",
       "Nf3",
-    ],
+    ),
     userMoveTarget: 6,
-    nextMove: "… Nc6 · 7. Be3",
+    nextMove: asSanMove("Nc6"),
   },
   {
     id: asCardId("lichess-puzzle-00sHx"),
     kind: "puzzle",
     title: "Mate in two",
     subtitle: "Mate · middlegame · short",
-    startingFen: "q5nr/1ppknQpp/3p4/1P2p3/4P3/B1PP1b2/B5PP/5K2 w - - 1 18",
-    moves: ["Be6+", "Kd8", "Qf8#"],
+    startingFen: asFenString(
+      "q5nr/1ppknQpp/3p4/1P2p3/4P3/B1PP1b2/B5PP/5K2 w - - 1 18",
+    ),
+    moves: sanLine("Be6+", "Kd8", "Qf8#"),
     userMoveTarget: 2,
     sourceUrl: "https://lichess.org/training/00sHx",
   },
@@ -89,7 +103,7 @@ export const demoCards = [
 
 export const bundledRepertoires: LocalRepertoire[] = [
   {
-    id: asRepertoireId("sample-white"),
+    id: sampleWhiteRepertoireId,
     title: "1. e4 Main Lines",
     sourceName: "Tempo examples",
     side: "white",
@@ -97,12 +111,12 @@ export const bundledRepertoires: LocalRepertoire[] = [
     cards: demoCards.filter((card) => card.kind === "opening").map((card) => ({
       ...card,
       orientation: "white",
-      repertoireId: asRepertoireId("sample-white"),
+      repertoireId: sampleWhiteRepertoireId,
       revision: 1,
     })),
   },
   {
-    id: asRepertoireId("sample-black"),
+    id: sampleBlackRepertoireId,
     title: "King’s Indian",
     sourceName: "Tempo examples",
     side: "black",
@@ -113,31 +127,31 @@ export const bundledRepertoires: LocalRepertoire[] = [
         kind: "opening",
         title: "King’s Indian",
         subtitle: "Main line",
-        startingFen: STANDARD_FEN,
-        moves: ["d4", "Nf6", "c4", "g6", "Nc3", "Bg7", "e4", "d6"],
+        startingFen: standardFen,
+        moves: sanLine("d4", "Nf6", "c4", "g6", "Nc3", "Bg7", "e4", "d6"),
         userMoveTarget: 4,
         orientation: "black",
-        repertoireId: asRepertoireId("sample-black"),
+        repertoireId: sampleBlackRepertoireId,
         revision: 1,
       },
     ],
   },
 ];
 
-export const sampleGames = [
+export const sampleGames: GameViewRecord[] = [
   {
-    id: "g1",
+    id: asGameId("g1"),
     source: "Lichess",
-    date: "Sep 12",
-    speed: "Rapid",
-    color: "White",
-    result: "Won",
+    date: "2026-09-12",
+    speed: "rapid",
+    color: "white",
+    result: "won",
     opening: "Open Sicilian",
     status: "covered",
     detail: "Covered through 12… Be7",
     flag: "First major mistake · 18. Bxh7? · −1.24",
     flagPly: 13,
-    moves: [
+    moves: sanLine(
       "e4",
       "c5",
       "Nf3",
@@ -153,21 +167,22 @@ export const sampleGames = [
       "f3",
       "b5",
       "Qd2",
-    ],
+    ),
+    startFen: standardFen,
   },
   {
-    id: "g2",
+    id: asGameId("g2"),
     source: "Chess.com",
-    date: "Sep 10",
-    speed: "Blitz",
-    color: "Black",
-    result: "Lost",
+    date: "2026-09-10",
+    speed: "blitz",
+    color: "black",
+    result: "lost",
     opening: "King’s Indian",
     status: "opponent gap",
     detail: "New opponent move 7. d5",
     flag: "Missed punishment · 12… Nxe4 · +1.18 available",
     flagPly: 9,
-    moves: [
+    moves: sanLine(
       "d4",
       "Nf6",
       "c4",
@@ -179,21 +194,22 @@ export const sampleGames = [
       "Nf3",
       "O-O",
       "Be2",
-    ],
+    ),
+    startFen: standardFen,
   },
   {
-    id: "g3",
+    id: asGameId("g3"),
     source: "Lichess",
-    date: "Sep 8",
-    speed: "Blitz",
-    color: "White",
-    result: "Draw",
+    date: "2026-09-08",
+    speed: "blitz",
+    color: "white",
+    result: "draw",
     opening: "French Defense",
     status: "player deviation",
     detail: "You played 8. Bd3 instead of 8. Qd2",
     flag: "First major mistake · 8. Bd3 · −1.07",
     flagPly: 10,
-    moves: [
+    moves: sanLine(
       "e4",
       "e6",
       "d4",
@@ -205,21 +221,23 @@ export const sampleGames = [
       "f4",
       "c5",
       "Nf3",
-    ],
+    ),
+    startFen: standardFen,
   },
   {
-    id: "g4",
+    id: asGameId("g4"),
     source: "Lichess",
-    date: "Sep 2",
-    speed: "Classical",
-    color: "Black",
-    result: "Won",
+    date: "2026-09-02",
+    speed: "classical",
+    color: "black",
+    result: "won",
     opening: "English Opening",
     status: "no repertoire",
     detail: "No applicable Black repertoire",
     flag: "No ≥100cp swing found",
     flagPly: 0,
-    moves: ["c4", "e5", "Nc3", "Nf6", "g3", "d5"],
+    moves: sanLine("c4", "e5", "Nc3", "Nf6", "g3", "d5"),
+    startFen: standardFen,
   },
 ];
 
@@ -243,8 +261,8 @@ export const hangingSample: PracticeCard = {
   kind: "puzzle",
   title: "Loose queen",
   subtitle: "Hanging piece",
-  startingFen: "4k3/8/8/8/3q4/3R4/8/4K3 w - - 0 1",
-  moves: ["Rxd4"],
+  startingFen: asFenString("4k3/8/8/8/3q4/3R4/8/4K3 w - - 0 1"),
+  moves: sanLine("Rxd4"),
   userMoveTarget: 1,
 };
 export const tacticExamples: Record<string, PracticeCard> = {
@@ -254,8 +272,8 @@ export const tacticExamples: Record<string, PracticeCard> = {
     kind: "puzzle",
     title: "Knight fork",
     subtitle: "Fork",
-    startingFen: "3q3k/8/8/4N3/8/8/8/4K3 w - - 0 1",
-    moves: ["Nf7+"],
+    startingFen: asFenString("3q3k/8/8/4N3/8/8/8/4K3 w - - 0 1"),
+    moves: sanLine("Nf7+"),
     userMoveTarget: 1,
   },
   pin: {
@@ -263,8 +281,8 @@ export const tacticExamples: Record<string, PracticeCard> = {
     kind: "puzzle",
     title: "Create the pin",
     subtitle: "Pin",
-    startingFen: "4k3/8/2n5/8/2B5/8/8/4K3 w - - 0 1",
-    moves: ["Bb5"],
+    startingFen: asFenString("4k3/8/2n5/8/2B5/8/8/4K3 w - - 0 1"),
+    moves: sanLine("Bb5"),
     userMoveTarget: 1,
   },
   skewer: {
@@ -272,8 +290,8 @@ export const tacticExamples: Record<string, PracticeCard> = {
     kind: "puzzle",
     title: "Skewer king and queen",
     subtitle: "Skewer",
-    startingFen: "4k3/8/8/7q/8/8/2B5/4K3 w - - 0 1",
-    moves: ["Bg6+"],
+    startingFen: asFenString("4k3/8/8/7q/8/8/2B5/4K3 w - - 0 1"),
+    moves: sanLine("Bg6+"),
     userMoveTarget: 1,
   },
   discoveredAttack: {
@@ -281,8 +299,8 @@ export const tacticExamples: Record<string, PracticeCard> = {
     kind: "puzzle",
     title: "Open the file",
     subtitle: "Discovery",
-    startingFen: "4k3/8/8/8/4B3/8/8/4R1K1 w - - 0 1",
-    moves: ["Bd5+"],
+    startingFen: asFenString("4k3/8/8/8/4B3/8/8/4R1K1 w - - 0 1"),
+    moves: sanLine("Bd5+"),
     userMoveTarget: 1,
   },
 };
@@ -292,8 +310,8 @@ export const alternateTactics: PracticeCard[] = [
     kind: "puzzle",
     title: "Loose rook",
     subtitle: "Material",
-    startingFen: "4k3/8/5r2/8/8/2B5/8/4K3 w - - 0 1",
-    moves: ["Bxf6"],
+    startingFen: asFenString("4k3/8/5r2/8/8/2B5/8/4K3 w - - 0 1"),
+    moves: sanLine("Bxf6"),
     userMoveTarget: 1,
   },
   {
@@ -301,8 +319,8 @@ export const alternateTactics: PracticeCard[] = [
     kind: "puzzle",
     title: "Loose knight",
     subtitle: "Material",
-    startingFen: "4k3/8/8/3n4/8/8/8/3QK3 w - - 0 1",
-    moves: ["Qxd5"],
+    startingFen: asFenString("4k3/8/8/3n4/8/8/8/3QK3 w - - 0 1"),
+    moves: sanLine("Qxd5"),
     userMoveTarget: 1,
   },
   demoCards[2],

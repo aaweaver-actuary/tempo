@@ -3,7 +3,13 @@ import { useEffect, useMemo, useState } from "react";
 import { MoveNavigator } from "../components/board-controls";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
 import { pieceSymbols } from "../const";
-import { PracticeCard, PackagedPuzzle, asCardId } from "../types";
+import {
+  PracticeCard,
+  PackagedPuzzle,
+  asCardId,
+  asFenString,
+  asSanMove,
+} from "../types";
 import { API_URL, assetUrl } from "../const";
 import { usesLocalApi } from "../utils/local";
 import { convertPackagedPuzzleRecordIntoPracticeCard } from "../utils/cards";
@@ -96,7 +102,7 @@ export default function CardEditor({
       const move = board.move({ from, to, promotion: "q" });
       setSolutionSanMovesList((moves) => [
         ...moves.slice(0, currentPositionInMoveList),
-        move.san,
+        asSanMove(move.san),
       ]);
       setCurrentPositionInMoveList((value) => value + 1);
       setError("");
@@ -229,12 +235,12 @@ export default function CardEditor({
               onSquareSelect={(square) => {
                 if (tab === "position")
                   setCurrentFenString((current) =>
-                    editFenSquare(current, square, piece),
+                    asFenString(editFenSquare(current, square, piece)),
                   );
               }}
               onFreeMove={(from, to) =>
                 setCurrentFenString((current) =>
-                  moveFenPiece(current, from, to),
+                  asFenString(moveFenPiece(current, from, to)),
                 )
               }
               onMove={playSolution}
@@ -273,7 +279,12 @@ export default function CardEditor({
               <textarea
                 value={currentFenString}
                 onChange={(event) => {
-                  setCurrentFenString(event.target.value);
+                  try {
+                    setCurrentFenString(asFenString(event.target.value));
+                    setError("");
+                  } catch {
+                    setError("Enter a valid FEN before saving.");
+                  }
                   setCurrentPositionInMoveList(0);
                 }}
               />

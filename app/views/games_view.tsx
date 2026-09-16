@@ -11,7 +11,15 @@ import { fenAfterMoves } from "../utils/fen";
 import { convertSanToUci } from "../utils/chess";
 import { usesLocalApi } from "../utils/local";
 import { lichessAnalysisUrl } from "../utils/urls";
-import { asRepertoireId, type GameViewRecord, type AnalysisLine } from "../types";
+import {
+  asFenString,
+  asLineId,
+  asRepertoireId,
+  asSanMove,
+  type GameId,
+  type GameViewRecord,
+  type AnalysisLine,
+} from "../types";
 import { canonicalizeLine, canonicalFenKey } from "../utils/canonical-line";
 import { indexRepertoirePositions } from "../lib/position-similarity";
 import { sampleGames } from "../samples";
@@ -25,8 +33,8 @@ export function GamesView({ onAnalyze, onSettings, onSync, syncState, theme, pie
   pieceSet: PieceSet;
 }) {
   const local = usesLocalApi();
-  const [records, setRecords] = useState<GameViewRecord[]>(() => local ? [] : sampleGames.map((game) => ({ ...game, color: game.color === "black" ? "black" : "white", startFen: STANDARD_FEN })));
-  const [selectedId, setSelectedId] = useState("");
+  const [records, setRecords] = useState<GameViewRecord[]>(() => (local ? [] : sampleGames));
+  const [selectedId, setSelectedId] = useState<GameId | "">("");
   const [cursor, setCursor] = useState(0);
   const selectedIdRef = useRef(selectedId);
   useEffect(() => { selectedIdRef.current = selectedId; }, [selectedId]);
@@ -63,7 +71,21 @@ export function GamesView({ onAnalyze, onSettings, onSync, syncState, theme, pie
     void fetch(`${API_URL}/api/repertoire/lines`).then(async (response) => {
       if (!response.ok) return;
       const body = await response.json() as { lines: Record<string, unknown>[] };
-        setLines(body.lines.map((line: Record<string, unknown>) => canonicalizeLine({ id: String(line.id), repertoireId: asRepertoireId(String(line.repertoire_id)), repertoireName: String(line.repertoire_name), title: String(line.name), side: line.trained_color === "black" ? "black" : "white", startingFen: String(line.start_fen), moves: line.moves as string[] })));
+      setLines(
+        body.lines.map((line: Record<string, unknown>) =>
+          canonicalizeLine({
+            id: asLineId(String(line.id)),
+            repertoireId: asRepertoireId(String(line.repertoire_id)),
+            repertoireName: String(line.repertoire_name),
+            title: String(line.name),
+            side: line.trained_color === "black" ? "black" : "white",
+            startingFen: asFenString(String(line.start_fen)),
+            moves: (Array.isArray(line.moves) ? line.moves : []).map((move) =>
+              asSanMove(String(move)),
+            ),
+          }),
+        ),
+      );
     }).catch(() => undefined);
   }, [local]);
   const pending = records.find((game) => game.analysisState === "pending");
@@ -99,7 +121,7 @@ export function GamesView({ onAnalyze, onSettings, onSync, syncState, theme, pie
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [selected?.moves.length]);
-  const applicable = games.filter((game) => game.status !== "no applicable repertoire");
+  const applicable = games.filter((game) => game.status !== "no repertoire");
   const covered = applicable.filter((game) => game.status === "covered").length;
   return <section className="games-page" id="games">
     <div className="page-heading compact"><div><h1>Games{!local ? " · Demo" : ""}</h1><p>{syncState.lastSuccess ? `Last sync ${new Date(syncState.lastSuccess).toLocaleString()}` : "No successful sync yet"}</p></div>
@@ -116,7 +138,7 @@ export function GamesView({ onAnalyze, onSettings, onSync, syncState, theme, pie
           <div className="game-moves">{selected?.moves.map((move, index) => <button className={`${index < cursor ? "shown" : ""}${index === selected.flagPly ? " flagged" : ""}`} onClick={() => setCursor(index + 1)} key={index}>{index % 2 === 0 ? `${Math.floor(index / 2) + 1}.` : ""}{move}</button>)}</div>
           {selected && <><button className="primary-button" onClick={() => onAnalyze(selected, cursor)}>Open position in Builder</button><a href={lichessAnalysisUrl(selected.moves.slice(0, cursor), selected.startFen)} target="_blank" rel="noreferrer">Lichess analysis ↗</a></>}
         </aside>
-        <div className="games-metrics"><article><span>Repertoire adherence</span><strong>{applicable.length ? `${Math.round(covered / applicable.length * 100)}%` : "—"}</strong><small>{covered} of {applicable.length} applicable games</small></article>{["opponent repertoire gap", "player deviation"].map((value) => <article key={value}><span>{value}</span><strong>{games.filter((game) => game.status === value).length}</strong></article>)}</div>
+        <div className="games-metrics"><article><span>Repertoire adherence</span><strong>{applicable.length ? `${Math.round(covered / applicable.length * 100)}%` : "—"}</strong><small>{covered} of {applicable.length} applicable games</small></article>{["opponent gap", "player deviation"].map((value) => <article key={value}><span>{value}</span><strong>{games.filter((game) => game.status === value).length}</strong></article>)}</div>
         <div className="game-filters">{(["source", "status", "color", "speed", "result"] as const).map((field) => <select key={field} aria-label={`Filter ${field}`} value={filters[field]} onChange={(event) => setFilters((current) => ({ ...current, [field]: event.target.value }))}><option value="All">All {field}</option>{[...new Set(records.map((game) => game[field]))].map((value) => <option key={value}>{value}</option>)}</select>)}<input aria-label="Games since" type="date" value={filters.from} onChange={(event) => setFilters((current) => ({ ...current, from: event.target.value }))} /></div>
         <section className="game-list">{games.map((game) => <button className={`game-row${selected?.id === game.id ? " selected" : ""}`} key={game.id} onClick={() => { setSelectedId(game.id); setCursor(game.flagPly); }}><span><b>{game.opening}</b><small>{game.source} · {game.date} · {game.speed} · {game.color} · {game.result}</small></span><span><em>{game.status}</em><small>{game.detail}</small></span></button>)}{!games.length && <div className="games-empty"><strong>No matching games.</strong><button onClick={onSettings}>Set game accounts</button></div>}</section>
       </div>
