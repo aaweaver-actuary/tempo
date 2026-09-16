@@ -23,6 +23,7 @@ def connection() -> Iterator[sqlite3.Connection]:
 
 def initialize() -> None:
     statements = [
+        "CREATE TABLE IF NOT EXISTS tactic_discovery_attempts (id TEXT PRIMARY KEY, deck_id TEXT NOT NULL, puzzle_id TEXT NOT NULL, clean INTEGER NOT NULL, result_json TEXT NOT NULL)",
         """
         CREATE TABLE IF NOT EXISTS settings (
             id INTEGER PRIMARY KEY CHECK (id = 1),
@@ -291,6 +292,8 @@ def initialize() -> None:
         database.execute("INSERT OR IGNORE INTO settings (id) VALUES (1)")
         # Existing local databases are migrated in place; user review history is never rebuilt.
         columns = {
+            "daily_queue": {"review_result_json": "TEXT"},
+            "game_sync_state": {"username": "TEXT NOT NULL DEFAULT ''"},
             "settings": {"lichess_username": "TEXT NOT NULL DEFAULT ''", "chesscom_username": "TEXT NOT NULL DEFAULT ''", "auto_sync_minutes": "INTEGER NOT NULL DEFAULT 3", "engine_line_window_cp": "INTEGER NOT NULL DEFAULT 30", "major_mistake_cp": "INTEGER NOT NULL DEFAULT 100", "light_first_interval_days": "INTEGER NOT NULL DEFAULT 7", "draw_hold_user_moves": "INTEGER NOT NULL DEFAULT 20"},
             "cards": {"fsrs_card_json": "TEXT", "first_correct_at": "TEXT", "reinforcement_pending": "INTEGER NOT NULL DEFAULT 0", "stability": "REAL NOT NULL DEFAULT 0", "guided_review": "INTEGER NOT NULL DEFAULT 0", "maximum_interval": "INTEGER NOT NULL DEFAULT 365", "content_type": "TEXT NOT NULL DEFAULT 'opening'", "scheduling_mode": "TEXT NOT NULL DEFAULT 'normal'", "hard_correct_streak": "INTEGER NOT NULL DEFAULT 0", "recent_attempts_json": "TEXT NOT NULL DEFAULT '[]'", "archived": "INTEGER NOT NULL DEFAULT 0", "superseded_by": "TEXT", "source_ref": "TEXT", "source_fen": "TEXT", "revision": "INTEGER NOT NULL DEFAULT 1", "introduced_at": "TEXT"},
             "reviews": {"internal_rating": "TEXT NOT NULL DEFAULT 'again'", "guided": "INTEGER NOT NULL DEFAULT 0"},

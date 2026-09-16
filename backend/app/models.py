@@ -66,6 +66,7 @@ class TeachingStateRequest(BaseModel):
 
 
 class TacticAttemptRequest(BaseModel):
+    attempt_id: str | None = None
     puzzle_id: str
     deck_id: str
     correct: bool

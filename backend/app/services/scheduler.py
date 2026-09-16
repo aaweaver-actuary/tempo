@@ -100,7 +100,8 @@ def schedule_review(
         if hard_correct_streak >= 3:
             scheduling_mode = "normal"
             hard_correct_streak = 0
-    interval = 0 if requeue_today else proposed
+    interval = 0 if requeue_today else max(1, proposed)
+    next_card.due = _utc_midday(now.date() + timedelta(days=interval))
     return Schedule(
         interval_days=interval,
         due_date=now.date() if requeue_today else now.date() + timedelta(days=interval),

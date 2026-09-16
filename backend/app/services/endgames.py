@@ -42,6 +42,8 @@ def generate_position(white_material: str, black_material: str, trained_color: s
 
 
 def category_for_player(category: str) -> str:
+    if category in {"cursed-win", "blessed-loss"}:
+        return "draw"
     if "win" in category and "loss" not in category:
         return "win"
     if "loss" in category:

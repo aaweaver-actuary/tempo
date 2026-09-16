@@ -1,4 +1,4 @@
-import hashlib, io, json, uuid
+import asyncio, hashlib, io, json, uuid
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
 
@@ -45,28 +45,31 @@ def reconcile_unseen_queue(db, day, limit):
     rows = db.execute("""
         SELECT q.id,q.card_id FROM daily_queue q
         JOIN cards c ON c.id=q.card_id
-        WHERE q.queue_date=? AND q.status='queued' AND c.state='new'
-          AND c.introduced_at IS NULL
+        WHERE q.queue_date=? AND q.status='queued' AND c.content_type='opening'
+          AND (c.introduced_at IS NULL OR c.introduced_at=?)
           AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)
         ORDER BY q.position,q.id
-    """, (day,)).fetchall()
-    introduced=db.execute("SELECT COUNT(*) FROM cards WHERE introduced_at=?",(day,)).fetchone()[0]
+    """, (day,day)).fetchall()
+    introduced=db.execute("SELECT COUNT(*) FROM cards WHERE content_type='opening' AND introduced_at=? AND EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=cards.id)",(day,)).fetchone()[0]
     allowed=max(0,limit-introduced)
     for row in rows[:allowed]:
         db.execute("UPDATE cards SET introduced_at=?,state='learning' WHERE id=?",(day,row["card_id"]))
     for row in rows[allowed:]:
         db.execute("DELETE FROM daily_queue WHERE id=?", (row["id"],))
+        db.execute("UPDATE cards SET introduced_at=NULL,state='new' WHERE id=?", (row["card_id"],))
 
 def seed_queue(db,day):
+    db.execute("""UPDATE cards SET state='new' WHERE content_type='opening' AND state='learning'
+                  AND introduced_at IS NULL AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=cards.id)""")
     limit=db.execute("SELECT new_cards_per_day FROM settings WHERE id=1").fetchone()[0]
     reconcile_unseen_queue(db,day,limit)
     maximum=db.execute("SELECT COALESCE(MAX(position),-1) FROM daily_queue WHERE queue_date=?",(day,)).fetchone()[0]
     rows=db.execute("SELECT id FROM cards WHERE due_date<=? AND state IN ('learning','mature') AND archived=0 AND id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?) ORDER BY due_date,id",(day,day)).fetchall()
     for offset,row in enumerate(rows,1): db.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?)",(day,row[0],maximum+offset))
     maximum+=len(rows)
-    introduced=db.execute("SELECT COUNT(*) FROM cards WHERE introduced_at=?",(day,)).fetchone()[0]
+    introduced=db.execute("SELECT COUNT(*) FROM cards WHERE content_type='opening' AND introduced_at=?",(day,)).fetchone()[0]
     remaining=max(0,limit-introduced)
-    new_rows=db.execute("SELECT id FROM cards WHERE due_date<=? AND state='new' AND introduced_at IS NULL AND archived=0 ORDER BY due_date,id LIMIT ?",(day,remaining)).fetchall()
+    new_rows=db.execute("SELECT id FROM cards WHERE content_type='opening' AND due_date<=? AND state='new' AND introduced_at IS NULL AND archived=0 AND id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?) ORDER BY due_date,id LIMIT ?",(day,day,remaining)).fetchall()
     for offset,row in enumerate(new_rows,1):
         db.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?)",(day,row[0],maximum+offset))
         db.execute("UPDATE cards SET introduced_at=?,state='learning' WHERE id=?",(day,row[0]))
@@ -78,13 +81,13 @@ def queue_today():
         seed_queue(db,day)
         rows=db.execute("""SELECT q.id queue_entry_id,q.position,q.cycle,q.attempt_state,c.*,
                                   r.name repertoire_name,r.source_name repertoire_source,r.is_main,
-                                  (SELECT l.trained_color FROM repertoire_lines l WHERE l.repertoire_id=r.id ORDER BY l.created_at LIMIT 1) trained_color
+                                  COALESCE((SELECT e.trained_color FROM endgame_templates e WHERE e.card_id=c.id), (SELECT l.trained_color FROM repertoire_lines l WHERE l.repertoire_id=r.id ORDER BY l.created_at LIMIT 1)) trained_color
                            FROM daily_queue q JOIN cards c ON c.id=q.card_id
                            JOIN repertoires r ON r.id=COALESCE(
                                (SELECT rc.repertoire_id FROM repertoire_cards rc JOIN repertoires linked ON linked.id=rc.repertoire_id
                                 WHERE rc.card_id=c.id ORDER BY linked.is_main DESC,linked.created_at DESC LIMIT 1),
                                c.repertoire_id)
-                           WHERE q.queue_date=? AND q.status='queued'
+                           WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
                            ORDER BY q.position,q.id""",(day,)).fetchall()
     cards=[{**dict(r),"moves":json.loads(r["moves_json"])} for r in rows]
     for card in cards: card.pop("moves_json",None)
@@ -100,7 +103,7 @@ async def import_pgn(file:UploadFile=File(...),trained_color:str=Form("white"),i
     with connection() as db:
         saved_depth=db.execute("SELECT initial_depth FROM settings WHERE id=1").fetchone()[0]
         depth=max(2,min(20,initial_depth if initial_depth is not None else saved_depth))
-        existing_repertoire=db.execute("SELECT id FROM repertoires WHERE source_name=? AND id NOT IN ('__tactics__','__endgames__') ORDER BY created_at DESC LIMIT 1",(file.filename,)).fetchone()
+        existing_repertoire=db.execute("SELECT r.id FROM repertoires r WHERE source_name=? AND id NOT IN ('__tactics__','__endgames__') AND EXISTS(SELECT 1 FROM repertoire_lines l WHERE l.repertoire_id=r.id AND l.trained_color=?) ORDER BY created_at DESC LIMIT 1",(file.filename,trained_color)).fetchone()
         rid=existing_repertoire["id"] if existing_repertoire else str(uuid.uuid4())
         db.execute("UPDATE repertoires SET is_main=0 WHERE id NOT IN ('__tactics__','__endgames__')")
         db.execute("INSERT INTO repertoires(id,name,source_name,created_at,is_main) VALUES(?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET is_main=1,source_name=excluded.source_name",(rid,file.filename.rsplit('.',1)[0],file.filename,now))
@@ -253,7 +256,7 @@ def requeue(db,day,cid,after,attempt):
     cycle=db.execute("SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue WHERE queue_date=? AND card_id=?",(day,cid)).fetchone()[0]
     if after is None: position=db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=?",(day,)).fetchone()[0]
     else:
-        row=db.execute("SELECT position FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id LIMIT 1 OFFSET ?",(day,max(0,after-1))).fetchone()
+        row=db.execute("SELECT position FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id LIMIT 1 OFFSET ?",(day,max(0,after))).fetchone()
         position=row[0] if row else db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=?",(day,)).fetchone()[0]
         db.execute("UPDATE daily_queue SET position=position+1 WHERE queue_date=? AND status='queued' AND position>=?",(day,position))
     db.execute("INSERT INTO daily_queue(queue_date,card_id,cycle,position,attempt_state) VALUES(?,?,?,?,?)",(day,cid,cycle,position,attempt))
@@ -262,6 +265,11 @@ def requeue(db,day,cid,after,attempt):
 def review(identifier:str,request:ReviewRequest):
     now=datetime.now(timezone.utc); day=date.today().isoformat()
     with connection() as db:
+        entry = db.execute("SELECT * FROM daily_queue WHERE id=? AND card_id=?",(request.queue_entry_id,identifier)).fetchone() if request.queue_entry_id else db.execute("SELECT * FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued' ORDER BY position,id LIMIT 1",(day,identifier)).fetchone()
+        if not entry: raise HTTPException(409,"This queue attempt is no longer available")
+        if entry["status"] != "queued":
+            if entry["review_result_json"]: return json.loads(entry["review_result_json"])
+            raise HTTPException(409,"This attempt was already completed")
         card=db.execute("SELECT interval_days,fsrs_card_json,first_correct_at,reinforcement_pending,scheduling_mode,hard_correct_streak,recent_attempts_json FROM cards WHERE id=? AND archived=0",(identifier,)).fetchone()
         if not card: raise HTTPException(404,"Card not found")
         settings=get_settings()
@@ -275,7 +283,9 @@ def review(identifier:str,request:ReviewRequest):
         db.execute("UPDATE cards SET due_date=?,interval_days=?,fsrs_card_json=?,first_correct_at=?,reinforcement_pending=?,stability=?,guided_review=?,state=?,scheduling_mode=?,hard_correct_streak=?,recent_attempts_json=? WHERE id=?",(s.due_date.isoformat(),s.interval_days,s.fsrs_card_json,s.first_correct_at,int(s.reinforcement_pending),s.stability,int(request.guided),state,s.scheduling_mode,s.hard_correct_streak,json.dumps(s.recent_attempts),identifier))
         if s.requeue_today: requeue(db,day,identifier,s.requeue_after_cards,"guided" if request.outcome=="again" else "reinforcement")
         if state=="mature": db.execute("UPDATE cards SET state='new',due_date=? WHERE unlock_after_card_id=? AND state='locked'",(day,identifier))
-    return {"card_id":identifier,"next_due":s.due_date,"interval_days":s.interval_days,"state":state,"requeue_today":s.requeue_today,"requeue_after_cards":s.requeue_after_cards,"stability":s.stability,"scheduling_mode":s.scheduling_mode,"hard_correct_streak":s.hard_correct_streak,"suggest_shorter_prefix":s.suggest_shorter_prefix}
+        result={"card_id":identifier,"next_due":s.due_date.isoformat(),"interval_days":s.interval_days,"state":state,"requeue_today":s.requeue_today,"requeue_after_cards":s.requeue_after_cards,"stability":s.stability,"scheduling_mode":s.scheduling_mode,"hard_correct_streak":s.hard_correct_streak,"suggest_shorter_prefix":s.suggest_shorter_prefix}
+        db.execute("UPDATE daily_queue SET review_result_json=? WHERE id=?",(json.dumps(result),entry["id"]))
+    return result
 
 @app.post("/api/repertoire/branches")
 def branch(request:BranchRequest):
@@ -286,15 +296,33 @@ def branch(request:BranchRequest):
             if move not in board.legal_moves: raise ValueError
             moves.append(move.uci()); board.push(move)
     except ValueError: raise HTTPException(422,"Branch contains an illegal move")
-    lid=card_id(request.starting_fen,moves); now=datetime.now(timezone.utc).isoformat()
+    lid=hashlib.sha256(f"{request.repertoire_id}\0{card_id(request.starting_fen,moves)}".encode()).hexdigest(); now=datetime.now(timezone.utc).isoformat()
     with connection() as db:
+        if not db.execute("SELECT 1 FROM repertoires WHERE id=?", (request.repertoire_id,)).fetchone(): raise HTTPException(404,"Repertoire not found")
         duplicate=db.execute("SELECT 1 FROM repertoire_lines WHERE id=?",(lid,)).fetchone() is not None
         db.execute("INSERT OR IGNORE INTO repertoire_lines VALUES(?,?,?,?,?,?,?)",(lid,request.repertoire_id,request.name,request.trained_color,request.starting_fen,json.dumps(moves),now))
+        depth=db.execute("SELECT initial_depth FROM settings WHERE id=1").fetchone()[0]
+        prefix=prefix_through_user_moves(request.starting_fen,moves,request.trained_color,depth)
+        if prefix:
+            cid=card_id(request.starting_fen,prefix)
+            db.execute("INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES(?,?,'prefix',?,?,?)",(cid,request.repertoire_id,request.starting_fen,json.dumps(prefix),date.today().isoformat()))
+            db.execute("INSERT OR IGNORE INTO repertoire_cards VALUES(?,?)",(request.repertoire_id,cid))
+        seed_queue(db,date.today().isoformat())
     return {"id":lid,"duplicate":duplicate,"moves":moves}
+
+@app.get("/api/progress")
+def progress_summary():
+    day=date.today()
+    with connection() as db:
+        seed_queue(db,day.isoformat())
+        states={row["state"]:row["n"] for row in db.execute("SELECT state,COUNT(*) n FROM cards WHERE archived=0 GROUP BY state")}
+        activity=[{"date":(day-timedelta(days=offset)).isoformat(),"count":db.execute("SELECT COUNT(*) FROM reviews WHERE date(reviewed_at)=?",((day-timedelta(days=offset)).isoformat(),)).fetchone()[0]} for offset in range(6,-1,-1)]
+        return {"states":states,"activity":activity,"reviewedToday":activity[-1]["count"],"cleanCards":db.execute("SELECT COUNT(DISTINCT card_id) FROM reviews WHERE rating='correct' AND guided=0").fetchone()[0],"dueToday":db.execute("SELECT COUNT(*) FROM daily_queue WHERE queue_date=? AND status='queued'",(day.isoformat(),)).fetchone()[0],"totalCards":sum(states.values())}
 
 def validated_line(starting_fen:str, values:list[str]):
     try: board=chess.Board(starting_fen)
     except ValueError as error: raise HTTPException(422,f"Invalid FEN: {error}")
+    if not board.is_valid(): raise HTTPException(422,"This position is not legal")
     moves=[]
     for value in values:
         try: move=chess.Move.from_uci(value.lower())
@@ -334,6 +362,9 @@ def revise_card(identifier:str,request:CardRevisionRequest):
             if request.history_mode=="preserve": db.execute("UPDATE reviews SET card_id=? WHERE card_id=?",(replacement,identifier))
             db.execute("UPDATE daily_queue SET card_id=? WHERE card_id=? AND status='queued'",(replacement,identifier))
             db.execute("UPDATE cards SET archived=1,superseded_by=? WHERE id=?",(replacement,identifier))
+        if replacement != identifier:
+            db.execute("INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id) SELECT repertoire_id,? FROM repertoire_cards WHERE card_id=?",(replacement,identifier))
+            db.execute("DELETE FROM repertoire_cards WHERE card_id=?",(identifier,))
     return {"card_id":replacement,"replaced":replacement!=identifier,"history_mode":request.history_mode}
 
 @app.delete("/api/cards/{identifier}")
@@ -417,14 +448,32 @@ def tactic_attempt(request:TacticAttemptRequest):
     record={"FEN":request.source_fen,"Moves":" ".join(request.moves)}
     training_fen,solution=validate_puzzle_record(record); now=datetime.now(timezone.utc); cid=card_id(training_fen,solution)
     with connection() as db:
+        if request.attempt_id:
+            previous=db.execute("SELECT result_json FROM tactic_discovery_attempts WHERE id=?",(request.attempt_id,)).fetchone()
+            if previous: return json.loads(previous[0])
         db.execute("INSERT OR IGNORE INTO repertoires(id,name,source_name,created_at) VALUES('__tactics__','Tactics','Lichess puzzle database',?)",(now.isoformat(),))
         clean_at=now.isoformat() if request.correct and request.clean else None
         db.execute("INSERT INTO tactic_progress(puzzle_id,deck_id,card_id,clean_pass_at,admitted_at,admission_mode) VALUES(?,?,?,?,?,?) ON CONFLICT(puzzle_id) DO UPDATE SET clean_pass_at=COALESCE(tactic_progress.clean_pass_at,excluded.clean_pass_at),card_id=excluded.card_id,admitted_at=COALESCE(tactic_progress.admitted_at,excluded.admitted_at),admission_mode=excluded.admission_mode",(request.puzzle_id,request.deck_id,cid,clean_at,now.isoformat(),"light" if request.correct and request.clean else "normal"))
         db.execute("INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type,scheduling_mode,source_ref,source_fen,state) VALUES(?, '__tactics__','checkpoint',?,?,?,?,?,?,?,'learning')",(cid,training_fen,json.dumps(solution),(now.date()+timedelta(days=7) if request.correct and request.clean else now.date()).isoformat(),"tactic","light" if request.correct and request.clean else "normal",request.puzzle_id,request.source_fen))
         db.execute("UPDATE cards SET state='learning' WHERE id=?",(cid,))
-        if not request.correct:
+        if not request.correct or not request.clean:
+            db.execute("UPDATE cards SET scheduling_mode='normal',due_date=? WHERE id=?",(now.date().isoformat(),cid))
+        if not request.correct and not db.execute("SELECT 1 FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued'",(now.date().isoformat(),cid)).fetchone():
             requeue(db,now.date().isoformat(),cid,4,"guided")
-    return {"card_id":cid,"mode":"light" if request.correct and request.clean else "normal","next_due":(now.date()+timedelta(days=7) if request.correct and request.clean else now.date())}
+        result={"card_id":cid,"mode":"light" if request.correct and request.clean else "normal","next_due":(now.date()+timedelta(days=7) if request.correct and request.clean else now.date()).isoformat()}
+        db.execute("INSERT INTO tactic_discovery_attempts VALUES(?,?,?,?,?)",(request.attempt_id or str(uuid.uuid4()),request.deck_id,request.puzzle_id,int(request.correct and request.clean),json.dumps(result)))
+    return result
+
+@app.get("/api/tactics/progress")
+def tactic_progress():
+    with connection() as db:
+        attempts=db.execute("SELECT deck_id,COUNT(*) n FROM tactic_discovery_attempts GROUP BY deck_id").fetchall()
+        solved=db.execute("SELECT deck_id,puzzle_id FROM tactic_progress WHERE clean_pass_at IS NOT NULL").fetchall()
+    data={row["deck_id"].replace("-",":",1):{"index":row["n"],"clean":0,"cleanIds":[]} for row in attempts}
+    for row in solved:
+        value=data.setdefault(row["deck_id"].replace("-",":",1),{"index":0,"clean":0,"cleanIds":[]})
+        value["cleanIds"].append(f"lichess-{row['puzzle_id']}"); value["clean"]=len(value["cleanIds"])
+    return data
 
 async def tablebase(fen:str):
     key=" ".join(fen.split()[:4])
@@ -459,6 +508,7 @@ def create_endgame(request:EndgameTemplateRequest):
         identifier=str(uuid.uuid4())
         db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type) VALUES(?,'__endgames__','checkpoint',?,'[]',?,'endgame')",(cid,sample,date.today().isoformat()))
         db.execute("INSERT INTO endgame_templates VALUES(?,?,?,?,?,?,?,?,?)",(identifier,cid,request.name,white,black,request.trained_color,request.goal_mix,1,now))
+        db.execute("UPDATE cards SET state='learning',introduced_at=? WHERE id=?",(date.today().isoformat(),cid))
     return {"id":identifier,"card_id":cid,"sample_fen":sample,"already_exists":False}
 
 @app.post("/api/endgames/templates/{identifier}/attempt")
@@ -483,13 +533,18 @@ def accounts(a:AccountSettings):
             else: db.execute("DELETE FROM game_accounts WHERE provider=?",(provider,))
     return a
 
-def store_games(provider,user,raw):
+def store_games(provider,user,raw,metadata=None):
     stream,count=io.StringIO(raw),0
     with connection() as db:
         while game:=chess.pgn.read_game(stream):
             board=game.board(); start=board.fen(); moves=[m.uci() for m in game.mainline_moves()]; gid=game.headers.get("Site") or card_id(start,moves)
-            color="white" if game.headers.get("White","").lower()==user.lower() else "black"; played=game.headers.get("UTCDate",game.headers.get("Date","1970.01.01")).replace('.','-')
-            count+=db.execute("INSERT OR IGNORE INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json,game_url,opening_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(gid,provider,user,played,game.headers.get("Event","unknown"),1,color,game.headers.get("Result","*"),start,json.dumps(moves),game.headers.get("Site"),game.headers.get("Opening"))).rowcount
+            if user.lower() not in {game.headers.get("White","").lower(),game.headers.get("Black","").lower()}: continue
+            color="white" if game.headers.get("White","").lower()==user.lower() else "black"
+            played=game.headers.get("UTCDate",game.headers.get("Date","1970.01.01")).replace('.','-')+"T"+game.headers.get("UTCTime","00:00:00")+"+00:00"
+            event=game.headers.get("Event","").lower()
+            speed=next((value for value in ("bullet","blitz","rapid","classical","correspondence") if value in event),"unknown")
+            meta=metadata or {}
+            count+=db.execute("INSERT OR IGNORE INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json,game_url,opening_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",(gid,provider,user,meta.get("played_at",played),meta.get("speed",speed),int(meta.get("rated","casual" not in event)),color,game.headers.get("Result","*"),start,json.dumps(moves),game.headers.get("Site"),game.headers.get("Opening"))).rowcount
     return count
 
 def compare_games():
@@ -513,8 +568,7 @@ def compare_games():
                     except ValueError: break
             db.execute("INSERT INTO repertoire_comparisons(game_id,repertoire_id,classification,divergence_ply,divergence_fen,expected_json,actual_uci,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(game_id) DO UPDATE SET repertoire_id=excluded.repertoire_id,classification=excluded.classification,divergence_ply=excluded.divergence_ply,divergence_fen=excluded.divergence_fen,expected_json=excluded.expected_json,actual_uci=excluded.actual_uci,updated_at=excluded.updated_at",(game["id"],candidates[0]["repertoire_id"] if candidates else None,classification,divergence[0] if divergence else None,divergence[1] if divergence else None,json.dumps(expected),divergence[2] if divergence else None,datetime.now(timezone.utc).isoformat()))
 
-@app.post("/api/games/sync")
-async def sync(request:GameSyncRequest):
+async def sync_providers(request:GameSyncRequest):
     imported=0; started=datetime.now(timezone.utc)
     with connection() as db:
         for provider,user in (("lichess",request.lichess_username),("chess.com",request.chesscom_username)):
@@ -522,7 +576,8 @@ async def sync(request:GameSyncRequest):
     if request.lichess_username:
         with connection() as db: state=db.execute("SELECT cursor FROM game_sync_state WHERE provider='lichess'").fetchone()
         baseline=datetime.now(timezone.utc)-timedelta(days=request.days)
-        if state and state[0]: baseline=max(baseline,datetime.fromisoformat(state[0])-timedelta(minutes=5))
+        with connection() as db: newest=db.execute("SELECT MAX(played_at) FROM imported_games WHERE provider='lichess' AND lower(username)=lower(?)",(request.lichess_username,)).fetchone()[0]
+        if newest: baseline=max(baseline,datetime.fromisoformat(newest)+timedelta(milliseconds=1))
         since=int(baseline.timestamp()*1000)
         params={"since":since,"moves":"true","opening":"true","perfType":','.join(request.speeds),"rated":str(request.rated_only).lower()}
         async with httpx.AsyncClient(timeout=45) as client: response=await client.get(f"https://lichess.org/api/games/user/{request.lichess_username}",params=params,headers={"Accept":"application/x-chess-pgn"})
@@ -532,6 +587,8 @@ async def sync(request:GameSyncRequest):
         imported+=store_games("lichess",request.lichess_username,response.text)
     if request.chesscom_username:
         cutoff=(datetime.now(timezone.utc)-timedelta(days=request.days)).date()
+        with connection() as db: state=db.execute("SELECT cursor FROM game_sync_state WHERE provider='chess.com'").fetchone()
+        archive_cutoff=max(cutoff,datetime.fromisoformat(state[0]).date()) if state and state[0] else cutoff
         async with httpx.AsyncClient(timeout=45,headers={"User-Agent":"Tempo local chess trainer"}) as client:
             archive_response=await client.get(f"https://api.chess.com/pub/player/{request.chesscom_username}/games/archives")
             if archive_response.status_code==404: raise HTTPException(404,"Chess.com username not found")
@@ -539,12 +596,15 @@ async def sync(request:GameSyncRequest):
             if not archive_response.is_success: raise HTTPException(archive_response.status_code,"Chess.com sync failed")
             for archive in archive_response.json().get("archives",[]):
                 year,month=map(int,archive.rstrip('/').split('/')[-2:])
-                if date(year,month,1)<date(cutoff.year,cutoff.month,1): continue
+                if date(year,month,1)<date(archive_cutoff.year,archive_cutoff.month,1): continue
                 response=await client.get(archive)
                 if response.status_code==429: raise HTTPException(429,"Chess.com rate limit reached")
                 response.raise_for_status()
-                pgns='\n\n'.join(game.get("pgn","") for game in response.json().get("games",[]) if game.get("pgn"))
-                imported+=store_games("chess.com",request.chesscom_username,pgns)
+                for game in response.json().get("games",[]):
+                    speed="classical" if game.get("time_class")=="daily" else game.get("time_class","unknown")
+                    played=datetime.fromtimestamp(game.get("end_time",0),timezone.utc)
+                    if not game.get("pgn") or played.date()<cutoff or speed not in request.speeds or (request.rated_only and not game.get("rated")): continue
+                    imported+=store_games("chess.com",request.chesscom_username,game["pgn"],{"played_at":played.isoformat(),"speed":speed,"rated":game.get("rated",False)})
     compare_games()
     synced=datetime.now(timezone.utc)
     with connection() as db:
@@ -552,18 +612,47 @@ async def sync(request:GameSyncRequest):
             if user: db.execute("UPDATE game_sync_state SET status='idle',cursor=?,last_success_at=?,last_error=NULL WHERE provider=?",((synced-timedelta(minutes=5)).isoformat(),synced.isoformat(),provider))
     return {"imported":imported,"cached":True,"incremental":True,"synced_at":synced}
 
+SYNC_LOCK=asyncio.Lock()
+
+@app.post("/api/games/sync")
+async def sync(request:GameSyncRequest):
+    if SYNC_LOCK.locked(): raise HTTPException(409,"A game sync is already running")
+    users=(("lichess",request.lichess_username.strip()),("chess.com",request.chesscom_username.strip()))
+    if not any(user for _,user in users): raise HTTPException(422,"Set a Lichess or Chess.com username in Settings")
+    now=datetime.now(timezone.utc)
+    async with SYNC_LOCK:
+        with connection() as db:
+            for provider,user in users:
+                if not user: continue
+                previous=db.execute("SELECT * FROM game_sync_state WHERE provider=?",(provider,)).fetchone()
+                if previous and previous["username"].lower()==user.lower() and previous["retry_after"] and datetime.fromisoformat(previous["retry_after"])>now: raise HTTPException(429,f"{provider} sync is waiting for its rate limit to reset")
+                if previous and previous["username"].lower()!=user.lower(): db.execute("UPDATE game_sync_state SET cursor=NULL,last_success_at=NULL,retry_after=NULL WHERE provider=?",(provider,))
+                db.execute("INSERT INTO game_sync_state(provider,username,status,last_started_at) VALUES(?,?,'syncing',?) ON CONFLICT(provider) DO UPDATE SET username=excluded.username,status='syncing',last_started_at=excluded.last_started_at,last_error=NULL",(provider,user,now.isoformat()))
+        try:
+            result=await sync_providers(request.model_copy(update={"lichess_username":users[0][1],"chesscom_username":users[1][1]}))
+            accounts(AccountSettings(lichess_username=users[0][1],chesscom_username=users[1][1]))
+            return result
+        except (httpx.HTTPError,HTTPException) as error:
+            code=error.status_code if isinstance(error,HTTPException) else 502
+            message=error.detail if isinstance(error,HTTPException) else "The game provider could not be reached. Retry when online."
+            with connection() as db:
+                for provider,user in users:
+                    if user: db.execute("UPDATE game_sync_state SET status='error',last_error=?,retry_after=? WHERE provider=?",(str(message),(now+timedelta(minutes=15 if code==429 else 3)).isoformat(),provider))
+            compare_games()
+            raise HTTPException(code,message) from error
+
 @app.get("/api/games/sync/status")
 def sync_status():
     with connection() as db: rows=db.execute("SELECT * FROM game_sync_state ORDER BY provider").fetchall()
     return {"providers":[dict(row) for row in rows]}
 
-@app.post("/api/games/{game_id}/analysis")
+@app.post("/api/games/{game_id:path}/analysis")
 def save_game_analysis(game_id:str,request:GameAnalysisRequest):
     with connection() as db:
-        game=db.execute("SELECT color FROM imported_games WHERE id=?",(game_id,)).fetchone()
+        game=db.execute("SELECT color,start_fen FROM imported_games WHERE id=?",(game_id,)).fetchone()
         if not game: raise HTTPException(404,"Game not found")
         threshold=db.execute("SELECT major_mistake_cp FROM settings WHERE id=1").fetchone()[0]
-        result=classify_swings(request.evaluations,game[0],threshold)
+        result=classify_swings(request.evaluations,game[0],threshold,"white" if chess.Board(game[1]).turn else "black")
         db.execute("DELETE FROM game_move_analysis WHERE game_id=?",(game_id,))
         for item in request.evaluations:
             loss=(int(item["before_cp"])-int(item["after_cp"]))*(1 if game[0]=="white" else -1)
@@ -574,10 +663,10 @@ def save_game_analysis(game_id:str,request:GameAnalysisRequest):
 
 @app.get("/api/games/summary")
 def summary():
-    with connection() as db: rows=db.execute("SELECT g.*,c.classification,c.divergence_ply,c.divergence_fen,c.expected_json,c.actual_uci FROM imported_games g LEFT JOIN repertoire_comparisons c ON c.game_id=g.id ORDER BY played_at DESC").fetchall()
+    with connection() as db: rows=db.execute("SELECT g.*,c.repertoire_id,c.classification,c.divergence_ply,c.divergence_fen,c.expected_json,c.actual_uci FROM imported_games g LEFT JOIN repertoire_comparisons c ON c.game_id=g.id ORDER BY played_at DESC").fetchall()
     return {"total":len(rows),"games":[{**dict(row),"moves":json.loads(row["moves_json"])} for row in rows]}
 
-@app.get("/api/games/{game_id}")
+@app.get("/api/games/{game_id:path}")
 def game_detail(game_id:str):
     with connection() as db: row=db.execute("SELECT g.*,c.classification,c.divergence_ply,c.divergence_fen,c.expected_json,c.actual_uci FROM imported_games g LEFT JOIN repertoire_comparisons c ON c.game_id=g.id WHERE g.id=?",(game_id,)).fetchone()
     if not row: raise HTTPException(404,"Game not found")

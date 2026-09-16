@@ -1,0 +1,5 @@
+[
+  {"fen":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1","moves":["e2e4","e7e5","g1f3","b8c6"],"color":"white","depth":2,"prefix":["e2e4","e7e5","g1f3"]},
+  {"fen":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1","moves":["e2e4","e7e5","g1f3","b8c6"],"color":"black","depth":2,"prefix":["e2e4","e7e5","g1f3","b8c6"]},
+  {"fen":"rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1","moves":["e7e5","e2e4","0000","g1f3"],"color":"black","depth":1,"prefix":["e7e5"]}
+]
