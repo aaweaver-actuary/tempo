@@ -176,6 +176,49 @@ pub fn position_distance_native(left_fen: &str, right_fen: &str) -> Option<usize
     )
 }
 
+pub fn prefix_native(
+    fen: &str,
+    moves: &[String],
+    color: &str,
+    depth: usize,
+) -> Result<Vec<String>, String> {
+    let target = match color {
+        "white" => shakmaty::Color::White,
+        "black" => shakmaty::Color::Black,
+        _ => return Err("Invalid trained color".into()),
+    };
+    if depth == 0 {
+        return Err("Depth must be positive".into());
+    }
+    let validated = validate_uci_line_native(fen, moves);
+    let mut position = position_from_fen(fen)?;
+    let mut prefix = Vec::new();
+    let mut count = 0;
+    for uci in validated.moves {
+        let played = UciMove::from_str(&uci)
+            .map_err(|e| e.to_string())?
+            .to_move(&position)
+            .map_err(|e| e.to_string())?;
+        if position.turn() == target {
+            count += 1;
+        }
+        position = position.play(played).map_err(|e| e.to_string())?;
+        prefix.push(uci);
+        if count == depth {
+            break;
+        }
+    }
+    Ok(prefix)
+}
+
+#[wasm_bindgen]
+pub fn prefix(fen: &str, moves: JsValue, color: &str, depth: usize) -> Result<JsValue, JsError> {
+    let moves: Vec<String> = serde_wasm_bindgen::from_value(moves)?;
+    let result =
+        prefix_native(fen, &moves, color, depth).map_err(|message| JsError::new(&message))?;
+    Ok(serde_wasm_bindgen::to_value(&result)?)
+}
+
 #[wasm_bindgen]
 pub fn core_version() -> String {
     env!("CARGO_PKG_VERSION").into()
@@ -257,5 +300,25 @@ mod tests {
     #[test]
     fn maintained_fsrs_is_linked() {
         assert!(fsrs_core_available());
+    }
+
+    #[test]
+    fn prefixes_match_shared_python_golden_fixtures() {
+        let fixtures: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/core-parity.json")).unwrap();
+        for fixture in fixtures.as_array().unwrap() {
+            let moves: Vec<String> = serde_json::from_value(fixture["moves"].clone()).unwrap();
+            let expected: Vec<String> = serde_json::from_value(fixture["prefix"].clone()).unwrap();
+            assert_eq!(
+                prefix_native(
+                    fixture["fen"].as_str().unwrap(),
+                    &moves,
+                    fixture["color"].as_str().unwrap(),
+                    fixture["depth"].as_u64().unwrap() as usize
+                )
+                .unwrap(),
+                expected
+            );
+        }
     }
 }
