@@ -1,4 +1,5 @@
 import { API_URL, STANDARD_FEN } from "../const";
+import { readWorkspaceResponse, invalidateWorkspaceData } from "../lib/workspace-data";
 import { Square, Chess } from "chess.js";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
@@ -47,7 +48,7 @@ export default function EndgamesView({
 
   useEffect(() => {
     if (!usesLocalApi()) return;
-    fetch(TEMPLATE_API_ENDPOINT)
+    readWorkspaceResponse(TEMPLATE_API_ENDPOINT)
       .then((response) => (response.ok ? response.json() : Promise.reject()))
       .then((value) => {
         const data = value as {
@@ -101,6 +102,7 @@ export default function EndgamesView({
       return;
     }
     const data = (await response.json()) as { id: string; card_id: string };
+    invalidateWorkspaceData();
     setAdmitted((current) => ({
       ...current,
       [selected]: { templateId: data.id, cardId: data.card_id },

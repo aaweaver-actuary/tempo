@@ -31,6 +31,7 @@ export type BackendQueueCard = {
   cycle?: number;
   attempt_state?: QueueAttemptStateValue;
   attempt_failed?: boolean;
+  first_correct_at?: string | null;
   recent_attempts_json?: string;
   start_fen: string;
   moves: string[];

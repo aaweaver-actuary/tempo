@@ -2,6 +2,7 @@
 import { useRef, useState, useEffect } from "react";
 import type { BoardTheme, PieceSet } from "../components/chessboard";
 import { API_URL } from "../const";
+import { readWorkspaceResponse, invalidateWorkspaceData } from "../lib/workspace-data";
 import { usesLocalApi } from "../utils/local";
 import { createEncryptedBackup, restoreEncryptedBackup } from "../lib/encrypted-backup";
 import { migrateSqliteToBrowser } from "../lib/sqlite-migration";
@@ -101,7 +102,7 @@ export default function SettingsView({
         chesscom_username: localStorage.getItem("tempo-chesscom-username") ?? "",
       }));
       if (usesLocalApi())
-        void fetch(`${API_URL}/api/settings`)
+        void readWorkspaceResponse(`${API_URL}/api/settings`)
           .then((response) => (response.ok ? response.json() : Promise.reject()))
           .then((saved) =>
             setValues((current) => ({
@@ -167,6 +168,7 @@ export default function SettingsView({
           body: JSON.stringify(backend),
         });
         if (!response.ok) throw new Error();
+        invalidateWorkspaceData();
         setStatus(
           "Saved.",
         );
@@ -326,8 +328,8 @@ export default function SettingsView({
           </label>
           <label>
             <span>
-              Woodland sounds
-              <small>Separate wooden move and capture sounds</small>
+              Chess-piece sounds
+              <small>Lichess standard move and capture recordings</small>
             </span>
             <button
               className={`setting-switch${values.sound ? " on" : ""}`}

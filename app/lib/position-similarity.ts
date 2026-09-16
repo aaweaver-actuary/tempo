@@ -86,12 +86,14 @@ export async function searchMaiaTranspositions({
   targets,
   horizon = 4,
   analyze,
+  matchPositions,
   signal,
 }: {
   startFen: string;
   targets: IndexedPosition[];
   horizon?: number;
   analyze: (fen: string) => Promise<Array<{ uci: string; probability?: number }>>;
+  matchPositions?: (fen: string, targets: IndexedPosition[]) => Promise<Array<IndexedPosition & { distance: number }>>;
   signal?: AbortSignal;
 }): Promise<TranspositionResult[]> {
   type BeamNode = { fen: string; path: string[]; probability: number };
@@ -116,10 +118,12 @@ export async function searchMaiaTranspositions({
             probability: node.probability * (candidate.probability ?? 0.001),
           };
           expanded.push(child);
-          for (const target of targets) {
+          const matches = matchPositions ? await matchPositions(child.fen, targets) : targets.flatMap(target => {
             const distance = chessPositionDistance(child.fen, target.fen);
-            if (distance !== undefined && distance <= 2) found.push({ ...target, distance, path: child.path, probability: child.probability });
-          }
+            return distance !== undefined && distance <= 2 ? [{ ...target, distance }] : [];
+          });
+          if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+          for (const target of matches) found.push({ ...target, path: child.path, probability: child.probability });
         } catch {
           // Ignore stale or malformed model moves.
         }

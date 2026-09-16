@@ -32,6 +32,15 @@ async function readyTactics() {
 async function pause(ms = 751) { await act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)); }); }
 
 describe("reported study regressions", () => {
+  it("tomorrow and later opening reviews remain unassisted even when teaching storage is empty", async () => {
+    vi.stubGlobal("fetch", vi.fn(async input => String(input).endsWith("/api/queue/today") ? Response.json({ cards: [{ id: "previously-clean", queue_entry_id: 80, start_fen: new Chess().fen(), moves: ["e2e4", "e7e5", "g1f3"], content_type: "opening", repertoire_name: "Prep", repertoire_source: "PGN", first_correct_at: "2026-09-15T12:00:00Z" }] }) : Response.json({ states: [], providers: [], lines: [] })));
+    render(<Home />);
+    await waitFor(() => expect(screen.getByTestId("board")).toBeTruthy());
+    await pause(150);
+    expect(screen.getByTestId("board").getAttribute("data-hint")).toBe("false");
+    fireEvent.click(screen.getByText("e2e4")); await pause(430);
+    expect(screen.getByTestId("board").getAttribute("data-hint")).toBe("false");
+  });
   it("Show move during initial teaching records failure and keeps required guidance", async () => {
     const failures: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (input, options) => {
@@ -97,7 +106,7 @@ describe("reported study regressions", () => {
     expect(attempts[0]).toMatchObject({ clean: false, correct: false });
     expect(new Chess(screen.getByTestId("board").getAttribute("data-fen")!).isCheckmate()).toBe(true);
     await pause();
-    expect(screen.getByText("Puzzle 2 of 100")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("Puzzle 2 of 100")).toBeTruthy());
   });
   it("tactic setup is applied and the final mate remains during feedback", async () => {
     mockTactics(); await readyTactics();
@@ -108,7 +117,7 @@ describe("reported study regressions", () => {
     await pause(250);
     expect(new Chess(screen.getByTestId("board").getAttribute("data-fen")!).isCheckmate()).toBe(true);
     await pause();
-    expect(screen.getByText("Puzzle 2 of 100")).toBeTruthy();
+    await waitFor(() => expect(screen.getByText("Puzzle 2 of 100")).toBeTruthy());
   });
   it("motif progress is independent and stale completion cannot advance another deck", async () => {
     mockTactics(); await readyTactics();

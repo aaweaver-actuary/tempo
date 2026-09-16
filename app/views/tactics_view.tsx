@@ -1,8 +1,8 @@
 import { Chess, Square, Move } from "chess.js";
-import { useState, useRef, useEffect, useMemo, useCallback } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { OutcomeFlash } from "../components/board-controls";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
-import { API_URL, assetUrl } from "../const";
+import { API_URL, STANDARD_FEN } from "../const";
 import { playMoveSound } from "../lib/move-sound";
 import {
   readTacticProgress,
@@ -10,15 +10,15 @@ import {
   advanceTacticProgress,
   writeTacticProgress,
 } from "../lib/tactics-progress";
-import {
-  tacticExamples,
-  demoCards,
-  alternateTactics,
-  tacticMotifs,
-} from "../samples";
-import { asFenString, PackagedPuzzle, PracticeCard } from "../types";
-import { convertPackagedPuzzleRecordIntoPracticeCard } from "../utils/cards";
+import { tacticMotifs } from "../samples";
+import { asCardId, asFenString, PackagedPuzzle, PracticeCard } from "../types";
 import { usesLocalApi } from "../utils/local";
+import { loadTacticsDeck, readWorkspaceData, invalidateWorkspaceData } from "../lib/workspace-data";
+
+const emptyPuzzle: PracticeCard = { id: asCardId("loading"), startingFen: asFenString(STANDARD_FEN), moves: [], kind: "puzzle", title: "", subtitle: "", userMoveTarget: 0 };
+function firstUnfinishedStage(progress: ReturnType<typeof readTacticProgress>, motif: string) {
+  return ["easy", "medium", "hard", "focused"].find(stage => (progress[tacticProgressKey(motif, stage)]?.clean ?? 0) < (stage === "focused" ? 250 : 100)) ?? "focused";
+}
 
 function TacticsSubHeader({
   currentProgress,
@@ -56,24 +56,29 @@ export default function TacticsView({
   const [failed, setFailed] = useState(false);
   const [outcome, setOutcome] = useState<"correct" | "wrong" | null>(null);
   const [boardAttempt, setBoardAttempt] = useState(0);
+  const [activePuzzleId, setActivePuzzleId] = useState("");
   const finishingRef = useRef(false);
   const failedRef = useRef(false);
   const discoveryId = useRef("");
   const [saveError, setSaveError] = useState("");
   const attemptTokenRef = useRef(0);
   const advanceTimerRef = useRef<number | undefined>(undefined);
-  const [catalog, setCatalog] = useState<PackagedPuzzle[]>([]);
+  const [prepared, setPrepared] = useState<Array<{ record: PackagedPuzzle; card: PracticeCard }>>([]);
+  const [deckState, setDeckState] = useState("loading");
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
-    fetch(assetUrl("data/tactics-decks.json"))
-      .then((response) => response.json() as Promise<PackagedPuzzle[]>)
-      .then((value) => setCatalog(value))
-      .catch(() => setCatalog([]));
-  }, []);
+    let active = true;
+    void loadTacticsDeck(motif, stage).then(deck => {
+      if (active) { setPrepared(deck); setDeckState(deck.length ? "ready" : "empty"); }
+    }).catch(error => { if (active) setDeckState(error.message); });
+    return () => { active = false; };
+  }, [motif, stage, retry]);
   useEffect(() => {
     if (!usesLocalApi()) return;
-    void fetch(`${API_URL}/api/tactics/progress`)
-      .then(async (response) => {
-        if (response.ok) setProgress(await response.json());
+    void readWorkspaceData<ReturnType<typeof readTacticProgress>>(`${API_URL}/api/tactics/progress`)
+      .then(value => {
+        setProgress(value);
+        setStage(firstUnfinishedStage(value, "hangingPiece"));
       })
       .catch(() =>
         setSaveError(
@@ -83,25 +88,12 @@ export default function TacticsView({
   }, []);
   const progressKey = tacticProgressKey(motif, stage);
   const currentProgress = progress[progressKey] ?? { clean: 0, index: 0 };
-  const packagedDeck = useMemo(
-    () =>
-      catalog
-        .filter((record) => record.DeckId === `${motif}-${stage}`)
-        .sort((a, b) => a.DeckPosition - b.DeckPosition)
-        .map(convertPackagedPuzzleRecordIntoPracticeCard)
-        .filter((card): card is PracticeCard => card !== null),
-    [catalog, motif, stage],
-  );
-  const deck = packagedDeck.length
-    ? packagedDeck
-    : [tacticExamples[motif] ?? demoCards[2], ...alternateTactics];
-  const puzzle = deck[currentProgress.index % deck.length];
+  const selectedPuzzle = prepared[currentProgress.index % prepared.length];
+  const puzzle = selectedPuzzle?.card ?? emptyPuzzle;
   const puzzleSide =
     puzzle.orientation ??
     (new Chess(puzzle.startingFen).turn() === "b" ? "black" : "white");
-  const packagedRecord = catalog.find(
-    (record) => record.PuzzleId === puzzle.id.replace(/^lichess-/, ""),
-  );
+  const packagedRecord = selectedPuzzle?.record;
   const [fen, setFen] = useState(puzzle.startingFen);
 
   const resetAttempt = useCallback(
@@ -113,6 +105,7 @@ export default function TacticsView({
       setSaveError("");
       failedRef.current = markFailed;
       setFen(puzzle.startingFen);
+      setActivePuzzleId(puzzle.id);
       setStep(0);
       setHint(markFailed);
       setFailed(markFailed);
@@ -159,6 +152,7 @@ export default function TacticsView({
           }),
         });
         if (!response.ok) throw new Error();
+        invalidateWorkspaceData();
         onQueueChanged();
       } catch {
         setSaveError(
@@ -223,11 +217,11 @@ export default function TacticsView({
   const current = tacticMotifs.find((item) => item[0] === motif)!;
   const target = stage === "focused" ? 250 : 100;
   const previousStages = ["easy", "medium", "hard"];
-  if (usesLocalApi() && !packagedDeck.length)
+  if (deckState !== "ready" || activePuzzleId !== puzzle.id)
     return (
       <section className="library-page" role="status">
-        No validated puzzles are available for this stage. Check the packaged
-        tactics data.
+        {deckState === "loading" || deckState === "ready" ? "Preparing puzzles…" : deckState === "empty" ? "No validated puzzles are available for this stage. Check the packaged tactics data." : deckState}
+        {deckState !== "loading" && <button onClick={() => { setDeckState("loading"); setRetry(value => value + 1); }}>Retry</button>}
       </section>
     );
   return (
@@ -256,7 +250,7 @@ export default function TacticsView({
                   ?.clean ?? 0) < 100
               }
               className={stage === item ? "active" : ""}
-              onClick={() => setStage(item)}
+              onClick={() => { setDeckState("loading"); setStage(item); }}
             >
               {item === "focused"
                 ? "Focused · 250"
@@ -273,7 +267,7 @@ export default function TacticsView({
               <button
                 className={motif === id ? "active" : ""}
                 key={id}
-                onClick={() => setMotif(id)}
+                onClick={() => { setDeckState("loading"); setMotif(id); setStage(firstUnfinishedStage(progress, id)); }}
               >
                 <b>{icon}</b>
                 <span>{name}</span>

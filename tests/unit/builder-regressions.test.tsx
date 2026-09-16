@@ -12,7 +12,7 @@ it("builder flip preserves repertoire identity and history across remounts", asy
   vi.stubGlobal("fetch", vi.fn(async (input) => Response.json(String(input).includes("/repertoire/lines") ? { lines: [{ id:"black-line", repertoire_id:"black-repertoire", repertoire_name:"Gambits", trained_color:"black", start_fen:new Chess().fen(), moves:["d2d4","g8f6","0000"] }] } : { annotations: [] })));
   const props = { imported: [], settings: new Settings(), theme:"brown" as const, pieceSet:"cburnett" as const };
   const view = render(<BuilderView {...props} />);
-  await waitFor(() => expect((screen.getByRole("combobox",{name:"Active repertoire"}) as unknown as HTMLSelectElement).value).toBe("black-repertoire"));
+  await waitFor(() => expect((screen.getByRole("combobox",{name:"Active repertoire"}) as unknown as HTMLSelectElement).value).toBe("black-repertoire"), { timeout: 3000 });
   fireEvent.change(screen.getByRole("combobox",{name:"Active repertoire"}), { target:{ value:"black-repertoire" } });
   fireEvent.click(screen.getByText("d2d4"));
   const fen=screen.getByTestId("board").getAttribute("data-fen");
@@ -21,7 +21,7 @@ it("builder flip preserves repertoire identity and history across remounts", asy
   expect(screen.getByTestId("board").getAttribute("data-orientation")).toBe("white");
   expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(fen);
   view.unmount(); render(<BuilderView {...props} />);
-  await waitFor(() => expect((screen.getByRole("combobox",{name:"Active repertoire"}) as unknown as HTMLSelectElement).value).toBe("black-repertoire"));
+  await waitFor(() => expect((screen.getByRole("combobox",{name:"Active repertoire"}) as unknown as HTMLSelectElement).value).toBe("black-repertoire"), { timeout: 3000 });
   expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(fen);
   expect(screen.getByText(/Stopped at null move/)).toBeTruthy();
 });

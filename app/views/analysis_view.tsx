@@ -12,7 +12,12 @@ import {
 } from "react";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
 import CandidateMovesTable from "../CandidateMovesTable";
+import { MoveComparisonTable } from "../components/move-comparison-table";
 import { STANDARD_FEN, API_URL } from "../const";
+import { readWorkspaceData, invalidateWorkspaceData } from "../lib/workspace-data";
+import { useBackgroundStudy } from "../hooks/use-background-study";
+import { runStudyTask } from "../lib/background-study";
+import type { StudyTask } from "../lib/study-computation";
 import {
   analyzeWithStockfish,
   analyzeWithMaia,
@@ -42,7 +47,6 @@ import { connectLichess } from "../utils/lichess";
 import { Settings } from "../utils/settings";
 import {
   canonicalFenKey,
-  canonicalizeLine,
   sanForUci,
 } from "../utils/canonical-line";
 import {
@@ -52,14 +56,16 @@ import {
   shapesToAnnotationParts,
 } from "../utils/position-annotations";
 import {
-  chessPositionDistance,
-  indexRepertoirePositions,
+  type IndexedPosition,
   searchMaiaTranspositions,
   type TranspositionResult,
 } from "../lib/position-similarity";
 import CloseButton from "../components/buttons/CloseButton";
 
 type AnalysisMetric = "stockfish" | "lichess" | "masters";
+const emptyLines: CanonicalLine[] = [];
+const emptyPositions: IndexedPosition[] = [];
+const emptySimilar: Array<IndexedPosition & { distance: number }> = [];
 
 function candidatesThrough<T extends { uci: string }>(
   moves: T[],
@@ -224,7 +230,7 @@ export default function BuilderView({
     ? [previousUci.slice(0, 2), previousUci.slice(2, 4)]
     : undefined;
   const playedUci = visibleHistory.map((move) => move.uci);
-  const availableLines = useMemo<CanonicalLine[]>(() => {
+  const lineTask = useMemo<StudyTask>(() => {
     const browserLines = imported.flatMap((repertoire) =>
       repertoire.cards.map((card) => ({
         id: asLineId(String(card.id)),
@@ -237,16 +243,9 @@ export default function BuilderView({
       })),
     );
     const source = usesLocalApi() ? backendLines : browserLines;
-    const canonical = source.map(canonicalizeLine);
-    return [
-      ...new Map(
-        canonical.map((line) => [
-          `${line.repertoireId}:${canonicalFenKey(line.startingFen)}:${line.moves.join(" ")}`,
-          line,
-        ]),
-      ).values(),
-    ];
+    return { kind: "lines", lines: source };
   }, [backendLines, imported]);
+  const availableLines = useBackgroundStudy(lineTask, emptyLines);
   const repertoires = [
     ...new Map(
       availableLines.map((line) => [
@@ -269,44 +268,11 @@ export default function BuilderView({
       return uci ? [uci] : [];
     }),
   );
-  const positionIndex = useMemo(
-    () =>
-      indexRepertoirePositions(
-        availableLines.filter(
-          (line) =>
-            !selectedRepertoire || line.repertoireId === selectedRepertoire.id,
-        ),
-      ),
-    [availableLines, selectedRepertoire],
-  );
-  const similarPositions = useMemo(
-    () =>
-      positionIndex
-        .map((position) => ({
-          ...position,
-          distance: chessPositionDistance(fen, position.fen),
-        }))
-        .filter(
-          (position): position is typeof position & { distance: number } =>
-            position.distance !== undefined &&
-            position.distance <= 2 &&
-            position.nextUci !== undefined,
-        )
-        .sort(
-          (left, right) =>
-            left.distance - right.distance || left.ply - right.ply,
-        )
-        .filter(
-          (position, index, all) =>
-            all.findIndex(
-              (other) =>
-                other.fen === position.fen &&
-                other.nextUci === position.nextUci,
-            ) === index,
-        )
-        .slice(0, 8),
-    [fen, positionIndex],
-  );
+  const selectedRepertoireId = selectedRepertoire?.id;
+  const indexTask = useMemo<StudyTask>(() => ({ kind: "index", lines: availableLines.filter(line => !selectedRepertoireId || line.repertoireId === selectedRepertoireId) }), [availableLines, selectedRepertoireId]);
+  const positionIndex = useBackgroundStudy(indexTask, emptyPositions);
+  const similarityTask = useMemo<StudyTask>(() => ({ kind: "similarity", fen, positions: positionIndex }), [fen, positionIndex]);
+  const similarPositions = useBackgroundStudy(similarityTask, emptySimilar);
 
   function rememberToggle(
     key: string,
@@ -319,8 +285,7 @@ export default function BuilderView({
 
   useEffect(() => {
     if (!usesLocalApi()) return;
-    void fetch(`${API_URL}/api/repertoire/lines`)
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
+    void readWorkspaceData(`${API_URL}/api/repertoire/lines`)
       .then((value) => {
         const body = value as {
           lines: Array<{
@@ -448,6 +413,7 @@ export default function BuilderView({
       const results = await searchMaiaTranspositions({
         startFen: fen,
         targets: positionIndex,
+        matchPositions: (fen, positions) => runStudyTask<Array<IndexedPosition & { distance: number }>>({ kind: "matches", fen, positions }),
         horizon,
         analyze: (positionFen) => analyzeWithMaia(positionFen, Number(maiaElo)),
         signal: controller.signal,
@@ -720,6 +686,7 @@ export default function BuilderView({
           detail?: string;
         };
         if (!response.ok) throw new Error(result.detail);
+        invalidateWorkspaceData();
         setBackendLines((current) => [
           ...current.filter((line) => line.id !== result.id),
           {
@@ -1082,6 +1049,11 @@ export default function BuilderView({
           </div>
         </div>
         <aside className="analysis-sidebar">
+          <section className="analysis-panel comparison-panel">
+            <div className="panel-heading"><div><span>Compare moves</span><strong>Repertoire · Stockfish · Maia · Lichess · Masters</strong></div></div>
+            <MoveComparisonTable repertoire={repertoireMoves} engine={stockfishMoves.slice(0, 5)} maia={maiaMoves} lichess={explorerMoves} masters={mastersMoves} turn={new Chess(fen).turn() === "w" ? "white" : "black"} onPlay={playUci} onHover={setHoveredMove} />
+          </section>
+          <div className="builder-tool-panels">
           {availableLines.some(
             (line) => line.validation?.diagnostics.length,
           ) && (
@@ -1440,6 +1412,7 @@ export default function BuilderView({
               <p className="panel-message">Maia is off.</p>
             )}
           </section>
+          </div>
         </aside>
       </div>
       {isSearchOpen && (

@@ -71,7 +71,13 @@ export function Chessboard({
       return new Chess();
     }
   }, [fen]);
-  const hintMove = expectedSan ? moveForSan(chess, expectedSan) : undefined;
+  const [preparedHint, setPreparedHint] = useState<{ fen: string; san: string; move?: Move }>();
+  useEffect(() => {
+    if (!showHint || !expectedSan) return;
+    const timer = window.setTimeout(() => setPreparedHint({ fen, san: expectedSan, move: moveForSan(chess, expectedSan) }), 0);
+    return () => window.clearTimeout(timer);
+  }, [chess, expectedSan, fen, showHint]);
+  const hintMove = showHint && preparedHint?.fen === fen && preparedHint.san === expectedSan ? preparedHint.move : undefined;
 
   // Handle keyboard shortcut for flipping the board.
   useEffect(() => {

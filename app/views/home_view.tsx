@@ -1,6 +1,8 @@
 import { useState, useCallback, useEffect, useRef } from "react";
 import { BoardTheme, PieceSet } from "../components/chessboard";
 import { API_URL } from "../const";
+import { preloadWorkspaces, invalidateWorkspaceData, readWorkspaceData } from "../lib/workspace-data";
+import { runStudyTask } from "../lib/background-study";
 import { ImportDialogBox } from "../import_dialog_box";
 import { moveSoundEnabled, playMoveSound } from "../lib/move-sound";
 import { bundledRepertoires, demoCards } from "../samples";
@@ -14,11 +16,8 @@ import {
   asRepertoireId,
   asSanMove,
 } from "../types";
-import { canonicalFenKey, canonicalizeLine } from "../utils/canonical-line";
-import {
-  indexRepertoirePositions,
-  IndexedPosition,
-} from "../lib/position-similarity";
+import { canonicalFenKey } from "../utils/canonical-line";
+import { IndexedPosition } from "../lib/position-similarity";
 import { usesLocalApi, localDayKey } from "../utils/local";
 import { trainedColor } from "../utils/cards";
 import BuilderView from "./analysis_view";
@@ -123,6 +122,7 @@ export default function Home() {
   const repertoireLine = card.moves;
 
   const refreshDatabaseQueue = useCallback(async () => {
+    invalidateWorkspaceData();
     await fetchAndInitializeQueue(
       setDatabaseQueue,
       setServiceError,
@@ -169,17 +169,21 @@ export default function Home() {
   ]);
 
   useEffect(() => {
+    const timer = window.setTimeout(() => void preloadWorkspaces(), 100);
+    return () => window.clearTimeout(timer);
+  }, []);
+
+  useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
     if (usesLocalApi() && currentView === "train") {
       queueMicrotask(() => void refreshDatabaseQueue());
-      void fetch(`${API_URL}/api/repertoire/lines`)
-        .then(async (response) => {
-          if (!response.ok) return;
-          const body = (await response.json()) as {
+      void readWorkspaceData<{ lines: Record<string, unknown>[] }>(`${API_URL}/api/repertoire/lines`)
+        .then(async (body) => {
+          const records = body as {
             lines: Record<string, unknown>[];
           };
-          const lines: AnalysisLine[] = body.lines.map((line) =>
-            canonicalizeLine({
+          const lines: AnalysisLine[] = records.lines.map((line) =>
+            ({
               id: asLineId(String(line.id)),
               repertoireId: asRepertoireId(String(line.repertoire_id)),
               repertoireName: String(line.repertoire_name),
@@ -191,7 +195,7 @@ export default function Home() {
               ),
             }),
           );
-          branchPositions.current = indexRepertoirePositions(lines);
+          branchPositions.current = await runStudyTask<IndexedPosition[]>({ kind: "index", lines });
         })
         .catch(() => {
           branchPositions.current = [];
@@ -702,7 +706,7 @@ export default function Home() {
         setTeachingEncounterKey(null);
         return;
       }
-      if (card.kind !== "opening" || card.queueAttemptState === "reinforcement") {
+      if (card.kind !== "opening" || card.firstCleanPassAt || card.queueAttemptState === "reinforcement") {
         setTeachingEncounterKey(null);
         return;
       }
@@ -730,6 +734,7 @@ export default function Home() {
   }, [
     card.kind,
     card.queueAttemptState,
+    card.firstCleanPassAt,
     card.backendId,
     card.revision,
     currentMoveKey,

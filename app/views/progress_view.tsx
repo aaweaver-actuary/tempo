@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState } from "react";
 import { API_URL } from "../const";
+import { readWorkspaceResponse } from "../lib/workspace-data";
 import { usesLocalApi } from "../utils/local";
 
 type Progress = {
@@ -18,7 +19,7 @@ export default function ProgressView({ reviewed, cardsLeft, totalCards }: { revi
   useEffect(() => {
     if (!usesLocalApi()) return;
     let active = true;
-    void fetch(`${API_URL}/api/progress`).then(async (response) => {
+    void readWorkspaceResponse(`${API_URL}/api/progress`).then(async (response) => {
       if (!response.ok) throw new Error();
       const summary = await response.json() as Progress;
       if (active) setData(summary);

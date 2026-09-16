@@ -1,4 +1,5 @@
 import { View } from "@/app/types";
+import { preloadView } from "../lib/workspace-data";
 
 function getViewList(): View[] {
   return [
@@ -33,6 +34,8 @@ export default function Navbar({ view, setView }: NavbarProps) {
         <button
           className={selectViewClass(item)}
           key={item}
+          onPointerEnter={() => void preloadView(item).catch(() => undefined)}
+          onFocus={() => void preloadView(item).catch(() => undefined)}
           onClick={() => setView(item)}
         >
           {item[0].toUpperCase() + item.slice(1)}

@@ -40,6 +40,7 @@ export type PracticeCard = {
   queueCycle?: number;
   queueAttemptState?: QueueAttemptStateValue;
   attemptFailed?: boolean;
+  firstCleanPassAt?: string;
   suggestShorterPrefix?: boolean;
   orientation?: PieceColor;
   revision?: number;

@@ -28,6 +28,7 @@ export function mapQueueCardToPracticeCard(
     queueCycle: card.cycle,
     queueAttemptState: card.attempt_state,
     attemptFailed: Boolean(card.attempt_failed),
+    firstCleanPassAt: card.first_correct_at ?? undefined,
     suggestShorterPrefix:
       (card.recent_attempts_json?.match(/"again"/g)?.length ?? 0) >= 3,
     kind:

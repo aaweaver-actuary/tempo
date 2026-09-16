@@ -7,6 +7,7 @@ import {
   type PieceSet,
 } from "../components/chessboard";
 import { API_URL, STANDARD_FEN } from "../const";
+import { readWorkspaceResponse, invalidateWorkspaceData } from "../lib/workspace-data";
 import { analyzeWithStockfish } from "../lib/analysis-engines";
 import { scanGame } from "../lib/game-scan";
 import type { GameSyncState } from "../hooks/use-game-sync";
@@ -24,8 +25,10 @@ import {
   type GameViewRecord,
   type AnalysisLine,
 } from "../types";
-import { canonicalizeLine, canonicalFenKey } from "../utils/canonical-line";
-import { indexRepertoirePositions } from "../lib/position-similarity";
+import { canonicalFenKey } from "../utils/canonical-line";
+import { useBackgroundStudy } from "../hooks/use-background-study";
+import type { StudyTask } from "../lib/study-computation";
+import type { IndexedPosition } from "../lib/position-similarity";
 import { sampleGames } from "../samples";
 
 export function GamesView({
@@ -80,7 +83,8 @@ export function GamesView({
     selected && cursor
       ? convertSanToUci(selected.moves, selected.startFen)[cursor - 1]
       : undefined;
-  const positions = useMemo(() => indexRepertoirePositions(lines), [lines]);
+  const indexTask = useMemo<StudyTask>(() => ({ kind: "index", lines }), [lines]);
+  const positions = useBackgroundStudy<IndexedPosition[]>(indexTask, []);
   const shapes = positions
     .filter(
       (position) =>
@@ -107,7 +111,7 @@ export function GamesView({
   const loadGames = useCallback(async () => {
     if (!local) return;
     try {
-      const response = await fetch(`${API_URL}/api/games/summary`);
+      const response = await readWorkspaceResponse(`${API_URL}/api/games/summary`);
       if (!response.ok) throw new Error("Could not load your local games.");
       const body = (await response.json()) as {
         games: Record<string, unknown>[];
@@ -128,11 +132,12 @@ export function GamesView({
     }
   }, [local]);
   useEffect(() => {
+    if (syncState.lastSuccess) invalidateWorkspaceData();
     queueMicrotask(() => void loadGames());
   }, [loadGames, syncState.lastSuccess]);
   useEffect(() => {
     if (!local) return;
-    void fetch(`${API_URL}/api/repertoire/lines`)
+    void readWorkspaceResponse(`${API_URL}/api/repertoire/lines`)
       .then(async (response) => {
         if (!response.ok) return;
         const body = (await response.json()) as {
@@ -140,7 +145,7 @@ export function GamesView({
         };
         setLines(
           body.lines.map((line: Record<string, unknown>) =>
-            canonicalizeLine({
+            ({
               id: asLineId(String(line.id)),
               repertoireId: asRepertoireId(String(line.repertoire_id)),
               repertoireName: String(line.repertoire_name),
@@ -182,6 +187,7 @@ export function GamesView({
           },
         );
         if (!response.ok) throw new Error("Could not save the game scan.");
+        invalidateWorkspaceData();
         await loadGames();
         setScanStatus("");
       })
