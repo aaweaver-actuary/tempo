@@ -9,3 +9,18 @@ Keep coherent fixes in separate commits and preserve existing uncommitted work. 
 ## YAGNI principle
 - Apply YAGNI to speculative requirements and premature abstraction, not to correctness, security, testing, maintainability, or explicitly requested product quality.
 
+## Preference for SOLID programming principles
+
+Apply SOLID principles only where they reduce real complexity, improve testability, or lower change cost.
+
+- Start with YAGNI and KISS: prefer the simplest design that works. Do not add interfaces, layers, or patterns without a concrete reason or a real axis of change.
+- Keep responsibilities clear: split mixed logic for validation, business rules, persistence, and I/O.
+- Prefer small, explicit seams over speculative abstractions. If a plain function or small class is clearer, use it.
+- Open/Closed: support new behavior by extension when variation is real, without rewriting stable code.
+- Liskov: subtypes must honor the parent contract and not tighten preconditions or weaken guarantees.
+- Interface Segregation: keep interfaces focused on client needs; avoid broad “god” APIs.
+- Dependency Inversion: depend on abstractions at boundaries, and inject concrete implementations at the edge.
+- Preserve behavior and public contracts unless the task explicitly changes them.
+- Justify each refactor briefly: which principle it addresses, what pain it removes, and why the abstraction earns its place.
+- If the code is already sound, leave it alone. Do not refactor for style alone.
+- Validate with targeted tests before and after changes; make regression protection explicit when behavior is user-facing.
