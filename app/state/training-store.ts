@@ -1,4 +1,5 @@
 import { create } from "zustand";
+import { useShallow } from "zustand/react/shallow";
 import type {
   PracticeCard,
   Feedback,
@@ -463,5 +464,5 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
 export function useTrainingStoreState<T>(
   selector: (state: TrainingStoreState) => T,
 ) {
-  return useTrainingStore(selector);
+  return useTrainingStore(useShallow(selector));
 }

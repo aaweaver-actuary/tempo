@@ -47,6 +47,7 @@ import TrainingView from "./training_view";
 import { fetchAndInitializeQueue } from "./fetchAndInitializeQueue";
 import { Settings } from "../utils/settings";
 import { TreeBrowser } from "./tree_browser";
+import { useShallow } from "zustand/react/shallow";
 
 export default function Home() {
   const gameSync = useGameSync();
@@ -76,7 +77,7 @@ export default function Home() {
     soundOn,
     databaseQueue,
     serviceError,
-  } = useTrainingStore(selectHomeViewState);
+  } = useTrainingStore(useShallow(selectHomeViewState));
   const {
     setPracticeCards,
     setImportedRepertoires,
@@ -111,7 +112,7 @@ export default function Home() {
     setServiceError,
     initializeCardState,
     resetTrainingLine,
-  } = useTrainingStore(selectTrainingActions);
+  } = useTrainingStore(useShallow(selectTrainingActions));
   const reviewPending = useRef(false);
   const attemptGeneration = useRef(0);
   const completionTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
@@ -422,7 +423,7 @@ export default function Home() {
 
   function tryMove(from: Square, to: Square) {
     const currentTurn =
-      new Chess(card.startingFen).turn() === "b" ? "black" : "white";
+      new Chess(currentFenString).turn() === "b" ? "black" : "white";
     if (
       isLocked ||
       step >= card.moves.length ||
@@ -701,7 +702,7 @@ export default function Home() {
         setTeachingEncounterKey(null);
         return;
       }
-      if (card.kind !== "opening") {
+      if (card.kind !== "opening" || card.queueAttemptState === "reinforcement") {
         setTeachingEncounterKey(null);
         return;
       }
@@ -728,6 +729,7 @@ export default function Home() {
     });
   }, [
     card.kind,
+    card.queueAttemptState,
     card.backendId,
     card.revision,
     currentMoveKey,
@@ -777,7 +779,7 @@ export default function Home() {
       setAttemptFailed(true);
       setQueueNotice("Again recorded · finish with guidance");
     }
-    setShowHint((value) => !value);
+    setShowHint(true);
     setFailureFen(currentFenString);
   }
 

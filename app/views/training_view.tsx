@@ -23,6 +23,7 @@ import {
   selectTrainingViewState,
 } from "../state/training-store";
 import { annotationToShapes } from "../utils/position-annotations";
+import { useShallow } from "zustand/react/shallow";
 
 interface TrainingViewProps {
   dateLabel: string;
@@ -68,9 +69,7 @@ export default function TrainingView({
     suggestShorter,
     currentFenString,
     teachingEncounterKey,
-  } = useTrainingStore(selectTrainingViewState);
-  const { setAttemptFailed, setFailureFen, setShowHint, setQueueNotice } =
-    useTrainingStore();
+  } = useTrainingStore(useShallow(selectTrainingViewState));
   const isEndgame = card.kind === "endgame";
   const feedbackCopy = getFeedbackCopy(attemptFailed, card)[feedback];
   const playerName = trainedColor(card) === "white" ? "White" : "Black";
@@ -78,6 +77,7 @@ export default function TrainingView({
   const showTeachingArrow =
     showHint ||
     (card.kind === "opening" && teachingEncounterKey === currentMoveKey);
+  const isFailedPosition = attemptFailed && currentFenString === failureFen;
   const trainingShapes: DrawShape[] = [
     ...(opponentLastMove
       ? [
@@ -88,7 +88,7 @@ export default function TrainingView({
           } as DrawShape,
         ]
       : []),
-    ...(attemptFailed && currentFenString === failureFen
+    ...(isFailedPosition
       ? annotationToShapes(failureAnnotation)
       : []),
   ];
@@ -129,7 +129,7 @@ export default function TrainingView({
           <div className="board-column">
             <Chessboard
               key={`${card.queueEntryId ?? card.id}:${boardAttempt}`}
-              fen={card.startingFen}
+              fen={currentFenString}
               expectedSan={card.moves[step]}
               lastMove={lastMove}
               locked={isLocked || step >= card.moves.length || cardsLeft === 0}
@@ -149,7 +149,6 @@ export default function TrainingView({
                 isAttemptFailed={attemptFailed}
                 isFeedbackComplete={feedback === "complete"}
                 hasNoCardsLeft={cardsLeft === 0}
-                showHint={showTeachingArrow}
               />
               <RestartButton handleRestart={resetCardAttempt} />
               <AnalyzeOnLichessButton
@@ -188,7 +187,7 @@ export default function TrainingView({
                 body={feedbackCopy.body}
               />
             </div>
-            {attemptFailed && failureAnnotation?.comment && (
+            {isFailedPosition && failureAnnotation?.comment && (
               <FailureNote failureAnnotation={failureAnnotation} />
             )}
             <div
@@ -232,20 +231,14 @@ export default function TrainingView({
               )}
             <div className="ratings binary">
               <button
-                onClick={() => {
-                  setAttemptFailed(true);
-                  setFailureFen(card.startingFen);
-                  setShowHint(true);
-                  setQueueNotice(
-                    "Again recorded · finish the line with guidance",
-                  );
-                }}
+                disabled={isLocked}
+                onClick={handleAttemptFailure}
               >
                 <strong>Again</strong>
               </button>
               <button
                 className="primary"
-                disabled={attemptFailed}
+                disabled={attemptFailed || isLocked}
                 onClick={() => void rateCard("correct")}
               >
                 <strong>

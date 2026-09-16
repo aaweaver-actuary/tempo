@@ -3,7 +3,6 @@ interface AgainButtonProps {
   isAttemptFailed: boolean;
   isFeedbackComplete: boolean;
   hasNoCardsLeft: boolean;
-  showHint: boolean;
 }
 
 export default function AgainButton({
@@ -11,14 +10,13 @@ export default function AgainButton({
   isAttemptFailed,
   isFeedbackComplete,
   hasNoCardsLeft,
-  showHint,
 }: AgainButtonProps) {
   return (
     <button
       onClick={handleAgain}
       disabled={isAttemptFailed || isFeedbackComplete || hasNoCardsLeft}
     >
-      ⌁ <span>{showHint ? "Hide move" : "Show move"}</span>
+      ⌁ <span>Show move</span>
     </button>
   );
 }

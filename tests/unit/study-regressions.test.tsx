@@ -5,7 +5,7 @@ import TacticsView from "../../app/views/tactics_view";
 import Home from "../../app/views/home_view";
 import { advanceTacticProgress } from "../../app/lib/tactics-progress";
 
-vi.mock("../../app/components/chessboard", () => ({ Chessboard: (props: { fen: string; showHint: boolean; locked: boolean; onMove: (from: string, to: string) => void }) => <div data-testid="board" data-fen={props.fen} data-hint={String(props.showHint)}>{[["a3","b4"],["a2","e6"],["f7","f8"],["e7","e5"],["b8","c6"]].map(([from,to]) => <button key={from+to} disabled={props.locked} onClick={() => props.onMove(from,to)}>{from+to}</button>)}</div> }));
+vi.mock("../../app/components/chessboard", () => ({ Chessboard: (props: { fen: string; showHint: boolean; locked: boolean; onMove: (from: string, to: string) => void }) => <div data-testid="board" data-fen={props.fen} data-hint={String(props.showHint)}>{[["a3","b4"],["a2","e6"],["f7","f8"],["e7","e5"],["b8","c6"],["g8","f6"],["e7","e6"],["e2","e4"],["g1","f3"]].map(([from,to]) => <button key={from+to} disabled={props.locked} onClick={() => props.onMove(from,to)}>{from+to}</button>)}</div> }));
 vi.mock("../../app/lib/move-sound", () => ({ playMoveSound: vi.fn(), moveSoundEnabled: () => false }));
 vi.mock("../../app/lib/analysis-engines", () => ({ analyzeWithStockfish: vi.fn(async () => []), analyzeWithMaia: vi.fn(async () => []) }));
 
@@ -32,6 +32,55 @@ async function readyTactics() {
 async function pause(ms = 751) { await act(async () => { await new Promise((resolve) => setTimeout(resolve, ms)); }); }
 
 describe("reported study regressions", () => {
+  it("Show move during initial teaching records failure and keeps required guidance", async () => {
+    const failures: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input, options) => {
+      const url = String(input);
+      if (url.endsWith("/api/queue/today")) return Response.json({ cards: [{ id: "help-card", queue_entry_id: 60, start_fen: new Chess().fen(), moves: ["e2e4", "e7e5", "g1f3"], content_type: "opening", repertoire_name: "Prep", repertoire_source: "PGN" }] });
+      if (options?.method === "POST" && url.endsWith("/fail")) failures.push(url);
+      return Response.json({ states: [], providers: [], lines: [] });
+    }));
+    render(<Home />);
+    await waitFor(() => expect(screen.getByTestId("board").getAttribute("data-hint")).toBe("true"));
+    fireEvent.click(screen.getByRole("button", { name: /Show move/ }));
+    expect(screen.getByTestId("board").getAttribute("data-hint")).toBe("true");
+    expect(screen.getByRole("button", { name: "Finish on the board" }).hasAttribute("disabled")).toBe(true);
+    await waitFor(() => expect(failures).toContain("http://127.0.0.1:8000/api/queue/entries/60/fail"));
+  });
+  it("self-reported first clean solves receive reinforcement without teaching later plies", async () => {
+    let queue = [{ id: "opening-card", queue_entry_id: 1, start_fen: new Chess().fen(), moves: ["e2e4", "e7e5", "g1f3"], content_type: "opening", repertoire_name: "Prep", repertoire_source: "PGN", attempt_state: "clean" }];
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      if (String(input).endsWith("/api/queue/today")) return Response.json({ cards: queue });
+      if (String(input).endsWith("/review")) queue = [{ ...queue[0], queue_entry_id: 2, attempt_state: "reinforcement" }];
+      return Response.json({ states: [], providers: [], lines: [] });
+    }));
+    render(<Home />);
+    await waitFor(() => expect(screen.getByTestId("board").getAttribute("data-hint")).toBe("true"));
+    fireEvent.click(screen.getByRole("button", { name: "Correct" }));
+    await waitFor(() => expect(screen.getByText("Reinforcement")).toBeTruthy());
+    expect(screen.getByTestId("board").getAttribute("data-hint")).toBe("false");
+    fireEvent.click(screen.getByText("e2e4")); await pause(430);
+    expect(screen.getByTestId("board").getAttribute("data-hint")).toBe("false");
+  });
+  it("Black training mounts without selector loops and plays from the current position", async () => {
+    let cards = [{ id: "black-card", queue_entry_id: 99, start_fen: new Chess().fen(), moves: ["d2d4", "g8f6", "c2c4", "e7e6"], content_type: "opening", repertoire_name: "Black prep", repertoire_source: "PGN", trained_color: "black" }];
+    const reviews: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input, options) => {
+      if (String(input).endsWith("/api/queue/today")) return Response.json({ cards });
+      if (String(input).endsWith("/review")) { reviews.push(JSON.parse(options.body)); cards = []; }
+      return Response.json({ states: [], providers: [], lines: [] });
+    }));
+    render(<Home />);
+    const board = new Chess(); board.move("d4");
+    await waitFor(() => expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(board.fen()));
+    fireEvent.click(screen.getByText("g8f6")); board.move("Nf6"); board.move("c4");
+    await pause(430);
+    expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(board.fen());
+    fireEvent.click(screen.getByText("e7e6")); board.move("e6");
+    expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(board.fen());
+    await pause(250); expect(reviews).toHaveLength(0);
+    await pause(); expect(reviews).toHaveLength(1);
+  });
   it("tactic failure remains interactive until the full guided solution is complete", async () => {
     const attempts = mockTactics();
     await readyTactics();
@@ -103,7 +152,7 @@ describe("reported study regressions", () => {
     expect(screen.getByTestId("board").getAttribute("data-hint")).toBe("false");
     fireEvent.click(screen.getByText("a2e6")); await pause(430); fireEvent.click(screen.getByText("f7f8")); await pause();
     expect(reviews).toHaveLength(2);
-    expect(screen.getByText("You’re done for today")).toBeTruthy();
+    expect(screen.getByText(/You['’]re done for today/)).toBeTruthy();
     expect(screen.queryByText(/First clean solve/)).toBeNull();
   });
 });
