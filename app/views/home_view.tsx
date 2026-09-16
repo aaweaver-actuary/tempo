@@ -4,11 +4,7 @@ import { API_URL } from "../const";
 import { ImportDialogBox } from "../import_dialog_box";
 import { moveSoundEnabled, playMoveSound } from "../lib/move-sound";
 import { bundledRepertoires, demoCards } from "../samples";
-import {
-  View,
-  LocalRepertoire,
-  AnalysisLine,
-} from "../types";
+import { View, LocalRepertoire, AnalysisLine } from "../types";
 import { canonicalFenKey, canonicalizeLine } from "../utils/canonical-line";
 import {
   indexRepertoirePositions,
@@ -676,7 +672,13 @@ export default function Home() {
     return () => {
       active = false;
     };
-  }, [card.backendId, card.kind, setSeenMoves, setTeachingReadyCard, teachingCardKey]);
+  }, [
+    card.backendId,
+    card.kind,
+    setSeenMoves,
+    setTeachingReadyCard,
+    teachingCardKey,
+  ]);
   const isPlayerTurn =
     step < repertoireLine.length &&
     new Chess(currentFenString).turn() ===
