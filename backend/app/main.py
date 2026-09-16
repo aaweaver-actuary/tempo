@@ -285,7 +285,7 @@ def review(identifier:str,request:ReviewRequest):
         card=db.execute("SELECT interval_days,fsrs_card_json,first_correct_at,reinforcement_pending,scheduling_mode,hard_correct_streak,recent_attempts_json FROM cards WHERE id=? AND archived=0",(identifier,)).fetchone()
         if not card: raise HTTPException(404,"Card not found")
         settings=get_settings()
-        s=schedule_review(request.outcome,interval_days=card[0],fsrs_card_json=card[1],first_correct_at=card[2],reinforcement_pending=bool(card[3]),scheduling_mode=card[4],hard_correct_streak=card[5],recent_attempts=json.loads(card[6] or "[]"),light_first_interval_days=settings.light_first_interval_days,reviewed_at=now)
+        s=schedule_review(request.outcome,interval_days=card[0],fsrs_card_json=card[1],first_correct_at=card[2],reinforcement_pending=bool(card[3]),scheduling_mode=card[4],hard_correct_streak=card[5],recent_attempts=json.loads(card[6] or "[]"),light_first_interval_days=settings.light_first_interval_days,reviewed_at=now,review_day=date.today())
         if request.queue_entry_id: db.execute("UPDATE daily_queue SET status='complete',attempt_state=? WHERE id=? AND card_id=?",("guided" if request.guided else "clean",request.queue_entry_id,identifier))
         else: db.execute("UPDATE daily_queue SET status='complete' WHERE id=(SELECT id FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued' ORDER BY position LIMIT 1)",(day,identifier))
         db.execute("INSERT INTO reviews(card_id,rating,internal_rating,guided,reviewed_at,previous_interval,next_interval) VALUES(?,?,?,?,?,?,?)",(identifier,request.outcome,s.internal_rating,int(request.guided),now.isoformat(),card[0],s.interval_days))

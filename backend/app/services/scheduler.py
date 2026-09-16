@@ -59,12 +59,14 @@ def schedule_review(
     recent_attempts: list[str] | None = None,
     light_first_interval_days: int = 7,
     reviewed_at: datetime | None = None,
+    review_day: date | None = None,
 ) -> Schedule:
     if outcome not in {"correct", "again"}:
         raise ValueError("outcome must be correct or again")
     now = reviewed_at or datetime.now(timezone.utc)
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
+    calendar_day = review_day or now.date()
     recent = ([outcome] + list(recent_attempts or []))[:5]
     if scheduling_mode != "hard" and recent.count("again") >= 3:
         scheduling_mode = "hard"
@@ -82,11 +84,14 @@ def schedule_review(
     next_card.due = _utc_midday(now.date() + timedelta(days=proposed))
 
     first_clean = outcome == "correct" and first_correct_at is None
+    reinforced_clean = outcome == "correct" and reinforcement_pending
     if first_clean:
         first_correct_at = now.isoformat()
         reinforcement_pending = True
     elif outcome == "correct" and reinforcement_pending:
         reinforcement_pending = False
+    if reinforced_clean and scheduling_mode == "normal":
+        proposed = 1  # New material is verified tomorrow before longer FSRS intervals.
     requeue_today = outcome == "again" or first_clean
     if scheduling_mode == "light" and first_clean:
         requeue_today = False
@@ -101,10 +106,10 @@ def schedule_review(
             scheduling_mode = "normal"
             hard_correct_streak = 0
     interval = 0 if requeue_today else max(1, proposed)
-    next_card.due = _utc_midday(now.date() + timedelta(days=interval))
+    next_card.due = _utc_midday(calendar_day + timedelta(days=interval))
     return Schedule(
         interval_days=interval,
-        due_date=now.date() if requeue_today else now.date() + timedelta(days=interval),
+        due_date=calendar_day if requeue_today else calendar_day + timedelta(days=interval),
         fsrs_card_json=next_card.to_json(),
         stability=float(next_card.stability or 0),
         state="learning",

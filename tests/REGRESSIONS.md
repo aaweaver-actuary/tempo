@@ -38,3 +38,15 @@ Append every new reported issue and its test names here. All listed tests belong
 | Self-reported first clean solve reveals later reinforcement plies | `self-reported first clean solves receive reinforcement without teaching later plies` |
 | Show move label and guidance toggle conflict with automatic teaching | `Show move during initial teaching records failure and keeps required guidance` |
 | A previous failed position's comment leaks into later positions | `position notes and annotations reveal only at the failed position and remain hidden in clean training` |
+
+| Local study readiness | Required regression |
+| --- | --- |
+| Docker serves packaged tactics as forbidden / empty stage | `real packaged tactics and standard chess sounds are readable and preloaded before opening Tactics`; `real hanging-piece packs contain 100 validated playable cards after their setup move`; `failed asset requests report HTTP errors and remain retryable without sample fallback` |
+| Diagnostics block interaction or show stale results | `background diagnostics yield before computation and discard stale generations` (worker-backed in browser workflows) |
+| Tabs fetch/validate only after the first click | `tab preloading prepares the first unfinished tactic stage and shares the validated deck request`; `preloaded local records are invalidated after mutations rather than hiding new study data` |
+| Builder source details cannot be compared | `Builder comparison keeps covered moves and displays all source details together`; `Builder source comparison is immediately reachable beside the board` |
+| Move sounds resemble birds rather than chess pieces | `moves and captures play distinct standard chess recordings and respect persisted sound settings`; production asset availability browser test |
+| Later reviews reveal teaching arrows | `tomorrow and later opening reviews remain unassisted even when teaching storage is empty`; `test_study_reinforces_today_reviews_tomorrow_and_persists_unassisted_later_reviews` |
+| Saved study work lost on Docker recreation | `verifyStudySurvivesContainerRecreation` in the mandatory Docker suite checks all SQLite store checksums, queue entries/order, FSRS, teaching, notes and guided state |
+| Tactical admissions/reviews do not return to the queue | `test_tactical_failures_requeue_once_and_clean_reviews_survive_restart_and_return_when_due`; `test_again_reappears_after_four_other_entries` |
+| Tomorrow shifts an extra day after UTC midnight | `test_tomorrow_is_the_local_review_day_even_after_utc_midnight` |

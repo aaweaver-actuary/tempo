@@ -130,6 +130,34 @@ test("Maia initializes matching runtime assets and returns legal playable probab
   await boardVisible(page);
 });
 
+test("real packaged tactics and standard chess sounds are readable and preloaded before opening Tactics", async ({page,request}) => {
+  const catalog = await request.get("/data/tactics-decks.json");
+  expect(catalog.ok()).toBeTruthy();
+  expect((await catalog.json()).filter((record: { DeckId: string }) => record.DeckId === "hangingPiece-easy")).toHaveLength(100);
+  for (const path of ["Move", "Capture"]) expect((await request.get(`/sounds/standard/${path}.mp3`)).ok()).toBeTruthy();
+  let requests = 0;
+  const progress = await (await request.get(`${api}/tactics/progress`)).json();
+  const expectedPuzzle = (progress["hangingPiece:easy"]?.index ?? 0) + 1;
+  page.on("request", request => { if (request.url().includes("/data/tactics-decks.json")) requests++; });
+  await page.goto("/");
+  await expect.poll(() => requests).toBe(1);
+  await nav(page,"Tactics");
+  await expect(page.locator(".board-frame")).toBeVisible();
+  await expect(page.getByText(`Puzzle ${expectedPuzzle} of 100`)).toBeVisible();
+  expect(requests).toBe(1);
+  await boardVisible(page);
+});
+
+test("Builder source comparison is immediately reachable beside the board", async ({page}) => {
+  await page.addInitScript(() => localStorage.setItem("tempo-stockfish-on", "true"));
+  await page.goto("/"); await nav(page,"Builder");
+  const comparison=page.getByRole("table", {name:"Move source comparison"});
+  await expect(comparison).toBeVisible();
+  for (const name of ["Stockfish","Maia","Lichess","Masters"]) await expect(comparison.getByRole("columnheader", {name,exact:true})).toBeVisible();
+  await expect(comparison.getByRole("button").first()).toBeVisible({timeout:45_000});
+  await boardVisible(page);
+});
+
 test("help remains Again after browser reload and the returned attempt is unassisted",async ({page,request})=>{
   await request.post(`${api}/imports/pgn`,{multipart:{file:{name:"help.pgn",mimeType:"application/x-chess-pgn",buffer:Buffer.from('1. e4 e5 2. Nf3 Nc6 *')},initial_depth:"2"}});
   await page.goto("/"); await expect(page.locator(".board-frame")).toBeVisible();

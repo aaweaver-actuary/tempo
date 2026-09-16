@@ -42,6 +42,12 @@ docker compose up --build
 
 Open `http://localhost:3000`. The local API is available at `http://localhost:8000`, and all durable data is stored in `./data/tempo.db` on the host computer.
 
+You can study in Docker Tempo now. Reviews, FSRS state, daily queue order, reinforcement, guided attempts, tactic discovery progress, repertoire notes, and teaching history are saved automatically in SQLite. Rebuilding or recreating the containers retains the host `data` directory; deleting that directory deletes your study data, so keep a backup. The mandatory Docker test recreates containers and verifies every SQLite store checksum and the exact queue order.
+
+New cards get one unassisted reinforcement later today and a review tomorrow before normal FSRS intervals. Later reviews do not automatically reveal teaching arrows; a mistake or Show move still provides guidance. Clean tactic discovery uses the configured light first interval; failed discoveries and subsequent lapses join normal review scheduling.
+
+Tempo preloads tab data and the first unfinished Hanging Pieces stage in the background. Puzzle validation, repertoire diagnostics/indexing, similarity, and transposition matching run in a study worker. Builder opens with a source-comparison table, including covered moves, rather than burying those details below editing tools. Move and capture audio use the official Lichess standard chess recordings.
+
 The hosted private Site uses local browser storage and representative game data. Docker Compose runs the full local FastAPI + SQLite path, including provider sync and durable review state.
 
 ### Static browser-only preview
