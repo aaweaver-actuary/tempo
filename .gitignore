@@ -50,3 +50,4 @@ __pycache__/
 /playwright-report/
 tsconfig.tsbuildinfo
 .pytest_cache/
+**/*.pgn
