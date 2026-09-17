@@ -112,6 +112,26 @@ All ancestors are therefore mature before a deeper child can appear. A later lap
 
 Local response cards alone can become disconnected fragments, so Tempo should also create a low-frequency **integration checkpoint** after every four newly learned user moves. A checkpoint tests the line from the repertoire’s starting FEN through the newest frontier. New descendants beyond that checkpoint remain locked until the checkpoint matures. This preserves fast, focused response cards while regularly proving that the learner can still reach the deep position from the start.
 
+## Validated domain and responsive boards
+
+Zod 4 schemas live in `app/domain/schemas`. Transport adapters validate external
+records before producing branded FENs, moves, and identifiers. Controlled Tempo
+and worker envelopes are strict; third-party move data permits additional fields
+but validates all consumed values. Invalid records are set aside with an
+exportable diagnostic; their source data is not deleted or silently repaired.
+
+Chessground uses one measured, square pixel surface and one instance per board.
+Input availability comes from the queue-entry attempt lifecycle, not a separate
+lock flag. Background queue refreshes preserve an active attempt; replacement
+entries cancel old reply and completion timers.
+
+Queue/repertoire validation, puzzle preparation, and position comparisons run in
+the study worker. Maia inference runs in a separate worker. Board input and DOM
+updates remain in TypeScript; Python/SQLite remains authoritative. Rust/WASM
+continues behind the existing golden parity fixtures. Recent readiness, move
+paint, and workspace switch timings are available in the browser Performance
+panel as `tempo:*` measurements.
+
 ## Remaining implementation decision
 
 - When a revised PGN removes or renames lines, decide whether missing cards are archived automatically or retained until explicitly deleted. Review history should be preserved either way.

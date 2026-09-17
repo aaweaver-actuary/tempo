@@ -66,7 +66,7 @@ export default function RepertoireView({ imported, onImport, onBrowse, onDeleteL
     <section className="library-page" id="repertoire">
       {error && <p role="alert">{error}<button onClick={() => void loadBackend()}>Retry</button></p>}
       <div className="page-heading">
-        <div><p className="eyebrow">Your source material</p><h1>Repertoire</h1><p>Upload PGNs once. Tempo turns transpositions and shared prefixes into one clean set of cards.</p></div>
+        <h1 className="sr-only">Repertoire</h1>
         <div className="heading-actions"><button onClick={()=>exportPgn()}>⇩ Export all PGN</button><button className="primary-button" onClick={onImport}>＋ Import PGN</button></div>
       </div>
       <div className="library-grid">

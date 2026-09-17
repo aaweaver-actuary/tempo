@@ -1,3 +1,7 @@
+import { explorerResponseSchema, branchResultSchema } from "../domain/schemas";
+import { readJsonResponse } from "../lib/validated-data";
+import { builderSessionSchema } from "../domain/schemas";
+import { readStoredValue, reportDataDiagnostic } from "../lib/validated-data";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import { Square, Chess } from "chess.js";
@@ -14,15 +18,18 @@ import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
 import CandidateMovesTable from "../CandidateMovesTable";
 import { MoveComparisonTable } from "../components/move-comparison-table";
 import { STANDARD_FEN, API_URL } from "../const";
-import { readWorkspaceData, invalidateWorkspaceData } from "../lib/workspace-data";
+import {
+  readWorkspaceData,
+  invalidateWorkspaceData,
+} from "../lib/workspace-data";
 import { useBackgroundStudy } from "../hooks/use-background-study";
 import { runStudyTask } from "../lib/background-study";
 import type { StudyTask } from "../lib/study-computation";
+import { analyzeWithStockfish, analyzeWithMaia } from "../lib/analysis-engines";
 import {
-  analyzeWithStockfish,
-  analyzeWithMaia,
-} from "../lib/analysis-engines";
-import { adaptEngineMoves, adaptExplorerMoves, type RawExplorerMove } from "../domain/adapters/analysis-adapters";
+  adaptEngineMoves,
+  adaptExplorerMoves,
+} from "../domain/adapters/analysis-adapters";
 import {
   LocalRepertoire,
   ExplorerMove,
@@ -45,10 +52,7 @@ import {
 import { usesLocalApi } from "../utils/local";
 import { connectLichess } from "../utils/lichess";
 import { Settings } from "../utils/settings";
-import {
-  canonicalFenKey,
-  sanForUci,
-} from "../utils/canonical-line";
+import { canonicalFenKey, sanForUci } from "../utils/canonical-line";
 import {
   annotationToShapes,
   loadPositionAnnotation,
@@ -103,22 +107,29 @@ function getLocalStorageOrDefault(key: string, defaultValue: string) {
 
 function readBuilderSession(): BuilderSession | undefined {
   if (typeof window === "undefined") return undefined;
-  const current = localStorage.getItem("tempo-builder-session");
-  const legacy = localStorage.getItem("tempo-analysis-session");
-  const raw = current ?? legacy;
-  if (!raw) return undefined;
+  const key = localStorage.getItem("tempo-builder-session")
+    ? "tempo-builder-session"
+    : "tempo-analysis-session";
+  const parsed = readStoredValue(localStorage, key, builderSessionSchema);
+  if (!parsed) return undefined;
+  const position = new Chess(parsed.startingFen);
   try {
-    const parsed = JSON.parse(raw) as BuilderSession;
-    if (parsed.version !== 1 || !Array.isArray(parsed.history))
-      return undefined;
-    if (!current) {
-      localStorage.setItem("tempo-builder-session", raw);
-      localStorage.removeItem("tempo-analysis-session");
+    for (const node of parsed.history) {
+      const move = position.move({
+        from: node.uci.slice(0, 2),
+        to: node.uci.slice(2, 4),
+        promotion: node.uci[4],
+      });
+      if (move.san !== node.san || position.fen() !== node.fen)
+        throw new Error("Saved history does not match its legal moves");
     }
-    return parsed;
-  } catch {
+  } catch (error) {
+    reportDataDiagnostic("saved Builder history", parsed, String(error));
     return undefined;
   }
+  if (key !== "tempo-builder-session")
+    localStorage.setItem("tempo-builder-session", JSON.stringify(parsed));
+  return parsed;
 }
 
 export default function BuilderView({
@@ -222,6 +233,9 @@ export default function BuilderView({
     "idle" | "loading" | "ready" | "error"
   >("idle");
   const transpositionController = useRef<AbortController | null>(null);
+  const [dismissedTranspositions, setDismissedTranspositions] = useState<
+    string[]
+  >(initialSession?.dismissedTranspositions ?? []);
 
   const visibleHistory = history.slice(0, cursor);
   const fen = visibleHistory.at(-1)?.fen ?? startingFen;
@@ -269,10 +283,32 @@ export default function BuilderView({
     }),
   );
   const selectedRepertoireId = selectedRepertoire?.id;
-  const indexTask = useMemo<StudyTask>(() => ({ kind: "index", lines: availableLines.filter(line => !selectedRepertoireId || line.repertoireId === selectedRepertoireId) }), [availableLines, selectedRepertoireId]);
+  const indexTask = useMemo<StudyTask>(
+    () => ({
+      kind: "index",
+      lines: availableLines.filter(
+        (line) =>
+          !selectedRepertoireId || line.repertoireId === selectedRepertoireId,
+      ),
+    }),
+    [availableLines, selectedRepertoireId],
+  );
   const positionIndex = useBackgroundStudy(indexTask, emptyPositions);
-  const similarityTask = useMemo<StudyTask>(() => ({ kind: "similarity", fen, positions: positionIndex }), [fen, positionIndex]);
+  const similarityTask = useMemo<StudyTask>(
+    () => ({ kind: "matches", fen, positions: positionIndex }),
+    [fen, positionIndex],
+  );
   const similarPositions = useBackgroundStudy(similarityTask, emptySimilar);
+  const transpositionKey = `${selectedRepertoireId}:${canonicalFenKey(fen)}`;
+  const exactTransposition =
+    cursor > 0 &&
+    lineMatches.length === 0 &&
+    !dismissedTranspositions.includes(transpositionKey)
+      ? similarPositions.find((position) => position.distance === 0)
+      : undefined;
+  const transpositionLine =
+    exactTransposition &&
+    availableLines.find((line) => line.id === exactTransposition.lineId);
 
   function rememberToggle(
     key: string,
@@ -286,28 +322,12 @@ export default function BuilderView({
   useEffect(() => {
     if (!usesLocalApi()) return;
     void readWorkspaceData(`${API_URL}/api/repertoire/lines`)
-      .then((value) => {
-        const body = value as {
-          lines: Array<{
-            id: string;
-            repertoire_id: string;
-            repertoire_name: string;
-            name: string;
-            trained_color: "white" | "black";
-            start_fen: string;
-            moves: string[];
-          }>;
-        };
+      .then(async (value) => {
         setBackendLines(
-          body.lines.map((line) => ({
-            id: asLineId(line.id),
-            repertoireId: asRepertoireId(line.repertoire_id),
-            repertoireName: line.repertoire_name,
-            title: line.name,
-            side: line.trained_color === "black" ? "black" : "white",
-            startingFen: asFenString(line.start_fen),
-            moves: line.moves.map(asSanMove),
-          })),
+          await runStudyTask<AnalysisLine[]>({
+            kind: "transportLines",
+            payload: value,
+          }),
         );
       })
       .catch(() => undefined);
@@ -344,11 +364,13 @@ export default function BuilderView({
       history,
       cursor: Math.min(cursor, history.length),
       branchStart,
+      dismissedTranspositions,
     };
     localStorage.setItem("tempo-builder-session", JSON.stringify(session));
   }, [
     activeRepertoire,
     branchStart,
+    dismissedTranspositions,
     cursor,
     history,
     orientation,
@@ -372,7 +394,7 @@ export default function BuilderView({
             comment: "",
             arrows: [],
             squares: [],
-            updatedAt: asIsoDateString(""),
+            updatedAt: asIsoDateString(new Date().toISOString()),
           },
         );
         setAnnotationStatus("");
@@ -413,7 +435,12 @@ export default function BuilderView({
       const results = await searchMaiaTranspositions({
         startFen: fen,
         targets: positionIndex,
-        matchPositions: (fen, positions) => runStudyTask<Array<IndexedPosition & { distance: number }>>({ kind: "matches", fen, positions }),
+        matchPositions: (fen, positions) =>
+          runStudyTask<Array<IndexedPosition & { distance: number }>>({
+            kind: "matches",
+            fen,
+            positions,
+          }),
         horizon,
         analyze: (positionFen) => analyzeWithMaia(positionFen, Number(maiaElo)),
         signal: controller.signal,
@@ -557,20 +584,29 @@ export default function BuilderView({
         .then(async ([lichess, masters]) => {
           if (!lichess.ok || !masters.ok)
             throw new Error("Explorer request failed");
-          return Promise.all([lichess.json(), masters.json()]);
+          return Promise.all([
+            readJsonResponse(
+              lichess,
+              explorerResponseSchema,
+              "Lichess explorer",
+            ),
+            readJsonResponse(
+              masters,
+              explorerResponseSchema,
+              "Masters explorer",
+            ),
+          ]);
         })
         .then((value) => {
           if (controller.signal.aborted) return;
-          const [human, masters] = value as [
-            { moves?: RawExplorerMove[] },
-            { moves?: RawExplorerMove[] },
-          ];
+          const [human, masters] = value;
           setExplorerMoves(adaptExplorerMoves(fen, human.moves ?? []));
           setMastersMoves(adaptExplorerMoves(fen, masters.moves ?? []));
           setExplorerState("ready");
         })
         .catch((error) => {
-          if (!controller.signal.aborted && error.name !== "AbortError") setExplorerState("error");
+          if (!controller.signal.aborted && error.name !== "AbortError")
+            setExplorerState("error");
         });
     });
     return () => controller.abort();
@@ -616,7 +652,9 @@ export default function BuilderView({
       setMaiaMoves([]);
       setMaiaProgress(0);
       setMaiaState("loading");
-      analyzeWithMaia(fen, Number(maiaElo), setMaiaProgress)
+      analyzeWithMaia(fen, Number(maiaElo), (progress) => {
+        if (current) setMaiaProgress(progress);
+      })
         .then((moves) => {
           if (current) {
             setMaiaMoves(adaptEngineMoves(fen, moves));
@@ -681,11 +719,11 @@ export default function BuilderView({
               .join(" "),
           }),
         });
-        const result = (await response.json()) as {
-          id: string;
-          detail?: string;
-        };
-        if (!response.ok) throw new Error(result.detail);
+        const result = await readJsonResponse(
+          response,
+          branchResultSchema,
+          "saved repertoire branch",
+        );
         invalidateWorkspaceData();
         setBackendLines((current) => [
           ...current.filter((line) => line.id !== result.id),
@@ -856,7 +894,7 @@ export default function BuilderView({
   return (
     <section className="analysis-page" id="builder">
       <div className="analysis-heading compact-analysis">
-        <h1>Builder</h1>
+        <h1 className="sr-only">Builder</h1>
         <div className="analysis-switches">
           <select
             aria-label="Active repertoire"
@@ -926,6 +964,43 @@ export default function BuilderView({
       </div>
       <div className="analysis-layout">
         <div className="analysis-board-column">
+          {exactTransposition && (
+            <div className="transposition-notice" role="status">
+              <span>
+                Transposes to{" "}
+                <strong>
+                  {transpositionLine
+                    ? lineMoveName(transpositionLine)
+                    : exactTransposition.repertoireName}
+                </strong>
+              </span>
+              <button
+                onClick={() => {
+                  setBranchStart(branchStart ?? 0);
+                  setBranchNote(
+                    "Route to this existing position is ready to save.",
+                  );
+                  setDismissedTranspositions((current) => [
+                    ...current,
+                    transpositionKey,
+                  ]);
+                }}
+              >
+                Add as branch
+              </button>
+              <button
+                aria-label="Dismiss transposition"
+                onClick={() =>
+                  setDismissedTranspositions((current) => [
+                    ...current,
+                    transpositionKey,
+                  ])
+                }
+              >
+                ×
+              </button>
+            </div>
+          )}
           <Chessboard
             fen={fen}
             lastMove={lastMove}
@@ -1050,245 +1125,15 @@ export default function BuilderView({
         </div>
         <aside className="analysis-sidebar">
           <section className="analysis-panel comparison-panel">
-            <div className="panel-heading"><div><span>Compare moves</span><strong>Repertoire · Stockfish · Maia · Lichess · Masters</strong></div></div>
-            <MoveComparisonTable repertoire={repertoireMoves} engine={stockfishMoves.slice(0, 5)} maia={maiaMoves} lichess={explorerMoves} masters={mastersMoves} turn={new Chess(fen).turn() === "w" ? "white" : "black"} onPlay={playUci} onHover={setHoveredMove} />
-          </section>
-          <div className="builder-tool-panels">
-          {availableLines.some(
-            (line) => line.validation?.diagnostics.length,
-          ) && (
-            <section
-              className="analysis-panel import-diagnostics"
-              role="status"
-            >
-              <div className="panel-heading">
-                <div>
-                  <span>Import diagnostics</span>
-                  <strong>Some line data was skipped safely</strong>
-                </div>
-              </div>
-              {availableLines.flatMap((line) =>
-                (line.validation?.diagnostics ?? []).map((diagnostic) => (
-                  <p key={`${line.id}-${diagnostic.ply}-${diagnostic.move}`}>
-                    {line.repertoireName}: {diagnostic.message} at ply{" "}
-                    {diagnostic.ply + 1}
-                  </p>
-                )),
+            <div className="comparison-toolbar">
+              <h2 className="sr-only">Compare moves</h2>
+              {(!lichessToken || explorerState === "error") && (
+                <button className="comparison-connect" onClick={connectLichess}>
+                  {lichessToken ? "Reconnect databases" : "Connect databases"}
+                </button>
               )}
-            </section>
-          )}
-          <section className="analysis-panel repertoire-panel">
-            <div className="panel-heading">
-              <div>
-                <span>Active repertoire</span>
-                <strong>
-                  {selectedRepertoire?.name ?? "No repertoire selected"}
-                </strong>
-              </div>
-            </div>
-            {repertoireMoves.length ? (
-              <CandidateMovesTable
-                moves={repertoireMoves}
-                covered={coveredReplies}
-                detail="score"
-                onPlay={playUci}
-                onHover={setHoveredMove}
-              />
-            ) : (
-              <p className="panel-message">
-                No saved response at this position.
-              </p>
-            )}
-          </section>
-          <section className="analysis-panel coverage-panel">
-            <div className="panel-heading">
-              <div>
-                <span>Coverage</span>
-                <strong>Likely {coverageTarget}% · change in Settings</strong>
-              </div>
-            </div>
-            <div className="coverage-summary">
-              <div>
-                <span>Lichess coverage</span>
-                <strong>
-                  {explorerTotal
-                    ? Math.round((explorerCovered / explorerTotal) * 100)
-                    : "—"}
-                  %
-                </strong>
-              </div>
-              <div>
-                <span>Maia coverage</span>
-                <strong>
-                  {maiaMoves.length ? Math.round(maiaCovered * 100) : "—"}%
-                </strong>
-              </div>
-              <div>
-                <span>Responses saved</span>
-                <strong>{coveredReplies.size}</strong>
-              </div>
-            </div>
-          </section>
-          <section className="analysis-panel annotation-panel">
-            <div className="panel-heading">
-              <div>
-                <span>Position note</span>
-                <strong>Shown only after a mistake</strong>
-              </div>
-            </div>
-            <textarea
-              aria-label="Position comment"
-              placeholder="Add a reminder for this exact position…"
-              value={annotation?.comment ?? ""}
-              onChange={(event) => {
-                const comment = event.target.value;
-                setAnnotation((current) =>
-                  current ? { ...current, comment } : current,
-                );
-                setAnnotationStatus("Unsaved changes");
-              }}
-            />
-            <small>
-              Right-drag an arrow or right-click a square on the board to add
-              graphical notes.
-            </small>
-            <div className="annotation-actions">
-              <span role="status">{annotationStatus}</span>
               <button
-                onClick={() => {
-                  setAnnotation((current) =>
-                    current
-                      ? { ...current, comment: "", arrows: [], squares: [] }
-                      : current,
-                  );
-                  setAnnotationStatus("Unsaved changes");
-                }}
-              >
-                Clear
-              </button>
-              <button className="save" onClick={() => void persistAnnotation()}>
-                Save note
-              </button>
-            </div>
-          </section>
-          <section className="analysis-panel similarity-panel">
-            <div className="panel-heading">
-              <div>
-                <span>Consistency</span>
-                <strong>Similar repertoire positions</strong>
-              </div>
-              <b>{similarPositions.length}</b>
-            </div>
-            {similarPositions.length ? (
-              <div className="similar-position-list">
-                {similarPositions.map((position) => (
-                  <button
-                    key={`${position.lineId}-${position.ply}-${position.nextUci}`}
-                    onClick={() =>
-                      position.nextUci && playUci(position.nextUci)
-                    }
-                  >
-                    <span>
-                      {position.distance === 0
-                        ? "Exact"
-                        : `${position.distance} relocation${position.distance === 1 ? "" : "s"}`}
-                    </span>
-                    <strong>
-                      {position.nextUci
-                        ? (sanForUci(fen, position.nextUci) ?? position.nextUci)
-                        : "Endpoint"}
-                    </strong>
-                    <small>
-                      {position.repertoireName} · ply {position.ply}
-                    </small>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <p className="panel-message">
-                No compatible distance-one or distance-two positions.
-              </p>
-            )}
-          </section>
-          <section className="analysis-panel transposition-panel">
-            <div className="panel-heading">
-              <div>
-                <span>Maia paths</span>
-                <strong>Likely transpositions</strong>
-              </div>
-            </div>
-            <button
-              className="find-transpositions"
-              disabled={!maiaOn || transpositionState === "loading"}
-              onClick={() => void findTranspositions()}
-            >
-              {transpositionState === "loading"
-                ? "Searching…"
-                : "Find likely paths"}
-            </button>
-            {transpositionState === "error" && (
-              <p className="panel-message error">
-                Maia could not complete this search.
-              </p>
-            )}
-            {transpositionState === "ready" && !transpositions.length && (
-              <p className="panel-message">
-                No likely transposition within the configured horizon.
-              </p>
-            )}
-            {transpositions.map((result) => (
-              <button
-                className="transposition-result"
-                key={`${result.lineId}-${result.ply}-${result.path.join("-")}`}
-                onClick={() => result.path[0] && playUci(result.path[0])}
-              >
-                <strong>
-                  {result.distance === 0
-                    ? "Exact transposition"
-                    : `Distance ${result.distance}`}
-                </strong>
-                <span>{result.path.join(" · ")}</span>
-                <small>
-                  {Math.round(result.probability * 100)}% path ·{" "}
-                  {result.repertoireName}
-                </small>
-              </button>
-            ))}
-          </section>
-          <button
-            className="analysis-panel repertoire-results position-preview"
-            onClick={() => {
-              setCurrentSearchIndex(0);
-              setIsSearchOpen(true);
-            }}
-          >
-            <div className="panel-heading">
-              <div>
-                <span>Position search</span>
-                <strong>
-                  {lineMatches.length
-                    ? `${lineMatches.length} repertoire ${lineMatches.length === 1 ? "match" : "matches"}`
-                    : "Repertoire gap"}
-                </strong>
-              </div>
-              <b className={lineMatches.length ? "covered" : "gap"}>
-                {lineMatches.length ? "Browse" : "Add"}
-              </b>
-            </div>
-            {lineMatches.slice(0, 2).map((line) => (
-              <span className="line-result" key={line.id}>
-                <strong>{lineMoveName(line)}</strong>
-              </span>
-            ))}
-          </button>
-          <section className="analysis-panel explorer-panel">
-            <div className="panel-heading">
-              <div>
-                <span>Lichess opening explorer</span>
-                <strong>Human games · {coverageTarget}% set</strong>
-              </div>
-              <button
-                className={`tiny-switch${explorerOn ? " on" : ""}`}
+                className="comparison-connect"
                 onClick={() =>
                   rememberToggle(
                     "tempo-explorer-on",
@@ -1297,121 +1142,323 @@ export default function BuilderView({
                   )
                 }
               >
-                {explorerOn ? "Live" : "Off"}
+                {explorerOn ? "Pause databases" : "Enable databases"}
               </button>
-            </div>
-            {!explorerOn ? (
-              <p className="panel-message">Explorer is paused.</p>
-            ) : explorerState === "auth" ? (
-              <div className="connect-panel">
-                <p>Connect Lichess to load Explorer data.</p>
-                <button onClick={connectLichess}>Connect Lichess</button>
-              </div>
-            ) : explorerState === "loading" ? (
-              <p className="panel-message">Loading Lichess data…</p>
-            ) : explorerState === "error" ? (
-              <div className="connect-panel">
-                <p>The Lichess connection needs to be refreshed.</p>
-                <button onClick={connectLichess}>Reconnect</button>
-              </div>
-            ) : (
-              <>
-                <div className="source-status">
-                  <span>Connected</span>
-                  <button onClick={disconnectLichess}>Disconnect</button>
-                </div>
-                <CandidateMovesTable
-                  moves={explorerCandidates.map((move) => ({
-                    ...move,
-                    probability: explorerTotal
-                      ? (move.white + move.draws + move.black) / explorerTotal
-                      : 0,
-                  }))}
-                  covered={coveredReplies}
-                  detail="results"
-                  turn={new Chess(fen).turn() === "w" ? "white" : "black"}
-                  totalGames={explorerTotal}
-                  onPlay={playUci}
-                  onHover={setHoveredMove}
-                />
-              </>
-            )}
-          </section>
-          <section className="analysis-panel explorer-panel">
-            <div className="panel-heading">
-              <div>
-                <span>Masters database</span>
-                <strong>Master games · {coverageTarget}% set</strong>
-              </div>
-            </div>
-            <CandidateMovesTable
-              moves={mastersCandidates}
-              covered={coveredReplies}
-              detail="results"
-              turn={new Chess(fen).turn() === "w" ? "white" : "black"}
-              totalGames={mastersMoves.reduce(
-                (sum, move) => sum + move.white + move.draws + move.black,
-                0,
+              {lichessToken && (
+                <button
+                  className="comparison-connect"
+                  onClick={disconnectLichess}
+                >
+                  Disconnect
+                </button>
               )}
+            </div>
+            <p className="source-status" role="status">
+              Stockfish: {stockfishState} · Maia: {maiaState} · Databases:{" "}
+              {!lichessToken
+                ? "not connected"
+                : !explorerOn
+                  ? "paused"
+                  : explorerState}
+            </p>
+            <MoveComparisonTable
+              repertoire={repertoireMoves}
+              engine={stockfishMoves.slice(0, 5)}
+              maia={maiaMoves}
+              lichess={explorerMoves}
+              masters={mastersMoves}
+              turn={new Chess(fen).turn() === "w" ? "white" : "black"}
               onPlay={playUci}
               onHover={setHoveredMove}
             />
           </section>
-          <section className="analysis-panel engine-panel">
-            <div className="panel-heading">
-              <div>
-                <span>Stockfish 19</span>
-                <strong>Engine lines</strong>
-              </div>
-              <b className={`engine-badge ${stockfishState}`}>
-                {stockfishState === "loading"
-                  ? "Analyzing…"
-                  : stockfishState === "ready"
-                    ? "Local"
-                    : stockfishState === "error"
-                      ? "Could not start"
-                      : "Off"}
-              </b>
-            </div>
-            {stockfishState === "ready" && (
-              <CandidateMovesTable
-                moves={engineCandidates}
-                covered={coveredReplies}
-                detail="score"
-                onPlay={playUci}
-                onHover={setHoveredMove}
-              />
+          <div className="builder-tool-panels">
+            {availableLines.some(
+              (line) => line.validation?.diagnostics.length,
+            ) && (
+              <section
+                className="analysis-panel import-diagnostics"
+                role="status"
+              >
+                <div className="panel-heading">
+                  <div>
+                    <span>Import diagnostics</span>
+                    <strong>Some line data was skipped safely</strong>
+                  </div>
+                </div>
+                {availableLines.flatMap((line) =>
+                  (line.validation?.diagnostics ?? []).map((diagnostic) => (
+                    <p key={`${line.id}-${diagnostic.ply}-${diagnostic.move}`}>
+                      {line.repertoireName}: {diagnostic.message} at ply{" "}
+                      {diagnostic.ply + 1}
+                    </p>
+                  )),
+                )}
+              </section>
             )}
-          </section>
-          <section className="analysis-panel engine-panel">
-            <div className="panel-heading">
-              <div>
-                <span>Maia 3</span>
-                <strong>Likely moves at {maiaElo}</strong>
+            <section className="analysis-panel repertoire-panel">
+              <div className="panel-heading">
+                <div>
+                  <span>Active repertoire</span>
+                  <strong>
+                    {selectedRepertoire?.name ?? "No repertoire selected"}
+                  </strong>
+                </div>
               </div>
-            </div>
-            {maiaState === "loading" ? (
-              <p className="panel-message">
-                {maiaProgress
-                  ? `Downloading model · ${maiaProgress}%`
-                  : "Initializing local Maia…"}
-              </p>
-            ) : maiaState === "error" ? (
-              <p className="panel-message error">
-                Maia could not start. Toggle it off and on to retry.
-              </p>
-            ) : maiaState === "ready" ? (
-              <CandidateMovesTable
-                moves={maiaCandidates}
-                covered={coveredReplies}
-                detail="probability"
-                onPlay={playUci}
-                onHover={setHoveredMove}
+              {repertoireMoves.length ? (
+                <CandidateMovesTable
+                  moves={repertoireMoves}
+                  covered={coveredReplies}
+                  detail="score"
+                  onPlay={playUci}
+                  onHover={setHoveredMove}
+                />
+              ) : (
+                <p className="panel-message">
+                  No saved response at this position.
+                </p>
+              )}
+            </section>
+            <section className="analysis-panel coverage-panel">
+              <div className="panel-heading">
+                <div>
+                  <span>Coverage</span>
+                  <strong>Likely {coverageTarget}% · change in Settings</strong>
+                </div>
+              </div>
+              <div className="coverage-summary">
+                <div>
+                  <span>Lichess coverage</span>
+                  <strong>
+                    {explorerTotal
+                      ? Math.round((explorerCovered / explorerTotal) * 100)
+                      : "—"}
+                    %
+                  </strong>
+                </div>
+                <div>
+                  <span>Maia coverage</span>
+                  <strong>
+                    {maiaMoves.length ? Math.round(maiaCovered * 100) : "—"}%
+                  </strong>
+                </div>
+                <div>
+                  <span>Responses saved</span>
+                  <strong>{coveredReplies.size}</strong>
+                </div>
+              </div>
+            </section>
+            <section className="analysis-panel annotation-panel">
+              <div className="panel-heading">
+                <div>
+                  <span>Position note</span>
+                  <strong>Shown only after a mistake</strong>
+                </div>
+              </div>
+              <textarea
+                aria-label="Position comment"
+                placeholder="Add a reminder for this exact position…"
+                value={annotation?.comment ?? ""}
+                onChange={(event) => {
+                  const comment = event.target.value;
+                  setAnnotation((current) =>
+                    current ? { ...current, comment } : current,
+                  );
+                  setAnnotationStatus("Unsaved changes");
+                }}
               />
-            ) : (
-              <p className="panel-message">Maia is off.</p>
-            )}
-          </section>
+              <small>
+                Right-drag an arrow or right-click a square on the board to add
+                graphical notes.
+              </small>
+              <div className="annotation-actions">
+                <span role="status">{annotationStatus}</span>
+                <button
+                  onClick={() => {
+                    setAnnotation((current) =>
+                      current
+                        ? { ...current, comment: "", arrows: [], squares: [] }
+                        : current,
+                    );
+                    setAnnotationStatus("Unsaved changes");
+                  }}
+                >
+                  Clear
+                </button>
+                <button
+                  className="save"
+                  onClick={() => void persistAnnotation()}
+                >
+                  Save note
+                </button>
+              </div>
+            </section>
+            <section className="analysis-panel similarity-panel">
+              <div className="panel-heading">
+                <div>
+                  <span>Consistency</span>
+                  <strong>Similar repertoire positions</strong>
+                </div>
+                <b>{similarPositions.length}</b>
+              </div>
+              {similarPositions.length ? (
+                <div className="similar-position-list">
+                  {similarPositions.map((position) => (
+                    <button
+                      key={`${position.lineId}-${position.ply}-${position.nextUci}`}
+                      onClick={() =>
+                        position.nextUci && playUci(position.nextUci)
+                      }
+                    >
+                      <span>
+                        {position.distance === 0
+                          ? "Exact"
+                          : `${position.distance} relocation${position.distance === 1 ? "" : "s"}`}
+                      </span>
+                      <strong>
+                        {position.nextUci
+                          ? (sanForUci(fen, position.nextUci) ??
+                            position.nextUci)
+                          : "Endpoint"}
+                      </strong>
+                      <small>
+                        {position.repertoireName} · ply {position.ply}
+                      </small>
+                    </button>
+                  ))}
+                </div>
+              ) : (
+                <p className="panel-message">
+                  No compatible distance-one or distance-two positions.
+                </p>
+              )}
+            </section>
+            <section className="analysis-panel transposition-panel">
+              <div className="panel-heading">
+                <div>
+                  <span>Maia paths</span>
+                  <strong>Likely transpositions</strong>
+                </div>
+              </div>
+              <button
+                className="find-transpositions"
+                disabled={!maiaOn || transpositionState === "loading"}
+                onClick={() => void findTranspositions()}
+              >
+                {transpositionState === "loading"
+                  ? "Searching…"
+                  : "Find likely paths"}
+              </button>
+              {transpositionState === "error" && (
+                <p className="panel-message error">
+                  Maia could not complete this search.
+                </p>
+              )}
+              {transpositionState === "ready" && !transpositions.length && (
+                <p className="panel-message">
+                  No likely transposition within the configured horizon.
+                </p>
+              )}
+              {transpositions.map((result) => (
+                <button
+                  className="transposition-result"
+                  key={`${result.lineId}-${result.ply}-${result.path.join("-")}`}
+                  onClick={() => result.path[0] && playUci(result.path[0])}
+                >
+                  <strong>
+                    {result.distance === 0
+                      ? "Exact transposition"
+                      : `Distance ${result.distance}`}
+                  </strong>
+                  <span>{result.path.join(" · ")}</span>
+                  <small>
+                    {Math.round(result.probability * 100)}% path ·{" "}
+                    {result.repertoireName}
+                  </small>
+                </button>
+              ))}
+            </section>
+            <button
+              className="analysis-panel repertoire-results position-preview"
+              onClick={() => {
+                setCurrentSearchIndex(0);
+                setIsSearchOpen(true);
+              }}
+            >
+              <div className="panel-heading">
+                <div>
+                  <span>Position search</span>
+                  <strong>
+                    {lineMatches.length
+                      ? `${lineMatches.length} repertoire ${lineMatches.length === 1 ? "match" : "matches"}`
+                      : "Repertoire gap"}
+                  </strong>
+                </div>
+                <b className={lineMatches.length ? "covered" : "gap"}>
+                  {lineMatches.length ? "Browse" : "Add"}
+                </b>
+              </div>
+              {lineMatches.slice(0, 2).map((line) => (
+                <span className="line-result" key={line.id}>
+                  <strong>{lineMoveName(line)}</strong>
+                </span>
+              ))}
+            </button>
+            <section className="analysis-panel engine-panel">
+              <div className="panel-heading">
+                <div>
+                  <span>Stockfish 19</span>
+                  <strong>Engine lines</strong>
+                </div>
+                <b className={`engine-badge ${stockfishState}`}>
+                  {stockfishState === "loading"
+                    ? "Analyzing…"
+                    : stockfishState === "ready"
+                      ? "Local"
+                      : stockfishState === "error"
+                        ? "Could not start"
+                        : "Off"}
+                </b>
+              </div>
+              {stockfishState === "ready" && (
+                <CandidateMovesTable
+                  moves={engineCandidates}
+                  covered={coveredReplies}
+                  detail="score"
+                  onPlay={playUci}
+                  onHover={setHoveredMove}
+                />
+              )}
+            </section>
+            <section className="analysis-panel engine-panel">
+              <div className="panel-heading">
+                <div>
+                  <span>Maia 3</span>
+                  <strong>Likely moves at {maiaElo}</strong>
+                </div>
+              </div>
+              {maiaState === "loading" ? (
+                <p className="panel-message">
+                  {maiaProgress
+                    ? `Downloading model · ${maiaProgress}%`
+                    : "Initializing local Maia…"}
+                </p>
+              ) : maiaState === "error" ? (
+                <p className="panel-message error">
+                  Maia could not start. Toggle it off and on to retry.
+                </p>
+              ) : maiaState === "ready" ? (
+                <CandidateMovesTable
+                  moves={maiaCandidates}
+                  covered={coveredReplies}
+                  detail="probability"
+                  onPlay={playUci}
+                  onHover={setHoveredMove}
+                />
+              ) : (
+                <p className="panel-message">Maia is off.</p>
+              )}
+            </section>
           </div>
         </aside>
       </div>

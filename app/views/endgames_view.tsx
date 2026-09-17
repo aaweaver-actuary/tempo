@@ -10,6 +10,8 @@ import { usesLocalApi } from "../utils/local";
 import { PracticeCard, PieceColor } from "../types";
 import { EndgameMaterial } from "../lib/endgame-generator";
 import { OutcomeFlash } from "../components/board-controls";
+import { endgameTemplatesSchema, endgameCreatedSchema, endgameAttemptSchema } from "../domain/schemas";
+import { readJsonResponse } from "../lib/validated-data";
 
 const TEMPLATE_API_ENDPOINT = `${API_URL}/api/endgames/templates`;
 
@@ -49,16 +51,8 @@ export default function EndgamesView({
   useEffect(() => {
     if (!usesLocalApi()) return;
     readWorkspaceResponse(TEMPLATE_API_ENDPOINT)
-      .then((response) => (response.ok ? response.json() : Promise.reject()))
-      .then((value) => {
-        const data = value as {
-          templates: Array<{
-            id: string;
-            card_id: string;
-            white_material: string;
-            black_material: string;
-          }>;
-        };
+      .then((response) => readJsonResponse(response, endgameTemplatesSchema, "endgame templates"))
+      .then((data) => {
         const next: Record<number, { templateId: string; cardId: string }> = {};
         const allTemplates = [...endgameTemplates];
         for (const item of data.templates) {
@@ -101,7 +95,7 @@ export default function EndgamesView({
       setStatus("Could not add this material set to training.");
       return;
     }
-    const data = (await response.json()) as { id: string; card_id: string };
+    const data = await readJsonResponse(response, endgameCreatedSchema, "endgame admission");
     invalidateWorkspaceData();
     setAdmitted((current) => ({
       ...current,
@@ -134,8 +128,7 @@ export default function EndgamesView({
         if (!item) return;
         try {
           const response = await fetch(`${TEMPLATE_API_ENDPOINT}/${item.templateId}/attempt`, { method: "POST" });
-          const attempt = await response.json() as { fen: string; target: "win" | "draw"; detail?: string };
-          if (!response.ok) throw new Error(attempt.detail);
+          const attempt = await readJsonResponse(response, endgameAttemptSchema, "endgame attempt");
           if (token !== generation.current) return;
           setFen(attempt.fen); setTarget(attempt.target); setBusy(false); setStatus("Win or draw?");
         } catch (error) { if (token === generation.current) { setBusy(false); setStatus(error instanceof Error ? error.message : "Could not generate the position."); } }
@@ -264,8 +257,7 @@ export default function EndgamesView({
     <section className={`endgames-page${scheduledCard ? " scheduled-endgame" : ""}`}>
       <div className="workspace-title">
         <div>
-          <h1>Endgames</h1>
-          <span>Exact seven-piece practice</span>
+          <h1 className="sr-only">Endgames</h1>
         </div>
         {!scheduledCard && <button
           className="primary-button"

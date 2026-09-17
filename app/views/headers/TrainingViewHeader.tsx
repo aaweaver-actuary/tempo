@@ -12,8 +12,7 @@ export default function TrainingViewHeader({
   return (
     <section className="training-header">
       <div>
-        <p className="eyebrow">Today · {dateLabel}</p>
-        <h1>
+        <h1 className="sr-only">
           {serviceError
             ? "Local service unavailable"
             : cardsLeft === 0
@@ -22,6 +21,7 @@ export default function TrainingViewHeader({
         </h1>
       </div>
       <div className="session-count">
+        <span>Today · {dateLabel}</span>
         <strong>{cardsLeft}</strong>
         <span>cards left</span>
       </div>

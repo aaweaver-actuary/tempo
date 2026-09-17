@@ -1,93 +1,57 @@
-import { Chess, type Square } from "chess.js";
+import type { Square } from "chess.js";
+import * as z from "zod";
+import * as schemas from "./schemas/primitives";
 
-// Shared types and utility functions for the chess opening trainer application.
-// This is a helper/base type for creating branded types, which are used to give
-// primitive types unique identities within the application, thus ensuring you
-// cannot use a GameId where a LineId is expected, or vice versa.
-export type Brand<TValue, TBrand extends string> = TValue & {
-  readonly __brand: TBrand;
-};
-
-export type CardId = Brand<string, "CardId">;
-export type RepertoireId = Brand<string, "RepertoireId">;
-export type QueueEntryId = Brand<number, "QueueEntryId">;
-export type DeckId = Brand<string, "DeckId">;
-export type LineId = Brand<string, "LineId">;
-export type GameId = Brand<string, "GameId">;
-export type PuzzleId = Brand<string, "PuzzleId">;
-export type FenString = Brand<string, "FenString">;
-export type FenKey = Brand<string, "FenKey">;
-export type UciMove = Brand<string, "UciMove">;
-export type SanMove = Brand<string, "SanMove">;
-export type NonNegativeInteger = Brand<number, "NonNegativeInteger">;
-export type IsoDateString = Brand<string, "IsoDateString">;
+export type Brand<TValue, TBrand extends string> = TValue & z.$brand<TBrand>;
+export type CardId = z.infer<typeof schemas.cardIdSchema>;
+export type RepertoireId = z.infer<typeof schemas.repertoireIdSchema>;
+export type QueueEntryId = z.infer<typeof schemas.queueEntryIdSchema>;
+export type DeckId = z.infer<typeof schemas.deckIdSchema>;
+export type LineId = z.infer<typeof schemas.lineIdSchema>;
+export type GameId = z.infer<typeof schemas.gameIdSchema>;
+export type PuzzleId = z.infer<typeof schemas.puzzleIdSchema>;
+export type FenString = z.infer<typeof schemas.fenStringSchema>;
+export type FenKey = z.infer<typeof schemas.fenKeySchema>;
+export type UciMove = z.infer<typeof schemas.uciMoveSchema>;
+export type SanMove = z.infer<typeof schemas.sanMoveSchema>;
+export type NonNegativeInteger = z.infer<
+  typeof schemas.nonNegativeIntegerSchema
+>;
+export type IsoDateString = z.infer<typeof schemas.isoDateSchema>;
 export type DomainDate = IsoDateString;
-
-export type ChessMove = {
-  uci: UciMove;
-  san?: SanMove;
-};
-
+export type ChessMove = { uci: UciMove; san?: SanMove };
 export type MoveSquares = readonly [Square, Square];
-
-export const asCardId = (value: string): CardId => value as CardId;
+export const asCardId = (value: string): CardId =>
+  schemas.cardIdSchema.parse(value);
 export const asRepertoireId = (value: string): RepertoireId =>
-  value as RepertoireId;
+  schemas.repertoireIdSchema.parse(value);
 export const asQueueEntryId = (value: number): QueueEntryId =>
-  value as QueueEntryId;
-export const asDeckId = (value: string): DeckId => value as DeckId;
-export const asLineId = (value: string): LineId => value as LineId;
-export const asGameId = (value: string): GameId => value as GameId;
-export const asPuzzleId = (value: string): PuzzleId => value as PuzzleId;
+  schemas.queueEntryIdSchema.parse(value);
+export const asDeckId = (value: string): DeckId =>
+  schemas.deckIdSchema.parse(value);
+export const asLineId = (value: string): LineId =>
+  schemas.lineIdSchema.parse(value);
+export const asGameId = (value: string): GameId =>
+  schemas.gameIdSchema.parse(value);
+export const asPuzzleId = (value: string): PuzzleId =>
+  schemas.puzzleIdSchema.parse(value);
+export const asFenString = (value: string): FenString =>
+  schemas.fenStringSchema.parse(value);
+export const asFenKey = (value: string): FenKey =>
+  schemas.fenKeySchema.parse(value);
+export const asUciMove = (value: string): UciMove =>
+  schemas.uciMoveSchema.parse(value);
+export const asSanMove = (value: string): SanMove =>
+  schemas.sanMoveSchema.parse(value);
+export const asNonNegativeInteger = (value: number): NonNegativeInteger =>
+  schemas.nonNegativeIntegerSchema.parse(value);
 export const asIsoDateString = (value: string): IsoDateString =>
-  value as IsoDateString;
-
-const UCI_MOVE_RE = /^[a-h][1-8][a-h][1-8][qrbn]?$/i;
-
+  schemas.isoDateSchema.parse(value);
 export function isFenString(value: string): value is FenString {
-  try {
-    void new Chess(value);
-    return true;
-  } catch {
-    return false;
-  }
+  return schemas.fenStringSchema.safeParse(value).success;
 }
-
-export function asFenString(value: string): FenString {
-  if (!isFenString(value)) {
-    throw new Error(`Invalid FEN: ${value}`);
-  }
-  return value as FenString;
-}
-
-export function asFenKey(value: string): FenKey {
-  return value as FenKey;
-}
-
 export function isUciMove(value: string): value is UciMove {
-  return UCI_MOVE_RE.test(value.trim());
-}
-
-export function asUciMove(value: string): UciMove {
-  if (!isUciMove(value)) {
-    throw new Error(`Invalid UCI move: ${value}`);
-  }
-  return value.trim().toLowerCase() as UciMove;
-}
-
-export function asSanMove(value: string): SanMove {
-  const trimmed = value.trim();
-  if (!trimmed) {
-    throw new Error("SAN move cannot be empty");
-  }
-  return trimmed as SanMove;
-}
-
-export function asNonNegativeInteger(value: number): NonNegativeInteger {
-  if (!Number.isInteger(value) || value < 0) {
-    throw new Error(`Expected non-negative integer, got: ${value}`);
-  }
-  return value as NonNegativeInteger;
+  return schemas.uciMoveSchema.safeParse(value).success;
 }
 
 export enum PieceColorEnum {

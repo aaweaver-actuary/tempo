@@ -1,3 +1,6 @@
+import * as z from "zod";
+import { annotationSchema, annotationsResponseSchema } from "../domain/schemas";
+import { readStoredValue, validRecords, readJsonResponse } from "../lib/validated-data";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import type { Square } from "chess.js";
@@ -10,13 +13,8 @@ const STORAGE_KEY = "tempo-position-annotations";
 
 function localAnnotations(): PositionAnnotation[] {
   if (typeof window === "undefined") return [];
-  try {
-    return JSON.parse(
-      localStorage.getItem(STORAGE_KEY) ?? "[]",
-    ) as PositionAnnotation[];
-  } catch {
-    return [];
-  }
+  const raw = readStoredValue(localStorage, STORAGE_KEY, z.array(z.unknown())) ?? [];
+  return validRecords(annotationSchema, raw, "saved annotation");
 }
 
 export async function loadPositionAnnotation(
@@ -30,10 +28,8 @@ export async function loadPositionAnnotation(
         `${API_URL}/api/repertoires/${encodeURIComponent(repertoireId)}/annotations?fen=${encodeURIComponent(fen)}`,
       );
       if (response.ok) {
-        const body = (await response.json()) as {
-          annotations: PositionAnnotation[];
-        };
-        return body.annotations[0];
+        const body = await readJsonResponse(response, annotationsResponseSchema, "position annotations");
+        return validRecords(annotationSchema, body.annotations, "position annotation")[0];
       }
     } catch {
       return undefined;
@@ -83,7 +79,7 @@ export async function savePositionAnnotation(
       },
     );
     if (!response.ok) throw new Error("Could not save this position note");
-    return (await response.json()) as PositionAnnotation;
+    return readJsonResponse(response, annotationSchema, "saved annotation");
   }
   return normalized;
 }

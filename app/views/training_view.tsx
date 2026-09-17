@@ -128,7 +128,8 @@ export default function TrainingView({
         <section className="training-grid" id="train">
           <div className="board-column">
             <Chessboard
-              key={`${card.queueEntryId ?? card.id}:${boardAttempt}`}
+              key={`${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${card.revision ?? 1}`}
+              positionRevision={boardAttempt}
               fen={currentFenString}
               expectedSan={card.moves[step]}
               lastMove={lastMove}

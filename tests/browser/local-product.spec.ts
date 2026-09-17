@@ -8,26 +8,65 @@ const puzzles = [1,2].map(n => ({ PuzzleId:`browser-mate-${n}`,DeckId:"hangingPi
 
 async function nav(page: Page, name: string) { await page.getByRole("navigation").getByRole("button", {name,exact:true}).click(); }
 async function boardVisible(page: Page) {
+  await page.evaluate(() => new Promise<void>(resolve =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))));
   const board=page.locator(".board-frame").first();
   await expect(board).toBeVisible();
+  await expect(board.locator("piece.anim")).toHaveCount(0);
   const box=await board.boundingBox(); const viewport=page.viewportSize()!;
   expect(box).not.toBeNull();
   expect(box!.x).toBeGreaterThanOrEqual(0); expect(box!.y).toBeGreaterThanOrEqual(65);
   expect(box!.x+box!.width).toBeLessThanOrEqual(viewport.width+1);
   expect(box!.y+box!.height).toBeLessThanOrEqual(viewport.height+1);
   expect(Math.abs(box!.width-box!.height)).toBeLessThan(2);
+  const surface = await board.locator(".cg-wrap").boundingBox();
+  const squares = await board.locator("cg-board").boundingBox();
+  expect(surface).not.toBeNull(); expect(squares).not.toBeNull();
+  for (const axis of ["x", "y", "width", "height"] as const)
+    expect(Math.abs(surface![axis] - squares![axis])).toBeLessThan(0.6);
+  expect(Math.abs(surface!.width - surface!.height)).toBeLessThan(0.6);
+  // A Black prompt may start its automatic reply between separate DOM reads.
+  // Sample surface and pieces together, and assert the settled geometry rather
+  // than an interpolated animation frame.
+  await expect.poll(() => board.locator(".cg-wrap").evaluate(node => {
+    const bounds=node.getBoundingClientRect();
+    return [...node.querySelectorAll("cg-board piece:not(.ghost)")].every(piece => {
+      const b=piece.getBoundingClientRect();
+      const file=(b.x-bounds.x)/(bounds.width/8),rank=(b.y-bounds.y)/(bounds.height/8);
+      return !piece.classList.contains("anim") &&
+        Math.abs(b.width-bounds.width/8)<0.6 && Math.abs(b.height-bounds.height/8)<0.6 &&
+        Math.abs(file-Math.round(file))<0.02 && Math.abs(rank-Math.round(rank))<0.02 &&
+        file>=-0.02 && file<=7.02 && rank>=-0.02 && rank<=7.02;
+    });
+  })).toBe(true);
   const controls=page.locator(".board-tools").first();
   if (await controls.count()) {
     const controlsBox=(await controls.boundingBox())!;
     expect(controlsBox.y+controlsBox.height).toBeLessThanOrEqual(viewport.height+1);
   }
 }
+
+test("high-DPI board geometry stays aligned through narrow resize and orientation flips", async ({browser}) => {
+  const context=await browser.newContext({deviceScaleFactor:2,viewport:{width:1280,height:800},baseURL:process.env.TEMPO_DOCKER_URL ?? "http://127.0.0.1:3001"});
+  const page=await context.newPage();
+  await page.addInitScript(()=>{localStorage.setItem("tempo-stockfish-on","false");localStorage.setItem("tempo-maia-on","false");});
+  await page.goto("/"); await nav(page,"Builder");
+  for (const viewport of [{width:1280,height:800},{width:390,height:844},{width:768,height:600}]) {
+    await page.setViewportSize(viewport); await boardVisible(page);
+    const orientation=await page.locator(".board-frame").getAttribute("data-orientation");
+    await page.keyboard.press("f");
+    await expect(page.locator(".board-frame")).not.toHaveAttribute("data-orientation",orientation!);
+    await boardVisible(page);
+  }
+  await context.close();
+});
 async function move(page: Page, from: string, to: string) {
   const board=page.locator(".board-frame").first();
-  await expect(board).toBeVisible();
-  const box=(await board.boundingBox())!;
+  await expect(board).toHaveAttribute("data-input-enabled","true");
+  await boardVisible(page);
   const black=(await board.getAttribute("data-orientation"))==="black";
   for(const square of [from,to]) {
+    const box=(await board.locator(".cg-wrap").boundingBox())!;
     const file=square.charCodeAt(0)-97,rank=Number(square[1])-1;
     await page.mouse.click(box.x+((black?7-file:file)+.5)*box.width/8,box.y+((black?rank:7-rank)+.5)*box.height/8);
   }
@@ -89,6 +128,47 @@ test("wrong tactic immediately shows X, requires guided continuation, and leaves
   await page.setViewportSize({width:390,height:844}); await boardVisible(page);
 });
 
+test("tactic help and restart preserve one failed attempt until guided completion and playable next puzzle",async ({page})=>{
+  const deck=puzzles.map((puzzle,index)=>({...puzzle,PuzzleId:`browser-guided-${index+1}`}));
+  const attempts:unknown[]=[];
+  page.on("request",request=>{if(request.url().endsWith("/tactics/attempt")) attempts.push(request.postDataJSON());});
+  await page.route("**/data/tactics-decks.json",route=>route.fulfill({json:deck}));
+  await page.goto("/"); await nav(page,"Tactics");
+  await expect(page.getByText("Puzzle 1 of 100")).toBeVisible();
+  const initialFen=await page.locator(".board-frame").getAttribute("data-fen");
+  await page.getByRole("button",{name:/Show move/}).click();
+  await expect(page.locator(".outcome-flash.wrong")).toBeVisible();
+  await page.waitForTimeout(850);
+  await expect(page.getByText("Puzzle 1 of 100")).toBeVisible();
+  expect(attempts).toHaveLength(0);
+  await move(page,"a2","e6");
+  await page.getByRole("button",{name:/Restart/}).click();
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-fen",initialFen!);
+  await expect(page.locator(".outcome-flash.wrong")).toBeVisible();
+  await move(page,"a2","e6"); await move(page,"f7","f8");
+  await expect.poll(()=>attempts.length).toBe(1);
+  expect(attempts[0]).toMatchObject({puzzle_id:"browser-guided-1",clean:false,correct:false});
+  expect(new Chess((await page.locator(".board-frame").getAttribute("data-fen"))!).isCheckmate()).toBe(true);
+  await expect(page.getByText("Puzzle 2 of 100")).toBeVisible();
+  await expect(page.locator(".outcome-flash")).toHaveCount(0);
+  await move(page,"a2","e6");
+  expect(attempts).toHaveLength(1);
+});
+
+test("Builder exact transposition saves the played route and does not prompt for a covered route",async ({page,request})=>{
+  await request.post(`${api}/imports/pgn`,{multipart:{file:{name:"transposition.pgn",mimeType:"application/x-chess-pgn",buffer:Buffer.from('[Event "Blitz"]\n\n1. d4 d5 2. Nf3 Nf6 *')},initial_depth:"2"}});
+  await page.goto("/"); await nav(page,"Builder");
+  await move(page,"g1","f3"); await move(page,"d7","d5"); await move(page,"d2","d4");
+  await expect(page.getByRole("button",{name:"Add as branch"})).toBeVisible();
+  await page.getByRole("button",{name:"Add as branch"}).click();
+  await page.getByRole("button",{name:"Save branch"}).click();
+  await expect.poll(async()=> (await (await request.get(`${api}/repertoire/lines`)).json()).lines.length).toBe(2);
+  await expect(page.getByRole("button",{name:"Add as branch"})).toHaveCount(0);
+  await page.reload(); await nav(page,"Builder");
+  await expect(page.getByRole("button",{name:"Add as branch"})).toHaveCount(0);
+  await boardVisible(page);
+});
+
 test("Docker Games shows actual empty records and actionable sync errors, never sample success",async ({page}) => {
   await page.goto("/"); await nav(page,"Games");
   await expect(page.getByText("No games imported",{exact:true})).toBeVisible();
@@ -133,11 +213,13 @@ test("Maia initializes matching runtime assets and returns legal playable probab
 test("real packaged tactics and standard chess sounds are readable and preloaded before opening Tactics", async ({page,request}) => {
   const catalog = await request.get("/data/tactics-decks.json");
   expect(catalog.ok()).toBeTruthy();
-  expect((await catalog.json()).filter((record: { DeckId: string }) => record.DeckId === "hangingPiece-easy")).toHaveLength(100);
+  const deck=(await catalog.json()).filter((record: { DeckId: string }) => record.DeckId === "hangingPiece-easy");
+  expect(deck).toHaveLength(100);
   for (const path of ["Move", "Capture"]) expect((await request.get(`/sounds/standard/${path}.mp3`)).ok()).toBeTruthy();
   let requests = 0;
   const progress = await (await request.get(`${api}/tactics/progress`)).json();
-  const expectedPuzzle = (progress["hangingPiece:easy"]?.index ?? 0) + 1;
+  const discovered=new Set(progress["hangingPiece:easy"]?.discoveredIds ?? progress["hangingPiece:easy"]?.cleanIds ?? []);
+  const expectedPuzzle=deck.find((record:{PuzzleId:string})=>!discovered.has(`lichess-${record.PuzzleId}`)).DeckPosition;
   page.on("request", request => { if (request.url().includes("/data/tactics-decks.json")) requests++; });
   await page.goto("/");
   await expect.poll(() => requests).toBe(1);
@@ -154,7 +236,15 @@ test("Builder source comparison is immediately reachable beside the board", asyn
   const comparison=page.getByRole("table", {name:"Move source comparison"});
   await expect(comparison).toBeVisible();
   for (const name of ["Stockfish","Maia","Lichess","Masters"]) await expect(comparison.getByRole("columnheader", {name,exact:true})).toBeVisible();
-  await expect(comparison.getByRole("button").first()).toBeVisible({timeout:45_000});
+  await expect(comparison.locator("tbody tr button").first()).toBeVisible({timeout:45_000});
+  const header=comparison.getByRole("columnheader",{name:"Stockfish",exact:true});
+  await header.getByRole("button").focus();
+  await page.keyboard.press("Enter");
+  await expect(header).toHaveAttribute("aria-sort","ascending");
+  await page.keyboard.press("Enter");
+  await expect(header).toHaveAttribute("aria-sort","descending");
+  await expect(page.getByRole("navigation",{name:"Primary navigation"}).getByRole("button",{name:"Builder",exact:true})).toHaveAttribute("aria-current","page");
+  await expect(page.locator("h1:not(.sr-only)")).toHaveCount(0);
   await boardVisible(page);
 });
 

@@ -1,3 +1,13 @@
+import {
+  queueEnvelopeSchema,
+  queueCardSchema,
+  packagedPuzzleSchema,
+} from "../schemas";
+import {
+  parseData,
+  validRecords,
+  reportDataDiagnostic,
+} from "../../lib/validated-data";
 import { Chess, Square } from "chess.js";
 import {
   BackendQueueCard,
@@ -14,12 +24,15 @@ import { canonicalizeMoves } from "../../utils/canonical-line";
 
 // Maps queue transport records from the backend into domain practice cards.
 export function mapQueueCardToPracticeCard(
-  card: BackendQueueCard,
+  raw: BackendQueueCard | unknown,
 ): PracticeCard {
+  const card = parseData(queueCardSchema, raw, "queue card");
   const startingFen = asFenString(card.start_fen);
   const validatedLine = canonicalizeMoves(startingFen, card.moves);
   if (validatedLine.diagnostics.length) {
-    throw new Error(`Invalid queue card ${card.id}: ${validatedLine.diagnostics[0].message}`);
+    throw new Error(
+      `Invalid queue card ${card.id}: ${validatedLine.diagnostics[0].message}`,
+    );
   }
   return {
     id: asCardId(`queue-${card.queue_entry_id}`),
@@ -74,6 +87,7 @@ export function mapPackagedPuzzleToPracticeCard(
   record: PackagedPuzzle,
 ): PracticeCard | null {
   try {
+    record = parseData(packagedPuzzleSchema, record, "packaged puzzle");
     const board = new Chess(asFenString(record.FEN));
     const uciMoves = record.Moves.split(/\s+/).filter(Boolean);
     const setup = uciMoves.shift()!;
@@ -106,4 +120,18 @@ export function mapPackagedPuzzleToPracticeCard(
   } catch {
     return null;
   }
+}
+
+export function queueCardsFromPayload(raw: unknown): PracticeCard[] {
+  const body = parseData(queueEnvelopeSchema, raw, "daily queue");
+  return validRecords(queueCardSchema, body.cards, "queue card").flatMap(
+    (record) => {
+      try {
+        return [mapQueueCardToPracticeCard(record)];
+      } catch (error) {
+        reportDataDiagnostic("queue card", record, String(error), record.id);
+        return [];
+      }
+    },
+  );
 }

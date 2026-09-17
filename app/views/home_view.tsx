@@ -1,9 +1,20 @@
+import { teachingResponseSchema } from "../domain/schemas";
+import { readJsonResponse, readStoredValue, validRecords } from "../lib/validated-data";
+import * as z from "zod";
+import { localRepertoireSchema } from "../domain/schemas";
+import { measureTempoOperation } from "../lib/performance";
+import { isCurrentAttempt } from "../domain/attempt";
+import { DataDiagnosticsNotice } from "../components/data-diagnostics-notice";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { BoardTheme, PieceSet } from "../components/chessboard";
 import { API_URL } from "../const";
-import { preloadWorkspaces, invalidateWorkspaceData, readWorkspaceData } from "../lib/workspace-data";
+import {
+  preloadWorkspaces,
+  invalidateWorkspaceData,
+  readWorkspaceData,
+} from "../lib/workspace-data";
 import { runStudyTask } from "../lib/background-study";
-import { ImportDialogBox } from "../import_dialog_box";
+import { ImportDialogBox } from "../ImportDialogBox";
 import { moveSoundEnabled, playMoveSound } from "../lib/move-sound";
 import { bundledRepertoires, demoCards } from "../samples";
 import {
@@ -12,9 +23,6 @@ import {
   AnalysisLine,
   CardId,
   asFenString,
-  asLineId,
-  asRepertoireId,
-  asSanMove,
 } from "../types";
 import { canonicalFenKey } from "../utils/canonical-line";
 import { IndexedPosition } from "../lib/position-similarity";
@@ -51,14 +59,19 @@ import { useShallow } from "zustand/react/shallow";
 export default function Home() {
   const gameSync = useGameSync();
   const [currentView, setCurrentView] = useState<View>("train");
+  const changeWorkspace = useCallback((view: View) => {
+    const finished = measureTempoOperation("view-switch");
+    setCurrentView(view);
+    requestAnimationFrame(() => requestAnimationFrame(finished));
+  }, []);
   const branchPositions = useRef<IndexedPosition[]>([]);
   const {
     practiceCards,
     importedRepertoires,
     activeCardIndex,
     currentFenString,
-    step,
-    isLocked,
+    currentStepIndex: step,
+    isViewLocked: isLocked,
     cardsLeft,
     reviewed,
     showImport,
@@ -86,7 +99,7 @@ export default function Home() {
     setFeedback,
     setLastMove,
     setOpponentLastMove,
-    setIsLocked,
+    setAttemptPhase,
     setBoardAttempt,
     setShowHint,
     setCardsLeft,
@@ -107,13 +120,12 @@ export default function Home() {
     setBoardTheme,
     setPieceSet,
     setSoundOn,
-    setDatabaseQueue,
     setServiceError,
     initializeCardState,
     resetTrainingLine,
   } = useTrainingStore(useShallow(selectTrainingActions));
   const reviewPending = useRef(false);
-  const attemptGeneration = useRef(0);
+  const replyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const completionTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -121,52 +133,10 @@ export default function Home() {
   const card = practiceCards[activeCardIndex] ?? demoCards[0];
   const repertoireLine = card.moves;
 
-  const refreshDatabaseQueue = useCallback(async () => {
+  const refreshDatabaseQueue = useCallback(async (advance = false) => {
     invalidateWorkspaceData();
-    await fetchAndInitializeQueue(
-      setDatabaseQueue,
-      setServiceError,
-      setPracticeCards,
-      setDailyQueue,
-      setCardsLeft,
-      reviewPending,
-      activeQueueEntry,
-      setActiveCardIndex,
-      attemptGeneration,
-      setCurrentFenString,
-      setStep,
-      setFeedback,
-      setLastMove,
-      setOpponentLastMove,
-      setIsLocked,
-      setShowHint,
-      setTeachingEncounterKey,
-      setAttemptFailed,
-      setFailureAnnotation,
-      setFailureFen,
-    )();
-  }, [
-    activeQueueEntry,
-    attemptGeneration,
-    reviewPending,
-    setActiveCardIndex,
-    setAttemptFailed,
-    setCardsLeft,
-    setCurrentFenString,
-    setDailyQueue,
-    setDatabaseQueue,
-    setFailureAnnotation,
-    setFailureFen,
-    setFeedback,
-    setIsLocked,
-    setLastMove,
-    setOpponentLastMove,
-    setPracticeCards,
-    setServiceError,
-    setShowHint,
-    setStep,
-    setTeachingEncounterKey,
-  ]);
+    await fetchAndInitializeQueue(advance);
+  }, []);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void preloadWorkspaces(), 100);
@@ -177,25 +147,13 @@ export default function Home() {
     window.scrollTo({ top: 0, behavior: "auto" });
     if (usesLocalApi() && currentView === "train") {
       queueMicrotask(() => void refreshDatabaseQueue());
-      void readWorkspaceData<{ lines: Record<string, unknown>[] }>(`${API_URL}/api/repertoire/lines`)
-        .then(async (body) => {
-          const records = body as {
-            lines: Record<string, unknown>[];
-          };
-          const lines: AnalysisLine[] = records.lines.map((line) =>
-            ({
-              id: asLineId(String(line.id)),
-              repertoireId: asRepertoireId(String(line.repertoire_id)),
-              repertoireName: String(line.repertoire_name),
-              title: String(line.name ?? ""),
-              side: line.trained_color === "black" ? "black" : "white",
-              startingFen: asFenString(String(line.start_fen)),
-              moves: (Array.isArray(line.moves) ? line.moves : []).map((move) =>
-                asSanMove(String(move)),
-              ),
-            }),
-          );
-          branchPositions.current = await runStudyTask<IndexedPosition[]>({ kind: "index", lines });
+      void readWorkspaceData(`${API_URL}/api/repertoire/lines`)
+        .then(async body => {
+          const lines = await runStudyTask<AnalysisLine[]>({kind:"transportLines",payload:body});
+          branchPositions.current = await runStudyTask<IndexedPosition[]>({
+            kind: "index",
+            lines,
+          });
         })
         .catch(() => {
           branchPositions.current = [];
@@ -230,7 +188,7 @@ export default function Home() {
         setDailyQueue([]);
         setImportedRepertoires([]);
         setSeenMoves(
-          new Set(JSON.parse(localStorage.getItem("tempo-seen-moves") ?? "[]")),
+          new Set(readStoredValue(localStorage, "tempo-seen-moves", z.array(z.string())) ?? []),
         );
         setBoardTheme(
           (localStorage.getItem("tempo-board-theme") as BoardTheme) ?? "brown",
@@ -257,16 +215,15 @@ export default function Home() {
       setCardsLeft(Number(localStorage.getItem("tempo-cards-left") ?? 12));
       setReviewed(Number(localStorage.getItem("tempo-reviewed") ?? 0));
       setSeenMoves(
-        new Set(JSON.parse(localStorage.getItem("tempo-seen-moves") ?? "[]")),
+        new Set(readStoredValue(localStorage, "tempo-seen-moves", z.array(z.string())) ?? []),
       );
       setFirstCleanPasses(
         new Set(
-          JSON.parse(localStorage.getItem("tempo-first-clean-passes") ?? "[]"),
+          readStoredValue(localStorage, "tempo-first-clean-passes", z.array(z.string())) ?? [],
         ),
       );
-      const savedRepertoires = JSON.parse(
-        localStorage.getItem("tempo-imported-repertoires") ?? "[]",
-      ) as LocalRepertoire[];
+      const savedRepertoires = validRecords(localRepertoireSchema,
+        readStoredValue(localStorage, "tempo-imported-repertoires", z.array(z.unknown())) ?? [], "saved repertoire");
       const tombstones = new Set<string>(
         JSON.parse(localStorage.getItem("tempo-repertoire-tombstones") ?? "[]"),
       );
@@ -420,7 +377,7 @@ export default function Home() {
   }
 
   function resetLine(nextCard = card) {
-    attemptGeneration.current += 1;
+    clearTimeout(replyTimer.current);
     clearTimeout(completionTimer.current);
     resetTrainingLine(nextCard);
   }
@@ -492,7 +449,7 @@ export default function Home() {
       return;
     }
     markMoveSeen(step);
-    setCurrentFenString(position.fen());
+    setCurrentFenString(asFenString(position.fen()));
     setLastMove([move.from, move.to]);
     setOpponentLastMove(undefined);
     setFeedback("correct");
@@ -504,22 +461,24 @@ export default function Home() {
       completeAttempt(position.fen());
       return;
     }
-    setIsLocked(true);
-    const generation = attemptGeneration.current;
-    window.setTimeout(() => {
-      if (generation !== attemptGeneration.current) return;
+    setAttemptPhase("opponentReplyPending");
+    const token = useTrainingStore.getState().attempt;
+    replyTimer.current = setTimeout(() => {
+      if (!isCurrentAttempt(useTrainingStore.getState().attempt, token)) return;
       const replyPosition = new Chess(position.fen());
-      const reply = replyPosition.move(card.moves[opponentStep]);
+      let reply: Move | null;
+      try { reply = replyPosition.move(card.moves[opponentStep]); }
+      catch { setAttemptPhase("guided", token); setServiceError("This line needs repair: its opponent reply is illegal."); return; }
       if (!reply) {
-        setIsLocked(false);
+        setAttemptPhase(useTrainingStore.getState().isAttemptFailed ? "guided" : "playerTurn");
         return;
       }
       const nextStep = opponentStep + 1;
-      setCurrentFenString(replyPosition.fen());
+      setCurrentFenString(asFenString(replyPosition.fen()));
       setLastMove([reply.from, reply.to]);
       setOpponentLastMove([reply.from, reply.to]);
       setStep(nextStep);
-      setIsLocked(false);
+      setAttemptPhase(useTrainingStore.getState().isAttemptFailed ? "guided" : "playerTurn");
       setFeedback(nextStep >= card.moves.length ? "complete" : "ready");
       playMoveSound();
       if (nextStep >= card.moves.length) completeAttempt(replyPosition.fen());
@@ -545,7 +504,7 @@ export default function Home() {
   async function rateCard(outcome: "again" | "correct") {
     if (reviewPending.current || cardsLeft === 0) return;
     reviewPending.current = true;
-    setIsLocked(true);
+    setAttemptPhase("feedbackPause");
     if (databaseQueue && card.backendId) {
       try {
         if (attemptFailed) {
@@ -570,12 +529,13 @@ export default function Home() {
         if (!response.ok) throw new Error();
         setReviewed((count) => count + 1);
         setQueueNotice("");
-        await refreshDatabaseQueue();
+        await refreshDatabaseQueue(true);
         reviewPending.current = false;
         return;
       } catch {
         reviewPending.current = false;
-        setQueueNotice("The local database could not save this result.");
+        setQueueNotice("The local database could not save this result. Please retry.");
+        setAttemptPhase(attemptFailed ? "guided" : "playerTurn");
         return;
       }
     }
@@ -619,20 +579,20 @@ export default function Home() {
   }
 
   function completeAttempt(finalFen: string) {
-    setCurrentFenString(finalFen);
-    setIsLocked(true);
+    setCurrentFenString(asFenString(finalFen));
+    setAttemptPhase("feedbackPause");
     setFeedback("complete");
-    const generation = attemptGeneration.current;
+    const token = useTrainingStore.getState().attempt;
     clearTimeout(completionTimer.current);
     completionTimer.current = setTimeout(() => {
-      if (generation === attemptGeneration.current)
-        void rateCard(attemptFailed ? "again" : "correct");
+      if (isCurrentAttempt(useTrainingStore.getState().attempt, token))
+        void rateCard(useTrainingStore.getState().isAttemptFailed ? "again" : "correct");
     }, 750);
   }
 
   useEffect(
     () => () => {
-      attemptGeneration.current += 1;
+      clearTimeout(replyTimer.current);
       clearTimeout(completionTimer.current);
     },
     [],
@@ -661,9 +621,7 @@ export default function Home() {
     void fetch(`${API_URL}/api/cards/${card.backendId}/teaching`)
       .then((response) => {
         if (!response.ok) throw new Error();
-        return response.json() as Promise<{
-          states: { revision: number; ply: number }[];
-        }>;
+        return readJsonResponse(response, teachingResponseSchema, "teaching state");
       })
       .then(({ states }) => {
         if (!active) return;
@@ -706,7 +664,11 @@ export default function Home() {
         setTeachingEncounterKey(null);
         return;
       }
-      if (card.kind !== "opening" || card.firstCleanPassAt || card.queueAttemptState === "reinforcement") {
+      if (
+        card.kind !== "opening" ||
+        card.firstCleanPassAt ||
+        card.queueAttemptState === "reinforcement"
+      ) {
         setTeachingEncounterKey(null);
         return;
       }
@@ -801,8 +763,8 @@ export default function Home() {
       className={`app-shell${boardWorkspace ? " board-workspace-shell" : ""}`}
     >
       <header className="topbar">
-        <BrandButton setView={setCurrentView} />
-        <Navbar view={currentView} setView={setCurrentView} />
+        <BrandButton setView={changeWorkspace} />
+        <Navbar view={currentView} setView={changeWorkspace} />
         <div className="top-actions">
           <SoundToggleButton soundOn={soundOn} changeSound={changeSound} />
           <SavedLocallyButton setShowImport={setShowImport} />
@@ -952,6 +914,7 @@ export default function Home() {
           }}
         />
       )}
+      <DataDiagnosticsNotice />
       {!boardWorkspace && <Footer />}
     </main>
   );

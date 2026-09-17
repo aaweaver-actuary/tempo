@@ -25,12 +25,12 @@ describe("training store", () => {
     useTrainingStore.setState({
       practiceCards: [card],
       activeCardIndex: 0,
-      currentFenString: "",
+      currentFenString: card.startingFen,
       step: 999,
       feedback: "wrong",
       lastMove: ["a2", "a3"],
       opponentLastMove: ["a7", "a6"],
-      isLocked: true,
+      attempt: {entryKey:"old",generation:0,phase:"feedbackPause"},
     });
 
     useTrainingStore.getState().resetTrainingLine(card);
@@ -43,6 +43,6 @@ describe("training store", () => {
     expect(state.feedback).toBe("ready");
     expect(state.lastMove).toBeUndefined();
     expect(state.opponentLastMove).toBeUndefined();
-    expect(state.isLocked).toBe(false);
+    expect(state.attempt.phase).toBe("playerTurn");
   });
 });

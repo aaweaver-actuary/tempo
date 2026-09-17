@@ -1,5 +1,8 @@
 export const TEMPO_DB_VERSION = 1;
 
+import { portableSnapshotSchema, storedRecordSchema } from "../domain/schemas";
+import { parseData, validRecords } from "./validated-data";
+
 export const TEMPO_STORES = [
   "repertoires",
   "lines",
@@ -46,11 +49,11 @@ export async function putRecords(store: TempoStore, records: StoredRecord[]): Pr
   });
 }
 
-export async function getRecords<T = unknown>(store: TempoStore): Promise<StoredRecord<T>[]> {
+export async function getRecords(store: TempoStore): Promise<StoredRecord[]> {
   const database = await openTempoDatabase();
   return await new Promise((resolve, reject) => {
     const request = database.transaction(store).objectStore(store).getAll();
-    request.onsuccess = () => resolve(request.result as StoredRecord<T>[]);
+    request.onsuccess = () => resolve(validRecords(storedRecordSchema, request.result, `IndexedDB ${store}`));
     request.onerror = () => reject(request.error);
   });
 }
@@ -122,6 +125,7 @@ async function snapshotChecksum(snapshot: PortableSnapshot): Promise<string> {
 }
 
 export async function importPortableSnapshot(snapshot: PortableSnapshot): Promise<Record<string, number>> {
+  snapshot = parseData(portableSnapshotSchema, snapshot, "portable snapshot");
   if (snapshot.schemaVersion !== 1) throw new Error(`Unsupported snapshot version ${snapshot.schemaVersion}`);
   for (const [table, rows] of Object.entries(snapshot.tables)) {
     if (rows.length !== snapshot.counts[table]) throw new Error(`Snapshot count mismatch for ${table}`);

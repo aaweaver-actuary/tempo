@@ -4,17 +4,27 @@ import { Chessground } from "@lichess-org/chessground";
 import type { Api } from "@lichess-org/chessground/api";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
-import { Chess, type Move, type Square } from "chess.js";
+import { Chess, type Square } from "chess.js";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useBoardViewport } from "../hooks/use-board-viewport";
+import { measureTempoOperation } from "../lib/performance";
 import { playMoveSound } from "../lib/move-sound";
 
 export type BoardTheme = "brown" | "blue" | "green";
 export type PieceSet = "cburnett" | "merida";
+const EMPTY_SHAPES: DrawShape[] = [];
+const DRAW_BRUSHES = {
+  green: { key: "g", color: "#4f8a59", opacity: 0.88, lineWidth: 10 },
+  red: { key: "r", color: "#b45f50", opacity: 0.88, lineWidth: 10 },
+  blue: { key: "b", color: "#4e7ca8", opacity: 0.88, lineWidth: 10 },
+  yellow: { key: "y", color: "#d0a83f", opacity: 0.92, lineWidth: 11 },
+  maia: { key: "m", color: "#8a62a5", opacity: 0.9, lineWidth: 10 },
+};
 
 type ChessboardProps = {
   fen: string;
   expectedSan?: string;
-  lastMove?: [string, string];
+  lastMove?: readonly [string, string];
   locked: boolean;
   showHint: boolean;
   theme: BoardTheme;
@@ -28,11 +38,8 @@ type ChessboardProps = {
   onMove: (from: Square, to: Square) => void;
   orientation?: "white" | "black";
   onFlip?: () => void;
+  positionRevision?: number;
 };
-
-function moveForSan(chess: Chess, san: string): Move | undefined {
-  return chess.moves({ verbose: true }).find((move) => move.san === san);
-}
 
 export function Chessboard({
   fen,
@@ -42,8 +49,8 @@ export function Chessboard({
   showHint,
   theme,
   pieceSet,
-  shapes = [],
-  drawnShapes = [],
+  shapes = EMPTY_SHAPES,
+  drawnShapes = EMPTY_SHAPES,
   onDrawnShapesChange,
   editMode = false,
   onSquareSelect,
@@ -51,45 +58,96 @@ export function Chessboard({
   onMove,
   orientation = "white",
   onFlip,
+  positionRevision = 0,
 }: ChessboardProps) {
-  const elementRef = useRef<HTMLDivElement>(null);
+  const hostRef = useRef<HTMLDivElement>(null);
+  const surfaceRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<Api | null>(null);
-  const onMoveRef = useRef(onMove);
-  const onFreeMoveRef = useRef(onFreeMove);
-  const onSquareSelectRef = useRef(onSquareSelect);
-  const [boardSize, setBoardSize] = useState<number>();
+  const handlers = useRef({
+    onMove,
+    onFreeMove,
+    onSquareSelect,
+    onDrawnShapesChange,
+    editMode,
+  });
+  const surfaceSize = useBoardViewport(hostRef);
   const [flipped, setFlipped] = useState(false);
   const visualOrientation = flipped
     ? orientation === "white"
       ? "black"
       : "white"
     : orientation;
-  const chess = useMemo(() => {
-    try {
-      return new Chess(fen);
-    } catch {
-      return new Chess();
+  // One legal-move calculation per position; annotations never repeat this work.
+  const position = useMemo(() => {
+    const chess = new Chess(fen, { skipValidation: editMode });
+    const legalMoves = editMode ? [] : chess.moves({ verbose: true });
+    const destinations = new Map<Key, Key[]>();
+    for (const move of legalMoves) {
+      const from = move.from as Key;
+      const targets = destinations.get(from) ?? [];
+      if (!targets.includes(move.to as Key)) targets.push(move.to as Key);
+      destinations.set(from, targets);
     }
-  }, [fen]);
-  const [preparedHint, setPreparedHint] = useState<{ fen: string; san: string; move?: Move }>();
+    return { chess, legalMoves, destinations };
+  }, [fen, editMode]);
+  const positionRef = useRef(position);
+  const [preparedHint, setPreparedHint] = useState<{
+    fen: string;
+    san: string;
+    shape?: DrawShape;
+  }>();
+
+  useLayoutEffect(() => {
+    handlers.current = {
+      onMove,
+      onFreeMove,
+      onSquareSelect,
+      onDrawnShapesChange,
+      editMode,
+    };
+    positionRef.current = position;
+  }, [
+    onMove,
+    onFreeMove,
+    onSquareSelect,
+    onDrawnShapesChange,
+    editMode,
+    position,
+  ]);
+
   useEffect(() => {
     if (!showHint || !expectedSan) return;
-    const timer = window.setTimeout(() => setPreparedHint({ fen, san: expectedSan, move: moveForSan(chess, expectedSan) }), 0);
+    const timer = window.setTimeout(() => {
+      const move = position.legalMoves.find((move) => move.san === expectedSan);
+      setPreparedHint({
+        fen,
+        san: expectedSan,
+        shape: move
+          ? { orig: move.from as Key, dest: move.to as Key, brush: "yellow" }
+          : undefined,
+      });
+    }, 0);
     return () => window.clearTimeout(timer);
-  }, [chess, expectedSan, fen, showHint]);
-  const hintMove = showHint && preparedHint?.fen === fen && preparedHint.san === expectedSan ? preparedHint.move : undefined;
+  }, [position, expectedSan, fen, showHint]);
+  const hint =
+    showHint && preparedHint?.fen === fen && preparedHint.san === expectedSan
+      ? preparedHint.shape
+      : undefined;
 
-  // Handle keyboard shortcut for flipping the board.
   useEffect(() => {
     const flip = (event: KeyboardEvent) => {
+      if (!surfaceRef.current?.getClientRects().length) return;
       const target = event.target as HTMLElement | null;
       if (
         event.key.toLowerCase() !== "f" ||
         target?.matches('input,textarea,select,[contenteditable="true"]')
       )
         return;
-      const dialog = document.querySelector('[role="dialog"]');
-      if (dialog && !elementRef.current?.closest('[role="dialog"]')) return;
+      if (
+        document.querySelector('[role="dialog"]') &&
+        !surfaceRef.current?.closest('[role="dialog"]')
+      )
+        return;
       event.preventDefault();
       if (onFlip) onFlip();
       else setFlipped((current) => !current);
@@ -98,153 +156,138 @@ export function Chessboard({
     return () => window.removeEventListener("keydown", flip);
   }, [onFlip]);
 
-  useEffect(() => {
-    onMoveRef.current = onMove;
-    onFreeMoveRef.current = onFreeMove;
-    onSquareSelectRef.current = onSquareSelect;
-  }, [onFreeMove, onMove, onSquareSelect]);
-
-  useEffect(() => {
-    if (!elementRef.current) return;
-    apiRef.current = Chessground(elementRef.current);
+  useLayoutEffect(() => {
+    if (!surfaceRef.current) return;
+    const finishReady = measureTempoOperation("board-ready");
+    apiRef.current = Chessground(surfaceRef.current, {
+      viewOnly: false,
+      coordinates: true,
+      animation: { enabled: true, duration: 180 },
+      premovable: { enabled: false },
+      drawable: {
+        enabled: true,
+        visible: true,
+        brushes: DRAW_BRUSHES,
+        onChange: (value) => handlers.current.onDrawnShapesChange?.(value),
+      },
+      movable: {
+        free: false,
+        events: {
+          after: (from, to) => {
+            const finishMove = measureTempoOperation("move-to-paint");
+            const chess = positionRef.current.chess;
+            const capture =
+              Boolean(chess.get(to as Square)) ||
+              (chess.get(from as Square)?.type === "p" && from[0] !== to[0]);
+            playMoveSound(false, capture);
+            apiRef.current?.setAutoShapes([]);
+            if (handlers.current.editMode)
+              handlers.current.onFreeMove?.(from as Square, to as Square);
+            else handlers.current.onMove(from as Square, to as Square);
+            requestAnimationFrame(finishMove);
+          },
+        },
+      },
+      events: {
+        select: (square) => {
+          if (handlers.current.editMode)
+            handlers.current.onSquareSelect?.(square as Square);
+        },
+      },
+    });
+    const frame = requestAnimationFrame(finishReady);
     return () => {
+      cancelAnimationFrame(frame);
       apiRef.current?.destroy();
       apiRef.current = null;
     };
   }, []);
 
-  useEffect(() => {
-    const destinations = new Map<Key, Key[]>();
-    for (const move of chess.moves({ verbose: true })) {
-      const from = move.from as Key;
-      destinations.set(from, [
-        ...(destinations.get(from) ?? []),
-        move.to as Key,
-      ]);
-    }
-    const autoShapes: DrawShape[] = [
-      ...shapes,
-      ...(showHint && hintMove
-        ? [
-            {
-              orig: hintMove.from as Key,
-              dest: hintMove.to as Key,
-              brush: "yellow",
-            },
-          ]
-        : []),
-    ];
+  useLayoutEffect(() => {
     apiRef.current?.set({
       fen,
       orientation: visualOrientation,
-      turnColor: chess.turn() === "w" ? "white" : "black",
-      lastMove: lastMove as Key[] | undefined,
-      coordinates: true,
-      viewOnly: locked && !editMode,
-      animation: { enabled: true, duration: 180 },
+      turnColor: position.chess.turn() === "w" ? "white" : "black",
+      lastMove: lastMove ? ([...lastMove] as Key[]) : undefined,
       movable: {
         free: editMode,
         color: editMode
           ? "both"
           : locked
             ? undefined
-            : chess.turn() === "w"
+            : position.chess.turn() === "w"
               ? "white"
               : "black",
-        dests: editMode ? undefined : destinations,
+        dests: editMode ? new Map() : position.destinations,
         showDests: true,
-        events: {
-          after: (from, to) => {
-            const target = chess.get(to as Square);
-            const source = chess.get(from as Square);
-            const enPassant =
-              source?.type === "p" && from[0] !== to[0] && !target;
-            playMoveSound(false, Boolean(target) || enPassant);
-            if (editMode) onFreeMoveRef.current?.(from as Square, to as Square);
-            else onMoveRef.current(from as Square, to as Square);
-          },
-        },
       },
       draggable: { enabled: editMode || !locked, showGhost: true },
       selectable: { enabled: editMode || !locked },
-      events: {
-        select: (square) => {
-          if (editMode) onSquareSelectRef.current?.(square as Square);
-        },
-      },
-      drawable: {
-        enabled: true,
-        visible: true,
-        shapes: drawnShapes,
-        autoShapes,
-        onChange: onDrawnShapesChange,
-        brushes: {
-          green: { key: "g", color: "#4f8a59", opacity: 0.88, lineWidth: 10 },
-          red: { key: "r", color: "#b45f50", opacity: 0.88, lineWidth: 10 },
-          blue: { key: "b", color: "#4e7ca8", opacity: 0.88, lineWidth: 10 },
-          yellow: { key: "y", color: "#d0a83f", opacity: 0.92, lineWidth: 11 },
-          maia: { key: "m", color: "#8a62a5", opacity: 0.9, lineWidth: 10 },
-        },
-      },
     });
   }, [
-    chess,
-    drawnShapes,
-    editMode,
     fen,
-    hintMove,
+    visualOrientation,
+    position,
     lastMove,
     locked,
-    onDrawnShapesChange,
-    shapes,
-    showHint,
-    visualOrientation,
+    editMode,
+    positionRevision,
   ]);
 
+  useEffect(() => {
+    apiRef.current?.setAutoShapes(hint ? [...shapes, hint] : shapes);
+  }, [shapes, hint]);
+  useEffect(() => {
+    apiRef.current?.setShapes(drawnShapes);
+  }, [drawnShapes]);
   useLayoutEffect(() => {
-    const element = elementRef.current?.parentElement?.parentElement;
-    const parent = element?.parentElement;
-    if (!element || !parent) return;
-    const fit = () => {
-      const viewportHeight =
-        window.visualViewport?.height ?? window.innerHeight;
-      const top = element.getBoundingClientRect().top;
-      const controlsHeight = Array.from(parent.children).reduce((height, sibling) => {
-        if (sibling === element) return height;
-        const style = window.getComputedStyle(sibling);
-        if (["absolute", "fixed"].includes(style.position)) return height;
-        return height + sibling.getBoundingClientRect().height + (parseFloat(style.marginTop) || 0) + (parseFloat(style.marginBottom) || 0);
-      }, 0);
-      const availableHeight = Math.max(
-        120,
-        viewportHeight - Math.max(0, top) - controlsHeight - 12,
-      );
-      const availableWidth = parent.clientWidth;
-      setBoardSize(Math.floor(Math.min(availableWidth, availableHeight, 760)));
-    };
-    const observer = new ResizeObserver(fit);
-    observer.observe(parent);
-    window.addEventListener("resize", fit);
-    window.visualViewport?.addEventListener("resize", fit);
-    requestAnimationFrame(fit);
-    return () => {
-      observer.disconnect();
-      window.removeEventListener("resize", fit);
-      window.visualViewport?.removeEventListener("resize", fit);
-    };
-  }, []);
+    if (!surfaceSize) return;
+    apiRef.current?.redrawAll();
+    if (process.env.NODE_ENV !== "production") {
+      const surface = surfaceRef.current?.getBoundingClientRect();
+      const board = surfaceRef.current
+        ?.querySelector("cg-board")
+        ?.getBoundingClientRect();
+      if (
+        surface &&
+        board &&
+        [
+          Math.abs(surface.width - board.width),
+          Math.abs(surface.height - board.height),
+          Math.abs(surface.x - board.x),
+          Math.abs(surface.y - board.y),
+        ].some((delta) => delta > 0.5)
+      ) {
+        console.error("Tempo board geometry mismatch", { surface, board });
+      }
+    }
+  }, [surfaceSize, theme, pieceSet]);
 
   return (
-    <div
-      className="board-frame"
-      aria-label="Interactive chessboard"
-      data-fen={fen}
-      data-orientation={visualOrientation}
-      data-hint={Boolean(showHint && hintMove)}
-      style={boardSize ? { width: boardSize } : undefined}
-    >
-      <div className={`chessground-shell theme-${theme} pieces-${pieceSet}`}>
-        <div className="cg-wrap" ref={elementRef} />
+    <div className="board-viewport" ref={hostRef}>
+      <div
+        className="board-frame"
+        aria-label="Interactive chessboard"
+        data-fen={fen}
+        data-orientation={visualOrientation}
+        data-hint={Boolean(hint)}
+        data-input-enabled={editMode || !locked}
+        style={
+          surfaceSize
+            ? { width: surfaceSize + 18, height: surfaceSize + 18 }
+            : undefined
+        }
+      >
+        <div
+          className={`chessground-shell theme-${theme} pieces-${pieceSet}`}
+          style={
+            surfaceSize
+              ? { width: surfaceSize, height: surfaceSize }
+              : undefined
+          }
+        >
+          <div className="cg-wrap" ref={surfaceRef} />
+        </div>
       </div>
     </div>
   );

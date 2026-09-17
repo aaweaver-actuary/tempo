@@ -3,29 +3,18 @@ import { useEffect, useMemo, useState } from "react";
 import { MoveNavigator } from "../components/board-controls";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
 import { pieceSymbols } from "../const";
-import {
-  PracticeCard,
-  PackagedPuzzle,
-  asCardId,
-  asFenString,
-  asSanMove,
-} from "../types";
+import { PracticeCard, asFenString, asSanMove } from "../types";
 import { API_URL, assetUrl } from "../const";
 import { usesLocalApi } from "../utils/local";
 import { convertPackagedPuzzleRecordIntoPracticeCard } from "../utils/cards";
 import { editFenSquare, fenAfterMoves, moveFenPiece } from "../utils/fen";
 import CloseButton from "../components/buttons/CloseButton";
+import {
+  cardRevisionResultSchema,
+  packagedPuzzleSchema,
+} from "../domain/schemas";
+import { readJsonResponse, validRecords } from "../lib/validated-data";
 
-// CardEditor component allows editing a practice card's starting position and solution moves.
-//
-// State:
-// - fen: the current board position in FEN notation
-// - solution: the list of moves in SAN notation
-// - cursor: the current position in the solution move list
-// - tab: whether the user is editing the position or the solution
-// - historyMode: whether to preserve or reset the move history when editing the position
-// - piece: the currently selected piece for editing the position
-// - error: any error message related to illegal moves or invalid FEN
 export default function CardEditor({
   practiceCard: card,
   boardTheme: theme,
@@ -39,7 +28,9 @@ export default function CardEditor({
   onClose: () => void;
   onSave: (card: PracticeCard) => void;
 }) {
-  const [currentFenString, setCurrentFenString] = useState(card.startingFen);
+  const [currentFenString, setCurrentFenString] = useState<string>(
+    card.startingFen,
+  );
   const [solutionSanMovesList, setSolutionSanMovesList] = useState(card.moves);
   const [currentPositionInMoveList, setCurrentPositionInMoveList] = useState(0); // starts at index 0
   const [tab, setTab] = useState<"position" | "solution">("position");
@@ -115,7 +106,13 @@ export default function CardEditor({
     try {
       const response = await fetch(assetUrl("data/tactics-decks.json"));
       if (!response.ok) throw new Error();
-      const records = (await response.json()) as PackagedPuzzle[];
+      const raw: unknown = await response.json();
+      if (!Array.isArray(raw)) throw new Error();
+      const records = validRecords(
+        packagedPuzzleSchema,
+        raw,
+        "original tactic records",
+      );
       const id = card.sourceUrl?.split("/").at(-1);
       const record = records.find((puzzle) => puzzle.PuzzleId === id);
       const original =
@@ -151,19 +148,18 @@ export default function CardEditor({
             history_mode: historyMode,
           }),
         });
-        const result = (await response.json()) as {
-          card_id: string;
-          detail?: string;
-        };
-        if (!response.ok)
-          throw new Error(result.detail ?? "Could not save this card.");
-        backendId = asCardId(result.card_id);
+        const result = await readJsonResponse(
+          response,
+          cardRevisionResultSchema,
+          "card revision",
+        );
+        backendId = result.card_id;
       }
       onSave({
         ...card,
         backendId,
         revision: (card.revision ?? 1) + 1,
-        startingFen: currentFenString,
+        startingFen: asFenString(currentFenString),
         moves: solutionSanMovesList,
       });
       onClose();
@@ -235,12 +231,12 @@ export default function CardEditor({
               onSquareSelect={(square) => {
                 if (tab === "position")
                   setCurrentFenString((current) =>
-                    asFenString(editFenSquare(current, square, piece)),
+                    editFenSquare(current, square, piece),
                   );
               }}
               onFreeMove={(from, to) =>
                 setCurrentFenString((current) =>
-                  asFenString(moveFenPiece(current, from, to)),
+                  moveFenPiece(current, from, to),
                 )
               }
               onMove={playSolution}
@@ -280,7 +276,7 @@ export default function CardEditor({
                 value={currentFenString}
                 onChange={(event) => {
                   try {
-                    setCurrentFenString(asFenString(event.target.value));
+                    setCurrentFenString(event.target.value);
                     setError("");
                   } catch {
                     setError("Enter a valid FEN before saving.");

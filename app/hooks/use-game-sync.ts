@@ -1,3 +1,5 @@
+import { settingsResponseSchema, syncResultSchema, syncStatusSchema } from "../domain/schemas";
+import { readJsonResponse } from "../lib/validated-data";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { API_URL } from "../const";
 import { usesLocalApi } from "../utils/local";
@@ -16,7 +18,7 @@ export function useGameSync() {
     try {
       const settingsResponse = await fetch(`${API_URL}/api/settings`);
       if (!settingsResponse.ok) throw new Error("Could not reach the local service.");
-      const settings = await settingsResponse.json() as { auto_sync_minutes: number; lichess_username: string; chesscom_username: string };
+      const settings = await readJsonResponse(settingsResponse, settingsResponseSchema, "game sync settings");
       interval.current = Number(settings.auto_sync_minutes ?? 3) * 60_000;
       if (!settings.lichess_username && !settings.chesscom_username) {
         if (manual) setState((current) => ({ ...current, error: "Add a Lichess or Chess.com username in Settings." }));
@@ -25,8 +27,7 @@ export function useGameSync() {
       lastStarted.current = Date.now();
       setState((current) => ({ ...current, syncing: true, error: "" }));
       const response = await fetch(`${API_URL}/api/games/sync`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lichess_username: settings.lichess_username, chesscom_username: settings.chesscom_username, days: 90, speeds: ["blitz", "rapid", "classical"], rated_only: true }) });
-      const result = await response.json() as { detail?: string; synced_at: string; imported: number };
-      if (!response.ok) throw new Error(result.detail ?? "Game sync failed. Retry when online.");
+      const result = await readJsonResponse(response, syncResultSchema, "game sync");
       setState({ syncing: false, lastSuccess: result.synced_at, error: "", imported: result.imported });
     } catch (error) {
       setState((current) => ({ ...current, syncing: false, error: error instanceof Error ? error.message : "Could not sync games." }));
@@ -36,7 +37,7 @@ export function useGameSync() {
     if (!usesLocalApi()) return;
     void fetch(`${API_URL}/api/games/sync/status`).then(async (response) => {
       if (!response.ok) return;
-      const result = await response.json() as { providers: { last_success_at?: string; last_error?: string }[] };
+      const result = await readJsonResponse(response, syncStatusSchema, "game sync status");
       const latest = result.providers.map((provider) => provider.last_success_at ?? "").sort().at(-1) ?? "";
       setState((current) => ({ ...current, lastSuccess: current.lastSuccess || latest, error: current.error || result.providers.find((provider) => provider.last_error)?.last_error || "" }));
     }).catch(() => undefined);

@@ -21,7 +21,7 @@ it("real hanging-piece packs contain 100 validated playable cards after their se
 });
 
 it("tab preloading prepares the first unfinished tactic stage and shares the validated deck request", async () => {
-  const fetcher = vi.fn(async (url: string) => Response.json(url.includes("/progress") ? { "hangingPiece:easy": { clean: 100 } } : records));
+  const fetcher = vi.fn(async (url: string) => Response.json(url.includes("/progress") ? { "hangingPiece:easy": { clean: 100, index: 100 } } : records));
   vi.stubGlobal("fetch", fetcher);
   await preloadView("tactics");
   const prepared = await loadTacticsDeck("hangingPiece", "medium");
@@ -55,9 +55,9 @@ it("background diagnostics yield before computation and discard stale generation
 it("preloaded local records are invalidated after mutations rather than hiding new study data", async () => {
   const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ count: 1 })).mockResolvedValueOnce(Response.json({ count: 2 }));
   vi.stubGlobal("fetch", fetcher);
-  expect(await readWorkspaceData("http://localhost/api/repertoires")).toEqual({ count: 1 });
+  expect(await readWorkspaceData("http://localhost/api/cache-fixture")).toEqual({ count: 1 });
   invalidateWorkspaceData();
-  expect(await readWorkspaceData("http://localhost/api/repertoires")).toEqual({ count: 2 });
+  expect(await readWorkspaceData("http://localhost/api/cache-fixture")).toEqual({ count: 2 });
 });
 
 it("Builder comparison keeps covered moves and displays all source details together", () => {
@@ -66,6 +66,9 @@ it("Builder comparison keeps covered moves and displays all source details toget
   render(<MoveComparisonTable repertoire={[move]} engine={[{ ...move, score: "+0.30" }]} maia={[{ ...move, probability: .45 }]} lichess={[{ ...move, white: 60, draws: 20, black: 20 }]} masters={[{ ...move, white: 20, draws: 60, black: 20 }]} turn="white" onPlay={onPlay} onHover={vi.fn()} />);
   for (const heading of ["Stockfish", "Maia", "Lichess", "Masters"]) expect(screen.getByRole("columnheader", { name: heading })).toBeTruthy();
   expect(screen.getByText("+0.30")).toBeTruthy(); expect(screen.getByText("45%")).toBeTruthy();
-  expect(screen.getByText(/70% score/)).toBeTruthy(); expect(screen.getByText(/50% score/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button",{name:"Lichess details for e4"}));
+  expect(screen.getByText(/70% white score/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button",{name:"Masters details for e4"}));
+  expect(screen.getByText(/50% white score/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "e4" })); expect(onPlay).toHaveBeenCalledWith("e2e4");
 });

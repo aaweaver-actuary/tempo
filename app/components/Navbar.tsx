@@ -33,6 +33,7 @@ export default function Navbar({ view, setView }: NavbarProps) {
       {getViewList().map((item) => (
         <button
           className={selectViewClass(item)}
+          aria-current={isViewActive(item) ? "page" : undefined}
           key={item}
           onPointerEnter={() => void preloadView(item).catch(() => undefined)}
           onFocus={() => void preloadView(item).catch(() => undefined)}

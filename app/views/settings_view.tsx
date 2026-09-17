@@ -225,10 +225,7 @@ export default function SettingsView({
     <section className="settings-page">
       <div className="page-heading compact">
         <div>
-          <h1>Settings</h1>
-          <p>
-            Training, boards, analysis, games, and scheduling—all in one place.
-          </p>
+          <h1 className="sr-only">Settings</h1>
         </div>
         <button className="primary-button" onClick={() => void save()}>
           Save settings

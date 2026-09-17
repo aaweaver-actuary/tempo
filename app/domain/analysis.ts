@@ -89,6 +89,7 @@ export type BuilderSession = {
   history: BuilderHistoryEntry[];
   cursor: number;
   branchStart: number | null;
+  dismissedTranspositions?: string[];
 };
 
 export type CardNameSource = "title" | "moves" | "startingFen";

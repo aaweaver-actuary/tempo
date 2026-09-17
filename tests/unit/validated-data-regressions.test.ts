@@ -1,0 +1,103 @@
+import { beforeEach, expect, it } from "vitest";
+import { Chess } from "chess.js";
+import { queueCardsFromPayload } from "../../app/domain/adapters/practice-card-adapters";
+import {
+  adaptEngineMoves,
+  adaptExplorerMoves,
+} from "../../app/domain/adapters/analysis-adapters";
+import {
+  builderSessionSchema,
+  portableSnapshotSchema,
+} from "../../app/domain/schemas";
+import {
+  clearDataDiagnostics,
+  dataDiagnostics,
+  readStoredValue,
+} from "../../app/lib/validated-data";
+
+beforeEach(clearDataDiagnostics);
+const rawCard = {
+  id: "saved",
+  queue_entry_id: 42,
+  start_fen: new Chess().fen(),
+  moves: ["e2e4"],
+  content_type: "opening",
+  repertoire_name: "Prep",
+  repertoire_source: "PGN",
+};
+
+it("malformed FEN, null UCI and illegal queue lines are quarantined without discarding valid study cards", () => {
+  const cards = queueCardsFromPayload({
+    cards: [
+      rawCard,
+      { ...rawCard, id: "bad-fen", start_fen: "broken" },
+      { ...rawCard, id: "null", moves: ["0000"] },
+      { ...rawCard, id: "illegal", moves: ["e2e5"] },
+    ],
+  });
+  expect(cards).toHaveLength(1);
+  expect(cards[0].queueEntryId).toBe(42);
+  expect(dataDiagnostics()).toHaveLength(3);
+  expect(dataDiagnostics().map((issue) => issue.recordId)).toEqual([
+    "bad-fen",
+    "null",
+    "illegal",
+  ]);
+});
+
+it("controlled queue payload structural drift produces a named diagnostic instead of unsafe domain values", () => {
+  expect(
+    queueCardsFromPayload({
+      cards: [
+        { ...rawCard, queue_entry_id: "42" },
+        { ...rawCard, unrecognized: "value" },
+      ],
+    }),
+  ).toEqual([]);
+  expect(dataDiagnostics()).toHaveLength(2);
+});
+
+it("third-party analysis accepts new provider fields but rejects invalid counts, probabilities and illegal moves", () => {
+  const fen = new Chess().fen();
+  expect(
+    adaptExplorerMoves(fen, [
+      { uci: "e2e4", white: 4, draws: 3, black: 2, providerAddition: true },
+      { uci: "e2e5", white: 1, draws: 1, black: 1 },
+      { uci: "d2d4", white: -1, draws: 0, black: 0 },
+    ]),
+  ).toHaveLength(1);
+  expect(
+    adaptEngineMoves(fen, [
+      { uci: "e2e4", san: "e4", probability: 2 },
+      { uci: "0000", san: "" },
+      { uci: "e2e4", san: "e4", probability: 0.6, pv: ["e2e4", "e7e5"] },
+    ]),
+  ).toHaveLength(1);
+  expect(dataDiagnostics()).toHaveLength(4);
+});
+
+it("malformed stored Builder state is retained for repair while a valid default remains available", () => {
+  localStorage.setItem(
+    "tempo-builder-session",
+    JSON.stringify({ version: 1, history: [{ uci: "0000" }] }),
+  );
+  expect(
+    readStoredValue(
+      localStorage,
+      "tempo-builder-session",
+      builderSessionSchema,
+    ),
+  ).toBeUndefined();
+  expect(localStorage.getItem("tempo-builder-session")).toContain("0000");
+  expect(dataDiagnostics()[0].source).toBe("storage:tempo-builder-session");
+});
+
+it("backup snapshots require all version, timestamp, checksum, table, and count fields", () => {
+  expect(
+    portableSnapshotSchema.safeParse({
+      schemaVersion: 1,
+      tables: {},
+      counts: {},
+    }).success,
+  ).toBe(false);
+});

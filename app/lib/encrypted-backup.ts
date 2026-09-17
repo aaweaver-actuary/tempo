@@ -1,4 +1,10 @@
-import { deleteRecords, getRecords, putRecords, TEMPO_STORES, type StoredRecord, type TempoStore } from "./tempo-db";
+import { deleteRecords, getRecords, putRecords, TEMPO_STORES, type StoredRecord } from "./tempo-db";
+import { encryptedEnvelopeSchema, decryptedBackupSchema, storedRecordSchema } from "../domain/schemas";
+import { parseData, validRecords } from "./validated-data";
+import { z } from "zod";
+
+const queueOrderSchema = z.looseObject({ queue_date: z.string().optional(), position: z.number().int().nonnegative().optional() });
+const tombstoneValueSchema = z.strictObject({ store: z.enum(TEMPO_STORES).optional(), recordKey: z.string().min(1).optional() });
 
 type EncryptedSnapshot = {
   version: 1;
@@ -38,13 +44,13 @@ export async function createEncryptedBackup(passphrase: string): Promise<Blob> {
 }
 
 export async function decryptBackup(file: Blob, passphrase: string) {
-  const envelope = JSON.parse(await file.text()) as EncryptedSnapshot;
+  const envelope = parseData(encryptedEnvelopeSchema, JSON.parse(await file.text()), "encrypted backup");
   if (envelope.version !== 1 || envelope.algorithm !== "PBKDF2-AES-GCM") throw new Error("Unsupported backup format");
   const salt = base64ToBytes(envelope.salt);
   const iv = base64ToBytes(envelope.iv);
   const key = await backupKey(passphrase, salt, envelope.iterations);
   const plaintext = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, base64ToBytes(envelope.ciphertext));
-  return JSON.parse(new TextDecoder().decode(plaintext)) as { schemaVersion: 1; stores: Record<string, unknown[]> };
+  return parseData(decryptedBackupSchema, JSON.parse(new TextDecoder().decode(plaintext)), "decrypted backup");
 }
 
 function newest(left: StoredRecord | undefined, right: StoredRecord): StoredRecord {
@@ -59,8 +65,7 @@ export async function restoreEncryptedBackup(file: Blob, passphrase: string) {
   if (snapshot.schemaVersion !== 1) throw new Error("Unsupported backup schema");
   let merged = 0;
   for (const store of TEMPO_STORES) {
-    const incoming = (snapshot.stores[store] ?? []) as StoredRecord[];
-    if (!Array.isArray(incoming)) throw new Error(`Invalid ${store} records`);
+    const incoming = validRecords(storedRecordSchema, snapshot.stores[store] ?? [], `backup ${store}`);
     const current = await getRecords(store);
     const records = new Map(current.map((record) => [record.key, record]));
     for (const record of incoming) {
@@ -69,18 +74,19 @@ export async function restoreEncryptedBackup(file: Blob, passphrase: string) {
       merged += 1;
     }
     if (store === "queues") {
-      const ordered = [...records.values()].sort((left, right) => {
-        const a = left.value as { queue_date?: string; position?: number };
-        const b = right.value as { queue_date?: string; position?: number };
-        return String(a.queue_date ?? "").localeCompare(String(b.queue_date ?? "")) || Number(a.position ?? 0) - Number(b.position ?? 0) || left.key.localeCompare(right.key);
-      });
+      const ordered = [...records.values()].map((record) => ({ record, order: parseData(queueOrderSchema, record.value, `backup queue order ${record.key}`) })).sort((left, right) => {
+        const a = left.order;
+        const b = right.order;
+        return String(a.queue_date ?? "").localeCompare(String(b.queue_date ?? "")) || Number(a.position ?? 0) - Number(b.position ?? 0) || left.record.key.localeCompare(right.record.key);
+      }).map(({record}) => record);
       await putRecords(store, ordered);
     } else await putRecords(store, [...records.values()]);
   }
-  const tombstones = await getRecords<{ store?: TempoStore; recordKey?: string }>("tombstones");
+  const tombstones = await getRecords("tombstones");
   for (const tombstone of tombstones) {
-    const target = tombstone.value?.store;
-    const key = tombstone.value?.recordKey;
+    const value = parseData(tombstoneValueSchema, tombstone.value, `backup tombstone ${tombstone.key}`);
+    const target = value.store;
+    const key = value.recordKey;
     if (target && target !== "tombstones" && key) await deleteRecords(target, [key]);
   }
   localStorage.setItem("tempo-last-backup-restore", new Date().toISOString());

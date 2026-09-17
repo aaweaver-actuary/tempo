@@ -6,6 +6,8 @@ import { parsePgnImport } from "./lib/pgn-import";
 import type { LocalRepertoire } from "./types";
 import { usesLocalApi } from "./utils/local";
 import CloseButton from "./components/buttons/CloseButton";
+import { settingsResponseSchema, importResultSchema } from "./domain/schemas";
+import { readJsonResponse } from "./lib/validated-data";
 
 export function ImportDialogBox({
   onClose,
@@ -36,7 +38,7 @@ export function ImportDialogBox({
       .then(async (response) => {
         if (response.ok)
           setInitialDepth(
-            ((await response.json()) as { initial_depth: number })
+            (await readJsonResponse(response, settingsResponseSchema, "import settings"))
               .initial_depth,
           );
       })
@@ -67,17 +69,7 @@ export function ImportDialogBox({
           method: "POST",
           body: data,
         });
-        const result = (await response.json()) as {
-          detail?: string;
-          cards_admitted_today: number;
-          unique_lines: number;
-          duplicates_merged: number;
-        };
-        if (!response.ok)
-          throw new Error(
-            result.detail ??
-              "The local service could not save this repertoire.",
-          );
+        const result = await readJsonResponse(response, importResultSchema, "PGN import");
         backend = true;
         if (backend) {
           admitted = result.cards_admitted_today ?? 0;

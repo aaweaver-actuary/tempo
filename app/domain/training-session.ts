@@ -1,6 +1,7 @@
 import type { PositionAnnotation } from "./annotations";
 import type { PracticeCard } from "./cards";
 import type { LocalRepertoire } from "./repertoire";
+import type { AttemptToken } from "./attempt";
 import type { FenString, Feedback, MoveSquares } from "./shared";
 
 export enum QueueModeEnum {
@@ -28,11 +29,11 @@ export type AttemptLifecycleState = {
   feedback: Feedback;
   lastMove: MoveSquares | undefined;
   opponentLastMove: MoveSquares | undefined;
-  isLocked: boolean;
+  attempt: AttemptToken;
   boardAttempt: number;
   showHint: boolean;
   attemptFailed: boolean;
-  failureFen: FenString;
+  failureFen: FenString | undefined;
   failureAnnotation: PositionAnnotation | undefined;
   teachingEncounterKey: string | null;
   teachingReadyCard: string;

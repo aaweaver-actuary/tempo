@@ -257,7 +257,7 @@ export function GamesView({
     <section className="games-page" id="games">
       <div className="page-heading compact">
         <div>
-          <h1>Games{!local ? " · Demo" : ""}</h1>
+          <h1 className="sr-only">Games{!local ? " · Demo" : ""}</h1>
           <p>
             {syncState.lastSuccess
               ? `Last sync ${new Date(syncState.lastSuccess).toLocaleString()}`

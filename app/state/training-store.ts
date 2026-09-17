@@ -5,22 +5,26 @@ import type {
   Feedback,
   PositionAnnotation,
   LocalRepertoire,
+  FenString,
+  MoveSquares,
 } from "../types";
 import { demoCards } from "../samples";
 import { BoardTheme, PieceSet } from "../components/chessboard";
-import { initialTrainingState } from "../page";
+import { initialTrainingState, attemptEntryKey, isAttemptPlayable, isCurrentAttempt, type AttemptPhase, type AttemptToken } from "../domain/attempt";
+import { asFenString } from "../domain/shared";
 import { STANDARD_FEN } from "../const";
 
 export type TrainingStoreState = {
   practiceCards: PracticeCard[];
   importedRepertoires: LocalRepertoire[];
   activeCardIndex: number;
-  currentFenString: string;
+  currentFenString: FenString;
   step: number;
   feedback: Feedback;
-  lastMove: [string, string] | undefined;
-  opponentLastMove: [string, string] | undefined;
-  isLocked: boolean;
+  lastMove: MoveSquares | undefined;
+  opponentLastMove: MoveSquares | undefined;
+  attempt: AttemptToken;
+  reviewSaveError: string;
   boardAttempt: number;
   showHint: boolean;
   cardsLeft: number;
@@ -33,15 +37,15 @@ export type TrainingStoreState = {
   teachingEncounterKey: string | null;
   teachingReadyCard: string;
   firstCleanPasses: Set<string>;
-  attemptFailed: boolean;
+  isAttemptFailed: boolean;
   failureAnnotation: PositionAnnotation | undefined;
-  failureFen: string;
+  failureFen: FenString | undefined;
   dailyQueue: number[];
   queueNotice: string;
   boardTheme: BoardTheme;
   pieceSet: PieceSet;
-  soundOn: boolean;
-  databaseQueue: boolean;
+  isSoundEnabled: boolean;
+  isDatabaseQueueActive: boolean;
   serviceError: string;
   setPracticeCards: (
     cards: PracticeCard[] | ((current: PracticeCard[]) => PracticeCard[]),
@@ -52,26 +56,20 @@ export type TrainingStoreState = {
       | ((current: LocalRepertoire[]) => LocalRepertoire[]),
   ) => void;
   setActiveCardIndex: (index: number | ((current: number) => number)) => void;
-  setCurrentFenString: (fen: string | ((current: string) => string)) => void;
+  setCurrentFenString: (
+    fen: FenString | ((current: FenString) => FenString),
+  ) => void;
   setStep: (step: number | ((current: number) => number)) => void;
   setFeedback: (feedback: Feedback | ((current: Feedback) => Feedback)) => void;
   setLastMove: (
-    move:
-      | [string, string]
-      | undefined
-      | ((
-          current: [string, string] | undefined,
-        ) => [string, string] | undefined),
+    move: MoveSquares | undefined | ((current: MoveSquares | undefined) => MoveSquares | undefined),
   ) => void;
   setOpponentLastMove: (
-    move:
-      | [string, string]
-      | undefined
-      | ((
-          current: [string, string] | undefined,
-        ) => [string, string] | undefined),
+    move: MoveSquares | undefined | ((current: MoveSquares | undefined) => MoveSquares | undefined),
   ) => void;
-  setIsLocked: (locked: boolean | ((current: boolean) => boolean)) => void;
+  setAttemptPhase: (phase: AttemptPhase, expected?: AttemptToken) => void;
+  setReviewSaveError: (error: string) => void;
+  hydrateLocalQueue: (cards: PracticeCard[], advance?: boolean) => void;
   setBoardAttempt: (value: number | ((value: number) => number)) => void;
   setShowHint: (value: boolean | ((value: boolean) => boolean)) => void;
   setCardsLeft: (cardsLeft: number | ((current: number) => number)) => void;
@@ -104,7 +102,7 @@ export type TrainingStoreState = {
           current: PositionAnnotation | undefined,
         ) => PositionAnnotation | undefined),
   ) => void;
-  setFailureFen: (fen: string | ((current: string) => string)) => void;
+  setFailureFen: (fen: FenString | undefined | ((current: FenString | undefined) => FenString | undefined)) => void;
   setDailyQueue: (queue: number[] | ((current: number[]) => number[])) => void;
   setQueueNotice: (notice: string | ((current: string) => string)) => void;
   setBoardTheme: (
@@ -128,7 +126,7 @@ export type TrainingStoreState = {
       feedback: Feedback;
       attemptFailed: boolean;
       showHint: boolean;
-      failureFen: string;
+      failureFen: FenString;
     }>,
   ) => void;
   getCard: () => PracticeCard;
@@ -138,12 +136,13 @@ const defaultState = {
   practiceCards: [...demoCards],
   importedRepertoires: [],
   activeCardIndex: 0,
-  currentFenString: STANDARD_FEN,
+  currentFenString: asFenString(STANDARD_FEN),
   step: 0,
   feedback: "ready" as const,
   lastMove: undefined,
   opponentLastMove: undefined,
-  isLocked: false,
+  attempt: { entryKey: "", generation: 0, phase: "complete" as AttemptPhase },
+  reviewSaveError: "",
   boardAttempt: 0,
   showHint: false,
   cardsLeft: 0,
@@ -156,9 +155,9 @@ const defaultState = {
   teachingEncounterKey: null,
   teachingReadyCard: "",
   firstCleanPasses: new Set<string>(),
-  attemptFailed: false,
+  isAttemptFailed: false,
   failureAnnotation: undefined,
-  failureFen: "",
+  failureFen: undefined,
   dailyQueue: Array.from(
     { length: 12 },
     (_, index) => index % demoCards.length,
@@ -166,17 +165,19 @@ const defaultState = {
   queueNotice: "",
   boardTheme: "brown" as BoardTheme,
   pieceSet: "cburnett" as PieceSet,
-  soundOn: true,
-  databaseQueue: false,
+  isSoundEnabled: true,
+  isDatabaseQueueActive: false,
   serviceError: "",
 };
 
 export const selectTrainingViewState = (state: TrainingStoreState) => ({
   boardAttempt: state.boardAttempt,
-  attemptFailed: state.attemptFailed,
+  attemptFailed: state.isAttemptFailed,
   lastMove: state.lastMove,
   opponentLastMove: state.opponentLastMove,
-  isLocked: state.isLocked,
+  isLocked: !isAttemptPlayable(state.attempt),
+  attempt: state.attempt,
+  reviewSaveError: state.reviewSaveError,
   step: state.step,
   feedback: state.feedback,
   showHint: state.showHint,
@@ -188,39 +189,42 @@ export const selectTrainingViewState = (state: TrainingStoreState) => ({
   teachingEncounterKey: state.teachingEncounterKey,
 });
 
-export const selectHomeViewState = (state: TrainingStoreState) => ({
-  practiceCards: state.practiceCards,
-  importedRepertoires: state.importedRepertoires,
-  activeCardIndex: state.activeCardIndex,
-  currentFenString: state.currentFenString,
-  step: state.step,
-  feedback: state.feedback,
-  lastMove: state.lastMove,
-  opponentLastMove: state.opponentLastMove,
-  isLocked: state.isLocked,
-  boardAttempt: state.boardAttempt,
-  showHint: state.showHint,
-  cardsLeft: state.cardsLeft,
-  reviewed: state.reviewed,
-  showImport: state.showImport,
-  showTree: state.showTree,
-  editorCard: state.editorCard,
-  suggestShorter: state.suggestShorter,
-  seenMoves: state.seenMoves,
-  teachingEncounterKey: state.teachingEncounterKey,
-  teachingReadyCard: state.teachingReadyCard,
-  firstCleanPasses: state.firstCleanPasses,
-  attemptFailed: state.attemptFailed,
-  failureAnnotation: state.failureAnnotation,
-  failureFen: state.failureFen,
-  dailyQueue: state.dailyQueue,
-  queueNotice: state.queueNotice,
-  boardTheme: state.boardTheme,
-  pieceSet: state.pieceSet,
-  soundOn: state.soundOn,
-  databaseQueue: state.databaseQueue,
-  serviceError: state.serviceError,
-});
+export function selectHomeViewState(state: TrainingStoreState) {
+  return {
+    practiceCards: state.practiceCards,
+    importedRepertoires: state.importedRepertoires,
+    activeCardIndex: state.activeCardIndex,
+    currentFenString: state.currentFenString,
+    currentStepIndex: state.step,
+    evaluationFeedback: state.feedback,
+    lastMove: state.lastMove,
+    opponentLastMove: state.opponentLastMove,
+    isViewLocked: !isAttemptPlayable(state.attempt),
+    attempt: state.attempt,
+    totalBoardAttempts: state.boardAttempt,
+    showHint: state.showHint,
+    cardsLeft: state.cardsLeft,
+    reviewed: state.reviewed,
+    showImport: state.showImport,
+    showTree: state.showTree,
+    editorCard: state.editorCard,
+    suggestShorter: state.suggestShorter,
+    seenMoves: state.seenMoves,
+    teachingEncounterKey: state.teachingEncounterKey,
+    teachingReadyCard: state.teachingReadyCard,
+    firstCleanPasses: state.firstCleanPasses,
+    attemptFailed: state.isAttemptFailed,
+    failureAnnotation: state.failureAnnotation,
+    failureFen: state.failureFen,
+    dailyQueue: state.dailyQueue,
+    queueNotice: state.queueNotice,
+    boardTheme: state.boardTheme,
+    pieceSet: state.pieceSet,
+    soundOn: state.isSoundEnabled,
+    databaseQueue: state.isDatabaseQueueActive,
+    serviceError: state.serviceError,
+  };
+}
 
 export const selectTrainingActions = (state: TrainingStoreState) => ({
   setPracticeCards: state.setPracticeCards,
@@ -231,7 +235,9 @@ export const selectTrainingActions = (state: TrainingStoreState) => ({
   setFeedback: state.setFeedback,
   setLastMove: state.setLastMove,
   setOpponentLastMove: state.setOpponentLastMove,
-  setIsLocked: state.setIsLocked,
+  setAttemptPhase: state.setAttemptPhase,
+  setReviewSaveError: state.setReviewSaveError,
+  hydrateLocalQueue: state.hydrateLocalQueue,
   setBoardAttempt: state.setBoardAttempt,
   setShowHint: state.setShowHint,
   setCardsLeft: state.setCardsLeft,
@@ -298,10 +304,10 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       opponentLastMove:
         typeof value === "function" ? value(state.opponentLastMove) : value,
     })),
-  setIsLocked: (value) =>
-    set((state) => ({
-      isLocked: typeof value === "function" ? value(state.isLocked) : value,
-    })),
+  setAttemptPhase: (phase, expected) => set(state =>
+    expected && !isCurrentAttempt(state.attempt, expected) ? {} :
+      { attempt: { ...state.attempt, phase } }),
+  setReviewSaveError: reviewSaveError => set({ reviewSaveError }),
   setBoardAttempt: (value) =>
     set((state) => ({
       boardAttempt:
@@ -324,7 +330,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       showImport: typeof value === "function" ? value(state.showImport) : value,
     })),
   setShowTree: (value) =>
-    set((state) => ({
+    set((state): { showTree: boolean } => ({
       showTree: typeof value === "function" ? value(state.showTree) : value,
     })),
   setEditorCard: (value) =>
@@ -356,10 +362,11 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
         typeof value === "function" ? value(state.firstCleanPasses) : value,
     })),
   setAttemptFailed: (value) =>
-    set((state) => ({
-      attemptFailed:
-        typeof value === "function" ? value(state.attemptFailed) : value,
-    })),
+    set(state => {
+      const failed = typeof value === "function" ? value(state.isAttemptFailed) : value;
+      return { isAttemptFailed: failed, attempt: isAttemptPlayable(state.attempt)
+        ? { ...state.attempt, phase: failed ? "guided" : "playerTurn" } : state.attempt };
+    }),
   setFailureAnnotation: (value) =>
     set((state) => ({
       failureAnnotation:
@@ -388,12 +395,15 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
     })),
   setSoundOn: (value) =>
     set((state) => ({
-      soundOn: typeof value === "function" ? value(state.soundOn) : value,
+      isSoundEnabled:
+        typeof value === "function" ? value(state.isSoundEnabled) : value,
     })),
   setDatabaseQueue: (value) =>
     set((state) => ({
-      databaseQueue:
-        typeof value === "function" ? value(state.databaseQueue) : value,
+      isDatabaseQueueActive:
+        typeof value === "function"
+          ? value(state.isDatabaseQueueActive)
+          : value,
     })),
   setServiceError: (value) =>
     set((state) => ({
@@ -410,12 +420,13 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       feedback: "ready",
       lastMove: start.lastMove,
       opponentLastMove: start.lastMove,
-      isLocked: false,
+      attempt: { entryKey: attemptEntryKey(nextCard), generation: get().attempt.generation + 1, phase: "playerTurn" },
+      reviewSaveError: "",
       showHint: false,
       teachingEncounterKey: null,
-      attemptFailed: false,
+      isAttemptFailed: false,
       failureAnnotation: undefined,
-      failureFen: "",
+      failureFen: undefined,
     });
   },
   hydrateQueue: ({
@@ -450,13 +461,29 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       feedback: nextFeedback,
       lastMove: start.lastMove,
       opponentLastMove: start.lastMove,
-      isLocked: false,
+      attempt: { entryKey: attemptEntryKey(card), generation: get().attempt.generation + 1, phase: nextAttemptFailed ? "guided" : "playerTurn" },
+      reviewSaveError: "",
       showHint: nextShowHint,
       teachingEncounterKey: null,
-      attemptFailed: nextAttemptFailed,
+      isAttemptFailed: nextAttemptFailed,
       failureAnnotation: undefined,
-      failureFen: nextAttemptFailed ? (overrides.failureFen ?? start.fen) : "",
+      failureFen: nextAttemptFailed ? (overrides.failureFen ?? start.fen) : undefined,
     });
+  },
+  hydrateLocalQueue: (practiceCards, advance = false) => {
+    const current = get();
+    const retainedIndex = advance ? -1 : practiceCards.findIndex(card => attemptEntryKey(card) === current.attempt.entryKey);
+    const activeCardIndex = Math.max(0, retainedIndex);
+    const card = practiceCards[activeCardIndex];
+    const queueState = { practiceCards, dailyQueue: practiceCards.map((_, index) => index), cardsLeft: practiceCards.length, activeCardIndex, isDatabaseQueueActive: true, serviceError: "" };
+    if (retainedIndex >= 0) { set(queueState); return; }
+    const start = card ? initialTrainingState(card) : { fen: asFenString(STANDARD_FEN), step: 0, lastMove: undefined };
+    const failed = Boolean(card?.attemptFailed);
+    set({ ...queueState, currentFenString: start.fen, step: start.step, lastMove: start.lastMove,
+      opponentLastMove: start.lastMove, feedback: failed ? "wrong" : "ready", showHint: failed,
+      teachingEncounterKey: null, isAttemptFailed: failed, failureAnnotation: undefined,
+      failureFen: failed ? start.fen : undefined, reviewSaveError: "",
+      attempt: { entryKey: card ? attemptEntryKey(card) : "", generation: current.attempt.generation + 1, phase: card ? failed ? "guided" : "playerTurn" : "complete" } });
   },
   getCard: () => get().practiceCards[get().activeCardIndex] ?? demoCards[0],
 }));

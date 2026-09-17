@@ -29,7 +29,7 @@ describe("validated domain boundaries", () => {
     ]);
     expect(candidates).toEqual([{ uci: "e2e4", san: "e4", cp: 30, score: "+0.30", probability: 0.6, pv: ["e2e4", "e7e5"] }]);
     expect(adaptExplorerMoves(STANDARD_FEN, [{ uci: "e2e4", san: "bad", white: 4, draws: 3, black: 2 }])[0]).toMatchObject({ san: "e4", white: 4 });
-    expect(() => adaptExplorerMoves(STANDARD_FEN, [{ uci: "e2e4", white: -1, draws: 0, black: 0 }])).toThrow();
+    expect(adaptExplorerMoves(STANDARD_FEN, [{ uci: "e2e4", white: -1, draws: 0, black: 0 }])).toEqual([]);
   });
 
   it("queue mapping preserves identity and guided state and rejects illegal persisted lines", () => {
