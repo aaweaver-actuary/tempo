@@ -21,10 +21,9 @@ export const nonNegativeIntegerSchema = z
 export const isoDateSchema = z.iso
   .datetime({ offset: true })
   .brand<"IsoDateString">();
-export const squareSchema = z.templateLiteral([
-  z.enum(["a", "b", "c", "d", "e", "f", "g", "h"]),
-  z.enum(["1", "2", "3", "4", "5", "6", "7", "8"]),
-]);
+export const rankSchema = z.enum(["1", "2", "3", "4", "5", "6", "7", "8"]);
+export const fileSchema = z.enum(["a", "b", "c", "d", "e", "f", "g", "h"]);
+export const squareSchema = z.templateLiteral([fileSchema, rankSchema]);
 export const colorSchema = z.enum(["white", "black"]);
 export const uciMoveSchema = z
   .string()
