@@ -1254,26 +1254,20 @@ def tactic_attempt(request: TacticAttemptRequest):
 @app.get("/api/tactics/progress")
 def tactic_progress():
     with connection() as db:
-        attempts = db.execute(
-            "SELECT deck_id,COUNT(*) n FROM tactic_discovery_attempts GROUP BY deck_id"
+        discovered = db.execute(
+            "SELECT deck_id,puzzle_id,clean_pass_at FROM tactic_progress ORDER BY deck_id,puzzle_id"
         ).fetchall()
-        solved = db.execute(
-            "SELECT deck_id,puzzle_id FROM tactic_progress WHERE clean_pass_at IS NOT NULL"
-        ).fetchall()
-    data = {
-        row["deck_id"].replace("-", ":", 1): {
-            "index": row["n"],
-            "clean": 0,
-            "cleanIds": [],
-        }
-        for row in attempts
-    }
-    for row in solved:
+    data = {}
+    for row in discovered:
         value = data.setdefault(
             row["deck_id"].replace("-", ":", 1),
-            {"index": 0, "clean": 0, "cleanIds": []},
+            {"index": 0, "clean": 0, "cleanIds": [], "discoveredIds": []},
         )
-        value["cleanIds"].append(f"lichess-{row['puzzle_id']}")  # ty: ignore[unresolved-attribute]
+        puzzle_identity = f"lichess-{row['puzzle_id']}"
+        value["discoveredIds"].append(puzzle_identity)
+        value["index"] = len(value["discoveredIds"])
+        if row["clean_pass_at"]:
+            value["cleanIds"].append(puzzle_identity)
         value["clean"] = len(value["cleanIds"])  # ty: ignore[invalid-argument-type]
     return data
 
