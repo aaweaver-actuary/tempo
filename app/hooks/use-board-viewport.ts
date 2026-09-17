@@ -26,14 +26,15 @@ export function useBoardViewport(
       frame = 0;
       const bounds = host.getBoundingClientRect();
       // Reserve the workspace's move history/toolbar below the board, not just
-      // the board itself. Constrain its host so centering cannot put it lower.
+      // the board itself. Do not write that measurement back to the host: that
+      // creates a ResizeObserver feedback loop which can shrink a board to a
+      // few pixels on one-column training layouts.
       const visibleHeight = Math.max(
         0,
         (window.visualViewport?.height ?? window.innerHeight) -
           bounds.top -
           140,
       );
-      host.style.maxHeight = `${visibleHeight}px`;
       const nextSize = fitBoardSurface(
         { width: bounds.width, height: Math.min(bounds.height, visibleHeight) },
         frameInset,

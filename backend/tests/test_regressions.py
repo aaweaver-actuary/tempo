@@ -27,7 +27,7 @@ def test_legacy_introduced_but_unreviewed_queue_is_capped_without_losing_reviews
         client.post(f"/api/cards/{first['id']}/review", json={'outcome': 'correct', 'queue_entry_id': first['queue_entry_id']})
         with database.connection() as db:
             for i in range(146):
-                db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at) VALUES(?,?,'prefix',?,'[]','learning',?,?)", (f'legacy-{i}',imported['repertoire_id'],first['start_fen'],date.today().isoformat(),date.today().isoformat()))
+                db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at) VALUES(?,?,'prefix',?,'[\"e2e4\"]','learning',?,?)", (f'legacy-{i}',imported['repertoire_id'],first['start_fen'],date.today().isoformat(),date.today().isoformat()))
                 db.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?)", (date.today().isoformat(),f'legacy-{i}',i+10))
         queue = client.get('/api/queue/today').json()
         assert queue['count'] == 2  # due reinforcement plus one new introduction
@@ -124,7 +124,7 @@ def test_again_reappears_after_four_other_entries(tmp_path,monkeypatch):
         first=client.get('/api/queue/today').json()['cards'][0]
         with database.connection() as db:
             for i in range(5):
-                db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at) VALUES(?,?,'prefix',?,'[]','learning',?,'2020-01-01')",(f'other-{i}',first['repertoire_id'],first['start_fen'],date.today().isoformat()))
+                db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at) VALUES(?,?,'prefix',?,'[\"e2e4\"]','learning',?,'2020-01-01')",(f'other-{i}',first['repertoire_id'],first['start_fen'],date.today().isoformat()))
                 db.execute('INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?)',(date.today().isoformat(),f'other-{i}',i+1))
         client.post(f"/api/cards/{first['id']}/review",json={'outcome':'again','queue_entry_id':first['queue_entry_id']})
         ids=[card['id'] for card in client.get('/api/queue/today').json()['cards']]
@@ -161,7 +161,7 @@ def test_unfinished_unreviewed_cards_do_not_bypass_tomorrows_new_card_limit(tmp_
         first=client.get('/api/queue/today').json()['cards'][0]
         with database.connection() as db:
             for i in range(5):
-                db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(?,?,'prefix',?,'[]','new',?)",(f'new-{i}',first['repertoire_id'],first['start_fen'],date.today().isoformat()))
+                db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(?,?,'prefix',?,'[\"e2e4\"]','new',?)",(f'new-{i}',first['repertoire_id'],first['start_fen'],date.today().isoformat()))
             seed_queue(db,date.today().isoformat())
             tomorrow=(date.today()+timedelta(days=1)).isoformat()
             seed_queue(db,tomorrow);seed_queue(db,tomorrow)

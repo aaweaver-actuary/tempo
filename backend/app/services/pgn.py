@@ -87,15 +87,48 @@ def prefix_through_user_moves(
     target_color = chess.WHITE if trained_color == "white" else chess.BLACK
     prefix: list[str] = []
     moves_seen = 0
+    last_moving_color: chess.Color | None = None
     for uci in moves_uci:
         moving_color = board.turn
         move = chess.Move.from_uci(uci)
         if move not in board.legal_moves:
             break
         prefix.append(uci)
+        last_moving_color = moving_color
         board.push(move)
         if moving_color == target_color:
             moves_seen += 1
             if moves_seen == user_move_count:
                 break
-    return prefix
+    # A card must finish with a move by the side being trained.  Incomplete
+    # Black data such as ``1. e4`` is useful PGN, but is not a playable Black
+    # card: auto-playing e4 would leave no response for the learner.
+    if not prefix or moves_seen == 0:
+        return []
+    return prefix if last_moving_color == target_color else []
+
+
+def ends_on_trained_move(
+    starting_fen: str,
+    moves_uci: list[str],
+    trained_color: str,
+) -> bool:
+    """Return whether a stored opening line is legal and ends on its learner."""
+    if trained_color not in {"white", "black"} or not moves_uci:
+        return False
+    try:
+        board = chess.Board(starting_fen)
+    except ValueError:
+        return False
+    target_color = chess.WHITE if trained_color == "white" else chess.BLACK
+    last_moving_color: chess.Color | None = None
+    for uci in moves_uci:
+        try:
+            move = chess.Move.from_uci(uci)
+        except ValueError:
+            return False
+        if move not in board.legal_moves:
+            return False
+        last_moving_color = board.turn
+        board.push(move)
+    return last_moving_color == target_color

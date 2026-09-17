@@ -69,6 +69,14 @@ export const queueEnvelopeSchema = z.strictObject({
   cards: z.array(z.unknown()),
   local_date: z.iso.date().optional(),
   count: integer.optional(),
+  diagnostics: z
+    .array(
+      z.strictObject({
+        card_id: identifierSchema,
+        message: z.string().min(1),
+      }),
+    )
+    .optional(),
 });
 export const packagedPuzzleSchema = z.strictObject({
   DeckId: deckIdSchema,

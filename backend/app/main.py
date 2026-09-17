@@ -32,7 +32,7 @@ from .models import (
 )
 from .services.analysis import AnalysisCapabilities
 from .services.cards import card_id
-from .services.pgn import parse_pgn, prefix_through_user_moves
+from .services.pgn import ends_on_trained_move, parse_pgn, prefix_through_user_moves
 from .services.scheduler import schedule_review, unlock_ready
 from .services.endgames import (
     category_for_player,
@@ -180,6 +180,43 @@ def queue_today():
     day = date.today().isoformat()
     with connection() as db:
         seed_queue(db, day)
+        # Older versions could create a Black prefix that stopped after
+        # White's first move. Quarantine those records before serializing the
+        # queue so malformed saved data cannot leave the board locked.
+        candidates = db.execute(
+            """SELECT q.id queue_entry_id,c.id,c.start_fen,c.moves_json,c.content_type,
+                              (SELECT l.trained_color FROM repertoire_lines l
+                               WHERE l.repertoire_id=c.repertoire_id ORDER BY l.created_at LIMIT 1) trained_color
+                       FROM daily_queue q JOIN cards c ON c.id=q.card_id
+                       WHERE q.queue_date=? AND q.status='queued' AND c.archived=0""",
+            (day,),
+        ).fetchall()
+        diagnostics = []
+        for candidate in candidates:
+            if (
+                candidate["content_type"] != "opening"
+                or candidate["trained_color"] not in {"white", "black"}
+            ):
+                continue
+            try:
+                moves = json.loads(candidate["moves_json"])
+            except json.JSONDecodeError:
+                moves = []
+            if ends_on_trained_move(
+                candidate["start_fen"], moves, candidate["trained_color"]
+            ):
+                continue
+            db.execute("UPDATE cards SET state='locked' WHERE id=?", (candidate["id"],))
+            db.execute(
+                "UPDATE daily_queue SET status='skipped' WHERE id=?",
+                (candidate["queue_entry_id"],),
+            )
+            diagnostics.append(
+                {
+                    "card_id": candidate["id"],
+                    "message": "Skipped an incomplete opening card. Edit or re-import its line to study it.",
+                }
+            )
         rows = db.execute(
             """SELECT q.id queue_entry_id,q.position,q.cycle,q.attempt_state,q.attempt_failed,c.*,
                                   r.name repertoire_name,r.source_name repertoire_source,r.is_main,
@@ -196,7 +233,12 @@ def queue_today():
     cards = [{**dict(r), "moves": json.loads(r["moves_json"])} for r in rows]
     for card in cards:
         card.pop("moves_json", None)
-    return {"local_date": day, "cards": cards, "count": len(cards)}
+    return {
+        "local_date": day,
+        "cards": cards,
+        "count": len(cards),
+        "diagnostics": diagnostics,
+    }
 
 
 @app.post("/api/imports/pgn", response_model=ImportResult)

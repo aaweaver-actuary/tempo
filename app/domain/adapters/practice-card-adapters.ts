@@ -124,6 +124,13 @@ export function mapPackagedPuzzleToPracticeCard(
 
 export function queueCardsFromPayload(raw: unknown): PracticeCard[] {
   const body = parseData(queueEnvelopeSchema, raw, "daily queue");
+  for (const diagnostic of body.diagnostics ?? [])
+    reportDataDiagnostic(
+      "daily queue",
+      diagnostic,
+      diagnostic.message,
+      diagnostic.card_id,
+    );
   return validRecords(queueCardSchema, body.cards, "queue card").flatMap(
     (record) => {
       try {

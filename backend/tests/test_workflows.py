@@ -29,6 +29,49 @@ THREE_LINES = b'''[Event "King pawn"]
 1. c4 e5 2. Nc3 Nf6 *
 '''
 
+INCOMPLETE_BLACK_LINE = b'''[Event "Incomplete Black"]
+[Result "*"]
+
+1. e4 *
+'''
+
+
+def test_incomplete_black_prefix_is_not_created_or_queued(tmp_path, monkeypatch):
+    """Regression: an auto-played White move must not lock a Black card."""
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        imported = client.post(
+            "/api/imports/pgn",
+            files={"file": ("incomplete.pgn", INCOMPLETE_BLACK_LINE, "application/x-chess-pgn")},
+            data={"trained_color": "black", "initial_depth": "6"},
+        )
+        assert imported.status_code == 200
+        assert imported.json()["cards_created"] == 0
+        assert client.get("/api/queue/today").json()["count"] == 0
+
+
+def test_legacy_incomplete_black_prefix_is_quarantined_from_queue(tmp_path, monkeypatch):
+    """Regression: malformed persisted cards are skipped instead of freezing Train."""
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        client.post(
+            "/api/imports/pgn",
+            files={"file": ("complete.pgn", PGN, "application/x-chess-pgn")},
+            data={"trained_color": "black", "initial_depth": "2"},
+        )
+        queued = client.get("/api/queue/today").json()["cards"][0]
+        with database.connection() as db:
+            db.execute(
+                "UPDATE cards SET moves_json=? WHERE id=?",
+                (json.dumps(["e2e4"]), queued["id"]),
+            )
+        response = client.get("/api/queue/today").json()
+        assert response["count"] == 0
+        assert response["diagnostics"][0]["card_id"] == queued["id"]
+        with database.connection() as db:
+            assert db.execute("SELECT state FROM cards WHERE id=?", (queued["id"],)).fetchone()[0] == "locked"
+            assert db.execute("SELECT status FROM daily_queue WHERE id=?", (queued["queue_entry_id"],)).fetchone()[0] == "skipped"
+
 
 def test_import_becomes_main_and_survives_reload(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")

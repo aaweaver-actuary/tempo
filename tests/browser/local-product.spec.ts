@@ -91,6 +91,7 @@ test("local import respects the daily limit; Black prompts and Builder flip surv
   await page.getByRole("button",{name:"View imported repertoire"}).click();
   await nav(page,"Train"); await expect(page.locator(".session-count strong")).toHaveText("2");
   await expect.poll(async()=>new Chess((await page.locator(".board-frame").getAttribute("data-fen"))!).turn()).toBe("b");
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-input-enabled","true");
   await boardVisible(page); await nav(page,"Builder");
   const selector=page.getByRole("combobox",{name:"Active repertoire"}); await expect(selector).not.toHaveValue("");
   const selected=await selector.inputValue(); await move(page,"e2","e4");
@@ -102,6 +103,24 @@ test("local import respects the daily limit; Black prompts and Builder flip surv
   await page.reload(); await nav(page,"Builder"); await expect(selector).toHaveValue(selected);
   await expect(page.locator(".board-frame")).toHaveAttribute("data-fen",fen!);
   await page.setViewportSize({width:390,height:844}); await boardVisible(page);
+});
+
+test("Black Train prompt remains playable with a fully visible narrow board", async ({page}) => {
+  await page.goto("/"); await nav(page,"Repertoire");
+  await page.getByRole("button",{name:"＋ Import PGN"}).click();
+  await page.locator('input[type="file"]').setInputFiles({name:"black.pgn",mimeType:"application/x-chess-pgn",buffer:Buffer.from(pgn)});
+  await page.getByRole("dialog").getByRole("button",{name:"Black",exact:true}).click();
+  await page.getByRole("button",{name:"Import repertoire",exact:true}).click();
+  await page.getByRole("button",{name:"View imported repertoire"}).click();
+  await nav(page,"Train");
+  await page.setViewportSize({width:390,height:844});
+  await expect.poll(async()=>new Chess((await page.locator(".board-frame").getAttribute("data-fen"))!).turn()).toBe("b");
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-input-enabled","true");
+  await boardVisible(page);
+  const box=await page.locator(".board-frame").boundingBox();
+  expect(box!.width).toBeGreaterThan(200);
+  await move(page,"e7","e5");
+  await expect.poll(async()=>new Chess((await page.locator(".board-frame").getAttribute("data-fen"))!).get("e5")?.type).toBe("p");
 });
 
 test("sample deletion uses repertoire identity and does not delete its same-filename sibling",async ({page,request}) => {
