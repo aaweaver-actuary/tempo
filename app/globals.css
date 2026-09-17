@@ -3225,7 +3225,7 @@ button {
   font-size: 68px;
   font-weight: 800;
   box-shadow: 0 14px 40px rgba(20, 24, 19, 0.28);
-  animation: result-pop 0.16s ease-out;
+  animation: result-pop 0.16s ease-out, result-fade 0.2s ease-in 0.8s forwards;
 }
 .outcome-flash.correct {
   background: #4f8057;
@@ -3237,6 +3237,11 @@ button {
   from {
     transform: translate(-50%, -50%) scale(0.72);
     opacity: 0.2;
+  }
+}
+@keyframes result-fade {
+  to {
+    opacity: 0;
   }
 }
 

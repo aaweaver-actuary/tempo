@@ -138,13 +138,14 @@ test("tactic help and restart preserve one failed attempt until guided completio
   const initialFen=await page.locator(".board-frame").getAttribute("data-fen");
   await page.getByRole("button",{name:/Show move/}).click();
   await expect(page.locator(".outcome-flash.wrong")).toBeVisible();
-  await page.waitForTimeout(850);
+  await page.waitForTimeout(1100);
   await expect(page.getByText("Puzzle 1 of 100")).toBeVisible();
+  await expect(page.locator(".outcome-flash.wrong")).toHaveCount(0);
   expect(attempts).toHaveLength(0);
   await move(page,"a2","e6");
   await page.getByRole("button",{name:/Restart/}).click();
   await expect(page.locator(".board-frame")).toHaveAttribute("data-fen",initialFen!);
-  await expect(page.locator(".outcome-flash.wrong")).toBeVisible();
+  await expect(page.locator(".outcome-flash.wrong")).toHaveCount(0);
   await move(page,"a2","e6"); await move(page,"f7","f8");
   await expect.poll(()=>attempts.length).toBe(1);
   expect(attempts[0]).toMatchObject({puzzle_id:"browser-guided-1",clean:false,correct:false});

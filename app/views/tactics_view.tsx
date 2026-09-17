@@ -441,7 +441,12 @@ export default function TacticsView({
               </a>
             )}
           </div>
-          {(outcome || failed) && <OutcomeFlash outcome={outcome ?? "wrong"} />}
+          {(outcome || failed) && (
+            <OutcomeFlash
+              key={`${attempt.discoveryId}:${outcome ?? "wrong"}`}
+              outcome={outcome ?? "wrong"}
+            />
+          )}
           {saveError && (
             <div role="alert">
               {saveError}

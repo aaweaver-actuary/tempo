@@ -1,3 +1,5 @@
+import { useEffect, useState } from "react";
+
 export function MoveNavigator({ cursor, length, onChange }: { cursor: number; length: number; onChange: (cursor: number) => void }) {
   return (
     <div className="move-navigator" aria-label="Move navigation">
@@ -11,5 +13,11 @@ export function MoveNavigator({ cursor, length, onChange }: { cursor: number; le
 }
 
 export function OutcomeFlash({ outcome }: { outcome: 'correct' | 'wrong' }) {
+  const [visible, setVisible] = useState(true);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setVisible(false), 1000);
+    return () => window.clearTimeout(timer);
+  }, []);
+  if (!visible) return null;
   return <div className={`outcome-flash ${outcome}`} role="status" aria-live="assertive">{outcome === 'correct' ? '✓' : '×'}</div>;
 }

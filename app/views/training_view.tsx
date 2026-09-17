@@ -142,7 +142,10 @@ export default function TrainingView({
               orientation={card.orientation}
             />
             {(attemptFailed || feedback === "complete") && (
-              <OutcomeFlash outcome={attemptFailed ? "wrong" : "correct"} />
+              <OutcomeFlash
+                key={`${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${attemptFailed ? "wrong" : "correct"}`}
+                outcome={attemptFailed ? "wrong" : "correct"}
+              />
             )}
             <div className="board-tools">
               <AgainButton
