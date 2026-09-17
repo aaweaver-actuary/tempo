@@ -6,6 +6,44 @@ from app.main import app
 
 PGN = b'[Event "Durability"]\n\n1. e4 e5 2. Nf3 Nc6 *'
 
+def test_tactic_discovery_uses_local_day_after_utc_midnight(tmp_path, monkeypatch):
+    import app.main as main
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    class LocalDate(date):
+        @classmethod
+        def today(cls):
+            return date(2026, 9, 16)
+    class UtcClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 9, 17, 1, tzinfo=timezone.utc)
+    monkeypatch.setattr(main, "date", LocalDate)
+    monkeypatch.setattr(main, "datetime", UtcClock)
+    with TestClient(app) as client:
+        result = client.post("/api/tactics/attempt", json={
+            "attempt_id":"utc-lapse","puzzle_id":"utc-puzzle","deck_id":"fork-easy",
+            "correct":False,"clean":False,
+            "source_fen":"8/8/8/8/8/4k3/7p/6K1 b - - 0 1",
+            "moves":["h2h1q","g1h1"],
+        })
+        assert result.status_code == 200
+        assert result.json()["next_due"] == "2026-09-16"
+        assert client.get("/api/queue/today").json()["count"] == 1
+
+def test_default_scheduler_uses_local_day_not_utc_day(monkeypatch):
+    import app.services.scheduler as scheduler
+    class LocalDate(date):
+        @classmethod
+        def today(cls):
+            return date(2026, 9, 16)
+    class UtcClock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return datetime(2026, 9, 17, 1, tzinfo=timezone.utc)
+    monkeypatch.setattr(scheduler, "date", LocalDate)
+    monkeypatch.setattr(scheduler, "datetime", UtcClock)
+    assert scheduler.schedule_review("again").due_date == date(2026, 9, 16)
+
 def test_tomorrow_is_the_local_review_day_even_after_utc_midnight():
     from app.services.scheduler import schedule_review
     utc_now = datetime(2026, 9, 17, 1, tzinfo=timezone.utc)

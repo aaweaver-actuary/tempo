@@ -66,7 +66,7 @@ def schedule_review(
     now = reviewed_at or datetime.now(timezone.utc)
     if now.tzinfo is None:
         now = now.replace(tzinfo=timezone.utc)
-    calendar_day = review_day or now.date()
+    calendar_day = review_day or (now.date() if reviewed_at is not None else date.today())
     recent = ([outcome] + list(recent_attempts or []))[:5]
     if scheduling_mode != "hard" and recent.count("again") >= 3:
         scheduling_mode = "hard"
