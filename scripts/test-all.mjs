@@ -24,6 +24,7 @@ const commands = [
   ["npm", ["run", "build:local"]],
   ["npm", ["run", "test:browser"]],
   ["npm", ["run", "test:docker"]],
+  ["npm", ["run", "test:visual"]],
 ];
 for (const [command, args] of commands) {
   const result = spawnSync(command, args, { stdio: "inherit", env: { ...process.env, PYTHONPATH: "backend" } });

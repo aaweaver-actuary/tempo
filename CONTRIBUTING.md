@@ -7,3 +7,13 @@ Use a frontend test for state transitions and timing, a backend integration test
 `npm test` runs frontend regressions, backend integration tests, Rust checks, lint, the production build, browser workflows, and Docker integration. CI runs the same suite and does not silently skip unavailable prerequisites. Individual suites are available for development; the complete suite is required before a release.
 
 Keep each coherent fix in a separate commit. Preserve existing user data and uncommitted work. A failing provider request must report its actual error and must never substitute demonstration data or report false success in local Tempo.
+
+The responsive UI contract is in `docs/UI-CONTRACT.md`. The regular pipeline now also
+runs pinned Linux ARM64 visual/performance checks; use `npm run test:visual` for a
+comparison and explicitly pass `-- --update` only to prepare candidates for review.
+Never accept screenshots automatically in CI. The quality runner and container
+architecture must match the baseline environment. Browser failures retain screenshots,
+traces, console messages, and geometry under `test-results/`.
+
+Browser fixture cleanup requires `/api/health` to explicitly identify a disposable
+test instance. Do not set `TEMPO_TEST_INSTANCE=disposable` on a real Tempo database.

@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   quality:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -34,8 +34,13 @@ jobs:
       - uses: taiki-e/install-action@wasm-pack
       - run: npm ci
       - run: pip install -r backend/requirements.txt pytest
-      - run: npx playwright install --with-deps chromium
+      - run: npx playwright install --with-deps chromium firefox webkit
       - run: npm test
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: tempo-ui-failures
+          path: test-results/
   build:
     if: github.event_name != 'pull_request'
     needs: quality

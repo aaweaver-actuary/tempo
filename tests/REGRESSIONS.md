@@ -119,3 +119,7 @@ Append every new reported issue and its test names here. All listed tests belong
 - `import waits for saved settings before writing a repertoire` — import cannot race the initial settings response and submit a temporary default depth. Loading errors are actionable and retryable.
 
 - Phone toolbar controls must meet the 44px touch-target contract even when a narrow viewport has a fine pointer: `phone board controls provide 44px touch targets with every pointer type` (`tests/browser/layout.spec.ts`). This reproduced the 36px board-toolbar specificity override before the fix.
+
+- The regular browser, visual, and performance suites serve a production build; development-server reloads must not reset navigation during recovery or real Maia initialization. Covered by the existing Maia, Settings recovery, and single-Chessground navigation regressions.
+- Annotation gestures wait for Chessground's drawing animation frame before releasing the pointer; the existing `Builder right-click annotation saves the exact clicked square` regression verifies the persisted square, while `builder annotations never appear in games` verifies isolation.
+- Endgames visual references assert a fixed FEN before capture so asynchronous random-number consumption cannot change the photographed position.

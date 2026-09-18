@@ -73,3 +73,8 @@ The checked-in candidates are inspectable here. Phone screenshots include the fi
 | Settings | [390px](../tests/browser/visual-baselines/settings-390.png) | [768px](../tests/browser/visual-baselines/settings-768.png) | [1280px](../tests/browser/visual-baselines/settings-1280.png) | [1920px](../tests/browser/visual-baselines/settings-1920.png) |
 
 Update candidates deliberately with `npm run test:visual -- --update`, inspect the changed images, then run `npm run test:visual` without update. Missing baselines and changed pixels fail the ordinary pipeline. Screenshot, trace, console and geometry artifacts are retained under `test-results/` on failure.
+
+Additional states: [board unavailable](../tests/browser/visual-baselines/board-unavailable.png),
+[incorrect training move](../tests/browser/visual-baselines/training-feedback-phone.png),
+[service unavailable](../tests/browser/visual-baselines/service-unavailable.png), and
+[phone import dialog](../tests/browser/visual-baselines/import-dialog-phone.png).

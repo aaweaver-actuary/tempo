@@ -35,7 +35,7 @@ export default defineConfig({
         },
         {
           command:
-            "npm run dev:local -- --host 127.0.0.1 --port 3001 --strictPort",
+            "npm run build:local && TEMPO_TARGET=local vite preview --config vite.static.config.ts --host 127.0.0.1 --port 3001 --strictPort",
           env: { TEMPO_PROXY_API: "http://127.0.0.1:8001" },
           url: "http://127.0.0.1:3001",
           timeout: 120_000,

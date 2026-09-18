@@ -145,6 +145,12 @@ async function clickSquare(
   const y = box.y + (((black ? rank : 7 - rank) + 0.5) * box.height) / 8;
   await page.mouse.move(x, y);
   await page.mouse.down({ button });
+  // Chessground resolves the drawn square on its animation frame before release.
+  if (button === "right")
+    await page.evaluate(
+      () =>
+        new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    );
   await page.mouse.up({ button });
 }
 
