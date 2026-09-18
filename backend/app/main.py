@@ -27,6 +27,7 @@ from .models import (
     ImportResult,
     PositionAnnotationRequest,
     RepertoireRenameRequest,
+    RemoveBranchRequest,
     ReviewRequest,
     Settings,
     TacticAttemptRequest,
@@ -113,7 +114,7 @@ def reconcile_unseen_queue(db, day, limit):
     """Trim legacy queues that eagerly admitted every unseen card."""
     rows = db.execute(
         """
-        SELECT q.id,q.card_id FROM daily_queue q
+        SELECT q.id,q.card_id,c.repertoire_id FROM daily_queue q
         JOIN cards c ON c.id=q.card_id
         WHERE q.queue_date=? AND q.status='queued' AND c.content_type='opening'
           AND (c.introduced_at IS NULL OR c.introduced_at=?)
@@ -122,22 +123,19 @@ def reconcile_unseen_queue(db, day, limit):
     """,
         (day, day),
     ).fetchall()
-    introduced = db.execute(
-        "SELECT COUNT(*) FROM cards WHERE content_type='opening' AND introduced_at=? AND EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=cards.id)",
+    introduced_by_repertoire = dict(db.execute(
+        "SELECT repertoire_id,COUNT(*) FROM cards WHERE content_type='opening' AND introduced_at=? AND EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=cards.id) GROUP BY repertoire_id",
         (day,),
-    ).fetchone()[0]
-    allowed = max(0, limit - introduced)
-    for row in rows[:allowed]:
-        db.execute(
-            "UPDATE cards SET introduced_at=?,state='learning' WHERE id=?",
-            (day, row["card_id"]),
-        )
-    for row in rows[allowed:]:
-        db.execute("DELETE FROM daily_queue WHERE id=?", (row["id"],))
-        db.execute(
-            "UPDATE cards SET introduced_at=NULL,state='new' WHERE id=?",
-            (row["card_id"],),
-        )
+    ).fetchall())
+    for row in rows:
+        repertoire_id = row["repertoire_id"]
+        introduced = introduced_by_repertoire.get(repertoire_id, 0)
+        if introduced < limit:
+            db.execute("UPDATE cards SET introduced_at=?,state='learning' WHERE id=?", (day, row["card_id"]))
+            introduced_by_repertoire[repertoire_id] = introduced + 1
+        else:
+            db.execute("DELETE FROM daily_queue WHERE id=?", (row["id"],))
+            db.execute("UPDATE cards SET introduced_at=NULL,state='new' WHERE id=?", (row["card_id"],))
 
 
 def seed_queue(db, day):
@@ -166,24 +164,23 @@ def seed_queue(db, day):
             (day, row[0], maximum + offset),
         )
     maximum += len(rows)
-    introduced = db.execute(
-        "SELECT COUNT(*) FROM cards WHERE content_type='opening' AND introduced_at=?",
+    introduced_by_repertoire = dict(db.execute(
+        "SELECT repertoire_id,COUNT(*) FROM cards WHERE content_type='opening' AND introduced_at=? GROUP BY repertoire_id",
         (day,),
-    ).fetchone()[0]
-    remaining = max(0, limit - introduced)
+    ).fetchall())
     new_rows = db.execute(
-        "SELECT id FROM cards WHERE content_type='opening' AND due_date<=? AND state='new' AND introduced_at IS NULL AND archived=0 AND id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?) ORDER BY due_date,id LIMIT ?",
-        (day, day, remaining),
+        "SELECT id,repertoire_id FROM cards WHERE content_type='opening' AND due_date<=? AND state='new' AND introduced_at IS NULL AND archived=0 AND id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?) ORDER BY due_date,id",
+        (day, day),
     ).fetchall()
-    for offset, row in enumerate(new_rows, 1):
-        db.execute(
-            "INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?)",
-            (day, row[0], maximum + offset),
-        )
-        db.execute(
-            "UPDATE cards SET introduced_at=?,state='learning' WHERE id=?",
-            (day, row[0]),
-        )
+    for row in new_rows:
+        repertoire_id = row["repertoire_id"]
+        introduced = introduced_by_repertoire.get(repertoire_id, 0)
+        if introduced >= limit:
+            continue
+        maximum += 1
+        db.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?)", (day, row["id"], maximum))
+        db.execute("UPDATE cards SET introduced_at=?,state='learning' WHERE id=?", (day, row["id"]))
+        introduced_by_repertoire[repertoire_id] = introduced + 1
 
 
 @app.get("/api/queue/today")
@@ -849,6 +846,56 @@ def branch(request: BranchRequest):
             )
         seed_queue(db, date.today().isoformat())
     return {"id": lid, "duplicate": duplicate, "moves": moves}
+
+
+@app.post("/api/repertoire/branches/remove")
+def remove_branch(request: RemoveBranchRequest):
+    if not request.moves:
+        raise HTTPException(422, "Choose a nonempty branch to remove")
+    try:
+        board = chess.Board(request.starting_fen)
+        moves = [move.lower() for move in request.moves]
+        for value in moves:
+            board.push_uci(value)
+    except ValueError:
+        raise HTTPException(422, "Branch contains an illegal move")
+    position_key = " ".join(request.starting_fen.split()[:4])
+    with connection() as db:
+        if not db.execute("SELECT 1 FROM repertoires WHERE id=?", (request.repertoire_id,)).fetchone():
+            raise HTTPException(404, "Repertoire not found")
+        lines = db.execute("SELECT * FROM repertoire_lines WHERE repertoire_id=?", (request.repertoire_id,)).fetchall()
+        removed_lines = [line for line in lines if " ".join(line["start_fen"].split()[:4]) == position_key and json.loads(line["moves_json"])[:len(moves)] == moves]
+        removed_ids = {line["id"] for line in removed_lines}
+        retained_lines = [line for line in lines if line["id"] not in removed_ids]
+        if not removed_lines:
+            return {"deleted_line_count": 0, "deleted_card_count": 0, "retained_line_count": len(retained_lines)}
+        for line in removed_lines:
+            db.execute("DELETE FROM repertoire_lines WHERE id=?", (line["id"],))
+        cards = db.execute("SELECT DISTINCT c.* FROM cards c LEFT JOIN repertoire_cards rc ON rc.card_id=c.id WHERE c.content_type='opening' AND (c.repertoire_id=? OR rc.repertoire_id=?)", (request.repertoire_id, request.repertoire_id)).fetchall()
+        deleted_cards = 0
+        for card in cards:
+            card_moves = json.loads(card["moves_json"])
+            supported = any(" ".join(line["start_fen"].split()[:4]) == " ".join(card["start_fen"].split()[:4]) and json.loads(line["moves_json"])[:len(card_moves)] == card_moves for line in retained_lines)
+            if supported:
+                continue
+            db.execute("DELETE FROM repertoire_cards WHERE repertoire_id=? AND card_id=?", (request.repertoire_id, card["id"]))
+            replacement = db.execute("SELECT repertoire_id FROM repertoire_cards WHERE card_id=? LIMIT 1", (card["id"],)).fetchone()
+            if replacement:
+                if card["repertoire_id"] == request.repertoire_id:
+                    db.execute("UPDATE cards SET repertoire_id=? WHERE id=?", (replacement[0], card["id"]))
+            else:
+                db.execute("DELETE FROM cards WHERE id=?", (card["id"],))
+                deleted_cards += 1
+        depth = db.execute("SELECT initial_depth FROM settings WHERE id=1").fetchone()[0]
+        for line in retained_lines:
+            prefix = prefix_through_user_moves(line["start_fen"], json.loads(line["moves_json"]), line["trained_color"], depth)
+            if not prefix:
+                continue
+            identifier = card_id(line["start_fen"], prefix)
+            db.execute("INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES(?,?,'prefix',?,?,?)", (identifier, request.repertoire_id, line["start_fen"], json.dumps(prefix), date.today().isoformat()))
+            db.execute("INSERT OR IGNORE INTO repertoire_cards VALUES(?,?)", (request.repertoire_id, identifier))
+        seed_queue(db, date.today().isoformat())
+    return {"deleted_line_count": len(removed_lines), "deleted_card_count": deleted_cards, "retained_line_count": len(retained_lines)}
 
 
 @app.get("/api/progress")
