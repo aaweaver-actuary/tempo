@@ -83,3 +83,7 @@ Append every new reported issue and its test names here. All listed tests belong
 | Training shared-board shell leaks ownership or remounts embedded board during migration | `Training shared board publishes shell ownership and hides local board instance` |
 | Persistent shell remounts Chessground while board ownership changes across workspaces | `persistent board shell reuses one Chessground instance across board owner switches` |
 | Shared shell layout drifts between desktop and mobile across board workspaces | `shared board shell keeps board region fixed left on desktop and top on mobile across board workspaces` |
+
+| UI consistency and reliability | Required regression |
+| --- | --- |
+| Deleted/missing SQLite mount reports healthy | `test_unavailable_database_is_actionable_and_never_healthy` |

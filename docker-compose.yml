@@ -8,7 +8,7 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./data:/data
+      - tempo-data:/data
     restart: unless-stopped
 
   web:
@@ -20,3 +20,7 @@ services:
     depends_on:
       - api
     restart: unless-stopped
+
+volumes:
+  tempo-data:
+    name: tempo-data

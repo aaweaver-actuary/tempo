@@ -5,7 +5,7 @@ from pathlib import Path
 from typing import Iterator
 
 
-DB_PATH = Path(os.getenv("TEMPO_DB_PATH", "./data/tempo.db"))
+DB_PATH = Path(os.getenv("TEMPO_DB_PATH", str(Path(os.getenv("XDG_DATA_HOME", Path.home() / ".local/share")) / "tempo" / "tempo.db")))
 
 
 @contextmanager

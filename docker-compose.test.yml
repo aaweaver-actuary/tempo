@@ -3,6 +3,7 @@ services:
     build: ./backend
     environment:
       TEMPO_DB_PATH: /data/tempo.db
+      TEMPO_TEST_INSTANCE: disposable
       TZ: America/New_York
     volumes:
       - ${TEMPO_TEST_DATA}:/data

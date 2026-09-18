@@ -2,6 +2,8 @@ import asyncio
 import hashlib
 import io
 import json
+import sqlite3
+import os
 import uuid
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
@@ -10,7 +12,7 @@ import chess
 import chess.pgn
 import httpx
 from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
-from fastapi.responses import PlainTextResponse
+from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import connection, initialize
@@ -58,9 +60,18 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(sqlite3.OperationalError)
+async def storage_unavailable(_request, error):
+    return JSONResponse(status_code=503, content={"detail":
+        "Local database unavailable. Check the Tempo data mount, file permissions, "
+        "and available disk space, then retry. " + str(error)})
+
+
 @app.get("/api/health")
 def health():
-    return {"status": "ok", "storage": "local-sqlite", "scheduler": "FSRS 6"}
+    with connection() as db:
+        db.execute("SELECT id FROM settings LIMIT 1").fetchone()
+    return {"status": "ok", "storage": "local-sqlite", "scheduler": "FSRS 6", "test_instance": os.getenv("TEMPO_TEST_INSTANCE") == "disposable"}
 
 
 @app.get("/api/analysis/capabilities")

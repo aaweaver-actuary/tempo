@@ -40,7 +40,7 @@ If macOS blocks the launcher the first time, right-click **Start Tempo.command**
 docker compose up --build
 ```
 
-Open `http://localhost:3000`. The local API is available at `http://localhost:8000`, and all durable data is stored in `./data/tempo.db` on the host computer.
+Open `http://localhost:3000`. The local API is available at `http://localhost:8000`, and all durable data is stored in the named Docker volume `tempo-data`, independent of the checkout location. See [storage operations](docs/STORAGE.md) for backups and restore.
 
 You can study in Docker Tempo now. Reviews, FSRS state, daily queue order, reinforcement, guided attempts, tactic discovery progress, repertoire notes, and teaching history are saved automatically in SQLite. Rebuilding or recreating the containers retains the host `data` directory; deleting that directory deletes your study data, so keep a backup. The mandatory Docker test recreates containers and verifies every SQLite store checksum and the exact queue order.
 

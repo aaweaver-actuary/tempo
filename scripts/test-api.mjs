@@ -5,7 +5,7 @@ import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 const directory = mkdtempSync(join(tmpdir(), "tempo-browser-tests-"));
 const python = existsSync(".venv/bin/python") ? ".venv/bin/python" : "python3";
-const api = spawn(python, ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8001"], { stdio: "inherit", env: { ...process.env, PYTHONPATH: "backend", TEMPO_DB_PATH: join(directory, "tempo.db") } });
+const api = spawn(python, ["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8001"], { stdio: "inherit", env: { ...process.env, PYTHONPATH: "backend", TEMPO_TEST_INSTANCE: "disposable", TEMPO_DB_PATH: join(directory, "tempo.db") } });
 const cleanup = () => { api.kill("SIGTERM"); };
 process.on("SIGINT", cleanup);
 process.on("SIGTERM", cleanup);
