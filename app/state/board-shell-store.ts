@@ -21,6 +21,7 @@ export type BoardShellSnapshot = {
   shapes: DrawShape[];
   drawnShapes: DrawShape[];
   positionRevision: number;
+  unavailable?: string;
   onMove?: (from: Square, to: Square) => void;
   onSquareSelect?: (square: Square) => void;
   onFreeMove?: (from: Square, to: Square) => void;
@@ -29,19 +30,22 @@ export type BoardShellSnapshot = {
 };
 
 type BoardShellStore = {
+  session: number;
   board: BoardShellSnapshot;
   setShellBoardForOwner: (
     owner: BoardShellOwner,
-    board: Partial<BoardShellSnapshot>,
+    board: BoardShellSnapshot,
+    session?: number,
   ) => void;
   updateShellBoardForOwner: (
     owner: BoardShellOwner,
     board: Partial<BoardShellSnapshot>,
+    session?: number,
   ) => void;
-  releaseShellBoardForOwner: (owner: BoardShellOwner) => void;
+  releaseShellBoardForOwner: (owner: BoardShellOwner, session?: number) => void;
 };
 
-const defaultBoardState: BoardShellSnapshot = {
+export const defaultBoardState: BoardShellSnapshot = {
   owner: "train",
   fen: STANDARD_FEN,
   orientation: "white",
@@ -55,18 +59,23 @@ const defaultBoardState: BoardShellSnapshot = {
 };
 
 export const useBoardShellStore = create<BoardShellStore>((set) => ({
+  session: 0,
   board: defaultBoardState,
-  setShellBoardForOwner: (owner, board) =>
-    set((current) => ({
-      board: {
-        ...current.board,
-        ...board,
-        owner,
-      },
-    })),
-  updateShellBoardForOwner: (owner, board) =>
+  setShellBoardForOwner: (owner, board, session) =>
     set((current) => {
-      if (current.board.owner !== owner) return current;
+      if (session !== undefined && session < current.session) return current;
+      return {
+        session: session ?? current.session,
+        board: { ...defaultBoardState, ...board, owner },
+      };
+    }),
+  updateShellBoardForOwner: (owner, board, session) =>
+    set((current) => {
+      if (
+        current.board.owner !== owner ||
+        (session !== undefined && session !== current.session)
+      )
+        return current;
       return {
         board: {
           ...current.board,
@@ -75,9 +84,13 @@ export const useBoardShellStore = create<BoardShellStore>((set) => ({
         },
       };
     }),
-  releaseShellBoardForOwner: (owner) =>
+  releaseShellBoardForOwner: (owner, session) =>
     set((current) => {
-      if (current.board.owner !== owner) return current;
+      if (
+        current.board.owner !== owner ||
+        (session !== undefined && session !== current.session)
+      )
+        return current;
       return { board: { ...defaultBoardState } };
     }),
 }));

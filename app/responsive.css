@@ -1,0 +1,767 @@
+/* Canonical UI contract. Workspace-specific CSS must not own board geometry. */
+:root {
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --nav-height: 70px;
+  --gutter: 24px;
+}
+button,
+input,
+select {
+  min-height: 36px;
+}
+button,
+a,
+input,
+textarea,
+select {
+  touch-action: manipulation;
+}
+button {
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+:focus-visible {
+  outline: 3px solid #496d91;
+  outline-offset: 3px;
+}
+button,
+input,
+select,
+textarea {
+  font-size: 14px;
+}
+button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
+    .candidate-row
+  ) {
+  border-radius: 6px;
+}
+[hidden] {
+  display: none !important;
+}
+.app-shell,
+.app-shell.board-workspace-shell {
+  height: auto;
+  min-height: 100dvh;
+  overflow: visible;
+  padding: calc(var(--nav-height) + 16px) var(--gutter) 32px;
+}
+.topbar {
+  height: var(--nav-height);
+  padding: 0 var(--gutter);
+  grid-template-columns: auto 1fr auto;
+  gap: 24px;
+}
+.nav {
+  display: block;
+  overflow: visible;
+  width: auto;
+}
+.desktop-navigation {
+  display: flex;
+  justify-content: center;
+  gap: 8px;
+}
+.nav button {
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  font-weight: 600;
+  color: var(--muted);
+}
+.nav button[aria-current="page"] {
+  color: var(--ink);
+  background: var(--sage);
+}
+.nav button::after {
+  display: none;
+}
+.tablet-navigation,
+.phone-navigation {
+  display: none;
+}
+.workspace-menu {
+  position: fixed;
+  z-index: 60;
+  top: calc(var(--nav-height) + 8px);
+  right: var(--gutter);
+  display: grid;
+  gap: 4px;
+  padding: 8px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  box-shadow: 0 8px 32px #2223;
+}
+.unified-board-shell-layout {
+  max-width: 1760px;
+  margin: auto;
+  display: grid;
+  grid-template-columns:
+    minmax(338px, var(--board-column-width, 46%))
+    20px minmax(0, 1fr);
+  gap: 8px;
+  align-items: start;
+}
+.workspace-board-column {
+  position: sticky;
+  top: calc(var(--nav-height) + 16px);
+  min-width: 0;
+  width: 100%;
+}
+.persistent-board-shell {
+  position: relative;
+  top: auto;
+  margin: 0;
+  width: var(--board-frame-width, 100%);
+  max-width: 100%;
+}
+.board-viewport,
+.centered-board .board-viewport,
+.editor-board-column .board-viewport {
+  width: 100%;
+  height: auto;
+  aspect-ratio: 1;
+  max-width: 778px;
+  min-width: 0;
+  align-items: flex-start;
+  justify-content: flex-start;
+}
+.board-viewport > .board-frame {
+  max-height: none;
+  padding: 9px;
+  margin: 0;
+  min-width: 0;
+}
+.shared-board-toolbar {
+  width: var(--board-frame-width, 100%);
+  max-width: 100%;
+  padding-top: 12px;
+  min-height: 104px;
+}
+.board-tools {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+}
+.board-tools button,
+.board-tools a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  border-radius: 6px;
+  color: var(--ink);
+  text-decoration: none;
+}
+.board-tools button span,
+.board-tools a span {
+  display: inline;
+}
+.workspace-board-actions {
+  display: contents;
+}
+.board-divider {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  align-self: stretch;
+  min-height: 360px;
+}
+.board-divider [role="separator"] {
+  width: 20px;
+  min-height: 300px;
+  flex: 1;
+  cursor: col-resize;
+  touch-action: none;
+  background: linear-gradient(var(--line), var(--line)) center/2px 100%
+    no-repeat;
+  border-radius: 4px;
+}
+.board-divider button {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  width: 28px;
+  min-height: 36px;
+}
+.unified-board-shell-panel {
+  min-width: 0;
+  width: 100%;
+  max-width: none;
+  margin: 0;
+}
+.unified-board-shell-panel
+  :is(
+    .analysis-page,
+    .games-page,
+    .tactics-page,
+    .endgames-page,
+    .library-page,
+    .training-grid,
+    .training-header
+  ) {
+  width: 100%;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+}
+.unified-board-shell-panel
+  :is(
+    .analysis-layout,
+    .training-grid.training-grid-shared,
+    .game-review,
+    .tactics-workspace,
+    .endgame-workspace,
+    .scheduled-endgame .endgame-workspace
+  ) {
+  display: flex;
+  flex-direction: column;
+  height: auto;
+  min-height: 0;
+  max-height: none;
+  gap: 16px;
+  overflow: visible;
+}
+.unified-board-shell-panel
+  :is(
+    .analysis-sidebar,
+    .game-side-scroll,
+    .analysis-board-column,
+    .game-board,
+    .game-inspector,
+    .study-panel,
+    .board-column
+  ) {
+  width: 100%;
+  min-width: 0;
+  max-width: none;
+  height: auto;
+  max-height: none;
+  overflow: visible;
+  margin: 0;
+}
+.unified-board-shell-panel .board-column:empty,
+.unified-board-shell-panel .game-board:empty {
+  display: none;
+}
+.analysis-sidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.analysis-heading,
+.workspace-title,
+.page-heading,
+.training-header {
+  min-height: 0;
+  height: auto;
+  margin: 0 0 16px;
+  padding: 0;
+  gap: 12px;
+}
+.analysis-switches {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+}
+.analysis-switches select {
+  flex: 1;
+  min-width: 140px;
+  max-width: 100%;
+}
+.arrow-legend {
+  flex-wrap: wrap;
+  margin: 8px 0;
+}
+.analysis-moves {
+  display: flex;
+  flex-wrap: wrap;
+  padding: 12px;
+  gap: 8px;
+  max-height: 240px;
+  overflow: auto;
+}
+.branch-editor {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px;
+}
+.branch-editor > span {
+  flex: 1 1 200px;
+}
+.builder-tool-panels {
+  width: 100%;
+  columns: auto;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 260px), 1fr));
+  gap: 12px;
+}
+.analysis-panel,
+.game-inspector {
+  padding: 16px;
+  min-width: 0;
+}
+.comparison-panel {
+  order: -1;
+}
+.comparison-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.source-comparison-scroll,
+.comparison-table-wrap {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.template-list,
+.motif-rail {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  width: 100%;
+  max-height: none;
+  padding: 0;
+  gap: 8px;
+  overflow: visible;
+  align-self: stretch;
+}
+.template-list button,
+.motif-rail button {
+  width: 100%;
+  min-width: 0;
+  padding: 12px;
+}
+.motif-rail {
+  max-height: 240px;
+  overflow-y: auto;
+}
+.stage-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  width: auto;
+  overflow: visible;
+}
+.stage-tabs button {
+  flex: 1 1 auto;
+}
+.tactic-study h2,
+.endgame-study h2 {
+  margin: 0 0 8px;
+  font-size: 28px;
+}
+.feedback {
+  margin: 12px 0;
+  padding: 16px;
+}
+.ratings {
+  margin: 12px 0 0;
+}
+.game-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 8px;
+  padding: 0;
+}
+.game-filters input,
+.game-filters select {
+  width: 100%;
+  min-width: 0;
+}
+.game-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  width: 100%;
+}
+.game-row > span {
+  flex: 1 1 180px;
+  min-width: 0;
+}
+.game-row small {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.game-moves {
+  max-height: 240px;
+  overflow: auto;
+}
+.games-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 16px 0;
+}
+.games-metrics article {
+  padding: 12px;
+}
+.task-tabs {
+  display: none;
+}
+.ui-notice,
+[role="alert"] {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  overflow-wrap: anywhere;
+}
+[role="alert"],
+.ui-notice.error {
+  border-color: #b87960;
+}
+.ui-notice button,
+[role="alert"] button {
+  padding: 8px 12px;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  flex-shrink: 0;
+}
+.board-unavailable {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  padding: 24px;
+  text-align: center;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  z-index: 2;
+}
+.persistent-board-shell[data-unavailable="true"] .board-viewport {
+  visibility: hidden;
+}
+:is(.library-page, .progress-page, .settings-page) {
+  width: 100%;
+  max-width: 1400px;
+  margin: 0 auto;
+  padding: 0;
+}
+.library-grid {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 260px), 1fr));
+}
+.new-repertoire-card {
+  min-height: 180px;
+}
+.chart-card {
+  min-height: 240px;
+}
+.settings-grid {
+  gap: 16px;
+}
+.settings-card {
+  padding: 16px;
+}
+.modal-backdrop {
+  padding: 16px;
+  overflow-y: auto;
+  align-items: flex-start;
+}
+[role="dialog"] {
+  margin: auto;
+  max-width: 100%;
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+}
+footer {
+  margin: 24px auto 0;
+}
+@media (pointer: coarse) {
+  button,
+  input,
+  select,
+  .board-tools a {
+    min-height: 44px;
+  }
+}
+@media (max-width: 1099px), (max-height: 599px) {
+  :root {
+    --gutter: 20px;
+    --nav-height: 64px;
+  }
+  .desktop-navigation {
+    display: none;
+  }
+  .tablet-navigation {
+    display: block;
+    margin: auto;
+  }
+  .unified-board-shell-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+  .workspace-board-column {
+    position: static;
+    max-width: 658px;
+    margin: 0 auto;
+  }
+  .persistent-board-shell {
+    width: 100%;
+    max-width: 658px;
+  }
+  .board-divider {
+    display: none;
+  }
+  .unified-board-shell-panel {
+    max-width: 900px;
+    margin: auto;
+  }
+  .shared-board-toolbar {
+    width: 100%;
+    min-height: 56px;
+  }
+}
+@media (max-width: 767px) {
+  :root {
+    --gutter: 12px;
+    --nav-height: 56px;
+  }
+  .app-shell,
+  .app-shell.board-workspace-shell {
+    padding-bottom: calc(84px + env(safe-area-inset-bottom));
+  }
+  .topbar {
+    grid-template-columns: 1fr auto;
+    grid-template-rows: 1fr;
+    gap: 8px;
+  }
+  .nav {
+    grid-column: auto;
+    width: auto;
+  }
+  .tablet-navigation {
+    display: none;
+  }
+  .phone-navigation {
+    position: fixed;
+    inset: auto 0 0;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0;
+    padding: 8px 4px calc(8px + env(safe-area-inset-bottom));
+    background: var(--panel);
+    border-top: 1px solid var(--line);
+    z-index: 50;
+  }
+  .phone-navigation button {
+    min-height: 44px;
+    padding: 8px 2px;
+    font-size: 12px;
+  }
+  .workspace-menu {
+    top: auto;
+    bottom: calc(76px + env(safe-area-inset-bottom));
+    left: 12px;
+    right: 12px;
+    grid-template-columns: 1fr 1fr;
+  }
+  .phone-menu-primary {
+    display: none;
+  }
+  .top-actions {
+    position: absolute;
+    right: 12px;
+    top: 6px;
+  }
+  .local-status {
+    display: none;
+  }
+  .task-tabs {
+    display: flex;
+    gap: 4px;
+    margin: 0 0 12px;
+  }
+  .task-tabs button {
+    flex: 1;
+    border: 1px solid var(--line);
+    background: var(--panel);
+    padding: 8px 4px;
+    min-width: 0;
+    min-height: 44px;
+    font-size: 13px;
+  }
+  .task-tabs button[aria-selected="true"] {
+    background: var(--sage);
+    border-color: var(--green);
+  }
+  [data-active-task] [data-task] {
+    display: none;
+  }
+  [data-active-task="Moves"] [data-task="Moves"],
+  [data-active-task="Analysis"] [data-task="Analysis"],
+  [data-active-task="Repertoire"] [data-task="Repertoire"],
+  [data-active-task="Notes"] [data-task="Notes"],
+  [data-active-task="Library"] [data-task="Library"] {
+    display: block;
+  }
+  .settings-grid,
+  .analytics-grid,
+  .metric-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+  }
+  .settings-row {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  .games-metrics {
+    grid-template-columns: 1fr;
+  }
+  .builder-tool-panels {
+    display: block;
+  }
+  .builder-tool-panels > * {
+    margin-bottom: 12px;
+  }
+  button,
+  input,
+  select,
+  .board-tools a {
+    min-height: 44px;
+  }
+  .board-tools {
+    gap: 4px;
+  }
+  .board-tools button,
+  .board-tools a {
+    padding: 8px;
+    font-size: 12px;
+  }
+  .modal-backdrop {
+    padding: 8px;
+  }
+  [role="dialog"] {
+    max-height: calc(100dvh - 16px);
+    padding: 16px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0s !important;
+    transition-duration: 0s !important;
+  }
+}
+/* Fixed mobile navigation must be anchored to the viewport, not a filtered header. */
+.topbar {
+  backdrop-filter: none;
+}
+.move-comparison-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+@media (min-width: 1100px) and (min-height: 600px) {
+  .board-divider {
+    position: sticky;
+    top: calc(var(--nav-height) + 16px);
+    height: calc(var(--board-frame-width) + 104px);
+    min-height: 0;
+    align-self: start;
+  }
+}
+.unified-board-shell-panel .analysis-sidebar {
+  display: contents;
+}
+.unified-board-shell-panel .comparison-panel {
+  order: 0;
+}
+.unified-board-shell-panel .analysis-board-column {
+  order: 1;
+}
+.unified-board-shell-panel .builder-tool-panels {
+  order: 2;
+}
+:root {
+  --muted: #60675d;
+}
+.pagination {
+  display: flex;
+  gap: 8px;
+  margin-top: 12px;
+}
+.pagination button {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  padding: 8px 12px;
+}
+.board-frame {
+  width: 100%;
+  aspect-ratio: 1;
+  min-width: 0;
+  max-width: 100%;
+  padding: 9px;
+}
+.comparison-covered {
+  color: #526326;
+}
+.analysis-moves > button {
+  color: var(--muted);
+}
+.pill {
+  align-self: flex-start;
+  width: fit-content;
+}
+html {
+  scroll-padding-top: calc(var(--nav-height) + 12px);
+}
+@media (max-width: 767px) {
+  html {
+    scroll-padding-bottom: calc(84px + env(safe-area-inset-bottom));
+  }
+}
+/* Remove legacy two-row navigation placement at tablet breakpoints. */
+.topbar {
+  grid-template-rows: 1fr;
+}
+.nav {
+  grid-column: auto;
+  grid-row: auto;
+  align-self: center;
+}
+.top-actions {
+  grid-column: 3;
+  grid-row: 1;
+}
+.source-name {
+  margin-top: 4px;
+  line-height: 1.4;
+}
+@media (max-width: 767px) {
+  .top-actions {
+    grid-column: auto;
+  }
+}
+
+button {
+  min-width: 36px;
+}
+@media (max-width: 767px), (pointer: coarse) {
+  button {
+    min-width: 44px;
+  }
+}

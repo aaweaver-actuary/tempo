@@ -29,7 +29,17 @@ export function readWorkspaceData(
     return cached.promise.then((raw) =>
       schema ? parseData(schema, raw, url) : raw,
     );
-  const promise = fetch(url)
+  const requestController = new AbortController();
+  const requestTimeout = setTimeout(
+    () =>
+      requestController.abort(
+        new Error(
+          "Service request timed out after 15 seconds. Retry when the service is available.",
+        ),
+      ),
+    15_000,
+  );
+  const promise = fetch(url, { signal: requestController.signal })
     .then((response) => {
       if (!response.ok)
         throw new Error(
@@ -46,7 +56,8 @@ export function readWorkspaceData(
     .catch((error) => {
       requests.delete(url);
       throw error;
-    });
+    })
+    .finally(() => clearTimeout(requestTimeout));
   requests.set(url, { createdAt: Date.now(), promise });
   return promise.then((raw) => (schema ? parseData(schema, raw, url) : raw));
 }

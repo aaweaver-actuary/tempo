@@ -1,4 +1,6 @@
 "use client";
+import { useRef as useDialogRef } from "react";
+import { useDialogFocus } from "../hooks/use-dialog-focus";
 import { useState } from "react";
 import {
   type BoardTheme,
@@ -19,12 +21,16 @@ export function TreeBrowser({
   theme: BoardTheme;
   pieceSet: PieceSet;
 }) {
+  const dialogRef = useDialogRef<HTMLDivElement>(null);
+  useDialogFocus(dialogRef, onClose);
   const line = demoCards[0].moves;
   const [ply, setPly] = useState(0);
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section
         className="tree-browser"
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="tree-title"

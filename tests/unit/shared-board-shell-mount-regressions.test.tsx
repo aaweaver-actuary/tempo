@@ -2,7 +2,10 @@ import { act, render } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { STANDARD_FEN } from "../../app/const";
 import { PersistentBoardShell } from "../../app/components/persistent-board-shell";
-import { useBoardShellStore } from "../../app/state/board-shell-store";
+import {
+  defaultBoardState,
+  useBoardShellStore,
+} from "../../app/state/board-shell-store";
 
 const board = vi.hoisted(() => ({
   set: vi.fn(),
@@ -80,30 +83,35 @@ it("persistent board shell reuses one Chessground instance across board owner sw
   const setBoard = useBoardShellStore.getState().setShellBoardForOwner;
   act(() => {
     setBoard("builder", {
+      ...defaultBoardState,
       fen: "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
       orientation: "black",
       interactionMode: "legal",
       positionRevision: 1,
     });
     setBoard("games", {
+      ...defaultBoardState,
       fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
       orientation: "white",
       interactionMode: "readonly",
       positionRevision: 2,
     });
     setBoard("tactics", {
+      ...defaultBoardState,
       fen: "rnbqkbnr/pppp1ppp/8/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R b KQkq - 1 2",
       orientation: "white",
       interactionMode: "legal",
       positionRevision: 3,
     });
     setBoard("endgames", {
+      ...defaultBoardState,
       fen: "8/8/8/8/8/8/5K2/6k1 w - - 0 1",
       orientation: "white",
       interactionMode: "readonly",
       positionRevision: 4,
     });
     setBoard("train", {
+      ...defaultBoardState,
       fen: STANDARD_FEN,
       orientation: "white",
       interactionMode: "legal",

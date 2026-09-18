@@ -1,3 +1,5 @@
+import { useTaskTabs } from "../components/task-tabs";
+import { BoardTools } from "../components/board-workspace";
 import {
   explorerResponseSchema,
   branchResultSchema,
@@ -19,7 +21,7 @@ import {
   type SetStateAction,
 } from "react";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
-import { useBoardShellStore } from "../state/board-shell-store";
+import { useBoardPublisher } from "../hooks/use-board-publisher";
 import CandidateMovesTable from "../CandidateMovesTable";
 import { MoveComparisonTable } from "../components/move-comparison-table";
 import { STANDARD_FEN, API_URL } from "../const";
@@ -150,6 +152,7 @@ export default function BuilderView({
   pieceSet: PieceSet;
   useSharedBoard?: boolean;
 }) {
+  const tools = useTaskTabs(["Moves", "Analysis", "Repertoire", "Notes"], "Analysis", "tempo-builder-tools");
   const initialSession = useMemo(readBuilderSession, []);
   const [history, setHistory] = useState(initialSession?.history ?? []);
   const [cursor, setCursor] = useState(initialSession?.cursor ?? 0);
@@ -239,24 +242,19 @@ export default function BuilderView({
   const [transpositionState, setTranspositionState] = useState<
     "idle" | "loading" | "ready" | "error"
   >("idle");
-  const setShellBoardForOwner = useBoardShellStore(
-    (state) => state.setShellBoardForOwner,
-  );
-  const releaseShellBoardForOwner = useBoardShellStore(
-    (state) => state.releaseShellBoardForOwner,
-  );
+  const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
   const transpositionController = useRef<AbortController | null>(null);
   const [dismissedTranspositions, setDismissedTranspositions] = useState<
     string[]
   >(initialSession?.dismissedTranspositions ?? []);
 
-  const visibleHistory = history.slice(0, cursor);
+  const visibleHistory = useMemo(() => history.slice(0, cursor), [history, cursor]);
   const fen = visibleHistory.at(-1)?.fen ?? startingFen;
   const previousUci = visibleHistory.at(-1)?.uci;
-  const lastMove: [string, string] | undefined = previousUci
+  const lastMove = useMemo<[string, string] | undefined>(() => previousUci
     ? [previousUci.slice(0, 2), previousUci.slice(2, 4)]
-    : undefined;
-  const playedUci = visibleHistory.map((move) => move.uci);
+    : undefined, [previousUci]);
+  const playedUci = useMemo(() => visibleHistory.map((move) => move.uci), [visibleHistory]);
   const lineTask = useMemo<StudyTask>(() => {
     const browserLines = imported.flatMap((repertoire) =>
       repertoire.cards.map((card) => ({
@@ -283,19 +281,19 @@ export default function BuilderView({
   ];
   const selectedRepertoire =
     repertoires.find((item) => item.id === activeRepertoire) ?? repertoires[0];
-  const lineMatches = availableLines.filter(
+  const selectedRepertoireId = selectedRepertoire?.id;
+  const lineMatches = useMemo(() => availableLines.filter(
     (line) =>
-      (!selectedRepertoire || line.repertoireId === selectedRepertoire.id) &&
+      (!selectedRepertoireId || line.repertoireId === selectedRepertoireId) &&
       canonicalFenKey(line.startingFen) === canonicalFenKey(startingFen) &&
       playedUci.every((move, index) => line.moves[index] === move),
-  );
-  const coveredReplies = new Set<UciMove>(
+  ), [availableLines, selectedRepertoireId, startingFen, playedUci]);
+  const coveredReplies = useMemo(() => new Set<UciMove>(
     lineMatches.flatMap((line) => {
       const uci = line.moves[cursor];
       return uci ? [uci] : [];
     }),
-  );
-  const selectedRepertoireId = selectedRepertoire?.id;
+  ), [lineMatches, cursor]);
   const indexTask = useMemo<StudyTask>(
     () => ({
       kind: "index",
@@ -524,6 +522,7 @@ export default function BuilderView({
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (document.querySelector('[role="dialog"]')) return;
       if (
         event.target instanceof HTMLInputElement ||
         event.target instanceof HTMLSelectElement ||
@@ -695,7 +694,7 @@ export default function BuilderView({
     };
   }, [fen, maiaElo, maiaOn]);
 
-  function playMove(from: Square, to: Square) {
+  const playMove = useCallback((from: Square, to: Square) => {
     const chess = new Chess(fen);
     try {
       const move = chess.move({ from, to, promotion: "q" });
@@ -715,7 +714,7 @@ export default function BuilderView({
     } catch {
       /* Chessground only offers legal destinations. */
     }
-  }
+  }, [fen, coveredReplies, branchStart, cursor]);
 
   function playUci(uci: string) {
     playMove(uci.slice(0, 2) as Square, uci.slice(2, 4) as Square);
@@ -997,6 +996,7 @@ export default function BuilderView({
     lastMove,
     orientation,
     pieceSet,
+    playMove,
     releaseShellBoardForOwner,
     setShellBoardForOwner,
     shapes,
@@ -1020,7 +1020,7 @@ export default function BuilderView({
   }
 
   return (
-    <section className="analysis-page" id="builder">
+    <section className="analysis-page" {...tools.panelProps}>
       <div className="analysis-heading compact-analysis">
         <h1 className="sr-only">Builder</h1>
         <div className="analysis-switches">
@@ -1067,9 +1067,9 @@ export default function BuilderView({
               </option>
             ))}
           </select>
-          <button title="Flip board (F)" onClick={flipBuilder}>
+          {!useSharedBoard && <button title="Flip board (F)" onClick={flipBuilder}>
             ⇅ {orientation === "white" ? "White" : "Black"}
-          </button>
+          </button>}
           <button
             className={isStockfishOn ? "on" : ""}
             onClick={() =>
@@ -1090,6 +1090,7 @@ export default function BuilderView({
           </button>
         </div>
       </div>
+      {tools.tabs}
       <div
         className={`analysis-layout${useSharedBoard ? " analysis-layout-shared" : ""}`}
       >
@@ -1147,7 +1148,7 @@ export default function BuilderView({
               onFlip={flipBuilder}
             />
           )}
-          <div className="arrow-legend">
+          <div className="arrow-legend" data-task="Analysis">
             <span>
               <i className="known" /> Covered
             </span>
@@ -1170,7 +1171,7 @@ export default function BuilderView({
               <b>M</b> Maia
             </span>
           </div>
-          <div className="board-tools">
+          <BoardTools>
             <button
               onClick={() => setCursor((value) => Math.max(0, value - 1))}
               disabled={!cursor}
@@ -1195,8 +1196,8 @@ export default function BuilderView({
             >
               ↗ <span>Open in Lichess</span>
             </a>
-          </div>
-          <div className="analysis-moves">
+          </BoardTools>
+          <div className="analysis-moves" data-task="Moves">
             <span>
               {history.length
                 ? history.map((move, index) => (
@@ -1216,7 +1217,7 @@ export default function BuilderView({
               Copy FEN
             </button>
           </div>
-          <div className="branch-editor">
+          <div className="branch-editor" data-task="Repertoire">
             <span>
               <b>
                 {branchStart === null
@@ -1265,7 +1266,7 @@ export default function BuilderView({
           </div>
         </div>
         <aside className="analysis-sidebar">
-          <section className="analysis-panel comparison-panel">
+          <section className="analysis-panel comparison-panel" data-task="Analysis">
             <div className="comparison-toolbar">
               <h2 className="sr-only">Compare moves</h2>
               {(!lichessToken || explorerState === "error") && (
@@ -1337,7 +1338,7 @@ export default function BuilderView({
                 )}
               </section>
             )}
-            <section className="analysis-panel repertoire-panel">
+            <section className="analysis-panel repertoire-panel" data-task="Repertoire">
               <div className="panel-heading">
                 <div>
                   <span>Active repertoire</span>
@@ -1360,7 +1361,7 @@ export default function BuilderView({
                 </p>
               )}
             </section>
-            <section className="analysis-panel coverage-panel">
+            <section className="analysis-panel coverage-panel" data-task="Repertoire">
               <div className="panel-heading">
                 <div>
                   <span>Coverage</span>
@@ -1389,7 +1390,7 @@ export default function BuilderView({
                 </div>
               </div>
             </section>
-            <section className="analysis-panel annotation-panel">
+            <section className="analysis-panel annotation-panel" data-task="Notes">
               <div className="panel-heading">
                 <div>
                   <span>Position note</span>
@@ -1398,6 +1399,7 @@ export default function BuilderView({
               </div>
               <textarea
                 aria-label="Position comment"
+                disabled={!annotation}
                 placeholder="Add a reminder for this exact position…"
                 value={annotation?.comment ?? ""}
                 onChange={(event) => {
@@ -1434,7 +1436,7 @@ export default function BuilderView({
                 </button>
               </div>
             </section>
-            <section className="analysis-panel similarity-panel">
+            <section className="analysis-panel similarity-panel" data-task="Repertoire">
               <div className="panel-heading">
                 <div>
                   <span>Consistency</span>
@@ -1474,7 +1476,7 @@ export default function BuilderView({
                 </p>
               )}
             </section>
-            <section className="analysis-panel transposition-panel">
+            <section className="analysis-panel transposition-panel" data-task="Repertoire">
               <div className="panel-heading">
                 <div>
                   <span>Maia paths</span>
@@ -1520,7 +1522,7 @@ export default function BuilderView({
               ))}
             </section>
             <button
-              className="analysis-panel repertoire-results position-preview"
+              className="analysis-panel repertoire-results position-preview" data-task="Repertoire"
               onClick={() => {
                 setCurrentSearchIndex(0);
                 setIsSearchOpen(true);
@@ -1545,7 +1547,7 @@ export default function BuilderView({
                 </span>
               ))}
             </button>
-            <section className="analysis-panel engine-panel">
+            <section className="analysis-panel engine-panel" data-task="Analysis">
               <div className="panel-heading">
                 <div>
                   <span>Stockfish 19</span>
@@ -1571,7 +1573,7 @@ export default function BuilderView({
                 />
               )}
             </section>
-            <section className="analysis-panel engine-panel">
+            <section className="analysis-panel engine-panel" data-task="Analysis">
               <div className="panel-heading">
                 <div>
                   <span>Maia 3</span>

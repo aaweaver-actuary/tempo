@@ -1,4 +1,5 @@
 "use client";
+import { Notice } from "../components/task-tabs";
 import { useEffect, useState } from "react";
 import { API_URL } from "../const";
 import { readWorkspaceResponse } from "../lib/workspace-data";
@@ -31,30 +32,35 @@ export default function ProgressView({
     totalCards,
   });
   const [error, setError] = useState("");
+  const [loaded, setLoaded] = useState(!usesLocalApi());
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
     if (!usesLocalApi()) return;
     let active = true;
     void readWorkspaceResponse(`${API_URL}/api/progress`)
       .then(async (response) => {
-        if (!response.ok) throw new Error();
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
         const summary = (await response.json()) as Progress;
-        if (active) setData(summary);
+        if (!summary || !Array.isArray(summary.activity) || typeof summary.totalCards !== "number" || !summary.states) throw new Error("Malformed progress response");
+        if (active) { setData(summary); setLoaded(true); setError(""); }
       })
-      .catch(() => {
+      .catch((failure) => {
         if (active)
-          setError("Could not load review history. Check the local service.");
+          setError(`Review history unavailable: ${failure instanceof Error ? failure.message : "connection failed"}. Check the local service and retry.`);
       });
     return () => {
       active = false;
     };
-  }, []);
+  }, [retry]);
   const maximum = Math.max(1, ...data.activity.map((day) => day.count));
   return (
     <section className="progress-page" id="progress">
       <div className="page-heading compact">
         <h1 className="sr-only">Progress</h1>
       </div>
-      {error && <p role="alert">{error}</p>}
+      {error && <Notice error onRetry={() => setRetry(value => value + 1)}>{error}</Notice>}
+      {!loaded && !error && <Notice>Loading progress…</Notice>}
+      {loaded && <>
       <div className="metric-grid">
         {[
           ["Due today", data.dueToday],
@@ -100,6 +106,7 @@ export default function ProgressView({
           </ul>
         </article>
       </div>
+      </>}
     </section>
   );
 }

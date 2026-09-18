@@ -3,6 +3,7 @@ import '@lichess-org/chessground/assets/chessground.base.css';
 import '@lichess-org/chessground/assets/chessground.brown.css';
 import '@lichess-org/chessground/assets/chessground.cburnett.css';
 import './globals.css';
+import './responsive.css';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://tempo-chess-opening-trainer.andyandyandyandy.chatgpt.site'),

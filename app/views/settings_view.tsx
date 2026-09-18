@@ -1,11 +1,13 @@
 "use client";
-import { useRef, useState, useEffect } from "react";
+import { useRef, useState, useEffect, useCallback } from "react";
 import type { BoardTheme, PieceSet } from "../components/chessboard";
 import { API_URL } from "../const";
 import { readWorkspaceResponse, invalidateWorkspaceData } from "../lib/workspace-data";
 import { usesLocalApi } from "../utils/local";
 import { createEncryptedBackup, restoreEncryptedBackup } from "../lib/encrypted-backup";
 import { migrateSqliteToBrowser } from "../lib/sqlite-migration";
+
+import { Notice } from "../components/task-tabs";
 
 type SettingsValues = {
   initial_depth: number;
@@ -68,6 +70,22 @@ export default function SettingsView({
     arrow_metric: "stockfish",
   });
   const [status, setStatus] = useState("");
+  const [settingsLoaded, setSettingsLoaded] = useState(!usesLocalApi());
+  const [loadError, setLoadError] = useState("");
+  const loadSettings = useCallback(async () => {
+    if (!usesLocalApi()) return;
+    try {
+      const response = await readWorkspaceResponse(`${API_URL}/api/settings`);
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const saved = await response.json() as Partial<SettingsValues> | null;
+      if (!saved || typeof saved.initial_depth !== "number") throw new Error("Malformed settings response");
+      setValues(current => ({ ...current, ...saved }));
+      setSettingsLoaded(true);
+      setLoadError("");
+    } catch (error) {
+      setLoadError(`Settings unavailable: ${error instanceof Error ? error.message : "connection failed"}. Retry before saving.`);
+    }
+  }, []);
   const backupInput = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -101,19 +119,10 @@ export default function SettingsView({
         lichess_username: localStorage.getItem("tempo-lichess-username") ?? "",
         chesscom_username: localStorage.getItem("tempo-chesscom-username") ?? "",
       }));
-      if (usesLocalApi())
-        void readWorkspaceResponse(`${API_URL}/api/settings`)
-          .then((response) => (response.ok ? response.json() : Promise.reject()))
-          .then((saved) =>
-            setValues((current) => ({
-              ...current,
-              ...(saved as Partial<SettingsValues>),
-            })),
-          )
-          .catch(() => undefined);
+      void loadSettings();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [pieceSet, sound, theme]);
+  }, [pieceSet, sound, theme, loadSettings]);
 
   function update<K extends keyof SettingsValues>(
     key: K,
@@ -123,6 +132,7 @@ export default function SettingsView({
   }
 
   async function save() {
+    if (!settingsLoaded) return;
     onTheme(values.board_theme);
     onPieces(values.piece_set);
     onSound(values.sound);
@@ -227,10 +237,13 @@ export default function SettingsView({
         <div>
           <h1 className="sr-only">Settings</h1>
         </div>
-        <button className="primary-button" onClick={() => void save()}>
+        <button className="primary-button" disabled={!settingsLoaded} onClick={() => void save()}>
           Save settings
         </button>
       </div>
+      {loadError && <Notice error onRetry={() => { invalidateWorkspaceData(); void loadSettings(); }}>{loadError}</Notice>}
+      {!settingsLoaded && !loadError && <Notice>Loading settings…</Notice>}
+      {status && <Notice>{status}</Notice>}
       <div className="settings-grid">
         <section className="settings-card">
           <h2>Training</h2>
@@ -514,7 +527,7 @@ export default function SettingsView({
       </div>
       {status && (
         <p className="settings-status" role="status">
-          ✓ {status}
+          {status}
         </p>
       )}
     </section>

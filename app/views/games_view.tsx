@@ -1,4 +1,6 @@
 "use client";
+import { Notice, useTaskTabs } from "../components/task-tabs";
+import { BoardTools } from "../components/board-workspace";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import {
@@ -6,7 +8,7 @@ import {
   type BoardTheme,
   type PieceSet,
 } from "../components/chessboard";
-import { useBoardShellStore } from "../state/board-shell-store";
+import { useBoardPublisher } from "../hooks/use-board-publisher";
 import { API_URL, STANDARD_FEN } from "../const";
 import {
   readWorkspaceResponse,
@@ -53,11 +55,21 @@ export default function GamesView({
   useSharedBoard?: boolean;
 }) {
   const local = usesLocalApi();
+  const tools = useTaskTabs(["Moves", "Analysis", "Library"], "Moves", "tempo-games-tools");
+  const [loaded, setLoaded] = useState(!local);
+  const [libraryPage, setLibraryPage] = useState(0);
   const [records, setRecords] = useState<GameViewRecord[]>(() =>
     local ? [] : sampleGames,
   );
-  const [selectedId, setSelectedId] = useState<GameId | "">("");
-  const [cursor, setCursor] = useState(0);
+  const [savedSession] = useState(() => {
+    try {
+      const saved = JSON.parse(sessionStorage.getItem('tempo-games-session') ?? 'null');
+      return saved?.version === 1 && typeof saved.id === 'string' && Number.isInteger(saved.cursor) && saved.cursor >= 0 ? saved as {id:GameId;cursor:number} : null;
+    } catch { return null; }
+  });
+  const [selectedId, setSelectedId] = useState<GameId | "">(savedSession?.id ?? "");
+  const [cursor, setCursor] = useState(savedSession?.cursor ?? 0);
+  useEffect(() => { sessionStorage.setItem('tempo-games-session', JSON.stringify({version:1,id:selectedId,cursor})); }, [selectedId,cursor]);
   const selectedIdRef = useRef(selectedId);
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -69,12 +81,7 @@ export default function GamesView({
   const [error, setError] = useState("");
   const [scanStatus, setScanStatus] = useState("");
   const [lines, setLines] = useState<AnalysisLine[]>([]);
-  const setShellBoardForOwner = useBoardShellStore(
-    (state) => state.setShellBoardForOwner,
-  );
-  const releaseShellBoardForOwner = useBoardShellStore(
-    (state) => state.releaseShellBoardForOwner,
-  );
+  const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
   const [filters, setFilters] = useState(() => ({
     source: "All",
     status: "All",
@@ -142,6 +149,7 @@ export default function GamesView({
         setCursor(loaded[0]?.flagPly ?? 0);
       }
       setError("");
+      setLoaded(true);
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Could not load games.",
@@ -272,6 +280,7 @@ export default function GamesView({
   useEffect(() => {
     if (!useSharedBoard) return;
     setShellBoardForOwner("games", {
+      unavailable: !selected ? (error ? "Game position unavailable. Retry the local service." : loaded ? "Select an imported game to review." : "Loading games…") : undefined,
       fen: gameFen,
       lastMove: gameLast
         ? ([gameLast.slice(0, 2), gameLast.slice(2, 4)] as readonly [
@@ -294,6 +303,9 @@ export default function GamesView({
     });
     return () => releaseShellBoardForOwner("games");
   }, [
+    loaded,
+    error,
+    selected,
     cursor,
     gameFen,
     gameLast,
@@ -307,7 +319,7 @@ export default function GamesView({
   ]);
 
   return (
-    <section className="games-page" id="games">
+    <section className="games-page" {...tools.panelProps}>
       <div className="page-heading compact">
         <div>
           <h1 className="sr-only">Games{!local ? " · Demo" : ""}</h1>
@@ -331,6 +343,7 @@ export default function GamesView({
       {(error || syncState.error) && (
         <p role="alert">
           {error || syncState.error}{" "}
+          {error && <button onClick={() => { invalidateWorkspaceData(); void loadGames(); }}>Retry</button>}
           <button onClick={onSettings}>Account settings</button>
         </p>
       )}
@@ -343,7 +356,9 @@ export default function GamesView({
           .
         </p>
       )}
-      <div className="game-review">
+      {tools.tabs}
+      {!loaded && !error && <Notice>Loading games…</Notice>}
+      {(loaded || records.length > 0) && <div className="game-review">
         <div className="game-board">
           {!useSharedBoard && (
             <Chessboard
@@ -362,13 +377,14 @@ export default function GamesView({
               orientation={selected?.color}
             />
           )}
-          <div className="board-tools">
+          <BoardTools>
             <button
+              disabled={!selected || cursor === 0}
               onClick={() => setCursor((value) => Math.max(0, value - 1))}
             >
               ← Back
             </button>
-            <button
+            <button disabled={!selected || cursor >= selected.moves.length}
               onClick={() =>
                 setCursor((value) =>
                   Math.min(selected?.moves.length ?? 0, value + 1),
@@ -394,10 +410,10 @@ export default function GamesView({
             >
               Stockfish
             </button>
-          </div>
+          </BoardTools>
         </div>
         <div className="game-side-scroll">
-          <aside className="game-inspector">
+          <aside className="game-inspector" data-task="Moves">
             <h2>{selected?.opening ?? "No games imported"}</h2>
             <strong>{selected?.flag}</strong>
             {engineOn && <p>{engineText}</p>}
@@ -435,7 +451,7 @@ export default function GamesView({
               </>
             )}
           </aside>
-          <div className="games-metrics">
+          <div className="games-metrics" data-task="Analysis">
             <article>
               <span>Repertoire adherence</span>
               <strong>
@@ -456,19 +472,14 @@ export default function GamesView({
               </article>
             ))}
           </div>
-          <div className="game-filters">
+          <div data-task="Library"><div className="game-filters">
             {(["source", "status", "color", "speed", "result"] as const).map(
               (field) => (
                 <select
                   key={field}
                   aria-label={`Filter ${field}`}
                   value={filters[field]}
-                  onChange={(event) =>
-                    setFilters((current) => ({
-                      ...current,
-                      [field]: event.target.value,
-                    }))
-                  }
+                  onChange={(event) => { setLibraryPage(0); setFilters((current) => ({ ...current, [field]: event.target.value })); }}
                 >
                   <option value="All">All {field}</option>
                   {[...new Set(records.map((game) => game[field]))].map(
@@ -492,7 +503,7 @@ export default function GamesView({
             />
           </div>
           <section className="game-list">
-            {games.map((game) => (
+            {games.slice(libraryPage * 50, (libraryPage + 1) * 50).map((game) => (
               <button
                 className={`game-row${selected?.id === game.id ? " selected" : ""}`}
                 key={game.id}
@@ -521,8 +532,10 @@ export default function GamesView({
               </div>
             )}
           </section>
+          <div className="pagination" aria-label="Game pages"><button disabled={libraryPage === 0} onClick={() => setLibraryPage(value => value - 1)}>Previous games</button><button disabled={(libraryPage + 1) * 50 >= games.length} onClick={() => setLibraryPage(value => value + 1)}>Next games</button></div>
+          </div>
         </div>
-      </div>
+      </div>}
     </section>
   );
 }

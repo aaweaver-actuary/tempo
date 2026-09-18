@@ -1,4 +1,6 @@
 "use client";
+import { useRef as useDialogRef } from "react";
+import { useDialogFocus } from "./hooks/use-dialog-focus";
 import { useState, useEffect } from "react";
 import { JSX } from "react/jsx-runtime";
 import { API_URL } from "./const";
@@ -20,6 +22,8 @@ export function ImportDialogBox({
   onViewRepertoire: () => void;
   onDatabaseUpdated: () => Promise<void>;
 }): JSX.Element {
+  const dialogRef = useDialogRef<HTMLDivElement>(null);
+  useDialogFocus(dialogRef, onClose);
   const [file, setFile] = useState<File | null>(null);
   const [initialDepth, setInitialDepth] = useState(6);
   const [trainedColor, setTrainedColor] = useState<"white" | "black">("white");
@@ -100,6 +104,8 @@ export function ImportDialogBox({
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section
         className="import-dialog"
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="import-title"

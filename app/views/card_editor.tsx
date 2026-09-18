@@ -1,3 +1,5 @@
+import { useRef as useDialogRef } from "react";
+import { useDialogFocus } from "../hooks/use-dialog-focus";
 import { Square, Chess } from "chess.js";
 import { useEffect, useMemo, useState } from "react";
 import { MoveNavigator } from "../components/board-controls";
@@ -36,6 +38,8 @@ export default function CardEditor({
   onSave: (card: PracticeCard) => void;
   onOpenBuilderForLineRemoval?: (session: BuilderSession) => void;
 }) {
+  const dialogRef = useDialogRef<HTMLDivElement>(null);
+  useDialogFocus(dialogRef, onClose);
   const [currentFenString, setCurrentFenString] = useState<string>(
     card.startingFen,
   );
@@ -216,6 +220,8 @@ export default function CardEditor({
     <div className="modal-backdrop" onMouseDown={onClose}>
       <section
         className="card-editor"
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="card-editor-title"

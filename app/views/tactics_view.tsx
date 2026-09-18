@@ -1,3 +1,4 @@
+import { BoardTools } from "../components/board-workspace";
 import { Chess, Square, Move } from "chess.js";
 import {
   useState,
@@ -8,7 +9,7 @@ import {
 } from "react";
 import { OutcomeFlash } from "../components/board-controls";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
-import { useBoardShellStore } from "../state/board-shell-store";
+import { useBoardPublisher } from "../hooks/use-board-publisher";
 import { API_URL, STANDARD_FEN } from "../const";
 import { playMoveSound } from "../lib/move-sound";
 import {
@@ -120,12 +121,7 @@ export default function TacticsView({
   }));
   const finishingRef = useRef("");
   const [saveError, setSaveError] = useState("");
-  const setShellBoardForOwner = useBoardShellStore(
-    (state) => state.setShellBoardForOwner,
-  );
-  const releaseShellBoardForOwner = useBoardShellStore(
-    (state) => state.releaseShellBoardForOwner,
-  );
+  const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
   const attemptTokenRef = useRef(0);
   const advanceTimers = useRef(new Set<number>());
   useEffect(() => {
@@ -161,6 +157,7 @@ export default function TacticsView({
         setProgress(value);
         setStage(firstUnfinishedStage(value, "hangingPiece"));
         setProgressReady(true);
+        setSaveError("");
       })
       .catch(() => {
         if (active)
@@ -363,6 +360,7 @@ export default function TacticsView({
   useLayoutEffect(() => {
     if (!useSharedBoard) return;
     setShellBoardForOwner("tactics", {
+      unavailable: !progressReady || !deckReady || !selectedPuzzle ? (saveError || "Preparing puzzles…") : undefined,
       fen,
       expectedSan: puzzle.moves[step],
       interactionMode:
@@ -382,6 +380,10 @@ export default function TacticsView({
     });
     return () => releaseShellBoardForOwner("tactics");
   }, [
+    progressReady,
+    deckReady,
+    selectedPuzzle,
+    saveError,
     boardAttempt,
     fen,
     hint,
@@ -520,7 +522,7 @@ export default function TacticsView({
               orientation={puzzleSide}
             />
           )}
-          <div className="board-tools">
+          <BoardTools>
             <button
               disabled={attempt.phase === "feedbackPause"}
               onClick={() => guideAttempt()}
@@ -538,7 +540,7 @@ export default function TacticsView({
                 ↗ <span>Original</span>
               </a>
             )}
-          </div>
+          </BoardTools>
           {(outcome || failed) && (
             <OutcomeFlash
               key={`${attempt.discoveryId}:${outcome ?? "wrong"}`}

@@ -9,19 +9,24 @@ import { usesLocalApi } from "../utils/local";
 import { API_URL } from "../const";
 import { readWorkspaceResponse, invalidateWorkspaceData } from "../lib/workspace-data";
 
+import { Notice } from "../components/task-tabs";
+
 export default function RepertoireView({ imported, onImport, onBrowse, onDeleteLocal, onRenameLocal, onQueueChanged }: { imported: LocalRepertoire[]; onImport: () => void; onBrowse: (id: string) => void; onDeleteLocal: (id: string) => void; onRenameLocal: (id: string, name: string) => void; onQueueChanged: () => Promise<void> }) {
   const [backendItems, setBackendItems] = useState<RepertoireItem[]>([]);
+  const [loaded, setLoaded] = useState(!usesLocalApi());
+  const [libraryPage, setLibraryPage] = useState(0);
   const [error, setError] = useState("");
 
   const loadBackend = useCallback(async () => {
     if (!usesLocalApi()) return;
     try {
       const response = await readWorkspaceResponse(`${API_URL}/api/repertoires`);
-      if (!response.ok) throw new Error();
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
       const body = await response.json() as { repertoires: { id: string; name: string; source_name: string; line_count: number; card_count: number; due_count: number; trained_color?: PieceColor }[] };
       setBackendItems(body.repertoires.map((item) => ({ id: asRepertoireId(item.id), side: item.trained_color === 'black' ? 'black' : 'white', title: item.name, sourceName: item.source_name, detail: `${item.line_count} unique ${item.line_count === 1 ? 'line' : 'lines'} · ${item.card_count} cards`, progress: 0, due: item.due_count, backend: true })));
+      setLoaded(true);
       setError("");
-    } catch { setError("Could not load repertoires from the local service."); }
+    } catch (failure) { setError(`Repertoires unavailable: ${failure instanceof Error ? failure.message : "connection failed"}.`); }
   }, []);
 
   useEffect(() => {
@@ -55,7 +60,7 @@ export default function RepertoireView({ imported, onImport, onBrowse, onDeleteL
   }
 
   function exportPgn(item?: RepertoireItem) {
-    if ((item?.backend || (!item && backendItems.length)) && usesLocalApi()) {
+    if ((item?.backend || !item) && usesLocalApi()) {
       const link=document.createElement('a'); link.href=item ? `${API_URL}/api/repertoires/${item.id}/export.pgn` : `${API_URL}/api/repertoires/export.pgn`; link.click(); return;
     }
     const text = item?.pgn ?? repertoires.flatMap((entry) => entry.pgn ? [entry.pgn] : []).join('\n\n');
@@ -64,13 +69,14 @@ export default function RepertoireView({ imported, onImport, onBrowse, onDeleteL
   }
   return (
     <section className="library-page" id="repertoire">
-      {error && <p role="alert">{error}<button onClick={() => void loadBackend()}>Retry</button></p>}
+      {error && <Notice error onRetry={() => { invalidateWorkspaceData(); void loadBackend(); }}>{loaded ? "Showing previously loaded records. " : ""}{error}</Notice>}
+      {!loaded && !error && <Notice>Loading repertoires…</Notice>}
       <div className="page-heading">
         <h1 className="sr-only">Repertoire</h1>
-        <div className="heading-actions"><button onClick={()=>exportPgn()}>⇩ Export all PGN</button><button className="primary-button" onClick={onImport}>＋ Import PGN</button></div>
+        <div className="heading-actions"><button disabled={!loaded} onClick={()=>exportPgn()}>⇩ Export all PGN</button><button className="primary-button" onClick={(event) => { event.currentTarget.focus(); onImport(); }}>＋ Import PGN</button></div>
       </div>
       <div className="library-grid">
-        {repertoires.map((item) => (
+        {repertoires.slice(libraryPage * 50, (libraryPage + 1) * 50).map((item) => (
           <article className="repertoire-card" key={item.id}>
             <div className="repertoire-top"><span className="side-badge">{item.side}</span><span>{item.due ? `${item.due} due` : 'Up to date'}</span></div>
             <div className="mini-board" aria-hidden="true">{Array.from({ length: 16 }).map((_, index) => <i key={index} />)}</div>
@@ -78,8 +84,9 @@ export default function RepertoireView({ imported, onImport, onBrowse, onDeleteL
             <div className="repertoire-actions"><button className="browse-button" onClick={() => onBrowse(item.id)}>Browse tree</button><button onClick={()=>exportPgn(item)}>⇩ PGN</button><button className="delete-repertoire" onClick={()=>void remove(item)}>Delete</button></div>
           </article>
         ))}
-        <button className="new-repertoire-card" onClick={onImport}><span>＋</span><strong>Add a repertoire</strong><small>PGN files stay on this computer</small></button>
+        <button className="new-repertoire-card" onClick={(event) => { event.currentTarget.focus(); onImport(); }}><span>＋</span><strong>Add a repertoire</strong><small>PGN files stay on this computer</small></button>
       </div>
+      {repertoires.length > 50 && <div className="pagination" aria-label="Library pages"><button disabled={libraryPage === 0} onClick={() => setLibraryPage(value => value - 1)}>Previous</button><span>Page {libraryPage + 1}</span><button disabled={(libraryPage + 1) * 50 >= repertoires.length} onClick={() => setLibraryPage(value => value + 1)}>Next</button></div>}
     </section>
   );
 }

@@ -40,7 +40,7 @@ it("Games shared board publishes readonly state and releases ownership on unmoun
       onAnalyze={vi.fn()}
       onSettings={vi.fn()}
       onSync={vi.fn()}
-      syncState={{ syncing: false, error: "", lastSuccess: "" }}
+      syncState={{ syncing: false, imported: 0, error: "", lastSuccess: "" }}
       theme="brown"
       pieceSet="cburnett"
       useSharedBoard

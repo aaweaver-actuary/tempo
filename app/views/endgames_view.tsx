@@ -1,3 +1,5 @@
+import { Dialog } from "../components/dialog";
+import { BoardTools } from "../components/board-workspace";
 import { API_URL, STANDARD_FEN } from "../const";
 import {
   readWorkspaceResponse,
@@ -6,7 +8,7 @@ import {
 import { Square, Chess } from "chess.js";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
-import { useBoardShellStore } from "../state/board-shell-store";
+import { useBoardPublisher } from "../hooks/use-board-publisher";
 import { generateLegalEndgameFen } from "../lib/endgame-generator";
 import { endgameTemplates } from "../samples";
 import { probeTablebase, tablebaseCategoryForWhite } from "../utils/tablebase";
@@ -58,12 +60,7 @@ export default function EndgamesView({
   const [target, setTarget] = useState<"win" | "draw">("win");
   const [status, setStatus] = useState("Finding a legal tablebase position…");
   const [fen, setFen] = useState(STANDARD_FEN);
-  const setShellBoardForOwner = useBoardShellStore(
-    (state) => state.setShellBoardForOwner,
-  );
-  const releaseShellBoardForOwner = useBoardShellStore(
-    (state) => state.releaseShellBoardForOwner,
-  );
+  const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
   const [busy, setBusy] = useState(true);
   const [userMoves, setUserMoves] = useState(0);
   const [complete, setComplete] = useState(false);
@@ -147,7 +144,7 @@ export default function EndgamesView({
     onQueueChanged();
   }
 
-  function recordEndgame(result: "correct" | "again") {
+  const recordEndgame = useCallback((result: "correct" | "again") => {
     setOutcome(result === "correct" ? "correct" : "wrong");
     if (!scheduledCard || !onReview) return;
     const token = generation.current;
@@ -155,7 +152,7 @@ export default function EndgamesView({
     resultTimer.current = setTimeout(() => {
       if (token === generation.current) onReview(result);
     }, 750);
-  }
+  }, [scheduledCard, onReview]);
 
   const newPosition = useCallback(
     async (index = selected) => {
@@ -252,7 +249,7 @@ export default function EndgamesView({
     }
   }
 
-  async function play(from: Square, to: Square) {
+  const play = useCallback(async (from: Square, to: Square) => {
     if (classification !== target || busy || complete) return;
     const board = new Chess(fen);
     const token = generation.current;
@@ -331,11 +328,12 @@ export default function EndgamesView({
       setStatus("The tablebase response failed. Replay the move when online.");
     }
     setBusy(false);
-  }
+  }, [classification, target, busy, complete, fen, scheduledCard, userMoves, recordEndgame]);
 
   useEffect(() => {
     if (!useSharedBoard) return;
     setShellBoardForOwner("endgames", {
+      unavailable: fen === STANDARD_FEN ? status : undefined,
       fen,
       interactionMode:
         busy || classification !== target || complete ? "readonly" : "legal",
@@ -354,6 +352,7 @@ export default function EndgamesView({
     });
     return () => releaseShellBoardForOwner("endgames");
   }, [
+    status,
     busy,
     classification,
     complete,
@@ -418,7 +417,7 @@ export default function EndgamesView({
               orientation={scheduledCard?.orientation}
             />
           )}
-          <div className="board-tools">
+          <BoardTools>
             <button
               disabled={Boolean(scheduledCard) && !complete}
               onClick={() => void newPosition()}
@@ -426,11 +425,11 @@ export default function EndgamesView({
               ⤨ <span>New position</span>
             </button>
             {!scheduledCard && (
-              <button onClick={() => setEditingMaterial(true)}>
+              <button onClick={(event) => { event.currentTarget.focus(); setEditingMaterial(true); }}>
                 ⚙ <span>Edit material</span>
               </button>
             )}
-          </div>
+          </BoardTools>
           {outcome && <OutcomeFlash outcome={outcome} />}
         </div>
         <aside className="study-panel endgame-study">
@@ -478,18 +477,8 @@ export default function EndgamesView({
         </aside>
       </div>
       {editingMaterial && (
-        <div
-          className="modal-backdrop"
-          onClick={() => setEditingMaterial(false)}
-        >
-          <section
-            className="import-dialog"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Edit endgame material"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <h2>Endgame material</h2>
+        <Dialog className="import-dialog" titleId="endgame-material-title" onClose={() => setEditingMaterial(false)}>
+            <h2 id="endgame-material-title">Endgame material</h2>
             <p>Use K, Q, R, B, N, P. One king per side; seven pieces total.</p>
             {(["white", "black"] as const).map((side) => (
               <label key={side}>
@@ -531,8 +520,7 @@ export default function EndgamesView({
               Practice material
             </button>
             <button onClick={() => setEditingMaterial(false)}>Cancel</button>
-          </section>
-        </div>
+        </Dialog>
       )}
     </section>
   );

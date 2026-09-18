@@ -22,7 +22,7 @@ export default function TrainingViewHeader({
       </div>
       <div className="session-count">
         <span>Today · {dateLabel}</span>
-        <strong>{cardsLeft}</strong>
+        <strong>{serviceError ? "—" : cardsLeft}</strong>
         <span>cards left</span>
       </div>
     </section>

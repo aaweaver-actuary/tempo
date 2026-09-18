@@ -20,7 +20,8 @@
     "preview:static": "vite preview --config vite.static.config.ts --host 127.0.0.1 --port 4173 --strictPort",
     "verify:static": "node scripts/verify-static-build.mjs",
     "start": "vinext start",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern pages-dist --ignore-pattern local-dist --ignore-pattern public/tempo-core --ignore-pattern test-results --ignore-pattern playwright-report"
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern pages-dist --ignore-pattern local-dist --ignore-pattern public/tempo-core --ignore-pattern test-results --ignore-pattern playwright-report",
+    "test:visual": "node scripts/test-visual.mjs"
   },
   "dependencies": {
     "@lichess-org/chessground": "^10.1.1",
@@ -34,6 +35,7 @@
     "zustand": "^5.0.15"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@cloudflare/vite-plugin": "1.37.1",
     "@cloudflare/workers-types": "4.20260515.1",
     "@openai/sites-vite-plugin": "^0.1.0 || ^0.2.0",

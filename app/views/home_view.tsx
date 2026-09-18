@@ -52,7 +52,7 @@ import {
 } from "../state/training-store";
 import Footer from "../components/Footer";
 import Navbar from "../components/Navbar";
-import { PersistentBoardShell } from "../components/persistent-board-shell";
+import { BoardWorkspace } from "../components/board-workspace";
 import BrandButton from "../components/buttons/BrandButton";
 import SoundToggleButton from "../components/buttons/SoundToggleButton";
 import SavedLocallyButton from "../components/buttons/SavedLocallyButton";
@@ -155,7 +155,7 @@ export default function Home() {
   useEffect(() => {
     window.scrollTo({ top: 0, behavior: "auto" });
     if (usesLocalApi() && currentView === "train") {
-      queueMicrotask(() => void refreshDatabaseQueue());
+      queueMicrotask(() => void refreshDatabaseQueue().catch(() => undefined));
       void readWorkspaceData(`${API_URL}/api/repertoire/lines`)
         .then(async (body) => {
           const lines = await runStudyTask<AnalysisLine[]>({
@@ -215,7 +215,7 @@ export default function Home() {
           (localStorage.getItem("tempo-piece-set") as PieceSet) ?? "cburnett",
         );
         setSoundOn(moveSoundEnabled());
-        void refreshDatabaseQueue();
+        void refreshDatabaseQueue().catch(() => undefined);
         return;
       }
       const today = localDayKey();
@@ -310,7 +310,7 @@ export default function Home() {
           "cburnett",
       );
       setSoundOn(moveSoundEnabled());
-      void refreshDatabaseQueue();
+      void refreshDatabaseQueue().catch(() => undefined);
     }, 0);
     return () => window.clearTimeout(timer);
   }, [
@@ -826,10 +826,9 @@ export default function Home() {
       </header>
       {!usesLocalApi() && <DemoBanner />}
 
+      <BoardWorkspaceContainer enabled={boardWorkspace} view={currentView}>
       {currentView === "train" && (
-        <section className="unified-board-shell-layout" data-view="train">
-          <PersistentBoardShell />
-          <div className="unified-board-shell-panel">
+        <>
             <TrainingView
               dateLabel={new Date().toLocaleDateString()}
               serviceError={serviceError}
@@ -845,34 +844,27 @@ export default function Home() {
               onMove={tryMove}
               useSharedBoard
             />
-          </div>
-        </section>
+        </>
       )}
       {currentView === "tactics" && (
-        <section className="unified-board-shell-layout" data-view="tactics">
-          <PersistentBoardShell />
-          <div className="unified-board-shell-panel">
+        <>
             <TacticsView
               theme={boardTheme}
               pieceSet={pieceSet}
               onQueueChanged={() => void refreshDatabaseQueue()}
               useSharedBoard
             />
-          </div>
-        </section>
+        </>
       )}
       {currentView === "endgames" && (
-        <section className="unified-board-shell-layout" data-view="endgames">
-          <PersistentBoardShell />
-          <div className="unified-board-shell-panel">
+        <>
             <EndgamesView
               theme={boardTheme}
               pieceSet={pieceSet}
               onQueueChanged={() => void refreshDatabaseQueue()}
               useSharedBoard
             />
-          </div>
-        </section>
+        </>
       )}
       {currentView === "repertoire" && (
         <RepertoireView
@@ -896,9 +888,7 @@ export default function Home() {
         />
       )}
       {currentView === "builder" && (
-        <section className="unified-board-shell-layout" data-view="builder">
-          <PersistentBoardShell />
-          <div className="unified-board-shell-panel">
+        <>
             <BuilderView
               theme={boardTheme}
               pieceSet={pieceSet}
@@ -906,13 +896,10 @@ export default function Home() {
               settings={new Settings()}
               useSharedBoard
             />
-          </div>
-        </section>
+        </>
       )}
       {currentView === "games" && (
-        <section className="unified-board-shell-layout" data-view="games">
-          <PersistentBoardShell />
-          <div className="unified-board-shell-panel">
+        <>
             <GamesView
               syncState={gameSync.state}
               onSync={() => void gameSync.sync(true)}
@@ -946,8 +933,7 @@ export default function Home() {
               pieceSet={pieceSet}
               useSharedBoard
             />
-          </div>
-        </section>
+        </>
       )}
       {currentView === "progress" && (
         <ProgressView
@@ -966,6 +952,7 @@ export default function Home() {
           onSound={changeSound}
         />
       )}
+      </BoardWorkspaceContainer>
       {showImport && (
         <ImportDialogBox
           onClose={() => setShowImport(false)}
@@ -1022,7 +1009,7 @@ export default function Home() {
             resetLine(updated);
             setSuggestShorter(false);
             activeQueueEntry.current = undefined;
-            if (usesLocalApi()) void refreshDatabaseQueue();
+            if (usesLocalApi()) void refreshDatabaseQueue().catch(() => undefined);
           }}
         />
       )}
@@ -1030,4 +1017,8 @@ export default function Home() {
       {!boardWorkspace && <Footer />}
     </main>
   );
+}
+
+function BoardWorkspaceContainer({ enabled, view, children }: { enabled: boolean; view: string; children: React.ReactNode }) {
+  return <BoardWorkspace view={view} enabled={enabled}>{children}</BoardWorkspace>;
 }

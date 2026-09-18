@@ -1,3 +1,4 @@
+import { BoardTools } from "../components/board-workspace";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import TrainingViewHeader from "./headers/TrainingViewHeader";
@@ -5,7 +6,7 @@ import RetryButton from "../components/buttons/RetryButton";
 import EndgamesView from "./endgames_view";
 import { PracticeCard } from "../types";
 import { BoardTheme, Chessboard, PieceSet } from "../components/chessboard";
-import { useBoardShellStore } from "../state/board-shell-store";
+import { useBoardPublisher } from "../hooks/use-board-publisher";
 import { OutcomeFlash } from "../components/board-controls";
 import AgainButton from "../components/buttons/AgainButton";
 import AnalyzeOnLichessButton from "../components/buttons/AnalyzeOnLichessButton";
@@ -15,7 +16,7 @@ import FailureNote from "../components/FailureNote";
 import FeedbackIcon from "../components/feedback/FeedbackIcon";
 import FeedbackText from "../components/feedback/FeedbackText";
 import OpeningTitle from "../components/OpeningTitle";
-import { useEffect } from "react";
+import { useEffect, useMemo } from "react";
 import { usesLocalApi } from "../utils/local";
 import { Square } from "chess.js";
 import { getFeedbackCopy } from "./getFeedbackCopy";
@@ -75,12 +76,7 @@ export default function TrainingView({
     teachingEncounterKey,
   } = useTrainingStore(useShallow(selectTrainingViewState));
   const isEndgame = card.kind === "endgame";
-  const setShellBoardForOwner = useBoardShellStore(
-    (state) => state.setShellBoardForOwner,
-  );
-  const releaseShellBoardForOwner = useBoardShellStore(
-    (state) => state.releaseShellBoardForOwner,
-  );
+  const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
   const feedbackCopy = getFeedbackCopy(attemptFailed, card)[feedback];
   const playerName = trainedColor(card) === "white" ? "White" : "Black";
   const currentMoveKey = `${card.backendId ?? card.id}:${card.revision ?? 1}:${step}`;
@@ -88,7 +84,7 @@ export default function TrainingView({
     showHint ||
     (card.kind === "opening" && teachingEncounterKey === currentMoveKey);
   const isFailedPosition = attemptFailed && currentFenString === failureFen;
-  const trainingShapes: DrawShape[] = [
+  const trainingShapes = useMemo<DrawShape[]>(() => [
     ...(opponentLastMove
       ? [
           {
@@ -99,15 +95,16 @@ export default function TrainingView({
         ]
       : []),
     ...(isFailedPosition ? annotationToShapes(failureAnnotation) : []),
-  ];
+  ], [opponentLastMove, isFailedPosition, failureAnnotation]);
   const revealedMoves = card.moves.slice(
     0,
     feedback === "complete" ? card.moves.length : step,
   );
 
   useEffect(() => {
-    if (!useSharedBoard || isEndgame || cardsLeft <= 0) return;
+    if (!useSharedBoard || isEndgame) return;
     setShellBoardForOwner("train", {
+      unavailable: cardsLeft <= 0 ? (serviceError ? "Training position unavailable. Retry the local service." : "No cards due. Your next session will appear here.") : undefined,
       fen: currentFenString,
       expectedSan: card.moves[step],
       lastMove,
@@ -115,7 +112,7 @@ export default function TrainingView({
         isLocked || step >= card.moves.length || cardsLeft === 0
           ? "readonly"
           : "legal",
-      showHint: showTeachingArrow,
+      showHint: cardsLeft > 0 && showTeachingArrow,
       theme: boardTheme,
       pieceSet,
       orientation: card.orientation === "black" ? "black" : "white",
@@ -130,6 +127,7 @@ export default function TrainingView({
     });
     return () => releaseShellBoardForOwner("train");
   }, [
+    serviceError,
     boardAttempt,
     boardTheme,
     card.moves,
@@ -207,7 +205,7 @@ export default function TrainingView({
                 outcome={attemptFailed ? "wrong" : "correct"}
               />
             )}
-            <div className="board-tools">
+            <BoardTools>
               <AgainButton
                 handleAgain={handleAttemptFailure}
                 isAttemptFailed={attemptFailed}
@@ -224,7 +222,7 @@ export default function TrainingView({
                 card={card}
                 setEditorCard={(value) => setEditorCard(value)}
               />
-            </div>
+            </BoardTools>
           </div>
           <aside className="study-panel">
             <p className="side-to-play">{playerName.toLowerCase()} to play</p>

@@ -87,3 +87,31 @@ Append every new reported issue and its test names here. All listed tests belong
 | UI consistency and reliability | Required regression |
 | --- | --- |
 | Deleted/missing SQLite mount reports healthy | `test_unavailable_database_is_actionable_and_never_healthy` |
+| Builder annotations leak into Games | `builder annotations never appear in games`; `stale sessions cannot overwrite or release a replacement owner` |
+| Board moves and changes size between workspaces | `board bounds remain identical across workspace navigation` (viewport matrix) |
+| Endgame actions inaccessible on phones | `endgame study actions remain reachable on narrow screens` |
+| Nested workspaces clip desktop content | `desktop workspace panels do not clip controls or content` |
+| Board toolbar placement varies between modes | `board controls retain consistent placement across workspaces` |
+| Application navigation recreates the board | `application navigation retains one Chessground instance` |
+| Service failures masquerade as empty data | `failed initial loads never display empty records or zero statistics` |
+| Split resizing loses preference or changes other workspaces | `shared split supports keyboard reset and persistence without changing workspace preference` |
+| Responsive navigation and task tabs break across browser engines | `critical navigation, board input, split and dialogs work across browser engines` |
+| Inaccessible controls and page overflow | `workspace accessibility and reflow` (phone and desktop) |
+| Appearance drifts between sections and viewports | Mandatory Linux `visual.spec.ts` baselines for all eight sections, unavailable service and phone import dialog |
+| Test cleanup could run against a user's database | `destructive browser fixtures refuse production and unmarked services` |
+| State leaks across arbitrary board mode transitions | `all board owner pairs clear transient fields on acquisition`; `every directed workspace transition isolates annotations and board input` |
+| Pointer resizing loses its preferred allocation | `pointer resizing persists and clamps without horizontal overflow` |
+| Warm navigation/resize stalls | `warm workspace shells paint within 200ms p95 without long interaction tasks` in the mandatory pinned Linux suite |
+
+- `failed settings reads cannot overwrite authoritative settings with defaults` — `tests/browser/recovery.spec.ts`: failed initial settings load disables writes and offers retry.
+- `malformed progress is unavailable and retry recovers real measurements` — malformed data cannot become empty or zero statistics.
+- `touch board input and rotation preserve legal position at DPR` — legal/illegal touch moves, read-only Games and orientation changes at DPR 1/2.
+- `drag input and promotion retain the established queen-promotion behavior` — real Chessground drag and promotion.
+- Existing backend regressions `test_delete_branch_prefix_removes_nimzo_descendants_and_preserves_qgd` and `test_delete_branch_rebuilds_missing_retained_cards_without_server_error` exposed a missing route; `test_branch_removal_preserves_shared_cards_and_other_repertoire_history` additionally protects shared card ownership and reviews.
+- Existing `test_new_cards_per_day_applies_separately_to_each_repertoire`, `test_new_cards_per_day_respects_lower_limit`, and `test_new_cards_per_day_handles_uneven_repertoire_sizes` protect the restored per-repertoire admission limit.
+- `tablet section menu stays inside the header and never overlaps the board` — removes inherited two-row navigation positioning at tablet breakpoints, discovered during baseline review.
+- `workspace timeout is actionable and a retry can recover` — bounded service reads abort after 15 seconds, evict the failed request, and allow a fresh retry.
+- `application navigation retains one Chessground instance` additionally traverses Settings, Progress, and Repertoire; the hidden board remains mounted while its workspace relinquishes ownership.
+- `shared toolbar flip persists while stepping through a game` — toolbar flip and keyboard flip share the rendered board's orientation behavior, so move navigation cannot overwrite it.
+- `owner changes clear an unfinished square selection at the same position` — same-FEN ownership transitions still cancel transient board selection.
+- `tablet menu Escape restores the visible navigation trigger` — keyboard dismissal returns focus to the tablet trigger rather than the hidden phone control; covered in Chromium, Firefox, and WebKit.

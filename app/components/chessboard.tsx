@@ -22,6 +22,7 @@ const DRAW_BRUSHES = {
 };
 
 type ChessboardProps = {
+  owner?: string;
   fen: string;
   expectedSan?: string;
   lastMove?: readonly [string, string];
@@ -43,6 +44,7 @@ type ChessboardProps = {
 
 export function Chessboard({
   fen,
+  owner,
   expectedSan,
   lastMove,
   locked,
@@ -71,7 +73,8 @@ export function Chessboard({
     editMode,
   });
   const surfaceSize = useBoardViewport(hostRef);
-  const [flipped, setFlipped] = useState(false);
+  const [flippedOwner, setFlippedOwner] = useState<string | null>(null);
+  const flipped = flippedOwner === (owner ?? "embedded");
   const visualOrientation = flipped
     ? orientation === "white"
       ? "black"
@@ -135,12 +138,17 @@ export function Chessboard({
       : undefined;
 
   useEffect(() => {
-    const flip = (event: KeyboardEvent) => {
-      if (!surfaceRef.current?.getClientRects().length) return;
+    const flip = (event: Event) => {
+      if (
+        !surfaceRef.current?.getClientRects().length ||
+        hostRef.current?.closest('[data-unavailable="true"]')
+      )
+        return;
       const target = event.target as HTMLElement | null;
       if (
-        event.key.toLowerCase() !== "f" ||
-        target?.matches('input,textarea,select,[contenteditable="true"]')
+        event instanceof KeyboardEvent &&
+        (event.key.toLowerCase() !== "f" ||
+          target?.matches('input,textarea,select,[contenteditable="true"]'))
       )
         return;
       if (
@@ -150,11 +158,18 @@ export function Chessboard({
         return;
       event.preventDefault();
       if (onFlip) onFlip();
-      else setFlipped((current) => !current);
+      else
+        setFlippedOwner((current) =>
+          current === (owner ?? "embedded") ? null : (owner ?? "embedded"),
+        );
     };
     window.addEventListener("keydown", flip);
-    return () => window.removeEventListener("keydown", flip);
-  }, [onFlip]);
+    window.addEventListener("tempo:flip-board", flip);
+    return () => {
+      window.removeEventListener("keydown", flip);
+      window.removeEventListener("tempo:flip-board", flip);
+    };
+  }, [onFlip, owner]);
 
   useLayoutEffect(() => {
     if (!surfaceRef.current) return;
@@ -162,7 +177,11 @@ export function Chessboard({
     apiRef.current = Chessground(surfaceRef.current, {
       viewOnly: false,
       coordinates: true,
-      animation: { enabled: true, duration: 180 },
+      animation: {
+        enabled: !window.matchMedia?.("(prefers-reduced-motion: reduce)")
+          .matches,
+        duration: 180,
+      },
       premovable: { enabled: false },
       drawable: {
         enabled: true,
@@ -204,6 +223,7 @@ export function Chessboard({
   }, []);
 
   useLayoutEffect(() => {
+    apiRef.current?.cancelMove?.();
     apiRef.current?.set({
       fen,
       orientation: visualOrientation,
@@ -226,6 +246,7 @@ export function Chessboard({
     });
   }, [
     fen,
+    owner,
     visualOrientation,
     position,
     lastMove,
@@ -234,12 +255,12 @@ export function Chessboard({
     positionRevision,
   ]);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     apiRef.current?.setAutoShapes(hint ? [...shapes, hint] : shapes);
-  }, [shapes, hint]);
-  useEffect(() => {
+  }, [shapes, hint, owner]);
+  useLayoutEffect(() => {
     apiRef.current?.setShapes(drawnShapes);
-  }, [drawnShapes]);
+  }, [drawnShapes, owner]);
   useLayoutEffect(() => {
     if (!surfaceSize) return;
     apiRef.current?.redrawAll();

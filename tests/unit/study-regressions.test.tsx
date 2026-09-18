@@ -127,9 +127,10 @@ describe("reported study regressions", () => {
     await waitFor(() => expect(screen.getAllByText("black to play").length).toBeGreaterThan(0));
     await pause();
     expect(screen.getByText("Puzzle 1 of 100")).toBeTruthy();
-    fireEvent.click(screen.getByText("e7e5")); fireEvent.click(screen.getByText("b8c6"));
-    await pause();
-    expect(JSON.parse(localStorage.getItem("tempo-tactics-progress-v2")!)["fork:easy"].index).toBe(1);
+    fireEvent.click(screen.getByText("e7e5"));
+    await waitFor(() => expect(screen.getByTestId("board").getAttribute("data-fen")).toContain("5N2"));
+    fireEvent.click(screen.getByText("b8c6"));
+    await waitFor(() => expect(JSON.parse(localStorage.getItem("tempo-tactics-progress-v2") ?? "{}")["fork:easy"]?.index).toBe(1));
   });
   it("clean progress counts distinct puzzle IDs", () => {
     const first = advanceTacticProgress({}, "fork:easy", true, "same");

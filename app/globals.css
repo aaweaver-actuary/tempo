@@ -38,12 +38,6 @@ button {
   min-height: 100vh;
   padding: 70px 0 48px;
 }
-.board-workspace-shell {
-  height: 100dvh;
-  min-height: 0;
-  overflow: hidden;
-  padding-bottom: 0;
-}
 .topbar {
   position: fixed;
   z-index: 40;
@@ -211,42 +205,9 @@ button {
   max-height: 100%;
   position: relative;
 }
-.board-viewport {
-  width: 100%;
-  height: calc(100dvh - var(--nav-height) - 190px);
-  min-width: 0;
-  min-height: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.board-viewport > .board-frame {
-  flex: none;
-  max-width: none;
-  max-height: none;
-  margin: 0;
-}
-.centered-board .board-viewport {
-  height: calc(100dvh - var(--nav-height) - 230px);
-}
-.editor-board-column .board-viewport {
-  height: min(540px, calc(100dvh - 240px));
-}
-@media (max-width: 620px) {
-  .centered-board .board-viewport {
-    height: calc(100dvh - var(--nav-height) - 300px);
-  }
-}
 .board-frame {
   position: relative;
-  width: min(100%, 680px);
-  min-width: 0;
-  max-width: 100%;
-  max-height: calc(100svh - var(--nav-height) - 12px);
-  aspect-ratio: 1;
-  margin-left: auto;
   background: #293028;
-  padding: 9px;
   border-radius: 6px;
   box-shadow: 0 18px 50px rgba(45, 48, 40, 0.14);
   z-index: 2;
@@ -1238,54 +1199,9 @@ button {
 .analysis-layout.analysis-layout-shared {
   grid-template-columns: 1fr;
 }
-.unified-board-shell-layout {
-  display: grid;
-  grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.1fr);
-  align-items: start;
-  gap: clamp(18px, 2.5vw, 36px);
-}
-.unified-board-shell-layout[data-view="builder"] .analysis-page {
-  max-width: none;
-  padding-left: 0;
-  padding-right: 0;
-}
-.unified-board-shell-layout[data-view="tactics"] .tactics-page {
-  max-width: none;
-  padding-left: 0;
-  padding-right: 0;
-}
-.unified-board-shell-layout[data-view="endgames"] .endgames-page {
-  max-width: none;
-  padding-left: 0;
-  padding-right: 0;
-}
-.unified-board-shell-layout[data-view="train"] .training-header,
-.unified-board-shell-layout[data-view="train"] .training-grid {
-  max-width: none;
-  padding-left: 0;
-  padding-right: 0;
-}
-.persistent-board-shell {
-  min-width: 0;
-  position: sticky;
-  top: calc(var(--nav-height) + 16px);
-}
-.persistent-board-shell .board-frame {
-  width: min(100%, calc(100vh - 195px));
-  min-width: 0;
-  margin: 0;
-}
-.unified-board-shell-panel {
-  min-width: 0;
-}
 .analysis-board-column {
   min-width: 0;
   align-self: stretch;
-}
-.analysis-board-column .board-frame {
-  width: min(100%, calc(100vh - 195px));
-  min-width: 0;
-  margin: 0;
 }
 .analysis-moves {
   min-height: 48px;
@@ -2425,11 +2341,6 @@ button {
   grid-template-columns: minmax(330px, 0.92fr) minmax(300px, 1.08fr);
   gap: 28px;
 }
-.tree-board .board-frame {
-  width: 100%;
-  min-width: 0;
-  padding: 7px;
-}
 .tree-panel {
   min-width: 0;
   display: flex;
@@ -2835,11 +2746,6 @@ button {
 .game-board {
   align-self: stretch;
 }
-.game-board .board-frame {
-  width: min(100%, calc(100dvh - var(--nav-height) - 150px));
-  min-width: 0;
-  margin: auto;
-}
 .game-side-scroll {
   min-height: 0;
   max-height: 100%;
@@ -2991,11 +2897,6 @@ button {
 .centered-board {
   position: relative;
   align-self: stretch;
-}
-.centered-board .board-frame {
-  width: min(100%, calc(100dvh - 230px));
-  min-width: 0;
-  margin: auto;
 }
 .tactic-study h2,
 .endgame-study h2 {
@@ -3158,11 +3059,6 @@ button {
 .piece-palette button.active {
   outline: 2px solid var(--green);
 }
-.editor-board-column .board-frame {
-  width: 100%;
-  min-width: 0;
-  margin: 0 auto;
-}
 .move-navigator {
   display: grid;
   grid-template-columns: 38px 38px 1fr 38px 38px;
@@ -3313,15 +3209,6 @@ button {
     display: flex;
     flex-direction: column;
   }
-  .training-grid .board-viewport {
-    height: 100%;
-    min-height: 0;
-  }
-  .board-frame {
-    width: min(100%, calc(100dvh - var(--nav-height) - 150px), 680px);
-    min-width: 0;
-    margin: 0 auto;
-  }
   .study-panel {
     min-height: auto;
     max-height: 148px;
@@ -3336,29 +3223,6 @@ button {
   }
   .analysis-layout {
     grid-template-columns: 1fr;
-  }
-  .unified-board-shell-layout {
-    grid-template-columns: 1fr;
-    gap: 14px;
-  }
-  .persistent-board-shell {
-    position: static;
-    max-width: 680px;
-    width: 100%;
-    margin: 0 auto;
-  }
-  .persistent-board-shell .board-frame {
-    width: min(100%, calc(100dvh - var(--nav-height) - 170px), 680px);
-    margin: 0 auto;
-  }
-  .unified-board-shell-panel {
-    max-width: 680px;
-    width: 100%;
-    margin: 0 auto;
-  }
-  .analysis-board-column .board-frame {
-    width: min(100%, calc(100dvh - var(--nav-height) - 150px), 680px);
-    margin: 0 auto;
   }
   .analysis-board-column {
     max-width: 680px;
@@ -3390,10 +3254,6 @@ button {
   }
   .template-list button {
     min-width: 145px;
-  }
-  .tactics-workspace .board-frame,
-  .endgame-workspace .board-frame {
-    width: min(100%, calc(100dvh - var(--nav-height) - 300px), 680px);
   }
   .motif-rail {
     max-height: none;
@@ -3479,25 +3339,6 @@ button {
   }
   .training-grid {
     padding-bottom: 65px;
-  }
-  .board-frame {
-    padding: 6px;
-  }
-  .training-grid .board-frame {
-    width: min(100%, calc(100dvh - var(--nav-height) - 217px));
-  }
-  .tactics-workspace .board-frame,
-  .endgame-workspace .board-frame {
-    width: min(100%, calc(100dvh - var(--nav-height) - 290px));
-  }
-  .analysis-board-column .board-frame {
-    width: min(100%, calc(100dvh - var(--nav-height) - 300px));
-  }
-  .persistent-board-shell .board-frame {
-    width: min(100%, calc(100dvh - var(--nav-height) - 300px));
-  }
-  .game-board .board-frame {
-    width: min(100%, calc(100dvh - var(--nav-height) - 330px));
   }
   .piece {
     font-size: clamp(33px, 11vw, 58px);
