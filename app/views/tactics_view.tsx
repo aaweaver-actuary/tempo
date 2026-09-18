@@ -1,7 +1,14 @@
 import { Chess, Square, Move } from "chess.js";
-import { useState, useRef, useEffect } from "react";
+import {
+  useState,
+  useRef,
+  useEffect,
+  useLayoutEffect,
+  useCallback,
+} from "react";
 import { OutcomeFlash } from "../components/board-controls";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
+import { useBoardShellStore } from "../state/board-shell-store";
 import { API_URL, STANDARD_FEN } from "../const";
 import { playMoveSound } from "../lib/move-sound";
 import {
@@ -74,33 +81,53 @@ export default function TacticsView({
   theme,
   pieceSet,
   onQueueChanged,
+  useSharedBoard = false,
 }: {
   theme: BoardTheme;
   pieceSet: PieceSet;
   onQueueChanged: () => void;
+  useSharedBoard?: boolean;
 }) {
   const [motif, setMotif] = useState("hangingPiece");
   const [stage, setStage] = useState("easy");
   const [progress, setProgress] = useState(readTacticProgress);
   const [progressReady, setProgressReady] = useState(() => !usesLocalApi());
-  const [attempt, setAttempt] = useState<TacticAttempt>({
-    entryKey: "",
-    discoveryId: "",
-    fen: emptyPuzzle.startingFen,
-    step: 0,
-    guided: false,
-    phase: "playerTurn",
-    positionRevision: 0,
-  });
-  const finishingRef = useRef("");
-  const [saveError, setSaveError] = useState("");
-  const attemptTokenRef = useRef(0);
-  const advanceTimers = useRef(new Set<number>());
   const [prepared, setPrepared] = useState<
     Array<{ record: PackagedPuzzle; card: PracticeCard }>
   >([]);
   const [deckState, setDeckState] = useState("loading");
   const [retry, setRetry] = useState(0);
+  const progressKey = tacticProgressKey(motif, stage);
+  const currentProgress = progress[progressKey] ?? { clean: 0, index: 0 };
+  const discoveredIds = new Set(
+    currentProgress.discoveredIds ?? currentProgress.cleanIds ?? [],
+  );
+  const cleanIds = new Set(currentProgress.cleanIds ?? []);
+  const selectedPuzzle =
+    prepared.find(({ card }) => !discoveredIds.has(card.id)) ??
+    prepared.find(({ card }) => !cleanIds.has(card.id));
+  const puzzle = selectedPuzzle?.card ?? emptyPuzzle;
+  const packagedRecord = selectedPuzzle?.record;
+  const entryKey = `${progressKey}:${puzzle.id}`;
+  const [attempt, setAttempt] = useState<TacticAttempt>(() => ({
+    entryKey,
+    discoveryId: crypto.randomUUID(),
+    fen: puzzle.startingFen,
+    step: 0,
+    guided: false,
+    phase: "playerTurn",
+    positionRevision: 0,
+  }));
+  const finishingRef = useRef("");
+  const [saveError, setSaveError] = useState("");
+  const setShellBoardForOwner = useBoardShellStore(
+    (state) => state.setShellBoardForOwner,
+  );
+  const releaseShellBoardForOwner = useBoardShellStore(
+    (state) => state.releaseShellBoardForOwner,
+  );
+  const attemptTokenRef = useRef(0);
+  const advanceTimers = useRef(new Set<number>());
   useEffect(() => {
     let active = true;
     void loadTacticsDeck(motif, stage)
@@ -145,23 +172,11 @@ export default function TacticsView({
       active = false;
     };
   }, [retry]);
-  const progressKey = tacticProgressKey(motif, stage);
   const deckReady =
     deckState === "ready" && prepared[0]?.record.DeckId === `${motif}-${stage}`;
-  const currentProgress = progress[progressKey] ?? { clean: 0, index: 0 };
-  const discoveredIds = new Set(
-    currentProgress.discoveredIds ?? currentProgress.cleanIds ?? [],
-  );
-  const cleanIds = new Set(currentProgress.cleanIds ?? []);
-  const selectedPuzzle =
-    prepared.find(({ card }) => !discoveredIds.has(card.id)) ??
-    prepared.find(({ card }) => !cleanIds.has(card.id));
-  const puzzle = selectedPuzzle?.card ?? emptyPuzzle;
   const puzzleSide =
     puzzle.orientation ??
     (new Chess(puzzle.startingFen).turn() === "b" ? "black" : "white");
-  const packagedRecord = selectedPuzzle?.record;
-  const entryKey = `${progressKey}:${puzzle.id}`;
   const { fen, step, guided: failed, positionRevision: boardAttempt } = attempt;
   const hint = attempt.guided;
   const outcome =
@@ -171,135 +186,216 @@ export default function TacticsView({
         : "correct"
       : null;
 
+  const attemptRef = useRef(attempt);
+  const entryKeyRef = useRef(entryKey);
+  const fenRef = useRef(fen);
+  const stepRef = useRef(step);
+  const puzzleMovesRef = useRef(puzzle.moves);
+
   useEffect(() => {
-    const timer = window.setTimeout(() => {
+    attemptRef.current = attempt;
+    entryKeyRef.current = entryKey;
+    fenRef.current = fen;
+    stepRef.current = step;
+    puzzleMovesRef.current = puzzle.moves;
+  }, [attempt, entryKey, fen, puzzle.moves, step]);
+
+  useLayoutEffect(() => {
+    setAttempt((current) => {
+      if (
+        current.entryKey === entryKey &&
+        current.fen === puzzle.startingFen &&
+        current.phase === "playerTurn" &&
+        !current.guided
+      ) {
+        return current;
+      }
       attemptTokenRef.current += 1;
       finishingRef.current = "";
       setSaveError("");
-      setAttempt({
+      return {
         entryKey,
         discoveryId: crypto.randomUUID(),
         fen: puzzle.startingFen,
         step: 0,
         guided: false,
         phase: "playerTurn",
-        positionRevision: 0,
-      });
-    }, 0);
-    return () => window.clearTimeout(timer);
+        positionRevision: current.positionRevision + 1,
+      };
+    });
   }, [entryKey, puzzle.startingFen]);
   useEffect(() => {
     const timers = advanceTimers.current;
     return () => timers.forEach((timer) => window.clearTimeout(timer));
   }, []);
 
-  async function finish(completedAttempt = attempt) {
-    if (finishingRef.current === completedAttempt.discoveryId) return;
-    finishingRef.current = completedAttempt.discoveryId;
-    const clean = !completedAttempt.guided;
-    const completedKey = progressKey;
-    const token = attemptTokenRef.current;
-    setAttempt({ ...completedAttempt, phase: "feedbackPause" });
-    if (packagedRecord && usesLocalApi()) {
-      try {
-        const response = await fetch(`${API_URL}/api/tactics/attempt`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            attempt_id: completedAttempt.discoveryId,
-            puzzle_id: packagedRecord.PuzzleId,
-            deck_id: packagedRecord.DeckId,
-            correct: clean,
+  const guideAttempt = useCallback(
+    (restart = false) => {
+      if (attemptRef.current.phase === "feedbackPause") return;
+      setAttempt((current) => ({
+        ...current,
+        entryKey: current.entryKey || entryKey,
+        discoveryId: current.discoveryId || crypto.randomUUID(),
+        fen: restart ? puzzle.startingFen : current.fen,
+        step: restart ? 0 : current.step,
+        guided: true,
+        phase: "guided",
+        positionRevision: current.positionRevision + 1,
+      }));
+    },
+    [entryKey, puzzle.startingFen],
+  );
+
+  const finish = useCallback(
+    async (completedAttempt = attemptRef.current) => {
+      if (finishingRef.current === completedAttempt.discoveryId) return;
+      finishingRef.current = completedAttempt.discoveryId;
+      const clean = !completedAttempt.guided;
+      const completedKey = progressKey;
+      const token = attemptTokenRef.current;
+      setAttempt({ ...completedAttempt, phase: "feedbackPause" });
+      if (packagedRecord && usesLocalApi()) {
+        try {
+          const response = await fetch(`${API_URL}/api/tactics/attempt`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              attempt_id: completedAttempt.discoveryId,
+              puzzle_id: packagedRecord.PuzzleId,
+              deck_id: packagedRecord.DeckId,
+              correct: clean,
+              clean,
+              source_fen: packagedRecord.FEN,
+              moves: packagedRecord.Moves.split(/\s+/),
+              rating: packagedRecord.Rating,
+            }),
+          });
+          if (!response.ok) throw new Error();
+          invalidateWorkspaceData();
+          onQueueChanged();
+        } catch {
+          if (attemptTokenRef.current === token)
+            setSaveError(
+              "Could not save this attempt. Retry to save it before continuing.",
+            );
+          if (finishingRef.current === completedAttempt.discoveryId)
+            finishingRef.current = "";
+          return;
+        }
+      }
+      const timer = window.setTimeout(() => {
+        advanceTimers.current.delete(timer);
+        // Commit only this deck's puzzle identity. A stale completion must never
+        // mutate another deck's active attempt or its feedback.
+        setProgress((current) => {
+          const next = advanceTacticProgress(
+            current,
+            completedKey,
             clean,
-            source_fen: packagedRecord.FEN,
-            moves: packagedRecord.Moves.split(/\s+/),
-            rating: packagedRecord.Rating,
-          }),
-        });
-        if (!response.ok) throw new Error();
-        invalidateWorkspaceData();
-        onQueueChanged();
-      } catch {
-        if (attemptTokenRef.current === token)
-          setSaveError(
-            "Could not save this attempt. Retry to save it before continuing.",
+            puzzle.id,
           );
-        if (finishingRef.current === completedAttempt.discoveryId)
-          finishingRef.current = "";
+          writeTacticProgress(next);
+          return next;
+        });
+      }, 750);
+      advanceTimers.current.add(timer);
+    },
+    [onQueueChanged, packagedRecord, progressKey, puzzle.id],
+  );
+
+  const movePiece = useCallback(
+    (from: Square, to: Square) => {
+      const currentAttempt = attemptRef.current;
+      const currentEntryKey = entryKeyRef.current;
+      const currentFen = fenRef.current;
+      const currentStep = stepRef.current;
+      const currentPuzzleMoves = puzzleMovesRef.current;
+      if (
+        currentAttempt.phase === "feedbackPause" ||
+        currentAttempt.entryKey !== currentEntryKey ||
+        currentStep % 2 ||
+        currentStep >= currentPuzzleMoves.length
+      )
+        return;
+      const board = new Chess(currentFen);
+      let move: Move;
+      try {
+        move = board.move({ from, to, promotion: "q" });
+      } catch {
+        guideAttempt();
         return;
       }
-    }
-    const timer = window.setTimeout(() => {
-      advanceTimers.current.delete(timer);
-      // Commit only this deck's puzzle identity. A stale completion must never
-      // mutate another deck's active attempt or its feedback.
-      setProgress((current) => {
-        const next = advanceTacticProgress(
-          current,
-          completedKey,
-          clean,
-          puzzle.id,
-        );
-        writeTacticProgress(next);
-        return next;
-      });
-    }, 750);
-    advanceTimers.current.add(timer);
-  }
+      if (
+        !board.isCheckmate() &&
+        move.san !== currentPuzzleMoves[currentStep]
+      ) {
+        guideAttempt();
+        return;
+      }
+      const nextAttempt = {
+        ...currentAttempt,
+        fen: asFenString(board.fen()),
+        step: currentStep + 1,
+      };
+      if (board.isCheckmate()) {
+        void finish({
+          ...nextAttempt,
+          step: currentPuzzleMoves.length,
+        });
+        return;
+      }
+      const replyIndex = currentStep + 1;
+      if (replyIndex >= currentPuzzleMoves.length) {
+        void finish(nextAttempt);
+        return;
+      }
+      const replyBoard = new Chess(board.fen());
+      replyBoard.move(currentPuzzleMoves[replyIndex]);
+      nextAttempt.fen = asFenString(replyBoard.fen());
+      nextAttempt.step = replyIndex + 1;
+      playMoveSound();
+      if (replyIndex + 1 >= currentPuzzleMoves.length) void finish(nextAttempt);
+      else setAttempt(nextAttempt);
+    },
+    [finish, guideAttempt],
+  );
 
-  function guideAttempt(restart = false) {
-    if (attempt.phase === "feedbackPause") return;
-    setAttempt((current) => ({
-      ...current,
-      fen: restart ? puzzle.startingFen : current.fen,
-      step: restart ? 0 : current.step,
-      guided: true,
-      phase: "guided",
-      positionRevision: current.positionRevision + 1,
-    }));
-  }
-
-  function movePiece(from: Square, to: Square) {
-    if (
-      attempt.phase === "feedbackPause" ||
-      attempt.entryKey !== entryKey ||
-      step % 2 ||
-      step >= puzzle.moves.length
-    )
-      return;
-    const board = new Chess(fen);
-    let move: Move;
-    try {
-      move = board.move({ from, to, promotion: "q" });
-    } catch {
-      return;
-    }
-    if (!board.isCheckmate() && move.san !== puzzle.moves[step]) {
-      guideAttempt();
-      return;
-    }
-    const nextAttempt = {
-      ...attempt,
-      fen: asFenString(board.fen()),
-      step: step + 1,
-    };
-    if (board.isCheckmate()) {
-      void finish({ ...nextAttempt, step: puzzle.moves.length });
-      return;
-    }
-    const replyIndex = step + 1;
-    if (replyIndex >= puzzle.moves.length) {
-      void finish(nextAttempt);
-      return;
-    }
-    const replyBoard = new Chess(board.fen());
-    replyBoard.move(puzzle.moves[replyIndex]);
-    nextAttempt.fen = asFenString(replyBoard.fen());
-    nextAttempt.step = replyIndex + 1;
-    playMoveSound();
-    if (replyIndex + 1 >= puzzle.moves.length) void finish(nextAttempt);
-    else setAttempt(nextAttempt);
-  }
+  useLayoutEffect(() => {
+    if (!useSharedBoard) return;
+    setShellBoardForOwner("tactics", {
+      fen,
+      expectedSan: puzzle.moves[step],
+      interactionMode:
+        Boolean(outcome) || step >= puzzle.moves.length ? "readonly" : "legal",
+      showHint: hint,
+      theme,
+      pieceSet,
+      orientation: puzzleSide,
+      shapes: [],
+      drawnShapes: [],
+      positionRevision: boardAttempt,
+      onMove: movePiece,
+      onSquareSelect: undefined,
+      onFreeMove: undefined,
+      onDrawnShapesChange: undefined,
+      onFlip: undefined,
+    });
+    return () => releaseShellBoardForOwner("tactics");
+  }, [
+    boardAttempt,
+    fen,
+    hint,
+    movePiece,
+    outcome,
+    pieceSet,
+    puzzle.moves,
+    puzzleSide,
+    releaseShellBoardForOwner,
+    setShellBoardForOwner,
+    step,
+    theme,
+    useSharedBoard,
+  ]);
 
   const current = tacticMotifs.find((item) => item[0] === motif)!;
   const target = stage === "focused" ? 250 : 100;
@@ -410,18 +506,20 @@ export default function TacticsView({
           })}
         </aside>
         <div className="board-column centered-board">
-          <Chessboard
-            key={entryKey}
-            positionRevision={boardAttempt}
-            fen={fen}
-            expectedSan={puzzle.moves[step]}
-            locked={Boolean(outcome) || step >= puzzle.moves.length}
-            showHint={hint}
-            theme={theme}
-            pieceSet={pieceSet}
-            onMove={movePiece}
-            orientation={puzzleSide}
-          />
+          {!useSharedBoard && (
+            <Chessboard
+              key={entryKey}
+              positionRevision={boardAttempt}
+              fen={fen}
+              expectedSan={puzzle.moves[step]}
+              locked={Boolean(outcome) || step >= puzzle.moves.length}
+              showHint={hint}
+              theme={theme}
+              pieceSet={pieceSet}
+              onMove={movePiece}
+              orientation={puzzleSide}
+            />
+          )}
           <div className="board-tools">
             <button
               disabled={attempt.phase === "feedbackPause"}

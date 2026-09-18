@@ -252,6 +252,11 @@ export const branchResultSchema = z.strictObject({
   duplicate: z.boolean(),
   moves: z.array(uciMoveSchema),
 });
+export const removeBranchResultSchema = z.strictObject({
+  deleted_line_count: integer,
+  deleted_card_count: integer,
+  retained_line_count: integer,
+});
 export const cardRevisionResultSchema = z.strictObject({
   card_id: cardIdSchema,
   replaced: z.boolean(),

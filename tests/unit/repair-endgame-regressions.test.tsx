@@ -4,7 +4,12 @@ import { expect, it, vi } from "vitest";
 import CardEditor from "../../app/views/card_editor";
 import { generateLegalEndgameFen } from "../../app/lib/endgame-generator";
 import { tablebaseCategoryForWhite } from "../../app/utils/tablebase";
-import { asCardId, asFenString, asSanMove } from "../../app/types";
+import {
+  asCardId,
+  asFenString,
+  asRepertoireId,
+  asSanMove,
+} from "../../app/types";
 
 vi.mock("../../app/components/chessboard", () => ({
   Chessboard: (props: { fen: string }) => (
@@ -44,6 +49,42 @@ it("repair uses the shared board and arrows navigate the complete solution; Esca
   fireEvent.keyDown(window, { key: "Escape" });
   expect(onClose).toHaveBeenCalledOnce();
 });
+
+it("opening card editor can jump to Builder with line-removal context", () => {
+  const openBuilder = vi.fn();
+  render(
+    <CardEditor
+      practiceCard={{
+        id: asCardId("opening-repair"),
+        kind: "opening",
+        subtitle: "Line",
+        title: "QGD test",
+        startingFen: asFenString(new Chess().fen()),
+        moves: [asSanMove("d4"), asSanMove("Nf6")],
+        userMoveTarget: 1,
+        repertoireId: asRepertoireId("white-repertoire"),
+      }}
+      boardTheme="brown"
+      pieceSet="cburnett"
+      onClose={vi.fn()}
+      onSave={vi.fn()}
+      onOpenBuilderForLineRemoval={openBuilder}
+    />,
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: "Open Builder to remove line" }),
+  );
+  expect(openBuilder).toHaveBeenCalledOnce();
+  expect(openBuilder.mock.calls[0][0]).toMatchObject({
+    activeRepertoireId: "white-repertoire",
+    startingFen: new Chess().fen(),
+    cursor: 0,
+  });
+  expect(openBuilder.mock.calls[0][0].history).toHaveLength(2);
+  expect(openBuilder.mock.calls[0][0].history[0].uci).toBe("d2d4");
+  expect(openBuilder.mock.calls[0][0].history[1].uci).toBe("g8f6");
+});
+
 it("random endgames never leave the nonmoving king in check", () => {
   for (const turn of ["w", "b"] as const)
     for (let i = 0; i < 100; i++) {

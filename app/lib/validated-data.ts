@@ -106,7 +106,14 @@ export async function readJsonResponse<T>(
   schema: z.ZodType<T>,
   source: string,
 ): Promise<T> {
-  const raw: unknown = await response.json();
+  let raw: unknown;
+  try {
+    raw = await response.json();
+  } catch {
+    if (!response.ok)
+      throw new Error(`${source} failed (HTTP ${response.status})`);
+    throw new Error(`Invalid ${source} response JSON`);
+  }
   if (!response.ok) {
     const error = z
       .looseObject({ detail: z.string().optional() })

@@ -1,5 +1,9 @@
 import { teachingResponseSchema } from "../domain/schemas";
-import { readJsonResponse, readStoredValue, validRecords } from "../lib/validated-data";
+import {
+  readJsonResponse,
+  readStoredValue,
+  validRecords,
+} from "../lib/validated-data";
 import * as z from "zod";
 import { localRepertoireSchema } from "../domain/schemas";
 import { measureTempoOperation } from "../lib/performance";
@@ -19,9 +23,11 @@ import { moveSoundEnabled, playMoveSound } from "../lib/move-sound";
 import { bundledRepertoires, demoCards } from "../samples";
 import {
   View,
+  BuilderSession,
   LocalRepertoire,
   AnalysisLine,
   CardId,
+  asRepertoireId,
   asFenString,
 } from "../types";
 import { canonicalFenKey } from "../utils/canonical-line";
@@ -31,7 +37,7 @@ import { trainedColor } from "../utils/cards";
 import BuilderView from "./analysis_view";
 import CardEditor from "./card_editor";
 import EndgamesView from "./endgames_view";
-import { GamesView } from "./games_view";
+import GamesView from "./games_view";
 import ProgressView from "./progress_view";
 import RepertoireView from "./repertoire_view";
 import SettingsView from "./settings_view";
@@ -46,6 +52,7 @@ import {
 } from "../state/training-store";
 import Footer from "../components/Footer";
 import Navbar from "../components/Navbar";
+import { PersistentBoardShell } from "../components/persistent-board-shell";
 import BrandButton from "../components/buttons/BrandButton";
 import SoundToggleButton from "../components/buttons/SoundToggleButton";
 import SavedLocallyButton from "../components/buttons/SavedLocallyButton";
@@ -125,7 +132,9 @@ export default function Home() {
     resetTrainingLine,
   } = useTrainingStore(useShallow(selectTrainingActions));
   const reviewPending = useRef(false);
-  const replyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const replyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined,
+  );
   const completionTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -148,8 +157,11 @@ export default function Home() {
     if (usesLocalApi() && currentView === "train") {
       queueMicrotask(() => void refreshDatabaseQueue());
       void readWorkspaceData(`${API_URL}/api/repertoire/lines`)
-        .then(async body => {
-          const lines = await runStudyTask<AnalysisLine[]>({kind:"transportLines",payload:body});
+        .then(async (body) => {
+          const lines = await runStudyTask<AnalysisLine[]>({
+            kind: "transportLines",
+            payload: body,
+          });
           branchPositions.current = await runStudyTask<IndexedPosition[]>({
             kind: "index",
             lines,
@@ -188,7 +200,13 @@ export default function Home() {
         setDailyQueue([]);
         setImportedRepertoires([]);
         setSeenMoves(
-          new Set(readStoredValue(localStorage, "tempo-seen-moves", z.array(z.string())) ?? []),
+          new Set(
+            readStoredValue(
+              localStorage,
+              "tempo-seen-moves",
+              z.array(z.string()),
+            ) ?? [],
+          ),
         );
         setBoardTheme(
           (localStorage.getItem("tempo-board-theme") as BoardTheme) ?? "brown",
@@ -215,15 +233,32 @@ export default function Home() {
       setCardsLeft(Number(localStorage.getItem("tempo-cards-left") ?? 12));
       setReviewed(Number(localStorage.getItem("tempo-reviewed") ?? 0));
       setSeenMoves(
-        new Set(readStoredValue(localStorage, "tempo-seen-moves", z.array(z.string())) ?? []),
+        new Set(
+          readStoredValue(
+            localStorage,
+            "tempo-seen-moves",
+            z.array(z.string()),
+          ) ?? [],
+        ),
       );
       setFirstCleanPasses(
         new Set(
-          readStoredValue(localStorage, "tempo-first-clean-passes", z.array(z.string())) ?? [],
+          readStoredValue(
+            localStorage,
+            "tempo-first-clean-passes",
+            z.array(z.string()),
+          ) ?? [],
         ),
       );
-      const savedRepertoires = validRecords(localRepertoireSchema,
-        readStoredValue(localStorage, "tempo-imported-repertoires", z.array(z.unknown())) ?? [], "saved repertoire");
+      const savedRepertoires = validRecords(
+        localRepertoireSchema,
+        readStoredValue(
+          localStorage,
+          "tempo-imported-repertoires",
+          z.array(z.unknown()),
+        ) ?? [],
+        "saved repertoire",
+      );
       const tombstones = new Set<string>(
         JSON.parse(localStorage.getItem("tempo-repertoire-tombstones") ?? "[]"),
       );
@@ -467,10 +502,19 @@ export default function Home() {
       if (!isCurrentAttempt(useTrainingStore.getState().attempt, token)) return;
       const replyPosition = new Chess(position.fen());
       let reply: Move | null;
-      try { reply = replyPosition.move(card.moves[opponentStep]); }
-      catch { setAttemptPhase("guided", token); setServiceError("This line needs repair: its opponent reply is illegal."); return; }
+      try {
+        reply = replyPosition.move(card.moves[opponentStep]);
+      } catch {
+        setAttemptPhase("guided", token);
+        setServiceError(
+          "This line needs repair: its opponent reply is illegal.",
+        );
+        return;
+      }
       if (!reply) {
-        setAttemptPhase(useTrainingStore.getState().isAttemptFailed ? "guided" : "playerTurn");
+        setAttemptPhase(
+          useTrainingStore.getState().isAttemptFailed ? "guided" : "playerTurn",
+        );
         return;
       }
       const nextStep = opponentStep + 1;
@@ -478,7 +522,9 @@ export default function Home() {
       setLastMove([reply.from, reply.to]);
       setOpponentLastMove([reply.from, reply.to]);
       setStep(nextStep);
-      setAttemptPhase(useTrainingStore.getState().isAttemptFailed ? "guided" : "playerTurn");
+      setAttemptPhase(
+        useTrainingStore.getState().isAttemptFailed ? "guided" : "playerTurn",
+      );
       setFeedback(nextStep >= card.moves.length ? "complete" : "ready");
       playMoveSound();
       if (nextStep >= card.moves.length) completeAttempt(replyPosition.fen());
@@ -534,7 +580,9 @@ export default function Home() {
         return;
       } catch {
         reviewPending.current = false;
-        setQueueNotice("The local database could not save this result. Please retry.");
+        setQueueNotice(
+          "The local database could not save this result. Please retry.",
+        );
         setAttemptPhase(attemptFailed ? "guided" : "playerTurn");
         return;
       }
@@ -586,7 +634,9 @@ export default function Home() {
     clearTimeout(completionTimer.current);
     completionTimer.current = setTimeout(() => {
       if (isCurrentAttempt(useTrainingStore.getState().attempt, token))
-        void rateCard(useTrainingStore.getState().isAttemptFailed ? "again" : "correct");
+        void rateCard(
+          useTrainingStore.getState().isAttemptFailed ? "again" : "correct",
+        );
     }, 750);
   }
 
@@ -621,7 +671,11 @@ export default function Home() {
     void fetch(`${API_URL}/api/cards/${card.backendId}/teaching`)
       .then((response) => {
         if (!response.ok) throw new Error();
-        return readJsonResponse(response, teachingResponseSchema, "teaching state");
+        return readJsonResponse(
+          response,
+          teachingResponseSchema,
+          "teaching state",
+        );
       })
       .then(({ states }) => {
         if (!active) return;
@@ -773,34 +827,52 @@ export default function Home() {
       {!usesLocalApi() && <DemoBanner />}
 
       {currentView === "train" && (
-        <TrainingView
-          dateLabel={new Date().toLocaleDateString()}
-          serviceError={serviceError}
-          refreshDatabaseQueue={refreshDatabaseQueue}
-          cardsLeft={cardsLeft}
-          card={card}
-          boardTheme={boardTheme}
-          pieceSet={pieceSet}
-          rateCard={rateCard}
-          handleAttemptFailure={handleAttemptFailure}
-          resetCardAttempt={resetCardAttempt}
-          setEditorCard={setEditorCard}
-          onMove={tryMove}
-        />
+        <section className="unified-board-shell-layout" data-view="train">
+          <PersistentBoardShell />
+          <div className="unified-board-shell-panel">
+            <TrainingView
+              dateLabel={new Date().toLocaleDateString()}
+              serviceError={serviceError}
+              refreshDatabaseQueue={refreshDatabaseQueue}
+              cardsLeft={cardsLeft}
+              card={card}
+              boardTheme={boardTheme}
+              pieceSet={pieceSet}
+              rateCard={rateCard}
+              handleAttemptFailure={handleAttemptFailure}
+              resetCardAttempt={resetCardAttempt}
+              setEditorCard={setEditorCard}
+              onMove={tryMove}
+              useSharedBoard
+            />
+          </div>
+        </section>
       )}
       {currentView === "tactics" && (
-        <TacticsView
-          theme={boardTheme}
-          pieceSet={pieceSet}
-          onQueueChanged={() => void refreshDatabaseQueue()}
-        />
+        <section className="unified-board-shell-layout" data-view="tactics">
+          <PersistentBoardShell />
+          <div className="unified-board-shell-panel">
+            <TacticsView
+              theme={boardTheme}
+              pieceSet={pieceSet}
+              onQueueChanged={() => void refreshDatabaseQueue()}
+              useSharedBoard
+            />
+          </div>
+        </section>
       )}
       {currentView === "endgames" && (
-        <EndgamesView
-          theme={boardTheme}
-          pieceSet={pieceSet}
-          onQueueChanged={() => void refreshDatabaseQueue()}
-        />
+        <section className="unified-board-shell-layout" data-view="endgames">
+          <PersistentBoardShell />
+          <div className="unified-board-shell-panel">
+            <EndgamesView
+              theme={boardTheme}
+              pieceSet={pieceSet}
+              onQueueChanged={() => void refreshDatabaseQueue()}
+              useSharedBoard
+            />
+          </div>
+        </section>
       )}
       {currentView === "repertoire" && (
         <RepertoireView
@@ -824,46 +896,58 @@ export default function Home() {
         />
       )}
       {currentView === "builder" && (
-        <BuilderView
-          theme={boardTheme}
-          pieceSet={pieceSet}
-          imported={importedRepertoires}
-          settings={new Settings()}
-        />
+        <section className="unified-board-shell-layout" data-view="builder">
+          <PersistentBoardShell />
+          <div className="unified-board-shell-panel">
+            <BuilderView
+              theme={boardTheme}
+              pieceSet={pieceSet}
+              imported={importedRepertoires}
+              settings={new Settings()}
+              useSharedBoard
+            />
+          </div>
+        </section>
       )}
       {currentView === "games" && (
-        <GamesView
-          syncState={gameSync.state}
-          onSync={() => void gameSync.sync(true)}
-          onSettings={() => setCurrentView("settings")}
-          onAnalyze={(game, gameCursor) => {
-            const position = new Chess(game.startFen);
-            const history = game.moves.slice(0, gameCursor).map((san) => {
-              const move = position.move(san);
-              return {
-                san: move.san,
-                uci: `${move.from}${move.to}${move.promotion ?? ""}`,
-                fen: position.fen(),
-              };
-            });
-            localStorage.setItem(
-              "tempo-builder-session",
-              JSON.stringify({
-                version: 1,
-                activeRepertoireId: game.repertoireId,
-                activeRepertoireByColor: {},
-                orientation: game.color,
-                startingFen: game.startFen,
-                history,
-                cursor: history.length,
-                branchStart: history.length,
-              }),
-            );
-            setCurrentView("builder");
-          }}
-          theme={boardTheme}
-          pieceSet={pieceSet}
-        />
+        <section className="unified-board-shell-layout" data-view="games">
+          <PersistentBoardShell />
+          <div className="unified-board-shell-panel">
+            <GamesView
+              syncState={gameSync.state}
+              onSync={() => void gameSync.sync(true)}
+              onSettings={() => setCurrentView("settings")}
+              onAnalyze={(game, gameCursor) => {
+                const position = new Chess(game.startFen);
+                const history = game.moves.slice(0, gameCursor).map((san) => {
+                  const move = position.move(san);
+                  return {
+                    san: move.san,
+                    uci: `${move.from}${move.to}${move.promotion ?? ""}`,
+                    fen: position.fen(),
+                  };
+                });
+                localStorage.setItem(
+                  "tempo-builder-session",
+                  JSON.stringify({
+                    version: 1,
+                    activeRepertoireId: game.repertoireId,
+                    activeRepertoireByColor: {},
+                    orientation: game.color,
+                    startingFen: game.startFen,
+                    history,
+                    cursor: history.length,
+                    branchStart: history.length,
+                  }),
+                );
+                setCurrentView("builder");
+              }}
+              theme={boardTheme}
+              pieceSet={pieceSet}
+              useSharedBoard
+            />
+          </div>
+        </section>
       )}
       {currentView === "progress" && (
         <ProgressView
@@ -903,6 +987,34 @@ export default function Home() {
           boardTheme={boardTheme}
           pieceSet={pieceSet}
           onClose={() => setEditorCard(null)}
+          onOpenBuilderForLineRemoval={(sessionFromEditor: BuilderSession) => {
+            const existingSession = JSON.parse(
+              localStorage.getItem("tempo-builder-session") ?? "null",
+            ) as BuilderSession | null;
+            const mergedSession: BuilderSession = {
+              ...sessionFromEditor,
+              activeRepertoireByColor:
+                sessionFromEditor.activeRepertoireByColor,
+              activeRepertoireId:
+                sessionFromEditor.activeRepertoireId ??
+                existingSession?.activeRepertoireId,
+            };
+            if (!mergedSession.activeRepertoireId) {
+              const savedWhiteRepertoire = localStorage.getItem(
+                "tempo-active-repertoire-white",
+              );
+              if (savedWhiteRepertoire)
+                mergedSession.activeRepertoireId = asRepertoireId(
+                  savedWhiteRepertoire,
+                );
+            }
+            localStorage.setItem(
+              "tempo-builder-session",
+              JSON.stringify(mergedSession),
+            );
+            setEditorCard(null);
+            setCurrentView("builder");
+          }}
           onSave={(updated) => {
             setPracticeCards((current) =>
               current.map((item) => (item.id === updated.id ? updated : item)),

@@ -74,3 +74,50 @@ it("resize and feedback locks reuse Chessground without toggling construction-on
   view.unmount();
   bounds.mockRestore();
 });
+
+it("forwards selected squares and drawn square markers with exact square identity", () => {
+  vi.stubGlobal(
+    "ResizeObserver",
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  );
+  vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+    x: 0,
+    y: 80,
+    top: 80,
+    left: 0,
+    right: 640,
+    bottom: 720,
+    width: 640,
+    height: 640,
+    toJSON: () => ({}),
+  });
+  const onSquareSelect = vi.fn();
+  const onDrawnShapesChange = vi.fn();
+  render(
+    <Chessboard
+      fen={STANDARD_FEN}
+      locked={false}
+      showHint={false}
+      editMode
+      onSquareSelect={onSquareSelect}
+      onDrawnShapesChange={onDrawnShapesChange}
+      onMove={vi.fn()}
+      theme="brown"
+      pieceSet="cburnett"
+    />,
+  );
+  const config = createBoard.mock.calls.at(-1)?.[1] as {
+    events?: { select?: (square: string) => void };
+    drawable?: { onChange?: (shapes: unknown[]) => void };
+  };
+  config.events?.select?.("a4");
+  config.drawable?.onChange?.([{ orig: "a4", brush: "yellow" }]);
+
+  expect(onSquareSelect).toHaveBeenCalledWith("a4");
+  expect(onDrawnShapesChange).toHaveBeenCalledWith([
+    { orig: "a4", brush: "yellow" },
+  ]);
+});

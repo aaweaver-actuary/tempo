@@ -1,6 +1,10 @@
-import { explorerResponseSchema, branchResultSchema } from "../domain/schemas";
+import {
+  explorerResponseSchema,
+  branchResultSchema,
+  builderSessionSchema,
+  removeBranchResultSchema,
+} from "../domain/schemas";
 import { readJsonResponse } from "../lib/validated-data";
-import { builderSessionSchema } from "../domain/schemas";
 import { readStoredValue, reportDataDiagnostic } from "../lib/validated-data";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
@@ -15,6 +19,7 @@ import {
   type SetStateAction,
 } from "react";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
+import { useBoardShellStore } from "../state/board-shell-store";
 import CandidateMovesTable from "../CandidateMovesTable";
 import { MoveComparisonTable } from "../components/move-comparison-table";
 import { STANDARD_FEN, API_URL } from "../const";
@@ -137,11 +142,13 @@ export default function BuilderView({
   settings,
   theme,
   pieceSet,
+  useSharedBoard = false,
 }: {
   imported: LocalRepertoire[];
   settings: Settings;
   theme: BoardTheme;
   pieceSet: PieceSet;
+  useSharedBoard?: boolean;
 }) {
   const initialSession = useMemo(readBuilderSession, []);
   const [history, setHistory] = useState(initialSession?.history ?? []);
@@ -232,6 +239,12 @@ export default function BuilderView({
   const [transpositionState, setTranspositionState] = useState<
     "idle" | "loading" | "ready" | "error"
   >("idle");
+  const setShellBoardForOwner = useBoardShellStore(
+    (state) => state.setShellBoardForOwner,
+  );
+  const releaseShellBoardForOwner = useBoardShellStore(
+    (state) => state.releaseShellBoardForOwner,
+  );
   const transpositionController = useRef<AbortController | null>(null);
   const [dismissedTranspositions, setDismissedTranspositions] = useState<
     string[]
@@ -309,6 +322,17 @@ export default function BuilderView({
   const transpositionLine =
     exactTransposition &&
     availableLines.find((line) => line.id === exactTransposition.lineId);
+
+  const refreshBackendLines = useCallback(async () => {
+    if (!usesLocalApi()) return;
+    const value = await readWorkspaceData(`${API_URL}/api/repertoire/lines`);
+    setBackendLines(
+      await runStudyTask<AnalysisLine[]>({
+        kind: "transportLines",
+        payload: value,
+      }),
+    );
+  }, []);
 
   function rememberToggle(
     key: string,
@@ -758,6 +782,70 @@ export default function BuilderView({
     setBranchStart(null);
   }
 
+  async function removeBranchFromCurrentPosition() {
+    if (!usesLocalApi()) {
+      setBranchNote("Branch removal requires the local service.");
+      return;
+    }
+    if (!selectedRepertoire) {
+      setBranchNote("Choose a repertoire before removing a branch.");
+      return;
+    }
+    const moves = history.slice(0, cursor).map((move) => move.uci);
+    if (!moves.length) {
+      setBranchNote("Play into the branch you want to remove.");
+      return;
+    }
+    const route = history
+      .slice(0, cursor)
+      .map((move) => move.san)
+      .join(" ");
+    if (
+      !window.confirm(
+        `Delete all lines in ${selectedRepertoire.name} that start with "${route}"? This cannot be undone.`,
+      )
+    )
+      return;
+    try {
+      const response = await fetch(
+        `${API_URL}/api/repertoire/branches/remove`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            repertoire_id: selectedRepertoire.id,
+            starting_fen: startingFen,
+            moves,
+          }),
+        },
+      );
+      const result = await readJsonResponse(
+        response,
+        removeBranchResultSchema,
+        "remove repertoire branch",
+      );
+      invalidateWorkspaceData();
+      await refreshBackendLines();
+      if (result.deleted_line_count > 0) {
+        const previousPly = Math.max(0, cursor - 1);
+        setHistory((currentHistory) => currentHistory.slice(0, previousPly));
+        setCursor(previousPly);
+      }
+      setBranchStart(null);
+      setBranchNote(
+        result.deleted_line_count
+          ? `Deleted ${result.deleted_line_count} line${result.deleted_line_count === 1 ? "" : "s"}.`
+          : "No matching lines found for this route.",
+      );
+    } catch (error) {
+      setBranchNote(
+        error instanceof Error
+          ? error.message
+          : "Could not remove the branch. Retry with the local service running.",
+      );
+    }
+  }
+
   const target = coverageTarget / 100;
   const explorerCandidates = candidatesThrough(
     explorerMoves,
@@ -876,6 +964,46 @@ export default function BuilderView({
           },
     };
   });
+  const drawnShapes = useMemo(
+    () => annotationToShapes(annotation),
+    [annotation],
+  );
+
+  useEffect(() => {
+    if (!useSharedBoard) return;
+    setShellBoardForOwner("builder", {
+      fen,
+      lastMove,
+      showHint: false,
+      theme,
+      pieceSet,
+      shapes,
+      drawnShapes,
+      interactionMode: "legal",
+      orientation,
+      positionRevision: cursor,
+      onMove: playMove,
+      onDrawnShapesChange: updateAnnotationShapes,
+      onFlip: flipBuilder,
+      onSquareSelect: undefined,
+      onFreeMove: undefined,
+    });
+    return () => releaseShellBoardForOwner("builder");
+  }, [
+    cursor,
+    drawnShapes,
+    fen,
+    flipBuilder,
+    lastMove,
+    orientation,
+    pieceSet,
+    releaseShellBoardForOwner,
+    setShellBoardForOwner,
+    shapes,
+    theme,
+    updateAnnotationShapes,
+    useSharedBoard,
+  ]);
 
   function reset() {
     setHistory([]);
@@ -962,7 +1090,9 @@ export default function BuilderView({
           </button>
         </div>
       </div>
-      <div className="analysis-layout">
+      <div
+        className={`analysis-layout${useSharedBoard ? " analysis-layout-shared" : ""}`}
+      >
         <div className="analysis-board-column">
           {exactTransposition && (
             <div className="transposition-notice" role="status">
@@ -1001,20 +1131,22 @@ export default function BuilderView({
               </button>
             </div>
           )}
-          <Chessboard
-            fen={fen}
-            lastMove={lastMove}
-            locked={false}
-            showHint={false}
-            theme={theme}
-            pieceSet={pieceSet}
-            shapes={shapes}
-            drawnShapes={annotationToShapes(annotation)}
-            onDrawnShapesChange={updateAnnotationShapes}
-            onMove={playMove}
-            orientation={orientation}
-            onFlip={flipBuilder}
-          />
+          {!useSharedBoard && (
+            <Chessboard
+              fen={fen}
+              lastMove={lastMove}
+              locked={false}
+              showHint={false}
+              theme={theme}
+              pieceSet={pieceSet}
+              shapes={shapes}
+              drawnShapes={drawnShapes}
+              onDrawnShapesChange={updateAnnotationShapes}
+              onMove={playMove}
+              orientation={orientation}
+              onFlip={flipBuilder}
+            />
+          )}
           <div className="arrow-legend">
             <span>
               <i className="known" /> Covered
@@ -1120,6 +1252,15 @@ export default function BuilderView({
                   Cancel
                 </button>
               </>
+            )}
+            {usesLocalApi() && (
+              <button
+                className="danger"
+                onClick={() => void removeBranchFromCurrentPosition()}
+                disabled={!selectedRepertoire || cursor === 0}
+              >
+                Delete line from here
+              </button>
             )}
           </div>
         </div>

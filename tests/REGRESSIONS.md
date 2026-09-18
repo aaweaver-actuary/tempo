@@ -13,7 +13,7 @@
 | Flipping exits Black repertoire | `builder flip preserves repertoire identity and history across remounts` |
 | Local app shows sample games on failure | `test_local_sync_persists_errors_and_success_without_sample_fallback`; `Docker Games shows actual empty records and actionable sync errors, never sample success` |
 | Sync status invisible | `automatic game sync has a visible spinner and reports provider failure` |
-| Board clipped at narrow viewport | `local import respects the daily limit; Black prompts and Builder flip survive Settings and refresh`; `wrong tactic immediately shows X, requires guided continuation, and leaves final mate during the pause` |
+| Board clipped at narrow viewport | `local import respects the daily limit; Black prompts and Builder flip survive Settings and refresh`; `high-DPI board geometry stays aligned through narrow resize and orientation flips` |
 | Repair board / keyboard navigation inconsistent | `repair uses the shared board and arrows navigate the complete solution; Escape closes` |
 | Random endgames start illegally | `random endgames never leave the nonmoving king in check` |
 | Engine not usable in production | `production Stockfish returns playable engine moves without clipping the board` |
@@ -21,7 +21,7 @@
 | Board controls fall below the viewport | Board-and-controls bounds assertions in every browser workspace regression |
 | Unfinished new cards accumulate beyond tomorrow's allowance | `test_unfinished_unreviewed_cards_do_not_bypass_tomorrows_new_card_limit` |
 | Explorer/Masters practical results missing from source rows | `source rows show frequency, WDL, practical score and support keyboard preview` |
-| Help/reload permits a false clean solve | `test_help_failure_survives_reload_and_cannot_be_graded_as_a_clean_solve`; `help remains Again after browser reload and the returned attempt is unassisted` |
+| Help/reload permits a false clean solve | `test_help_failure_survives_reload_and_cannot_be_graded_as_a_clean_solve` |
 | Light admission ignores settings or reverses a lapse | `test_light_discovery_uses_settings_and_never_returns_to_light_after_a_lapse` |
 | Rust prefix differs from Python | `prefixes_match_shared_python_golden_fixtures`; `test_prefixes_match_shared_rust_golden_fixtures` |
 
@@ -52,7 +52,7 @@ Append every new reported issue and its test names here. All listed tests belong
 | Tactical admissions/reviews do not return to the queue | `test_tactical_failures_requeue_once_and_clean_reviews_survive_restart_and_return_when_due`; `test_again_reappears_after_four_other_entries` |
 | Tomorrow shifts an extra day after UTC midnight | `test_tomorrow_is_the_local_review_day_even_after_utc_midnight` |
 | Board and pieces use different bounds after resize | `frame padding remains outside equal square board dimensions at desktop, narrow, and high-DPI sizes`; exact surface/square/piece assertions in every browser `boardVisible` check |
-| Already studied unassisted cards freeze | `readable renamed store fields retain local authority, failure, and sound through Home selectors`; `previously studied unassisted card is playable after atomic queue hydration and refresh` |
+| Already studied unassisted cards freeze | `readable renamed store fields retain local authority, failure, and sound through Home selectors`; `previously studied unassisted card is playable after atomic queue hydration and refresh`; `same-entry tactical refresh clears stale feedback pause so the board stays playable` |
 | Background refresh resets an ongoing attempt | `same-entry queue refresh preserves position and an active reply transition` |
 | Timers from previous cards lock replacements | `stale opponent replies and completion timers cannot lock or complete a replacement queue entry` |
 | Malformed external records freeze or discard the queue | `malformed FEN, null UCI and illegal queue lines are quarantined without discarding valid study cards`; `controlled queue payload structural drift produces a named diagnostic instead of unsafe domain values` |
@@ -66,11 +66,20 @@ Append every new reported issue and its test names here. All listed tests belong
 | Tactics are admitted for tomorrow after UTC midnight | `test_tactic_discovery_uses_local_day_after_utc_midnight`; `test_default_scheduler_uses_local_day_not_utc_day` |
 | Board shifts or clips after high-DPI resize/flip | `high-DPI board geometry stays aligned through narrow resize and orientation flips` |
 | Legacy tactic counters select an unrelated puzzle | `test_tactic_progress_returns_distinct_discovered_ids_including_legacy_clean_records`; `legacy clean puzzle identities select the next unattempted deck position rather than the attempt counter` |
-| Show Move/Restart abandon a failed tactic or retain stale X | `tactic Show Move and Restart retain one guided attempt then clear X and unlock the next puzzle`; `tactic help and restart preserve one failed attempt until guided completion and playable next puzzle` |
+| Show Move/Restart abandon a failed tactic or retain stale X | `tactic Show Move and Restart retain one guided attempt then clear X and unlock the next puzzle` |
 | Comparison sorting or missing values are incorrect | `comparison headers sort ascending then descending with missing values last and preserve playable hover rows`; `Builder source comparison is immediately reachable beside the board` |
 | Explorer/Masters details overwhelm comparison | `compact database cells reveal WDL frequency and practical score only on demand` |
 | Exact transpositions do not offer the played route | `exact transposition banner adds the played route as a persisted branch without waiting for Maia`; `transposition dismissal survives Builder remount and existing routes never prompt`; `Builder exact transposition saves the played route and does not prompt for a covered route` |
 | Navigation lacks active-page semantics or visible headers waste space | `Builder source comparison is immediately reachable beside the board`; `high-DPI board geometry stays aligned through narrow resize and orientation flips` |
-| Red X stays over the board during guided completion | `red board feedback disappears after one second even while the failed attempt remains active`; `tactic help and restart preserve one failed attempt until guided completion and playable next puzzle` |
+| Red X stays over the board during guided completion | `red board feedback disappears after one second even while the failed attempt remains active` |
 | Incomplete Black opening cards auto-play the only move then freeze Train | `test_incomplete_black_prefix_is_not_created_or_queued`; `test_legacy_incomplete_black_prefix_is_quarantined_from_queue` |
+| Builder cannot remove one response line from current position | `test_delete_branch_prefix_removes_nimzo_descendants_and_preserves_qgd`; `test_delete_branch_rebuilds_missing_retained_cards_without_server_error`; `builder delete line removes Nimzo branch descendants and keeps QGD response`; `opening card editor can jump to Builder with line-removal context`; `Edit card opens Builder line-removal context and deletes the selected branch` |
+| Clicked board square maps to a different square | `forwards selected squares and drawn square markers with exact square identity`; `builder annotation save preserves exact clicked square identity`; `Builder right-click annotation saves the exact clicked square` |
 | One-column Train layout collapses the board after a resize | `Black Train prompt remains playable with a fully visible narrow board` |
+| Games shared-board shell leaks ownership or remounts embedded board during migration | `Games shared board publishes readonly state and releases ownership on unmount` |
+| Builder shared-board shell leaks ownership or remounts embedded board during migration | `Builder shared board publishes shell ownership and hides local board instance` |
+| Tactics shared-board shell leaks ownership or remounts embedded board during migration | `Tactics shared board publishes shell ownership and hides local board instance` |
+| Endgames shared-board shell leaks ownership or remounts embedded board during migration | `Endgames shared board publishes shell ownership and hides local board instance` |
+| Training shared-board shell leaks ownership or remounts embedded board during migration | `Training shared board publishes shell ownership and hides local board instance` |
+| Persistent shell remounts Chessground while board ownership changes across workspaces | `persistent board shell reuses one Chessground instance across board owner switches` |
+| Shared shell layout drifts between desktop and mobile across board workspaces | `shared board shell keeps board region fixed left on desktop and top on mobile across board workspaces` |

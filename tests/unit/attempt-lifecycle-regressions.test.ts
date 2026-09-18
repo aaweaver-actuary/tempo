@@ -1,10 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { Chess } from "chess.js";
 import { fetchAndInitializeQueue } from "../../app/views/fetchAndInitializeQueue";
 import {
   useTrainingStore,
   selectHomeViewState,
   selectTrainingViewState,
 } from "../../app/state/training-store";
+import { attemptEntryKey } from "../../app/domain/attempt";
 import {
   asCardId,
   asFenString,
@@ -114,5 +116,39 @@ describe("review attempt reliability", () => {
     expect(selectTrainingViewState(useTrainingStore.getState()).isLocked).toBe(
       false,
     );
+  });
+
+  it("same-entry tactical refresh clears stale feedback pause so the board stays playable", () => {
+    const store = useTrainingStore.getState();
+    const tacticalCard: PracticeCard = {
+      ...card,
+      id: asCardId("tactic-review"),
+      backendId: asCardId("tactic-backend"),
+      queueEntryId: asQueueEntryId(77),
+      kind: "puzzle",
+      title: "Tactics review",
+      startingFen: asFenString(
+        "q3k1nr/1pp1nQpp/3p4/1P2p3/4P3/B1PP1b2/B5PP/5K2 b k - 0 17",
+      ),
+      orientation: "black",
+      moves: [asSanMove("Kxf7"), asSanMove("Qf3+")],
+      userMoveTarget: 1,
+    };
+    store.hydrateLocalQueue([tacticalCard], true);
+    useTrainingStore.setState((state) => ({
+      ...state,
+      attempt: {
+        entryKey: attemptEntryKey(tacticalCard),
+        generation: state.attempt.generation,
+        phase: "feedbackPause",
+      },
+      currentFenString: asFenString(new Chess().fen()),
+      feedback: "complete",
+    }));
+    store.hydrateLocalQueue([tacticalCard]);
+    const refreshed = useTrainingStore.getState();
+    expect(refreshed.attempt.phase).toBe("playerTurn");
+    expect(refreshed.currentFenString).toBe(tacticalCard.startingFen);
+    expect(selectTrainingViewState(refreshed).isLocked).toBe(false);
   });
 });

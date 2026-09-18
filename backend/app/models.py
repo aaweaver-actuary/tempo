@@ -30,6 +30,12 @@ class BranchRequest(BaseModel):
     name: str = "Analysis branch"
 
 
+class RemoveBranchRequest(BaseModel):
+    repertoire_id: str
+    starting_fen: str
+    moves: list[str]
+
+
 class CardRevisionRequest(BaseModel):
     starting_fen: str
     moves: list[str]

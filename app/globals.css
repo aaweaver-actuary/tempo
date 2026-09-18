@@ -202,6 +202,9 @@ button {
   align-items: center;
   overflow: hidden;
 }
+.training-grid.training-grid-shared {
+  grid-template-columns: minmax(220px, 0.72fr) minmax(320px, 1.28fr);
+}
 .board-column {
   min-width: 0;
   min-height: 0;
@@ -1231,6 +1234,49 @@ button {
   gap: clamp(18px, 2.5vw, 36px);
   align-items: start;
   overflow: hidden;
+}
+.analysis-layout.analysis-layout-shared {
+  grid-template-columns: 1fr;
+}
+.unified-board-shell-layout {
+  display: grid;
+  grid-template-columns: minmax(320px, 0.9fr) minmax(420px, 1.1fr);
+  align-items: start;
+  gap: clamp(18px, 2.5vw, 36px);
+}
+.unified-board-shell-layout[data-view="builder"] .analysis-page {
+  max-width: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+.unified-board-shell-layout[data-view="tactics"] .tactics-page {
+  max-width: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+.unified-board-shell-layout[data-view="endgames"] .endgames-page {
+  max-width: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+.unified-board-shell-layout[data-view="train"] .training-header,
+.unified-board-shell-layout[data-view="train"] .training-grid {
+  max-width: none;
+  padding-left: 0;
+  padding-right: 0;
+}
+.persistent-board-shell {
+  min-width: 0;
+  position: sticky;
+  top: calc(var(--nav-height) + 16px);
+}
+.persistent-board-shell .board-frame {
+  width: min(100%, calc(100vh - 195px));
+  min-width: 0;
+  margin: 0;
+}
+.unified-board-shell-panel {
+  min-width: 0;
 }
 .analysis-board-column {
   min-width: 0;
@@ -2558,6 +2604,14 @@ button {
   background: var(--green-dark);
   color: #fff;
 }
+.branch-editor button.danger {
+  border-color: #b24747;
+  color: #7b2020;
+}
+.branch-editor button.danger:hover {
+  border-color: #7b2020;
+  background: #fff2f2;
+}
 .games-page {
   height: calc(100dvh - var(--nav-height));
   max-width: 1240px;
@@ -3225,7 +3279,9 @@ button {
   font-size: 68px;
   font-weight: 800;
   box-shadow: 0 14px 40px rgba(20, 24, 19, 0.28);
-  animation: result-pop 0.16s ease-out, result-fade 0.2s ease-in 0.8s forwards;
+  animation:
+    result-pop 0.16s ease-out,
+    result-fade 0.2s ease-in 0.8s forwards;
 }
 .outcome-flash.correct {
   background: #4f8057;
@@ -3280,6 +3336,25 @@ button {
   }
   .analysis-layout {
     grid-template-columns: 1fr;
+  }
+  .unified-board-shell-layout {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .persistent-board-shell {
+    position: static;
+    max-width: 680px;
+    width: 100%;
+    margin: 0 auto;
+  }
+  .persistent-board-shell .board-frame {
+    width: min(100%, calc(100dvh - var(--nav-height) - 170px), 680px);
+    margin: 0 auto;
+  }
+  .unified-board-shell-panel {
+    max-width: 680px;
+    width: 100%;
+    margin: 0 auto;
   }
   .analysis-board-column .board-frame {
     width: min(100%, calc(100dvh - var(--nav-height) - 150px), 680px);
@@ -3416,6 +3491,9 @@ button {
     width: min(100%, calc(100dvh - var(--nav-height) - 290px));
   }
   .analysis-board-column .board-frame {
+    width: min(100%, calc(100dvh - var(--nav-height) - 300px));
+  }
+  .persistent-board-shell .board-frame {
     width: min(100%, calc(100dvh - var(--nav-height) - 300px));
   }
   .game-board .board-frame {

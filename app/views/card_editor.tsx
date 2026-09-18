@@ -3,7 +3,13 @@ import { useEffect, useMemo, useState } from "react";
 import { MoveNavigator } from "../components/board-controls";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
 import { pieceSymbols } from "../const";
-import { PracticeCard, asFenString, asSanMove } from "../types";
+import {
+  BuilderSession,
+  PracticeCard,
+  asFenString,
+  asSanMove,
+  asUciMove,
+} from "../types";
 import { API_URL, assetUrl } from "../const";
 import { usesLocalApi } from "../utils/local";
 import { convertPackagedPuzzleRecordIntoPracticeCard } from "../utils/cards";
@@ -21,12 +27,14 @@ export default function CardEditor({
   pieceSet,
   onClose,
   onSave,
+  onOpenBuilderForLineRemoval,
 }: {
   practiceCard: PracticeCard;
   boardTheme: BoardTheme;
   pieceSet: PieceSet;
   onClose: () => void;
   onSave: (card: PracticeCard) => void;
+  onOpenBuilderForLineRemoval?: (session: BuilderSession) => void;
 }) {
   const [currentFenString, setCurrentFenString] = useState<string>(
     card.startingFen,
@@ -172,6 +180,38 @@ export default function CardEditor({
     }
   }
 
+  function openBuilderForLineRemoval() {
+    try {
+      const position = new Chess(currentFenString);
+      const history = solutionSanMovesList.map((san) => {
+        const move = position.move(san);
+        return {
+          san: asSanMove(move.san),
+          uci: asUciMove(`${move.from}${move.to}${move.promotion ?? ""}`),
+          fen: asFenString(position.fen()),
+        };
+      });
+      const orientation =
+        card.orientation ?? (position.turn() === "b" ? "black" : "white");
+      onOpenBuilderForLineRemoval?.({
+        version: 1,
+        activeRepertoireByColor: {},
+        activeRepertoireId: card.repertoireId,
+        orientation,
+        startingFen: asFenString(currentFenString),
+        history,
+        cursor: Math.min(currentPositionInMoveList, history.length),
+        branchStart: null,
+        dismissedTranspositions: [],
+      });
+      onClose();
+    } catch {
+      setError(
+        "The line cannot be opened in Builder until all moves are legal.",
+      );
+    }
+  }
+
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
       <section
@@ -309,6 +349,11 @@ export default function CardEditor({
             </fieldset>
             {error && <p className="editor-error">{error}</p>}
             <div className="editor-actions">
+              {usesLocalApi() && card.kind === "opening" && (
+                <button onClick={openBuilderForLineRemoval}>
+                  Open Builder to remove line
+                </button>
+              )}
               <button onClick={onClose}>Cancel</button>
               <button className="primary-button" onClick={save}>
                 Validate & save

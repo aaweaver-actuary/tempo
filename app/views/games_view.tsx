@@ -6,8 +6,12 @@ import {
   type BoardTheme,
   type PieceSet,
 } from "../components/chessboard";
+import { useBoardShellStore } from "../state/board-shell-store";
 import { API_URL, STANDARD_FEN } from "../const";
-import { readWorkspaceResponse, invalidateWorkspaceData } from "../lib/workspace-data";
+import {
+  readWorkspaceResponse,
+  invalidateWorkspaceData,
+} from "../lib/workspace-data";
 import { analyzeWithStockfish } from "../lib/analysis-engines";
 import { scanGame } from "../lib/game-scan";
 import type { GameSyncState } from "../hooks/use-game-sync";
@@ -31,13 +35,14 @@ import type { StudyTask } from "../lib/study-computation";
 import type { IndexedPosition } from "../lib/position-similarity";
 import { sampleGames } from "../samples";
 
-export function GamesView({
+export default function GamesView({
   onAnalyze,
   onSettings,
   onSync,
   syncState,
   theme,
   pieceSet,
+  useSharedBoard = false,
 }: {
   onAnalyze: (game: GameViewRecord, cursor: number) => void;
   onSettings: () => void;
@@ -45,6 +50,7 @@ export function GamesView({
   syncState: GameSyncState;
   theme: BoardTheme;
   pieceSet: PieceSet;
+  useSharedBoard?: boolean;
 }) {
   const local = usesLocalApi();
   const [records, setRecords] = useState<GameViewRecord[]>(() =>
@@ -63,6 +69,12 @@ export function GamesView({
   const [error, setError] = useState("");
   const [scanStatus, setScanStatus] = useState("");
   const [lines, setLines] = useState<AnalysisLine[]>([]);
+  const setShellBoardForOwner = useBoardShellStore(
+    (state) => state.setShellBoardForOwner,
+  );
+  const releaseShellBoardForOwner = useBoardShellStore(
+    (state) => state.releaseShellBoardForOwner,
+  );
   const [filters, setFilters] = useState(() => ({
     source: "All",
     status: "All",
@@ -83,7 +95,10 @@ export function GamesView({
     selected && cursor
       ? convertSanToUci(selected.moves, selected.startFen)[cursor - 1]
       : undefined;
-  const indexTask = useMemo<StudyTask>(() => ({ kind: "index", lines }), [lines]);
+  const indexTask = useMemo<StudyTask>(
+    () => ({ kind: "index", lines }),
+    [lines],
+  );
   const positions = useBackgroundStudy<IndexedPosition[]>(indexTask, []);
   const shapes = positions
     .filter(
@@ -111,7 +126,9 @@ export function GamesView({
   const loadGames = useCallback(async () => {
     if (!local) return;
     try {
-      const response = await readWorkspaceResponse(`${API_URL}/api/games/summary`);
+      const response = await readWorkspaceResponse(
+        `${API_URL}/api/games/summary`,
+      );
       if (!response.ok) throw new Error("Could not load your local games.");
       const body = (await response.json()) as {
         games: Record<string, unknown>[];
@@ -144,19 +161,17 @@ export function GamesView({
           lines: Record<string, unknown>[];
         };
         setLines(
-          body.lines.map((line: Record<string, unknown>) =>
-            ({
-              id: asLineId(String(line.id)),
-              repertoireId: asRepertoireId(String(line.repertoire_id)),
-              repertoireName: String(line.repertoire_name),
-              title: String(line.name),
-              side: line.trained_color === "black" ? "black" : "white",
-              startingFen: asFenString(String(line.start_fen)),
-              moves: (Array.isArray(line.moves) ? line.moves : []).map((move) =>
-                asSanMove(String(move)),
-              ),
-            }),
-          ),
+          body.lines.map((line: Record<string, unknown>) => ({
+            id: asLineId(String(line.id)),
+            repertoireId: asRepertoireId(String(line.repertoire_id)),
+            repertoireName: String(line.repertoire_name),
+            title: String(line.name),
+            side: line.trained_color === "black" ? "black" : "white",
+            startingFen: asFenString(String(line.start_fen)),
+            moves: (Array.isArray(line.moves) ? line.moves : []).map((move) =>
+              asSanMove(String(move)),
+            ),
+          })),
         );
       })
       .catch(() => undefined);
@@ -253,6 +268,44 @@ export function GamesView({
   }, [selected?.moves.length]);
   const applicable = games.filter((game) => game.status !== "no repertoire");
   const covered = applicable.filter((game) => game.status === "covered").length;
+
+  useEffect(() => {
+    if (!useSharedBoard) return;
+    setShellBoardForOwner("games", {
+      fen: gameFen,
+      lastMove: gameLast
+        ? ([gameLast.slice(0, 2), gameLast.slice(2, 4)] as readonly [
+            string,
+            string,
+          ])
+        : undefined,
+      shapes,
+      interactionMode: "readonly",
+      showHint: false,
+      theme,
+      pieceSet,
+      orientation: selected?.color === "black" ? "black" : "white",
+      positionRevision: cursor,
+      onMove: undefined,
+      onSquareSelect: undefined,
+      onFreeMove: undefined,
+      onDrawnShapesChange: undefined,
+      onFlip: undefined,
+    });
+    return () => releaseShellBoardForOwner("games");
+  }, [
+    cursor,
+    gameFen,
+    gameLast,
+    pieceSet,
+    releaseShellBoardForOwner,
+    selected?.color,
+    setShellBoardForOwner,
+    shapes,
+    theme,
+    useSharedBoard,
+  ]);
+
   return (
     <section className="games-page" id="games">
       <div className="page-heading compact">
@@ -292,21 +345,23 @@ export function GamesView({
       )}
       <div className="game-review">
         <div className="game-board">
-          <Chessboard
-            fen={gameFen}
-            lastMove={
-              gameLast
-                ? [gameLast.slice(0, 2), gameLast.slice(2, 4)]
-                : undefined
-            }
-            shapes={shapes}
-            locked
-            showHint={false}
-            theme={theme}
-            pieceSet={pieceSet}
-            onMove={() => undefined}
-            orientation={selected?.color}
-          />
+          {!useSharedBoard && (
+            <Chessboard
+              fen={gameFen}
+              lastMove={
+                gameLast
+                  ? [gameLast.slice(0, 2), gameLast.slice(2, 4)]
+                  : undefined
+              }
+              shapes={shapes}
+              locked
+              showHint={false}
+              theme={theme}
+              pieceSet={pieceSet}
+              onMove={() => undefined}
+              orientation={selected?.color}
+            />
+          )}
           <div className="board-tools">
             <button
               onClick={() => setCursor((value) => Math.max(0, value - 1))}

@@ -5,6 +5,7 @@ import RetryButton from "../components/buttons/RetryButton";
 import EndgamesView from "./endgames_view";
 import { PracticeCard } from "../types";
 import { BoardTheme, Chessboard, PieceSet } from "../components/chessboard";
+import { useBoardShellStore } from "../state/board-shell-store";
 import { OutcomeFlash } from "../components/board-controls";
 import AgainButton from "../components/buttons/AgainButton";
 import AnalyzeOnLichessButton from "../components/buttons/AnalyzeOnLichessButton";
@@ -14,6 +15,7 @@ import FailureNote from "../components/FailureNote";
 import FeedbackIcon from "../components/feedback/FeedbackIcon";
 import FeedbackText from "../components/feedback/FeedbackText";
 import OpeningTitle from "../components/OpeningTitle";
+import { useEffect } from "react";
 import { usesLocalApi } from "../utils/local";
 import { Square } from "chess.js";
 import { getFeedbackCopy } from "./getFeedbackCopy";
@@ -38,6 +40,7 @@ interface TrainingViewProps {
   resetCardAttempt: () => void;
   setEditorCard: (card: PracticeCard | null) => void;
   onMove: (from: Square, to: Square) => void;
+  useSharedBoard?: boolean;
 }
 
 export default function TrainingView({
@@ -53,6 +56,7 @@ export default function TrainingView({
   resetCardAttempt,
   setEditorCard,
   onMove,
+  useSharedBoard = false,
 }: TrainingViewProps) {
   const {
     boardAttempt,
@@ -71,6 +75,12 @@ export default function TrainingView({
     teachingEncounterKey,
   } = useTrainingStore(useShallow(selectTrainingViewState));
   const isEndgame = card.kind === "endgame";
+  const setShellBoardForOwner = useBoardShellStore(
+    (state) => state.setShellBoardForOwner,
+  );
+  const releaseShellBoardForOwner = useBoardShellStore(
+    (state) => state.releaseShellBoardForOwner,
+  );
   const feedbackCopy = getFeedbackCopy(attemptFailed, card)[feedback];
   const playerName = trainedColor(card) === "white" ? "White" : "Black";
   const currentMoveKey = `${card.backendId ?? card.id}:${card.revision ?? 1}:${step}`;
@@ -88,14 +98,56 @@ export default function TrainingView({
           } as DrawShape,
         ]
       : []),
-    ...(isFailedPosition
-      ? annotationToShapes(failureAnnotation)
-      : []),
+    ...(isFailedPosition ? annotationToShapes(failureAnnotation) : []),
   ];
   const revealedMoves = card.moves.slice(
     0,
     feedback === "complete" ? card.moves.length : step,
   );
+
+  useEffect(() => {
+    if (!useSharedBoard || isEndgame || cardsLeft <= 0) return;
+    setShellBoardForOwner("train", {
+      fen: currentFenString,
+      expectedSan: card.moves[step],
+      lastMove,
+      interactionMode:
+        isLocked || step >= card.moves.length || cardsLeft === 0
+          ? "readonly"
+          : "legal",
+      showHint: showTeachingArrow,
+      theme: boardTheme,
+      pieceSet,
+      orientation: card.orientation === "black" ? "black" : "white",
+      shapes: trainingShapes,
+      drawnShapes: [],
+      positionRevision: boardAttempt,
+      onMove,
+      onSquareSelect: undefined,
+      onFreeMove: undefined,
+      onDrawnShapesChange: undefined,
+      onFlip: undefined,
+    });
+    return () => releaseShellBoardForOwner("train");
+  }, [
+    boardAttempt,
+    boardTheme,
+    card.moves,
+    card.orientation,
+    cardsLeft,
+    currentFenString,
+    isEndgame,
+    isLocked,
+    lastMove,
+    onMove,
+    pieceSet,
+    releaseShellBoardForOwner,
+    setShellBoardForOwner,
+    showTeachingArrow,
+    step,
+    trainingShapes,
+    useSharedBoard,
+  ]);
 
   function handleAnalyzeOnLichessClick() {
     if (!attemptFailed) void rateCard("again");
@@ -122,25 +174,33 @@ export default function TrainingView({
           theme={boardTheme}
           pieceSet={pieceSet}
           onQueueChanged={() => void refreshDatabaseQueue()}
+          useSharedBoard={useSharedBoard}
         />
       )}
       {cardsLeft > 0 && !isEndgame && (
-        <section className="training-grid" id="train">
+        <section
+          className={`training-grid${useSharedBoard ? " training-grid-shared" : ""}`}
+          id="train"
+        >
           <div className="board-column">
-            <Chessboard
-              key={`${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${card.revision ?? 1}`}
-              positionRevision={boardAttempt}
-              fen={currentFenString}
-              expectedSan={card.moves[step]}
-              lastMove={lastMove}
-              locked={isLocked || step >= card.moves.length || cardsLeft === 0}
-              showHint={showTeachingArrow}
-              shapes={trainingShapes}
-              theme={boardTheme}
-              pieceSet={pieceSet}
-              onMove={onMove}
-              orientation={card.orientation}
-            />
+            {!useSharedBoard && (
+              <Chessboard
+                key={`${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${card.revision ?? 1}`}
+                positionRevision={boardAttempt}
+                fen={currentFenString}
+                expectedSan={card.moves[step]}
+                lastMove={lastMove}
+                locked={
+                  isLocked || step >= card.moves.length || cardsLeft === 0
+                }
+                showHint={showTeachingArrow}
+                shapes={trainingShapes}
+                theme={boardTheme}
+                pieceSet={pieceSet}
+                onMove={onMove}
+                orientation={card.orientation}
+              />
+            )}
             {(attemptFailed || feedback === "complete") && (
               <OutcomeFlash
                 key={`${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${attemptFailed ? "wrong" : "correct"}`}
@@ -234,10 +294,7 @@ export default function TrainingView({
                 </div>
               )}
             <div className="ratings binary">
-              <button
-                disabled={isLocked}
-                onClick={handleAttemptFailure}
-              >
+              <button disabled={isLocked} onClick={handleAttemptFailure}>
                 <strong>Again</strong>
               </button>
               <button

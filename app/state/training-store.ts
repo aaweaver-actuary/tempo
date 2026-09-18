@@ -10,7 +10,14 @@ import type {
 } from "../types";
 import { demoCards } from "../samples";
 import { BoardTheme, PieceSet } from "../components/chessboard";
-import { initialTrainingState, attemptEntryKey, isAttemptPlayable, isCurrentAttempt, type AttemptPhase, type AttemptToken } from "../domain/attempt";
+import {
+  initialTrainingState,
+  attemptEntryKey,
+  isAttemptPlayable,
+  isCurrentAttempt,
+  type AttemptPhase,
+  type AttemptToken,
+} from "../domain/attempt";
 import { asFenString } from "../domain/shared";
 import { STANDARD_FEN } from "../const";
 
@@ -62,10 +69,16 @@ export type TrainingStoreState = {
   setStep: (step: number | ((current: number) => number)) => void;
   setFeedback: (feedback: Feedback | ((current: Feedback) => Feedback)) => void;
   setLastMove: (
-    move: MoveSquares | undefined | ((current: MoveSquares | undefined) => MoveSquares | undefined),
+    move:
+      | MoveSquares
+      | undefined
+      | ((current: MoveSquares | undefined) => MoveSquares | undefined),
   ) => void;
   setOpponentLastMove: (
-    move: MoveSquares | undefined | ((current: MoveSquares | undefined) => MoveSquares | undefined),
+    move:
+      | MoveSquares
+      | undefined
+      | ((current: MoveSquares | undefined) => MoveSquares | undefined),
   ) => void;
   setAttemptPhase: (phase: AttemptPhase, expected?: AttemptToken) => void;
   setReviewSaveError: (error: string) => void;
@@ -102,7 +115,12 @@ export type TrainingStoreState = {
           current: PositionAnnotation | undefined,
         ) => PositionAnnotation | undefined),
   ) => void;
-  setFailureFen: (fen: FenString | undefined | ((current: FenString | undefined) => FenString | undefined)) => void;
+  setFailureFen: (
+    fen:
+      | FenString
+      | undefined
+      | ((current: FenString | undefined) => FenString | undefined),
+  ) => void;
   setDailyQueue: (queue: number[] | ((current: number[]) => number[])) => void;
   setQueueNotice: (notice: string | ((current: string) => string)) => void;
   setBoardTheme: (
@@ -304,10 +322,13 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       opponentLastMove:
         typeof value === "function" ? value(state.opponentLastMove) : value,
     })),
-  setAttemptPhase: (phase, expected) => set(state =>
-    expected && !isCurrentAttempt(state.attempt, expected) ? {} :
-      { attempt: { ...state.attempt, phase } }),
-  setReviewSaveError: reviewSaveError => set({ reviewSaveError }),
+  setAttemptPhase: (phase, expected) =>
+    set((state) =>
+      expected && !isCurrentAttempt(state.attempt, expected)
+        ? {}
+        : { attempt: { ...state.attempt, phase } },
+    ),
+  setReviewSaveError: (reviewSaveError) => set({ reviewSaveError }),
   setBoardAttempt: (value) =>
     set((state) => ({
       boardAttempt:
@@ -362,10 +383,15 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
         typeof value === "function" ? value(state.firstCleanPasses) : value,
     })),
   setAttemptFailed: (value) =>
-    set(state => {
-      const failed = typeof value === "function" ? value(state.isAttemptFailed) : value;
-      return { isAttemptFailed: failed, attempt: isAttemptPlayable(state.attempt)
-        ? { ...state.attempt, phase: failed ? "guided" : "playerTurn" } : state.attempt };
+    set((state) => {
+      const failed =
+        typeof value === "function" ? value(state.isAttemptFailed) : value;
+      return {
+        isAttemptFailed: failed,
+        attempt: isAttemptPlayable(state.attempt)
+          ? { ...state.attempt, phase: failed ? "guided" : "playerTurn" }
+          : state.attempt,
+      };
     }),
   setFailureAnnotation: (value) =>
     set((state) => ({
@@ -420,7 +446,11 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       feedback: "ready",
       lastMove: start.lastMove,
       opponentLastMove: start.lastMove,
-      attempt: { entryKey: attemptEntryKey(nextCard), generation: get().attempt.generation + 1, phase: "playerTurn" },
+      attempt: {
+        entryKey: attemptEntryKey(nextCard),
+        generation: get().attempt.generation + 1,
+        phase: "playerTurn",
+      },
       reviewSaveError: "",
       showHint: false,
       teachingEncounterKey: null,
@@ -461,29 +491,91 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       feedback: nextFeedback,
       lastMove: start.lastMove,
       opponentLastMove: start.lastMove,
-      attempt: { entryKey: attemptEntryKey(card), generation: get().attempt.generation + 1, phase: nextAttemptFailed ? "guided" : "playerTurn" },
+      attempt: {
+        entryKey: attemptEntryKey(card),
+        generation: get().attempt.generation + 1,
+        phase: nextAttemptFailed ? "guided" : "playerTurn",
+      },
       reviewSaveError: "",
       showHint: nextShowHint,
       teachingEncounterKey: null,
       isAttemptFailed: nextAttemptFailed,
       failureAnnotation: undefined,
-      failureFen: nextAttemptFailed ? (overrides.failureFen ?? start.fen) : undefined,
+      failureFen: nextAttemptFailed
+        ? (overrides.failureFen ?? start.fen)
+        : undefined,
     });
   },
   hydrateLocalQueue: (practiceCards, advance = false) => {
     const current = get();
-    const retainedIndex = advance ? -1 : practiceCards.findIndex(card => attemptEntryKey(card) === current.attempt.entryKey);
+    const retainedIndex = advance
+      ? -1
+      : practiceCards.findIndex(
+          (card) => attemptEntryKey(card) === current.attempt.entryKey,
+        );
     const activeCardIndex = Math.max(0, retainedIndex);
     const card = practiceCards[activeCardIndex];
-    const queueState = { practiceCards, dailyQueue: practiceCards.map((_, index) => index), cardsLeft: practiceCards.length, activeCardIndex, isDatabaseQueueActive: true, serviceError: "" };
-    if (retainedIndex >= 0) { set(queueState); return; }
-    const start = card ? initialTrainingState(card) : { fen: asFenString(STANDARD_FEN), step: 0, lastMove: undefined };
+    const queueState = {
+      practiceCards,
+      dailyQueue: practiceCards.map((_, index) => index),
+      cardsLeft: practiceCards.length,
+      activeCardIndex,
+      isDatabaseQueueActive: true,
+      serviceError: "",
+    };
+    if (retainedIndex >= 0) {
+      if (["feedbackPause", "complete"].includes(current.attempt.phase)) {
+        const start = card
+          ? initialTrainingState(card)
+          : { fen: asFenString(STANDARD_FEN), step: 0, lastMove: undefined };
+        const failed = Boolean(card?.attemptFailed);
+        set({
+          ...queueState,
+          currentFenString: start.fen,
+          step: start.step,
+          lastMove: start.lastMove,
+          opponentLastMove: start.lastMove,
+          feedback: failed ? "wrong" : "ready",
+          showHint: failed,
+          teachingEncounterKey: null,
+          isAttemptFailed: failed,
+          failureAnnotation: undefined,
+          failureFen: failed ? start.fen : undefined,
+          reviewSaveError: "",
+          attempt: {
+            entryKey: card ? attemptEntryKey(card) : "",
+            generation: current.attempt.generation + 1,
+            phase: card ? (failed ? "guided" : "playerTurn") : "complete",
+          },
+        });
+        return;
+      }
+      set(queueState);
+      return;
+    }
+    const start = card
+      ? initialTrainingState(card)
+      : { fen: asFenString(STANDARD_FEN), step: 0, lastMove: undefined };
     const failed = Boolean(card?.attemptFailed);
-    set({ ...queueState, currentFenString: start.fen, step: start.step, lastMove: start.lastMove,
-      opponentLastMove: start.lastMove, feedback: failed ? "wrong" : "ready", showHint: failed,
-      teachingEncounterKey: null, isAttemptFailed: failed, failureAnnotation: undefined,
-      failureFen: failed ? start.fen : undefined, reviewSaveError: "",
-      attempt: { entryKey: card ? attemptEntryKey(card) : "", generation: current.attempt.generation + 1, phase: card ? failed ? "guided" : "playerTurn" : "complete" } });
+    set({
+      ...queueState,
+      currentFenString: start.fen,
+      step: start.step,
+      lastMove: start.lastMove,
+      opponentLastMove: start.lastMove,
+      feedback: failed ? "wrong" : "ready",
+      showHint: failed,
+      teachingEncounterKey: null,
+      isAttemptFailed: failed,
+      failureAnnotation: undefined,
+      failureFen: failed ? start.fen : undefined,
+      reviewSaveError: "",
+      attempt: {
+        entryKey: card ? attemptEntryKey(card) : "",
+        generation: current.attempt.generation + 1,
+        phase: card ? (failed ? "guided" : "playerTurn") : "complete",
+      },
+    });
   },
   getCard: () => get().practiceCards[get().activeCardIndex] ?? demoCards[0],
 }));

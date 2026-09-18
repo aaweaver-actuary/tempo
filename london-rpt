@@ -1,0 +1,174 @@
+PGN CLEANING / VALIDATION REPORT
+======================================================================
+
+Input:                     /Users/andy/Downloads/Hambleton - Hambleton's London System Full Version.pgn
+Clean output:              ../london-clean.pgn
+Rejected output:           ../london-bad.pgn
+
+Games read:                831
+Clean games:               831
+Rejected games:            0
+Games repaired:            30
+
+Null moves removed:        30
+Move nodes removed:        107
+
+Control chars removed:     0
+Bad UTF-8 replacements:    0
+
+PROCESS:
+  1. Parse source game
+  2. Remove known-invalid constructs
+  3. Export normalized PGN
+  4. Reparse exported PGN from scratch
+  5. Accept only if reparsed game is valid
+
+Game 17: QS | Early …Bd6 Setups with …c5 | 3...c5 #1 vs Quickstarter [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 2 total move node(s)
+
+Game 20: QS | The Main Line | 6...Be7 vs Quickstarter [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 3 total move node(s)
+
+Game 22: QS | The Main Line | 6...Bd6 / 7...O-O #1 vs Quickstarter [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 4 total move node(s)
+
+Game 27: QS | 1…d5 2…c5 with 6…cxd4 | 9...O-O / 10...f5 vs Quickstarter [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 4 total move node(s)
+
+Game 29: QS | 1…d5 2…c5 with 5…cxd4 | 6...Bg4 vs Quickstarter [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 5 total move node(s)
+
+Game 48: 1A | Dealing with ...Qb6 (2...c6) | 5...Nh5 #2 vs 1) Dealing with …Qb6 | Black plays ...d5 [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 3 total move node(s)
+
+Game 90: Summary Chapter 1 vs 1) Dealing with …Qb6 | Black plays ...d5 [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 2 total move node(s)
+
+Game 102: 2A | Dealing with ...Qb6 (1...e6) | 4...Nf6 #3 vs 2) Dealing with ...Qb6 | Black doesn't play …d5 #1 [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 5 total move node(s)
+
+Game 121: 2D | Dealing with ...Qb6 (1...Nf6) | 3...Qb6 / 4...g6 | Alternative 5.Qd2 #1 vs 2) Dealing with ...Qb6 | Black doesn't play …d5 #1 [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 4 total move node(s)
+
+Game 122: 2D | Dealing with ...Qb6 (1...Nf6) | 3...Qb6 / 4...g6 | Alternative 5.Qd2 #2 vs 2) Dealing with ...Qb6 | Black doesn't play …d5 #1 [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 4 total move node(s)
+
+Game 170: 3B | Dealing with ...Qb6 (4...Qxb2) | 5…Nd5 #5 vs 3) Dealing with ...Qb6 | Black doesn't play …d5 #2 [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 4 total move node(s)
+
+Game 207: 4 | Early ...Bd6 Setups without ...c5 | Main line 6...b6 / 7...Bb7 #11 vs 4) Early …Bd6 Setups | Black doesn’t play …c5 [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 2 total move node(s)
+
+Game 213: 5 | Early …Bd6 Setups with …c5 | 3...c5 #2 vs 5) Early …Bd6 Setups | Black plays …c5 [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 2 total move node(s)
+
+Game 252: 6 | The Main Line | 6...Be7 #1  vs 6) The Main Line | 1…d5 2…e6 3…Nf6 4…c5 [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 3 total move node(s)
+
+Game 253: 6 | The Main Line | 6...Be7 #2 vs 6) The Main Line | 1…d5 2…e6 3…Nf6 4…c5 [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 3 total move node(s)
+
+Game 254: 6 | The Main Line | 6...Be7 #3 vs 6) The Main Line | 1…d5 2…e6 3…Nf6 4…c5 [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 3 total move node(s)
+
+Game 255: 6 | The Main Line | 6...Be7 #4 vs 6) The Main Line | 1…d5 2…e6 3…Nf6 4…c5 [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 3 total move node(s)
+
+Game 260: 6 | The Main Line | 6...Bd6 / 7...O-O #2 vs 6) The Main Line | 1…d5 2…e6 3…Nf6 4…c5 [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 4 total move node(s)
+
+Game 288: 7 | 1…d5 2…c5 with 4…cxd4 | 5...f6 #5 vs 7) 1…d5 2…c5 | Black plays 4…cxd4 [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 4 total move node(s)
+
+Game 319: 8 | 1…d5 2…c5 with 5…cxd4 | 6...Bg4 #4 vs 8) 1…d5 2…c5 | Black plays 5…cxd4 [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 5 total move node(s)
+
+Game 394: 9 | 1…d5 2…c5 with 6…cxd4 | 9...O-O / 10...f5 #5 vs 9) 1…d5 2…c5 | Black plays 6…cxd4 [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 4 total move node(s)
+
+Game 395: 9 | 1…d5 2…c5 with 6…cxd4 | 9...O-O / 10...f5 #6 vs 9) 1…d5 2…c5 | Black plays 6…cxd4 [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 4 total move node(s)
+
+Game 406: 10A | Early 3...Bg4 | 5...Bxf3 #6 vs 10) Early …Bg4 & …Bf5 [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 6 total move node(s)
+
+Game 611: 15 | KID Main Line 6…Nfd7 | 9...a5 #2 vs 15) Fianchetto Setups | KID Main Line with 6…Nfd7 [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 4 total move node(s)
+
+Game 740: R | 3B | Dealing with ...Qb6 (4...Qxb2) | 5…Nd5 #5 vs Refutations [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 4 total move node(s)
+
+Game 752: R | 6 | The Main Line | 6...Be7 #1  vs Refutations [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 3 total move node(s)
+
+Game 753: R | 6 | The Main Line | 6...Be7 #2 vs Refutations [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 3 total move node(s)
+
+Game 754: R | 6 | The Main Line | 6...Be7 #3 vs Refutations [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 3 total move node(s)
+
+Game 755: R | 6 | The Main Line | 6...Be7 #4 vs Refutations [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 3 total move node(s)
+
+Game 760: R | 7 | 1…d5 2…c5 with 4…cxd4 | 5...f6 #5 vs Refutations [Aman Hambleton's London System]
+  REPAIRED AND ACCEPTED
+    - Removed 1 null-move subtree(s)
+    - Removed 4 total move node(s)
