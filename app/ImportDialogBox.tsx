@@ -52,7 +52,10 @@ export function ImportDialogBox({
       setSettingsError(`Import settings unavailable: ${failure instanceof Error ? failure.message : "connection failed"}`);
     }
   }, []);
-  useEffect(() => { void loadImportSettings(); }, [loadImportSettings]);
+  useEffect(() => {
+    const timer = window.setTimeout(() => void loadImportSettings(), 0);
+    return () => window.clearTimeout(timer);
+  }, [loadImportSettings]);
 
   async function importFile() {
     if (!file || !settingsLoaded) return;
