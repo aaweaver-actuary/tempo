@@ -115,3 +115,5 @@ Append every new reported issue and its test names here. All listed tests belong
 - `shared toolbar flip persists while stepping through a game` — toolbar flip and keyboard flip share the rendered board's orientation behavior, so move navigation cannot overwrite it.
 - `owner changes clear an unfinished square selection at the same position` — same-FEN ownership transitions still cancel transient board selection.
 - `tablet menu Escape restores the visible navigation trigger` — keyboard dismissal returns focus to the tablet trigger rather than the hidden phone control; covered in Chromium, Firefox, and WebKit.
+- Mandatory `board-unavailable` and `training-feedback-phone` screenshots cover an initial board load failure and visible practice feedback, alongside the all-section viewport gallery.
+- `import waits for saved settings before writing a repertoire` — import cannot race the initial settings response and submit a temporary default depth. Loading errors are actionable and retryable.

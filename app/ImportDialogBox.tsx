@@ -1,8 +1,10 @@
 "use client";
 import { useRef as useDialogRef } from "react";
 import { useDialogFocus } from "./hooks/use-dialog-focus";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { JSX } from "react/jsx-runtime";
+import { Notice } from "./components/task-tabs";
+import { readWorkspaceResponse, invalidateWorkspaceData } from "./lib/workspace-data";
 import { API_URL } from "./const";
 import { parsePgnImport } from "./lib/pgn-import";
 import type { LocalRepertoire } from "./types";
@@ -36,21 +38,24 @@ export function ImportDialogBox({
   });
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => {
+  const [settingsLoaded, setSettingsLoaded] = useState(!usesLocalApi());
+  const [settingsError, setSettingsError] = useState("");
+  const loadImportSettings = useCallback(async () => {
     if (!usesLocalApi()) return;
-    void fetch(`${API_URL}/api/settings`)
-      .then(async (response) => {
-        if (response.ok)
-          setInitialDepth(
-            (await readJsonResponse(response, settingsResponseSchema, "import settings"))
-              .initial_depth,
-          );
-      })
-      .catch(() => undefined);
+    try {
+      const response = await readWorkspaceResponse(`${API_URL}/api/settings`);
+      const saved = await readJsonResponse(response, settingsResponseSchema, "import settings");
+      setInitialDepth(saved.initial_depth);
+      setSettingsLoaded(true);
+      setSettingsError("");
+    } catch (failure) {
+      setSettingsError(`Import settings unavailable: ${failure instanceof Error ? failure.message : "connection failed"}`);
+    }
   }, []);
+  useEffect(() => { void loadImportSettings(); }, [loadImportSettings]);
 
   async function importFile() {
-    if (!file) return;
+    if (!file || !settingsLoaded) return;
     setWorking(true);
     setError("");
     try {
@@ -199,14 +204,16 @@ export function ImportDialogBox({
                 </button>
               </span>
             </label>
-            {error && <p className="editor-error">{error}</p>}
+            {!settingsLoaded && !settingsError && <Notice>Loading import settings…</Notice>}
+            {settingsError && <Notice error onRetry={() => { invalidateWorkspaceData(); void loadImportSettings(); }}>{settingsError}</Notice>}
+            {error && <p className="editor-error" role="alert">{error}</p>}
             <div className="dialog-footer">
               <span>
                 <i className="status-dot" /> Stored locally
               </span>
               <button
                 className="primary-button"
-                disabled={!file || working}
+                disabled={!file || working || !settingsLoaded}
                 onClick={() => void importFile()}
               >
                 {working ? "Importing…" : "Import repertoire"}

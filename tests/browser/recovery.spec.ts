@@ -64,3 +64,19 @@ test("malformed progress is unavailable and retry recovers real measurements", a
   await page.getByRole("button", { name: "Retry", exact: true }).click();
   await expect(page.locator(".metric-grid")).toContainText("9");
 });
+
+test('import waits for saved settings before writing a repertoire', async ({page}) => {
+  let releaseSettings!: () => void;
+  const pendingSettings = new Promise<void>(resolve => { releaseSettings = resolve; });
+  await page.route('**/api/settings', async route => {
+    await pendingSettings;
+    await route.fulfill({json:{initial_depth:2,timezone:'local',new_cards_per_day:2,lichess_username:'',chesscom_username:'',auto_sync_minutes:3,engine_line_window_cp:30,major_mistake_cp:100,light_first_interval_days:7,draw_hold_user_moves:20}});
+  });
+  await prepareUI(page);
+  await navigate(page,'Repertoire'); await page.getByRole('button',{name:/Import PGN/}).click();
+  await page.locator('input[type=file]').setInputFiles({name:'short.pgn',mimeType:'application/x-chess-pgn',buffer:Buffer.from('1. d4 d5 2. c4 e6 *')});
+  await expect(page.getByRole('button',{name:'Import repertoire',exact:true})).toBeDisabled();
+  releaseSettings();
+  await expect(page.getByRole('button',{name:'Import repertoire',exact:true})).toBeEnabled();
+  await expect(page.getByText('2 user moves',{exact:true})).toBeVisible();
+});
