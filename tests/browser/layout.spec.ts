@@ -146,3 +146,21 @@ test("tablet section menu stays inside the header and never overlaps the board",
   expect(menu.y).toBeGreaterThanOrEqual(header.y);
   expect(menu.y + menu.height).toBeLessThanOrEqual(header.y + header.height);
 });
+
+test("phone board controls provide 44px touch targets with every pointer type", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepareUI(page);
+  for (const workspace of boardWorkspaces) {
+    await navigate(page, workspace);
+    const controls = page
+      .locator(".board-tools button, .board-tools a")
+      .filter({ visible: true });
+    for (const control of await controls.all()) {
+      const bounds = await control.boundingBox();
+      expect(bounds!.width).toBeGreaterThanOrEqual(44);
+      expect(bounds!.height).toBeGreaterThanOrEqual(44);
+    }
+  }
+});

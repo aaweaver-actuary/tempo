@@ -117,3 +117,5 @@ Append every new reported issue and its test names here. All listed tests belong
 - `tablet menu Escape restores the visible navigation trigger` — keyboard dismissal returns focus to the tablet trigger rather than the hidden phone control; covered in Chromium, Firefox, and WebKit.
 - Mandatory `board-unavailable` and `training-feedback-phone` screenshots cover an initial board load failure and visible practice feedback, alongside the all-section viewport gallery.
 - `import waits for saved settings before writing a repertoire` — import cannot race the initial settings response and submit a temporary default depth. Loading errors are actionable and retryable.
+
+- Phone toolbar controls must meet the 44px touch-target contract even when a narrow viewport has a fine pointer: `phone board controls provide 44px touch targets with every pointer type` (`tests/browser/layout.spec.ts`). This reproduced the 36px board-toolbar specificity override before the fix.

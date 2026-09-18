@@ -488,8 +488,9 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
 footer {
   margin: 24px auto 0;
 }
-@media (pointer: coarse) {
+@media (max-width: 767px), (pointer: coarse) {
   button,
+  .board-tools button,
   input,
   select,
   .board-tools a {
