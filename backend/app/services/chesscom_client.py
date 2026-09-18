@@ -8,6 +8,7 @@ from .game_record import GameRecord
 
 class UserNotFoundError(Exception):
     """Raised when a user is not found on Chess.com."""
+
     pass
 
 
@@ -41,6 +42,7 @@ async def fetch_chesscom_games_for_day(
             response = await httpx_client.get(url)
         else:
             import httpx
+
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(url)
 
@@ -89,12 +91,8 @@ def _normalize_chesscom_game(
         time_class = raw_game.get("time_class", "").lower()
         rated = raw_game.get("rated", False)
 
-        white_username = (
-            raw_game.get("white", {}).get("username", "").lower()
-        )
-        black_username = (
-            raw_game.get("black", {}).get("username", "").lower()
-        )
+        white_username = raw_game.get("white", {}).get("username", "").lower()
+        black_username = raw_game.get("black", {}).get("username", "").lower()
         user_lower = username.lower()
 
         if white_username == user_lower:
@@ -124,18 +122,22 @@ def _normalize_chesscom_game(
         if pgn_text:
             import io
             import chess.pgn
+
             try:
                 pgn_io = io.StringIO(pgn_text)
                 game = chess.pgn.read_game(pgn_io)
 
                 if game:
                     import chess
+
                     board = chess.Board()
                     uci_moves = [move.uci() for move in game.mainline_moves()]
                     start_fen = board.fen()
                 else:
                     uci_moves = []
-                    start_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+                    start_fen = (
+                        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+                    )
             except Exception as e:
                 print(f"PGN parse error for Chess.com game {game_id}: {e}")
                 uci_moves = []

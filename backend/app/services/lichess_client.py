@@ -11,6 +11,7 @@ from .game_record import GameRecord
 
 class UserNotFoundError(Exception):
     """Raised when a user is not found on Lichess."""
+
     pass
 
 
@@ -66,6 +67,7 @@ async def fetch_lichess_games_for_day(
             response = await httpx_client.get(url, params=params)
         else:
             import httpx
+
             async with httpx.AsyncClient(timeout=30.0) as client:
                 response = await client.get(url, params=params)
 

@@ -5,7 +5,7 @@ from datetime import date
 
 class GameRecord:
     """Represents a single game fetched from an API, before normalization into database."""
-    
+
     def __init__(self, provider: str, username: str):
         self.provider = provider  # "lichess" or "chess.com"
         self.username = username  # The player's username

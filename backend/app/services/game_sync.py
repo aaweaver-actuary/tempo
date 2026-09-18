@@ -6,8 +6,14 @@ import json
 from ..database import connection
 from ..models import GameSyncRequest
 from .game_record import GameRecord
-from .lichess_client import fetch_lichess_games_for_day, UserNotFoundError as LichessUserNotFoundError
-from .chesscom_client import fetch_chesscom_games_for_day, UserNotFoundError as ChesscomUserNotFoundError
+from .lichess_client import (
+    fetch_lichess_games_for_day,
+    UserNotFoundError as LichessUserNotFoundError,
+)
+from .chesscom_client import (
+    fetch_chesscom_games_for_day,
+    UserNotFoundError as ChesscomUserNotFoundError,
+)
 
 
 async def sync_providers(request: GameSyncRequest, httpx_client=None) -> dict:
