@@ -18,6 +18,7 @@ from .game_findings import refresh_game_findings
 from .game_sync import sync_providers
 from .repertoire_comparison import compare_games
 from .activity_gate import activity_gate
+from .repertoire_coverage import claim_coverage_node, execute_coverage_node
 
 
 def _now() -> str:
@@ -230,6 +231,11 @@ class GameSyncCoordinator:
                    WHERE status='running'""",
                 (_now(),),
             )
+            database.execute(
+                """UPDATE repertoire_coverage_nodes SET explorer_status='queued',updated_at=?
+                   WHERE explorer_status='running'""",
+                (_now(),),
+            )
         self._loop = asyncio.get_running_loop()
         self._wake_event = asyncio.Event()
         self._task = asyncio.create_task(self._run())
@@ -268,6 +274,15 @@ class GameSyncCoordinator:
                 continue
             if game_id:
                 await asyncio.to_thread(_execute_derivation, game_id)
+                await asyncio.sleep(0)
+                continue
+            try:
+                coverage_node = await asyncio.to_thread(claim_coverage_node)
+            except sqlite3.OperationalError:
+                await asyncio.sleep(0.25)
+                continue
+            if coverage_node:
+                await asyncio.to_thread(execute_coverage_node, coverage_node)
                 await asyncio.sleep(0)
                 continue
             assert self._wake_event is not None

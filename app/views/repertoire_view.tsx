@@ -8,14 +8,25 @@ import {
 import { usesLocalApi } from "../utils/local";
 import { API_URL } from "../const";
 import { readWorkspaceResponse, invalidateWorkspaceData } from "../lib/workspace-data";
+import { readJsonResponse } from "../lib/validated-data";
+import {
+  repertoireCoverageGapsSchema,
+  repertoireCoverageSummarySchema,
+} from "../domain/schemas";
+import type { z } from "zod";
 
 import { Notice } from "../components/task-tabs";
 
-export default function RepertoireView({ imported, onImport, onBrowse, onDeleteLocal, onRenameLocal, onQueueChanged }: { imported: LocalRepertoire[]; onImport: () => void; onBrowse: (id: string) => void; onDeleteLocal: (id: string) => void; onRenameLocal: (id: string, name: string) => void; onQueueChanged: () => Promise<void> }) {
+type CoverageSummary = z.infer<typeof repertoireCoverageSummarySchema>;
+type CoverageGap = z.infer<typeof repertoireCoverageGapsSchema>["gaps"][number];
+
+export default function RepertoireView({ imported, onImport, onBrowse, onResolveGap, onDeleteLocal, onRenameLocal, onQueueChanged }: { imported: LocalRepertoire[]; onImport: () => void; onBrowse: (id: string) => void; onResolveGap: (repertoireId: string, gap: CoverageGap) => void; onDeleteLocal: (id: string) => void; onRenameLocal: (id: string, name: string) => void; onQueueChanged: () => Promise<void> }) {
   const [backendItems, setBackendItems] = useState<RepertoireItem[]>([]);
   const [loaded, setLoaded] = useState(!usesLocalApi());
   const [libraryPage, setLibraryPage] = useState(0);
   const [error, setError] = useState("");
+  const [coverageByRepertoire, setCoverageByRepertoire] = useState<Record<string, CoverageSummary>>({});
+  const [gapsByRepertoire, setGapsByRepertoire] = useState<Record<string, CoverageGap[]>>({});
 
   const loadBackend = useCallback(async () => {
     if (!usesLocalApi()) return;
@@ -67,6 +78,32 @@ export default function RepertoireView({ imported, onImport, onBrowse, onDeleteL
     const url=URL.createObjectURL(new Blob([text],{type:'application/x-chess-pgn'}));
     const link=document.createElement('a'); link.href=url; link.download=item?`${item.title}.pgn`:'tempo-repertoires.pgn'; link.click(); URL.revokeObjectURL(url);
   }
+  async function loadCoverage(repertoireId: string) {
+    const [summaryResponse, gapsResponse] = await Promise.all([
+      fetch(`${API_URL}/api/repertoires/${repertoireId}/coverage`),
+      fetch(`${API_URL}/api/repertoires/${repertoireId}/coverage/gaps`),
+    ]);
+    const summary = await readJsonResponse(
+      summaryResponse,
+      repertoireCoverageSummarySchema,
+      "repertoire coverage",
+    );
+    const gaps = await readJsonResponse(
+      gapsResponse,
+      repertoireCoverageGapsSchema,
+      "repertoire coverage gaps",
+    );
+    setCoverageByRepertoire((current) => ({ ...current, [repertoireId]: summary }));
+    setGapsByRepertoire((current) => ({ ...current, [repertoireId]: gaps.gaps }));
+  }
+  async function refreshCoverage(repertoireId: string) {
+    const response = await fetch(
+      `${API_URL}/api/repertoires/${repertoireId}/coverage/refresh`,
+      { method: "POST" },
+    );
+    if (!response.ok) throw new Error("Could not queue repertoire coverage.");
+    await loadCoverage(repertoireId);
+  }
   return (
     <section className="library-page" id="repertoire">
       {error && <Notice error onRetry={() => { invalidateWorkspaceData(); void loadBackend(); }}>{loaded ? "Showing previously loaded records. " : ""}{error}</Notice>}
@@ -81,7 +118,13 @@ export default function RepertoireView({ imported, onImport, onBrowse, onDeleteL
             <div className="repertoire-top"><span className="side-badge">{item.side}</span><span>{item.due ? `${item.due} due` : 'Up to date'}</span></div>
             <div className="mini-board" aria-hidden="true">{Array.from({ length: 16 }).map((_, index) => <i key={index} />)}</div>
             <div className="repertoire-name"><h2>{item.title}</h2><button onClick={()=>void rename(item)} title="Rename repertoire">✎</button></div><p>{item.detail}</p>{Boolean(item.conflictCount) && <p className="warning-text">{item.conflictCount} trained-move {item.conflictCount === 1 ? "conflict" : "conflicts"} to resolve</p>}<small className="source-name">{item.sourceName}</small>
-            <div className="repertoire-actions"><button className="browse-button" onClick={() => onBrowse(item.id)}>Browse tree</button><button onClick={()=>exportPgn(item)}>⇩ PGN</button><button className="delete-repertoire" onClick={()=>void remove(item)}>Delete</button></div>
+            {item.backend && coverageByRepertoire[item.id] && <div className="coverage-summary">
+              <div><span>Required replies</span><strong>{coverageByRepertoire[item.id].covered_branches} / {coverageByRepertoire[item.id].required_branches}</strong></div>
+              <div><span>Probability coverage</span><strong>{coverageByRepertoire[item.id].probability_coverage === null ? "—" : `${Math.round(coverageByRepertoire[item.id].probability_coverage! * 1000) / 10}%`}</strong></div>
+              <small>{coverageByRepertoire[item.id].status}{coverageByRepertoire[item.id].unknown_nodes ? ` · ${coverageByRepertoire[item.id].unknown_nodes} positions awaiting data` : ""}</small>
+              {gapsByRepertoire[item.id]?.slice(0, 3).map((gap) => <button key={gap.gap_id} onClick={() => onResolveGap(item.id, gap)}>Fill {gap.move_uci} gap · {gap.probability === null ? "unknown" : `${Math.round(gap.probability * 1000) / 10}%`}</button>)}
+            </div>}
+            <div className="repertoire-actions"><button className="browse-button" onClick={() => onBrowse(item.id)}>Browse tree</button>{item.backend && <button onClick={() => void (coverageByRepertoire[item.id] ? refreshCoverage(item.id) : loadCoverage(item.id)).catch((failure) => setError(failure instanceof Error ? failure.message : "Coverage unavailable"))}>{coverageByRepertoire[item.id] ? "Refresh coverage" : "Check coverage"}</button>}<button onClick={()=>exportPgn(item)}>⇩ PGN</button><button className="delete-repertoire" onClick={()=>void remove(item)}>Delete</button></div>
           </article>
         ))}
         <button className="new-repertoire-card" onClick={(event) => { event.currentTarget.focus(); onImport(); }}><span>＋</span><strong>Add a repertoire</strong><small>PGN files stay on this computer</small></button>

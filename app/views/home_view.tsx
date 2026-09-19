@@ -31,6 +31,8 @@ import {
   asFenString,
   asTeachingCardKey,
   asTeachingMoveKey,
+  asUciMove,
+  asSanMove,
 } from "../types";
 import { canonicalFenKey } from "../utils/canonical-line";
 import { IndexedPosition } from "../lib/position-similarity";
@@ -47,6 +49,7 @@ import TacticsView from "./tactics_view";
 import { loadPositionAnnotation } from "../utils/position-annotations";
 import { useGameSync } from "../hooks/use-game-sync";
 import { useGameAnalysis } from "../hooks/use-game-analysis";
+import { useRepertoireCoverageWorker } from "../hooks/use-repertoire-coverage";
 import { Chess, Move, Square } from "chess.js";
 import {
   useTrainingStore,
@@ -83,6 +86,7 @@ async function responseErrorDetail(response: Response): Promise<string> {
 export default function Home() {
   const gameSync = useGameSync();
   useGameAnalysis();
+  useRepertoireCoverageWorker();
   const [currentView, setCurrentView] = useState<View>("train");
   const [gamesFenFilter, setGamesFenFilter] = useState("");
   const [reviewPersistenceState, setReviewPersistenceState] = useState<
@@ -961,6 +965,35 @@ export default function Home() {
                 JSON.stringify({ ...existing, activeRepertoireId: id }),
               );
             else localStorage.setItem("tempo-active-repertoire-white", id);
+            setCurrentView("builder");
+          }}
+          onResolveGap={(repertoireId, gap) => {
+            const position = new Chess(gap.fen);
+            const played = position.move({
+              from: gap.move_uci.slice(0, 2) as Square,
+              to: gap.move_uci.slice(2, 4) as Square,
+              promotion: gap.move_uci[4],
+            });
+            const session: BuilderSession = {
+              version: 1,
+              activeRepertoireByColor: {
+                [gap.trained_color]: asRepertoireId(repertoireId),
+              },
+              activeRepertoireId: asRepertoireId(repertoireId),
+              orientation: gap.trained_color,
+              startingFen: asFenString(gap.fen),
+              history: [
+                {
+                  san: asSanMove(played.san),
+                  uci: asUciMove(gap.move_uci),
+                  fen: asFenString(position.fen()),
+                },
+              ],
+              cursor: 1,
+              branchStart: 0,
+              sourceGapId: gap.gap_id,
+            };
+            localStorage.setItem("tempo-builder-session", JSON.stringify(session));
             setCurrentView("builder");
           }}
           onDeleteLocal={deleteLocalRepertoire}

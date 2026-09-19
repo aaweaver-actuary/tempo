@@ -27,6 +27,11 @@ type SettingsValues = {
   major_mistake_cp: number;
   light_first_interval_days: number;
   draw_hold_user_moves: number;
+  coverage_reply_denominator: number;
+  coverage_cumulative_target: number;
+  coverage_horizon_fullmoves: number;
+  coverage_path_floor: number;
+  coverage_maia_elo: number;
   board_theme: BoardTheme;
   piece_set: PieceSet;
   sound: boolean;
@@ -66,6 +71,11 @@ export default function SettingsView({
     major_mistake_cp: 100,
     light_first_interval_days: 7,
     draw_hold_user_moves: 20,
+    coverage_reply_denominator: 100,
+    coverage_cumulative_target: 95,
+    coverage_horizon_fullmoves: 15,
+    coverage_path_floor: 0.0005,
+    coverage_maia_elo: 1500,
     board_theme: theme,
     piece_set: pieceSet,
     sound,
@@ -188,6 +198,11 @@ export default function SettingsView({
         major_mistake_cp: values.major_mistake_cp,
         light_first_interval_days: values.light_first_interval_days,
         draw_hold_user_moves: values.draw_hold_user_moves,
+        coverage_reply_denominator: values.coverage_reply_denominator,
+        coverage_cumulative_target: values.coverage_cumulative_target,
+        coverage_horizon_fullmoves: values.coverage_horizon_fullmoves,
+        coverage_path_floor: values.coverage_path_floor,
+        coverage_maia_elo: values.coverage_maia_elo,
       };
       try {
         const response = await fetch(`${API_URL}/api/settings`, {
@@ -440,6 +455,47 @@ export default function SettingsView({
               <option value="90">90%</option>
               <option value="95">95%</option>
             </select>
+          </label>
+          <label>
+            <span>
+              Required reply threshold
+              <small>Cover opponent moves occurring at least this often</small>
+            </span>
+            <select
+              value={values.coverage_reply_denominator}
+              onChange={(event) =>
+                update("coverage_reply_denominator", Number(event.target.value))
+              }
+            >
+              <option value="100">1 in 100</option>
+              <option value="200">1 in 200</option>
+              <option value="300">1 in 300</option>
+            </select>
+          </label>
+          <label>
+            <span>Cumulative reply coverage</span>
+            <select
+              value={values.coverage_cumulative_target}
+              onChange={(event) =>
+                update("coverage_cumulative_target", Number(event.target.value))
+              }
+            >
+              <option value="90">90%</option>
+              <option value="95">95%</option>
+              <option value="99">99%</option>
+            </select>
+          </label>
+          <label>
+            <span>Coverage horizon<small>Full move number</small></span>
+            <input
+              type="number"
+              min="4"
+              max="40"
+              value={values.coverage_horizon_fullmoves}
+              onChange={(event) =>
+                update("coverage_horizon_fullmoves", Number(event.target.value))
+              }
+            />
           </label>
           <label>
             <span>Candidate colors</span>

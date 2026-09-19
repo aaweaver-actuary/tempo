@@ -17,6 +17,11 @@ class Settings(BaseModel):
     major_mistake_cp: int = Field(default=100, ge=25, le=1000)
     light_first_interval_days: int = Field(default=7, ge=1, le=90)
     draw_hold_user_moves: int = Field(default=20, ge=5, le=100)
+    coverage_reply_denominator: int = Field(default=100, ge=2, le=10000)
+    coverage_cumulative_target: int = Field(default=95, ge=50, le=100)
+    coverage_horizon_fullmoves: int = Field(default=15, ge=4, le=40)
+    coverage_path_floor: float = Field(default=0.0005, ge=0, le=0.1)
+    coverage_maia_elo: int = Field(default=1500, ge=1100, le=1900)
 
 
 class ReviewRequest(BaseModel):
@@ -36,6 +41,18 @@ class BranchRequest(BaseModel):
     trained_color: Literal["white", "black"]
     name: str = "Analysis branch"
     allow_conflict: bool = False
+    source_gap_id: str | None = None
+
+
+class CoverageMaiaMove(BaseModel):
+    move_uci: str = Field(pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$", min_length=4, max_length=5)
+    probability: float = Field(ge=0, le=1)
+
+
+class CoverageMaiaSubmission(BaseModel):
+    node_id: str
+    lease_id: str
+    moves: list[CoverageMaiaMove]
 
 
 class RemoveBranchRequest(BaseModel):

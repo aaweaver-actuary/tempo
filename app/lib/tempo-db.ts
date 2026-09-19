@@ -109,6 +109,10 @@ const TABLE_TO_STORE: Record<string, TempoStore> = {
   game_repertoire_matches: "syncMetadata",
   game_findings: "syncMetadata",
   game_insight_recommendations: "syncMetadata",
+  repertoire_coverage_runs: "syncMetadata",
+  repertoire_coverage_nodes: "syncMetadata",
+  repertoire_coverage_candidates: "syncMetadata",
+  explorer_position_cache: "syncMetadata",
 };
 
 function recordKey(table: string, row: Record<string, unknown>, index: number): string {

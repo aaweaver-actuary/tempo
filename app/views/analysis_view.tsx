@@ -388,6 +388,7 @@ export default function BuilderView({
       cursor: Math.min(cursor, history.length),
       branchStart,
       dismissedTranspositions,
+      sourceGapId: initialSession?.sourceGapId,
     };
     localStorage.setItem("tempo-builder-session", JSON.stringify(session));
   }, [
@@ -723,6 +724,7 @@ export default function BuilderView({
             .slice(0, cursor)
             .map((move) => move.san)
             .join(" "),
+          source_gap_id: initialSession?.sourceGapId,
         };
         let response = await fetch(`${API_URL}/api/repertoire/branches`, {
           method: "POST",

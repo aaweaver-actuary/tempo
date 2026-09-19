@@ -97,6 +97,7 @@ export type BuilderSession = {
   cursor: number;
   branchStart: number | null;
   dismissedTranspositions?: string[];
+  sourceGapId?: string;
 };
 
 export type CardNameSource = "title" | "moves" | "startingFen";

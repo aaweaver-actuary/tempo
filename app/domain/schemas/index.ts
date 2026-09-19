@@ -197,6 +197,7 @@ export const builderSessionSchema = z
     cursor: integer,
     branchStart: integer.nullable(),
     dismissedTranspositions: z.array(z.string()).optional(),
+    sourceGapId: z.string().optional(),
   })
   .refine(
     (value) =>
@@ -246,6 +247,11 @@ export const settingsResponseSchema = z.strictObject({
   major_mistake_cp: z.number().int().min(25).max(1000),
   light_first_interval_days: z.number().int().min(1).max(90),
   draw_hold_user_moves: z.number().int().min(5).max(100),
+  coverage_reply_denominator: z.number().int().min(2).max(10000).default(100),
+  coverage_cumulative_target: z.number().int().min(50).max(100).default(95),
+  coverage_horizon_fullmoves: z.number().int().min(4).max(40).default(15),
+  coverage_path_floor: z.number().min(0).max(0.1).default(0.0005),
+  coverage_maia_elo: z.number().int().min(1100).max(1900).default(1500),
 });
 export const importResultSchema = z.strictObject({
   repertoire_id: repertoireIdSchema,
@@ -527,6 +533,50 @@ export const gameAnalysisClaimSchema = z.strictObject({
     lease_id: z.string(),
     lease_expires_at: isoDateSchema,
   }).nullable(),
+});
+export const coverageMaiaClaimSchema = z.strictObject({
+  job: z
+    .strictObject({
+      node_id: z.string(),
+      lease_id: z.string(),
+      fen: fenStringSchema,
+      elo: integer,
+    })
+    .nullable(),
+});
+export const repertoireCoverageSummarySchema = z.strictObject({
+  run_id: z.string().uuid().nullable(),
+  status: z.enum(["not-started", "queued", "running", "complete", "failed"]),
+  required_branches: integer,
+  covered_branches: integer,
+  probability_coverage: z.number().min(0).max(1).nullable(),
+  is_complete: z.boolean(),
+  unknown_nodes: integer,
+  last_error: z.string().nullable().optional(),
+  settings: z
+    .strictObject({
+      reply_denominator: integer,
+      cumulative_target: z.number(),
+      horizon_fullmoves: integer,
+      path_floor: z.number(),
+      maia_elo: integer,
+    })
+    .optional(),
+});
+export const repertoireCoverageGapsSchema = z.strictObject({
+  gaps: z.array(
+    z.strictObject({
+      gap_id: z.string(),
+      node_id: z.string(),
+      fen: fenStringSchema,
+      fen_key: fenKeySchema,
+      move_uci: uciMoveSchema,
+      probability: z.number().nullable(),
+      source_state: z.enum(["blended", "explorer-only", "maia-only", "unknown"]),
+      explorer_games: integer,
+      trained_color: colorSchema,
+    }),
+  ),
 });
 export const progressResponseSchema = z.strictObject({
   states: z.record(z.string(), integer),

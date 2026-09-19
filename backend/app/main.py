@@ -30,6 +30,7 @@ from .models import (
     AccountSettings,
     BranchRequest,
     CardRevisionRequest,
+    CoverageMaiaSubmission,
     EndgameProbeRequest,
     EndgameTemplateRequest,
     GameAnalysisRequest,
@@ -79,6 +80,13 @@ from .services.repertoire_conflicts import (
 )
 from .services.puzzles import validate_puzzle_record
 from .services.prefix_split import apply_prefix_split, preview_prefix_split
+from .services.repertoire_coverage import (
+    claim_maia_coverage_node,
+    coverage_gaps,
+    coverage_summary,
+    enqueue_coverage_refresh,
+    submit_maia_coverage,
+)
 
 
 @asynccontextmanager
@@ -752,6 +760,10 @@ def migration_snapshot():
         "game_repertoire_matches",
         "game_findings",
         "game_insight_recommendations",
+        "repertoire_coverage_runs",
+        "repertoire_coverage_nodes",
+        "repertoire_coverage_candidates",
+        "explorer_position_cache",
         "game_sync_state",
     ]
     with connection() as db:
@@ -1036,6 +1048,29 @@ def branch(request: BranchRequest):
             db.execute(
                 "INSERT OR IGNORE INTO repertoire_cards VALUES(?,?)",
                 (request.repertoire_id, cid),
+            )
+        if request.source_gap_id:
+            try:
+                gap_node_id, gap_move_uci = request.source_gap_id.split(":", 1)
+            except ValueError as error:
+                raise HTTPException(422, "Invalid repertoire coverage gap") from error
+            gap = db.execute(
+                """SELECT c.node_id,c.move_uci,n.repertoire_id
+                   FROM repertoire_coverage_candidates c
+                   JOIN repertoire_coverage_nodes n ON n.id=c.node_id
+                   WHERE c.node_id=? AND c.move_uci=?""",
+                (gap_node_id, gap_move_uci),
+            ).fetchone()
+            if not gap or gap["repertoire_id"] != request.repertoire_id:
+                raise HTTPException(422, "Coverage gap does not belong to this repertoire")
+            if not moves or moves[0] != gap_move_uci or len(moves) < 2:
+                raise HTTPException(
+                    422,
+                    "A resolved gap must include the missing opponent move and your response",
+                )
+            db.execute(
+                "UPDATE repertoire_coverage_candidates SET covered=1 WHERE node_id=? AND move_uci=?",
+                (gap_node_id, gap_move_uci),
             )
         seed_queue(db, date.today().isoformat())
     return {"id": lid, "duplicate": duplicate, "moves": moves}
@@ -1451,6 +1486,44 @@ def export_one(identifier: str):
 @app.get("/api/repertoires/export.pgn")
 def export_all():
     return export_repertoires()
+
+
+@app.post("/api/repertoires/{identifier}/coverage/refresh", status_code=202)
+def refresh_repertoire_coverage(identifier: str):
+    try:
+        run_id = enqueue_coverage_refresh(identifier)
+    except KeyError as error:
+        raise HTTPException(404, str(error)) from error
+    coordinator.wake()
+    return {"run_id": run_id, "status": "queued"}
+
+
+@app.get("/api/repertoires/{identifier}/coverage")
+def repertoire_coverage(identifier: str):
+    return coverage_summary(identifier)
+
+
+@app.get("/api/repertoires/{identifier}/coverage/gaps")
+def repertoire_coverage_gaps(identifier: str):
+    return {"gaps": coverage_gaps(identifier)}
+
+
+@app.post("/api/repertoire-coverage/maia/claim")
+def coverage_maia_claim():
+    return {"job": claim_maia_coverage_node()}
+
+
+@app.post("/api/repertoire-coverage/maia/submit")
+def coverage_maia_submit(request: CoverageMaiaSubmission):
+    try:
+        submit_maia_coverage(
+            request.node_id,
+            request.lease_id,
+            [move.model_dump() for move in request.moves],
+        )
+    except RuntimeError as error:
+        raise HTTPException(409, str(error)) from error
+    return {"status": "complete"}
 
 
 @app.get("/api/explorer/{database_name}")
