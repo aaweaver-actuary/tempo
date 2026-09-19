@@ -56,6 +56,32 @@ class CardRevisionRequest(BaseModel):
     source_fen: str | None = None
 
 
+class PrefixSplitRequest(BaseModel):
+    """Accept a previously previewed one-decision prefix split."""
+
+    expected_revision: int = Field(ge=1)
+
+
+class PrefixSplitCard(BaseModel):
+    """One card produced by a prefix split."""
+
+    card_id: str
+    starting_fen: str
+    moves: list[str]
+    tested_player_moves: int = Field(ge=1)
+
+
+class PrefixSplitResponse(BaseModel):
+    """Preview or result of splitting a long opening prefix."""
+
+    source_card_id: str
+    source_revision: int
+    parent: PrefixSplitCard
+    continuation: PrefixSplitCard
+    applied: bool
+    idempotent: bool = False
+
+
 class RepertoireRenameRequest(BaseModel):
     """Request model for renaming a repertoire."""
 

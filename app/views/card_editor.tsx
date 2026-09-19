@@ -20,8 +20,13 @@ import CloseButton from "../components/buttons/CloseButton";
 import {
   cardRevisionResultSchema,
   packagedPuzzleSchema,
+  prefixSplitResponseSchema,
 } from "../domain/schemas";
 import { readJsonResponse, validRecords } from "../lib/validated-data";
+import { movesToSanFormat } from "../utils/chess";
+import type { z } from "zod";
+
+type PrefixSplitPreview = z.infer<typeof prefixSplitResponseSchema>;
 
 export default function CardEditor({
   practiceCard: card,
@@ -51,6 +56,43 @@ export default function CardEditor({
   );
   const [piece, setPiece] = useState("B");
   const [error, setError] = useState("");
+  const [prefixSplitPreview, setPrefixSplitPreview] =
+    useState<PrefixSplitPreview>();
+
+  useEffect(() => {
+    if (
+      card.editingIntent !== "shorten-prefix" ||
+      !card.backendId ||
+      !usesLocalApi()
+    )
+      return;
+    let active = true;
+    void fetch(`${API_URL}/api/cards/${card.backendId}/prefix-split`)
+      .then((response) =>
+        readJsonResponse(response, prefixSplitResponseSchema, "prefix split preview"),
+      )
+      .then((preview) => {
+        if (!active) return;
+        setPrefixSplitPreview(preview);
+        setCurrentFenString(preview.parent.starting_fen);
+        setSolutionSanMovesList(
+          movesToSanFormat(preview.parent.starting_fen, preview.parent.moves).map(
+            asSanMove,
+          ),
+        );
+      })
+      .catch((failure) => {
+        if (active)
+          setError(
+            failure instanceof Error
+              ? failure.message
+              : "Could not preview the shorter prefix.",
+          );
+      });
+    return () => {
+      active = false;
+    };
+  }, [card.backendId, card.editingIntent]);
 
   const previewFen = useMemo(() => {
     try {
@@ -141,6 +183,36 @@ export default function CardEditor({
 
   async function save() {
     try {
+      if (card.editingIntent === "shorten-prefix" && usesLocalApi()) {
+        if (!card.backendId || !prefixSplitPreview)
+          throw new Error("The shorter prefix preview is not ready.");
+        const response = await fetch(
+          `${API_URL}/api/cards/${card.backendId}/prefix-split`,
+          {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ expected_revision: card.revision ?? 1 }),
+          },
+        );
+        const result = await readJsonResponse(
+          response,
+          prefixSplitResponseSchema,
+          "accepted prefix split",
+        );
+        onSave({
+          ...card,
+          backendId: result.parent.card_id,
+          revision: result.source_revision + 1,
+          startingFen: asFenString(result.parent.starting_fen),
+          moves: movesToSanFormat(
+            result.parent.starting_fen,
+            result.parent.moves,
+          ).map(asSanMove),
+          editingIntent: undefined,
+        });
+        onClose();
+        return;
+      }
       const board = new Chess(currentFenString);
       const moves = solutionSanMovesList.map((san) => {
         const move = board.move(san);
@@ -231,7 +303,11 @@ export default function CardEditor({
         <div className="editor-heading">
           <div>
             <p className="eyebrow">Card repair</p>
-            <h2 id="card-editor-title">Edit {card.title}</h2>
+            <h2 id="card-editor-title">
+              {card.editingIntent === "shorten-prefix"
+                ? `Shorten ${card.title}`
+                : `Edit ${card.title}`}
+            </h2>
           </div>
           {card.sourceUrl && (
             <button onClick={restoreOriginal}>Restore Lichess original</button>
@@ -316,6 +392,21 @@ export default function CardEditor({
             )}
           </div>
           <div className="editor-fields">
+            {card.editingIntent === "shorten-prefix" && prefixSplitPreview && (
+              <section className="shorten-suggestion" aria-label="Prefix split preview">
+                <strong>One shorter prefix plus one continuation card</strong>
+                <p>
+                  The continuation starts from the shortened position and tests
+                  exactly one of your moves.
+                </p>
+                <small>
+                  Continuation: {movesToSanFormat(
+                    prefixSplitPreview.continuation.starting_fen,
+                    prefixSplitPreview.continuation.moves,
+                  ).join(" ")}
+                </small>
+              </section>
+            )}
             <label>
               FEN
               <textarea
@@ -334,7 +425,7 @@ export default function CardEditor({
             <p className="editor-key-help">
               ←/→ step · ↑ start · ↓ end · Esc close
             </p>
-            <fieldset>
+            {card.editingIntent !== "shorten-prefix" && <fieldset>
               <legend>Scheduling history</legend>
               <label>
                 <input
@@ -352,7 +443,7 @@ export default function CardEditor({
                 />{" "}
                 Reset as a new card
               </label>
-            </fieldset>
+            </fieldset>}
             {error && <p className="editor-error">{error}</p>}
             <div className="editor-actions">
               {usesLocalApi() && card.kind === "opening" && (
@@ -362,7 +453,9 @@ export default function CardEditor({
               )}
               <button onClick={onClose}>Cancel</button>
               <button className="primary-button" onClick={save}>
-                Validate & save
+                {card.editingIntent === "shorten-prefix"
+                  ? "Accept split"
+                  : "Validate & save"}
               </button>
             </div>
           </div>

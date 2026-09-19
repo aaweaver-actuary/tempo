@@ -45,4 +45,5 @@ export type PracticeCard = {
   orientation?: PieceColor;
   revision?: number;
   repertoireId?: RepertoireId;
+  editingIntent?: "standard" | "shorten-prefix";
 };

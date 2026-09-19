@@ -26,6 +26,7 @@
 | Sync status invisible | `automatic game sync has a visible spinner and reports provider failure` |
 | Chess.com mixed-case usernames and shared Site headers collapse games | `test_chesscom_mixed_case_username_and_shared_site_header_import_every_distinct_game` |
 | Queued or single-provider game sync results are rejected as missing provider objects | `queued game sync accepts an empty provider map without a diagnostic`; `single provider sync result does not require the other provider`; `malformed queued provider data still fails strict validation` |
+| Accepting a shorter opening prefix loses the removed decision instead of creating a focused continuation card | `test_accepted_shorter_opening_prefix_creates_a_one_player_decision_continuation_card`; `test_black_and_white_prefix_splits_preserve_the_opponent_setup_move`; `test_prefix_split_retry_creates_exactly_one_parent_child_and_queue_entry`; `test_prefix_split_preserves_the_complete_repertoire_line_and_original_reviews` |
 | One provider failure blocks the other account | `test_one_provider_failure_does_not_discard_other_provider_success` |
 | Incremental sync misses late games or creates duplicates | `test_incremental_overlap_catches_late_games_without_duplicates` |
 | Sync silently hides filtered, rejected, and duplicate records | `test_sync_reports_filtered_rejected_and_duplicate_counts` |

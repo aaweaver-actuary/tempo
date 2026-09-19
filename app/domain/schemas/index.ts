@@ -167,6 +167,7 @@ export const practiceCardSchema = z.strictObject({
   orientation: colorSchema.optional(),
   revision: z.number().int().positive().optional(),
   repertoireId: repertoireIdSchema.optional(),
+  editingIntent: z.enum(["standard", "shorten-prefix"]).optional(),
 });
 export const localRepertoireSchema = z.strictObject({
   id: repertoireIdSchema,
@@ -269,6 +270,20 @@ export const cardRevisionResultSchema = z.strictObject({
   card_id: cardIdSchema,
   replaced: z.boolean(),
   history_mode: z.enum(["preserve", "reset"]),
+});
+const prefixSplitCardSchema = z.strictObject({
+  card_id: cardIdSchema,
+  starting_fen: fenStringSchema,
+  moves: z.array(uciMoveSchema),
+  tested_player_moves: integer,
+});
+export const prefixSplitResponseSchema = z.strictObject({
+  source_card_id: cardIdSchema,
+  source_revision: integer,
+  parent: prefixSplitCardSchema,
+  continuation: prefixSplitCardSchema,
+  applied: z.boolean(),
+  idempotent: z.boolean(),
 });
 export const tacticProgressSchema = z.record(
   z.string(),

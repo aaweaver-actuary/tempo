@@ -45,6 +45,8 @@ from .models import (
     GamesSummaryResponse,
     ImportResult,
     PositionAnnotationRequest,
+    PrefixSplitRequest,
+    PrefixSplitResponse,
     RepertoireRenameRequest,
     RemoveBranchRequest,
     ReviewRequest,
@@ -76,6 +78,7 @@ from .services.repertoire_conflicts import (
     trained_move_index,
 )
 from .services.puzzles import validate_puzzle_record
+from .services.prefix_split import apply_prefix_split, preview_prefix_split
 
 
 @asynccontextmanager
@@ -732,6 +735,8 @@ def migration_snapshot():
         "daily_queue_days",
         "position_annotations",
         "teaching_states",
+        "card_revisions",
+        "prefix_splits",
         "tactic_progress",
         "endgame_templates",
         "endgame_attempts",
@@ -1206,6 +1211,30 @@ def validate_card(request: CardRevisionRequest):
         "canonical_id": card_id(request.starting_fen, moves),
         "moves": moves,
     }
+
+
+@app.get("/api/cards/{identifier}/prefix-split", response_model=PrefixSplitResponse)
+def prefix_split_preview(identifier: str):
+    with connection() as database:
+        try:
+            return preview_prefix_split(database, identifier)
+        except KeyError as error:
+            raise HTTPException(404, str(error)) from error
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+
+
+@app.post("/api/cards/{identifier}/prefix-split", response_model=PrefixSplitResponse)
+def prefix_split_accept(identifier: str, request: PrefixSplitRequest):
+    with connection() as database:
+        try:
+            return apply_prefix_split(database, identifier, request.expected_revision)
+        except KeyError as error:
+            raise HTTPException(404, str(error)) from error
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
 
 
 @app.put("/api/cards/{identifier}")

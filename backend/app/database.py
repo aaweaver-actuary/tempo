@@ -229,6 +229,15 @@ def initialize() -> None:
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS prefix_splits (
+            source_card_id TEXT PRIMARY KEY REFERENCES cards(id) ON DELETE CASCADE,
+            source_revision INTEGER NOT NULL,
+            shortened_card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+            continuation_card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+            created_at TEXT NOT NULL
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS tactic_progress (
             puzzle_id TEXT PRIMARY KEY,
             deck_id TEXT NOT NULL,

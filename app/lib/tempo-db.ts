@@ -92,6 +92,8 @@ const TABLE_TO_STORE: Record<string, TempoStore> = {
   settings: "settings",
   game_sync_state: "syncMetadata",
   teaching_states: "syncMetadata",
+  card_revisions: "syncMetadata",
+  prefix_splits: "syncMetadata",
   repertoire_cards: "syncMetadata",
   tactic_progress: "syncMetadata",
   endgame_templates: "syncMetadata",

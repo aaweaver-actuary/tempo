@@ -318,6 +318,7 @@ export default function TrainingView({
                       setEditorCard({
                         ...card,
                         moves: card.moves.slice(0, -2),
+                        editingIntent: "shorten-prefix",
                       })
                     }
                   >
