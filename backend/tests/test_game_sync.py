@@ -307,8 +307,6 @@ def test_game_summaries_never_expose_persistence_only_sync_fields(
         summary_response = client.get("/api/games/summary")
         assert summary_response.status_code == 200
         public_game = summary_response.json()["games"][0]
-        assert public_game["moves"] == ["e2e4", "e7e5", "g1f3", "b8c6"]
-        assert public_game["timeline"] == []
         assert {
             "provider_game_id",
             "content_hash",
@@ -316,9 +314,33 @@ def test_game_summaries_never_expose_persistence_only_sync_fields(
             "moves_json",
             "timeline_json",
             "expected_json",
+            "moves",
+            "timeline",
         }.isdisjoint(public_game)
         detail = client.get(f"/api/games/{public_game['id']}").json()
-        assert detail == public_game
+        assert detail["moves"] == ["e2e4", "e7e5", "g1f3", "b8c6"]
+        assert detail["timeline"] == []
+
+
+def test_games_summary_pagination_omits_heavy_fields_and_caps_rows(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        now = datetime.now(timezone.utc).isoformat()
+        with database.connection() as db:
+            db.executemany(
+                """INSERT INTO imported_games(
+                       id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json
+                   ) VALUES(?,'lichess','TempoPlayer',?,'rapid',1,'white','1-0',?,'[\"e2e4\"]')""",
+                [(f"page-{index:02d}", now, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1") for index in range(75)],
+            )
+        first = client.get("/api/games/summary", params={"limit": 50}).json()
+        assert first["total"] == 75
+        assert len(first["games"]) == 50
+        assert first["next_cursor"]
+        assert all("moves" not in game and "timeline" not in game for game in first["games"])
+        second = client.get("/api/games/summary", params={"limit": 50, "cursor": first["next_cursor"]}).json()
+        assert len(second["games"]) == 25
+        assert not {game["id"] for game in first["games"]} & {game["id"] for game in second["games"]}
 
 
 def test_correct_review_succeeds_while_one_thousand_derivation_jobs_are_queued(

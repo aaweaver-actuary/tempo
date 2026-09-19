@@ -1,4 +1,5 @@
 import hashlib
+import base64
 import io
 import json
 import logging
@@ -43,6 +44,7 @@ from .models import (
     GamePublicRecord,
     GameSyncRequest,
     GameSyncStatusResponse,
+    GameSummaryRecord,
     GuidedReviewAttemptRequest,
     GamesSummaryResponse,
     ImportResult,
@@ -2405,24 +2407,105 @@ GAME_PUBLIC_SELECT = """g.id,g.provider,g.username,g.played_at,g.speed,g.rated,
     m.deviation_card_id,m.matched_player_decisions,m.repertoire_opportunities,
     m.deepest_covered_ply,m.first_opponent_gap_ply,m.out_of_book_ply,m.timeline_json"""
 
+GAME_SUMMARY_SELECT = """g.id,g.provider,g.played_at,g.speed,g.color,g.result,
+    g.opening_name,g.analysis_state,g.major_mistake_ply,g.missed_punishment_ply,
+    m.repertoire_id,m.classification,m.first_player_deviation_ply AS divergence_ply,
+    m.matched_player_decisions,m.repertoire_opportunities"""
+
 
 @app.get("/api/games/summary", response_model=GamesSummaryResponse)
-def summary(fen: str | None = None):
+def summary(
+    fen: str | None = None,
+    cursor: str | None = None,
+    limit: int = 50,
+    provider: str | None = None,
+    status: str | None = None,
+    color: str | None = None,
+    speed: str | None = None,
+    outcome: str | None = None,
+    played_from: str | None = None,
+):
+    limit = max(1, min(50, limit))
     position_key = fen_key(fen) if fen else None
+    cursor_played_at: str | None = None
+    cursor_id: str | None = None
+    if cursor:
+        try:
+            cursor_played_at, cursor_id = json.loads(
+                base64.urlsafe_b64decode(cursor.encode()).decode()
+            )
+        except (ValueError, TypeError, json.JSONDecodeError):
+            raise HTTPException(422, "Invalid games cursor")
+    clauses = [
+        "(? IS NULL OR EXISTS(SELECT 1 FROM game_position_occurrences p WHERE p.game_id=g.id AND p.fen_key=?))"
+    ]
+    parameters: list[object] = [position_key, position_key]
+    filters = {
+        "g.provider": provider, "m.classification": status, "g.color": color,
+        "g.speed": speed,
+    }
+    for column, value in filters.items():
+        if value:
+            clauses.append(f"{column}=?")
+            parameters.append(value)
+    if outcome:
+        if outcome == "draw":
+            clauses.append("g.result='1/2-1/2'")
+        elif outcome == "won":
+            clauses.append("((g.color='white' AND g.result='1-0') OR (g.color='black' AND g.result='0-1'))")
+        elif outcome == "lost":
+            clauses.append("((g.color='white' AND g.result='0-1') OR (g.color='black' AND g.result='1-0'))")
+        else:
+            raise HTTPException(422, "Unknown game outcome filter")
+    if played_from:
+        clauses.append("g.played_at>=?")
+        parameters.append(played_from)
+    if cursor_played_at and cursor_id:
+        clauses.append("(g.played_at<? OR (g.played_at=? AND g.id<?))")
+        parameters.extend([cursor_played_at, cursor_played_at, cursor_id])
+    where = " AND ".join(clauses)
     with connection() as db:
         rows = db.execute(
-            f"""SELECT {GAME_PUBLIC_SELECT}
+            f"""SELECT {GAME_SUMMARY_SELECT}
                FROM imported_games g
                LEFT JOIN game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
-               WHERE ? IS NULL OR EXISTS(
-                   SELECT 1 FROM game_position_occurrences p
-                   WHERE p.game_id=g.id AND p.fen_key=?
-               )
-               ORDER BY played_at DESC""",
-            (position_key, position_key),
+               WHERE {where}
+               ORDER BY g.played_at DESC,g.id DESC LIMIT ?""",
+            (*parameters, limit + 1),
         ).fetchall()
+        count_clauses = clauses[:-1] if cursor_played_at and cursor_id else clauses
+        count_parameters = parameters[:-3] if cursor_played_at and cursor_id else parameters
+        total = db.execute(
+            f"""SELECT COUNT(*) FROM imported_games g
+                 LEFT JOIN game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
+                 WHERE {' AND '.join(count_clauses)}""",
+            count_parameters,
+        ).fetchone()[0]
+    page_rows = rows[:limit]
+    next_cursor = None
+    if len(rows) > limit and page_rows:
+        last = page_rows[-1]
+        next_cursor = base64.urlsafe_b64encode(
+            json.dumps([last["played_at"], last["id"]], separators=(",", ":")).encode()
+        ).decode()
+    summary_rows = []
+    for row in page_rows:
+        opportunities = row["repertoire_opportunities"]
+        summary_rows.append(GameSummaryRecord(
+            id=row["id"], provider=row["provider"], played_at=row["played_at"],
+            speed=row["speed"], color=row["color"], result=row["result"],
+            opening_name=row["opening_name"], analysis_state=row["analysis_state"],
+            major_mistake_ply=row["major_mistake_ply"],
+            missed_punishment_ply=row["missed_punishment_ply"],
+            repertoire_id=row["repertoire_id"], classification=row["classification"],
+            divergence_ply=row["divergence_ply"],
+            matched_player_decisions=row["matched_player_decisions"],
+            repertoire_opportunities=opportunities,
+            adherence=(row["matched_player_decisions"] / opportunities if opportunities else None),
+        ))
     return GamesSummaryResponse(
-        total=len(rows), games=[public_game_record(row) for row in rows]
+        total=total, games=summary_rows, next_cursor=next_cursor,
+        aggregates={"page_count": len(page_rows)},
     )
 
 

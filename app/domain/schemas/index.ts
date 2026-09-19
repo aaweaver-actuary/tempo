@@ -576,7 +576,26 @@ export const gameRecordSchema = z.strictObject({
 });
 export const gamesSummarySchema = z.strictObject({
   total: integer,
-  games: z.array(gameRecordSchema),
+  games: z.array(z.strictObject({
+    id: gameIdSchema,
+    provider: z.enum(["lichess", "chess.com"]),
+    played_at: z.string(),
+    speed: z.string(),
+    color: colorSchema,
+    result: z.string(),
+    opening_name: z.string().nullable().optional(),
+    analysis_state: z.enum(["pending", "analyzing", "ready", "complete", "failed"]),
+    major_mistake_ply: integer.nullable(),
+    missed_punishment_ply: integer.nullable(),
+    repertoire_id: repertoireIdSchema.nullable(),
+    classification: z.string().nullable(),
+    divergence_ply: integer.nullable(),
+    matched_player_decisions: integer.nullable(),
+    repertoire_opportunities: integer.nullable(),
+    adherence: z.number().nullable(),
+  })),
+  next_cursor: z.string().nullable(),
+  aggregates: z.record(z.string(), integer),
 });
 export const gameAnalysisClaimSchema = z.strictObject({
   job: z.strictObject({

@@ -130,3 +130,32 @@ export function importGameAndReformatToGameViewRecord(
     deviationCardId: value.deviation_card_id ? String(value.deviation_card_id) : undefined,
   };
 }
+
+export function importGameSummaryToGameViewRecord(
+  value: Record<string, unknown>,
+): GameViewRecord {
+  const color = value.color === "black" ? "black" : "white";
+  const major = typeof value.major_mistake_ply === "number" ? value.major_mistake_ply : null;
+  const missed = typeof value.missed_punishment_ply === "number" ? value.missed_punishment_ply : null;
+  const divergence = typeof value.divergence_ply === "number" ? value.divergence_ply : null;
+  const flagPly = major ?? missed ?? divergence ?? 0;
+  const status = normalizeCoverageStatus(value.classification);
+  return {
+    id: asGameId(String(value.id)),
+    source: value.provider === "chess.com" ? "Chess.com" : "Lichess",
+    date: String(value.played_at ?? "").slice(0, 10),
+    speed: normalizeSpeed(value.speed), color, result: normalizeResult(value.result),
+    opening: String(value.opening_name || "Unclassified opening"), status,
+    detail: divergence === null ? status : `Diverged at move ${Math.floor(divergence / 2) + 1}`,
+    flag: major !== null ? `First major mistake · move ${Math.floor(major / 2) + 1}`
+      : missed !== null ? `Missed punishment · move ${Math.floor(missed / 2) + 1}`
+        : divergence !== null ? `First repertoire divergence · move ${Math.floor(divergence / 2) + 1}`
+          : "No flagged position",
+    flagPly, moves: [], startFen: asFenString(STANDARD_FEN),
+    analysisState: normalizeAnalysisState(value.analysis_state),
+    repertoireId: value.repertoire_id ? asRepertoireId(String(value.repertoire_id)) : undefined,
+    matchedPlayerDecisions: Number(value.matched_player_decisions ?? 0),
+    repertoireOpportunities: Number(value.repertoire_opportunities ?? 0),
+    adherence: typeof value.adherence === "number" ? value.adherence : undefined,
+  };
+}

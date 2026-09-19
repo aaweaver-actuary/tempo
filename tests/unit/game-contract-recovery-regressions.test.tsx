@@ -46,6 +46,30 @@ const publicGame = {
   timeline: [],
   adherence: null,
 };
+const summaryGame = {
+  id: publicGame.id,
+  provider: publicGame.provider,
+  played_at: publicGame.played_at,
+  speed: publicGame.speed,
+  color: publicGame.color,
+  result: publicGame.result,
+  opening_name: publicGame.opening_name,
+  analysis_state: publicGame.analysis_state,
+  major_mistake_ply: publicGame.major_mistake_ply,
+  missed_punishment_ply: publicGame.missed_punishment_ply,
+  repertoire_id: publicGame.repertoire_id,
+  classification: publicGame.classification,
+  divergence_ply: publicGame.divergence_ply,
+  matched_player_decisions: publicGame.matched_player_decisions,
+  repertoire_opportunities: publicGame.repertoire_opportunities,
+  adherence: publicGame.adherence,
+};
+const summaryEnvelope = (games: typeof summaryGame[]) => ({
+  total: games.length,
+  games,
+  next_cursor: null,
+  aggregates: { page_count: games.length },
+});
 
 beforeEach(() => {
   localStorage.clear();
@@ -55,15 +79,16 @@ beforeEach(() => {
 
 it("backend game response and strict frontend schema remain in parity", () => {
   expect(
-    validateWorkspacePayload(summaryUrl, { total: 1, games: [publicGame] }),
-  ).toEqual({ total: 1, games: [publicGame] });
+    validateWorkspacePayload(summaryUrl, summaryEnvelope([summaryGame])),
+  ).toEqual(summaryEnvelope([summaryGame]));
 });
 
 it("game contract drift fails once instead of silently emptying the library", () => {
   expect(() =>
     validateWorkspacePayload(summaryUrl, {
+      ...summaryEnvelope([]),
       total: 1,
-      games: [{ ...publicGame, provider_game_id: "private" }],
+      games: [{ ...summaryGame, provider_game_id: "private" }],
     }),
   ).toThrow(/Invalid games data/);
   expect(dataDiagnostics()).toHaveLength(1);
@@ -75,8 +100,9 @@ it("invalid game responses are never cached as empty success", async () => {
     "fetch",
     vi.fn(async () =>
       Response.json({
+        ...summaryEnvelope([]),
         total: 1,
-        games: [{ ...publicGame, content_hash: "private" }],
+        games: [{ ...summaryGame, content_hash: "private" }],
       }),
     ),
   );
@@ -89,18 +115,18 @@ it("invalid game responses are never cached as empty success", async () => {
 });
 
 it("corrected game data replaces stale cache without navigation", async () => {
-  const staleGame = { ...publicGame, id: "chess.com:stale" };
+  const staleGame = { ...summaryGame, id: "chess.com:stale" };
   localStorage.setItem(
     `tempo-workspace-cache-v2:${summaryUrl}`,
     JSON.stringify({
       version: 2,
       savedAt: Date.now(),
-      data: { total: 1, games: [staleGame] },
+      data: summaryEnvelope([staleGame]),
     }),
   );
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => Response.json({ total: 1, games: [publicGame] })),
+    vi.fn(async () => Response.json(summaryEnvelope([summaryGame]))),
   );
   const ready = new Promise<void>((resolve) => {
     window.addEventListener(
@@ -120,7 +146,7 @@ it("corrected game data replaces stale cache without navigation", async () => {
   const persisted = JSON.parse(
     localStorage.getItem(`tempo-workspace-cache-v2:${summaryUrl}`) ?? "{}",
   );
-  expect(persisted.data.games[0].id).toBe(publicGame.id);
+  expect(persisted.data.games[0].id).toBe(summaryGame.id);
 });
 
 it("repeated diagnostics are grouped and clear after successful validation", async () => {
@@ -137,7 +163,7 @@ it("repeated diagnostics are grouped and clear after successful validation", asy
 
   vi.stubGlobal(
     "fetch",
-    vi.fn(async () => Response.json({ total: 1, games: [publicGame] })),
+    vi.fn(async () => Response.json(summaryEnvelope([summaryGame]))),
   );
   await readWorkspaceData(summaryUrl);
   await waitFor(() => expect(dataDiagnostics()).toHaveLength(0));

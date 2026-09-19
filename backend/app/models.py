@@ -349,7 +349,30 @@ class GamesSummaryResponse(BaseModel):
     """Typed response for the Games library."""
 
     total: int = Field(ge=0)
-    games: list[GamePublicRecord]
+    games: list["GameSummaryRecord"]
+    next_cursor: str | None = None
+    aggregates: dict[str, int] = Field(default_factory=dict)
+
+
+class GameSummaryRecord(BaseModel):
+    """Lightweight library row. Moves and evidence are fetched by game ID."""
+
+    id: str
+    provider: GameProvider
+    played_at: str
+    speed: str
+    color: Literal["white", "black"]
+    result: str
+    opening_name: str | None = None
+    analysis_state: Literal["pending", "analyzing", "ready", "complete", "failed"]
+    major_mistake_ply: int | None = None
+    missed_punishment_ply: int | None = None
+    repertoire_id: str | None = None
+    classification: str | None = None
+    divergence_ply: int | None = None
+    matched_player_decisions: int | None = None
+    repertoire_opportunities: int | None = None
+    adherence: float | None = None
 
 
 class ImportResult(BaseModel):

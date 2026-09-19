@@ -17,6 +17,7 @@ import {
 import { requestInteractiveAnalysis } from "../lib/engine-broker";
 import type { GameSyncState } from "../hooks/use-game-sync";
 import { importGameAndReformatToGameViewRecord } from "../utils/pgn";
+import { importGameSummaryToGameViewRecord } from "../utils/pgn";
 import { fenAfterMoves } from "../utils/fen";
 import { convertSanToUci } from "../utils/chess";
 import { usesLocalApi } from "../utils/local";
@@ -36,6 +37,7 @@ import type { StudyTask } from "../lib/study-computation";
 import type { IndexedPosition } from "../lib/position-similarity";
 import { sampleGames } from "../samples";
 import { Chess, type Square } from "chess.js";
+import { gameRecordSchema } from "../domain/schemas";
 
 type GuidedReviewSession = {
   id: string;
@@ -96,6 +98,9 @@ export default function GamesView({
   const tools = useTaskTabs(["Moves", "Analysis", "Library"], "Moves", "tempo-games-tools");
   const [loaded, setLoaded] = useState(!local);
   const [libraryPage, setLibraryPage] = useState(0);
+  const [pageCursor, setPageCursor] = useState<string | null>(null);
+  const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([]);
+  const [nextPageCursor, setNextPageCursor] = useState<string | null>(null);
   const [records, setRecords] = useState<GameViewRecord[]>(() =>
     local ? [] : sampleGames,
   );
@@ -118,7 +123,6 @@ export default function GamesView({
   const [engineText, setEngineText] = useState("");
   const [error, setError] = useState("");
   const [findings, setFindings] = useState<Array<{ id: string; game_id: string; ply: number; kind: string; confidence: number; motif?: string | null; card_id?: string | null }>>([]);
-  const [motifRecommendations, setMotifRecommendations] = useState<Array<{ motif: string; miss_count: number; total_loss_cp: number; supporting_games: string[]; recommended_pack_id?: string | null }>>([]);
   const [cardPreviews, setCardPreviews] = useState<Record<string, { starting_fen: string; moves: string[]; best_move: string; existing_card_id?: string | null }>>({});
   const [positionSummary, setPositionSummary] = useState<{
     encounters: number;
@@ -177,20 +181,31 @@ export default function GamesView({
         (field) => filters[field] === "All" || filters[field] === game[field],
       ),
   );
+  const summaryUrl = useMemo(() => {
+    const parameters = new URLSearchParams();
+    if (initialFenFilter) parameters.set("fen", initialFenFilter);
+    if (pageCursor) parameters.set("cursor", pageCursor);
+    if (filters.source !== "All")
+      parameters.set("provider", filters.source === "Chess.com" ? "chess.com" : "lichess");
+    if (filters.status !== "All") parameters.set("status", filters.status);
+    if (filters.color !== "All") parameters.set("color", filters.color);
+    if (filters.speed !== "All") parameters.set("speed", filters.speed);
+    if (filters.result !== "All") parameters.set("outcome", filters.result);
+    if (filters.from) parameters.set("played_from", filters.from);
+    const query = parameters.toString();
+    return `${API_URL}/api/games/summary${query ? `?${query}` : ""}`;
+  }, [filters, initialFenFilter, pageCursor]);
   const loadGames = useCallback(async () => {
     if (!local) return;
     try {
-      const summaryUrl = initialFenFilter
-        ? `${API_URL}/api/games/summary?fen=${encodeURIComponent(initialFenFilter)}`
-        : `${API_URL}/api/games/summary`;
       const response = await readWorkspaceResponse(summaryUrl);
       if (!response.ok) throw new Error("Could not load your local games.");
       const body = (await response.json()) as {
         games: Record<string, unknown>[];
+        next_cursor?: string | null;
       };
-      const loaded = body.games
-        .map(importGameAndReformatToGameViewRecord)
-        .filter((game): game is GameViewRecord => Boolean(game));
+      const loaded = body.games.map(importGameSummaryToGameViewRecord);
+      setNextPageCursor(body.next_cursor ?? null);
       setRecords(loaded);
       if (!loaded.some((game) => game.id === selectedIdRef.current)) {
         setSelectedId(loaded[0]?.id ?? "");
@@ -212,15 +227,34 @@ export default function GamesView({
         reason instanceof Error ? reason.message : "Could not load games.",
       );
     }
-  }, [local, initialFenFilter]);
+  }, [local, initialFenFilter, summaryUrl]);
+  useEffect(() => {
+    if (!local || !selectedId) return;
+    const selectedSummary = records.find((game) => game.id === selectedId);
+    if (!selectedSummary || selectedSummary.moves.length > 0) return;
+    const requestedId = selectedId;
+    const controller = new AbortController();
+    void fetch(`${API_URL}/api/games/${encodeURIComponent(requestedId)}`, { signal: controller.signal })
+      .then(async (response) => {
+        if (!response.ok) throw new Error("Could not load the selected game.");
+        const detailedGame = importGameAndReformatToGameViewRecord(
+          gameRecordSchema.parse(await response.json()),
+        );
+        if (!detailedGame || selectedIdRef.current !== requestedId) return;
+        setRecords((current) => current.map((game) => game.id === requestedId ? detailedGame : game));
+        setCursor((current) => Math.min(current || detailedGame.flagPly, detailedGame.moves.length));
+      })
+      .catch((reason) => {
+        if (reason instanceof DOMException && reason.name === "AbortError") return;
+        setError(reason instanceof Error ? reason.message : "Could not load the selected game.");
+      });
+    return () => controller.abort();
+  }, [local, records, selectedId]);
   useEffect(() => {
     if (syncState.lastSuccess) invalidateWorkspaceData();
     queueMicrotask(() => void loadGames());
   }, [loadGames, syncState.lastSuccess]);
   useEffect(() => {
-    const summaryUrl = initialFenFilter
-      ? `${API_URL}/api/games/summary?fen=${encodeURIComponent(initialFenFilter)}`
-      : `${API_URL}/api/games/summary`;
     const applySuccessfulRefresh = (event: Event) => {
       const detail = (event as CustomEvent<{ state: string; url: string }>).detail;
       if (detail?.state === "ready" && detail.url === summaryUrl)
@@ -229,7 +263,7 @@ export default function GamesView({
     window.addEventListener("tempo-workspace-data", applySuccessfulRefresh);
     return () =>
       window.removeEventListener("tempo-workspace-data", applySuccessfulRefresh);
-  }, [initialFenFilter, loadGames]);
+  }, [loadGames, summaryUrl]);
   useEffect(() => {
     if (!local) return;
     void readWorkspaceResponse(`${API_URL}/api/repertoire/lines`)
@@ -255,25 +289,21 @@ export default function GamesView({
       .catch(() => undefined);
   }, [local]);
   const loadFindings = useCallback(async () => {
-    if (!local) return;
-    const [findingResponse, insightResponse] = await Promise.all([
-      fetch(`${API_URL}/api/game-findings?status=pending`),
-      fetch(`${API_URL}/api/game-insights/motifs`),
-    ]);
+    if (!local || !selectedIdRef.current) {
+      setFindings([]);
+      return;
+    }
+    const findingResponse = await fetch(
+      `${API_URL}/api/game-findings?status=pending&game_id=${encodeURIComponent(selectedIdRef.current)}`,
+    );
     if (findingResponse.ok) {
       const payload = (await findingResponse.json()) as { findings?: typeof findings };
       setFindings(payload.findings ?? []);
     }
-    if (insightResponse.ok) {
-      const payload = (await insightResponse.json()) as { recommendations?: typeof motifRecommendations };
-      setMotifRecommendations(payload.recommendations ?? []);
-    }
   }, [local]);
   useEffect(() => {
     queueMicrotask(() => void loadFindings());
-    const timer = window.setInterval(() => void loadFindings(), 15_000);
-    return () => window.clearInterval(timer);
-  }, [loadFindings, syncState.lastSuccess]);
+  }, [loadFindings, syncState.lastSuccess, selectedId]);
   async function decideFinding(findingId: string, decision: "accepted" | "ignored") {
     const response = await fetch(`${API_URL}/api/game-findings/${findingId}/decision`, {
       method: "POST",
@@ -291,15 +321,6 @@ export default function GamesView({
       body: JSON.stringify({ excluded: true }),
     });
     if (!response.ok) setError("Could not exclude this game from adaptation.");
-    else await loadFindings();
-  }
-  async function activateRecommendedPack(packId: string) {
-    const response = await fetch(`${API_URL}/api/tactics/activation`, {
-      method: "PUT",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ pack_ids: [packId], active: true }),
-    });
-    if (!response.ok) setError("Could not activate the recommended tactics pack.");
     else await loadFindings();
   }
   async function createFindingCard(findingId: string, save: boolean) {
@@ -350,10 +371,9 @@ export default function GamesView({
   useEffect(() => {
     let active = true;
     if (!engineOn || !selected) return;
-    queueMicrotask(() => {
+    const debounceTimer = window.setTimeout(() => {
       if (active) setEngineText("Analyzing…");
-    });
-    void requestInteractiveAnalysis(gameFen, 12)
+      void requestInteractiveAnalysis(displayedFen, 12)
       .then((moves) => {
         if (active)
           setEngineText(
@@ -365,10 +385,12 @@ export default function GamesView({
       .catch((reason) => {
         if (active) setEngineText(`Engine error: ${reason.message}`);
       });
+    }, 200);
     return () => {
       active = false;
+      window.clearTimeout(debounceTimer);
     };
-  }, [engineOn, gameFen, selected]);
+  }, [engineOn, displayedFen, selected]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
       if (
@@ -668,14 +690,6 @@ export default function GamesView({
                 <button onClick={() => void decideFinding(finding.id, "ignored")}>Ignore</button>
               </article>
             ))}
-            {motifRecommendations.map((recommendation) => (
-              <article key={recommendation.motif}>
-                <span>Work on {recommendation.motif}</span>
-                <strong>{recommendation.miss_count} misses</strong>
-                <small>{recommendation.total_loss_cp} total centipawns · {recommendation.supporting_games.length} games</small>
-                {recommendation.recommended_pack_id && <button onClick={() => void activateRecommendedPack(recommendation.recommended_pack_id!)}>Activate next pack</button>}
-              </article>
-            ))}
           </div>
           <div data-task="Library"><div className="game-filters">
             {(["source", "status", "color", "speed", "result"] as const).map(
@@ -684,7 +698,10 @@ export default function GamesView({
                   key={field}
                   aria-label={`Filter ${field}`}
                   value={filters[field]}
-                  onChange={(event) => { setLibraryPage(0); setFilters((current) => ({ ...current, [field]: event.target.value })); }}
+                  onChange={(event) => {
+                    setLibraryPage(0); setPageCursor(null); setCursorHistory([]);
+                    setFilters((current) => ({ ...current, [field]: event.target.value }));
+                  }}
                 >
                   <option value="All">All {field}</option>
                   {[...new Set(records.map((game) => game[field]))].map(
@@ -700,15 +717,14 @@ export default function GamesView({
               type="date"
               value={filters.from}
               onChange={(event) =>
-                setFilters((current) => ({
-                  ...current,
-                  from: event.target.value,
-                }))
+                { setPageCursor(null); setCursorHistory([]); setLibraryPage(0); setFilters((current) => ({
+                  ...current, from: event.target.value,
+                })); }
               }
             />
           </div>
           <section className="game-list">
-            {games.slice(libraryPage * 50, (libraryPage + 1) * 50).map((game) => (
+            {games.map((game) => (
               <button
                 className={`game-row${selected?.id === game.id ? " selected" : ""}`}
                 key={game.id}
@@ -737,7 +753,19 @@ export default function GamesView({
               </div>
             )}
           </section>
-          <div className="pagination" aria-label="Game pages"><button disabled={libraryPage === 0} onClick={() => setLibraryPage(value => value - 1)}>Previous games</button><button disabled={(libraryPage + 1) * 50 >= games.length} onClick={() => setLibraryPage(value => value + 1)}>Next games</button></div>
+          <div className="pagination" aria-label="Game pages">
+            <button disabled={!cursorHistory.length} onClick={() => {
+              const previous = cursorHistory[cursorHistory.length - 1] ?? null;
+              setCursorHistory((history) => history.slice(0, -1));
+              setPageCursor(previous);
+              setLibraryPage((value) => Math.max(0, value - 1));
+            }}>Previous games</button>
+            <button disabled={!nextPageCursor} onClick={() => {
+              setCursorHistory((history) => [...history, pageCursor]);
+              setPageCursor(nextPageCursor);
+              setLibraryPage((value) => value + 1);
+            }}>Next games</button>
+          </div>
           </div>
         </div>
       </div>}
