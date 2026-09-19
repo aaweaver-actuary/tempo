@@ -39,6 +39,10 @@
 | Tactical suggestions hide how many eligible opportunities occurred | `test_tactics_suggestions_use_thirty_days_and_explicit_opportunity_denominator` |
 | A suggested tactics pack activates before the user chooses it | `TacticalCatalogPanel suggestions > activates a suggested tactics pack only after user action` |
 | Recomputing both-side gameplay events creates duplicates | `test_gameplay_events_reuse_both_sides_analysis_and_recompute_idempotently` |
+| Statistics score and rolling windows obscure their denominators | `test_statistics_score_rate_and_engine_metrics_use_exact_denominators` |
+| Unanalyzed games contaminate engine-derived statistics | `test_statistics_score_rate_and_engine_metrics_use_exact_denominators` |
+| Day-of-week and hour statistics ignore the configured timezone or DST | `test_statistics_local_day_and_hour_respect_timezone_and_dst` |
+| Opening and endgame evaluations reverse meaning for Black | `test_opening_and_endgame_evaluations_use_player_perspective` |
 | Ignoring gameplay evidence changes scheduling | `test_ignored_gameplay_finding_never_changes_card_scheduling` |
 | A confirmed gameplay lapse double-counts or fails to queue | `test_confirmed_gameplay_lapse_records_exactly_one_again_and_queues_the_card` |
 | First big mistake creates duplicate or unpreviewed cards | `test_first_big_mistake_creates_a_previewed_deduplicated_middlegame_card` |

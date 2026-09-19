@@ -90,6 +90,7 @@ export enum ViewEnum {
   Builder = "builder",
   Games = "games",
   Progress = "progress",
+  Statistics = "statistics",
   Settings = "settings",
 }
 

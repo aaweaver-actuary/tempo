@@ -445,6 +445,49 @@ def initialize() -> None:
         "CREATE INDEX IF NOT EXISTS idx_gameplay_events_game_ply ON gameplay_events(game_id,ply,kind)",
         "CREATE INDEX IF NOT EXISTS idx_gameplay_events_motif ON gameplay_events(motif,outcome,confidence)",
         """
+        CREATE TABLE IF NOT EXISTS game_feature_rows (
+            game_id TEXT PRIMARY KEY REFERENCES imported_games(id) ON DELETE CASCADE,
+            feature_version INTEGER NOT NULL,
+            local_day TEXT NOT NULL,
+            local_hour INTEGER NOT NULL,
+            local_weekday INTEGER NOT NULL,
+            outcome_score REAL NOT NULL,
+            player_decisions INTEGER NOT NULL,
+            mean_loss_cp REAL,
+            major_mistakes INTEGER,
+            opening_exit_ply INTEGER,
+            opening_exit_eval_cp INTEGER,
+            endgame_entry_ply INTEGER,
+            endgame_entry_eval_cp INTEGER,
+            tactical_opportunities INTEGER NOT NULL DEFAULT 0,
+            tactical_found INTEGER NOT NULL DEFAULT 0,
+            tactical_conceded INTEGER NOT NULL DEFAULT 0,
+            primary_repertoire_id TEXT,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_game_features_day ON game_feature_rows(local_day,game_id)",
+        """
+        CREATE TABLE IF NOT EXISTS daily_chess_snapshots (
+            local_day TEXT PRIMARY KEY,
+            snapshot_version INTEGER NOT NULL,
+            metrics_json TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'queued',
+            updated_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS daily_chess_insights (
+            id TEXT PRIMARY KEY,
+            local_day TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            evidence_json TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'pending',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS game_insight_recommendations (
             motif TEXT PRIMARY KEY,
             miss_count INTEGER NOT NULL,
@@ -528,7 +571,7 @@ def initialize() -> None:
             "settings": {"tactics_new_per_day": "INTEGER NOT NULL DEFAULT 5","lichess_username": "TEXT NOT NULL DEFAULT ''", "chesscom_username": "TEXT NOT NULL DEFAULT ''", "auto_sync_minutes": "INTEGER NOT NULL DEFAULT 3", "engine_line_window_cp": "INTEGER NOT NULL DEFAULT 30", "major_mistake_cp": "INTEGER NOT NULL DEFAULT 100", "light_first_interval_days": "INTEGER NOT NULL DEFAULT 7", "draw_hold_user_moves": "INTEGER NOT NULL DEFAULT 20", "coverage_reply_denominator": "INTEGER NOT NULL DEFAULT 100", "coverage_cumulative_target": "INTEGER NOT NULL DEFAULT 95", "coverage_horizon_fullmoves": "INTEGER NOT NULL DEFAULT 15", "coverage_path_floor": "REAL NOT NULL DEFAULT 0.0005", "coverage_maia_elo": "INTEGER NOT NULL DEFAULT 1500"},
             "cards": {"fsrs_card_json": "TEXT", "first_correct_at": "TEXT", "reinforcement_pending": "INTEGER NOT NULL DEFAULT 0", "stability": "REAL NOT NULL DEFAULT 0", "guided_review": "INTEGER NOT NULL DEFAULT 0", "maximum_interval": "INTEGER NOT NULL DEFAULT 365", "content_type": "TEXT NOT NULL DEFAULT 'opening'", "scheduling_mode": "TEXT NOT NULL DEFAULT 'normal'", "hard_correct_streak": "INTEGER NOT NULL DEFAULT 0", "recent_attempts_json": "TEXT NOT NULL DEFAULT '[]'", "archived": "INTEGER NOT NULL DEFAULT 0", "superseded_by": "TEXT", "source_ref": "TEXT", "source_fen": "TEXT", "revision": "INTEGER NOT NULL DEFAULT 1", "introduced_at": "TEXT", "trained_color": "TEXT"},
             "reviews": {"internal_rating": "TEXT NOT NULL DEFAULT 'again'", "guided": "INTEGER NOT NULL DEFAULT 0", "source_kind": "TEXT NOT NULL DEFAULT 'study'", "source_ref": "TEXT"},
-            "imported_games": {"analysis_state": "TEXT NOT NULL DEFAULT 'pending'", "analysis_version": "INTEGER NOT NULL DEFAULT 0", "major_mistake_ply": "INTEGER", "missed_punishment_ply": "INTEGER", "provider_game_id": "TEXT", "content_hash": "TEXT", "adaptive_excluded": "INTEGER NOT NULL DEFAULT 0"},
+            "imported_games": {"analysis_state": "TEXT NOT NULL DEFAULT 'pending'", "analysis_version": "INTEGER NOT NULL DEFAULT 0", "major_mistake_ply": "INTEGER", "missed_punishment_ply": "INTEGER", "provider_game_id": "TEXT", "content_hash": "TEXT", "adaptive_excluded": "INTEGER NOT NULL DEFAULT 0", "player_rating": "INTEGER", "opponent_rating": "INTEGER", "rating_change": "INTEGER", "time_control": "TEXT"},
             "game_derivation_jobs": {"derivation_version": "INTEGER NOT NULL DEFAULT 1", "next_attempt_at": "TEXT"},
             "game_move_analysis": {"best_move_uci": "TEXT", "principal_variation_json": "TEXT NOT NULL DEFAULT '[]'", "mate_before": "INTEGER", "mate_after": "INTEGER", "engine_version": "TEXT", "network_version": "TEXT", "mover_color": "TEXT", "is_player_move": "INTEGER NOT NULL DEFAULT 1", "actual_move_uci": "TEXT"},
             "repertoires": {"is_main": "INTEGER NOT NULL DEFAULT 0"},

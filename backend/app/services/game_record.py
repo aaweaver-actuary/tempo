@@ -18,3 +18,7 @@ class GameRecord:
     opening_name: str = ""
     game_url: str = ""
     content_hash: str = ""
+    player_rating: int | None = None
+    opponent_rating: int | None = None
+    rating_change: int | None = None
+    time_control: str = ""

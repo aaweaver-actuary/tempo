@@ -67,6 +67,7 @@ from .services.endgames import (
 )
 from .services.game_analysis import classify_swings
 from .services.game_findings import motif_recommendations, refresh_game_findings
+from .services.statistics import statistics_breakdown, statistics_overview
 from .services.game_sync_coordinator import (
     coordinator,
     enqueue_game_derivation,
@@ -760,6 +761,9 @@ def migration_snapshot():
         "game_repertoire_matches",
         "game_findings",
         "gameplay_events",
+        "game_feature_rows",
+        "daily_chess_snapshots",
+        "daily_chess_insights",
         "game_insight_recommendations",
         "repertoire_coverage_runs",
         "repertoire_coverage_nodes",
@@ -2500,3 +2504,20 @@ def game_detail(game_id: str):
     if not row:
         raise HTTPException(404, "Game not found")
     return public_game_record(row)
+
+
+@app.get("/api/statistics/overview")
+def chess_statistics_overview(window_days: int = 30):
+    if window_days not in {7, 30, 90, 36500}:
+        raise HTTPException(422, "Statistics window must be 7, 30, 90, or lifetime")
+    return statistics_overview(window_days)
+
+
+@app.get("/api/statistics/breakdown")
+def chess_statistics_breakdown(dimension: str = "color", window_days: int = 30):
+    if window_days not in {7, 30, 90, 36500}:
+        raise HTTPException(422, "Statistics window must be 7, 30, 90, or lifetime")
+    try:
+        return statistics_breakdown(dimension, window_days)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error

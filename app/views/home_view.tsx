@@ -43,6 +43,7 @@ import CardEditor from "./card_editor";
 import EndgamesView from "./endgames_view";
 import GamesView from "./games_view";
 import ProgressView from "./progress_view";
+import StatisticsView from "./statistics_view";
 import RepertoireView from "./repertoire_view";
 import SettingsView from "./settings_view";
 import TacticsView from "./tactics_view";
@@ -1059,6 +1060,7 @@ export default function Home() {
           totalCards={practiceCards.length}
         />
       )}
+      {currentView === "statistics" && <StatisticsView />}
       {currentView === "settings" && (
         <SettingsView
           theme={boardTheme}

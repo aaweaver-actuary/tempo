@@ -314,6 +314,52 @@ export const motifRecommendationSchema = z.strictObject({
 export const motifRecommendationsSchema = z.strictObject({
   recommendations: z.array(motifRecommendationSchema),
 });
+const optionalMetricSchema = z.number().finite().nullable();
+const confidenceIntervalSchema = z.tuple([z.number(), z.number()]).nullable();
+export const chessStatisticsOverviewSchema = z.strictObject({
+  window_days: z.number().int().positive(),
+  games: integer,
+  analyzed_games: integer,
+  analysis_coverage: z.number().min(0).max(1),
+  score: z.strictObject({
+    value: optionalMetricSchema,
+    wins: integer,
+    draws: integer,
+    losses: integer,
+    numerator: z.number().nonnegative(),
+    denominator: integer,
+    confidence_interval: confidenceIntervalSchema,
+  }),
+  decision_quality: z.strictObject({
+    mean_loss_cp: optionalMetricSchema,
+    major_mistakes_per_game: optionalMetricSchema,
+    denominator: integer,
+  }),
+  tactical_performance: z.strictObject({
+    value: optionalMetricSchema,
+    found: integer,
+    opportunities: integer,
+    conceded_per_100_decisions: optionalMetricSchema,
+    conceded: integer,
+    player_decisions: integer,
+    confidence_interval: confidenceIntervalSchema,
+  }),
+});
+export const chessStatisticsBreakdownSchema = z.strictObject({
+  dimension: z.enum([
+    "color", "speed", "provider", "weekday", "hour", "opening",
+    "repertoire", "opponent_rating", "relative_rating",
+  ]),
+  window_days: z.number().int().positive(),
+  segments: z.array(z.strictObject({
+    segment: z.string(),
+    games: integer,
+    score: optionalMetricSchema,
+    mean_loss_cp: optionalMetricSchema,
+    tactical_found: integer,
+    tactical_opportunities: integer,
+  })),
+});
 export const teachingResponseSchema = z.strictObject({
   states: z.array(
     z.strictObject({

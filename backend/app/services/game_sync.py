@@ -89,6 +89,10 @@ def _persist_game_once(record: GameRecord) -> tuple[str, str]:
             json.dumps(record.uci_moves),
             record.game_url,
             record.opening_name,
+            record.player_rating,
+            record.opponent_rating,
+            record.rating_change,
+            record.time_control,
         )
         if existing:
             changed = any(
@@ -97,13 +101,14 @@ def _persist_game_once(record: GameRecord) -> tuple[str, str]:
                     (
                         "provider_game_id", "content_hash", "username", "played_at", "speed",
                         "rated", "color", "result", "start_fen", "moves_json", "game_url", "opening_name",
+                        "player_rating", "opponent_rating", "rating_change", "time_control",
                     ),
                     values,
                 )
             )
             if changed:
                 database.execute(
-                    """UPDATE imported_games SET provider_game_id=?,content_hash=?,username=?,played_at=?,speed=?,rated=?,color=?,result=?,start_fen=?,moves_json=?,game_url=?,opening_name=? WHERE id=?""",
+                    """UPDATE imported_games SET provider_game_id=?,content_hash=?,username=?,played_at=?,speed=?,rated=?,color=?,result=?,start_fen=?,moves_json=?,game_url=?,opening_name=?,player_rating=?,opponent_rating=?,rating_change=?,time_control=? WHERE id=?""",
                     (*values, existing["id"]),
                 )
                 database.execute(
@@ -117,8 +122,8 @@ def _persist_game_once(record: GameRecord) -> tuple[str, str]:
             )
             return "duplicate", existing["id"]
         database.execute(
-            """INSERT INTO imported_games(id,provider,provider_game_id,content_hash,username,played_at,speed,rated,color,result,start_fen,moves_json,game_url,opening_name)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            """INSERT INTO imported_games(id,provider,provider_game_id,content_hash,username,played_at,speed,rated,color,result,start_fen,moves_json,game_url,opening_name,player_rating,opponent_rating,rating_change,time_control)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
             (
                 f"{record.provider}:{record.provider_game_id}",
                 record.provider,

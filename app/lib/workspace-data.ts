@@ -218,6 +218,7 @@ export async function preloadView(view: View) {
     games: ["games/summary", "repertoire/lines"],
     endgames: ["endgames/templates"],
     progress: ["progress"],
+    statistics: ["statistics/overview?window_days=30"],
     settings: ["settings"],
   };
   await Promise.all(
@@ -237,6 +238,7 @@ export function preloadWorkspaces() {
         "repertoire",
         "endgames",
         "progress",
+        "statistics",
         "settings",
       ] as View[]
     ).map(preloadView),

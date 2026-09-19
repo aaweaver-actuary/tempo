@@ -119,6 +119,18 @@ def normalize_provider_pgn(
     fingerprint_payload = json.dumps(
         [start_fen.split()[:4], moves, resolved_played_at], separators=(",", ":")
     ).encode()
+    player_prefix = "White" if color == "white" else "Black"
+    opponent_prefix = "Black" if color == "white" else "White"
+
+    def optional_integer(header_name: str) -> int | None:
+        raw_value = game.headers.get(header_name)
+        if raw_value is None:
+            return None
+        try:
+            return int(raw_value.lstrip("+"))
+        except ValueError:
+            return None
+
     return GameRecord(
         provider=provider,
         username=username,
@@ -137,4 +149,8 @@ def normalize_provider_pgn(
         opening_name=opening_name or game.headers.get("Opening", ""),
         game_url=resolved_url,
         content_hash=hashlib.sha256(fingerprint_payload).hexdigest(),
+        player_rating=optional_integer(f"{player_prefix}Elo"),
+        opponent_rating=optional_integer(f"{opponent_prefix}Elo"),
+        rating_change=optional_integer(f"{player_prefix}RatingDiff"),
+        time_control=game.headers.get("TimeControl", ""),
     )
