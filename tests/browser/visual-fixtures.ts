@@ -143,6 +143,9 @@ export async function prepareVisualUI(page: Page, fixedClock = true) {
       },
       "/api/tactics/progress": {},
       "/api/games/sync/status": { providers: [] },
+      "/api/games/analysis/claim": { job: null },
+      "/api/game-findings": { findings: [] },
+      "/api/game-insights/motifs": { recommendations: [] },
     };
     await route.fulfill({
       json:

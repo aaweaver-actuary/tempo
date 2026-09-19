@@ -118,6 +118,13 @@ class GameExclusionRequest(BaseModel):
     excluded: bool
 
 
+class GameFindingCardRequest(BaseModel):
+    save: bool = False
+    starting_fen: str | None = None
+    moves: list[str] | None = None
+    trained_color: Literal["white", "black"] | None = None
+
+
 class AccountSettings(BaseModel):
     lichess_username: str = ""
     chesscom_username: str = ""

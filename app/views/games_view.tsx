@@ -82,6 +82,7 @@ export default function GamesView({
   const [error, setError] = useState("");
   const [findings, setFindings] = useState<Array<{ id: string; game_id: string; ply: number; kind: string; confidence: number; motif?: string | null; card_id?: string | null }>>([]);
   const [motifRecommendations, setMotifRecommendations] = useState<Array<{ motif: string; miss_count: number; total_loss_cp: number; supporting_games: string[]; recommended_pack_id?: string | null }>>([]);
+  const [cardPreviews, setCardPreviews] = useState<Record<string, { starting_fen: string; moves: string[]; best_move: string; existing_card_id?: string | null }>>({});
   const [lines, setLines] = useState<AnalysisLine[]>([]);
   const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
   const [filters, setFilters] = useState(() => ({
@@ -202,7 +203,7 @@ export default function GamesView({
     }
   }, [local]);
   useEffect(() => {
-    void loadFindings();
+    queueMicrotask(() => void loadFindings());
     const timer = window.setInterval(() => void loadFindings(), 15_000);
     return () => window.clearInterval(timer);
   }, [loadFindings, syncState.lastSuccess]);
@@ -233,6 +234,20 @@ export default function GamesView({
     });
     if (!response.ok) setError("Could not activate the recommended tactics pack.");
     else await loadFindings();
+  }
+  async function createFindingCard(findingId: string, save: boolean) {
+    const response = await fetch(`${API_URL}/api/game-findings/${findingId}/card`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ save }),
+    });
+    if (!response.ok) {
+      setError("Could not prepare that game position as a study card.");
+      return;
+    }
+    const payload = (await response.json()) as { preview: { starting_fen: string; moves: string[]; best_move: string; existing_card_id?: string | null }; saved: boolean };
+    setCardPreviews((current) => ({ ...current, [findingId]: payload.preview }));
+    if (payload.saved) await loadFindings();
   }
   useEffect(() => {
     let active = true;
@@ -344,7 +359,7 @@ export default function GamesView({
         </div>
         {local && (
           <div>
-            <button className="primary-button sync-button" onClick={onSync} disabled={syncState.syncing}>
+            <button className="primary-button sync-button" onClick={onSync} disabled={syncState.syncing} aria-label={syncState.syncing ? "Syncing games" : "↻ Sync games"}>
               {syncState.syncing && <i />}
               {syncState.syncing ? "Syncing games" : "↻ Sync now"}
             </button>
@@ -500,6 +515,12 @@ export default function GamesView({
                 <span>{finding.kind}{finding.kind === "tactical miss" ? ` · ${finding.confidence >= 0.8 ? finding.motif : "unclassified"}` : ""}</span>
                 <small>Move {Math.floor(finding.ply / 2) + 1}</small>
                 {finding.kind === "repertoire lapse" && finding.card_id && <button onClick={() => void decideFinding(finding.id, "accepted")}>Count as lapse</button>}
+                {finding.kind === "first big mistake" && !cardPreviews[finding.id] && <button onClick={() => void createFindingCard(finding.id, false)}>Preview study card</button>}
+                {finding.kind === "first big mistake" && cardPreviews[finding.id] && <>
+                  <small>{cardPreviews[finding.id].starting_fen} · {cardPreviews[finding.id].moves.join(" ")}</small>
+                  {selected && <button onClick={() => onAnalyze(selected, finding.ply)}>Edit position in Builder</button>}
+                  <button onClick={() => void createFindingCard(finding.id, true)}>{cardPreviews[finding.id].existing_card_id ? "Use existing card" : "Save card due today"}</button>
+                </>}
                 <button onClick={() => void decideFinding(finding.id, "ignored")}>Ignore</button>
               </article>
             ))}

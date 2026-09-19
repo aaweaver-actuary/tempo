@@ -132,7 +132,7 @@ def compare_all_games() -> None:
     now = datetime.now(timezone.utc).isoformat()
     with connection() as database:
         repertoires = [dict(row) for row in database.execute(
-            "SELECT id,is_main FROM repertoires WHERE id NOT IN ('__tactics__','__endgames__')"
+            "SELECT id,is_main FROM repertoires WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__')"
         )]
         line_rows = database.execute("SELECT * FROM repertoire_lines").fetchall()
         lines_by_repertoire: dict[str, list[dict]] = defaultdict(list)

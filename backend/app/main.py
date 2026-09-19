@@ -28,6 +28,7 @@ from .models import (
     GameAnalysisFailureRequest,
     GameFindingDecisionRequest,
     GameExclusionRequest,
+    GameFindingCardRequest,
     GameSyncRequest,
     ImportResult,
     PositionAnnotationRequest,
@@ -41,7 +42,7 @@ from .models import (
 from .services.analysis import AnalysisCapabilities
 from .services.cards import card_id
 from .services.pgn import ends_on_trained_move, parse_pgn, prefix_through_user_moves
-from .services.scheduler import schedule_review, unlock_ready
+from .services.review_service import apply_scheduling_review, ensure_card_queued_after
 from .services.endgames import (
     category_for_player,
     generate_position,
@@ -203,8 +204,8 @@ def queue_today():
         # queue so malformed saved data cannot leave the board locked.
         candidates = db.execute(
             """SELECT q.id queue_entry_id,c.id,c.start_fen,c.moves_json,c.content_type,
-                              (SELECT l.trained_color FROM repertoire_lines l
-                               WHERE l.repertoire_id=c.repertoire_id ORDER BY l.created_at LIMIT 1) trained_color
+                              COALESCE(c.trained_color,(SELECT l.trained_color FROM repertoire_lines l
+                               WHERE l.repertoire_id=c.repertoire_id ORDER BY l.created_at LIMIT 1)) trained_color
                        FROM daily_queue q JOIN cards c ON c.id=q.card_id
                        WHERE q.queue_date=? AND q.status='queued' AND c.archived=0""",
             (day,),
@@ -238,7 +239,7 @@ def queue_today():
         rows = db.execute(
             """SELECT q.id queue_entry_id,q.position,q.cycle,q.attempt_state,q.attempt_failed,c.*,
                                   r.name repertoire_name,r.source_name repertoire_source,r.is_main,
-                                  COALESCE((SELECT e.trained_color FROM endgame_templates e WHERE e.card_id=c.id), (SELECT l.trained_color FROM repertoire_lines l WHERE l.repertoire_id=r.id ORDER BY l.created_at LIMIT 1)) trained_color
+                                  COALESCE(c.trained_color,(SELECT e.trained_color FROM endgame_templates e WHERE e.card_id=c.id), (SELECT l.trained_color FROM repertoire_lines l WHERE l.repertoire_id=r.id ORDER BY l.created_at LIMIT 1)) effective_trained_color
                            FROM daily_queue q JOIN cards c ON c.id=q.card_id
                            JOIN repertoires r ON r.id=COALESCE(
                                (SELECT rc.repertoire_id FROM repertoire_cards rc JOIN repertoires linked ON linked.id=rc.repertoire_id
@@ -251,6 +252,7 @@ def queue_today():
     cards = [{**dict(r), "moves": json.loads(r["moves_json"])} for r in rows]
     for card in cards:
         card.pop("moves_json", None)
+        card["trained_color"] = card.pop("effective_trained_color")
     return {
         "local_date": day,
         "cards": cards,
@@ -282,12 +284,12 @@ async def import_pgn(
             2, min(20, initial_depth if initial_depth is not None else saved_depth)
         )
         existing_repertoire = db.execute(
-            "SELECT r.id FROM repertoires r WHERE source_name=? AND id NOT IN ('__tactics__','__endgames__') AND EXISTS(SELECT 1 FROM repertoire_lines l WHERE l.repertoire_id=r.id AND l.trained_color=?) ORDER BY created_at DESC LIMIT 1",
+            "SELECT r.id FROM repertoires r WHERE source_name=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__') AND EXISTS(SELECT 1 FROM repertoire_lines l WHERE l.repertoire_id=r.id AND l.trained_color=?) ORDER BY created_at DESC LIMIT 1",
             (file.filename, trained_color),
         ).fetchone()
         rid = existing_repertoire["id"] if existing_repertoire else str(uuid.uuid4())
         db.execute(
-            "UPDATE repertoires SET is_main=0 WHERE id NOT IN ('__tactics__','__endgames__')"
+            "UPDATE repertoires SET is_main=0 WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__')"
         )
         db.execute(
             "INSERT INTO repertoires(id,name,source_name,created_at,is_main) VALUES(?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET is_main=1,source_name=excluded.source_name",
@@ -390,7 +392,7 @@ def list_repertoires():
             LEFT JOIN repertoire_cards rc ON rc.repertoire_id=r.id
             LEFT JOIN cards c ON c.id=rc.card_id
             LEFT JOIN daily_queue q ON q.card_id=c.id
-            WHERE r.id NOT IN ('__tactics__','__endgames__')
+            WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__')
             GROUP BY r.id,r.name,r.source_name,r.created_at
             ORDER BY r.created_at DESC
         """,
@@ -405,7 +407,7 @@ def repertoire_lines():
         rows = db.execute("""SELECT l.id,l.repertoire_id,l.name,l.trained_color,l.start_fen,l.moves_json,
                                   r.name repertoire_name,r.is_main
                            FROM repertoire_lines l JOIN repertoires r ON r.id=l.repertoire_id
-                           WHERE r.id NOT IN ('__tactics__','__endgames__') ORDER BY r.created_at,l.created_at""").fetchall()
+                           WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__') ORDER BY r.created_at,l.created_at""").fetchall()
     return {
         "lines": [{**dict(row), "moves": json.loads(row["moves_json"])} for row in rows]
     }
@@ -581,12 +583,12 @@ def migration_snapshot():
 def make_main_repertoire(identifier: str):
     with connection() as db:
         if not db.execute(
-            "SELECT 1 FROM repertoires WHERE id=? AND id NOT IN ('__tactics__','__endgames__')",
+            "SELECT 1 FROM repertoires WHERE id=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__')",
             (identifier,),
         ).fetchone():
             raise HTTPException(404, "Repertoire not found")
         db.execute(
-            "UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__')",
+            "UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__')",
             (identifier,),
         )
     return {"id": identifier, "is_main": True}
@@ -615,11 +617,11 @@ def delete_repertoire(identifier: str):
             )
         db.execute("DELETE FROM repertoires WHERE id=?", (identifier,))
         replacement = db.execute(
-            "SELECT id FROM repertoires WHERE id NOT IN ('__tactics__','__endgames__') ORDER BY created_at DESC LIMIT 1"
+            "SELECT id FROM repertoires WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__') ORDER BY created_at DESC LIMIT 1"
         ).fetchone()
         if replacement:
             db.execute(
-                "UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__')",
+                "UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__')",
                 (replacement[0],),
             )
     return {"deleted": True, "id": identifier}
@@ -693,26 +695,17 @@ def review(identifier: str, request: ReviewRequest):
             raise HTTPException(409, "This attempt was already completed")
         if entry["attempt_failed"] or request.guided:
             request = request.model_copy(update={"outcome": "again", "guided": True})
-        card = db.execute(
-            "SELECT interval_days,fsrs_card_json,first_correct_at,reinforcement_pending,scheduling_mode,hard_correct_streak,recent_attempts_json FROM cards WHERE id=? AND archived=0",
-            (identifier,),
-        ).fetchone()
-        if not card:
-            raise HTTPException(404, "Card not found")
         settings = get_settings()
-        s = schedule_review(
-            request.outcome,
-            interval_days=card[0],
-            fsrs_card_json=card[1],
-            first_correct_at=card[2],
-            reinforcement_pending=bool(card[3]),
-            scheduling_mode=card[4],
-            hard_correct_streak=card[5],
-            recent_attempts=json.loads(card[6] or "[]"),
-            light_first_interval_days=settings.light_first_interval_days,
-            reviewed_at=now,
-            review_day=date.today(),
-        )
+        try:
+            result = apply_scheduling_review(
+                db, identifier, request.outcome, guided=request.guided,
+                source_kind="study", source_ref=None,
+                light_first_interval_days=settings.light_first_interval_days,
+                reviewed_at=now,
+                review_day=date.today(),
+            )
+        except KeyError as error:
+            raise HTTPException(404, "Card not found") from error
         if request.queue_entry_id:
             db.execute(
                 "UPDATE daily_queue SET status='complete',attempt_state=? WHERE id=? AND card_id=?",
@@ -727,74 +720,16 @@ def review(identifier: str, request: ReviewRequest):
                 "UPDATE daily_queue SET status='complete' WHERE id=(SELECT id FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued' ORDER BY position LIMIT 1)",
                 (day, identifier),
             )
-        db.execute(
-            "INSERT INTO reviews(card_id,rating,internal_rating,guided,reviewed_at,previous_interval,next_interval) VALUES(?,?,?,?,?,?,?)",
-            (
-                identifier,
-                request.outcome,
-                s.internal_rating,
-                int(request.guided),
-                now.isoformat(),
-                card[0],
-                s.interval_days,
-            ),
-        )
-        days = db.execute(
-            "SELECT COUNT(DISTINCT date(reviewed_at)) FROM reviews WHERE card_id=? AND rating='correct'",
-            (identifier,),
-        ).fetchone()[0]
-        recent = [
-            r[0]
-            for r in db.execute(
-                "SELECT rating FROM reviews WHERE card_id=? ORDER BY reviewed_at DESC,id DESC LIMIT 2",
-                (identifier,),
-            )
-        ]
-        state = "mature" if unlock_ready(s.stability, days, recent) else "learning"
-        db.execute(
-            "UPDATE cards SET due_date=?,interval_days=?,fsrs_card_json=?,first_correct_at=?,reinforcement_pending=?,stability=?,guided_review=?,state=?,scheduling_mode=?,hard_correct_streak=?,recent_attempts_json=? WHERE id=?",
-            (
-                s.due_date.isoformat(),
-                s.interval_days,
-                s.fsrs_card_json,
-                s.first_correct_at,
-                int(s.reinforcement_pending),
-                s.stability,
-                int(request.guided),
-                state,
-                s.scheduling_mode,
-                s.hard_correct_streak,
-                json.dumps(s.recent_attempts),
-                identifier,
-            ),
-        )
         if request.outcome == "correct" and not request.guided and not entry["attempt_failed"]:
             db.execute("UPDATE tactic_progress SET clean_pass_at=COALESCE(clean_pass_at,?) WHERE card_id=?", (now.isoformat(), identifier))
-        if s.requeue_today:
+        if result["requeue_today"]:
             requeue(
                 db,
                 day,
                 identifier,
-                s.requeue_after_cards,
+                result["requeue_after_cards"],
                 "guided" if request.outcome == "again" else "reinforcement",
             )
-        if state == "mature":
-            db.execute(
-                "UPDATE cards SET state='new',due_date=? WHERE unlock_after_card_id=? AND state='locked'",
-                (day, identifier),
-            )
-        result = {
-            "card_id": identifier,
-            "next_due": s.due_date.isoformat(),
-            "interval_days": s.interval_days,
-            "state": state,
-            "requeue_today": s.requeue_today,
-            "requeue_after_cards": s.requeue_after_cards,
-            "stability": s.stability,
-            "scheduling_mode": s.scheduling_mode,
-            "hard_correct_streak": s.hard_correct_streak,
-            "suggest_shorter_prefix": s.suggest_shorter_prefix,
-        }
         db.execute(
             "UPDATE daily_queue SET review_result_json=? WHERE id=?",
             (json.dumps(result), entry["id"]),
@@ -1809,14 +1744,108 @@ def list_game_findings(status: str | None = None, game_id: str | None = None):
 @app.post("/api/game-findings/{finding_id}/decision")
 def decide_game_finding(finding_id: str, request: GameFindingDecisionRequest):
     with connection() as db:
-        finding = db.execute("SELECT id,status FROM game_findings WHERE id=?", (finding_id,)).fetchone()
+        finding = db.execute(
+            """SELECT f.*,g.adaptive_excluded FROM game_findings f
+               JOIN imported_games g ON g.id=f.game_id WHERE f.id=?""",
+            (finding_id,),
+        ).fetchone()
         if not finding:
             raise HTTPException(404, "Gameplay finding not found")
+        if request.decision == "accepted" and finding["adaptive_excluded"]:
+            raise HTTPException(409, "This game is excluded from adaptation")
+        scheduling_result = None
+        if request.decision == "accepted" and finding["kind"] == "repertoire lapse":
+            if not finding["card_id"]:
+                raise HTTPException(422, "This repertoire lapse is not linked to a study card")
+            try:
+                scheduling_result = apply_scheduling_review(
+                    db, finding["card_id"], "again", guided=False,
+                    source_kind="game", source_ref=finding_id,
+                    light_first_interval_days=get_settings().light_first_interval_days,
+                    reviewed_at=datetime.now(timezone.utc),
+                    review_day=date.today(),
+                )
+            except KeyError as error:
+                raise HTTPException(404, "Linked study card not found") from error
+            ensure_card_queued_after(db, finding["card_id"], 4)
         db.execute(
             "UPDATE game_findings SET status=?,updated_at=? WHERE id=?",
             (request.decision, datetime.now(timezone.utc).isoformat(), finding_id),
         )
-    return {"id": finding_id, "status": request.decision}
+    return {"id": finding_id, "status": request.decision, "scheduling": scheduling_result}
+
+
+@app.post("/api/game-findings/{finding_id}/card")
+def create_card_from_game_finding(finding_id: str, request: GameFindingCardRequest):
+    with connection() as db:
+        finding = db.execute(
+            """SELECT f.*,g.color,g.adaptive_excluded FROM game_findings f
+               JOIN imported_games g ON g.id=f.game_id WHERE f.id=?""",
+            (finding_id,),
+        ).fetchone()
+        if not finding:
+            raise HTTPException(404, "Gameplay finding not found")
+        if finding["kind"] != "first big mistake":
+            raise HTTPException(422, "Only a first big mistake can create a study card")
+        if finding["adaptive_excluded"]:
+            raise HTTPException(409, "This game is excluded from adaptation")
+        evidence = json.loads(finding["evidence_json"])
+        starting_fen = request.starting_fen or evidence.get("fen")
+        moves = request.moves or evidence.get("principal_variation", [])[:3]
+        if not starting_fen or not moves:
+            raise HTTPException(422, "The finding has no legal study line")
+        try:
+            board = chess.Board(starting_fen)
+            normalized_moves = []
+            for move_uci in moves[:6]:
+                move = chess.Move.from_uci(move_uci)
+                if move not in board.legal_moves:
+                    raise ValueError
+                normalized_moves.append(move.uci())
+                board.push(move)
+        except ValueError as error:
+            raise HTTPException(422, "The proposed study line contains an illegal move") from error
+        trained_color = request.trained_color or finding["color"]
+        existing = db.execute(
+            "SELECT id FROM cards WHERE start_fen=? AND moves_json=? AND archived=0",
+            (starting_fen, json.dumps(normalized_moves)),
+        ).fetchone()
+        preview = {
+            "starting_fen": starting_fen,
+            "moves": normalized_moves,
+            "best_move": normalized_moves[0],
+            "trained_color": trained_color,
+            "existing_card_id": existing["id"] if existing else None,
+        }
+        if not request.save:
+            return {"preview": preview, "saved": False}
+        created_at = datetime.now(timezone.utc).isoformat()
+        db.execute(
+            """INSERT OR IGNORE INTO repertoires(id,name,source_name,created_at,is_main)
+               VALUES('__game_mistakes__','Game mistakes','Accepted gameplay findings',?,0)""",
+            (created_at,),
+        )
+        study_card_id = existing["id"] if existing else card_id(starting_fen, normalized_moves)
+        if not existing:
+            db.execute(
+                """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type,
+                   source_ref,source_fen,trained_color,introduced_at)
+                   VALUES(?,'__game_mistakes__','checkpoint',?,?,'learning',?,'middlegame',?,?,?,?)""",
+                (
+                    study_card_id, starting_fen, json.dumps(normalized_moves), date.today().isoformat(),
+                    finding_id, starting_fen, trained_color, date.today().isoformat(),
+                ),
+            )
+            db.execute(
+                "INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('__game_mistakes__',?)",
+                (study_card_id,),
+            )
+        ensure_card_queued_after(db, study_card_id, 4)
+        db.execute(
+            "UPDATE game_findings SET card_id=?,status='accepted',updated_at=? WHERE id=?",
+            (study_card_id, created_at, finding_id),
+        )
+    return {"preview": {**preview, "existing_card_id": study_card_id}, "saved": True, "card_id": study_card_id, "reused": bool(existing)}
 
 
 @app.post("/api/games/{game_id:path}/exclusion")
