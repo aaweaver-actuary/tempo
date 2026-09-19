@@ -14,11 +14,17 @@ import { API_URL, STANDARD_FEN } from "../const";
 import { playMoveSound } from "../lib/move-sound";
 import {
   readTacticProgress,
-  tacticProgressKey,
   advanceTacticProgress,
   writeTacticProgress,
 } from "../lib/tactics-progress";
-import { tacticMotifs } from "../samples";
+import { TacticalCatalogPanel } from "../components/tactical-catalog";
+import {
+  loadTacticalCatalog,
+  setPackActivation,
+  migrateDemoProgress,
+  type TacticalCatalog,
+  type TacticalPack,
+} from "../lib/tactical-catalog";
 import { asCardId, asFenString, PackagedPuzzle, PracticeCard } from "../types";
 import { usesLocalApi } from "../utils/local";
 import {
@@ -46,19 +52,6 @@ type TacticAttempt = {
   phase: "playerTurn" | "guided" | "feedbackPause";
   positionRevision: number;
 };
-function firstUnfinishedStage(
-  progress: ReturnType<typeof readTacticProgress>,
-  motif: string,
-) {
-  return (
-    ["easy", "medium", "hard", "focused"].find(
-      (stage) =>
-        (progress[tacticProgressKey(motif, stage)]?.clean ?? 0) <
-        (stage === "focused" ? 250 : 100),
-    ) ?? "focused"
-  );
-}
-
 function TacticsSubHeader({
   currentProgress,
   current,
@@ -89,16 +82,82 @@ export default function TacticsView({
   onQueueChanged: () => void;
   useSharedBoard?: boolean;
 }) {
-  const [motif, setMotif] = useState("hangingPiece");
-  const [stage, setStage] = useState("easy");
+  const [retry, setRetry] = useState(0);
+  const [selectedPackId, setSelectedPackId] = useState(
+    () =>
+      localStorage.getItem("tempo-tactic-selected-pack-v1") ??
+      "hangingPiece-easy-01",
+  );
+  const motif = selectedPackId.split("-")[0];
+  const stage = selectedPackId.slice(motif.length + 1);
+  const [catalog, setCatalog] = useState<TacticalCatalog | null>(null);
+  const [catalogError, setCatalogError] = useState("");
+  const [activationError, setActivationError] = useState("");
+  const [activationBusy, setActivationBusy] = useState(false);
   const [progress, setProgress] = useState(readTacticProgress);
   const [progressReady, setProgressReady] = useState(() => !usesLocalApi());
   const [prepared, setPrepared] = useState<
     Array<{ record: PackagedPuzzle; card: PracticeCard }>
   >([]);
   const [deckState, setDeckState] = useState("loading");
-  const [retry, setRetry] = useState(0);
-  const progressKey = tacticProgressKey(motif, stage);
+  const selectPack = (pack: TacticalPack) => {
+    setDeckState("loading");
+    setSelectedPackId(pack.id);
+    localStorage.setItem("tempo-tactic-selected-pack-v1", pack.id);
+  };
+  const activatePacks = async (ids: string[], active: boolean) => {
+    setActivationBusy(true);
+    setActivationError("");
+    try {
+      setCatalog(await setPackActivation(ids, active));
+      invalidateWorkspaceData();
+      onQueueChanged();
+    } catch (error) {
+      setActivationError(
+        error instanceof Error
+          ? error.message
+          : "Could not save activation. Retry.",
+      );
+    } finally {
+      setActivationBusy(false);
+    }
+  };
+  useEffect(() => {
+    let active = true;
+    void loadTacticalCatalog()
+      .then(async (value) => {
+        if (!usesLocalApi()) {
+          const activePacks = new Set(
+            JSON.parse(
+              localStorage.getItem("tempo-tactic-active-packs-v1") ?? "[]",
+            ),
+          );
+          value = {
+            ...value,
+            packs: value.packs.map((pack) => ({
+              ...pack,
+              active: activePacks.has(pack.id),
+            })),
+          };
+          const migrated = await migrateDemoProgress(
+            value,
+            readTacticProgress(),
+          );
+          if (active) setProgress(migrated);
+        }
+        if (active) {
+          setCatalog(value);
+          setCatalogError("");
+        }
+      })
+      .catch((error) => {
+        if (active) setCatalogError(error.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [retry]);
+  const progressKey = selectedPackId;
   const currentProgress = progress[progressKey] ?? { clean: 0, index: 0 };
   const discoveredIds = new Set(
     currentProgress.discoveredIds ?? currentProgress.cleanIds ?? [],
@@ -121,7 +180,8 @@ export default function TacticsView({
   }));
   const finishingRef = useRef("");
   const [saveError, setSaveError] = useState("");
-  const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
+  const { setShellBoardForOwner, releaseShellBoardForOwner } =
+    useBoardPublisher();
   const attemptTokenRef = useRef(0);
   const advanceTimers = useRef(new Set<number>());
   useEffect(() => {
@@ -155,7 +215,7 @@ export default function TacticsView({
       .then((value) => {
         if (!active) return;
         setProgress(value);
-        setStage(firstUnfinishedStage(value, "hangingPiece"));
+
         setProgressReady(true);
         setSaveError("");
       })
@@ -360,7 +420,10 @@ export default function TacticsView({
   useLayoutEffect(() => {
     if (!useSharedBoard) return;
     setShellBoardForOwner("tactics", {
-      unavailable: !progressReady || !deckReady || !selectedPuzzle ? (saveError || "Preparing puzzles…") : undefined,
+      unavailable:
+        !progressReady || !deckReady || !selectedPuzzle
+          ? saveError || "Preparing puzzles…"
+          : undefined,
       fen,
       expectedSan: puzzle.moves[step],
       interactionMode:
@@ -399,49 +462,36 @@ export default function TacticsView({
     useSharedBoard,
   ]);
 
-  const current = tacticMotifs.find((item) => item[0] === motif)!;
-  const target = stage === "focused" ? 250 : 100;
-  const previousStages = ["easy", "medium", "hard"];
-  if (progressReady && deckReady && !selectedPuzzle)
+  const current = [
+    motif,
+    catalog?.themes.find((item) => item.id === motif)?.name ?? motif,
+  ];
+  const target = 25;
+  if (
+    !catalog ||
+    !progressReady ||
+    !deckReady ||
+    attempt.entryKey !== entryKey ||
+    !selectedPuzzle
+  )
     return (
       <section className="library-page" role="status">
-        <h1 className="sr-only">Tactics</h1>All packaged puzzles in this stage
-        have a clean solve.
-        <div className="stage-tabs">
-          {tacticMotifs.map(([id, name]) => (
-            <button
-              key={id}
-              onClick={() => {
-                setDeckState("loading");
-                setMotif(id);
-                setStage(firstUnfinishedStage(progress, id));
-              }}
-            >
-              {name}
-            </button>
-          ))}
-        </div>
-      </section>
-    );
-  if (!progressReady || !deckReady || attempt.entryKey !== entryKey)
-    return (
-      <section className="library-page" role="status">
-        {saveError ||
+        {catalogError ||
+          saveError ||
           (deckState === "loading" || deckState === "ready"
             ? "Preparing puzzles…"
             : deckState === "empty"
-              ? "No validated puzzles are available for this stage. Check the packaged tactics data."
+              ? "No validated puzzles are available for this pack. Check the packaged tactics data."
               : deckState)}
-        {deckState !== "loading" && (
-          <button
-            onClick={() => {
-              setDeckState("loading");
-              setRetry((value) => value + 1);
-            }}
-          >
-            Retry
-          </button>
-        )}
+        <button
+          onClick={() => {
+            invalidateWorkspaceData();
+            setDeckState("loading");
+            setRetry((value) => value + 1);
+          }}
+        >
+          Retry
+        </button>
       </section>
     );
   return (
@@ -450,63 +500,27 @@ export default function TacticsView({
         <div>
           <h1 className="sr-only">Tactics</h1>
           <TacticsSubHeader
-            currentProgress={
-              progress[tacticProgressKey(motif, stage)] ?? {
-                clean: 0,
-                index: 0,
-              }
-            }
+            currentProgress={currentProgress}
             current={current}
             stage={stage}
           />
         </div>
-        <div className="stage-tabs">
-          {["easy", "medium", "hard", "focused"].map((item, index) => (
-            <button
-              key={item}
-              disabled={
-                index > 0 &&
-                (progress[tacticProgressKey(motif, previousStages[index - 1])]
-                  ?.clean ?? 0) < 100
-              }
-              className={stage === item ? "active" : ""}
-              onClick={() => {
-                setDeckState("loading");
-                setStage(item);
-              }}
-            >
-              {item === "focused"
-                ? "Focused · 250"
-                : `${item[0].toUpperCase() + item.slice(1)} · 100`}
-            </button>
-          ))}
-        </div>
       </div>
+      {activationError && (
+        <div role="alert">
+          {activationError}
+          <button onClick={() => setActivationError("")}>Dismiss</button>
+        </div>
+      )}
       <div className="tactics-workspace">
-        <aside className="motif-rail">
-          {tacticMotifs.map(([id, name, icon]) => {
-            const clean = progress[tacticProgressKey(id, stage)]?.clean ?? 0;
-            return (
-              <button
-                className={motif === id ? "active" : ""}
-                key={id}
-                onClick={() => {
-                  setDeckState("loading");
-                  setMotif(id);
-                  setStage(firstUnfinishedStage(progress, id));
-                }}
-              >
-                <b>{icon}</b>
-                <span>{name}</span>
-                <small>
-                  {clean
-                    ? `${clean} / ${stage === "focused" ? 250 : 100}`
-                    : "Not started"}
-                </small>
-              </button>
-            );
-          })}
-        </aside>
+        <TacticalCatalogPanel
+          catalog={catalog}
+          progress={progress}
+          selectedPackId={selectedPackId}
+          onSelect={selectPack}
+          onActivate={(ids, active) => void activatePacks(ids, active)}
+          busy={activationBusy}
+        />
         <div className="board-column centered-board">
           {!useSharedBoard && (
             <Chessboard
@@ -555,11 +569,9 @@ export default function TacticsView({
           )}
         </div>
         <aside className="study-panel tactic-study">
-          <span className="pill puzzle">{stage}</span>
+          <span className="pill puzzle">{stage.replace(/-\d{2}$/, "")}</span>
           <h2>{current[1]}</h2>
-          <p className="side-to-play">
-            {puzzleSide === "black" ? "black" : "white"} to play
-          </p>
+          <p className="side-to-play">{puzzleSide} to play</p>
           <p className="tactic-rating">
             Puzzle {packagedRecord?.DeckPosition} of {target}
           </p>
@@ -581,7 +593,7 @@ export default function TacticsView({
               }}
             />
           </div>
-          <small>Easy → Medium → Hard → Focused</small>
+          <small>All packs are directly accessible</small>
         </aside>
       </div>
     </section>

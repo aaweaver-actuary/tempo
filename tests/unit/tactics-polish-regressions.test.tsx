@@ -31,10 +31,33 @@ vi.mock("../../app/components/chessboard", () => ({
   ),
 }));
 vi.mock("../../app/lib/move-sound", () => ({ playMoveSound: vi.fn() }));
+const catalog = {
+  version: 1,
+  groups: [{ id: "basic", name: "Basic motifs" }],
+  themes: [{ id: "hangingPiece", name: "Hanging pieces", group: "basic" }],
+  packs: [
+    {
+      id: "hangingPiece-easy-01",
+      theme: "hangingPiece",
+      group: "basic",
+      difficulty: "easy",
+      ordinal: 1,
+      count: 25,
+      minRating: 700,
+      maxRating: 1100,
+      asset: "data/tactics-packs/hangingPiece-easy-01.json",
+      legacyDeckId: "hangingPiece-easy",
+      active: false,
+      clean: 0,
+      introduced: 0,
+      due: 0,
+    },
+  ],
+};
 const sourceFen = "q3k1nr/1pp1nQpp/3p4/1P2p3/4P3/B1PP1b2/B5PP/5K2 b k - 0 17";
 const records = Array.from({ length: 26 }, (_, i) => ({
   PuzzleId: `polish-${i + 1}`,
-  DeckId: "hangingPiece-easy",
+  DeckId: "hangingPiece-easy-01",
   DeckPosition: i + 1,
   FEN: sourceFen,
   Moves: "e8d7 a2e6 d7d8 f7f8",
@@ -53,18 +76,18 @@ it("legacy clean puzzle identities select the next unattempted deck position rat
     "fetch",
     vi.fn(async (input) =>
       Response.json(
-        String(input).includes("tactics-decks")
-          ? records
-          : { "hangingPiece:easy": { index: 4, clean: 24, cleanIds } },
+        String(input).includes("tactics-packs")
+          ? records.slice(0, 25)
+          : String(input).includes("tactics/catalog")
+            ? catalog
+            : { "hangingPiece-easy-01": { index: 4, clean: 24, cleanIds } },
       ),
     ),
   );
   render(
     <TacticsView theme="brown" pieceSet="cburnett" onQueueChanged={vi.fn()} />,
   );
-  await waitFor(() =>
-    expect(screen.getByText("Puzzle 25 of 100")).toBeTruthy(),
-  );
+  await waitFor(() => expect(screen.getByText("Puzzle 25 of 25")).toBeTruthy());
 });
 
 it("tactic Show Move and Restart retain one guided attempt then clear X and unlock the next puzzle", async () => {
@@ -72,8 +95,10 @@ it("tactic Show Move and Restart retain one guided attempt then clear X and unlo
   vi.stubGlobal(
     "fetch",
     vi.fn(async (input, options) => {
-      if (String(input).includes("tactics-decks"))
-        return Response.json(records);
+      if (String(input).includes("tactics-packs"))
+        return Response.json(records.slice(0, 25));
+      if (String(input).includes("tactics/catalog"))
+        return Response.json(catalog);
       if (String(input).endsWith("/attempt")) {
         submissions.push(JSON.parse(options.body));
         return Response.json({});
@@ -84,11 +109,11 @@ it("tactic Show Move and Restart retain one guided attempt then clear X and unlo
   render(
     <TacticsView theme="brown" pieceSet="cburnett" onQueueChanged={vi.fn()} />,
   );
-  await waitFor(() => expect(screen.getByText("Puzzle 1 of 100")).toBeTruthy());
+  await waitFor(() => expect(screen.getByText("Puzzle 1 of 25")).toBeTruthy());
   const startingFen = screen.getByTestId("board").getAttribute("data-fen");
   fireEvent.click(screen.getByRole("button", { name: /Show move/ }));
   await pause();
-  expect(screen.getByText("Puzzle 1 of 100")).toBeTruthy();
+  expect(screen.getByText("Puzzle 1 of 25")).toBeTruthy();
   expect(screen.getByText("Follow the arrow")).toBeTruthy();
   fireEvent.click(screen.getByText("a2e6"));
   fireEvent.click(screen.getByRole("button", { name: /Restart/ }));
@@ -110,7 +135,7 @@ it("tactic Show Move and Restart retain one guided attempt then clear X and unlo
     ).isCheckmate(),
   ).toBe(true);
   await pause();
-  await waitFor(() => expect(screen.getByText("Puzzle 2 of 100")).toBeTruthy());
+  await waitFor(() => expect(screen.getByText("Puzzle 2 of 25")).toBeTruthy());
   expect(screen.queryByText("Follow the arrow")).toBeNull();
   expect(screen.getByText("a2e6").hasAttribute("disabled")).toBe(false);
   expect(submissions).toHaveLength(1);

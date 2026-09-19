@@ -164,3 +164,32 @@ test("phone board controls provide 44px touch targets with every pointer type", 
     }
   }
 });
+
+test("tactical catalog groups and activation controls remain reachable on phones", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepareUI(page);
+  await navigate(page, "Tactics");
+  const catalog = page.getByRole("region", { name: "Tactical puzzle catalog" });
+  await expect(catalog).toBeVisible();
+  await expect(catalog.getByText("Basic motifs")).toBeVisible();
+  const activation = catalog.getByRole("button", {
+    name: /Activate Hanging pieces easy pack 1/,
+  });
+  if (!(await activation.isVisible()))
+    await catalog
+      .locator(".tactic-theme summary")
+      .filter({ hasText: "Hanging pieces" })
+      .click();
+  await expect(activation).toBeVisible();
+  const bounds = await activation.boundingBox();
+  expect(bounds!.height).toBeGreaterThanOrEqual(44);
+  await activation.click();
+  await expect(
+    catalog.getByRole("button", {
+      name: /Deactivate Hanging pieces easy pack 1/,
+    }),
+  ).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".cg-wrap")).toBeVisible();
+});

@@ -78,7 +78,11 @@ export function loadTacticsDeck(motif: string, stage: string) {
   let deck = decks.get(deckId);
   if (!deck) {
     deck = readWorkspaceData(
-      assetUrl("data/tactics-decks.json"),
+      assetUrl(
+        /-\d{2}$/.test(deckId)
+          ? `data/tactics-packs/${deckId}.json`
+          : "data/tactics-decks.json",
+      ),
       z.array(z.unknown()),
     )
       .then((records) =>

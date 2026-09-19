@@ -81,12 +81,16 @@ export const queueEnvelopeSchema = z.strictObject({
 export const packagedPuzzleSchema = z.strictObject({
   DeckId: deckIdSchema,
   DeckPosition: z.number().int().positive(),
+  LegacyDeckId: z.string().optional(),
+  LegacyDeckPosition: z.number().int().positive().optional(),
   PuzzleId: identifierSchema,
   FEN: fenStringSchema,
   Moves: z.string().trim().min(1),
   Rating: z.number().int().nonnegative(),
   Motif: identifierSchema.optional(),
-  Difficulty: z.enum(["easy", "medium", "hard", "focused"]).optional(),
+  Difficulty: z
+    .enum(["easy", "medium", "hard", "focused", "advanced"])
+    .optional(),
   RatingDeviation: integer.optional(),
   Popularity: z.number().int().min(-100).max(100).optional(),
   NbPlays: integer.optional(),
@@ -230,6 +234,7 @@ export const settingsResponseSchema = z.strictObject({
   initial_depth: z.number().int().min(2).max(20),
   timezone: z.string(),
   new_cards_per_day: z.number().int().min(0).max(100),
+  tactics_new_per_day: z.number().int().min(0).max(100).default(5),
   lichess_username: z.string(),
   chesscom_username: z.string(),
   auto_sync_minutes: z.number().int().min(2).max(60),

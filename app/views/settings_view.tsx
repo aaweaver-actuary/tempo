@@ -2,9 +2,15 @@
 import { useRef, useState, useEffect, useCallback } from "react";
 import type { BoardTheme, PieceSet } from "../components/chessboard";
 import { API_URL } from "../const";
-import { readWorkspaceResponse, invalidateWorkspaceData } from "../lib/workspace-data";
+import {
+  readWorkspaceResponse,
+  invalidateWorkspaceData,
+} from "../lib/workspace-data";
 import { usesLocalApi } from "../utils/local";
-import { createEncryptedBackup, restoreEncryptedBackup } from "../lib/encrypted-backup";
+import {
+  createEncryptedBackup,
+  restoreEncryptedBackup,
+} from "../lib/encrypted-backup";
 import { migrateSqliteToBrowser } from "../lib/sqlite-migration";
 
 import { Notice } from "../components/task-tabs";
@@ -13,6 +19,7 @@ type SettingsValues = {
   initial_depth: number;
   timezone: string;
   new_cards_per_day: number;
+  tactics_new_per_day: number;
   lichess_username: string;
   chesscom_username: string;
   auto_sync_minutes: number;
@@ -51,6 +58,7 @@ export default function SettingsView({
     initial_depth: 6,
     timezone: "local",
     new_cards_per_day: 10,
+    tactics_new_per_day: 5,
     lichess_username: "",
     chesscom_username: "",
     auto_sync_minutes: 3,
@@ -77,13 +85,16 @@ export default function SettingsView({
     try {
       const response = await readWorkspaceResponse(`${API_URL}/api/settings`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const saved = await response.json() as Partial<SettingsValues> | null;
-      if (!saved || typeof saved.initial_depth !== "number") throw new Error("Malformed settings response");
-      setValues(current => ({ ...current, ...saved }));
+      const saved = (await response.json()) as Partial<SettingsValues> | null;
+      if (!saved || typeof saved.initial_depth !== "number")
+        throw new Error("Malformed settings response");
+      setValues((current) => ({ ...current, ...saved }));
       setSettingsLoaded(true);
       setLoadError("");
     } catch (error) {
-      setLoadError(`Settings unavailable: ${error instanceof Error ? error.message : "connection failed"}. Retry before saving.`);
+      setLoadError(
+        `Settings unavailable: ${error instanceof Error ? error.message : "connection failed"}. Retry before saving.`,
+      );
     }
   }, []);
   const backupInput = useRef<HTMLInputElement>(null);
@@ -109,7 +120,9 @@ export default function SettingsView({
           localStorage.getItem("tempo-coverage-target") ?? 90,
         ),
         maia_elo: localStorage.getItem("tempo-maia-elo") ?? "1500",
-        maia_transposition_plies: Number(localStorage.getItem("tempo-maia-transposition-plies") ?? 4),
+        maia_transposition_plies: Number(
+          localStorage.getItem("tempo-maia-transposition-plies") ?? 4,
+        ),
         explorer_speeds:
           localStorage.getItem("tempo-explorer-speeds") ??
           "blitz,rapid,classical",
@@ -117,7 +130,8 @@ export default function SettingsView({
           localStorage.getItem("tempo-explorer-ratings") ??
           "1600,1800,2000,2200,2500",
         lichess_username: localStorage.getItem("tempo-lichess-username") ?? "",
-        chesscom_username: localStorage.getItem("tempo-chesscom-username") ?? "",
+        chesscom_username:
+          localStorage.getItem("tempo-chesscom-username") ?? "",
       }));
       void loadSettings();
     }, 0);
@@ -141,7 +155,10 @@ export default function SettingsView({
       String(values.coverage_target),
     );
     localStorage.setItem("tempo-maia-elo", values.maia_elo);
-    localStorage.setItem("tempo-maia-transposition-plies", String(values.maia_transposition_plies));
+    localStorage.setItem(
+      "tempo-maia-transposition-plies",
+      String(values.maia_transposition_plies),
+    );
     localStorage.setItem("tempo-explorer-speeds", values.explorer_speeds);
     localStorage.setItem("tempo-explorer-ratings", values.explorer_ratings);
     localStorage.setItem(
@@ -163,6 +180,7 @@ export default function SettingsView({
         initial_depth: values.initial_depth,
         timezone: values.timezone,
         new_cards_per_day: values.new_cards_per_day,
+        tactics_new_per_day: values.tactics_new_per_day,
         lichess_username: values.lichess_username.trim(),
         chesscom_username: values.chesscom_username.trim(),
         auto_sync_minutes: values.auto_sync_minutes,
@@ -179,9 +197,7 @@ export default function SettingsView({
         });
         if (!response.ok) throw new Error();
         invalidateWorkspaceData();
-        setStatus(
-          "Saved.",
-        );
+        setStatus("Saved.");
       } catch {
         setStatus(
           "Browser settings saved. The local service could not be reached.",
@@ -194,15 +210,25 @@ export default function SettingsView({
     setStatus("Copying and verifying the local database…");
     try {
       const result = await migrateSqliteToBrowser(true);
-      if (result.status === "unavailable") setStatus("Open Docker Tempo to transfer its local database.");
-      else setStatus(`Verified browser copy (${Object.values(result.counts ?? {}).reduce((sum, count) => sum + count, 0)} records).`);
+      if (result.status === "unavailable")
+        setStatus("Open Docker Tempo to transfer its local database.");
+      else
+        setStatus(
+          `Verified browser copy (${Object.values(result.counts ?? {}).reduce((sum, count) => sum + count, 0)} records).`,
+        );
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "The local database could not be transferred.");
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : "The local database could not be transferred.",
+      );
     }
   }
 
   async function exportBackup() {
-    const passphrase = window.prompt("Choose a passphrase for this encrypted backup");
+    const passphrase = window.prompt(
+      "Choose a passphrase for this encrypted backup",
+    );
     if (!passphrase) return;
     try {
       const blob = await createEncryptedBackup(passphrase);
@@ -213,7 +239,11 @@ export default function SettingsView({
       URL.revokeObjectURL(link.href);
       setStatus("Encrypted backup downloaded.");
     } catch (error) {
-      setStatus(error instanceof Error ? error.message : "The backup could not be created.");
+      setStatus(
+        error instanceof Error
+          ? error.message
+          : "The backup could not be created.",
+      );
     }
   }
 
@@ -223,7 +253,9 @@ export default function SettingsView({
     if (!passphrase) return;
     try {
       const result = await restoreEncryptedBackup(file, passphrase);
-      setStatus(`Backup restored (${result.merged} records merged). Reload Tempo to use the restored data.`);
+      setStatus(
+        `Backup restored (${result.merged} records merged). Reload Tempo to use the restored data.`,
+      );
     } catch {
       setStatus("That backup is damaged or the passphrase is incorrect.");
     } finally {
@@ -237,11 +269,25 @@ export default function SettingsView({
         <div>
           <h1 className="sr-only">Settings</h1>
         </div>
-        <button className="primary-button" disabled={!settingsLoaded} onClick={() => void save()}>
+        <button
+          className="primary-button"
+          disabled={!settingsLoaded}
+          onClick={() => void save()}
+        >
           Save settings
         </button>
       </div>
-      {loadError && <Notice error onRetry={() => { invalidateWorkspaceData(); void loadSettings(); }}>{loadError}</Notice>}
+      {loadError && (
+        <Notice
+          error
+          onRetry={() => {
+            invalidateWorkspaceData();
+            void loadSettings();
+          }}
+        >
+          {loadError}
+        </Notice>
+      )}
       {!settingsLoaded && !loadError && <Notice>Loading settings…</Notice>}
       {status && <Notice>{status}</Notice>}
       <div className="settings-grid">
@@ -275,6 +321,24 @@ export default function SettingsView({
               value={values.new_cards_per_day}
               onChange={(event) =>
                 update("new_cards_per_day", Number(event.target.value))
+              }
+            />
+          </label>
+          <label>
+            <span>
+              New tactics per day
+              <small>
+                Shared across active packs; due reviews and practice discoveries
+                are additional
+              </small>
+            </span>
+            <input
+              type="number"
+              min="0"
+              max="100"
+              value={values.tactics_new_per_day}
+              onChange={(event) =>
+                update("tactics_new_per_day", Number(event.target.value))
               }
             />
           </label>
@@ -419,13 +483,17 @@ export default function SettingsView({
             </select>
           </label>
           <label>
-            <span>Transposition search<small>Maia lookahead plies</small></span>
+            <span>
+              Transposition search<small>Maia lookahead plies</small>
+            </span>
             <input
               type="number"
               min="2"
               max="8"
               value={values.maia_transposition_plies}
-              onChange={(event) => update("maia_transposition_plies", Number(event.target.value))}
+              onChange={(event) =>
+                update("maia_transposition_plies", Number(event.target.value))
+              }
             />
           </label>
           <label>
@@ -510,11 +578,22 @@ export default function SettingsView({
         </section>
         <section className="settings-card">
           <h2>Data &amp; backup</h2>
-          <p className="settings-card-copy">Keep an encrypted portable copy of browser data. Docker’s SQLite file remains unchanged during transfer.</p>
+          <p className="settings-card-copy">
+            Keep an encrypted portable copy of browser data. Docker’s SQLite
+            file remains unchanged during transfer.
+          </p>
           <div className="settings-actions">
-            {usesLocalApi() && <button onClick={() => void transferLocalData()}>Transfer Docker data</button>}
-            <button onClick={() => void exportBackup()}>Export encrypted backup</button>
-            <button onClick={() => backupInput.current?.click()}>Import encrypted backup</button>
+            {usesLocalApi() && (
+              <button onClick={() => void transferLocalData()}>
+                Transfer Docker data
+              </button>
+            )}
+            <button onClick={() => void exportBackup()}>
+              Export encrypted backup
+            </button>
+            <button onClick={() => backupInput.current?.click()}>
+              Import encrypted backup
+            </button>
             <input
               ref={backupInput}
               type="file"

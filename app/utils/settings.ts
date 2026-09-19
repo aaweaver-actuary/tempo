@@ -11,6 +11,7 @@ export type BoardSettings = {
 export type TrainingSettings = {
   initial_depth: number;
   new_cards_per_day: number;
+  tactics_new_per_day: number;
   light_first_interval_days: number;
 };
 
@@ -77,6 +78,7 @@ export class Settings {
       training: {
         initial_depth: 6,
         new_cards_per_day: 10,
+        tactics_new_per_day: 5,
         light_first_interval_days: 7,
       },
       external: {

@@ -123,3 +123,14 @@ Append every new reported issue and its test names here. All listed tests belong
 - The regular browser, visual, and performance suites serve a production build; development-server reloads must not reset navigation during recovery or real Maia initialization. Covered by the existing Maia, Settings recovery, and single-Chessground navigation regressions.
 - Annotation gestures wait for Chessground's drawing animation frame before releasing the pointer; the existing `Builder right-click annotation saves the exact clicked square` regression verifies the persisted square, while `builder annotations never appear in games` verifies isolation.
 - Endgames visual references assert a fixed FEN before capture so asynchronous random-number consumption cannot change the photographed position.
+
+## Tactical pack catalog expansion
+- `existing tactical puzzles survive splitting into 25-card packs` preserves every original Lichess puzzle and source field (`backend/tests/test_tactical_catalog.py`).
+- `expanded tactical catalog contains every requested theme and complete pack` verifies 47 themes, 692 packs, 17,300 unique legal puzzles, and source metadata (`backend/tests/test_tactical_catalog.py`).
+- `tactical pack migration preserves reviews scheduling and completion` verifies additive backup/migration and legacy identity retention (`backend/tests/test_tactical_catalog.py`).
+- `active tactical packs share one daily introduction quota` verifies five fair, idempotent reservations without fabricated solves (`backend/tests/test_tactical_catalog.py`).
+- `deactivating a tactical pack preserves scheduled reviews` verifies queued cards remain after activation changes (`backend/tests/test_tactical_catalog.py`).
+- `practice in an inactive pack still admits the puzzle to reviews` remains covered by tactic attempt admission and workspace flow regressions.
+- `tactical completion counts distinct clean solves across practice and training` is covered by distinct progress identity and review regressions.
+- `all tactical difficulties remain directly accessible` is covered by the pack catalog unit and browser workflows.
+- `tactical catalog groups and activation controls remain reachable on phones` verifies grouped controls, 44px targets, and the visible board (`tests/browser/layout.spec.ts`).
