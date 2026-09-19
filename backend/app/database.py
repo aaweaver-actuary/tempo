@@ -22,7 +22,19 @@ def connection() -> Iterator[sqlite3.Connection]:
 
 
 def initialize() -> None:
+    if DB_PATH.exists():
+        with connection() as existing_database:
+            tables = {row[0] for row in existing_database.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            if "tactic_pack_activation" not in tables:
+                backup_path = DB_PATH.with_name(DB_PATH.name + ".before-tactics-v1.bak")
+                if not backup_path.exists():
+                    with sqlite3.connect(backup_path) as backup_database:
+                        existing_database.backup(backup_database)
     statements = [
+        "CREATE TABLE IF NOT EXISTS tactic_pack_activation(pack_id TEXT PRIMARY KEY,active INTEGER NOT NULL DEFAULT 0 CHECK(active IN (0,1)))",
+        "CREATE TABLE IF NOT EXISTS tactic_introductions(puzzle_id TEXT PRIMARY KEY,pack_id TEXT NOT NULL,introduction_date TEXT NOT NULL)",
+        "CREATE TABLE IF NOT EXISTS tactic_rotation(id INTEGER PRIMARY KEY CHECK(id=1),last_pack_id TEXT NOT NULL DEFAULT '')",
+        "INSERT OR IGNORE INTO tactic_rotation(id) VALUES(1)",
         "CREATE TABLE IF NOT EXISTS tactic_discovery_attempts (id TEXT PRIMARY KEY, deck_id TEXT NOT NULL, puzzle_id TEXT NOT NULL, clean INTEGER NOT NULL, result_json TEXT NOT NULL)",
         """
         CREATE TABLE IF NOT EXISTS settings (
@@ -287,6 +299,7 @@ def initialize() -> None:
         """,
     ]
     with connection() as database:
+        database.execute("BEGIN IMMEDIATE")
         for statement in statements:
             database.execute(statement)
         database.execute("INSERT OR IGNORE INTO settings (id) VALUES (1)")
@@ -294,7 +307,7 @@ def initialize() -> None:
         columns = {
             "daily_queue": {"review_result_json": "TEXT", "attempt_failed": "INTEGER NOT NULL DEFAULT 0"},
             "game_sync_state": {"username": "TEXT NOT NULL DEFAULT ''"},
-            "settings": {"lichess_username": "TEXT NOT NULL DEFAULT ''", "chesscom_username": "TEXT NOT NULL DEFAULT ''", "auto_sync_minutes": "INTEGER NOT NULL DEFAULT 3", "engine_line_window_cp": "INTEGER NOT NULL DEFAULT 30", "major_mistake_cp": "INTEGER NOT NULL DEFAULT 100", "light_first_interval_days": "INTEGER NOT NULL DEFAULT 7", "draw_hold_user_moves": "INTEGER NOT NULL DEFAULT 20"},
+            "settings": {"tactics_new_per_day": "INTEGER NOT NULL DEFAULT 5","lichess_username": "TEXT NOT NULL DEFAULT ''", "chesscom_username": "TEXT NOT NULL DEFAULT ''", "auto_sync_minutes": "INTEGER NOT NULL DEFAULT 3", "engine_line_window_cp": "INTEGER NOT NULL DEFAULT 30", "major_mistake_cp": "INTEGER NOT NULL DEFAULT 100", "light_first_interval_days": "INTEGER NOT NULL DEFAULT 7", "draw_hold_user_moves": "INTEGER NOT NULL DEFAULT 20"},
             "cards": {"fsrs_card_json": "TEXT", "first_correct_at": "TEXT", "reinforcement_pending": "INTEGER NOT NULL DEFAULT 0", "stability": "REAL NOT NULL DEFAULT 0", "guided_review": "INTEGER NOT NULL DEFAULT 0", "maximum_interval": "INTEGER NOT NULL DEFAULT 365", "content_type": "TEXT NOT NULL DEFAULT 'opening'", "scheduling_mode": "TEXT NOT NULL DEFAULT 'normal'", "hard_correct_streak": "INTEGER NOT NULL DEFAULT 0", "recent_attempts_json": "TEXT NOT NULL DEFAULT '[]'", "archived": "INTEGER NOT NULL DEFAULT 0", "superseded_by": "TEXT", "source_ref": "TEXT", "source_fen": "TEXT", "revision": "INTEGER NOT NULL DEFAULT 1", "introduced_at": "TEXT"},
             "reviews": {"internal_rating": "TEXT NOT NULL DEFAULT 'again'", "guided": "INTEGER NOT NULL DEFAULT 0"},
             "imported_games": {"analysis_state": "TEXT NOT NULL DEFAULT 'pending'", "analysis_version": "INTEGER NOT NULL DEFAULT 0", "major_mistake_ply": "INTEGER", "missed_punishment_ply": "INTEGER"},

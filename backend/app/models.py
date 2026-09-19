@@ -6,6 +6,7 @@ from pydantic import BaseModel, Field
 class Settings(BaseModel):
     initial_depth: int = Field(default=6, ge=2, le=20)
     timezone: str = "local"
+    tactics_new_per_day: int = Field(default=5, ge=0, le=100)
     new_cards_per_day: int = Field(default=10, ge=0, le=100)
     lichess_username: str = ""
     chesscom_username: str = ""
@@ -118,3 +119,8 @@ class ImportResult(BaseModel):
     cards_created: int
     duplicates_merged: int
     cards_admitted_today: int = 0
+
+
+class TacticActivationRequest(BaseModel):
+    pack_ids: list[str] = Field(min_length=1, max_length=692)
+    active: bool

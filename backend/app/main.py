@@ -16,6 +16,8 @@ from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import connection, initialize
+from .models import TacticActivationRequest
+from .services.tactical_catalog import catalog_status, activate, seed_tactical_introductions, puzzle_membership, progress_pack_id
 from .models import (
     AccountSettings,
     BranchRequest,
@@ -84,7 +86,7 @@ def capabilities():
 def get_settings():
     with connection() as db:
         row = db.execute(
-            "SELECT initial_depth,timezone,new_cards_per_day,lichess_username,chesscom_username,auto_sync_minutes,engine_line_window_cp,major_mistake_cp,light_first_interval_days,draw_hold_user_moves FROM settings WHERE id=1"
+            "SELECT tactics_new_per_day,initial_depth,timezone,new_cards_per_day,lichess_username,chesscom_username,auto_sync_minutes,engine_line_window_cp,major_mistake_cp,light_first_interval_days,draw_hold_user_moves FROM settings WHERE id=1"
         ).fetchone()
     return Settings(**dict(row))
 
@@ -93,8 +95,9 @@ def get_settings():
 def put_settings(s: Settings):
     with connection() as db:
         db.execute(
-            "UPDATE settings SET initial_depth=?,timezone=?,new_cards_per_day=?,lichess_username=?,chesscom_username=?,auto_sync_minutes=?,engine_line_window_cp=?,major_mistake_cp=?,light_first_interval_days=?,draw_hold_user_moves=? WHERE id=1",
+            "UPDATE settings SET tactics_new_per_day=?,initial_depth=?,timezone=?,new_cards_per_day=?,lichess_username=?,chesscom_username=?,auto_sync_minutes=?,engine_line_window_cp=?,major_mistake_cp=?,light_first_interval_days=?,draw_hold_user_moves=? WHERE id=1",
             (
+                s.tactics_new_per_day,
                 s.initial_depth,
                 s.timezone,
                 s.new_cards_per_day,
@@ -139,6 +142,7 @@ def reconcile_unseen_queue(db, day, limit):
 
 
 def seed_queue(db, day):
+    seed_tactical_introductions(db, day)
     db.execute("""UPDATE cards SET state='new' WHERE content_type='opening' AND state='learning'
                   AND introduced_at IS NULL AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=cards.id)""")
     db.execute(
@@ -752,6 +756,8 @@ def review(identifier: str, request: ReviewRequest):
                 identifier,
             ),
         )
+        if request.outcome == "correct" and not request.guided and not entry["attempt_failed"]:
+            db.execute("UPDATE tactic_progress SET clean_pass_at=COALESCE(clean_pass_at,?) WHERE card_id=?", (now.isoformat(), identifier))
         if s.requeue_today:
             requeue(
                 db,
@@ -1234,43 +1240,30 @@ TACTIC_MOTIFS = [
 @app.get("/api/tactics/catalog")
 def tactics_catalog():
     with connection() as db:
-        progress = {
-            row[0]: row[1]
-            for row in db.execute(
-                "SELECT deck_id,COUNT(*) FROM tactic_progress WHERE clean_pass_at IS NOT NULL GROUP BY deck_id"
-            )
-        }
-    decks = []
-    for motif, name, icon in TACTIC_MOTIFS:
-        stages = []
-        previous_complete = True
-        for tier, label, range_text, size in (
-            ("easy", "Easy", "700–1100", 100),
-            ("medium", "Medium", "1101–1500", 100),
-            ("hard", "Hard", "1501–2000", 100),
-            ("focused", "Focused", "1250–2000", 250),
-        ):
-            deck_id = f"{motif}-{tier}"
-            clean = progress.get(deck_id, 0)
-            unlocked = previous_complete
-            stages.append(
-                {
-                    "id": deck_id,
-                    "label": label,
-                    "range": range_text,
-                    "size": size,
-                    "clean": clean,
-                    "unlocked": unlocked,
-                }
-            )
-            previous_complete = previous_complete and clean >= size
-        decks.append({"id": motif, "name": name, "icon": icon, "stages": stages})
-    return {"default": "hangingPiece", "motifs": decks}
+        return catalog_status(db)
+
+
+@app.put("/api/tactics/activation")
+def tactics_activation(request: TacticActivationRequest):
+    with connection() as db:
+        try:
+            activate(db, request.pack_ids, request.active)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+        return catalog_status(db)
 
 
 @app.post("/api/tactics/attempt")
 def tactic_attempt(request: TacticAttemptRequest):
-    record = {"FEN": request.source_fen, "Moves": " ".join(request.moves)}
+    membership = puzzle_membership().get(request.puzzle_id)
+    if membership:
+        pack_id, record = membership
+        if request.deck_id not in {pack_id, record.get("LegacyDeckId"), f"{record['Motif']}-{record['Difficulty']}"}:
+            raise HTTPException(422, "Puzzle does not belong to this pack")
+    else:
+        # Preserve admission of historical/provider puzzles outside the packaged catalog.
+        pack_id = request.deck_id
+        record = {"FEN": request.source_fen, "Moves": " ".join(request.moves)}
     training_fen, solution = validate_puzzle_record(record)  # ty: ignore[invalid-argument-type]
     now = datetime.now(timezone.utc)
     cid = card_id(training_fen, solution)
@@ -1293,7 +1286,7 @@ def tactic_attempt(request: TacticAttemptRequest):
             "INSERT INTO tactic_progress(puzzle_id,deck_id,card_id,clean_pass_at,admitted_at,admission_mode) VALUES(?,?,?,?,?,?) ON CONFLICT(puzzle_id) DO UPDATE SET clean_pass_at=COALESCE(tactic_progress.clean_pass_at,excluded.clean_pass_at),card_id=excluded.card_id,admitted_at=COALESCE(tactic_progress.admitted_at,excluded.admitted_at),admission_mode=excluded.admission_mode",
             (
                 request.puzzle_id,
-                request.deck_id,
+                pack_id,
                 cid,
                 clean_at,
                 now.isoformat(),
@@ -1355,12 +1348,12 @@ def tactic_attempt(request: TacticAttemptRequest):
 def tactic_progress():
     with connection() as db:
         discovered = db.execute(
-            "SELECT deck_id,puzzle_id,clean_pass_at FROM tactic_progress ORDER BY deck_id,puzzle_id"
+            "SELECT deck_id,puzzle_id,clean_pass_at FROM tactic_progress WHERE clean_pass_at IS NOT NULL OR puzzle_id NOT IN(SELECT puzzle_id FROM tactic_introductions) OR puzzle_id IN(SELECT puzzle_id FROM tactic_discovery_attempts) ORDER BY deck_id,puzzle_id"
         ).fetchall()
     data = {}
     for row in discovered:
         value = data.setdefault(
-            row["deck_id"].replace("-", ":", 1),
+            progress_pack_id(row["puzzle_id"], row["deck_id"]),
             {"index": 0, "clean": 0, "cleanIds": [], "discoveredIds": []},
         )
         puzzle_identity = f"lichess-{row['puzzle_id']}"
@@ -1369,6 +1362,19 @@ def tactic_progress():
         if row["clean_pass_at"]:
             value["cleanIds"].append(puzzle_identity)
         value["clean"] = len(value["cleanIds"])  # ty: ignore[invalid-argument-type]
+    for row in discovered:
+        legacy_key = row["deck_id"].replace("-", ":", 1)
+        canonical = progress_pack_id(row["puzzle_id"], row["deck_id"])
+        if legacy_key != canonical and row["deck_id"] == canonical:
+            data[legacy_key] = data[canonical]
+        elif legacy_key != canonical and row["deck_id"] not in data:
+            data.setdefault(legacy_key, {"index": 0, "clean": 0, "cleanIds": [], "discoveredIds": []})
+            value = data[legacy_key]
+            identity = f"lichess-{row['puzzle_id']}"
+            value["discoveredIds"].append(identity)
+            if row["clean_pass_at"]: value["cleanIds"].append(identity)
+            value["index"] = len(value["discoveredIds"])
+            value["clean"] = len(value["cleanIds"])
     return data
 
 

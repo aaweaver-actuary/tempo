@@ -1,6 +1,8 @@
 services:
   api:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
     environment:
       TEMPO_DB_PATH: /data/tempo.db
       TEMPO_TEST_INSTANCE: disposable
