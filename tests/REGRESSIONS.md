@@ -18,6 +18,8 @@
 | Incremental sync misses late games or creates duplicates | `test_incremental_overlap_catches_late_games_without_duplicates` |
 | Sync silently hides filtered, rejected, and duplicate records | `test_sync_reports_filtered_rejected_and_duplicate_counts` |
 | Game analysis stops on navigation or submits twice after reload | `test_background_game_analysis_resumes_after_reload_and_submits_once` |
+| Repertoire identity is lost after a deviation or transposition | `test_repertoire_comparison_retains_identity_across_deviation_and_transposition` |
+| A repertoire line ending is reported as a player error | `test_line_ending_is_out_of_book_rather_than_a_player_deviation` |
 | Board clipped at narrow viewport | `local import respects the daily limit; Black prompts and Builder flip survive Settings and refresh`; `high-DPI board geometry stays aligned through narrow resize and orientation flips` |
 | Repair board / keyboard navigation inconsistent | `repair uses the shared board and arrows navigate the complete solution; Escape closes` |
 | Random endgames start illegally | `random endgames never leave the nonmoving king in check` |

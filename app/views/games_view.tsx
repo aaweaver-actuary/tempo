@@ -236,8 +236,8 @@ export default function GamesView({
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [selected?.moves.length]);
-  const applicable = games.filter((game) => game.status !== "no repertoire");
-  const covered = applicable.filter((game) => game.status === "covered").length;
+  const matchedDecisions = games.reduce((total, game) => total + (game.matchedPlayerDecisions ?? 0), 0);
+  const repertoireOpportunities = games.reduce((total, game) => total + (game.repertoireOpportunities ?? 0), 0);
 
   useEffect(() => {
     if (!useSharedBoard) return;
@@ -390,9 +390,11 @@ export default function GamesView({
                   className={`${index < cursor ? "shown" : ""}${index === selected.flagPly ? " flagged" : ""}`}
                   onClick={() => setCursor(index + 1)}
                   key={index}
+                  title={selected.timeline?.find((event) => event.ply === index)?.kind}
                 >
                   {index % 2 === 0 ? `${Math.floor(index / 2) + 1}.` : ""}
                   {move}
+                  {selected.timeline?.some((event) => event.ply === index) ? " •" : ""}
                 </button>
               ))}
             </div>
@@ -421,12 +423,12 @@ export default function GamesView({
             <article>
               <span>Repertoire adherence</span>
               <strong>
-                {applicable.length
-                  ? `${Math.round((covered / applicable.length) * 100)}%`
+                {repertoireOpportunities
+                  ? `${Math.round((matchedDecisions / repertoireOpportunities) * 100)}%`
                   : "—"}
               </strong>
               <small>
-                {covered} of {applicable.length} applicable games
+                {matchedDecisions} of {repertoireOpportunities} player decisions
               </small>
             </article>
             {["opponent gap", "player deviation"].map((value) => (

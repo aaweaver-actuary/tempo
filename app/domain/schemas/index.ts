@@ -452,6 +452,15 @@ export const gameRecordSchema = z.strictObject({
   divergence_fen: z.string().nullable().optional(),
   expected_json: z.string().nullable().optional(),
   actual_uci: z.string().nullable().optional(),
+  deviation_card_id: z.string().nullable().optional(),
+  matched_player_decisions: integer.nullable().optional(),
+  repertoire_opportunities: integer.nullable().optional(),
+  deepest_covered_ply: integer.nullable().optional(),
+  first_opponent_gap_ply: integer.nullable().optional(),
+  out_of_book_ply: integer.nullable().optional(),
+  timeline_json: z.string().nullable().optional(),
+  timeline: z.array(z.looseObject({ ply: integer, kind: z.string() })).optional(),
+  adherence: z.number().nullable().optional(),
 });
 export const gamesSummarySchema = z.strictObject({
   total: integer,

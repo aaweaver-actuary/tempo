@@ -313,6 +313,28 @@ def initialize() -> None:
             updated_at TEXT NOT NULL
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS game_repertoire_matches (
+            game_id TEXT NOT NULL REFERENCES imported_games(id) ON DELETE CASCADE,
+            repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+            is_primary INTEGER NOT NULL DEFAULT 0,
+            classification TEXT NOT NULL,
+            matched_player_decisions INTEGER NOT NULL DEFAULT 0,
+            repertoire_opportunities INTEGER NOT NULL DEFAULT 0,
+            deepest_covered_ply INTEGER NOT NULL DEFAULT 0,
+            first_player_deviation_ply INTEGER,
+            first_player_deviation_fen TEXT,
+            first_player_deviation_expected_json TEXT NOT NULL DEFAULT '[]',
+            first_player_deviation_actual_uci TEXT,
+            deviation_card_id TEXT,
+            first_opponent_gap_ply INTEGER,
+            out_of_book_ply INTEGER,
+            timeline_json TEXT NOT NULL DEFAULT '[]',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(game_id,repertoire_id)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_game_repertoire_matches_primary ON game_repertoire_matches(game_id,is_primary)",
     ]
     with connection() as database:
         database.execute("BEGIN IMMEDIATE")

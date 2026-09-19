@@ -47,6 +47,7 @@ from .services.endgames import (
 )
 from .services.game_analysis import classify_swings
 from .services.game_sync import sync_providers
+from .services.repertoire_comparison import compare_all_games
 from .services.puzzles import validate_puzzle_record
 
 
@@ -357,6 +358,7 @@ async def import_pgn(
                                WHERE q.queue_date=? AND q.status='queued' AND rc.repertoire_id=?""",
             (date.today().isoformat(), rid),
         ).fetchone()[0]
+    compare_all_games()
     return ImportResult(
         repertoire_id=rid,
         source_name=file.filename,
@@ -544,6 +546,7 @@ def migration_snapshot():
         "game_move_analysis",
         "game_analysis_jobs",
         "repertoire_comparisons",
+        "game_repertoire_matches",
         "game_sync_state",
     ]
     with connection() as db:
@@ -1533,71 +1536,6 @@ def accounts(a: AccountSettings):
     return a
 
 
-def compare_games():
-    """Classify the first game/repertoire divergence without changing card history."""
-    with connection() as db:
-        lines = [
-            {**dict(r), "moves": json.loads(r["moves_json"])}
-            for r in db.execute("SELECT * FROM repertoire_lines")
-        ]
-        games = [
-            {**dict(r), "moves": json.loads(r["moves_json"])}
-            for r in db.execute("SELECT * FROM imported_games")
-        ]
-        for game in games:
-            candidates = [
-                line
-                for line in lines
-                if line["trained_color"] == game["color"]
-                and line["start_fen"].split(" ")[:4] == game["start_fen"].split(" ")[:4]
-            ]
-            classification = "no applicable repertoire"
-            divergence = None
-            expected = []
-            board = chess.Board(game["start_fen"])
-            if candidates:
-                classification = "covered"
-                for ply, actual in enumerate(game["moves"]):
-                    expected = sorted(
-                        {
-                            line["moves"][ply]
-                            for line in candidates
-                            if len(line["moves"]) > ply
-                        }
-                    )
-                    matching = [
-                        line
-                        for line in candidates
-                        if len(line["moves"]) > ply and line["moves"][ply] == actual
-                    ]
-                    if not matching:
-                        classification = (
-                            "player deviation"
-                            if (board.turn == chess.WHITE) == (game["color"] == "white")
-                            else "opponent repertoire gap"
-                        )
-                        divergence = (ply, board.fen(), actual)
-                        break
-                    candidates = matching
-                    try:
-                        board.push_uci(actual)
-                    except ValueError:
-                        break
-            db.execute(
-                "INSERT INTO repertoire_comparisons(game_id,repertoire_id,classification,divergence_ply,divergence_fen,expected_json,actual_uci,updated_at) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(game_id) DO UPDATE SET repertoire_id=excluded.repertoire_id,classification=excluded.classification,divergence_ply=excluded.divergence_ply,divergence_fen=excluded.divergence_fen,expected_json=excluded.expected_json,actual_uci=excluded.actual_uci,updated_at=excluded.updated_at",
-                (
-                    game["id"],
-                    candidates[0]["repertoire_id"] if candidates else None,
-                    classification,
-                    divergence[0] if divergence else None,
-                    divergence[1] if divergence else None,
-                    json.dumps(expected),
-                    divergence[2] if divergence else None,
-                    datetime.now(timezone.utc).isoformat(),
-                ),
-            )
-
-
 SYNC_LOCK = asyncio.Lock()
 
 
@@ -1626,7 +1564,7 @@ async def sync(request: GameSyncRequest):
                     lichess_username=users[0][1], chesscom_username=users[1][1]
                 )
             )
-            compare_games()
+            compare_all_games()
             return result
         except (httpx.HTTPError, HTTPException) as error:
             code = error.status_code if isinstance(error, HTTPException) else 502
@@ -1649,7 +1587,7 @@ async def sync(request: GameSyncRequest):
                                 provider,
                             ),
                         )
-            compare_games()
+            compare_all_games()
             raise HTTPException(code, message) from error
 
 
@@ -1840,12 +1778,31 @@ def save_game_analysis(game_id: str, request: GameAnalysisRequest):
 def summary():
     with connection() as db:
         rows = db.execute(
-            "SELECT g.*,c.repertoire_id,c.classification,c.divergence_ply,c.divergence_fen,c.expected_json,c.actual_uci FROM imported_games g LEFT JOIN repertoire_comparisons c ON c.game_id=g.id ORDER BY played_at DESC"
+            """SELECT g.*,m.repertoire_id,m.classification,
+                      m.first_player_deviation_ply AS divergence_ply,
+                      m.first_player_deviation_fen AS divergence_fen,
+                      m.first_player_deviation_expected_json AS expected_json,
+                      m.first_player_deviation_actual_uci AS actual_uci,
+                      m.deviation_card_id,m.matched_player_decisions,m.repertoire_opportunities,
+                      m.deepest_covered_ply,m.first_opponent_gap_ply,m.out_of_book_ply,m.timeline_json
+               FROM imported_games g
+               LEFT JOIN game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
+               ORDER BY played_at DESC"""
         ).fetchall()
     return {
         "total": len(rows),
         "games": [
-            {**dict(row), "moves": json.loads(row["moves_json"])} for row in rows
+            {
+                **dict(row),
+                "moves": json.loads(row["moves_json"]),
+                "timeline": json.loads(row["timeline_json"] or "[]"),
+                "adherence": (
+                    row["matched_player_decisions"] / row["repertoire_opportunities"]
+                    if row["repertoire_opportunities"]
+                    else None
+                ),
+            }
+            for row in rows
         ],
     }
 
@@ -1854,7 +1811,15 @@ def summary():
 def game_detail(game_id: str):
     with connection() as db:
         row = db.execute(
-            "SELECT g.*,c.classification,c.divergence_ply,c.divergence_fen,c.expected_json,c.actual_uci FROM imported_games g LEFT JOIN repertoire_comparisons c ON c.game_id=g.id WHERE g.id=?",
+            """SELECT g.*,m.repertoire_id,m.classification,
+                      m.first_player_deviation_ply AS divergence_ply,
+                      m.first_player_deviation_fen AS divergence_fen,
+                      m.first_player_deviation_expected_json AS expected_json,
+                      m.first_player_deviation_actual_uci AS actual_uci,
+                      m.deviation_card_id,m.matched_player_decisions,m.repertoire_opportunities,
+                      m.deepest_covered_ply,m.first_opponent_gap_ply,m.out_of_book_ply,m.timeline_json
+               FROM imported_games g LEFT JOIN game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
+               WHERE g.id=?""",
             (game_id,),
         ).fetchone()
     if not row:
@@ -1862,4 +1827,10 @@ def game_detail(game_id: str):
     result = dict(row)
     result["moves"] = json.loads(result.pop("moves_json"))
     result["expected"] = json.loads(result.pop("expected_json") or "[]")
+    result["timeline"] = json.loads(result.pop("timeline_json") or "[]")
+    result["adherence"] = (
+        result["matched_player_decisions"] / result["repertoire_opportunities"]
+        if result["repertoire_opportunities"]
+        else None
+    )
     return result

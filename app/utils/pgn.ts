@@ -32,6 +32,7 @@ function normalizeCoverageStatus(value: unknown): GameViewRecord["status"] {
   if (["opponent gap", "opponent repertoire gap"].includes(normalized))
     return "opponent gap";
   if (normalized === "player deviation") return "player deviation";
+  if (normalized === "out of book") return "out of book";
   if (["no repertoire", "no applicable repertoire"].includes(normalized))
     return "no repertoire";
   return "unknown";
@@ -111,5 +112,21 @@ export function importGameAndReformatToGameViewRecord(
     repertoireId: value.repertoire_id
       ? asRepertoireId(String(value.repertoire_id))
       : undefined,
+    matchedPlayerDecisions: Number(value.matched_player_decisions ?? 0),
+    repertoireOpportunities: Number(value.repertoire_opportunities ?? 0),
+    deepestCoveredPly: Number(value.deepest_covered_ply ?? 0),
+    firstOpponentGapPly: typeof value.first_opponent_gap_ply === "number" ? value.first_opponent_gap_ply : undefined,
+    outOfBookPly: typeof value.out_of_book_ply === "number" ? value.out_of_book_ply : undefined,
+    adherence: typeof value.adherence === "number" ? value.adherence : undefined,
+    timeline: Array.isArray(value.timeline)
+      ? value.timeline.flatMap((event) => {
+          if (!event || typeof event !== "object") return [];
+          const candidate = event as Record<string, unknown>;
+          return typeof candidate.ply === "number" && typeof candidate.kind === "string"
+            ? [{ ply: candidate.ply, kind: candidate.kind }]
+            : [];
+        })
+      : [],
+    deviationCardId: value.deviation_card_id ? String(value.deviation_card_id) : undefined,
   };
 }

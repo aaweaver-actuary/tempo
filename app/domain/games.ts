@@ -32,6 +32,7 @@ export enum GameCoverageStatus {
   Covered = "covered",
   OpponentGap = "opponent gap",
   PlayerDeviation = "player deviation",
+  OutOfBook = "out of book",
   NoRepertoire = "no repertoire",
   Unknown = "unknown",
 }
@@ -57,4 +58,12 @@ export type GameViewRecord = {
   startFen: FenString;
   analysisState?: GameAnalysisStateValue;
   repertoireId?: RepertoireId;
+  matchedPlayerDecisions?: number;
+  repertoireOpportunities?: number;
+  deepestCoveredPly?: number;
+  firstOpponentGapPly?: number;
+  outOfBookPly?: number;
+  adherence?: number;
+  timeline?: Array<{ ply: number; kind: string }>;
+  deviationCardId?: string;
 };
