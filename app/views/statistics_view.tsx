@@ -23,7 +23,6 @@ export default function StatisticsView() {
 
   useEffect(() => {
     let active = true;
-    setError("");
     void Promise.all([
       readWorkspaceData(
         `${API_URL}/api/statistics/overview?window_days=${windowDays}`,
@@ -37,6 +36,7 @@ export default function StatisticsView() {
       if (!active) return;
       setOverview(nextOverview);
       setBreakdown(nextBreakdown);
+      setError("");
     }).catch((reason) => {
       if (active) setError(reason instanceof Error ? reason.message : "Statistics unavailable.");
     });

@@ -400,6 +400,7 @@ export default function BuilderView({
     orientation,
     selectedRepertoire,
     startingFen,
+    initialSession?.sourceGapId,
   ]);
 
   useEffect(() => {

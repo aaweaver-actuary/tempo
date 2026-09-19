@@ -97,7 +97,6 @@ export default function GamesView({
   const local = usesLocalApi();
   const tools = useTaskTabs(["Moves", "Analysis", "Library"], "Moves", "tempo-games-tools");
   const [loaded, setLoaded] = useState(!local);
-  const [libraryPage, setLibraryPage] = useState(0);
   const [pageCursor, setPageCursor] = useState<string | null>(null);
   const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([]);
   const [nextPageCursor, setNextPageCursor] = useState<string | null>(null);
@@ -699,7 +698,7 @@ export default function GamesView({
                   aria-label={`Filter ${field}`}
                   value={filters[field]}
                   onChange={(event) => {
-                    setLibraryPage(0); setPageCursor(null); setCursorHistory([]);
+                    setPageCursor(null); setCursorHistory([]);
                     setFilters((current) => ({ ...current, [field]: event.target.value }));
                   }}
                 >
@@ -717,7 +716,7 @@ export default function GamesView({
               type="date"
               value={filters.from}
               onChange={(event) =>
-                { setPageCursor(null); setCursorHistory([]); setLibraryPage(0); setFilters((current) => ({
+                { setPageCursor(null); setCursorHistory([]); setFilters((current) => ({
                   ...current, from: event.target.value,
                 })); }
               }
@@ -758,12 +757,10 @@ export default function GamesView({
               const previous = cursorHistory[cursorHistory.length - 1] ?? null;
               setCursorHistory((history) => history.slice(0, -1));
               setPageCursor(previous);
-              setLibraryPage((value) => Math.max(0, value - 1));
             }}>Previous games</button>
             <button disabled={!nextPageCursor} onClick={() => {
               setCursorHistory((history) => [...history, pageCursor]);
               setPageCursor(nextPageCursor);
-              setLibraryPage((value) => value + 1);
             }}>Next games</button>
           </div>
           </div>
