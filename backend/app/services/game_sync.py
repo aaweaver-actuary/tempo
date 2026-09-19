@@ -115,6 +115,14 @@ def _persist_game_once(record: GameRecord) -> tuple[str, str]:
                     "INSERT OR IGNORE INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
                     (existing["id"], datetime.now(timezone.utc).isoformat()),
                 )
+                database.execute(
+                    "DELETE FROM daily_chess_snapshots WHERE local_day=?",
+                    (record.played_at[:10],),
+                )
+                database.execute(
+                    "DELETE FROM daily_chess_insights WHERE local_day=?",
+                    (record.played_at[:10],),
+                )
                 return "updated", existing["id"]
             database.execute(
                 "INSERT OR IGNORE INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
@@ -133,6 +141,14 @@ def _persist_game_once(record: GameRecord) -> tuple[str, str]:
         database.execute(
             "INSERT INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
             (f"{record.provider}:{record.provider_game_id}", datetime.now(timezone.utc).isoformat()),
+        )
+        database.execute(
+            "DELETE FROM daily_chess_snapshots WHERE local_day=?",
+            (record.played_at[:10],),
+        )
+        database.execute(
+            "DELETE FROM daily_chess_insights WHERE local_day=?",
+            (record.played_at[:10],),
         )
         return "inserted", f"{record.provider}:{record.provider_game_id}"
 

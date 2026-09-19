@@ -6,6 +6,9 @@ from fastapi.testclient import TestClient
 from app import database
 from app.main import app
 from app.services.statistics import refresh_game_features
+from app.services.statistics import refresh_daily_snapshot
+from app.services.game_record import GameRecord
+from app.services.game_sync import _persist_game_once
 
 
 START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -103,3 +106,55 @@ def test_opening_and_endgame_evaluations_use_player_perspective(tmp_path, monkey
             feature = db.execute("SELECT * FROM game_feature_rows WHERE game_id='perspective'").fetchone()
             assert feature["opening_exit_eval_cp"] == -200
             assert feature["endgame_entry_eval_cp"] == -200
+
+
+def test_daily_insights_wait_for_sync_and_analysis_completion(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    local_day = "2026-09-18"
+    with TestClient(app):
+        with database.connection() as db:
+            db.execute("INSERT INTO game_accounts(provider,username) VALUES('lichess','TempoPlayer')")
+            db.execute(
+                """INSERT INTO game_sync_state(provider,username,status,last_success_at)
+                   VALUES('lichess','TempoPlayer','idle','2026-09-19T01:00:00+00:00')"""
+            )
+            _game(db, "daily-pending", "1-0", played_at="2026-09-18T12:00:00+00:00")
+        waiting = refresh_daily_snapshot(local_day)
+        assert waiting["status"] == "waiting-analysis"
+        assert waiting["blocked_game_ids"] == ["daily-pending"]
+        with database.connection() as db:
+            db.execute(
+                """INSERT INTO game_move_analysis(
+                       game_id,ply,eval_before_cp,eval_after_cp,loss_cp,depth,
+                       principal_variation_json,mover_color,is_player_move,actual_move_uci
+                   ) VALUES('daily-pending',0,0,-10,10,8,'[]','white',1,'e2e4')"""
+            )
+        refresh_game_features("daily-pending")
+        complete = refresh_daily_snapshot(local_day)
+        assert complete["status"] == "complete"
+        assert complete["games"] == 1
+
+
+def test_late_game_arrival_invalidates_affected_daily_snapshot(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app):
+        with database.connection() as db:
+            db.execute(
+                """INSERT INTO daily_chess_snapshots(local_day,snapshot_version,metrics_json,status,updated_at)
+                   VALUES('2026-09-18',1,'{}','complete',?)""",
+                (datetime.now(timezone.utc).isoformat(),),
+            )
+            db.execute(
+                """INSERT INTO daily_chess_insights(id,local_day,kind,evidence_json,status,created_at,updated_at)
+                   VALUES('late-insight','2026-09-18','outcome trend','{}','pending',?,?)""",
+                (datetime.now(timezone.utc).isoformat(), datetime.now(timezone.utc).isoformat()),
+            )
+        _persist_game_once(GameRecord(
+            provider="lichess", username="TempoPlayer", provider_game_id="late",
+            played_at="2026-09-18T23:00:00+00:00", speed="rapid", rated=True,
+            color="white", result="1-0", start_fen=START, uci_moves=["e2e4"],
+            content_hash="late-hash",
+        ))
+        with database.connection() as db:
+            assert db.execute("SELECT COUNT(*) FROM daily_chess_snapshots").fetchone()[0] == 0
+            assert db.execute("SELECT COUNT(*) FROM daily_chess_insights").fetchone()[0] == 0

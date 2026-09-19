@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import json
 import math
+import hashlib
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import chess
@@ -223,3 +224,84 @@ def statistics_breakdown(dimension: str, window_days: int) -> dict:
          "tactical_opportunities": row["tactical_opportunities"] or 0}
         for row in rows
     ]}
+
+
+def refresh_daily_snapshot(local_day: str) -> dict:
+    """Materialize a day only after provider watermarks and analyses are settled."""
+    datetime.fromisoformat(local_day)
+    next_day = (datetime.fromisoformat(local_day).date() + timedelta(days=1)).isoformat()
+    with connection() as database:
+        configured_providers = database.execute(
+            "SELECT provider FROM game_accounts WHERE trim(username)!=''"
+        ).fetchall()
+        missing_watermarks = []
+        for provider in configured_providers:
+            state = database.execute(
+                "SELECT last_success_at FROM game_sync_state WHERE provider=?",
+                (provider["provider"],),
+            ).fetchone()
+            if not state or not state["last_success_at"] or state["last_success_at"][:10] < next_day:
+                missing_watermarks.append(provider["provider"])
+        eligible_games = database.execute(
+            """SELECT g.id,g.analysis_state,g.adaptive_excluded,f.game_id AS feature_game_id
+                 FROM imported_games g LEFT JOIN game_feature_rows f ON f.game_id=g.id
+                WHERE substr(g.played_at,1,10)=?""",
+            (local_day,),
+        ).fetchall()
+        blocked_games = [
+            row["id"] for row in eligible_games
+            if not row["adaptive_excluded"]
+            and row["analysis_state"] not in {"failed"}
+            and row["feature_game_id"] is None
+        ]
+        now = datetime.now(timezone.utc).isoformat()
+        if missing_watermarks or blocked_games:
+            status = "waiting-sync" if missing_watermarks else "waiting-analysis"
+            payload = {
+                "local_day": local_day, "status": status,
+                "missing_provider_watermarks": missing_watermarks,
+                "blocked_game_ids": blocked_games,
+            }
+            database.execute(
+                """INSERT INTO daily_chess_snapshots(local_day,snapshot_version,metrics_json,status,updated_at)
+                   VALUES(?,1,?,?,?) ON CONFLICT(local_day) DO UPDATE SET
+                   metrics_json=excluded.metrics_json,status=excluded.status,updated_at=excluded.updated_at""",
+                (local_day, json.dumps(payload), status, now),
+            )
+            return payload
+        features = database.execute(
+            "SELECT * FROM game_feature_rows WHERE local_day=?", (local_day,)
+        ).fetchall()
+        games = len(features)
+        score_points = sum(row["outcome_score"] for row in features)
+        opportunities = sum(row["tactical_opportunities"] for row in features)
+        found = sum(row["tactical_found"] for row in features)
+        payload = {
+            "local_day": local_day, "status": "complete", "games": games,
+            "score": score_points / games if games else None,
+            "tactical_found": found, "tactical_opportunities": opportunities,
+        }
+        database.execute(
+            """INSERT INTO daily_chess_snapshots(local_day,snapshot_version,metrics_json,status,updated_at)
+               VALUES(?,1,?,'complete',?) ON CONFLICT(local_day) DO UPDATE SET
+               metrics_json=excluded.metrics_json,status='complete',updated_at=excluded.updated_at""",
+            (local_day, json.dumps(payload), now),
+        )
+        if games >= 20:
+            insight_id = hashlib.sha256(f"{local_day}\0outcome-trend\01".encode()).hexdigest()
+            database.execute(
+                """INSERT OR IGNORE INTO daily_chess_insights(
+                       id,local_day,kind,evidence_json,status,created_at,updated_at
+                   ) VALUES(?,?, 'outcome trend',?,'pending',?,?)""",
+                (insight_id, local_day, json.dumps(payload), now, now),
+            )
+        missed = opportunities - found
+        if opportunities >= 10 and missed >= 3:
+            insight_id = hashlib.sha256(f"{local_day}\0tactical-focus\01".encode()).hexdigest()
+            database.execute(
+                """INSERT OR IGNORE INTO daily_chess_insights(
+                       id,local_day,kind,evidence_json,status,created_at,updated_at
+                   ) VALUES(?,?, 'tactical focus',?,'pending',?,?)""",
+                (insight_id, local_day, json.dumps(payload), now, now),
+            )
+        return payload

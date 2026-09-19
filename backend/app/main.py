@@ -70,7 +70,7 @@ from .services.endgames import (
 )
 from .services.game_analysis import classify_swings
 from .services.game_findings import motif_recommendations, refresh_game_findings
-from .services.statistics import statistics_breakdown, statistics_overview
+from .services.statistics import refresh_daily_snapshot, statistics_breakdown, statistics_overview
 from .services.guided_review import create_or_resume_session, read_session, submit_attempt
 from .services.game_sync_coordinator import (
     coordinator,
@@ -2608,6 +2608,26 @@ def chess_statistics_breakdown(dimension: str = "color", window_days: int = 30):
         return statistics_breakdown(dimension, window_days)
     except ValueError as error:
         raise HTTPException(422, str(error)) from error
+
+
+@app.post("/api/statistics/daily/{local_day}/refresh")
+def refresh_chess_statistics_day(local_day: str):
+    try:
+        return refresh_daily_snapshot(local_day)
+    except ValueError as error:
+        raise HTTPException(422, "Invalid local day") from error
+
+
+@app.get("/api/statistics/insights")
+def chess_statistics_insights(status: str = "pending"):
+    if status not in {"pending", "accepted", "ignored"}:
+        raise HTTPException(422, "Unknown insight status")
+    with connection() as database:
+        rows = database.execute(
+            "SELECT * FROM daily_chess_insights WHERE status=? ORDER BY local_day DESC,kind",
+            (status,),
+        ).fetchall()
+    return {"insights": [{**dict(row), "evidence": json.loads(row["evidence_json"])} for row in rows]}
 
 
 @app.post("/api/games/{game_id:path}/guided-review")

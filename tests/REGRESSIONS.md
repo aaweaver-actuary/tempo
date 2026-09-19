@@ -49,6 +49,8 @@
 | A guided correction silently changes FSRS scheduling | `test_guided_review_resumes_and_correction_does_not_change_fsrs` |
 | Games summary transports moves, timelines, or findings for every library row | `test_games_summary_pagination_omits_heavy_fields_and_caps_rows` |
 | A large Games library renders more than fifty rows at once | `test_games_summary_pagination_omits_heavy_fields_and_caps_rows` |
+| Daily chess insights run before sync watermarks and game analysis settle | `test_daily_insights_wait_for_sync_and_analysis_completion` |
+| A late-arriving game leaves a stale daily snapshot or insight | `test_late_game_arrival_invalidates_affected_daily_snapshot` |
 | Ignoring gameplay evidence changes scheduling | `test_ignored_gameplay_finding_never_changes_card_scheduling` |
 | A confirmed gameplay lapse double-counts or fails to queue | `test_confirmed_gameplay_lapse_records_exactly_one_again_and_queues_the_card` |
 | First big mistake creates duplicate or unpreviewed cards | `test_first_big_mistake_creates_a_previewed_deduplicated_middlegame_card` |
