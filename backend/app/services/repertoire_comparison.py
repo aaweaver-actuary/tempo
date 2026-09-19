@@ -4,11 +4,22 @@ from __future__ import annotations
 
 from collections import defaultdict
 from datetime import datetime, timezone
+import hashlib
 import json
+import threading
 
 import chess
 
 from ..database import connection
+from .activity_gate import activity_gate
+
+
+_index_lock = threading.Lock()
+_cached_signature = ""
+_cached_repertoires: list[dict] = []
+_cached_graphs_by_repertoire: dict[str, tuple[dict[str, set[str]], set[str]]] = {}
+_cached_colors_by_repertoire: dict[str, set[str]] = {}
+_cached_card_positions: dict[tuple[str, str, str], str] = {}
 
 
 def canonical_fen(fen: str) -> str:
@@ -35,28 +46,72 @@ def _position_graph(lines: list[dict]) -> tuple[dict[str, set[str]], set[str]]:
     return expected_moves, known_positions
 
 
-def _card_for_deviation(database, repertoire_id: str, fen: str, expected: set[str]) -> str | None:
-    rows = database.execute(
-        """SELECT c.id,c.start_fen,c.moves_json FROM cards c
-           JOIN repertoire_cards rc ON rc.card_id=c.id
-           WHERE rc.repertoire_id=? AND c.archived=0""",
-        (repertoire_id,),
-    ).fetchall()
-    target = canonical_fen(fen)
+def _card_position_index(rows: list[dict]) -> dict[tuple[str, str, str], str]:
+    positions: dict[tuple[str, str, str], str] = {}
     for row in rows:
         try:
             board = chess.Board(row["start_fen"])
             for move_uci in json.loads(row["moves_json"]):
-                if canonical_fen(board.fen()) == target and move_uci in expected:
-                    return row["id"]
+                positions.setdefault(
+                    (row["repertoire_id"], canonical_fen(board.fen()), move_uci),
+                    row["id"],
+                )
                 board.push_uci(move_uci)
         except (ValueError, TypeError, json.JSONDecodeError):
             continue
-    return None
+    return positions
 
 
-def _compare_game_to_repertoire(database, game: dict, repertoire: dict, lines: list[dict]) -> dict:
-    expected_by_position, known_positions = _position_graph(lines)
+def _load_repertoire_index() -> tuple[list[dict], dict[str, tuple[dict[str, set[str]], set[str]]], dict[str, set[str]], dict[tuple[str, str, str], str]]:
+    global _cached_signature, _cached_repertoires, _cached_graphs_by_repertoire
+    global _cached_colors_by_repertoire, _cached_card_positions
+    with connection() as database:
+        repertoires = [dict(row) for row in database.execute(
+            "SELECT id,is_main FROM repertoires WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__') ORDER BY id"
+        )]
+        line_rows = [dict(row) for row in database.execute(
+            "SELECT id,repertoire_id,trained_color,start_fen,moves_json FROM repertoire_lines ORDER BY id"
+        )]
+        card_rows = [dict(row) for row in database.execute(
+            """SELECT rc.repertoire_id,c.id,c.start_fen,c.moves_json FROM cards c
+               JOIN repertoire_cards rc ON rc.card_id=c.id
+               WHERE c.archived=0 ORDER BY rc.repertoire_id,c.id"""
+        )]
+    signature = hashlib.sha256(
+        json.dumps([repertoires, line_rows, card_rows], sort_keys=True).encode()
+    ).hexdigest()
+    with _index_lock:
+        if signature == _cached_signature:
+            return (
+                _cached_repertoires,
+                _cached_graphs_by_repertoire,
+                _cached_colors_by_repertoire,
+                _cached_card_positions,
+            )
+        lines_by_repertoire: dict[str, list[dict]] = defaultdict(list)
+        colors_by_repertoire: dict[str, set[str]] = defaultdict(set)
+        for row in line_rows:
+            line = {**row, "moves": json.loads(row["moves_json"])}
+            lines_by_repertoire[row["repertoire_id"]].append(line)
+            colors_by_repertoire[row["repertoire_id"]].add(row["trained_color"])
+        _cached_signature = signature
+        _cached_repertoires = repertoires
+        _cached_graphs_by_repertoire = {
+            repertoire_id: _position_graph(lines)
+            for repertoire_id, lines in lines_by_repertoire.items()
+        }
+        _cached_colors_by_repertoire = dict(colors_by_repertoire)
+        _cached_card_positions = _card_position_index(card_rows)
+        return (
+            _cached_repertoires,
+            _cached_graphs_by_repertoire,
+            _cached_colors_by_repertoire,
+            _cached_card_positions,
+        )
+
+
+def _compare_game_to_repertoire(game: dict, repertoire: dict, graph: tuple[dict[str, set[str]], set[str]], card_positions: dict[tuple[str, str, str], str]) -> dict:
+    expected_by_position, known_positions = graph
     board = chess.Board(game["start_fen"])
     player_is_white = game["color"] == "white"
     matched = opportunities = deepest = 0
@@ -121,39 +176,50 @@ def _compare_game_to_repertoire(database, game: dict, repertoire: dict, lines: l
         "opportunities": opportunities,
         "deepest": deepest,
         "deviation": player_deviation,
-        "deviation_card_id": _card_for_deviation(database, repertoire["id"], player_deviation["fen"], expected) if player_deviation else None,
+        "deviation_card_id": next(
+            (
+                card_positions[(repertoire["id"], canonical_fen(player_deviation["fen"]), move)]
+                for move in sorted(expected)
+                if (repertoire["id"], canonical_fen(player_deviation["fen"]), move) in card_positions
+            ),
+            None,
+        ) if player_deviation else None,
         "opponent_gap": opponent_gap,
         "out_of_book": out_of_book,
         "timeline": timeline,
     }
 
 
-def compare_games(game_ids: list[str] | None = None) -> None:
+def compare_games(
+    game_ids: list[str] | None = None, *, background: bool = False
+) -> None:
     now = datetime.now(timezone.utc).isoformat()
+    repertoires, graphs_by_repertoire, colors_by_repertoire, card_positions = _load_repertoire_index()
     with connection() as database:
-        repertoires = [dict(row) for row in database.execute(
-            "SELECT id,is_main FROM repertoires WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__')"
-        )]
-        line_rows = database.execute("SELECT * FROM repertoire_lines").fetchall()
-        lines_by_repertoire: dict[str, list[dict]] = defaultdict(list)
-        colors_by_repertoire: dict[str, set[str]] = defaultdict(set)
-        for row in line_rows:
-            line = {**dict(row), "moves": json.loads(row["moves_json"])}
-            lines_by_repertoire[row["repertoire_id"]].append(line)
-            colors_by_repertoire[row["repertoire_id"]].add(row["trained_color"])
         where = "" if game_ids is None else f" WHERE id IN ({','.join('?' for _ in game_ids)})"
         games = [
             {**dict(row), "moves": json.loads(row["moves_json"])}
             for row in database.execute(f"SELECT * FROM imported_games{where}", game_ids or [])
         ]
-        for game in games:
+    computed: list[tuple[dict, list[dict]]] = []
+    for game in games:
+        matches = [
+            _compare_game_to_repertoire(
+                game,
+                repertoire,
+                graphs_by_repertoire.get(repertoire["id"], ({}, set())),
+                card_positions,
+            )
+            for repertoire in repertoires
+            if game["color"] in colors_by_repertoire.get(repertoire["id"], set())
+        ]
+        matches.sort(key=lambda item: (-item["matched"], -item["deepest"], -item["is_main"], item["repertoire_id"]))
+        computed.append((game, matches))
+    if background:
+        activity_gate.wait_for_foreground()
+    with connection(background=background) as database:
+        for game, matches in computed:
             database.execute("DELETE FROM game_repertoire_matches WHERE game_id=?", (game["id"],))
-            matches = [
-                _compare_game_to_repertoire(database, game, repertoire, lines_by_repertoire[repertoire["id"]])
-                for repertoire in repertoires
-                if game["color"] in colors_by_repertoire[repertoire["id"]]
-            ]
-            matches.sort(key=lambda item: (-item["matched"], -item["deepest"], -item["is_main"], item["repertoire_id"]))
             for index, match in enumerate(matches):
                 deviation = match["deviation"]
                 database.execute(

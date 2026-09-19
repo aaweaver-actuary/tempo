@@ -464,7 +464,6 @@ export const gameRecordSchema = z.strictObject({
   result: z.string(),
   start_fen: fenStringSchema,
   moves: z.array(uciMoveSchema),
-  moves_json: z.string().optional(),
   game_url: z.string().nullable().optional(),
   opening_name: z.string().nullable().optional(),
   analysis_state: z
@@ -477,7 +476,7 @@ export const gameRecordSchema = z.strictObject({
   classification: z.string().nullable().optional(),
   divergence_ply: integer.nullable().optional(),
   divergence_fen: z.string().nullable().optional(),
-  expected_json: z.string().nullable().optional(),
+  expected: z.array(uciMoveSchema).optional(),
   actual_uci: z.string().nullable().optional(),
   deviation_card_id: z.string().nullable().optional(),
   matched_player_decisions: integer.nullable().optional(),
@@ -485,13 +484,12 @@ export const gameRecordSchema = z.strictObject({
   deepest_covered_ply: integer.nullable().optional(),
   first_opponent_gap_ply: integer.nullable().optional(),
   out_of_book_ply: integer.nullable().optional(),
-  timeline_json: z.string().nullable().optional(),
   timeline: z.array(z.looseObject({ ply: integer, kind: z.string() })).optional(),
   adherence: z.number().nullable().optional(),
 });
 export const gamesSummarySchema = z.strictObject({
   total: integer,
-  games: z.array(z.unknown()),
+  games: z.array(gameRecordSchema),
 });
 export const gameAnalysisClaimSchema = z.strictObject({
   job: z.strictObject({

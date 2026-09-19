@@ -10,12 +10,12 @@ DB_PATH = Path(os.getenv("TEMPO_DB_PATH", str(Path(os.getenv("XDG_DATA_HOME", Pa
 
 
 @contextmanager
-def connection() -> Iterator[sqlite3.Connection]:
+def connection(*, background: bool = False) -> Iterator[sqlite3.Connection]:
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     database = sqlite3.connect(DB_PATH)
     database.row_factory = sqlite3.Row
     database.execute("PRAGMA foreign_keys = ON")
-    database.execute("PRAGMA busy_timeout = 5000")
+    database.execute(f"PRAGMA busy_timeout = {250 if background else 5000}")
     try:
         yield database
         database.commit()
@@ -304,6 +304,8 @@ def initialize() -> None:
             status TEXT NOT NULL DEFAULT 'queued'
                 CHECK(status IN ('queued','running','complete','failed')),
             attempts INTEGER NOT NULL DEFAULT 0,
+            derivation_version INTEGER NOT NULL DEFAULT 1,
+            next_attempt_at TEXT,
             last_error TEXT,
             updated_at TEXT NOT NULL
         )
@@ -435,6 +437,7 @@ def initialize() -> None:
             "cards": {"fsrs_card_json": "TEXT", "first_correct_at": "TEXT", "reinforcement_pending": "INTEGER NOT NULL DEFAULT 0", "stability": "REAL NOT NULL DEFAULT 0", "guided_review": "INTEGER NOT NULL DEFAULT 0", "maximum_interval": "INTEGER NOT NULL DEFAULT 365", "content_type": "TEXT NOT NULL DEFAULT 'opening'", "scheduling_mode": "TEXT NOT NULL DEFAULT 'normal'", "hard_correct_streak": "INTEGER NOT NULL DEFAULT 0", "recent_attempts_json": "TEXT NOT NULL DEFAULT '[]'", "archived": "INTEGER NOT NULL DEFAULT 0", "superseded_by": "TEXT", "source_ref": "TEXT", "source_fen": "TEXT", "revision": "INTEGER NOT NULL DEFAULT 1", "introduced_at": "TEXT", "trained_color": "TEXT"},
             "reviews": {"internal_rating": "TEXT NOT NULL DEFAULT 'again'", "guided": "INTEGER NOT NULL DEFAULT 0", "source_kind": "TEXT NOT NULL DEFAULT 'study'", "source_ref": "TEXT"},
             "imported_games": {"analysis_state": "TEXT NOT NULL DEFAULT 'pending'", "analysis_version": "INTEGER NOT NULL DEFAULT 0", "major_mistake_ply": "INTEGER", "missed_punishment_ply": "INTEGER", "provider_game_id": "TEXT", "content_hash": "TEXT", "adaptive_excluded": "INTEGER NOT NULL DEFAULT 0"},
+            "game_derivation_jobs": {"derivation_version": "INTEGER NOT NULL DEFAULT 1", "next_attempt_at": "TEXT"},
             "game_move_analysis": {"best_move_uci": "TEXT", "principal_variation_json": "TEXT NOT NULL DEFAULT '[]'", "mate_before": "INTEGER", "mate_after": "INTEGER", "engine_version": "TEXT", "network_version": "TEXT"},
             "repertoires": {"is_main": "INTEGER NOT NULL DEFAULT 0"},
         }

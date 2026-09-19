@@ -9,7 +9,6 @@ import {
   repertoiresResponseSchema,
   progressResponseSchema,
   gamesSummarySchema,
-  gameRecordSchema,
   endgameTemplatesSchema,
   tacticProgressSchema,
 } from "../schemas";
@@ -72,11 +71,7 @@ export function validateWorkspacePayload(url: string, raw: unknown): unknown {
     case "/api/tactics/progress":
       return parseData(tacticProgressSchema, raw, "tactics progress");
     case "/api/games/summary": {
-      const body = parseData(gamesSummarySchema, raw, "games");
-      return {
-        ...body,
-        games: validRecords(gameRecordSchema, body.games, "game"),
-      };
+      return parseData(gamesSummarySchema, raw, "games");
     }
     case "/api/endgames/templates":
       return parseData(endgameTemplatesSchema, raw, "endgame templates");

@@ -1,9 +1,11 @@
 import hashlib
 import io
 import json
+import logging
 import sqlite3
 import os
 import random
+import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
@@ -11,7 +13,7 @@ from datetime import date, datetime, timedelta, timezone
 import chess
 import chess.pgn
 import httpx
-from fastapi import FastAPI, File, Form, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadFile
 from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -37,8 +39,10 @@ from .models import (
     GameExclusionRequest,
     GameFindingCardRequest,
     GameSyncEnqueueResponse,
+    GamePublicRecord,
     GameSyncRequest,
     GameSyncStatusResponse,
+    GamesSummaryResponse,
     ImportResult,
     PositionAnnotationRequest,
     RepertoireRenameRequest,
@@ -49,6 +53,7 @@ from .models import (
     TeachingStateRequest,
 )
 from .services.analysis import AnalysisCapabilities
+from .services.activity_gate import activity_gate
 from .services.cards import card_id
 from .services.pgn import ends_on_trained_move, parse_pgn, prefix_through_user_moves
 from .services.review_service import apply_scheduling_review, ensure_card_queued_after
@@ -92,14 +97,51 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+_foreground_paths = (
+    "/api/cards",
+    "/api/queue",
+    "/api/settings",
+    "/api/repertoire",
+    "/api/repertoires",
+    "/api/imports",
+    "/api/tactics",
+    "/api/endgames",
+    "/api/progress",
+)
+
+
+@app.middleware("http")
+async def prioritize_foreground_requests(request: Request, call_next):
+    request.state.started_monotonic = time.monotonic()
+    if request.url.path.startswith(_foreground_paths):
+        with activity_gate.foreground():
+            return await call_next(request)
+    return await call_next(request)
+
 
 @app.exception_handler(sqlite3.OperationalError)
-async def storage_unavailable(_request, error):
+async def storage_unavailable(request: Request, error: sqlite3.OperationalError):
+    is_busy = "locked" in str(error).lower() or "busy" in str(error).lower()
+    active_background_work = activity_gate.background_work
+    logging.getLogger("tempo.storage").warning(
+        "SQLite operation failed path=%s wait_ms=%d retryable=%s background_type=%s background_job_id=%s error=%s",
+        request.url.path,
+        round(1000 * (time.monotonic() - request.state.started_monotonic)),
+        is_busy,
+        active_background_work[0] if active_background_work else None,
+        active_background_work[1] if active_background_work else None,
+        type(error).__name__,
+    )
     return JSONResponse(
         status_code=503,
         content={
-            "detail": "Local database unavailable. Check the Tempo data mount, file permissions, "
-            "and available disk space, then retry. " + str(error)
+            "code": "database_busy" if is_busy else "database_unavailable",
+            "retryable": is_busy,
+            "detail": (
+                "The local database is busy with background work. Retry this action."
+                if is_busy
+                else "Local database unavailable. Check the Tempo data mount, file permissions, and available disk space, then retry."
+            ),
         },
     )
 
@@ -841,7 +883,12 @@ def review(identifier: str, request: ReviewRequest):
             raise HTTPException(409, "This queue attempt is no longer available")
         if entry["status"] != "queued":
             if entry["review_result_json"]:
-                return json.loads(entry["review_result_json"])
+                return {
+                    **json.loads(entry["review_result_json"]),
+                    "queue_entry_id": entry["id"],
+                    "persisted": True,
+                    "idempotent": True,
+                }
             raise HTTPException(409, "This attempt was already completed")
         if entry["attempt_failed"] or request.guided:
             request = request.model_copy(update={"outcome": "again", "guided": True})
@@ -891,11 +938,17 @@ def review(identifier: str, request: ReviewRequest):
                 result["requeue_after_cards"],
                 "guided" if request.outcome == "again" else "reinforcement",
             )
+        persisted_result = {
+            **result,
+            "queue_entry_id": entry["id"],
+            "persisted": True,
+            "idempotent": False,
+        }
         db.execute(
             "UPDATE daily_queue SET review_result_json=? WHERE id=?",
-            (json.dumps(result), entry["id"]),
+            (json.dumps(persisted_result), entry["id"]),
         )
-    return result
+    return persisted_result
 
 
 @app.post("/api/repertoire/branches")
@@ -2178,18 +2231,61 @@ def game_motif_insights():
     return {"recommendations": motif_recommendations()}
 
 
-@app.get("/api/games/summary")
+def public_game_record(row: sqlite3.Row) -> GamePublicRecord:
+    """Decode a database row without exposing persistence-only columns."""
+    opportunities = row["repertoire_opportunities"]
+    return GamePublicRecord(
+        id=row["id"],
+        provider=row["provider"],
+        username=row["username"],
+        played_at=row["played_at"],
+        speed=row["speed"],
+        rated=row["rated"],
+        color=row["color"],
+        result=row["result"],
+        start_fen=row["start_fen"],
+        moves=json.loads(row["moves_json"]),
+        game_url=row["game_url"],
+        opening_name=row["opening_name"],
+        analysis_state=row["analysis_state"],
+        analysis_version=row["analysis_version"],
+        major_mistake_ply=row["major_mistake_ply"],
+        missed_punishment_ply=row["missed_punishment_ply"],
+        repertoire_id=row["repertoire_id"],
+        classification=row["classification"],
+        divergence_ply=row["divergence_ply"],
+        divergence_fen=row["divergence_fen"],
+        expected=json.loads(row["expected_json"] or "[]"),
+        actual_uci=row["actual_uci"],
+        deviation_card_id=row["deviation_card_id"],
+        matched_player_decisions=row["matched_player_decisions"],
+        repertoire_opportunities=opportunities,
+        deepest_covered_ply=row["deepest_covered_ply"],
+        first_opponent_gap_ply=row["first_opponent_gap_ply"],
+        out_of_book_ply=row["out_of_book_ply"],
+        timeline=json.loads(row["timeline_json"] or "[]"),
+        adherence=(row["matched_player_decisions"] / opportunities if opportunities else None),
+    )
+
+
+GAME_PUBLIC_SELECT = """g.id,g.provider,g.username,g.played_at,g.speed,g.rated,
+    g.color,g.result,g.start_fen,g.moves_json,g.game_url,g.opening_name,
+    g.analysis_state,g.analysis_version,g.major_mistake_ply,g.missed_punishment_ply,
+    m.repertoire_id,m.classification,
+    m.first_player_deviation_ply AS divergence_ply,
+    m.first_player_deviation_fen AS divergence_fen,
+    m.first_player_deviation_expected_json AS expected_json,
+    m.first_player_deviation_actual_uci AS actual_uci,
+    m.deviation_card_id,m.matched_player_decisions,m.repertoire_opportunities,
+    m.deepest_covered_ply,m.first_opponent_gap_ply,m.out_of_book_ply,m.timeline_json"""
+
+
+@app.get("/api/games/summary", response_model=GamesSummaryResponse)
 def summary(fen: str | None = None):
     position_key = fen_key(fen) if fen else None
     with connection() as db:
         rows = db.execute(
-            """SELECT g.*,m.repertoire_id,m.classification,
-                      m.first_player_deviation_ply AS divergence_ply,
-                      m.first_player_deviation_fen AS divergence_fen,
-                      m.first_player_deviation_expected_json AS expected_json,
-                      m.first_player_deviation_actual_uci AS actual_uci,
-                      m.deviation_card_id,m.matched_player_decisions,m.repertoire_opportunities,
-                      m.deepest_covered_ply,m.first_opponent_gap_ply,m.out_of_book_ply,m.timeline_json
+            f"""SELECT {GAME_PUBLIC_SELECT}
                FROM imported_games g
                LEFT JOIN game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
                WHERE ? IS NULL OR EXISTS(
@@ -2199,22 +2295,9 @@ def summary(fen: str | None = None):
                ORDER BY played_at DESC""",
             (position_key, position_key),
         ).fetchall()
-    return {
-        "total": len(rows),
-        "games": [
-            {
-                **dict(row),
-                "moves": json.loads(row["moves_json"]),
-                "timeline": json.loads(row["timeline_json"] or "[]"),
-                "adherence": (
-                    row["matched_player_decisions"] / row["repertoire_opportunities"]
-                    if row["repertoire_opportunities"]
-                    else None
-                ),
-            }
-            for row in rows
-        ],
-    }
+    return GamesSummaryResponse(
+        total=len(rows), games=[public_game_record(row) for row in rows]
+    )
 
 
 @app.get("/api/games/position-summary")
@@ -2287,30 +2370,15 @@ def game_position_summary(fen: str):
     }
 
 
-@app.get("/api/games/{game_id:path}")
+@app.get("/api/games/{game_id:path}", response_model=GamePublicRecord)
 def game_detail(game_id: str):
     with connection() as db:
         row = db.execute(
-            """SELECT g.*,m.repertoire_id,m.classification,
-                      m.first_player_deviation_ply AS divergence_ply,
-                      m.first_player_deviation_fen AS divergence_fen,
-                      m.first_player_deviation_expected_json AS expected_json,
-                      m.first_player_deviation_actual_uci AS actual_uci,
-                      m.deviation_card_id,m.matched_player_decisions,m.repertoire_opportunities,
-                      m.deepest_covered_ply,m.first_opponent_gap_ply,m.out_of_book_ply,m.timeline_json
+            f"""SELECT {GAME_PUBLIC_SELECT}
                FROM imported_games g LEFT JOIN game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
                WHERE g.id=?""",
             (game_id,),
         ).fetchone()
     if not row:
         raise HTTPException(404, "Game not found")
-    result = dict(row)
-    result["moves"] = json.loads(result.pop("moves_json"))
-    result["expected"] = json.loads(result.pop("expected_json") or "[]")
-    result["timeline"] = json.loads(result.pop("timeline_json") or "[]")
-    result["adherence"] = (
-        result["matched_player_decisions"] / result["repertoire_opportunities"]
-        if result["repertoire_opportunities"]
-        else None
-    )
-    return result
+    return public_game_record(row)

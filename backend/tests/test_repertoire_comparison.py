@@ -1,11 +1,13 @@
 from datetime import datetime, timezone
 import json
+import threading
 
 from fastapi.testclient import TestClient
 
 from app import database
 from app.main import app
 from app.services.repertoire_comparison import compare_all_games
+import app.services.repertoire_comparison as repertoire_comparison
 
 
 START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -73,3 +75,39 @@ def test_line_ending_is_out_of_book_rather_than_a_player_deviation(tmp_path, mon
         assert match["classification"] == "out of book"
         assert match["out_of_book_ply"] == 2
         assert match["first_player_deviation_ply"] is None
+
+
+def test_background_repertoire_computation_holds_no_sqlite_write_transaction(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    entered_computation = threading.Event()
+    release_computation = threading.Event()
+    original_compare = repertoire_comparison._compare_game_to_repertoire
+
+    def deliberately_slow_compare(*args, **kwargs):
+        entered_computation.set()
+        assert release_computation.wait(timeout=2)
+        return original_compare(*args, **kwargs)
+
+    monkeypatch.setattr(
+        repertoire_comparison,
+        "_compare_game_to_repertoire",
+        deliberately_slow_compare,
+    )
+    with TestClient(app):
+        with database.connection() as db:
+            seed_repertoire(db, ["e2e4", "e7e5"])
+            seed_game(db, "slow-compute", ["e2e4", "e7e5"])
+        background_thread = threading.Thread(
+            target=lambda: repertoire_comparison.compare_games(
+                ["slow-compute"], background=True
+            )
+        )
+        background_thread.start()
+        assert entered_computation.wait(timeout=1)
+        with database.connection() as db:
+            db.execute("UPDATE settings SET new_cards_per_day=11 WHERE id=1")
+        release_computation.set()
+        background_thread.join(timeout=2)
+        assert not background_thread.is_alive()

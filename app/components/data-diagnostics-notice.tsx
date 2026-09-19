@@ -11,6 +11,17 @@ export function DataDiagnosticsNotice() {
     dataDiagnostics,
   );
   if (!diagnostics.length) return null;
+  const groupedDiagnostics = Array.from(
+    diagnostics.reduce((groups, issue) => {
+      const key = `${issue.source}\u0000${issue.message}`;
+      const group = groups.get(key) ?? { issue, count: 0, recordIds: [] as string[] };
+      group.count += 1;
+      if (issue.recordId && group.recordIds.length < 3)
+        group.recordIds.push(issue.recordId);
+      groups.set(key, group);
+      return groups;
+    }, new Map<string, { issue: (typeof diagnostics)[number]; count: number; recordIds: string[] }>()),
+  ).map(([, group]) => group);
   const exportDiagnostics = () => {
     const url = URL.createObjectURL(
       new Blob([JSON.stringify(diagnostics, null, 2)], {
@@ -26,14 +37,15 @@ export function DataDiagnosticsNotice() {
   return (
     <details className="data-diagnostics-notice">
       <summary>
-        {diagnostics.length} data issue{diagnostics.length === 1 ? "" : "s"} set
-        aside for repair
+        {groupedDiagnostics.length} data issue type
+        {groupedDiagnostics.length === 1 ? "" : "s"} affecting {diagnostics.length}{" "}
+        record{diagnostics.length === 1 ? "" : "s"}
       </summary>
       <ul>
-        {diagnostics.map((issue, index) => (
-          <li key={index}>
-            {issue.source}
-            {issue.recordId ? ` · ${issue.recordId}` : ""}: {issue.message}
+        {groupedDiagnostics.map(({ issue, count, recordIds }) => (
+          <li key={`${issue.source}:${issue.message}`}>
+            {issue.source} · {count} affected
+            {recordIds.length ? ` · examples ${recordIds.join(", ")}` : ""}: {issue.message}
           </li>
         ))}
       </ul>

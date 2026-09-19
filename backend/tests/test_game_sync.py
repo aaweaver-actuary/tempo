@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app import database
 from app.main import app
+import app.services.game_sync_coordinator as game_sync_coordinator
 
 
 def pgn(game_url: str, white: str = "TempoPlayer", result: str = "1-0") -> str:
@@ -281,3 +282,151 @@ def test_correct_card_review_advances_while_game_sync_is_active(tmp_path, monkey
             assert db.execute(
                 "SELECT status FROM daily_queue WHERE id=?", (queue_entry_id,)
             ).fetchone()[0] == "complete"
+
+
+def test_game_summaries_never_expose_persistence_only_sync_fields(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+
+    def handler(request: httpx.Request):
+        if request.url.path.endswith("/archives"):
+            return httpx.Response(
+                200,
+                json={
+                    "archives": [
+                        "https://api.chess.com/pub/player/tempoplayer/games/2026/09"
+                    ]
+                },
+            )
+        return httpx.Response(200, json={"games": [chesscom_game("private-fields")]})
+
+    install_transport(monkeypatch, handler)
+    with TestClient(app) as client:
+        complete_sync(client, {"chesscom_username": "TempoPlayer"})
+        summary_response = client.get("/api/games/summary")
+        assert summary_response.status_code == 200
+        public_game = summary_response.json()["games"][0]
+        assert public_game["moves"] == ["e2e4", "e7e5", "g1f3", "b8c6"]
+        assert public_game["timeline"] == []
+        assert {
+            "provider_game_id",
+            "content_hash",
+            "adaptive_excluded",
+            "moves_json",
+            "timeline_json",
+            "expected_json",
+        }.isdisjoint(public_game)
+        detail = client.get(f"/api/games/{public_game['id']}").json()
+        assert detail == public_game
+
+
+def test_correct_review_succeeds_while_one_thousand_derivation_jobs_are_queued(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    today = date.today().isoformat()
+    now = datetime.now(timezone.utc).isoformat()
+    start_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    with TestClient(app) as client:
+        with database.connection() as db:
+            db.execute(
+                "INSERT INTO repertoires(id,name,source_name,created_at) VALUES('load-rep','Load','load.pgn',?)",
+                (now,),
+            )
+            db.execute(
+                """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at)
+                   VALUES('foreground-review','load-rep','prefix',?,?,'learning',?,?)""",
+                (start_fen, json.dumps(["e2e4"]), today, today),
+            )
+            queue_entry_id = db.execute(
+                "INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,'foreground-review',0)",
+                (today,),
+            ).lastrowid
+            games = [
+                (
+                    f"queued-{index}",
+                    "lichess",
+                    "TempoPlayer",
+                    now,
+                    "rapid",
+                    1,
+                    "white",
+                    "1-0",
+                    start_fen,
+                    "[]",
+                )
+                for index in range(1000)
+            ]
+            db.executemany(
+                """INSERT INTO imported_games(
+                       id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json
+                   ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                games,
+            )
+            db.executemany(
+                "INSERT INTO game_derivation_jobs(game_id,status,updated_at) VALUES(?,'queued',?)",
+                [(game[0], now) for game in games],
+            )
+        started = time.monotonic()
+        response = client.post(
+            "/api/cards/foreground-review/review",
+            json={"outcome": "correct", "queue_entry_id": queue_entry_id},
+        )
+        assert response.status_code == 200
+        assert response.json()["persisted"] is True
+        assert time.monotonic() - started < 1
+        with database.connection() as db:
+            assert db.execute(
+                "SELECT COUNT(*) FROM reviews WHERE card_id='foreground-review'"
+            ).fetchone()[0] == 1
+
+
+def test_sync_jobs_are_not_starved_behind_derivation_work(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+
+    def handler(_request: httpx.Request):
+        return httpx.Response(404, text="not found")
+
+    install_transport(monkeypatch, handler)
+    original_execute_derivation = game_sync_coordinator._execute_derivation
+
+    def deliberately_slow_derivation(game_id: str):
+        time.sleep(0.05)
+        original_execute_derivation(game_id)
+
+    monkeypatch.setattr(
+        game_sync_coordinator, "_execute_derivation", deliberately_slow_derivation
+    )
+    now = datetime.now(timezone.utc).isoformat()
+    start_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    with TestClient(app) as client:
+        with database.connection() as db:
+            games = [
+                (
+                    f"starvation-{index}",
+                    "lichess",
+                    "TempoPlayer",
+                    now,
+                    "rapid",
+                    1,
+                    "white",
+                    "1-0",
+                    start_fen,
+                    "[]",
+                )
+                for index in range(100)
+            ]
+            db.executemany(
+                """INSERT INTO imported_games(
+                       id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json
+                   ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+                games,
+            )
+            db.executemany(
+                "INSERT INTO game_derivation_jobs(game_id,status,updated_at) VALUES(?,'queued',?)",
+                [(game[0], now) for game in games],
+            )
+        started = time.monotonic()
+        complete_sync(client, {"lichess_username": "Missing"})
+        assert time.monotonic() - started < 1

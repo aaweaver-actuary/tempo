@@ -4,13 +4,13 @@ import { usesLocalApi } from "../utils/local";
 import { runStudyTask } from "./background-study";
 import * as z from "zod";
 import { tacticProgressSchema } from "../domain/schemas";
-import { parseData } from "./validated-data";
+import { clearDataDiagnosticsForSources, parseData } from "./validated-data";
 
 const requests = new Map<
   string,
   { createdAt: number; promise: Promise<unknown>; staleValue?: unknown }
 >();
-const WORKSPACE_CACHE_VERSION = 1;
+const WORKSPACE_CACHE_VERSION = 2;
 const WORKSPACE_CACHE_PREFIX = `tempo-workspace-cache-v${WORKSPACE_CACHE_VERSION}:`;
 const WORKSPACE_CACHE_LIMIT = 40;
 
@@ -62,6 +62,12 @@ function notifyWorkspaceData(state: "refreshing" | "ready" | "error", url: strin
   if (typeof window !== "undefined")
     window.dispatchEvent(new CustomEvent("tempo-workspace-data", { detail: { state, url } }));
 }
+
+function clearResolvedDiagnostics(url: string) {
+  const path = new URL(url, "http://tempo.local").pathname;
+  if (path === "/api/games/summary")
+    clearDataDiagnosticsForSources(["games", "game"]);
+}
 const decks = new Map<
   string,
   Promise<Array<{ record: PackagedPuzzle; card: PracticeCard }>>
@@ -81,9 +87,7 @@ export function readWorkspaceData(
     const value = cached.staleValue === undefined
       ? cached.promise
       : Promise.resolve(cached.staleValue);
-    return value.then((raw) =>
-      schema ? parseData(schema, raw, url) : raw,
-    );
+    return value;
   }
   const persisted = readPersisted(url);
   const requestController = new AbortController();
@@ -117,10 +121,12 @@ export function readWorkspaceData(
         );
     })
     .then((raw) => {
+      const validated = schema ? parseData(schema, raw, url) : raw;
       entry.staleValue = undefined;
-      persist(url, raw);
+      clearResolvedDiagnostics(url);
+      persist(url, validated);
       notifyWorkspaceData("ready", url);
-      return raw;
+      return validated;
     })
     .catch((error) => {
       requests.delete(url);
@@ -132,11 +138,16 @@ export function readWorkspaceData(
   requests.set(url, entry);
   if (persisted) {
     void promise.catch(() => undefined);
-    return Promise.resolve(persisted.data).then((raw) =>
-      schema ? parseData(schema, raw, url) : raw,
-    );
+    try {
+      return Promise.resolve(
+        schema ? parseData(schema, persisted.data, url) : persisted.data,
+      );
+    } catch {
+      localStorage.removeItem(`${WORKSPACE_CACHE_PREFIX}${url}`);
+      return promise;
+    }
   }
-  return promise.then((raw) => (schema ? parseData(schema, raw, url) : raw));
+  return promise;
 }
 
 export function invalidateWorkspaceData() {

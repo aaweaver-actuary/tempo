@@ -246,6 +246,7 @@ export function selectHomeViewState(state: TrainingStoreState) {
     soundOn: state.isSoundEnabled,
     databaseQueue: state.isDatabaseQueueActive,
     serviceError: state.serviceError,
+    reviewSaveError: state.reviewSaveError,
   };
 }
 

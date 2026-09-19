@@ -67,11 +67,27 @@ import { TreeBrowser } from "./tree_browser";
 import { useShallow } from "zustand/react/shallow";
 import { WorkspaceRefreshStatus } from "../components/workspace-refresh-status";
 
+async function responseErrorDetail(response: Response): Promise<string> {
+  try {
+    const payload = z
+      .looseObject({ detail: z.string().optional(), retryable: z.boolean().optional() })
+      .parse(await response.json());
+    if (payload.detail)
+      return `${payload.detail}${payload.retryable ? " Please retry." : ""}`;
+  } catch {
+    // Fall back to a stable HTTP message when the service did not return JSON.
+  }
+  return `Request failed (HTTP ${response.status}).`;
+}
+
 export default function Home() {
   const gameSync = useGameSync();
   useGameAnalysis();
   const [currentView, setCurrentView] = useState<View>("train");
   const [gamesFenFilter, setGamesFenFilter] = useState("");
+  const [reviewPersistenceState, setReviewPersistenceState] = useState<
+    "idle" | "saving" | "saveFailed" | "saved" | "refreshingQueue" | "queueFailed"
+  >("idle");
   const changeWorkspace = useCallback((view: View) => {
     const finished = measureTempoOperation("view-switch");
     setCurrentView(view);
@@ -102,6 +118,7 @@ export default function Home() {
     soundOn,
     databaseQueue,
     serviceError,
+    reviewSaveError,
   } = useTrainingStore(useShallow(selectHomeViewState));
   const {
     setPracticeCards,
@@ -133,6 +150,7 @@ export default function Home() {
     setBoardTheme,
     setPieceSet,
     setSoundOn,
+    setReviewSaveError,
     setServiceError,
     initializeCardState,
     resetTrainingLine,
@@ -556,6 +574,8 @@ export default function Home() {
   async function rateCard(outcome: "again" | "correct") {
     if (reviewPending.current || cardsLeft === 0) return;
     reviewPending.current = true;
+    setReviewPersistenceState("saving");
+    setReviewSaveError("");
     setAttemptPhase("feedbackPause");
     if (databaseQueue && card.backendId) {
       try {
@@ -564,7 +584,7 @@ export default function Home() {
             `${API_URL}/api/queue/entries/${card.queueEntryId}/fail`,
             { method: "POST" },
           );
-          if (!saved.ok) throw new Error();
+          if (!saved.ok) throw new Error(await responseErrorDetail(saved));
         }
         const response = await fetch(
           `${API_URL}/api/cards/${card.backendId}/review`,
@@ -578,23 +598,39 @@ export default function Home() {
             }),
           },
         );
-        if (!response.ok) throw new Error();
+        if (!response.ok) throw new Error(await responseErrorDetail(response));
+        setReviewPersistenceState("saved");
         setReviewed((count) => count + 1);
         setQueueNotice("");
-        await refreshDatabaseQueue(true);
         reviewPending.current = false;
+        setReviewPersistenceState("refreshingQueue");
+        try {
+          await refreshDatabaseQueue(true);
+          setReviewPersistenceState("idle");
+        } catch {
+          setReviewPersistenceState("queueFailed");
+          setQueueNotice(
+            "Result saved. The next card could not be loaded.",
+          );
+        }
         return;
-      } catch {
+      } catch (error) {
         reviewPending.current = false;
-        setQueueNotice(
-          "The local database could not save this result. Please retry.",
+        setReviewPersistenceState("saveFailed");
+        setReviewSaveError(
+          error instanceof Error && error.message
+            ? `The local database could not save this result. ${error.message}`
+            : "The local database could not save this result. Please retry.",
         );
-        setAttemptPhase(attemptFailed ? "guided" : "playerTurn");
+        setQueueNotice("");
+        setAttemptPhase("feedbackPause");
         return;
       }
     }
     if (usesLocalApi()) {
       reviewPending.current = false;
+      setReviewPersistenceState("saveFailed");
+      setReviewSaveError("Connect to the local service before reviewing.");
       setServiceError("Connect to the local service before reviewing.");
       return;
     }
@@ -630,6 +666,7 @@ export default function Home() {
     setActiveCardIndex(nextIndex);
     resetLine(practiceCards[nextIndex]);
     reviewPending.current = false;
+    setReviewPersistenceState("idle");
   }
 
   function completeAttempt(finalFen: string) {
@@ -873,6 +910,14 @@ export default function Home() {
               boardTheme={boardTheme}
               pieceSet={pieceSet}
               rateCard={rateCard}
+              reviewPersistenceState={reviewPersistenceState}
+              reviewSaveError={reviewSaveError}
+              retryQueueAfterReview={() => {
+                setReviewPersistenceState("refreshingQueue");
+                void refreshDatabaseQueue(true)
+                  .then(() => setReviewPersistenceState("idle"))
+                  .catch(() => setReviewPersistenceState("queueFailed"));
+              }}
               handleAttemptFailure={handleAttemptFailure}
               resetCardAttempt={resetCardAttempt}
               setEditorCard={setEditorCard}

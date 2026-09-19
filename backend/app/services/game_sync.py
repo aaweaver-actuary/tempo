@@ -5,6 +5,8 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import email.utils
 import json
+import sqlite3
+import time
 
 import httpx
 
@@ -13,6 +15,7 @@ from ..models import GameSyncRequest
 from .chesscom_client import fetch_chesscom_games
 from .game_record import GameRecord
 from .lichess_client import ProviderRequestError, fetch_lichess_games
+from .activity_gate import activity_gate
 
 
 USER_AGENT = "Tempo local chess trainer/1.0 (game sync)"
@@ -51,7 +54,19 @@ def _retry_at(value: str | None) -> str | None:
 
 
 def _persist_game(record: GameRecord) -> tuple[str, str]:
-    with connection() as database:
+    for retry_number in range(5):
+        activity_gate.wait_for_foreground()
+        try:
+            return _persist_game_once(record)
+        except sqlite3.OperationalError:
+            if retry_number == 4:
+                raise
+            time.sleep(0.05 * (2**retry_number))
+    raise RuntimeError("Unreachable game persistence retry state")
+
+
+def _persist_game_once(record: GameRecord) -> tuple[str, str]:
+    with connection(background=True) as database:
         existing = database.execute(
             "SELECT * FROM imported_games WHERE provider=? AND provider_game_id=?",
             (record.provider, record.provider_game_id),
@@ -139,7 +154,8 @@ async def _sync_provider(
 ) -> dict:
     result = _empty_result(provider, username)
     started_at = datetime.now(timezone.utc)
-    with connection() as database:
+    activity_gate.wait_for_foreground()
+    with connection(background=True) as database:
         previous = database.execute(
             "SELECT username,retry_after FROM game_sync_state WHERE provider=?", (provider,)
         ).fetchone()
@@ -185,7 +201,8 @@ async def _sync_provider(
         result["_changed_game_ids"] = changed_game_ids
         result["status"] = "idle"
         completed_at = datetime.now(timezone.utc)
-        with connection() as database:
+        activity_gate.wait_for_foreground()
+        with connection(background=True) as database:
             database.execute(
                 """UPDATE game_sync_state SET status='idle',cursor=?,last_success_at=?,last_error=NULL,retry_after=NULL,last_result_json=? WHERE provider=?""",
                 (since.isoformat(), completed_at.isoformat(), json.dumps({key: value for key, value in result.items() if not key.startswith("_")}), provider),
@@ -195,7 +212,8 @@ async def _sync_provider(
         result["failed"] = 1
         result["error"] = str(error) if isinstance(error, ProviderRequestError) else "The provider could not be reached. Retry when online."
         result["retry_after"] = _retry_at(error.retry_after) if isinstance(error, ProviderRequestError) else None
-        with connection() as database:
+        activity_gate.wait_for_foreground()
+        with connection(background=True) as database:
             database.execute(
                 "UPDATE game_sync_state SET status='error',last_error=?,retry_after=?,last_result_json=? WHERE provider=?",
                 (result["error"], result["retry_after"], json.dumps({key: value for key, value in result.items() if not key.startswith("_")}), provider),

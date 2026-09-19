@@ -74,7 +74,9 @@ export function useGameSync() {
             : false,
         jobStatus,
         lastSuccess: completedResult?.synced_at ?? (current.lastSuccess || latest),
-        error: result.active_job?.error ?? providerError,
+        error:
+          (result.active_job?.error ?? providerError) ||
+          (completedResult ? "" : current.error),
         imported: completedResult?.imported ?? current.imported,
         providers: providerResults.length ? providerResults : current.providers,
         filterLabel: result.active_filters ? `${result.active_filters.rated_only ? "Rated " : ""}${result.active_filters.speeds.join(", ")} · last ${result.active_filters.days} days` : current.filterLabel,

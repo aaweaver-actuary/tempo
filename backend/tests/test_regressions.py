@@ -88,7 +88,19 @@ def test_completed_queue_entry_is_idempotent_and_reinforcement_schedules_into_th
         url = f"/api/cards/{first['id']}/review"
         payload = {"outcome": "correct", "queue_entry_id": first["queue_entry_id"]}
         saved = client.post(url, json=payload).json()
-        assert client.post(url, json=payload).json() == saved
+        repeated = client.post(url, json=payload).json()
+        assert saved["persisted"] is True and saved["idempotent"] is False
+        assert repeated["persisted"] is True and repeated["idempotent"] is True
+        assert repeated["queue_entry_id"] == first["queue_entry_id"]
+        assert {
+            key: value for key, value in repeated.items() if key != "idempotent"
+        } == {
+            key: value for key, value in saved.items() if key != "idempotent"
+        }
+        with database.connection() as db:
+            assert db.execute(
+                "SELECT COUNT(*) FROM reviews WHERE card_id=?", (first["id"],)
+            ).fetchone()[0] == 1
         reinforcement = client.get("/api/queue/today").json()["cards"][0]
         assert reinforcement["queue_entry_id"] != first["queue_entry_id"]
         assert reinforcement["attempt_state"] == "reinforcement"

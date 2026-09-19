@@ -24,6 +24,16 @@ export function clearDataDiagnostics() {
   notifyDiagnostics();
 }
 
+export function clearDataDiagnosticsForSources(sources: readonly string[]) {
+  const sourceSet = new Set(sources);
+  const remainingDiagnostics = diagnostics.filter(
+    (diagnostic) => !sourceSet.has(diagnostic.source),
+  );
+  if (remainingDiagnostics.length === diagnostics.length) return;
+  diagnostics = remainingDiagnostics;
+  notifyDiagnostics();
+}
+
 export function reportDataDiagnostic(
   source: string,
   raw: unknown,

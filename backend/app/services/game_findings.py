@@ -9,6 +9,7 @@ import json
 import chess
 
 from ..database import connection
+from .activity_gate import activity_gate
 from .tactical_catalog import catalog_status
 
 
@@ -118,7 +119,11 @@ def _unseen_card_for_position(database, fen: str, expected_move: str | None) -> 
     return None
 
 
-def refresh_game_findings(game_id: str | None = None) -> None:
+def refresh_game_findings(
+    game_id: str | None = None, *, background: bool = False
+) -> None:
+    finding_writes: list[dict] = []
+    priority_writes: list[tuple] = []
     with connection() as database:
         where = "WHERE g.id=?" if game_id else ""
         games = database.execute(
@@ -134,15 +139,15 @@ def refresh_game_findings(game_id: str | None = None) -> None:
             moves = json.loads(game["moves_json"])
             deviation_ply = game["first_player_deviation_ply"]
             if deviation_ply is not None:
-                _upsert_finding(
-                    database, game_id=game["id"], analysis_version=version, ply=deviation_ply,
+                finding_writes.append(dict(
+                    game_id=game["id"], analysis_version=version, ply=deviation_ply,
                     kind="repertoire lapse", confidence=1.0,
                     evidence={
                         "fen": game["first_player_deviation_fen"],
                         "expected": json.loads(game["first_player_deviation_expected_json"] or "[]"),
                         "actual": game["first_player_deviation_actual_uci"],
                     }, repertoire_id=game["repertoire_id"], card_id=game["deviation_card_id"],
-                )
+                ))
             analysis_rows = database.execute(
                 "SELECT * FROM game_move_analysis WHERE game_id=? ORDER BY ply", (game["id"],)
             ).fetchall()
@@ -176,8 +181,7 @@ def refresh_game_findings(game_id: str | None = None) -> None:
                     finding_id = _finding_id(
                         game["id"], version, "repertoire gap", gap_analysis["ply"]
                     )
-                    _upsert_finding(
-                        database,
+                    finding_writes.append(dict(
                         game_id=game["id"],
                         analysis_version=version,
                         ply=gap_analysis["ply"],
@@ -195,18 +199,10 @@ def refresh_game_findings(game_id: str | None = None) -> None:
                         },
                         repertoire_id=game["repertoire_id"],
                         card_id=linked_card,
-                    )
+                    ))
                     if linked_card:
                         tomorrow = (date.today() + timedelta(days=1)).isoformat()
-                        database.execute(
-                            """INSERT INTO gameplay_card_priorities(
-                                   card_id,source_game_id,finding_id,priority_date,reason,created_at
-                               ) VALUES(?,?,?,?,?,?)
-                               ON CONFLICT(card_id) DO UPDATE SET
-                                   source_game_id=excluded.source_game_id,
-                                   finding_id=excluded.finding_id,
-                                   priority_date=MIN(gameplay_card_priorities.priority_date,excluded.priority_date),
-                                   reason=excluded.reason""",
+                        priority_writes.append(
                             (
                                 linked_card,
                                 game["id"],
@@ -214,7 +210,7 @@ def refresh_game_findings(game_id: str | None = None) -> None:
                                 tomorrow,
                                 "Encountered repertoire gap followed by a mistake",
                                 datetime.now(timezone.utc).isoformat(),
-                            ),
+                            )
                         )
             first_big_mistake = next((row for row in analysis_rows if row["loss_cp"] >= threshold), None)
             for row in analysis_rows:
@@ -228,14 +224,14 @@ def refresh_game_findings(game_id: str | None = None) -> None:
                     "mate_before": row["mate_before"], "mate_after": row["mate_after"],
                 }
                 kind = "blunder" if row["loss_cp"] >= 250 or (row["mate_before"] is not None) != (row["mate_after"] is not None) else "major mistake"
-                _upsert_finding(database, game_id=game["id"], analysis_version=version, ply=row["ply"], kind=kind, confidence=1.0, evidence=evidence)
+                finding_writes.append(dict(game_id=game["id"], analysis_version=version, ply=row["ply"], kind=kind, confidence=1.0, evidence=evidence))
                 board = _position_before_ply(game["start_fen"], moves, row["ply"])
                 motif, confidence, candidates = _classify_motif(board, row["best_move_uci"], evidence["principal_variation"])
-                _upsert_finding(
-                    database, game_id=game["id"], analysis_version=version, ply=row["ply"],
+                finding_writes.append(dict(
+                    game_id=game["id"], analysis_version=version, ply=row["ply"],
                     kind="tactical miss", confidence=confidence,
                     evidence={**evidence, "candidate_motifs": candidates}, motif=motif,
-                )
+                ))
             if first_big_mistake:
                 evidence = {
                     "fen": _position_before_ply(game["start_fen"], moves, first_big_mistake["ply"]).fen(),
@@ -243,9 +239,26 @@ def refresh_game_findings(game_id: str | None = None) -> None:
                     "best_move_uci": first_big_mistake["best_move_uci"],
                     "principal_variation": json.loads(first_big_mistake["principal_variation_json"] or "[]"),
                 }
-                _upsert_finding(database, game_id=game["id"], analysis_version=version,
+                finding_writes.append(dict(game_id=game["id"], analysis_version=version,
                                 ply=first_big_mistake["ply"], kind="first big mistake",
-                                confidence=1.0, evidence=evidence)
+                                confidence=1.0, evidence=evidence))
+    if background:
+        activity_gate.wait_for_foreground()
+    with connection(background=background) as database:
+        for finding in finding_writes:
+            _upsert_finding(database, **finding)
+        for priority in priority_writes:
+            database.execute(
+                """INSERT INTO gameplay_card_priorities(
+                       card_id,source_game_id,finding_id,priority_date,reason,created_at
+                   ) VALUES(?,?,?,?,?,?)
+                   ON CONFLICT(card_id) DO UPDATE SET
+                       source_game_id=excluded.source_game_id,
+                       finding_id=excluded.finding_id,
+                       priority_date=MIN(gameplay_card_priorities.priority_date,excluded.priority_date),
+                       reason=excluded.reason""",
+                priority,
+            )
 
 
 def motif_recommendations() -> list[dict]:

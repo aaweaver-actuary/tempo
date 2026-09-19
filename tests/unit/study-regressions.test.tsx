@@ -158,6 +158,81 @@ async function pause(ms = 751) {
 }
 
 describe("reported study regressions", () => {
+  it("failed review save retains the completed card for retry; successful review is not reported as failed when queue refresh fails", async () => {
+    const queueCard = {
+      id: "retry-review",
+      queue_entry_id: 901,
+      start_fen: new Chess().fen(),
+      moves: ["e2e4"],
+      content_type: "opening",
+      repertoire_name: "Retry prep",
+      repertoire_source: "PGN",
+      attempt_state: "clean",
+    };
+    let reviewRequests = 0;
+    let reviewSaved = false;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input) => {
+        const url = String(input);
+        if (url.endsWith("/api/queue/today")) {
+          if (reviewSaved)
+            return Response.json(
+              { code: "database_busy", retryable: true, detail: "Database busy" },
+              { status: 503 },
+            );
+          return Response.json({ cards: [queueCard] });
+        }
+        if (url.endsWith("/review")) {
+          reviewRequests += 1;
+          if (reviewRequests === 1)
+            return Response.json(
+              {
+                code: "database_busy",
+                retryable: true,
+                detail: "The local database is busy with background work.",
+              },
+              { status: 503 },
+            );
+          reviewSaved = true;
+          return Response.json({
+            queue_entry_id: 901,
+            persisted: true,
+            idempotent: false,
+          });
+        }
+        return Response.json(
+          url.endsWith("/teaching")
+            ? { states: [] }
+            : url.endsWith("/sync-status")
+              ? { providers: [] }
+              : { lines: [] },
+        );
+      }),
+    );
+    render(<Home />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Correct" })).toBeTruthy(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Correct" }));
+    await waitFor(
+      () => expect(screen.getByRole("button", { name: "Retry save" })).toBeTruthy(),
+      { timeout: 2_000 },
+    );
+    expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(
+      queueCard.start_fen,
+    );
+    expect(screen.getByText(/The local database could not save this result/)).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: "Retry loading the queue" }),
+      ).toBeTruthy(),
+    );
+    expect(screen.queryByText(/could not save this result/)).toBeNull();
+    expect(reviewRequests).toBe(2);
+  });
+
   it("tomorrow and later opening reviews remain unassisted even when teaching storage is empty", async () => {
     vi.stubGlobal(
       "fetch",

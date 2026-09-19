@@ -8,6 +8,17 @@
 | Repeated clean solves unlock a stage prematurely | `clean progress counts distinct puzzle IDs` |
 | Unseen tactical review reveals its answer | `unseen tactic review has no automatic teaching arrow` |
 | Training repeats a completed entry / duplicate submissions | `completed queue entry is idempotent and reinforcement schedules into the future` |
+| Failed review save advances or loses the completed card | `failed review save retains the completed card for retry` |
+| Review retry creates a duplicate review | `test_completed_queue_entry_is_idempotent_and_reinforcement_schedules_into_the_future` |
+| Queue refresh failure is reported as a review-save failure | `successful review is not reported as failed when queue refresh fails` |
+| Games responses expose SQLite-only sync fields | `test_game_summaries_never_expose_persistence_only_sync_fields`; `backend game response and strict frontend schema remain in parity` |
+| First-party Games contract drift silently empties and caches the library | `game contract drift fails once instead of silently emptying the library`; `invalid game responses are never cached as empty success` |
+| Corrected Games data requires navigation and old diagnostics flood the UI | `corrected game data replaces stale cache without navigation`; `repeated diagnostics are grouped and clear after successful validation` |
+| Repertoire computation holds a SQLite write lock during chess traversal | `test_background_repertoire_computation_holds_no_sqlite_write_transaction` |
+| Background contention blocks foreground writes instead of retrying | `test_background_database_contention_retries_without_blocking_foreground_writes` |
+| A large derivation backlog blocks card review | `test_correct_review_succeeds_while_one_thousand_derivation_jobs_are_queued` |
+| Interrupted derivations duplicate findings or fail to resume | `test_derivation_backlog_resumes_after_restart_without_duplicate_findings` |
+| Sync is starved behind the derivation backlog | `test_sync_jobs_are_not_starved_behind_derivation_work` |
 | Import bypasses the new-card limit | `legacy introduced-but-unreviewed queue is capped without losing reviews` |
 | One sample deletion removes both | `deletion isolates records sharing a source filename` |
 | Flipping exits Black repertoire | `builder flip preserves repertoire identity and history across remounts` |

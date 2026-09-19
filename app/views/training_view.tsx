@@ -37,6 +37,15 @@ interface TrainingViewProps {
   boardTheme: BoardTheme;
   pieceSet: PieceSet;
   rateCard: (outcome: "again" | "correct") => Promise<void>;
+  reviewPersistenceState?:
+    | "idle"
+    | "saving"
+    | "saveFailed"
+    | "saved"
+    | "refreshingQueue"
+    | "queueFailed";
+  reviewSaveError?: string;
+  retryQueueAfterReview?: () => void;
   handleAttemptFailure: () => void;
   resetCardAttempt: () => void;
   setEditorCard: (card: PracticeCard | null) => void;
@@ -54,6 +63,9 @@ export default function TrainingView({
   boardTheme,
   pieceSet,
   rateCard,
+  reviewPersistenceState = "idle",
+  reviewSaveError = "",
+  retryQueueAfterReview = () => undefined,
   handleAttemptFailure,
   resetCardAttempt,
   setEditorCard,
@@ -164,6 +176,26 @@ export default function TrainingView({
         <div role="alert">
           {serviceError}{" "}
           <RetryButton onRetry={() => void refreshDatabaseQueue()} />
+        </div>
+      )}
+      {reviewPersistenceState === "saving" && (
+        <p role="status">Saving result…</p>
+      )}
+      {reviewPersistenceState === "saveFailed" && (
+        <div role="alert">
+          {reviewSaveError}{" "}
+          <button onClick={() => void rateCard(attemptFailed ? "again" : "correct")}>
+            Retry save
+          </button>
+        </div>
+      )}
+      {reviewPersistenceState === "refreshingQueue" && (
+        <p role="status">Result saved. Loading the next card…</p>
+      )}
+      {reviewPersistenceState === "queueFailed" && (
+        <div role="alert">
+          Result saved; the next card could not be loaded.{" "}
+          <button onClick={retryQueueAfterReview}>Retry loading the queue</button>
         </div>
       )}
       {cardsLeft > 0 && isEndgame && (

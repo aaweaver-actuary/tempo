@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
-import threading
+import logging
+import sqlite3
+import time
 import uuid
 
 import chess
@@ -15,6 +17,7 @@ from ..models import GameSyncRequest
 from .game_findings import refresh_game_findings
 from .game_sync import sync_providers
 from .repertoire_comparison import compare_games
+from .activity_gate import activity_gate
 
 
 def _now() -> str:
@@ -42,7 +45,8 @@ def enqueue_sync(request: GameSyncRequest) -> str:
 
 
 def _claim_job() -> dict | None:
-    with connection() as database:
+    activity_gate.wait_for_foreground()
+    with connection(background=True) as database:
         database.execute("BEGIN IMMEDIATE")
         row = database.execute(
             """SELECT * FROM game_sync_jobs WHERE status IN ('queued','retrying')
@@ -61,7 +65,8 @@ def _claim_job() -> dict | None:
 
 def _finish_job(job_id: str, result: dict) -> None:
     now = _now()
-    with connection() as database:
+    activity_gate.wait_for_foreground()
+    with connection(background=True) as database:
         database.execute(
             """UPDATE game_sync_jobs SET status='complete',result_json=?,error=NULL,
                       completed_at=?,updated_at=? WHERE id=?""",
@@ -71,7 +76,8 @@ def _finish_job(job_id: str, result: dict) -> None:
 
 def _fail_job(job_id: str, error: Exception) -> None:
     now = _now()
-    with connection() as database:
+    activity_gate.wait_for_foreground()
+    with connection(background=True) as database:
         database.execute(
             """UPDATE game_sync_jobs SET status='failed',error=?,completed_at=?,updated_at=?
                WHERE id=?""",
@@ -80,34 +86,40 @@ def _fail_job(job_id: str, error: Exception) -> None:
 
 
 def _execute_job(job: dict) -> None:
-    try:
-        request = GameSyncRequest.model_validate_json(job["request_json"])
-        result = asyncio.run(sync_providers(request))
-        changed_game_ids = result.pop("_changed_game_ids", [])
-        for game_id in changed_game_ids:
-            enqueue_game_derivation(game_id)
-        _finish_job(job["id"], result)
-    except Exception as error:  # The job error must not overwrite provider state.
-        _fail_job(job["id"], error)
+    with activity_gate.background_job("game_sync", job["id"]):
+        try:
+            request = GameSyncRequest.model_validate_json(job["request_json"])
+            result = asyncio.run(sync_providers(request))
+            changed_game_ids = result.pop("_changed_game_ids", [])
+            for game_id in changed_game_ids:
+                enqueue_game_derivation(game_id, background=True)
+            _finish_job(job["id"], result)
+        except Exception as error:  # The job error must not overwrite provider state.
+            _fail_job(job["id"], error)
 
 
-def enqueue_game_derivation(game_id: str) -> None:
-    with connection() as database:
+def enqueue_game_derivation(game_id: str, *, background: bool = False) -> None:
+    if background:
+        activity_gate.wait_for_foreground()
+    with connection(background=background) as database:
         database.execute(
             """INSERT INTO game_derivation_jobs(game_id,status,updated_at)
                VALUES(?,'queued',?)
                ON CONFLICT(game_id) DO UPDATE SET status='queued',last_error=NULL,
-                   updated_at=excluded.updated_at""",
+                   next_attempt_at=NULL,updated_at=excluded.updated_at""",
             (game_id, _now()),
         )
 
 
 def _claim_derivation() -> str | None:
-    with connection() as database:
+    activity_gate.wait_for_foreground()
+    with connection(background=True) as database:
         database.execute("BEGIN IMMEDIATE")
         row = database.execute(
             """SELECT game_id FROM game_derivation_jobs WHERE status='queued'
+               AND (next_attempt_at IS NULL OR next_attempt_at<=?)
                ORDER BY updated_at LIMIT 1"""
+            , (_now(),)
         ).fetchone()
         if not row:
             return None
@@ -120,23 +132,54 @@ def _claim_derivation() -> str | None:
 
 
 def _execute_derivation(game_id: str) -> None:
-    try:
-        _index_game_positions(game_id)
-        compare_games([game_id])
-        refresh_game_findings(game_id)
-        with connection() as database:
-            database.execute(
-                """UPDATE game_derivation_jobs SET status='complete',last_error=NULL,updated_at=?
-                   WHERE game_id=?""",
-                (_now(), game_id),
-            )
-    except Exception as error:
-        with connection() as database:
-            database.execute(
-                """UPDATE game_derivation_jobs SET status='failed',last_error=?,updated_at=?
-                   WHERE game_id=?""",
-                (str(error), _now(), game_id),
-            )
+    with activity_gate.background_job("game_derivation", game_id):
+        try:
+            _index_game_positions(game_id)
+            compare_games([game_id], background=True)
+            refresh_game_findings(game_id, background=True)
+            activity_gate.wait_for_foreground()
+            with connection(background=True) as database:
+                database.execute(
+                    """UPDATE game_derivation_jobs SET status='complete',last_error=NULL,next_attempt_at=NULL,updated_at=?
+                       WHERE game_id=?""",
+                    (_now(), game_id),
+                )
+        except sqlite3.OperationalError as error:
+            for retry_number in range(5):
+                activity_gate.wait_for_foreground()
+                try:
+                    with connection(background=True) as database:
+                        attempts = database.execute(
+                            "SELECT attempts FROM game_derivation_jobs WHERE game_id=?",
+                            (game_id,),
+                        ).fetchone()
+                        delay_seconds = min(
+                            60, 2 ** min(5, attempts[0] if attempts else 1)
+                        )
+                        retry_at = (
+                            datetime.now(timezone.utc)
+                            + timedelta(seconds=delay_seconds)
+                        ).isoformat()
+                        database.execute(
+                            """UPDATE game_derivation_jobs SET status='queued',last_error=?,next_attempt_at=?,updated_at=?
+                               WHERE game_id=?""",
+                            (str(error), retry_at, _now(), game_id),
+                        )
+                    break
+                except sqlite3.OperationalError:
+                    if retry_number == 4:
+                        logging.getLogger("tempo.background").exception(
+                            "Could not requeue derivation job_id=%s", game_id
+                        )
+                    else:
+                        time.sleep(0.05 * (retry_number + 1))
+        except Exception as error:
+            with connection(background=True) as database:
+                database.execute(
+                    """UPDATE game_derivation_jobs SET status='failed',last_error=?,updated_at=?
+                       WHERE game_id=?""",
+                    (str(error), _now(), game_id),
+                )
 
 
 def _index_game_positions(game_id: str) -> None:
@@ -159,9 +202,9 @@ def _index_game_positions(game_id: str) -> None:
         occurrences.append(
             (game_id, len(occurrences), " ".join(board.fen().split()[:4]), None)
         )
-        database.execute(
-            "DELETE FROM game_position_occurrences WHERE game_id=?", (game_id,)
-        )
+    activity_gate.wait_for_foreground()
+    with connection(background=True) as database:
+        database.execute("DELETE FROM game_position_occurrences WHERE game_id=?", (game_id,))
         database.executemany(
             """INSERT INTO game_position_occurrences(game_id,ply,fen_key,move_uci)
                VALUES(?,?,?,?)""",
@@ -209,12 +252,20 @@ class GameSyncCoordinator:
 
     async def _run(self) -> None:
         while True:
-            job = await asyncio.to_thread(_claim_job)
+            try:
+                job = await asyncio.to_thread(_claim_job)
+            except sqlite3.OperationalError:
+                await asyncio.sleep(0.25)
+                continue
             if job:
                 await asyncio.to_thread(_execute_job, job)
                 await asyncio.sleep(0)
                 continue
-            game_id = await asyncio.to_thread(_claim_derivation)
+            try:
+                game_id = await asyncio.to_thread(_claim_derivation)
+            except sqlite3.OperationalError:
+                await asyncio.sleep(0.25)
+                continue
             if game_id:
                 await asyncio.to_thread(_execute_derivation, game_id)
                 await asyncio.sleep(0)
