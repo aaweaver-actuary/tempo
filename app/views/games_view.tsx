@@ -14,7 +14,7 @@ import {
   readWorkspaceResponse,
   invalidateWorkspaceData,
 } from "../lib/workspace-data";
-import { analyzeWithStockfish } from "../lib/analysis-engines";
+import { requestInteractiveAnalysis } from "../lib/engine-broker";
 import type { GameSyncState } from "../hooks/use-game-sync";
 import { importGameAndReformatToGameViewRecord } from "../utils/pgn";
 import { fenAfterMoves } from "../utils/fen";
@@ -45,6 +45,8 @@ export default function GamesView({
   theme,
   pieceSet,
   useSharedBoard = false,
+  initialFenFilter = "",
+  onClearFenFilter,
 }: {
   onAnalyze: (game: GameViewRecord, cursor: number) => void;
   onSettings: () => void;
@@ -54,6 +56,8 @@ export default function GamesView({
   theme: BoardTheme;
   pieceSet: PieceSet;
   useSharedBoard?: boolean;
+  initialFenFilter?: string;
+  onClearFenFilter?: () => void;
 }) {
   const local = usesLocalApi();
   const tools = useTaskTabs(["Moves", "Analysis", "Library"], "Moves", "tempo-games-tools");
@@ -83,6 +87,11 @@ export default function GamesView({
   const [findings, setFindings] = useState<Array<{ id: string; game_id: string; ply: number; kind: string; confidence: number; motif?: string | null; card_id?: string | null }>>([]);
   const [motifRecommendations, setMotifRecommendations] = useState<Array<{ motif: string; miss_count: number; total_loss_cp: number; supporting_games: string[]; recommended_pack_id?: string | null }>>([]);
   const [cardPreviews, setCardPreviews] = useState<Record<string, { starting_fen: string; moves: string[]; best_move: string; existing_card_id?: string | null }>>({});
+  const [positionSummary, setPositionSummary] = useState<{
+    encounters: number;
+    analyzed_encounters: number;
+    moves: Array<{ move_uci: string; games: number; score_percentage: number; average_loss_cp: number | null; mistakes: number }>;
+  } | null>(null);
   const [lines, setLines] = useState<AnalysisLine[]>([]);
   const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
   const [filters, setFilters] = useState(() => ({
@@ -136,9 +145,10 @@ export default function GamesView({
   const loadGames = useCallback(async () => {
     if (!local) return;
     try {
-      const response = await readWorkspaceResponse(
-        `${API_URL}/api/games/summary`,
-      );
+      const summaryUrl = initialFenFilter
+        ? `${API_URL}/api/games/summary?fen=${encodeURIComponent(initialFenFilter)}`
+        : `${API_URL}/api/games/summary`;
+      const response = await readWorkspaceResponse(summaryUrl);
       if (!response.ok) throw new Error("Could not load your local games.");
       const body = (await response.json()) as {
         games: Record<string, unknown>[];
@@ -153,12 +163,21 @@ export default function GamesView({
       }
       setError("");
       setLoaded(true);
+      if (initialFenFilter) {
+        const positionResponse = await readWorkspaceResponse(
+          `${API_URL}/api/games/position-summary?fen=${encodeURIComponent(initialFenFilter)}`,
+        );
+        if (positionResponse.ok)
+          setPositionSummary(await positionResponse.json());
+      } else {
+        setPositionSummary(null);
+      }
     } catch (reason) {
       setError(
         reason instanceof Error ? reason.message : "Could not load games.",
       );
     }
-  }, [local]);
+  }, [local, initialFenFilter]);
   useEffect(() => {
     if (syncState.lastSuccess) invalidateWorkspaceData();
     queueMicrotask(() => void loadGames());
@@ -255,7 +274,7 @@ export default function GamesView({
     queueMicrotask(() => {
       if (active) setEngineText("Analyzing…");
     });
-    void analyzeWithStockfish(gameFen, 12)
+    void requestInteractiveAnalysis(gameFen, 12)
       .then((moves) => {
         if (active)
           setEngineText(
@@ -368,6 +387,21 @@ export default function GamesView({
         )}
       </div>
       {local && <p className="muted">Import filter: {syncState.filterLabel ?? "Rated blitz, rapid, and classical · last 90 days"}. Bullet, casual, variants, and older games are skipped.</p>}
+      {initialFenFilter && (
+        <section className="position-game-summary" aria-label="Games from reviewed position">
+          <p>
+            Position filter · {positionSummary?.encounters ?? 0} encounters · {positionSummary?.analyzed_encounters ?? 0} analyzed
+            {" "}<button onClick={onClearFenFilter}>Clear</button>
+          </p>
+          {positionSummary?.moves.map((move) => (
+            <p key={move.move_uci}>
+              <strong>{move.move_uci}</strong> · {move.games} games · {move.score_percentage}% score
+              {move.average_loss_cp === null ? " · awaiting analysis" : ` · ${move.average_loss_cp} cp average loss · ${move.mistakes} mistakes`}
+            </p>
+          ))}
+          {positionSummary?.encounters === 0 && <p>No imported game has reached this position.</p>}
+        </section>
+      )}
       {(syncState.providers ?? []).map((provider) => (
         <p className="muted" key={provider.provider}>
           {provider.provider}: {provider.inserted} new, {provider.updated} updated, {provider.duplicates} duplicates, {provider.filtered} filtered, {provider.rejected} rejected{provider.failed ? ", failed" : ""}

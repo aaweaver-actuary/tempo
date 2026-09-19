@@ -41,6 +41,7 @@ interface TrainingViewProps {
   resetCardAttempt: () => void;
   setEditorCard: (card: PracticeCard | null) => void;
   onMove: (from: Square, to: Square) => void;
+  onOpenPosition?: (target: "analysis" | "builder" | "games") => void;
   useSharedBoard?: boolean;
 }
 
@@ -57,6 +58,7 @@ export default function TrainingView({
   resetCardAttempt,
   setEditorCard,
   onMove,
+  onOpenPosition = () => undefined,
   useSharedBoard = false,
 }: TrainingViewProps) {
   const {
@@ -304,6 +306,11 @@ export default function TrainingView({
                   {attemptFailed ? "Finish on the board" : "Correct"}
                 </strong>
               </button>
+            </div>
+            <div className="position-actions" aria-label="Open review position">
+              <button onClick={() => onOpenPosition("analysis")}>Analysis</button>
+              <button onClick={() => onOpenPosition("builder")}>Builder</button>
+              <button onClick={() => onOpenPosition("games")}>Games here</button>
             </div>
           </aside>
         </section>

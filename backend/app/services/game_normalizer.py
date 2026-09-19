@@ -20,6 +20,7 @@ class RejectedGame(ValueError):
 
 
 def _provider_game_id(game_url: str, explicit_id: str | None) -> str:
+    """Determine the unique game ID for a provider game, using an explicit ID if available, or extracting it from the game URL."""
     if explicit_id and explicit_id.strip():
         return explicit_id.strip()
     parsed = urlparse(game_url)
@@ -30,6 +31,7 @@ def _provider_game_id(game_url: str, explicit_id: str | None) -> str:
 
 
 def _played_at(headers: chess.pgn.Headers, explicit: str | None) -> str:
+    """Determine the played date and time for a game, using an explicit value if available, or extracting it from the PGN headers."""
     if explicit:
         return explicit
     played_date = headers.get("UTCDate", headers.get("Date", "")).replace(".", "-")
@@ -39,6 +41,7 @@ def _played_at(headers: chess.pgn.Headers, explicit: str | None) -> str:
 
 
 def _speed(headers: chess.pgn.Headers, explicit: str | None) -> str:
+    """Determine the speed of the game, using an explicit value if available, or extracting it from the PGN headers."""
     if explicit:
         return explicit.lower()
     event = headers.get("Event", "").lower()
@@ -57,10 +60,33 @@ def normalize_provider_pgn(
     game_url: str | None = None,
     opening_name: str | None = None,
 ) -> GameRecord:
+    """
+    Normalize a provider-specific PGN into a standardized GameRecord.
+
+    Args:
+        provider: The name of the game provider (e.g., "chess.com", "lichess.org").
+        username: The username of the player for whom the game is being normalized.
+        pgn_text: The raw PGN text of the game.
+        provider_game_id: Optional explicit provider game ID.
+        played_at: Optional explicit played date and time.
+        speed: Optional explicit game speed.
+        rated: Optional flag indicating if the game was rated.
+        game_url: Optional URL of the game.
+        opening_name: Optional name of the opening.
+
+    Returns:
+        A normalized GameRecord instance.
+
+    Raises:
+        RejectedGame: If the game cannot be normalized due to missing or invalid data.
+    """
     game = chess.pgn.read_game(io.StringIO(pgn_text))
     if not game or game.errors:
         raise RejectedGame("PGN could not be parsed legally")
-    if game.headers.get("Variant", "Standard").lower() not in {"standard", "from position"}:
+    if game.headers.get("Variant", "Standard").lower() not in {
+        "standard",
+        "from position",
+    }:
         raise RejectedGame("only standard chess games are supported")
 
     white = game.headers.get("White", "")
@@ -99,7 +125,11 @@ def normalize_provider_pgn(
         provider_game_id=resolved_provider_game_id,
         played_at=resolved_played_at,
         speed=_speed(game.headers, speed),
-        rated=bool(rated if rated is not None else "casual" not in game.headers.get("Event", "").lower()),
+        rated=bool(
+            rated
+            if rated is not None
+            else "casual" not in game.headers.get("Event", "").lower()
+        ),
         color=color,
         result=result,
         start_fen=start_fen,

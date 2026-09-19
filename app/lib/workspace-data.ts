@@ -8,8 +8,60 @@ import { parseData } from "./validated-data";
 
 const requests = new Map<
   string,
-  { createdAt: number; promise: Promise<unknown> }
+  { createdAt: number; promise: Promise<unknown>; staleValue?: unknown }
 >();
+const WORKSPACE_CACHE_VERSION = 1;
+const WORKSPACE_CACHE_PREFIX = `tempo-workspace-cache-v${WORKSPACE_CACHE_VERSION}:`;
+const WORKSPACE_CACHE_LIMIT = 40;
+
+type StoredWorkspaceValue = {
+  version: number;
+  savedAt: number;
+  data: unknown;
+};
+
+function canPersist(url: string) {
+  return typeof localStorage !== "undefined" && url.includes("/api/");
+}
+
+function readPersisted(url: string): StoredWorkspaceValue | undefined {
+  if (!canPersist(url)) return undefined;
+  try {
+    const raw = localStorage.getItem(`${WORKSPACE_CACHE_PREFIX}${url}`);
+    if (!raw) return undefined;
+    const value = JSON.parse(raw) as StoredWorkspaceValue;
+    return value.version === WORKSPACE_CACHE_VERSION ? value : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function persist(url: string, data: unknown) {
+  if (!canPersist(url)) return;
+  try {
+    localStorage.setItem(
+      `${WORKSPACE_CACHE_PREFIX}${url}`,
+      JSON.stringify({ version: WORKSPACE_CACHE_VERSION, savedAt: Date.now(), data }),
+    );
+    const keys = Array.from({ length: localStorage.length }, (_, index) =>
+      localStorage.key(index),
+    ).filter((key): key is string => Boolean(key?.startsWith(WORKSPACE_CACHE_PREFIX)));
+    if (keys.length > WORKSPACE_CACHE_LIMIT) {
+      const oldest = keys
+        .map((key) => ({ key, value: JSON.parse(localStorage.getItem(key) ?? "{}") as Partial<StoredWorkspaceValue> }))
+        .sort((left, right) => (left.value.savedAt ?? 0) - (right.value.savedAt ?? 0));
+      for (const item of oldest.slice(0, keys.length - WORKSPACE_CACHE_LIMIT))
+        localStorage.removeItem(item.key);
+    }
+  } catch {
+    // A full or disabled browser store must not prevent live reads.
+  }
+}
+
+function notifyWorkspaceData(state: "refreshing" | "ready" | "error", url: string) {
+  if (typeof window !== "undefined")
+    window.dispatchEvent(new CustomEvent("tempo-workspace-data", { detail: { state, url } }));
+}
 const decks = new Map<
   string,
   Promise<Array<{ record: PackagedPuzzle; card: PracticeCard }>>
@@ -25,10 +77,15 @@ export function readWorkspaceData(
   schema?: z.ZodType,
 ): Promise<unknown> {
   const cached = requests.get(url);
-  if (cached && Date.now() - cached.createdAt < 30_000)
-    return cached.promise.then((raw) =>
+  if (cached && Date.now() - cached.createdAt < 30_000) {
+    const value = cached.staleValue === undefined
+      ? cached.promise
+      : Promise.resolve(cached.staleValue);
+    return value.then((raw) =>
       schema ? parseData(schema, raw, url) : raw,
     );
+  }
+  const persisted = readPersisted(url);
   const requestController = new AbortController();
   const requestTimeout = setTimeout(
     () =>
@@ -39,6 +96,12 @@ export function readWorkspaceData(
       ),
     15_000,
   );
+  if (persisted) notifyWorkspaceData("refreshing", url);
+  const entry: { createdAt: number; promise: Promise<unknown>; staleValue?: unknown } = {
+    createdAt: Date.now(),
+    promise: Promise.resolve(undefined),
+    staleValue: persisted?.data,
+  };
   const promise = fetch(url, { signal: requestController.signal })
     .then((response) => {
       if (!response.ok)
@@ -53,17 +116,37 @@ export function readWorkspaceData(
             : raw,
         );
     })
+    .then((raw) => {
+      entry.staleValue = undefined;
+      persist(url, raw);
+      notifyWorkspaceData("ready", url);
+      return raw;
+    })
     .catch((error) => {
       requests.delete(url);
+      notifyWorkspaceData("error", url);
       throw error;
     })
     .finally(() => clearTimeout(requestTimeout));
-  requests.set(url, { createdAt: Date.now(), promise });
+  entry.promise = promise;
+  requests.set(url, entry);
+  if (persisted) {
+    void promise.catch(() => undefined);
+    return Promise.resolve(persisted.data).then((raw) =>
+      schema ? parseData(schema, raw, url) : raw,
+    );
+  }
   return promise.then((raw) => (schema ? parseData(schema, raw, url) : raw));
 }
 
 export function invalidateWorkspaceData() {
   requests.clear();
+  if (typeof localStorage !== "undefined") {
+    for (let index = localStorage.length - 1; index >= 0; index--) {
+      const key = localStorage.key(index);
+      if (key?.startsWith(WORKSPACE_CACHE_PREFIX)) localStorage.removeItem(key);
+    }
+  }
 }
 export async function readWorkspaceResponse(url: string) {
   return Response.json(await readWorkspaceData(url));

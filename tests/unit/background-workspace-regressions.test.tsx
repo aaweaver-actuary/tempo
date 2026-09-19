@@ -3,7 +3,7 @@ import { render, screen, waitFor, fireEvent } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
 import { computeStudyTask } from "../../app/lib/study-computation";
-import { loadTacticsDeck, preloadView, readWorkspaceData, invalidateWorkspaceData } from "../../app/lib/workspace-data";
+import { loadTacticsDeck, preloadView, readWorkspaceData, invalidateWorkspaceData, resetWorkspaceCache } from "../../app/lib/workspace-data";
 import { useBackgroundStudy } from "../../app/hooks/use-background-study";
 import type { StudyTask } from "../../app/lib/study-computation";
 import type { PackagedPuzzle } from "../../app/types";
@@ -58,6 +58,21 @@ it("preloaded local records are invalidated after mutations rather than hiding n
   expect(await readWorkspaceData("http://localhost/api/cache-fixture")).toEqual({ count: 1 });
   invalidateWorkspaceData();
   expect(await readWorkspaceData("http://localhost/api/cache-fixture")).toEqual({ count: 2 });
+});
+
+it("cached route data renders before background refresh and reconciles afterward", async () => {
+  invalidateWorkspaceData();
+  const url = "http://localhost/api/persistent-cache-fixture";
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ count: 1 })));
+  expect(await readWorkspaceData(url)).toEqual({ count: 1 });
+  resetWorkspaceCache();
+  let finishRefresh!: (response: Response) => void;
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { finishRefresh = resolve; })));
+  const cached = await readWorkspaceData(url);
+  expect(cached).toEqual({ count: 1 });
+  finishRefresh(Response.json({ count: 2 }));
+  await waitFor(async () => expect(await readWorkspaceData(url)).toEqual({ count: 2 }));
+  invalidateWorkspaceData();
 });
 
 it("Builder comparison keeps covered moves and displays all source details together", () => {

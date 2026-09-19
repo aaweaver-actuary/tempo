@@ -29,6 +29,8 @@ import {
   CardId,
   asRepertoireId,
   asFenString,
+  asTeachingCardKey,
+  asTeachingMoveKey,
 } from "../types";
 import { canonicalFenKey } from "../utils/canonical-line";
 import { IndexedPosition } from "../lib/position-similarity";
@@ -63,11 +65,13 @@ import { fetchAndInitializeQueue } from "./fetchAndInitializeQueue";
 import { Settings } from "../utils/settings";
 import { TreeBrowser } from "./tree_browser";
 import { useShallow } from "zustand/react/shallow";
+import { WorkspaceRefreshStatus } from "../components/workspace-refresh-status";
 
 export default function Home() {
   const gameSync = useGameSync();
   useGameAnalysis();
   const [currentView, setCurrentView] = useState<View>("train");
+  const [gamesFenFilter, setGamesFenFilter] = useState("");
   const changeWorkspace = useCallback((view: View) => {
     const finished = measureTempoOperation("view-switch");
     setCurrentView(view);
@@ -203,11 +207,11 @@ export default function Home() {
         setImportedRepertoires([]);
         setSeenMoves(
           new Set(
-            readStoredValue(
+            (readStoredValue(
               localStorage,
               "tempo-seen-moves",
               z.array(z.string()),
-            ) ?? [],
+            ) ?? []).map(asTeachingMoveKey),
           ),
         );
         setBoardTheme(
@@ -236,11 +240,11 @@ export default function Home() {
       setReviewed(Number(localStorage.getItem("tempo-reviewed") ?? 0));
       setSeenMoves(
         new Set(
-          readStoredValue(
+          (readStoredValue(
             localStorage,
             "tempo-seen-moves",
             z.array(z.string()),
-          ) ?? [],
+          ) ?? []).map(asTeachingMoveKey),
         ),
       );
       setFirstCleanPasses(
@@ -651,7 +655,7 @@ export default function Home() {
   );
 
   function markMoveSeen(moveStep: number) {
-    const key = `${card.backendId ?? card.id}:${card.revision ?? 1}:${moveStep}`;
+    const key = asTeachingMoveKey(`${card.backendId ?? card.id}:${card.revision ?? 1}:${moveStep}`);
     setSeenMoves((current) => {
       const next = new Set(current).add(key);
       localStorage.setItem(
@@ -662,8 +666,8 @@ export default function Home() {
     });
   }
 
-  const currentMoveKey = `${card.backendId ?? card.id}:${card.revision ?? 1}:${step}`;
-  const teachingCardKey = `${card.backendId ?? card.id}:${card.revision ?? 1}`;
+  const currentMoveKey = asTeachingMoveKey(`${card.backendId ?? card.id}:${card.revision ?? 1}:${step}`);
+  const teachingCardKey = asTeachingCardKey(`${card.backendId ?? card.id}:${card.revision ?? 1}`);
   useEffect(() => {
     let active = true;
     if (!card.backendId || card.kind !== "opening") {
@@ -689,7 +693,7 @@ export default function Home() {
                 .concat(
                   states.map(
                     (state) =>
-                      `${card.backendId}:${state.revision}:${state.ply}`,
+                      asTeachingMoveKey(`${card.backendId}:${state.revision}:${state.ply}`),
                   ),
                 ),
             ),
@@ -814,6 +818,34 @@ export default function Home() {
     setQueueNotice("Again recorded · restarted in guided mode");
   }
 
+  function openReviewPosition(target: "analysis" | "builder" | "games") {
+    if (target === "games") {
+      setGamesFenFilter(canonicalFenKey(currentFenString));
+      changeWorkspace("games");
+      return;
+    }
+    const orientation = trainedColor(card);
+    const repertoireId = card.repertoireId;
+    const session: BuilderSession = {
+      version: 1,
+      activeRepertoireByColor: repertoireId
+        ? { [orientation]: repertoireId }
+        : {},
+      activeRepertoireId: repertoireId,
+      orientation,
+      startingFen: currentFenString,
+      history: [],
+      cursor: 0,
+      branchStart: target === "builder" ? 0 : null,
+    };
+    localStorage.setItem("tempo-builder-session", JSON.stringify(session));
+    sessionStorage.setItem(
+      "tempo-builder-tools",
+      target === "analysis" ? "Analysis" : "Repertoire",
+    );
+    changeWorkspace("builder");
+  }
+
   return (
     <main
       className={`app-shell${boardWorkspace ? " board-workspace-shell" : ""}`}
@@ -827,6 +859,7 @@ export default function Home() {
         </div>
       </header>
       {!usesLocalApi() && <DemoBanner />}
+      <WorkspaceRefreshStatus />
 
       <BoardWorkspaceContainer enabled={boardWorkspace} view={currentView}>
       {currentView === "train" && (
@@ -844,6 +877,7 @@ export default function Home() {
               resetCardAttempt={resetCardAttempt}
               setEditorCard={setEditorCard}
               onMove={tryMove}
+              onOpenPosition={openReviewPosition}
               useSharedBoard
             />
         </>
@@ -903,6 +937,8 @@ export default function Home() {
       {currentView === "games" && (
         <>
             <GamesView
+              initialFenFilter={gamesFenFilter}
+              onClearFenFilter={() => setGamesFenFilter("")}
               syncState={gameSync.state}
               onSync={() => void gameSync.sync(true)}
               onRepair={() => void gameSync.sync(true, true)}

@@ -14,6 +14,13 @@ export enum ValidationIssueKind {
   IllegalMove = "illegal",
 }
 
+export enum EnginePriority {
+  Interactive = "interactive",
+  Background = "background",
+}
+
+export type EnginePriorityValue = `${EnginePriority}`;
+
 export enum TablebaseCategory {
   Win = "win",
   Loss = "loss",

@@ -14,6 +14,36 @@ export enum GameSpeed {
   Unknown = "unknown",
 }
 
+export enum GameProvider {
+  Lichess = "lichess",
+  ChessCom = "chess.com",
+}
+
+export enum GameSyncJobStatus {
+  Queued = "queued",
+  Running = "running",
+  Paused = "paused",
+  Retrying = "retrying",
+  Complete = "complete",
+  Failed = "failed",
+}
+
+export enum GameFindingKind {
+  RepertoireLapse = "repertoire lapse",
+  RepertoireGap = "repertoire gap",
+  MajorMistake = "major mistake",
+  Blunder = "blunder",
+  FirstBigMistake = "first big mistake",
+  TacticalMiss = "tactical miss",
+}
+
+export enum GameFindingStatus {
+  Pending = "pending",
+  Accepted = "accepted",
+  Ignored = "ignored",
+  Excluded = "excluded",
+}
+
 export enum GameResult {
   Won = "won",
   Lost = "lost",
@@ -38,6 +68,10 @@ export enum GameCoverageStatus {
 }
 
 export type GameSpeedValue = `${GameSpeed}`;
+export type GameProviderValue = `${GameProvider}`;
+export type GameSyncJobStatusValue = `${GameSyncJobStatus}`;
+export type GameFindingKindValue = `${GameFindingKind}`;
+export type GameFindingStatusValue = `${GameFindingStatus}`;
 export type GameResultValue = `${GameResult}`;
 export type GameAnalysisStateValue = `${GameAnalysisState}`;
 export type GameCoverageStatusValue = `${GameCoverageStatus}`;

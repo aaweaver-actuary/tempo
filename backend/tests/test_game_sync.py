@@ -1,4 +1,7 @@
 from datetime import datetime, timezone
+import time
+from datetime import date
+import json
 
 import httpx
 from fastapi.testclient import TestClient
@@ -44,6 +47,21 @@ def install_transport(monkeypatch, handler):
     )
 
 
+def complete_sync(client: TestClient, payload: dict) -> dict:
+    enqueue = client.post("/api/games/sync", json=payload)
+    assert enqueue.status_code == 202
+    job_id = enqueue.json()["job_id"]
+    deadline = time.monotonic() + 5
+    while time.monotonic() < deadline:
+        job = client.get("/api/games/sync/status").json().get("active_job")
+        if job and job["id"] == job_id and job["status"] == "complete":
+            return job["result"]
+        if job and job["id"] == job_id and job["status"] == "failed":
+            raise AssertionError(job["error"])
+        time.sleep(0.01)
+    raise AssertionError("Game sync did not complete")
+
+
 def test_chesscom_mixed_case_username_and_shared_site_header_import_every_distinct_game(
     tmp_path, monkeypatch
 ):
@@ -63,11 +81,8 @@ def test_chesscom_mixed_case_username_and_shared_site_header_import_every_distin
 
     install_transport(monkeypatch, handler)
     with TestClient(app) as client:
-        response = client.post(
-            "/api/games/sync", json={"chesscom_username": "TempoPlayer"}
-        )
-        assert response.status_code == 200
-        assert response.json()["providers"]["chess.com"]["inserted"] == 2
+        result = complete_sync(client, {"chesscom_username": "TempoPlayer"})
+        assert result["providers"]["chess.com"]["inserted"] == 2
         assert client.get("/api/games/summary").json()["total"] == 2
     assert requested_paths[0].endswith("/player/tempoplayer/games/archives")
 
@@ -89,10 +104,10 @@ def test_one_provider_failure_does_not_discard_other_provider_success(
 
     install_transport(monkeypatch, handler)
     with TestClient(app) as client:
-        result = client.post(
-            "/api/games/sync",
-            json={"lichess_username": "TempoPlayer", "chesscom_username": "TempoPlayer"},
-        ).json()
+        result = complete_sync(
+            client,
+            {"lichess_username": "TempoPlayer", "chesscom_username": "TempoPlayer"},
+        )
         assert result["providers"]["lichess"]["failed"] == 1
         assert result["providers"]["chess.com"]["inserted"] == 1
         assert client.get("/api/games/summary").json()["total"] == 1
@@ -114,8 +129,8 @@ def test_incremental_overlap_catches_late_games_without_duplicates(tmp_path, mon
 
     install_transport(monkeypatch, handler)
     with TestClient(app) as client:
-        first = client.post("/api/games/sync", json={"lichess_username": "TempoPlayer"}).json()
-        second = client.post("/api/games/sync", json={"lichess_username": "TempoPlayer"}).json()
+        first = complete_sync(client, {"lichess_username": "TempoPlayer"})
+        second = complete_sync(client, {"lichess_username": "TempoPlayer"})
         assert first["imported"] == 1
         assert second["providers"]["lichess"]["inserted"] == 1
         assert second["providers"]["lichess"]["duplicates"] == 1
@@ -145,11 +160,124 @@ def test_sync_reports_filtered_rejected_and_duplicate_counts(tmp_path, monkeypat
 
     install_transport(monkeypatch, handler)
     with TestClient(app) as client:
-        client.post("/api/games/sync", json={"chesscom_username": "TempoPlayer"})
-        counts = client.post(
-            "/api/games/sync", json={"chesscom_username": "TempoPlayer"}
-        ).json()["providers"]["chess.com"]
+        complete_sync(client, {"chesscom_username": "TempoPlayer"})
+        counts = complete_sync(client, {"chesscom_username": "TempoPlayer"})[
+            "providers"
+        ]["chess.com"]
         assert counts["filtered"] == 1
         assert counts["rejected"] == 1
         assert counts["duplicates"] == 1
         assert counts["failed"] == 0
+
+
+def test_sync_status_never_exposes_persistence_only_result_json(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        with database.connection() as db:
+            db.execute(
+                """INSERT INTO game_sync_state(provider,username,status,last_result_json)
+                   VALUES('lichess','TempoPlayer','idle',NULL)"""
+            )
+        response = client.get("/api/games/sync/status")
+        assert response.status_code == 200
+        provider = response.json()["providers"][0]
+        assert "last_result_json" not in provider
+        assert provider["last_result"] is None
+
+
+def test_provider_status_never_inherits_another_provider_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+
+    def handler(request: httpx.Request):
+        if request.url.host == "lichess.org":
+            return httpx.Response(404, text="not found")
+        if request.url.path.endswith("/archives"):
+            return httpx.Response(200, json={"archives": []})
+        raise AssertionError(f"Unexpected request: {request.url}")
+
+    install_transport(monkeypatch, handler)
+    with TestClient(app) as client:
+        complete_sync(
+            client,
+            {"lichess_username": "Missing", "chesscom_username": "TempoPlayer"},
+        )
+        providers = {
+            provider["provider"]: provider
+            for provider in client.get("/api/games/sync/status").json()["providers"]
+        }
+        assert providers["lichess"]["last_error"] == "Lichess username not found"
+        assert providers["chess.com"]["last_error"] is None
+
+
+def test_slow_game_sync_does_not_delay_settings_read(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+
+    def handler(_request: httpx.Request):
+        time.sleep(0.35)
+        return httpx.Response(404, text="not found")
+
+    install_transport(monkeypatch, handler)
+    with TestClient(app) as client:
+        enqueue = client.post("/api/games/sync", json={"lichess_username": "Slow"})
+        assert enqueue.status_code == 202
+        started = time.monotonic()
+        settings = client.get("/api/settings")
+        elapsed = time.monotonic() - started
+        assert settings.status_code == 200
+        assert elapsed < 0.2
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            job = client.get("/api/games/sync/status").json()["active_job"]
+            if job["status"] == "complete":
+                break
+            time.sleep(0.01)
+        else:
+            raise AssertionError("Slow sync did not finish")
+
+
+def test_correct_card_review_advances_while_game_sync_is_active(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+
+    def handler(_request: httpx.Request):
+        time.sleep(0.35)
+        return httpx.Response(404, text="not found")
+
+    install_transport(monkeypatch, handler)
+    with TestClient(app) as client:
+        today = date.today().isoformat()
+        with database.connection() as db:
+            db.execute(
+                "INSERT INTO repertoires(id,name,source_name,created_at) VALUES('rep','Rep','rep.pgn',?)",
+                (datetime.now(timezone.utc).isoformat(),),
+            )
+            db.execute(
+                """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at)
+                   VALUES('review-card','rep','prefix',? ,?,'learning',?,?)""",
+                (
+                    "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                    json.dumps(["e2e4"]),
+                    today,
+                    today,
+                ),
+            )
+            queue_entry_id = db.execute(
+                "INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,'review-card',0)",
+                (today,),
+            ).lastrowid
+        assert client.post(
+            "/api/games/sync", json={"lichess_username": "Slow"}
+        ).status_code == 202
+        started = time.monotonic()
+        review = client.post(
+            "/api/cards/review-card/review",
+            json={"outcome": "correct", "queue_entry_id": queue_entry_id},
+        )
+        assert review.status_code == 200
+        assert time.monotonic() - started < 0.2
+        with database.connection() as db:
+            assert db.execute(
+                "SELECT COUNT(*) FROM reviews WHERE card_id='review-card'"
+            ).fetchone()[0] == 1
+            assert db.execute(
+                "SELECT status FROM daily_queue WHERE id=?", (queue_entry_id,)
+            ).fetchone()[0] == "complete"

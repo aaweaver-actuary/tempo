@@ -295,9 +295,10 @@ def test_local_sync_persists_errors_and_success_without_sample_fallback(
         lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs),
     )
     with TestClient(app) as client:
-        error = client.post("/api/games/sync", json={"lichess_username": "andy"})
-        assert error.status_code == 200
-        assert error.json()["providers"]["lichess"]["failed"] == 1
+        from test_game_sync import complete_sync
+
+        error = complete_sync(client, {"lichess_username": "andy"})
+        assert error["providers"]["lichess"]["failed"] == 1
         state = client.get("/api/games/sync/status").json()["providers"][0]
         assert state["status"] == "error"
         assert (
@@ -309,15 +310,11 @@ def test_local_sync_persists_errors_and_success_without_sample_fallback(
         with database.connection() as db:
             db.execute("UPDATE game_sync_state SET retry_after=NULL")
         assert (
-            client.post("/api/games/sync", json={"lichess_username": "andy"}).json()[
-                "imported"
-            ]
+            complete_sync(client, {"lichess_username": "andy"})["imported"]
             == 1
         )
         assert (
-            client.post("/api/games/sync", json={"lichess_username": "andy"}).json()[
-                "imported"
-            ]
+            complete_sync(client, {"lichess_username": "andy"})["imported"]
             == 0
         )
         assert client.get("/api/games/summary").json()["total"] == 1

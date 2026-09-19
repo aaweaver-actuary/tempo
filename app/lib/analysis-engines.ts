@@ -7,64 +7,73 @@ import {
   stockfishMessageSchema,
 } from "../domain/schemas";
 import { parseData, validRecords } from "./validated-data";
+import type { CandidateMove, FenString } from "../types";
+import { asSanMove, asUciMove } from "../types";
 
-export type EngineMove = {
-  // TODO: we should use one of our already-defined types instead of a plain string for better type safety.
-  uci: string;
-  // TODO: we should use one of our already-defined types instead of a plain string for better type safety.
-  san: string;
-  score?: string;
-  probability?: number;
-  cp?: number;
-  mate?: number;
-  pv?: string[];
-};
+export type EngineMove = CandidateMove;
 
 let stockfishWorker: Worker | undefined;
 let stockfishRequest = 0;
+const STOCKFISH_REQUEST_TIMEOUT_MS = 60_000;
+
+export class StockfishCancelledError extends Error {
+  constructor() {
+    super("Stockfish analysis was preempted");
+    this.name = "StockfishCancelledError";
+  }
+}
 
 async function loadStockfish() {
   if (!stockfishWorker)
-    stockfishWorker = new Worker(`${assetUrl("stockfish-worker.js")}?v=2`, {
+    stockfishWorker = new Worker(`${assetUrl("stockfish-worker.js")}?v=3`, {
       type: "module",
     });
   return stockfishWorker;
 }
 
-let stockfishTail: Promise<unknown> = Promise.resolve();
-
 export function analyzeWithStockfish(
-  // TODO: we should use one of our already-defined types instead of a plain string for better type safety.
-  fen: string,
+  fen: FenString,
   depth = 10,
+  signal?: AbortSignal,
 ): Promise<EngineMove[]> {
-  const result = stockfishTail.then(() => stockfishAnalysis(fen, depth));
-  stockfishTail = result.catch(() => undefined);
-  return result;
+  return stockfishAnalysis(fen, depth, signal);
 }
 
 async function stockfishAnalysis(
-  // TODO: we should use one of our already-defined types instead of a plain string for better type safety.
-  fen: string,
+  fen: FenString,
   depth: number,
+  signal?: AbortSignal,
 ): Promise<EngineMove[]> {
   const worker = await loadStockfish();
   const id = ++stockfishRequest;
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new StockfishCancelledError());
+      return;
+    }
     const lines = new Map<number, EngineMove>();
-    const timeout = window.setTimeout(() => {
+    const cleanup = () => {
+      window.clearTimeout(timeout);
       worker.removeEventListener("message", receive);
+      signal?.removeEventListener("abort", cancel);
+    };
+    const cancel = () => worker.postMessage({ type: "cancel", id });
+    const timeout = window.setTimeout(() => {
+      cleanup();
       reject(new Error("Stockfish took too long"));
-      // TODO: what is this magic number? why is it hard-coded here? should it be configurable?
-    }, 60_000);
+    }, STOCKFISH_REQUEST_TIMEOUT_MS);
     const receive = (event: MessageEvent<unknown>) => {
       const parsed = stockfishMessageSchema.safeParse(event.data);
       if (!parsed.success) return;
       const data = parsed.data;
       if (data.id !== id) return;
+      if (data.type === "cancelled") {
+        cleanup();
+        reject(new StockfishCancelledError());
+        return;
+      }
       if (data.type === "error") {
-        window.clearTimeout(timeout);
-        worker.removeEventListener("message", receive);
+        cleanup();
         reject(new Error(data.message ?? "Stockfish could not start"));
         return;
       }
@@ -94,10 +103,12 @@ async function stockfishAnalysis(
             : cp
               ? `${Number(cp) >= 0 ? "+" : ""}${(Number(cp) / 100).toFixed(2)}`
               : "—";
-          const pv = line.split(" pv ")[1]?.trim().split(/\s+/) ?? [uci];
+          const pv = (line.split(" pv ")[1]?.trim().split(/\s+/) ?? [uci]).map(
+            asUciMove,
+          );
           lines.set(multipv, {
-            uci,
-            san: move.san,
+            uci: asUciMove(uci),
+            san: asSanMove(move.san),
             score,
             pv,
             cp: cp === undefined ? undefined : Number(cp),
@@ -105,8 +116,7 @@ async function stockfishAnalysis(
           });
         }
         if (line.startsWith("bestmove ")) {
-          window.clearTimeout(timeout);
-          worker.removeEventListener("message", receive);
+          cleanup();
           resolve(
             [...lines.entries()]
               .sort(([a], [b]) => a - b)
@@ -116,6 +126,7 @@ async function stockfishAnalysis(
       }
     };
     worker.addEventListener("message", receive);
+    signal?.addEventListener("abort", cancel, { once: true });
     worker.postMessage({ type: "analyze", id, fen, depth });
   });
 }
@@ -159,7 +170,22 @@ export function analyzeWithMaia(
         else
           request.resolve(
             validRecords(engineMoveSchema, reply.moves!, "Maia move").flatMap(
-              (move) => (move.san ? [{ ...move, san: move.san }] : []),
+              (move) =>
+                move.san
+                  ? [
+                      {
+                        ...move,
+                        san: asSanMove(move.san),
+                        pv: move.pv?.flatMap((uci) => {
+                          try {
+                            return [asUciMove(uci)];
+                          } catch {
+                            return [];
+                          }
+                        }),
+                      },
+                    ]
+                  : [],
             ),
           );
       }

@@ -7,7 +7,7 @@ import {
   removeBranchResultSchema,
 } from "../domain/schemas";
 import { readJsonResponse } from "../lib/validated-data";
-import { readStoredValue, reportDataDiagnostic } from "../lib/validated-data";
+import { parseData, readStoredValue, reportDataDiagnostic } from "../lib/validated-data";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import { Square, Chess } from "chess.js";
@@ -32,7 +32,8 @@ import {
 import { useBackgroundStudy } from "../hooks/use-background-study";
 import { runStudyTask } from "../lib/background-study";
 import type { StudyTask } from "../lib/study-computation";
-import { analyzeWithStockfish, analyzeWithMaia } from "../lib/analysis-engines";
+import { analyzeWithMaia } from "../lib/analysis-engines";
+import { requestInteractiveAnalysis } from "../lib/engine-broker";
 import {
   adaptEngineMoves,
   adaptExplorerMoves,
@@ -57,7 +58,7 @@ import {
   asUciMove,
 } from "../types";
 import { usesLocalApi } from "../utils/local";
-import { connectLichess } from "../utils/lichess";
+import { loadExplorer, readCachedExplorer } from "../lib/lichess-explorer";
 import { Settings } from "../utils/settings";
 import { canonicalFenKey, sanForUci } from "../utils/canonical-line";
 import {
@@ -513,7 +514,7 @@ export default function BuilderView({
       )
       .then((value) => {
         const data = value as { access_token: string };
-        sessionStorage.setItem("tempo-lichess-token", data.access_token);
+        localStorage.setItem("tempo-lichess-token", data.access_token);
         setLichessToken(data.access_token);
         window.history.replaceState({}, "", redirectUri);
       })
@@ -579,61 +580,46 @@ export default function BuilderView({
   ]);
 
   useEffect(() => {
-    const controller = new AbortController();
+    let active = true;
     queueMicrotask(() => {
-      if (controller.signal.aborted) return;
-      setExplorerMoves([]);
-      setMastersMoves([]);
-      if (!explorerOn || !lichessToken) {
-        setExplorerState(lichessToken ? "ready" : "auth");
+      if (!active) return;
+      if (!explorerOn) {
+        setExplorerState("off");
         return;
       }
-      setExplorerState("loading");
-      const headers = { Authorization: `Bearer ${lichessToken}` };
-      const base = "https://explorer.lichess.org";
-      Promise.all([
-        fetch(
-          `${base}/lichess?variant=standard&speeds=${explorerSpeeds}&ratings=${explorerRatings}&fen=${encodeURIComponent(fen)}`,
-          { signal: controller.signal, headers },
-        ),
-        fetch(
-          `${base}/masters?variant=standard&fen=${encodeURIComponent(fen)}`,
-          {
-            signal: controller.signal,
-            headers,
-          },
-        ),
-      ])
-        .then(async ([lichess, masters]) => {
-          if (!lichess.ok || !masters.ok)
-            throw new Error("Explorer request failed");
-          return Promise.all([
-            readJsonResponse(
-              lichess,
-              explorerResponseSchema,
-              "Lichess explorer",
-            ),
-            readJsonResponse(
-              masters,
-              explorerResponseSchema,
-              "Masters explorer",
-            ),
-          ]);
-        })
+      const cached = readCachedExplorer(fen, explorerSpeeds, explorerRatings);
+      if (cached) {
+        const human = parseData(explorerResponseSchema, cached.human, "cached Lichess explorer");
+        const masters = parseData(explorerResponseSchema, cached.masters, "cached Masters explorer");
+        setExplorerMoves(adaptExplorerMoves(fen, human.moves ?? []));
+        setMastersMoves(adaptExplorerMoves(fen, masters.moves ?? []));
+        setExplorerState("stale");
+      } else {
+        setExplorerMoves([]);
+        setMastersMoves([]);
+        setExplorerState("loading");
+      }
+      loadExplorer(fen, explorerSpeeds, explorerRatings)
         .then((value) => {
-          if (controller.signal.aborted) return;
-          const [human, masters] = value;
+          if (!active) return;
+          const human = parseData(explorerResponseSchema, value.human, "Lichess explorer");
+          const masters = parseData(explorerResponseSchema, value.masters, "Masters explorer");
           setExplorerMoves(adaptExplorerMoves(fen, human.moves ?? []));
           setMastersMoves(adaptExplorerMoves(fen, masters.moves ?? []));
           setExplorerState("ready");
         })
         .catch((error) => {
-          if (!controller.signal.aborted && error.name !== "AbortError")
-            setExplorerState("error");
+          if (!active) return;
+          if (!navigator.onLine) setExplorerState(cached ? "stale" : "offline");
+          else if (error instanceof Error && error.message === "rate-limited")
+            setExplorerState(cached ? "stale" : "rate-limited");
+          else setExplorerState(cached ? "stale" : "error");
         });
     });
-    return () => controller.abort();
-  }, [fen, explorerOn, lichessToken, explorerRatings, explorerSpeeds]);
+    return () => {
+      active = false;
+    };
+  }, [fen, explorerOn, explorerRatings, explorerSpeeds]);
 
   useEffect(() => {
     let current = true;
@@ -646,7 +632,7 @@ export default function BuilderView({
       }
       setStockfishMoves([]);
       setStockfishState("loading");
-      analyzeWithStockfish(fen)
+      requestInteractiveAnalysis(fen, 10)
         .then((moves) => {
           if (current) {
             setStockfishMoves(adaptEngineMoves(fen, moves));
@@ -728,20 +714,33 @@ export default function BuilderView({
         return;
       }
       try {
-        const response = await fetch(`${API_URL}/api/repertoire/branches`, {
+        const branchPayload = {
+          repertoire_id: selectedRepertoire.id,
+          starting_fen: startingFen,
+          moves,
+          trained_color: selectedRepertoire.side,
+          name: history
+            .slice(0, cursor)
+            .map((move) => move.san)
+            .join(" "),
+        };
+        let response = await fetch(`${API_URL}/api/repertoire/branches`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            repertoire_id: selectedRepertoire.id,
-            starting_fen: startingFen,
-            moves,
-            trained_color: selectedRepertoire.side,
-            name: history
-              .slice(0, cursor)
-              .map((move) => move.san)
-              .join(" "),
-          }),
+          body: JSON.stringify(branchPayload),
         });
+        if (
+          response.status === 409 &&
+          window.confirm(
+            "This repertoire already trains a different move from this position. Save this conflicting line anyway? Consider moving it to another repertoire instead.",
+          )
+        ) {
+          response = await fetch(`${API_URL}/api/repertoire/branches`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ ...branchPayload, allow_conflict: true }),
+          });
+        }
         const result = await readJsonResponse(
           response,
           branchResultSchema,
@@ -1014,7 +1013,7 @@ export default function BuilderView({
     if (nextStart) setStartingFen(nextStart);
   }
   function disconnectLichess() {
-    sessionStorage.removeItem("tempo-lichess-token");
+    localStorage.removeItem("tempo-lichess-token");
     setLichessToken("");
     setExplorerMoves([]);
   }
@@ -1266,14 +1265,9 @@ export default function BuilderView({
           </div>
         </div>
         <aside className="analysis-sidebar">
-          <section className="analysis-panel comparison-panel" data-task="Analysis">
+          <section className="analysis-panel comparison-panel" data-task="Analysis" data-turn-context={trainedTurn ? "trained-player" : "opponent"}>
             <div className="comparison-toolbar">
               <h2 className="sr-only">Compare moves</h2>
-              {(!lichessToken || explorerState === "error") && (
-                <button className="comparison-connect" onClick={connectLichess}>
-                  {lichessToken ? "Reconnect databases" : "Connect databases"}
-                </button>
-              )}
               <button
                 className="comparison-connect"
                 onClick={() =>
@@ -1297,11 +1291,14 @@ export default function BuilderView({
             </div>
             <p className="source-status" role="status">
               Stockfish: {stockfishState} · Maia: {maiaState} · Databases:{" "}
-              {!lichessToken
-                ? "not connected"
-                : !explorerOn
+              {!explorerOn
                   ? "paused"
                   : explorerState}
+            </p>
+            <p className="panel-message">
+              {trainedTurn
+                ? "Your turn: compare move quality, practical results, and repertoire consistency."
+                : "Opponent turn: cover reasonable responses supported by games, Maia, or Stockfish."}
             </p>
             <MoveComparisonTable
               repertoire={repertoireMoves}

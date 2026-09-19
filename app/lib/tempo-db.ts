@@ -86,6 +86,7 @@ const TABLE_TO_STORE: Record<string, TempoStore> = {
   cards: "cards",
   reviews: "reviews",
   daily_queue: "queues",
+  daily_queue_days: "queues",
   position_annotations: "annotations",
   imported_games: "games",
   settings: "settings",
@@ -97,7 +98,15 @@ const TABLE_TO_STORE: Record<string, TempoStore> = {
   endgame_attempts: "syncMetadata",
   game_accounts: "syncMetadata",
   game_move_analysis: "syncMetadata",
+  game_analysis_jobs: "syncMetadata",
+  game_sync_jobs: "syncMetadata",
+  game_derivation_jobs: "syncMetadata",
+  game_position_occurrences: "syncMetadata",
+  gameplay_card_priorities: "syncMetadata",
   repertoire_comparisons: "syncMetadata",
+  game_repertoire_matches: "syncMetadata",
+  game_findings: "syncMetadata",
+  game_insight_recommendations: "syncMetadata",
 };
 
 function recordKey(table: string, row: Record<string, unknown>, index: number): string {
@@ -105,6 +114,10 @@ function recordKey(table: string, row: Record<string, unknown>, index: number): 
   if (table === "settings") return String(row.id ?? 1);
   if (table === "game_sync_state") return `game_sync_state:${row.provider ?? index}`;
   if (table === "teaching_states") return `teaching_states:${row.card_id}:${row.revision}:${row.ply}`;
+  if (table === "daily_queue_days") return `daily_queue_days:${row.queue_date}`;
+  if (table === "game_position_occurrences") return `game_position_occurrences:${row.game_id}:${row.ply}`;
+  if (table === "game_repertoire_matches") return `game_repertoire_matches:${row.game_id}:${row.repertoire_id}`;
+  if (table === "gameplay_card_priorities") return `gameplay_card_priorities:${row.card_id}`;
   if (TABLE_TO_STORE[table] === "syncMetadata") return `${table}:${row.id ?? row.card_id ?? row.game_id ?? row.provider ?? index}`;
   return String(row.id ?? `${table}:${index}`);
 }

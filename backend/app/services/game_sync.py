@@ -50,7 +50,7 @@ def _retry_at(value: str | None) -> str | None:
             return None
 
 
-def _persist_game(record: GameRecord) -> str:
+def _persist_game(record: GameRecord) -> tuple[str, str]:
     with connection() as database:
         existing = database.execute(
             "SELECT * FROM imported_games WHERE provider=? AND provider_game_id=?",
@@ -95,12 +95,12 @@ def _persist_game(record: GameRecord) -> str:
                     "INSERT OR IGNORE INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
                     (existing["id"], datetime.now(timezone.utc).isoformat()),
                 )
-                return "updated"
+                return "updated", existing["id"]
             database.execute(
                 "INSERT OR IGNORE INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
                 (existing["id"], datetime.now(timezone.utc).isoformat()),
             )
-            return "duplicate"
+            return "duplicate", existing["id"]
         database.execute(
             """INSERT INTO imported_games(id,provider,provider_game_id,content_hash,username,played_at,speed,rated,color,result,start_fen,moves_json,game_url,opening_name)
                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
@@ -114,7 +114,7 @@ def _persist_game(record: GameRecord) -> str:
             "INSERT INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
             (f"{record.provider}:{record.provider_game_id}", datetime.now(timezone.utc).isoformat()),
         )
-        return "inserted"
+        return "inserted", f"{record.provider}:{record.provider_game_id}"
 
 
 def _starting_point(provider: str, username: str, request: GameSyncRequest) -> datetime:
@@ -176,15 +176,19 @@ async def _sync_provider(
                 username, since, request.speeds, request.rated_only, client
             )
         result.update(counts)
+        changed_game_ids: list[str] = []
         for record in records:
-            outcome = _persist_game(record)
+            outcome, persisted_game_id = _persist_game(record)
             result[{"inserted": "inserted", "updated": "updated", "duplicate": "duplicates"}[outcome]] += 1
+            if outcome in {"inserted", "updated"}:
+                changed_game_ids.append(persisted_game_id)
+        result["_changed_game_ids"] = changed_game_ids
         result["status"] = "idle"
         completed_at = datetime.now(timezone.utc)
         with connection() as database:
             database.execute(
                 """UPDATE game_sync_state SET status='idle',cursor=?,last_success_at=?,last_error=NULL,retry_after=NULL,last_result_json=? WHERE provider=?""",
-                (since.isoformat(), completed_at.isoformat(), json.dumps(result), provider),
+                (since.isoformat(), completed_at.isoformat(), json.dumps({key: value for key, value in result.items() if not key.startswith("_")}), provider),
             )
     except (ProviderRequestError, httpx.HTTPError) as error:
         result["status"] = "error"
@@ -194,7 +198,7 @@ async def _sync_provider(
         with connection() as database:
             database.execute(
                 "UPDATE game_sync_state SET status='error',last_error=?,retry_after=?,last_result_json=? WHERE provider=?",
-                (result["error"], result["retry_after"], json.dumps(result), provider),
+                (result["error"], result["retry_after"], json.dumps({key: value for key, value in result.items() if not key.startswith("_")}), provider),
             )
     return result
 
@@ -209,10 +213,16 @@ async def sync_providers(request: GameSyncRequest) -> dict:
         for provider, username in provider_accounts:
             if username:
                 results[provider] = await _sync_provider(provider, username, request, client)
+    changed_game_ids = [
+        game_id
+        for item in results.values()
+        for game_id in item.pop("_changed_game_ids", [])
+    ]
     return {
         "imported": sum(item["inserted"] for item in results.values()),
         "cached": True,
         "incremental": not request.repair,
         "synced_at": datetime.now(timezone.utc).isoformat(),
         "providers": results,
+        "_changed_game_ids": changed_game_ids,
     }

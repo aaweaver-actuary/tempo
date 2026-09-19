@@ -109,6 +109,20 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
   gap: 8px;
   align-items: start;
 }
+.workspace-refresh-status {
+  position: fixed;
+  right: var(--gutter);
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 55;
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--panel);
+  box-shadow: 0 6px 20px #2222;
+  color: var(--muted);
+  font-size: 0.82rem;
+  pointer-events: none;
+}
 .workspace-board-column {
   position: sticky;
   top: calc(var(--nav-height) + 16px);

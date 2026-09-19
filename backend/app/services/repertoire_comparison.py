@@ -128,7 +128,7 @@ def _compare_game_to_repertoire(database, game: dict, repertoire: dict, lines: l
     }
 
 
-def compare_all_games() -> None:
+def compare_games(game_ids: list[str] | None = None) -> None:
     now = datetime.now(timezone.utc).isoformat()
     with connection() as database:
         repertoires = [dict(row) for row in database.execute(
@@ -141,9 +141,10 @@ def compare_all_games() -> None:
             line = {**dict(row), "moves": json.loads(row["moves_json"])}
             lines_by_repertoire[row["repertoire_id"]].append(line)
             colors_by_repertoire[row["repertoire_id"]].add(row["trained_color"])
+        where = "" if game_ids is None else f" WHERE id IN ({','.join('?' for _ in game_ids)})"
         games = [
             {**dict(row), "moves": json.loads(row["moves_json"])}
-            for row in database.execute("SELECT * FROM imported_games")
+            for row in database.execute(f"SELECT * FROM imported_games{where}", game_ids or [])
         ]
         for game in games:
             database.execute("DELETE FROM game_repertoire_matches WHERE game_id=?", (game["id"],))
@@ -180,3 +181,7 @@ def compare_all_games() -> None:
                     json.dumps(deviation["expected"] if deviation else []), deviation["actual"] if deviation else None, now,
                 ),
             )
+
+
+def compare_all_games() -> None:
+    compare_games()

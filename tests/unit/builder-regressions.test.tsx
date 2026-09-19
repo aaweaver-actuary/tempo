@@ -11,6 +11,7 @@ import BuilderView from "../../app/views/analysis_view";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import { Settings } from "../../app/utils/settings";
 import { scanGame } from "../../app/lib/game-scan";
+import { asSanMove, asUciMove } from "../../app/types";
 
 vi.mock("../../app/components/chessboard", () => ({
   Chessboard: (props: {
@@ -43,7 +44,7 @@ vi.mock("../../app/lib/analysis-engines", () => ({
   analyzeWithMaia: vi.fn(async () => []),
 }));
 
-it("Builder comparison exposes database connection and source status rather than unexplained blanks", () => {
+it("Builder comparison exposes public database status without requiring authentication", () => {
   vi.stubGlobal(
     "fetch",
     vi.fn(async () => Response.json({ lines: [], annotations: [] })),
@@ -60,9 +61,10 @@ it("Builder comparison exposes database connection and source status rather than
     .getByRole("table", { name: "Move source comparison" })
     .closest("section")!;
   expect(panel.querySelector(".comparison-connect")?.textContent).toBe(
-    "Connect databases",
+    "Pause databases",
   );
-  expect(panel.textContent).toContain("Databases: not connected");
+  expect(panel.textContent).toContain("Databases:");
+  expect(panel.textContent).not.toContain("not connected");
 });
 
 it("builder flip preserves repertoire identity and history across remounts", async () => {
@@ -347,7 +349,7 @@ it("builder annotation save preserves exact clicked square identity", async () =
 it("game scan normalizes black evaluations and identifies missed-punishment opportunities", async () => {
   const cp = [0, 150, 0];
   const evaluate = vi.fn(async () => [
-    { uci: "e2e4", san: "e4", cp: cp.shift() },
+    { uci: asUciMove("e2e4"), san: asSanMove("e4"), cp: cp.shift() },
   ]);
   const result = await scanGame(
     new Chess().fen(),

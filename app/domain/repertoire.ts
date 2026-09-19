@@ -23,6 +23,7 @@ export type RepertoireItem = {
   due: number;
   pgn?: string;
   backend?: boolean;
+  conflictCount?: number;
 };
 
 export type LocalRepertoire = {

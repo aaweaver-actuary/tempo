@@ -38,6 +38,18 @@
 
 Append every new reported issue and its test names here. All listed tests belong to the regular suites.
 
+- Sync status exposes SQLite-only fields to strict clients — `test_sync_status_never_exposes_persistence_only_result_json`.
+- One provider inherits another provider's error — `test_provider_status_never_inherits_another_provider_error`.
+- Game sync blocks foreground Settings reads — `test_slow_game_sync_does_not_delay_settings_read`.
+- A correct card shows feedback but cannot advance during sync — `test_correct_card_review_advances_while_game_sync_is_active`.
+- Daily queues group reviews, new cards, or content types — `test_daily_queue_is_stable_within_a_day_and_mixed`; `test_daily_queue_uses_a_different_seed_for_the_next_day`.
+- A repertoire trains contradictory player moves — `test_same_repertoire_trained_player_move_conflict_is_detected`; `test_opponent_branches_and_cross_repertoire_moves_are_not_conflicts`; `test_new_conflicting_branch_requires_explicit_confirmation`.
+- Review position handoff cannot find matching games — `test_review_position_filters_games_and_summarizes_played_moves`; `review position opens consistently in analysis builder and games`.
+- Encountered repertoire gaps remain weeks away or create lines silently — `test_game_gap_with_nearby_mistake_prioritizes_existing_unseen_card_for_tomorrow`; `test_missing_game_gap_line_requires_preview_before_card_creation`.
+- Cold routes wait for every service asset before rendering — `cached route data renders before background refresh and reconciles afterward`.
+- Background Stockfish blocks interactive work or becomes a failed job when paused — `background game analysis yields to interactive engine work and resumes once`; `test_paused_background_analysis_releases_its_lease_without_failure`.
+- Builder repeatedly requires Lichess authentication for public databases — `lichess explorer uses public requests and cached results survive builder remount`.
+
 | Refactor regression | Required regression |
 | --- | --- |
 | Application aliases fail in Vitest | `application aliases resolve in the regular frontend suite` |
@@ -80,7 +92,7 @@ Append every new reported issue and its test names here. All listed tests belong
 | Show Move/Restart abandon a failed tactic or retain stale X | `tactic Show Move and Restart retain one guided attempt then clear X and unlock the next puzzle` |
 | Comparison sorting or missing values are incorrect | `comparison headers sort ascending then descending with missing values last and preserve playable hover rows`; `Builder source comparison is immediately reachable beside the board` |
 | Explorer/Masters details overwhelm comparison | `compact database cells reveal WDL frequency and practical score only on demand` |
-| Exact transpositions do not offer the played route | `exact transposition banner adds the played route as a persisted branch without waiting for Maia`; `transposition dismissal survives Builder remount and existing routes never prompt`; `Builder exact transposition saves the played route and does not prompt for a covered route` |
+| Exact transpositions do not offer the played route | `exact transposition banner adds the played route as a persisted branch without waiting for Maia`; `transposition dismissal survives Builder remount and existing routes never prompt`; `Builder exact transposition confirms a conflicting trained move then saves the route` |
 | Navigation lacks active-page semantics or visible headers waste space | `Builder source comparison is immediately reachable beside the board`; `high-DPI board geometry stays aligned through narrow resize and orientation flips` |
 | Red X stays over the board during guided completion | `red board feedback disappears after one second even while the failed attempt remains active` |
 | Incomplete Black opening cards auto-play the only move then freeze Train | `test_incomplete_black_prefix_is_not_created_or_queued`; `test_legacy_incomplete_black_prefix_is_quarantined_from_queue` |

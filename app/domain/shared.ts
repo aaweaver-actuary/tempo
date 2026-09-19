@@ -21,6 +21,9 @@ export type IsoDateString = z.infer<typeof schemas.isoDateSchema>;
 export type DomainDate = IsoDateString;
 export type ChessMove = { uci: UciMove; san?: SanMove };
 export type MoveSquares = readonly [Square, Square];
+export type SquareName = z.infer<typeof schemas.squareSchema>;
+export type TeachingMoveKey = Brand<string, "TeachingMoveKey">;
+export type TeachingCardKey = Brand<string, "TeachingCardKey">;
 export const asCardId = (value: string): CardId =>
   schemas.cardIdSchema.parse(value);
 export const asRepertoireId = (value: string): RepertoireId =>
@@ -43,6 +46,12 @@ export const asUciMove = (value: string): UciMove =>
   schemas.uciMoveSchema.parse(value);
 export const asSanMove = (value: string): SanMove =>
   schemas.sanMoveSchema.parse(value);
+export const asSquareName = (value: string): SquareName =>
+  schemas.squareSchema.parse(value);
+export const asTeachingMoveKey = (value: string): TeachingMoveKey =>
+  value as TeachingMoveKey;
+export const asTeachingCardKey = (value: string): TeachingCardKey =>
+  value as TeachingCardKey;
 export const asNonNegativeInteger = (value: number): NonNegativeInteger =>
   schemas.nonNegativeIntegerSchema.parse(value);
 export const asIsoDateString = (value: string): IsoDateString =>

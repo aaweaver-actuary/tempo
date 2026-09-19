@@ -7,6 +7,9 @@ export enum EngineStatusEnum {
   Loading = "loading",
   Ready = "ready",
   Error = "error",
+  Stale = "stale",
+  RateLimited = "rate-limited",
+  Offline = "offline",
 }
 
 export enum ShellModalEnum {

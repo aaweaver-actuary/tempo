@@ -15,6 +15,7 @@ def connection() -> Iterator[sqlite3.Connection]:
     database = sqlite3.connect(DB_PATH)
     database.row_factory = sqlite3.Row
     database.execute("PRAGMA foreign_keys = ON")
+    database.execute("PRAGMA busy_timeout = 5000")
     try:
         yield database
         database.commit()
@@ -147,6 +148,14 @@ def initialize() -> None:
             UNIQUE(queue_date, card_id, cycle)
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS daily_queue_days (
+            queue_date TEXT PRIMARY KEY,
+            seed INTEGER NOT NULL,
+            membership_hash TEXT NOT NULL,
+            generated_at TEXT NOT NULL
+        )
+        """,
         "CREATE INDEX IF NOT EXISTS idx_daily_queue_order ON daily_queue(queue_date, status, position)",
         """
         CREATE TABLE IF NOT EXISTS position_annotations (
@@ -275,6 +284,53 @@ def initialize() -> None:
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS game_sync_jobs (
+            id TEXT PRIMARY KEY,
+            request_json TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'queued'
+                CHECK(status IN ('queued','running','paused','retrying','complete','failed')),
+            result_json TEXT,
+            error TEXT,
+            created_at TEXT NOT NULL,
+            started_at TEXT,
+            completed_at TEXT,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_game_sync_jobs_status ON game_sync_jobs(status,created_at)",
+        """
+        CREATE TABLE IF NOT EXISTS game_derivation_jobs (
+            game_id TEXT PRIMARY KEY REFERENCES imported_games(id) ON DELETE CASCADE,
+            status TEXT NOT NULL DEFAULT 'queued'
+                CHECK(status IN ('queued','running','complete','failed')),
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_game_derivation_jobs_status ON game_derivation_jobs(status,updated_at)",
+        """
+        CREATE TABLE IF NOT EXISTS game_position_occurrences (
+            game_id TEXT NOT NULL REFERENCES imported_games(id) ON DELETE CASCADE,
+            ply INTEGER NOT NULL,
+            fen_key TEXT NOT NULL,
+            move_uci TEXT,
+            PRIMARY KEY(game_id,ply)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_game_positions_fen ON game_position_occurrences(fen_key,game_id)",
+        """
+        CREATE TABLE IF NOT EXISTS gameplay_card_priorities (
+            card_id TEXT PRIMARY KEY REFERENCES cards(id) ON DELETE CASCADE,
+            source_game_id TEXT NOT NULL REFERENCES imported_games(id) ON DELETE CASCADE,
+            finding_id TEXT NOT NULL,
+            priority_date TEXT NOT NULL,
+            reason TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_gameplay_priorities_date ON gameplay_card_priorities(priority_date,card_id)",
+        """
         CREATE TABLE IF NOT EXISTS game_move_analysis (
             game_id TEXT NOT NULL REFERENCES imported_games(id) ON DELETE CASCADE,
             ply INTEGER NOT NULL,
@@ -365,13 +421,15 @@ def initialize() -> None:
         """,
     ]
     with connection() as database:
+        database.execute("PRAGMA journal_mode = WAL")
+        database.execute("PRAGMA synchronous = NORMAL")
         database.execute("BEGIN IMMEDIATE")
         for statement in statements:
             database.execute(statement)
         database.execute("INSERT OR IGNORE INTO settings (id) VALUES (1)")
         # Existing local databases are migrated in place; user review history is never rebuilt.
         columns = {
-            "daily_queue": {"review_result_json": "TEXT", "attempt_failed": "INTEGER NOT NULL DEFAULT 0"},
+            "daily_queue": {"review_result_json": "TEXT", "attempt_failed": "INTEGER NOT NULL DEFAULT 0", "card_bucket": "TEXT", "admission_kind": "TEXT", "gameplay_priority_reason": "TEXT"},
             "game_sync_state": {"username": "TEXT NOT NULL DEFAULT ''", "last_result_json": "TEXT"},
             "settings": {"tactics_new_per_day": "INTEGER NOT NULL DEFAULT 5","lichess_username": "TEXT NOT NULL DEFAULT ''", "chesscom_username": "TEXT NOT NULL DEFAULT ''", "auto_sync_minutes": "INTEGER NOT NULL DEFAULT 3", "engine_line_window_cp": "INTEGER NOT NULL DEFAULT 30", "major_mistake_cp": "INTEGER NOT NULL DEFAULT 100", "light_first_interval_days": "INTEGER NOT NULL DEFAULT 7", "draw_hold_user_moves": "INTEGER NOT NULL DEFAULT 20"},
             "cards": {"fsrs_card_json": "TEXT", "first_correct_at": "TEXT", "reinforcement_pending": "INTEGER NOT NULL DEFAULT 0", "stability": "REAL NOT NULL DEFAULT 0", "guided_review": "INTEGER NOT NULL DEFAULT 0", "maximum_interval": "INTEGER NOT NULL DEFAULT 365", "content_type": "TEXT NOT NULL DEFAULT 'opening'", "scheduling_mode": "TEXT NOT NULL DEFAULT 'normal'", "hard_correct_streak": "INTEGER NOT NULL DEFAULT 0", "recent_attempts_json": "TEXT NOT NULL DEFAULT '[]'", "archived": "INTEGER NOT NULL DEFAULT 0", "superseded_by": "TEXT", "source_ref": "TEXT", "source_fen": "TEXT", "revision": "INTEGER NOT NULL DEFAULT 1", "introduced_at": "TEXT", "trained_color": "TEXT"},
@@ -398,4 +456,10 @@ def initialize() -> None:
         )
         database.execute("""INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id)
                             SELECT repertoire_id,id FROM cards WHERE content_type='opening'""")
+        database.execute(
+            """INSERT OR IGNORE INTO game_derivation_jobs(game_id,status,updated_at)
+               SELECT id,'queued',? FROM imported_games g
+               WHERE NOT EXISTS(SELECT 1 FROM game_position_occurrences p WHERE p.game_id=g.id)""",
+            (now,),
+        )
         database.execute("PRAGMA optimize")

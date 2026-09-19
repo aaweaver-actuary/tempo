@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import hashlib
 import json
 
@@ -97,12 +97,34 @@ def _upsert_finding(database, *, game_id: str, analysis_version: int, ply: int, 
     )
 
 
+def _unseen_card_for_position(database, fen: str, expected_move: str | None) -> str | None:
+    if not expected_move:
+        return None
+    target = " ".join(chess.Board(fen).fen().split()[:4])
+    rows = database.execute(
+        """SELECT c.id,c.start_fen,c.moves_json FROM cards c
+           WHERE c.content_type='opening' AND c.archived=0 AND c.introduced_at IS NULL
+             AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)"""
+    ).fetchall()
+    for row in rows:
+        try:
+            board = chess.Board(row["start_fen"])
+            for move_uci in json.loads(row["moves_json"]):
+                if " ".join(board.fen().split()[:4]) == target:
+                    return row["id"] if move_uci == expected_move else None
+                board.push_uci(move_uci)
+        except (ValueError, TypeError, json.JSONDecodeError):
+            continue
+    return None
+
+
 def refresh_game_findings(game_id: str | None = None) -> None:
     with connection() as database:
         where = "WHERE g.id=?" if game_id else ""
         games = database.execute(
             f"""SELECT g.*,m.repertoire_id,m.first_player_deviation_ply,m.first_player_deviation_fen,
                        m.first_player_deviation_expected_json,m.first_player_deviation_actual_uci,m.deviation_card_id
+                       ,m.first_opponent_gap_ply,m.out_of_book_ply,m.timeline_json
                 FROM imported_games g LEFT JOIN game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1 {where}""",
             (game_id,) if game_id else (),
         ).fetchall()
@@ -124,6 +146,76 @@ def refresh_game_findings(game_id: str | None = None) -> None:
             analysis_rows = database.execute(
                 "SELECT * FROM game_move_analysis WHERE game_id=? ORDER BY ply", (game["id"],)
             ).fetchall()
+            player_analysis_rows = list(analysis_rows)
+            gap_start = game["out_of_book_ply"]
+            if game["first_opponent_gap_ply"] is not None:
+                gap_start = min(
+                    value
+                    for value in (gap_start, game["first_opponent_gap_ply"] + 1)
+                    if value is not None
+                )
+            if gap_start is None and game["repertoire_id"] is None:
+                gap_start = player_analysis_rows[0]["ply"] if player_analysis_rows else None
+            if gap_start is not None:
+                decisions_after_gap = [
+                    row for row in player_analysis_rows if row["ply"] >= gap_start
+                ][:3]
+                mistake = next(
+                    (row for row in decisions_after_gap if row["loss_cp"] >= threshold),
+                    None,
+                )
+                gap_analysis = decisions_after_gap[0] if decisions_after_gap else None
+                if mistake and gap_analysis:
+                    gap_board = _position_before_ply(
+                        game["start_fen"], moves, gap_analysis["ply"]
+                    )
+                    best_move = gap_analysis["best_move_uci"]
+                    linked_card = _unseen_card_for_position(
+                        database, gap_board.fen(), best_move
+                    )
+                    finding_id = _finding_id(
+                        game["id"], version, "repertoire gap", gap_analysis["ply"]
+                    )
+                    _upsert_finding(
+                        database,
+                        game_id=game["id"],
+                        analysis_version=version,
+                        ply=gap_analysis["ply"],
+                        kind="repertoire gap",
+                        confidence=1.0,
+                        evidence={
+                            "fen": gap_board.fen(),
+                            "best_move_uci": best_move,
+                            "principal_variation": json.loads(
+                                gap_analysis["principal_variation_json"] or "[]"
+                            ),
+                            "mistake_ply": mistake["ply"],
+                            "mistake_loss_cp": mistake["loss_cp"],
+                            "player_decisions_until_mistake": decisions_after_gap.index(mistake) + 1,
+                        },
+                        repertoire_id=game["repertoire_id"],
+                        card_id=linked_card,
+                    )
+                    if linked_card:
+                        tomorrow = (date.today() + timedelta(days=1)).isoformat()
+                        database.execute(
+                            """INSERT INTO gameplay_card_priorities(
+                                   card_id,source_game_id,finding_id,priority_date,reason,created_at
+                               ) VALUES(?,?,?,?,?,?)
+                               ON CONFLICT(card_id) DO UPDATE SET
+                                   source_game_id=excluded.source_game_id,
+                                   finding_id=excluded.finding_id,
+                                   priority_date=MIN(gameplay_card_priorities.priority_date,excluded.priority_date),
+                                   reason=excluded.reason""",
+                            (
+                                linked_card,
+                                game["id"],
+                                finding_id,
+                                tomorrow,
+                                "Encountered repertoire gap followed by a mistake",
+                                datetime.now(timezone.utc).isoformat(),
+                            ),
+                        )
             first_big_mistake = next((row for row in analysis_rows if row["loss_cp"] >= threshold), None)
             for row in analysis_rows:
                 if row["loss_cp"] < threshold:

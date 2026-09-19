@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 
 from app import database
 from app.main import app
+from app.services.game_findings import refresh_game_findings
 
 
 START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -118,3 +119,75 @@ def test_first_big_mistake_creates_a_previewed_deduplicated_middlegame_card(
             assert card["due_date"] == date.today().isoformat()
             assert card["trained_color"] == "white"
             assert db.execute("SELECT COUNT(*) FROM cards WHERE content_type='middlegame'").fetchone()[0] == 1
+
+
+def test_game_gap_with_nearby_mistake_prioritizes_existing_unseen_card_for_tomorrow(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    now = datetime.now(timezone.utc).isoformat()
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    with TestClient(app):
+        with database.connection() as db:
+            db.execute(
+                "INSERT INTO repertoires(id,name,source_name,created_at) VALUES('rep','Rep','rep.pgn',?)",
+                (now,),
+            )
+            db.execute(
+                """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type)
+                   VALUES('future-card','rep','prefix',?,'[\"e2e4\"]','new',?,'opening')""",
+                (START, (date.today() + timedelta(days=21)).isoformat()),
+            )
+            db.execute(
+                """INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json,analysis_version)
+                   VALUES('gap-game','lichess','TempoPlayer',?,'rapid',1,'white','lost',?,'[\"d2d4\"]',1)""",
+                (now, START),
+            )
+            db.execute(
+                """INSERT INTO game_move_analysis(game_id,ply,eval_before_cp,eval_after_cp,loss_cp,label,depth,best_move_uci,principal_variation_json)
+                   VALUES('gap-game',0,20,-150,170,'major mistake',14,'e2e4','[\"e2e4\",\"e7e5\"]')"""
+            )
+        refresh_game_findings("gap-game")
+        with database.connection() as db:
+            finding = db.execute(
+                "SELECT * FROM game_findings WHERE game_id='gap-game' AND kind='repertoire gap'"
+            ).fetchone()
+            assert finding["card_id"] == "future-card"
+            priority = db.execute(
+                "SELECT * FROM gameplay_card_priorities WHERE card_id='future-card'"
+            ).fetchone()
+            assert priority["priority_date"] == tomorrow
+            from app.main import seed_queue
+
+            seed_queue(db, tomorrow)
+            queued = db.execute(
+                "SELECT card_id FROM daily_queue WHERE queue_date=? ORDER BY position", (tomorrow,)
+            ).fetchall()
+            assert [row["card_id"] for row in queued][0] == "future-card"
+
+
+def test_missing_game_gap_line_requires_preview_before_card_creation(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    now = datetime.now(timezone.utc).isoformat()
+    with TestClient(app) as client:
+        with database.connection() as db:
+            db.execute(
+                """INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json,analysis_version)
+                   VALUES('gap-game','lichess','TempoPlayer',?,'rapid',1,'white','lost',?,'[\"d2d4\"]',1)""",
+                (now, START),
+            )
+            db.execute(
+                """INSERT INTO game_move_analysis(game_id,ply,eval_before_cp,eval_after_cp,loss_cp,label,depth,best_move_uci,principal_variation_json)
+                   VALUES('gap-game',0,20,-150,170,'major mistake',14,'e2e4','[\"e2e4\",\"e7e5\"]')"""
+            )
+        refresh_game_findings("gap-game")
+        finding = client.get("/api/game-findings?game_id=gap-game").json()["findings"]
+        gap = next(item for item in finding if item["kind"] == "repertoire gap")
+        preview = client.post(
+            f"/api/game-findings/{gap['id']}/card", json={"save": False}
+        ).json()
+        assert preview["saved"] is False
+        with database.connection() as db:
+            assert db.execute(
+                "SELECT COUNT(*) FROM cards WHERE source_ref=?", (gap["id"],)
+            ).fetchone()[0] == 0

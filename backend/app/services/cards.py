@@ -2,7 +2,7 @@ import hashlib
 
 
 def card_id(starting_fen: str, moves: list[str]) -> str:
-    """Build the stable deduplication key specified by the product."""
+    """Generate a stable deduplication key for a chess card based on the starting FEN and the sequence of moves."""
     # Position identity keeps placement, turn, castling, and en-passant state.
     # Halfmove/fullmove clocks do not change which opening position is tested.
     normalized_fen = " ".join(starting_fen.split()[:4])

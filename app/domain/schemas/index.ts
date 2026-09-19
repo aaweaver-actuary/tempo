@@ -117,10 +117,12 @@ export const engineMoveSchema = z.looseObject({
   score: z.string().optional(),
   cp: z.number().finite().optional(),
   mate: z.number().int().optional(),
+  // PVs are canonicalized move-by-move so one trailing provider token does not
+  // discard an otherwise useful engine line.
   pv: z.array(z.string()).optional(),
 });
 export const stockfishMessageSchema = z.strictObject({
-  type: z.enum(["line", "ready", "error"]),
+  type: z.enum(["line", "ready", "error", "cancelled"]),
   id: integer.optional(),
   line: z.string().optional(),
   message: z.string().optional(),
@@ -226,6 +228,7 @@ export const repertoiresResponseSchema = z.strictObject({
       line_count: integer,
       card_count: integer,
       due_count: integer,
+      conflict_count: integer.optional(),
       trained_color: colorSchema.nullable().optional(),
     }),
   ),
@@ -399,12 +402,26 @@ const providerSyncResultSchema = z.strictObject({
   error: z.string().nullable(),
   retry_after: nullableDate,
 });
-export const syncResultSchema = z.strictObject({
+const gameSyncJobStatusSchema = z.enum([
+  "queued",
+  "running",
+  "paused",
+  "retrying",
+  "complete",
+  "failed",
+]);
+const completedSyncResultSchema = z.strictObject({
   imported: integer,
   synced_at: isoDateSchema,
   cached: z.boolean().optional(),
   incremental: z.boolean().optional(),
-  providers: z.record(z.enum(["lichess", "chess.com"]), providerSyncResultSchema).optional(),
+  providers: z.record(z.enum(["lichess", "chess.com"]), providerSyncResultSchema),
+});
+export const syncResultSchema = z.strictObject({
+  imported: integer,
+  job_id: z.string().uuid(),
+  status: gameSyncJobStatusSchema,
+  providers: z.record(z.enum(["lichess", "chess.com"]), providerSyncResultSchema),
 });
 export const syncStatusSchema = z.strictObject({
   providers: z.array(
@@ -425,6 +442,16 @@ export const syncStatusSchema = z.strictObject({
     speeds: z.array(z.string()),
     rated_only: z.boolean(),
   }).optional(),
+  active_job: z.strictObject({
+    id: z.string().uuid(),
+    status: gameSyncJobStatusSchema,
+    created_at: isoDateSchema,
+    started_at: nullableDate,
+    completed_at: nullableDate,
+    updated_at: isoDateSchema,
+    error: z.string().nullable(),
+    result: completedSyncResultSchema.nullable(),
+  }).nullable().optional(),
 });
 export const gameRecordSchema = z.strictObject({
   id: gameIdSchema,

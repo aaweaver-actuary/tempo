@@ -9,6 +9,8 @@ EXPLORER_ENDPOINT = "https://explorer.lichess.org/lichess"
 
 @dataclass(frozen=True)
 class AnalysisCapabilities:
+    """Represents the analysis capabilities of the local Tempo instance."""
+
     stockfish_version: int = STOCKFISH_VERSION
     maia_version: int = MAIA_VERSION
     stockfish_runtime: str = "local-wasm-adapter"

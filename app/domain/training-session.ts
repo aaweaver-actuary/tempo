@@ -2,7 +2,7 @@ import type { PositionAnnotation } from "./annotations";
 import type { PracticeCard } from "./cards";
 import type { LocalRepertoire } from "./repertoire";
 import type { AttemptToken } from "./attempt";
-import type { FenString, Feedback, MoveSquares } from "./shared";
+import type { FenString, Feedback, MoveSquares, TeachingCardKey } from "./shared";
 
 export enum QueueModeEnum {
   Browser = "browser",
@@ -36,5 +36,5 @@ export type AttemptLifecycleState = {
   failureFen: FenString | undefined;
   failureAnnotation: PositionAnnotation | undefined;
   teachingEncounterKey: string | null;
-  teachingReadyCard: string;
+  teachingReadyCard: TeachingCardKey | "";
 };

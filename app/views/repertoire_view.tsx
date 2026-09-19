@@ -22,8 +22,8 @@ export default function RepertoireView({ imported, onImport, onBrowse, onDeleteL
     try {
       const response = await readWorkspaceResponse(`${API_URL}/api/repertoires`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const body = await response.json() as { repertoires: { id: string; name: string; source_name: string; line_count: number; card_count: number; due_count: number; trained_color?: PieceColor }[] };
-      setBackendItems(body.repertoires.map((item) => ({ id: asRepertoireId(item.id), side: item.trained_color === 'black' ? 'black' : 'white', title: item.name, sourceName: item.source_name, detail: `${item.line_count} unique ${item.line_count === 1 ? 'line' : 'lines'} · ${item.card_count} cards`, progress: 0, due: item.due_count, backend: true })));
+      const body = await response.json() as { repertoires: { id: string; name: string; source_name: string; line_count: number; card_count: number; due_count: number; conflict_count?: number; trained_color?: PieceColor }[] };
+      setBackendItems(body.repertoires.map((item) => ({ id: asRepertoireId(item.id), side: item.trained_color === 'black' ? 'black' : 'white', title: item.name, sourceName: item.source_name, detail: `${item.line_count} unique ${item.line_count === 1 ? 'line' : 'lines'} · ${item.card_count} cards`, progress: 0, due: item.due_count, conflictCount: item.conflict_count ?? 0, backend: true })));
       setLoaded(true);
       setError("");
     } catch (failure) { setError(`Repertoires unavailable: ${failure instanceof Error ? failure.message : "connection failed"}.`); }
@@ -80,7 +80,7 @@ export default function RepertoireView({ imported, onImport, onBrowse, onDeleteL
           <article className="repertoire-card" key={item.id}>
             <div className="repertoire-top"><span className="side-badge">{item.side}</span><span>{item.due ? `${item.due} due` : 'Up to date'}</span></div>
             <div className="mini-board" aria-hidden="true">{Array.from({ length: 16 }).map((_, index) => <i key={index} />)}</div>
-            <div className="repertoire-name"><h2>{item.title}</h2><button onClick={()=>void rename(item)} title="Rename repertoire">✎</button></div><p>{item.detail}</p><small className="source-name">{item.sourceName}</small>
+            <div className="repertoire-name"><h2>{item.title}</h2><button onClick={()=>void rename(item)} title="Rename repertoire">✎</button></div><p>{item.detail}</p>{Boolean(item.conflictCount) && <p className="warning-text">{item.conflictCount} trained-move {item.conflictCount === 1 ? "conflict" : "conflicts"} to resolve</p>}<small className="source-name">{item.sourceName}</small>
             <div className="repertoire-actions"><button className="browse-button" onClick={() => onBrowse(item.id)}>Browse tree</button><button onClick={()=>exportPgn(item)}>⇩ PGN</button><button className="delete-repertoire" onClick={()=>void remove(item)}>Delete</button></div>
           </article>
         ))}

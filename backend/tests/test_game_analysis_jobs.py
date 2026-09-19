@@ -78,3 +78,47 @@ def test_background_game_analysis_resumes_after_reload_and_submits_once(
                 (game_id,),
             ).fetchone()
         assert tuple(stored) == ("Stockfish 19 WASM", "test-network", "d2d4")
+
+
+def test_paused_background_analysis_releases_its_lease_without_failure(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    game_id = "lichess:paused-game"
+    with TestClient(app) as client:
+        with database.connection() as db:
+            db.execute(
+                """INSERT INTO imported_games(
+                    id,provider,provider_game_id,username,played_at,speed,rated,color,result,start_fen,moves_json
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                (
+                    game_id,
+                    "lichess",
+                    "paused-game",
+                    "TempoPlayer",
+                    datetime.now(timezone.utc).isoformat(),
+                    "rapid",
+                    1,
+                    "white",
+                    "1-0",
+                    "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                    json.dumps(["e2e4"]),
+                ),
+            )
+            db.execute(
+                "INSERT INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
+                (game_id, datetime.now(timezone.utc).isoformat()),
+            )
+        job = client.post("/api/games/analysis/claim").json()["job"]
+        response = client.post(
+            f"/api/games/analysis/{game_id}/release",
+            json={"lease_id": job["lease_id"]},
+        )
+        assert response.json()["status"] == "queued"
+        resumed = client.post("/api/games/analysis/claim").json()["job"]
+        assert resumed["game_id"] == game_id
+        assert resumed["lease_id"] != job["lease_id"]
+        with database.connection() as db:
+            assert db.execute(
+                "SELECT last_error FROM game_analysis_jobs WHERE game_id=?", (game_id,)
+            ).fetchone()[0] is None

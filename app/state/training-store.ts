@@ -7,6 +7,8 @@ import type {
   LocalRepertoire,
   FenString,
   MoveSquares,
+  TeachingCardKey,
+  TeachingMoveKey,
 } from "../types";
 import { demoCards } from "../samples";
 import { BoardTheme, PieceSet } from "../components/chessboard";
@@ -40,11 +42,9 @@ export type TrainingStoreState = {
   showTree: boolean;
   editorCard: PracticeCard | null;
   suggestShorter: boolean;
-  // TODO: should this be a Map<Square, MoveSquares> instead of a Set<string> to track seen moves more accurately?
-  seenMoves: Set<string>;
+  seenMoves: Set<TeachingMoveKey>;
   teachingEncounterKey: string | null;
-  // TODO: what does this teachingReadyCard represent and how is it used? we should use a more descriptive type or structure if necessary.
-  teachingReadyCard: string;
+  teachingReadyCard: TeachingCardKey | "";
   firstCleanPasses: Set<string>;
   isAttemptFailed: boolean;
   failureAnnotation: PositionAnnotation | undefined;
@@ -55,7 +55,7 @@ export type TrainingStoreState = {
   pieceSet: PieceSet;
   isSoundEnabled: boolean;
   isDatabaseQueueActive: boolean;
-  // TODO: is there a discrete number of service errors that can occur, and should this be represented differently?
+  // Service errors intentionally retain actionable server text rather than a closed enum.
   serviceError: string;
   setPracticeCards: (
     cards: PracticeCard[] | ((current: PracticeCard[]) => PracticeCard[]),
@@ -84,7 +84,6 @@ export type TrainingStoreState = {
       | ((current: MoveSquares | undefined) => MoveSquares | undefined),
   ) => void;
   setAttemptPhase: (phase: AttemptPhase, expected?: AttemptToken) => void;
-  // TODO: consider whether this should be a more structured error type rather than a plain string.
   setReviewSaveError: (error: string) => void;
   hydrateLocalQueue: (cards: PracticeCard[], advance?: boolean) => void;
   setBoardAttempt: (value: number | ((value: number) => number)) => void;
@@ -100,14 +99,15 @@ export type TrainingStoreState = {
       | ((current: PracticeCard | null) => PracticeCard | null),
   ) => void;
   setSuggestShorter: (value: boolean | ((current: boolean) => boolean)) => void;
-  // TODO: should this be based on a set of chess move objects rather than strings for more accurate tracking?
   setSeenMoves: (
-    moves: Set<string> | ((value: Set<string>) => Set<string>),
+    moves: Set<TeachingMoveKey> | ((value: Set<TeachingMoveKey>) => Set<TeachingMoveKey>),
   ) => void;
   setTeachingEncounterKey: (
     key: string | null | ((current: string | null) => string | null),
   ) => void;
-  setTeachingReadyCard: (key: string | ((current: string) => string)) => void;
+  setTeachingReadyCard: (
+    key: TeachingCardKey | "" | ((current: TeachingCardKey | "") => TeachingCardKey | ""),
+  ) => void;
   setFirstCleanPasses: (
     passes: Set<string> | ((current: Set<string>) => Set<string>),
   ) => void;
@@ -174,9 +174,9 @@ const defaultState = {
   showTree: false,
   editorCard: null,
   suggestShorter: false,
-  seenMoves: new Set<string>(),
+  seenMoves: new Set<TeachingMoveKey>(),
   teachingEncounterKey: null,
-  teachingReadyCard: "",
+  teachingReadyCard: "" as const,
   firstCleanPasses: new Set<string>(),
   isAttemptFailed: false,
   failureAnnotation: undefined,

@@ -40,10 +40,14 @@ test("sample deletion uses repertoire identity and does not delete its same-file
   await expect(page.locator(".repertoire-card")).toHaveCount(1);
 });
 
-test("Builder exact transposition saves the played route and does not prompt for a covered route", async ({
+test("Builder exact transposition confirms a conflicting trained move then saves the route", async ({
   page,
   request,
 }) => {
+  const settings = await (await request.get(`${api}/settings`)).json();
+  await request.put(`${api}/settings`, {
+    data: { ...settings, new_cards_per_day: 10 },
+  });
   await request.post(`${api}/imports/pgn`, {
     multipart: {
       file: {
@@ -63,6 +67,7 @@ test("Builder exact transposition saves the played route and does not prompt for
     page.getByRole("button", { name: "Add as branch" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Add as branch" }).click();
+  page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Save branch" }).click();
   await expect
     .poll(
@@ -80,6 +85,49 @@ test("Builder exact transposition saves the played route and does not prompt for
     0,
   );
   await boardVisible(page);
+});
+
+test("review position opens consistently in analysis builder and games", async ({
+  page,
+  request,
+}) => {
+  const settings = await (await request.get(`${api}/settings`)).json();
+  await request.put(`${api}/settings`, {
+    data: { ...settings, new_cards_per_day: 10 },
+  });
+  await request.post(`${api}/imports/pgn`, {
+    multipart: {
+      file: {
+        name: "handoff.pgn",
+        mimeType: "application/x-chess-pgn",
+        buffer: Buffer.from(pgn),
+      },
+      initial_depth: "2",
+    },
+  });
+  await page.goto("/");
+  const reviewedFen = await page.locator(".board-frame").getAttribute("data-fen");
+  await page.getByRole("button", { name: "Analysis", exact: true }).click();
+  await expect(page.locator(".analysis-page")).toHaveAttribute(
+    "data-active-task",
+    "Analysis",
+  );
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", reviewedFen!);
+
+  await nav(page, "Train");
+  await page
+    .getByLabel("Open review position")
+    .getByRole("button", { name: "Builder", exact: true })
+    .click();
+  await expect(page.locator(".analysis-page")).toHaveAttribute(
+    "data-active-task",
+    "Repertoire",
+  );
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", reviewedFen!);
+
+  await nav(page, "Train");
+  await page.getByRole("button", { name: "Games here", exact: true }).click();
+  await expect(page.getByText(/Position filter · 0 encounters/)).toBeVisible();
 });
 
 test("Edit card opens Builder line-removal context and deletes the selected branch", async ({

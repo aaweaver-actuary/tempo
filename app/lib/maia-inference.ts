@@ -3,6 +3,8 @@ import * as ort from "onnxruntime-web/wasm";
 import moveIndex from "./all_moves_maia3.json";
 import reversedMoveIndex from "./all_moves_maia3_reversed.json";
 import type { EngineMove } from "./analysis-engines";
+import type { FenString, SquareName, UciMove } from "../types";
+import { asFenString, asSanMove, asSquareName, asUciMove } from "../types";
 
 let assetRoot = "";
 
@@ -12,18 +14,17 @@ function assetUrl(path: string) {
 const allMoves = moveIndex as Record<string, number>;
 const reversedMoves = reversedMoveIndex as Record<string, string>;
 
-// TODO: we should use one of our already-defined types instead of a plain string for better type safety.
-function mirrorSquare(square: string) {
-  return `${square[0]}${9 - Number(square[1])}`;
+function mirrorSquare(square: SquareName): SquareName {
+  return asSquareName(`${square[0]}${9 - Number(square[1])}`);
 }
 
-// TODO: we should use one of our already-defined types instead of a plain string for better type safety.
-function mirrorMove(uci: string) {
-  return `${mirrorSquare(uci.slice(0, 2))}${mirrorSquare(uci.slice(2, 4))}${uci.slice(4)}`;
+function mirrorMove(uci: UciMove): UciMove {
+  return asUciMove(
+    `${mirrorSquare(asSquareName(uci.slice(0, 2)))}${mirrorSquare(asSquareName(uci.slice(2, 4)))}${uci.slice(4)}`,
+  );
 }
 
-// TODO: consider using a proper Move type instead of a plain string for better type safety.
-function mirrorFen(fen: string) {
+function mirrorFen(fen: FenString): FenString {
   const [placement, active, castling, ep, halfmove, fullmove] = fen.split(" ");
   const swap = (rank: string) =>
     [...rank]
@@ -44,11 +45,10 @@ function mirrorFen(fen: string) {
           castling.includes("K") ? "k" : "",
           castling.includes("Q") ? "q" : "",
         ].join("") || "-";
-  return `${placement.split("/").reverse().map(swap).join("/")} ${active === "w" ? "b" : "w"} ${rights} ${ep === "-" ? "-" : mirrorSquare(ep)} ${halfmove} ${fullmove}`;
+  return asFenString(`${placement.split("/").reverse().map(swap).join("/")} ${active === "w" ? "b" : "w"} ${rights} ${ep === "-" ? "-" : mirrorSquare(asSquareName(ep))} ${halfmove} ${fullmove}`);
 }
 
-// TODO: we should use one of our already-defined types instead of a plain string for better type safety.
-function preprocessMaia(fen: string) {
+function preprocessMaia(fen: FenString) {
   const isBlack = fen.split(" ")[1] === "b";
   const normalizedFen = isBlack ? mirrorFen(fen) : fen;
   const chess = new Chess(normalizedFen);
@@ -159,8 +159,7 @@ function loadMaia(onProgress?: (progress: number) => void) {
 }
 
 export async function runMaiaInference(
-  // TODO: we should use one of our already-defined types instead of a plain string for better type safety.
-  fen: string,
+  fen: FenString,
   elo: number,
   root: string,
   onProgress?: (progress: number) => void,
@@ -187,7 +186,7 @@ export async function runMaiaInference(
   const position = new Chess(fen);
   const moves: EngineMove[] = [];
   for (const [itemIndex, index] of legalIndices.entries()) {
-    const raw = reversedMoves[String(index)];
+    const raw = asUciMove(reversedMoves[String(index)]);
     const uci = isBlack ? mirrorMove(raw) : raw;
     let move: Move | null = null;
     try {
@@ -203,7 +202,7 @@ export async function runMaiaInference(
     if (!move) continue;
     moves.push({
       uci,
-      san: move.san,
+      san: asSanMove(move.san),
       probability: weights[itemIndex] / total,
     });
   }
