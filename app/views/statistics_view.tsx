@@ -45,7 +45,7 @@ export default function StatisticsView() {
 
   return (
     <section className="library-page statistics-page">
-      <header className="workspace-title">
+      <header className="page-heading statistics-heading">
         <div>
           <h1>Chess statistics</h1>
           <p>Game outcomes use all valid games. Engine metrics use analyzed games only.</p>
@@ -64,19 +64,19 @@ export default function StatisticsView() {
       {!overview && !error && <p role="status">Loading chess statistics…</p>}
       {overview && (
         <>
-          <div className="stats-grid">
-            <article className="card">
+          <div className="statistics-kpi-grid">
+            <article className="statistics-kpi">
               <h2>Game score</h2><strong>{percentage(overview.score.value)}</strong>
               <p>{overview.score.wins} W · {overview.score.draws} D · {overview.score.losses} L</p>
               <small>{overview.score.numerator} points / {overview.score.denominator} games</small>
             </article>
-            <article className="card">
+            <article className="statistics-kpi">
               <h2>Decision quality</h2>
               <strong>{overview.decision_quality.mean_loss_cp?.toFixed(0) ?? "—"} cp</strong>
               <p>{overview.decision_quality.major_mistakes_per_game?.toFixed(2) ?? "—"} major mistakes/game</p>
               <small>{overview.decision_quality.denominator} analyzed games</small>
             </article>
-            <article className="card">
+            <article className="statistics-kpi">
               <h2>Tactical performance</h2><strong>{percentage(overview.tactical_performance.value)}</strong>
               <p>{overview.tactical_performance.found} found / {overview.tactical_performance.opportunities} opportunities</p>
               <small>{overview.tactical_performance.conceded_per_100_decisions?.toFixed(1) ?? "—"} conceded / 100 decisions</small>
@@ -85,7 +85,7 @@ export default function StatisticsView() {
           <p>{overview.analyzed_games} of {overview.games} games analyzed ({percentage(overview.analysis_coverage)} coverage).</p>
         </>
       )}
-      <section className="card">
+      <section className="statistics-breakdown">
         <h2>Breakdown</h2>
         <label>Compare by{" "}
           <select value={dimension} onChange={(event) => setDimension(event.target.value as Dimension)}>
@@ -101,7 +101,7 @@ export default function StatisticsView() {
             <caption>Performance by {breakdown.dimension.replaceAll("_", " ")}</caption>
             <thead><tr><th>Segment</th><th>Games</th><th>Score</th><th>Mean loss</th><th>Tactics</th></tr></thead>
             <tbody>{breakdown.segments.map((segment) => (
-              <tr key={segment.segment}><th>{segment.segment}</th><td>{segment.games}</td>
+              <tr key={segment.segment}><th>{segment.segment}<span className="statistics-bar" aria-hidden="true"><i style={{ width: `${(segment.score ?? 0) * 100}%` }} /></span></th><td>{segment.games}</td>
                 <td>{percentage(segment.score)}</td><td>{segment.mean_loss_cp?.toFixed(0) ?? "—"} cp</td>
                 <td>{segment.tactical_found}/{segment.tactical_opportunities}</td></tr>
             ))}</tbody>

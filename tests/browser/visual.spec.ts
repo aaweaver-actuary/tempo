@@ -15,6 +15,7 @@ for (const viewport of [
     "Builder",
     "Games",
     "Progress",
+    "Statistics",
     "Settings",
   ]) {
     test(`${workspace} ${viewport.width}`, async ({ page }) => {
