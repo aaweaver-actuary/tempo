@@ -25,6 +25,7 @@
 | Local app shows sample games on failure | `test_local_sync_persists_errors_and_success_without_sample_fallback`; `Docker Games shows actual empty records and actionable sync errors, never sample success` |
 | Sync status invisible | `automatic game sync has a visible spinner and reports provider failure` |
 | Chess.com mixed-case usernames and shared Site headers collapse games | `test_chesscom_mixed_case_username_and_shared_site_header_import_every_distinct_game` |
+| Queued or single-provider game sync results are rejected as missing provider objects | `queued game sync accepts an empty provider map without a diagnostic`; `single provider sync result does not require the other provider`; `malformed queued provider data still fails strict validation` |
 | One provider failure blocks the other account | `test_one_provider_failure_does_not_discard_other_provider_success` |
 | Incremental sync misses late games or creates duplicates | `test_incremental_overlap_catches_late_games_without_duplicates` |
 | Sync silently hides filtered, rejected, and duplicate records | `test_sync_reports_filtered_rejected_and_duplicate_counts` |

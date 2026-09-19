@@ -415,13 +415,19 @@ const completedSyncResultSchema = z.strictObject({
   synced_at: isoDateSchema,
   cached: z.boolean().optional(),
   incremental: z.boolean().optional(),
-  providers: z.record(z.enum(["lichess", "chess.com"]), providerSyncResultSchema),
+  providers: z.partialRecord(
+    z.enum(["lichess", "chess.com"]),
+    providerSyncResultSchema,
+  ),
 });
 export const syncResultSchema = z.strictObject({
   imported: integer,
   job_id: z.string().uuid(),
   status: gameSyncJobStatusSchema,
-  providers: z.record(z.enum(["lichess", "chess.com"]), providerSyncResultSchema),
+  providers: z.partialRecord(
+    z.enum(["lichess", "chess.com"]),
+    providerSyncResultSchema,
+  ),
 });
 export const syncStatusSchema = z.strictObject({
   providers: z.array(
