@@ -3,6 +3,18 @@ import type { TacticalCatalog, TacticalPack } from "../lib/tactical-catalog";
 import { packProgress } from "../lib/tactical-catalog";
 import type { TacticProgress } from "../lib/tactics-progress";
 
+export type MotifRecommendation = {
+  motif: string;
+  miss_count: number;
+  opportunity_count: number;
+  miss_rate: number;
+  window_days: number;
+  total_loss_cp: number;
+  supporting_games: string[];
+  recommended_pack_id: string | null;
+  recommended_pack_active: boolean;
+};
+
 export function TacticalCatalogPanel({
   catalog,
   progress,
@@ -10,6 +22,8 @@ export function TacticalCatalogPanel({
   onSelect,
   onActivate,
   busy,
+  recommendations = [],
+  onStartSuggested,
 }: {
   catalog: TacticalCatalog;
   progress: TacticProgress;
@@ -17,6 +31,8 @@ export function TacticalCatalogPanel({
   onSelect: (pack: TacticalPack) => void;
   onActivate: (ids: string[], active: boolean) => void;
   busy: boolean;
+  recommendations?: MotifRecommendation[];
+  onStartSuggested?: (recommendation: MotifRecommendation) => void;
 }) {
   const [expandedGroups, setExpandedGroups] = useState<string[]>(() => {
     try {
@@ -29,6 +45,28 @@ export function TacticalCatalogPanel({
   });
   return (
     <section className="tactical-catalog" aria-label="Tactical puzzle catalog">
+      {recommendations.length > 0 && (
+        <section className="tactics-suggestions" aria-labelledby="suggested-tactics-heading">
+          <h2 id="suggested-tactics-heading">Suggested</h2>
+          {recommendations.map((recommendation) => (
+            <article key={recommendation.motif}>
+              <strong>{recommendation.motif}</strong>
+              <p>
+                You missed {recommendation.miss_count} of {recommendation.opportunity_count}{" "}
+                {recommendation.motif} opportunities in the past {recommendation.window_days} days.
+              </p>
+              {recommendation.recommended_pack_id && (
+                <button
+                  disabled={busy}
+                  onClick={() => onStartSuggested?.(recommendation)}
+                >
+                  {recommendation.recommended_pack_active ? "Resume this motif" : "Start this motif"}
+                </button>
+              )}
+            </article>
+          ))}
+        </section>
+      )}
       <p>
         Activate packs to introduce up to your daily tactics limit. Due reviews
         continue after deactivation. Practicing any puzzle also adds it to daily

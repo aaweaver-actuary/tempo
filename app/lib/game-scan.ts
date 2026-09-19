@@ -9,6 +9,9 @@ export type DurableMoveEvaluation = MoveEvaluation & {
   principal_variation: string[];
   mate_before?: number;
   mate_after?: number;
+  mover_color: "white" | "black";
+  is_player_move: boolean;
+  actual_move_uci: string;
 };
 
 function whiteEvaluation(line: EngineMove | undefined, turn: "w" | "b", checkmate: boolean) {
@@ -26,41 +29,72 @@ export async function scanGameTwoPass(
   signal?: AbortSignal,
 ): Promise<DurableMoveEvaluation[]> {
   const board = new Chess(startFen);
-  const playerTurn = color === "white" ? "w" : "b";
-  const playerSign = color === "white" ? 1 : -1;
+  const positionFens = [board.fen()];
+  const positionTurns: Array<"w" | "b"> = [board.turn()];
+  const positionCheckmates = [board.isCheckmate()];
+  for (const move of moves) {
+    board.move(move);
+    positionFens.push(board.fen());
+    positionTurns.push(board.turn());
+    positionCheckmates.push(board.isCheckmate());
+  }
+  const analysisCache = new Map<string, EngineMove | undefined>();
+  const analyzePosition = async (positionIndex: number, depth: number) => {
+    const cacheKey = `${depth}:${positionFens[positionIndex]}`;
+    if (!analysisCache.has(cacheKey)) {
+      analysisCache.set(
+        cacheKey,
+        (await analyze(positionFens[positionIndex], depth))[0],
+      );
+      await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
+    }
+    return analysisCache.get(cacheKey);
+  };
+  const shallowLines: Array<EngineMove | undefined> = [];
+  for (let positionIndex = 0; positionIndex < positionFens.length; positionIndex++) {
+    if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
+    shallowLines.push(await analyzePosition(positionIndex, 8));
+  }
   const evaluations: DurableMoveEvaluation[] = [];
   for (let ply = 0; ply < moves.length; ply++) {
-    if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
-    const playerMoved = board.turn() === playerTurn;
-    if (!playerMoved) {
-      board.move(moves[ply]);
-      continue;
-    }
-    const beforeFen = board.fen();
-    const beforeTurn = board.turn();
-    const shallowBefore = (await analyze(beforeFen, 8))[0];
-    const shallowBeforeValue = whiteEvaluation(shallowBefore, beforeTurn, board.isCheckmate());
-    board.move(moves[ply]);
-    const afterFen = board.fen();
-    const afterTurn = board.turn();
-    const shallowAfter = (await analyze(afterFen, 8))[0];
-    const shallowAfterValue = whiteEvaluation(shallowAfter, afterTurn, board.isCheckmate());
-    const shallowLoss = (shallowBeforeValue - shallowAfterValue) * playerSign;
+    const beforeTurn = positionTurns[ply];
+    const afterTurn = positionTurns[ply + 1];
+    const moverColor = beforeTurn === "w" ? "white" : "black";
+    const moverSign = moverColor === "white" ? 1 : -1;
+    const shallowBefore = shallowLines[ply];
+    const shallowAfter = shallowLines[ply + 1];
+    const shallowBeforeValue = whiteEvaluation(
+      shallowBefore,
+      beforeTurn,
+      positionCheckmates[ply],
+    );
+    const shallowAfterValue = whiteEvaluation(
+      shallowAfter,
+      afterTurn,
+      positionCheckmates[ply + 1],
+    );
+    const shallowLoss = (shallowBeforeValue - shallowAfterValue) * moverSign;
     const shouldConfirm = shallowLoss >= 75 || ply === repertoireDeviationPly || shallowBefore?.mate !== undefined || shallowAfter?.mate !== undefined;
-    const confirmedBefore = shouldConfirm ? (await analyze(beforeFen, 14))[0] : shallowBefore;
-    const confirmedAfter = shouldConfirm ? (await analyze(afterFen, 14))[0] : shallowAfter;
+    const confirmedBefore = shouldConfirm
+      ? await analyzePosition(ply, 14)
+      : shallowBefore;
+    const confirmedAfter = shouldConfirm
+      ? await analyzePosition(ply + 1, 14)
+      : shallowAfter;
     evaluations.push({
       ply,
-      before_cp: whiteEvaluation(confirmedBefore, beforeTurn, false),
-      after_cp: whiteEvaluation(confirmedAfter, afterTurn, board.isCheckmate()),
+      before_cp: whiteEvaluation(confirmedBefore, beforeTurn, positionCheckmates[ply]),
+      after_cp: whiteEvaluation(confirmedAfter, afterTurn, positionCheckmates[ply + 1]),
       opponent_created_chance: false,
       depth: shouldConfirm ? 14 : 8,
       best_move_uci: confirmedBefore?.uci,
       principal_variation: confirmedBefore?.pv ?? [],
       mate_before: confirmedBefore?.mate,
       mate_after: confirmedAfter?.mate,
+      mover_color: moverColor,
+      is_player_move: moverColor === color,
+      actual_move_uci: moves[ply],
     });
-    await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
   }
   return evaluations;
 }

@@ -759,6 +759,7 @@ def migration_snapshot():
         "repertoire_comparisons",
         "game_repertoire_matches",
         "game_findings",
+        "gameplay_events",
         "game_insight_recommendations",
         "repertoire_coverage_runs",
         "repertoire_coverage_nodes",
@@ -2057,7 +2058,7 @@ def retry_game_analysis(game_id: str):
 def save_game_analysis(game_id: str, request: GameAnalysisRequest):
     with connection() as db:
         game = db.execute(
-            "SELECT color,start_fen FROM imported_games WHERE id=?", (game_id,)
+            "SELECT color,start_fen,moves_json FROM imported_games WHERE id=?", (game_id,)
         ).fetchone()
         if not game:
             raise HTTPException(404, "Game not found")
@@ -2092,25 +2093,37 @@ def save_game_analysis(game_id: str, request: GameAnalysisRequest):
             "white" if chess.Board(game[1]).turn else "black",
         )
         db.execute("DELETE FROM game_move_analysis WHERE game_id=?", (game_id,))
+        game_board = chess.Board(game["start_fen"])
+        game_moves = json.loads(game["moves_json"])
+        mover_color_by_ply: dict[int, str] = {}
+        for move_ply, move_uci in enumerate(game_moves):
+            mover_color_by_ply[move_ply] = "white" if game_board.turn else "black"
+            game_board.push_uci(move_uci)
         for item in request.evaluations:
+            item_ply = int(item["ply"])
+            mover_color = item.get("mover_color") or mover_color_by_ply.get(item_ply)
+            if mover_color not in {"white", "black"}:
+                raise HTTPException(422, "Analysis move color is invalid")
+            is_player_move = mover_color == game["color"]
             loss = (int(item["before_cp"]) - int(item["after_cp"])) * (
-                1 if game[0] == "white" else -1
+                1 if mover_color == "white" else -1
             )
             label = (
                 "missed punishment"
-                if int(item["ply"]) == result["missed_punishment_ply"]
+                if item_ply == result["missed_punishment_ply"]
                 else "major mistake"
-                if int(item["ply"]) == result["major_mistake_ply"]
+                if item_ply == result["major_mistake_ply"]
                 else None
             )
             db.execute(
                 """INSERT INTO game_move_analysis(
                     game_id,ply,eval_before_cp,eval_after_cp,loss_cp,label,depth,best_move_uci,
-                    principal_variation_json,mate_before,mate_after,engine_version,network_version
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    principal_variation_json,mate_before,mate_after,engine_version,network_version,
+                    mover_color,is_player_move,actual_move_uci
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     game_id,
-                    int(item["ply"]),
+                    item_ply,
                     int(item["before_cp"]),
                     int(item["after_cp"]),
                     loss,
@@ -2122,6 +2135,9 @@ def save_game_analysis(game_id: str, request: GameAnalysisRequest):
                     item.get("mate_after"),
                     request.engine_version,
                     request.network_version,
+                    mover_color,
+                    int(is_player_move),
+                    item.get("actual_move_uci") or game_moves[item_ply],
                 ),
             )
         db.execute(

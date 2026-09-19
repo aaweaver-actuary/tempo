@@ -100,6 +100,7 @@ const TABLE_TO_STORE: Record<string, TempoStore> = {
   endgame_attempts: "syncMetadata",
   game_accounts: "syncMetadata",
   game_move_analysis: "syncMetadata",
+  gameplay_events: "syncMetadata",
   game_analysis_jobs: "syncMetadata",
   game_sync_jobs: "syncMetadata",
   game_derivation_jobs: "syncMetadata",

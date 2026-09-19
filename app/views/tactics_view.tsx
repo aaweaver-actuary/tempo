@@ -17,7 +17,7 @@ import {
   advanceTacticProgress,
   writeTacticProgress,
 } from "../lib/tactics-progress";
-import { TacticalCatalogPanel } from "../components/tactical-catalog";
+import { TacticalCatalogPanel, type MotifRecommendation } from "../components/tactical-catalog";
 import {
   loadTacticalCatalog,
   setPackActivation,
@@ -32,7 +32,7 @@ import {
   readWorkspaceData,
   invalidateWorkspaceData,
 } from "../lib/workspace-data";
-import { tacticProgressSchema } from "../domain/schemas";
+import { motifRecommendationsSchema, tacticProgressSchema } from "../domain/schemas";
 
 const emptyPuzzle: PracticeCard = {
   id: asCardId("loading"),
@@ -94,6 +94,7 @@ export default function TacticsView({
   const [catalogError, setCatalogError] = useState("");
   const [activationError, setActivationError] = useState("");
   const [activationBusy, setActivationBusy] = useState(false);
+  const [recommendations, setRecommendations] = useState<MotifRecommendation[]>([]);
   const [progress, setProgress] = useState(readTacticProgress);
   const [progressReady, setProgressReady] = useState(() => !usesLocalApi());
   const [prepared, setPrepared] = useState<
@@ -153,6 +154,21 @@ export default function TacticsView({
       .catch((error) => {
         if (active) setCatalogError(error.message);
       });
+    return () => {
+      active = false;
+    };
+  }, [retry]);
+  useEffect(() => {
+    if (!usesLocalApi()) return;
+    let active = true;
+    void readWorkspaceData(
+      `${API_URL}/api/game-insights/motifs`,
+      motifRecommendationsSchema,
+    ).then((payload) => {
+      if (active) setRecommendations(payload.recommendations);
+    }).catch(() => {
+      if (active) setRecommendations([]);
+    });
     return () => {
       active = false;
     };
@@ -520,6 +536,17 @@ export default function TacticsView({
           onSelect={selectPack}
           onActivate={(ids, active) => void activatePacks(ids, active)}
           busy={activationBusy}
+          recommendations={recommendations}
+          onStartSuggested={(recommendation) => {
+            const suggestedPack = catalog.packs.find(
+              (pack) => pack.id === recommendation.recommended_pack_id,
+            );
+            if (!suggestedPack) return;
+            if (!suggestedPack.active) {
+              void activatePacks([suggestedPack.id], true);
+            }
+            selectPack(suggestedPack);
+          }}
         />
         <div className="board-column centered-board">
           {!useSharedBoard && (

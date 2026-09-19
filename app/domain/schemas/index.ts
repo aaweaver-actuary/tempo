@@ -300,6 +300,20 @@ export const tacticProgressSchema = z.record(
     discoveredIds: z.array(z.string()).optional(),
   }),
 );
+export const motifRecommendationSchema = z.strictObject({
+  motif: identifierSchema,
+  miss_count: integer,
+  opportunity_count: integer,
+  miss_rate: z.number().min(0).max(1),
+  total_loss_cp: integer,
+  supporting_games: z.array(gameIdSchema),
+  window_days: z.number().int().positive(),
+  recommended_pack_id: identifierSchema.nullable(),
+  recommended_pack_active: z.boolean(),
+});
+export const motifRecommendationsSchema = z.strictObject({
+  recommendations: z.array(motifRecommendationSchema),
+});
 export const teachingResponseSchema = z.strictObject({
   states: z.array(
     z.strictObject({

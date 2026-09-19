@@ -34,7 +34,7 @@ def _position_before_ply(start_fen: str, moves: list[str], ply: int) -> chess.Bo
     return board
 
 
-def _classify_motif(board: chess.Board, best_move_uci: str | None, principal_variation: list[str]) -> tuple[str, float, list[str]]:
+def classify_tactical_motif(board: chess.Board, best_move_uci: str | None, principal_variation: list[str]) -> tuple[str, float, list[str]]:
     if not best_move_uci:
         return "unclassified", 0.0, []
     try:
@@ -151,7 +151,9 @@ def refresh_game_findings(
             analysis_rows = database.execute(
                 "SELECT * FROM game_move_analysis WHERE game_id=? ORDER BY ply", (game["id"],)
             ).fetchall()
-            player_analysis_rows = list(analysis_rows)
+            player_analysis_rows = [
+                row for row in analysis_rows if bool(row["is_player_move"])
+            ]
             gap_start = game["out_of_book_ply"]
             if game["first_opponent_gap_ply"] is not None:
                 gap_start = min(
@@ -212,8 +214,8 @@ def refresh_game_findings(
                                 datetime.now(timezone.utc).isoformat(),
                             )
                         )
-            first_big_mistake = next((row for row in analysis_rows if row["loss_cp"] >= threshold), None)
-            for row in analysis_rows:
+            first_big_mistake = next((row for row in player_analysis_rows if row["loss_cp"] >= threshold), None)
+            for row in player_analysis_rows:
                 if row["loss_cp"] < threshold:
                     continue
                 evidence = {
@@ -226,7 +228,7 @@ def refresh_game_findings(
                 kind = "blunder" if row["loss_cp"] >= 250 or (row["mate_before"] is not None) != (row["mate_after"] is not None) else "major mistake"
                 finding_writes.append(dict(game_id=game["id"], analysis_version=version, ply=row["ply"], kind=kind, confidence=1.0, evidence=evidence))
                 board = _position_before_ply(game["start_fen"], moves, row["ply"])
-                motif, confidence, candidates = _classify_motif(board, row["best_move_uci"], evidence["principal_variation"])
+                motif, confidence, candidates = classify_tactical_motif(board, row["best_move_uci"], evidence["principal_variation"])
                 finding_writes.append(dict(
                     game_id=game["id"], analysis_version=version, ply=row["ply"],
                     kind="tactical miss", confidence=confidence,
@@ -263,23 +265,31 @@ def refresh_game_findings(
 
 def motif_recommendations() -> list[dict]:
     with connection() as database:
-        eligible_games = [row[0] for row in database.execute(
-            "SELECT id FROM imported_games WHERE adaptive_excluded=0 ORDER BY played_at DESC LIMIT 30"
-        )]
-        if not eligible_games:
-            return []
-        placeholders = ",".join("?" for _ in eligible_games)
+        window_days = 30
+        window_start = (
+            datetime.now(timezone.utc) - timedelta(days=window_days)
+        ).isoformat()
         rows = database.execute(
-            f"""SELECT * FROM game_findings WHERE game_id IN ({placeholders}) AND kind='tactical miss'
-                  AND confidence>=0.8 AND motif!='unclassified' AND status NOT IN ('ignored','excluded')""",
-            eligible_games,
+            """SELECT e.*,g.color AS player_color,g.played_at
+                 FROM gameplay_events e
+                 JOIN imported_games g ON g.id=e.game_id
+                WHERE g.adaptive_excluded=0 AND g.played_at>=?
+                  AND e.kind='tactical opportunity' AND e.confidence>=0.8
+                  AND e.motif!='unclassified' AND e.beneficiary_color=g.color""",
+            (window_start,),
         ).fetchall()
         grouped: dict[str, dict] = {}
         for row in rows:
-            evidence = json.loads(row["evidence_json"])
-            item = grouped.setdefault(row["motif"], {"motif": row["motif"], "miss_count": 0, "total_loss_cp": 0, "supporting_games": []})
+            item = grouped.setdefault(row["motif"], {
+                "motif": row["motif"], "miss_count": 0,
+                "opportunity_count": 0, "total_loss_cp": 0,
+                "supporting_games": [], "window_days": window_days,
+            })
+            item["opportunity_count"] += 1
+            if row["outcome"] != "missed":
+                continue
             item["miss_count"] += 1
-            item["total_loss_cp"] += int(evidence.get("loss_cp", 0))
+            item["total_loss_cp"] += int(row["loss_cp"] or 0)
             if row["game_id"] not in item["supporting_games"]:
                 item["supporting_games"].append(row["game_id"])
         catalog = catalog_status(database)
@@ -289,8 +299,16 @@ def motif_recommendations() -> list[dict]:
         for item in grouped.values():
             if item["miss_count"] < 3:
                 continue
-            pack = next((pack for pack in catalog["packs"] if pack["id"].startswith(f"{item['motif']}-") and not pack["active"] and pack["introduced"] < pack["count"]), None)
+            unfinished_packs = [
+                pack for pack in catalog["packs"]
+                if pack["id"].startswith(f"{item['motif']}-")
+                and pack["introduced"] < pack["count"]
+            ]
+            unfinished_packs.sort(key=lambda pack: (not pack["active"], pack["id"]))
+            pack = unfinished_packs[0] if unfinished_packs else None
             item["recommended_pack_id"] = pack["id"] if pack else None
+            item["recommended_pack_active"] = bool(pack and pack["active"])
+            item["miss_rate"] = item["miss_count"] / item["opportunity_count"]
             database.execute(
                 "INSERT INTO game_insight_recommendations VALUES(?,?,?,?,?,?)",
                 (item["motif"], item["miss_count"], item["total_loss_cp"], json.dumps(item["supporting_games"]), item["recommended_pack_id"], now),

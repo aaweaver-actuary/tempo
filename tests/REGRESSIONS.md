@@ -35,6 +35,10 @@
 | Repertoire identity is lost after a deviation or transposition | `test_repertoire_comparison_retains_identity_across_deviation_and_transposition` |
 | A repertoire line ending is reported as a player error | `test_line_ending_is_out_of_book_rather_than_a_player_deviation` |
 | A recurring tactical motif silently changes the curriculum | `test_recurring_motif_recommends_but_does_not_activate_a_tactics_pack` |
+| Tactical suggestions use a game count instead of the requested calendar window | `test_tactics_suggestions_use_thirty_days_and_explicit_opportunity_denominator` |
+| Tactical suggestions hide how many eligible opportunities occurred | `test_tactics_suggestions_use_thirty_days_and_explicit_opportunity_denominator` |
+| A suggested tactics pack activates before the user chooses it | `TacticalCatalogPanel suggestions > activates a suggested tactics pack only after user action` |
+| Recomputing both-side gameplay events creates duplicates | `test_gameplay_events_reuse_both_sides_analysis_and_recompute_idempotently` |
 | Ignoring gameplay evidence changes scheduling | `test_ignored_gameplay_finding_never_changes_card_scheduling` |
 | A confirmed gameplay lapse double-counts or fails to queue | `test_confirmed_gameplay_lapse_records_exactly_one_again_and_queues_the_card` |
 | First big mistake creates duplicate or unpreviewed cards | `test_first_big_mistake_creates_a_previewed_deduplicated_middlegame_card` |

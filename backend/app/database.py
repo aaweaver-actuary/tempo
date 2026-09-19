@@ -421,6 +421,30 @@ def initialize() -> None:
         """,
         "CREATE INDEX IF NOT EXISTS idx_game_findings_status ON game_findings(status,kind,updated_at)",
         """
+        CREATE TABLE IF NOT EXISTS gameplay_events (
+            id TEXT PRIMARY KEY,
+            game_id TEXT NOT NULL REFERENCES imported_games(id) ON DELETE CASCADE,
+            analysis_version INTEGER NOT NULL,
+            classifier_version INTEGER NOT NULL,
+            ply INTEGER NOT NULL,
+            kind TEXT NOT NULL,
+            motif TEXT NOT NULL,
+            beneficiary_color TEXT NOT NULL CHECK(beneficiary_color IN ('white','black')),
+            created_by_color TEXT NOT NULL CHECK(created_by_color IN ('white','black')),
+            outcome TEXT NOT NULL,
+            confidence REAL NOT NULL,
+            loss_cp INTEGER NOT NULL,
+            best_move_uci TEXT,
+            actual_move_uci TEXT,
+            principal_variation_json TEXT NOT NULL DEFAULT '[]',
+            evidence_json TEXT NOT NULL DEFAULT '{}',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_gameplay_events_game_ply ON gameplay_events(game_id,ply,kind)",
+        "CREATE INDEX IF NOT EXISTS idx_gameplay_events_motif ON gameplay_events(motif,outcome,confidence)",
+        """
         CREATE TABLE IF NOT EXISTS game_insight_recommendations (
             motif TEXT PRIMARY KEY,
             miss_count INTEGER NOT NULL,
@@ -506,7 +530,7 @@ def initialize() -> None:
             "reviews": {"internal_rating": "TEXT NOT NULL DEFAULT 'again'", "guided": "INTEGER NOT NULL DEFAULT 0", "source_kind": "TEXT NOT NULL DEFAULT 'study'", "source_ref": "TEXT"},
             "imported_games": {"analysis_state": "TEXT NOT NULL DEFAULT 'pending'", "analysis_version": "INTEGER NOT NULL DEFAULT 0", "major_mistake_ply": "INTEGER", "missed_punishment_ply": "INTEGER", "provider_game_id": "TEXT", "content_hash": "TEXT", "adaptive_excluded": "INTEGER NOT NULL DEFAULT 0"},
             "game_derivation_jobs": {"derivation_version": "INTEGER NOT NULL DEFAULT 1", "next_attempt_at": "TEXT"},
-            "game_move_analysis": {"best_move_uci": "TEXT", "principal_variation_json": "TEXT NOT NULL DEFAULT '[]'", "mate_before": "INTEGER", "mate_after": "INTEGER", "engine_version": "TEXT", "network_version": "TEXT"},
+            "game_move_analysis": {"best_move_uci": "TEXT", "principal_variation_json": "TEXT NOT NULL DEFAULT '[]'", "mate_before": "INTEGER", "mate_after": "INTEGER", "engine_version": "TEXT", "network_version": "TEXT", "mover_color": "TEXT", "is_player_move": "INTEGER NOT NULL DEFAULT 1", "actual_move_uci": "TEXT"},
             "repertoires": {"is_main": "INTEGER NOT NULL DEFAULT 0"},
         }
         for table, additions in columns.items():

@@ -15,6 +15,7 @@ import chess
 from ..database import connection
 from ..models import GameSyncRequest
 from .game_findings import refresh_game_findings
+from .gameplay_events import refresh_gameplay_events
 from .game_sync import sync_providers
 from .repertoire_comparison import compare_games
 from .activity_gate import activity_gate
@@ -138,6 +139,7 @@ def _execute_derivation(game_id: str) -> None:
             _index_game_positions(game_id)
             compare_games([game_id], background=True)
             refresh_game_findings(game_id, background=True)
+            refresh_gameplay_events(game_id, background=True)
             activity_gate.wait_for_foreground()
             with connection(background=True) as database:
                 database.execute(
