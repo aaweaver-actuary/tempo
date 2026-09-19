@@ -72,10 +72,6 @@ export function editFenSquare(
   return addPieceToFenString(fen, square, piece);
 }
 
-export function moveFenPiece(
-  fen: string,
-  from: Square,
-  to: Square,
-): string {
+export function moveFenPiece(fen: string, from: Square, to: Square): string {
   return movePieceFromOneSquareToAnotherInFenString(fen, from, to);
 }

@@ -9,7 +9,9 @@ import {
 import { parseData, validRecords } from "./validated-data";
 
 export type EngineMove = {
+  // TODO: we should use one of our already-defined types instead of a plain string for better type safety.
   uci: string;
+  // TODO: we should use one of our already-defined types instead of a plain string for better type safety.
   san: string;
   score?: string;
   probability?: number;
@@ -32,6 +34,7 @@ async function loadStockfish() {
 let stockfishTail: Promise<unknown> = Promise.resolve();
 
 export function analyzeWithStockfish(
+  // TODO: we should use one of our already-defined types instead of a plain string for better type safety.
   fen: string,
   depth = 10,
 ): Promise<EngineMove[]> {
@@ -41,6 +44,7 @@ export function analyzeWithStockfish(
 }
 
 async function stockfishAnalysis(
+  // TODO: we should use one of our already-defined types instead of a plain string for better type safety.
   fen: string,
   depth: number,
 ): Promise<EngineMove[]> {
@@ -51,6 +55,7 @@ async function stockfishAnalysis(
     const timeout = window.setTimeout(() => {
       worker.removeEventListener("message", receive);
       reject(new Error("Stockfish took too long"));
+      // TODO: what is this magic number? why is it hard-coded here? should it be configurable?
     }, 60_000);
     const receive = (event: MessageEvent<unknown>) => {
       const parsed = stockfishMessageSchema.safeParse(event.data);

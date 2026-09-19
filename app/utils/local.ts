@@ -4,10 +4,13 @@ declare const __TEMPO_DEMO__: boolean;
 // also work when the web application is accessed through a LAN hostname.
 export function usesLocalApi(): boolean {
   if (typeof __TEMPO_DEMO__ !== "undefined") return !__TEMPO_DEMO__;
-  const configured = typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL;
+  const configured =
+    typeof process !== "undefined" && process.env.NEXT_PUBLIC_API_URL;
   return (
     typeof window !== "undefined" &&
-    Boolean(configured || ["localhost", "127.0.0.1"].includes(location.hostname))
+    Boolean(
+      configured || ["localhost", "127.0.0.1"].includes(location.hostname),
+    )
   );
 }
 

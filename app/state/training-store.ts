@@ -40,8 +40,10 @@ export type TrainingStoreState = {
   showTree: boolean;
   editorCard: PracticeCard | null;
   suggestShorter: boolean;
+  // TODO: should this be a Map<Square, MoveSquares> instead of a Set<string> to track seen moves more accurately?
   seenMoves: Set<string>;
   teachingEncounterKey: string | null;
+  // TODO: what does this teachingReadyCard represent and how is it used? we should use a more descriptive type or structure if necessary.
   teachingReadyCard: string;
   firstCleanPasses: Set<string>;
   isAttemptFailed: boolean;
@@ -53,6 +55,7 @@ export type TrainingStoreState = {
   pieceSet: PieceSet;
   isSoundEnabled: boolean;
   isDatabaseQueueActive: boolean;
+  // TODO: is there a discrete number of service errors that can occur, and should this be represented differently?
   serviceError: string;
   setPracticeCards: (
     cards: PracticeCard[] | ((current: PracticeCard[]) => PracticeCard[]),
@@ -81,6 +84,7 @@ export type TrainingStoreState = {
       | ((current: MoveSquares | undefined) => MoveSquares | undefined),
   ) => void;
   setAttemptPhase: (phase: AttemptPhase, expected?: AttemptToken) => void;
+  // TODO: consider whether this should be a more structured error type rather than a plain string.
   setReviewSaveError: (error: string) => void;
   hydrateLocalQueue: (cards: PracticeCard[], advance?: boolean) => void;
   setBoardAttempt: (value: number | ((value: number) => number)) => void;
@@ -96,6 +100,7 @@ export type TrainingStoreState = {
       | ((current: PracticeCard | null) => PracticeCard | null),
   ) => void;
   setSuggestShorter: (value: boolean | ((current: boolean) => boolean)) => void;
+  // TODO: should this be based on a set of chess move objects rather than strings for more accurate tracking?
   setSeenMoves: (
     moves: Set<string> | ((value: Set<string>) => Set<string>),
   ) => void;
