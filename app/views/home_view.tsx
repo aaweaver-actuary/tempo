@@ -44,6 +44,7 @@ import SettingsView from "./settings_view";
 import TacticsView from "./tactics_view";
 import { loadPositionAnnotation } from "../utils/position-annotations";
 import { useGameSync } from "../hooks/use-game-sync";
+import { useGameAnalysis } from "../hooks/use-game-analysis";
 import { Chess, Move, Square } from "chess.js";
 import {
   useTrainingStore,
@@ -65,6 +66,7 @@ import { useShallow } from "zustand/react/shallow";
 
 export default function Home() {
   const gameSync = useGameSync();
+  useGameAnalysis();
   const [currentView, setCurrentView] = useState<View>("train");
   const changeWorkspace = useCallback((view: View) => {
     const finished = measureTempoOperation("view-switch");

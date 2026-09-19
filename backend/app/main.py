@@ -25,6 +25,7 @@ from .models import (
     EndgameProbeRequest,
     EndgameTemplateRequest,
     GameAnalysisRequest,
+    GameAnalysisFailureRequest,
     GameSyncRequest,
     ImportResult,
     PositionAnnotationRequest,
@@ -541,6 +542,7 @@ def migration_snapshot():
         "game_accounts",
         "imported_games",
         "game_move_analysis",
+        "game_analysis_jobs",
         "repertoire_comparisons",
         "game_sync_state",
     ]
@@ -1674,6 +1676,82 @@ def sync_status():
     }
 
 
+@app.post("/api/games/analysis/claim")
+def claim_game_analysis():
+    now = datetime.now(timezone.utc)
+    lease_expires_at = now + timedelta(minutes=5)
+    lease_id = str(uuid.uuid4())
+    with connection() as db:
+        db.execute("BEGIN IMMEDIATE")
+        db.execute(
+            """UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,lease_expires_at=NULL,updated_at=?
+               WHERE status='leased' AND lease_expires_at<?""",
+            (now.isoformat(), now.isoformat()),
+        )
+        job = db.execute(
+            """SELECT j.game_id,j.analysis_version,g.provider,g.username,g.played_at,g.color,g.start_fen,g.moves_json,
+                      c.divergence_ply
+               FROM game_analysis_jobs j
+               JOIN imported_games g ON g.id=j.game_id
+               LEFT JOIN repertoire_comparisons c ON c.game_id=g.id
+               WHERE j.status='queued' AND g.rated=1 AND g.speed IN ('blitz','rapid','classical')
+               ORDER BY g.played_at DESC LIMIT 1"""
+        ).fetchone()
+        if not job:
+            return {"job": None}
+        updated = db.execute(
+            """UPDATE game_analysis_jobs SET status='leased',lease_id=?,lease_expires_at=?,attempts=attempts+1,updated_at=?
+               WHERE game_id=? AND status='queued'""",
+            (lease_id, lease_expires_at.isoformat(), now.isoformat(), job["game_id"]),
+        ).rowcount
+        if not updated:
+            return {"job": None}
+        db.execute(
+            "UPDATE imported_games SET analysis_state='analyzing' WHERE id=?",
+            (job["game_id"],),
+        )
+    return {
+        "job": {
+            **dict(job),
+            "moves": json.loads(job["moves_json"]),
+            "lease_id": lease_id,
+            "lease_expires_at": lease_expires_at.isoformat(),
+        }
+    }
+
+
+@app.post("/api/games/analysis/{game_id:path}/failure")
+def fail_game_analysis(game_id: str, request: GameAnalysisFailureRequest):
+    with connection() as db:
+        job = db.execute(
+            "SELECT lease_id,status FROM game_analysis_jobs WHERE game_id=?", (game_id,)
+        ).fetchone()
+        if not job:
+            raise HTTPException(404, "Analysis job not found")
+        if job["status"] != "leased" or job["lease_id"] != request.lease_id:
+            raise HTTPException(409, "Analysis lease is no longer active")
+        db.execute(
+            """UPDATE game_analysis_jobs SET status='failed',lease_id=NULL,lease_expires_at=NULL,last_error=?,updated_at=? WHERE game_id=?""",
+            (request.error, datetime.now(timezone.utc).isoformat(), game_id),
+        )
+        db.execute("UPDATE imported_games SET analysis_state='failed' WHERE id=?", (game_id,))
+    return {"status": "failed", "retryable": True}
+
+
+@app.post("/api/games/analysis/{game_id:path}/retry")
+def retry_game_analysis(game_id: str):
+    with connection() as db:
+        updated = db.execute(
+            """UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,lease_expires_at=NULL,last_error=NULL,updated_at=?
+               WHERE game_id=? AND status='failed'""",
+            (datetime.now(timezone.utc).isoformat(), game_id),
+        ).rowcount
+        if not updated:
+            raise HTTPException(409, "Only failed analysis jobs can be retried")
+        db.execute("UPDATE imported_games SET analysis_state='pending' WHERE id=?", (game_id,))
+    return {"status": "queued"}
+
+
 @app.post("/api/games/{game_id:path}/analysis")
 def save_game_analysis(game_id: str, request: GameAnalysisRequest):
     with connection() as db:
@@ -1682,6 +1760,21 @@ def save_game_analysis(game_id: str, request: GameAnalysisRequest):
         ).fetchone()
         if not game:
             raise HTTPException(404, "Game not found")
+        job = db.execute(
+            "SELECT * FROM game_analysis_jobs WHERE game_id=?", (game_id,)
+        ).fetchone()
+        if request.idempotency_key and job and job["status"] == "complete":
+            if job["idempotency_key"] == request.idempotency_key:
+                return {
+                    "major_mistake_ply": db.execute("SELECT major_mistake_ply FROM imported_games WHERE id=?", (game_id,)).fetchone()[0],
+                    "missed_punishment_ply": db.execute("SELECT missed_punishment_ply FROM imported_games WHERE id=?", (game_id,)).fetchone()[0],
+                    "idempotent": True,
+                }
+            raise HTTPException(409, "A different analysis was already submitted")
+        if request.lease_id and (
+            not job or job["status"] != "leased" or job["lease_id"] != request.lease_id
+        ):
+            raise HTTPException(409, "Analysis lease is no longer active")
         threshold = db.execute(
             "SELECT major_mistake_cp FROM settings WHERE id=1"
         ).fetchone()[0]
@@ -1704,7 +1797,10 @@ def save_game_analysis(game_id: str, request: GameAnalysisRequest):
                 else None
             )
             db.execute(
-                "INSERT INTO game_move_analysis VALUES(?,?,?,?,?,?,?)",
+                """INSERT INTO game_move_analysis(
+                    game_id,ply,eval_before_cp,eval_after_cp,loss_cp,label,depth,best_move_uci,
+                    principal_variation_json,mate_before,mate_after,engine_version,network_version
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     game_id,
                     int(item["ply"]),
@@ -1712,12 +1808,30 @@ def save_game_analysis(game_id: str, request: GameAnalysisRequest):
                     int(item["after_cp"]),
                     loss,
                     label,
-                    request.depth,
+                    int(item.get("depth", request.depth)),
+                    item.get("best_move_uci"),
+                    json.dumps(item.get("principal_variation", [])),
+                    item.get("mate_before"),
+                    item.get("mate_after"),
+                    request.engine_version,
+                    request.network_version,
                 ),
             )
         db.execute(
             "UPDATE imported_games SET analysis_state='ready',analysis_version=analysis_version+1,major_mistake_ply=?,missed_punishment_ply=? WHERE id=?",
             (result["major_mistake_ply"], result["missed_punishment_ply"], game_id),
+        )
+        db.execute(
+            """INSERT INTO game_analysis_jobs(game_id,analysis_version,status,idempotency_key,updated_at)
+               VALUES(?,?,'complete',?,?)
+               ON CONFLICT(game_id) DO UPDATE SET analysis_version=excluded.analysis_version,status='complete',
+               lease_id=NULL,lease_expires_at=NULL,idempotency_key=excluded.idempotency_key,last_error=NULL,updated_at=excluded.updated_at""",
+            (
+                game_id,
+                request.analysis_version,
+                request.idempotency_key,
+                datetime.now(timezone.utc).isoformat(),
+            ),
         )
     return result
 

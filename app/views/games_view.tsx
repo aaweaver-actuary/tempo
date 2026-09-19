@@ -15,7 +15,6 @@ import {
   invalidateWorkspaceData,
 } from "../lib/workspace-data";
 import { analyzeWithStockfish } from "../lib/analysis-engines";
-import { scanGame } from "../lib/game-scan";
 import type { GameSyncState } from "../hooks/use-game-sync";
 import { importGameAndReformatToGameViewRecord } from "../utils/pgn";
 import { fenAfterMoves } from "../utils/fen";
@@ -81,7 +80,6 @@ export default function GamesView({
   );
   const [engineText, setEngineText] = useState("");
   const [error, setError] = useState("");
-  const [scanStatus, setScanStatus] = useState("");
   const [lines, setLines] = useState<AnalysisLine[]>([]);
   const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
   const [filters, setFilters] = useState(() => ({
@@ -186,44 +184,6 @@ export default function GamesView({
       })
       .catch(() => undefined);
   }, [local]);
-  const pending = records.find((game) => game.analysisState === "pending");
-  useEffect(() => {
-    if (!local || !pending) return;
-    const controller = new AbortController();
-    queueMicrotask(() => {
-      if (!controller.signal.aborted)
-        setScanStatus(`Scanning ${pending.opening}…`);
-    });
-    void scanGame(
-      pending.startFen,
-      pending.moves,
-      pending.color,
-      (fen) => analyzeWithStockfish(fen, 6),
-      controller.signal,
-    )
-      .then(async (evaluations) => {
-        if (controller.signal.aborted) return;
-        const response = await fetch(
-          `${API_URL}/api/games/${encodeURIComponent(pending.id)}/analysis`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ evaluations, depth: 6 }),
-          },
-        );
-        if (!response.ok) throw new Error("Could not save the game scan.");
-        invalidateWorkspaceData();
-        await loadGames();
-        setScanStatus("");
-      })
-      .catch((reason) => {
-        if (!controller.signal.aborted)
-          setScanStatus(
-            `Game scan failed: ${reason instanceof Error ? reason.message : "retry by reopening Games"}`,
-          );
-      });
-    return () => controller.abort();
-  }, [local, pending, loadGames]);
   useEffect(() => {
     let active = true;
     if (!engineOn || !selected) return;
@@ -424,7 +384,6 @@ export default function GamesView({
             <h2>{selected?.opening ?? "No games imported"}</h2>
             <strong>{selected?.flag}</strong>
             {engineOn && <p>{engineText}</p>}
-            {scanStatus && <p role="status">{scanStatus}</p>}
             <div className="game-moves">
               {selected?.moves.map((move, index) => (
                 <button

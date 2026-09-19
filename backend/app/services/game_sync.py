@@ -91,7 +91,15 @@ def _persist_game(record: GameRecord) -> str:
                     """UPDATE imported_games SET provider_game_id=?,content_hash=?,username=?,played_at=?,speed=?,rated=?,color=?,result=?,start_fen=?,moves_json=?,game_url=?,opening_name=? WHERE id=?""",
                     (*values, existing["id"]),
                 )
+                database.execute(
+                    "INSERT OR IGNORE INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
+                    (existing["id"], datetime.now(timezone.utc).isoformat()),
+                )
                 return "updated"
+            database.execute(
+                "INSERT OR IGNORE INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
+                (existing["id"], datetime.now(timezone.utc).isoformat()),
+            )
             return "duplicate"
         database.execute(
             """INSERT INTO imported_games(id,provider,provider_game_id,content_hash,username,played_at,speed,rated,color,result,start_fen,moves_json,game_url,opening_name)
@@ -101,6 +109,10 @@ def _persist_game(record: GameRecord) -> str:
                 record.provider,
                 *values,
             ),
+        )
+        database.execute(
+            "INSERT INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
+            (f"{record.provider}:{record.provider_game_id}", datetime.now(timezone.utc).isoformat()),
         )
         return "inserted"
 

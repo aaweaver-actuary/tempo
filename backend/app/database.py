@@ -1,6 +1,7 @@
 import os
 import sqlite3
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
@@ -287,6 +288,20 @@ def initialize() -> None:
         """,
         "CREATE INDEX IF NOT EXISTS idx_imported_games_account_date ON imported_games(provider, username, played_at)",
         """
+        CREATE TABLE IF NOT EXISTS game_analysis_jobs (
+            game_id TEXT PRIMARY KEY REFERENCES imported_games(id) ON DELETE CASCADE,
+            analysis_version INTEGER NOT NULL DEFAULT 1,
+            status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','leased','complete','failed')),
+            lease_id TEXT,
+            lease_expires_at TEXT,
+            idempotency_key TEXT,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_game_analysis_jobs_status ON game_analysis_jobs(status, updated_at)",
+        """
         CREATE TABLE IF NOT EXISTS repertoire_comparisons (
             game_id TEXT PRIMARY KEY REFERENCES imported_games(id) ON DELETE CASCADE,
             repertoire_id TEXT,
@@ -312,6 +327,7 @@ def initialize() -> None:
             "cards": {"fsrs_card_json": "TEXT", "first_correct_at": "TEXT", "reinforcement_pending": "INTEGER NOT NULL DEFAULT 0", "stability": "REAL NOT NULL DEFAULT 0", "guided_review": "INTEGER NOT NULL DEFAULT 0", "maximum_interval": "INTEGER NOT NULL DEFAULT 365", "content_type": "TEXT NOT NULL DEFAULT 'opening'", "scheduling_mode": "TEXT NOT NULL DEFAULT 'normal'", "hard_correct_streak": "INTEGER NOT NULL DEFAULT 0", "recent_attempts_json": "TEXT NOT NULL DEFAULT '[]'", "archived": "INTEGER NOT NULL DEFAULT 0", "superseded_by": "TEXT", "source_ref": "TEXT", "source_fen": "TEXT", "revision": "INTEGER NOT NULL DEFAULT 1", "introduced_at": "TEXT"},
             "reviews": {"internal_rating": "TEXT NOT NULL DEFAULT 'again'", "guided": "INTEGER NOT NULL DEFAULT 0"},
             "imported_games": {"analysis_state": "TEXT NOT NULL DEFAULT 'pending'", "analysis_version": "INTEGER NOT NULL DEFAULT 0", "major_mistake_ply": "INTEGER", "missed_punishment_ply": "INTEGER", "provider_game_id": "TEXT", "content_hash": "TEXT"},
+            "game_move_analysis": {"best_move_uci": "TEXT", "principal_variation_json": "TEXT NOT NULL DEFAULT '[]'", "mate_before": "INTEGER", "mate_after": "INTEGER", "engine_version": "TEXT", "network_version": "TEXT"},
             "repertoires": {"is_main": "INTEGER NOT NULL DEFAULT 0"},
         }
         for table, additions in columns.items():
@@ -322,6 +338,13 @@ def initialize() -> None:
         database.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_imported_games_provider_game_id ON imported_games(provider, provider_game_id) WHERE provider_game_id IS NOT NULL")
         database.execute("DROP INDEX IF EXISTS idx_imported_games_content_hash")
         database.execute("CREATE INDEX idx_imported_games_content_hash ON imported_games(provider, username, content_hash) WHERE content_hash IS NOT NULL")
+        now = datetime.now(timezone.utc).isoformat()
+        database.execute(
+            """INSERT OR IGNORE INTO game_analysis_jobs(game_id,analysis_version,status,updated_at)
+               SELECT id,1,CASE WHEN analysis_state IN ('ready','complete') THEN 'complete' WHEN analysis_state='failed' THEN 'failed' ELSE 'queued' END,?
+               FROM imported_games""",
+            (now,),
+        )
         database.execute("""INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id)
                             SELECT repertoire_id,id FROM cards WHERE content_type='opening'""")
         database.execute("PRAGMA optimize")

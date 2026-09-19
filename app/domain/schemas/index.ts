@@ -457,6 +457,22 @@ export const gamesSummarySchema = z.strictObject({
   total: integer,
   games: z.array(z.unknown()),
 });
+export const gameAnalysisClaimSchema = z.strictObject({
+  job: z.strictObject({
+    game_id: gameIdSchema,
+    analysis_version: integer,
+    provider: z.enum(["lichess", "chess.com"]),
+    username: z.string(),
+    played_at: z.string(),
+    color: colorSchema,
+    start_fen: fenStringSchema,
+    moves_json: z.string(),
+    moves: z.array(uciMoveSchema),
+    divergence_ply: integer.nullable(),
+    lease_id: z.string(),
+    lease_expires_at: isoDateSchema,
+  }).nullable(),
+});
 export const progressResponseSchema = z.strictObject({
   states: z.record(z.string(), integer),
   activity: z.array(z.strictObject({ date: z.iso.date(), count: integer })),

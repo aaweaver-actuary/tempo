@@ -98,6 +98,16 @@ class EndgameProbeRequest(BaseModel):
 class GameAnalysisRequest(BaseModel):
     evaluations: list[dict]
     depth: int = Field(default=13, ge=1, le=40)
+    lease_id: str | None = None
+    idempotency_key: str | None = None
+    analysis_version: int = Field(default=1, ge=1)
+    engine_version: str = "Stockfish 19 WASM"
+    network_version: str = "nn-1c0000000000.nnue"
+
+
+class GameAnalysisFailureRequest(BaseModel):
+    lease_id: str
+    error: str = Field(min_length=1, max_length=1000)
 
 
 class AccountSettings(BaseModel):

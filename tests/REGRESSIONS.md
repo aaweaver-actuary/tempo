@@ -17,6 +17,7 @@
 | One provider failure blocks the other account | `test_one_provider_failure_does_not_discard_other_provider_success` |
 | Incremental sync misses late games or creates duplicates | `test_incremental_overlap_catches_late_games_without_duplicates` |
 | Sync silently hides filtered, rejected, and duplicate records | `test_sync_reports_filtered_rejected_and_duplicate_counts` |
+| Game analysis stops on navigation or submits twice after reload | `test_background_game_analysis_resumes_after_reload_and_submits_once` |
 | Board clipped at narrow viewport | `local import respects the daily limit; Black prompts and Builder flip survive Settings and refresh`; `high-DPI board geometry stays aligned through narrow resize and orientation flips` |
 | Repair board / keyboard navigation inconsistent | `repair uses the shared board and arrows navigate the complete solution; Escape closes` |
 | Random endgames start illegally | `random endgames never leave the nonmoving king in check` |
