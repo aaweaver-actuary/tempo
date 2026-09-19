@@ -527,6 +527,7 @@ export default function SettingsView({
         </section>
         <section className="settings-card">
           <h2>Games</h2>
+          <p>Tempo syncs rated standard blitz, rapid, and classical games from the last 90 days. Bullet, casual, variant, and older games are excluded.</p>
           <label>
             <span>Lichess username</span>
             <input

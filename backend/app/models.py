@@ -109,6 +109,7 @@ class GameSyncRequest(AccountSettings):
     days: int = Field(default=90, ge=1, le=3650)
     speeds: list[str] = Field(default_factory=lambda: ["blitz", "rapid", "classical"])
     rated_only: bool = True
+    repair: bool = False
 
 
 class ImportResult(BaseModel):

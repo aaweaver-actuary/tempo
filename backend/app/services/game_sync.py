@@ -1,180 +1,206 @@
-"""Game sync service: fetches games from Lichess and Chess.com daily."""
+"""Independent, idempotent provider synchronization for the local game library."""
 
-from datetime import date, datetime, timedelta, timezone
+from __future__ import annotations
+
+from datetime import datetime, timedelta, timezone
+import email.utils
 import json
+
+import httpx
 
 from ..database import connection
 from ..models import GameSyncRequest
+from .chesscom_client import fetch_chesscom_games
 from .game_record import GameRecord
-from .lichess_client import (
-    fetch_lichess_games_for_day,
-    UserNotFoundError as LichessUserNotFoundError,
-)
-from .chesscom_client import (
-    fetch_chesscom_games_for_day,
-    UserNotFoundError as ChesscomUserNotFoundError,
-)
+from .lichess_client import ProviderRequestError, fetch_lichess_games
 
 
-async def sync_providers(request: GameSyncRequest, httpx_client=None) -> dict:
-    """
-    Main entry point for game sync.
+USER_AGENT = "Tempo local chess trainer/1.0 (game sync)"
+OVERLAP = timedelta(days=2)
 
-    Fetches games from configured providers (Lichess, Chess.com)
-    for the last N days, normalizes them, and stores in the database.
 
-    Args:
-        request: GameSyncRequest with usernames and sync parameters
-        httpx_client: Optional pre-created httpx.AsyncClient for testing; if None, creates new ones
-
-    Returns:
-        {
-            "imported": 42,
-            "synced_at": "2026-09-18T15:30:00+00:00"
-        }
-    """
-    imported_total = 0
-    synced_at = datetime.now(timezone.utc).isoformat()
-
-    today = date.today()
-    days_to_fetch = min(request.days, 3650)  # Cap at 10 years
-
-    # Fetch from Lichess
-    if request.lichess_username.strip():
-        try:
-            imported = await _sync_provider(
-                provider="lichess",
-                username=request.lichess_username.strip(),
-                today=today,
-                days=days_to_fetch,
-                speeds=request.speeds,
-                rated_only=request.rated_only,
-                httpx_client=httpx_client,
-            )
-            imported_total += imported
-        except (LichessUserNotFoundError, ChesscomUserNotFoundError):
-            raise
-        except Exception as e:
-            print(f"Lichess sync error: {e}")
-
-    # Fetch from Chess.com
-    if request.chesscom_username.strip():
-        try:
-            imported = await _sync_provider(
-                provider="chess.com",
-                username=request.chesscom_username.strip(),
-                today=today,
-                days=days_to_fetch,
-                speeds=request.speeds,
-                rated_only=request.rated_only,
-                httpx_client=httpx_client,
-            )
-            imported_total += imported
-        except (LichessUserNotFoundError, ChesscomUserNotFoundError):
-            raise
-        except Exception as e:
-            print(f"Chess.com sync error: {e}")
-
+def _empty_result(provider: str, username: str) -> dict:
     return {
-        "imported": imported_total,
-        "synced_at": synced_at,
+        "provider": provider,
+        "username": username,
+        "status": "idle",
+        "fetched": 0,
+        "inserted": 0,
+        "updated": 0,
+        "duplicates": 0,
+        "filtered": 0,
+        "rejected": 0,
+        "failed": 0,
+        "error": None,
+        "retry_after": None,
     }
+
+
+def _retry_at(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        seconds = max(0, int(value))
+        return (datetime.now(timezone.utc) + timedelta(seconds=seconds)).isoformat()
+    except ValueError:
+        try:
+            parsed = email.utils.parsedate_to_datetime(value)
+            return parsed.astimezone(timezone.utc).isoformat()
+        except (TypeError, ValueError):
+            return None
+
+
+def _persist_game(record: GameRecord) -> str:
+    with connection() as database:
+        existing = database.execute(
+            "SELECT * FROM imported_games WHERE provider=? AND provider_game_id=?",
+            (record.provider, record.provider_game_id),
+        ).fetchone()
+        if not existing:
+            existing = database.execute(
+                "SELECT * FROM imported_games WHERE provider=? AND lower(username)=lower(?) AND content_hash=? AND provider_game_id IS NULL",
+                (record.provider, record.username, record.content_hash),
+            ).fetchone()
+        values = (
+            record.provider_game_id,
+            record.content_hash,
+            record.username,
+            record.played_at,
+            record.speed,
+            int(record.rated),
+            record.color,
+            record.result,
+            record.start_fen,
+            json.dumps(record.uci_moves),
+            record.game_url,
+            record.opening_name,
+        )
+        if existing:
+            changed = any(
+                existing[column] != value
+                for column, value in zip(
+                    (
+                        "provider_game_id", "content_hash", "username", "played_at", "speed",
+                        "rated", "color", "result", "start_fen", "moves_json", "game_url", "opening_name",
+                    ),
+                    values,
+                )
+            )
+            if changed:
+                database.execute(
+                    """UPDATE imported_games SET provider_game_id=?,content_hash=?,username=?,played_at=?,speed=?,rated=?,color=?,result=?,start_fen=?,moves_json=?,game_url=?,opening_name=? WHERE id=?""",
+                    (*values, existing["id"]),
+                )
+                return "updated"
+            return "duplicate"
+        database.execute(
+            """INSERT INTO imported_games(id,provider,provider_game_id,content_hash,username,played_at,speed,rated,color,result,start_fen,moves_json,game_url,opening_name)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (
+                f"{record.provider}:{record.provider_game_id}",
+                record.provider,
+                *values,
+            ),
+        )
+        return "inserted"
+
+
+def _starting_point(provider: str, username: str, request: GameSyncRequest) -> datetime:
+    requested_cutoff = datetime.now(timezone.utc) - timedelta(days=request.days)
+    if request.repair:
+        return requested_cutoff
+    with connection() as database:
+        newest = database.execute(
+            "SELECT MAX(played_at) FROM imported_games WHERE provider=? AND lower(username)=lower(?)",
+            (provider, username),
+        ).fetchone()[0]
+    if not newest:
+        return requested_cutoff
+    return max(requested_cutoff, datetime.fromisoformat(newest) - OVERLAP)
 
 
 async def _sync_provider(
     provider: str,
     username: str,
-    today: date,
-    days: int,
-    speeds: list[str],
-    rated_only: bool,
-    httpx_client=None,
-) -> int:
-    """Sync games for a single provider."""
-
-    with connection() as db:
-        cursor_row = db.execute(
-            "SELECT cursor FROM game_sync_state WHERE provider=?",
-            (provider,),
+    request: GameSyncRequest,
+    client: httpx.AsyncClient,
+) -> dict:
+    result = _empty_result(provider, username)
+    started_at = datetime.now(timezone.utc)
+    with connection() as database:
+        previous = database.execute(
+            "SELECT username,retry_after FROM game_sync_state WHERE provider=?", (provider,)
         ).fetchone()
-
-        last_fetched = (
-            date.fromisoformat(cursor_row["cursor"])
-            if cursor_row and cursor_row["cursor"]
-            else today - timedelta(days=days)
-        )
-
-    imported = 0
-
-    # Fetch games day-by-day, starting from most recent
-    for day_offset in range((today - last_fetched).days + 1):
-        current_day = today - timedelta(days=day_offset)
-
-        if current_day < last_fetched:
-            break
-
-        try:
-            if provider == "lichess":
-                games = await fetch_lichess_games_for_day(
-                    username, current_day, speeds, httpx_client=httpx_client
-                )
-            elif provider == "chess.com":
-                games = await fetch_chesscom_games_for_day(
-                    username, current_day, speeds, httpx_client=httpx_client
-                )
-            else:
-                continue
-
-            # Save games to database
-            for game in games:
-                if await _upsert_game(game):
-                    imported += 1
-
-            # Update cursor
-            with connection() as db:
-                db.execute(
-                    "INSERT INTO game_sync_state(provider, cursor, status) VALUES(?, ?, 'idle') "
-                    "ON CONFLICT(provider) DO UPDATE SET cursor=excluded.cursor, status='idle'",
-                    (provider, current_day.isoformat()),
-                )
-
-        except Exception as e:
-            print(f"Error fetching {provider} games for {current_day}: {e}")
-            continue
-
-    return imported
-
-
-async def _upsert_game(game: GameRecord) -> bool:
-    """
-    Insert or replace a game in the database.
-    Returns True if inserted/updated, False if skipped.
-    """
-    try:
-        with connection() as db:
-            db.execute(
-                """
-                INSERT OR REPLACE INTO imported_games(
-                    id, provider, username, played_at, speed, rated,
-                    color, result, start_fen, moves_json, game_url, opening_name
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    game.id,
-                    game.provider,
-                    game.username,
-                    game.played_at.isoformat() if game.played_at else None,
-                    game.speed,
-                    1 if game.rated else 0,
-                    game.color,
-                    game.result,
-                    game.start_fen,
-                    json.dumps(game.uci_moves) if game.uci_moves else None,
-                    game.game_url,
-                    game.opening_name,
-                ),
+        if (
+            previous
+            and previous["username"].casefold() == username.casefold()
+            and previous["retry_after"]
+            and datetime.fromisoformat(previous["retry_after"]) > started_at
+        ):
+            result["status"] = "error"
+            result["failed"] = 1
+            result["retry_after"] = previous["retry_after"]
+            result["error"] = f"{provider} sync is waiting for its rate limit to reset"
+            return result
+        if previous and previous["username"].casefold() != username.casefold():
+            database.execute(
+                "UPDATE game_sync_state SET cursor=NULL,last_success_at=NULL,retry_after=NULL WHERE provider=?",
+                (provider,),
             )
-        return True
-    except Exception as e:
-        print(f"Failed to upsert game {game.id}: {e}")
-        return False
+        database.execute(
+            """INSERT INTO game_sync_state(provider,username,status,last_started_at,last_error)
+               VALUES(?,?,'syncing',?,NULL)
+               ON CONFLICT(provider) DO UPDATE SET username=excluded.username,status='syncing',last_started_at=excluded.last_started_at,last_error=NULL""",
+            (provider, username, started_at.isoformat()),
+        )
+    since = _starting_point(provider, username, request)
+    try:
+        if provider == "lichess":
+            records, counts = await fetch_lichess_games(
+                username, int(since.timestamp() * 1000), request.speeds, request.rated_only, client
+            )
+        else:
+            records, counts = await fetch_chesscom_games(
+                username, since, request.speeds, request.rated_only, client
+            )
+        result.update(counts)
+        for record in records:
+            outcome = _persist_game(record)
+            result[{"inserted": "inserted", "updated": "updated", "duplicate": "duplicates"}[outcome]] += 1
+        result["status"] = "idle"
+        completed_at = datetime.now(timezone.utc)
+        with connection() as database:
+            database.execute(
+                """UPDATE game_sync_state SET status='idle',cursor=?,last_success_at=?,last_error=NULL,retry_after=NULL,last_result_json=? WHERE provider=?""",
+                (since.isoformat(), completed_at.isoformat(), json.dumps(result), provider),
+            )
+    except (ProviderRequestError, httpx.HTTPError) as error:
+        result["status"] = "error"
+        result["failed"] = 1
+        result["error"] = str(error) if isinstance(error, ProviderRequestError) else "The provider could not be reached. Retry when online."
+        result["retry_after"] = _retry_at(error.retry_after) if isinstance(error, ProviderRequestError) else None
+        with connection() as database:
+            database.execute(
+                "UPDATE game_sync_state SET status='error',last_error=?,retry_after=?,last_result_json=? WHERE provider=?",
+                (result["error"], result["retry_after"], json.dumps(result), provider),
+            )
+    return result
+
+
+async def sync_providers(request: GameSyncRequest) -> dict:
+    provider_accounts = (
+        ("lichess", request.lichess_username.strip()),
+        ("chess.com", request.chesscom_username.strip()),
+    )
+    results: dict[str, dict] = {}
+    async with httpx.AsyncClient(timeout=45, headers={"User-Agent": USER_AGENT}) as client:
+        for provider, username in provider_accounts:
+            if username:
+                results[provider] = await _sync_provider(provider, username, request, client)
+    return {
+        "imported": sum(item["inserted"] for item in results.values()),
+        "cached": True,
+        "incremental": not request.repair,
+        "synced_at": datetime.now(timezone.utc).isoformat(),
+        "providers": results,
+    }

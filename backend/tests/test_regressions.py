@@ -278,20 +278,26 @@ def test_local_sync_persists_errors_and_success_without_sample_fallback(
     original = httpx.AsyncClient
     requests = []
     status = 404
+    completed_pgn = PGN.replace(b'[Result "*"]', b'[Result "1-0"]').replace(
+        b" Nc6 *", b" Nc6 1-0"
+    )
 
     def handler(request):
         requests.append(request)
         return httpx.Response(
-            status, content=PGN if status == 200 else b"not found", request=request
+            status,
+            content=completed_pgn if status == 200 else b"not found",
+            request=request,
         )
 
     monkeypatch.setattr(
-        "app.main.httpx.AsyncClient",
+        "app.services.game_sync.httpx.AsyncClient",
         lambda **kwargs: original(transport=httpx.MockTransport(handler), **kwargs),
     )
     with TestClient(app) as client:
         error = client.post("/api/games/sync", json={"lichess_username": "andy"})
-        assert error.status_code == 404
+        assert error.status_code == 200
+        assert error.json()["providers"]["lichess"]["failed"] == 1
         state = client.get("/api/games/sync/status").json()["providers"][0]
         assert state["status"] == "error"
         assert (

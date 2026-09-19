@@ -385,11 +385,26 @@ export const maiaReplySchema = z.discriminatedUnion("type", [
     message: z.string(),
   }),
 ]);
+const providerSyncResultSchema = z.strictObject({
+  provider: z.enum(["lichess", "chess.com"]),
+  username: z.string(),
+  status: z.enum(["idle", "error"]),
+  fetched: integer,
+  inserted: integer,
+  updated: integer,
+  duplicates: integer,
+  filtered: integer,
+  rejected: integer,
+  failed: integer,
+  error: z.string().nullable(),
+  retry_after: nullableDate,
+});
 export const syncResultSchema = z.strictObject({
   imported: integer,
   synced_at: isoDateSchema,
   cached: z.boolean().optional(),
   incremental: z.boolean().optional(),
+  providers: z.record(z.enum(["lichess", "chess.com"]), providerSyncResultSchema).optional(),
 });
 export const syncStatusSchema = z.strictObject({
   providers: z.array(
@@ -402,8 +417,14 @@ export const syncStatusSchema = z.strictObject({
       last_success_at: nullableDate,
       last_error: z.string().nullable(),
       retry_after: nullableDate,
+      last_result: providerSyncResultSchema.nullable().optional(),
     }),
   ),
+  active_filters: z.strictObject({
+    days: integer,
+    speeds: z.array(z.string()),
+    rated_only: z.boolean(),
+  }).optional(),
 });
 export const gameRecordSchema = z.strictObject({
   id: gameIdSchema,

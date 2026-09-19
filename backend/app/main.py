@@ -45,6 +45,7 @@ from .services.endgames import (
     normalized_material,
 )
 from .services.game_analysis import classify_swings
+from .services.game_sync import sync_providers
 from .services.puzzles import validate_puzzle_record
 
 
@@ -1530,68 +1531,6 @@ def accounts(a: AccountSettings):
     return a
 
 
-def store_games(provider, user, raw, metadata=None):
-    stream, count = io.StringIO(raw), 0
-    with connection() as db:
-        while game := chess.pgn.read_game(stream):
-            board = game.board()
-            start = board.fen()
-            moves = [m.uci() for m in game.mainline_moves()]
-            gid = game.headers.get("Site") or card_id(start, moves)
-            if user.lower() not in {
-                game.headers.get("White", "").lower(),
-                game.headers.get("Black", "").lower(),
-            }:
-                continue
-            color = (
-                "white"
-                if game.headers.get("White", "").lower() == user.lower()
-                else "black"
-            )
-            played = (
-                game.headers.get(
-                    "UTCDate", game.headers.get("Date", "1970.01.01")
-                ).replace(".", "-")
-                + "T"
-                + game.headers.get("UTCTime", "00:00:00")
-                + "+00:00"
-            )
-            event = game.headers.get("Event", "").lower()
-            speed = next(
-                (
-                    value
-                    for value in (
-                        "bullet",
-                        "blitz",
-                        "rapid",
-                        "classical",
-                        "correspondence",
-                    )
-                    if value in event
-                ),
-                "unknown",
-            )
-            meta = metadata or {}
-            count += db.execute(
-                "INSERT OR IGNORE INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json,game_url,opening_name) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)",
-                (
-                    gid,
-                    provider,
-                    user,
-                    meta.get("played_at", played),
-                    meta.get("speed", speed),
-                    int(meta.get("rated", "casual" not in event)),
-                    color,
-                    game.headers.get("Result", "*"),
-                    start,
-                    json.dumps(moves),
-                    game.headers.get("Site"),
-                    game.headers.get("Opening"),
-                ),
-            ).rowcount
-    return count
-
-
 def compare_games():
     """Classify the first game/repertoire divergence without changing card history."""
     with connection() as db:
@@ -1657,140 +1596,6 @@ def compare_games():
             )
 
 
-async def sync_providers(request: GameSyncRequest):
-    imported = 0
-    started = datetime.now(timezone.utc)
-    with connection() as db:
-        for provider, user in (
-            ("lichess", request.lichess_username),
-            ("chess.com", request.chesscom_username),
-        ):
-            if user:
-                db.execute(
-                    "INSERT INTO game_sync_state(provider,status,last_started_at,last_error) VALUES(?,'syncing',?,NULL) ON CONFLICT(provider) DO UPDATE SET status='syncing',last_started_at=excluded.last_started_at,last_error=NULL",
-                    (provider, started.isoformat()),
-                )
-    if request.lichess_username:
-        with connection() as db:
-            state = db.execute(
-                "SELECT cursor FROM game_sync_state WHERE provider='lichess'"
-            ).fetchone()
-        baseline = datetime.now(timezone.utc) - timedelta(days=request.days)
-        with connection() as db:
-            newest = db.execute(
-                "SELECT MAX(played_at) FROM imported_games WHERE provider='lichess' AND lower(username)=lower(?)",
-                (request.lichess_username,),
-            ).fetchone()[0]
-        if newest:
-            baseline = max(
-                baseline, datetime.fromisoformat(newest) + timedelta(milliseconds=1)
-            )
-        since = int(baseline.timestamp() * 1000)
-        params = {
-            "since": since,
-            "moves": "true",
-            "opening": "true",
-            "perfType": ",".join(request.speeds),
-            "rated": str(request.rated_only).lower(),
-        }
-        async with httpx.AsyncClient(timeout=45) as client:
-            response = await client.get(
-                f"https://lichess.org/api/games/user/{request.lichess_username}",
-                params=params,
-                headers={"Accept": "application/x-chess-pgn"},
-            )
-        if response.status_code == 404:
-            raise HTTPException(404, "Lichess username not found")
-        if response.status_code == 429:
-            raise HTTPException(429, "Lichess rate limit reached")
-        if not response.is_success:
-            raise HTTPException(response.status_code, "Lichess sync failed")
-        imported += store_games("lichess", request.lichess_username, response.text)
-    if request.chesscom_username:
-        cutoff = (datetime.now(timezone.utc) - timedelta(days=request.days)).date()
-        with connection() as db:
-            state = db.execute(
-                "SELECT cursor FROM game_sync_state WHERE provider='chess.com'"
-            ).fetchone()
-        archive_cutoff = (
-            max(cutoff, datetime.fromisoformat(state[0]).date())
-            if state and state[0]
-            else cutoff
-        )
-        async with httpx.AsyncClient(
-            timeout=45, headers={"User-Agent": "Tempo local chess trainer"}
-        ) as client:
-            archive_response = await client.get(
-                f"https://api.chess.com/pub/player/{request.chesscom_username}/games/archives"
-            )
-            if archive_response.status_code == 404:
-                raise HTTPException(404, "Chess.com username not found")
-            if archive_response.status_code == 429:
-                raise HTTPException(429, "Chess.com rate limit reached")
-            if not archive_response.is_success:
-                raise HTTPException(
-                    archive_response.status_code, "Chess.com sync failed"
-                )
-            for archive in archive_response.json().get("archives", []):
-                year, month = map(int, archive.rstrip("/").split("/")[-2:])
-                if date(year, month, 1) < date(
-                    archive_cutoff.year, archive_cutoff.month, 1
-                ):
-                    continue
-                response = await client.get(archive)
-                if response.status_code == 429:
-                    raise HTTPException(429, "Chess.com rate limit reached")
-                response.raise_for_status()
-                for game in response.json().get("games", []):
-                    speed = (
-                        "classical"
-                        if game.get("time_class") == "daily"
-                        else game.get("time_class", "unknown")
-                    )
-                    played = datetime.fromtimestamp(
-                        game.get("end_time", 0), timezone.utc
-                    )
-                    if (
-                        not game.get("pgn")
-                        or played.date() < cutoff
-                        or speed not in request.speeds
-                        or (request.rated_only and not game.get("rated"))
-                    ):
-                        continue
-                    imported += store_games(
-                        "chess.com",
-                        request.chesscom_username,
-                        game["pgn"],
-                        {
-                            "played_at": played.isoformat(),
-                            "speed": speed,
-                            "rated": game.get("rated", False),
-                        },
-                    )
-    compare_games()
-    synced = datetime.now(timezone.utc)
-    with connection() as db:
-        for provider, user in (
-            ("lichess", request.lichess_username),
-            ("chess.com", request.chesscom_username),
-        ):
-            if user:
-                db.execute(
-                    "UPDATE game_sync_state SET status='idle',cursor=?,last_success_at=?,last_error=NULL WHERE provider=?",
-                    (
-                        (synced - timedelta(minutes=5)).isoformat(),
-                        synced.isoformat(),
-                        provider,
-                    ),
-                )
-    return {
-        "imported": imported,
-        "cached": True,
-        "incremental": True,
-        "synced_at": synced,
-    }
-
-
 SYNC_LOCK = asyncio.Lock()
 
 
@@ -1804,33 +1609,7 @@ async def sync(request: GameSyncRequest):
     )
     if not any(user for _, user in users):
         raise HTTPException(422, "Set a Lichess or Chess.com username in Settings")
-    now = datetime.now(timezone.utc)
     async with SYNC_LOCK:
-        with connection() as db:
-            for provider, user in users:
-                if not user:
-                    continue
-                previous = db.execute(
-                    "SELECT * FROM game_sync_state WHERE provider=?", (provider,)
-                ).fetchone()
-                if (
-                    previous
-                    and previous["username"].lower() == user.lower()
-                    and previous["retry_after"]
-                    and datetime.fromisoformat(previous["retry_after"]) > now
-                ):
-                    raise HTTPException(
-                        429, f"{provider} sync is waiting for its rate limit to reset"
-                    )
-                if previous and previous["username"].lower() != user.lower():
-                    db.execute(
-                        "UPDATE game_sync_state SET cursor=NULL,last_success_at=NULL,retry_after=NULL WHERE provider=?",
-                        (provider,),
-                    )
-                db.execute(
-                    "INSERT INTO game_sync_state(provider,username,status,last_started_at) VALUES(?,?,'syncing',?) ON CONFLICT(provider) DO UPDATE SET username=excluded.username,status='syncing',last_started_at=excluded.last_started_at,last_error=NULL",
-                    (provider, user, now.isoformat()),
-                )
         try:
             result = await sync_providers(
                 request.model_copy(
@@ -1845,6 +1624,7 @@ async def sync(request: GameSyncRequest):
                     lichess_username=users[0][1], chesscom_username=users[1][1]
                 )
             )
+            compare_games()
             return result
         except (httpx.HTTPError, HTTPException) as error:
             code = error.status_code if isinstance(error, HTTPException) else 502
@@ -1861,7 +1641,8 @@ async def sync(request: GameSyncRequest):
                             (
                                 str(message),
                                 (
-                                    now + timedelta(minutes=15 if code == 429 else 3)
+                                    datetime.now(timezone.utc)
+                                    + timedelta(minutes=15 if code == 429 else 3)
                                 ).isoformat(),
                                 provider,
                             ),
@@ -1874,7 +1655,23 @@ async def sync(request: GameSyncRequest):
 def sync_status():
     with connection() as db:
         rows = db.execute("SELECT * FROM game_sync_state ORDER BY provider").fetchall()
-    return {"providers": [dict(row) for row in rows]}
+    providers = []
+    for row in rows:
+        provider = dict(row)
+        provider["last_result"] = (
+            json.loads(provider.pop("last_result_json"))
+            if provider.get("last_result_json")
+            else None
+        )
+        providers.append(provider)
+    return {
+        "providers": providers,
+        "active_filters": {
+            "days": 90,
+            "speeds": ["blitz", "rapid", "classical"],
+            "rated_only": True,
+        },
+    }
 
 
 @app.post("/api/games/{game_id:path}/analysis")

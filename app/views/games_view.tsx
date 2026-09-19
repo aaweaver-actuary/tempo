@@ -41,6 +41,7 @@ export default function GamesView({
   onAnalyze,
   onSettings,
   onSync,
+  onRepair,
   syncState,
   theme,
   pieceSet,
@@ -49,6 +50,7 @@ export default function GamesView({
   onAnalyze: (game: GameViewRecord, cursor: number) => void;
   onSettings: () => void;
   onSync: () => void;
+  onRepair?: () => void;
   syncState: GameSyncState;
   theme: BoardTheme;
   pieceSet: PieceSet;
@@ -330,16 +332,21 @@ export default function GamesView({
           </p>
         </div>
         {local && (
-          <button
-            className="primary-button sync-button"
-            onClick={onSync}
-            disabled={syncState.syncing}
-          >
-            {syncState.syncing && <i />}
-            {syncState.syncing ? "Syncing games" : "↻ Sync games"}
-          </button>
+          <div>
+            <button className="primary-button sync-button" onClick={onSync} disabled={syncState.syncing}>
+              {syncState.syncing && <i />}
+              {syncState.syncing ? "Syncing games" : "↻ Sync now"}
+            </button>
+            <button onClick={() => onRepair?.()} disabled={syncState.syncing}>Repair last 90 days</button>
+          </div>
         )}
       </div>
+      {local && <p className="muted">Import filter: {syncState.filterLabel ?? "Rated blitz, rapid, and classical · last 90 days"}. Bullet, casual, variants, and older games are skipped.</p>}
+      {(syncState.providers ?? []).map((provider) => (
+        <p className="muted" key={provider.provider}>
+          {provider.provider}: {provider.inserted} new, {provider.updated} updated, {provider.duplicates} duplicates, {provider.filtered} filtered, {provider.rejected} rejected{provider.failed ? ", failed" : ""}
+        </p>
+      ))}
       {(error || syncState.error) && (
         <p role="alert">
           {error || syncState.error}{" "}

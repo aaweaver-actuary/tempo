@@ -270,6 +270,7 @@ def initialize() -> None:
             last_success_at TEXT,
             last_error TEXT,
             retry_after TEXT
+            ,last_result_json TEXT
         )
         """,
         """
@@ -306,11 +307,11 @@ def initialize() -> None:
         # Existing local databases are migrated in place; user review history is never rebuilt.
         columns = {
             "daily_queue": {"review_result_json": "TEXT", "attempt_failed": "INTEGER NOT NULL DEFAULT 0"},
-            "game_sync_state": {"username": "TEXT NOT NULL DEFAULT ''"},
+            "game_sync_state": {"username": "TEXT NOT NULL DEFAULT ''", "last_result_json": "TEXT"},
             "settings": {"tactics_new_per_day": "INTEGER NOT NULL DEFAULT 5","lichess_username": "TEXT NOT NULL DEFAULT ''", "chesscom_username": "TEXT NOT NULL DEFAULT ''", "auto_sync_minutes": "INTEGER NOT NULL DEFAULT 3", "engine_line_window_cp": "INTEGER NOT NULL DEFAULT 30", "major_mistake_cp": "INTEGER NOT NULL DEFAULT 100", "light_first_interval_days": "INTEGER NOT NULL DEFAULT 7", "draw_hold_user_moves": "INTEGER NOT NULL DEFAULT 20"},
             "cards": {"fsrs_card_json": "TEXT", "first_correct_at": "TEXT", "reinforcement_pending": "INTEGER NOT NULL DEFAULT 0", "stability": "REAL NOT NULL DEFAULT 0", "guided_review": "INTEGER NOT NULL DEFAULT 0", "maximum_interval": "INTEGER NOT NULL DEFAULT 365", "content_type": "TEXT NOT NULL DEFAULT 'opening'", "scheduling_mode": "TEXT NOT NULL DEFAULT 'normal'", "hard_correct_streak": "INTEGER NOT NULL DEFAULT 0", "recent_attempts_json": "TEXT NOT NULL DEFAULT '[]'", "archived": "INTEGER NOT NULL DEFAULT 0", "superseded_by": "TEXT", "source_ref": "TEXT", "source_fen": "TEXT", "revision": "INTEGER NOT NULL DEFAULT 1", "introduced_at": "TEXT"},
             "reviews": {"internal_rating": "TEXT NOT NULL DEFAULT 'again'", "guided": "INTEGER NOT NULL DEFAULT 0"},
-            "imported_games": {"analysis_state": "TEXT NOT NULL DEFAULT 'pending'", "analysis_version": "INTEGER NOT NULL DEFAULT 0", "major_mistake_ply": "INTEGER", "missed_punishment_ply": "INTEGER"},
+            "imported_games": {"analysis_state": "TEXT NOT NULL DEFAULT 'pending'", "analysis_version": "INTEGER NOT NULL DEFAULT 0", "major_mistake_ply": "INTEGER", "missed_punishment_ply": "INTEGER", "provider_game_id": "TEXT", "content_hash": "TEXT"},
             "repertoires": {"is_main": "INTEGER NOT NULL DEFAULT 0"},
         }
         for table, additions in columns.items():
@@ -318,6 +319,9 @@ def initialize() -> None:
             for name, definition in additions.items():
                 if name not in existing:
                     database.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+        database.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_imported_games_provider_game_id ON imported_games(provider, provider_game_id) WHERE provider_game_id IS NOT NULL")
+        database.execute("DROP INDEX IF EXISTS idx_imported_games_content_hash")
+        database.execute("CREATE INDEX idx_imported_games_content_hash ON imported_games(provider, username, content_hash) WHERE content_hash IS NOT NULL")
         database.execute("""INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id)
                             SELECT repertoire_id,id FROM cards WHERE content_type='opening'""")
         database.execute("PRAGMA optimize")
