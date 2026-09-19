@@ -8,6 +8,7 @@ from app.services.repertoire_coverage import (
     blend_probabilities,
     required_reply_moves,
     discover_opponent_positions,
+    recent_player_cohort,
 )
 
 
@@ -38,6 +39,25 @@ def test_coverage_uses_explorer_sample_weight_and_maia_smoothing():
     assert blend_probabilities(0.20, 0.50, explorer_games=200) == pytest.approx(0.35)
     assert blend_probabilities(0.20, None, explorer_games=10) == pytest.approx(0.20)
     assert blend_probabilities(None, 0.50, explorer_games=0) == pytest.approx(0.50)
+
+
+def test_coverage_uses_nearest_rating_and_personal_speed_cohort(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    now = repertoire_coverage._now()
+    with database.connection() as database_connection:
+        for index, (rating, speed) in enumerate([(1420, "rapid"), (1500, "rapid"), (1580, "blitz")]):
+            database_connection.execute(
+                """INSERT INTO imported_games(
+                       id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json,player_rating
+                   ) VALUES(?,'lichess','TempoPlayer',?,?,1,'white','1-0',?,'[\"e2e4\"]',?)""",
+                (f"cohort-{index}", now, speed, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", rating),
+            )
+        cohort = recent_player_cohort(database_connection, 1100)
+    assert cohort["recent_median_rating"] == 1500
+    assert cohort["explorer_rating"] == 1400
+    assert cohort["maia_elo"] == 1500
+    assert cohort["speed_weights"] == pytest.approx({"rapid": 2 / 3, "blitz": 1 / 3})
 
 
 def test_unknown_or_stale_coverage_data_never_reports_a_repertoire_complete():

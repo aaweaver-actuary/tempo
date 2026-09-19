@@ -7,6 +7,7 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import uuid
+from statistics import median
 
 import chess
 import httpx
@@ -132,6 +133,7 @@ def discover_opponent_positions(
 
 EXPLORER_CACHE_MAX_AGE = timedelta(days=7)
 SUPPORTED_RATING_BUCKETS = (1000, 1200, 1400, 1600, 1800, 2000, 2200, 2500)
+SUPPORTED_MAIA_ELOS = (1100, 1200, 1300, 1400, 1500, 1600, 1700, 1800, 1900)
 
 
 def _now() -> str:
@@ -140,6 +142,35 @@ def _now() -> str:
 
 def _nearest_rating_bucket(rating: int) -> int:
     return min(SUPPORTED_RATING_BUCKETS, key=lambda candidate: (abs(candidate - rating), candidate))
+
+
+def recent_player_cohort(database, fallback_rating: int) -> dict:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=90)).isoformat()
+    rows = database.execute(
+        """SELECT player_rating,speed FROM imported_games
+            WHERE played_at>=? AND adaptive_excluded=0
+              AND speed IN ('blitz','rapid','classical')""",
+        (cutoff,),
+    ).fetchall()
+    ratings = [int(row["player_rating"]) for row in rows if row["player_rating"] is not None]
+    representative_rating = round(median(ratings)) if ratings else fallback_rating
+    speed_counts = {
+        speed: sum(row["speed"] == speed for row in rows)
+        for speed in ("blitz", "rapid", "classical")
+    }
+    speed_total = sum(speed_counts.values())
+    speed_weights = (
+        {speed: count / speed_total for speed, count in speed_counts.items() if count}
+        if speed_total
+        else {"blitz": 1 / 3, "rapid": 1 / 3, "classical": 1 / 3}
+    )
+    return {
+        "recent_median_rating": representative_rating,
+        "explorer_rating": _nearest_rating_bucket(representative_rating),
+        "maia_elo": min(SUPPORTED_MAIA_ELOS, key=lambda candidate: (abs(candidate - representative_rating), candidate)),
+        "speed_weights": speed_weights,
+        "games": len(rows),
+    }
 
 
 def enqueue_coverage_refresh(repertoire_id: str) -> str:
@@ -158,6 +189,7 @@ def enqueue_coverage_refresh(repertoire_id: str) -> str:
         if active:
             return active["id"]
         settings = database.execute("SELECT * FROM settings WHERE id=1").fetchone()
+        cohort = recent_player_cohort(database, int(settings["coverage_maia_elo"]))
         lines = [
             dict(row)
             for row in database.execute(
@@ -175,7 +207,11 @@ def enqueue_coverage_refresh(repertoire_id: str) -> str:
             "cumulative_target": settings["coverage_cumulative_target"] / 100,
             "horizon_fullmoves": settings["coverage_horizon_fullmoves"],
             "path_floor": settings["coverage_path_floor"],
-            "maia_elo": settings["coverage_maia_elo"],
+            "maia_elo": cohort["maia_elo"],
+            "explorer_rating": cohort["explorer_rating"],
+            "recent_median_rating": cohort["recent_median_rating"],
+            "speed_weights": cohort["speed_weights"],
+            "cohort_games": cohort["games"],
         }
         database.execute(
             """INSERT INTO repertoire_coverage_runs(
@@ -252,21 +288,38 @@ def _cached_explorer_payload(
 
 
 def _fetch_explorer(fen: str, speeds: str, ratings: str) -> dict:
+    speed_weights = {}
+    for speed_part in speeds.split(","):
+        speed_name, _, raw_weight = speed_part.partition(":")
+        speed_weights[speed_name] = float(raw_weight) if raw_weight else 1.0
+    total_weight = sum(speed_weights.values()) or 1
+    weighted_probabilities: dict[str, float] = {}
+    explorer_games = 0
     with httpx.Client(timeout=15, headers={"User-Agent": "Tempo repertoire coverage/1.0"}) as client:
-        response = client.get(
-            "https://explorer.lichess.org/lichess",
-            params={
-                "variant": "standard",
-                "fen": fen,
-                "speeds": speeds,
-                "ratings": ratings,
-            },
-        )
-        response.raise_for_status()
-        payload = response.json()
-        if not isinstance(payload, dict) or not isinstance(payload.get("moves"), list):
-            raise ValueError("Lichess Explorer returned an invalid coverage response")
-        return payload
+        for speed_name, raw_weight in speed_weights.items():
+            response = client.get(
+                "https://explorer.lichess.org/lichess",
+                params={"variant": "standard", "fen": fen, "speeds": speed_name, "ratings": ratings},
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict) or not isinstance(payload.get("moves"), list):
+                raise ValueError("Lichess Explorer returned an invalid coverage response")
+            move_counts = {
+                str(move.get("uci")): int(move.get("white", 0)) + int(move.get("draws", 0)) + int(move.get("black", 0))
+                for move in payload["moves"] if move.get("uci")
+            }
+            sample_games = sum(move_counts.values())
+            explorer_games += sample_games
+            if not sample_games:
+                continue
+            weight = raw_weight / total_weight
+            for move_uci, count in move_counts.items():
+                weighted_probabilities[move_uci] = weighted_probabilities.get(move_uci, 0) + weight * count / sample_games
+    return {"moves": [
+        {"uci": move_uci, "white": probability, "draws": 0, "black": 0}
+        for move_uci, probability in weighted_probabilities.items()
+    ], "_probabilities": weighted_probabilities, "_explorer_games": explorer_games}
 
 
 def _recalculate_node(database, node_id: str, settings: dict) -> None:
@@ -330,8 +383,9 @@ def _recalculate_node(database, node_id: str, settings: dict) -> None:
 def execute_coverage_node(node: dict) -> None:
     try:
         settings = json.loads(node["settings_json"])
-        rating_bucket = _nearest_rating_bucket(int(settings["maia_elo"]))
-        speeds = "blitz,rapid,classical"
+        rating_bucket = int(settings.get("explorer_rating", _nearest_rating_bucket(int(settings["maia_elo"]))))
+        speed_weights = settings.get("speed_weights", {"blitz": 1 / 3, "rapid": 1 / 3, "classical": 1 / 3})
+        speeds = ",".join(f"{speed}:{weight:.6f}" for speed, weight in sorted(speed_weights.items()))
         ratings = str(rating_bucket)
         with connection() as database:
             payload, cache_key = _cached_explorer_payload(
@@ -347,7 +401,8 @@ def execute_coverage_node(node: dict) -> None:
             for move in moves
             if move.get("uci")
         }
-        total_games = sum(counts.values())
+        total_games = int(payload.get("_explorer_games", sum(counts.values())))
+        probabilities = payload.get("_probabilities")
         covered_replies = set(json.loads(node["covered_replies_json"]))
         activity_gate.wait_for_foreground()
         with connection(background=True) as database:
@@ -375,7 +430,8 @@ def execute_coverage_node(node: dict) -> None:
                     (
                         node["id"],
                         move_uci,
-                        move_games / total_games if total_games else None,
+                        float(probabilities[move_uci]) if probabilities and move_uci in probabilities
+                        else move_games / sum(counts.values()) if sum(counts.values()) else None,
                         int(move_uci in covered_replies),
                         "explorer-only",
                     ),
