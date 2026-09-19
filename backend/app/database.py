@@ -421,6 +421,29 @@ def initialize() -> None:
         """,
         "CREATE INDEX IF NOT EXISTS idx_game_findings_status ON game_findings(status,kind,updated_at)",
         """
+        CREATE TABLE IF NOT EXISTS guided_review_sessions (
+            id TEXT PRIMARY KEY,
+            game_id TEXT NOT NULL REFERENCES imported_games(id) ON DELETE CASCADE,
+            analysis_version INTEGER NOT NULL,
+            finding_ids_json TEXT NOT NULL,
+            current_index INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','complete')),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_guided_review_game ON guided_review_sessions(game_id,status,updated_at)",
+        """
+        CREATE TABLE IF NOT EXISTS guided_review_attempts (
+            session_id TEXT NOT NULL REFERENCES guided_review_sessions(id) ON DELETE CASCADE,
+            finding_id TEXT NOT NULL REFERENCES game_findings(id) ON DELETE CASCADE,
+            move_uci TEXT NOT NULL,
+            correct INTEGER NOT NULL,
+            attempted_at TEXT NOT NULL,
+            PRIMARY KEY(session_id,finding_id)
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS gameplay_events (
             id TEXT PRIMARY KEY,
             game_id TEXT NOT NULL REFERENCES imported_games(id) ON DELETE CASCADE,

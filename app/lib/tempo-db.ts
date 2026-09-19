@@ -101,6 +101,8 @@ const TABLE_TO_STORE: Record<string, TempoStore> = {
   game_accounts: "syncMetadata",
   game_move_analysis: "syncMetadata",
   gameplay_events: "syncMetadata",
+  guided_review_sessions: "syncMetadata",
+  guided_review_attempts: "syncMetadata",
   game_feature_rows: "syncMetadata",
   daily_chess_snapshots: "syncMetadata",
   daily_chess_insights: "syncMetadata",

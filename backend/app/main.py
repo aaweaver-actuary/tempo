@@ -43,6 +43,7 @@ from .models import (
     GamePublicRecord,
     GameSyncRequest,
     GameSyncStatusResponse,
+    GuidedReviewAttemptRequest,
     GamesSummaryResponse,
     ImportResult,
     PositionAnnotationRequest,
@@ -68,6 +69,7 @@ from .services.endgames import (
 from .services.game_analysis import classify_swings
 from .services.game_findings import motif_recommendations, refresh_game_findings
 from .services.statistics import statistics_breakdown, statistics_overview
+from .services.guided_review import create_or_resume_session, read_session, submit_attempt
 from .services.game_sync_coordinator import (
     coordinator,
     enqueue_game_derivation,
@@ -760,6 +762,8 @@ def migration_snapshot():
         "repertoire_comparisons",
         "game_repertoire_matches",
         "game_findings",
+        "guided_review_sessions",
+        "guided_review_attempts",
         "gameplay_events",
         "game_feature_rows",
         "daily_chess_snapshots",
@@ -2519,5 +2523,31 @@ def chess_statistics_breakdown(dimension: str = "color", window_days: int = 30):
         raise HTTPException(422, "Statistics window must be 7, 30, 90, or lifetime")
     try:
         return statistics_breakdown(dimension, window_days)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+
+
+@app.post("/api/games/{game_id:path}/guided-review")
+def start_guided_game_review(game_id: str):
+    try:
+        return create_or_resume_session(game_id)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from error
+
+
+@app.get("/api/guided-reviews/{session_id}")
+def guided_game_review(session_id: str):
+    try:
+        return read_session(session_id)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from error
+
+
+@app.post("/api/guided-reviews/{session_id}/attempt")
+def attempt_guided_game_review(session_id: str, request: GuidedReviewAttemptRequest):
+    try:
+        return submit_attempt(session_id, request.move_uci)
+    except LookupError as error:
+        raise HTTPException(404, str(error)) from error
     except ValueError as error:
         raise HTTPException(422, str(error)) from error

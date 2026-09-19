@@ -369,3 +369,9 @@ class TacticActivationRequest(BaseModel):
 
     pack_ids: list[str] = Field(min_length=1, max_length=692)
     active: bool
+
+
+class GuidedReviewAttemptRequest(BaseModel):
+    """A legal correction attempted from the hidden-answer position."""
+
+    move_uci: str = Field(pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$", min_length=4, max_length=5)

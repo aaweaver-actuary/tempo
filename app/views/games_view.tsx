@@ -35,6 +35,39 @@ import { useBackgroundStudy } from "../hooks/use-background-study";
 import type { StudyTask } from "../lib/study-computation";
 import type { IndexedPosition } from "../lib/position-similarity";
 import { sampleGames } from "../samples";
+import { Chess, type Square } from "chess.js";
+
+type GuidedReviewSession = {
+  id: string;
+  game_id: string;
+  status: "active" | "complete";
+  current_index: number;
+  total: number;
+  current: null | {
+    finding_id: string;
+    kind: string;
+    ply: number;
+    fen: string;
+    motif?: string | null;
+    confidence: number;
+  };
+  attempts: Array<{ finding_id: string; move_uci: string; correct: 0 | 1; attempted_at: string }>;
+};
+type GuidedReviewAttempt = {
+  correct: boolean;
+  revealed: GuidedReviewSession["current"] & {
+    answer: {
+      actual_move_uci?: string | null;
+      best_move_uci?: string | null;
+      expected_moves: string[];
+      loss_cp?: number | null;
+      eval_before_cp?: number | null;
+      eval_after_cp?: number | null;
+      principal_variation: string[];
+    };
+  };
+  session: GuidedReviewSession;
+};
 
 export default function GamesView({
   onAnalyze,
@@ -92,6 +125,8 @@ export default function GamesView({
     analyzed_encounters: number;
     moves: Array<{ move_uci: string; games: number; score_percentage: number; average_loss_cp: number | null; mistakes: number }>;
   } | null>(null);
+  const [guidedReview, setGuidedReview] = useState<GuidedReviewSession | null>(null);
+  const [guidedReveal, setGuidedReveal] = useState<GuidedReviewAttempt | null>(null);
   const [lines, setLines] = useState<AnalysisLine[]>([]);
   const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
   const [filters, setFilters] = useState(() => ({
@@ -281,6 +316,37 @@ export default function GamesView({
     setCardPreviews((current) => ({ ...current, [findingId]: payload.preview }));
     if (payload.saved) await loadFindings();
   }
+  async function startGuidedReview() {
+    if (!selected) return;
+    const response = await fetch(
+      `${API_URL}/api/games/${encodeURIComponent(selected.id)}/guided-review`,
+      { method: "POST" },
+    );
+    if (!response.ok) {
+      setError("Could not start this guided review.");
+      return;
+    }
+    setGuidedReview((await response.json()) as GuidedReviewSession);
+    setGuidedReveal(null);
+  }
+  const attemptGuidedMove = useCallback(async (from: Square, to: Square) => {
+    if (!guidedReview?.current || guidedReveal) return;
+    const board = new Chess(guidedReview.current.fen);
+    const legalMove = board.move({ from, to, promotion: "q" });
+    if (!legalMove) return;
+    const moveUci = `${legalMove.from}${legalMove.to}${legalMove.promotion ?? ""}`;
+    const response = await fetch(`${API_URL}/api/guided-reviews/${guidedReview.id}/attempt`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ move_uci: moveUci }),
+    });
+    if (!response.ok) {
+      setError("Could not save that correction attempt.");
+      return;
+    }
+    setGuidedReveal((await response.json()) as GuidedReviewAttempt);
+  }, [guidedReview, guidedReveal]);
+  const displayedFen = guidedReveal?.revealed.fen ?? guidedReview?.current?.fen ?? gameFen;
   useEffect(() => {
     let active = true;
     if (!engineOn || !selected) return;
@@ -341,21 +407,21 @@ export default function GamesView({
     if (!useSharedBoard) return;
     setShellBoardForOwner("games", {
       unavailable: !selected ? (error ? "Game position unavailable. Retry the local service." : loaded ? "Select an imported game to review." : "Loading games…") : undefined,
-      fen: gameFen,
-      lastMove: gameLast
+      fen: displayedFen,
+      lastMove: !guidedReview && gameLast
         ? ([gameLast.slice(0, 2), gameLast.slice(2, 4)] as readonly [
             string,
             string,
           ])
         : undefined,
       shapes,
-      interactionMode: "readonly",
+      interactionMode: guidedReview?.current && !guidedReveal ? "legal" : "readonly",
       showHint: false,
       theme,
       pieceSet,
       orientation: selected?.color === "black" ? "black" : "white",
       positionRevision: cursor,
-      onMove: undefined,
+      onMove: guidedReview?.current && !guidedReveal ? attemptGuidedMove : undefined,
       onSquareSelect: undefined,
       onFreeMove: undefined,
       onDrawnShapesChange: undefined,
@@ -367,7 +433,7 @@ export default function GamesView({
     error,
     selected,
     cursor,
-    gameFen,
+    displayedFen,
     gameLast,
     pieceSet,
     releaseShellBoardForOwner,
@@ -376,6 +442,9 @@ export default function GamesView({
     shapes,
     theme,
     useSharedBoard,
+    guidedReview,
+    guidedReveal,
+    attemptGuidedMove,
   ]);
 
   return (
@@ -442,18 +511,18 @@ export default function GamesView({
         <div className="game-board">
           {!useSharedBoard && (
             <Chessboard
-              fen={gameFen}
+              fen={displayedFen}
               lastMove={
                 gameLast
                   ? [gameLast.slice(0, 2), gameLast.slice(2, 4)]
                   : undefined
               }
               shapes={shapes}
-              locked
+              locked={!guidedReview?.current || Boolean(guidedReveal)}
               showHint={false}
               theme={theme}
               pieceSet={pieceSet}
-              onMove={() => undefined}
+              onMove={(from, to) => void attemptGuidedMove(from, to)}
               orientation={selected?.color}
             />
           )}
@@ -513,6 +582,9 @@ export default function GamesView({
             </div>
             {selected && (
               <>
+                <button className="primary-button" onClick={() => void startGuidedReview()}>
+                  Review this game
+                </button>
                 <button
                   className="primary-button"
                   onClick={() => onAnalyze(selected, cursor)}
@@ -533,6 +605,31 @@ export default function GamesView({
             )}
           </aside>
           <div className="games-metrics" data-task="Analysis">
+            {guidedReview && (
+              <article className="guided-game-review" aria-live="polite">
+                <span>Guided review</span>
+                <strong>{guidedReview.status === "complete" ? "Complete" : `${guidedReview.current_index + 1} of ${guidedReview.total}`}</strong>
+                {guidedReview.current && !guidedReveal && (
+                  <p>Find a correction for this {guidedReview.current.kind}. Play it on the board.</p>
+                )}
+                {guidedReveal && (
+                  <>
+                    <p>{guidedReveal.correct ? "That correction works." : "There is a stronger correction."}</p>
+                    <small>
+                      Actual {guidedReveal.revealed.answer.actual_move_uci ?? "—"} · Recommended {guidedReveal.revealed.answer.best_move_uci ?? guidedReveal.revealed.answer.expected_moves[0] ?? "—"}
+                      {guidedReveal.revealed.answer.loss_cp != null ? ` · ${guidedReveal.revealed.answer.loss_cp} cp` : ""}
+                    </small>
+                    <p>{guidedReveal.revealed.answer.principal_variation.join(" ")}</p>
+                    <button onClick={() => {
+                      setGuidedReview(guidedReveal.session);
+                      setGuidedReveal(null);
+                    }}>{guidedReveal.session.status === "complete" ? "Finish review" : "Next correction"}</button>
+                    {selected && <button onClick={() => onAnalyze(selected, guidedReveal.revealed.ply)}>Open full Builder analysis</button>}
+                  </>
+                )}
+                {guidedReview.status === "complete" && !guidedReveal && <p>All selected corrections reviewed. No study scheduling changed.</p>}
+              </article>
+            )}
             <article>
               <span>Repertoire adherence</span>
               <strong>
