@@ -110,6 +110,14 @@ class GameAnalysisFailureRequest(BaseModel):
     error: str = Field(min_length=1, max_length=1000)
 
 
+class GameFindingDecisionRequest(BaseModel):
+    decision: Literal["accepted", "ignored"]
+
+
+class GameExclusionRequest(BaseModel):
+    excluded: bool
+
+
 class AccountSettings(BaseModel):
     lichess_username: str = ""
     chesscom_username: str = ""

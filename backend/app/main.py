@@ -26,6 +26,8 @@ from .models import (
     EndgameTemplateRequest,
     GameAnalysisRequest,
     GameAnalysisFailureRequest,
+    GameFindingDecisionRequest,
+    GameExclusionRequest,
     GameSyncRequest,
     ImportResult,
     PositionAnnotationRequest,
@@ -46,6 +48,7 @@ from .services.endgames import (
     normalized_material,
 )
 from .services.game_analysis import classify_swings
+from .services.game_findings import motif_recommendations, refresh_game_findings
 from .services.game_sync import sync_providers
 from .services.repertoire_comparison import compare_all_games
 from .services.puzzles import validate_puzzle_record
@@ -359,6 +362,7 @@ async def import_pgn(
             (date.today().isoformat(), rid),
         ).fetchone()[0]
     compare_all_games()
+    refresh_game_findings()
     return ImportResult(
         repertoire_id=rid,
         source_name=file.filename,
@@ -547,6 +551,8 @@ def migration_snapshot():
         "game_analysis_jobs",
         "repertoire_comparisons",
         "game_repertoire_matches",
+        "game_findings",
+        "game_insight_recommendations",
         "game_sync_state",
     ]
     with connection() as db:
@@ -1565,6 +1571,7 @@ async def sync(request: GameSyncRequest):
                 )
             )
             compare_all_games()
+            refresh_game_findings()
             return result
         except (httpx.HTTPError, HTTPException) as error:
             code = error.status_code if isinstance(error, HTTPException) else 502
@@ -1588,6 +1595,7 @@ async def sync(request: GameSyncRequest):
                             ),
                         )
             compare_all_games()
+            refresh_game_findings()
             raise HTTPException(code, message) from error
 
 
@@ -1771,7 +1779,62 @@ def save_game_analysis(game_id: str, request: GameAnalysisRequest):
                 datetime.now(timezone.utc).isoformat(),
             ),
         )
+    refresh_game_findings(game_id)
     return result
+
+
+@app.get("/api/game-findings")
+def list_game_findings(status: str | None = None, game_id: str | None = None):
+    clauses = []
+    parameters: list[str] = []
+    if status:
+        if status not in {"pending", "accepted", "ignored", "excluded"}:
+            raise HTTPException(422, "Unknown finding status")
+        clauses.append("f.status=?")
+        parameters.append(status)
+    if game_id:
+        clauses.append("f.game_id=?")
+        parameters.append(game_id)
+    where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
+    with connection() as db:
+        rows = db.execute(
+            f"""SELECT f.*,g.played_at,g.provider,g.opening_name,g.adaptive_excluded
+                 FROM game_findings f JOIN imported_games g ON g.id=f.game_id
+                 {where} ORDER BY g.played_at DESC,f.ply,f.kind""",
+            parameters,
+        ).fetchall()
+    return {"findings": [{**dict(row), "evidence": json.loads(row["evidence_json"])} for row in rows]}
+
+
+@app.post("/api/game-findings/{finding_id}/decision")
+def decide_game_finding(finding_id: str, request: GameFindingDecisionRequest):
+    with connection() as db:
+        finding = db.execute("SELECT id,status FROM game_findings WHERE id=?", (finding_id,)).fetchone()
+        if not finding:
+            raise HTTPException(404, "Gameplay finding not found")
+        db.execute(
+            "UPDATE game_findings SET status=?,updated_at=? WHERE id=?",
+            (request.decision, datetime.now(timezone.utc).isoformat(), finding_id),
+        )
+    return {"id": finding_id, "status": request.decision}
+
+
+@app.post("/api/games/{game_id:path}/exclusion")
+def exclude_game_from_adaptation(game_id: str, request: GameExclusionRequest):
+    with connection() as db:
+        if not db.execute("SELECT 1 FROM imported_games WHERE id=?", (game_id,)).fetchone():
+            raise HTTPException(404, "Game not found")
+        db.execute("UPDATE imported_games SET adaptive_excluded=? WHERE id=?", (int(request.excluded), game_id))
+        if request.excluded:
+            db.execute("UPDATE game_findings SET status='excluded',updated_at=? WHERE game_id=? AND status='pending'", (datetime.now(timezone.utc).isoformat(), game_id))
+        else:
+            db.execute("UPDATE game_findings SET status='pending',updated_at=? WHERE game_id=? AND status='excluded'", (datetime.now(timezone.utc).isoformat(), game_id))
+    return {"game_id": game_id, "excluded": request.excluded}
+
+
+@app.get("/api/game-insights/motifs")
+def game_motif_insights():
+    return {"recommendations": motif_recommendations()}
 
 
 @app.get("/api/games/summary")

@@ -80,6 +80,8 @@ export default function GamesView({
   );
   const [engineText, setEngineText] = useState("");
   const [error, setError] = useState("");
+  const [findings, setFindings] = useState<Array<{ id: string; game_id: string; ply: number; kind: string; confidence: number; motif?: string | null; card_id?: string | null }>>([]);
+  const [motifRecommendations, setMotifRecommendations] = useState<Array<{ motif: string; miss_count: number; total_loss_cp: number; supporting_games: string[]; recommended_pack_id?: string | null }>>([]);
   const [lines, setLines] = useState<AnalysisLine[]>([]);
   const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
   const [filters, setFilters] = useState(() => ({
@@ -184,6 +186,54 @@ export default function GamesView({
       })
       .catch(() => undefined);
   }, [local]);
+  const loadFindings = useCallback(async () => {
+    if (!local) return;
+    const [findingResponse, insightResponse] = await Promise.all([
+      fetch(`${API_URL}/api/game-findings?status=pending`),
+      fetch(`${API_URL}/api/game-insights/motifs`),
+    ]);
+    if (findingResponse.ok) {
+      const payload = (await findingResponse.json()) as { findings?: typeof findings };
+      setFindings(payload.findings ?? []);
+    }
+    if (insightResponse.ok) {
+      const payload = (await insightResponse.json()) as { recommendations?: typeof motifRecommendations };
+      setMotifRecommendations(payload.recommendations ?? []);
+    }
+  }, [local]);
+  useEffect(() => {
+    void loadFindings();
+    const timer = window.setInterval(() => void loadFindings(), 15_000);
+    return () => window.clearInterval(timer);
+  }, [loadFindings, syncState.lastSuccess]);
+  async function decideFinding(findingId: string, decision: "accepted" | "ignored") {
+    const response = await fetch(`${API_URL}/api/game-findings/${findingId}/decision`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ decision }),
+    });
+    if (!response.ok) setError("Could not save that gameplay decision.");
+    else await loadFindings();
+  }
+  async function excludeSelectedGame() {
+    if (!selected) return;
+    const response = await fetch(`${API_URL}/api/games/${encodeURIComponent(selected.id)}/exclusion`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ excluded: true }),
+    });
+    if (!response.ok) setError("Could not exclude this game from adaptation.");
+    else await loadFindings();
+  }
+  async function activateRecommendedPack(packId: string) {
+    const response = await fetch(`${API_URL}/api/tactics/activation`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ pack_ids: [packId], active: true }),
+    });
+    if (!response.ok) setError("Could not activate the recommended tactics pack.");
+    else await loadFindings();
+  }
   useEffect(() => {
     let active = true;
     if (!engineOn || !selected) return;
@@ -238,6 +288,7 @@ export default function GamesView({
   }, [selected?.moves.length]);
   const matchedDecisions = games.reduce((total, game) => total + (game.matchedPlayerDecisions ?? 0), 0);
   const repertoireOpportunities = games.reduce((total, game) => total + (game.repertoireOpportunities ?? 0), 0);
+  const selectedFindings = findings.filter((finding) => finding.game_id === selected?.id);
 
   useEffect(() => {
     if (!useSharedBoard) return;
@@ -390,11 +441,11 @@ export default function GamesView({
                   className={`${index < cursor ? "shown" : ""}${index === selected.flagPly ? " flagged" : ""}`}
                   onClick={() => setCursor(index + 1)}
                   key={index}
-                  title={selected.timeline?.find((event) => event.ply === index)?.kind}
+                  title={[...(selected.timeline ?? []), ...selectedFindings].filter((event) => event.ply === index).map((event) => event.kind).join(", ")}
                 >
                   {index % 2 === 0 ? `${Math.floor(index / 2) + 1}.` : ""}
                   {move}
-                  {selected.timeline?.some((event) => event.ply === index) ? " •" : ""}
+                  {[...(selected.timeline ?? []), ...selectedFindings].some((event) => event.ply === index) ? " •" : ""}
                 </button>
               ))}
             </div>
@@ -437,6 +488,27 @@ export default function GamesView({
                 <strong>
                   {games.filter((game) => game.status === value).length}
                 </strong>
+              </article>
+            ))}
+            {selected && <article>
+              <span>Adaptation review</span>
+              <strong>{selectedFindings.length}</strong>
+              <button onClick={excludeSelectedGame}>Ignore this game for adaptation</button>
+            </article>}
+            {selectedFindings.map((finding) => (
+              <article key={finding.id}>
+                <span>{finding.kind}{finding.kind === "tactical miss" ? ` · ${finding.confidence >= 0.8 ? finding.motif : "unclassified"}` : ""}</span>
+                <small>Move {Math.floor(finding.ply / 2) + 1}</small>
+                {finding.kind === "repertoire lapse" && finding.card_id && <button onClick={() => void decideFinding(finding.id, "accepted")}>Count as lapse</button>}
+                <button onClick={() => void decideFinding(finding.id, "ignored")}>Ignore</button>
+              </article>
+            ))}
+            {motifRecommendations.map((recommendation) => (
+              <article key={recommendation.motif}>
+                <span>Work on {recommendation.motif}</span>
+                <strong>{recommendation.miss_count} misses</strong>
+                <small>{recommendation.total_loss_cp} total centipawns · {recommendation.supporting_games.length} games</small>
+                {recommendation.recommended_pack_id && <button onClick={() => void activateRecommendedPack(recommendation.recommended_pack_id!)}>Activate next pack</button>}
               </article>
             ))}
           </div>
