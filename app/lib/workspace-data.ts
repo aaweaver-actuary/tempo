@@ -103,19 +103,18 @@ export function loadTacticsDeck(motif: string, stage: string) {
 
 export async function preloadView(view: View) {
   if (view === "tactics") {
-    const progress = usesLocalApi()
-      ? await readWorkspaceData(
-          `${API_URL}/api/tactics/progress`,
-          tacticProgressSchema,
-        )
-      : {};
-    const stage =
-      ["easy", "medium", "hard", "focused"].find(
-        (item) =>
-          (progress[`hangingPiece:${item}`]?.clean ?? 0) <
-          (item === "focused" ? 250 : 100),
-      ) ?? "focused";
-    await loadTacticsDeck("hangingPiece", stage);
+    if (usesLocalApi())
+      await readWorkspaceData(
+        `${API_URL}/api/tactics/progress`,
+        tacticProgressSchema,
+      );
+    const selectedPackId =
+      (typeof localStorage === "undefined"
+        ? undefined
+        : localStorage.getItem("tempo-tactic-selected-pack-v1")) ??
+      "hangingPiece-easy-01";
+    const motif = selectedPackId.split("-")[0];
+    await loadTacticsDeck(motif, selectedPackId.slice(motif.length + 1));
     return;
   }
   if (!usesLocalApi()) return;
