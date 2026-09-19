@@ -11,6 +11,30 @@ PGN = b'[Event "Rated blitz game"]\n[White "andy"]\n[Black "opponent"]\n[UTCDate
 BRANCH_PGN = b'[Event "QGD"]\n[White "andy"]\n[Black "opponent"]\n[Result "*"]\n\n1. d4 d5 2. c4 e6 *\n\n[Event "Nimzo"]\n[White "andy"]\n[Black "opponent"]\n[Result "*"]\n\n1. d4 Nf6 2. c4 e6 3. Nc3 Bb4 *'
 
 
+def test_legacy_timestamp_introduced_at_is_repaired_to_a_study_date(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as db:
+        db.execute(
+            "INSERT INTO repertoires(id,name,source_name,created_at) VALUES('repair-repertoire','Repair','repair.pgn','2026-09-19T12:00:00+00:00')"
+        )
+        db.execute(
+            """INSERT INTO cards(
+                   id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at
+               ) VALUES('repair-card','repair-repertoire','prefix',?,'[\"e2e4\"]','learning','2026-09-19','2026-09-19T13:26:39.665242+00:00')""",
+            ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",),
+        )
+
+    database.initialize()
+
+    with database.connection() as db:
+        assert db.execute(
+            "SELECT introduced_at FROM cards WHERE id='repair-card'"
+        ).fetchone()[0] == "2026-09-19"
+
+
 def test_prefixes_match_shared_rust_golden_fixtures():
     from pathlib import Path
     from app.services.pgn import prefix_through_user_moves

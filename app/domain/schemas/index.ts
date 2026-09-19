@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { QueueAttemptState } from "../cards";
 import {
   cardIdSchema,
   colorSchema,
@@ -20,12 +21,7 @@ export * from "./primitives";
 
 const integer = z.number().int().nonnegative();
 const nullableDate = isoDateSchema.nullable().optional();
-export const attemptStateSchema = z.enum([
-  "clean",
-  "guided",
-  "reinforcement",
-  "again",
-]);
+export const attemptStateSchema = z.enum(QueueAttemptState);
 export const queueCardSchema = z.strictObject({
   id: identifierSchema,
   queue_entry_id: queueEntryIdSchema,

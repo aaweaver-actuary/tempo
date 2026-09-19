@@ -246,7 +246,7 @@ def apply_prefix_split(
                 "source_ref": f"prefix-split:{source_card_id}",
                 "source_fen": source_card["start_fen"],
                 "revision": 1,
-                "introduced_at": now,
+                "introduced_at": today,
                 "trained_color": trained_color,
             },
         )

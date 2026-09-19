@@ -126,6 +126,7 @@ def test_accepted_shorter_opening_prefix_creates_a_one_player_decision_continuat
             ).fetchone()
             assert continuation["kind"] == "response"
             assert continuation["state"] == "learning"
+            assert continuation["introduced_at"] == date.today().isoformat()
             assert json.loads(continuation["moves_json"]) == ["b8c6", "f1b5"]
             assert database_connection.execute(
                 "SELECT COUNT(*) FROM repertoire_cards WHERE card_id=?",

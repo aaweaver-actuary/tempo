@@ -57,6 +57,22 @@ it("controlled queue payload structural drift produces a named diagnostic instea
   expect(dataDiagnostics()).toHaveLength(2);
 });
 
+it("gameplay-prioritized queue cards remain valid typed study cards", () => {
+  const cards = queueCardsFromPayload({
+    cards: [
+      {
+        ...rawCard,
+        attempt_state: "gameplay",
+        introduced_at: "2026-09-19",
+      },
+    ],
+  });
+
+  expect(cards).toHaveLength(1);
+  expect(cards[0].queueAttemptState).toBe("gameplay");
+  expect(dataDiagnostics()).toEqual([]);
+});
+
 it("third-party analysis accepts new provider fields but rejects invalid counts, probabilities and illegal moves", () => {
   const fen = new Chess().fen();
   expect(

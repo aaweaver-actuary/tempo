@@ -19,6 +19,7 @@ export enum QueueAttemptState {
   Guided = "guided",
   Reinforcement = "reinforcement",
   Again = "again",
+  Gameplay = "gameplay",
 }
 
 export type CardKind = `${CardKindEnum}`;

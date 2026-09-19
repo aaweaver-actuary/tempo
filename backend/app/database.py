@@ -608,6 +608,17 @@ def initialize() -> None:
         database.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_source ON reviews(source_kind,source_ref) WHERE source_ref IS NOT NULL")
         database.execute("DROP INDEX IF EXISTS idx_imported_games_content_hash")
         database.execute("CREATE INDEX idx_imported_games_content_hash ON imported_games(provider, username, content_hash) WHERE content_hash IS NOT NULL")
+        # `introduced_at` is a local study-day field. A prefix-split release
+        # briefly wrote full timestamps, which violate the queue transport
+        # contract and can make an otherwise valid card disappear in the UI.
+        database.execute(
+            """UPDATE cards
+               SET introduced_at=substr(introduced_at,1,10)
+               WHERE introduced_at IS NOT NULL
+                 AND length(introduced_at) > 10
+                 AND substr(introduced_at,5,1)='-'
+                 AND substr(introduced_at,8,1)='-'"""
+        )
         now = datetime.now(timezone.utc).isoformat()
         database.execute(
             """INSERT OR IGNORE INTO game_analysis_jobs(game_id,analysis_version,status,updated_at)
