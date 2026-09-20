@@ -20,6 +20,10 @@
 | A large derivation backlog blocks card review | `test_correct_review_succeeds_while_one_thousand_derivation_jobs_are_queued` |
 | Interrupted derivations duplicate findings or fail to resume | `test_derivation_backlog_resumes_after_restart_without_duplicate_findings` |
 | Sync is starved behind the derivation backlog | `test_sync_jobs_are_not_starved_behind_derivation_work` |
+| Startup integrity analysis blocks the app and active training/tactics | `test_startup_serves_training_and_tactics_while_integrity_sweep_is_running` |
+| Foreground review waits behind a background database slice | `test_foreground_review_preempts_each_background_database_slice` |
+| Large integrity scans lose progress or duplicate issues after restart | `test_large_integrity_sweep_commits_and_resumes_one_source_at_a_time` |
+| Integrity rescans quarantine a previously clean repertoire or unrelated tactics | `test_last_known_good_repertoire_remains_trainable_during_rescan`; `test_never_validated_repertoire_is_quarantined_without_blocking_tactics` |
 | Import bypasses the new-card limit | `legacy introduced-but-unreviewed queue is capped without losing reviews` |
 | One sample deletion removes both | `deletion isolates records sharing a source filename` |
 | Flipping exits Black repertoire | `builder flip preserves repertoire identity and history across remounts` |

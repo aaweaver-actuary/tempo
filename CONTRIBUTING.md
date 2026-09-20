@@ -4,6 +4,8 @@ Every user-reported defect must have a named automated regression test before it
 
 Use a frontend test for state transitions and timing, a backend integration test for persistence and API behavior, and a browser test for board interaction or complete workflows. Add all applicable layers for failures spanning the client and server. Add the issue and its test names to `tests/REGRESSIONS.md`.
 
+All background analysis is foreground-preemptible. Treat ordinary API requests as foreground by default; browser workers must explicitly mark background requests. Background jobs must be durable and idempotent, process one bounded slice, close SQLite before computation or network work, and use only short background database sections. Never perform a sweep or derived-data rebuild in startup, a queue read, or an interactive request transaction. Add a foreground-concurrency regression whenever a new background handler is introduced.
+
 `npm test` runs frontend regressions, backend integration tests, Rust checks, lint, the production build, browser workflows, and Docker integration. CI runs the same suite and does not silently skip unavailable prerequisites. Individual suites are available for development; the complete suite is required before a release.
 
 Keep each coherent fix in a separate commit. Preserve existing user data and uncommitted work. A failing provider request must report its actual error and must never substitute demonstration data or report false success in local Tempo.
