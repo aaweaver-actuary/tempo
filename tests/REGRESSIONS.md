@@ -87,6 +87,7 @@ Append every new reported issue and its test names here. All listed tests belong
 - Cold routes wait for every service asset before rendering — `cached route data renders before background refresh and reconciles afterward`.
 - Background Stockfish blocks interactive work or becomes a failed job when paused — `background game analysis yields to interactive engine work and resumes once`; `test_paused_background_analysis_releases_its_lease_without_failure`.
 - Builder repeatedly requires Lichess authentication for public databases — `lichess explorer uses public requests and cached results survive builder remount`.
+- High-frequency opening trunks crowd out the later lines that matter — `test_completed_zero_personal_and_explorer_support_with_low_maia_deprioritizes_the_line`; `test_unavailable_sources_are_unknown_instead_of_zero`; `test_strict_prefix_repertoire_records_do_not_become_duplicate_completed_lines`; `test_london_trunk_moves_do_not_add_repeated_near_full_priority`; `test_common_multi_move_line_can_outrank_a_rare_single_move_line`; `test_single_and_multi_move_cards_use_normalized_frontier_scores`.
 
 | Refactor regression | Required regression |
 | --- | --- |

@@ -17,7 +17,11 @@ export const TEMPO_STORES = [
 ] as const;
 
 export type TempoStore = (typeof TEMPO_STORES)[number];
-export type StoredRecord<T = unknown> = { key: string; value: T; updatedAt?: string };
+export type StoredRecord<T = unknown> = {
+  key: string;
+  value: T;
+  updatedAt?: string;
+};
 
 let databasePromise: Promise<IDBDatabase> | undefined;
 
@@ -28,7 +32,8 @@ export function openTempoDatabase(): Promise<IDBDatabase> {
     request.onupgradeneeded = () => {
       const database = request.result;
       for (const store of TEMPO_STORES) {
-        if (!database.objectStoreNames.contains(store)) database.createObjectStore(store, { keyPath: "key" });
+        if (!database.objectStoreNames.contains(store))
+          database.createObjectStore(store, { keyPath: "key" });
       }
     };
     request.onsuccess = () => resolve(request.result);
@@ -37,7 +42,10 @@ export function openTempoDatabase(): Promise<IDBDatabase> {
   return databasePromise;
 }
 
-export async function putRecords(store: TempoStore, records: StoredRecord[]): Promise<void> {
+export async function putRecords(
+  store: TempoStore,
+  records: StoredRecord[],
+): Promise<void> {
   const database = await openTempoDatabase();
   await new Promise<void>((resolve, reject) => {
     const transaction = database.transaction(store, "readwrite");
@@ -53,12 +61,18 @@ export async function getRecords(store: TempoStore): Promise<StoredRecord[]> {
   const database = await openTempoDatabase();
   return await new Promise((resolve, reject) => {
     const request = database.transaction(store).objectStore(store).getAll();
-    request.onsuccess = () => resolve(validRecords(storedRecordSchema, request.result, `IndexedDB ${store}`));
+    request.onsuccess = () =>
+      resolve(
+        validRecords(storedRecordSchema, request.result, `IndexedDB ${store}`),
+      );
     request.onerror = () => reject(request.error);
   });
 }
 
-export async function deleteRecords(store: TempoStore, keys: string[]): Promise<void> {
+export async function deleteRecords(
+  store: TempoStore,
+  keys: string[],
+): Promise<void> {
   if (!keys.length) return;
   const database = await openTempoDatabase();
   await new Promise<void>((resolve, reject) => {
@@ -121,16 +135,27 @@ const TABLE_TO_STORE: Record<string, TempoStore> = {
   explorer_position_cache: "syncMetadata",
 };
 
-function recordKey(table: string, row: Record<string, unknown>, index: number): string {
-  if (table === "position_annotations") return `${row.repertoire_id}:${row.fen_key}`;
+function recordKey(
+  table: string,
+  row: Record<string, unknown>,
+  index: number,
+): string {
+  if (table === "position_annotations")
+    return `${row.repertoire_id}:${row.fen_key}`;
   if (table === "settings") return String(row.id ?? 1);
-  if (table === "game_sync_state") return `game_sync_state:${row.provider ?? index}`;
-  if (table === "teaching_states") return `teaching_states:${row.card_id}:${row.revision}:${row.ply}`;
+  if (table === "game_sync_state")
+    return `game_sync_state:${row.provider ?? index}`;
+  if (table === "teaching_states")
+    return `teaching_states:${row.card_id}:${row.revision}:${row.ply}`;
   if (table === "daily_queue_days") return `daily_queue_days:${row.queue_date}`;
-  if (table === "game_position_occurrences") return `game_position_occurrences:${row.game_id}:${row.ply}`;
-  if (table === "game_repertoire_matches") return `game_repertoire_matches:${row.game_id}:${row.repertoire_id}`;
-  if (table === "gameplay_card_priorities") return `gameplay_card_priorities:${row.card_id}`;
-  if (TABLE_TO_STORE[table] === "syncMetadata") return `${table}:${row.id ?? row.card_id ?? row.game_id ?? row.provider ?? index}`;
+  if (table === "game_position_occurrences")
+    return `game_position_occurrences:${row.game_id}:${row.ply}`;
+  if (table === "game_repertoire_matches")
+    return `game_repertoire_matches:${row.game_id}:${row.repertoire_id}`;
+  if (table === "gameplay_card_priorities")
+    return `gameplay_card_priorities:${row.card_id}`;
+  if (TABLE_TO_STORE[table] === "syncMetadata")
+    return `${table}:${row.id ?? row.card_id ?? row.game_id ?? row.provider ?? index}`;
   return String(row.id ?? `${table}:${index}`);
 }
 
@@ -144,34 +169,71 @@ function stableJson(value: unknown): string {
 }
 
 async function snapshotChecksum(snapshot: PortableSnapshot): Promise<string> {
-  const payload = stableJson({ schemaVersion: snapshot.schemaVersion, tables: snapshot.tables });
-  const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(payload));
-  return [...new Uint8Array(digest)].map((byte) => byte.toString(16).padStart(2, "0")).join("");
+  const payload = stableJson({
+    schemaVersion: snapshot.schemaVersion,
+    tables: snapshot.tables,
+  });
+  const digest = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(payload),
+  );
+  return [...new Uint8Array(digest)]
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("");
 }
 
-export async function importPortableSnapshot(snapshot: PortableSnapshot): Promise<Record<string, number>> {
+export async function importPortableSnapshot(
+  snapshot: PortableSnapshot,
+): Promise<Record<string, number>> {
   snapshot = parseData(portableSnapshotSchema, snapshot, "portable snapshot");
-  if (snapshot.schemaVersion !== 1) throw new Error(`Unsupported snapshot version ${snapshot.schemaVersion}`);
+  if (snapshot.schemaVersion !== 1)
+    throw new Error(`Unsupported snapshot version ${snapshot.schemaVersion}`);
   for (const [table, rows] of Object.entries(snapshot.tables)) {
-    if (rows.length !== snapshot.counts[table]) throw new Error(`Snapshot count mismatch for ${table}`);
+    if (rows.length !== snapshot.counts[table])
+      throw new Error(`Snapshot count mismatch for ${table}`);
   }
   const checksum = await snapshotChecksum(snapshot);
-  if (checksum !== snapshot.checksum) throw new Error("Snapshot checksum mismatch");
+  if (checksum !== snapshot.checksum)
+    throw new Error("Snapshot checksum mismatch");
   const database = await openTempoDatabase();
-  const stores = [...new Set(Object.keys(snapshot.tables).map((table) => TABLE_TO_STORE[table]).filter(Boolean))];
+  const stores = [
+    ...new Set(
+      Object.keys(snapshot.tables)
+        .map((table) => TABLE_TO_STORE[table])
+        .filter(Boolean),
+    ),
+  ];
   await new Promise<void>((resolve, reject) => {
     const transaction = database.transaction(stores, "readwrite");
     for (const [table, rows] of Object.entries(snapshot.tables)) {
       const store = TABLE_TO_STORE[table];
       if (!store) continue;
       const target = transaction.objectStore(store);
-      rows.forEach((row, index) => target.put({ key: recordKey(table, row, index), value: row, updatedAt: snapshot.exportedAt }));
+      rows.forEach((row, index) =>
+        target.put({
+          key: recordKey(table, row, index),
+          value: row,
+          updatedAt: snapshot.exportedAt,
+        }),
+      );
     }
     transaction.oncomplete = () => resolve();
     transaction.onerror = () => reject(transaction.error);
     transaction.onabort = () => reject(transaction.error);
   });
-  const imported = Object.fromEntries(Object.entries(snapshot.tables).map(([table, rows]) => [table, rows.length]));
-  localStorage.setItem("tempo-sqlite-migration", JSON.stringify({ completedAt: new Date().toISOString(), checksum, counts: imported }));
+  const imported = Object.fromEntries(
+    Object.entries(snapshot.tables).map(([table, rows]) => [
+      table,
+      rows.length,
+    ]),
+  );
+  localStorage.setItem(
+    "tempo-sqlite-migration",
+    JSON.stringify({
+      completedAt: new Date().toISOString(),
+      checksum,
+      counts: imported,
+    }),
+  );
   return imported;
 }

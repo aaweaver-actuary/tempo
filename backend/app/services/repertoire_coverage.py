@@ -55,7 +55,9 @@ def required_reply_moves(
         raise ValueError("Coverage denominator must be at least two")
     if not 0 < cumulative_target <= 1:
         raise ValueError("Cumulative coverage target must be between zero and one")
-    positive_candidates = [candidate for candidate in candidates if candidate.probability > 0]
+    positive_candidates = [
+        candidate for candidate in candidates if candidate.probability > 0
+    ]
     total_probability = sum(candidate.probability for candidate in positive_candidates)
     if total_probability <= 0:
         return set()
@@ -141,7 +143,10 @@ def _now() -> str:
 
 
 def _nearest_rating_bucket(rating: int) -> int:
-    return min(SUPPORTED_RATING_BUCKETS, key=lambda candidate: (abs(candidate - rating), candidate))
+    return min(
+        SUPPORTED_RATING_BUCKETS,
+        key=lambda candidate: (abs(candidate - rating), candidate),
+    )
 
 
 def recent_player_cohort(database, fallback_rating: int) -> dict:
@@ -152,7 +157,9 @@ def recent_player_cohort(database, fallback_rating: int) -> dict:
               AND speed IN ('blitz','rapid','classical')""",
         (cutoff,),
     ).fetchall()
-    ratings = [int(row["player_rating"]) for row in rows if row["player_rating"] is not None]
+    ratings = [
+        int(row["player_rating"]) for row in rows if row["player_rating"] is not None
+    ]
     representative_rating = round(median(ratings)) if ratings else fallback_rating
     speed_counts = {
         speed: sum(row["speed"] == speed for row in rows)
@@ -167,13 +174,16 @@ def recent_player_cohort(database, fallback_rating: int) -> dict:
     return {
         "recent_median_rating": representative_rating,
         "explorer_rating": _nearest_rating_bucket(representative_rating),
-        "maia_elo": min(SUPPORTED_MAIA_ELOS, key=lambda candidate: (abs(candidate - representative_rating), candidate)),
+        "maia_elo": min(
+            SUPPORTED_MAIA_ELOS,
+            key=lambda candidate: (abs(candidate - representative_rating), candidate),
+        ),
         "speed_weights": speed_weights,
         "games": len(rows),
     }
 
 
-def enqueue_coverage_refresh(repertoire_id: str) -> str:
+def enqueue_coverage_refresh(repertoire_id: str, *, automatic: bool = False) -> str:
     with connection() as database:
         repertoire = database.execute(
             "SELECT 1 FROM repertoires WHERE id=?", (repertoire_id,)
@@ -203,6 +213,7 @@ def enqueue_coverage_refresh(repertoire_id: str) -> str:
         run_id = str(uuid.uuid4())
         now = _now()
         settings_payload = {
+            "automatic_priority": automatic,
             "reply_denominator": settings["coverage_reply_denominator"],
             "cumulative_target": settings["coverage_cumulative_target"] / 100,
             "horizon_fullmoves": settings["coverage_horizon_fullmoves"],
@@ -228,7 +239,9 @@ def enqueue_coverage_refresh(repertoire_id: str) -> str:
             ),
         )
         for node in nodes:
-            node_id = hashlib.sha256(f"{run_id}\0{node['fen_key']}".encode()).hexdigest()
+            node_id = hashlib.sha256(
+                f"{run_id}\0{node['fen_key']}".encode()
+            ).hexdigest()
             database.execute(
                 """INSERT INTO repertoire_coverage_nodes(
                        id,run_id,repertoire_id,fen,fen_key,ply,trained_color,
@@ -277,12 +290,18 @@ def claim_coverage_node() -> dict | None:
 def _cached_explorer_payload(
     database, fen: str, speeds: str, ratings: str
 ) -> tuple[dict | None, str]:
-    cache_key = hashlib.sha256(f"{fen_key(fen)}\0{speeds}\0{ratings}".encode()).hexdigest()
+    cache_key = hashlib.sha256(
+        f"{fen_key(fen)}\0{speeds}\0{ratings}".encode()
+    ).hexdigest()
     cached = database.execute(
         "SELECT response_json,fetched_at FROM explorer_position_cache WHERE cache_key=?",
         (cache_key,),
     ).fetchone()
-    if cached and datetime.fromisoformat(cached["fetched_at"]) >= datetime.now(timezone.utc) - EXPLORER_CACHE_MAX_AGE:
+    if (
+        cached
+        and datetime.fromisoformat(cached["fetched_at"])
+        >= datetime.now(timezone.utc) - EXPLORER_CACHE_MAX_AGE
+    ):
         return json.loads(cached["response_json"]), cache_key
     return None, cache_key
 
@@ -295,19 +314,33 @@ def _fetch_explorer(fen: str, speeds: str, ratings: str) -> dict:
     total_weight = sum(speed_weights.values()) or 1
     weighted_probabilities: dict[str, float] = {}
     explorer_games = 0
-    with httpx.Client(timeout=15, headers={"User-Agent": "Tempo repertoire coverage/1.0"}) as client:
+    with httpx.Client(
+        timeout=15, headers={"User-Agent": "Tempo repertoire coverage/1.0"}
+    ) as client:
         for speed_name, raw_weight in speed_weights.items():
             response = client.get(
                 "https://explorer.lichess.org/lichess",
-                params={"variant": "standard", "fen": fen, "speeds": speed_name, "ratings": ratings},
+                params={
+                    "variant": "standard",
+                    "fen": fen,
+                    "speeds": speed_name,
+                    "ratings": ratings,
+                },
             )
             response.raise_for_status()
             payload = response.json()
-            if not isinstance(payload, dict) or not isinstance(payload.get("moves"), list):
-                raise ValueError("Lichess Explorer returned an invalid coverage response")
+            if not isinstance(payload, dict) or not isinstance(
+                payload.get("moves"), list
+            ):
+                raise ValueError(
+                    "Lichess Explorer returned an invalid coverage response"
+                )
             move_counts = {
-                str(move.get("uci")): int(move.get("white", 0)) + int(move.get("draws", 0)) + int(move.get("black", 0))
-                for move in payload["moves"] if move.get("uci")
+                str(move.get("uci")): int(move.get("white", 0))
+                + int(move.get("draws", 0))
+                + int(move.get("black", 0))
+                for move in payload["moves"]
+                if move.get("uci")
             }
             sample_games = sum(move_counts.values())
             explorer_games += sample_games
@@ -315,11 +348,18 @@ def _fetch_explorer(fen: str, speeds: str, ratings: str) -> dict:
                 continue
             weight = raw_weight / total_weight
             for move_uci, count in move_counts.items():
-                weighted_probabilities[move_uci] = weighted_probabilities.get(move_uci, 0) + weight * count / sample_games
-    return {"moves": [
-        {"uci": move_uci, "white": probability, "draws": 0, "black": 0}
-        for move_uci, probability in weighted_probabilities.items()
-    ], "_probabilities": weighted_probabilities, "_explorer_games": explorer_games}
+                weighted_probabilities[move_uci] = (
+                    weighted_probabilities.get(move_uci, 0)
+                    + weight * count / sample_games
+                )
+    return {
+        "moves": [
+            {"uci": move_uci, "white": probability, "draws": 0, "black": 0}
+            for move_uci, probability in weighted_probabilities.items()
+        ],
+        "_probabilities": weighted_probabilities,
+        "_explorer_games": explorer_games,
+    }
 
 
 def _recalculate_node(database, node_id: str, settings: dict) -> None:
@@ -355,11 +395,14 @@ def _recalculate_node(database, node_id: str, settings: dict) -> None:
         denominator=int(settings["reply_denominator"]),
         cumulative_target=float(settings["cumulative_target"]),
     )
-    normalized_by_move = {candidate.move_uci: candidate.probability for candidate in combined}
+    normalized_by_move = {
+        candidate.move_uci: candidate.probability for candidate in combined
+    }
     for row in rows:
         source_state = (
             "blended"
-            if row["explorer_probability"] is not None and row["maia_probability"] is not None
+            if row["explorer_probability"] is not None
+            and row["maia_probability"] is not None
             else "explorer-only"
             if row["explorer_probability"] is not None
             else "maia-only"
@@ -383,9 +426,17 @@ def _recalculate_node(database, node_id: str, settings: dict) -> None:
 def execute_coverage_node(node: dict) -> None:
     try:
         settings = json.loads(node["settings_json"])
-        rating_bucket = int(settings.get("explorer_rating", _nearest_rating_bucket(int(settings["maia_elo"]))))
-        speed_weights = settings.get("speed_weights", {"blitz": 1 / 3, "rapid": 1 / 3, "classical": 1 / 3})
-        speeds = ",".join(f"{speed}:{weight:.6f}" for speed, weight in sorted(speed_weights.items()))
+        rating_bucket = int(
+            settings.get(
+                "explorer_rating", _nearest_rating_bucket(int(settings["maia_elo"]))
+            )
+        )
+        speed_weights = settings.get(
+            "speed_weights", {"blitz": 1 / 3, "rapid": 1 / 3, "classical": 1 / 3}
+        )
+        speeds = ",".join(
+            f"{speed}:{weight:.6f}" for speed, weight in sorted(speed_weights.items())
+        )
         ratings = str(rating_bucket)
         with connection() as database:
             payload, cache_key = _cached_explorer_payload(
@@ -430,8 +481,11 @@ def execute_coverage_node(node: dict) -> None:
                     (
                         node["id"],
                         move_uci,
-                        float(probabilities[move_uci]) if probabilities and move_uci in probabilities
-                        else move_games / sum(counts.values()) if sum(counts.values()) else None,
+                        float(probabilities[move_uci])
+                        if probabilities and move_uci in probabilities
+                        else move_games / sum(counts.values())
+                        if sum(counts.values())
+                        else None,
                         int(move_uci in covered_replies),
                         "explorer-only",
                     ),
@@ -454,8 +508,16 @@ def execute_coverage_node(node: dict) -> None:
             database.execute(
                 """UPDATE repertoire_coverage_runs SET completed_nodes=?,status=?,updated_at=?
                    WHERE id=?""",
-                (completed, "complete" if not remaining else "running", _now(), node["run_id"]),
+                (
+                    completed,
+                    "complete" if not remaining else "running",
+                    _now(),
+                    node["run_id"],
+                ),
             )
+        from .introduction_priorities import rebuild_priorities_for_repertoire
+
+        rebuild_priorities_for_repertoire(node["repertoire_id"])
     except Exception as error:
         with connection(background=True) as database:
             database.execute(
@@ -574,7 +636,12 @@ def claim_maia_coverage_node() -> dict | None:
             return None
         database.execute(
             "UPDATE repertoire_coverage_nodes SET maia_status='leased',lease_id=?,lease_expires_at=?,updated_at=? WHERE id=?",
-            (lease_id, (now + timedelta(minutes=5)).isoformat(), now.isoformat(), node["id"]),
+            (
+                lease_id,
+                (now + timedelta(minutes=5)).isoformat(),
+                now.isoformat(),
+                node["id"],
+            ),
         )
         settings = json.loads(node["settings_json"])
         return {
@@ -586,6 +653,7 @@ def claim_maia_coverage_node() -> dict | None:
 
 
 def submit_maia_coverage(node_id: str, lease_id: str, moves: list[dict]) -> None:
+    repertoire_id: str | None = None
     with connection() as database:
         node = database.execute(
             """SELECT n.*,r.settings_json FROM repertoire_coverage_nodes n
@@ -594,6 +662,7 @@ def submit_maia_coverage(node_id: str, lease_id: str, moves: list[dict]) -> None
         ).fetchone()
         if not node or node["maia_status"] != "leased" or node["lease_id"] != lease_id:
             raise RuntimeError("Coverage MAIA lease is no longer active")
+        repertoire_id = node["repertoire_id"]
         covered_replies = set(json.loads(node["covered_replies_json"]))
         for move in moves:
             database.execute(
@@ -616,3 +685,7 @@ def submit_maia_coverage(node_id: str, lease_id: str, moves: list[dict]) -> None
                       lease_expires_at=NULL,updated_at=? WHERE id=?""",
             (_now(), node_id),
         )
+    if repertoire_id:
+        from .introduction_priorities import rebuild_priorities_for_repertoire
+
+        rebuild_priorities_for_repertoire(repertoire_id)

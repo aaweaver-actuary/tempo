@@ -6,7 +6,16 @@ from pathlib import Path
 from typing import Iterator
 
 
-DB_PATH = Path(os.getenv("TEMPO_DB_PATH", str(Path(os.getenv("XDG_DATA_HOME", Path.home() / ".local/share")) / "tempo" / "tempo.db")))
+DB_PATH = Path(
+    os.getenv(
+        "TEMPO_DB_PATH",
+        str(
+            Path(os.getenv("XDG_DATA_HOME", Path.home() / ".local/share"))
+            / "tempo"
+            / "tempo.db"
+        ),
+    )
+)
 
 
 @contextmanager
@@ -26,7 +35,12 @@ def connection(*, background: bool = False) -> Iterator[sqlite3.Connection]:
 def initialize() -> None:
     if DB_PATH.exists():
         with connection() as existing_database:
-            tables = {row[0] for row in existing_database.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            tables = {
+                row[0]
+                for row in existing_database.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                )
+            }
             if "tactic_pack_activation" not in tables:
                 backup_path = DB_PATH.with_name(DB_PATH.name + ".before-tactics-v1.bak")
                 if not backup_path.exists():
@@ -618,6 +632,22 @@ def initialize() -> None:
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS repertoire_card_introduction_priorities (
+            repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+            card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+            scoring_version INTEGER NOT NULL,
+            completed_line_ids_json TEXT NOT NULL DEFAULT '[]',
+            completion_mass REAL NOT NULL DEFAULT 0,
+            frontier_decisions_json TEXT NOT NULL DEFAULT '[]',
+            frontier_reach REAL NOT NULL DEFAULT 0,
+            priority_score REAL NOT NULL DEFAULT 0,
+            evidence_json TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(repertoire_id,card_id)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_introduction_priorities_score ON repertoire_card_introduction_priorities(repertoire_id,priority_score DESC)",
+        """
         CREATE TABLE IF NOT EXISTS explorer_position_cache (
             cache_key TEXT PRIMARY KEY,
             fen_key TEXT NOT NULL,
@@ -637,29 +667,116 @@ def initialize() -> None:
         database.execute("INSERT OR IGNORE INTO settings (id) VALUES (1)")
         # Existing local databases are migrated in place; user review history is never rebuilt.
         columns = {
-            "daily_queue": {"review_result_json": "TEXT", "attempt_failed": "INTEGER NOT NULL DEFAULT 0", "card_bucket": "TEXT", "admission_kind": "TEXT", "gameplay_priority_reason": "TEXT"},
-            "game_sync_state": {"username": "TEXT NOT NULL DEFAULT ''", "last_result_json": "TEXT"},
-            "settings": {"tactics_new_per_day": "INTEGER NOT NULL DEFAULT 5","lichess_username": "TEXT NOT NULL DEFAULT ''", "chesscom_username": "TEXT NOT NULL DEFAULT ''", "auto_sync_minutes": "INTEGER NOT NULL DEFAULT 3", "engine_line_window_cp": "INTEGER NOT NULL DEFAULT 30", "major_mistake_cp": "INTEGER NOT NULL DEFAULT 100", "light_first_interval_days": "INTEGER NOT NULL DEFAULT 7", "draw_hold_user_moves": "INTEGER NOT NULL DEFAULT 20", "coverage_reply_denominator": "INTEGER NOT NULL DEFAULT 100", "coverage_cumulative_target": "INTEGER NOT NULL DEFAULT 95", "coverage_horizon_fullmoves": "INTEGER NOT NULL DEFAULT 15", "coverage_path_floor": "REAL NOT NULL DEFAULT 0.0005", "coverage_maia_elo": "INTEGER NOT NULL DEFAULT 1500"},
-            "cards": {"fsrs_card_json": "TEXT", "first_correct_at": "TEXT", "reinforcement_pending": "INTEGER NOT NULL DEFAULT 0", "stability": "REAL NOT NULL DEFAULT 0", "guided_review": "INTEGER NOT NULL DEFAULT 0", "maximum_interval": "INTEGER NOT NULL DEFAULT 365", "content_type": "TEXT NOT NULL DEFAULT 'opening'", "scheduling_mode": "TEXT NOT NULL DEFAULT 'normal'", "hard_correct_streak": "INTEGER NOT NULL DEFAULT 0", "recent_attempts_json": "TEXT NOT NULL DEFAULT '[]'", "archived": "INTEGER NOT NULL DEFAULT 0", "superseded_by": "TEXT", "source_ref": "TEXT", "source_fen": "TEXT", "revision": "INTEGER NOT NULL DEFAULT 1", "introduced_at": "TEXT", "trained_color": "TEXT"},
-            "reviews": {"internal_rating": "TEXT NOT NULL DEFAULT 'again'", "guided": "INTEGER NOT NULL DEFAULT 0", "source_kind": "TEXT NOT NULL DEFAULT 'study'", "source_ref": "TEXT"},
-            "imported_games": {"analysis_state": "TEXT NOT NULL DEFAULT 'pending'", "analysis_version": "INTEGER NOT NULL DEFAULT 0", "analysis_evidence_version": "INTEGER NOT NULL DEFAULT 1", "major_mistake_ply": "INTEGER", "missed_punishment_ply": "INTEGER", "provider_game_id": "TEXT", "content_hash": "TEXT", "adaptive_excluded": "INTEGER NOT NULL DEFAULT 0", "player_rating": "INTEGER", "opponent_rating": "INTEGER", "rating_change": "INTEGER", "time_control": "TEXT"},
-            "game_derivation_jobs": {"derivation_version": "INTEGER NOT NULL DEFAULT 1", "next_attempt_at": "TEXT"},
-            "game_move_analysis": {"best_move_uci": "TEXT", "principal_variation_json": "TEXT NOT NULL DEFAULT '[]'", "mate_before": "INTEGER", "mate_after": "INTEGER", "engine_version": "TEXT", "network_version": "TEXT", "mover_color": "TEXT", "is_player_move": "INTEGER NOT NULL DEFAULT 1", "actual_move_uci": "TEXT", "position_fen": "TEXT"},
+            "daily_queue": {
+                "review_result_json": "TEXT",
+                "attempt_failed": "INTEGER NOT NULL DEFAULT 0",
+                "card_bucket": "TEXT",
+                "admission_kind": "TEXT",
+                "gameplay_priority_reason": "TEXT",
+            },
+            "game_sync_state": {
+                "username": "TEXT NOT NULL DEFAULT ''",
+                "last_result_json": "TEXT",
+            },
+            "settings": {
+                "tactics_new_per_day": "INTEGER NOT NULL DEFAULT 5",
+                "lichess_username": "TEXT NOT NULL DEFAULT ''",
+                "chesscom_username": "TEXT NOT NULL DEFAULT ''",
+                "auto_sync_minutes": "INTEGER NOT NULL DEFAULT 3",
+                "engine_line_window_cp": "INTEGER NOT NULL DEFAULT 30",
+                "major_mistake_cp": "INTEGER NOT NULL DEFAULT 100",
+                "light_first_interval_days": "INTEGER NOT NULL DEFAULT 7",
+                "draw_hold_user_moves": "INTEGER NOT NULL DEFAULT 20",
+                "coverage_reply_denominator": "INTEGER NOT NULL DEFAULT 100",
+                "coverage_cumulative_target": "INTEGER NOT NULL DEFAULT 95",
+                "coverage_horizon_fullmoves": "INTEGER NOT NULL DEFAULT 15",
+                "coverage_path_floor": "REAL NOT NULL DEFAULT 0.0005",
+                "coverage_maia_elo": "INTEGER NOT NULL DEFAULT 1500",
+            },
+            "cards": {
+                "fsrs_card_json": "TEXT",
+                "first_correct_at": "TEXT",
+                "reinforcement_pending": "INTEGER NOT NULL DEFAULT 0",
+                "stability": "REAL NOT NULL DEFAULT 0",
+                "guided_review": "INTEGER NOT NULL DEFAULT 0",
+                "maximum_interval": "INTEGER NOT NULL DEFAULT 365",
+                "content_type": "TEXT NOT NULL DEFAULT 'opening'",
+                "scheduling_mode": "TEXT NOT NULL DEFAULT 'normal'",
+                "hard_correct_streak": "INTEGER NOT NULL DEFAULT 0",
+                "recent_attempts_json": "TEXT NOT NULL DEFAULT '[]'",
+                "archived": "INTEGER NOT NULL DEFAULT 0",
+                "superseded_by": "TEXT",
+                "source_ref": "TEXT",
+                "source_fen": "TEXT",
+                "revision": "INTEGER NOT NULL DEFAULT 1",
+                "introduced_at": "TEXT",
+                "trained_color": "TEXT",
+            },
+            "reviews": {
+                "internal_rating": "TEXT NOT NULL DEFAULT 'again'",
+                "guided": "INTEGER NOT NULL DEFAULT 0",
+                "source_kind": "TEXT NOT NULL DEFAULT 'study'",
+                "source_ref": "TEXT",
+            },
+            "imported_games": {
+                "analysis_state": "TEXT NOT NULL DEFAULT 'pending'",
+                "analysis_version": "INTEGER NOT NULL DEFAULT 0",
+                "analysis_evidence_version": "INTEGER NOT NULL DEFAULT 1",
+                "major_mistake_ply": "INTEGER",
+                "missed_punishment_ply": "INTEGER",
+                "provider_game_id": "TEXT",
+                "content_hash": "TEXT",
+                "adaptive_excluded": "INTEGER NOT NULL DEFAULT 0",
+                "player_rating": "INTEGER",
+                "opponent_rating": "INTEGER",
+                "rating_change": "INTEGER",
+                "time_control": "TEXT",
+            },
+            "game_derivation_jobs": {
+                "derivation_version": "INTEGER NOT NULL DEFAULT 1",
+                "next_attempt_at": "TEXT",
+            },
+            "game_move_analysis": {
+                "best_move_uci": "TEXT",
+                "principal_variation_json": "TEXT NOT NULL DEFAULT '[]'",
+                "mate_before": "INTEGER",
+                "mate_after": "INTEGER",
+                "engine_version": "TEXT",
+                "network_version": "TEXT",
+                "mover_color": "TEXT",
+                "is_player_move": "INTEGER NOT NULL DEFAULT 1",
+                "actual_move_uci": "TEXT",
+                "position_fen": "TEXT",
+            },
             "game_move_analysis_candidates": {"score_text": "TEXT"},
-            "game_analysis_jobs": {"analysis_evidence_version": "INTEGER NOT NULL DEFAULT 1"},
+            "game_analysis_jobs": {
+                "analysis_evidence_version": "INTEGER NOT NULL DEFAULT 1"
+            },
             "game_findings": {"source_opportunity_id": "TEXT", "review_after": "TEXT"},
             "repertoires": {"is_main": "INTEGER NOT NULL DEFAULT 0"},
         }
         for table, additions in columns.items():
-            existing = {row[1] for row in database.execute(f"PRAGMA table_info({table})")}
+            existing = {
+                row[1] for row in database.execute(f"PRAGMA table_info({table})")
+            }
             for name, definition in additions.items():
                 if name not in existing:
-                    database.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
-        database.execute("CREATE INDEX IF NOT EXISTS idx_game_findings_opportunity ON game_findings(source_opportunity_id)")
-        database.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_imported_games_provider_game_id ON imported_games(provider, provider_game_id) WHERE provider_game_id IS NOT NULL")
-        database.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_source ON reviews(source_kind,source_ref) WHERE source_ref IS NOT NULL")
+                    database.execute(
+                        f"ALTER TABLE {table} ADD COLUMN {name} {definition}"
+                    )
+        database.execute(
+            "CREATE INDEX IF NOT EXISTS idx_game_findings_opportunity ON game_findings(source_opportunity_id)"
+        )
+        database.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_imported_games_provider_game_id ON imported_games(provider, provider_game_id) WHERE provider_game_id IS NOT NULL"
+        )
+        database.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_source ON reviews(source_kind,source_ref) WHERE source_ref IS NOT NULL"
+        )
         database.execute("DROP INDEX IF EXISTS idx_imported_games_content_hash")
-        database.execute("CREATE INDEX idx_imported_games_content_hash ON imported_games(provider, username, content_hash) WHERE content_hash IS NOT NULL")
+        database.execute(
+            "CREATE INDEX idx_imported_games_content_hash ON imported_games(provider, username, content_hash) WHERE content_hash IS NOT NULL"
+        )
         # `introduced_at` is a local study-day field. A prefix-split release
         # briefly wrote full timestamps, which violate the queue transport
         # contract and can make an otherwise valid card disappear in the UI.

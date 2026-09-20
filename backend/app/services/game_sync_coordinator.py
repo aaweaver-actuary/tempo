@@ -20,6 +20,7 @@ from .game_sync import sync_providers
 from .repertoire_comparison import compare_games
 from .activity_gate import activity_gate
 from .repertoire_coverage import claim_coverage_node, execute_coverage_node
+from .introduction_priorities import rebuild_priorities_for_game
 from .statistics import refresh_game_features
 
 
@@ -142,6 +143,7 @@ def _execute_derivation(game_id: str) -> None:
             refresh_game_findings(game_id, background=True)
             refresh_gameplay_events(game_id, background=True)
             refresh_game_features(game_id, background=True)
+            rebuild_priorities_for_game(game_id)
             activity_gate.wait_for_foreground()
             with connection(background=True) as database:
                 database.execute(

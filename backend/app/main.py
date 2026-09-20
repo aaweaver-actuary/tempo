@@ -94,6 +94,11 @@ from .services.repertoire_coverage import (
     enqueue_coverage_refresh,
     submit_maia_coverage,
 )
+from .services.introduction_priorities import (
+    priority_status,
+    rebuild_introduction_priorities,
+    rebuild_priorities_for_game,
+)
 
 
 @asynccontextmanager
@@ -307,7 +312,7 @@ def capabilities():
 def get_settings():
     with connection() as db:
         row = db.execute(
-            "SELECT tactics_new_per_day,initial_depth,timezone,new_cards_per_day,lichess_username,chesscom_username,auto_sync_minutes,engine_line_window_cp,major_mistake_cp,light_first_interval_days,draw_hold_user_moves FROM settings WHERE id=1"
+            "SELECT tactics_new_per_day,initial_depth,timezone,new_cards_per_day,lichess_username,chesscom_username,auto_sync_minutes,engine_line_window_cp,major_mistake_cp,light_first_interval_days,draw_hold_user_moves,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
         ).fetchone()
     return Settings(**dict(row))
 
@@ -316,7 +321,7 @@ def get_settings():
 def put_settings(s: Settings):
     with connection() as db:
         db.execute(
-            "UPDATE settings SET tactics_new_per_day=?,initial_depth=?,timezone=?,new_cards_per_day=?,lichess_username=?,chesscom_username=?,auto_sync_minutes=?,engine_line_window_cp=?,major_mistake_cp=?,light_first_interval_days=?,draw_hold_user_moves=? WHERE id=1",
+            "UPDATE settings SET tactics_new_per_day=?,initial_depth=?,timezone=?,new_cards_per_day=?,lichess_username=?,chesscom_username=?,auto_sync_minutes=?,engine_line_window_cp=?,major_mistake_cp=?,light_first_interval_days=?,draw_hold_user_moves=?,coverage_reply_denominator=?,coverage_cumulative_target=?,coverage_horizon_fullmoves=?,coverage_path_floor=?,coverage_maia_elo=? WHERE id=1",
             (
                 s.tactics_new_per_day,
                 s.initial_depth,
@@ -329,8 +334,28 @@ def put_settings(s: Settings):
                 s.major_mistake_cp,
                 s.light_first_interval_days,
                 s.draw_hold_user_moves,
+                s.coverage_reply_denominator,
+                s.coverage_cumulative_target,
+                s.coverage_horizon_fullmoves,
+                s.coverage_path_floor,
+                s.coverage_maia_elo,
             ),
         )
+        repertoire_ids = [
+            row["id"]
+            for row in db.execute(
+                "SELECT id FROM repertoires WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__')"
+            )
+        ]
+        for repertoire_id in repertoire_ids:
+            rebuild_introduction_priorities(db, repertoire_id)
+    for repertoire_id in repertoire_ids:
+        try:
+            enqueue_coverage_refresh(repertoire_id, automatic=True)
+        except (KeyError, sqlite3.OperationalError):
+            continue
+    if repertoire_ids:
+        coordinator.wake()
     return s
 
 
@@ -370,6 +395,112 @@ def reconcile_unseen_queue(db, day, limit):
             )
 
 
+def _priority_frontier_depth(priority_row) -> int:
+    if not priority_row or not priority_row["frontier_decisions_json"]:
+        return 0
+    try:
+        values = json.loads(priority_row["frontier_decisions_json"])
+        return max((int(item[2].get("ply", 0)) for item in values), default=0)
+    except (TypeError, ValueError, json.JSONDecodeError, IndexError):
+        return 0
+
+
+def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> int:
+    """Admit unseen opening cards by impact without changing the active queue."""
+
+    candidates = db.execute(
+        """SELECT c.id,c.repertoire_id,c.moves_json,c.due_date,p.reason gameplay_priority_reason,
+                  p.priority_date,ip.priority_score,ip.completed_line_ids_json,
+                  ip.frontier_decisions_json
+           FROM cards c
+           LEFT JOIN gameplay_card_priorities p ON p.card_id=c.id AND p.priority_date<=?
+           LEFT JOIN repertoire_card_introduction_priorities ip
+             ON ip.card_id=c.id AND ip.repertoire_id=c.repertoire_id
+           WHERE c.content_type='opening' AND (c.due_date<=? OR p.card_id IS NOT NULL)
+             AND c.state='new' AND c.introduced_at IS NULL AND c.archived=0
+             AND c.id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?)""",
+        (day, day, day),
+    ).fetchall()
+    repertoire_ids = sorted({row["repertoire_id"] for row in candidates})
+    for repertoire_id in repertoire_ids:
+        rebuild_introduction_priorities(db, repertoire_id)
+    if repertoire_ids:
+        candidates = db.execute(
+            """SELECT c.id,c.repertoire_id,c.moves_json,c.due_date,p.reason gameplay_priority_reason,
+                      p.priority_date,ip.priority_score,ip.completed_line_ids_json,
+                      ip.frontier_decisions_json
+               FROM cards c
+               LEFT JOIN gameplay_card_priorities p ON p.card_id=c.id AND p.priority_date<=?
+               LEFT JOIN repertoire_card_introduction_priorities ip
+                 ON ip.card_id=c.id AND ip.repertoire_id=c.repertoire_id
+               WHERE c.content_type='opening' AND (c.due_date<=? OR p.card_id IS NOT NULL)
+                 AND c.state='new' AND c.introduced_at IS NULL AND c.archived=0
+                 AND c.id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?)""",
+            (day, day, day),
+        ).fetchall()
+    introduced_by_repertoire = dict(
+        db.execute(
+            "SELECT repertoire_id,COUNT(*) FROM cards WHERE content_type='opening' AND introduced_at=? GROUP BY repertoire_id",
+            (day,),
+        ).fetchall()
+    )
+    by_repertoire: dict[str, list] = {}
+    for row in candidates:
+        by_repertoire.setdefault(row["repertoire_id"], []).append(row)
+    next_position = maximum
+    for repertoire_id, rows in by_repertoire.items():
+        remaining = max(0, limit - introduced_by_repertoire.get(repertoire_id, 0))
+        selected_ids: set[str] = set()
+        breadth_line_ids: set[str] = set()
+        while remaining:
+            available = [row for row in rows if row["id"] not in selected_ids]
+            if not available:
+                break
+            gameplay = [row for row in available if row["gameplay_priority_reason"]]
+            if gameplay:
+                choice = min(gameplay, key=lambda row: (row["priority_date"] or day, row["id"]))
+            else:
+                def line_ids(row) -> set[str]:
+                    try:
+                        return set(json.loads(row["completed_line_ids_json"] or "[]"))
+                    except json.JSONDecodeError:
+                        return set()
+
+                breadth_candidates = [
+                    row for row in available
+                    if not line_ids(row) or not line_ids(row).issubset(breadth_line_ids)
+                ]
+                if not breadth_candidates:
+                    breadth_line_ids.clear()
+                    breadth_candidates = available
+                choice = min(
+                    breadth_candidates,
+                    key=lambda row: (
+                        -float(row["priority_score"] or 0),
+                        -_priority_frontier_depth(row),
+                        len(json.loads(row["moves_json"])),
+                        row["id"],
+                    ),
+                )
+                try:
+                    breadth_line_ids.update(json.loads(choice["completed_line_ids_json"] or "[]"))
+                except json.JSONDecodeError:
+                    pass
+            next_position += 1
+            db.execute(
+                """INSERT INTO daily_queue(queue_date,card_id,position,gameplay_priority_reason)
+                   VALUES(?,?,?,?)""",
+                (day, choice["id"], next_position, choice["gameplay_priority_reason"]),
+            )
+            db.execute(
+                "UPDATE cards SET introduced_at=?,state='learning' WHERE id=?",
+                (day, choice["id"]),
+            )
+            selected_ids.add(choice["id"])
+            remaining -= 1
+    return next_position
+
+
 def seed_queue(db, day):
     seed_tactical_introductions(db, day)
     db.execute("""UPDATE cards SET state='new' WHERE content_type='opening' AND state='learning'
@@ -397,37 +528,7 @@ def seed_queue(db, day):
             (day, row[0], maximum + offset),
         )
     maximum += len(rows)
-    introduced_by_repertoire = dict(
-        db.execute(
-            "SELECT repertoire_id,COUNT(*) FROM cards WHERE content_type='opening' AND introduced_at=? GROUP BY repertoire_id",
-            (day,),
-        ).fetchall()
-    )
-    new_rows = db.execute(
-        """SELECT c.id,c.repertoire_id,p.reason gameplay_priority_reason
-           FROM cards c LEFT JOIN gameplay_card_priorities p ON p.card_id=c.id AND p.priority_date<=?
-           WHERE c.content_type='opening' AND (c.due_date<=? OR p.card_id IS NOT NULL)
-             AND c.state='new' AND c.introduced_at IS NULL AND c.archived=0
-             AND c.id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?)
-           ORDER BY (p.card_id IS NOT NULL) DESC,p.created_at DESC,c.due_date,c.id""",
-        (day, day, day),
-    ).fetchall()
-    for row in new_rows:
-        repertoire_id = row["repertoire_id"]
-        introduced = introduced_by_repertoire.get(repertoire_id, 0)
-        if introduced >= limit:
-            continue
-        maximum += 1
-        db.execute(
-            """INSERT INTO daily_queue(queue_date,card_id,position,gameplay_priority_reason)
-               VALUES(?,?,?,?)""",
-            (day, row["id"], maximum, row["gameplay_priority_reason"]),
-        )
-        db.execute(
-            "UPDATE cards SET introduced_at=?,state='learning' WHERE id=?",
-            (day, row["id"]),
-        )
-        introduced_by_repertoire[repertoire_id] = introduced + 1
+    admit_prioritized_opening_cards(db, day, limit, maximum)
 
 
 def randomize_daily_queue(db, day: str) -> None:
@@ -668,12 +769,19 @@ async def import_pgn(
                 "INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)",
                 (rid, cid),
             )
+        rebuild_introduction_priorities(db, rid)
         seed_queue(db, date.today().isoformat())
         admitted = db.execute(
             """SELECT COUNT(DISTINCT q.card_id) FROM daily_queue q JOIN repertoire_cards rc ON rc.card_id=q.card_id
                                WHERE q.queue_date=? AND q.status='queued' AND rc.repertoire_id=?""",
             (date.today().isoformat(), rid),
         ).fetchone()[0]
+    try:
+        enqueue_coverage_refresh(rid, automatic=True)
+        coordinator.wake()
+    except (KeyError, sqlite3.OperationalError):
+        # The immediate local evidence remains sufficient to admit cards.
+        pass
     compare_all_games()
     refresh_game_findings()
     return ImportResult(
@@ -714,11 +822,16 @@ def list_repertoires():
             conflict_counts[conflict["repertoire_id"]] = (
                 conflict_counts.get(conflict["repertoire_id"], 0) + 1
             )
-    return {
-        "repertoires": [
-            {**dict(row), "conflict_count": conflict_counts.get(row["id"], 0)}
+        repertoire_items = [
+            {
+                **dict(row),
+                "conflict_count": conflict_counts.get(row["id"], 0),
+                "introduction_priority": priority_status(db, row["id"]),
+            }
             for row in rows
         ]
+    return {
+        "repertoires": repertoire_items
     }
 
 
@@ -899,14 +1012,34 @@ def migration_snapshot():
         "repertoire_coverage_runs",
         "repertoire_coverage_nodes",
         "repertoire_coverage_candidates",
-        "explorer_position_cache",
         "game_sync_state",
     ]
     with connection() as db:
-        tables = {
-            name: [dict(row) for row in db.execute(f"SELECT * FROM {name}").fetchall()]
-            for name in table_names
+        # Automatic coverage and Explorer cache rows are rebuildable enrichment.
+        # Keeping them out of a portable study snapshot preserves its checksum
+        # across a restart while background work continues independently.
+        automatic_coverage_run_ids = {
+            row["id"]
+            for row in db.execute(
+                """SELECT id FROM repertoire_coverage_runs
+                   WHERE settings_json LIKE '%\"automatic_priority\": true%'"""
+            )
         }
+        automatic_coverage_node_ids = {
+            row["id"]
+            for row in db.execute("SELECT id,run_id FROM repertoire_coverage_nodes").fetchall()
+            if row["run_id"] in automatic_coverage_run_ids
+        }
+        tables = {}
+        for name in table_names:
+            rows = [dict(row) for row in db.execute(f"SELECT * FROM {name}").fetchall()]
+            if name == "repertoire_coverage_runs":
+                rows = [row for row in rows if row["id"] not in automatic_coverage_run_ids]
+            elif name == "repertoire_coverage_nodes":
+                rows = [row for row in rows if row["id"] not in automatic_coverage_node_ids]
+            elif name == "repertoire_coverage_candidates":
+                rows = [row for row in rows if row["node_id"] not in automatic_coverage_node_ids]
+            tables[name] = rows
     counts = {name: len(rows) for name, rows in tables.items()}
     canonical = json.dumps(
         {"schemaVersion": 1, "tables": tables},
@@ -1208,7 +1341,13 @@ def branch(request: BranchRequest):
                 "UPDATE repertoire_coverage_candidates SET covered=1 WHERE node_id=? AND move_uci=?",
                 (gap_node_id, gap_move_uci),
             )
+        rebuild_introduction_priorities(db, request.repertoire_id)
         seed_queue(db, date.today().isoformat())
+    try:
+        enqueue_coverage_refresh(request.repertoire_id, automatic=True)
+        coordinator.wake()
+    except (KeyError, sqlite3.OperationalError):
+        pass
     return {"id": lid, "duplicate": duplicate, "moves": moves}
 
 
@@ -1308,7 +1447,13 @@ def remove_branch(request: RemoveBranchRequest):
                 "INSERT OR IGNORE INTO repertoire_cards VALUES(?,?)",
                 (request.repertoire_id, identifier),
             )
+        rebuild_introduction_priorities(db, request.repertoire_id)
         seed_queue(db, date.today().isoformat())
+    try:
+        enqueue_coverage_refresh(request.repertoire_id, automatic=True)
+        coordinator.wake()
+    except (KeyError, sqlite3.OperationalError):
+        pass
     return {
         "deleted_line_count": len(removed_lines),
         "deleted_card_count": deleted_cards,
@@ -1399,7 +1544,17 @@ def prefix_split_preview(identifier: str):
 def prefix_split_accept(identifier: str, request: PrefixSplitRequest):
     with connection() as database:
         try:
-            return apply_prefix_split(database, identifier, request.expected_revision)
+            result = apply_prefix_split(database, identifier, request.expected_revision)
+            repertoire_ids = [
+                row["repertoire_id"]
+                for row in database.execute(
+                    "SELECT repertoire_id FROM repertoire_cards WHERE card_id IN (?,?)",
+                    (result["parent"]["card_id"], result["continuation"]["card_id"]),
+                )
+            ]
+            for repertoire_id in set(repertoire_ids):
+                rebuild_introduction_priorities(database, repertoire_id)
+            return result
         except KeyError as error:
             raise HTTPException(404, str(error)) from error
         except ValueError as error:
@@ -1512,6 +1667,14 @@ def revise_card(identifier: str, request: CardRevisionRequest):
                 (replacement, identifier),
             )
             db.execute("DELETE FROM repertoire_cards WHERE card_id=?", (identifier,))
+        repertoire_ids = [
+            row["repertoire_id"]
+            for row in db.execute(
+                "SELECT repertoire_id FROM repertoire_cards WHERE card_id=?", (replacement,)
+            )
+        ]
+        for repertoire_id in set(repertoire_ids):
+            rebuild_introduction_priorities(db, repertoire_id)
     return {
         "card_id": replacement,
         "replaced": replacement != identifier,
@@ -1522,6 +1685,12 @@ def revise_card(identifier: str, request: CardRevisionRequest):
 @app.delete("/api/cards/{identifier}")
 def archive_card(identifier: str):
     with connection() as db:
+        repertoire_ids = [
+            row["repertoire_id"]
+            for row in db.execute(
+                "SELECT repertoire_id FROM repertoire_cards WHERE card_id=?", (identifier,)
+            )
+        ]
         if not db.execute(
             "UPDATE cards SET archived=1 WHERE id=?", (identifier,)
         ).rowcount:
@@ -1530,6 +1699,8 @@ def archive_card(identifier: str):
             "UPDATE daily_queue SET status='complete' WHERE card_id=? AND status='queued'",
             (identifier,),
         )
+        for repertoire_id in set(repertoire_ids):
+            rebuild_introduction_priorities(db, repertoire_id)
     return {"archived": True}
 
 
@@ -2619,6 +2790,7 @@ def exclude_game_from_adaptation(game_id: str, request: GameExclusionRequest):
                 "UPDATE game_findings SET status='pending',updated_at=? WHERE game_id=? AND status='excluded'",
                 (datetime.now(timezone.utc).isoformat(), game_id),
             )
+    rebuild_priorities_for_game(game_id)
     return {"game_id": game_id, "excluded": request.excluded}
 
 

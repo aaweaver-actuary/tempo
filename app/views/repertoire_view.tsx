@@ -19,6 +19,14 @@ import { Notice } from "../components/task-tabs";
 
 type CoverageSummary = z.infer<typeof repertoireCoverageSummarySchema>;
 type CoverageGap = z.infer<typeof repertoireCoverageGapsSchema>["gaps"][number];
+type IntroductionPriorityStatus = {
+  state: "fallback" | "partial" | "ready";
+  personal_games: number;
+  explorer: string;
+  maia: string;
+  updated_at: string | null;
+  error: string | null;
+};
 
 export default function RepertoireView({ imported, onImport, onBrowse, onResolveGap, onDeleteLocal, onRenameLocal, onQueueChanged }: { imported: LocalRepertoire[]; onImport: () => void; onBrowse: (id: string) => void; onResolveGap: (repertoireId: string, gap: CoverageGap) => void; onDeleteLocal: (id: string) => void; onRenameLocal: (id: string, name: string) => void; onQueueChanged: () => Promise<void> }) {
   const [backendItems, setBackendItems] = useState<RepertoireItem[]>([]);
@@ -34,8 +42,16 @@ export default function RepertoireView({ imported, onImport, onBrowse, onResolve
     try {
       const response = await readWorkspaceResponse(`${API_URL}/api/repertoires`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const body = await response.json() as { repertoires: { id: string; name: string; source_name: string; line_count: number; card_count: number; due_count: number; conflict_count?: number; trained_color?: PieceColor }[] };
-      setBackendItems(body.repertoires.map((item) => ({ id: asRepertoireId(item.id), side: item.trained_color === 'black' ? 'black' : 'white', title: item.name, sourceName: item.source_name, detail: `${item.line_count} unique ${item.line_count === 1 ? 'line' : 'lines'} · ${item.card_count} cards`, progress: 0, due: item.due_count, conflictCount: item.conflict_count ?? 0, backend: true })));
+      const body = await response.json() as { repertoires: { id: string; name: string; source_name: string; line_count: number; card_count: number; due_count: number; conflict_count?: number; trained_color?: PieceColor; introduction_priority?: IntroductionPriorityStatus }[] };
+      setBackendItems(body.repertoires.map((item) => {
+        const priority = item.introduction_priority;
+        const priorityDetail = priority
+          ? priority.error
+            ? " · new-line priority fallback — refresh coverage to retry"
+            : ` · new-line priority ${priority.state === "ready" ? "ready" : priority.state === "partial" ? "using available evidence" : "using structural fallback"}`
+          : "";
+        return { id: asRepertoireId(item.id), side: item.trained_color === 'black' ? 'black' : 'white', title: item.name, sourceName: item.source_name, detail: `${item.line_count} unique ${item.line_count === 1 ? 'line' : 'lines'} · ${item.card_count} cards${priorityDetail}`, progress: 0, due: item.due_count, conflictCount: item.conflict_count ?? 0, backend: true };
+      }));
       setLoaded(true);
       setError("");
     } catch (failure) { setError(`Repertoires unavailable: ${failure instanceof Error ? failure.message : "connection failed"}.`); }
