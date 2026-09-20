@@ -514,6 +514,12 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
   overflow-y: auto;
   align-items: flex-start;
 }
+@media (max-width: 720px) {
+  .integrity-dialog { padding: 22px 16px; }
+  .integrity-layout { grid-template-columns: 1fr; gap: 16px; }
+  .integrity-train-notice { align-items: flex-start; flex-wrap: wrap; }
+  .integrity-train-notice button { margin-left: 0; }
+}
 [role="dialog"] {
   margin: auto;
   max-width: 100%;

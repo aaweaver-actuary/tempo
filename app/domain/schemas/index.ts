@@ -229,7 +229,16 @@ export const repertoiresResponseSchema = z.strictObject({
       conflict_count: integer.optional(),
       integrity_status: z.enum(["unchecked", "clean", "needs_repair"]).optional(),
       integrity_issue_count: integer.optional(),
+      integrity_first_issue_id: z.string().nullable().optional(),
       trained_color: colorSchema.nullable().optional(),
+      introduction_priority: z.strictObject({
+        state: z.enum(["fallback", "partial", "ready"]),
+        personal_games: integer,
+        explorer: z.string(),
+        maia: z.string(),
+        updated_at: z.string().nullable(),
+        error: z.string().nullable(),
+      }).optional(),
     }),
   ),
 });

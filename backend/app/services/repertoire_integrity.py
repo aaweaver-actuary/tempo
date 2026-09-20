@@ -20,9 +20,13 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _issue_id(repertoire_id: str, kind: str, fen_key: str | None) -> str:
+def _issue_id(repertoire_id: str, kind: str, fen_key: str | None, sources: list[dict] | None = None) -> str:
+    source_key = "|".join(
+        f"{source.get('type')}:{source.get('id')}"
+        for source in (sources or [])
+    )
     return hashlib.sha256(
-        f"{repertoire_id}\0{kind}\0{fen_key or ''}".encode()
+        f"{repertoire_id}\0{kind}\0{fen_key or source_key}".encode()
     ).hexdigest()
 
 
@@ -58,10 +62,10 @@ def _source_rows(database: sqlite3.Connection, repertoire_id: str) -> list[dict]
                                   SELECT l.trained_color FROM repertoire_lines l
                                   WHERE l.repertoire_id=? ORDER BY l.created_at,l.id LIMIT 1
                               )) trained_color
-               FROM cards c JOIN repertoire_cards rc ON rc.card_id=c.id
-               WHERE rc.repertoire_id=? AND c.archived=0 AND c.content_type='opening'
+               FROM cards c LEFT JOIN repertoire_cards rc ON rc.card_id=c.id
+               WHERE (rc.repertoire_id=? OR c.repertoire_id=?) AND c.archived=0 AND c.content_type='opening'
                ORDER BY c.id""",
-            (repertoire_id, repertoire_id),
+            (repertoire_id, repertoire_id, repertoire_id),
         ).fetchall()
     ]
     return lines + cards
@@ -70,6 +74,7 @@ def _source_rows(database: sqlite3.Connection, repertoire_id: str) -> list[dict]
 def _scan_sources(database: sqlite3.Connection, repertoire_id: str) -> list[dict]:
     positions: dict[str, dict] = {}
     invalid: list[dict] = []
+    repertoire_color: str | None = None
     for source in _source_rows(database, repertoire_id):
         source_label = f"{source['source_type']} {source['source_id']}"
         try:
@@ -80,6 +85,13 @@ def _scan_sources(database: sqlite3.Connection, repertoire_id: str) -> list[dict
             target = chess.WHITE if source["trained_color"] == "white" else chess.BLACK
             if source["trained_color"] not in {"white", "black"}:
                 raise ValueError("trained color is unknown")
+            if repertoire_color is None:
+                repertoire_color = source["trained_color"]
+            elif source["trained_color"] != repertoire_color:
+                raise ValueError(
+                    f"trained color {source['trained_color']} does not match repertoire color {repertoire_color}"
+                )
+            last_moving_color = None
             for move_index, move_value in enumerate(moves):
                 if board.turn == target:
                     _record_position(
@@ -92,8 +104,9 @@ def _scan_sources(database: sqlite3.Connection, repertoire_id: str) -> list[dict
                 move = chess.Move.from_uci(str(move_value).lower())
                 if move not in board.legal_moves:
                     raise ValueError(f"illegal move at ply {move_index + 1}")
+                last_moving_color = board.turn
                 board.push(move)
-            if board.turn == target and any(board.legal_moves):
+            if board.turn == target and any(board.legal_moves) and last_moving_color != target:
                 _record_position(positions, board, source, len(moves), None)
         except (TypeError, ValueError, json.JSONDecodeError, KeyError) as error:
             invalid.append(
@@ -121,11 +134,11 @@ def _scan_sources(database: sqlite3.Connection, repertoire_id: str) -> list[dict
         value["kind"] = "missing_response" if not move_set else "multiple_responses"
         issues.append(value)
     for issue in invalid:
-        issue["id"] = _issue_id(repertoire_id, issue["kind"], None)
+        issue["id"] = _issue_id(repertoire_id, issue["kind"], None, issue.get("sources"))
         issue["signature"] = _signature(issue)
         issues.append(issue)
     for issue in issues:
-        issue.setdefault("id", _issue_id(repertoire_id, issue["kind"], issue.get("fen_key")))
+        issue.setdefault("id", _issue_id(repertoire_id, issue["kind"], issue.get("fen_key"), issue.get("sources")))
         issue.setdefault("signature", _signature(issue))
     return sorted(
         issues,
@@ -196,9 +209,15 @@ def sweep_repertoire(database: sqlite3.Connection, repertoire_id: str) -> dict:
         )
     status = "needs_repair" if issues else "clean"
     database.execute(
-        "UPDATE repertoires SET integrity_status=?,integrity_checked_at=? WHERE id=?",
-        (status, now, repertoire_id),
+        """INSERT INTO repertoire_integrity_state(repertoire_id,status,checked_at)
+           VALUES(?,?,?) ON CONFLICT(repertoire_id) DO UPDATE SET status=excluded.status,checked_at=excluded.checked_at""",
+        (repertoire_id, status, now),
     )
+    if status != "clean":
+        database.execute(
+            "DELETE FROM repertoire_card_introduction_priorities WHERE repertoire_id=?",
+            (repertoire_id,),
+        )
     return integrity_summary(database, repertoire_id)
 
 
@@ -214,7 +233,9 @@ def sweep_all(database: sqlite3.Connection) -> None:
 
 def integrity_summary(database: sqlite3.Connection, repertoire_id: str) -> dict:
     row = database.execute(
-        "SELECT integrity_status,integrity_checked_at FROM repertoires WHERE id=?",
+        """SELECT r.id,COALESCE(s.status,'unchecked') integrity_status,s.checked_at integrity_checked_at
+           FROM repertoires r LEFT JOIN repertoire_integrity_state s ON s.repertoire_id=r.id
+           WHERE r.id=?""",
         (repertoire_id,),
     ).fetchone()
     if not row:
@@ -329,6 +350,53 @@ def _rewrite_card(database: sqlite3.Connection, repertoire_id: str, row: sqlite3
     return True
 
 
+def _reconcile_derived_cards(database: sqlite3.Connection, repertoire_id: str) -> int:
+    """Remove opening cards whose route is no longer supported by a retained line."""
+    lines = database.execute(
+        "SELECT start_fen,moves_json FROM repertoire_lines WHERE repertoire_id=?",
+        (repertoire_id,),
+    ).fetchall()
+    line_routes = [
+        (canonical_fen(row["start_fen"]), json.loads(row["moves_json"]))
+        for row in lines
+    ]
+    cards = database.execute(
+        """SELECT DISTINCT c.* FROM cards c LEFT JOIN repertoire_cards rc ON rc.card_id=c.id
+           WHERE c.content_type='opening' AND c.archived=0
+             AND (c.repertoire_id=? OR rc.repertoire_id=?)""",
+        (repertoire_id, repertoire_id),
+    ).fetchall()
+    changed = 0
+    for card in cards:
+        supported = any(
+            canonical_fen(card["start_fen"]) == start_key
+            and route[: len(json.loads(card["moves_json"]))] == json.loads(card["moves_json"])
+            for start_key, route in line_routes
+        )
+        if supported:
+            continue
+        database.execute(
+            "DELETE FROM repertoire_cards WHERE repertoire_id=? AND card_id=?",
+            (repertoire_id, card["id"]),
+        )
+        remaining = database.execute(
+            "SELECT 1 FROM repertoire_cards WHERE card_id=? LIMIT 1", (card["id"],)
+        ).fetchone()
+        if remaining:
+            if card["repertoire_id"] == repertoire_id:
+                database.execute(
+                    "UPDATE cards SET repertoire_id=? WHERE id=?",
+                    (remaining[0], card["id"]),
+                )
+        else:
+            database.execute(
+                "UPDATE cards SET archived=1,state='locked',superseded_by=NULL WHERE id=?",
+                (card["id"],),
+            )
+        changed += 1
+    return changed
+
+
 def resolve_issue(database: sqlite3.Connection, repertoire_id: str, issue_id: str, signature: str, selected_move: str) -> dict:
     row = database.execute(
         "SELECT * FROM repertoire_integrity_issues WHERE id=? AND repertoire_id=?",
@@ -366,5 +434,6 @@ def resolve_issue(database: sqlite3.Connection, repertoire_id: str, issue_id: st
             moves, changed = _transform_source(source_row["start_fen"], json.loads(source_row["moves_json"]), trained, target_fen, selected)
             if changed:
                 changed_cards += int(_rewrite_card(database, repertoire_id, source_row, moves))
+    changed_cards += _reconcile_derived_cards(database, repertoire_id)
     summary = sweep_repertoire(database, repertoire_id)
     return {"summary": summary, "changed_line_count": changed_lines, "changed_card_count": changed_cards}

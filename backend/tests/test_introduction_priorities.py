@@ -175,7 +175,7 @@ def test_seed_queue_introduces_the_highest_impact_line_first(tmp_path, monkeypat
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
     common = ["d2d4", "d7d5", "c1f4", "g8f6", "e2e3", "e7e6", "b1c3"]
-    rare = ["c2c4", "e7e5", "b1c3"]
+    rare = ["d2d4", "c7c5", "c2c4"]
     with database.connection() as db:
         _seed_repertoire(db, [common, rare], [common[:5], rare])
         db.execute("UPDATE settings SET new_cards_per_day=1 WHERE id=1")
@@ -188,7 +188,7 @@ def test_seed_queue_introduces_the_highest_impact_line_first(tmp_path, monkeypat
         _seed_public_probability(db, "common-1", ["d2d4"], "d7d5", 0.9)
         _seed_public_probability(db, "common-2", ["d2d4", "d7d5", "c1f4"], "g8f6", 0.9)
         _seed_public_probability(db, "common-3", ["d2d4", "d7d5", "c1f4", "g8f6", "e2e3"], "e7e6", 0.9)
-        _seed_public_probability(db, "rare-1", ["c2c4"], "e7e5", 0.01)
+        _seed_public_probability(db, "rare-1", ["d2d4", "c7c5"], "c2c4", 0.01)
         seed_queue(db, "2026-09-20")
         introduced = db.execute(
             "SELECT card_id FROM daily_queue WHERE queue_date='2026-09-20'"

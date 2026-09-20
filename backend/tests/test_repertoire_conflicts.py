@@ -41,7 +41,7 @@ def test_opponent_branches_and_cross_repertoire_moves_are_not_conflicts(tmp_path
         assert client.get("/api/repertoire/conflicts").json()["conflicts"] == []
 
 
-def test_new_conflicting_branch_requires_explicit_confirmation(tmp_path, monkeypatch):
+def test_new_conflicting_branch_enters_integrity_repair(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         with database.connection() as db:
@@ -52,7 +52,6 @@ def test_new_conflicting_branch_requires_explicit_confirmation(tmp_path, monkeyp
             "moves": ["d2d4", "d7d5"],
             "trained_color": "white",
         }
-        assert client.post("/api/repertoire/branches", json=payload).status_code == 409
-        assert client.post(
-            "/api/repertoire/branches", json={**payload, "allow_conflict": True}
-        ).status_code == 200
+        response = client.post("/api/repertoire/branches", json=payload)
+        assert response.status_code == 200
+        assert response.json()["integrity"]["status"] == "needs_repair"

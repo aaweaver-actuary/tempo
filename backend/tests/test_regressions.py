@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from app import database
 from app.main import app
 
-PGN = b'[Event "Rated blitz game"]\n[White "andy"]\n[Black "opponent"]\n[UTCDate "2026.09.16"]\n[UTCTime "12:30:00"]\n[Site "https://lichess.org/game1"]\n[Result "*"]\n\n1. e4 e5 2. Nf3 Nc6 *'
+PGN = b'[Event "Rated blitz game"]\n[White "andy"]\n[Black "opponent"]\n[UTCDate "2026.09.16"]\n[UTCTime "12:30:00"]\n[Site "https://lichess.org/game1"]\n[Result "*"]\n\n1. e4 e5 2. Nf3 Nc6 3. d4 *'
 BRANCH_PGN = b'[Event "QGD"]\n[White "andy"]\n[Black "opponent"]\n[Result "*"]\n\n1. d4 d5 2. c4 e6 *\n\n[Event "Nimzo"]\n[White "andy"]\n[Black "opponent"]\n[Result "*"]\n\n1. d4 Nf6 2. c4 e6 3. Nc3 Bb4 *'
 
 

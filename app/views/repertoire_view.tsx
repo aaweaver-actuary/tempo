@@ -28,7 +28,7 @@ type IntroductionPriorityStatus = {
   error: string | null;
 };
 
-export default function RepertoireView({ imported, onImport, onBrowse, onResolveGap, onDeleteLocal, onRenameLocal, onQueueChanged }: { imported: LocalRepertoire[]; onImport: () => void; onBrowse: (id: string) => void; onResolveGap: (repertoireId: string, gap: CoverageGap) => void; onDeleteLocal: (id: string) => void; onRenameLocal: (id: string, name: string) => void; onQueueChanged: () => Promise<void> }) {
+export default function RepertoireView({ imported, onImport, onBrowse, onResolveGap, onRepair, onDeleteLocal, onRenameLocal, onQueueChanged }: { imported: LocalRepertoire[]; onImport: () => void; onBrowse: (id: string) => void; onResolveGap: (repertoireId: string, gap: CoverageGap) => void; onRepair: (id: string) => void; onDeleteLocal: (id: string) => void; onRenameLocal: (id: string, name: string) => void; onQueueChanged: () => Promise<void> }) {
   const [backendItems, setBackendItems] = useState<RepertoireItem[]>([]);
   const [loaded, setLoaded] = useState(!usesLocalApi());
   const [libraryPage, setLibraryPage] = useState(0);
@@ -42,7 +42,7 @@ export default function RepertoireView({ imported, onImport, onBrowse, onResolve
     try {
       const response = await readWorkspaceResponse(`${API_URL}/api/repertoires`);
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const body = await response.json() as { repertoires: { id: string; name: string; source_name: string; line_count: number; card_count: number; due_count: number; conflict_count?: number; trained_color?: PieceColor; introduction_priority?: IntroductionPriorityStatus }[] };
+      const body = await response.json() as { repertoires: { id: string; name: string; source_name: string; line_count: number; card_count: number; due_count: number; conflict_count?: number; integrity_status?: "unchecked" | "clean" | "needs_repair"; integrity_issue_count?: number; trained_color?: PieceColor; introduction_priority?: IntroductionPriorityStatus }[] };
       setBackendItems(body.repertoires.map((item) => {
         const priority = item.introduction_priority;
         const priorityDetail = priority
@@ -50,7 +50,7 @@ export default function RepertoireView({ imported, onImport, onBrowse, onResolve
             ? " · new-line priority fallback — refresh coverage to retry"
             : ` · new-line priority ${priority.state === "ready" ? "ready" : priority.state === "partial" ? "using available evidence" : "using structural fallback"}`
           : "";
-        return { id: asRepertoireId(item.id), side: item.trained_color === 'black' ? 'black' : 'white', title: item.name, sourceName: item.source_name, detail: `${item.line_count} unique ${item.line_count === 1 ? 'line' : 'lines'} · ${item.card_count} cards${priorityDetail}`, progress: 0, due: item.due_count, conflictCount: item.conflict_count ?? 0, backend: true };
+        return { id: asRepertoireId(item.id), side: item.trained_color === 'black' ? 'black' : 'white', title: item.name, sourceName: item.source_name, detail: `${item.line_count} unique ${item.line_count === 1 ? 'line' : 'lines'} · ${item.card_count} cards${priorityDetail}`, progress: 0, due: item.due_count, conflictCount: item.conflict_count ?? 0, backend: true, integrityStatus: item.integrity_status, integrityIssueCount: item.integrity_issue_count ?? 0 };
       }));
       setLoaded(true);
       setError("");
@@ -134,7 +134,7 @@ export default function RepertoireView({ imported, onImport, onBrowse, onResolve
           <article className="repertoire-card" key={item.id}>
             <div className="repertoire-top"><span className="side-badge">{item.side}</span><span>{item.due ? `${item.due} due` : 'Up to date'}</span></div>
             <div className="mini-board" aria-hidden="true">{Array.from({ length: 16 }).map((_, index) => <i key={index} />)}</div>
-            <div className="repertoire-name"><h2>{item.title}</h2><details className="card-menu" open={openMenu === item.id} onToggle={(event) => setOpenMenu(event.currentTarget.open ? item.id : null)}><summary aria-label={`More actions for ${item.title}`}>•••</summary><div role="menu"><button role="menuitem" onClick={()=>void rename(item)}>Rename</button><button role="menuitem" onClick={()=>exportPgn(item)}>⇩ Export PGN</button><button role="menuitem" className="delete-repertoire" onClick={()=>void remove(item)}>Delete</button></div></details></div><p>{item.detail}</p>{Boolean(item.conflictCount) && <p className="warning-text">{item.conflictCount} trained-move {item.conflictCount === 1 ? "conflict" : "conflicts"} to resolve</p>}<small className="source-name">{item.sourceName}</small>
+            <div className="repertoire-name"><h2>{item.title}</h2><details className="card-menu" open={openMenu === item.id} onToggle={(event) => setOpenMenu(event.currentTarget.open ? item.id : null)}><summary aria-label={`More actions for ${item.title}`}>•••</summary><div role="menu"><button role="menuitem" onClick={()=>void rename(item)}>Rename</button><button role="menuitem" onClick={()=>exportPgn(item)}>⇩ Export PGN</button><button role="menuitem" className="delete-repertoire" onClick={()=>void remove(item)}>Delete</button></div></details></div><p>{item.detail}</p>{item.integrityStatus === "needs_repair" && <><p className="warning-text">Training paused · {item.integrityIssueCount ?? 0} integrity issues</p><button onClick={() => onRepair(item.id)}>Resume repair</button></>}{Boolean(item.conflictCount) && <p className="warning-text">{item.conflictCount} trained-move {item.conflictCount === 1 ? "conflict" : "conflicts"} to resolve</p>}<small className="source-name">{item.sourceName}</small>
             {item.backend && coverageByRepertoire[item.id] && <div className="coverage-summary">
               <div><span>Required replies</span><strong>{coverageByRepertoire[item.id].covered_branches} / {coverageByRepertoire[item.id].required_branches}</strong></div>
               <div><span>Probability coverage</span><strong>{coverageByRepertoire[item.id].probability_coverage === null ? "—" : `${Math.round(coverageByRepertoire[item.id].probability_coverage! * 1000) / 10}%`}</strong></div>

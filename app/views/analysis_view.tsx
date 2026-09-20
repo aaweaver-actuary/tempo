@@ -727,29 +727,20 @@ export default function BuilderView({
             .join(" "),
           source_gap_id: initialSession?.sourceGapId,
         };
-        let response = await fetch(`${API_URL}/api/repertoire/branches`, {
+        const response = await fetch(`${API_URL}/api/repertoire/branches`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(branchPayload),
         });
-        if (
-          response.status === 409 &&
-          window.confirm(
-            "This repertoire already trains a different move from this position. Save this conflicting line anyway? Consider moving it to another repertoire instead.",
-          )
-        ) {
-          response = await fetch(`${API_URL}/api/repertoire/branches`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ ...branchPayload, allow_conflict: true }),
-          });
-        }
         const result = await readJsonResponse(
           response,
           branchResultSchema,
           "saved repertoire branch",
         );
         invalidateWorkspaceData();
+        if (result.integrity?.status === "needs_repair") {
+          window.dispatchEvent(new CustomEvent("tempo:integrity", { detail: { repertoireId: selectedRepertoire.id } }));
+        }
         setBackendLines((current) => [
           ...current.filter((line) => line.id !== result.id),
           {
@@ -826,6 +817,9 @@ export default function BuilderView({
         "remove repertoire branch",
       );
       invalidateWorkspaceData();
+      if (result.integrity?.status === "needs_repair") {
+        window.dispatchEvent(new CustomEvent("tempo:integrity", { detail: { repertoireId: selectedRepertoire.id } }));
+      }
       await refreshBackendLines();
       if (result.deleted_line_count > 0) {
         const previousPly = Math.max(0, cursor - 1);

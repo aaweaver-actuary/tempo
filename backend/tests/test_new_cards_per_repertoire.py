@@ -10,17 +10,17 @@ from app.main import app
 THREE_LINES_WHITE = b"""[Event "White King pawn"]
 [Result "*"]
 
-1. e4 e5 2. Nf3 Nc6 *
+1. e4 e5 2. Nf3 Nc6 3. Bb5 *
 
 [Event "White Queen pawn"]
 [Result "*"]
 
-1. d4 d5 2. c4 e6 *
+1. e4 c5 2. Nf3 d6 3. d4 *
 
 [Event "White English"]
 [Result "*"]
 
-1. c4 e5 2. Nc3 Nf6 *
+1. e4 e6 2. d4 d5 3. Nc3 *
 """
 
 THREE_LINES_BLACK = b"""[Event "Black French"]
@@ -31,12 +31,12 @@ THREE_LINES_BLACK = b"""[Event "Black French"]
 [Event "Black Caro-Kann"]
 [Result "*"]
 
-1. e4 c6 2. d4 d5 *
+1. e4 e6 2. Nf3 d5 *
 
 [Event "Black Scandinavian"]
 [Result "*"]
 
-1. e4 d5 2. exd5 Qxd5 *
+1. e4 e6 2. c4 d5 *
 """
 
 

@@ -4,7 +4,7 @@ from fastapi.testclient import TestClient
 from app import database
 from app.main import app
 
-PGN = b'[Event "Durability"]\n\n1. e4 e5 2. Nf3 Nc6 *'
+PGN = b'[Event "Durability"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 *'
 
 def test_tactic_discovery_uses_local_day_after_utc_midnight(tmp_path, monkeypatch):
     import app.main as main

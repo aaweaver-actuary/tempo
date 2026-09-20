@@ -10,10 +10,26 @@ PGN = b'''[Event "Persistent repertoire"]
 [Opening "Italian Game"]
 [Result "*"]
 
-1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6 5. d3 d6 6. O-O O-O *
+1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6 5. d3 d6 6. O-O O-O 7. Re1 *
 '''
 
 THREE_LINES = b'''[Event "King pawn"]
+[Result "*"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bb5 *
+
+[Event "Queen pawn"]
+[Result "*"]
+
+1. e4 c5 2. Nf3 d6 3. d4 *
+
+[Event "English"]
+[Result "*"]
+
+1. e4 e6 2. d4 d5 3. Nc3 *
+'''
+
+THREE_LINES_BLACK = b'''[Event "King pawn"]
 [Result "*"]
 
 1. e4 e5 2. Nf3 Nc6 *
@@ -21,12 +37,19 @@ THREE_LINES = b'''[Event "King pawn"]
 [Event "Queen pawn"]
 [Result "*"]
 
-1. d4 d5 2. c4 e6 *
+1. e4 e5 2. c4 Nc6 *
 
 [Event "English"]
 [Result "*"]
 
-1. c4 e5 2. Nc3 Nf6 *
+1. e4 e5 2. d4 Nc6 *
+'''
+
+BLACK_PGN = b'''[Event "Persistent repertoire"]
+[Opening "Italian Game"]
+[Result "*"]
+
+1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 Nf6 5. d3 d6 6. O-O O-O 7. Re1 Be6 *
 '''
 
 INCOMPLETE_BLACK_LINE = b'''[Event "Incomplete Black"]
@@ -56,7 +79,7 @@ def test_legacy_incomplete_black_prefix_is_quarantined_from_queue(tmp_path, monk
     with TestClient(app) as client:
         client.post(
             "/api/imports/pgn",
-            files={"file": ("complete.pgn", PGN, "application/x-chess-pgn")},
+            files={"file": ("complete.pgn", BLACK_PGN, "application/x-chess-pgn")},
             data={"trained_color": "black", "initial_depth": "2"},
         )
         queued = client.get("/api/queue/today").json()["cards"][0]
@@ -134,7 +157,7 @@ def test_new_card_limit_due_counts_and_repertoire_deletion(tmp_path, monkeypatch
         settings["new_cards_per_day"] = 2
         assert client.put("/api/settings", json=settings).status_code == 200
 
-        imported = client.post("/api/imports/pgn", files={"file": ("three.pgn", THREE_LINES, "application/x-chess-pgn")}, data={"trained_color": "black", "initial_depth": "2"})
+        imported = client.post("/api/imports/pgn", files={"file": ("three.pgn", THREE_LINES_BLACK, "application/x-chess-pgn")}, data={"trained_color": "black", "initial_depth": "2"})
         assert imported.status_code == 200
         assert imported.json()["cards_created"] == 3
         repertoire_id = imported.json()["repertoire_id"]

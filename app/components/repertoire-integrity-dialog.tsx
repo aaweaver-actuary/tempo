@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { API_URL } from "../const";
 import { Chessboard, type BoardTheme, type PieceSet } from "./chessboard";
@@ -45,13 +45,13 @@ export function RepertoireIntegrityDialog({
     } catch {
       return undefined;
     }
-  }, [issue?.fen]);
+  }, [issue]);
   const repertoireMoves = useMemo<CandidateMove[]>(
     () => (issue?.moves ?? []).map((move) => ({ uci: asUciMove(move.uci) })),
     [issue],
   );
 
-  async function load() {
+  const load = useCallback(async () => {
     setError("");
     try {
       const response = await fetch(`${API_URL}/api/repertoires/${repertoireId}/integrity`);
@@ -79,11 +79,12 @@ export function RepertoireIntegrityDialog({
     } catch (failure) {
       setError(failure instanceof Error ? failure.message : "Integrity data unavailable.");
     }
-  }
+  }, [repertoireId]);
 
   useEffect(() => {
-    void load();
-  }, [repertoireId]);
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => window.clearTimeout(timer);
+  }, [load]);
 
   async function resolve() {
     if (!issue || !selected) return;
@@ -132,7 +133,8 @@ export function RepertoireIntegrityDialog({
                   }} />
                 </div>
                 <div className="integrity-evidence">
-                  <p><strong>Saved responses</strong>: {issue.moves.length ? issue.moves.map((move) => `${move.uci} (${move.line_count} lines, ${move.card_count} cards)`).join(" · ") : "none"}</p>
+                  <p><strong>Saved responses</strong>: {issue.moves.length ? issue.moves.map((move) => `${move.uci} (${move.line_count} lines, ${move.card_count} cards, ${move.review_count} reviews)`).join(" · ") : "none"}</p>
+                  <p className="source-status">Affected sources: {issue.sources.length ? issue.sources.map((source) => `${source.type} ${source.id}`).join(" · ") : "none"}</p>
                   <MoveComparisonTable repertoire={repertoireMoves} engine={[]} maia={[]} lichess={lichess} masters={masters} turn={board.turn() === "w" ? "white" : "black"} onPlay={(move) => setSelected(move)} onHover={() => undefined} />
                   <p className="source-status">Personal games: {personal.length ? personal.map((move) => `${move.move_uci} · ${move.games} games · ${move.score_percentage}%`).join(" · ") : "unavailable"} · Stockfish: unavailable · Maia: unavailable</p>
                   <p>Selected response: <strong>{selected ?? "Choose a legal move"}</strong></p>

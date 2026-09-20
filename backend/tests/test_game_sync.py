@@ -252,8 +252,8 @@ def test_correct_card_review_advances_while_game_sync_is_active(tmp_path, monkey
                 (datetime.now(timezone.utc).isoformat(),),
             )
             db.execute(
-                """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at)
-                   VALUES('review-card','rep','prefix',? ,?,'learning',?,?)""",
+                """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at,trained_color)
+                   VALUES('review-card','rep','prefix',? ,?,'learning',?,?, 'white')""",
                 (
                     "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
                     json.dumps(["e2e4"]),
@@ -357,8 +357,8 @@ def test_correct_review_succeeds_while_one_thousand_derivation_jobs_are_queued(
                 (now,),
             )
             db.execute(
-                """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at)
-                   VALUES('foreground-review','load-rep','prefix',?,?,'learning',?,?)""",
+                """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at,trained_color)
+                   VALUES('foreground-review','load-rep','prefix',?,?,'learning',?,?, 'white')""",
                 (start_fen, json.dumps(["e2e4"]), today, today),
             )
             queue_entry_id = db.execute(

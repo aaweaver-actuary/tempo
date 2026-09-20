@@ -24,6 +24,8 @@ export type RepertoireItem = {
   pgn?: string;
   backend?: boolean;
   conflictCount?: number;
+  integrityStatus?: "unchecked" | "clean" | "needs_repair";
+  integrityIssueCount?: number;
 };
 
 export type LocalRepertoire = {

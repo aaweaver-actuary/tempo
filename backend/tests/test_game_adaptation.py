@@ -134,8 +134,8 @@ def test_game_gap_with_nearby_mistake_prioritizes_existing_unseen_card_for_tomor
                 (now,),
             )
             db.execute(
-                """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type)
-                   VALUES('future-card','rep','prefix',?,'[\"e2e4\"]','new',?,'opening')""",
+                """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type,trained_color)
+                   VALUES('future-card','rep','prefix',?,'[\"e2e4\"]','new',?,'opening','white')""",
                 (START, (date.today() + timedelta(days=21)).isoformat()),
             )
             db.execute(

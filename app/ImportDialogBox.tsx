@@ -72,6 +72,7 @@ export function ImportDialogBox({
       let admitted = 0;
       let lines = parsed.cards.length;
       let duplicates = parsed.duplicateLines;
+      let integrityRepertoireId: string | undefined;
       if (usesLocalApi()) {
         const data = new FormData();
         data.append("file", file);
@@ -87,6 +88,7 @@ export function ImportDialogBox({
           admitted = result.cards_admitted_today ?? 0;
           lines = result.unique_lines;
           duplicates = result.duplicates_merged;
+          if (result.integrity?.status === "needs_repair") integrityRepertoireId = result.repertoire_id;
           await onDatabaseUpdated();
         }
       } else onImported(parsed.repertoire);
@@ -97,6 +99,9 @@ export function ImportDialogBox({
         backend,
       });
       setFinished(true);
+      if (integrityRepertoireId) {
+        window.setTimeout(() => window.dispatchEvent(new CustomEvent("tempo:integrity", { detail: { repertoireId: integrityRepertoireId } })), 0);
+      }
     } catch (reason) {
       setError(
         reason instanceof Error

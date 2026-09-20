@@ -69,6 +69,8 @@ import { Settings } from "../utils/settings";
 import { TreeBrowser } from "./tree_browser";
 import { useShallow } from "zustand/react/shallow";
 import { WorkspaceRefreshStatus } from "../components/workspace-refresh-status";
+import { RepertoireIntegrityDialog } from "../components/repertoire-integrity-dialog";
+import { repertoiresResponseSchema } from "../domain/schemas";
 
 async function responseErrorDetail(response: Response): Promise<string> {
   try {
@@ -88,6 +90,9 @@ export default function Home() {
   useGameAnalysis();
   useRepertoireCoverageWorker();
   const [currentView, setCurrentView] = useState<View>("train");
+  const [repairRepertoireId, setRepairRepertoireId] = useState<string>();
+  const [pausedIntegrity, setPausedIntegrity] = useState<{ id: string; issueCount: number }>();
+  const deferredRepairIds = useRef(new Set<string>());
   const [insightsTab, setInsightsTab] = useState<"training" | "games">(
     "training",
   );
@@ -178,10 +183,47 @@ export default function Home() {
   const card = practiceCards[activeCardIndex] ?? demoCards[0];
   const repertoireLine = card.moves;
 
+  const checkPendingIntegrity = useCallback(async (preferred?: string) => {
+    if (!usesLocalApi()) return;
+    try {
+      const response = await fetch(`${API_URL}/api/repertoires`);
+      const data = await response.json();
+      const parsed = repertoiresResponseSchema.parse(data);
+      const candidate = parsed.repertoires.find((item) =>
+        item.integrity_status === "needs_repair" &&
+        !deferredRepairIds.current.has(item.id),
+      );
+      const preferredCandidate = preferred ? parsed.repertoires.find((item) => item.id === preferred && item.integrity_status === "needs_repair") : undefined;
+      setRepairRepertoireId(preferredCandidate?.id ?? candidate?.id);
+      const paused = preferredCandidate ?? candidate;
+      setPausedIntegrity(paused ? { id: paused.id, issueCount: paused.integrity_issue_count ?? 0 } : undefined);
+    } catch {
+      // The normal workspace refresh path reports the service error.
+    }
+  }, []);
+
   const refreshDatabaseQueue = useCallback(async (advance = false) => {
     invalidateWorkspaceData();
     await fetchAndInitializeQueue(advance);
+    await checkPendingIntegrity();
+  }, [checkPendingIntegrity]);
+  const refreshQueueOnly = useCallback(async () => {
+    invalidateWorkspaceData();
+    await fetchAndInitializeQueue(false);
   }, []);
+
+  useEffect(() => {
+    const onIntegrity = (event: Event) => {
+      const detail = (event as CustomEvent<{ repertoireId?: string }>).detail;
+      if (detail?.repertoireId) {
+        deferredRepairIds.current.delete(detail.repertoireId);
+        void checkPendingIntegrity(detail.repertoireId);
+      } else void checkPendingIntegrity();
+    };
+    window.addEventListener("tempo:integrity", onIntegrity);
+    void checkPendingIntegrity();
+    return () => window.removeEventListener("tempo:integrity", onIntegrity);
+  }, [checkPendingIntegrity]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => void preloadWorkspaces(), 100);
@@ -913,6 +955,7 @@ export default function Home() {
       <BoardWorkspaceContainer enabled={boardWorkspace} view={currentView}>
       {currentView === "train" && (
         <>
+            {pausedIntegrity && <div className="integrity-train-notice" role="status"><strong>Training paused while repertoire integrity is repaired.</strong><span>{pausedIntegrity.issueCount} issue{pausedIntegrity.issueCount === 1 ? "" : "s"} remaining.</span><button onClick={() => { deferredRepairIds.current.delete(pausedIntegrity.id); setRepairRepertoireId(pausedIntegrity.id); }}>Resume repair</button></div>}
             <TrainingView
               dateLabel={new Date().toLocaleDateString()}
               serviceError={serviceError}
@@ -974,6 +1017,10 @@ export default function Home() {
               );
             else localStorage.setItem("tempo-active-repertoire-white", id);
             setCurrentView("builder");
+          }}
+          onRepair={(id) => {
+            deferredRepairIds.current.delete(id);
+            setRepairRepertoireId(id);
           }}
           onResolveGap={(repertoireId, gap) => {
             const position = new Chess(gap.fen);
@@ -1084,7 +1131,7 @@ export default function Home() {
         <ImportDialogBox
           onClose={() => setShowImport(false)}
           onImported={addImportedRepertoire}
-          onDatabaseUpdated={refreshDatabaseQueue}
+          onDatabaseUpdated={refreshQueueOnly}
           onViewRepertoire={() => setCurrentView("repertoire")}
         />
       )}
@@ -1136,7 +1183,28 @@ export default function Home() {
             resetLine(updated);
             setSuggestShorter(false);
             activeQueueEntry.current = undefined;
-            if (usesLocalApi()) void refreshDatabaseQueue().catch(() => undefined);
+            if (usesLocalApi()) {
+              void refreshDatabaseQueue().catch(() => undefined);
+              if (updated.repertoireId)
+                window.dispatchEvent(new CustomEvent("tempo:integrity", { detail: { repertoireId: updated.repertoireId } }));
+            }
+          }}
+        />
+      )}
+      {repairRepertoireId && (
+        <RepertoireIntegrityDialog
+          repertoireId={repairRepertoireId}
+          theme={boardTheme}
+          pieceSet={pieceSet}
+          onClose={() => {
+            deferredRepairIds.current.add(repairRepertoireId);
+            setRepairRepertoireId(undefined);
+          }}
+          onClean={() => {
+            deferredRepairIds.current.delete(repairRepertoireId);
+            setRepairRepertoireId(undefined);
+            setPausedIntegrity(undefined);
+            void refreshDatabaseQueue();
           }}
         />
       )}

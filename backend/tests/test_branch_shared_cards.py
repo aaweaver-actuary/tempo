@@ -8,7 +8,7 @@ def test_branch_removal_preserves_shared_cards_and_other_repertoire_history(tmp_
     with TestClient(app) as client:
         identifiers = []
         for name in ("first.pgn", "second.pgn"):
-            response = client.post("/api/imports/pgn", files={"file": (name, b'[Event "Shared"]\n\n1. d4 Nf6 2. c4 e6 *')}, data={"trained_color": "white", "initial_depth": 2})
+            response = client.post("/api/imports/pgn", files={"file": (name, b'[Event "Shared"]\n\n1. d4 Nf6 2. c4 e6 3. Nf3 *')}, data={"trained_color": "white", "initial_depth": 2})
             identifiers.append(response.json()["repertoire_id"])
         card = client.get("/api/queue/today").json()["cards"][0]
         assert client.post(f'/api/cards/{card["id"]}/review', json={"outcome": "correct", "queue_entry_id": card["queue_entry_id"]}).status_code == 200

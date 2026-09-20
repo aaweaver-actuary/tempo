@@ -67,9 +67,7 @@ def initialize() -> None:
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             source_name TEXT NOT NULL,
-            created_at TEXT NOT NULL,
-            integrity_status TEXT NOT NULL DEFAULT 'unchecked' CHECK(integrity_status IN ('unchecked','clean','needs_repair')),
-            integrity_checked_at TEXT
+            created_at TEXT NOT NULL
         )
         """,
         """
@@ -185,6 +183,14 @@ def initialize() -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_position_annotations_fen ON position_annotations(fen_key)",
+        """
+        CREATE TABLE IF NOT EXISTS repertoire_integrity_state (
+            repertoire_id TEXT PRIMARY KEY REFERENCES repertoires(id) ON DELETE CASCADE,
+            status TEXT NOT NULL DEFAULT 'unchecked' CHECK(status IN ('unchecked','clean','needs_repair')),
+            checked_at TEXT
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_repertoire_integrity_state_status ON repertoire_integrity_state(status)",
         """
         CREATE TABLE IF NOT EXISTS repertoire_integrity_issues (
             id TEXT PRIMARY KEY,
@@ -710,10 +716,6 @@ def initialize() -> None:
                 "coverage_horizon_fullmoves": "INTEGER NOT NULL DEFAULT 15",
                 "coverage_path_floor": "REAL NOT NULL DEFAULT 0.0005",
                 "coverage_maia_elo": "INTEGER NOT NULL DEFAULT 1500",
-            },
-            "repertoires": {
-                "integrity_status": "TEXT NOT NULL DEFAULT 'unchecked'",
-                "integrity_checked_at": "TEXT",
             },
             "cards": {
                 "fsrs_card_json": "TEXT",
