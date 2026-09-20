@@ -115,6 +115,36 @@ button {
   font-size: 12px;
   cursor: pointer;
 }
+.local-data-menu {
+  position: relative;
+}
+.local-data-popover {
+  position: absolute;
+  top: calc(100% + 10px);
+  right: 0;
+  z-index: 70;
+  display: grid;
+  gap: 6px;
+  min-width: 190px;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 10px 30px #2222;
+}
+.local-data-popover strong { font-size: 12px; }
+.local-data-popover small { color: var(--muted); font-size: 11px; }
+.local-data-popover button {
+  min-height: 36px;
+  margin-top: 4px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font-weight: 700;
+}
 .top-actions {
   justify-self: end;
   display: flex;
@@ -596,6 +626,30 @@ button {
   display: grid;
   gap: 20px;
 }
+.insights-page {
+  max-width: 1320px;
+  margin: 0 auto;
+  padding: 18px clamp(20px, 4vw, 64px) 70px;
+}
+.insights-heading {
+  margin-bottom: 8px;
+}
+.insights-tabs {
+  margin-bottom: 20px;
+}
+.insights-page > .insights-tabs .task-tabs {
+  justify-content: flex-start;
+  border-bottom: 1px solid var(--line);
+}
+.insights-page > [hidden] {
+  display: none;
+}
+.workspace-context-tabs {
+  margin-bottom: 12px;
+}
+.workspace-context-tabs .task-tabs {
+  justify-content: flex-start;
+}
 .statistics-heading {
   align-items: center;
   margin-bottom: 0;
@@ -720,6 +774,48 @@ button {
 .heading-actions {
   display: flex;
   gap: 9px;
+  align-items: center;
+}
+.action-menu,
+.card-menu { position: relative; }
+.action-menu summary,
+.card-menu summary {
+  min-height: 36px;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  list-style: none;
+}
+.action-menu summary::-webkit-details-marker,
+.card-menu summary::-webkit-details-marker { display: none; }
+.action-menu > button,
+.card-menu > div {
+  position: absolute;
+  right: 0;
+  z-index: 20;
+  display: grid;
+  gap: 4px;
+  min-width: 150px;
+  padding: 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 8px 24px #2222;
+}
+.action-menu > button { top: calc(100% + 4px); }
+.card-menu > div { top: calc(100% + 4px); }
+.action-menu > button,
+.card-menu > div button {
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-weight: 700;
 }
 .heading-actions > button:not(.primary-button) {
   padding: 12px 15px;
@@ -1106,10 +1202,44 @@ button {
   margin: 0 auto;
   padding: 48px clamp(20px, 4vw, 64px);
 }
+.settings-page .page-heading h1,
+.insights-page .page-heading h1 {
+  font-size: clamp(30px, 4vw, 42px);
+}
+.settings-unsaved {
+  align-self: center;
+  color: var(--rust);
+  font-size: 12px;
+  font-weight: 700;
+}
 .settings-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 16px;
+}
+.settings-section-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-bottom: 16px;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #ebeae4;
+}
+.settings-section-nav button {
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--muted);
+  font-weight: 700;
+}
+.settings-section-nav button[aria-selected="true"] {
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: 0 1px 5px rgba(0, 0, 0, 0.08);
 }
 .settings-card {
   padding: 22px;

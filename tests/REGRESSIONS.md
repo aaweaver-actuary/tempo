@@ -11,6 +11,7 @@
 | Failed review save advances or loses the completed card | `failed review save retains the completed card for retry` |
 | Review retry creates a duplicate review | `test_completed_queue_entry_is_idempotent_and_reinforcement_schedules_into_the_future` |
 | Queue refresh failure is reported as a review-save failure | `successful review is not reported as failed when queue refresh fails` |
+| Retryable SQLite queue contention aborts refresh immediately with an opaque 503 | `retryable queue contention retries before reporting a failure and retains the active attempt` |
 | Games responses expose SQLite-only sync fields | `test_game_summaries_never_expose_persistence_only_sync_fields`; `backend game response and strict frontend schema remain in parity` |
 | First-party Games contract drift silently empties and caches the library | `game contract drift fails once instead of silently emptying the library`; `invalid game responses are never cached as empty success` |
 | Corrected Games data requires navigation and old diagnostics flood the UI | `corrected game data replaces stale cache without navigation`; `repeated diagnostics are grouped and clear after successful validation` |
@@ -34,12 +35,16 @@
 | Incremental sync misses late games or creates duplicates | `test_incremental_overlap_catches_late_games_without_duplicates` |
 | Sync silently hides filtered, rejected, and duplicate records | `test_sync_reports_filtered_rejected_and_duplicate_counts` |
 | Game analysis stops on navigation or submits twice after reload | `test_background_game_analysis_resumes_after_reload_and_submits_once` |
+| Game analysis discarded MultiPV evidence or accepted an illegal candidate line | `two-pass game scan preserves a bounded MultiPV set with its decision FEN`; `test_game_analysis_persists_bounded_candidate_lines_and_evidence_versions`; `test_game_analysis_rejects_illegal_candidate_pv_before_persistence`; `test_multipv_gameplay_event_records_exploited_tactical_opportunity_and_evidence` |
+| Game analysis claim rejects the returned evidence-version field | `game analysis claims accept the evidence version returned by the backend` |
+| Motif classification counted harmless pins or lost structured alternate evidence | `test_python_motif_parity_fixture`; `test_detector_contract_preserves_structured_pin_evidence`; `test_primary_motif_precedence_is_stable_and_keeps_secondary_results` |
 | Repertoire identity is lost after a deviation or transposition | `test_repertoire_comparison_retains_identity_across_deviation_and_transposition` |
 | A repertoire line ending is reported as a player error | `test_line_ending_is_out_of_book_rather_than_a_player_deviation` |
 | A recurring tactical motif silently changes the curriculum | `test_recurring_motif_recommends_but_does_not_activate_a_tactics_pack` |
 | Tactical suggestions use a game count instead of the requested calendar window | `test_tactics_suggestions_use_thirty_days_and_explicit_opportunity_denominator` |
 | Tactical suggestions hide how many eligible opportunities occurred | `test_tactics_suggestions_use_thirty_days_and_explicit_opportunity_denominator` |
 | A suggested tactics pack activates before the user chooses it | `TacticalCatalogPanel suggestions > activates a suggested tactics pack only after user action` |
+| Completing the selected tactical pack hides the catalog and leaves Tactics apparently frozen | `completed selected pack keeps the catalog available for choosing another pack` |
 | Recomputing both-side gameplay events creates duplicates | `test_gameplay_events_reuse_both_sides_analysis_and_recompute_idempotently` |
 | Statistics score and rolling windows obscure their denominators | `test_statistics_score_rate_and_engine_metrics_use_exact_denominators` |
 | Unanalyzed games contaminate engine-derived statistics | `test_statistics_score_rate_and_engine_metrics_use_exact_denominators` |
@@ -48,6 +53,8 @@
 | Guided game review repeats findings from the same position or exceeds five prompts | `test_guided_review_ranks_and_deduplicates_top_five_actionable_positions` |
 | Guided game review loses its place across navigation or reload | `test_guided_review_resumes_and_correction_does_not_change_fsrs` |
 | A guided correction silently changes FSRS scheduling | `test_guided_review_resumes_and_correction_does_not_change_fsrs` |
+| Tactical opportunities lose their denominator, queue state, or card provenance | `test_tactical_statistics_has_explicit_zero_safe_conversion_and_pin_breakdown`; `test_tactical_queue_skip_keeps_finding_pending_and_ignore_removes_it`; `test_tactical_card_preview_is_side_effect_free_and_save_admits_one_personal_tactics_card` |
+| Tactical themes show misleading percentages or the wrong queue orientation | `tactical statistics render an explicit zero-denominator rate`; `tactical queue uses the player's board orientation` |
 | Games summary transports moves, timelines, or findings for every library row | `test_games_summary_pagination_omits_heavy_fields_and_caps_rows` |
 | A large Games library renders more than fifty rows at once | `test_games_summary_pagination_omits_heavy_fields_and_caps_rows` |
 | Daily chess insights run before sync watermarks and game analysis settle | `test_daily_insights_wait_for_sync_and_analysis_completion` |
@@ -188,3 +195,15 @@ Append every new reported issue and its test names here. All listed tests belong
 - `tactical completion counts distinct clean solves across practice and training` is covered by distinct progress identity and review regressions.
 - `all tactical difficulties remain directly accessible` is covered by the pack catalog unit and browser workflows.
 - `tactical catalog groups and activation controls remain reachable on phones` verifies grouped controls, 44px targets, and the visible board (`tests/browser/layout.spec.ts`).
+
+## UI focus and consistency refactor
+- `primary navigation exposes one Insights destination` verifies Progress and Statistics are represented by one visible Insights destination.
+- `legacy progress and statistics destinations open the matching Insights tab` preserves compatibility for old internal view selections.
+- `context tabs preserve workspace state across resize and navigation` verifies selected records, board state, and tab state survive workspace changes.
+- `tactics solving remains focused while every pack stays reachable` verifies Solve and Packs contexts preserve the active attempt.
+- `inactive tactical catalog content does not block board interaction` verifies collapsed and filtered catalog content remains lazy and non-blocking.
+- `games review findings and library retain independent state` verifies each Games context preserves its selected game and findings queue.
+- `builder tabs preserve engines repertoire history and annotations` verifies Builder state survives Compare, Repertoire, Moves, and Notes changes.
+- `settings sections and save feedback remain reachable on phones` verifies section navigation, unsaved state, save feedback, and keyboard reachability.
+- `repertoire cards keep secondary and destructive actions reachable` verifies overflow actions expose rename, export, and delete without obscuring Browse.
+- `shared workspace controls retain one consistent hierarchy` verifies headings, tabs, notices, and primary actions across all workspaces.

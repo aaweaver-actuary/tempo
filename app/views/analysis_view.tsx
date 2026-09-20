@@ -153,7 +153,7 @@ export default function BuilderView({
   pieceSet: PieceSet;
   useSharedBoard?: boolean;
 }) {
-  const tools = useTaskTabs(["Moves", "Analysis", "Repertoire", "Notes"], "Analysis", "tempo-builder-tools");
+  const tools = useTaskTabs(["Moves", "Compare", "Repertoire", "Notes"], "Compare", "tempo-builder-tools");
   const initialSession = useMemo(readBuilderSession, []);
   const [history, setHistory] = useState(initialSession?.history ?? []);
   const [cursor, setCursor] = useState(initialSession?.cursor ?? 0);
@@ -1024,7 +1024,7 @@ export default function BuilderView({
   return (
     <section className="analysis-page" {...tools.panelProps}>
       <div className="analysis-heading compact-analysis">
-        <h1 className="sr-only">Builder</h1>
+        <h1>Builder</h1>
         <div className="analysis-switches">
           <select
             aria-label="Active repertoire"
@@ -1150,7 +1150,7 @@ export default function BuilderView({
               onFlip={flipBuilder}
             />
           )}
-          <div className="arrow-legend" data-task="Analysis">
+          <div className="arrow-legend" data-task="Compare">
             <span>
               <i className="known" /> Covered
             </span>
@@ -1268,7 +1268,7 @@ export default function BuilderView({
           </div>
         </div>
         <aside className="analysis-sidebar">
-          <section className="analysis-panel comparison-panel" data-task="Analysis" data-turn-context={trainedTurn ? "trained-player" : "opponent"}>
+          <section className="analysis-panel comparison-panel" data-task="Compare" data-turn-context={trainedTurn ? "trained-player" : "opponent"}>
             <div className="comparison-toolbar">
               <h2 className="sr-only">Compare moves</h2>
               <button
@@ -1547,7 +1547,7 @@ export default function BuilderView({
                 </span>
               ))}
             </button>
-            <section className="analysis-panel engine-panel" data-task="Analysis">
+            <section className="analysis-panel engine-panel" data-task="Compare">
               <div className="panel-heading">
                 <div>
                   <span>Stockfish 19</span>
@@ -1573,7 +1573,7 @@ export default function BuilderView({
                 />
               )}
             </section>
-            <section className="analysis-panel engine-panel" data-task="Analysis">
+            <section className="analysis-panel engine-panel" data-task="Compare">
               <div className="panel-heading">
                 <div>
                   <span>Maia 3</span>

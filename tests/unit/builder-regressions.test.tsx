@@ -10,7 +10,7 @@ import { Chess } from "chess.js";
 import BuilderView from "../../app/views/analysis_view";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import { Settings } from "../../app/utils/settings";
-import { scanGame } from "../../app/lib/game-scan";
+import { scanGame, scanGameTwoPass } from "../../app/lib/game-scan";
 import { asSanMove, asUciMove } from "../../app/types";
 
 vi.mock("../../app/components/chessboard", () => ({
@@ -361,5 +361,36 @@ it("game scan normalizes black evaluations and identifies missed-punishment oppo
     before_cp: -150,
     after_cp: 0,
     opponent_created_chance: true,
+  });
+});
+
+it("two-pass game scan preserves a bounded MultiPV set with its decision FEN", async () => {
+  const startFen = new Chess().fen();
+  const evaluate = vi.fn(async (fen: string) =>
+    fen.includes(" w ")
+      ? [
+          { uci: asUciMove("e2e4"), san: asSanMove("e4"), cp: 30, pv: [asUciMove("e2e4"), asUciMove("e7e5")] },
+          { uci: asUciMove("d2d4"), san: asSanMove("d4"), cp: 25, pv: [asUciMove("d2d4"), asUciMove("d7d5")] },
+          { uci: asUciMove("g1f3"), san: asSanMove("Nf3"), cp: 20, pv: [asUciMove("g1f3"), asUciMove("d7d5")] },
+          { uci: asUciMove("c2c4"), san: asSanMove("c4"), cp: 15, pv: [asUciMove("c2c4"), asUciMove("e7e5")] },
+          { uci: asUciMove("b1c3"), san: asSanMove("Nc3"), cp: 10, pv: [asUciMove("b1c3"), asUciMove("d7d5")] },
+        ]
+      : [
+          { uci: asUciMove("e7e5"), san: asSanMove("e5"), cp: 20, pv: [asUciMove("e7e5"), asUciMove("g1f3")] },
+        ],
+  );
+
+  const result = await scanGameTwoPass(startFen, ["e4"], "white", evaluate);
+
+  expect(result[0]).toMatchObject({
+    position_fen: startFen,
+    best_move_uci: "e2e4",
+    candidate_lines: [
+      { uci: "e2e4", cp: 30 },
+      { uci: "d2d4", cp: 25 },
+      { uci: "g1f3", cp: 20 },
+      { uci: "c2c4", cp: 15 },
+      { uci: "b1c3", cp: 10 },
+    ],
   });
 });

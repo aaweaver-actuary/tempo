@@ -299,8 +299,10 @@ export const tacticProgressSchema = z.record(
 export const motifRecommendationSchema = z.strictObject({
   motif: identifierSchema,
   miss_count: integer,
+  exploited_count: integer.optional(),
   opportunity_count: integer,
   miss_rate: z.number().min(0).max(1),
+  conversion_rate: z.number().min(0).max(1).optional(),
   total_loss_cp: integer,
   supporting_games: z.array(gameIdSchema),
   window_days: z.number().int().positive(),
@@ -597,6 +599,7 @@ export const gameAnalysisClaimSchema = z.strictObject({
   job: z.strictObject({
     game_id: gameIdSchema,
     analysis_version: integer,
+    analysis_evidence_version: integer,
     provider: z.enum(["lichess", "chess.com"]),
     username: z.string(),
     played_at: z.string(),

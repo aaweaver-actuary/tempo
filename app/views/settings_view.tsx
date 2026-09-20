@@ -88,6 +88,8 @@ export default function SettingsView({
     arrow_metric: "stockfish",
   });
   const [status, setStatus] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const [activeSection, setActiveSection] = useState("training");
   const [settingsLoaded, setSettingsLoaded] = useState(!usesLocalApi());
   const [loadError, setLoadError] = useState("");
   const loadSettings = useCallback(async () => {
@@ -153,6 +155,7 @@ export default function SettingsView({
     value: SettingsValues[K],
   ) {
     setValues((current) => ({ ...current, [key]: value }));
+    setDirty(true);
   }
 
   async function save() {
@@ -213,12 +216,16 @@ export default function SettingsView({
         if (!response.ok) throw new Error();
         invalidateWorkspaceData();
         setStatus("Saved.");
+        setDirty(false);
       } catch {
         setStatus(
           "Browser settings saved. The local service could not be reached.",
         );
       }
-    } else setStatus("Saved in this browser.");
+    } else {
+      setStatus("Saved in this browser.");
+      setDirty(false);
+    }
   }
 
   async function transferLocalData() {
@@ -282,7 +289,7 @@ export default function SettingsView({
     <section className="settings-page">
       <div className="page-heading compact">
         <div>
-          <h1 className="sr-only">Settings</h1>
+          <h1>Settings</h1>
         </div>
         <button
           className="primary-button"
@@ -291,6 +298,7 @@ export default function SettingsView({
         >
           Save settings
         </button>
+        {dirty && <small className="settings-unsaved" role="status">Unsaved changes</small>}
       </div>
       {loadError && (
         <Notice
@@ -305,8 +313,21 @@ export default function SettingsView({
       )}
       {!settingsLoaded && !loadError && <Notice>Loading settings…</Notice>}
       {status && <Notice>{status}</Notice>}
+      <nav className="settings-section-nav" aria-label="Settings sections" role="tablist">
+        {["training", "board", "builder", "games", "data"].map((section) => (
+          <button
+            key={section}
+            role="tab"
+            aria-selected={activeSection === section}
+            aria-controls={`settings-section-${section}`}
+            onClick={() => setActiveSection(section)}
+          >
+            {section === "data" ? "Data & backup" : section[0].toUpperCase() + section.slice(1)}
+          </button>
+        ))}
+      </nav>
       <div className="settings-grid">
-        <section className="settings-card">
+        <section id="settings-section-training" className="settings-card" hidden={activeSection !== "training"}>
           <h2>Training</h2>
           <label>
             <span>
@@ -388,7 +409,7 @@ export default function SettingsView({
             />
           </label>
         </section>
-        <section className="settings-card">
+        <section id="settings-section-board" className="settings-card" hidden={activeSection !== "board"}>
           <h2>Board</h2>
           <label>
             <span>Board colors</span>
@@ -441,7 +462,7 @@ export default function SettingsView({
             />
           </label>
         </section>
-        <section className="settings-card">
+        <section id="settings-section-builder" className="settings-card" hidden={activeSection !== "builder"}>
           <h2>Builder</h2>
           <label>
             <span>Coverage target</span>
@@ -581,7 +602,7 @@ export default function SettingsView({
             </select>
           </label>
         </section>
-        <section className="settings-card">
+        <section id="settings-section-games" className="settings-card" hidden={activeSection !== "games"}>
           <h2>Games</h2>
           <p>Tempo syncs rated standard blitz, rapid, and classical games from the last 90 days. Bullet, casual, variant, and older games are excluded.</p>
           <label>
@@ -633,7 +654,7 @@ export default function SettingsView({
             />
           </label>
         </section>
-        <section className="settings-card">
+        <section id="settings-section-data" className="settings-card" hidden={activeSection !== "data"}>
           <h2>Data &amp; backup</h2>
           <p className="settings-card-copy">
             Keep an encrypted portable copy of browser data. Docker’s SQLite

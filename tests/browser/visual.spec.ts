@@ -42,6 +42,9 @@ for (const viewport of [
         await expect(
           page.getByRole("combobox", { name: "Active repertoire" }),
         ).toHaveValue("visual-repertoire");
+      if (workspace === "Games") {
+        await expect(page.locator(".games-page")).toBeVisible({ timeout: 15000 });
+      }
       if (workspace === "Games")
         await expect(
           page.getByRole("heading", { name: "Spanish opening", exact: true }),

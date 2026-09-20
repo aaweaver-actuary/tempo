@@ -25,11 +25,20 @@ export const viewports = [
   { width: 1101, height: 800 },
 ];
 export async function navigate(page: Page, name: string) {
+  const legacyInsightsTab = name === "Progress" ? "Training" : name === "Statistics" ? "Games" : null;
+  const destination = legacyInsightsTab ? "Insights" : name;
   const navigation = page.getByRole("navigation", {
     name: "Primary navigation",
   });
+  await expect
+    .poll(
+      async () =>
+        (await navigation.getByRole("button").count()) > 0,
+      { timeout: 10000 },
+    )
+    .toBe(true);
   const direct = navigation
-    .getByRole("button", { name, exact: true })
+    .getByRole("button", { name: destination, exact: true })
     .filter({ visible: true });
   if (!(await direct.count())) {
     const menu = navigation
@@ -39,9 +48,11 @@ export async function navigate(page: Page, name: string) {
     else await page.locator(".tablet-navigation").click();
   }
   await navigation
-    .getByRole("button", { name, exact: true })
+    .getByRole("button", { name: destination, exact: true })
     .filter({ visible: true })
     .click();
+  if (legacyInsightsTab)
+    await page.getByRole("tab", { name: legacyInsightsTab, exact: true }).click();
 }
 export async function prepareUI(page: Page) {
   await page.addInitScript(() => {

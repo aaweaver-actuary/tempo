@@ -7,6 +7,7 @@ import {
 } from "../../app/domain/adapters/analysis-adapters";
 import {
   builderSessionSchema,
+  gameAnalysisClaimSchema,
   portableSnapshotSchema,
 } from "../../app/domain/schemas";
 import {
@@ -43,6 +44,27 @@ it("malformed FEN, null UCI and illegal queue lines are quarantined without disc
     "null",
     "illegal",
   ]);
+});
+
+it("game analysis claims accept the evidence version returned by the backend", () => {
+  const result = gameAnalysisClaimSchema.safeParse({
+    job: {
+      game_id: "lichess:LiV8mg66",
+      analysis_version: 2,
+      analysis_evidence_version: 2,
+      provider: "lichess",
+      username: "andy_andy_andy",
+      played_at: "2026-09-19T20:08:02+00:00",
+      color: "black",
+      start_fen: new Chess().fen(),
+      moves_json: '["d2d4"]',
+      moves: ["d2d4"],
+      divergence_ply: null,
+      lease_id: "6228ee96-a27f-49ce-9711-c40863913011",
+      lease_expires_at: "2026-09-19T23:13:14.567917+00:00",
+    },
+  });
+  expect(result.success).toBe(true);
 });
 
 it("controlled queue payload structural drift produces a named diagnostic instead of unsafe domain values", () => {

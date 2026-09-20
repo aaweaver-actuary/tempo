@@ -26,8 +26,13 @@ Touch controls are at least 44px high; fine-pointer desktop controls are at leas
 Visible focus, accessible names, reduced motion and input-safe shortcuts are mandatory.
 Board flip is always first; workspace actions follow in the same toolbar. Practice hints
 and grading never become available through analysis controls. Games remains read-only.
-Phone Builder tabs: Moves, Analysis (default), Repertoire, Notes. Games: Moves (default),
-Analysis, Library. Tabs preserve mounted state when hidden or when the viewport changes.
+Every workspace uses the same context-tab contract at phone, tablet, and desktop sizes:
+tabs expose an accessible name, `aria-controls`, a selected state, and preserve mounted
+state when hidden or when the viewport changes. Builder tabs are Moves, Compare (default),
+Repertoire, Notes. Games tabs are Review (default), Findings, Library. Endgames uses Study
+and Positions. Tactics keeps solving in Solve (default) and moves the catalog into Packs;
+Insights contains Training and Games views. Secondary and destructive actions stay in
+compact action or overflow menus so one task remains visually dominant.
 Dialogs trap focus, Escape dismisses, and closing restores the prior focus.
 
 Board leases isolate callbacks, automatic/drawn arrows, selection, feedback and hints.
@@ -69,7 +74,7 @@ The checked-in candidates are inspectable here. Phone screenshots include the fi
 | Repertoire | [390px](../tests/browser/visual-baselines/repertoire-390.png) | [768px](../tests/browser/visual-baselines/repertoire-768.png) | [1280px](../tests/browser/visual-baselines/repertoire-1280.png) | [1920px](../tests/browser/visual-baselines/repertoire-1920.png) |
 | Builder | [390px](../tests/browser/visual-baselines/builder-390.png) | [768px](../tests/browser/visual-baselines/builder-768.png) | [1280px](../tests/browser/visual-baselines/builder-1280.png) | [1920px](../tests/browser/visual-baselines/builder-1920.png) |
 | Games | [390px](../tests/browser/visual-baselines/games-390.png) | [768px](../tests/browser/visual-baselines/games-768.png) | [1280px](../tests/browser/visual-baselines/games-1280.png) | [1920px](../tests/browser/visual-baselines/games-1920.png) |
-| Progress | [390px](../tests/browser/visual-baselines/progress-390.png) | [768px](../tests/browser/visual-baselines/progress-768.png) | [1280px](../tests/browser/visual-baselines/progress-1280.png) | [1920px](../tests/browser/visual-baselines/progress-1920.png) |
+| Insights | [390px](../tests/browser/visual-baselines/progress-390.png) | [768px](../tests/browser/visual-baselines/progress-768.png) | [1280px](../tests/browser/visual-baselines/progress-1280.png) | [1920px](../tests/browser/visual-baselines/progress-1920.png) |
 | Settings | [390px](../tests/browser/visual-baselines/settings-390.png) | [768px](../tests/browser/visual-baselines/settings-768.png) | [1280px](../tests/browser/visual-baselines/settings-1280.png) | [1920px](../tests/browser/visual-baselines/settings-1920.png) |
 
 Update candidates deliberately with `npm run test:visual -- --update`, inspect the changed images, then run `npm run test:visual` without update. Missing baselines and changed pixels fail the ordinary pipeline. Screenshot, trace, console and geometry artifacts are retained under `test-results/` on failure.

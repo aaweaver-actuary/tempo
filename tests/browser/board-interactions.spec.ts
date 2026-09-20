@@ -150,7 +150,7 @@ test("Builder source comparison is immediately reachable beside the board", asyn
       .getByRole("navigation", { name: "Primary navigation" })
       .getByRole("button", { name: "Builder", exact: true }),
   ).toHaveAttribute("aria-current", "page");
-  await expect(page.locator("h1:not(.sr-only)")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Builder", exact: true })).toBeVisible();
   await boardVisible(page);
 });
 
@@ -171,6 +171,7 @@ test("Builder right-click annotation saves the exact clicked square", async ({
     .click();
   await page.getByRole("button", { name: "View imported repertoire" }).click();
   await nav(page, "Builder");
+  await page.getByRole("tab", { name: "Notes", exact: true }).click();
   await expect(
     page.getByRole("combobox", { name: "Active repertoire" }),
   ).not.toHaveValue("");

@@ -33,6 +33,7 @@ import {
   invalidateWorkspaceData,
 } from "../lib/workspace-data";
 import { motifRecommendationsSchema, tacticProgressSchema } from "../domain/schemas";
+import { useTaskTabs } from "../components/task-tabs";
 
 const emptyPuzzle: PracticeCard = {
   id: asCardId("loading"),
@@ -95,6 +96,7 @@ export default function TacticsView({
   const [activationError, setActivationError] = useState("");
   const [activationBusy, setActivationBusy] = useState(false);
   const [recommendations, setRecommendations] = useState<MotifRecommendation[]>([]);
+  const tools = useTaskTabs(["Solve", "Packs"], "Solve", "tempo-tactics-tools");
   const [progress, setProgress] = useState(readTacticProgress);
   const [progressReady, setProgressReady] = useState(() => !usesLocalApi());
   const [prepared, setPrepared] = useState<
@@ -487,8 +489,7 @@ export default function TacticsView({
     !catalog ||
     !progressReady ||
     !deckReady ||
-    attempt.entryKey !== entryKey ||
-    !selectedPuzzle
+    (selectedPuzzle && attempt.entryKey !== entryKey)
   )
     return (
       <section className="library-page" role="status">
@@ -510,25 +511,10 @@ export default function TacticsView({
         </button>
       </section>
     );
-  return (
-    <section className="tactics-page">
-      <div className="workspace-title">
-        <div>
-          <h1 className="sr-only">Tactics</h1>
-          <TacticsSubHeader
-            currentProgress={currentProgress}
-            current={current}
-            stage={stage}
-          />
-        </div>
-      </div>
-      {activationError && (
-        <div role="alert">
-          {activationError}
-          <button onClick={() => setActivationError("")}>Dismiss</button>
-        </div>
-      )}
-      <div className="tactics-workspace">
+  if (!selectedPuzzle)
+    return (
+      <section className="library-page" aria-live="polite">
+        <p>This pack is complete. Select another pack to continue practicing.</p>
         <TacticalCatalogPanel
           catalog={catalog}
           progress={progress}
@@ -542,12 +528,53 @@ export default function TacticsView({
               (pack) => pack.id === recommendation.recommended_pack_id,
             );
             if (!suggestedPack) return;
-            if (!suggestedPack.active) {
-              void activatePacks([suggestedPack.id], true);
-            }
+            if (!suggestedPack.active) void activatePacks([suggestedPack.id], true);
             selectPack(suggestedPack);
           }}
         />
+      </section>
+    );
+  return (
+    <section className="tactics-page" {...tools.panelProps}>
+      <div className="workspace-title">
+        <div>
+          <h1>Tactics</h1>
+          <TacticsSubHeader
+            currentProgress={currentProgress}
+            current={current}
+            stage={stage}
+          />
+        </div>
+      </div>
+      <div className="workspace-context-tabs">{tools.tabs}</div>
+      {activationError && (
+        <div role="alert">
+          {activationError}
+          <button onClick={() => setActivationError("")}>Dismiss</button>
+        </div>
+      )}
+      <div className="tactics-workspace">
+        {tools.activeTab === "Packs" && (
+          <TacticalCatalogPanel
+            catalog={catalog}
+            progress={progress}
+            selectedPackId={selectedPackId}
+            onSelect={selectPack}
+            onActivate={(ids, active) => void activatePacks(ids, active)}
+            busy={activationBusy}
+            recommendations={recommendations}
+            onStartSuggested={(recommendation) => {
+              const suggestedPack = catalog.packs.find(
+                (pack) => pack.id === recommendation.recommended_pack_id,
+              );
+              if (!suggestedPack) return;
+              if (!suggestedPack.active) {
+                void activatePacks([suggestedPack.id], true);
+              }
+              selectPack(suggestedPack);
+            }}
+          />
+        )}
         <div className="board-column centered-board">
           {!useSharedBoard && (
             <Chessboard

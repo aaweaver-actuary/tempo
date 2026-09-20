@@ -116,7 +116,7 @@ records.push({
   Rating: 900,
 });
 
-function mockTactics() {
+function mockTactics(progressPayload: unknown = {}) {
   const attempts: unknown[] = [];
   vi.stubGlobal(
     "fetch",
@@ -131,7 +131,7 @@ function mockTactics() {
           records.filter((record) => record.DeckId.startsWith("fork")),
         );
       if (url.includes("tactics/catalog")) return Response.json(tacticsCatalog);
-      if (url.endsWith("/api/tactics/progress")) return Response.json({});
+      if (url.endsWith("/api/tactics/progress")) return Response.json(progressPayload);
       if (url.endsWith("/api/tactics/attempt")) {
         attempts.push(JSON.parse(options.body));
         return Response.json({});
@@ -473,6 +473,7 @@ describe("reported study regressions", () => {
     await readyTactics();
     fireEvent.click(screen.getByText("a2e6"));
     fireEvent.click(screen.getByText("f7f8"));
+    fireEvent.click(screen.getByRole("tab", { name: "Packs" }));
     fireEvent.click(screen.getByText("Forks"));
     fireEvent.click(
       screen.getAllByRole("button", { name: /Easy · Pack 1/ }).at(-1)!,
@@ -496,6 +497,24 @@ describe("reported study regressions", () => {
         ]?.index,
       ).toBe(1),
     );
+  });
+  it("completed selected pack keeps the catalog available for choosing another pack", async () => {
+    localStorage.setItem("tempo-tactic-selected-pack-v1", "hangingPiece-easy-01");
+    mockTactics({
+      "hangingPiece-easy-01": {
+        clean: 2,
+        index: 2,
+        cleanIds: ["lichess-mate-1", "lichess-mate-2"],
+        discoveredIds: ["lichess-mate-1", "lichess-mate-2"],
+      },
+    });
+    render(
+      <TacticsView theme="brown" pieceSet="cburnett" onQueueChanged={vi.fn()} />,
+    );
+    await waitFor(() =>
+      expect(screen.getByText(/This pack is complete/)).toBeTruthy(),
+    );
+    expect(screen.getByText("Forks")).toBeTruthy();
   });
   it("clean progress counts distinct puzzle IDs", () => {
     const first = advanceTacticProgress({}, "fork:easy", true, "same");

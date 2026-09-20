@@ -30,6 +30,7 @@ test("every directed workspace transition isolates annotations and board input",
 test("builder annotations never appear in games", async ({ page }) => {
   await prepareVisualUI(page);
   await navigate(page, "Builder");
+  await page.getByRole("tab", { name: "Notes", exact: true }).click();
   await expect(
     page.getByRole("textbox", { name: "Position comment" }),
   ).toBeEnabled();
@@ -98,6 +99,7 @@ test("shared toolbar flip persists while stepping through a game", async ({
 
 test('owner changes clear an unfinished square selection at the same position', async ({page}) => {
   await prepareVisualUI(page); await navigate(page,'Builder');
+  await page.getByRole('tab',{name:'Notes',exact:true}).click();
   await expect(page.getByRole('textbox',{name:'Position comment'})).toBeEnabled();
   const surface=(await page.locator('.cg-wrap').boundingBox())!;
   await page.mouse.click(surface.x+4.5*surface.width/8,surface.y+6.5*surface.height/8);

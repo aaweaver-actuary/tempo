@@ -3,6 +3,7 @@ export function useTaskTabs(
   names: readonly string[],
   initial: string,
   storageKey?: string,
+  onChange?: (name: string) => void,
 ) {
   const [activeTab, setActiveTab] = useState(() => {
     const saved = storageKey ? sessionStorage.getItem(storageKey) : null;
@@ -11,6 +12,7 @@ export function useTaskTabs(
   function selectTab(name: string) {
     setActiveTab(name);
     if (storageKey) sessionStorage.setItem(storageKey, name);
+    onChange?.(name);
   }
   const id = useId();
   const tabs = (

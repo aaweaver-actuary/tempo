@@ -11,6 +11,7 @@ const LOCAL_IDLE_DELAY_MS = 1_500;
 const EMPTY_QUEUE_RETRY_MS = 15_000;
 const BUSY_RETRY_MS = 2_000;
 const LEASE_HEARTBEAT_MS = 60_000;
+const ANALYSIS_EVIDENCE_VERSION = 2;
 
 type ActiveLease = { gameId: string; leaseId: string };
 
@@ -109,8 +110,9 @@ export function useGameAnalysis() {
                 evaluations,
                 depth: 14,
                 lease_id: job.lease_id,
-                idempotency_key: `${job.game_id}:analysis:${job.analysis_version}`,
+                idempotency_key: `${job.game_id}:analysis:${job.analysis_version}:evidence:${ANALYSIS_EVIDENCE_VERSION}`,
                 analysis_version: job.analysis_version,
+                analysis_evidence_version: ANALYSIS_EVIDENCE_VERSION,
                 engine_version: "Stockfish 19 WASM",
                 network_version: "nn-1c0000000000.nnue",
               }),

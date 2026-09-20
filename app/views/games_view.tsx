@@ -38,6 +38,7 @@ import type { IndexedPosition } from "../lib/position-similarity";
 import { sampleGames } from "../samples";
 import { Chess, type Square } from "chess.js";
 import { gameRecordSchema } from "../domain/schemas";
+import { formatConversionRate, tacticalQueueBoardOrientation } from "../lib/tactical-opportunities";
 
 type GuidedReviewSession = {
   id: string;
@@ -70,6 +71,27 @@ type GuidedReviewAttempt = {
   };
   session: GuidedReviewSession;
 };
+type TacticalQueueItem = {
+  id: string; game_id: string; ply: number; motif?: string | null; confidence: number;
+  played_at: string; color: "white" | "black"; opportunity_value_cp: number;
+  evaluation_loss_cp: number; accepted_moves: string[]; evidence: {
+    fen?: string; actual_move_uci?: string; candidate_lines?: Array<{ uci: string; pv?: string[] }>;
+    motif_evidence?: Array<{ motif: string; concrete_outcome?: Record<string, unknown> }>;
+  };
+};
+type TacticalStats = { overall: { opportunities: number; exploited: number; missed: number; conversion_rate: number | null; average_missed_centipawn_cost: number | null; supporting_games: number }; motifs: Array<{ motif: string; opportunities: number; exploited: number; missed: number; conversion_rate: number | null; average_missed_centipawn_cost: number | null; supporting_games: number; pin_breakdown?: Record<string, { opportunities: number; exploited: number; missed: number; conversion_rate: number | null }> }> };
+function isTacticalStats(value: unknown): value is TacticalStats {
+  if (!value || typeof value !== "object") return false;
+  const overall = (value as { overall?: unknown }).overall;
+  const motifs = (value as { motifs?: unknown }).motifs;
+  return Boolean(
+    overall &&
+      typeof overall === "object" &&
+      typeof (overall as { exploited?: unknown }).exploited === "number" &&
+      typeof (overall as { opportunities?: unknown }).opportunities === "number" &&
+      Array.isArray(motifs),
+  );
+}
 
 export default function GamesView({
   onAnalyze,
@@ -95,7 +117,7 @@ export default function GamesView({
   onClearFenFilter?: () => void;
 }) {
   const local = usesLocalApi();
-  const tools = useTaskTabs(["Moves", "Analysis", "Library"], "Moves", "tempo-games-tools");
+  const tools = useTaskTabs(["Review", "Findings", "Library"], "Review", "tempo-games-tools");
   const [loaded, setLoaded] = useState(!local);
   const [pageCursor, setPageCursor] = useState<string | null>(null);
   const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([]);
@@ -130,6 +152,11 @@ export default function GamesView({
   } | null>(null);
   const [guidedReview, setGuidedReview] = useState<GuidedReviewSession | null>(null);
   const [guidedReveal, setGuidedReveal] = useState<GuidedReviewAttempt | null>(null);
+  const [tacticalQueue, setTacticalQueue] = useState<{ item: TacticalQueueItem | null; remaining: number }>({ item: null, remaining: 0 });
+  const [tacticalStats, setTacticalStats] = useState<TacticalStats | null>(null);
+  const [tacticalReveal, setTacticalReveal] = useState(false);
+  const [tacticalPreview, setTacticalPreview] = useState<{ starting_fen: string; moves: string[]; best_move: string; existing_card_id?: string | null } | null>(null);
+  const [tacticalBusy, setTacticalBusy] = useState(false);
   const [lines, setLines] = useState<AnalysisLine[]>([]);
   const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
   const [filters, setFilters] = useState(() => ({
@@ -300,9 +327,32 @@ export default function GamesView({
       setFindings(payload.findings ?? []);
     }
   }, [local]);
+  const loadTacticalQueue = useCallback(async () => {
+    if (!local) return;
+    const response = await fetch(`${API_URL}/api/game-findings/tactical-queue`);
+    if (!response.ok) { setError("Could not load the missed-tactics queue. Check the local Tempo service."); return; }
+    const payload = await response.json() as { item: TacticalQueueItem | null; remaining: number };
+    setTacticalQueue(payload);
+    setTacticalReveal(false);
+    setTacticalPreview(null);
+  }, [local]);
+  const loadTacticalStats = useCallback(async () => {
+    if (!local) return;
+    const parameters = new URLSearchParams();
+    if (filters.from) parameters.set("from_date", filters.from);
+    if (filters.source !== "All") parameters.set("provider", filters.source === "Chess.com" ? "chess.com" : "lichess");
+    if (filters.color !== "All") parameters.set("color", filters.color);
+    if (filters.speed !== "All") parameters.set("speed", filters.speed);
+    const response = await fetch(`${API_URL}/api/game-insights/tactical?${parameters}`);
+    if (!response.ok) { setError("Could not load tactical statistics from the local database."); return; }
+    const payload: unknown = await response.json();
+    setTacticalStats(isTacticalStats(payload) ? payload : null);
+  }, [filters, local]);
   useEffect(() => {
     queueMicrotask(() => void loadFindings());
-  }, [loadFindings, syncState.lastSuccess, selectedId]);
+    queueMicrotask(() => void loadTacticalQueue());
+    queueMicrotask(() => void loadTacticalStats());
+  }, [loadFindings, loadTacticalQueue, loadTacticalStats, syncState.lastSuccess, selectedId]);
   async function decideFinding(findingId: string, decision: "accepted" | "ignored") {
     const response = await fetch(`${API_URL}/api/game-findings/${findingId}/decision`, {
       method: "POST",
@@ -336,6 +386,32 @@ export default function GamesView({
     setCardPreviews((current) => ({ ...current, [findingId]: payload.preview }));
     if (payload.saved) await loadFindings();
   }
+  const attemptTacticalMove = useCallback((from: Square, to: Square) => {
+    const item = tacticalQueue.item;
+    if (!item || tacticalReveal) return;
+    const board = new Chess(item.evidence.fen ?? STANDARD_FEN);
+    const move = board.move({ from, to, promotion: "q" });
+    if (!move) return;
+    setTacticalReveal(item.accepted_moves.includes(`${move.from}${move.to}${move.promotion ?? ""}`));
+  }, [tacticalQueue.item, tacticalReveal]);
+  async function tacticalCurationAction(action: "skip" | "ignore") {
+    if (!tacticalQueue.item || tacticalBusy) return;
+    setTacticalBusy(true);
+    const response = await fetch(`${API_URL}/api/game-findings/${tacticalQueue.item.id}/curation`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+    setTacticalBusy(false);
+    if (!response.ok) { setError("Could not save that curation decision. The current candidate is still visible."); return; }
+    await loadTacticalQueue();
+  }
+  async function previewTacticalCard(save: boolean) {
+    if (!tacticalQueue.item || tacticalBusy) return;
+    setTacticalBusy(true);
+    const response = await fetch(`${API_URL}/api/game-findings/${tacticalQueue.item.id}/card`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ save }) });
+    setTacticalBusy(false);
+    if (!response.ok) { setError("Could not prepare this tactical position. The candidate remains available."); return; }
+    const payload = await response.json() as { preview: typeof tacticalPreview; saved: boolean };
+    setTacticalPreview(payload.preview);
+    if (payload.saved) await loadTacticalQueue();
+  }
   async function startGuidedReview() {
     if (!selected) return;
     const response = await fetch(
@@ -366,7 +442,7 @@ export default function GamesView({
     }
     setGuidedReveal((await response.json()) as GuidedReviewAttempt);
   }, [guidedReview, guidedReveal]);
-  const displayedFen = guidedReveal?.revealed.fen ?? guidedReview?.current?.fen ?? gameFen;
+  const displayedFen = guidedReveal?.revealed.fen ?? guidedReview?.current?.fen ?? tacticalQueue.item?.evidence.fen ?? gameFen;
   useEffect(() => {
     let active = true;
     if (!engineOn || !selected) return;
@@ -436,13 +512,13 @@ export default function GamesView({
           ])
         : undefined,
       shapes,
-      interactionMode: guidedReview?.current && !guidedReveal ? "legal" : "readonly",
+      interactionMode: (guidedReview?.current && !guidedReveal) || (tacticalQueue.item && !tacticalReveal) ? "legal" : "readonly",
       showHint: false,
       theme,
       pieceSet,
-      orientation: selected?.color === "black" ? "black" : "white",
+      orientation: tacticalQueue.item ? tacticalQueueBoardOrientation(tacticalQueue.item.color) : selected?.color === "black" ? "black" : "white",
       positionRevision: cursor,
-      onMove: guidedReview?.current && !guidedReveal ? attemptGuidedMove : undefined,
+      onMove: guidedReview?.current && !guidedReveal ? attemptGuidedMove : tacticalQueue.item && !tacticalReveal ? attemptTacticalMove : undefined,
       onSquareSelect: undefined,
       onFreeMove: undefined,
       onDrawnShapesChange: undefined,
@@ -466,13 +542,16 @@ export default function GamesView({
     guidedReview,
     guidedReveal,
     attemptGuidedMove,
+    tacticalQueue,
+    tacticalReveal,
+    attemptTacticalMove,
   ]);
 
   return (
     <section className="games-page" {...tools.panelProps}>
       <div className="page-heading compact">
         <div>
-          <h1 className="sr-only">Games{!local ? " · Demo" : ""}</h1>
+          <h1>Games{!local ? " · Demo" : ""}</h1>
           <p>
             {syncState.lastSuccess
               ? `Last sync ${new Date(syncState.lastSuccess).toLocaleString()}`
@@ -539,12 +618,12 @@ export default function GamesView({
                   : undefined
               }
               shapes={shapes}
-              locked={!guidedReview?.current || Boolean(guidedReveal)}
+              locked={(!guidedReview?.current && !tacticalQueue.item) || Boolean(guidedReveal) || tacticalReveal}
               showHint={false}
               theme={theme}
               pieceSet={pieceSet}
-              onMove={(from, to) => void attemptGuidedMove(from, to)}
-              orientation={selected?.color}
+              onMove={(from, to) => guidedReview?.current && !guidedReveal ? void attemptGuidedMove(from, to) : attemptTacticalMove(from, to)}
+              orientation={tacticalQueue.item?.color ?? selected?.color}
             />
           )}
           <BoardTools>
@@ -583,7 +662,7 @@ export default function GamesView({
           </BoardTools>
         </div>
         <div className="game-side-scroll">
-          <aside className="game-inspector" data-task="Moves">
+          <aside className="game-inspector" data-task="Review">
             <h2>{selected?.opening ?? "No games imported"}</h2>
             <strong>{selected?.flag}</strong>
             {engineOn && <p>{engineText}</p>}
@@ -625,7 +704,40 @@ export default function GamesView({
               </>
             )}
           </aside>
-          <div className="games-metrics" data-task="Analysis">
+          <div className="games-metrics" data-task="Findings">
+            {local && tacticalStats && (
+              <article aria-label="Tactical themes">
+                <span>Tactical themes</span>
+                <strong>{tacticalStats.overall.exploited} of {tacticalStats.overall.opportunities} exploited{tacticalStats.overall.conversion_rate === null ? "" : ` (${formatConversionRate(tacticalStats.overall.exploited, tacticalStats.overall.opportunities)})`}</strong>
+                <small>{tacticalStats.overall.missed} missed · {tacticalStats.overall.supporting_games} games · rates are descriptive until the sample grows</small>
+                {tacticalStats.motifs.map((themeStats) => (
+                  <p key={themeStats.motif}>
+                    <strong>{themeStats.motif}</strong>: {themeStats.exploited}/{themeStats.opportunities} ({formatConversionRate(themeStats.exploited, themeStats.opportunities)}) · {themeStats.missed} missed
+                    {themeStats.motif === "pin" && themeStats.pin_breakdown && <small> · absolute {themeStats.pin_breakdown.absolute?.opportunities ?? 0}, relative {themeStats.pin_breakdown.relative?.opportunities ?? 0}, existing {themeStats.pin_breakdown.existing?.opportunities ?? 0}, created {themeStats.pin_breakdown.created?.opportunities ?? 0}</small>}
+                  </p>
+                ))}
+              </article>
+            )}
+            {local && (
+              <article aria-label="Missed tactics review" aria-live="polite">
+                <span>Missed tactics</span>
+                <strong>{tacticalQueue.remaining} remaining</strong>
+                {tacticalQueue.item ? <>
+                  <small>{tacticalQueue.item.motif ?? "tactical"} · {new Date(tacticalQueue.item.played_at).toLocaleDateString()} · move {Math.floor(tacticalQueue.item.ply / 2) + 1}</small>
+                  <small>Opportunity {tacticalQueue.item.opportunity_value_cp} cp · cost {tacticalQueue.item.evaluation_loss_cp} cp · played {tacticalQueue.item.evidence.actual_move_uci ?? "—"} · best {tacticalQueue.item.accepted_moves[0] ?? "—"}</small>
+                  {!tacticalReveal && <p>Try the move on the board, or reveal the engine-supported conversion.</p>}
+                  {tacticalReveal && <p>Engine line: {(tacticalQueue.item.evidence.candidate_lines?.[0]?.pv ?? []).join(" ") || tacticalQueue.item.accepted_moves[0]}</p>}
+                  <button onClick={() => setTacticalReveal(true)} disabled={tacticalReveal}>Reveal line</button>
+                  {!tacticalPreview ? <button onClick={() => void previewTacticalCard(false)} disabled={tacticalBusy}>Preview puzzle</button> : <>
+                    <small>Preview: {tacticalPreview.moves.join(" ")}</small>
+                    <button onClick={() => void previewTacticalCard(true)} disabled={tacticalBusy}>{tacticalPreview.existing_card_id ? "Add existing puzzle" : "Add to deck"}</button>
+                  </>}
+                  <button onClick={() => void tacticalCurationAction("skip")} disabled={tacticalBusy}>Skip for now</button>
+                  <button onClick={() => void tacticalCurationAction("ignore")} disabled={tacticalBusy}>Ignore permanently</button>
+                  <button onClick={() => { setSelectedId(tacticalQueue.item!.game_id as GameId); setCursor(tacticalQueue.item!.ply); }}>Open source game</button>
+                </> : <small>No pending tactical misses.</small>}
+              </article>
+            )}
             {guidedReview && (
               <article className="guided-game-review" aria-live="polite">
                 <span>Guided review</span>

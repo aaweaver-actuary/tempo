@@ -212,6 +212,7 @@ def initialize() -> None:
             opening_name TEXT
             ,analysis_state TEXT NOT NULL DEFAULT 'pending'
             ,analysis_version INTEGER NOT NULL DEFAULT 0
+            ,analysis_evidence_version INTEGER NOT NULL DEFAULT 1
             ,major_mistake_ply INTEGER
             ,missed_punishment_ply INTEGER
         )
@@ -350,14 +351,35 @@ def initialize() -> None:
             loss_cp INTEGER,
             label TEXT,
             depth INTEGER NOT NULL,
+            position_fen TEXT,
             PRIMARY KEY(game_id, ply)
         )
         """,
+        """
+        CREATE TABLE IF NOT EXISTS game_move_analysis_candidates (
+            game_id TEXT NOT NULL,
+            ply INTEGER NOT NULL,
+            rank INTEGER NOT NULL CHECK(rank >= 1),
+            candidate_uci TEXT NOT NULL,
+            score_cp INTEGER,
+            mate INTEGER,
+            score_text TEXT,
+            principal_variation_json TEXT NOT NULL DEFAULT '[]',
+            depth INTEGER NOT NULL,
+            position_fen TEXT NOT NULL,
+            engine_version TEXT NOT NULL,
+            network_version TEXT NOT NULL,
+            PRIMARY KEY(game_id, ply, rank),
+            FOREIGN KEY(game_id, ply) REFERENCES game_move_analysis(game_id, ply) ON DELETE CASCADE
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_game_analysis_candidates_move ON game_move_analysis_candidates(game_id, ply, candidate_uci)",
         "CREATE INDEX IF NOT EXISTS idx_imported_games_account_date ON imported_games(provider, username, played_at)",
         """
         CREATE TABLE IF NOT EXISTS game_analysis_jobs (
             game_id TEXT PRIMARY KEY REFERENCES imported_games(id) ON DELETE CASCADE,
             analysis_version INTEGER NOT NULL DEFAULT 1,
+            analysis_evidence_version INTEGER NOT NULL DEFAULT 1,
             status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','leased','complete','failed')),
             lease_id TEXT,
             lease_expires_at TEXT,
@@ -420,6 +442,32 @@ def initialize() -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_game_findings_status ON game_findings(status,kind,updated_at)",
+        """
+        CREATE TABLE IF NOT EXISTS tactical_opportunities (
+            id TEXT PRIMARY KEY,
+            game_id TEXT NOT NULL REFERENCES imported_games(id) ON DELETE CASCADE,
+            analysis_version INTEGER NOT NULL,
+            ply INTEGER NOT NULL,
+            motif TEXT NOT NULL,
+            outcome TEXT NOT NULL CHECK(outcome IN ('exploited','missed')),
+            confidence REAL NOT NULL,
+            opportunity_value_cp INTEGER NOT NULL,
+            evaluation_loss_cp INTEGER NOT NULL,
+            played_move_uci TEXT NOT NULL,
+            accepted_moves_json TEXT NOT NULL DEFAULT '[]',
+            evidence_json TEXT NOT NULL,
+            engine_version TEXT,
+            network_version TEXT,
+            active INTEGER NOT NULL DEFAULT 1 CHECK(active IN (0,1)),
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            superseded_at TEXT,
+            UNIQUE(game_id,analysis_version,ply,motif)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_tactical_opportunities_motif_outcome ON tactical_opportunities(motif,outcome,active)",
+        "CREATE INDEX IF NOT EXISTS idx_tactical_opportunities_game_version ON tactical_opportunities(game_id,analysis_version,ply,active)",
+        "CREATE INDEX IF NOT EXISTS idx_tactical_opportunities_updated ON tactical_opportunities(updated_at,outcome)",
         """
         CREATE TABLE IF NOT EXISTS guided_review_sessions (
             id TEXT PRIMARY KEY,
@@ -594,9 +642,12 @@ def initialize() -> None:
             "settings": {"tactics_new_per_day": "INTEGER NOT NULL DEFAULT 5","lichess_username": "TEXT NOT NULL DEFAULT ''", "chesscom_username": "TEXT NOT NULL DEFAULT ''", "auto_sync_minutes": "INTEGER NOT NULL DEFAULT 3", "engine_line_window_cp": "INTEGER NOT NULL DEFAULT 30", "major_mistake_cp": "INTEGER NOT NULL DEFAULT 100", "light_first_interval_days": "INTEGER NOT NULL DEFAULT 7", "draw_hold_user_moves": "INTEGER NOT NULL DEFAULT 20", "coverage_reply_denominator": "INTEGER NOT NULL DEFAULT 100", "coverage_cumulative_target": "INTEGER NOT NULL DEFAULT 95", "coverage_horizon_fullmoves": "INTEGER NOT NULL DEFAULT 15", "coverage_path_floor": "REAL NOT NULL DEFAULT 0.0005", "coverage_maia_elo": "INTEGER NOT NULL DEFAULT 1500"},
             "cards": {"fsrs_card_json": "TEXT", "first_correct_at": "TEXT", "reinforcement_pending": "INTEGER NOT NULL DEFAULT 0", "stability": "REAL NOT NULL DEFAULT 0", "guided_review": "INTEGER NOT NULL DEFAULT 0", "maximum_interval": "INTEGER NOT NULL DEFAULT 365", "content_type": "TEXT NOT NULL DEFAULT 'opening'", "scheduling_mode": "TEXT NOT NULL DEFAULT 'normal'", "hard_correct_streak": "INTEGER NOT NULL DEFAULT 0", "recent_attempts_json": "TEXT NOT NULL DEFAULT '[]'", "archived": "INTEGER NOT NULL DEFAULT 0", "superseded_by": "TEXT", "source_ref": "TEXT", "source_fen": "TEXT", "revision": "INTEGER NOT NULL DEFAULT 1", "introduced_at": "TEXT", "trained_color": "TEXT"},
             "reviews": {"internal_rating": "TEXT NOT NULL DEFAULT 'again'", "guided": "INTEGER NOT NULL DEFAULT 0", "source_kind": "TEXT NOT NULL DEFAULT 'study'", "source_ref": "TEXT"},
-            "imported_games": {"analysis_state": "TEXT NOT NULL DEFAULT 'pending'", "analysis_version": "INTEGER NOT NULL DEFAULT 0", "major_mistake_ply": "INTEGER", "missed_punishment_ply": "INTEGER", "provider_game_id": "TEXT", "content_hash": "TEXT", "adaptive_excluded": "INTEGER NOT NULL DEFAULT 0", "player_rating": "INTEGER", "opponent_rating": "INTEGER", "rating_change": "INTEGER", "time_control": "TEXT"},
+            "imported_games": {"analysis_state": "TEXT NOT NULL DEFAULT 'pending'", "analysis_version": "INTEGER NOT NULL DEFAULT 0", "analysis_evidence_version": "INTEGER NOT NULL DEFAULT 1", "major_mistake_ply": "INTEGER", "missed_punishment_ply": "INTEGER", "provider_game_id": "TEXT", "content_hash": "TEXT", "adaptive_excluded": "INTEGER NOT NULL DEFAULT 0", "player_rating": "INTEGER", "opponent_rating": "INTEGER", "rating_change": "INTEGER", "time_control": "TEXT"},
             "game_derivation_jobs": {"derivation_version": "INTEGER NOT NULL DEFAULT 1", "next_attempt_at": "TEXT"},
-            "game_move_analysis": {"best_move_uci": "TEXT", "principal_variation_json": "TEXT NOT NULL DEFAULT '[]'", "mate_before": "INTEGER", "mate_after": "INTEGER", "engine_version": "TEXT", "network_version": "TEXT", "mover_color": "TEXT", "is_player_move": "INTEGER NOT NULL DEFAULT 1", "actual_move_uci": "TEXT"},
+            "game_move_analysis": {"best_move_uci": "TEXT", "principal_variation_json": "TEXT NOT NULL DEFAULT '[]'", "mate_before": "INTEGER", "mate_after": "INTEGER", "engine_version": "TEXT", "network_version": "TEXT", "mover_color": "TEXT", "is_player_move": "INTEGER NOT NULL DEFAULT 1", "actual_move_uci": "TEXT", "position_fen": "TEXT"},
+            "game_move_analysis_candidates": {"score_text": "TEXT"},
+            "game_analysis_jobs": {"analysis_evidence_version": "INTEGER NOT NULL DEFAULT 1"},
+            "game_findings": {"source_opportunity_id": "TEXT", "review_after": "TEXT"},
             "repertoires": {"is_main": "INTEGER NOT NULL DEFAULT 0"},
         }
         for table, additions in columns.items():
@@ -604,6 +655,7 @@ def initialize() -> None:
             for name, definition in additions.items():
                 if name not in existing:
                     database.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+        database.execute("CREATE INDEX IF NOT EXISTS idx_game_findings_opportunity ON game_findings(source_opportunity_id)")
         database.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_imported_games_provider_game_id ON imported_games(provider, provider_game_id) WHERE provider_game_id IS NOT NULL")
         database.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_source ON reviews(source_kind,source_ref) WHERE source_ref IS NOT NULL")
         database.execute("DROP INDEX IF EXISTS idx_imported_games_content_hash")
@@ -624,6 +676,25 @@ def initialize() -> None:
             """INSERT OR IGNORE INTO game_analysis_jobs(game_id,analysis_version,status,updated_at)
                SELECT id,1,CASE WHEN analysis_state IN ('ready','complete') THEN 'complete' WHEN analysis_state='failed' THEN 'failed' ELSE 'queued' END,?
                FROM imported_games""",
+            (now,),
+        )
+        # Candidate lines are an additive evidence upgrade. Queue only completed
+        # analyses that predate it; cards, reviews, and sync metadata remain intact.
+        database.execute(
+            """UPDATE game_analysis_jobs
+               SET analysis_version=(
+                       SELECT MAX(1,g.analysis_version + 1)
+                       FROM imported_games g
+                       WHERE g.id=game_analysis_jobs.game_id
+                   ),
+                   status='queued',lease_id=NULL,lease_expires_at=NULL,
+                   analysis_evidence_version=2,updated_at=?
+               WHERE status='complete' AND analysis_evidence_version < 2
+                 AND EXISTS(
+                     SELECT 1 FROM imported_games g
+                     WHERE g.id=game_analysis_jobs.game_id
+                       AND g.analysis_evidence_version < 2
+                 )""",
             (now,),
         )
         database.execute("""INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id)

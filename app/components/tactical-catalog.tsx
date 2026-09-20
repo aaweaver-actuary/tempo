@@ -6,8 +6,10 @@ import type { TacticProgress } from "../lib/tactics-progress";
 export type MotifRecommendation = {
   motif: string;
   miss_count: number;
+  exploited_count?: number;
   opportunity_count: number;
   miss_rate: number;
+  conversion_rate?: number;
   window_days: number;
   total_loss_cp: number;
   supporting_games: string[];
@@ -43,6 +45,10 @@ export function TacticalCatalogPanel({
       return ["basic"];
     }
   });
+  const [themeQuery, setThemeQuery] = useState("");
+  const [packFilter, setPackFilter] = useState<"all" | "active" | "unfinished">("all");
+  const [expandedThemeId, setExpandedThemeId] = useState<string | null>(null);
+  const normalizedQuery = themeQuery.trim().toLowerCase();
   return (
     <section className="tactical-catalog" aria-label="Tactical puzzle catalog">
       {recommendations.length > 0 && (
@@ -55,6 +61,17 @@ export function TacticalCatalogPanel({
                 You missed {recommendation.miss_count} of {recommendation.opportunity_count}{" "}
                 {recommendation.motif} opportunities in the past {recommendation.window_days} days.
               </p>
+              <small>
+                {recommendation.exploited_count ??
+                  recommendation.opportunity_count - recommendation.miss_count} exploited ·{" "}
+                {Math.round(
+                  (recommendation.conversion_rate ??
+                    (recommendation.opportunity_count
+                      ? (recommendation.opportunity_count - recommendation.miss_count) /
+                        recommendation.opportunity_count
+                      : 0)) * 100,
+                )}% conversion
+              </small>
               {recommendation.recommended_pack_id && (
                 <button
                   disabled={busy}
@@ -72,6 +89,25 @@ export function TacticalCatalogPanel({
         continue after deactivation. Practicing any puzzle also adds it to daily
         reviews, in addition to automatic introductions.
       </p>
+      <div className="tactic-catalog-filters" aria-label="Filter tactical packs">
+        <label>
+          <span className="sr-only">Search themes</span>
+          <input
+            type="search"
+            placeholder="Search themes"
+            value={themeQuery}
+            onChange={(event) => setThemeQuery(event.target.value)}
+          />
+        </label>
+        <label>
+          <span className="sr-only">Pack status</span>
+          <select value={packFilter} onChange={(event) => setPackFilter(event.target.value as typeof packFilter)}>
+            <option value="all">All packs</option>
+            <option value="active">Active packs</option>
+            <option value="unfinished">Unfinished packs</option>
+          </select>
+        </label>
+      </div>
       {catalog.groups.map((group) => {
         const packs = catalog.packs.filter((pack) => pack.group === group.id);
         const clean = packs.reduce(
@@ -108,6 +144,7 @@ export function TacticalCatalogPanel({
                 max={packs.length * 25}
               />
             </summary>
+            {expandedGroups.includes(group.id) && <>
             <div className="tactic-group-actions">
               <button
                 disabled={busy}
@@ -134,6 +171,7 @@ export function TacticalCatalogPanel({
             </div>
             {catalog.themes
               .filter((theme) => theme.group === group.id)
+              .filter((theme) => !normalizedQuery || theme.name.toLowerCase().includes(normalizedQuery))
               .map((theme) => {
                 const themePacks = packs.filter(
                   (pack) => pack.theme === theme.id,
@@ -142,14 +180,17 @@ export function TacticalCatalogPanel({
                   (total, pack) => total + packProgress(pack, progress).clean,
                   0,
                 );
+                const visiblePacks = themePacks.filter((pack) => {
+                  if (packFilter === "active") return pack.active;
+                  if (packFilter === "unfinished") return packProgress(pack, progress).clean < 25;
+                  return true;
+                });
                 return (
                   <details
                     key={theme.id}
                     className="tactic-theme"
-                    open={
-                      themePacks.some((pack) => pack.id === selectedPackId) ||
-                      undefined
-                    }
+                    open={expandedThemeId === theme.id || themePacks.some((pack) => pack.id === selectedPackId)}
+                    onToggle={(event) => setExpandedThemeId(event.currentTarget.open ? theme.id : null)}
                   >
                     <summary>
                       {theme.name}
@@ -158,7 +199,7 @@ export function TacticalCatalogPanel({
                       </span>
                     </summary>
                     <div className="tactic-pack-grid">
-                      {themePacks.map((pack) => (
+                      {visiblePacks.map((pack) => (
                         <article
                           key={pack.id}
                           className={
@@ -197,6 +238,7 @@ export function TacticalCatalogPanel({
                   </details>
                 );
               })}
+            </>}
           </details>
         );
       })}

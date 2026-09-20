@@ -38,6 +38,7 @@ from .models import (
     GameAnalysisFailureRequest,
     GameAnalysisLeaseRequest,
     GameFindingDecisionRequest,
+    GameFindingCurationRequest,
     GameExclusionRequest,
     GameFindingCardRequest,
     GameSyncEnqueueResponse,
@@ -70,6 +71,7 @@ from .services.endgames import (
 )
 from .services.game_analysis import classify_swings
 from .services.game_findings import motif_recommendations, refresh_game_findings
+from .services.tactical_opportunities import tactical_statistics
 from .services.statistics import refresh_daily_snapshot, statistics_breakdown, statistics_overview
 from .services.guided_review import create_or_resume_session, read_session, submit_attempt
 from .services.game_sync_coordinator import (
@@ -124,6 +126,128 @@ _foreground_paths = (
     "/api/endgames",
     "/api/progress",
 )
+
+
+ANALYSIS_EVIDENCE_VERSION = 2
+MAX_ANALYSIS_CANDIDATES = 5
+
+
+def _analysis_error(message: str) -> HTTPException:
+    """Return a consistent, actionable validation error for engine evidence."""
+
+    return HTTPException(422, f"Invalid game analysis evidence: {message}")
+
+
+def _validate_analysis_line(board: chess.Board, line: list[str], label: str) -> None:
+    """Validate a UCI line against the exact position from which it was sent."""
+
+    line_board = board.copy()
+    for line_ply, move_uci in enumerate(line):
+        try:
+            move = chess.Move.from_uci(move_uci)
+        except (TypeError, ValueError) as error:
+            raise _analysis_error(f"{label} move {line_ply + 1} is not valid UCI: {move_uci!r}") from error
+        if move not in line_board.legal_moves:
+            raise _analysis_error(
+                f"{label} move {line_ply + 1} is illegal from the submitted position: {move_uci}"
+            )
+        line_board.push(move)
+
+
+def _validated_analysis_evaluations(
+    request: GameAnalysisRequest, game: sqlite3.Row
+) -> list[dict]:
+    """Normalize and validate submitted evidence before replacing persisted analysis."""
+
+    game_moves = json.loads(game["moves_json"])
+    seen_plies: set[int] = set()
+    validated: list[dict] = []
+    board = chess.Board(game["start_fen"])
+    positions: list[chess.Board] = [board.copy()]
+    for move_uci in game_moves:
+        try:
+            board.push_uci(move_uci)
+        except ValueError as error:
+            raise _analysis_error(f"stored game move is illegal at ply {len(positions) - 1}: {move_uci}") from error
+        positions.append(board.copy())
+
+    for submitted in request.evaluations:
+        item = submitted.model_dump(exclude_none=True)
+        item_ply = item["ply"]
+        if item_ply >= len(game_moves):
+            raise _analysis_error(f"ply {item_ply} is outside the game move list")
+        if item_ply in seen_plies:
+            raise _analysis_error(f"ply {item_ply} was submitted more than once")
+        seen_plies.add(item_ply)
+        position = positions[item_ply]
+        expected_color = "white" if position.turn else "black"
+        if item.get("mover_color") and item["mover_color"] != expected_color:
+            raise _analysis_error(
+                f"ply {item_ply} has mover_color={item['mover_color']!r}; expected {expected_color!r}"
+            )
+        actual_move_uci = item.get("actual_move_uci") or game_moves[item_ply]
+        if actual_move_uci != game_moves[item_ply]:
+            raise _analysis_error(
+                f"ply {item_ply} actual_move_uci does not match the imported game move {game_moves[item_ply]}"
+            )
+        _validate_analysis_line(position, [actual_move_uci], f"played move at ply {item_ply}")
+        if item.get("position_fen") and item["position_fen"] != position.fen():
+            raise _analysis_error(f"position_fen for ply {item_ply} does not match the imported game")
+        best_move_uci = item.get("best_move_uci")
+        principal_variation = item.get("principal_variation", [])
+        if best_move_uci:
+            _validate_analysis_line(position, [best_move_uci], f"best move at ply {item_ply}")
+            if principal_variation and principal_variation[0] != best_move_uci:
+                raise _analysis_error(
+                    f"principal_variation for ply {item_ply} must start with best_move_uci"
+                )
+        if principal_variation:
+            _validate_analysis_line(position, principal_variation, f"principal variation at ply {item_ply}")
+        candidates = item.get("candidate_lines") or item.get("candidates") or []
+        if len(candidates) > MAX_ANALYSIS_CANDIDATES:
+            raise _analysis_error(
+                f"ply {item_ply} has {len(candidates)} candidate lines; the maximum is {MAX_ANALYSIS_CANDIDATES}"
+            )
+        normalized_candidates: list[dict] = []
+        for rank, candidate in enumerate(candidates, start=1):
+            candidate_uci = candidate.get("uci") or candidate.get("move_uci")
+            if not candidate_uci:
+                raise _analysis_error(f"candidate {rank} at ply {item_ply} has no UCI move")
+            candidate_pv = candidate.get("pv")
+            if candidate_pv is None:
+                candidate_pv = candidate.get("principal_variation", [])
+            if not candidate_pv:
+                raise _analysis_error(f"candidate {rank} at ply {item_ply} has no principal variation")
+            if candidate_pv[0] != candidate_uci:
+                raise _analysis_error(
+                    f"candidate {rank} principal variation at ply {item_ply} must start with its UCI move"
+                )
+            if (
+                candidate.get("cp") is None
+                and candidate.get("score_cp") is None
+                and candidate.get("mate") is None
+                and candidate.get("score_mate") is None
+                and candidate.get("score") is None
+            ):
+                raise _analysis_error(
+                    f"candidate {rank} at ply {item_ply} must include cp, mate, or score"
+                )
+            _validate_analysis_line(position, candidate_pv, f"candidate {rank} at ply {item_ply}")
+            normalized_candidates.append(
+                {
+                    "uci": candidate_uci,
+                    "cp": candidate.get("cp") if candidate.get("cp") is not None else candidate.get("score_cp"),
+                    "mate": candidate.get("mate") if candidate.get("mate") is not None else candidate.get("score_mate"),
+                    "score": candidate.get("score"),
+                    "pv": candidate_pv,
+                }
+            )
+        item["mover_color"] = expected_color
+        item["actual_move_uci"] = actual_move_uci
+        item["position_fen"] = position.fen()
+        item["candidate_lines"] = normalized_candidates
+        validated.append(item)
+    return validated
 
 
 @app.middleware("http")
@@ -756,6 +880,7 @@ def migration_snapshot():
         "game_accounts",
         "imported_games",
         "game_move_analysis",
+        "game_move_analysis_candidates",
         "game_analysis_jobs",
         "game_sync_jobs",
         "game_derivation_jobs",
@@ -1957,7 +2082,8 @@ def claim_game_analysis():
             (now.isoformat(), now.isoformat()),
         )
         job = db.execute(
-            """SELECT j.game_id,j.analysis_version,g.provider,g.username,g.played_at,g.color,g.start_fen,g.moves_json,
+            """SELECT j.game_id,j.analysis_version,j.analysis_evidence_version,
+                      g.provider,g.username,g.played_at,g.color,g.start_fen,g.moves_json,
                       c.divergence_ply
                FROM game_analysis_jobs j
                JOIN imported_games g ON g.id=j.game_id
@@ -2072,6 +2198,7 @@ def save_game_analysis(game_id: str, request: GameAnalysisRequest):
         ).fetchone()
         if not game:
             raise HTTPException(404, "Game not found")
+        submitted_evaluations = _validated_analysis_evaluations(request, game)
         job = db.execute(
             "SELECT * FROM game_analysis_jobs WHERE game_id=?", (game_id,)
         ).fetchone()
@@ -2097,19 +2224,20 @@ def save_game_analysis(game_id: str, request: GameAnalysisRequest):
             "SELECT major_mistake_cp FROM settings WHERE id=1"
         ).fetchone()[0]
         result = classify_swings(
-            request.evaluations,
+            submitted_evaluations,
             game[0],
             threshold,
             "white" if chess.Board(game[1]).turn else "black",
         )
         db.execute("DELETE FROM game_move_analysis WHERE game_id=?", (game_id,))
+        db.execute("DELETE FROM game_move_analysis_candidates WHERE game_id=?", (game_id,))
         game_board = chess.Board(game["start_fen"])
         game_moves = json.loads(game["moves_json"])
         mover_color_by_ply: dict[int, str] = {}
         for move_ply, move_uci in enumerate(game_moves):
             mover_color_by_ply[move_ply] = "white" if game_board.turn else "black"
             game_board.push_uci(move_uci)
-        for item in request.evaluations:
+        for item in submitted_evaluations:
             item_ply = int(item["ply"])
             mover_color = item.get("mover_color") or mover_color_by_ply.get(item_ply)
             if mover_color not in {"white", "black"}:
@@ -2129,8 +2257,8 @@ def save_game_analysis(game_id: str, request: GameAnalysisRequest):
                 """INSERT INTO game_move_analysis(
                     game_id,ply,eval_before_cp,eval_after_cp,loss_cp,label,depth,best_move_uci,
                     principal_variation_json,mate_before,mate_after,engine_version,network_version,
-                    mover_color,is_player_move,actual_move_uci
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    mover_color,is_player_move,actual_move_uci,position_fen
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                 (
                     game_id,
                     item_ply,
@@ -2148,20 +2276,50 @@ def save_game_analysis(game_id: str, request: GameAnalysisRequest):
                     mover_color,
                     int(is_player_move),
                     item.get("actual_move_uci") or game_moves[item_ply],
+                    item["position_fen"],
                 ),
             )
+            for rank, candidate in enumerate(item["candidate_lines"], start=1):
+                db.execute(
+                    """INSERT INTO game_move_analysis_candidates(
+                           game_id,ply,rank,candidate_uci,score_cp,mate,score_text,
+                           principal_variation_json,depth,position_fen,engine_version,network_version
+                       ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                    (
+                        game_id,
+                        item_ply,
+                        rank,
+                        candidate["uci"],
+                        candidate.get("cp"),
+                        candidate.get("mate"),
+                        candidate.get("score"),
+                        json.dumps(candidate["pv"]),
+                        int(item.get("depth", request.depth)),
+                        item["position_fen"],
+                        request.engine_version,
+                        request.network_version,
+                    ),
+                )
         db.execute(
-            "UPDATE imported_games SET analysis_state='ready',analysis_version=analysis_version+1,major_mistake_ply=?,missed_punishment_ply=? WHERE id=?",
-            (result["major_mistake_ply"], result["missed_punishment_ply"], game_id),
+            """UPDATE imported_games SET analysis_state='ready',analysis_version=analysis_version+1,
+                   analysis_evidence_version=?,major_mistake_ply=?,missed_punishment_ply=? WHERE id=?""",
+            (
+                request.analysis_evidence_version,
+                result["major_mistake_ply"],
+                result["missed_punishment_ply"],
+                game_id,
+            ),
         )
         db.execute(
-            """INSERT INTO game_analysis_jobs(game_id,analysis_version,status,idempotency_key,updated_at)
-               VALUES(?,?,'complete',?,?)
-               ON CONFLICT(game_id) DO UPDATE SET analysis_version=excluded.analysis_version,status='complete',
+            """INSERT INTO game_analysis_jobs(game_id,analysis_version,analysis_evidence_version,status,idempotency_key,updated_at)
+               VALUES(?,?,?,'complete',?,?)
+               ON CONFLICT(game_id) DO UPDATE SET analysis_version=excluded.analysis_version,
+               analysis_evidence_version=excluded.analysis_evidence_version,status='complete',
                lease_id=NULL,lease_expires_at=NULL,idempotency_key=excluded.idempotency_key,last_error=NULL,updated_at=excluded.updated_at""",
             (
                 game_id,
                 request.analysis_version,
+                request.analysis_evidence_version,
                 request.idempotency_key,
                 datetime.now(timezone.utc).isoformat(),
             ),
@@ -2196,6 +2354,86 @@ def list_game_findings(status: str | None = None, game_id: str | None = None):
             {**dict(row), "evidence": json.loads(row["evidence_json"])} for row in rows
         ]
     }
+
+
+@app.get("/api/game-findings/tactical-queue")
+def next_tactical_finding(motif: str | None = None):
+    clauses = [
+        "f.kind='tactical miss'", "f.status='pending'", "g.adaptive_excluded=0",
+        "o.active=1", "o.analysis_version=g.analysis_version",
+        "(f.review_after IS NULL OR f.review_after<=?)",
+    ]
+    parameters: list[str] = [datetime.now(timezone.utc).isoformat()]
+    if motif:
+        clauses.append("o.motif=?")
+        parameters.append(motif)
+    with connection() as db:
+        remaining = db.execute(
+            f"""SELECT COUNT(*) FROM game_findings f
+                JOIN imported_games g ON g.id=f.game_id
+                JOIN tactical_opportunities o ON o.id=f.source_opportunity_id
+                WHERE {' AND '.join(clauses)}""", parameters,
+        ).fetchone()[0]
+        row = db.execute(
+            f"""SELECT f.*,g.played_at,g.provider,g.speed,g.color,g.opening_name,
+                       o.outcome,o.opportunity_value_cp,o.evaluation_loss_cp,o.accepted_moves_json,
+                       o.evidence_json AS opportunity_evidence
+                FROM game_findings f
+                JOIN imported_games g ON g.id=f.game_id
+                JOIN tactical_opportunities o ON o.id=f.source_opportunity_id
+                WHERE {' AND '.join(clauses)}
+                ORDER BY CASE WHEN instr(o.evidence_json,'"type": "mate"') > 0 THEN 0 ELSE 1 END,
+                         o.confidence DESC,o.evaluation_loss_cp DESC,g.played_at DESC,f.id
+                LIMIT 1""", parameters,
+        ).fetchone()
+    if not row:
+        return {"item": None, "remaining": 0, "next_item_id": None}
+    item = dict(row)
+    item["evidence"] = json.loads(item.pop("evidence_json") or "{}")
+    item["opportunity_evidence"] = json.loads(item.pop("opportunity_evidence") or "{}")
+    item["accepted_moves"] = json.loads(item.pop("accepted_moves_json") or "[]")
+    return {"item": item, "remaining": remaining, "next_item_id": item["id"]}
+
+
+@app.post("/api/game-findings/{finding_id}/curation")
+def curate_tactical_finding(finding_id: str, request: GameFindingCurationRequest):
+    now = datetime.now(timezone.utc)
+    with connection() as db:
+        finding = db.execute(
+            "SELECT f.*,g.adaptive_excluded FROM game_findings f JOIN imported_games g ON g.id=f.game_id WHERE f.id=?",
+            (finding_id,),
+        ).fetchone()
+        if not finding or finding["kind"] != "tactical miss":
+            raise HTTPException(404, "Pending tactical miss not found")
+        if finding["adaptive_excluded"]:
+            raise HTTPException(409, "This game is excluded from adaptation")
+        if request.action == "skip":
+            review_after = (now + timedelta(days=1)).isoformat()
+            db.execute("UPDATE game_findings SET review_after=?,updated_at=? WHERE id=?", (review_after, now.isoformat(), finding_id))
+            return {"id": finding_id, "status": "pending", "review_after": review_after}
+        db.execute("UPDATE game_findings SET status='ignored',review_after=NULL,updated_at=? WHERE id=?", (now.isoformat(), finding_id))
+    return {"id": finding_id, "status": "ignored"}
+
+
+@app.get("/api/game-insights/tactical")
+def game_tactical_statistics(
+    from_date: str | None = None, to_date: str | None = None,
+    provider: str | None = None, speed: str | None = None,
+    color: str | None = None, motif: str | None = None,
+    outcome: str | None = None,
+):
+    for name, value in (("from_date", from_date), ("to_date", to_date)):
+        if value:
+            try:
+                date.fromisoformat(value)
+            except ValueError as error:
+                raise HTTPException(422, f"{name} must use YYYY-MM-DD") from error
+    if outcome and outcome not in {"exploited", "missed"}:
+        raise HTTPException(422, "outcome must be exploited or missed")
+    if color and color not in {"white", "black"}:
+        raise HTTPException(422, "color must be white or black")
+    return tactical_statistics({"from_date": from_date, "to_date": to_date, "provider": provider,
+                                "speed": speed, "color": color, "motif": motif, "outcome": outcome})
 
 
 @app.post("/api/game-findings/{finding_id}/decision")
@@ -2246,23 +2484,47 @@ def decide_game_finding(finding_id: str, request: GameFindingDecisionRequest):
 def create_card_from_game_finding(finding_id: str, request: GameFindingCardRequest):
     with connection() as db:
         finding = db.execute(
-            """SELECT f.*,g.color,g.adaptive_excluded FROM game_findings f
-               JOIN imported_games g ON g.id=f.game_id WHERE f.id=?""",
+            """SELECT f.*,g.color,g.adaptive_excluded,g.analysis_version AS game_analysis_version,
+                      o.active AS opportunity_active,o.analysis_version AS opportunity_analysis_version,
+                      o.accepted_moves_json,o.evidence_json AS opportunity_evidence_json
+               FROM game_findings f JOIN imported_games g ON g.id=f.game_id
+               LEFT JOIN tactical_opportunities o ON o.id=f.source_opportunity_id WHERE f.id=?""",
             (finding_id,),
         ).fetchone()
         if not finding:
             raise HTTPException(404, "Gameplay finding not found")
-        if finding["kind"] not in {"first big mistake", "repertoire gap"}:
+        if finding["kind"] not in {"first big mistake", "repertoire gap", "tactical miss"}:
             raise HTTPException(422, "This finding cannot create a study card")
         if finding["adaptive_excluded"]:
             raise HTTPException(409, "This game is excluded from adaptation")
         evidence = json.loads(finding["evidence_json"])
+        if finding["kind"] == "tactical miss":
+            if not finding["source_opportunity_id"] or not finding["opportunity_active"] or finding["opportunity_analysis_version"] != finding["game_analysis_version"]:
+                raise HTTPException(409, "This tactical opportunity is stale and must be re-analyzed")
+            if float(finding["confidence"]) < 0.8:
+                raise HTTPException(422, "This tactical miss does not meet the confidence threshold")
+            opportunity_evidence = json.loads(finding["opportunity_evidence_json"] or "{}")
+            evidence = {**opportunity_evidence, **evidence}
         starting_fen = request.starting_fen or evidence.get("fen")
-        moves = request.moves or evidence.get("principal_variation", [])[:3]
+        default_line = evidence.get("principal_variation", [])
+        if not default_line:
+            default_line = (evidence.get("candidate_lines") or [{}])[0].get("pv", [])
+        moves = request.moves or default_line[:6]
+        if finding["kind"] == "tactical miss":
+            accepted_moves = set(json.loads(finding["accepted_moves_json"] or "[]"))
+            if not accepted_moves:
+                raise HTTPException(422, "The tactical opportunity has no accepted conversion")
+            if not moves or moves[0] not in accepted_moves:
+                raise HTTPException(422, "The solution must begin with an accepted tactical conversion")
+            if len(moves) < 2:
+                raise HTTPException(422, "The tactical solution is too short to demonstrate the payoff")
         if not starting_fen or not moves:
             raise HTTPException(422, "The finding has no legal study line")
         try:
             board = chess.Board(starting_fen)
+            trained_color = request.trained_color or finding["color"]
+            if finding["kind"] == "tactical miss" and (board.turn == chess.WHITE) != (trained_color == "white"):
+                raise ValueError("trained color is not on move")
             normalized_moves = []
             for move_uci in moves[:6]:
                 move = chess.Move.from_uci(move_uci)
@@ -2275,9 +2537,10 @@ def create_card_from_game_finding(finding_id: str, request: GameFindingCardReque
                 422, "The proposed study line contains an illegal move"
             ) from error
         trained_color = request.trained_color or finding["color"]
+        normalized_fen = chess.Board(starting_fen).fen()
         existing = db.execute(
-            "SELECT id FROM cards WHERE start_fen=? AND moves_json=? AND archived=0",
-            (starting_fen, json.dumps(normalized_moves)),
+            "SELECT id FROM cards WHERE content_type=? AND source_fen=? AND moves_json=? AND archived=0",
+            ("tactics" if finding["kind"] == "tactical miss" else "middlegame", normalized_fen, json.dumps(normalized_moves)),
         ).fetchone()
         preview = {
             "starting_fen": starting_fen,
@@ -2289,10 +2552,12 @@ def create_card_from_game_finding(finding_id: str, request: GameFindingCardReque
         if not request.save:
             return {"preview": preview, "saved": False}
         created_at = datetime.now(timezone.utc).isoformat()
+        repertoire_id = "__game_tactics__" if finding["kind"] == "tactical miss" else "__game_mistakes__"
+        repertoire_name = "Game tactics" if finding["kind"] == "tactical miss" else "Game mistakes"
         db.execute(
             """INSERT OR IGNORE INTO repertoires(id,name,source_name,created_at,is_main)
-               VALUES('__game_mistakes__','Game mistakes','Accepted gameplay findings',?,0)""",
-            (created_at,),
+               VALUES(?,?,?, ?,0)""",
+            (repertoire_id, repertoire_name, "Accepted personal game findings", created_at),
         )
         study_card_id = (
             existing["id"] if existing else card_id(starting_fen, normalized_moves)
@@ -2301,21 +2566,24 @@ def create_card_from_game_finding(finding_id: str, request: GameFindingCardReque
             db.execute(
                 """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type,
                    source_ref,source_fen,trained_color,introduced_at)
-                   VALUES(?,'__game_mistakes__','checkpoint',?,?,'learning',?,'middlegame',?,?,?,?)""",
+                   VALUES(?,?,?,?,?,'learning',?,? ,?,?,?,?)""",
                 (
                     study_card_id,
+                    repertoire_id,
+                    "checkpoint",
                     starting_fen,
                     json.dumps(normalized_moves),
                     date.today().isoformat(),
+                    "tactics" if finding["kind"] == "tactical miss" else "middlegame",
                     finding_id,
-                    starting_fen,
+                    normalized_fen,
                     trained_color,
                     date.today().isoformat(),
                 ),
             )
             db.execute(
-                "INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('__game_mistakes__',?)",
-                (study_card_id,),
+                "INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)",
+                (repertoire_id, study_card_id),
             )
         ensure_card_queued_after(db, study_card_id, 4)
         db.execute(

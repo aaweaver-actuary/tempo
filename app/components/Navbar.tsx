@@ -9,8 +9,7 @@ export const WORKSPACES: { id: View; label: string }[] = [
   { id: "repertoire", label: "Repertoire" },
   { id: "builder", label: "Builder" },
   { id: "games", label: "Games" },
-  { id: "progress", label: "Progress" },
-  { id: "statistics", label: "Statistics" },
+  { id: "insights", label: "Insights" },
   { id: "settings", label: "Settings" },
 ];
 const PHONE_PRIMARY: View[] = ["train", "tactics", "endgames", "builder"];

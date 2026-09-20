@@ -10,17 +10,13 @@ import chess
 
 from ..database import connection
 from .activity_gate import activity_gate
+from .motif_detectors import (
+    MotifEvidence,
+    classify_candidate_lines,
+    select_primary_motif,
+)
 from .tactical_catalog import catalog_status
-
-
-PIECE_VALUES = {
-    chess.PAWN: 1,
-    chess.KNIGHT: 3,
-    chess.BISHOP: 3,
-    chess.ROOK: 5,
-    chess.QUEEN: 9,
-    chess.KING: 100,
-}
+from .tactical_opportunities import opportunity_id
 
 
 def _finding_id(game_id: str, analysis_version: int, kind: str, ply: int) -> str:
@@ -34,66 +30,74 @@ def _position_before_ply(start_fen: str, moves: list[str], ply: int) -> chess.Bo
     return board
 
 
-def classify_tactical_motif(board: chess.Board, best_move_uci: str | None, principal_variation: list[str]) -> tuple[str, float, list[str]]:
-    if not best_move_uci:
+def _structured_motif_evidence(
+    board: chess.Board,
+    best_move_uci: str | None,
+    principal_variation: list[str],
+    *,
+    candidate_lines: list[dict] | None = None,
+    actual_move_uci: str | None = None,
+    actual_after_cp: int | None = None,
+    mover_color: str | None = None,
+) -> list[MotifEvidence]:
+    return classify_candidate_lines(
+        board,
+        actual_move_uci,
+        candidate_lines or [],
+        best_move_uci=best_move_uci,
+        principal_variation=principal_variation,
+        actual_after_cp=actual_after_cp,
+        mover_color=mover_color,
+    )
+
+
+def classify_tactical_motif(
+    board: chess.Board,
+    best_move_uci: str | None,
+    principal_variation: list[str],
+    *,
+    candidate_lines: list[dict] | None = None,
+    concrete_gain_cp: int | None = None,
+    actual_after_cp: int | None = None,
+    mover_color: str | None = None,
+    actual_move_uci: str | None = None,
+) -> tuple[str, float, list[str]]:
+    """Compatibility wrapper returning the legacy primary-label tuple.
+
+    New code should consume :func:`_structured_motif_evidence` so every
+    matching detector result remains available to callers.
+    """
+
+    del concrete_gain_cp
+    evidence = _structured_motif_evidence(
+        board,
+        best_move_uci,
+        principal_variation,
+        candidate_lines=candidate_lines,
+        actual_move_uci=actual_move_uci,
+        actual_after_cp=actual_after_cp,
+        mover_color=mover_color,
+    )
+    primary = select_primary_motif(evidence)
+    if primary is None:
         return "unclassified", 0.0, []
-    try:
-        move = chess.Move.from_uci(best_move_uci)
-        if move not in board.legal_moves:
-            return "unclassified", 0.0, []
-    except ValueError:
-        return "unclassified", 0.0, []
-    candidates: list[str] = []
-    captured_piece = board.piece_at(move.to_square)
-    if captured_piece and not board.attackers(captured_piece.color, move.to_square):
-        candidates.append("hangingPiece")
-    moved_color = board.turn
-    board.push(move)
-    moved_piece = board.piece_at(move.to_square)
-    if moved_piece:
-        valuable_targets = [
-            square
-            for square in board.attacks(move.to_square)
-            if (piece := board.piece_at(square))
-            and piece.color != moved_color
-            and PIECE_VALUES[piece.piece_type] >= 3
-        ]
-        if len(valuable_targets) >= 2:
-            candidates.append("fork")
-    opponent_color = not moved_color
-    if any(
-        board.piece_at(square)
-        and board.piece_at(square).color == opponent_color
-        and board.piece_at(square).piece_type != chess.KING
-        and board.is_pinned(opponent_color, square)
-        for square in chess.SQUARES
-    ):
-        candidates.append("pin")
-    variation_board = board.copy()
-    for move_uci in principal_variation[1:]:
-        try:
-            variation_board.push_uci(move_uci)
-        except ValueError:
-            break
-    if variation_board.is_checkmate():
-        losing_king = variation_board.king(variation_board.turn)
-        if losing_king is not None and chess.square_rank(losing_king) in {0, 7}:
-            candidates.insert(0, "backRankMate")
-    return (candidates[0], 0.9, candidates) if candidates else ("unclassified", 0.4, [])
+    return primary.motif, primary.confidence, [item.motif for item in evidence]
 
 
 def _upsert_finding(database, *, game_id: str, analysis_version: int, ply: int, kind: str,
                     confidence: float, evidence: dict, repertoire_id: str | None = None,
-                    card_id: str | None = None, motif: str | None = None) -> None:
+                    card_id: str | None = None, motif: str | None = None,
+                    source_opportunity_id: str | None = None) -> None:
     now = datetime.now(timezone.utc).isoformat()
     database.execute(
-        """INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,repertoire_id,card_id,motif,created_at,updated_at)
-           VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+        """INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,repertoire_id,card_id,motif,source_opportunity_id,created_at,updated_at)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(id) DO UPDATE SET confidence=excluded.confidence,evidence_json=excluded.evidence_json,
-           repertoire_id=excluded.repertoire_id,card_id=excluded.card_id,motif=excluded.motif,updated_at=excluded.updated_at""",
+           repertoire_id=excluded.repertoire_id,card_id=COALESCE(excluded.card_id,game_findings.card_id),motif=excluded.motif,
+           source_opportunity_id=excluded.source_opportunity_id,updated_at=excluded.updated_at""",
         (
             _finding_id(game_id, analysis_version, kind, ply), game_id, analysis_version, ply,
-            kind, confidence, json.dumps(evidence), repertoire_id, card_id, motif, now, now,
+            kind, confidence, json.dumps(evidence), repertoire_id, card_id, motif, source_opportunity_id, now, now,
         ),
     )
 
@@ -123,6 +127,8 @@ def refresh_game_findings(
     game_id: str | None = None, *, background: bool = False
 ) -> None:
     finding_writes: list[dict] = []
+    opportunity_writes: list[dict] = []
+    opportunity_games: dict[str, int] = {}
     priority_writes: list[tuple] = []
     with connection() as database:
         where = "WHERE g.id=?" if game_id else ""
@@ -133,7 +139,11 @@ def refresh_game_findings(
                 FROM imported_games g LEFT JOIN game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1 {where}""",
             (game_id,) if game_id else (),
         ).fetchall()
-        threshold = database.execute("SELECT major_mistake_cp FROM settings WHERE id=1").fetchone()[0]
+        settings = database.execute(
+            "SELECT major_mistake_cp,engine_line_window_cp FROM settings WHERE id=1"
+        ).fetchone()
+        threshold = int(settings["major_mistake_cp"])
+        acceptable_tolerance_cp = int(settings["engine_line_window_cp"])
         for game in games:
             version = max(1, int(game["analysis_version"]))
             moves = json.loads(game["moves_json"])
@@ -151,6 +161,24 @@ def refresh_game_findings(
             analysis_rows = database.execute(
                 "SELECT * FROM game_move_analysis WHERE game_id=? ORDER BY ply", (game["id"],)
             ).fetchall()
+            candidate_rows = database.execute(
+                "SELECT * FROM game_move_analysis_candidates WHERE game_id=? ORDER BY ply,rank",
+                (game["id"],),
+            ).fetchall()
+            candidate_lines_by_ply: dict[int, list[dict]] = {}
+            for candidate in candidate_rows:
+                candidate_lines_by_ply.setdefault(int(candidate["ply"]), []).append(
+                    {
+                        "uci": candidate["candidate_uci"],
+                        "cp": candidate["score_cp"],
+                        "mate": candidate["mate"],
+                        "score": candidate["score_text"],
+                        "pv": json.loads(candidate["principal_variation_json"] or "[]"),
+                        "depth": candidate["depth"],
+                        "engine_version": candidate["engine_version"],
+                        "network_version": candidate["network_version"],
+                    }
+                )
             player_analysis_rows = [
                 row for row in analysis_rows if bool(row["is_player_move"])
             ]
@@ -214,6 +242,95 @@ def refresh_game_findings(
                                 datetime.now(timezone.utc).isoformat(),
                             )
                         )
+            # A tactical opportunity is durable evidence, including when the
+            # player converted it: the raw candidate lines let later classifiers
+            # distinguish exploited from missed without rerunning Stockfish.
+            for row in player_analysis_rows:
+                candidate_lines = candidate_lines_by_ply.get(int(row["ply"]), [])
+                if not candidate_lines:
+                    continue
+                opportunity_board = _position_before_ply(game["start_fen"], moves, row["ply"])
+                motif_evidence = _structured_motif_evidence(
+                    opportunity_board,
+                    row["best_move_uci"],
+                    json.loads(row["principal_variation_json"] or "[]"),
+                    candidate_lines=candidate_lines,
+                    actual_move_uci=row["actual_move_uci"],
+                    actual_after_cp=row["eval_after_cp"],
+                    mover_color=row["mover_color"],
+                )
+                primary_motif = select_primary_motif(motif_evidence)
+                if primary_motif is None:
+                    continue
+                def candidate_score(candidate: dict) -> int | None:
+                    if candidate.get("mate") is not None:
+                        return 1_000_000 if int(candidate["mate"]) > 0 else -1_000_000
+                    return candidate.get("cp")
+
+                candidate_scores = [candidate_score(candidate) for candidate in candidate_lines]
+                scored_candidates = [score for score in candidate_scores if score is not None]
+                best_score = max(scored_candidates) if scored_candidates else None
+                acceptable_moves = {
+                    candidate["uci"] for candidate, score in zip(candidate_lines, candidate_scores)
+                    if score is not None and best_score is not None and best_score - score <= acceptable_tolerance_cp
+                }
+                acceptable = (
+                    row["actual_move_uci"] in acceptable_moves
+                    or int(row["loss_cp"] or 0) <= acceptable_tolerance_cp
+                )
+                loss_cp = int(row["loss_cp"] or 0)
+                outcome = (
+                    "exploited"
+                    if acceptable
+                    else "missed"
+                    if loss_cp >= threshold
+                    else "unconverted"
+                )
+                if outcome == "unconverted":
+                    continue
+                evidence = {
+                            "fen": opportunity_board.fen(),
+                            "motif": primary_motif.motif,
+                            "candidate_motifs": [item.motif for item in motif_evidence],
+                            "motif_evidence": [item.to_dict() for item in motif_evidence],
+                            "outcome": outcome,
+                            "actual_move_uci": row["actual_move_uci"],
+                            "candidate_lines": candidate_lines,
+                            "loss_cp": loss_cp,
+                            "thresholds": {
+                                "missed_opportunity_loss_cp": threshold,
+                                "acceptable_move_tolerance_cp": acceptable_tolerance_cp,
+                            },
+                            "analysis_version": version,
+                            "analysis_evidence_version": game["analysis_evidence_version"],
+                            "accepted_moves": sorted(acceptable_moves),
+                        }
+                concrete_outcome = primary_motif.concrete_outcome
+                opportunity_value_cp = max(
+                    int(concrete_outcome.get("material_gain_cp", 0) or 0),
+                    int(concrete_outcome.get("evaluation_swing_cp", 0) or 0),
+                    1_000_000 if concrete_outcome.get("type") in {"mate", "forced_mate"} else 0,
+                )
+                stable_id = opportunity_id(game["id"], version, int(row["ply"]), primary_motif.motif)
+                opportunity_games[game["id"]] = version
+                opportunity_writes.append({
+                    "id": stable_id, "game_id": game["id"], "analysis_version": version,
+                    "ply": int(row["ply"]), "motif": primary_motif.motif, "outcome": outcome,
+                    "confidence": primary_motif.confidence, "opportunity_value_cp": opportunity_value_cp,
+                    "evaluation_loss_cp": loss_cp, "played_move_uci": row["actual_move_uci"],
+                    "accepted_moves_json": json.dumps(sorted(acceptable_moves)),
+                    "evidence_json": json.dumps(evidence),
+                    "engine_version": candidate_lines[0].get("engine_version") if candidate_lines else None,
+                    "network_version": candidate_lines[0].get("network_version") if candidate_lines else None,
+                })
+                if outcome == "missed" and primary_motif.confidence >= 0.8:
+                    finding_writes.append(dict(
+                        game_id=game["id"], analysis_version=version, ply=row["ply"],
+                        kind="tactical miss", confidence=primary_motif.confidence,
+                        evidence={**evidence, "opportunity_id": stable_id,
+                                  "opportunity_value_cp": opportunity_value_cp},
+                        motif=primary_motif.motif, source_opportunity_id=stable_id,
+                    ))
             first_big_mistake = next((row for row in player_analysis_rows if row["loss_cp"] >= threshold), None)
             for row in player_analysis_rows:
                 if row["loss_cp"] < threshold:
@@ -224,15 +341,32 @@ def refresh_game_findings(
                     "principal_variation": json.loads(row["principal_variation_json"] or "[]"),
                     "eval_before_cp": row["eval_before_cp"], "eval_after_cp": row["eval_after_cp"],
                     "mate_before": row["mate_before"], "mate_after": row["mate_after"],
+                    "candidate_lines": candidate_lines_by_ply.get(int(row["ply"]), []),
                 }
                 kind = "blunder" if row["loss_cp"] >= 250 or (row["mate_before"] is not None) != (row["mate_after"] is not None) else "major mistake"
                 finding_writes.append(dict(game_id=game["id"], analysis_version=version, ply=row["ply"], kind=kind, confidence=1.0, evidence=evidence))
+                if candidate_lines_by_ply.get(int(row["ply"])):
+                    continue
                 board = _position_before_ply(game["start_fen"], moves, row["ply"])
-                motif, confidence, candidates = classify_tactical_motif(board, row["best_move_uci"], evidence["principal_variation"])
+                motif_evidence = _structured_motif_evidence(
+                    board,
+                    row["best_move_uci"],
+                    evidence["principal_variation"],
+                    candidate_lines=evidence["candidate_lines"] or None,
+                    actual_move_uci=row["actual_move_uci"],
+                    actual_after_cp=row["eval_after_cp"],
+                    mover_color=row["mover_color"],
+                )
+                primary_motif = select_primary_motif(motif_evidence)
                 finding_writes.append(dict(
                     game_id=game["id"], analysis_version=version, ply=row["ply"],
-                    kind="tactical miss", confidence=confidence,
-                    evidence={**evidence, "candidate_motifs": candidates}, motif=motif,
+                    kind="tactical miss", confidence=primary_motif.confidence if primary_motif else 0.0,
+                    evidence={
+                        **evidence,
+                        "candidate_motifs": [item.motif for item in motif_evidence],
+                        "motif_evidence": [item.to_dict() for item in motif_evidence],
+                    },
+                    motif=primary_motif.motif if primary_motif else "unclassified",
                 ))
             if first_big_mistake:
                 evidence = {
@@ -247,6 +381,29 @@ def refresh_game_findings(
     if background:
         activity_gate.wait_for_foreground()
     with connection(background=background) as database:
+        now = datetime.now(timezone.utc).isoformat()
+        for opportunity_game_id, opportunity_version in opportunity_games.items():
+            database.execute(
+                "UPDATE tactical_opportunities SET active=0,superseded_at=?,updated_at=? WHERE game_id=? AND active=1 AND analysis_version!=?",
+                (now, now, opportunity_game_id, opportunity_version),
+            )
+        for opportunity in opportunity_writes:
+            database.execute(
+                """INSERT INTO tactical_opportunities(
+                    id,game_id,analysis_version,ply,motif,outcome,confidence,opportunity_value_cp,
+                    evaluation_loss_cp,played_move_uci,accepted_moves_json,evidence_json,engine_version,
+                    network_version,active,created_at,updated_at
+                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,1,?,?)
+                ON CONFLICT(id) DO UPDATE SET outcome=excluded.outcome,confidence=excluded.confidence,
+                    opportunity_value_cp=excluded.opportunity_value_cp,evaluation_loss_cp=excluded.evaluation_loss_cp,
+                    played_move_uci=excluded.played_move_uci,accepted_moves_json=excluded.accepted_moves_json,
+                    evidence_json=excluded.evidence_json,engine_version=excluded.engine_version,
+                    network_version=excluded.network_version,active=1,superseded_at=NULL,updated_at=excluded.updated_at""",
+                (*[opportunity[key] for key in (
+                    "id","game_id","analysis_version","ply","motif","outcome","confidence",
+                    "opportunity_value_cp","evaluation_loss_cp","played_move_uci","accepted_moves_json",
+                    "evidence_json","engine_version","network_version")], now, now),
+            )
         for finding in finding_writes:
             _upsert_finding(database, **finding)
         for priority in priority_writes:
@@ -282,16 +439,18 @@ def motif_recommendations() -> list[dict]:
         for row in rows:
             item = grouped.setdefault(row["motif"], {
                 "motif": row["motif"], "miss_count": 0,
-                "opportunity_count": 0, "total_loss_cp": 0,
+                "exploited_count": 0, "opportunity_count": 0, "total_loss_cp": 0,
                 "supporting_games": [], "window_days": window_days,
             })
             item["opportunity_count"] += 1
-            if row["outcome"] != "missed":
+            if row["outcome"] == "exploited":
+                item["exploited_count"] += 1
                 continue
-            item["miss_count"] += 1
-            item["total_loss_cp"] += int(row["loss_cp"] or 0)
-            if row["game_id"] not in item["supporting_games"]:
-                item["supporting_games"].append(row["game_id"])
+            if row["outcome"] == "missed":
+                item["miss_count"] += 1
+                item["total_loss_cp"] += int(row["loss_cp"] or 0)
+                if row["game_id"] not in item["supporting_games"]:
+                    item["supporting_games"].append(row["game_id"])
         catalog = catalog_status(database)
         recommendations = []
         database.execute("DELETE FROM game_insight_recommendations")
@@ -309,6 +468,7 @@ def motif_recommendations() -> list[dict]:
             item["recommended_pack_id"] = pack["id"] if pack else None
             item["recommended_pack_active"] = bool(pack and pack["active"])
             item["miss_rate"] = item["miss_count"] / item["opportunity_count"]
+            item["conversion_rate"] = item["exploited_count"] / item["opportunity_count"]
             database.execute(
                 "INSERT INTO game_insight_recommendations VALUES(?,?,?,?,?,?)",
                 (item["motif"], item["miss_count"], item["total_loss_cp"], json.dumps(item["supporting_games"]), item["recommended_pack_id"], now),

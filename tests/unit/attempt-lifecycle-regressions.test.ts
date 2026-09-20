@@ -64,6 +64,28 @@ describe("review attempt reliability", () => {
     expect(useTrainingStore.getState().practiceCards[0].queueEntryId).toBe(44);
     expect(useTrainingStore.getState().attempt.phase).toBe("playerTurn");
   });
+  it("retryable queue contention retries before reporting a failure and retains the active attempt", async () => {
+    const payload = {
+      cards: [{
+        id: "persisted-card",
+        queue_entry_id: 44,
+        start_fen: card.startingFen,
+        moves: ["e2e4"],
+        content_type: "opening",
+        repertoire_name: "Prep",
+        repertoire_source: "PGN",
+      }],
+    };
+    vi.stubGlobal(
+      "fetch",
+      vi.fn()
+        .mockResolvedValueOnce(Response.json({ detail: "The local database is busy with background work. Retry this action.", retryable: true }, { status: 503 }))
+        .mockResolvedValueOnce(Response.json(payload)),
+    );
+    await fetchAndInitializeQueue();
+    expect(useTrainingStore.getState().practiceCards[0].queueEntryId).toBe(44);
+    expect(useTrainingStore.getState().serviceError).toBe("");
+  });
   it("readable renamed store fields retain local authority, failure, and sound through Home selectors", () => {
     const store = useTrainingStore.getState();
     store.setDatabaseQueue(true);

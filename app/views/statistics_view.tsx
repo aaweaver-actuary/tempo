@@ -14,7 +14,7 @@ type Dimension = Breakdown["dimension"];
 const percentage = (value: number | null) =>
   value === null ? "—" : `${(value * 100).toFixed(1)}%`;
 
-export default function StatisticsView() {
+export default function StatisticsView({ embedded = false }: { embedded?: boolean }) {
   const [windowDays, setWindowDays] = useState<WindowDays>(30);
   const [dimension, setDimension] = useState<Dimension>("color");
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -45,7 +45,7 @@ export default function StatisticsView() {
 
   return (
     <section className="library-page statistics-page">
-      <header className="page-heading statistics-heading">
+      <header className={embedded ? "sr-only" : "page-heading statistics-heading"}>
         <div>
           <h1>Chess statistics</h1>
           <p>Game outcomes use all valid games. Engine metrics use analyzed games only.</p>

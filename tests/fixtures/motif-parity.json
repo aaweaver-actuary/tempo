@@ -1,0 +1,138 @@
+[
+  {
+    "id": "absolute-pin-exploits-preexisting-rook-pin",
+    "fen": "4k3/4r3/2B5/8/8/8/8/4R1K1 w - - 0 1",
+    "played_move": "e1e7",
+    "candidates": [
+      {"uci": "e1e7", "pv": ["e1e7", "e8d8"]}
+    ],
+    "expected": [
+      {"motif": "pin", "pin_type": "absolute", "existed_before": true, "created_by_candidate_move": false, "outcome": "material_gain"}
+    ]
+  },
+  {
+    "id": "absolute-pin-created-by-candidate",
+    "fen": "4k3/4r3/8/8/8/8/8/R5K1 w - - 0 1",
+    "played_move": "a1e1",
+    "candidates": [
+      {"uci": "a1e1", "pv": ["a1e1", "e8d8", "e1e7"]}
+    ],
+    "expected": [
+      {"motif": "pin", "pin_type": "absolute", "existed_before": false, "created_by_candidate_move": true, "outcome": "material_gain"}
+    ]
+  },
+  {
+    "id": "relative-pin-created-by-candidate",
+    "fen": "k3q3/4n3/8/8/8/8/8/R5K1 w - - 0 1",
+    "played_move": "a1e1",
+    "candidates": [
+      {"uci": "a1e1", "pv": ["a1e1", "a8b8", "e1e7"]}
+    ],
+    "expected": [
+      {"motif": "pin", "pin_type": "relative", "existed_before": false, "created_by_candidate_move": true, "outcome": "material_gain"}
+    ]
+  },
+  {
+    "id": "pin-geometry-without-concrete-gain",
+    "fen": "4k3/4r3/8/8/8/8/8/R5K1 w - - 0 1",
+    "played_move": "a1e1",
+    "candidates": [
+      {"uci": "a1e1", "pv": ["a1e1", "e8d8"]}
+    ],
+    "expected": []
+  },
+  {
+    "id": "promotion-line-is-legal-and-does-not-invent-a-motif",
+    "fen": "4k3/P7/8/8/8/8/8/6K1 w - - 0 1",
+    "played_move": "a7a8q",
+    "candidates": [
+      {"uci": "a7a8q", "pv": ["a7a8q", "e8d7"]}
+    ],
+    "expected": []
+  },
+  {
+    "id": "en-passant-line-is-legal-and-does-not-invent-a-motif",
+    "fen": "4k3/8/8/3pP3/8/8/8/6K1 w - d6 0 1",
+    "played_move": "e5d6",
+    "candidates": [
+      {"uci": "e5d6", "pv": ["e5d6", "e8d7"]}
+    ],
+    "expected": []
+  },
+  {
+    "id": "castling-line-is-legal-and-does-not-invent-a-motif",
+    "fen": "4k2r/8/8/8/8/8/8/R3K2R w KQk - 0 1",
+    "played_move": "e1g1",
+    "candidates": [
+      {"uci": "e1g1", "pv": ["e1g1", "e8d7"]}
+    ],
+    "expected": []
+  },
+  {
+    "id": "fork-converts-one-of-two-attacked-targets",
+    "fen": "k3q3/3r4/8/3N4/8/8/8/6K1 w - - 0 1",
+    "played_move": "d5f6",
+    "candidates": [
+      {"uci": "d5f6", "pv": ["d5f6", "a8b8", "f6e8"]}
+    ],
+    "expected": [
+      {"motif": "fork", "pin_type": null, "existed_before": false, "created_by_candidate_move": true, "outcome": "material_gain"}
+    ]
+  },
+  {
+    "id": "skewer-converts-the-hidden-rook",
+    "fen": "k3r3/4q3/8/8/8/8/8/R5K1 w - - 0 1",
+    "played_move": "a1e1",
+    "candidates": [
+      {"uci": "a1e1", "pv": ["a1e1", "e7d7", "e1e8"]}
+    ],
+    "expected": [
+      {"motif": "skewer", "pin_type": null, "existed_before": false, "created_by_candidate_move": true, "outcome": "material_gain"}
+    ]
+  },
+  {
+    "id": "discovered-attack-converts-the-queen",
+    "fen": "q6k/8/8/8/8/8/N7/R5K1 w - - 0 1",
+    "played_move": "a2b4",
+    "candidates": [
+      {"uci": "a2b4", "pv": ["a2b4", "h8g8", "a1a8"]}
+    ],
+    "expected": [
+      {"motif": "discoveredAttack", "pin_type": null, "existed_before": false, "created_by_candidate_move": true, "outcome": "material_gain"}
+    ]
+  },
+  {
+    "id": "hanging-piece-is-captured",
+    "fen": "k7/4r3/8/8/8/8/8/4R1K1 w - - 0 1",
+    "played_move": "e1e7",
+    "candidates": [
+      {"uci": "e1e7", "pv": ["e1e7", "a8b8"]}
+    ],
+    "expected": [
+      {"motif": "hangingPiece", "pin_type": null, "existed_before": true, "created_by_candidate_move": false, "outcome": "material_gain"}
+    ]
+  },
+  {
+    "id": "pin-and-fork-are-both-preserved",
+    "fen": "4k3/4r3/8/q7/8/8/8/Q5K1 w - - 0 1",
+    "played_move": "a1e1",
+    "candidates": [
+      {"uci": "a1e1", "pv": ["a1e1", "e8d8", "e1e7"]}
+    ],
+    "expected": [
+      {"motif": "pin", "pin_type": "absolute", "existed_before": false, "created_by_candidate_move": true, "outcome": "material_gain"},
+      {"motif": "fork", "pin_type": null, "existed_before": false, "created_by_candidate_move": true, "outcome": "material_gain"}
+    ]
+  },
+  {
+    "id": "mate-score-proves-mating-tactic",
+    "fen": "7k/5Q2/6K1/8/8/8/8/8 w - - 0 1",
+    "played_move": "f7g7",
+    "candidates": [
+      {"uci": "f7g7", "mate": 1, "pv": ["f7g7"]}
+    ],
+    "expected": [
+      {"motif": "matingTactic", "pin_type": null, "existed_before": false, "created_by_candidate_move": true, "outcome": "mate"}
+    ]
+  }
+]

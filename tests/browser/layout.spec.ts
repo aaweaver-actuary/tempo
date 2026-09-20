@@ -171,6 +171,7 @@ test("tactical catalog groups and activation controls remain reachable on phones
   await page.setViewportSize({ width: 390, height: 844 });
   await prepareUI(page);
   await navigate(page, "Tactics");
+  await page.getByRole("tab", { name: "Packs", exact: true }).click();
   const catalog = page.getByRole("region", { name: "Tactical puzzle catalog" });
   await expect(catalog).toBeVisible();
   await expect(catalog.getByText("Basic motifs")).toBeVisible();

@@ -22,6 +22,7 @@ import {
   endgameAttemptSchema,
 } from "../domain/schemas";
 import { readJsonResponse } from "../lib/validated-data";
+import { useTaskTabs } from "../components/task-tabs";
 
 const TEMPLATE_API_ENDPOINT = `${API_URL}/api/endgames/templates`;
 
@@ -67,6 +68,7 @@ export default function EndgamesView({
   const [admitted, setAdmitted] = useState<
     Record<number, { templateId: string; cardId: string }>
   >({});
+  const tools = useTaskTabs(["Study", "Positions"], "Study", "tempo-endgames-tools");
 
   useEffect(() => {
     if (!usesLocalApi()) return;
@@ -371,10 +373,11 @@ export default function EndgamesView({
   return (
     <section
       className={`endgames-page${scheduledCard ? " scheduled-endgame" : ""}`}
+      {...tools.panelProps}
     >
       <div className="workspace-title">
         <div>
-          <h1 className="sr-only">Endgames</h1>
+          <h1>Endgames</h1>
         </div>
         {!scheduledCard && (
           <button
@@ -388,8 +391,9 @@ export default function EndgamesView({
           </button>
         )}
       </div>
+      {!scheduledCard && <div className="workspace-context-tabs">{tools.tabs}</div>}
       <div className="endgame-workspace">
-        {!scheduledCard && (
+        {!scheduledCard && tools.activeTab === "Positions" && (
           <aside className="template-list">
             {templates.map((template, index) => (
               <button

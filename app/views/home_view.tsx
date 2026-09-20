@@ -42,8 +42,7 @@ import BuilderView from "./analysis_view";
 import CardEditor from "./card_editor";
 import EndgamesView from "./endgames_view";
 import GamesView from "./games_view";
-import ProgressView from "./progress_view";
-import StatisticsView from "./statistics_view";
+import InsightsView from "./insights_view";
 import RepertoireView from "./repertoire_view";
 import SettingsView from "./settings_view";
 import TacticsView from "./tactics_view";
@@ -89,13 +88,21 @@ export default function Home() {
   useGameAnalysis();
   useRepertoireCoverageWorker();
   const [currentView, setCurrentView] = useState<View>("train");
+  const [insightsTab, setInsightsTab] = useState<"training" | "games">(
+    "training",
+  );
   const [gamesFenFilter, setGamesFenFilter] = useState("");
   const [reviewPersistenceState, setReviewPersistenceState] = useState<
     "idle" | "saving" | "saveFailed" | "saved" | "refreshingQueue" | "queueFailed"
   >("idle");
   const changeWorkspace = useCallback((view: View) => {
     const finished = measureTempoOperation("view-switch");
-    setCurrentView(view);
+    if (view === "progress" || view === "statistics") {
+      setInsightsTab(view === "statistics" ? "games" : "training");
+      setCurrentView("insights");
+    } else {
+      setCurrentView(view);
+    }
     requestAnimationFrame(() => requestAnimationFrame(finished));
   }, []);
   const branchPositions = useRef<IndexedPosition[]>([]);
@@ -883,7 +890,7 @@ export default function Home() {
     localStorage.setItem("tempo-builder-session", JSON.stringify(session));
     sessionStorage.setItem(
       "tempo-builder-tools",
-      target === "analysis" ? "Analysis" : "Repertoire",
+      target === "analysis" ? "Compare" : "Repertoire",
     );
     changeWorkspace("builder");
   }
@@ -1053,14 +1060,15 @@ export default function Home() {
             />
         </>
       )}
-      {currentView === "progress" && (
-        <ProgressView
+      {currentView === "insights" && (
+          <InsightsView
+          initialTab={insightsTab}
+          onTabChange={setInsightsTab}
           reviewed={reviewed}
           cardsLeft={cardsLeft}
           totalCards={practiceCards.length}
         />
       )}
-      {currentView === "statistics" && <StatisticsView />}
       {currentView === "settings" && (
         <SettingsView
           theme={boardTheme}

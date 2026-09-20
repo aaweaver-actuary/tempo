@@ -29,7 +29,7 @@ test("critical navigation, board input, split and dialogs work across browser en
   await page.getByRole("tab", { name: "Notes", exact: true }).click();
   const note = page.getByRole("textbox", { name: "Position comment" });
   await note.fill("Remember this position.");
-  await page.getByRole("tab", { name: "Analysis", exact: true }).click();
+  await page.getByRole("tab", { name: "Compare", exact: true }).click();
   await page.getByRole("tab", { name: "Notes", exact: true }).click();
   await expect(note).toHaveValue("Remember this position.");
   await navigate(page, "Repertoire");

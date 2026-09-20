@@ -30,7 +30,12 @@ test("sample deletion uses repertoire identity and does not delete its same-file
   await page
     .locator(".repertoire-card")
     .first()
-    .getByRole("button", { name: "Delete", exact: true })
+    .locator("details.card-menu summary")
+    .click();
+  await page
+    .locator(".repertoire-card")
+    .first()
+    .getByRole("menuitem", { name: "Delete", exact: true })
     .click();
   await expect(page.locator(".repertoire-card")).toHaveCount(1);
   await nav(page, "Builder");
@@ -67,6 +72,7 @@ test("Builder exact transposition confirms a conflicting trained move then saves
     page.getByRole("button", { name: "Add as branch" }),
   ).toBeVisible();
   await page.getByRole("button", { name: "Add as branch" }).click();
+  await page.getByRole("tab", { name: "Repertoire", exact: true }).click();
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Save branch" }).click();
   await expect
@@ -107,10 +113,11 @@ test("review position opens consistently in analysis builder and games", async (
   });
   await page.goto("/");
   const reviewedFen = await page.locator(".board-frame").getAttribute("data-fen");
-  await page.getByRole("button", { name: "Analysis", exact: true }).click();
+  await nav(page, "Builder");
+  await page.getByRole("tab", { name: "Compare", exact: true }).click();
   await expect(page.locator(".analysis-page")).toHaveAttribute(
     "data-active-task",
-    "Analysis",
+    "Compare",
   );
   await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", reviewedFen!);
 
@@ -166,6 +173,7 @@ test("Edit card opens Builder line-removal context and deletes the selected bran
   ).toHaveAttribute("aria-current", "page");
   await move(page, "d2", "d4");
   await move(page, "g8", "f6");
+  await page.getByRole("tab", { name: "Repertoire", exact: true }).click();
   page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: "Delete line from here" }).click();
   await expect(page.getByText(/Deleted \d+ line/)).toBeVisible();

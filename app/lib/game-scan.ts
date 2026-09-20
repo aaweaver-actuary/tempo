@@ -5,8 +5,16 @@ export type MoveEvaluation = { ply: number; before_cp: number; after_cp: number;
 
 export type DurableMoveEvaluation = MoveEvaluation & {
   depth: number;
+  position_fen: string;
   best_move_uci?: string;
   principal_variation: string[];
+  candidate_lines: Array<{
+    uci: string;
+    cp?: number;
+    mate?: number;
+    score?: string;
+    pv: string[];
+  }>;
   mate_before?: number;
   mate_after?: number;
   mover_color: "white" | "black";
@@ -38,19 +46,19 @@ export async function scanGameTwoPass(
     positionTurns.push(board.turn());
     positionCheckmates.push(board.isCheckmate());
   }
-  const analysisCache = new Map<string, EngineMove | undefined>();
+  const analysisCache = new Map<string, EngineMove[]>();
   const analyzePosition = async (positionIndex: number, depth: number) => {
     const cacheKey = `${depth}:${positionFens[positionIndex]}`;
     if (!analysisCache.has(cacheKey)) {
       analysisCache.set(
         cacheKey,
-        (await analyze(positionFens[positionIndex], depth))[0],
+        (await analyze(positionFens[positionIndex], depth)).slice(0, 5),
       );
       await new Promise<void>((resolve) => window.setTimeout(resolve, 0));
     }
-    return analysisCache.get(cacheKey);
+    return analysisCache.get(cacheKey) ?? [];
   };
-  const shallowLines: Array<EngineMove | undefined> = [];
+  const shallowLines: EngineMove[][] = [];
   for (let positionIndex = 0; positionIndex < positionFens.length; positionIndex++) {
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     shallowLines.push(await analyzePosition(positionIndex, 8));
@@ -61,8 +69,8 @@ export async function scanGameTwoPass(
     const afterTurn = positionTurns[ply + 1];
     const moverColor = beforeTurn === "w" ? "white" : "black";
     const moverSign = moverColor === "white" ? 1 : -1;
-    const shallowBefore = shallowLines[ply];
-    const shallowAfter = shallowLines[ply + 1];
+    const shallowBefore = shallowLines[ply][0];
+    const shallowAfter = shallowLines[ply + 1][0];
     const shallowBeforeValue = whiteEvaluation(
       shallowBefore,
       beforeTurn,
@@ -75,20 +83,30 @@ export async function scanGameTwoPass(
     );
     const shallowLoss = (shallowBeforeValue - shallowAfterValue) * moverSign;
     const shouldConfirm = shallowLoss >= 75 || ply === repertoireDeviationPly || shallowBefore?.mate !== undefined || shallowAfter?.mate !== undefined;
-    const confirmedBefore = shouldConfirm
+    const confirmedBeforeLines = shouldConfirm
       ? await analyzePosition(ply, 14)
-      : shallowBefore;
-    const confirmedAfter = shouldConfirm
+      : shallowLines[ply];
+    const confirmedAfterLines = shouldConfirm
       ? await analyzePosition(ply + 1, 14)
-      : shallowAfter;
+      : shallowLines[ply + 1];
+    const confirmedBefore = confirmedBeforeLines[0];
+    const confirmedAfter = confirmedAfterLines[0];
     evaluations.push({
       ply,
       before_cp: whiteEvaluation(confirmedBefore, beforeTurn, positionCheckmates[ply]),
       after_cp: whiteEvaluation(confirmedAfter, afterTurn, positionCheckmates[ply + 1]),
       opponent_created_chance: false,
       depth: shouldConfirm ? 14 : 8,
+      position_fen: positionFens[ply],
       best_move_uci: confirmedBefore?.uci,
       principal_variation: confirmedBefore?.pv ?? [],
+      candidate_lines: confirmedBeforeLines.map((line) => ({
+        uci: line.uci,
+        cp: line.cp,
+        mate: line.mate,
+        score: line.score,
+        pv: line.pv ?? [line.uci],
+      })),
       mate_before: confirmedBefore?.mate,
       mate_after: confirmedAfter?.mate,
       mover_color: moverColor,
