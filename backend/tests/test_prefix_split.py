@@ -134,6 +134,54 @@ def test_accepted_shorter_opening_prefix_creates_a_one_player_decision_continuat
             ).fetchone()[0] == 1
 
 
+def test_prefix_split_resets_remediation_state_on_shortened_parent(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    complete_line = ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"]
+    with TestClient(app) as client:
+        with database.connection() as database_connection:
+            source_card_id = seed_prefix_card(
+                database_connection, "white", complete_line
+            )
+            database_connection.execute(
+                "UPDATE cards SET scheduling_mode='hard', hard_correct_streak=2 WHERE id=?",
+                (source_card_id,),
+            )
+
+        result = client.post(
+            f"/api/cards/{source_card_id}/prefix-split",
+            json={"expected_revision": 3},
+        ).json()
+
+        with database.connection() as database_connection:
+            parent = database_connection.execute(
+                """SELECT recent_attempts_json,scheduling_mode,hard_correct_streak
+                   FROM cards WHERE id=?""",
+                (result["parent"]["card_id"],),
+            ).fetchone()
+            assert json.loads(parent["recent_attempts_json"]) == []
+            assert parent["scheduling_mode"] == "normal"
+            assert parent["hard_correct_streak"] == 0
+
+            source = database_connection.execute(
+                "SELECT archived,superseded_by FROM cards WHERE id=?",
+                (source_card_id,),
+            ).fetchone()
+            assert source["archived"] == 1
+            assert source["superseded_by"] == result["parent"]["card_id"]
+            assert database_connection.execute(
+                "SELECT COUNT(*) FROM reviews WHERE card_id=?",
+                (result["parent"]["card_id"],),
+            ).fetchone()[0] == 1
+            continuation = database_connection.execute(
+                "SELECT kind,moves_json FROM cards WHERE id=?",
+                (result["continuation"]["card_id"],),
+            ).fetchone()
+            assert continuation["kind"] == "response"
+            assert json.loads(continuation["moves_json"]) == ["b8c6", "f1b5"]
+
+
 def test_prefix_split_retry_creates_exactly_one_parent_child_and_queue_entry(
     tmp_path, monkeypatch
 ):

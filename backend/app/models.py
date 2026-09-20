@@ -44,6 +44,13 @@ class BranchRequest(BaseModel):
     source_gap_id: str | None = None
 
 
+class IntegrityResolutionRequest(BaseModel):
+    """Request for choosing the single response at an integrity issue."""
+
+    signature: str
+    selected_move_uci: str = Field(pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$", min_length=4, max_length=5)
+
+
 class CoverageMaiaMove(BaseModel):
     move_uci: str = Field(pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$", min_length=4, max_length=5)
     probability: float = Field(ge=0, le=1)
@@ -428,6 +435,7 @@ class ImportResult(BaseModel):
     cards_created: int
     duplicates_merged: int
     cards_admitted_today: int = 0
+    integrity: dict = Field(default_factory=dict)
 
 
 class TacticActivationRequest(BaseModel):

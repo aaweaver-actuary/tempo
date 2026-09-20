@@ -173,6 +173,9 @@ def apply_prefix_split(
                 "revision": int(source_card["revision"]) + 1,
                 "archived": 0,
                 "superseded_by": None,
+                "recent_attempts_json": "[]",
+                "scheduling_mode": "normal",
+                "hard_correct_streak": 0,
             },
         )
     database.execute(

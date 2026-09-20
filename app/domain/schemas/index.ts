@@ -227,6 +227,8 @@ export const repertoiresResponseSchema = z.strictObject({
       card_count: integer,
       due_count: integer,
       conflict_count: integer.optional(),
+      integrity_status: z.enum(["unchecked", "clean", "needs_repair"]).optional(),
+      integrity_issue_count: integer.optional(),
       trained_color: colorSchema.nullable().optional(),
     }),
   ),
@@ -257,16 +259,70 @@ export const importResultSchema = z.strictObject({
   cards_created: integer,
   duplicates_merged: integer,
   cards_admitted_today: integer,
+  integrity: z.object({
+    status: z.enum(["unchecked", "clean", "needs_repair"]),
+    issue_count: integer,
+    first_issue_id: z.string().nullable(),
+    checked_at: z.string().nullable().optional(),
+  }).optional(),
+});
+export const integrityMoveSchema = z.strictObject({
+  uci: uciMoveSchema,
+  line_count: integer,
+  card_count: integer,
+  review_count: integer,
+});
+export const integrityIssueSchema = z.strictObject({
+  id: z.string(),
+  kind: z.enum(["missing_response", "multiple_responses", "invalid_source"]),
+  fen_key: z.string().nullable(),
+  fen: fenStringSchema.nullable(),
+  trained_color: colorSchema.nullable(),
+  signature: z.string(),
+  moves: z.array(integrityMoveSchema),
+  sources: z.array(z.record(z.string(), z.unknown())),
+});
+export const repertoireIntegritySchema = z.strictObject({
+  repertoire_id: repertoireIdSchema,
+  status: z.enum(["unchecked", "clean", "needs_repair"]),
+  issue_count: integer,
+  first_issue_id: z.string().nullable(),
+  checked_at: z.string().nullable().optional(),
+  issues: z.array(integrityIssueSchema),
+});
+export const integrityResolutionSchema = z.strictObject({
+  summary: z.object({
+    status: z.enum(["unchecked", "clean", "needs_repair"]),
+    issue_count: integer,
+    first_issue_id: z.string().nullable(),
+    checked_at: z.string().nullable().optional(),
+  }),
+  changed_line_count: integer,
+  changed_card_count: integer,
+  next_issue: integrityIssueSchema.nullable(),
+  issues_remaining: integer,
 });
 export const branchResultSchema = z.strictObject({
   id: lineIdSchema,
   duplicate: z.boolean(),
   moves: z.array(uciMoveSchema),
+  integrity: z.object({
+    status: z.enum(["unchecked", "clean", "needs_repair"]),
+    issue_count: integer,
+    first_issue_id: z.string().nullable(),
+    checked_at: z.string().nullable().optional(),
+  }).optional(),
 });
 export const removeBranchResultSchema = z.strictObject({
   deleted_line_count: integer,
   deleted_card_count: integer,
   retained_line_count: integer,
+  integrity: z.object({
+    status: z.enum(["unchecked", "clean", "needs_repair"]),
+    issue_count: integer,
+    first_issue_id: z.string().nullable(),
+    checked_at: z.string().nullable().optional(),
+  }).optional(),
 });
 export const cardRevisionResultSchema = z.strictObject({
   card_id: cardIdSchema,

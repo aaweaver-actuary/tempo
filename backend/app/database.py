@@ -67,7 +67,9 @@ def initialize() -> None:
             id TEXT PRIMARY KEY,
             name TEXT NOT NULL,
             source_name TEXT NOT NULL,
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            integrity_status TEXT NOT NULL DEFAULT 'unchecked' CHECK(integrity_status IN ('unchecked','clean','needs_repair')),
+            integrity_checked_at TEXT
         )
         """,
         """
@@ -183,6 +185,22 @@ def initialize() -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_position_annotations_fen ON position_annotations(fen_key)",
+        """
+        CREATE TABLE IF NOT EXISTS repertoire_integrity_issues (
+            id TEXT PRIMARY KEY,
+            repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+            kind TEXT NOT NULL CHECK(kind IN ('missing_response','multiple_responses','invalid_source')),
+            fen_key TEXT,
+            fen TEXT,
+            trained_color TEXT,
+            signature TEXT NOT NULL,
+            moves_json TEXT NOT NULL DEFAULT '[]',
+            sources_json TEXT NOT NULL DEFAULT '[]',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_repertoire_integrity_repertoire ON repertoire_integrity_issues(repertoire_id,updated_at,id)",
         """
         CREATE TABLE IF NOT EXISTS teaching_states (
             card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
@@ -692,6 +710,10 @@ def initialize() -> None:
                 "coverage_horizon_fullmoves": "INTEGER NOT NULL DEFAULT 15",
                 "coverage_path_floor": "REAL NOT NULL DEFAULT 0.0005",
                 "coverage_maia_elo": "INTEGER NOT NULL DEFAULT 1500",
+            },
+            "repertoires": {
+                "integrity_status": "TEXT NOT NULL DEFAULT 'unchecked'",
+                "integrity_checked_at": "TEXT",
             },
             "cards": {
                 "fsrs_card_json": "TEXT",

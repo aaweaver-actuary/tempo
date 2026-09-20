@@ -48,6 +48,7 @@ from .models import (
     GameSummaryRecord,
     GuidedReviewAttemptRequest,
     GamesSummaryResponse,
+    IntegrityResolutionRequest,
     ImportResult,
     PositionAnnotationRequest,
     PrefixSplitRequest,
@@ -85,6 +86,13 @@ from .services.repertoire_conflicts import (
     find_repertoire_conflicts,
     trained_move_index,
 )
+from .services.repertoire_integrity import (
+    integrity_summary,
+    list_integrity_issues,
+    resolve_issue,
+    sweep_all,
+    sweep_repertoire,
+)
 from .services.puzzles import validate_puzzle_record
 from .services.prefix_split import apply_prefix_split, preview_prefix_split
 from .services.repertoire_coverage import (
@@ -105,6 +113,8 @@ from .services.introduction_priorities import (
 async def lifespan(_: FastAPI):
     """Lifespan context manager for the FastAPI application. Initializes the database and starts the coordinator on startup, and stops the coordinator on shutdown."""
     initialize()
+    with connection() as database:
+        sweep_all(database)
     await coordinator.start()
     try:
         yield
@@ -418,6 +428,8 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
              ON ip.card_id=c.id AND ip.repertoire_id=c.repertoire_id
            WHERE c.content_type='opening' AND (c.due_date<=? OR p.card_id IS NOT NULL)
              AND c.state='new' AND c.introduced_at IS NULL AND c.archived=0
+             AND EXISTS(SELECT 1 FROM repertoire_cards rc_ok JOIN repertoires r_ok ON r_ok.id=rc_ok.repertoire_id
+                        WHERE rc_ok.card_id=c.id AND r_ok.integrity_status='clean')
              AND c.id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?)""",
         (day, day, day),
     ).fetchall()
@@ -435,6 +447,8 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
                  ON ip.card_id=c.id AND ip.repertoire_id=c.repertoire_id
                WHERE c.content_type='opening' AND (c.due_date<=? OR p.card_id IS NOT NULL)
                  AND c.state='new' AND c.introduced_at IS NULL AND c.archived=0
+                 AND EXISTS(SELECT 1 FROM repertoire_cards rc_ok JOIN repertoires r_ok ON r_ok.id=rc_ok.repertoire_id
+                            WHERE rc_ok.card_id=c.id AND r_ok.integrity_status='clean')
                  AND c.id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?)""",
             (day, day, day),
         ).fetchall()
@@ -519,7 +533,10 @@ def seed_queue(db, day):
         "SELECT COALESCE(MAX(position),-1) FROM daily_queue WHERE queue_date=?", (day,)
     ).fetchone()[0]
     rows = db.execute(
-        "SELECT id FROM cards WHERE due_date<=? AND state IN ('learning','mature') AND archived=0 AND id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?) ORDER BY due_date,id",
+        """SELECT id FROM cards WHERE due_date<=? AND state IN ('learning','mature') AND archived=0
+           AND EXISTS(SELECT 1 FROM repertoire_cards rc JOIN repertoires rr ON rr.id=rc.repertoire_id
+                      WHERE rc.card_id=cards.id AND rr.integrity_status='clean')
+           AND id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?) ORDER BY due_date,id""",
         (day, day),
     ).fetchall()
     for offset, row in enumerate(rows, 1):
@@ -620,7 +637,9 @@ def queue_today():
                               COALESCE(c.trained_color,(SELECT l.trained_color FROM repertoire_lines l
                                WHERE l.repertoire_id=c.repertoire_id ORDER BY l.created_at LIMIT 1)) trained_color
                        FROM daily_queue q JOIN cards c ON c.id=q.card_id
-                       WHERE q.queue_date=? AND q.status='queued' AND c.archived=0""",
+                       WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
+                         AND EXISTS(SELECT 1 FROM repertoire_cards rc_ok JOIN repertoires r_ok ON r_ok.id=rc_ok.repertoire_id
+                                    WHERE rc_ok.card_id=c.id AND r_ok.integrity_status='clean')""",
             (day,),
         ).fetchall()
         diagnostics = []
@@ -655,9 +674,11 @@ def queue_today():
                            FROM daily_queue q JOIN cards c ON c.id=q.card_id
                            JOIN repertoires r ON r.id=COALESCE(
                                (SELECT rc.repertoire_id FROM repertoire_cards rc JOIN repertoires linked ON linked.id=rc.repertoire_id
-                                WHERE rc.card_id=c.id ORDER BY linked.is_main DESC,linked.created_at DESC LIMIT 1),
+                                WHERE rc.card_id=c.id AND linked.integrity_status='clean'
+                                ORDER BY linked.is_main DESC,linked.created_at DESC LIMIT 1),
                                c.repertoire_id)
                            WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
+                             AND r.integrity_status='clean'
                            ORDER BY q.position,q.id""",
             (day,),
         ).fetchall()
@@ -769,6 +790,7 @@ async def import_pgn(
                 "INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)",
                 (rid, cid),
             )
+        integrity = sweep_repertoire(db, rid)
         rebuild_introduction_priorities(db, rid)
         seed_queue(db, date.today().isoformat())
         admitted = db.execute(
@@ -776,14 +798,14 @@ async def import_pgn(
                                WHERE q.queue_date=? AND q.status='queued' AND rc.repertoire_id=?""",
             (date.today().isoformat(), rid),
         ).fetchone()[0]
-    try:
-        enqueue_coverage_refresh(rid, automatic=True)
-        coordinator.wake()
-    except (KeyError, sqlite3.OperationalError):
-        # The immediate local evidence remains sufficient to admit cards.
-        pass
-    compare_all_games()
-    refresh_game_findings()
+    if integrity["status"] == "clean":
+        try:
+            enqueue_coverage_refresh(rid, automatic=True)
+            coordinator.wake()
+        except (KeyError, sqlite3.OperationalError):
+            pass
+        compare_all_games()
+        refresh_game_findings()
     return ImportResult(
         repertoire_id=rid,
         source_name=file.filename,
@@ -792,6 +814,7 @@ async def import_pgn(
         cards_created=created,
         duplicates_merged=max(0, len(lines) - created),
         cards_admitted_today=admitted,
+        integrity=integrity,
     )
 
 
@@ -801,11 +824,12 @@ def list_repertoires():
         seed_queue(db, date.today().isoformat())
         rows = db.execute(
             """
-            SELECT r.id,r.name,r.source_name,r.created_at,r.is_main,
+            SELECT r.id,r.name,r.source_name,r.created_at,r.is_main,r.integrity_status,
                    COUNT(DISTINCT l.id) AS line_count,
                    COUNT(DISTINCT c.id) AS card_count,
                    (SELECT l2.trained_color FROM repertoire_lines l2 WHERE l2.repertoire_id=r.id ORDER BY l2.created_at LIMIT 1) AS trained_color,
-                   COUNT(DISTINCT CASE WHEN q.queue_date=? AND q.status='queued' THEN q.card_id END) AS due_count
+                   COUNT(DISTINCT CASE WHEN q.queue_date=? AND q.status='queued'
+                         AND r.integrity_status='clean' THEN q.card_id END) AS due_count
             FROM repertoires r
             LEFT JOIN repertoire_lines l ON l.repertoire_id=r.id
             LEFT JOIN repertoire_cards rc ON rc.repertoire_id=r.id
@@ -826,6 +850,10 @@ def list_repertoires():
             {
                 **dict(row),
                 "conflict_count": conflict_counts.get(row["id"], 0),
+                "integrity_issue_count": db.execute(
+                    "SELECT COUNT(*) FROM repertoire_integrity_issues WHERE repertoire_id=?",
+                    (row["id"],),
+                ).fetchone()[0],
                 "introduction_priority": priority_status(db, row["id"]),
             }
             for row in rows
@@ -851,6 +879,53 @@ def repertoire_lines():
 def repertoire_conflicts(repertoire_id: str | None = None):
     with connection() as db:
         return {"conflicts": find_repertoire_conflicts(db, repertoire_id)}
+
+
+@app.get("/api/repertoires/{identifier}/integrity")
+def repertoire_integrity(identifier: str):
+    with connection() as db:
+        try:
+            summary = integrity_summary(db, identifier)
+            issues = list_integrity_issues(db, identifier)
+        except KeyError as error:
+            raise HTTPException(404, "Repertoire not found") from error
+    return {"repertoire_id": identifier, **summary, "issues": issues}
+
+
+@app.post("/api/repertoires/{identifier}/integrity/issues/{issue_id}/resolve")
+def resolve_repertoire_integrity(
+    identifier: str, issue_id: str, request: IntegrityResolutionRequest
+):
+    with connection() as db:
+        try:
+            result = resolve_issue(
+                db,
+                identifier,
+                issue_id,
+                request.signature,
+                request.selected_move_uci,
+            )
+        except KeyError as error:
+            raise HTTPException(404, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+        if result["summary"]["status"] == "clean":
+            rebuild_introduction_priorities(db, identifier)
+            seed_queue(db, date.today().isoformat())
+        next_issue = list_integrity_issues(db, identifier)
+        result["next_issue"] = next_issue[0] if next_issue else None
+        result["issues_remaining"] = len(next_issue)
+    if result["summary"]["status"] == "clean":
+        try:
+            enqueue_coverage_refresh(identifier, automatic=True)
+            coordinator.wake()
+        except (KeyError, sqlite3.OperationalError):
+            pass
+        compare_all_games()
+        refresh_game_findings()
+    return result
 
 
 def fen_key(fen: str) -> str:
@@ -1154,6 +1229,13 @@ def review(identifier: str, request: ReviewRequest):
     now = datetime.now(timezone.utc)
     day = date.today().isoformat()
     with connection() as db:
+        if not db.execute(
+            """SELECT 1 FROM repertoire_cards rc JOIN repertoires r ON r.id=rc.repertoire_id
+               JOIN cards c ON c.id=rc.card_id
+               WHERE rc.card_id=? AND c.archived=0 AND r.integrity_status='clean' LIMIT 1""",
+            (identifier,),
+        ).fetchone():
+            raise HTTPException(409, "This card belongs only to a repertoire awaiting integrity repair")
         entry = (
             db.execute(
                 "SELECT * FROM daily_queue WHERE id=? AND card_id=?",
@@ -1259,27 +1341,6 @@ def branch(request: BranchRequest):
             "SELECT 1 FROM repertoires WHERE id=?", (request.repertoire_id,)
         ).fetchone():
             raise HTTPException(404, "Repertoire not found")
-        if not request.allow_conflict:
-            existing_moves = trained_move_index(db, request.repertoire_id)
-            prospective_board = chess.Board(request.starting_fen)
-            trained_turn = (
-                chess.WHITE if request.trained_color == "white" else chess.BLACK
-            )
-            for move_uci in moves:
-                if prospective_board.turn == trained_turn:
-                    position = fen_key(prospective_board.fen())
-                    expected = existing_moves.get((request.repertoire_id, position), {})
-                    if expected and move_uci not in expected:
-                        raise HTTPException(
-                            409,
-                            {
-                                "message": "This repertoire already trains a different move from this position.",
-                                "fen": position,
-                                "existing_moves": sorted(expected),
-                                "new_move": move_uci,
-                            },
-                        )
-                prospective_board.push_uci(move_uci)
         duplicate = (
             db.execute("SELECT 1 FROM repertoire_lines WHERE id=?", (lid,)).fetchone()
             is not None
@@ -1341,14 +1402,16 @@ def branch(request: BranchRequest):
                 "UPDATE repertoire_coverage_candidates SET covered=1 WHERE node_id=? AND move_uci=?",
                 (gap_node_id, gap_move_uci),
             )
+        integrity = sweep_repertoire(db, request.repertoire_id)
         rebuild_introduction_priorities(db, request.repertoire_id)
         seed_queue(db, date.today().isoformat())
-    try:
-        enqueue_coverage_refresh(request.repertoire_id, automatic=True)
-        coordinator.wake()
-    except (KeyError, sqlite3.OperationalError):
-        pass
-    return {"id": lid, "duplicate": duplicate, "moves": moves}
+    if integrity["status"] == "clean":
+        try:
+            enqueue_coverage_refresh(request.repertoire_id, automatic=True)
+            coordinator.wake()
+        except (KeyError, sqlite3.OperationalError):
+            pass
+    return {"id": lid, "duplicate": duplicate, "moves": moves, "integrity": integrity}
 
 
 @app.post("/api/repertoire/branches/remove")
@@ -1381,10 +1444,12 @@ def remove_branch(request: RemoveBranchRequest):
         removed_ids = {line["id"] for line in removed_lines}
         retained_lines = [line for line in lines if line["id"] not in removed_ids]
         if not removed_lines:
+            integrity = sweep_repertoire(db, request.repertoire_id)
             return {
                 "deleted_line_count": 0,
                 "deleted_card_count": 0,
                 "retained_line_count": len(retained_lines),
+                "integrity": integrity,
             }
         for line in removed_lines:
             db.execute("DELETE FROM repertoire_lines WHERE id=?", (line["id"],))
@@ -1447,17 +1512,20 @@ def remove_branch(request: RemoveBranchRequest):
                 "INSERT OR IGNORE INTO repertoire_cards VALUES(?,?)",
                 (request.repertoire_id, identifier),
             )
+        integrity = sweep_repertoire(db, request.repertoire_id)
         rebuild_introduction_priorities(db, request.repertoire_id)
         seed_queue(db, date.today().isoformat())
-    try:
-        enqueue_coverage_refresh(request.repertoire_id, automatic=True)
-        coordinator.wake()
-    except (KeyError, sqlite3.OperationalError):
-        pass
+    if integrity["status"] == "clean":
+        try:
+            enqueue_coverage_refresh(request.repertoire_id, automatic=True)
+            coordinator.wake()
+        except (KeyError, sqlite3.OperationalError):
+            pass
     return {
         "deleted_line_count": len(removed_lines),
         "deleted_card_count": deleted_cards,
         "retained_line_count": len(retained_lines),
+        "integrity": integrity,
     }
 
 
@@ -1553,6 +1621,7 @@ def prefix_split_accept(identifier: str, request: PrefixSplitRequest):
                 )
             ]
             for repertoire_id in set(repertoire_ids):
+                sweep_repertoire(database, repertoire_id)
                 rebuild_introduction_priorities(database, repertoire_id)
             return result
         except KeyError as error:
@@ -1674,6 +1743,7 @@ def revise_card(identifier: str, request: CardRevisionRequest):
             )
         ]
         for repertoire_id in set(repertoire_ids):
+            sweep_repertoire(db, repertoire_id)
             rebuild_introduction_priorities(db, repertoire_id)
     return {
         "card_id": replacement,
