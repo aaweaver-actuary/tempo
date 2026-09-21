@@ -69,7 +69,7 @@ def test_repertoire_integrity_sweep_pauses_conflicting_transpositions_after_impo
         assert client.get("/api/queue/today").json()["cards"] == []
 
 
-def test_integrity_scan_blocks_only_cards_crossing_unresolved_positions(
+def test_integrity_blocks_only_affected_decision_segments(
     tmp_path, monkeypatch
 ):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")

@@ -5,7 +5,9 @@ from app.main import app
 from helpers import wait_for_integrity
 
 
-def test_branch_removal_preserves_shared_cards_and_other_repertoire_history(tmp_path, monkeypatch):
+def test_branch_removal_unlinks_or_archives_only_unreferenced_decision_cards(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         identifiers = []

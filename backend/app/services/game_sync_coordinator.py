@@ -38,6 +38,11 @@ from .repertoire_integrity import (
     requeue_integrity_slice,
 )
 from .durable_tasks import claim_task, complete_task, fail_task, requeue_interrupted_tasks
+from .opening_graph import (
+    calculate_opening_graph_artifacts,
+    prepare_opening_graph_rebuild,
+    publish_opening_graph_rebuild,
+)
 
 
 _durable_task_handlers: dict[str, Callable[[dict], None]] = {}
@@ -373,7 +378,24 @@ class GameSyncCoordinator:
                         if handler is None:
                             raise RuntimeError(f"No handler registered for task kind {item['kind']}")
                         try:
-                            await asyncio.to_thread(handler, item)
+                            if item["kind"] == "opening_graph_rebuild":
+                                rebuild_input = await asyncio.to_thread(
+                                    prepare_opening_graph_rebuild, item
+                                )
+                                if self._process_pool is None:
+                                    self._process_pool = ProcessPoolExecutor(max_workers=1)
+                                graph_artifacts = await asyncio.get_running_loop().run_in_executor(
+                                    self._process_pool,
+                                    calculate_opening_graph_artifacts,
+                                    rebuild_input,
+                                )
+                                await asyncio.to_thread(
+                                    publish_opening_graph_rebuild,
+                                    item,
+                                    graph_artifacts,
+                                )
+                            else:
+                                await asyncio.to_thread(handler, item)
                             await asyncio.to_thread(
                                 complete_task,
                                 item["id"],

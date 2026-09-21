@@ -43,6 +43,22 @@ class GraphInput:
     default_depth: int
 
 
+@dataclass(frozen=True)
+class GraphRebuildInput:
+    graph_input: GraphInput
+    legacy_cards: tuple[dict, ...]
+    reviews_by_card: dict[str, list[dict]]
+    existing_card_ids: frozenset[str]
+    study_day: str
+
+
+@dataclass(frozen=True)
+class GraphRebuildArtifacts:
+    graph_steps: tuple[GraphStep, ...]
+    legacy_mappings: tuple[tuple[str, str], ...]
+    schedule_seeds: dict[str, dict]
+
+
 def build_graph(graph_input: GraphInput) -> tuple[GraphStep, ...]:
     steps: list[GraphStep] = []
     for line in graph_input.lines:
@@ -301,21 +317,56 @@ def _chunks(values: tuple[GraphStep, ...], size: int = 250):
         yield values[offset : offset + size]
 
 
-def execute_opening_graph_rebuild(task: dict) -> None:
-    """Compute without SQLite, stage bounded slices, then publish one generation."""
+def prepare_opening_graph_rebuild(task: dict) -> GraphRebuildInput:
+    """Copy immutable rebuild inputs while holding only short read connections."""
+
+    repertoire_id = task["payload"]["repertoire_id"]
+    local_day = task["payload"].get("local_day") or date.today().isoformat()
+    graph_input = load_graph_input(repertoire_id)
+    legacy_cards, reviews_by_card, existing_card_ids = _load_legacy_snapshot(repertoire_id)
+    return GraphRebuildInput(
+        graph_input=graph_input,
+        legacy_cards=legacy_cards,
+        reviews_by_card=reviews_by_card,
+        existing_card_ids=frozenset(existing_card_ids),
+        study_day=local_day,
+    )
+
+
+def calculate_opening_graph_artifacts(
+    rebuild_input: GraphRebuildInput,
+) -> GraphRebuildArtifacts:
+    """Perform chess traversal and migration scoring without SQLite access."""
+
+    graph_steps = build_graph(rebuild_input.graph_input)
+    legacy_mappings = _legacy_mappings(graph_steps, rebuild_input.legacy_cards)
+    schedule_seeds = _seed_values(
+        graph_steps,
+        rebuild_input.legacy_cards,
+        rebuild_input.reviews_by_card,
+        set(rebuild_input.existing_card_ids),
+        date.fromisoformat(rebuild_input.study_day),
+    )
+    return GraphRebuildArtifacts(
+        graph_steps=graph_steps,
+        legacy_mappings=legacy_mappings,
+        schedule_seeds=schedule_seeds,
+    )
+
+
+def publish_opening_graph_rebuild(
+    task: dict, artifacts: GraphRebuildArtifacts
+) -> None:
+    """Stage bounded writes and atomically publish a current graph generation."""
 
     from .database_executor import submit_background_write
 
     repertoire_id = task["payload"]["repertoire_id"]
     local_day = task["payload"].get("local_day") or date.today().isoformat()
-    study_day = date.fromisoformat(local_day)
     generation = int(task["generation"])
-    graph_steps = build_graph(load_graph_input(repertoire_id))
-    legacy_cards, reviews_by_card, existing_card_ids = _load_legacy_snapshot(repertoire_id)
-    legacy_mappings = _legacy_mappings(graph_steps, legacy_cards)
-    schedule_seeds = _seed_values(
-        graph_steps, legacy_cards, reviews_by_card, existing_card_ids, study_day
-    )
+    graph_steps = artifacts.graph_steps
+    legacy_mappings = artifacts.legacy_mappings
+    schedule_seeds = artifacts.schedule_seeds
 
     def clear_staging(database: sqlite3.Connection) -> None:
         database.execute(
@@ -434,13 +485,13 @@ def execute_opening_graph_rebuild(task: dict) -> None:
             label=f"opening-graph-seed:{repertoire_id}:{generation}",
         )
 
-    def publish(database: sqlite3.Connection) -> None:
+    def publish(database: sqlite3.Connection) -> bool:
         current = database.execute(
             "SELECT generation FROM background_tasks WHERE id=? AND lease_token=?",
             (task["id"], task["lease_token"]),
         ).fetchone()
         if not current or int(current["generation"]) != generation:
-            return
+            return False
         now = datetime.now(timezone.utc).isoformat()
         database.execute(
             """INSERT INTO opening_graph_publications(
@@ -530,10 +581,20 @@ def execute_opening_graph_rebuild(task: dict) -> None:
                )""",
             (repertoire_id, generation),
         )
+        return True
 
-    submit_background_write(
+    published = submit_background_write(
         publish,
         label=f"opening-graph-publish:{repertoire_id}:{generation}",
+    )
+    if not published:
+        return
+    from .repertoire_integrity import enqueue_integrity_scans
+
+    enqueue_integrity_scans(
+        repertoire_id,
+        restart=True,
+        background=True,
     )
     from .durable_tasks import enqueue_task
 
@@ -544,3 +605,11 @@ def execute_opening_graph_rebuild(task: dict) -> None:
         priority=10,
         foreground=False,
     )
+
+
+def execute_opening_graph_rebuild(task: dict) -> None:
+    """Synchronous compatibility path used by focused tests and maintenance."""
+
+    rebuild_input = prepare_opening_graph_rebuild(task)
+    artifacts = calculate_opening_graph_artifacts(rebuild_input)
+    publish_opening_graph_rebuild(task, artifacts)

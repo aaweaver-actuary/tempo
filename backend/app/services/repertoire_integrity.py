@@ -283,14 +283,18 @@ def sweep_all(database: sqlite3.Connection) -> None:
 
 
 def enqueue_integrity_scans(
-    repertoire_id: str | None = None, *, stale_only: bool = False
+    repertoire_id: str | None = None,
+    *,
+    stale_only: bool = False,
+    restart: bool = False,
+    background: bool = False,
 ) -> list[str]:
     """Queue integrity work without changing the last published result."""
 
     queued: list[str] = []
     from ..database import connection
 
-    with connection() as database:
+    with connection(background=background) as database:
         if repertoire_id:
             ids = [repertoire_id]
         elif stale_only:
@@ -323,7 +327,7 @@ def enqueue_integrity_scans(
                 "SELECT run_id,status FROM repertoire_integrity_jobs WHERE repertoire_id=? AND status IN ('queued','running','finalizing')",
                 (identifier,),
             ).fetchone()
-            if active:
+            if active and not restart:
                 queued.append(active["run_id"])
                 continue
             total = database.execute(
@@ -468,6 +472,33 @@ def execute_integrity_slice(job: dict) -> None:
 
         with connection(background=True) as database:
             sources = _source_rows(database, job["repertoire_id"])
+            current_job = database.execute(
+                """SELECT run_id,total_sources FROM repertoire_integrity_jobs
+                   WHERE repertoire_id=?""",
+                (job["repertoire_id"],),
+            ).fetchone()
+            if not current_job or current_job["run_id"] != job["run_id"]:
+                return
+            if len(sources) != int(current_job["total_sources"]):
+                database.execute(
+                    """UPDATE repertoire_integrity_jobs
+                       SET source_offset=0,total_sources=?,status='running',updated_at=?
+                       WHERE repertoire_id=? AND run_id=?""",
+                    (len(sources), _now(), job["repertoire_id"], job["run_id"]),
+                )
+                database.execute(
+                    "DELETE FROM repertoire_integrity_source_runs WHERE run_id=?",
+                    (job["run_id"],),
+                )
+                return
+            if int(job["source_offset"]) >= len(sources):
+                database.execute(
+                    """UPDATE repertoire_integrity_jobs
+                       SET status='finalizing',updated_at=?
+                       WHERE repertoire_id=? AND run_id=?""",
+                    (_now(), job["repertoire_id"], job["run_id"]),
+                )
+                return
             source = sources[job["source_offset"]]
             repertoire_color = next((item.get("trained_color") for item in sources if item.get("trained_color") in {"white", "black"}), None)
         positions, invalid = _scan_source(source, repertoire_color)

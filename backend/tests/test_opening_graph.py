@@ -1,4 +1,6 @@
 from datetime import date
+import json
+import time
 
 from fastapi.testclient import TestClient
 
@@ -7,7 +9,9 @@ from app.main import app
 from app.services.durable_tasks import claim_task, complete_task
 from app.services.opening_graph import (
     GraphInput,
+    GraphRebuildInput,
     build_graph,
+    calculate_opening_graph_artifacts,
     decision_segments,
     enqueue_opening_graph_rebuild,
     execute_opening_graph_rebuild,
@@ -16,6 +20,23 @@ from app.services.scheduler import schedule_review
 
 
 STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+
+
+def _publish_graph(repertoire_id: str) -> None:
+    enqueue_opening_graph_rebuild(repertoire_id)
+    task = claim_task("opening_graph_rebuild")
+    if task is not None:
+        execute_opening_graph_rebuild(task)
+        complete_task(task["id"], task["generation"], task["lease_token"])
+    for _ in range(200):
+        with database.connection() as connection:
+            if connection.execute(
+                "SELECT 1 FROM opening_graph_publications WHERE repertoire_id=?",
+                (repertoire_id,),
+            ).fetchone():
+                return
+        time.sleep(0.01)
+    raise AssertionError(f"opening graph did not publish for {repertoire_id}")
 
 
 def test_lines_sharing_a_prefix_materialize_one_card_per_shared_decision():
@@ -115,11 +136,7 @@ def test_descendant_requires_a_mature_parent(tmp_path, monkeypatch):
                 "line-1",
                 ["e2e4", "e7e5", "g1f3"],
             )
-        enqueue_opening_graph_rebuild("frontier-repertoire")
-        task = claim_task("opening_graph_rebuild")
-        assert task is not None
-        execute_opening_graph_rebuild(task)
-        complete_task(task["id"], task["generation"], task["lease_token"])
+        _publish_graph("frontier-repertoire")
 
         with database.connection() as connection:
             steps = connection.execute(
@@ -146,24 +163,63 @@ def test_graph_rebuild_holds_no_sqlite_connection_during_chess_traversal(
         raise AssertionError("graph computation opened SQLite")
 
     monkeypatch.setattr(database, "connection", forbidden_connection)
-    graph = build_graph(
-        GraphInput(
-            "offline-repertoire",
-            (
-                {
-                    "id": "line-1",
-                    "start_fen": STARTING_FEN,
-                    "moves_json": __import__("json").dumps(
-                        ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"]
-                    ),
-                    "trained_color": "white",
-                    "learner_decision_count": 3,
-                },
-            ),
-            3,
-        )
+    graph_input = GraphInput(
+        "offline-repertoire",
+        (
+            {
+                "id": "line-1",
+                "start_fen": STARTING_FEN,
+                "moves_json": json.dumps(
+                    ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"]
+                ),
+                "trained_color": "white",
+                "learner_decision_count": 3,
+            },
+        ),
+        3,
     )
+    graph = calculate_opening_graph_artifacts(
+        GraphRebuildInput(graph_input, (), {}, frozenset(), "2026-09-21")
+    ).graph_steps
     assert len(graph) == 3
+
+
+def test_production_scale_opening_graph_calculation_is_bounded():
+    route_json = json.dumps(
+        [
+            "e2e4",
+            "e7e5",
+            "g1f3",
+            "b8c6",
+            "f1b5",
+            "a7a6",
+            "b5a4",
+            "g8f6",
+            "e1g1",
+        ]
+    )
+    graph_input = GraphInput(
+        "production-scale-repertoire",
+        tuple(
+            {
+                "id": f"line-{line_number}",
+                "start_fen": STARTING_FEN,
+                "moves_json": route_json,
+                "trained_color": "white",
+                "learner_decision_count": 5,
+            }
+            for line_number in range(1_600)
+        ),
+        5,
+    )
+
+    calculation_started = time.perf_counter()
+    artifacts = calculate_opening_graph_artifacts(
+        GraphRebuildInput(graph_input, (), {}, frozenset(), "2026-09-21")
+    )
+
+    assert len(artifacts.graph_steps) == 8_000
+    assert time.perf_counter() - calculation_started < 8
 
 
 def test_failed_seed_verification_does_not_revoke_introduced_descendants(
@@ -183,11 +239,7 @@ def test_failed_seed_verification_does_not_revoke_introduced_descendants(
                 "line-1",
                 ["e2e4", "e7e5", "g1f3"],
             )
-        enqueue_opening_graph_rebuild("verification-repertoire")
-        task = claim_task("opening_graph_rebuild")
-        assert task is not None
-        execute_opening_graph_rebuild(task)
-        complete_task(task["id"], task["generation"], task["lease_token"])
+        _publish_graph("verification-repertoire")
         with database.connection() as connection:
             steps = connection.execute(
                 """SELECT card_id FROM opening_graph_steps
@@ -234,17 +286,39 @@ def test_canonical_decision_cards_do_not_offer_prefix_splitting(
                 "line-1",
                 ["e2e4", "e7e5", "g1f3"],
             )
-        enqueue_opening_graph_rebuild("split-repertoire")
-        task = claim_task("opening_graph_rebuild")
-        assert task is not None
-        execute_opening_graph_rebuild(task)
-        complete_task(task["id"], task["generation"], task["lease_token"])
+        _publish_graph("split-repertoire")
         with database.connection() as connection:
             card_identifier = connection.execute(
                 """SELECT card_id FROM opening_graph_steps
                    WHERE repertoire_id='split-repertoire' ORDER BY decision_index LIMIT 1"""
             ).fetchone()[0]
         assert client.get(f"/api/cards/{card_identifier}/prefix-split").status_code == 422
+
+
+def test_graph_publication_restarts_integrity_scan_with_current_sources(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app):
+        with database.connection() as connection:
+            _insert_repertoire_line(
+                connection,
+                "scan-repertoire",
+                "line-1",
+                ["e2e4", "e7e5", "g1f3"],
+            )
+        from app.services.repertoire_integrity import enqueue_integrity_scans
+
+        first_run_id = enqueue_integrity_scans("scan-repertoire")[0]
+        _publish_graph("scan-repertoire")
+        with database.connection() as connection:
+            current = connection.execute(
+                """SELECT run_id,total_sources,last_error
+                   FROM repertoire_integrity_jobs WHERE repertoire_id='scan-repertoire'"""
+            ).fetchone()
+            assert current["run_id"] != first_run_id
+            assert current["total_sources"] == 3
+            assert current["last_error"] is None
 
 
 def _insert_repertoire_line(connection, repertoire_id: str, line_id: str, moves):
@@ -267,8 +341,11 @@ def _insert_repertoire_line(connection, repertoire_id: str, line_id: str, moves)
 def test_repeated_graph_rebuilds_are_generation_guarded_and_idempotent(
     tmp_path, monkeypatch
 ):
+    from app.services.game_sync_coordinator import coordinator
+
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
-    with TestClient(app):
+    with TestClient(app) as client:
+        client.portal.call(coordinator.stop)
         with database.connection() as connection:
             _insert_repertoire_line(
                 connection,
@@ -290,20 +367,34 @@ def test_repeated_graph_rebuilds_are_generation_guarded_and_idempotent(
             ).fetchone() is None
 
         current = claim_task("opening_graph_rebuild")
-        assert current is not None
-        execute_opening_graph_rebuild(current)
-        assert complete_task(
-            current["id"], current["generation"], current["lease_token"]
-        ) is True
+        if current is not None:
+            execute_opening_graph_rebuild(current)
+            assert complete_task(
+                current["id"], current["generation"], current["lease_token"]
+            ) is True
+            expected_generation = current["generation"]
+        else:
+            import time
+
+            expected_generation = first["generation"] + 1
+            for _ in range(200):
+                with database.connection() as connection:
+                    publication = connection.execute(
+                        """SELECT generation FROM opening_graph_publications
+                           WHERE repertoire_id='graph-repertoire'"""
+                    ).fetchone()
+                if publication:
+                    break
+                time.sleep(0.01)
         with database.connection() as connection:
             publication = connection.execute(
                 "SELECT generation FROM opening_graph_publications WHERE repertoire_id='graph-repertoire'"
             ).fetchone()
-            assert publication["generation"] == current["generation"]
+            assert publication["generation"] == expected_generation
             assert connection.execute(
                 """SELECT COUNT(DISTINCT card_id) FROM opening_graph_steps
                    WHERE repertoire_id='graph-repertoire' AND generation=?""",
-                (current["generation"],),
+                (expected_generation,),
             ).fetchone()[0] == 3
 
 
@@ -355,11 +446,7 @@ def test_cumulative_migration_preserves_reviews_and_caps_seeded_stability(
                 (legacy_id,),
             )
 
-        enqueue_opening_graph_rebuild("migration-repertoire")
-        task = claim_task("opening_graph_rebuild")
-        assert task is not None
-        execute_opening_graph_rebuild(task)
-        complete_task(task["id"], task["generation"], task["lease_token"])
+        _publish_graph("migration-repertoire")
 
         with database.connection() as connection:
             assert connection.execute(
@@ -382,3 +469,54 @@ def test_cumulative_migration_preserves_reviews_and_caps_seeded_stability(
             assert connection.execute(
                 "SELECT archived FROM cards WHERE id=?", (legacy_id,)
             ).fetchone()[0] == 1
+
+
+def test_graph_publication_never_rewrites_completed_queue_attempts(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app):
+        route = ["e2e4", "e7e5", "g1f3"]
+        with database.connection() as connection:
+            _insert_repertoire_line(
+                connection, "completed-attempt-repertoire", "line-1", route
+            )
+            from app.services.cards import card_id
+
+            legacy_card_id = card_id(STARTING_FEN, route)
+            connection.execute(
+                """INSERT INTO cards(
+                       id,repertoire_id,kind,start_fen,moves_json,due_date,
+                       content_type,trained_color
+                   ) VALUES(?,?,'prefix',?,?,'2026-09-21','opening','white')""",
+                (
+                    legacy_card_id,
+                    "completed-attempt-repertoire",
+                    STARTING_FEN,
+                    __import__("json").dumps(route),
+                ),
+            )
+            connection.execute(
+                "INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)",
+                ("completed-attempt-repertoire", legacy_card_id),
+            )
+            connection.execute(
+                """INSERT INTO daily_queue(
+                       queue_date,card_id,cycle,position,status,attempt_state
+                   ) VALUES('2026-09-21',?,0,7,'complete','failed')""",
+                (legacy_card_id,),
+            )
+
+        _publish_graph("completed-attempt-repertoire")
+
+        with database.connection() as connection:
+            completed_attempt = connection.execute(
+                """SELECT card_id,position,status,attempt_state FROM daily_queue
+                   WHERE queue_date='2026-09-21' AND cycle=0"""
+            ).fetchone()
+            assert dict(completed_attempt) == {
+                "card_id": legacy_card_id,
+                "position": 7,
+                "status": "complete",
+                "attempt_state": "failed",
+            }

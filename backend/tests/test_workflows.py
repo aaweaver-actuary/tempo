@@ -237,6 +237,41 @@ def test_identical_context_segments_share_one_global_schedule_across_repertoires
             assert db.execute("SELECT repertoire_id FROM cards WHERE id=?", (card_id_value,)).fetchone()[0] == second["repertoire_id"]
 
 
+def test_shared_card_counts_once_while_respecting_repertoire_admission_limits(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        settings = client.get("/api/settings").json()
+        settings["new_cards_per_day"] = 1
+        assert client.put("/api/settings", json=settings).status_code == 200
+
+        repertoire_ids = []
+        for source_name in ("shared-first.pgn", "shared-second.pgn"):
+            imported = client.post(
+                "/api/imports/pgn",
+                files={"file": (source_name, PGN, "application/x-chess-pgn")},
+                data={"trained_color": "white", "initial_depth": "2"},
+            ).json()
+            repertoire_ids.append(imported["repertoire_id"])
+            wait_for_integrity(client, imported["repertoire_id"])
+
+        queue = client.get("/api/queue/today").json()
+        assert queue["count"] == 1
+        assert len({card["id"] for card in queue["cards"]}) == 1
+        with database.connection() as db:
+            queued = db.execute(
+                """SELECT card_id,admission_repertoire_id FROM daily_queue
+                   WHERE status='queued'"""
+            ).fetchall()
+            assert len(queued) == 1
+            assert queued[0]["admission_repertoire_id"] in repertoire_ids
+            assert db.execute(
+                "SELECT COUNT(*) FROM repertoire_cards WHERE card_id=?",
+                (queued[0]["card_id"],),
+            ).fetchone()[0] == 2
+
+
 def test_position_annotations_are_scoped_and_round_trip_through_pgn(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
