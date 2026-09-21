@@ -27,6 +27,8 @@ function gameBlocks(pgn: string) {
 
 export function parsePgnImport(fileName: string, pgn: string, trainedColor: 'white' | 'black', initialDepth: number) {
   const cards: PracticeCard[] = [];
+  const prefixCardIds = new Set<string>();
+  let prefixOccurrences = 0;
   for (const block of gameBlocks(pgn)) {
     const chess = new Chess();
     try { chess.loadPgn(block, { strict: false }); } catch { continue; }
@@ -34,29 +36,59 @@ export function parsePgnImport(fileName: string, pgn: string, trainedColor: 'whi
     const allMoves = chess.history();
     const startingFen = asFenString(headers.FEN || STANDARD_FEN);
     const replay = new Chess(startingFen);
-    let segmentStartingFen = startingFen;
-    let segmentMoves: SanMove[] = [];
-    let learnerDecisions = 0;
+    const trainedChessColor = trainedColor === 'white' ? 'w' : 'b';
+    const legalMoves: SanMove[] = [];
+    const learnerMoveOffsets: number[] = [];
     for (const san of allMoves) {
       const movingColor = replay.turn();
-      segmentMoves.push(asSanMove(san));
+      if (movingColor === trainedChessColor) learnerMoveOffsets.push(legalMoves.length);
+      legalMoves.push(asSanMove(san));
       replay.move(san);
-      if (movingColor !== (trainedColor === 'white' ? 'w' : 'b')) continue;
+    }
+    if (!learnerMoveOffsets.length || initialDepth <= 0) continue;
+
+    const prefixDecisionCount = Math.min(initialDepth, learnerMoveOffsets.length);
+    const prefixEndOffset = learnerMoveOffsets[prefixDecisionCount - 1] + 1;
+    const prefixMoves = legalMoves.slice(0, prefixEndOffset);
+    const title = headers.Opening || headers.Event || fileName.replace(/\.pgn$/i, '');
+    const subtitle = headers.Variation || `Imported from ${fileName}`;
+    const addCard = (
+      segmentStartingFen: ReturnType<typeof asFenString>,
+      segmentMoves: SanMove[],
+      userMoveTarget: number,
+      segmentKind: 'prefix' | 'decision',
+    ) => {
       const identity = `${segmentStartingFen.split(' ').slice(0, 4).join(' ')}|${segmentMoves.join(' ')}`;
+      const identifier = asCardId(`import-${stableId(identity)}`);
+      if (segmentKind === 'prefix') {
+        prefixOccurrences += 1;
+        prefixCardIds.add(identifier);
+      }
       cards.push({
-        id: asCardId(`import-${stableId(identity)}`),
+        id: identifier,
         kind: 'opening',
-        title: headers.Opening || headers.Event || fileName.replace(/\.pgn$/i, ''),
-        subtitle: headers.Variation || `Imported from ${fileName}`,
+        title,
+        subtitle,
         startingFen: segmentStartingFen,
         moves: segmentMoves,
-        userMoveTarget: 1,
+        userMoveTarget,
         orientation: trainedColor,
       });
-      learnerDecisions += 1;
-      if (learnerDecisions >= initialDepth) break;
-      segmentStartingFen = asFenString(replay.fen());
-      segmentMoves = [];
+    };
+    addCard(startingFen, prefixMoves, prefixDecisionCount, 'prefix');
+
+    const descendantReplay = new Chess(startingFen);
+    for (const move of prefixMoves) descendantReplay.move(move);
+    let descendantStartingFen = asFenString(descendantReplay.fen());
+    let descendantMoves: SanMove[] = [];
+    for (const san of legalMoves.slice(prefixEndOffset)) {
+      const movingColor = descendantReplay.turn();
+      descendantMoves.push(san);
+      descendantReplay.move(san);
+      if (movingColor !== trainedChessColor) continue;
+      addCard(descendantStartingFen, descendantMoves, 1, 'decision');
+      descendantStartingFen = asFenString(descendantReplay.fen());
+      descendantMoves = [];
     }
   }
   const uniqueCards = [...new Map(cards.map((card) => [card.id, card])).values()];
@@ -75,5 +107,12 @@ export function parsePgnImport(fileName: string, pgn: string, trainedColor: 'whi
     repertoireId: repertoire.id,
     revision: 1,
   }));
-  return { repertoire, cards: repertoire.cards, duplicateLines: cards.length - uniqueCards.length };
+  return {
+    repertoire,
+    cards: repertoire.cards,
+    duplicateLines: cards.length - uniqueCards.length,
+    prefixCards: prefixCardIds.size,
+    descendantCards: uniqueCards.filter((card) => !prefixCardIds.has(card.id)).length,
+    sharedPrefixes: prefixOccurrences - prefixCardIds.size,
+  };
 }

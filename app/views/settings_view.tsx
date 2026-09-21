@@ -348,7 +348,7 @@ export default function SettingsView({
           <h2>Training</h2>
           <label>
             <span>
-              Imported line depth<small>Learner decisions retained from each line</small>
+              Initial prefix length<small>Learner moves tested together before one-move descendants</small>
             </span>
             <input
               type="number"

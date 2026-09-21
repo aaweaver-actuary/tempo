@@ -289,6 +289,9 @@ export const importResultSchema = z.strictObject({
   cards_admitted_today: integer,
   decision_cards_created: integer.optional(),
   shared_decisions_reused: integer.optional(),
+  prefix_cards_created: integer.optional(),
+  shared_prefixes_reused: integer.optional(),
+  descendant_decision_cards_created: integer.optional(),
   graph_state: z.enum(["refreshing", "ready", "failed"]).optional(),
   integrity: z.object({
     status: z.enum(["unchecked", "clean", "needs_repair"]),
@@ -391,6 +394,8 @@ export const prefixSplitResponseSchema = z.strictObject({
   continuation: prefixSplitCardSchema,
   applied: z.boolean(),
   idempotent: z.boolean(),
+  shared_line_count: integer.optional(),
+  shared_repertoire_count: integer.optional(),
 });
 export const tacticProgressSchema = z.record(
   z.string(),

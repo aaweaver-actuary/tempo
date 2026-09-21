@@ -39,6 +39,9 @@ export function ImportDialogBox({
     lines: 0,
     duplicates: 0,
     admitted: 0,
+    prefixes: 0,
+    descendants: 0,
+    sharedPrefixes: 0,
     backend: false,
   });
   const [working, setWorking] = useState(false);
@@ -106,6 +109,9 @@ export function ImportDialogBox({
       let admitted = 0;
       let lines = parsed.cards.length;
       let duplicates = parsed.duplicateLines;
+      let prefixes = parsed.prefixCards;
+      let descendants = parsed.descendantCards;
+      let sharedPrefixes = parsed.sharedPrefixes;
       let integrityRepertoireId: string | undefined;
       if (usesLocalApi()) {
         const data = new FormData();
@@ -122,6 +128,9 @@ export function ImportDialogBox({
           admitted = result.cards_admitted_today ?? 0;
           lines = result.unique_lines;
           duplicates = result.duplicates_merged;
+          prefixes = result.prefix_cards_created ?? 0;
+          descendants = result.descendant_decision_cards_created ?? result.decision_cards_created ?? 0;
+          sharedPrefixes = result.shared_prefixes_reused ?? 0;
           if (result.integrity?.status === "needs_repair") integrityRepertoireId = result.repertoire_id;
           admitted = await waitForPublishedAdmission(
             result.repertoire_id,
@@ -134,6 +143,9 @@ export function ImportDialogBox({
         lines,
         duplicates,
         admitted,
+        prefixes,
+        descendants,
+        sharedPrefixes,
         backend,
       });
       setFinished(true);
@@ -181,6 +193,8 @@ export function ImportDialogBox({
                 ? ` and merged ${summary.duplicates} duplicate ${summary.duplicates === 1 ? "line" : "lines"}`
                 : ""}
               .{" "}
+              Created {summary.prefixes} initial prefix {summary.prefixes === 1 ? "card" : "cards"} and {summary.descendants} one-move descendant {summary.descendants === 1 ? "card" : "cards"}
+              {summary.sharedPrefixes ? `; reused ${summary.sharedPrefixes} shared ${summary.sharedPrefixes === 1 ? "prefix" : "prefixes"}` : ""}.{" "}
               {summary.backend
                 ? `${summary.admitted} cards are in today’s queue; remaining new cards will follow your daily limit.`
                 : "This browser’s repertoire and practice queue are updated."}
@@ -201,8 +215,8 @@ export function ImportDialogBox({
             <h2 id="import-title">Add PGN repertoire</h2>
             <p className="dialog-copy">
               Your file is parsed on this computer. Re-uploading the same
-              positions updates the repertoire without duplicating shared
-              learner decisions.
+              positions updates the repertoire without duplicating identical
+              full prefixes or descendant decisions.
             </p>
             <label className={`drop-zone${file ? " has-file" : ""}`}>
               <input
@@ -239,8 +253,8 @@ export function ImportDialogBox({
             </div>
             <label className="depth-setting">
               <span>
-                <strong>Imported learner decisions</strong>
-                <small>Each decision becomes one contextual study card</small>
+                <strong>Learner moves in initial prefix card</strong>
+                <small>Later moves become locked one-move descendants</small>
               </span>
               <span className="stepper">
                 <button
