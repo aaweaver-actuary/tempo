@@ -917,6 +917,7 @@ def initialize() -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_opening_graph_steps_card ON opening_graph_steps(repertoire_id,generation,card_id)",
+        "CREATE INDEX IF NOT EXISTS idx_opening_graph_steps_queue_card ON opening_graph_steps(card_id,repertoire_id,generation,parent_card_id)",
         "CREATE INDEX IF NOT EXISTS idx_opening_graph_steps_parent ON opening_graph_steps(repertoire_id,generation,parent_card_id)",
         """
         CREATE TABLE IF NOT EXISTS opening_graph_legacy_mappings (

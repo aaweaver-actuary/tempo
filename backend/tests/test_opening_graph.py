@@ -39,6 +39,26 @@ def _publish_graph(repertoire_id: str) -> None:
     raise AssertionError(f"opening graph did not publish for {repertoire_id}")
 
 
+def test_daily_queue_graph_unlock_has_a_card_first_lookup_index(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as connection:
+        indexed_columns = [
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA index_info(idx_opening_graph_steps_queue_card)"
+            )
+        ]
+    assert indexed_columns == [
+        "card_id",
+        "repertoire_id",
+        "generation",
+        "parent_card_id",
+    ]
+
+
 def test_lines_sharing_a_prefix_materialize_one_card_per_shared_decision():
     first = decision_segments(
         STARTING_FEN,
