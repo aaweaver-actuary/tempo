@@ -71,9 +71,20 @@ def apply_scheduling_review(
         "SELECT COUNT(DISTINCT date(reviewed_at)) FROM reviews WHERE card_id=? AND rating='correct'",
         (card_id,),
     ).fetchone()[0]
+    seed = database.execute(
+        """SELECT baseline_successful_days,baseline_recent_clean
+           FROM opening_card_schedule_seeds WHERE card_id=?""",
+        (card_id,),
+    ).fetchone()
+    successful_days += int(seed["baseline_successful_days"] if seed else 0)
     recent_outcomes = [row[0] for row in database.execute(
         "SELECT rating FROM reviews WHERE card_id=? ORDER BY reviewed_at DESC,id DESC LIMIT 2", (card_id,)
     )]
+    if seed:
+        recent_outcomes.extend(
+            ["correct"]
+            * min(int(seed["baseline_recent_clean"]), max(0, 2 - len(recent_outcomes)))
+        )
     state = "mature" if unlock_ready(schedule.stability, successful_days, recent_outcomes) else "learning"
     database.execute(
         """UPDATE cards SET due_date=?,interval_days=?,fsrs_card_json=?,first_correct_at=?,reinforcement_pending=?,

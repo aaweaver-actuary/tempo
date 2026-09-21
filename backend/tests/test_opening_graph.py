@@ -8,6 +8,7 @@ from app.services.opening_graph import (
     enqueue_opening_graph_rebuild,
     execute_opening_graph_rebuild,
 )
+from app.services.scheduler import schedule_review
 
 
 STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -134,3 +135,80 @@ def test_repeated_graph_rebuilds_are_generation_guarded_and_idempotent(
                    WHERE repertoire_id='graph-repertoire' AND generation=?""",
                 (current["generation"],),
             ).fetchone()[0] == 3
+
+
+def test_cumulative_migration_preserves_reviews_and_caps_seeded_stability(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app):
+        route = ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"]
+        with database.connection() as connection:
+            _insert_repertoire_line(connection, "migration-repertoire", "line-1", route)
+            from app.services.cards import card_id
+
+            legacy_id = card_id(STARTING_FEN, route)
+            scheduled = schedule_review("correct")
+            connection.execute(
+                """INSERT INTO cards(
+                       id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+                       interval_days,stability,fsrs_card_json,first_correct_at,
+                       introduced_at,content_type,trained_color
+                   ) VALUES(?,?,'prefix',?,?,'mature','2026-12-01',30,30,?,?,
+                            '2026-08-01','opening','white')""",
+                (
+                    legacy_id,
+                    "migration-repertoire",
+                    STARTING_FEN,
+                    __import__("json").dumps(route),
+                    scheduled.fsrs_card_json,
+                    scheduled.first_correct_at,
+                ),
+            )
+            connection.execute(
+                "INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)",
+                ("migration-repertoire", legacy_id),
+            )
+            for day in ("2026-08-01", "2026-08-03", "2026-08-05"):
+                connection.execute(
+                    """INSERT INTO reviews(
+                           card_id,rating,reviewed_at,previous_interval,next_interval
+                       ) VALUES(?,'correct',?,1,7)""",
+                    (legacy_id, day),
+                )
+            connection.execute(
+                "INSERT INTO daily_queue(queue_date,card_id,position,status) VALUES('2026-09-21',?,0,'complete')",
+                (legacy_id,),
+            )
+            connection.execute(
+                "INSERT INTO daily_queue(queue_date,card_id,cycle,position,status) VALUES('2026-09-21',?,1,1,'queued')",
+                (legacy_id,),
+            )
+
+        enqueue_opening_graph_rebuild("migration-repertoire")
+        task = claim_task("opening_graph_rebuild")
+        assert task is not None
+        execute_opening_graph_rebuild(task)
+        complete_task(task["id"], task["generation"], task["lease_token"])
+
+        with database.connection() as connection:
+            assert connection.execute(
+                "SELECT COUNT(*) FROM reviews WHERE card_id=?", (legacy_id,)
+            ).fetchone()[0] == 3
+            assert connection.execute(
+                "SELECT status FROM daily_queue WHERE card_id=? AND cycle=0", (legacy_id,)
+            ).fetchone()[0] == "complete"
+            assert connection.execute(
+                "SELECT status FROM daily_queue WHERE card_id=? AND cycle=1", (legacy_id,)
+            ).fetchone()[0] == "superseded"
+            seeded = connection.execute(
+                """SELECT card.stability,seed.baseline_successful_days,seed.verification_due
+                   FROM opening_card_schedule_seeds seed
+                   JOIN cards card ON card.id=seed.card_id"""
+            ).fetchall()
+            assert len(seeded) == 3
+            assert all(row["stability"] <= 14 for row in seeded)
+            assert all(row["baseline_successful_days"] == 3 for row in seeded)
+            assert connection.execute(
+                "SELECT archived FROM cards WHERE id=?", (legacy_id,)
+            ).fetchone()[0] == 1

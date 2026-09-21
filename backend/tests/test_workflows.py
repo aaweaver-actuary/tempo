@@ -95,7 +95,11 @@ def test_legacy_incomplete_black_prefix_is_quarantined_from_queue(tmp_path, monk
         response = None
         for _ in range(100):
             response = client.get("/api/queue/today").json()
-            if response["count"] == 0:
+            if (
+                response["count"] == 0
+                and response["projection"]["state"] == "ready"
+                and response["diagnostics"]
+            ):
                 break
             time.sleep(0.01)
         assert response is not None
@@ -117,7 +121,7 @@ def test_import_becomes_main_and_survives_reload(tmp_path, monkeypatch):
         assert queue["count"] == 1
         assert queue["cards"][0]["is_main"] == 1
         assert queue["cards"][0]["trained_color"] == "white"
-        assert queue["cards"][0]["moves"][-1] == "e1g1"
+        assert queue["cards"][0]["moves"] == ["e2e4"]
 
         card = queue["cards"][0]
         first_review = client.post(f"/api/cards/{card['id']}/review", json={"outcome": "correct", "queue_entry_id": card["queue_entry_id"]})
@@ -170,17 +174,17 @@ def test_new_card_limit_due_counts_and_repertoire_deletion(tmp_path, monkeypatch
 
         imported = client.post("/api/imports/pgn", files={"file": ("three.pgn", THREE_LINES_BLACK, "application/x-chess-pgn")}, data={"trained_color": "black", "initial_depth": "2"})
         assert imported.status_code == 200
-        assert imported.json()["cards_created"] == 3
+        assert imported.json()["cards_created"] == 4
         repertoire_id = imported.json()["repertoire_id"]
         wait_for_integrity(client, repertoire_id)
 
         queue = client.get("/api/queue/today").json()["cards"]
-        assert len(queue) == 2
+        assert len(queue) == 1
         assert all(card["trained_color"] == "black" for card in queue)
-        assert all(len(card["moves"]) == 4 for card in queue)
+        assert queue[0]["moves"] == ["e2e4", "e7e5"]
         repertoire = client.get("/api/repertoires").json()["repertoires"][0]
-        assert repertoire["card_count"] == 3
-        assert repertoire["due_count"] == 2
+        assert repertoire["card_count"] == 4
+        assert repertoire["due_count"] == 1
 
         assert client.delete(f"/api/repertoires/{repertoire_id}").json()["deleted"] is True
         assert client.get("/api/repertoires").json()["repertoires"] == []

@@ -909,6 +909,7 @@ def initialize() -> None:
             decision_index INTEGER NOT NULL,
             card_id TEXT NOT NULL,
             parent_card_id TEXT,
+            decision_fen_key TEXT NOT NULL,
             starting_fen TEXT NOT NULL,
             moves_json TEXT NOT NULL,
             trained_color TEXT NOT NULL CHECK(trained_color IN ('white','black')),
@@ -982,6 +983,7 @@ def initialize() -> None:
                 "card_bucket": "TEXT",
                 "admission_kind": "TEXT",
                 "gameplay_priority_reason": "TEXT",
+                "admission_repertoire_id": "TEXT",
             },
             "game_sync_state": {
                 "username": "TEXT NOT NULL DEFAULT ''",
@@ -1074,6 +1076,9 @@ def initialize() -> None:
             },
             "queue_projections": {
                 "blocked_count": "INTEGER NOT NULL DEFAULT 0",
+            },
+            "opening_graph_steps": {
+                "decision_fen_key": "TEXT NOT NULL DEFAULT ''",
             },
         }
         for table, additions in columns.items():

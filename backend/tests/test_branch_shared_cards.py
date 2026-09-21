@@ -1,4 +1,5 @@
 from fastapi.testclient import TestClient
+import time
 from app import database
 from app.main import app
 from helpers import wait_for_integrity
@@ -17,6 +18,17 @@ def test_branch_removal_preserves_shared_cards_and_other_repertoire_history(tmp_
         removed = client.post("/api/repertoire/branches/remove", json={"repertoire_id": identifiers[0], "starting_fen": card["start_fen"], "moves": ["d2d4", "g8f6"]})
         assert removed.status_code == 200
         assert removed.json()["deleted_card_count"] == 0
-        with database.connection() as db:
-            assert db.execute("SELECT repertoire_id FROM cards WHERE id=?", (card["id"],)).fetchone()[0] == identifiers[1]
-            assert db.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (card["id"],)).fetchone()[0] == 1
+        owner = None
+        for _ in range(200):
+            with database.connection() as db:
+                owner = db.execute(
+                    "SELECT repertoire_id FROM cards WHERE id=?", (card["id"],)
+                ).fetchone()[0]
+                review_count = db.execute(
+                    "SELECT COUNT(*) FROM reviews WHERE card_id=?", (card["id"],)
+                ).fetchone()[0]
+            if owner == identifiers[1]:
+                break
+            time.sleep(0.01)
+        assert owner == identifiers[1]
+        assert review_count == 1
