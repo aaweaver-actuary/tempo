@@ -111,6 +111,7 @@ from .services.repertoire_coverage import (
 from .services.introduction_priorities import (
     priority_status,
 )
+from .services.opening_graph import execute_opening_graph_rebuild
 
 
 @asynccontextmanager
@@ -879,6 +880,7 @@ def _execute_daily_queue_task(task: dict) -> None:
 
 register_durable_task_handler("daily_queue", _execute_daily_queue_task)
 register_durable_task_handler("integrity_repair", execute_durable_integrity_repair)
+register_durable_task_handler("opening_graph_rebuild", execute_opening_graph_rebuild)
 
 
 def _ensure_current_daily_queue() -> None:

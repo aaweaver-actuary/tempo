@@ -887,6 +887,56 @@ def initialize() -> None:
         """,
         "CREATE INDEX IF NOT EXISTS idx_background_task_events_task ON background_task_events(task_id,id DESC)",
         """
+        CREATE TABLE IF NOT EXISTS repertoire_line_training_depths (
+            line_id TEXT PRIMARY KEY REFERENCES repertoire_lines(id) ON DELETE CASCADE,
+            learner_decision_count INTEGER NOT NULL CHECK(learner_decision_count >= 0)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS opening_graph_publications (
+            repertoire_id TEXT PRIMARY KEY REFERENCES repertoires(id) ON DELETE CASCADE,
+            generation INTEGER NOT NULL,
+            state TEXT NOT NULL DEFAULT 'ready' CHECK(state IN ('ready','failed')),
+            last_error TEXT,
+            published_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS opening_graph_steps (
+            repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+            generation INTEGER NOT NULL,
+            line_id TEXT NOT NULL REFERENCES repertoire_lines(id) ON DELETE CASCADE,
+            decision_index INTEGER NOT NULL,
+            card_id TEXT NOT NULL,
+            parent_card_id TEXT,
+            starting_fen TEXT NOT NULL,
+            moves_json TEXT NOT NULL,
+            trained_color TEXT NOT NULL CHECK(trained_color IN ('white','black')),
+            PRIMARY KEY(repertoire_id,generation,line_id,decision_index)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_opening_graph_steps_card ON opening_graph_steps(repertoire_id,generation,card_id)",
+        "CREATE INDEX IF NOT EXISTS idx_opening_graph_steps_parent ON opening_graph_steps(repertoire_id,generation,parent_card_id)",
+        """
+        CREATE TABLE IF NOT EXISTS opening_graph_legacy_mappings (
+            repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+            generation INTEGER NOT NULL,
+            legacy_card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+            decision_card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+            PRIMARY KEY(repertoire_id,generation,legacy_card_id,decision_card_id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS opening_card_schedule_seeds (
+            card_id TEXT PRIMARY KEY REFERENCES cards(id) ON DELETE CASCADE,
+            source_card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+            baseline_successful_days INTEGER NOT NULL DEFAULT 0,
+            baseline_recent_clean INTEGER NOT NULL DEFAULT 0,
+            verification_due TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS queue_projections (
             queue_date TEXT PRIMARY KEY,
             state TEXT NOT NULL DEFAULT 'refreshing'
@@ -1126,5 +1176,22 @@ def initialize() -> None:
                SELECT id,'queued',? FROM imported_games g
                WHERE NOT EXISTS(SELECT 1 FROM game_position_occurrences p WHERE p.game_id=g.id)""",
             (now,),
+        )
+        database.execute(
+            """INSERT OR IGNORE INTO background_tasks(
+                   id,kind,deduplication_key,generation,priority,state,phase,
+                   payload_version,payload_json,attempt_count,max_attempts,
+                   next_attempt_at,created_at,updated_at
+               )
+               SELECT 'opening-graph:' || repertoire.id,'opening_graph_rebuild',
+                      repertoire.id,1,40,'queued','queued',1,
+                      json_object('repertoire_id',repertoire.id),0,5,?,?,?
+               FROM repertoires repertoire
+               WHERE repertoire.id NOT IN ('__tactics__','__endgames__','__game_mistakes__')
+                 AND NOT EXISTS(
+                     SELECT 1 FROM opening_graph_publications publication
+                     WHERE publication.repertoire_id=repertoire.id
+                 )""",
+            (now, now, now),
         )
         database.execute("PRAGMA optimize")
