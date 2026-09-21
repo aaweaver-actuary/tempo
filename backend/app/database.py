@@ -886,6 +886,10 @@ def initialize() -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_background_task_events_task ON background_task_events(task_id,id DESC)",
+        """CREATE TABLE IF NOT EXISTS internal_migrations (
+            name TEXT PRIMARY KEY,
+            applied_at TEXT NOT NULL
+        )""",
         """
         CREATE TABLE IF NOT EXISTS repertoire_line_training_depths (
             line_id TEXT PRIMARY KEY REFERENCES repertoire_lines(id) ON DELETE CASCADE,
@@ -1125,6 +1129,60 @@ def initialize() -> None:
                  AND substr(introduced_at,8,1)='-'"""
         )
         now = datetime.now(timezone.utc).isoformat()
+        hybrid_graph_migration_name = "hybrid-opening-graph-v1"
+        if not database.execute(
+            "SELECT 1 FROM internal_migrations WHERE name=?",
+            (hybrid_graph_migration_name,),
+        ).fetchone():
+            for repertoire in database.execute(
+                """SELECT id FROM repertoires
+                   WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__')"""
+            ).fetchall():
+                repertoire_id = repertoire["id"]
+                database.execute(
+                    """INSERT INTO background_tasks(
+                           id,kind,deduplication_key,generation,priority,state,phase,
+                           payload_version,payload_json,attempt_count,max_attempts,
+                           next_attempt_at,created_at,updated_at
+                       ) VALUES(?,'opening_graph_rebuild',?,1,40,'queued','queued',
+                                1,json_object('repertoire_id',?),0,5,?,?,?)
+                       ON CONFLICT(kind,deduplication_key) DO UPDATE SET
+                           generation=background_tasks.generation+1,
+                           priority=40,state='queued',phase='queued',payload_version=1,
+                           payload_json=excluded.payload_json,attempt_count=0,max_attempts=5,
+                           next_attempt_at=excluded.next_attempt_at,lease_token=NULL,
+                           lease_expires_at=NULL,last_error=NULL,started_at=NULL,
+                           completed_at=NULL,updated_at=excluded.updated_at""",
+                    (
+                        f"opening-graph:{repertoire_id}",
+                        repertoire_id,
+                        repertoire_id,
+                        now,
+                        now,
+                        now,
+                    ),
+                )
+            database.execute(
+                "INSERT INTO internal_migrations(name,applied_at) VALUES(?,?)",
+                (hybrid_graph_migration_name, now),
+            )
+        hybrid_depth_backfill_name = "hybrid-opening-depth-backfill-v1"
+        if not database.execute(
+            "SELECT 1 FROM internal_migrations WHERE name=?",
+            (hybrid_depth_backfill_name,),
+        ).fetchone():
+            database.execute(
+                """INSERT OR IGNORE INTO repertoire_line_training_depths(
+                       line_id,learner_decision_count
+                   )
+                   SELECT line.id,settings.initial_depth
+                   FROM repertoire_lines line CROSS JOIN settings
+                   WHERE settings.id=1"""
+            )
+            database.execute(
+                "INSERT INTO internal_migrations(name,applied_at) VALUES(?,?)",
+                (hybrid_depth_backfill_name, now),
+            )
         database.execute(
             """INSERT OR IGNORE INTO game_analysis_jobs(game_id,analysis_version,status,updated_at)
                SELECT id,1,CASE WHEN analysis_state IN ('ready','complete') THEN 'complete' WHEN analysis_state='failed' THEN 'failed' ELSE 'queued' END,?

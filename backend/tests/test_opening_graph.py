@@ -60,6 +60,91 @@ def test_daily_queue_graph_unlock_has_a_card_first_lookup_index(
     ]
 
 
+def test_hybrid_graph_migration_enqueues_each_existing_repertoire_once(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as connection:
+        connection.execute(
+            """INSERT INTO repertoires(id,name,source_name,created_at)
+               VALUES('migration-repertoire','Migration','migration.pgn','2026-09-21')"""
+        )
+        connection.execute(
+            """INSERT INTO opening_graph_publications(
+                   repertoire_id,generation,state,published_at
+               ) VALUES('migration-repertoire',4,'ready','2026-09-21')"""
+        )
+        connection.execute(
+            """INSERT INTO background_tasks(
+                   id,kind,deduplication_key,generation,priority,state,phase,
+                   payload_json,next_attempt_at,created_at,updated_at
+               ) VALUES('opening-graph:migration-repertoire','opening_graph_rebuild',
+                        'migration-repertoire',4,40,'complete','published',
+                        '{"repertoire_id":"migration-repertoire"}',
+                        '2026-09-21','2026-09-21','2026-09-21')"""
+        )
+        connection.execute(
+            "DELETE FROM internal_migrations WHERE name='hybrid-opening-graph-v1'"
+        )
+
+    database.initialize()
+    with database.connection() as connection:
+        migrated = connection.execute(
+            """SELECT generation,state,phase FROM background_tasks
+               WHERE kind='opening_graph_rebuild'
+                 AND deduplication_key='migration-repertoire'"""
+        ).fetchone()
+        assert tuple(migrated) == (5, "queued", "queued")
+
+    database.initialize()
+    with database.connection() as connection:
+        repeated = connection.execute(
+            """SELECT generation,state FROM background_tasks
+               WHERE kind='opening_graph_rebuild'
+                 AND deduplication_key='migration-repertoire'"""
+        ).fetchone()
+        assert tuple(repeated) == (5, "queued")
+
+
+def test_hybrid_migration_freezes_legacy_line_prefix_depth_once(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as connection:
+        connection.execute("UPDATE settings SET initial_depth=5 WHERE id=1")
+        _insert_repertoire_line(
+            connection,
+            "legacy-depth-repertoire",
+            "legacy-depth-line",
+            ["e2e4", "e7e5", "g1f3"],
+        )
+        connection.execute(
+            "DELETE FROM repertoire_line_training_depths WHERE line_id='legacy-depth-line'"
+        )
+        connection.execute(
+            "DELETE FROM internal_migrations WHERE name='hybrid-opening-depth-backfill-v1'"
+        )
+
+    database.initialize()
+    with database.connection() as connection:
+        assert connection.execute(
+            """SELECT learner_decision_count
+               FROM repertoire_line_training_depths
+               WHERE line_id='legacy-depth-line'"""
+        ).fetchone()[0] == 5
+        connection.execute("UPDATE settings SET initial_depth=9 WHERE id=1")
+
+    database.initialize()
+    with database.connection() as connection:
+        assert connection.execute(
+            """SELECT learner_decision_count
+               FROM repertoire_line_training_depths
+               WHERE line_id='legacy-depth-line'"""
+        ).fetchone()[0] == 5
+
+
 def test_configured_black_route_materializes_as_one_cumulative_prefix():
     route = [
         "e2e4", "c7c6", "d2d4", "d7d5", "e4e5", "c6c5",
