@@ -33,6 +33,7 @@ import {
   invalidateWorkspaceData,
 } from "../lib/workspace-data";
 import { motifRecommendationsSchema, tacticProgressSchema } from "../domain/schemas";
+import { reportDebugError } from "../lib/debug-reporting";
 import { useTaskTabs } from "../components/task-tabs";
 
 const emptyPuzzle: PracticeCard = {
@@ -116,6 +117,13 @@ export default function TacticsView({
       invalidateWorkspaceData();
       onQueueChanged();
     } catch (error) {
+      reportDebugError(error, {
+        kind: "api",
+        source: "tactics-view",
+        operation: "save tactic pack activation",
+        endpoint: `${API_URL}/api/tactics/activation`,
+        method: "POST",
+      });
       setActivationError(
         error instanceof Error
           ? error.message
@@ -154,7 +162,12 @@ export default function TacticsView({
         }
       })
       .catch((error) => {
-        if (active) setCatalogError(error.message);
+        reportDebugError(error, {
+          kind: "data-validation",
+          source: "tactics-view",
+          operation: "load tactics catalog",
+        });
+        if (active) setCatalogError(error instanceof Error ? error.message : "Could not load tactics catalog.");
       });
     return () => {
       active = false;

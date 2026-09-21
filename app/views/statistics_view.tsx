@@ -5,6 +5,7 @@ import {
   chessStatisticsOverviewSchema,
 } from "../domain/schemas";
 import { readWorkspaceData } from "../lib/workspace-data";
+import { reportDebugError } from "../lib/debug-reporting";
 
 type Overview = ReturnType<typeof chessStatisticsOverviewSchema.parse>;
 type Breakdown = ReturnType<typeof chessStatisticsBreakdownSchema.parse>;
@@ -38,6 +39,12 @@ export default function StatisticsView({ embedded = false }: { embedded?: boolea
       setBreakdown(nextBreakdown);
       setError("");
     }).catch((reason) => {
+      reportDebugError(reason, {
+        kind: "api",
+        source: "statistics-view",
+        operation: "load chess statistics",
+        endpoint: `${API_URL}/api/statistics/overview`,
+      });
       if (active) setError(reason instanceof Error ? reason.message : "Statistics unavailable.");
     });
     return () => { active = false; };

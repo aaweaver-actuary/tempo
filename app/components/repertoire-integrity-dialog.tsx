@@ -14,6 +14,7 @@ import {
 import { readJsonResponse } from "../lib/validated-data";
 import { asFenString, asUciMove } from "../types";
 import { MoveComparisonTable } from "./move-comparison-table";
+import { reportDebugError } from "../lib/debug-reporting";
 
 export function RepertoireIntegrityDialog({
   repertoireId,
@@ -77,13 +78,27 @@ export function RepertoireIntegrityDialog({
         }
       }
     } catch (failure) {
+      reportDebugError(failure, {
+        kind: "api",
+        source: "repertoire-integrity",
+        operation: "load integrity data",
+        endpoint: `${API_URL}/api/repertoires/${repertoireId}/integrity`,
+      });
       setError(failure instanceof Error ? failure.message : "Integrity data unavailable.");
     }
   }, [repertoireId]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void load(), 0);
+    if (!payload || !["queued", "running", "retrying"].includes(payload.scan_status)) return;
+    const timer = window.setTimeout(() => void load(), 500);
     return () => window.clearTimeout(timer);
+  }, [payload, load]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(), 0);
+    return () => {
+      window.clearTimeout(timer);
+    };
   }, [load]);
 
   async function resolve() {
@@ -97,12 +112,19 @@ export function RepertoireIntegrityDialog({
         body: JSON.stringify({ signature: issue.signature, selected_move_uci: selected }),
       });
       const result = await readJsonResponse(response, integrityResolutionSchema, "integrity repair");
-      if (result.summary.status === "clean") {
+      if (result.summary.status === "clean" && result.summary.scan_status === "idle") {
         onClean();
         return;
       }
       await load();
     } catch (failure) {
+      reportDebugError(failure, {
+        kind: "api",
+        source: "repertoire-integrity",
+        operation: "resolve integrity issue",
+        endpoint: `${API_URL}/api/repertoires/${repertoireId}/integrity/issues/${issue.id}/resolve`,
+        method: "POST",
+      });
       setError(failure instanceof Error ? failure.message : "The repair could not be saved.");
     } finally {
       setWorking(false);

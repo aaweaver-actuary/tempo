@@ -1,9 +1,11 @@
 from fastapi.testclient import TestClient
 import hashlib
 import json
+import time
 
 from app import database
-from app.main import app
+from app.main import app, enqueue_daily_queue_refresh
+from helpers import wait_for_daily_queue, wait_for_integrity
 
 
 PGN = b'''[Event "Persistent repertoire"]
@@ -77,18 +79,26 @@ def test_legacy_incomplete_black_prefix_is_quarantined_from_queue(tmp_path, monk
     """Regression: malformed persisted cards are skipped instead of freezing Train."""
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
-        client.post(
+        imported = client.post(
             "/api/imports/pgn",
             files={"file": ("complete.pgn", BLACK_PGN, "application/x-chess-pgn")},
             data={"trained_color": "black", "initial_depth": "2"},
         )
+        wait_for_integrity(client, imported.json()["repertoire_id"])
         queued = client.get("/api/queue/today").json()["cards"][0]
         with database.connection() as db:
             db.execute(
                 "UPDATE cards SET moves_json=? WHERE id=?",
                 (json.dumps(["e2e4"]), queued["id"]),
             )
-        response = client.get("/api/queue/today").json()
+        enqueue_daily_queue_refresh()
+        response = None
+        for _ in range(100):
+            response = client.get("/api/queue/today").json()
+            if response["count"] == 0:
+                break
+            time.sleep(0.01)
+        assert response is not None
         assert response["count"] == 0
         assert response["diagnostics"][0]["card_id"] == queued["id"]
         with database.connection() as db:
@@ -102,6 +112,7 @@ def test_import_becomes_main_and_survives_reload(tmp_path, monkeypatch):
         first = client.post("/api/imports/pgn", files={"file": ("italian.pgn", PGN, "application/x-chess-pgn")}, data={"trained_color": "white", "initial_depth": "6"})
         assert first.status_code == 200
         repertoire_id = first.json()["repertoire_id"]
+        wait_for_integrity(client, repertoire_id)
         queue = client.get("/api/queue/today").json()
         assert queue["count"] == 1
         assert queue["cards"][0]["is_main"] == 1
@@ -146,7 +157,7 @@ def test_tactic_and_endgame_are_admitted_to_scheduler(tmp_path, monkeypatch):
         assert repeated.json()["card_id"] == endgame.json()["card_id"]
         assert repeated.json()["already_exists"] is True
 
-        queue = client.get("/api/queue/today").json()["cards"]
+        queue = wait_for_daily_queue(client, 2)["cards"]
         assert {card["content_type"] for card in queue} == {"tactic", "endgame"}
 
 
@@ -161,6 +172,7 @@ def test_new_card_limit_due_counts_and_repertoire_deletion(tmp_path, monkeypatch
         assert imported.status_code == 200
         assert imported.json()["cards_created"] == 3
         repertoire_id = imported.json()["repertoire_id"]
+        wait_for_integrity(client, repertoire_id)
 
         queue = client.get("/api/queue/today").json()["cards"]
         assert len(queue) == 2
@@ -181,14 +193,18 @@ def test_legacy_eager_queue_is_reconciled_without_reviews(tmp_path, monkeypatch)
         settings = client.get("/api/settings").json()
         settings["new_cards_per_day"] = 1
         client.put("/api/settings", json=settings)
-        client.post("/api/imports/pgn", files={"file": ("legacy.pgn", THREE_LINES, "application/x-chess-pgn")}, data={"trained_color": "white", "initial_depth": "2"})
+        imported = client.post("/api/imports/pgn", files={"file": ("legacy.pgn", THREE_LINES, "application/x-chess-pgn")}, data={"trained_color": "white", "initial_depth": "2"})
+        wait_for_integrity(client, imported.json()["repertoire_id"])
+        client.get("/api/queue/today")
         with database.connection() as db:
             day = db.execute("SELECT queue_date FROM daily_queue LIMIT 1").fetchone()[0]
             maximum = db.execute("SELECT MAX(position) FROM daily_queue WHERE queue_date=?", (day,)).fetchone()[0]
             unseen = db.execute("SELECT id FROM cards WHERE state='new' ORDER BY id").fetchall()
             for offset, card in enumerate(unseen, 1):
                 db.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?)", (day, card[0], maximum + offset))
-        queue = client.get("/api/queue/today").json()
+        from app.main import enqueue_daily_queue_refresh
+        enqueue_daily_queue_refresh()
+        queue = wait_for_daily_queue(client, 1)
         assert queue["count"] == 1
         with database.connection() as db:
             assert db.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 0
@@ -198,10 +214,12 @@ def test_overlapping_repertoires_share_card_history_when_one_is_deleted(tmp_path
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         first = client.post("/api/imports/pgn", files={"file": ("first.pgn", PGN, "application/x-chess-pgn")}, data={"trained_color": "white", "initial_depth": "2"}).json()
+        wait_for_integrity(client, first["repertoire_id"])
         card_id_value = client.get("/api/queue/today").json()["cards"][0]["id"]
         client.post(f"/api/cards/{card_id_value}/review", json={"outcome": "correct", "guided": False})
 
         second = client.post("/api/imports/pgn", files={"file": ("second.pgn", PGN, "application/x-chess-pgn")}, data={"trained_color": "white", "initial_depth": "2"}).json()
+        wait_for_integrity(client, second["repertoire_id"])
         assert second["cards_created"] == 0
         with database.connection() as db:
             assert db.execute("SELECT COUNT(*) FROM repertoire_cards WHERE card_id=?", (card_id_value,)).fetchone()[0] == 2
@@ -243,6 +261,7 @@ def test_teaching_state_and_verified_migration_snapshot(tmp_path, monkeypatch):
             data={"trained_color": "white", "initial_depth": "2"},
         )
         assert imported.status_code == 200
+        wait_for_integrity(client, imported.json()["repertoire_id"])
         card_id = client.get("/api/queue/today").json()["cards"][0]["id"]
         taught = client.post(f"/api/cards/{card_id}/teaching", json={"revision": 1, "ply": 0})
         assert taught.status_code == 200

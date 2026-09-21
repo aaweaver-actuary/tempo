@@ -29,6 +29,9 @@ def _seed_repertoire(db, lines: list[list[str]], cards: list[list[str]]) -> None
             (f"card-{index}", "rep", START, json.dumps(moves), "2026-09-20"),
         )
         db.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('rep',?)", (f"card-{index}",))
+    db.execute(
+        "INSERT INTO repertoire_integrity_state(repertoire_id,status,checked_at) VALUES('rep','clean','2026-09-20T00:00:00+00:00')"
+    )
 
 
 def _fen_after(moves: list[str]) -> str:
@@ -189,6 +192,7 @@ def test_seed_queue_introduces_the_highest_impact_line_first(tmp_path, monkeypat
         _seed_public_probability(db, "common-2", ["d2d4", "d7d5", "c1f4"], "g8f6", 0.9)
         _seed_public_probability(db, "common-3", ["d2d4", "d7d5", "c1f4", "g8f6", "e2e3"], "e7e6", 0.9)
         _seed_public_probability(db, "rare-1", ["d2d4", "c7c5"], "c2c4", 0.01)
+        priorities.rebuild_introduction_priorities(db, "rep")
         seed_queue(db, "2026-09-20")
         introduced = db.execute(
             "SELECT card_id FROM daily_queue WHERE queue_date='2026-09-20'"

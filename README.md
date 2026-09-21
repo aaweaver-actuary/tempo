@@ -71,6 +71,12 @@ static/                    GitHub Pages entry point (base path /tempo/)
 docker-compose.yml         Local two-service runtime
 ```
 
+The [code organization audit](docs/CODE-ORGANIZATION-AUDIT.md) explains the
+current boundaries, the backend service clusters, and a staged path for making
+the code easier to navigate. Maintained source, test, asset, and documentation
+directories also contain a local `README.md`; start with the README closest to
+the code you are changing.
+
 ## Static build
 
 ```bash

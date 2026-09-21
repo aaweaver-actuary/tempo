@@ -6,7 +6,9 @@ from collections import defaultdict
 from datetime import datetime, timezone
 import hashlib
 import json
+import logging
 import sqlite3
+import uuid
 
 import chess
 
@@ -14,6 +16,7 @@ from .cards import card_id
 from .repertoire_comparison import canonical_fen
 
 SYSTEM_REPERTOIRES = {"__tactics__", "__endgames__", "__game_mistakes__"}
+_LOGGER = logging.getLogger("tempo.background")
 
 
 def _now() -> str:
@@ -71,61 +74,71 @@ def _source_rows(database: sqlite3.Connection, repertoire_id: str) -> list[dict]
     return lines + cards
 
 
+def _scan_source(
+    source: dict, repertoire_color: str | None
+) -> tuple[dict[str, dict], list[dict]]:
+    positions: dict[str, dict] = {}
+    invalid: list[dict] = []
+    source_label = f"{source['source_type']} {source['source_id']}"
+    try:
+        board = chess.Board(source["start_fen"])
+        moves = json.loads(source["moves_json"])
+        if not isinstance(moves, list):
+            raise ValueError("moves_json must be a list")
+        target = chess.WHITE if source["trained_color"] == "white" else chess.BLACK
+        if source["trained_color"] not in {"white", "black"}:
+            raise ValueError("trained color is unknown")
+        if repertoire_color is not None and source["trained_color"] != repertoire_color:
+            raise ValueError(
+                f"trained color {source['trained_color']} does not match repertoire color {repertoire_color}"
+            )
+        last_moving_color = None
+        for move_index, move_value in enumerate(moves):
+            if board.turn == target:
+                _record_position(positions, board, source, move_index, str(move_value))
+            move = chess.Move.from_uci(str(move_value).lower())
+            if move not in board.legal_moves:
+                raise ValueError(f"illegal move at ply {move_index + 1}")
+            last_moving_color = board.turn
+            board.push(move)
+        if board.turn == target and any(board.legal_moves) and last_moving_color != target:
+            _record_position(positions, board, source, len(moves), None)
+    except (TypeError, ValueError, json.JSONDecodeError, KeyError) as error:
+        invalid.append(
+            {
+                "kind": "invalid_source",
+                "fen_key": None,
+                "fen": None,
+                "trained_color": source.get("trained_color"),
+                "moves": [],
+                "sources": [
+                    {
+                        "type": source["source_type"],
+                        "id": source["source_id"],
+                        "label": source_label,
+                        "error": str(error),
+                    }
+                ],
+            }
+        )
+    return positions, invalid
+
+
 def _scan_sources(database: sqlite3.Connection, repertoire_id: str) -> list[dict]:
     positions: dict[str, dict] = {}
     invalid: list[dict] = []
     repertoire_color: str | None = None
     for source in _source_rows(database, repertoire_id):
-        source_label = f"{source['source_type']} {source['source_id']}"
-        try:
-            board = chess.Board(source["start_fen"])
-            moves = json.loads(source["moves_json"])
-            if not isinstance(moves, list):
-                raise ValueError("moves_json must be a list")
-            target = chess.WHITE if source["trained_color"] == "white" else chess.BLACK
-            if source["trained_color"] not in {"white", "black"}:
-                raise ValueError("trained color is unknown")
-            if repertoire_color is None:
-                repertoire_color = source["trained_color"]
-            elif source["trained_color"] != repertoire_color:
-                raise ValueError(
-                    f"trained color {source['trained_color']} does not match repertoire color {repertoire_color}"
-                )
-            last_moving_color = None
-            for move_index, move_value in enumerate(moves):
-                if board.turn == target:
-                    _record_position(
-                        positions,
-                        board,
-                        source,
-                        move_index,
-                        str(move_value),
-                    )
-                move = chess.Move.from_uci(str(move_value).lower())
-                if move not in board.legal_moves:
-                    raise ValueError(f"illegal move at ply {move_index + 1}")
-                last_moving_color = board.turn
-                board.push(move)
-            if board.turn == target and any(board.legal_moves) and last_moving_color != target:
-                _record_position(positions, board, source, len(moves), None)
-        except (TypeError, ValueError, json.JSONDecodeError, KeyError) as error:
-            invalid.append(
-                {
-                    "kind": "invalid_source",
-                    "fen_key": None,
-                    "fen": None,
-                    "trained_color": source.get("trained_color"),
-                    "moves": [],
-                    "sources": [
-                        {
-                            "type": source["source_type"],
-                            "id": source["source_id"],
-                            "label": source_label,
-                            "error": str(error),
-                        }
-                    ],
-                }
-            )
+        source_positions, source_invalid = _scan_source(source, repertoire_color)
+        if repertoire_color is None and source.get("trained_color") in {"white", "black"}:
+            repertoire_color = source["trained_color"]
+        for key, value in source_positions.items():
+            if key not in positions:
+                positions[key] = value
+            else:
+                positions[key]["moves"].extend(value["moves"])
+                positions[key]["sources"].extend(value["sources"])
+        invalid.extend(source_invalid)
     issues: list[dict] = []
     for value in positions.values():
         move_set = set(value["moves"])
@@ -231,9 +244,247 @@ def sweep_all(database: sqlite3.Connection) -> None:
         sweep_repertoire(database, repertoire_id)
 
 
+def enqueue_integrity_scans(
+    repertoire_id: str | None = None, *, stale_only: bool = False
+) -> list[str]:
+    """Queue integrity work without changing the last published result."""
+
+    queued: list[str] = []
+    from ..database import connection
+
+    with connection() as database:
+        if repertoire_id:
+            ids = [repertoire_id]
+        elif stale_only:
+            ids = [
+                row[0]
+                for row in database.execute(
+                    """SELECT r.id FROM repertoires r
+                       LEFT JOIN repertoire_integrity_state s ON s.repertoire_id=r.id
+                       WHERE r.id NOT IN (?,?,?)
+                         AND (s.repertoire_id IS NULL OR s.status='unchecked' OR s.scan_status='failed')
+                       ORDER BY r.id""",
+                    tuple(SYSTEM_REPERTOIRES),
+                )
+            ]
+        else:
+            ids = [
+                row[0]
+                for row in database.execute(
+                    "SELECT id FROM repertoires WHERE id NOT IN (?,?,?) ORDER BY id",
+                    tuple(SYSTEM_REPERTOIRES),
+                )
+            ]
+        now = _now()
+        for identifier in ids:
+            if not database.execute(
+                "SELECT 1 FROM repertoires WHERE id=?", (identifier,)
+            ).fetchone():
+                raise KeyError("Repertoire not found")
+            active = database.execute(
+                "SELECT run_id,status FROM repertoire_integrity_jobs WHERE repertoire_id=? AND status IN ('queued','running','finalizing')",
+                (identifier,),
+            ).fetchone()
+            if active:
+                queued.append(active["run_id"])
+                continue
+            total = database.execute(
+                "SELECT COUNT(*) FROM (SELECT id FROM repertoire_lines WHERE repertoire_id=? UNION ALL SELECT DISTINCT c.id FROM cards c LEFT JOIN repertoire_cards rc ON rc.card_id=c.id WHERE (rc.repertoire_id=? OR c.repertoire_id=?) AND c.archived=0 AND c.content_type='opening')",
+                (identifier, identifier, identifier),
+            ).fetchone()[0]
+            run_id = str(uuid.uuid4())
+            database.execute(
+                "INSERT INTO repertoire_integrity_jobs(repertoire_id,run_id,status,source_offset,total_sources,updated_at) VALUES(?,?, 'queued',0,?,?) ON CONFLICT(repertoire_id) DO UPDATE SET run_id=excluded.run_id,status='queued',source_offset=0,total_sources=excluded.total_sources,attempts=0,last_error=NULL,updated_at=excluded.updated_at",
+                (identifier, run_id, total, now),
+            )
+            database.execute(
+                "INSERT INTO repertoire_integrity_state(repertoire_id,status,scan_status,scan_generation,scan_completed_sources,scan_total_sources,scan_error) VALUES(?, 'unchecked','queued',NULL,0,?,NULL) ON CONFLICT(repertoire_id) DO UPDATE SET scan_status='queued',scan_generation=excluded.scan_generation,scan_completed_sources=0,scan_total_sources=excluded.scan_total_sources,scan_error=NULL",
+                (identifier, total),
+            )
+            queued.append(run_id)
+    return queued
+
+
+def _issues_from_observations(
+    repertoire_id: str, observations: list[dict], invalid: list[dict]
+) -> list[dict]:
+    positions: dict[str, dict] = {}
+    for source_positions in observations:
+        for value in source_positions:
+            key = value["fen_key"]
+            if key not in positions:
+                positions[key] = value
+            else:
+                positions[key]["moves"].extend(value.get("moves", []))
+                positions[key]["sources"].extend(value.get("sources", []))
+    issues: list[dict] = []
+    for value in positions.values():
+        move_set = set(value["moves"])
+        if len(move_set) == 1:
+            continue
+        value["kind"] = "missing_response" if not move_set else "multiple_responses"
+        issues.append(value)
+    for issue in invalid:
+        issue["id"] = _issue_id(repertoire_id, issue["kind"], None, issue.get("sources"))
+        issue["signature"] = _signature(issue)
+        issues.append(issue)
+    for issue in issues:
+        issue.setdefault("id", _issue_id(repertoire_id, issue["kind"], issue.get("fen_key"), issue.get("sources")))
+        issue.setdefault("signature", _signature(issue))
+    return sorted(issues, key=lambda item: (item.get("fen_key") or "", item["kind"], item["id"]))
+
+
+def claim_integrity_slice() -> dict | None:
+    from ..database import connection
+
+    with connection(background=True) as database:
+        database.execute("BEGIN IMMEDIATE")
+        row = database.execute(
+            "SELECT * FROM repertoire_integrity_jobs WHERE status IN ('queued','running','finalizing') ORDER BY updated_at,repertoire_id LIMIT 1"
+        ).fetchone()
+        if not row:
+            return None
+        now = _now()
+        if row["status"] == "finalizing" or row["source_offset"] >= row["total_sources"]:
+            database.execute(
+                "UPDATE repertoire_integrity_jobs SET status='finalizing',updated_at=? WHERE repertoire_id=?",
+                (now, row["repertoire_id"]),
+            )
+            database.execute(
+                "UPDATE repertoire_integrity_state SET scan_status='running' WHERE repertoire_id=?",
+                (row["repertoire_id"],),
+            )
+            return {**dict(row), "status": "finalizing"}
+        database.execute(
+            "UPDATE repertoire_integrity_jobs SET status='running',attempts=attempts+1,updated_at=? WHERE repertoire_id=?",
+            (now, row["repertoire_id"]),
+        )
+        database.execute(
+            "UPDATE repertoire_integrity_state SET scan_status='running' WHERE repertoire_id=?",
+            (row["repertoire_id"],),
+        )
+        return {**dict(row), "status": "running"}
+
+
+def execute_integrity_slice(job: dict) -> None:
+    from ..database import connection
+    from .activity_gate import activity_gate
+
+    with activity_gate.background_job("integrity", job["repertoire_id"]):
+        if job["status"] == "finalizing":
+            with connection(background=True) as database:
+                staged = database.execute(
+                    "SELECT observations_json,invalid_json FROM repertoire_integrity_source_runs WHERE run_id=? ORDER BY source_offset",
+                    (job["run_id"],),
+                ).fetchall()
+            observations = [json.loads(row[0]) for row in staged]
+            invalid = [item for row in staged for item in json.loads(row[1])]
+            issues = _issues_from_observations(job["repertoire_id"], observations, invalid)
+            now = _now()
+            with connection(background=True) as database:
+                database.execute("DELETE FROM repertoire_integrity_issues WHERE repertoire_id=?", (job["repertoire_id"],))
+                for issue in issues:
+                    database.execute(
+                        "INSERT INTO repertoire_integrity_issues(id,repertoire_id,kind,fen_key,fen,trained_color,signature,moves_json,sources_json,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
+                        (issue["id"], job["repertoire_id"], issue["kind"], issue.get("fen_key"), issue.get("fen"), issue.get("trained_color"), issue["signature"], json.dumps(sorted(set(issue.get("moves", [])))), json.dumps(issue.get("sources", [])), now, now),
+                    )
+                status = "needs_repair" if issues else "clean"
+                database.execute(
+                    "UPDATE repertoire_integrity_state SET status=?,checked_at=?,scan_status='idle',scan_generation=?,scan_completed_sources=scan_total_sources,scan_error=NULL WHERE repertoire_id=?",
+                    (status, now, job["run_id"], job["repertoire_id"]),
+                )
+                if status == "clean":
+                    database.execute(
+                        """UPDATE cards SET pending_validation=0,state=CASE WHEN state='locked' THEN 'new' ELSE state END
+                           WHERE pending_validation=1 AND archived=0 AND
+                             (repertoire_id=? OR id IN (SELECT card_id FROM repertoire_cards WHERE repertoire_id=?))""",
+                        (job["repertoire_id"], job["repertoire_id"]),
+                    )
+                database.execute(
+                    "UPDATE repertoire_integrity_jobs SET status='complete',last_error=NULL,updated_at=? WHERE repertoire_id=?",
+                    (now, job["repertoire_id"]),
+                )
+            from .database_executor import database_writer
+            from .durable_tasks import enqueue_task
+
+            if database_writer.healthy:
+                enqueue_task(
+                    "daily_queue",
+                    "current",
+                    {},
+                    priority=10,
+                    foreground=False,
+                )
+            return
+
+        with connection(background=True) as database:
+            sources = _source_rows(database, job["repertoire_id"])
+            source = sources[job["source_offset"]]
+            repertoire_color = next((item.get("trained_color") for item in sources if item.get("trained_color") in {"white", "black"}), None)
+        positions, invalid = _scan_source(source, repertoire_color)
+        now = _now()
+        with connection(background=True) as database:
+            database.execute(
+                "INSERT OR REPLACE INTO repertoire_integrity_source_runs(run_id,source_offset,observations_json,invalid_json) VALUES(?,?,?,?)",
+                (job["run_id"], job["source_offset"], json.dumps(list(positions.values())), json.dumps(invalid)),
+            )
+            next_offset = job["source_offset"] + 1
+            status = "finalizing" if next_offset >= job["total_sources"] else "running"
+            database.execute(
+                "UPDATE repertoire_integrity_jobs SET status=?,source_offset=?,updated_at=? WHERE repertoire_id=? AND run_id=?",
+                (status, next_offset, now, job["repertoire_id"], job["run_id"]),
+            )
+            database.execute(
+                "UPDATE repertoire_integrity_state SET scan_status='running',scan_completed_sources=?,scan_total_sources=? WHERE repertoire_id=?",
+                (next_offset, job["total_sources"], job["repertoire_id"]),
+            )
+
+
+def requeue_integrity_slice(job: dict, error: Exception) -> None:
+    """Return a failed slice to durable storage without disturbing published issues."""
+
+    from ..database import connection
+
+    message = str(error)
+    now = _now()
+    with connection(background=True) as database:
+        attempts = database.execute(
+            "SELECT attempts FROM repertoire_integrity_jobs WHERE repertoire_id=? AND run_id=?",
+            (job["repertoire_id"], job["run_id"]),
+        ).fetchone()
+        attempt_count = int(attempts[0]) if attempts else int(job.get("attempts") or 0)
+        if attempt_count >= 5:
+            database.execute(
+                "UPDATE repertoire_integrity_jobs SET status='failed',last_error=?,updated_at=? WHERE repertoire_id=? AND run_id=?",
+                (message, now, job["repertoire_id"], job["run_id"]),
+            )
+            database.execute(
+                "UPDATE repertoire_integrity_state SET scan_status='failed',scan_error=? WHERE repertoire_id=?",
+                (message, job["repertoire_id"]),
+            )
+        else:
+            database.execute(
+                "UPDATE repertoire_integrity_jobs SET status='queued',last_error=?,updated_at=? WHERE repertoire_id=? AND run_id=?",
+                (message, now, job["repertoire_id"], job["run_id"]),
+            )
+            database.execute(
+                "UPDATE repertoire_integrity_state SET scan_status='retrying',scan_error=? WHERE repertoire_id=?",
+                (message, job["repertoire_id"]),
+            )
+    _LOGGER.warning(
+        "integrity slice requeued job_type=integrity job_id=%s retry=%s error=%s",
+        job["repertoire_id"],
+        attempt_count,
+        message,
+    )
+
+
 def integrity_summary(database: sqlite3.Connection, repertoire_id: str) -> dict:
     row = database.execute(
-        """SELECT r.id,COALESCE(s.status,'unchecked') integrity_status,s.checked_at integrity_checked_at
+        """SELECT r.id,COALESCE(s.status,'unchecked') integrity_status,s.checked_at integrity_checked_at,
+                  COALESCE(s.scan_status,'idle') scan_status,s.scan_generation,
+                  COALESCE(s.scan_completed_sources,0) scan_completed_sources,
+                  COALESCE(s.scan_total_sources,0) scan_total_sources,s.scan_error
            FROM repertoires r LEFT JOIN repertoire_integrity_state s ON s.repertoire_id=r.id
            WHERE r.id=?""",
         (repertoire_id,),
@@ -253,6 +504,13 @@ def integrity_summary(database: sqlite3.Connection, repertoire_id: str) -> dict:
         "issue_count": count,
         "first_issue_id": issue[0] if issue else None,
         "checked_at": row["integrity_checked_at"],
+        "scan_status": row["scan_status"],
+        "scan_generation": row["scan_generation"],
+        "scan_progress": {
+            "completed": row["scan_completed_sources"],
+            "total": row["scan_total_sources"],
+        },
+        "last_scan_error": row["scan_error"],
     }
 
 

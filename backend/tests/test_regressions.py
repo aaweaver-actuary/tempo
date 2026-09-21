@@ -1,11 +1,13 @@
 from datetime import date
 import json
+import time
 
 import httpx
 from fastapi.testclient import TestClient
 
 from app import database
-from app.main import app
+from app.main import app, enqueue_daily_queue_refresh
+from helpers import wait_for_integrity
 
 PGN = b'[Event "Rated blitz game"]\n[White "andy"]\n[Black "opponent"]\n[UTCDate "2026.09.16"]\n[UTCTime "12:30:00"]\n[Site "https://lichess.org/game1"]\n[Result "*"]\n\n1. e4 e5 2. Nf3 Nc6 3. d4 *'
 BRANCH_PGN = b'[Event "QGD"]\n[White "andy"]\n[Black "opponent"]\n[Result "*"]\n\n1. d4 d5 2. c4 e6 *\n\n[Event "Nimzo"]\n[White "andy"]\n[Black "opponent"]\n[Result "*"]\n\n1. d4 Nf6 2. c4 e6 3. Nc3 Bb4 *'
@@ -64,6 +66,7 @@ def test_legacy_introduced_but_unreviewed_queue_is_capped_without_losing_reviews
             files={"file": ("mine.pgn", PGN)},
             data={"initial_depth": 2},
         ).json()
+        wait_for_integrity(client, imported["repertoire_id"])
         first = client.get("/api/queue/today").json()["cards"][0]
         client.post(
             f"/api/cards/{first['id']}/review",
@@ -85,6 +88,16 @@ def test_legacy_introduced_but_unreviewed_queue_is_capped_without_losing_reviews
                     "INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,?,?)",
                     (date.today().isoformat(), f"legacy-{i}", i + 10),
                 )
+        enqueue_daily_queue_refresh()
+        for _ in range(200):
+            tasks = client.get("/api/system/tasks").json()["tasks"]
+            if not any(
+                task["kind"] == "daily_queue"
+                and task["state"] in {"queued", "leased", "retrying"}
+                for task in tasks
+            ):
+                break
+            time.sleep(0.01)
         queue = client.get("/api/queue/today").json()
         assert queue["count"] == 2  # due reinforcement plus one new introduction
         assert queue == client.get("/api/queue/today").json()
@@ -103,11 +116,12 @@ def test_completed_queue_entry_is_idempotent_and_reinforcement_schedules_into_th
 ):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
-        client.post(
+        imported = client.post(
             "/api/imports/pgn",
             files={"file": ("one.pgn", PGN)},
             data={"initial_depth": 2},
         )
+        wait_for_integrity(client, imported.json()["repertoire_id"])
         first = client.get("/api/queue/today").json()["cards"][0]
         url = f"/api/cards/{first['id']}/review"
         payload = {"outcome": "correct", "queue_entry_id": first["queue_entry_id"]}
@@ -178,6 +192,7 @@ def test_delete_branch_prefix_removes_nimzo_descendants_and_preserves_qgd(
             data={"trained_color": "white", "initial_depth": 6},
         ).json()
         repertoire_id = imported["repertoire_id"]
+        wait_for_integrity(client, repertoire_id)
         lines_before = [
             line
             for line in client.get("/api/repertoire/lines").json()["lines"]
@@ -221,6 +236,7 @@ def test_delete_branch_rebuilds_missing_retained_cards_without_server_error(
             data={"trained_color": "white", "initial_depth": 6},
         ).json()
         repertoire_id = imported["repertoire_id"]
+        wait_for_integrity(client, repertoire_id)
         lines = [
             line
             for line in client.get("/api/repertoire/lines").json()["lines"]
@@ -378,11 +394,12 @@ def test_local_sync_persists_errors_and_success_without_sample_fallback(
 def test_again_reappears_after_four_other_entries(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
-        client.post(
+        imported = client.post(
             "/api/imports/pgn",
             files={"file": ("one.pgn", PGN)},
             data={"initial_depth": 2},
         )
+        wait_for_integrity(client, imported.json()["repertoire_id"])
         first = client.get("/api/queue/today").json()["cards"][0]
         with database.connection() as db:
             for i in range(5):
@@ -421,11 +438,12 @@ def test_help_failure_survives_reload_and_cannot_be_graded_as_a_clean_solve(
 ):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
-        client.post(
+        imported = client.post(
             "/api/imports/pgn",
             files={"file": ("one.pgn", PGN)},
             data={"initial_depth": 2},
         )
+        wait_for_integrity(client, imported.json()["repertoire_id"])
         card = client.get("/api/queue/today").json()["cards"][0]
         for _ in range(2):
             assert (
@@ -466,11 +484,12 @@ def test_unfinished_unreviewed_cards_do_not_bypass_tomorrows_new_card_limit(
         settings = client.get("/api/settings").json()
         settings["new_cards_per_day"] = 2
         client.put("/api/settings", json=settings)
-        client.post(
+        imported = client.post(
             "/api/imports/pgn",
             files={"file": ("one.pgn", PGN)},
             data={"initial_depth": 2},
         )
+        wait_for_integrity(client, imported.json()["repertoire_id"])
         first = client.get("/api/queue/today").json()["cards"][0]
         with database.connection() as db:
             for i in range(5):

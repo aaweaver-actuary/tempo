@@ -153,11 +153,11 @@ def _persist_game_once(record: GameRecord) -> tuple[str, str]:
         return "inserted", f"{record.provider}:{record.provider_game_id}"
 
 
-def _starting_point(provider: str, username: str, request: GameSyncRequest) -> datetime:
+def _starting_point(provider: str, username: str, request: GameSyncRequest, *, background: bool = False) -> datetime:
     requested_cutoff = datetime.now(timezone.utc) - timedelta(days=request.days)
     if request.repair:
         return requested_cutoff
-    with connection() as database:
+    with connection(background=background) as database:
         newest = database.execute(
             "SELECT MAX(played_at) FROM imported_games WHERE provider=? AND lower(username)=lower(?)",
             (provider, username),
@@ -202,7 +202,7 @@ async def _sync_provider(
                ON CONFLICT(provider) DO UPDATE SET username=excluded.username,status='syncing',last_started_at=excluded.last_started_at,last_error=NULL""",
             (provider, username, started_at.isoformat()),
         )
-    since = _starting_point(provider, username, request)
+    since = _starting_point(provider, username, request, background=True)
     try:
         if provider == "lichess":
             records, counts = await fetch_lichess_games(

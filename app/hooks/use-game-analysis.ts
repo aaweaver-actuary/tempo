@@ -6,6 +6,8 @@ import { scanGameTwoPass } from "../lib/game-scan";
 import { readJsonResponse } from "../lib/validated-data";
 import { invalidateWorkspaceData } from "../lib/workspace-data";
 import { usesLocalApi } from "../utils/local";
+import { backgroundFetch } from "../lib/background-fetch";
+import { reportDebugError } from "../lib/debug-reporting";
 
 const LOCAL_IDLE_DELAY_MS = 1_500;
 const EMPTY_QUEUE_RETRY_MS = 15_000;
@@ -19,7 +21,7 @@ async function updateLease(
   lease: ActiveLease,
   action: "heartbeat" | "release",
 ) {
-  await fetch(
+  await backgroundFetch(
     `${API_URL}/api/games/analysis/${encodeURIComponent(lease.gameId)}/${action}`,
     {
       method: "POST",
@@ -71,7 +73,7 @@ export function useGameAnalysis() {
       }
       running = true;
       try {
-        const claimResponse = await fetch(`${API_URL}/api/games/analysis/claim`, {
+        const claimResponse = await backgroundFetch(`${API_URL}/api/games/analysis/claim`, {
           method: "POST",
         });
         const { job } = await readJsonResponse(
@@ -101,7 +103,7 @@ export function useGameAnalysis() {
             job.divergence_ply,
             signal,
           );
-          const submitResponse = await fetch(
+          const submitResponse = await backgroundFetch(
             `${API_URL}/api/games/${encodeURIComponent(job.game_id)}/analysis`,
             {
               method: "POST",
@@ -127,9 +129,16 @@ export function useGameAnalysis() {
           if (error instanceof DOMException && error.name === "AbortError") {
             releaseActiveLease();
           } else if (activeLease) {
+            reportDebugError(error, {
+              kind: "api",
+              source: "background-game-analysis",
+              operation: "save game analysis",
+              endpoint: `${API_URL}/api/games/${encodeURIComponent(job.game_id)}/analysis`,
+              method: "POST",
+            });
             const failedLease = activeLease;
             activeLease = undefined;
-            await fetch(
+            await backgroundFetch(
               `${API_URL}/api/games/analysis/${encodeURIComponent(job.game_id)}/failure`,
               {
                 method: "POST",
@@ -147,6 +156,13 @@ export function useGameAnalysis() {
         }
         schedule(BUSY_RETRY_MS);
       } catch (error) {
+        reportDebugError(error, {
+          kind: "api",
+          source: "background-game-analysis",
+          operation: "claim or run game analysis",
+          endpoint: `${API_URL}/api/games/analysis/claim`,
+          method: "POST",
+        });
         if (!stopped) {
           setStatus(
             error instanceof Error

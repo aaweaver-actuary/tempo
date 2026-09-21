@@ -65,6 +65,43 @@ test("malformed progress is unavailable and retry recovers real measurements", a
   await expect(page.locator(".metric-grid")).toContainText("9");
 });
 
+test("frontend errors show a redacted copyable debug bundle", async ({ page }) => {
+  await page.route("**/api/progress", (route) =>
+    route.fulfill({
+      status: 503,
+      json: { detail: "Database unavailable" },
+    }),
+  );
+  await prepareUI(page);
+  await page.evaluate(() => {
+    Object.defineProperty(window, "__tempoCopiedDebug", {
+      configurable: true,
+      value: "",
+      writable: true,
+    });
+    Object.defineProperty(navigator, "clipboard", {
+      configurable: true,
+      value: {
+        writeText: async (value: string) => {
+          (window as unknown as { __tempoCopiedDebug: string }).__tempoCopiedDebug = value;
+        },
+      },
+    });
+  });
+  await navigate(page, "Progress");
+  await expect(page.getByRole("alert").first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Copy debug info" })).toBeVisible();
+  await page.getByRole("button", { name: "Copy debug info" }).click();
+  await expect(page.getByRole("button", { name: "Copied debug info" })).toBeVisible();
+  const copied = await page.evaluate(
+    () => JSON.parse((window as unknown as { __tempoCopiedDebug: string }).__tempoCopiedDebug),
+  );
+  expect(copied.schemaVersion).toBe(1);
+  expect(copied.error.message).toContain("/api/progress");
+  expect(copied.workspace.activeView).toBe("insights");
+  expect(copied.omitted).toContain("PGN and repertoire lines");
+});
+
 test('import waits for saved settings before writing a repertoire', async ({page}) => {
   let releaseSettings!: () => void;
   const pendingSettings = new Promise<void>(resolve => { releaseSettings = resolve; });

@@ -43,4 +43,5 @@ export type BackendQueueCard = {
   trained_color?: PieceColor;
   revision?: number;
   repertoire_id?: string;
+  pending_validation?: boolean;
 };

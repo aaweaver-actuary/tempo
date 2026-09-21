@@ -39,12 +39,12 @@ def test_active_tactical_packs_share_one_daily_introduction_quota(tmp_path, monk
     from fastapi.testclient import TestClient
     from app import database
     from app.main import app
+    from helpers import wait_for_daily_queue
     monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'tempo.db')
     with TestClient(app) as client:
         packs = ['hangingPiece-easy-01', 'fork-hard-01']
         assert client.put('/api/tactics/activation', json={'pack_ids': packs, 'active': True}).status_code == 200
-        client.get('/api/queue/today')
-        client.get('/api/queue/today')
+        wait_for_daily_queue(client, 5)
         with database.connection() as db:
             rows = db.execute('SELECT pack_id FROM tactic_introductions').fetchall()
             assert len(rows) == 5
@@ -56,13 +56,14 @@ def test_deactivating_a_tactical_pack_preserves_scheduled_reviews(tmp_path, monk
     from fastapi.testclient import TestClient
     from app import database
     from app.main import app
+    from helpers import wait_for_daily_queue
     monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'tempo.db')
     with TestClient(app) as client:
         pack = 'hangingPiece-easy-01'
         client.put('/api/tactics/activation', json={'pack_ids':[pack], 'active':True})
-        before = client.get('/api/queue/today').json()['cards']
+        before = wait_for_daily_queue(client, 5)['cards']
         client.put('/api/tactics/activation', json={'pack_ids':[pack], 'active':False})
-        after = client.get('/api/queue/today').json()['cards']
+        after = wait_for_daily_queue(client, 5)['cards']
         assert len(before) == len(after) == 5
         assert {card['id'] for card in before} == {card['id'] for card in after}
 

@@ -3,7 +3,8 @@ from datetime import date
 from fastapi.testclient import TestClient
 
 from app import database
-from app.main import app
+from app.main import app, materialize_daily_queue
+from app.services.database_executor import submit_foreground_write
 
 
 START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -38,6 +39,10 @@ def _seed_cards() -> None:
                    VALUES(?,?,'prefix',?,'[\"e2e4\"]','learning',?,?,?)""",
                 (f"new-{index}", "queue-test", START_FEN, today, content_type, today),
             )
+    submit_foreground_write(
+        lambda connection: materialize_daily_queue(connection, today),
+        label="test-daily-queue",
+    )
 
 
 def test_daily_queue_is_stable_within_a_day_and_mixed(tmp_path, monkeypatch):

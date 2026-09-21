@@ -60,6 +60,7 @@ export const queueCardSchema = z.strictObject({
   superseded_by: z.string().nullable().optional(),
   source_fen: z.string().nullable().optional(),
   introduced_at: z.iso.date().nullable().optional(),
+  pending_validation: sqliteBooleanSchema.optional(),
 });
 export const queueEnvelopeSchema = z.strictObject({
   cards: z.array(z.unknown()),
@@ -72,6 +73,16 @@ export const queueEnvelopeSchema = z.strictObject({
         message: z.string().min(1),
       }),
     )
+    .optional(),
+  projection: z
+    .strictObject({
+      queue_date: z.iso.date().optional(),
+      state: z.enum(["ready", "refreshing", "failed"]),
+      generation: integer,
+      updated_at: z.iso.datetime({ offset: true }).nullable(),
+      refresh_pending: sqliteBooleanSchema,
+      last_error: z.string().nullable(),
+    })
     .optional(),
 });
 export const packagedPuzzleSchema = z.strictObject({
@@ -273,6 +284,10 @@ export const importResultSchema = z.strictObject({
     issue_count: integer,
     first_issue_id: z.string().nullable(),
     checked_at: z.string().nullable().optional(),
+    scan_status: z.enum(["idle", "queued", "running", "retrying", "failed"]).optional(),
+    scan_generation: z.string().nullable().optional(),
+    scan_progress: z.object({ completed: integer, total: integer }).optional(),
+    last_scan_error: z.string().nullable().optional(),
   }).optional(),
 });
 export const integrityMoveSchema = z.strictObject({
@@ -297,6 +312,10 @@ export const repertoireIntegritySchema = z.strictObject({
   issue_count: integer,
   first_issue_id: z.string().nullable(),
   checked_at: z.string().nullable().optional(),
+  scan_status: z.enum(["idle", "queued", "running", "retrying", "failed"]),
+  scan_generation: z.string().nullable(),
+  scan_progress: z.object({ completed: integer, total: integer }),
+  last_scan_error: z.string().nullable(),
   issues: z.array(integrityIssueSchema),
 });
 export const integrityResolutionSchema = z.strictObject({
@@ -305,6 +324,10 @@ export const integrityResolutionSchema = z.strictObject({
     issue_count: integer,
     first_issue_id: z.string().nullable(),
     checked_at: z.string().nullable().optional(),
+    scan_status: z.enum(["idle", "queued", "running", "retrying", "failed"]).optional(),
+    scan_generation: z.string().nullable().optional(),
+    scan_progress: z.object({ completed: integer, total: integer }).optional(),
+    last_scan_error: z.string().nullable().optional(),
   }),
   changed_line_count: integer,
   changed_card_count: integer,

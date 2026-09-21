@@ -12,6 +12,7 @@ import {
   restoreEncryptedBackup,
 } from "../lib/encrypted-backup";
 import { migrateSqliteToBrowser } from "../lib/sqlite-migration";
+import { reportDebugError } from "../lib/debug-reporting";
 
 import { Notice } from "../components/task-tabs";
 
@@ -104,6 +105,12 @@ export default function SettingsView({
       setSettingsLoaded(true);
       setLoadError("");
     } catch (error) {
+      reportDebugError(error, {
+        kind: "api",
+        source: "settings-view",
+        operation: "load settings",
+        endpoint: `${API_URL}/api/settings`,
+      });
       setLoadError(
         `Settings unavailable: ${error instanceof Error ? error.message : "connection failed"}. Retry before saving.`,
       );
@@ -239,6 +246,11 @@ export default function SettingsView({
           `Verified browser copy (${Object.values(result.counts ?? {}).reduce((sum, count) => sum + count, 0)} records).`,
         );
     } catch (error) {
+      reportDebugError(error, {
+        kind: "ui",
+        source: "settings-view",
+        operation: "transfer local data",
+      });
       setStatus(
         error instanceof Error
           ? error.message
@@ -261,6 +273,11 @@ export default function SettingsView({
       URL.revokeObjectURL(link.href);
       setStatus("Encrypted backup downloaded.");
     } catch (error) {
+      reportDebugError(error, {
+        kind: "ui",
+        source: "settings-view",
+        operation: "create encrypted backup",
+      });
       setStatus(
         error instanceof Error
           ? error.message

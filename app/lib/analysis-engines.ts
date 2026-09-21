@@ -23,6 +23,13 @@ export class StockfishCancelledError extends Error {
   }
 }
 
+export class MaiaCancelledError extends Error {
+  constructor() {
+    super("Maia analysis was preempted");
+    this.name = "MaiaCancelledError";
+  }
+}
+
 async function loadStockfish() {
   if (!stockfishWorker)
     stockfishWorker = new Worker(`${assetUrl("stockfish-worker.js")}?v=3`, {
@@ -146,6 +153,7 @@ export function analyzeWithMaia(
   fen: string,
   elo: number,
   onProgress?: (progress: number) => void,
+  signal?: AbortSignal,
 ): Promise<EngineMove[]> {
   if (typeof Worker === "undefined")
     return Promise.reject(new Error("Maia requires browser workers"));
@@ -194,8 +202,27 @@ export function analyzeWithMaia(
       failMaia(new Error("Maia worker failed. Toggle Maia to retry."));
   }
   return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new MaiaCancelledError());
+      return;
+    }
     const id = ++maiaId;
-    maiaRequests.set(id, { resolve, reject, progress: onProgress });
+    const cancel = () => {
+      signal?.removeEventListener("abort", cancel);
+      failMaia(new MaiaCancelledError());
+    };
+    signal?.addEventListener("abort", cancel, { once: true });
+    maiaRequests.set(id, {
+      resolve: (moves) => {
+        signal?.removeEventListener("abort", cancel);
+        resolve(moves);
+      },
+      reject: (error) => {
+        signal?.removeEventListener("abort", cancel);
+        reject(error);
+      },
+      progress: onProgress,
+    });
     maiaWorker!.postMessage({
       id,
       fen,

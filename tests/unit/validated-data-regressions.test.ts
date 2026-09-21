@@ -95,6 +95,15 @@ it("gameplay-prioritized queue cards remain valid typed study cards", () => {
   expect(dataDiagnostics()).toEqual([]);
 });
 
+it("queue cards accept persisted pending-validation state without a diagnostic", () => {
+  const cards = queueCardsFromPayload({
+    cards: [{ ...rawCard, pending_validation: 0 }],
+  });
+
+  expect(cards).toHaveLength(1);
+  expect(dataDiagnostics()).toEqual([]);
+});
+
 it("third-party analysis accepts new provider fields but rejects invalid counts, probabilities and illegal moves", () => {
   const fen = new Chess().fen();
   expect(

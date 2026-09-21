@@ -1,5 +1,14 @@
 # Games Sync Implementation Guide
 
+## Current status
+
+> Status: historical implementation guide, retained for design context. Game
+> sync is implemented in `backend/app/services/`; use
+> `backend/app/services/README.md` and
+> `docs/CODE-ORGANIZATION-AUDIT.md` for the current code map. The checklist and
+> templates below describe the original implementation plan and are not a
+> statement that these files are still missing.
+
 ## Quick Reference: Architecture Flow
 
 ```
@@ -29,7 +38,7 @@
         └────────────────────────────────────────────┘
                          ↓
         ┌────────────────────────────────────────────┐
-        │ Game Sync Service (NEW - implement here)   │
+        │ Game Sync Service (implemented here)        │
         ├────────────────────────────────────────────┤
         │ async sync_providers():                    │
         │   For each provider in [lichess, chess.com]│
@@ -81,10 +90,10 @@
 ```
 backend/app/services/
 ├── __init__.py
-├── game_sync.py          ← NEW: Main sync orchestrator
-├── lichess_client.py     ← NEW: Lichess API integration
-├── chesscom_client.py    ← NEW: Chess.com API integration
-└── game_normalizer.py    ← NEW: PGN parsing & normalization
+├── game_sync.py          ← provider sync orchestration
+├── lichess_client.py     ← Lichess API integration
+├── chesscom_client.py    ← Chess.com API integration
+└── game_normalizer.py    ← PGN parsing and normalization
 ```
 
 ---
@@ -645,4 +654,3 @@ async def sync(request: GameSyncRequest):
 - **Deduplication** via `INSERT OR REPLACE` on `id` column
 
 This approach follows the principle: **fetch incrementally, validate locally, persist atomically**.
-

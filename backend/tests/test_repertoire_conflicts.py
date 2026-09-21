@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from app import database
 from app.main import app
+from helpers import wait_for_integrity
 
 
 START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -54,4 +55,5 @@ def test_new_conflicting_branch_enters_integrity_repair(tmp_path, monkeypatch):
         }
         response = client.post("/api/repertoire/branches", json=payload)
         assert response.status_code == 200
-        assert response.json()["integrity"]["status"] == "needs_repair"
+        wait_for_integrity(client, "white-rep")
+        assert client.get("/api/repertoires/white-rep/integrity").json()["status"] == "needs_repair"

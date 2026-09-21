@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import asyncio
+from concurrent.futures import ProcessPoolExecutor
 from datetime import datetime, timedelta, timezone
 import json
 import logging
 import sqlite3
 import time
+from typing import Callable
 import uuid
 
 import chess
@@ -20,17 +22,43 @@ from .game_sync import sync_providers
 from .repertoire_comparison import compare_games
 from .activity_gate import activity_gate
 from .repertoire_coverage import claim_coverage_node, execute_coverage_node
-from .introduction_priorities import rebuild_priorities_for_game
-from .statistics import refresh_game_features
+from .introduction_priorities import (
+    calculate_priority_records,
+    claim_priority_refresh,
+    enqueue_priority_refreshes_for_game,
+    execute_priority_refresh,
+    load_priority_calculation_input,
+    publish_priority_records,
+)
+from .statistics import claim_daily_snapshot, execute_daily_snapshot, refresh_game_features
+from .repertoire_integrity import (
+    claim_integrity_slice,
+    execute_integrity_slice,
+    enqueue_integrity_scans,
+    requeue_integrity_slice,
+)
+from .durable_tasks import claim_task, complete_task, fail_task, requeue_interrupted_tasks
+
+
+_durable_task_handlers: dict[str, Callable[[dict], None]] = {}
+_maintenance_handlers: list[Callable[[], None]] = []
+
+
+def register_durable_task_handler(kind: str, handler: Callable[[dict], None]) -> None:
+    _durable_task_handlers[kind] = handler
+
+
+def register_maintenance_handler(handler: Callable[[], None]) -> None:
+    _maintenance_handlers.append(handler)
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def enqueue_sync(request: GameSyncRequest) -> str:
+def enqueue_sync(request: GameSyncRequest, *, background: bool = False) -> str:
     """Persist work before returning so navigation cannot cancel it."""
-    with connection() as database:
+    with connection(background=background) as database:
         existing = database.execute(
             """SELECT id FROM game_sync_jobs
                WHERE status IN ('queued','running','paused','retrying')
@@ -128,26 +156,73 @@ def _claim_derivation() -> str | None:
         if not row:
             return None
         changed = database.execute(
-            """UPDATE game_derivation_jobs SET status='running',attempts=attempts+1,updated_at=?
+            """UPDATE game_derivation_jobs SET status='running',phase='claimed',attempts=attempts+1,updated_at=?
                WHERE game_id=? AND status='queued'""",
             (_now(), row["game_id"]),
         ).rowcount
         return row["game_id"] if changed else None
 
 
+def _set_derivation_phase(game_id: str, phase: str) -> None:
+    activity_gate.wait_for_foreground()
+    with connection(background=True) as database:
+        database.execute(
+            "UPDATE game_derivation_jobs SET phase=?,updated_at=? WHERE game_id=? AND status='running'",
+            (phase, _now(), game_id),
+        )
+
+
+def _run_derivation_phase(
+    game_id: str, phase: str, operation: Callable[[], None]
+) -> None:
+    _set_derivation_phase(game_id, phase)
+    phase_started = time.perf_counter()
+    try:
+        operation()
+    finally:
+        logging.getLogger("tempo.background").info(
+            "derivation phase game_id=%s phase=%s duration=%.3fs",
+            game_id,
+            phase,
+            time.perf_counter() - phase_started,
+        )
+
+
 def _execute_derivation(game_id: str) -> None:
     with activity_gate.background_job("game_derivation", game_id):
         try:
-            _index_game_positions(game_id)
-            compare_games([game_id], background=True)
-            refresh_game_findings(game_id, background=True)
-            refresh_gameplay_events(game_id, background=True)
-            refresh_game_features(game_id, background=True)
-            rebuild_priorities_for_game(game_id)
+            _run_derivation_phase(
+                game_id, "indexing_positions", lambda: _index_game_positions(game_id)
+            )
+            _run_derivation_phase(
+                game_id,
+                "comparing_repertoire",
+                lambda: compare_games([game_id], background=True),
+            )
+            _run_derivation_phase(
+                game_id,
+                "refreshing_findings",
+                lambda: refresh_game_findings(game_id, background=True),
+            )
+            _run_derivation_phase(
+                game_id,
+                "refreshing_events",
+                lambda: refresh_gameplay_events(game_id, background=True),
+            )
+            _run_derivation_phase(
+                game_id,
+                "refreshing_features",
+                lambda: refresh_game_features(game_id, background=True),
+            )
+            _run_derivation_phase(
+                game_id,
+                "enqueueing_priorities",
+                lambda: enqueue_priority_refreshes_for_game(game_id, background=True),
+            )
             activity_gate.wait_for_foreground()
             with connection(background=True) as database:
                 database.execute(
-                    """UPDATE game_derivation_jobs SET status='complete',last_error=NULL,next_attempt_at=NULL,updated_at=?
+                    """UPDATE game_derivation_jobs SET status='complete',phase=NULL,last_error=NULL,next_attempt_at=NULL,updated_at=?
                        WHERE game_id=?""",
                     (_now(), game_id),
                 )
@@ -168,7 +243,7 @@ def _execute_derivation(game_id: str) -> None:
                             + timedelta(seconds=delay_seconds)
                         ).isoformat()
                         database.execute(
-                            """UPDATE game_derivation_jobs SET status='queued',last_error=?,next_attempt_at=?,updated_at=?
+                            """UPDATE game_derivation_jobs SET status='queued',phase=NULL,last_error=?,next_attempt_at=?,updated_at=?
                                WHERE game_id=?""",
                             (str(error), retry_at, _now(), game_id),
                         )
@@ -183,32 +258,33 @@ def _execute_derivation(game_id: str) -> None:
         except Exception as error:
             with connection(background=True) as database:
                 database.execute(
-                    """UPDATE game_derivation_jobs SET status='failed',last_error=?,updated_at=?
+                    """UPDATE game_derivation_jobs SET status='failed',phase=NULL,last_error=?,updated_at=?
                        WHERE game_id=?""",
                     (str(error), _now(), game_id),
                 )
 
 
 def _index_game_positions(game_id: str) -> None:
-    with connection() as database:
-        game = database.execute(
+    with connection(background=True) as database:
+        game_row = database.execute(
             "SELECT start_fen,moves_json FROM imported_games WHERE id=?", (game_id,)
         ).fetchone()
-        if not game:
-            return
-        board = chess.Board(game["start_fen"])
-        occurrences: list[tuple[str, int, str, str | None]] = []
-        for ply, move_uci in enumerate(json.loads(game["moves_json"])):
-            move = chess.Move.from_uci(move_uci)
-            if move not in board.legal_moves:
-                break
-            occurrences.append(
-                (game_id, ply, " ".join(board.fen().split()[:4]), move_uci)
-            )
-            board.push(move)
+        game = dict(game_row) if game_row else None
+    if not game:
+        return
+    board = chess.Board(game["start_fen"])
+    occurrences: list[tuple[str, int, str, str | None]] = []
+    for ply, move_uci in enumerate(json.loads(game["moves_json"])):
+        move = chess.Move.from_uci(move_uci)
+        if move not in board.legal_moves:
+            break
         occurrences.append(
-            (game_id, len(occurrences), " ".join(board.fen().split()[:4]), None)
+            (game_id, ply, " ".join(board.fen().split()[:4]), move_uci)
         )
+        board.push(move)
+    occurrences.append(
+        (game_id, len(occurrences), " ".join(board.fen().split()[:4]), None)
+    )
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
         database.execute("DELETE FROM game_position_occurrences WHERE game_id=?", (game_id,))
@@ -224,24 +300,13 @@ class GameSyncCoordinator:
         self._wake_event: asyncio.Event | None = None
         self._task: asyncio.Task | None = None
         self._loop: asyncio.AbstractEventLoop | None = None
+        self._next_source = 0
+        self._process_pool: ProcessPoolExecutor | None = None
 
     async def start(self) -> None:
-        with connection() as database:
-            database.execute(
-                """UPDATE game_sync_jobs SET status='queued',started_at=NULL,updated_at=?
-                   WHERE status IN ('running','paused')""",
-                (_now(),),
-            )
-            database.execute(
-                """UPDATE game_derivation_jobs SET status='queued',updated_at=?
-                   WHERE status='running'""",
-                (_now(),),
-            )
-            database.execute(
-                """UPDATE repertoire_coverage_nodes SET explorer_status='queued',updated_at=?
-                   WHERE explorer_status='running'""",
-                (_now(),),
-            )
+        requeue_interrupted_tasks()
+        _requeue_interrupted_background_work()
+        enqueue_integrity_scans(stale_only=True)
         self._loop = asyncio.get_running_loop()
         self._wake_event = asyncio.Event()
         self._task = asyncio.create_task(self._run())
@@ -257,46 +322,174 @@ class GameSyncCoordinator:
         self._task = None
         self._wake_event = None
         self._loop = None
+        if self._process_pool is not None:
+            self._process_pool.shutdown(wait=True, cancel_futures=True)
+            self._process_pool = None
 
     def wake(self) -> None:
         if self._loop and self._wake_event:
             self._loop.call_soon_threadsafe(self._wake_event.set)
 
     async def _run(self) -> None:
+        sources = (
+            "durable",
+            "sync",
+            "derivation",
+            "coverage",
+            "integrity",
+            "statistics",
+            "priority",
+        )
         while True:
-            try:
-                job = await asyncio.to_thread(_claim_job)
-            except sqlite3.OperationalError:
-                await asyncio.sleep(0.25)
-                continue
-            if job:
-                await asyncio.to_thread(_execute_job, job)
+            worked = False
+            for offset in range(len(sources)):
+                source_index = (self._next_source + offset) % len(sources)
+                source = sources[source_index]
+                try:
+                    if source == "durable":
+                        item = await asyncio.to_thread(claim_task)
+                    elif source == "sync":
+                        item = await asyncio.to_thread(_claim_job)
+                    elif source == "derivation":
+                        item = await asyncio.to_thread(_claim_derivation)
+                    elif source == "coverage":
+                        item = await asyncio.to_thread(claim_coverage_node)
+                    elif source == "integrity":
+                        item = await asyncio.to_thread(claim_integrity_slice)
+                    elif source == "statistics":
+                        item = await asyncio.to_thread(claim_daily_snapshot)
+                    else:
+                        item = await asyncio.to_thread(claim_priority_refresh)
+                except sqlite3.OperationalError:
+                    await asyncio.sleep(0.25)
+                    continue
+                if not item:
+                    continue
+                self._next_source = (source_index + 1) % len(sources)
+                slice_started = time.perf_counter()
+                try:
+                    if source == "durable":
+                        handler = _durable_task_handlers.get(item["kind"])
+                        if handler is None:
+                            raise RuntimeError(f"No handler registered for task kind {item['kind']}")
+                        try:
+                            await asyncio.to_thread(handler, item)
+                            await asyncio.to_thread(
+                                complete_task,
+                                item["id"],
+                                item["generation"],
+                                item["lease_token"],
+                            )
+                        except Exception as error:
+                            await asyncio.to_thread(
+                                fail_task,
+                                item["id"],
+                                item["generation"],
+                                item["lease_token"],
+                                error,
+                            )
+                    elif source == "sync":
+                        await asyncio.to_thread(_execute_job, item)
+                    elif source == "derivation":
+                        await asyncio.to_thread(_execute_derivation, item)
+                    elif source == "coverage":
+                        await asyncio.to_thread(execute_coverage_node, item)
+                    elif source == "integrity":
+                        await asyncio.to_thread(execute_integrity_slice, item)
+                    elif source == "statistics":
+                        await asyncio.to_thread(execute_daily_snapshot, item)
+                    else:
+                        calculation_input = await asyncio.to_thread(
+                            load_priority_calculation_input, item
+                        )
+                        if self._process_pool is None:
+                            self._process_pool = ProcessPoolExecutor(max_workers=1)
+                        records = await asyncio.get_running_loop().run_in_executor(
+                            self._process_pool,
+                            calculate_priority_records,
+                            calculation_input,
+                        )
+                        await asyncio.to_thread(publish_priority_records, item, records)
+                except sqlite3.OperationalError as error:
+                    if source == "integrity":
+                        await asyncio.to_thread(requeue_integrity_slice, item, error)
+                    else:
+                        logging.getLogger("tempo.background").warning(
+                            "background slice contention source=%s item=%s error=%s",
+                            source,
+                            item,
+                            error,
+                        )
+                except Exception as error:
+                    if source == "integrity":
+                        await asyncio.to_thread(requeue_integrity_slice, item, error)
+                    else:
+                        logging.getLogger("tempo.background").exception(
+                            "background slice failed source=%s item=%s",
+                            source,
+                            item,
+                        )
+                logging.getLogger("tempo.background").info(
+                    "background slice source=%s item=%s slice_duration=%.3fs retry_count=%s preempted=%s",
+                    source,
+                    item.get("id", item.get("game_id", item.get("repertoire_id", item))) if isinstance(item, dict) else item,
+                    time.perf_counter() - slice_started,
+                    item.get("attempts", 0) if isinstance(item, dict) else 0,
+                    activity_gate.foreground_waiting,
+                )
+                worked = True
                 await asyncio.sleep(0)
+                break
+            if worked:
                 continue
-            try:
-                game_id = await asyncio.to_thread(_claim_derivation)
-            except sqlite3.OperationalError:
-                await asyncio.sleep(0.25)
-                continue
-            if game_id:
-                await asyncio.to_thread(_execute_derivation, game_id)
-                await asyncio.sleep(0)
-                continue
-            try:
-                coverage_node = await asyncio.to_thread(claim_coverage_node)
-            except sqlite3.OperationalError:
-                await asyncio.sleep(0.25)
-                continue
-            if coverage_node:
-                await asyncio.to_thread(execute_coverage_node, coverage_node)
-                await asyncio.sleep(0)
-                continue
+            for maintenance_handler in _maintenance_handlers:
+                try:
+                    await asyncio.to_thread(maintenance_handler)
+                except Exception:
+                    logging.getLogger("tempo.background").exception(
+                        "background maintenance handler failed"
+                    )
             assert self._wake_event is not None
             self._wake_event.clear()
             try:
                 await asyncio.wait_for(self._wake_event.wait(), timeout=1)
             except TimeoutError:
                 pass
+
+
+def _requeue_interrupted_background_work() -> None:
+    now = _now()
+    with connection() as database:
+        database.execute(
+            """UPDATE game_sync_jobs SET status='queued',started_at=NULL,updated_at=?
+               WHERE status IN ('running','paused')""",
+            (now,),
+        )
+        database.execute(
+            """UPDATE game_derivation_jobs SET status='queued',phase=NULL,updated_at=?
+               WHERE status='running'""",
+            (now,),
+        )
+        database.execute(
+            """UPDATE repertoire_coverage_nodes SET explorer_status='queued',updated_at=?
+               WHERE explorer_status='running'""",
+            (now,),
+        )
+        database.execute(
+            """UPDATE repertoire_integrity_jobs SET status='queued',updated_at=?
+               WHERE status IN ('running','finalizing')""",
+            (now,),
+        )
+        database.execute(
+            """UPDATE repertoire_integrity_state SET scan_status='queued'
+               WHERE scan_status IN ('running','retrying')"""
+        )
+        database.execute(
+            """UPDATE repertoire_priority_jobs
+               SET status='queued',next_attempt_at=?,updated_at=?
+               WHERE status='running'""",
+            (now, now),
+        )
 
 
 coordinator = GameSyncCoordinator()

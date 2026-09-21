@@ -32,7 +32,7 @@ import {
 import { useBackgroundStudy } from "../hooks/use-background-study";
 import { runStudyTask } from "../lib/background-study";
 import type { StudyTask } from "../lib/study-computation";
-import { analyzeWithMaia } from "../lib/analysis-engines";
+import { requestInteractiveMaia } from "../lib/maia-broker";
 import { requestInteractiveAnalysis } from "../lib/engine-broker";
 import {
   adaptEngineMoves,
@@ -467,7 +467,7 @@ export default function BuilderView({
             positions,
           }),
         horizon,
-        analyze: (positionFen) => analyzeWithMaia(positionFen, Number(maiaElo)),
+        analyze: (positionFen) => requestInteractiveMaia(positionFen, Number(maiaElo)),
         signal: controller.signal,
       });
       if (!controller.signal.aborted) {
@@ -663,7 +663,7 @@ export default function BuilderView({
       setMaiaMoves([]);
       setMaiaProgress(0);
       setMaiaState("loading");
-      analyzeWithMaia(fen, Number(maiaElo), (progress) => {
+      requestInteractiveMaia(fen, Number(maiaElo), (progress) => {
         if (current) setMaiaProgress(progress);
       })
         .then((moves) => {

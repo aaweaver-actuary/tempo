@@ -14,6 +14,7 @@ import {
   repertoireCoverageSummarySchema,
 } from "../domain/schemas";
 import type { z } from "zod";
+import { reportDebugError } from "../lib/debug-reporting";
 
 import { Notice } from "../components/task-tabs";
 
@@ -54,7 +55,15 @@ export default function RepertoireView({ imported, onImport, onBrowse, onResolve
       }));
       setLoaded(true);
       setError("");
-    } catch (failure) { setError(`Repertoires unavailable: ${failure instanceof Error ? failure.message : "connection failed"}.`); }
+    } catch (failure) {
+      reportDebugError(failure, {
+        kind: "api",
+        source: "repertoire-view",
+        operation: "load repertoires",
+        endpoint: `${API_URL}/api/repertoires`,
+      });
+      setError(`Repertoires unavailable: ${failure instanceof Error ? failure.message : "connection failed"}.`);
+    }
   }, []);
 
   useEffect(() => {
@@ -141,7 +150,7 @@ export default function RepertoireView({ imported, onImport, onBrowse, onResolve
               <small>{coverageByRepertoire[item.id].status}{coverageByRepertoire[item.id].unknown_nodes ? ` · ${coverageByRepertoire[item.id].unknown_nodes} positions awaiting data` : ""}</small>
               {gapsByRepertoire[item.id]?.slice(0, 3).map((gap) => <button key={gap.gap_id} onClick={() => onResolveGap(item.id, gap)}>Fill {gap.move_uci} gap · {gap.probability === null ? "unknown" : `${Math.round(gap.probability * 1000) / 10}%`}</button>)}
             </div>}
-            <div className="repertoire-actions"><button className="browse-button" onClick={() => onBrowse(item.id)}>Browse tree</button>{item.backend && <button onClick={() => void (coverageByRepertoire[item.id] ? refreshCoverage(item.id) : loadCoverage(item.id)).catch((failure) => setError(failure instanceof Error ? failure.message : "Coverage unavailable"))}>{coverageByRepertoire[item.id] ? "Refresh coverage" : "Check coverage"}</button>}</div>
+            <div className="repertoire-actions"><button className="browse-button" onClick={() => onBrowse(item.id)}>Browse tree</button>{item.backend && <button onClick={() => void (coverageByRepertoire[item.id] ? refreshCoverage(item.id) : loadCoverage(item.id)).catch((failure) => { reportDebugError(failure, { kind: "api", source: "repertoire-coverage", operation: "load repertoire coverage", endpoint: `${API_URL}/api/repertoires/${item.id}/coverage` }); setError(failure instanceof Error ? failure.message : "Coverage unavailable"); })}>{coverageByRepertoire[item.id] ? "Refresh coverage" : "Check coverage"}</button>}</div>
           </article>
         ))}
         <button className="new-repertoire-card" onClick={(event) => { event.currentTarget.focus(); onImport(); }}><span>＋</span><strong>Add a repertoire</strong><small>PGN files stay on this computer</small></button>

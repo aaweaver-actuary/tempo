@@ -71,6 +71,8 @@ import { useShallow } from "zustand/react/shallow";
 import { WorkspaceRefreshStatus } from "../components/workspace-refresh-status";
 import { RepertoireIntegrityDialog } from "../components/repertoire-integrity-dialog";
 import { repertoiresResponseSchema } from "../domain/schemas";
+import { DebugErrorPanel } from "../components/debug-error-panel";
+import { setActiveDebugWorkspace } from "../lib/debug-reporting";
 
 async function responseErrorDetail(response: Response): Promise<string> {
   try {
@@ -102,6 +104,10 @@ export default function Home() {
   >("idle");
   const changeWorkspace = useCallback((view: View) => {
     const finished = measureTempoOperation("view-switch");
+    setRepairRepertoireId((currentRepairId) => {
+      if (currentRepairId) deferredRepairIds.current.add(currentRepairId);
+      return undefined;
+    });
     if (view === "progress" || view === "statistics") {
       setInsightsTab(view === "statistics" ? "games" : "training");
       setCurrentView("insights");
@@ -183,6 +189,10 @@ export default function Home() {
   const card = practiceCards[activeCardIndex] ?? demoCards[0];
   const repertoireLine = card.moves;
 
+  useEffect(() => {
+    setActiveDebugWorkspace(currentView);
+  }, [currentView]);
+
   const checkPendingIntegrity = useCallback(async (preferred?: string) => {
     if (!usesLocalApi()) return;
     try {
@@ -194,7 +204,7 @@ export default function Home() {
         !deferredRepairIds.current.has(item.id),
       );
       const preferredCandidate = preferred ? parsed.repertoires.find((item) => item.id === preferred && item.integrity_status === "needs_repair") : undefined;
-      setRepairRepertoireId(preferredCandidate?.id ?? candidate?.id);
+      setRepairRepertoireId(preferredCandidate?.id);
       const paused = preferredCandidate ?? candidate;
       setPausedIntegrity(paused ? { id: paused.id, issueCount: paused.integrity_issue_count ?? 0 } : undefined);
     } catch {
@@ -221,7 +231,7 @@ export default function Home() {
       } else void checkPendingIntegrity();
     };
     window.addEventListener("tempo:integrity", onIntegrity);
-    void checkPendingIntegrity();
+    queueMicrotask(() => void checkPendingIntegrity());
     return () => window.removeEventListener("tempo:integrity", onIntegrity);
   }, [checkPendingIntegrity]);
 
@@ -951,6 +961,7 @@ export default function Home() {
       </header>
       {!usesLocalApi() && <DemoBanner />}
       <WorkspaceRefreshStatus />
+      <DebugErrorPanel />
 
       <BoardWorkspaceContainer enabled={boardWorkspace} view={currentView}>
       {currentView === "train" && (

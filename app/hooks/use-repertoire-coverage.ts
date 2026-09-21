@@ -1,9 +1,11 @@
 import { useEffect } from "react";
 import { API_URL } from "../const";
 import { coverageMaiaClaimSchema } from "../domain/schemas";
-import { analyzeWithMaia } from "../lib/analysis-engines";
+import { requestBackgroundMaia } from "../lib/maia-broker";
 import { readJsonResponse } from "../lib/validated-data";
 import { usesLocalApi } from "../utils/local";
+import { backgroundFetch } from "../lib/background-fetch";
+import { reportDebugError } from "../lib/debug-reporting";
 
 const IDLE_DELAY_MS = 3_000;
 const RETRY_DELAY_MS = 15_000;
@@ -33,7 +35,7 @@ export function useRepertoireCoverageWorker() {
       }
       running = true;
       try {
-        const claimResponse = await fetch(
+        const claimResponse = await backgroundFetch(
           `${API_URL}/api/repertoire-coverage/maia/claim`,
           { method: "POST" },
         );
@@ -46,8 +48,8 @@ export function useRepertoireCoverageWorker() {
           schedule(RETRY_DELAY_MS);
           return;
         }
-        const moves = await analyzeWithMaia(job.fen, job.elo);
-        await fetch(`${API_URL}/api/repertoire-coverage/maia/submit`, {
+        const moves = await requestBackgroundMaia(job.fen, job.elo);
+        await backgroundFetch(`${API_URL}/api/repertoire-coverage/maia/submit`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -62,7 +64,14 @@ export function useRepertoireCoverageWorker() {
           }),
         });
         schedule(1_000);
-      } catch {
+      } catch (error) {
+        reportDebugError(error, {
+          kind: "api",
+          source: "background-repertoire-coverage",
+          operation: "refresh repertoire coverage",
+          endpoint: `${API_URL}/api/repertoire-coverage/maia/claim`,
+          method: "POST",
+        });
         schedule(RETRY_DELAY_MS);
       } finally {
         running = false;

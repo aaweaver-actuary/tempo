@@ -18,7 +18,7 @@ from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadF
 from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from .database import connection, initialize
+from .database import connection, initialize, query_only_request, read_connection
 from .models import TacticActivationRequest
 from .services.tactical_catalog import (
     catalog_status,
@@ -71,27 +71,33 @@ from .services.endgames import (
     normalized_material,
 )
 from .services.game_analysis import classify_swings
-from .services.game_findings import motif_recommendations, refresh_game_findings
+from .services.game_findings import motif_recommendations
 from .services.tactical_opportunities import tactical_statistics
-from .services.statistics import refresh_daily_snapshot, statistics_breakdown, statistics_overview
+from .services.statistics import enqueue_daily_snapshot, statistics_breakdown, statistics_overview
 from .services.guided_review import create_or_resume_session, read_session, submit_attempt
 from .services.game_sync_coordinator import (
     coordinator,
     enqueue_game_derivation,
     enqueue_sync,
+    register_durable_task_handler,
+    register_maintenance_handler,
     serialize_job,
 )
-from .services.repertoire_comparison import compare_all_games
+from .services.database_executor import (
+    database_writer,
+    submit_background_write,
+    submit_foreground_write,
+)
+from .services.durable_tasks import enqueue_task, list_tasks, retry_task
 from .services.repertoire_conflicts import (
     find_repertoire_conflicts,
     trained_move_index,
 )
 from .services.repertoire_integrity import (
+    enqueue_integrity_scans,
     integrity_summary,
     list_integrity_issues,
     resolve_issue,
-    sweep_all,
-    sweep_repertoire,
 )
 from .services.puzzles import validate_puzzle_record
 from .services.prefix_split import apply_prefix_split, preview_prefix_split
@@ -104,22 +110,33 @@ from .services.repertoire_coverage import (
 )
 from .services.introduction_priorities import (
     priority_status,
-    rebuild_introduction_priorities,
-    rebuild_priorities_for_game,
 )
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """Lifespan context manager for the FastAPI application. Initializes the database and starts the coordinator on startup, and stops the coordinator on shutdown."""
+    configured_workers = max(
+        int(os.getenv("WEB_CONCURRENCY", "1")),
+        int(os.getenv("UVICORN_WORKERS", "1")),
+        int(os.getenv("TEMPO_API_WORKERS", "1")),
+    )
+    if configured_workers != 1:
+        raise RuntimeError(
+            "Tempo requires one API worker while SQLite has an in-process database owner"
+        )
     initialize()
-    with connection() as database:
-        sweep_all(database)
+    database_writer.start()
+    submit_foreground_write(
+        lambda database: materialize_daily_queue(database, date.today().isoformat()),
+        label="startup-daily-queue",
+    )
     await coordinator.start()
     try:
         yield
     finally:
         await coordinator.stop()
+        database_writer.stop()
 
 
 app = FastAPI(title="Tempo local API", version="0.2.0", lifespan=lifespan)
@@ -129,19 +146,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-_foreground_paths = (
-    "/api/cards",
-    "/api/queue",
-    "/api/settings",
-    "/api/repertoire",
-    "/api/repertoires",
-    "/api/imports",
-    "/api/tactics",
-    "/api/endgames",
-    "/api/progress",
-)
-
 
 ANALYSIS_EVIDENCE_VERSION = 2
 MAX_ANALYSIS_CANDIDATES = 5
@@ -268,10 +272,21 @@ def _validated_analysis_evaluations(
 @app.middleware("http")
 async def prioritize_foreground_requests(request: Request, call_next):
     request.state.started_monotonic = time.monotonic()
-    if request.url.path.startswith(_foreground_paths):
+    is_background = (
+        request.headers.get("x-tempo-work-class", "").casefold() == "background"
+    )
+    request_scope = query_only_request() if request.method == "GET" else None
+    if request_scope is not None:
+        request_scope.__enter__()
+    try:
+        if is_background:
+            with activity_gate.background_request():
+                return await call_next(request)
         with activity_gate.foreground():
             return await call_next(request)
-    return await call_next(request)
+    finally:
+        if request_scope is not None:
+            request_scope.__exit__(None, None, None)
 
 
 @app.exception_handler(sqlite3.OperationalError)
@@ -303,14 +318,56 @@ async def storage_unavailable(request: Request, error: sqlite3.OperationalError)
 
 @app.get("/api/health")
 def health():
-    with connection() as db:
+    with read_connection() as db:
         db.execute("SELECT id FROM settings LIMIT 1").fetchone()
+    if not database_writer.healthy:
+        raise HTTPException(503, "Database writer is unavailable")
     return {
         "status": "ok",
         "storage": "local-sqlite",
         "scheduler": "FSRS 6",
         "test_instance": os.getenv("TEMPO_TEST_INSTANCE") == "disposable",
     }
+
+
+@app.get("/api/system/tasks")
+def system_tasks():
+    tasks = list_tasks()
+    queued_counts = database_writer.queued_counts
+    with read_connection() as database:
+        projections = [
+            dict(row)
+            for row in database.execute(
+                "SELECT * FROM queue_projections ORDER BY queue_date DESC LIMIT 7"
+            )
+        ]
+    return {
+        "tasks": tasks,
+        "counts": {
+            "queued": sum(task["state"] in {"queued", "retrying"} for task in tasks),
+            "active": sum(task["state"] == "leased" for task in tasks),
+            "failed": sum(task["state"] == "failed" for task in tasks),
+            "oldest_queued_age_seconds": max(
+                (
+                    task["age_seconds"]
+                    for task in tasks
+                    if task["state"] in {"queued", "retrying"}
+                ),
+                default=0,
+            ),
+        },
+        "writer": {"healthy": database_writer.healthy, **queued_counts},
+        "queue_projections": projections,
+    }
+
+
+@app.post("/api/system/tasks/{task_id}/retry")
+def retry_system_task(task_id: str):
+    retried = retry_task(task_id)
+    if retried is None:
+        raise HTTPException(404, "Terminal task not found")
+    coordinator.wake()
+    return retried
 
 
 @app.get("/api/analysis/capabilities")
@@ -320,7 +377,7 @@ def capabilities():
 
 @app.get("/api/settings", response_model=Settings)
 def get_settings():
-    with connection() as db:
+    with read_connection() as db:
         row = db.execute(
             "SELECT tactics_new_per_day,initial_depth,timezone,new_cards_per_day,lichess_username,chesscom_username,auto_sync_minutes,engine_line_window_cp,major_mistake_cp,light_first_interval_days,draw_hold_user_moves,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
         ).fetchone()
@@ -329,7 +386,17 @@ def get_settings():
 
 @app.put("/api/settings", response_model=Settings)
 def put_settings(s: Settings):
-    with connection() as db:
+    coverage_fields = (
+        "coverage_reply_denominator",
+        "coverage_cumulative_target",
+        "coverage_horizon_fullmoves",
+        "coverage_path_floor",
+        "coverage_maia_elo",
+    )
+    def persist_settings(db):
+        previous_settings = db.execute(
+            "SELECT coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
+        ).fetchone()
         db.execute(
             "UPDATE settings SET tactics_new_per_day=?,initial_depth=?,timezone=?,new_cards_per_day=?,lichess_username=?,chesscom_username=?,auto_sync_minutes=?,engine_line_window_cp=?,major_mistake_cp=?,light_first_interval_days=?,draw_hold_user_moves=?,coverage_reply_denominator=?,coverage_cumulative_target=?,coverage_horizon_fullmoves=?,coverage_path_floor=?,coverage_maia_elo=? WHERE id=1",
             (
@@ -351,31 +418,47 @@ def put_settings(s: Settings):
                 s.coverage_maia_elo,
             ),
         )
-        repertoire_ids = [
+        for provider, username in (
+            ("lichess", s.lichess_username.strip()),
+            ("chess.com", s.chesscom_username.strip()),
+        ):
+            if username:
+                db.execute(
+                    "INSERT INTO game_accounts(provider,username) VALUES(?,?) ON CONFLICT(provider) DO UPDATE SET username=excluded.username",
+                    (provider, username),
+                )
+            else:
+                db.execute("DELETE FROM game_accounts WHERE provider=?", (provider,))
+        coverage_changed = previous_settings is None or any(
+            previous_settings[field] != getattr(s, field) for field in coverage_fields
+        )
+        return [
             row["id"]
             for row in db.execute(
-                "SELECT id FROM repertoires WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__')"
+                """SELECT r.id FROM repertoires r
+                   JOIN repertoire_integrity_state state ON state.repertoire_id=r.id
+                   WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__')
+                     AND state.status='clean'"""
             )
-        ]
-        for repertoire_id in repertoire_ids:
-            if db.execute(
-                "SELECT 1 FROM repertoire_integrity_state WHERE repertoire_id=? AND status='clean'",
-                (repertoire_id,),
-            ).fetchone():
-                rebuild_introduction_priorities(db, repertoire_id)
+        ] if coverage_changed else []
+
+    repertoire_ids = submit_foreground_write(
+        persist_settings,
+        label="settings-update",
+    )
+    enqueue_daily_queue_refresh()
+    enqueued_coverage = False
     for repertoire_id in repertoire_ids:
-        with connection() as db:
-            is_clean = db.execute(
-                "SELECT 1 FROM repertoire_integrity_state WHERE repertoire_id=? AND status='clean'",
-                (repertoire_id,),
-            ).fetchone()
-        if not is_clean:
-            continue
         try:
-            enqueue_coverage_refresh(repertoire_id, automatic=True)
+            enqueue_coverage_refresh(
+                repertoire_id,
+                automatic=True,
+                background=False,
+            )
+            enqueued_coverage = True
         except (KeyError, sqlite3.OperationalError):
             continue
-    if repertoire_ids:
+    if enqueued_coverage:
         coordinator.wake()
     return s
 
@@ -431,40 +514,28 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
 
     candidates = db.execute(
         """SELECT c.id,c.repertoire_id,c.moves_json,c.due_date,p.reason gameplay_priority_reason,
-                  p.priority_date,ip.priority_score,ip.completed_line_ids_json,
-                  ip.frontier_decisions_json
+                  p.priority_date,
+                  COALESCE(published_priority.priority_score,legacy_priority.priority_score) priority_score,
+                  COALESCE(published_priority.completed_line_ids_json,legacy_priority.completed_line_ids_json) completed_line_ids_json,
+                  COALESCE(published_priority.frontier_decisions_json,legacy_priority.frontier_decisions_json) frontier_decisions_json
            FROM cards c
            LEFT JOIN gameplay_card_priorities p ON p.card_id=c.id AND p.priority_date<=?
-           LEFT JOIN repertoire_card_introduction_priorities ip
-             ON ip.card_id=c.id AND ip.repertoire_id=c.repertoire_id
+           LEFT JOIN repertoire_priority_publications publication
+             ON publication.repertoire_id=c.repertoire_id
+           LEFT JOIN repertoire_card_priority_generations published_priority
+             ON published_priority.card_id=c.id
+            AND published_priority.repertoire_id=c.repertoire_id
+            AND published_priority.generation=publication.generation
+           LEFT JOIN repertoire_card_introduction_priorities legacy_priority
+             ON legacy_priority.card_id=c.id AND legacy_priority.repertoire_id=c.repertoire_id
            WHERE c.content_type='opening' AND (c.due_date<=? OR p.card_id IS NOT NULL)
-             AND c.state='new' AND c.introduced_at IS NULL AND c.archived=0
+             AND c.state='new' AND c.introduced_at IS NULL AND c.archived=0 AND COALESCE(c.pending_validation,0)=0
              AND EXISTS(SELECT 1 FROM repertoires r_ok
                         WHERE (r_ok.id=c.repertoire_id OR EXISTS(SELECT 1 FROM repertoire_cards rc_ok WHERE rc_ok.card_id=c.id AND rc_ok.repertoire_id=r_ok.id))
                           AND COALESCE((SELECT status FROM repertoire_integrity_state WHERE repertoire_id=r_ok.id),'unchecked')='clean')
              AND c.id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?)""",
         (day, day, day),
     ).fetchall()
-    repertoire_ids = sorted({row["repertoire_id"] for row in candidates})
-    for repertoire_id in repertoire_ids:
-        rebuild_introduction_priorities(db, repertoire_id)
-    if repertoire_ids:
-        candidates = db.execute(
-            """SELECT c.id,c.repertoire_id,c.moves_json,c.due_date,p.reason gameplay_priority_reason,
-                      p.priority_date,ip.priority_score,ip.completed_line_ids_json,
-                      ip.frontier_decisions_json
-               FROM cards c
-               LEFT JOIN gameplay_card_priorities p ON p.card_id=c.id AND p.priority_date<=?
-               LEFT JOIN repertoire_card_introduction_priorities ip
-                 ON ip.card_id=c.id AND ip.repertoire_id=c.repertoire_id
-               WHERE c.content_type='opening' AND (c.due_date<=? OR p.card_id IS NOT NULL)
-                 AND c.state='new' AND c.introduced_at IS NULL AND c.archived=0
-                 AND EXISTS(SELECT 1 FROM repertoires r_ok
-                            WHERE (r_ok.id=c.repertoire_id OR EXISTS(SELECT 1 FROM repertoire_cards rc_ok WHERE rc_ok.card_id=c.id AND rc_ok.repertoire_id=r_ok.id))
-                              AND COALESCE((SELECT status FROM repertoire_integrity_state WHERE repertoire_id=r_ok.id),'unchecked')='clean')
-                 AND c.id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?)""",
-            (day, day, day),
-        ).fetchall()
     introduced_by_repertoire = dict(
         db.execute(
             "SELECT repertoire_id,COUNT(*) FROM cards WHERE content_type='opening' AND introduced_at=? GROUP BY repertoire_id",
@@ -529,13 +600,6 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
 
 
 def seed_queue(db, day):
-    unchecked_repertoires = db.execute(
-        """SELECT r.id FROM repertoires r LEFT JOIN repertoire_integrity_state s ON s.repertoire_id=r.id
-           WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__')
-             AND COALESCE(s.status,'unchecked')='unchecked'"""
-    ).fetchall()
-    for row in unchecked_repertoires:
-        sweep_repertoire(db, row[0])
     seed_tactical_introductions(db, day)
     db.execute("""UPDATE cards SET state='new' WHERE content_type='opening' AND state='learning'
                   AND introduced_at IS NULL AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=cards.id)""")
@@ -553,7 +617,7 @@ def seed_queue(db, day):
         "SELECT COALESCE(MAX(position),-1) FROM daily_queue WHERE queue_date=?", (day,)
     ).fetchone()[0]
     rows = db.execute(
-        """SELECT id FROM cards WHERE due_date<=? AND state IN ('learning','mature') AND archived=0
+        """SELECT id FROM cards WHERE due_date<=? AND state IN ('learning','mature') AND archived=0 AND COALESCE(pending_validation,0)=0
            AND (cards.content_type!='opening' OR EXISTS(SELECT 1 FROM repertoires rr
                       WHERE (rr.id=cards.repertoire_id OR EXISTS(SELECT 1 FROM repertoire_cards rc WHERE rc.card_id=cards.id AND rc.repertoire_id=rr.id))
                         AND COALESCE((SELECT status FROM repertoire_integrity_state WHERE repertoire_id=rr.id),'unchecked')='clean'))
@@ -580,6 +644,8 @@ def randomize_daily_queue(db, day: str) -> None:
            ORDER BY q.id""",
         (day,),
     ).fetchall()
+    if not rows:
+        return
     membership_hash = hashlib.sha256(
         "\0".join(f"{row['id']}:{row['card_id']}" for row in rows).encode()
     ).hexdigest()
@@ -644,51 +710,152 @@ def randomize_daily_queue(db, day: str) -> None:
     )
 
 
+def _quarantine_malformed_opening_cards(database, queue_date: str) -> list[dict]:
+    candidates = database.execute(
+        """SELECT q.id queue_entry_id,c.id,c.start_fen,c.moves_json,c.content_type,
+                          COALESCE(c.trained_color,(SELECT l.trained_color FROM repertoire_lines l
+                           WHERE l.repertoire_id=c.repertoire_id ORDER BY l.created_at LIMIT 1)) trained_color
+                   FROM daily_queue q JOIN cards c ON c.id=q.card_id
+                   WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
+                     AND (c.content_type!='opening' OR EXISTS(SELECT 1 FROM repertoires r_ok
+                                WHERE (r_ok.id=c.repertoire_id OR EXISTS(SELECT 1 FROM repertoire_cards rc_ok WHERE rc_ok.card_id=c.id AND rc_ok.repertoire_id=r_ok.id))
+                                  AND COALESCE((SELECT status FROM repertoire_integrity_state WHERE repertoire_id=r_ok.id),'unchecked')='clean'))""",
+        (queue_date,),
+    ).fetchall()
+    diagnostics: list[dict] = []
+    for candidate in candidates:
+        if candidate["content_type"] != "opening" or candidate["trained_color"] not in {
+            "white",
+            "black",
+        }:
+            continue
+        try:
+            moves = json.loads(candidate["moves_json"])
+        except json.JSONDecodeError:
+            moves = []
+        if ends_on_trained_move(
+            candidate["start_fen"], moves, candidate["trained_color"]
+        ):
+            continue
+        database.execute("UPDATE cards SET state='locked' WHERE id=?", (candidate["id"],))
+        database.execute(
+            "UPDATE daily_queue SET status='skipped' WHERE id=?",
+            (candidate["queue_entry_id"],),
+        )
+        diagnostics.append(
+            {
+                "card_id": candidate["id"],
+                "message": "Skipped an incomplete opening card. Edit or re-import its line to study it.",
+            }
+        )
+    return diagnostics
+
+
+def materialize_daily_queue(database, queue_date: str) -> None:
+    """Publish one complete queue generation in a bounded writer transaction."""
+
+    database.execute(
+        """INSERT INTO queue_projections(queue_date,state,generation,refresh_pending)
+           VALUES(?,'refreshing',0,1)
+           ON CONFLICT(queue_date) DO UPDATE SET state='refreshing',refresh_pending=1,
+               last_error=NULL""",
+        (queue_date,),
+    )
+    seed_queue(database, queue_date)
+    randomize_daily_queue(database, queue_date)
+    diagnostics = _quarantine_malformed_opening_cards(database, queue_date)
+    database.execute(
+        "DELETE FROM queue_projection_diagnostics WHERE queue_date=?", (queue_date,)
+    )
+    database.executemany(
+        "INSERT INTO queue_projection_diagnostics(queue_date,card_id,message) VALUES(?,?,?)",
+        [
+            (queue_date, diagnostic["card_id"], diagnostic["message"])
+            for diagnostic in diagnostics
+        ],
+    )
+    now = datetime.now(timezone.utc).isoformat()
+    database.execute(
+        """UPDATE queue_projections SET state='ready',generation=generation+1,
+               updated_at=?,refresh_pending=0,last_error=NULL WHERE queue_date=?""",
+        (now, queue_date),
+    )
+
+
+def _execute_daily_queue_task(task: dict) -> None:
+    queue_date = task["payload"].get("queue_date") or date.today().isoformat()
+    try:
+        submit_background_write(
+            lambda database: materialize_daily_queue(database, queue_date),
+            label=f"daily-queue:{queue_date}",
+        )
+    except Exception as error:
+        sanitized_error = str(error)[:500]
+        submit_background_write(
+            lambda database: database.execute(
+                """INSERT INTO queue_projections(
+                       queue_date,state,generation,refresh_pending,last_error
+                   ) VALUES(?,'failed',0,0,?)
+                   ON CONFLICT(queue_date) DO UPDATE SET state='failed',
+                       refresh_pending=0,last_error=excluded.last_error""",
+                (queue_date, sanitized_error),
+            ),
+            label=f"daily-queue-failed:{queue_date}",
+        )
+        raise
+
+
+register_durable_task_handler("daily_queue", _execute_daily_queue_task)
+
+
+def _ensure_current_daily_queue() -> None:
+    queue_date = date.today().isoformat()
+    with read_connection() as database:
+        projection = database.execute(
+            "SELECT state FROM queue_projections WHERE queue_date=?", (queue_date,)
+        ).fetchone()
+    if projection is None:
+        enqueue_daily_queue_refresh(foreground=False)
+
+
+register_maintenance_handler(_ensure_current_daily_queue)
+
+
+def enqueue_daily_queue_refresh(*, foreground: bool = True) -> dict:
+    queue_date = date.today().isoformat()
+    task = enqueue_task(
+        "daily_queue",
+        "current",
+        {"queue_date": queue_date},
+        priority=10,
+        foreground=foreground,
+    )
+    submit = submit_foreground_write if foreground else submit_background_write
+    submit(
+        lambda database: database.execute(
+            """INSERT INTO queue_projections(queue_date,state,generation,refresh_pending)
+               VALUES(?,'refreshing',0,1)
+               ON CONFLICT(queue_date) DO UPDATE SET state='refreshing',
+                   refresh_pending=1,last_error=NULL""",
+            (queue_date,),
+        ),
+        label=f"daily-queue-refreshing:{queue_date}",
+    )
+    coordinator.wake()
+    return task
+
+
 @app.get("/api/queue/today")
 def queue_today():
     day = date.today().isoformat()
-    with connection() as db:
-        seed_queue(db, day)
-        randomize_daily_queue(db, day)
-        # Older versions could create a Black prefix that stopped after
-        # White's first move. Quarantine those records before serializing the
-        # queue so malformed saved data cannot leave the board locked.
-        candidates = db.execute(
-            """SELECT q.id queue_entry_id,c.id,c.start_fen,c.moves_json,c.content_type,
-                              COALESCE(c.trained_color,(SELECT l.trained_color FROM repertoire_lines l
-                               WHERE l.repertoire_id=c.repertoire_id ORDER BY l.created_at LIMIT 1)) trained_color
-                       FROM daily_queue q JOIN cards c ON c.id=q.card_id
-                       WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
-                         AND (c.content_type!='opening' OR EXISTS(SELECT 1 FROM repertoires r_ok
-                                    WHERE (r_ok.id=c.repertoire_id OR EXISTS(SELECT 1 FROM repertoire_cards rc_ok WHERE rc_ok.card_id=c.id AND rc_ok.repertoire_id=r_ok.id))
-                                      AND COALESCE((SELECT status FROM repertoire_integrity_state WHERE repertoire_id=r_ok.id),'unchecked')='clean'))""",
+    with read_connection() as db:
+        projection_row = db.execute(
+            "SELECT * FROM queue_projections WHERE queue_date=?", (day,)
+        ).fetchone()
+        diagnostic_rows = db.execute(
+            "SELECT card_id,message FROM queue_projection_diagnostics WHERE queue_date=? ORDER BY card_id",
             (day,),
         ).fetchall()
-        diagnostics = []
-        for candidate in candidates:
-            if candidate["content_type"] != "opening" or candidate[
-                "trained_color"
-            ] not in {"white", "black"}:
-                continue
-            try:
-                moves = json.loads(candidate["moves_json"])
-            except json.JSONDecodeError:
-                moves = []
-            if ends_on_trained_move(
-                candidate["start_fen"], moves, candidate["trained_color"]
-            ):
-                continue
-            db.execute("UPDATE cards SET state='locked' WHERE id=?", (candidate["id"],))
-            db.execute(
-                "UPDATE daily_queue SET status='skipped' WHERE id=?",
-                (candidate["queue_entry_id"],),
-            )
-            diagnostics.append(
-                {
-                    "card_id": candidate["id"],
-                    "message": "Skipped an incomplete opening card. Edit or re-import its line to study it.",
-                }
-            )
         rows = db.execute(
             """SELECT q.id queue_entry_id,q.position,q.cycle,q.attempt_state,q.attempt_failed,c.*,
                                   r.name repertoire_name,r.source_name repertoire_source,r.is_main,
@@ -713,7 +880,18 @@ def queue_today():
         "local_date": day,
         "cards": cards,
         "count": len(cards),
-        "diagnostics": diagnostics,
+        "diagnostics": [dict(row) for row in diagnostic_rows],
+        "projection": (
+            dict(projection_row)
+            if projection_row
+            else {
+                "state": "refreshing",
+                "generation": 0,
+                "updated_at": None,
+                "refresh_pending": 1,
+                "last_error": None,
+            }
+        ),
     }
 
 
@@ -800,7 +978,7 @@ async def import_pgn(
                 continue
             seen.add(cid)
             created += db.execute(
-                "INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES(?,?,'prefix',?,?,?)",
+                "INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,pending_validation) VALUES(?,?,'prefix',?,?,?,1)",
                 (
                     cid,
                     rid,
@@ -813,23 +991,19 @@ async def import_pgn(
                 "INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)",
                 (rid, cid),
             )
-        integrity = sweep_repertoire(db, rid)
-        if integrity["status"] == "clean":
-            rebuild_introduction_priorities(db, rid)
+        integrity = integrity_summary(db, rid)
         seed_queue(db, date.today().isoformat())
         admitted = db.execute(
             """SELECT COUNT(DISTINCT q.card_id) FROM daily_queue q JOIN repertoire_cards rc ON rc.card_id=q.card_id
                                WHERE q.queue_date=? AND q.status='queued' AND rc.repertoire_id=?""",
             (date.today().isoformat(), rid),
         ).fetchone()[0]
-    if integrity["status"] == "clean":
-        try:
-            enqueue_coverage_refresh(rid, automatic=True)
-            coordinator.wake()
-        except (KeyError, sqlite3.OperationalError):
-            pass
-        compare_all_games()
-        refresh_game_findings()
+    try:
+        enqueue_integrity_scans(rid)
+        enqueue_coverage_refresh(rid, automatic=True)
+        coordinator.wake()
+    except (KeyError, sqlite3.OperationalError):
+        pass
     return ImportResult(
         repertoire_id=rid,
         source_name=file.filename,
@@ -844,42 +1018,53 @@ async def import_pgn(
 
 @app.get("/api/repertoires")
 def list_repertoires():
-    with connection() as db:
-        seed_queue(db, date.today().isoformat())
+    with read_connection() as db:
         rows = db.execute(
             """
+            WITH line_counts AS (
+                SELECT repertoire_id,COUNT(*) AS line_count
+                FROM repertoire_lines
+                GROUP BY repertoire_id
+            ), card_counts AS (
+                SELECT repertoire_id,COUNT(*) AS card_count
+                FROM repertoire_cards
+                GROUP BY repertoire_id
+            ), due_counts AS (
+                SELECT rc.repertoire_id,COUNT(DISTINCT q.card_id) AS due_count
+                FROM daily_queue q
+                JOIN repertoire_cards rc ON rc.card_id=q.card_id
+                WHERE q.queue_date=? AND q.status='queued'
+                GROUP BY rc.repertoire_id
+            ), issue_counts AS (
+                SELECT repertoire_id,COUNT(*) AS issue_count,
+                       SUM(CASE WHEN kind IN ('missing_response','multiple_responses','invalid_source')
+                           THEN 1 ELSE 0 END) AS conflict_count
+                FROM repertoire_integrity_issues
+                GROUP BY repertoire_id
+            )
             SELECT r.id,r.name,r.source_name,r.created_at,r.is_main,COALESCE(rs.status,'unchecked') integrity_status,
                    (SELECT ii.id FROM repertoire_integrity_issues ii WHERE ii.repertoire_id=r.id ORDER BY ii.updated_at,ii.id LIMIT 1) integrity_first_issue_id,
-                   COUNT(DISTINCT l.id) AS line_count,
-                   COUNT(DISTINCT c.id) AS card_count,
+                   COALESCE(lc.line_count,0) AS line_count,
+                   COALESCE(cc.card_count,0) AS card_count,
                    (SELECT l2.trained_color FROM repertoire_lines l2 WHERE l2.repertoire_id=r.id ORDER BY l2.created_at LIMIT 1) AS trained_color,
-                   COUNT(DISTINCT CASE WHEN q.queue_date=? AND q.status='queued'
-                         AND COALESCE(rs.status,'unchecked')='clean' THEN q.card_id END) AS due_count
+                   CASE WHEN COALESCE(rs.status,'unchecked')='clean'
+                        THEN COALESCE(dc.due_count,0) ELSE 0 END AS due_count,
+                   COALESCE(ic.issue_count,0) AS integrity_issue_count,
+                   COALESCE(ic.conflict_count,0) AS conflict_count
             FROM repertoires r
-            LEFT JOIN repertoire_lines l ON l.repertoire_id=r.id
             LEFT JOIN repertoire_integrity_state rs ON rs.repertoire_id=r.id
-            LEFT JOIN repertoire_cards rc ON rc.repertoire_id=r.id
-            LEFT JOIN cards c ON c.id=rc.card_id
-            LEFT JOIN daily_queue q ON q.card_id=c.id
+            LEFT JOIN line_counts lc ON lc.repertoire_id=r.id
+            LEFT JOIN card_counts cc ON cc.repertoire_id=r.id
+            LEFT JOIN due_counts dc ON dc.repertoire_id=r.id
+            LEFT JOIN issue_counts ic ON ic.repertoire_id=r.id
             WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__')
-            GROUP BY r.id,r.name,r.source_name,r.created_at
             ORDER BY r.created_at DESC
         """,
             (date.today().isoformat(),),
         ).fetchall()
-        conflict_counts: dict[str, int] = {}
-        for conflict in find_repertoire_conflicts(db):
-            conflict_counts[conflict["repertoire_id"]] = (
-                conflict_counts.get(conflict["repertoire_id"], 0) + 1
-            )
         repertoire_items = [
             {
                 **dict(row),
-                "conflict_count": conflict_counts.get(row["id"], 0),
-                "integrity_issue_count": db.execute(
-                    "SELECT COUNT(*) FROM repertoire_integrity_issues WHERE repertoire_id=?",
-                    (row["id"],),
-                ).fetchone()[0],
                 "introduction_priority": priority_status(db, row["id"]),
             }
             for row in rows
@@ -909,13 +1094,8 @@ def repertoire_conflicts(repertoire_id: str | None = None):
 
 @app.get("/api/repertoires/{identifier}/integrity")
 def repertoire_integrity(identifier: str):
-    with connection() as db:
+    with read_connection() as db:
         try:
-            current = db.execute(
-                "SELECT COALESCE((SELECT status FROM repertoire_integrity_state WHERE repertoire_id=?),'unchecked')", (identifier,)
-            ).fetchone()
-            if current and current[0] == "unchecked":
-                sweep_repertoire(db, identifier)
             summary = integrity_summary(db, identifier)
             issues = list_integrity_issues(db, identifier)
         except KeyError as error:
@@ -942,20 +1122,16 @@ def resolve_repertoire_integrity(
             raise HTTPException(409, str(error)) from error
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
-        if result["summary"]["status"] == "clean":
-            rebuild_introduction_priorities(db, identifier)
-            seed_queue(db, date.today().isoformat())
         next_issue = list_integrity_issues(db, identifier)
         result["next_issue"] = next_issue[0] if next_issue else None
         result["issues_remaining"] = len(next_issue)
-    if result["summary"]["status"] == "clean":
-        try:
-            enqueue_coverage_refresh(identifier, automatic=True)
-            coordinator.wake()
-        except (KeyError, sqlite3.OperationalError):
-            pass
-        compare_all_games()
-        refresh_game_findings()
+    try:
+        enqueue_integrity_scans(identifier)
+        coordinator.wake()
+    except (KeyError, sqlite3.OperationalError):
+        pass
+    with connection() as db:
+        result["summary"] = integrity_summary(db, identifier)
     return result
 
 
@@ -1267,18 +1443,12 @@ def review(identifier: str, request: ReviewRequest):
                 (identifier, identifier),
             ).fetchall()
         ]
-        for owner_id in owner_ids:
-            if db.execute(
-                "SELECT 1 FROM repertoire_integrity_state WHERE repertoire_id=? AND status!='unchecked'",
-                (owner_id,),
-            ).fetchone() is None:
-                sweep_repertoire(db, owner_id)
         if not db.execute(
             """SELECT 1 FROM cards c
                LEFT JOIN repertoire_cards rc ON rc.card_id=c.id
                LEFT JOIN repertoires r ON r.id=rc.repertoire_id OR r.id=c.repertoire_id
                WHERE c.id=? AND c.archived=0
-                 AND COALESCE((SELECT status FROM repertoire_integrity_state WHERE repertoire_id=r.id),'unchecked')='clean' LIMIT 1""",
+                 AND (c.content_type!='opening' OR COALESCE((SELECT status FROM repertoire_integrity_state WHERE repertoire_id=r.id),'unchecked')='clean') LIMIT 1""",
             (identifier,),
         ).fetchone():
             raise HTTPException(409, "This card belongs only to a repertoire awaiting integrity repair")
@@ -1412,7 +1582,7 @@ def branch(request: BranchRequest):
         if prefix:
             cid = card_id(request.starting_fen, prefix)
             db.execute(
-                "INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES(?,?,'prefix',?,?,?)",
+                "INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,pending_validation) VALUES(?,?,'prefix',?,?,?,1)",
                 (
                     cid,
                     request.repertoire_id,
@@ -1448,16 +1618,15 @@ def branch(request: BranchRequest):
                 "UPDATE repertoire_coverage_candidates SET covered=1 WHERE node_id=? AND move_uci=?",
                 (gap_node_id, gap_move_uci),
             )
-        integrity = sweep_repertoire(db, request.repertoire_id)
-        if integrity["status"] == "clean":
-            rebuild_introduction_priorities(db, request.repertoire_id)
-        seed_queue(db, date.today().isoformat())
-    if integrity["status"] == "clean":
-        try:
-            enqueue_coverage_refresh(request.repertoire_id, automatic=True)
-            coordinator.wake()
-        except (KeyError, sqlite3.OperationalError):
-            pass
+        integrity = integrity_summary(db, request.repertoire_id)
+    try:
+        enqueue_integrity_scans(request.repertoire_id)
+        enqueue_coverage_refresh(request.repertoire_id, automatic=True)
+        coordinator.wake()
+    except (KeyError, sqlite3.OperationalError):
+        pass
+    with connection() as db:
+        integrity = integrity_summary(db, request.repertoire_id)
     return {"id": lid, "duplicate": duplicate, "moves": moves, "integrity": integrity}
 
 
@@ -1495,7 +1664,7 @@ def remove_branch(request: RemoveBranchRequest):
         removed_ids = {line["id"] for line in removed_lines}
         retained_lines = [line for line in lines if line["id"] not in removed_ids]
         if not removed_lines:
-            integrity = sweep_repertoire(db, request.repertoire_id)
+            integrity = integrity_summary(db, request.repertoire_id)
             return {
                 "deleted_line_count": 0,
                 "deleted_card_count": 0,
@@ -1557,7 +1726,7 @@ def remove_branch(request: RemoveBranchRequest):
                 continue
             identifier = card_id(line["start_fen"], prefix)
             db.execute(
-                "INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES(?,?,'prefix',?,?,?)",
+                "INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,pending_validation) VALUES(?,?,'prefix',?,?,?,1)",
                 (
                     identifier,
                     request.repertoire_id,
@@ -1570,16 +1739,15 @@ def remove_branch(request: RemoveBranchRequest):
                 "INSERT OR IGNORE INTO repertoire_cards VALUES(?,?)",
                 (request.repertoire_id, identifier),
             )
-        integrity = sweep_repertoire(db, request.repertoire_id)
-        if integrity["status"] == "clean":
-            rebuild_introduction_priorities(db, request.repertoire_id)
-        seed_queue(db, date.today().isoformat())
-    if integrity["status"] == "clean":
-        try:
-            enqueue_coverage_refresh(request.repertoire_id, automatic=True)
-            coordinator.wake()
-        except (KeyError, sqlite3.OperationalError):
-            pass
+        integrity = integrity_summary(db, request.repertoire_id)
+    try:
+        enqueue_integrity_scans(request.repertoire_id)
+        enqueue_coverage_refresh(request.repertoire_id, automatic=True)
+        coordinator.wake()
+    except (KeyError, sqlite3.OperationalError):
+        pass
+    with connection() as db:
+        integrity = integrity_summary(db, request.repertoire_id)
     return {
         "deleted_line_count": len(removed_lines),
         "deleted_card_count": deleted_cards,
@@ -1591,8 +1759,7 @@ def remove_branch(request: RemoveBranchRequest):
 @app.get("/api/progress")
 def progress_summary():
     day = date.today()
-    with connection() as db:
-        seed_queue(db, day.isoformat())
+    with read_connection() as db:
         states = {
             row["state"]: row["n"]
             for row in db.execute(
@@ -1679,16 +1846,23 @@ def prefix_split_accept(identifier: str, request: PrefixSplitRequest):
                     (result["parent"]["card_id"], result["continuation"]["card_id"]),
                 )
             ]
-            for repertoire_id in set(repertoire_ids):
-                if sweep_repertoire(database, repertoire_id)["status"] == "clean":
-                    rebuild_introduction_priorities(database, repertoire_id)
-            return result
+            database.execute(
+                "UPDATE cards SET pending_validation=1 WHERE id IN (?,?)",
+                (result["parent"]["card_id"], result["continuation"]["card_id"]),
+            )
         except KeyError as error:
             raise HTTPException(404, str(error)) from error
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
         except RuntimeError as error:
             raise HTTPException(409, str(error)) from error
+    for repertoire_id in set(repertoire_ids):
+        try:
+            enqueue_integrity_scans(repertoire_id)
+        except (KeyError, sqlite3.OperationalError):
+            continue
+    coordinator.wake()
+    return result
 
 
 @app.put("/api/cards/{identifier}")
@@ -1802,8 +1976,16 @@ def revise_card(identifier: str, request: CardRevisionRequest):
             )
         ]
         for repertoire_id in set(repertoire_ids):
-            if sweep_repertoire(db, repertoire_id)["status"] == "clean":
-                rebuild_introduction_priorities(db, repertoire_id)
+            db.execute(
+                "UPDATE cards SET pending_validation=1 WHERE id=?",
+                (replacement,),
+            )
+    for repertoire_id in set(repertoire_ids):
+        try:
+            enqueue_integrity_scans(repertoire_id)
+        except (KeyError, sqlite3.OperationalError):
+            continue
+    coordinator.wake()
     return {
         "card_id": replacement,
         "replaced": replacement != identifier,
@@ -1828,13 +2010,16 @@ def archive_card(identifier: str):
             "UPDATE daily_queue SET status='complete' WHERE card_id=? AND status='queued'",
             (identifier,),
         )
-        for repertoire_id in set(repertoire_ids):
-            if sweep_repertoire(db, repertoire_id)["status"] == "clean":
-                rebuild_introduction_priorities(db, repertoire_id)
         integrity = {
             repertoire_id: integrity_summary(db, repertoire_id)
             for repertoire_id in set(repertoire_ids)
         }
+    for repertoire_id in set(repertoire_ids):
+        try:
+            enqueue_integrity_scans(repertoire_id)
+        except (KeyError, sqlite3.OperationalError):
+            continue
+    coordinator.wake()
     return {"archived": True, "integrity": integrity}
 
 
@@ -2018,18 +2203,22 @@ TACTIC_MOTIFS = [
 
 @app.get("/api/tactics/catalog")
 def tactics_catalog():
-    with connection() as db:
+    with read_connection() as db:
         return catalog_status(db)
 
 
 @app.put("/api/tactics/activation")
 def tactics_activation(request: TacticActivationRequest):
-    with connection() as db:
+    def persist_activation(db):
         try:
             activate(db, request.pack_ids, request.active)
         except ValueError as error:
             raise HTTPException(422, str(error)) from error
         return catalog_status(db)
+
+    result = submit_foreground_write(persist_activation, label="tactics-activation")
+    enqueue_daily_queue_refresh()
+    return result
 
 
 @app.post("/api/tactics/attempt")
@@ -2258,6 +2447,7 @@ def create_endgame(request: EndgameTemplateRequest):
             "UPDATE cards SET state='learning',introduced_at=? WHERE id=?",
             (date.today().isoformat(), cid),
         )
+    enqueue_daily_queue_refresh()
     return {
         "id": identifier,
         "card_id": cid,
@@ -2302,18 +2492,6 @@ async def create_endgame_attempt(identifier: str):
 def accounts(a: AccountSettings):
     s = get_settings().model_copy(update=a.model_dump())
     put_settings(s)
-    with connection() as db:
-        for provider, user in (
-            ("lichess", a.lichess_username),
-            ("chess.com", a.chesscom_username),
-        ):
-            if user:
-                db.execute(
-                    "INSERT INTO game_accounts(provider,username) VALUES(?,?) ON CONFLICT(provider) DO UPDATE SET username=excluded.username",
-                    (provider, user),
-                )
-            else:
-                db.execute("DELETE FROM game_accounts WHERE provider=?", (provider,))
     return a
 
 
@@ -2331,12 +2509,10 @@ def sync(request: GameSyncRequest):
             "chesscom_username": users[1][1],
         }
     )
-    accounts(
-        AccountSettings(lichess_username=users[0][1], chesscom_username=users[1][1])
-    )
-    job_id = enqueue_sync(normalized_request)
+    background = activity_gate.in_background
+    job_id = enqueue_sync(normalized_request, background=background)
     coordinator.wake()
-    with connection() as db:
+    with connection(background=background) as db:
         job = db.execute(
             "SELECT status FROM game_sync_jobs WHERE id=?", (job_id,)
         ).fetchone()
@@ -2350,7 +2526,7 @@ def sync(request: GameSyncRequest):
 
 @app.get("/api/games/sync/status", response_model=GameSyncStatusResponse)
 def sync_status():
-    with connection() as db:
+    with connection(background=activity_gate.in_background) as db:
         rows = db.execute("SELECT * FROM game_sync_state ORDER BY provider").fetchall()
         job_row = db.execute(
             """SELECT * FROM game_sync_jobs
@@ -2379,7 +2555,7 @@ def claim_game_analysis():
     now = datetime.now(timezone.utc)
     lease_expires_at = now + timedelta(minutes=5)
     lease_id = str(uuid.uuid4())
-    with connection() as db:
+    with connection(background=activity_gate.in_background) as db:
         db.execute("BEGIN IMMEDIATE")
         db.execute(
             """UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,lease_expires_at=NULL,updated_at=?
@@ -2421,7 +2597,7 @@ def claim_game_analysis():
 
 @app.post("/api/games/analysis/{game_id:path}/failure")
 def fail_game_analysis(game_id: str, request: GameAnalysisFailureRequest):
-    with connection() as db:
+    with connection(background=activity_gate.in_background) as db:
         job = db.execute(
             "SELECT lease_id,status FROM game_analysis_jobs WHERE game_id=?", (game_id,)
         ).fetchone()
@@ -2442,7 +2618,7 @@ def fail_game_analysis(game_id: str, request: GameAnalysisFailureRequest):
 @app.post("/api/games/analysis/{game_id:path}/heartbeat")
 def heartbeat_game_analysis(game_id: str, request: GameAnalysisLeaseRequest):
     now = datetime.now(timezone.utc)
-    with connection() as db:
+    with connection(background=activity_gate.in_background) as db:
         updated = db.execute(
             """UPDATE game_analysis_jobs SET lease_expires_at=?,updated_at=?
                WHERE game_id=? AND status='leased' AND lease_id=?""",
@@ -2460,7 +2636,7 @@ def heartbeat_game_analysis(game_id: str, request: GameAnalysisLeaseRequest):
 
 @app.post("/api/games/analysis/{game_id:path}/release")
 def release_game_analysis(game_id: str, request: GameAnalysisLeaseRequest):
-    with connection() as db:
+    with connection(background=activity_gate.in_background) as db:
         updated = db.execute(
             """UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,
                       lease_expires_at=NULL,updated_at=?
@@ -2497,16 +2673,18 @@ def retry_game_analysis(game_id: str):
 
 @app.post("/api/games/{game_id:path}/analysis")
 def save_game_analysis(game_id: str, request: GameAnalysisRequest):
-    with connection() as db:
-        game = db.execute(
+    background = activity_gate.in_background
+    with connection(background=background) as db:
+        game_row = db.execute(
             "SELECT color,start_fen,moves_json FROM imported_games WHERE id=?", (game_id,)
         ).fetchone()
-        if not game:
+        if not game_row:
             raise HTTPException(404, "Game not found")
-        submitted_evaluations = _validated_analysis_evaluations(request, game)
-        job = db.execute(
+        game = dict(game_row)
+        job_row = db.execute(
             "SELECT * FROM game_analysis_jobs WHERE game_id=?", (game_id,)
         ).fetchone()
+        job = dict(job_row) if job_row else None
         if request.idempotency_key and job and job["status"] == "complete":
             if job["idempotency_key"] == request.idempotency_key:
                 return {
@@ -2528,83 +2706,89 @@ def save_game_analysis(game_id: str, request: GameAnalysisRequest):
         threshold = db.execute(
             "SELECT major_mistake_cp FROM settings WHERE id=1"
         ).fetchone()[0]
-        result = classify_swings(
-            submitted_evaluations,
-            game[0],
-            threshold,
-            "white" if chess.Board(game[1]).turn else "black",
+
+    submitted_evaluations = _validated_analysis_evaluations(request, game)
+    result = classify_swings(
+        submitted_evaluations,
+        game["color"],
+        threshold,
+        "white" if chess.Board(game["start_fen"]).turn else "black",
+    )
+    game_board = chess.Board(game["start_fen"])
+    game_moves = json.loads(game["moves_json"])
+    mover_color_by_ply: dict[int, str] = {}
+    for move_ply, move_uci in enumerate(game_moves):
+        mover_color_by_ply[move_ply] = "white" if game_board.turn else "black"
+        game_board.push_uci(move_uci)
+    analysis_rows: list[tuple] = []
+    candidate_rows: list[tuple] = []
+    for item in submitted_evaluations:
+        item_ply = int(item["ply"])
+        mover_color = item.get("mover_color") or mover_color_by_ply.get(item_ply)
+        if mover_color not in {"white", "black"}:
+            raise HTTPException(422, "Analysis move color is invalid")
+        is_player_move = mover_color == game["color"]
+        loss = (int(item["before_cp"]) - int(item["after_cp"])) * (
+            1 if mover_color == "white" else -1
         )
+        label = (
+            "missed punishment"
+            if item_ply == result["missed_punishment_ply"]
+            else "major mistake"
+            if item_ply == result["major_mistake_ply"]
+            else None
+        )
+        analysis_rows.append(
+            (
+                game_id, item_ply, int(item["before_cp"]), int(item["after_cp"]),
+                loss, label, int(item.get("depth", request.depth)),
+                item.get("best_move_uci"), json.dumps(item.get("principal_variation", [])),
+                item.get("mate_before"), item.get("mate_after"), request.engine_version,
+                request.network_version, mover_color, int(is_player_move),
+                item.get("actual_move_uci") or game_moves[item_ply], item["position_fen"],
+            )
+        )
+        candidate_rows.extend(
+            (
+                game_id, item_ply, rank, candidate["uci"], candidate.get("cp"),
+                candidate.get("mate"), candidate.get("score"),
+                json.dumps(candidate["pv"]), int(item.get("depth", request.depth)),
+                item["position_fen"], request.engine_version, request.network_version,
+            )
+            for rank, candidate in enumerate(item["candidate_lines"], start=1)
+        )
+
+    if background:
+        activity_gate.wait_for_foreground()
+    with connection(background=background) as db:
+        db.execute("BEGIN IMMEDIATE")
+        current_job = db.execute(
+            "SELECT status,lease_id,idempotency_key FROM game_analysis_jobs WHERE game_id=?",
+            (game_id,),
+        ).fetchone()
+        if request.lease_id and (
+            not current_job
+            or current_job["status"] != "leased"
+            or current_job["lease_id"] != request.lease_id
+        ):
+            raise HTTPException(409, "Analysis lease is no longer active")
         db.execute("DELETE FROM game_move_analysis WHERE game_id=?", (game_id,))
         db.execute("DELETE FROM game_move_analysis_candidates WHERE game_id=?", (game_id,))
-        game_board = chess.Board(game["start_fen"])
-        game_moves = json.loads(game["moves_json"])
-        mover_color_by_ply: dict[int, str] = {}
-        for move_ply, move_uci in enumerate(game_moves):
-            mover_color_by_ply[move_ply] = "white" if game_board.turn else "black"
-            game_board.push_uci(move_uci)
-        for item in submitted_evaluations:
-            item_ply = int(item["ply"])
-            mover_color = item.get("mover_color") or mover_color_by_ply.get(item_ply)
-            if mover_color not in {"white", "black"}:
-                raise HTTPException(422, "Analysis move color is invalid")
-            is_player_move = mover_color == game["color"]
-            loss = (int(item["before_cp"]) - int(item["after_cp"])) * (
-                1 if mover_color == "white" else -1
-            )
-            label = (
-                "missed punishment"
-                if item_ply == result["missed_punishment_ply"]
-                else "major mistake"
-                if item_ply == result["major_mistake_ply"]
-                else None
-            )
-            db.execute(
-                """INSERT INTO game_move_analysis(
-                    game_id,ply,eval_before_cp,eval_after_cp,loss_cp,label,depth,best_move_uci,
-                    principal_variation_json,mate_before,mate_after,engine_version,network_version,
-                    mover_color,is_player_move,actual_move_uci,position_fen
-                ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (
-                    game_id,
-                    item_ply,
-                    int(item["before_cp"]),
-                    int(item["after_cp"]),
-                    loss,
-                    label,
-                    int(item.get("depth", request.depth)),
-                    item.get("best_move_uci"),
-                    json.dumps(item.get("principal_variation", [])),
-                    item.get("mate_before"),
-                    item.get("mate_after"),
-                    request.engine_version,
-                    request.network_version,
-                    mover_color,
-                    int(is_player_move),
-                    item.get("actual_move_uci") or game_moves[item_ply],
-                    item["position_fen"],
-                ),
-            )
-            for rank, candidate in enumerate(item["candidate_lines"], start=1):
-                db.execute(
-                    """INSERT INTO game_move_analysis_candidates(
-                           game_id,ply,rank,candidate_uci,score_cp,mate,score_text,
-                           principal_variation_json,depth,position_fen,engine_version,network_version
-                       ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
-                    (
-                        game_id,
-                        item_ply,
-                        rank,
-                        candidate["uci"],
-                        candidate.get("cp"),
-                        candidate.get("mate"),
-                        candidate.get("score"),
-                        json.dumps(candidate["pv"]),
-                        int(item.get("depth", request.depth)),
-                        item["position_fen"],
-                        request.engine_version,
-                        request.network_version,
-                    ),
-                )
+        db.executemany(
+            """INSERT INTO game_move_analysis(
+                game_id,ply,eval_before_cp,eval_after_cp,loss_cp,label,depth,best_move_uci,
+                principal_variation_json,mate_before,mate_after,engine_version,network_version,
+                mover_color,is_player_move,actual_move_uci,position_fen
+            ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+            analysis_rows,
+        )
+        db.executemany(
+            """INSERT INTO game_move_analysis_candidates(
+                   game_id,ply,rank,candidate_uci,score_cp,mate,score_text,
+                   principal_variation_json,depth,position_fen,engine_version,network_version
+               ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+            candidate_rows,
+        )
         db.execute(
             """UPDATE imported_games SET analysis_state='ready',analysis_version=analysis_version+1,
                    analysis_evidence_version=?,major_mistake_ply=?,missed_punishment_ply=? WHERE id=?""",
@@ -2629,7 +2813,7 @@ def save_game_analysis(game_id: str, request: GameAnalysisRequest):
                 datetime.now(timezone.utc).isoformat(),
             ),
         )
-    enqueue_game_derivation(game_id)
+    enqueue_game_derivation(game_id, background=background)
     coordinator.wake()
     return result
 
@@ -2924,7 +3108,8 @@ def exclude_game_from_adaptation(game_id: str, request: GameExclusionRequest):
                 "UPDATE game_findings SET status='pending',updated_at=? WHERE game_id=? AND status='excluded'",
                 (datetime.now(timezone.utc).isoformat(), game_id),
             )
-    rebuild_priorities_for_game(game_id)
+    enqueue_game_derivation(game_id)
+    coordinator.wake()
     return {"game_id": game_id, "excluded": request.excluded}
 
 
@@ -3187,7 +3372,10 @@ def chess_statistics_breakdown(dimension: str = "color", window_days: int = 30):
 @app.post("/api/statistics/daily/{local_day}/refresh")
 def refresh_chess_statistics_day(local_day: str):
     try:
-        return refresh_daily_snapshot(local_day)
+        datetime.fromisoformat(local_day)
+        enqueue_daily_snapshot(local_day)
+        coordinator.wake()
+        return {"local_day": local_day, "status": "queued"}
     except ValueError as error:
         raise HTTPException(422, "Invalid local day") from error
 

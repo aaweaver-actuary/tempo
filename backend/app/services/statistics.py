@@ -52,7 +52,7 @@ def _evaluation_before_ply(rows_by_ply: dict[int, object], ply: int, color: str)
 
 
 def refresh_game_features(game_id: str, *, background: bool = False) -> None:
-    with connection() as database:
+    with connection(background=background) as database:
         game = database.execute("SELECT * FROM imported_games WHERE id=?", (game_id,)).fetchone()
         if not game:
             return
@@ -226,11 +226,11 @@ def statistics_breakdown(dimension: str, window_days: int) -> dict:
     ]}
 
 
-def refresh_daily_snapshot(local_day: str) -> dict:
+def refresh_daily_snapshot(local_day: str, *, background: bool = False) -> dict:
     """Materialize a day only after provider watermarks and analyses are settled."""
     datetime.fromisoformat(local_day)
     next_day = (datetime.fromisoformat(local_day).date() + timedelta(days=1)).isoformat()
-    with connection() as database:
+    with connection(background=background) as database:
         configured_providers = database.execute(
             "SELECT provider FROM game_accounts WHERE trim(username)!=''"
         ).fetchall()
@@ -305,3 +305,50 @@ def refresh_daily_snapshot(local_day: str) -> dict:
                 (insight_id, local_day, json.dumps(payload), now, now),
             )
         return payload
+
+
+def enqueue_daily_snapshot(local_day: str) -> str:
+    """Persist a statistics materialization request for the background coordinator."""
+
+    now = datetime.now(timezone.utc).isoformat()
+    with connection() as database:
+        database.execute(
+            """INSERT INTO daily_statistics_jobs(local_day,status,last_error,updated_at)
+               VALUES(?,'queued',NULL,?) ON CONFLICT(local_day) DO UPDATE SET
+               status='queued',last_error=NULL,updated_at=excluded.updated_at""",
+            (local_day, now),
+        )
+    return local_day
+
+
+def claim_daily_snapshot() -> str | None:
+    with connection(background=True) as database:
+        database.execute("BEGIN IMMEDIATE")
+        row = database.execute(
+            "SELECT local_day FROM daily_statistics_jobs WHERE status='queued' ORDER BY updated_at LIMIT 1"
+        ).fetchone()
+        if not row:
+            return None
+        if not database.execute(
+            "UPDATE daily_statistics_jobs SET status='running',updated_at=? WHERE local_day=? AND status='queued'",
+            (datetime.now(timezone.utc).isoformat(), row[0]),
+        ).rowcount:
+            return None
+        return row[0]
+
+
+def execute_daily_snapshot(local_day: str) -> None:
+    try:
+        with activity_gate.background_job("daily_statistics", local_day):
+            refresh_daily_snapshot(local_day, background=True)
+            with connection(background=True) as database:
+                database.execute(
+                    "UPDATE daily_statistics_jobs SET status='complete',last_error=NULL,updated_at=? WHERE local_day=?",
+                    (datetime.now(timezone.utc).isoformat(), local_day),
+                )
+    except Exception as error:
+        with connection(background=True) as database:
+            database.execute(
+                "UPDATE daily_statistics_jobs SET status='failed',last_error=?,updated_at=? WHERE local_day=?",
+                (str(error), datetime.now(timezone.utc).isoformat(), local_day),
+            )

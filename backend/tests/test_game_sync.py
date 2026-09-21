@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app import database
 from app.main import app
+import app.main as main_module
 import app.services.game_sync_coordinator as game_sync_coordinator
 
 
@@ -236,6 +237,85 @@ def test_slow_game_sync_does_not_delay_settings_read(tmp_path, monkeypatch):
             raise AssertionError("Slow sync did not finish")
 
 
+def test_background_game_sync_routes_use_background_database_sections(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    monkeypatch.setattr(main_module.coordinator, "wake", lambda: None)
+    background_headers = {"X-Tempo-Work-Class": "background"}
+    with TestClient(app) as client:
+        assert client.get("/api/settings", headers=background_headers).status_code == 200
+        assert (
+            client.get("/api/games/sync/status", headers=background_headers).status_code
+            == 200
+        )
+        enqueue = client.post(
+            "/api/games/sync",
+            headers=background_headers,
+            json={"lichess_username": "BackgroundPlayer"},
+        )
+        assert enqueue.status_code == 202
+        assert enqueue.json()["status"] == "queued"
+
+
+def test_sync_enqueue_does_not_rewrite_settings_or_schedule_coverage(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    scheduled_repertoires = []
+    monkeypatch.setattr(
+        main_module,
+        "enqueue_coverage_refresh",
+        lambda repertoire_id, **_kwargs: scheduled_repertoires.append(repertoire_id),
+    )
+    monkeypatch.setattr(main_module.coordinator, "wake", lambda: None)
+    with TestClient(app) as client:
+        before = client.get("/api/settings").json()
+        response = client.post(
+            "/api/games/sync",
+            json={"lichess_username": "DifferentPlayer"},
+        )
+        assert response.status_code == 202
+        assert client.get("/api/settings").json() == before
+        assert scheduled_repertoires == []
+
+
+def test_only_coverage_setting_changes_enqueue_one_refresh_per_repertoire(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    scheduled_repertoires = []
+    monkeypatch.setattr(
+        main_module,
+        "enqueue_coverage_refresh",
+        lambda repertoire_id, **_kwargs: scheduled_repertoires.append(repertoire_id),
+    )
+    monkeypatch.setattr(main_module.coordinator, "wake", lambda: None)
+    with TestClient(app) as client:
+        with database.connection() as connection:
+            connection.execute(
+                "INSERT INTO repertoires(id,name,source_name,created_at) VALUES('settings-rep','Settings','settings.pgn',?)",
+                (datetime.now(timezone.utc).isoformat(),),
+            )
+            connection.execute(
+                "INSERT INTO repertoire_integrity_state(repertoire_id,status,checked_at) VALUES('settings-rep','clean',?)",
+                (date.today().isoformat(),),
+            )
+        settings = client.get("/api/settings").json()
+        unchanged_coverage = {**settings, "new_cards_per_day": 12}
+        assert client.put("/api/settings", json=unchanged_coverage).status_code == 200
+        assert scheduled_repertoires == []
+        changed_coverage = {
+            **unchanged_coverage,
+            "coverage_horizon_fullmoves": unchanged_coverage[
+                "coverage_horizon_fullmoves"
+            ]
+            + 1,
+        }
+        assert client.put("/api/settings", json=changed_coverage).status_code == 200
+        assert scheduled_repertoires == ["settings-rep"]
+
+
 def test_correct_card_review_advances_while_game_sync_is_active(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
 
@@ -250,6 +330,10 @@ def test_correct_card_review_advances_while_game_sync_is_active(tmp_path, monkey
             db.execute(
                 "INSERT INTO repertoires(id,name,source_name,created_at) VALUES('rep','Rep','rep.pgn',?)",
                 (datetime.now(timezone.utc).isoformat(),),
+            )
+            db.execute(
+                "INSERT INTO repertoire_integrity_state(repertoire_id,status,checked_at) VALUES('rep','clean',?)",
+                (today,),
             )
             db.execute(
                 """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at,trained_color)
@@ -354,6 +438,10 @@ def test_correct_review_succeeds_while_one_thousand_derivation_jobs_are_queued(
         with database.connection() as db:
             db.execute(
                 "INSERT INTO repertoires(id,name,source_name,created_at) VALUES('load-rep','Load','load.pgn',?)",
+                (now,),
+            )
+            db.execute(
+                "INSERT INTO repertoire_integrity_state(repertoire_id,status,checked_at) VALUES('load-rep','clean',?)",
                 (now,),
             )
             db.execute(

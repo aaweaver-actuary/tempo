@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { API_URL } from "../const";
 import { readWorkspaceResponse } from "../lib/workspace-data";
 import { usesLocalApi } from "../utils/local";
+import { reportDebugError } from "../lib/debug-reporting";
 
 type Progress = {
   states: Record<string, number>;
@@ -45,6 +46,12 @@ export default function ProgressView({
         if (active) { setData(summary); setLoaded(true); setError(""); }
       })
       .catch((failure) => {
+        reportDebugError(failure, {
+          kind: "api",
+          source: "progress-view",
+          operation: "load review history",
+          endpoint: `${API_URL}/api/progress`,
+        });
         if (active)
           setError(`Review history unavailable: ${failure instanceof Error ? failure.message : "connection failed"}. Check the local service and retry.`);
       });

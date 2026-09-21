@@ -5,6 +5,7 @@ import { runStudyTask } from "./background-study";
 import * as z from "zod";
 import { tacticProgressSchema } from "../domain/schemas";
 import { clearDataDiagnosticsForSources, parseData } from "./validated-data";
+import { reportDebugError } from "./debug-reporting";
 
 const requests = new Map<
   string,
@@ -129,6 +130,12 @@ export function readWorkspaceData(
       return validated;
     })
     .catch((error) => {
+      reportDebugError(error, {
+        kind: "api",
+        source: "workspace-data",
+        operation: "load workspace data",
+        endpoint: url,
+      });
       requests.delete(url);
       notifyWorkspaceData("error", url);
       throw error;

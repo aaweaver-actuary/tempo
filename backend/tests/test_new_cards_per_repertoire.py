@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 import json
 from app import database
 from app.main import app
+from helpers import wait_for_integrity
 
 THREE_LINES_WHITE = b"""[Event "White King pawn"]
 [Result "*"]
@@ -66,6 +67,7 @@ def test_new_cards_per_day_applies_separately_to_each_repertoire(tmp_path, monke
             data={"trained_color": "white", "initial_depth": "2"},
         ).json()
         assert repertoire_1["cards_created"] == 3
+        wait_for_integrity(client, repertoire_1["repertoire_id"])
 
         # Import second repertoire with 3 black lines
         repertoire_2 = client.post(
@@ -74,6 +76,7 @@ def test_new_cards_per_day_applies_separately_to_each_repertoire(tmp_path, monke
             data={"trained_color": "black", "initial_depth": "2"},
         ).json()
         assert repertoire_2["cards_created"] == 3
+        wait_for_integrity(client, repertoire_2["repertoire_id"])
 
         # Get today's queue
         queue = client.get("/api/queue/today").json()
@@ -129,12 +132,14 @@ def test_new_cards_per_day_respects_lower_limit(tmp_path, monkeypatch):
             files={"file": ("white.pgn", THREE_LINES_WHITE, "application/x-chess-pgn")},
             data={"trained_color": "white", "initial_depth": "2"},
         ).json()
+        wait_for_integrity(client, repertoire_1["repertoire_id"])
 
         repertoire_2 = client.post(
             "/api/imports/pgn",
             files={"file": ("black.pgn", THREE_LINES_BLACK, "application/x-chess-pgn")},
             data={"trained_color": "black", "initial_depth": "2"},
         ).json()
+        wait_for_integrity(client, repertoire_2["repertoire_id"])
 
         # Get today's queue
         queue = client.get("/api/queue/today").json()
@@ -175,6 +180,7 @@ def test_new_cards_per_day_handles_uneven_repertoire_sizes(tmp_path, monkeypatch
             files={"file": ("white.pgn", THREE_LINES_WHITE, "application/x-chess-pgn")},
             data={"trained_color": "white", "initial_depth": "2"},
         ).json()
+        wait_for_integrity(client, repertoire_1["repertoire_id"])
         # Add two more lines to make it 5 total
         with database.connection() as db:
             rep_id = repertoire_1["repertoire_id"]
@@ -212,6 +218,7 @@ def test_new_cards_per_day_handles_uneven_repertoire_sizes(tmp_path, monkeypatch
             data={"trained_color": "black", "initial_depth": "2"},
         ).json()
         assert repertoire_2["cards_created"] == 1
+        wait_for_integrity(client, repertoire_2["repertoire_id"])
 
         # Get today's queue
         queue = client.get("/api/queue/today").json()

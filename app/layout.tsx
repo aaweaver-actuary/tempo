@@ -4,6 +4,7 @@ import '@lichess-org/chessground/assets/chessground.brown.css';
 import '@lichess-org/chessground/assets/chessground.cburnett.css';
 import './globals.css';
 import './responsive.css';
+import RuntimeErrorGuard from './components/runtime-error-guard';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://tempo-chess-opening-trainer.andyandyandyandy.chatgpt.site'),
@@ -31,7 +32,7 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body><RuntimeErrorGuard>{children}</RuntimeErrorGuard></body>
     </html>
   );
 }

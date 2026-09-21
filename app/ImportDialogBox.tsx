@@ -10,8 +10,13 @@ import { parsePgnImport } from "./lib/pgn-import";
 import type { LocalRepertoire } from "./types";
 import { usesLocalApi } from "./utils/local";
 import CloseButton from "./components/buttons/CloseButton";
-import { settingsResponseSchema, importResultSchema } from "./domain/schemas";
+import {
+  settingsResponseSchema,
+  importResultSchema,
+  repertoiresResponseSchema,
+} from "./domain/schemas";
 import { readJsonResponse } from "./lib/validated-data";
+import { reportDebugError } from "./lib/debug-reporting";
 
 export function ImportDialogBox({
   onClose,
@@ -49,6 +54,12 @@ export function ImportDialogBox({
       setSettingsLoaded(true);
       setSettingsError("");
     } catch (failure) {
+      reportDebugError(failure, {
+        kind: "api",
+        source: "import-settings",
+        operation: "load import settings",
+        endpoint: `${API_URL}/api/settings`,
+      });
       setSettingsError(`Import settings unavailable: ${failure instanceof Error ? failure.message : "connection failed"}`);
     }
   }, []);
@@ -56,6 +67,29 @@ export function ImportDialogBox({
     const timer = window.setTimeout(() => void loadImportSettings(), 0);
     return () => window.clearTimeout(timer);
   }, [loadImportSettings]);
+
+  async function waitForPublishedAdmission(
+    repertoireId: string,
+    fallback: number,
+  ): Promise<number> {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const response = await fetch(`${API_URL}/api/repertoires`);
+      if (response.ok) {
+        const result = await readJsonResponse(
+          response,
+          repertoiresResponseSchema,
+          "imported repertoire admission",
+        );
+        const repertoire = result.repertoires.find(
+          (candidate) => candidate.id === repertoireId,
+        );
+        if (repertoire?.integrity_status === "clean") return repertoire.due_count;
+        if (repertoire?.integrity_status === "needs_repair") return 0;
+      }
+      await new Promise((resolve) => window.setTimeout(resolve, 50));
+    }
+    return fallback;
+  }
 
   async function importFile() {
     if (!file || !settingsLoaded) return;
@@ -89,6 +123,10 @@ export function ImportDialogBox({
           lines = result.unique_lines;
           duplicates = result.duplicates_merged;
           if (result.integrity?.status === "needs_repair") integrityRepertoireId = result.repertoire_id;
+          admitted = await waitForPublishedAdmission(
+            result.repertoire_id,
+            admitted,
+          );
           await onDatabaseUpdated();
         }
       } else onImported(parsed.repertoire);
@@ -103,6 +141,13 @@ export function ImportDialogBox({
         window.setTimeout(() => window.dispatchEvent(new CustomEvent("tempo:integrity", { detail: { repertoireId: integrityRepertoireId } })), 0);
       }
     } catch (reason) {
+      reportDebugError(reason, {
+        kind: "ui",
+        source: "pgn-import",
+        operation: "import PGN",
+        endpoint: usesLocalApi() ? `${API_URL}/api/imports/pgn` : undefined,
+        method: usesLocalApi() ? "POST" : undefined,
+      });
       setError(
         reason instanceof Error
           ? reason.message

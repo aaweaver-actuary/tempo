@@ -8,7 +8,9 @@ const api = process.env.TEMPO_DOCKER_URL
   ? `${process.env.TEMPO_DOCKER_URL}/api`
   : "http://127.0.0.1:8001/api";
 const pgn =
-  '[Event "My repertoire"]\n\n1. e4 e5 2. Nf3 Nc6 (2... Nf6) *\n\n[Event "Other line"]\n\n1. d4 d5 2. c4 e6 *';
+  '[Event "Open game"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 *\n\n[Event "Sicilian"]\n\n1. e4 c5 2. Nf3 d6 3. d4 *\n\n[Event "French"]\n\n1. e4 e6 2. d4 d5 3. Nc3 *';
+const blackPgn =
+  '[Event "King pawn"]\n\n1. e4 e5 2. Nf3 Nc6 *\n\n[Event "Queen pawn"]\n\n1. d4 d5 2. c4 e6 *\n\n[Event "English"]\n\n1. c4 e5 2. Nc3 Nf6 *';
 
 async function nav(page: Page, name: string) {
   await navigate(page, name);
@@ -191,6 +193,7 @@ export {
   Chess,
   api,
   pgn,
+  blackPgn,
   nav,
   boardVisible,
   assertSharedBoardShellLayout,

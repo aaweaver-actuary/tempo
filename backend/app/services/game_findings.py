@@ -102,16 +102,13 @@ def _upsert_finding(database, *, game_id: str, analysis_version: int, ply: int, 
     )
 
 
-def _unseen_card_for_position(database, fen: str, expected_move: str | None) -> str | None:
+def _unseen_card_for_position(
+    unseen_cards: list[dict], fen: str, expected_move: str | None
+) -> str | None:
     if not expected_move:
         return None
     target = " ".join(chess.Board(fen).fen().split()[:4])
-    rows = database.execute(
-        """SELECT c.id,c.start_fen,c.moves_json FROM cards c
-           WHERE c.content_type='opening' AND c.archived=0 AND c.introduced_at IS NULL
-             AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)"""
-    ).fetchall()
-    for row in rows:
+    for row in unseen_cards:
         try:
             board = chess.Board(row["start_fen"])
             for move_uci in json.loads(row["moves_json"]):
@@ -130,21 +127,50 @@ def refresh_game_findings(
     opportunity_writes: list[dict] = []
     opportunity_games: dict[str, int] = {}
     priority_writes: list[tuple] = []
-    with connection() as database:
+    with connection(background=background) as database:
         where = "WHERE g.id=?" if game_id else ""
-        games = database.execute(
+        games = [dict(row) for row in database.execute(
             f"""SELECT g.*,m.repertoire_id,m.first_player_deviation_ply,m.first_player_deviation_fen,
                        m.first_player_deviation_expected_json,m.first_player_deviation_actual_uci,m.deviation_card_id
                        ,m.first_opponent_gap_ply,m.out_of_book_ply,m.timeline_json
                 FROM imported_games g LEFT JOIN game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1 {where}""",
             (game_id,) if game_id else (),
-        ).fetchall()
-        settings = database.execute(
+        ).fetchall()]
+        settings = dict(database.execute(
             "SELECT major_mistake_cp,engine_line_window_cp FROM settings WHERE id=1"
-        ).fetchone()
-        threshold = int(settings["major_mistake_cp"])
-        acceptable_tolerance_cp = int(settings["engine_line_window_cp"])
-        for game in games:
+        ).fetchone())
+        analysis_rows_by_game = {
+            game["id"]: [
+                dict(row)
+                for row in database.execute(
+                    "SELECT * FROM game_move_analysis WHERE game_id=? ORDER BY ply",
+                    (game["id"],),
+                ).fetchall()
+            ]
+            for game in games
+        }
+        candidate_rows_by_game = {
+            game["id"]: [
+                dict(row)
+                for row in database.execute(
+                    "SELECT * FROM game_move_analysis_candidates WHERE game_id=? ORDER BY ply,rank",
+                    (game["id"],),
+                ).fetchall()
+            ]
+            for game in games
+        }
+        unseen_cards = [
+            dict(row)
+            for row in database.execute(
+                """SELECT c.id,c.start_fen,c.moves_json FROM cards c
+                   WHERE c.content_type='opening' AND c.archived=0 AND c.introduced_at IS NULL
+                     AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)"""
+            ).fetchall()
+        ]
+
+    threshold = int(settings["major_mistake_cp"])
+    acceptable_tolerance_cp = int(settings["engine_line_window_cp"])
+    for game in games:
             version = max(1, int(game["analysis_version"]))
             moves = json.loads(game["moves_json"])
             deviation_ply = game["first_player_deviation_ply"]
@@ -158,13 +184,8 @@ def refresh_game_findings(
                         "actual": game["first_player_deviation_actual_uci"],
                     }, repertoire_id=game["repertoire_id"], card_id=game["deviation_card_id"],
                 ))
-            analysis_rows = database.execute(
-                "SELECT * FROM game_move_analysis WHERE game_id=? ORDER BY ply", (game["id"],)
-            ).fetchall()
-            candidate_rows = database.execute(
-                "SELECT * FROM game_move_analysis_candidates WHERE game_id=? ORDER BY ply,rank",
-                (game["id"],),
-            ).fetchall()
+            analysis_rows = analysis_rows_by_game[game["id"]]
+            candidate_rows = candidate_rows_by_game[game["id"]]
             candidate_lines_by_ply: dict[int, list[dict]] = {}
             for candidate in candidate_rows:
                 candidate_lines_by_ply.setdefault(int(candidate["ply"]), []).append(
@@ -206,7 +227,7 @@ def refresh_game_findings(
                     )
                     best_move = gap_analysis["best_move_uci"]
                     linked_card = _unseen_card_for_position(
-                        database, gap_board.fen(), best_move
+                        unseen_cards, gap_board.fen(), best_move
                     )
                     finding_id = _finding_id(
                         game["id"], version, "repertoire gap", gap_analysis["ply"]
@@ -453,8 +474,6 @@ def motif_recommendations() -> list[dict]:
                     item["supporting_games"].append(row["game_id"])
         catalog = catalog_status(database)
         recommendations = []
-        database.execute("DELETE FROM game_insight_recommendations")
-        now = datetime.now(timezone.utc).isoformat()
         for item in grouped.values():
             if item["miss_count"] < 3:
                 continue
@@ -469,10 +488,6 @@ def motif_recommendations() -> list[dict]:
             item["recommended_pack_active"] = bool(pack and pack["active"])
             item["miss_rate"] = item["miss_count"] / item["opportunity_count"]
             item["conversion_rate"] = item["exploited_count"] / item["opportunity_count"]
-            database.execute(
-                "INSERT INTO game_insight_recommendations VALUES(?,?,?,?,?,?)",
-                (item["motif"], item["miss_count"], item["total_loss_cp"], json.dumps(item["supporting_games"]), item["recommended_pack_id"], now),
-            )
             recommendations.append(item)
         recommendations.sort(key=lambda item: (-item["miss_count"], -item["total_loss_cp"], item["motif"]))
         return recommendations

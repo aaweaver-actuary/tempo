@@ -111,6 +111,9 @@ test("review position opens consistently in analysis builder and games", async (
       initial_depth: "2",
     },
   });
+  await expect
+    .poll(async () => (await (await request.get(`${api}/queue/today`)).json()).count)
+    .toBeGreaterThan(0);
   await page.goto("/");
   const reviewedFen = await page.locator(".board-frame").getAttribute("data-fen");
   await nav(page, "Builder");
@@ -148,7 +151,7 @@ test("Edit card opens Builder line-removal context and deletes the selected bran
     name: "branches.pgn",
     mimeType: "application/x-chess-pgn",
     buffer: Buffer.from(
-      '[Event "QGD"]\n\n1. d4 d5 2. c4 e6 *\n\n[Event "Nimzo"]\n\n1. d4 Nf6 2. c4 e6 3. Nc3 Bb4 *',
+      '[Event "QGD"]\n\n1. d4 d5 2. c4 e6 3. Nc3 *\n\n[Event "Nimzo"]\n\n1. d4 Nf6 2. c4 e6 3. Nc3 Bb4 4. e3 *',
     ),
   });
   await page

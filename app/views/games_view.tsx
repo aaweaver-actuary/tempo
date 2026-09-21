@@ -33,6 +33,7 @@ import {
 } from "../types";
 import { canonicalFenKey } from "../utils/canonical-line";
 import { useBackgroundStudy } from "../hooks/use-background-study";
+import { reportDebugError } from "../lib/debug-reporting";
 import type { StudyTask } from "../lib/study-computation";
 import type { IndexedPosition } from "../lib/position-similarity";
 import { sampleGames } from "../samples";
@@ -249,6 +250,12 @@ export default function GamesView({
         setPositionSummary(null);
       }
     } catch (reason) {
+      reportDebugError(reason, {
+        kind: "api",
+        source: "games-view",
+        operation: "load games",
+        endpoint: summaryUrl,
+      });
       setError(
         reason instanceof Error ? reason.message : "Could not load games.",
       );
@@ -272,6 +279,12 @@ export default function GamesView({
       })
       .catch((reason) => {
         if (reason instanceof DOMException && reason.name === "AbortError") return;
+        reportDebugError(reason, {
+          kind: "api",
+          source: "games-view",
+          operation: "load selected game",
+          endpoint: `${API_URL}/api/games/${encodeURIComponent(requestedId)}`,
+        });
         setError(reason instanceof Error ? reason.message : "Could not load the selected game.");
       });
     return () => controller.abort();
@@ -458,7 +471,12 @@ export default function GamesView({
           );
       })
       .catch((reason) => {
-        if (active) setEngineText(`Engine error: ${reason.message}`);
+        reportDebugError(reason, {
+          kind: "ui",
+          source: "games-engine",
+          operation: "interactive game analysis",
+        });
+        if (active) setEngineText(`Engine error: ${reason instanceof Error ? reason.message : "unknown error"}`);
       });
     }, 200);
     return () => {

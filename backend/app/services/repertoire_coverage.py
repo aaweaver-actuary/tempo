@@ -183,8 +183,10 @@ def recent_player_cohort(database, fallback_rating: int) -> dict:
     }
 
 
-def enqueue_coverage_refresh(repertoire_id: str, *, automatic: bool = False) -> str:
-    with connection() as database:
+def enqueue_coverage_refresh(
+    repertoire_id: str, *, automatic: bool = False, background: bool = False
+) -> str:
+    with connection(background=background) as database:
         repertoire = database.execute(
             "SELECT 1 FROM repertoires WHERE id=?", (repertoire_id,)
         ).fetchone()
@@ -198,7 +200,7 @@ def enqueue_coverage_refresh(repertoire_id: str, *, automatic: bool = False) -> 
         ).fetchone()
         if active:
             return active["id"]
-        settings = database.execute("SELECT * FROM settings WHERE id=1").fetchone()
+        settings = dict(database.execute("SELECT * FROM settings WHERE id=1").fetchone())
         cohort = recent_player_cohort(database, int(settings["coverage_maia_elo"]))
         lines = [
             dict(row)
@@ -207,23 +209,36 @@ def enqueue_coverage_refresh(repertoire_id: str, *, automatic: bool = False) -> 
                 (repertoire_id,),
             )
         ]
-        nodes = discover_opponent_positions(
-            lines, int(settings["coverage_horizon_fullmoves"])
-        )
-        run_id = str(uuid.uuid4())
-        now = _now()
-        settings_payload = {
-            "automatic_priority": automatic,
-            "reply_denominator": settings["coverage_reply_denominator"],
-            "cumulative_target": settings["coverage_cumulative_target"] / 100,
-            "horizon_fullmoves": settings["coverage_horizon_fullmoves"],
-            "path_floor": settings["coverage_path_floor"],
-            "maia_elo": cohort["maia_elo"],
-            "explorer_rating": cohort["explorer_rating"],
-            "recent_median_rating": cohort["recent_median_rating"],
-            "speed_weights": cohort["speed_weights"],
-            "cohort_games": cohort["games"],
-        }
+
+    nodes = discover_opponent_positions(
+        lines, int(settings["coverage_horizon_fullmoves"])
+    )
+    run_id = str(uuid.uuid4())
+    now = _now()
+    settings_payload = {
+        "automatic_priority": automatic,
+        "reply_denominator": settings["coverage_reply_denominator"],
+        "cumulative_target": settings["coverage_cumulative_target"] / 100,
+        "horizon_fullmoves": settings["coverage_horizon_fullmoves"],
+        "path_floor": settings["coverage_path_floor"],
+        "maia_elo": cohort["maia_elo"],
+        "explorer_rating": cohort["explorer_rating"],
+        "recent_median_rating": cohort["recent_median_rating"],
+        "speed_weights": cohort["speed_weights"],
+        "cohort_games": cohort["games"],
+    }
+    if background:
+        activity_gate.wait_for_foreground()
+    with connection(background=background) as database:
+        database.execute("BEGIN IMMEDIATE")
+        active = database.execute(
+            """SELECT id FROM repertoire_coverage_runs
+               WHERE repertoire_id=? AND status IN ('queued','running')
+               ORDER BY created_at DESC LIMIT 1""",
+            (repertoire_id,),
+        ).fetchone()
+        if active:
+            return active["id"]
         database.execute(
             """INSERT INTO repertoire_coverage_runs(
                    id,repertoire_id,status,settings_json,total_nodes,created_at,updated_at
@@ -438,7 +453,7 @@ def execute_coverage_node(node: dict) -> None:
             f"{speed}:{weight:.6f}" for speed, weight in sorted(speed_weights.items())
         )
         ratings = str(rating_bucket)
-        with connection() as database:
+        with connection(background=True) as database:
             payload, cache_key = _cached_explorer_payload(
                 database, node["fen"], speeds, ratings
             )
@@ -515,9 +530,9 @@ def execute_coverage_node(node: dict) -> None:
                     node["run_id"],
                 ),
             )
-        from .introduction_priorities import rebuild_priorities_for_repertoire
+        from .introduction_priorities import enqueue_priority_refresh
 
-        rebuild_priorities_for_repertoire(node["repertoire_id"])
+        enqueue_priority_refresh(node["repertoire_id"], background=True)
     except Exception as error:
         with connection(background=True) as database:
             database.execute(
@@ -619,7 +634,7 @@ def coverage_gaps(repertoire_id: str) -> list[dict]:
 def claim_maia_coverage_node() -> dict | None:
     now = datetime.now(timezone.utc)
     lease_id = str(uuid.uuid4())
-    with connection() as database:
+    with connection(background=activity_gate.in_background) as database:
         database.execute("BEGIN IMMEDIATE")
         database.execute(
             """UPDATE repertoire_coverage_nodes SET maia_status='queued',lease_id=NULL,lease_expires_at=NULL
@@ -654,7 +669,7 @@ def claim_maia_coverage_node() -> dict | None:
 
 def submit_maia_coverage(node_id: str, lease_id: str, moves: list[dict]) -> None:
     repertoire_id: str | None = None
-    with connection() as database:
+    with connection(background=activity_gate.in_background) as database:
         node = database.execute(
             """SELECT n.*,r.settings_json FROM repertoire_coverage_nodes n
                JOIN repertoire_coverage_runs r ON r.id=n.run_id WHERE n.id=?""",
@@ -686,6 +701,6 @@ def submit_maia_coverage(node_id: str, lease_id: str, moves: list[dict]) -> None
             (_now(), node_id),
         )
     if repertoire_id:
-        from .introduction_priorities import rebuild_priorities_for_repertoire
+        from .introduction_priorities import enqueue_priority_refresh
 
-        rebuild_priorities_for_repertoire(repertoire_id)
+        enqueue_priority_refresh(repertoire_id, background=True)

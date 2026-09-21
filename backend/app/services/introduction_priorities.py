@@ -9,14 +9,17 @@ card before its later branches.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import json
+import logging
 import sqlite3
+import time
 
 import chess
 
 from .repertoire_comparison import canonical_fen
 from .repertoire_coverage import blend_probabilities
+from .activity_gate import activity_gate
 
 
 SCORING_VERSION = 1
@@ -46,9 +49,36 @@ class CardRoute:
     decisions: tuple[dict, ...]
 
 
+@dataclass(frozen=True)
+class PriorityCalculationInput:
+    repertoire_id: str
+    lines: tuple[IntendedLine, ...]
+    cards: tuple[dict, ...]
+    coverage_evidence: dict[str, dict]
+    personal_evidence: dict[str, dict[str, float]]
+    horizon_fullmoves: int
+    path_floor: float
+
+
+@dataclass(frozen=True)
+class PriorityRecord:
+    repertoire_id: str
+    card_id: str
+    completed_line_ids_json: str
+    completion_mass: float
+    frontier_decisions_json: str
+    frontier_reach: float
+    priority_score: float
+    evidence_json: str
+
+
 def _now() -> str:
     """Return the current UTC time as an ISO 8601 string."""
     return datetime.now(timezone.utc).isoformat()
+
+
+def _board_fen_key(board: chess.Board) -> str:
+    return " ".join(board.fen().split()[:4])
 
 
 def _route_signature(
@@ -66,7 +96,7 @@ def _route_signature(
         move = chess.Move.from_uci(move_uci)
         if move not in board.legal_moves:
             return tuple()
-        signature.append((canonical_fen(board.fen()), move_uci))
+        signature.append((_board_fen_key(board), move_uci))
         board.push(move)
     return tuple(signature)
 
@@ -86,19 +116,20 @@ def _maximal_intended_lines(rows: list[sqlite3.Row]) -> list[IntendedLine]:
                 (row["id"], row["start_fen"], row["trained_color"], moves, signature)
             )
 
-    maximal: list[
-        tuple[str, str, str, tuple[str, ...], tuple[tuple[str, str], ...]]
-    ] = []
-    for candidate in candidates:
-        _, _, color, _, signature = candidate
-        is_strict_prefix = any(
-            other[2] == color
-            and len(signature) < len(other[4])
-            and other[4][: len(signature)] == signature
-            for other in candidates
+    strict_prefixes_by_color: dict[
+        str, set[tuple[tuple[str, str], ...]]
+    ] = {}
+    for _, _, color, _, signature in candidates:
+        strict_prefixes = strict_prefixes_by_color.setdefault(color, set())
+        strict_prefixes.update(
+            signature[:prefix_length]
+            for prefix_length in range(1, len(signature))
         )
-        if not is_strict_prefix:
-            maximal.append(candidate)
+    maximal = [
+        candidate
+        for candidate in candidates
+        if candidate[4] not in strict_prefixes_by_color.get(candidate[2], set())
+    ]
 
     unique: dict[tuple[tuple[str, str], ...], IntendedLine] = {}
     for identifier, start_fen, color, moves, signature in maximal:
@@ -126,10 +157,10 @@ def _line_card_route(
 
     board = chess.Board(line.start_fen)
     trained_color = chess.WHITE if line.trained_color == "white" else chess.BLACK
-    positions = [canonical_fen(board.fen())]
+    positions = [_board_fen_key(board)]
     for move_uci in line.moves:
         board.push_uci(move_uci)
-        positions.append(canonical_fen(board.fen()))
+        positions.append(_board_fen_key(board))
     for start_ply, position in enumerate(positions[:-1]):
         if position != card_start:
             continue
@@ -140,7 +171,7 @@ def _line_card_route(
         reach_probability = 1.0
         decisions: list[dict] = []
         for ply, move_uci in enumerate(line.moves[:end_ply]):
-            current_key = canonical_fen(route_board.fen())
+            current_key = _board_fen_key(route_board)
             if route_board.turn == trained_color:
                 decisions.append(
                     {
@@ -163,7 +194,7 @@ def _repertoire_reply_moves(lines: list[IntendedLine]) -> dict[str, set[str]]:
         board = chess.Board(line.start_fen)
         trained_color = chess.WHITE if line.trained_color == "white" else chess.BLACK
         for move_uci in line.moves:
-            key = canonical_fen(board.fen())
+            key = _board_fen_key(board)
             if board.turn != trained_color:
                 replies.setdefault(key, set()).add(move_uci)
             board.push_uci(move_uci)
@@ -213,6 +244,12 @@ def _personal_evidence(
               AND g.speed IN ({",".join("?" for _ in SUPPORTED_PERSONAL_SPEEDS)})""",
         (*sorted(fen_keys), trained_color, *SUPPORTED_PERSONAL_SPEEDS),
     ).fetchall()
+    return _personal_evidence_from_rows([dict(row) for row in rows])
+
+
+def _personal_evidence_from_rows(
+    rows: list[dict],
+) -> dict[str, dict[str, float]]:
     now = datetime.now(timezone.utc)
     evidence: dict[str, dict[str, float]] = {}
     for row in rows:
@@ -301,19 +338,13 @@ def _move_probability(
 
 
 def _line_probabilities(
-    database: sqlite3.Connection,
     lines: list[IntendedLine],
-    repertoire_id: str,
+    public: dict[str, dict],
+    personal: dict[str, dict[str, float]],
     horizon_fullmoves: int,
     path_floor: float,
 ) -> tuple[dict[str, float], dict[tuple[str, str], tuple[float, dict]], dict]:
     reply_moves = _repertoire_reply_moves(lines)
-    public = _coverage_evidence(database, repertoire_id)
-    personal = (
-        _personal_evidence(database, set(reply_moves), lines[0].trained_color)
-        if lines
-        else {}
-    )
     edge_evidence: dict[tuple[str, str], tuple[float, dict]] = {}
     line_probabilities: dict[str, float] = {}
     aggregate = {"personal_games": 0.0, "explorer": "unknown", "maia": "unknown"}
@@ -323,7 +354,7 @@ def _line_probabilities(
         trained_color = chess.WHITE if line.trained_color == "white" else chess.BLACK
         probability = 1.0
         for ply, move_uci in enumerate(line.moves[:maximum_plies]):
-            key = canonical_fen(board.fen())
+            key = _board_fen_key(board)
             if board.turn != trained_color:
                 edge_key = (key, move_uci)
                 if edge_key not in edge_evidence:
@@ -353,154 +384,554 @@ def _line_probabilities(
     return line_probabilities, edge_evidence, aggregate
 
 
-def rebuild_introduction_priorities(
-    database: sqlite3.Connection, repertoire_id: str
-) -> None:
-    """Recompute derived priorities without touching card history or queues."""
+def _card_routes(
+    cards: tuple[dict, ...],
+    lines: tuple[IntendedLine, ...],
+    edge_probabilities: dict[tuple[str, str], tuple[float, dict]],
+) -> dict[str, list[tuple[IntendedLine, CardRoute]]]:
+    card_tries_by_start: dict[str, dict] = {}
+    for card in cards:
+        try:
+            card_moves = tuple(json.loads(card["moves_json"]))
+            card_start = canonical_fen(card["start_fen"])
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+        if not card_moves:
+            continue
+        trie_node = card_tries_by_start.setdefault(card_start, {})
+        for move_uci in card_moves:
+            trie_node = trie_node.setdefault(move_uci, {})
+        trie_node.setdefault("__cards__", []).append(card)
 
-    line_rows = database.execute(
-        "SELECT * FROM repertoire_lines WHERE repertoire_id=? ORDER BY id",
-        (repertoire_id,),
-    ).fetchall()
-    lines = _maximal_intended_lines(line_rows)
-    cards = database.execute(
-        """SELECT DISTINCT c.* FROM cards c JOIN repertoire_cards rc ON rc.card_id=c.id
-           WHERE rc.repertoire_id=? AND c.content_type='opening' AND c.archived=0""",
-        (repertoire_id,),
-    ).fetchall()
-    database.execute(
-        "DELETE FROM repertoire_card_introduction_priorities WHERE repertoire_id=?",
-        (repertoire_id,),
-    )
-    if not cards:
-        return
-    settings = database.execute(
-        "SELECT coverage_horizon_fullmoves,coverage_path_floor FROM settings WHERE id=1"
-    ).fetchone()
-    line_probabilities, edge_evidence, aggregate = _line_probabilities(
-        database,
-        lines,
-        repertoire_id,
-        int(settings["coverage_horizon_fullmoves"]),
-        float(settings["coverage_path_floor"]),
-    )
     routes_by_card: dict[str, list[tuple[IntendedLine, CardRoute]]] = {
         card["id"]: [] for card in cards
     }
     for line in lines:
-        for card in cards:
-            route = _line_card_route(card, line, edge_evidence)
-            if route:
-                routes_by_card[card["id"]].append((line, route))
+        board = chess.Board(line.start_fen)
+        trained_color = chess.WHITE if line.trained_color == "white" else chess.BLACK
+        reach_probability = 1.0
+        decisions: list[dict] = []
+        positions: list[str] = []
+        decisions_through_ply: list[tuple[dict, ...]] = []
+        for ply, move_uci in enumerate(line.moves):
+            position = _board_fen_key(board)
+            positions.append(position)
+            if board.turn == trained_color:
+                decisions.append(
+                    {
+                        "fen_key": position,
+                        "move_uci": move_uci,
+                        "reach_probability": reach_probability,
+                        "ply": ply,
+                    }
+                )
+            elif (position, move_uci) in edge_probabilities:
+                reach_probability *= edge_probabilities[(position, move_uci)][0]
+            board.push_uci(move_uci)
+            decisions_through_ply.append(tuple(decisions))
 
+        for start_ply, position in enumerate(positions):
+            trie_node = card_tries_by_start.get(position)
+            if trie_node is None:
+                continue
+            for end_ply in range(start_ply + 1, len(line.moves) + 1):
+                trie_node = trie_node.get(line.moves[end_ply - 1])
+                if trie_node is None:
+                    break
+                for card in trie_node.get("__cards__", []):
+                    routes_by_card[card["id"]].append(
+                        (
+                            line,
+                            CardRoute(
+                                card["id"],
+                                end_ply,
+                                decisions_through_ply[end_ply - 1],
+                            ),
+                        )
+                    )
+    return routes_by_card
+
+
+def calculate_priority_records(
+    calculation_input: PriorityCalculationInput,
+) -> list[PriorityRecord]:
+    cards = calculation_input.cards
+    lines = calculation_input.lines
+    if not cards:
+        return []
+    line_probabilities, edge_evidence, aggregate = _line_probabilities(
+        list(lines),
+        calculation_input.coverage_evidence,
+        calculation_input.personal_evidence,
+        calculation_input.horizon_fullmoves,
+        calculation_input.path_floor,
+    )
+    routes_by_card = _card_routes(cards, lines, edge_evidence)
+    earliest_new_end_by_line: dict[str, int] = {}
     for card in cards:
-        card_routes = routes_by_card[card["id"]]
-        assigned_lines: list[IntendedLine] = []
-        for line, route in card_routes:
-            # A line contributes to its earliest currently-unintroduced card.
-            matching = [
-                candidate_route
-                for candidate_card in cards
-                if candidate_card["state"] == "new"
-                and candidate_card["introduced_at"] is None
-                for candidate_line, candidate_route in routes_by_card[
-                    candidate_card["id"]
-                ]
-                if candidate_line.identifier == line.identifier
-            ]
-            if matching and min(item.end_ply for item in matching) == route.end_ply:
-                assigned_lines.append(line)
-        completion_mass = min(
-            1.0,
-            sum(
-                line_probabilities[line.identifier]
-                for line in {line.identifier: line for line in assigned_lines}.values()
-            ),
-        )
-        all_decisions = [
-            decision for _, route in card_routes for decision in route.decisions
-        ]
-        unique_decisions = {
-            (item["fen_key"], item["move_uci"], item["ply"]): item
-            for item in all_decisions
-        }
-        newest = sorted(
-            unique_decisions.values(), key=lambda item: item["ply"], reverse=True
-        )[: len(FRONTIER_WEIGHTS)]
-        weighted_values: list[tuple[float, float, dict]] = []
-        for weight, decision in zip(FRONTIER_WEIGHTS, newest):
-            value = float(decision["reach_probability"])
-            weighted_values.append((weight, value, decision))
-        frontier_reach = (
-            sum(weight * value for weight, value, _ in weighted_values)
-            / sum(weight for weight, _, _ in weighted_values)
-            if weighted_values
-            else 0.0
-        )
-        priority_score = 0.7 * completion_mass + 0.3 * frontier_reach
-        evidence_json = {
+        if card["state"] != "new" or card["introduced_at"] is not None:
+            continue
+        for line, route in routes_by_card[card["id"]]:
+            earliest_new_end_by_line[line.identifier] = min(
+                earliest_new_end_by_line.get(line.identifier, route.end_ply),
+                route.end_ply,
+            )
+
+    evidence_json = json.dumps(
+        {
             **aggregate,
             "edge_states": {
                 f"{fen_key}:{move_uci}": provenance
                 for (fen_key, move_uci), (_, provenance) in edge_evidence.items()
             },
         }
-        database.execute(
-            """INSERT INTO repertoire_card_introduction_priorities(
-                   repertoire_id,card_id,scoring_version,completed_line_ids_json,
-                   completion_mass,frontier_decisions_json,frontier_reach,
-                   priority_score,evidence_json,updated_at
-               ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
-            (
-                repertoire_id,
+    )
+    records: list[PriorityRecord] = []
+    for card in cards:
+        card_routes = routes_by_card[card["id"]]
+        assigned_lines = {
+            line.identifier: line
+            for line, route in card_routes
+            if earliest_new_end_by_line.get(line.identifier) == route.end_ply
+        }
+        completion_mass = min(
+            1.0,
+            sum(line_probabilities[line_id] for line_id in assigned_lines),
+        )
+        unique_decisions = {
+            (decision["fen_key"], decision["move_uci"], decision["ply"]): decision
+            for _, route in card_routes
+            for decision in route.decisions
+        }
+        newest = sorted(
+            unique_decisions.values(), key=lambda item: item["ply"], reverse=True
+        )[: len(FRONTIER_WEIGHTS)]
+        weighted_values = [
+            (weight, float(decision["reach_probability"]), decision)
+            for weight, decision in zip(FRONTIER_WEIGHTS, newest)
+        ]
+        frontier_reach = (
+            sum(weight * value for weight, value, _ in weighted_values)
+            / sum(weight for weight, _, _ in weighted_values)
+            if weighted_values
+            else 0.0
+        )
+        records.append(
+            PriorityRecord(
+                calculation_input.repertoire_id,
                 card["id"],
-                SCORING_VERSION,
-                json.dumps(sorted({line.identifier for line in assigned_lines})),
+                json.dumps(sorted(assigned_lines)),
                 completion_mass,
                 json.dumps(weighted_values),
                 frontier_reach,
-                priority_score,
-                json.dumps(evidence_json),
-                _now(),
-            ),
+                0.7 * completion_mass + 0.3 * frontier_reach,
+                evidence_json,
+            )
+        )
+    return records
+
+
+def _load_priority_calculation_input(
+    repertoire_id: str, *, background: bool
+) -> PriorityCalculationInput:
+    from ..database import connection
+
+    with connection(background=background) as database:
+        line_rows = [
+            dict(row)
+            for row in database.execute(
+                "SELECT * FROM repertoire_lines WHERE repertoire_id=? ORDER BY id",
+                (repertoire_id,),
+            )
+        ]
+        cards = tuple(
+            dict(row)
+            for row in database.execute(
+                """SELECT DISTINCT c.* FROM cards c
+                   JOIN repertoire_cards rc ON rc.card_id=c.id
+                   WHERE rc.repertoire_id=? AND c.content_type='opening' AND c.archived=0""",
+                (repertoire_id,),
+            )
+        )
+        settings = dict(
+            database.execute(
+                "SELECT coverage_horizon_fullmoves,coverage_path_floor FROM settings WHERE id=1"
+            ).fetchone()
+        )
+        coverage_evidence = _coverage_evidence(database, repertoire_id)
+    lines = tuple(_maximal_intended_lines(line_rows))
+    reply_moves = _repertoire_reply_moves(list(lines))
+    personal_rows: list[dict] = []
+    if lines and reply_moves:
+        fen_keys = sorted(reply_moves)
+        placeholders = ",".join("?" for _ in fen_keys)
+        with connection(background=background) as database:
+            personal_rows = [
+                dict(row)
+                for row in database.execute(
+                    f"""SELECT p.fen_key,p.move_uci,g.played_at
+                        FROM game_position_occurrences p
+                        JOIN imported_games g ON g.id=p.game_id
+                        WHERE p.fen_key IN ({placeholders}) AND p.move_uci IS NOT NULL
+                          AND g.color=? AND g.adaptive_excluded=0
+                          AND g.speed IN ({','.join('?' for _ in SUPPORTED_PERSONAL_SPEEDS)})""",
+                    (*fen_keys, lines[0].trained_color, *SUPPORTED_PERSONAL_SPEEDS),
+                )
+            ]
+    return PriorityCalculationInput(
+        repertoire_id,
+        lines,
+        cards,
+        coverage_evidence,
+        _personal_evidence_from_rows(personal_rows),
+        int(settings["coverage_horizon_fullmoves"]),
+        float(settings["coverage_path_floor"]),
+    )
+
+
+def _replace_priority_records(
+    database: sqlite3.Connection,
+    repertoire_id: str,
+    records: list[PriorityRecord],
+) -> None:
+    database.execute(
+        "DELETE FROM repertoire_card_introduction_priorities WHERE repertoire_id=?",
+        (repertoire_id,),
+    )
+    updated_at = _now()
+    database.executemany(
+        """INSERT INTO repertoire_card_introduction_priorities(
+               repertoire_id,card_id,scoring_version,completed_line_ids_json,
+               completion_mass,frontier_decisions_json,frontier_reach,
+               priority_score,evidence_json,updated_at
+           ) VALUES(?,?,?,?,?,?,?,?,?,?)""",
+        [
+            (
+                record.repertoire_id,
+                record.card_id,
+                SCORING_VERSION,
+                record.completed_line_ids_json,
+                record.completion_mass,
+                record.frontier_decisions_json,
+                record.frontier_reach,
+                record.priority_score,
+                record.evidence_json,
+                updated_at,
+            )
+            for record in records
+        ],
+    )
+
+
+def rebuild_introduction_priorities(
+    database: sqlite3.Connection, repertoire_id: str
+) -> None:
+    """Synchronous compatibility path used by focused parity tests."""
+
+    line_rows = [
+        dict(row)
+        for row in database.execute(
+            "SELECT * FROM repertoire_lines WHERE repertoire_id=? ORDER BY id",
+            (repertoire_id,),
+        )
+    ]
+    lines = tuple(_maximal_intended_lines(line_rows))
+    cards = tuple(
+        dict(row)
+        for row in database.execute(
+            """SELECT DISTINCT c.* FROM cards c JOIN repertoire_cards rc ON rc.card_id=c.id
+               WHERE rc.repertoire_id=? AND c.content_type='opening' AND c.archived=0""",
+            (repertoire_id,),
+        )
+    )
+    settings = database.execute(
+        "SELECT coverage_horizon_fullmoves,coverage_path_floor FROM settings WHERE id=1"
+    ).fetchone()
+    reply_moves = _repertoire_reply_moves(list(lines))
+    calculation_input = PriorityCalculationInput(
+        repertoire_id,
+        lines,
+        cards,
+        _coverage_evidence(database, repertoire_id),
+        _personal_evidence(
+            database,
+            set(reply_moves),
+            lines[0].trained_color if lines else "white",
+        ),
+        int(settings["coverage_horizon_fullmoves"]),
+        float(settings["coverage_path_floor"]),
+    )
+    _replace_priority_records(
+        database,
+        repertoire_id,
+        calculate_priority_records(calculation_input),
+    )
+
+
+def enqueue_priority_refresh(
+    repertoire_id: str, *, background: bool = False, quiet_seconds: int = 5
+) -> int:
+    from ..database import connection
+
+    now = datetime.now(timezone.utc)
+    next_attempt_at = (now + timedelta(seconds=quiet_seconds)).isoformat()
+    with connection(background=background) as database:
+        database.execute(
+            """INSERT INTO repertoire_priority_jobs(
+                   repertoire_id,generation,status,attempts,next_attempt_at,last_error,updated_at
+               ) VALUES(?,1,'queued',0,?,NULL,?)
+               ON CONFLICT(repertoire_id) DO UPDATE SET
+                   generation=repertoire_priority_jobs.generation+1,
+                   status='queued',attempts=0,next_attempt_at=excluded.next_attempt_at,
+                   last_error=NULL,updated_at=excluded.updated_at""",
+            (repertoire_id, next_attempt_at, now.isoformat()),
+        )
+        return int(
+            database.execute(
+                "SELECT generation FROM repertoire_priority_jobs WHERE repertoire_id=?",
+                (repertoire_id,),
+            ).fetchone()[0]
         )
 
 
-def rebuild_priorities_for_repertoire(repertoire_id: str) -> None:
+def enqueue_priority_refreshes_for_game(
+    game_id: str, *, background: bool = False
+) -> None:
     from ..database import connection
 
-    with connection() as database:
-        rebuild_introduction_priorities(database, repertoire_id)
-
-
-def rebuild_priorities_for_game(game_id: str) -> None:
-    """Refresh only repertoires whose trained side can use this game's evidence."""
-
-    from ..database import connection
-
-    with connection(background=True) as database:
+    with connection(background=background) as database:
         game = database.execute(
             "SELECT color FROM imported_games WHERE id=?", (game_id,)
         ).fetchone()
         if not game:
             return
         repertoire_ids = [
-            row["repertoire_id"]
+            row[0]
             for row in database.execute(
                 "SELECT DISTINCT repertoire_id FROM repertoire_lines WHERE trained_color=?",
                 (game["color"],),
             )
         ]
-        for repertoire_id in repertoire_ids:
-            rebuild_introduction_priorities(database, repertoire_id)
+    for repertoire_id in repertoire_ids:
+        enqueue_priority_refresh(repertoire_id, background=background)
+
+
+def claim_priority_refresh() -> dict | None:
+    from ..database import connection
+
+    activity_gate.wait_for_foreground()
+    with connection(background=True) as database:
+        database.execute("BEGIN IMMEDIATE")
+        job = database.execute(
+            """SELECT * FROM repertoire_priority_jobs
+               WHERE status='queued' AND next_attempt_at<=?
+               ORDER BY next_attempt_at,updated_at LIMIT 1""",
+            (_now(),),
+        ).fetchone()
+        if not job:
+            return None
+        changed = database.execute(
+            """UPDATE repertoire_priority_jobs
+               SET status='running',attempts=attempts+1,updated_at=?
+               WHERE repertoire_id=? AND generation=? AND status='queued'""",
+            (_now(), job["repertoire_id"], job["generation"]),
+        ).rowcount
+        claimed_job = dict(job) if changed else None
+    if claimed_job:
+        logging.getLogger("tempo.background").info(
+            "priority refresh claimed repertoire_id=%s generation=%s attempts=%s",
+            claimed_job["repertoire_id"],
+            claimed_job["generation"],
+            int(claimed_job["attempts"]) + 1,
+        )
+    return claimed_job
+
+
+def execute_priority_refresh(job: dict) -> None:
+    from ..database import connection
+
+    repertoire_id = job["repertoire_id"]
+    generation = int(job["generation"])
+    started = time.perf_counter()
+    with activity_gate.background_job("repertoire_priority", repertoire_id):
+        try:
+            read_started = time.perf_counter()
+            calculation_input = _load_priority_calculation_input(
+                repertoire_id, background=True
+            )
+            logging.getLogger("tempo.background").info(
+                "priority refresh read repertoire_id=%s generation=%d duration=%.3fs",
+                repertoire_id,
+                generation,
+                time.perf_counter() - read_started,
+            )
+            compute_started = time.perf_counter()
+            records = calculate_priority_records(calculation_input)
+            logging.getLogger("tempo.background").info(
+                "priority refresh compute repertoire_id=%s generation=%d records=%d duration=%.3fs",
+                repertoire_id,
+                generation,
+                len(records),
+                time.perf_counter() - compute_started,
+            )
+            activity_gate.wait_for_foreground()
+            commit_started = time.perf_counter()
+            with connection(background=True) as database:
+                database.execute("BEGIN IMMEDIATE")
+                current = database.execute(
+                    "SELECT generation,status FROM repertoire_priority_jobs WHERE repertoire_id=?",
+                    (repertoire_id,),
+                ).fetchone()
+                if (
+                    not current
+                    or int(current["generation"]) != generation
+                    or current["status"] != "running"
+                ):
+                    logging.getLogger("tempo.background").info(
+                        "priority refresh discarded stale generation repertoire_id=%s generation=%d duration=%.3fs",
+                        repertoire_id,
+                        generation,
+                        time.perf_counter() - commit_started,
+                    )
+                    return
+                _replace_priority_records(database, repertoire_id, records)
+                database.execute(
+                    """UPDATE repertoire_priority_jobs
+                       SET status='complete',last_error=NULL,updated_at=?
+                       WHERE repertoire_id=? AND generation=?""",
+                    (_now(), repertoire_id, generation),
+                )
+            logging.getLogger("tempo.background").info(
+                "priority refresh commit repertoire_id=%s generation=%d duration=%.3fs",
+                repertoire_id,
+                generation,
+                time.perf_counter() - commit_started,
+            )
+            logging.getLogger("tempo.background").info(
+                "priority refresh complete repertoire_id=%s generation=%d records=%d duration=%.3fs",
+                repertoire_id,
+                generation,
+                len(records),
+                time.perf_counter() - started,
+            )
+        except Exception as error:
+            retry_delay = min(60, 2 ** min(5, int(job.get("attempts", 0)) + 1))
+            with connection(background=True) as database:
+                current = database.execute(
+                    "SELECT generation,attempts FROM repertoire_priority_jobs WHERE repertoire_id=?",
+                    (repertoire_id,),
+                ).fetchone()
+                if not current or int(current["generation"]) != generation:
+                    return
+                failed = int(current["attempts"]) >= 5
+                database.execute(
+                    """UPDATE repertoire_priority_jobs
+                       SET status=?,next_attempt_at=?,last_error=?,updated_at=?
+                       WHERE repertoire_id=? AND generation=?""",
+                    (
+                        "failed" if failed else "queued",
+                        (datetime.now(timezone.utc) + timedelta(seconds=retry_delay)).isoformat(),
+                        str(error),
+                        _now(),
+                        repertoire_id,
+                        generation,
+                    ),
+                )
+                logging.getLogger("tempo.background").exception(
+                "priority refresh failed repertoire_id=%s generation=%d retry_delay=%ds failed=%s",
+                repertoire_id,
+                generation,
+                retry_delay,
+                failed,
+                )
+
+
+def load_priority_calculation_input(job: dict) -> PriorityCalculationInput:
+    """Copy immutable priority inputs while holding SQLite only for reads."""
+
+    return _load_priority_calculation_input(job["repertoire_id"], background=True)
+
+
+def publish_priority_records(job: dict, records: list[PriorityRecord]) -> bool:
+    """Stage bounded chunks, then atomically publish the current generation."""
+
+    from ..database import connection
+
+    repertoire_id = job["repertoire_id"]
+    generation = int(job["generation"])
+    updated_at = _now()
+    with connection(background=True) as database:
+        database.execute(
+            "DELETE FROM repertoire_card_priority_generations WHERE repertoire_id=? AND generation=?",
+            (repertoire_id, generation),
+        )
+    for chunk_start in range(0, len(records), 100):
+        chunk = records[chunk_start : chunk_start + 100]
+        activity_gate.wait_for_foreground()
+        with connection(background=True) as database:
+            database.executemany(
+                """INSERT INTO repertoire_card_priority_generations(
+                       repertoire_id,generation,card_id,scoring_version,
+                       completed_line_ids_json,completion_mass,frontier_decisions_json,
+                       frontier_reach,priority_score,evidence_json,updated_at
+                   ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                [
+                    (
+                        record.repertoire_id,
+                        generation,
+                        record.card_id,
+                        SCORING_VERSION,
+                        record.completed_line_ids_json,
+                        record.completion_mass,
+                        record.frontier_decisions_json,
+                        record.frontier_reach,
+                        record.priority_score,
+                        record.evidence_json,
+                        updated_at,
+                    )
+                    for record in chunk
+                ],
+            )
+    activity_gate.wait_for_foreground()
+    with connection(background=True) as database:
+        current = database.execute(
+            "SELECT generation,status FROM repertoire_priority_jobs WHERE repertoire_id=?",
+            (repertoire_id,),
+        ).fetchone()
+        if (
+            not current
+            or int(current["generation"]) != generation
+            or current["status"] != "running"
+        ):
+            return False
+        database.execute(
+            """INSERT INTO repertoire_priority_publications(repertoire_id,generation,updated_at)
+               VALUES(?,?,?) ON CONFLICT(repertoire_id) DO UPDATE SET
+               generation=excluded.generation,updated_at=excluded.updated_at""",
+            (repertoire_id, generation, updated_at),
+        )
+        database.execute(
+            """UPDATE repertoire_priority_jobs SET status='complete',last_error=NULL,updated_at=?
+               WHERE repertoire_id=? AND generation=?""",
+            (_now(), repertoire_id, generation),
+        )
+    return True
 
 
 def priority_status(database: sqlite3.Connection, repertoire_id: str) -> dict:
     row = database.execute(
-        """SELECT evidence_json,updated_at FROM repertoire_card_introduction_priorities
-           WHERE repertoire_id=? ORDER BY updated_at DESC LIMIT 1""",
-        (repertoire_id,),
+        """SELECT evidence_json,updated_at FROM repertoire_card_priority_generations generated
+           WHERE generated.repertoire_id=? AND generated.generation=(
+               SELECT generation FROM repertoire_priority_publications WHERE repertoire_id=?
+           ) ORDER BY updated_at DESC LIMIT 1""",
+        (repertoire_id, repertoire_id),
     ).fetchone()
+    if not row:
+        row = database.execute(
+            """SELECT evidence_json,updated_at FROM repertoire_card_introduction_priorities
+               WHERE repertoire_id=? ORDER BY updated_at DESC LIMIT 1""",
+            (repertoire_id,),
+        ).fetchone()
     if not row:
         return {
             "state": "fallback",

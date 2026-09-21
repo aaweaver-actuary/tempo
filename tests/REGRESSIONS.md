@@ -11,7 +11,9 @@
 | Failed review save advances or loses the completed card | `failed review save retains the completed card for retry` |
 | Review retry creates a duplicate review | `test_completed_queue_entry_is_idempotent_and_reinforcement_schedules_into_the_future` |
 | Queue refresh failure is reported as a review-save failure | `successful review is not reported as failed when queue refresh fails` |
+| Frontend errors do not expose safe, copyable debugging state | `frontend errors show a redacted copyable debug bundle`; `frontend render failures retain a copyable fallback` |
 | Retryable SQLite queue contention aborts refresh immediately with an opaque 503 | `retryable queue contention retries before reporting a failure and retains the active attempt` |
+| Persisted queue validation metadata is rejected by the strict frontend adapter | `queue cards accept persisted pending-validation state without a diagnostic` |
 | Games responses expose SQLite-only sync fields | `test_game_summaries_never_expose_persistence_only_sync_fields`; `backend game response and strict frontend schema remain in parity` |
 | First-party Games contract drift silently empties and caches the library | `game contract drift fails once instead of silently emptying the library`; `invalid game responses are never cached as empty success` |
 | Corrected Games data requires navigation and old diagnostics flood the UI | `corrected game data replaces stale cache without navigation`; `repeated diagnostics are grouped and clear after successful validation` |
@@ -22,12 +24,14 @@
 | Sync is starved behind the derivation backlog | `test_sync_jobs_are_not_starved_behind_derivation_work` |
 | Startup integrity analysis blocks the app and active training/tactics | `test_startup_serves_training_and_tactics_while_integrity_sweep_is_running` |
 | Foreground review waits behind a background database slice | `test_foreground_review_preempts_each_background_database_slice` |
+| Foreground SQLite requests collide with an already-open background write section | `test_foreground_connection_waits_for_active_background_section` |
 | Large integrity scans lose progress or duplicate issues after restart | `test_large_integrity_sweep_commits_and_resumes_one_source_at_a_time` |
 | Integrity rescans quarantine a previously clean repertoire or unrelated tactics | `test_last_known_good_repertoire_remains_trainable_during_rescan`; `test_never_validated_repertoire_is_quarantined_without_blocking_tactics` |
 | Import bypasses the new-card limit | `legacy introduced-but-unreviewed queue is capped without losing reviews` |
 | One sample deletion removes both | `deletion isolates records sharing a source filename` |
 | Flipping exits Black repertoire | `builder flip preserves repertoire identity and history across remounts` |
 | Local app shows sample games on failure | `test_local_sync_persists_errors_and_success_without_sample_fallback`; `Docker Games shows actual empty records and actionable sync errors, never sample success` |
+| Game-sync diagnostics blame the sync endpoint when loading settings fails | `game-sync settings failures identify the settings endpoint` |
 | Sync status invisible | `automatic game sync has a visible spinner and reports provider failure` |
 | Chess.com mixed-case usernames and shared Site headers collapse games | `test_chesscom_mixed_case_username_and_shared_site_header_import_every_distinct_game` |
 | Queued or single-provider game sync results are rejected as missing provider objects | `queued game sync accepts an empty provider map without a diagnostic`; `single provider sync result does not require the other provider`; `malformed queued provider data still fails strict validation` |
@@ -214,3 +218,24 @@ Append every new reported issue and its test names here. All listed tests belong
 - `settings sections and save feedback remain reachable on phones` verifies section navigation, unsaved state, save feedback, and keyboard reachability.
 - `repertoire cards keep secondary and destructive actions reachable` verifies overflow actions expose rename, export, and delete without obscuring Browse.
 - `shared workspace controls retain one consistent hierarchy` verifies headings, tabs, notices, and primary actions across all workspaces.
+
+## Availability and background-work recovery
+
+- `test_background_game_sync_routes_use_background_database_sections` protects automatic settings, sync enqueue, and sync-status requests from foreground/background contract violations.
+- `test_sync_enqueue_does_not_rewrite_settings_or_schedule_coverage` keeps sync enqueue free of account-setting and coverage side effects.
+- `test_only_coverage_setting_changes_enqueue_one_refresh_per_repertoire` coalesces coverage refresh scheduling to actual coverage-setting changes.
+- `test_production_scale_priority_computation_holds_no_sqlite_connection` exercises 1,600 lines, 850 cards, and 120,000 occurrences with a bounded pure-compute phase.
+- `test_foreground_review_and_workspace_reads_succeed_during_priority_computation` verifies settings, progress, and review writes remain available while priority scoring runs.
+- `test_priority_refresh_coalesces_repeated_game_and_coverage_triggers` protects one durable generation-coalesced job per repertoire.
+- `test_interrupted_priority_refresh_replays_once_after_restart` verifies startup recovery requeues an interrupted generation and publishes one replacement.
+- `test_stale_priority_generation_cannot_overwrite_newer_inputs` prevents stale calculations from committing after a newer trigger.
+- `test_optimized_priority_scoring_matches_existing_parity_fixtures` protects scoring parity across the indexed implementation.
+- Recurring SQLite contention and false-empty workspace projections — `test_concurrent_queue_progress_repertoire_and_settings_reads_never_return_busy`; `test_workspace_reads_complete_under_one_second_during_full_background_backlog`; `test_get_endpoints_are_query_only`.
+- Daily admission races, refresh replacement, and restart drift — `test_daily_queue_admission_is_single_flight_and_idempotent`; `test_last_published_queue_remains_playable_during_refresh`; `test_daily_queue_remains_exact_across_restart_and_midday_admission`.
+- Integrity-blocked openings hide or inflate playable tactics — `test_needs_repair_openings_do_not_hide_or_inflate_due_tactics`.
+- Background commits outrank interactive review writes — `test_foreground_review_preempts_queued_background_commits`.
+- Oversized background publications escape the operational transaction budget — `test_background_commit_budget_is_enforced_at_production_scale`.
+- CPU-bound priority scoring starves the API process — `test_cpu_bound_task_does_not_starve_api_requests`.
+- Durable work is duplicated, lost on restart, or publishes stale generations — `test_repeated_triggers_coalesce_by_kind_key_and_generation`; `test_durable_task_replays_once_after_process_restart`; `test_stale_task_generation_cannot_publish`.
+- Terminal background failures are invisible or cannot be retried — `test_terminal_task_failure_is_visible_and_retryable`.
+- `automatic game sync backs off after service failure and resumes after recovery` protects 5/10/20/60-second failure backoff, recovery reset, and idle polling.

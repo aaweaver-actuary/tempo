@@ -3,7 +3,7 @@ import {
   expect,
   Chess,
   api,
-  pgn,
+  blackPgn,
   nav,
   boardVisible,
   move,
@@ -18,7 +18,7 @@ test("local import respects the daily limit; Black prompts and Builder flip surv
   await page.locator('input[type="file"]').setInputFiles({
     name: "mine.pgn",
     mimeType: "application/x-chess-pgn",
-    buffer: Buffer.from(pgn),
+    buffer: Buffer.from(blackPgn),
   });
   await page
     .getByRole("dialog")
@@ -80,7 +80,7 @@ test("Black Train prompt remains playable with a fully visible narrow board", as
   await page.locator('input[type="file"]').setInputFiles({
     name: "black.pgn",
     mimeType: "application/x-chess-pgn",
-    buffer: Buffer.from(pgn),
+    buffer: Buffer.from(blackPgn),
   });
   await page
     .getByRole("dialog")

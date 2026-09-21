@@ -1,8 +1,10 @@
 from datetime import date, datetime, timedelta, timezone
+import time
 
 from fastapi.testclient import TestClient
 from app import database
-from app.main import app
+from app.main import app, enqueue_daily_queue_refresh
+from helpers import wait_for_daily_queue, wait_for_integrity
 
 PGN = b'[Event "Durability"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 *'
 
@@ -75,7 +77,8 @@ def test_study_reinforces_today_reviews_tomorrow_and_persists_unassisted_later_r
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     clock = install_clock(monkeypatch)
     with TestClient(app) as client:
-        client.post("/api/imports/pgn", files={"file": ("durability.pgn", PGN)}, data={"initial_depth": 2})
+        imported = client.post("/api/imports/pgn", files={"file": ("durability.pgn", PGN)}, data={"initial_depth": 2})
+        wait_for_integrity(client, imported.json()["repertoire_id"])
         first = client.get("/api/queue/today").json()["cards"][0]
         for ply in (0, 2):
             assert client.post(f"/api/cards/{first['id']}/teaching", json={"revision": 1, "ply": ply}).status_code == 200
@@ -92,7 +95,13 @@ def test_study_reinforces_today_reviews_tomorrow_and_persists_unassisted_later_r
         assert client.get("/api/migration/snapshot").json()["checksum"] == before["checksum"]
         for _ in range(3):
             clock["now"] = datetime.fromisoformat(result["next_due"]).replace(hour=12, tzinfo=timezone.utc)
-            queue = client.get("/api/queue/today").json()["cards"]
+            enqueue_daily_queue_refresh()
+            queue = []
+            for _ in range(200):
+                queue = client.get("/api/queue/today").json()["cards"]
+                if queue:
+                    break
+                time.sleep(0.01)
             assert len(queue) == 1 and queue[0]["first_correct_at"]
             states = client.get(f"/api/cards/{first['id']}/teaching").json()["states"]
             assert {(state["revision"], state["ply"]) for state in states} == {(1, 0), (1, 2)}
@@ -122,7 +131,8 @@ def test_tactical_failures_requeue_once_and_clean_reviews_survive_restart_and_re
         assert client.get("/api/migration/snapshot").json()["checksum"] == snapshot["checksum"]
         assert client.get("/api/tactics/progress").json()["hangingPiece:easy"]["index"] == 1
         clock["now"] += timedelta(days=1)
-        returned = client.get("/api/queue/today").json()["cards"]
+        enqueue_daily_queue_refresh()
+        returned = wait_for_daily_queue(client, 1)["cards"]
         assert len(returned) == 1 and returned[0]["id"] == first["id"] and returned[0]["content_type"] == "tactic"
         result = solve(client, returned[0])
         assert not result["requeue_today"] and result["next_due"] > "2026-09-17"

@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { reportDebugError } from "./debug-reporting";
 
 export type DataDiagnostic = {
   source: string;
@@ -78,7 +79,14 @@ export function parseData<T>(
     .map((issue) => `${issue.path.join(".") || "record"}: ${issue.message}`)
     .join("; ");
   reportDataDiagnostic(source, raw, message, recordIdentity(raw));
-  throw new Error(`Invalid ${source} data: ${message}`);
+  const failure = new Error(`Invalid ${source} data: ${message}`);
+  reportDebugError(failure, {
+    kind: "data-validation",
+    source: "validated-data",
+    operation: "schema validation",
+    endpoint: source,
+  });
+  throw failure;
 }
 
 export function validRecords<T>(
@@ -128,11 +136,19 @@ export async function readJsonResponse<T>(
     const error = z
       .looseObject({ detail: z.string().optional() })
       .safeParse(raw);
-    throw new Error(
+    const failure = new Error(
       error.success && error.data.detail
         ? error.data.detail
         : `${source} failed (HTTP ${response.status})`,
     );
+    reportDebugError(failure, {
+      kind: "api",
+      source: "validated-response",
+      operation: "read JSON response",
+      endpoint: response.url || source,
+      status: response.status,
+    });
+    throw failure;
   }
   return parseData(schema, raw, source);
 }

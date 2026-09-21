@@ -23,6 +23,7 @@ import {
 } from "../domain/schemas";
 import { readJsonResponse } from "../lib/validated-data";
 import { useTaskTabs } from "../components/task-tabs";
+import { reportDebugError } from "../lib/debug-reporting";
 
 const TEMPLATE_API_ENDPOINT = `${API_URL}/api/endgames/templates`;
 
@@ -185,6 +186,13 @@ export default function EndgamesView({
           setBusy(false);
           setStatus("Win or draw?");
         } catch (error) {
+          reportDebugError(error, {
+            kind: "api",
+            source: "endgames-view",
+            operation: "generate endgame attempt",
+            endpoint: `${TEMPLATE_API_ENDPOINT}/${item.templateId}/attempt`,
+            method: "POST",
+          });
           if (token === generation.current) {
             setBusy(false);
             setStatus(

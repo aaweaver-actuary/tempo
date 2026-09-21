@@ -147,6 +147,10 @@ def test_game_gap_with_nearby_mistake_prioritizes_existing_unseen_card_for_tomor
                 """INSERT INTO game_move_analysis(game_id,ply,eval_before_cp,eval_after_cp,loss_cp,label,depth,best_move_uci,principal_variation_json)
                    VALUES('gap-game',0,20,-150,170,'major mistake',14,'e2e4','[\"e2e4\",\"e7e5\"]')"""
             )
+            db.execute(
+                "INSERT INTO repertoire_integrity_state(repertoire_id,status,checked_at) VALUES('rep','clean',?)",
+                (now,),
+            )
         refresh_game_findings("gap-game")
         with database.connection() as db:
             finding = db.execute(

@@ -6,9 +6,15 @@ import "@lichess-org/chessground/assets/chessground.cburnett.css";
 import "../../app/globals.css";
 import "../../app/responsive.css";
 import Home from "../../app/views/home_view";
+import { TempoErrorBoundary } from "../../app/components/error-boundary";
+import { installGlobalDebugErrorHandlers } from "../../app/lib/debug-reporting";
+
+installGlobalDebugErrorHandlers();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
-  <React.StrictMode><Home /></React.StrictMode>,
+  <React.StrictMode>
+    <TempoErrorBoundary><Home /></TempoErrorBoundary>
+  </React.StrictMode>,
 );
 
 if ("serviceWorker" in navigator && import.meta.env.PROD && import.meta.env.BASE_URL === "/tempo/") {

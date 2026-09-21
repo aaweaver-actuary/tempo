@@ -32,7 +32,7 @@ def _position_before_ply(start_fen: str, moves: list[str], ply: int) -> chess.Bo
 
 def refresh_gameplay_events(game_id: str, *, background: bool = False) -> None:
     """Compute outside a transaction and replace only this version in one short write."""
-    with connection() as database:
+    with connection(background=background) as database:
         game = database.execute(
             """SELECT id,color,start_fen,moves_json,analysis_version,analysis_evidence_version
                   FROM imported_games WHERE id=?""",

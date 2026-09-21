@@ -1,5 +1,6 @@
 import { useRef as useDialogRef } from "react";
 import { useDialogFocus } from "../hooks/use-dialog-focus";
+import { reportDebugError } from "../lib/debug-reporting";
 import { Square, Chess } from "chess.js";
 import { useEffect, useMemo, useState } from "react";
 import { MoveNavigator } from "../components/board-controls";
@@ -82,6 +83,12 @@ export default function CardEditor({
         );
       })
       .catch((failure) => {
+        reportDebugError(failure, {
+          kind: "api",
+          source: "card-editor",
+          operation: "preview shorter prefix",
+          endpoint: `${API_URL}/api/cards/${card.backendId}/prefix-split`,
+        });
         if (active)
           setError(
             failure instanceof Error
@@ -248,6 +255,13 @@ export default function CardEditor({
       });
       onClose();
     } catch (error) {
+      reportDebugError(error, {
+        kind: "api",
+        source: "card-editor",
+        operation: "save card revision",
+        endpoint: `${API_URL}/api/cards/${card.backendId}`,
+        method: "PATCH",
+      });
       setError(
         error instanceof Error
           ? error.message

@@ -62,10 +62,10 @@ def _card_position_index(rows: list[dict]) -> dict[tuple[str, str, str], str]:
     return positions
 
 
-def _load_repertoire_index() -> tuple[list[dict], dict[str, tuple[dict[str, set[str]], set[str]]], dict[str, set[str]], dict[tuple[str, str, str], str]]:
+def _load_repertoire_index(*, background: bool = False) -> tuple[list[dict], dict[str, tuple[dict[str, set[str]], set[str]]], dict[str, set[str]], dict[tuple[str, str, str], str]]:
     global _cached_signature, _cached_repertoires, _cached_graphs_by_repertoire
     global _cached_colors_by_repertoire, _cached_card_positions
-    with connection() as database:
+    with connection(background=background) as database:
         repertoires = [dict(row) for row in database.execute(
             "SELECT id,is_main FROM repertoires WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__') ORDER BY id"
         )]
@@ -194,8 +194,8 @@ def compare_games(
     game_ids: list[str] | None = None, *, background: bool = False
 ) -> None:
     now = datetime.now(timezone.utc).isoformat()
-    repertoires, graphs_by_repertoire, colors_by_repertoire, card_positions = _load_repertoire_index()
-    with connection() as database:
+    repertoires, graphs_by_repertoire, colors_by_repertoire, card_positions = _load_repertoire_index(background=background)
+    with connection(background=background) as database:
         where = "" if game_ids is None else f" WHERE id IN ({','.join('?' for _ in game_ids)})"
         games = [
             {**dict(row), "moves": json.loads(row["moves_json"])}

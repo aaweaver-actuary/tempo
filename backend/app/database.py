@@ -1,9 +1,32 @@
 import os
 import sqlite3
+import logging
+import sys
+import threading
+from contextvars import ContextVar
+import time
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
+
+from .services.activity_gate import activity_gate
+
+
+_LOGGER = logging.getLogger("tempo.background")
+write_compatibility_lock = threading.RLock()
+_query_only_request: ContextVar[bool] = ContextVar(
+    "tempo_query_only_request", default=False
+)
+
+
+@contextmanager
+def query_only_request() -> Iterator[None]:
+    token = _query_only_request.set(True)
+    try:
+        yield
+    finally:
+        _query_only_request.reset(token)
 
 
 DB_PATH = Path(
@@ -20,16 +43,87 @@ DB_PATH = Path(
 
 @contextmanager
 def connection(*, background: bool = False) -> Iterator[sqlite3.Connection]:
-    DB_PATH.parent.mkdir(parents=True, exist_ok=True)
-    database = sqlite3.connect(DB_PATH)
-    database.row_factory = sqlite3.Row
-    database.execute("PRAGMA foreign_keys = ON")
-    database.execute(f"PRAGMA busy_timeout = {250 if background else 5000}")
+    if _query_only_request.get():
+        with read_connection() as database:
+            yield database
+        return
+    activity_gate.assert_foreground_connection_allowed(background)
+    if not background:
+        # A background writer may already have acquired SQLite's write lock by
+        # the time this foreground request enters the activity gate. Wait for
+        # that bounded section to commit instead of surfacing a transient 503.
+        activity_gate.wait_for_background_sections()
+    section = activity_gate.background_database_section() if background else None
+    section_wait_started = time.perf_counter() if background else None
+    if section is not None:
+        section.__enter__()
+    section_wait_seconds = (
+        time.perf_counter() - section_wait_started
+        if section_wait_started is not None
+        else 0.0
+    )
+    database = None
+    database_started = time.perf_counter()
     try:
-        yield database
-        database.commit()
+        with write_compatibility_lock:
+            DB_PATH.parent.mkdir(parents=True, exist_ok=True)
+            database = sqlite3.connect(DB_PATH)
+            database.row_factory = sqlite3.Row
+            database.execute("PRAGMA foreign_keys = ON")
+            database.execute(f"PRAGMA busy_timeout = {50 if background else 1000}")
+            yield database
+            database.commit()
     finally:
-        database.close()
+        try:
+            if database is not None:
+                database.close()
+        finally:
+            if section is not None:
+                section_duration = time.perf_counter() - database_started
+                job = activity_gate.current_job
+                job_label = f"{job[0]}:{job[1]}" if job else "unknown"
+                _LOGGER.info(
+                    "background database section job=%s foreground_wait=%.3fs database_duration=%.3fs",
+                    job_label,
+                    section_wait_seconds,
+                    section_duration,
+                )
+                if section_duration > 0.05:
+                    _LOGGER.warning(
+                        "background database section exceeded 50ms budget job=%s duration=%.3fs",
+                        job_label,
+                        section_duration,
+                    )
+                section.__exit__(*sys.exc_info())
+
+
+def foreground_connection() -> Iterator[sqlite3.Connection]:
+    """Open a normal foreground connection explicitly."""
+
+    return connection(background=False)
+
+
+def background_connection() -> Iterator[sqlite3.Connection]:
+    """Open a short, foreground-preemptible background connection explicitly."""
+
+    return connection(background=True)
+
+
+@contextmanager
+def read_connection() -> Iterator[sqlite3.Connection]:
+    """Open a query-only connection suitable for request projections."""
+
+    database = None
+    try:
+        database = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, timeout=1)
+        database.row_factory = sqlite3.Row
+        database.execute("PRAGMA foreign_keys = ON")
+        database.execute("PRAGMA query_only = ON")
+        database.execute("PRAGMA busy_timeout = 1000")
+        yield database
+    finally:
+        if database is not None:
+            database.close()
 
 
 def initialize() -> None:
@@ -90,6 +184,7 @@ def initialize() -> None:
             ,stability REAL NOT NULL DEFAULT 0
             ,guided_review INTEGER NOT NULL DEFAULT 0
             ,maximum_interval INTEGER NOT NULL DEFAULT 365
+            ,pending_validation INTEGER NOT NULL DEFAULT 0
         )
         """,
         """
@@ -103,6 +198,7 @@ def initialize() -> None:
             PRIMARY KEY(repertoire_id, card_id)
         )
         """,
+        "CREATE INDEX IF NOT EXISTS idx_repertoire_cards_card ON repertoire_cards(card_id, repertoire_id)",
         """
         CREATE TABLE IF NOT EXISTS reviews (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -187,7 +283,12 @@ def initialize() -> None:
         CREATE TABLE IF NOT EXISTS repertoire_integrity_state (
             repertoire_id TEXT PRIMARY KEY REFERENCES repertoires(id) ON DELETE CASCADE,
             status TEXT NOT NULL DEFAULT 'unchecked' CHECK(status IN ('unchecked','clean','needs_repair')),
-            checked_at TEXT
+            checked_at TEXT,
+            scan_status TEXT NOT NULL DEFAULT 'idle' CHECK(scan_status IN ('idle','queued','running','retrying','failed')),
+            scan_generation TEXT,
+            scan_completed_sources INTEGER NOT NULL DEFAULT 0,
+            scan_total_sources INTEGER NOT NULL DEFAULT 0,
+            scan_error TEXT
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_repertoire_integrity_state_status ON repertoire_integrity_state(status)",
@@ -208,6 +309,28 @@ def initialize() -> None:
         """,
         "CREATE INDEX IF NOT EXISTS idx_repertoire_integrity_repertoire ON repertoire_integrity_issues(repertoire_id,updated_at,id)",
         """
+        CREATE TABLE IF NOT EXISTS repertoire_integrity_jobs (
+            repertoire_id TEXT PRIMARY KEY REFERENCES repertoires(id) ON DELETE CASCADE,
+            run_id TEXT NOT NULL,
+            status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','running','finalizing','complete','failed')),
+            source_offset INTEGER NOT NULL DEFAULT 0,
+            total_sources INTEGER NOT NULL DEFAULT 0,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_repertoire_integrity_jobs_status ON repertoire_integrity_jobs(status,updated_at)",
+        """
+        CREATE TABLE IF NOT EXISTS repertoire_integrity_source_runs (
+            run_id TEXT NOT NULL,
+            source_offset INTEGER NOT NULL,
+            observations_json TEXT NOT NULL,
+            invalid_json TEXT NOT NULL DEFAULT '[]',
+            PRIMARY KEY(run_id,source_offset)
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS teaching_states (
             card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
             revision INTEGER NOT NULL,
@@ -227,6 +350,7 @@ def initialize() -> None:
             created_at TEXT NOT NULL
         )
         """,
+        "CREATE INDEX IF NOT EXISTS idx_repertoire_lines_repertoire_created ON repertoire_lines(repertoire_id, created_at, id)",
         """
         CREATE TABLE IF NOT EXISTS game_accounts (
             provider TEXT PRIMARY KEY,
@@ -353,6 +477,7 @@ def initialize() -> None:
                 CHECK(status IN ('queued','running','complete','failed')),
             attempts INTEGER NOT NULL DEFAULT 0,
             derivation_version INTEGER NOT NULL DEFAULT 1,
+            phase TEXT,
             next_attempt_at TEXT,
             last_error TEXT,
             updated_at TEXT NOT NULL
@@ -672,6 +797,104 @@ def initialize() -> None:
         """,
         "CREATE INDEX IF NOT EXISTS idx_introduction_priorities_score ON repertoire_card_introduction_priorities(repertoire_id,priority_score DESC)",
         """
+        CREATE TABLE IF NOT EXISTS repertoire_priority_publications (
+            repertoire_id TEXT PRIMARY KEY REFERENCES repertoires(id) ON DELETE CASCADE,
+            generation INTEGER NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS repertoire_card_priority_generations (
+            repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+            generation INTEGER NOT NULL,
+            card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+            scoring_version INTEGER NOT NULL,
+            completed_line_ids_json TEXT NOT NULL DEFAULT '[]',
+            completion_mass REAL NOT NULL DEFAULT 0,
+            frontier_decisions_json TEXT NOT NULL DEFAULT '[]',
+            frontier_reach REAL NOT NULL DEFAULT 0,
+            priority_score REAL NOT NULL DEFAULT 0,
+            evidence_json TEXT NOT NULL DEFAULT '{}',
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(repertoire_id,generation,card_id)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_priority_generation_score ON repertoire_card_priority_generations(repertoire_id,generation,priority_score DESC)",
+        """CREATE TABLE IF NOT EXISTS repertoire_priority_jobs (
+            repertoire_id TEXT PRIMARY KEY REFERENCES repertoires(id) ON DELETE CASCADE,
+            generation INTEGER NOT NULL DEFAULT 1,
+            status TEXT NOT NULL DEFAULT 'queued'
+                CHECK(status IN ('queued','running','complete','failed')),
+            attempts INTEGER NOT NULL DEFAULT 0,
+            next_attempt_at TEXT NOT NULL,
+            last_error TEXT,
+            updated_at TEXT NOT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_repertoire_priority_jobs_status ON repertoire_priority_jobs(status,next_attempt_at,updated_at)",
+        """CREATE TABLE IF NOT EXISTS daily_statistics_jobs (
+            local_day TEXT PRIMARY KEY,
+            status TEXT NOT NULL DEFAULT 'queued' CHECK(status IN ('queued','running','complete','failed')),
+            last_error TEXT,
+            updated_at TEXT NOT NULL
+        )""",
+        """
+        CREATE TABLE IF NOT EXISTS background_tasks (
+            id TEXT PRIMARY KEY,
+            kind TEXT NOT NULL,
+            deduplication_key TEXT NOT NULL,
+            generation INTEGER NOT NULL DEFAULT 1,
+            priority INTEGER NOT NULL DEFAULT 100,
+            state TEXT NOT NULL DEFAULT 'queued'
+                CHECK(state IN ('queued','leased','retrying','complete','failed','superseded')),
+            phase TEXT NOT NULL DEFAULT 'queued',
+            payload_version INTEGER NOT NULL DEFAULT 1,
+            payload_json TEXT NOT NULL DEFAULT '{}',
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            max_attempts INTEGER NOT NULL DEFAULT 5,
+            next_attempt_at TEXT NOT NULL,
+            lease_token TEXT,
+            lease_expires_at TEXT,
+            last_error TEXT,
+            created_at TEXT NOT NULL,
+            started_at TEXT,
+            completed_at TEXT,
+            updated_at TEXT NOT NULL,
+            UNIQUE(kind,deduplication_key)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_background_tasks_claim ON background_tasks(state,priority,next_attempt_at,created_at)",
+        """
+        CREATE TABLE IF NOT EXISTS background_task_events (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            task_id TEXT NOT NULL REFERENCES background_tasks(id) ON DELETE CASCADE,
+            generation INTEGER NOT NULL,
+            event TEXT NOT NULL,
+            phase TEXT,
+            detail TEXT,
+            created_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_background_task_events_task ON background_task_events(task_id,id DESC)",
+        """
+        CREATE TABLE IF NOT EXISTS queue_projections (
+            queue_date TEXT PRIMARY KEY,
+            state TEXT NOT NULL DEFAULT 'refreshing'
+                CHECK(state IN ('ready','refreshing','failed')),
+            generation INTEGER NOT NULL DEFAULT 0,
+            updated_at TEXT,
+            refresh_pending INTEGER NOT NULL DEFAULT 1,
+            last_error TEXT
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS queue_projection_diagnostics (
+            queue_date TEXT NOT NULL,
+            card_id TEXT NOT NULL,
+            message TEXT NOT NULL,
+            PRIMARY KEY(queue_date,card_id)
+        )
+        """,
+        """
         CREATE TABLE IF NOT EXISTS explorer_position_cache (
             cache_key TEXT PRIMARY KEY,
             fen_key TEXT NOT NULL,
@@ -735,6 +958,7 @@ def initialize() -> None:
                 "revision": "INTEGER NOT NULL DEFAULT 1",
                 "introduced_at": "TEXT",
                 "trained_color": "TEXT",
+                "pending_validation": "INTEGER NOT NULL DEFAULT 0",
             },
             "reviews": {
                 "internal_rating": "TEXT NOT NULL DEFAULT 'again'",
@@ -758,6 +982,7 @@ def initialize() -> None:
             },
             "game_derivation_jobs": {
                 "derivation_version": "INTEGER NOT NULL DEFAULT 1",
+                "phase": "TEXT",
                 "next_attempt_at": "TEXT",
             },
             "game_move_analysis": {
@@ -778,6 +1003,13 @@ def initialize() -> None:
             },
             "game_findings": {"source_opportunity_id": "TEXT", "review_after": "TEXT"},
             "repertoires": {"is_main": "INTEGER NOT NULL DEFAULT 0"},
+            "repertoire_integrity_state": {
+                "scan_status": "TEXT NOT NULL DEFAULT 'idle'",
+                "scan_generation": "TEXT",
+                "scan_completed_sources": "INTEGER NOT NULL DEFAULT 0",
+                "scan_total_sources": "INTEGER NOT NULL DEFAULT 0",
+                "scan_error": "TEXT",
+            },
         }
         for table, additions in columns.items():
             existing = {

@@ -1,9 +1,12 @@
 import json
+import time
 
 from fastapi.testclient import TestClient
 
 from app import database
 from app.main import app
+from app.services.game_sync_coordinator import coordinator
+from app.services.repertoire_integrity import enqueue_integrity_scans
 
 
 START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -20,13 +23,24 @@ def _line(db, identifier: str, repertoire: str, moves: list[str]):
     )
 
 
+def _integrity(client, repertoire="rep"):
+    enqueue_integrity_scans(repertoire)
+    coordinator.wake()
+    for _ in range(100):
+        payload = client.get(f"/api/repertoires/{repertoire}/integrity").json()
+        if payload.get("scan_status") in {"idle", "failed"}:
+            return payload
+        time.sleep(0.01)
+    return payload
+
+
 def test_repertoire_integrity_sweep_pauses_conflicting_transpositions_after_import(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         with database.connection() as db:
             _line(db, "one", "rep", ["e2e4", "e7e5", "g1f3", "b8c6", "d2d4"])
             _line(db, "two", "rep", ["d2d4", "d7d5", "c2c4", "c7c6", "g1f3"])
-        integrity = client.get("/api/repertoires/rep/integrity").json()
+        integrity = _integrity(client)
         assert integrity["status"] == "needs_repair"
         assert any(issue["kind"] == "multiple_responses" for issue in integrity["issues"])
         assert client.get("/api/queue/today").json()["cards"] == []
@@ -38,7 +52,7 @@ def test_repertoire_integrity_requires_one_response_at_player_turn_endpoints(tmp
     with database.connection() as db:
         _line(db, "one", "rep", ["e2e4", "e7e5"])
     with TestClient(app) as client:
-        issues = client.get("/api/repertoires/rep/integrity").json()["issues"]
+        issues = _integrity(client)["issues"]
         assert [issue["kind"] for issue in issues] == ["missing_response"]
 
 
@@ -50,7 +64,7 @@ def test_integrity_resolution_rewrites_routes_and_truncates_losing_continuations
             _line(db, "two", "rep", ["d2d4", "d7d5", "c2c4", "c7c6", "g1f3"])
         issue = next(
             item
-            for item in client.get("/api/repertoires/rep/integrity").json()["issues"]
+            for item in _integrity(client)["issues"]
             if item["kind"] == "multiple_responses"
         )
         result = client.post(
@@ -71,7 +85,7 @@ def test_stale_or_illegal_integrity_resolution_is_atomic(tmp_path, monkeypatch):
             _line(db, "two", "rep", ["d2d4", "d7d5"])
         issue = next(
             item
-            for item in client.get("/api/repertoires/rep/integrity").json()["issues"]
+            for item in _integrity(client)["issues"]
             if item["kind"] == "multiple_responses"
         )
         response = client.post(
@@ -79,16 +93,16 @@ def test_stale_or_illegal_integrity_resolution_is_atomic(tmp_path, monkeypatch):
             json={"signature": "stale", "selected_move_uci": "d2d4"},
         )
         assert response.status_code == 409
-        assert client.get("/api/repertoires/rep/integrity").json()["status"] == "needs_repair"
+        assert _integrity(client)["status"] == "needs_repair"
 
 
-def test_legacy_integrity_issues_are_swept_at_startup_and_excluded_from_training(tmp_path, monkeypatch):
+def test_legacy_integrity_issues_are_swept_in_background_and_excluded_from_training(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
     with database.connection() as db:
         _line(db, "legacy", "rep", ["e2e4", "e7e5"])
     with TestClient(app) as client:
-        summary = client.get("/api/repertoires/rep/integrity").json()
+        summary = _integrity(client)
         assert summary["status"] == "needs_repair"
         assert client.get("/api/queue/today").json()["count"] == 0
 
@@ -105,6 +119,8 @@ def test_shared_cards_remain_trainable_only_through_clean_repertoires(tmp_path, 
             )
             db.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)", ("clean-rep", "shared"))
             db.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)", ("paused-rep", "shared"))
+        _integrity(client, "clean-rep")
+        _integrity(client, "paused-rep")
         client.get("/api/queue/today")
         with database.connection() as db:
             db.execute("UPDATE cards SET due_date=? WHERE id=?", ("2026-09-20", "shared"))
@@ -123,7 +139,7 @@ def test_invalid_sources_materialize_as_distinct_blocking_issues(tmp_path, monke
                 (identifier, "rep", identifier, "white", START, '["not-a-uci"]', "2026-09-20"),
             )
     with TestClient(app) as client:
-        issues = client.get("/api/repertoires/rep/integrity").json()["issues"]
+        issues = _integrity(client)["issues"]
         assert [issue["kind"] for issue in issues] == ["invalid_source", "invalid_source"]
 
 
@@ -133,7 +149,7 @@ def test_missing_endpoint_resolution_accepts_an_unsaved_legal_move(tmp_path, mon
     with database.connection() as db:
         _line(db, "one", "rep", ["e2e4", "e7e5"])
     with TestClient(app) as client:
-        issue = client.get("/api/repertoires/rep/integrity").json()["issues"][0]
+        issue = _integrity(client)["issues"][0]
         response = client.post(
             f"/api/repertoires/rep/integrity/issues/{issue['id']}/resolve",
             json={"signature": issue["signature"], "selected_move_uci": "g1f3"},
@@ -156,7 +172,7 @@ def test_integrity_repair_archives_losing_card_history_without_transferring_mast
             db.execute(
                 "INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES('losing-card','correct','2026-09-20',1,7)"
             )
-        issue = next(item for item in client.get("/api/repertoires/rep/integrity").json()["issues"] if item["kind"] == "multiple_responses")
+        issue = next(item for item in _integrity(client)["issues"] if item["kind"] == "multiple_responses")
         response = client.post(
             f"/api/repertoires/rep/integrity/issues/{issue['id']}/resolve",
             json={"signature": issue["signature"], "selected_move_uci": "d2d4"},
