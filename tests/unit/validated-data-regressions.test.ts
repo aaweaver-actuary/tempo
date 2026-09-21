@@ -9,11 +9,13 @@ import {
   builderSessionSchema,
   gameAnalysisClaimSchema,
   portableSnapshotSchema,
+  repertoiresResponseSchema,
 } from "../../app/domain/schemas";
 import {
   clearDataDiagnostics,
   dataDiagnostics,
   readStoredValue,
+  validRecords,
 } from "../../app/lib/validated-data";
 
 beforeEach(clearDataDiagnostics);
@@ -26,6 +28,86 @@ const rawCard = {
   repertoire_name: "Prep",
   repertoire_source: "PGN",
 };
+
+const rawRepertoire = {
+  id: "rep",
+  name: "Weighted repertoire",
+  source_name: "weighted.pgn",
+  line_count: 12,
+  card_count: 8,
+  due_count: 3,
+};
+
+it("test_fractional_personal_game_evidence_is_valid_repertoire_data", () => {
+  const parsed = repertoiresResponseSchema.parse({
+    repertoires: [
+      {
+        ...rawRepertoire,
+        introduction_priority: {
+          state: "partial",
+          personal_games: 637.74,
+          explorer: "unknown",
+          maia: "unknown",
+          updated_at: "2026-09-21T00:56:50.367084+00:00",
+          error: null,
+        },
+      },
+    ],
+  });
+
+  expect(parsed.repertoires[0].introduction_priority?.personal_games).toBe(
+    637.74,
+  );
+});
+
+it("test_workspace_validation_does_not_drop_fractional_priority_records", () => {
+  const records = validRecords(
+    repertoiresResponseSchema.shape.repertoires.element,
+    [
+      {
+        ...rawRepertoire,
+        id: "black",
+        introduction_priority: {
+          state: "partial",
+          personal_games: 637.74,
+          explorer: "unknown",
+          maia: "unknown",
+          updated_at: null,
+          error: null,
+        },
+      },
+      {
+        ...rawRepertoire,
+        id: "white",
+        introduction_priority: {
+          state: "partial",
+          personal_games: 299.74,
+          explorer: "unknown",
+          maia: "unknown",
+          updated_at: null,
+          error: null,
+        },
+      },
+      {
+        ...rawRepertoire,
+        id: "malformed-optional-priority",
+        introduction_priority: {
+          state: "partial",
+          personal_games: "not-a-number",
+        },
+      },
+    ],
+    "repertoire",
+  );
+
+  expect(records.map((record) => record.id)).toEqual([
+    "black",
+    "white",
+    "malformed-optional-priority",
+  ]);
+  expect(records[2].introduction_priority).toBeUndefined();
+  expect(dataDiagnostics()).toEqual([]);
+});
 
 it("malformed FEN, null UCI and illegal queue lines are quarantined without discarding valid study cards", () => {
   const cards = queueCardsFromPayload({

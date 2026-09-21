@@ -12,6 +12,7 @@ type Progress = {
   reviewedToday: number;
   cleanCards: number;
   dueToday: number;
+  blockedDue?: number;
   totalCards: number;
 };
 
@@ -71,6 +72,7 @@ export default function ProgressView({
       <div className="metric-grid">
         {[
           ["Due today", data.dueToday],
+          ...(data.blockedDue ? [["Paused for repair", data.blockedDue] as [string, number]] : []),
           ["Cards available", data.totalCards],
           ["Reviewed today", data.reviewedToday],
           ["Cards recalled cleanly", data.cleanCards],

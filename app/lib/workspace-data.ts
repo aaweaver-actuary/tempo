@@ -68,6 +68,8 @@ function clearResolvedDiagnostics(url: string) {
   const path = new URL(url, "http://tempo.local").pathname;
   if (path === "/api/games/summary")
     clearDataDiagnosticsForSources(["games", "game"]);
+  if (path === "/api/repertoires")
+    clearDataDiagnosticsForSources(["repertoire", "repertoires"]);
 }
 const decks = new Map<
   string,

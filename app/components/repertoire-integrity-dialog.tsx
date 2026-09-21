@@ -8,7 +8,7 @@ import { loadExplorer } from "../lib/lichess-explorer";
 import { adaptExplorerMoves } from "../domain/adapters/analysis-adapters";
 import type { CandidateMove } from "../domain";
 import {
-  integrityResolutionSchema,
+  integrityRepairSubmissionSchema,
   repertoireIntegritySchema,
 } from "../domain/schemas";
 import { readJsonResponse } from "../lib/validated-data";
@@ -38,6 +38,7 @@ export function RepertoireIntegrityDialog({
   const [masters, setMasters] = useState<CandidateMove[]>([]);
   const [error, setError] = useState("");
   const [working, setWorking] = useState(false);
+  const [taskState, setTaskState] = useState<"queued" | "running" | "retrying" | "complete" | "failed">();
 
   const issue = payload?.issues[0];
   const board = useMemo(() => {
@@ -104,6 +105,7 @@ export function RepertoireIntegrityDialog({
   async function resolve() {
     if (!issue || !selected) return;
     setWorking(true);
+    setTaskState(undefined);
     setError("");
     try {
       const response = await fetch(`${API_URL}/api/repertoires/${repertoireId}/integrity/issues/${issue.id}/resolve`, {
@@ -111,12 +113,33 @@ export function RepertoireIntegrityDialog({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ signature: issue.signature, selected_move_uci: selected }),
       });
-      const result = await readJsonResponse(response, integrityResolutionSchema, "integrity repair");
-      if (result.summary.status === "clean" && result.summary.scan_status === "idle") {
-        onClean();
-        return;
+      const submission = await readJsonResponse(response, integrityRepairSubmissionSchema, "integrity repair");
+      setTaskState(submission.state === "leased" ? "running" : submission.state);
+      for (let poll = 0; poll < 300; poll += 1) {
+        await new Promise((resolveDelay) => window.setTimeout(resolveDelay, 500));
+        const [taskResponse, integrityResponse] = await Promise.all([
+          fetch(`${API_URL}/api/system/tasks`),
+          fetch(`${API_URL}/api/repertoires/${repertoireId}/integrity`),
+        ]);
+        if (!taskResponse.ok || !integrityResponse.ok) continue;
+        const tasks = await taskResponse.json() as { tasks?: { id: string; state: string; last_error?: string | null }[] };
+        const task = tasks.tasks?.find((candidate) => candidate.id === submission.task_id);
+        if (task)
+          setTaskState(task.state === "leased" ? "running" : task.state as "queued" | "retrying" | "complete" | "failed");
+        if (task?.state === "failed")
+          throw new Error(task.last_error || "The guided repair failed.");
+        const next = repertoireIntegritySchema.parse(await integrityResponse.json());
+        if (!next.issues.some((candidate) => candidate.id === submission.issue_id) && next.scan_status === "idle") {
+          if (next.status === "clean") onClean();
+          else {
+            setPayload(next);
+            setSelected(undefined);
+          }
+          setTaskState(undefined);
+          return;
+        }
       }
-      await load();
+      throw new Error("The repair is still processing. It is safe to close this dialog and return later.");
     } catch (failure) {
       reportDebugError(failure, {
         kind: "api",
@@ -126,6 +149,7 @@ export function RepertoireIntegrityDialog({
         method: "POST",
       });
       setError(failure instanceof Error ? failure.message : "The repair could not be saved.");
+      setTaskState("failed");
     } finally {
       setWorking(false);
     }
@@ -160,6 +184,7 @@ export function RepertoireIntegrityDialog({
                   <MoveComparisonTable repertoire={repertoireMoves} engine={[]} maia={[]} lichess={lichess} masters={masters} turn={board.turn() === "w" ? "white" : "black"} onPlay={(move) => setSelected(move)} onHover={() => undefined} />
                   <p className="source-status">Personal games: {personal.length ? personal.map((move) => `${move.move_uci} · ${move.games} games · ${move.score_percentage}%`).join(" · ") : "unavailable"} · Stockfish: unavailable · Maia: unavailable</p>
                   <p>Selected response: <strong>{selected ?? "Choose a legal move"}</strong></p>
+                  {taskState && <p className="source-status" role="status">Repair task: {taskState}.</p>}
                   <button className="primary-button" disabled={!selected || working} onClick={() => void resolve()}>{working ? "Saving…" : "Keep this response"}</button>
                 </div>
               </div>

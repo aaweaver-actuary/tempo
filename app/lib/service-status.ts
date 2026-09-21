@@ -28,6 +28,7 @@ export type ServiceStatus = {
     updated_at: string | null;
     refresh_pending: number;
     last_error: string | null;
+    blocked_count?: number;
   }>;
 };
 

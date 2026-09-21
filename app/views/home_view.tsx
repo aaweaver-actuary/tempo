@@ -93,7 +93,7 @@ export default function Home() {
   useRepertoireCoverageWorker();
   const [currentView, setCurrentView] = useState<View>("train");
   const [repairRepertoireId, setRepairRepertoireId] = useState<string>();
-  const [pausedIntegrity, setPausedIntegrity] = useState<{ id: string; issueCount: number }>();
+  const [pausedIntegrity, setPausedIntegrity] = useState<{ id: string; issueCount: number; blockedDue: number }>();
   const deferredRepairIds = useRef(new Set<string>());
   const [insightsTab, setInsightsTab] = useState<"training" | "games">(
     "training",
@@ -206,7 +206,12 @@ export default function Home() {
       const preferredCandidate = preferred ? parsed.repertoires.find((item) => item.id === preferred && item.integrity_status === "needs_repair") : undefined;
       setRepairRepertoireId(preferredCandidate?.id);
       const paused = preferredCandidate ?? candidate;
-      setPausedIntegrity(paused ? { id: paused.id, issueCount: paused.integrity_issue_count ?? 0 } : undefined);
+      const repairItems = parsed.repertoires.filter((item) => item.integrity_status === "needs_repair");
+      setPausedIntegrity(paused ? {
+        id: paused.id,
+        issueCount: repairItems.reduce((total, item) => total + (item.integrity_issue_count ?? 0), 0),
+        blockedDue: repairItems.reduce((total, item) => total + (item.blocked_due_count ?? 0), 0),
+      } : undefined);
     } catch {
       // The normal workspace refresh path reports the service error.
     }
@@ -966,7 +971,7 @@ export default function Home() {
       <BoardWorkspaceContainer enabled={boardWorkspace} view={currentView}>
       {currentView === "train" && (
         <>
-            {pausedIntegrity && <div className="integrity-train-notice" role="status"><strong>Training paused while repertoire integrity is repaired.</strong><span>{pausedIntegrity.issueCount} issue{pausedIntegrity.issueCount === 1 ? "" : "s"} remaining.</span><button onClick={() => { deferredRepairIds.current.delete(pausedIntegrity.id); setRepairRepertoireId(pausedIntegrity.id); }}>Resume repair</button></div>}
+            {pausedIntegrity && <div className="integrity-train-notice" role="status"><strong>{pausedIntegrity.blockedDue} opening card{pausedIntegrity.blockedDue === 1 ? "" : "s"} paused by repertoire repair.</strong><span>Unaffected openings and tactics remain available · {pausedIntegrity.issueCount} issue{pausedIntegrity.issueCount === 1 ? "" : "s"} remaining.</span><button onClick={() => { deferredRepairIds.current.delete(pausedIntegrity.id); setRepairRepertoireId(pausedIntegrity.id); }}>Resume repair</button></div>}
             <TrainingView
               dateLabel={new Date().toLocaleDateString()}
               serviceError={serviceError}

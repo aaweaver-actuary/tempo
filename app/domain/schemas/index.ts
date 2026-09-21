@@ -82,6 +82,7 @@ export const queueEnvelopeSchema = z.strictObject({
       updated_at: z.iso.datetime({ offset: true }).nullable(),
       refresh_pending: sqliteBooleanSchema,
       last_error: z.string().nullable(),
+      blocked_count: integer.optional(),
     })
     .optional(),
 });
@@ -237,6 +238,8 @@ export const repertoiresResponseSchema = z.strictObject({
       line_count: integer,
       card_count: integer,
       due_count: integer,
+      blocked_due_count: integer.optional(),
+      blocked_card_count: integer.optional(),
       conflict_count: integer.optional(),
       integrity_status: z.enum(["unchecked", "clean", "needs_repair"]).optional(),
       integrity_issue_count: integer.optional(),
@@ -244,12 +247,13 @@ export const repertoiresResponseSchema = z.strictObject({
       trained_color: colorSchema.nullable().optional(),
       introduction_priority: z.strictObject({
         state: z.enum(["fallback", "partial", "ready"]),
-        personal_games: integer,
+        // Recency decay makes this an effective (weighted) game count.
+        personal_games: z.number().finite().nonnegative(),
         explorer: z.string(),
         maia: z.string(),
         updated_at: z.string().nullable(),
         error: z.string().nullable(),
-      }).optional(),
+      }).optional().catch(undefined),
     }),
   ),
 });
@@ -333,6 +337,12 @@ export const integrityResolutionSchema = z.strictObject({
   changed_card_count: integer,
   next_issue: integrityIssueSchema.nullable(),
   issues_remaining: integer,
+});
+export const integrityRepairSubmissionSchema = z.strictObject({
+  task_id: z.string(),
+  repertoire_id: repertoireIdSchema,
+  issue_id: z.string(),
+  state: z.enum(["queued", "leased", "retrying", "complete", "failed"]),
 });
 export const branchResultSchema = z.strictObject({
   id: lineIdSchema,
@@ -750,6 +760,7 @@ export const progressResponseSchema = z.strictObject({
   reviewedToday: integer,
   cleanCards: integer,
   dueToday: integer,
+  blockedDue: integer.optional(),
   totalCards: integer,
 });
 const tablebaseCategorySchema = z.enum([

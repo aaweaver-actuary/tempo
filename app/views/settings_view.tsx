@@ -362,7 +362,7 @@ export default function SettingsView({
           </label>
           <label>
             <span>
-              New cards per day
+              New cards per repertoire per day
               <small>
                 Reviews are always shown; only unseen cards are limited
               </small>

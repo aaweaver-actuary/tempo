@@ -26,6 +26,8 @@ export type RepertoireItem = {
   conflictCount?: number;
   integrityStatus?: "unchecked" | "clean" | "needs_repair";
   integrityIssueCount?: number;
+  blockedDueCount?: number;
+  blockedCardCount?: number;
 };
 
 export type LocalRepertoire = {

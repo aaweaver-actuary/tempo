@@ -106,13 +106,19 @@ test("Black Train prompt remains playable with a fully visible narrow board", as
   await boardVisible(page);
   const box = await page.locator(".board-frame").boundingBox();
   expect(box!.width).toBeGreaterThan(200);
-  await move(page, "e7", "e5");
+  const prompt = new Chess(
+    (await page.locator(".board-frame").getAttribute("data-fen"))!,
+  );
+  const response = prompt.get("d4")
+    ? { from: "d7" as const, to: "d5" as const }
+    : { from: "e7" as const, to: "e5" as const };
+  await move(page, response.from, response.to);
   await expect
     .poll(
       async () =>
         new Chess(
           (await page.locator(".board-frame").getAttribute("data-fen"))!,
-        ).get("e5")?.type,
+        ).get(response.to)?.type,
     )
     .toBe("p");
 });

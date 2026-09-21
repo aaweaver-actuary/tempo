@@ -239,3 +239,13 @@ Append every new reported issue and its test names here. All listed tests belong
 - Durable work is duplicated, lost on restart, or publishes stale generations — `test_repeated_triggers_coalesce_by_kind_key_and_generation`; `test_durable_task_replays_once_after_process_restart`; `test_stale_task_generation_cannot_publish`.
 - Terminal background failures are invisible or cannot be retried — `test_terminal_task_failure_is_visible_and_retryable`.
 - `automatic game sync backs off after service failure and resumes after recovery` protects 5/10/20/60-second failure backoff, recovery reset, and idle polling.
+
+## Fractional priority validation and card-level integrity recovery
+
+- Fractional weighted personal-game evidence invalidates repertoire records — `test_fractional_personal_game_evidence_is_valid_repertoire_data`; `test_workspace_validation_does_not_drop_fractional_priority_records`; `fractional priority evidence loads both repertoires without a diagnostic`.
+- Whole-repertoire repair status quarantines safe cards — `test_integrity_scan_blocks_only_cards_crossing_unresolved_positions`; `test_unaffected_due_reviews_remain_playable_when_repertoire_needs_repair`; `unaffected opening reviews remain mixed with tactics during repertoire repair`.
+- Blocked cards are hidden inside playable due totals — `test_blocked_opening_cards_are_reported_but_not_counted_as_playable`.
+- Queue refresh rewrites history or duplicates recovered work — `test_queue_refresh_never_resurrects_completed_attempts`; `test_same_day_repair_requeues_newly_unblocked_due_cards_once`.
+- An obsolete integrity scan overwrites newer published blocks — `test_integrity_block_publication_is_generation_guarded`.
+- Guided repair chooses a move without explicit user input — `test_guided_repair_never_auto_selects_a_move`.
+- Repair traversal holds SQLite or migrates mastery to changed content — `test_repair_worker_holds_no_sqlite_connection_during_chess_traversal`; `test_repair_preserves_unchanged_card_reviews_and_archives_changed_history`.
