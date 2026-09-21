@@ -254,6 +254,10 @@ export const repertoiresResponseSchema = z.strictObject({
         updated_at: z.string().nullable(),
         error: z.string().nullable(),
       }).optional().catch(undefined),
+      graph_generation: integer.optional(),
+      graph_updated_at: isoDateSchema.nullable().optional(),
+      graph_state: z.enum(["refreshing", "ready", "failed"]).optional(),
+      graph_error: z.string().nullable().optional(),
     }),
   ),
 });
@@ -283,6 +287,9 @@ export const importResultSchema = z.strictObject({
   cards_created: integer,
   duplicates_merged: integer,
   cards_admitted_today: integer,
+  decision_cards_created: integer.optional(),
+  shared_decisions_reused: integer.optional(),
+  graph_state: z.enum(["refreshing", "ready", "failed"]).optional(),
   integrity: z.object({
     status: z.enum(["unchecked", "clean", "needs_repair"]),
     issue_count: integer,

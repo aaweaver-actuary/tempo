@@ -436,6 +436,9 @@ class ImportResult(BaseModel):
     duplicates_merged: int
     cards_admitted_today: int = 0
     integrity: dict = Field(default_factory=dict)
+    decision_cards_created: int = 0
+    shared_decisions_reused: int = 0
+    graph_state: Literal["refreshing", "ready", "failed"] = "refreshing"
 
 
 class TacticActivationRequest(BaseModel):

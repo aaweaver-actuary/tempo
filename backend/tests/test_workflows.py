@@ -214,7 +214,9 @@ def test_legacy_eager_queue_is_reconciled_without_reviews(tmp_path, monkeypatch)
             assert db.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 0
 
 
-def test_overlapping_repertoires_share_card_history_when_one_is_deleted(tmp_path, monkeypatch):
+def test_identical_context_segments_share_one_global_schedule_across_repertoires(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         first = client.post("/api/imports/pgn", files={"file": ("first.pgn", PGN, "application/x-chess-pgn")}, data={"trained_color": "white", "initial_depth": "2"}).json()

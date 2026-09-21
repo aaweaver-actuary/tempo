@@ -201,7 +201,8 @@ export function ImportDialogBox({
             <h2 id="import-title">Add PGN repertoire</h2>
             <p className="dialog-copy">
               Your file is parsed on this computer. Re-uploading the same
-              positions updates the repertoire without duplicating cards.
+              positions updates the repertoire without duplicating shared
+              learner decisions.
             </p>
             <label className={`drop-zone${file ? " has-file" : ""}`}>
               <input
@@ -238,8 +239,8 @@ export function ImportDialogBox({
             </div>
             <label className="depth-setting">
               <span>
-                <strong>Initial line depth</strong>
-                <small>New prefix cards test this many user moves</small>
+                <strong>Imported learner decisions</strong>
+                <small>Each decision becomes one contextual study card</small>
               </span>
               <span className="stepper">
                 <button

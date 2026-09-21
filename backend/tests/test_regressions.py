@@ -261,14 +261,14 @@ def test_delete_branch_rebuilds_missing_retained_cards_without_server_error(
         body = removed.json()
         assert body["deleted_line_count"] >= 1
         assert body["retained_line_count"] >= 1
+        from helpers import wait_for_daily_queue
+
+        wait_for_daily_queue(client)
         with database.connection() as db:
-            assert (
-                db.execute(
-                    "SELECT COUNT(*) FROM cards WHERE repertoire_id=?",
-                    (repertoire_id,),
-                ).fetchone()[0]
-                >= 1
-            )
+            assert db.execute(
+                "SELECT COUNT(*) FROM cards WHERE repertoire_id=? AND archived=0",
+                (repertoire_id,),
+            ).fetchone()[0] >= 1
 
 
 def test_tactic_discovery_is_idempotent_and_cursors_are_per_deck(tmp_path, monkeypatch):

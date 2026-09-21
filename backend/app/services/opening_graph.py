@@ -122,14 +122,20 @@ def decision_segments(
 
 
 def enqueue_opening_graph_rebuild(
-    repertoire_id: str, *, foreground: bool = True
+    repertoire_id: str,
+    *,
+    foreground: bool = True,
+    local_day: str | None = None,
 ) -> dict:
     from .durable_tasks import enqueue_task
 
     return enqueue_task(
         "opening_graph_rebuild",
         repertoire_id,
-        {"repertoire_id": repertoire_id},
+        {
+            "repertoire_id": repertoire_id,
+            "local_day": local_day or date.today().isoformat(),
+        },
         priority=40,
         foreground=foreground,
     )
@@ -227,6 +233,7 @@ def _seed_values(
     legacy_cards: tuple[dict, ...],
     reviews_by_card: dict[str, list[dict]],
     existing_card_ids: set[str],
+    study_day: date,
 ) -> dict[str, dict]:
     legacy_by_id = {card["id"]: card for card in legacy_cards}
     mappings = _legacy_mappings(graph_steps, legacy_cards)
@@ -242,7 +249,7 @@ def _seed_values(
                 {"card": legacy_by_id[legacy_card_id], "reviews": successful_reviews}
             )
 
-    today = date.today()
+    today = study_day
     latest_verification = today + timedelta(days=7)
     seeds: dict[str, dict] = {}
     for decision_card_id, candidates in candidates_by_decision.items():
@@ -300,12 +307,14 @@ def execute_opening_graph_rebuild(task: dict) -> None:
     from .database_executor import submit_background_write
 
     repertoire_id = task["payload"]["repertoire_id"]
+    local_day = task["payload"].get("local_day") or date.today().isoformat()
+    study_day = date.fromisoformat(local_day)
     generation = int(task["generation"])
     graph_steps = build_graph(load_graph_input(repertoire_id))
     legacy_cards, reviews_by_card, existing_card_ids = _load_legacy_snapshot(repertoire_id)
     legacy_mappings = _legacy_mappings(graph_steps, legacy_cards)
     schedule_seeds = _seed_values(
-        graph_steps, legacy_cards, reviews_by_card, existing_card_ids
+        graph_steps, legacy_cards, reviews_by_card, existing_card_ids, study_day
     )
 
     def clear_staging(database: sqlite3.Connection) -> None:
@@ -356,7 +365,7 @@ def execute_opening_graph_rebuild(task: dict) -> None:
                         step.starting_fen,
                         json.dumps(step.moves),
                         "new" if step.parent_card_id is None else "locked",
-                        date.today().isoformat(),
+                        local_day,
                         step.trained_color,
                     )
                     for step in values
@@ -530,8 +539,8 @@ def execute_opening_graph_rebuild(task: dict) -> None:
 
     enqueue_task(
         "daily_queue",
-        date.today().isoformat(),
-        {"queue_date": date.today().isoformat()},
+        local_day,
+        {"queue_date": local_day},
         priority=10,
         foreground=False,
     )

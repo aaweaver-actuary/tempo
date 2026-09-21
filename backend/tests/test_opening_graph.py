@@ -1,9 +1,13 @@
+from datetime import date
+
 from fastapi.testclient import TestClient
 
 from app import database
 from app.main import app
 from app.services.durable_tasks import claim_task, complete_task
 from app.services.opening_graph import (
+    GraphInput,
+    build_graph,
     decision_segments,
     enqueue_opening_graph_rebuild,
     execute_opening_graph_rebuild,
@@ -75,6 +79,172 @@ def test_distinct_opponent_cues_to_the_same_position_remain_distinct_cards():
 
     assert direct[1].card_id != alternate[1].card_id
     assert direct[1].moves != alternate[1].moves
+
+
+def test_any_mature_incoming_path_unlocks_a_transposed_descendant():
+    first_route = decision_segments(
+        STARTING_FEN,
+        ["g1f3", "d7d5", "g2g3", "g8f6", "f1g2"],
+        "white",
+        3,
+    )
+    second_route = decision_segments(
+        STARTING_FEN,
+        ["g2g3", "d7d5", "g1f3", "g8f6", "f1g2"],
+        "white",
+        3,
+    )
+
+    assert first_route[1].card_id != second_route[1].card_id
+    assert first_route[2].card_id == second_route[2].card_id
+    assert {
+        first_route[2].parent_card_id,
+        second_route[2].parent_card_id,
+    } == {first_route[1].card_id, second_route[1].card_id}
+
+
+def test_descendant_requires_a_mature_parent(tmp_path, monkeypatch):
+    from app.main import seed_queue
+
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app):
+        with database.connection() as connection:
+            _insert_repertoire_line(
+                connection,
+                "frontier-repertoire",
+                "line-1",
+                ["e2e4", "e7e5", "g1f3"],
+            )
+        enqueue_opening_graph_rebuild("frontier-repertoire")
+        task = claim_task("opening_graph_rebuild")
+        assert task is not None
+        execute_opening_graph_rebuild(task)
+        complete_task(task["id"], task["generation"], task["lease_token"])
+
+        with database.connection() as connection:
+            steps = connection.execute(
+                """SELECT card_id,parent_card_id FROM opening_graph_steps
+                   WHERE repertoire_id='frontier-repertoire'
+                   ORDER BY decision_index"""
+            ).fetchall()
+            assert connection.execute(
+                "SELECT state FROM cards WHERE id=?", (steps[1]["card_id"],)
+            ).fetchone()[0] == "locked"
+            connection.execute(
+                "UPDATE cards SET state='mature' WHERE id=?", (steps[0]["card_id"],)
+            )
+            seed_queue(connection, date.today().isoformat())
+            assert connection.execute(
+                "SELECT state FROM cards WHERE id=?", (steps[1]["card_id"],)
+            ).fetchone()[0] == "learning"
+
+
+def test_graph_rebuild_holds_no_sqlite_connection_during_chess_traversal(
+    monkeypatch,
+):
+    def forbidden_connection(*_args, **_kwargs):
+        raise AssertionError("graph computation opened SQLite")
+
+    monkeypatch.setattr(database, "connection", forbidden_connection)
+    graph = build_graph(
+        GraphInput(
+            "offline-repertoire",
+            (
+                {
+                    "id": "line-1",
+                    "start_fen": STARTING_FEN,
+                    "moves_json": __import__("json").dumps(
+                        ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"]
+                    ),
+                    "trained_color": "white",
+                    "learner_decision_count": 3,
+                },
+            ),
+            3,
+        )
+    )
+    assert len(graph) == 3
+
+
+def test_failed_seed_verification_does_not_revoke_introduced_descendants(
+    tmp_path, monkeypatch
+):
+    from datetime import datetime, timezone
+
+    from app.services.review_service import apply_scheduling_review
+
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app):
+        now = datetime.now(timezone.utc)
+        with database.connection() as connection:
+            _insert_repertoire_line(
+                connection,
+                "verification-repertoire",
+                "line-1",
+                ["e2e4", "e7e5", "g1f3"],
+            )
+        enqueue_opening_graph_rebuild("verification-repertoire")
+        task = claim_task("opening_graph_rebuild")
+        assert task is not None
+        execute_opening_graph_rebuild(task)
+        complete_task(task["id"], task["generation"], task["lease_token"])
+        with database.connection() as connection:
+            steps = connection.execute(
+                """SELECT card_id FROM opening_graph_steps
+                   WHERE repertoire_id='verification-repertoire'
+                   ORDER BY decision_index"""
+            ).fetchall()
+            parent_id, child_id = steps[0]["card_id"], steps[1]["card_id"]
+            connection.execute(
+                "UPDATE cards SET state='mature',stability=14 WHERE id=?",
+                (parent_id,),
+            )
+            connection.execute(
+                "UPDATE cards SET state='learning',introduced_at=? WHERE id=?",
+                (date.today().isoformat(), child_id),
+            )
+            apply_scheduling_review(
+                connection,
+                parent_id,
+                "again",
+                guided=False,
+                source_kind="study",
+                source_ref=None,
+                light_first_interval_days=7,
+                reviewed_at=now,
+                review_day=date.today(),
+            )
+            assert connection.execute(
+                "SELECT state FROM cards WHERE id=?", (parent_id,)
+            ).fetchone()[0] == "learning"
+            assert connection.execute(
+                "SELECT state FROM cards WHERE id=?", (child_id,)
+            ).fetchone()[0] == "learning"
+
+
+def test_canonical_decision_cards_do_not_offer_prefix_splitting(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        with database.connection() as connection:
+            _insert_repertoire_line(
+                connection,
+                "split-repertoire",
+                "line-1",
+                ["e2e4", "e7e5", "g1f3"],
+            )
+        enqueue_opening_graph_rebuild("split-repertoire")
+        task = claim_task("opening_graph_rebuild")
+        assert task is not None
+        execute_opening_graph_rebuild(task)
+        complete_task(task["id"], task["generation"], task["lease_token"])
+        with database.connection() as connection:
+            card_identifier = connection.execute(
+                """SELECT card_id FROM opening_graph_steps
+                   WHERE repertoire_id='split-repertoire' ORDER BY decision_index LIMIT 1"""
+            ).fetchone()[0]
+        assert client.get(f"/api/cards/{card_identifier}/prefix-split").status_code == 422
 
 
 def _insert_repertoire_line(connection, repertoire_id: str, line_id: str, moves):

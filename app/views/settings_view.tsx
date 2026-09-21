@@ -348,7 +348,7 @@ export default function SettingsView({
           <h2>Training</h2>
           <label>
             <span>
-              Initial prefix length<small>User moves per opening card</small>
+              Imported line depth<small>Learner decisions retained from each line</small>
             </span>
             <input
               type="number"

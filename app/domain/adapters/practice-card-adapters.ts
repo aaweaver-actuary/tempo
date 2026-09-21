@@ -43,6 +43,7 @@ export function mapQueueCardToPracticeCard(
     attemptFailed: Boolean(card.attempt_failed),
     firstCleanPassAt: card.first_correct_at ?? undefined,
     suggestShorterPrefix:
+      card.kind === "prefix" &&
       (card.recent_attempts_json?.match(/"again"/g)?.length ?? 0) >= 3,
     kind:
       card.content_type === "tactic"

@@ -6,6 +6,7 @@ import {
   asSanMove,
   type LocalRepertoire,
   type PracticeCard,
+  type SanMove,
 } from '../types';
 
 const STANDARD_FEN = new Chess().fen();
@@ -31,21 +32,32 @@ export function parsePgnImport(fileName: string, pgn: string, trainedColor: 'whi
     try { chess.loadPgn(block, { strict: false }); } catch { continue; }
     const headers = chess.getHeaders();
     const allMoves = chess.history();
-    const prefixLength = Math.min(allMoves.length, initialDepth * 2 - (trainedColor === 'white' ? 1 : 0));
-    if (!prefixLength) continue;
     const startingFen = asFenString(headers.FEN || STANDARD_FEN);
-    const moves = allMoves.slice(0, prefixLength).map(asSanMove);
-    const identity = `${startingFen.split(' ').slice(0, 4).join(' ')}|${moves.join(' ')}`;
-    cards.push({
-      id: asCardId(`import-${stableId(identity)}`),
-      kind: 'opening',
-      title: headers.Opening || headers.Event || fileName.replace(/\.pgn$/i, ''),
-      subtitle: headers.Variation || `Imported from ${fileName}`,
-      startingFen,
-      moves,
-      userMoveTarget: Math.ceil(prefixLength / 2),
-      orientation: trainedColor,
-    });
+    const replay = new Chess(startingFen);
+    let segmentStartingFen = startingFen;
+    let segmentMoves: SanMove[] = [];
+    let learnerDecisions = 0;
+    for (const san of allMoves) {
+      const movingColor = replay.turn();
+      segmentMoves.push(asSanMove(san));
+      replay.move(san);
+      if (movingColor !== (trainedColor === 'white' ? 'w' : 'b')) continue;
+      const identity = `${segmentStartingFen.split(' ').slice(0, 4).join(' ')}|${segmentMoves.join(' ')}`;
+      cards.push({
+        id: asCardId(`import-${stableId(identity)}`),
+        kind: 'opening',
+        title: headers.Opening || headers.Event || fileName.replace(/\.pgn$/i, ''),
+        subtitle: headers.Variation || `Imported from ${fileName}`,
+        startingFen: segmentStartingFen,
+        moves: segmentMoves,
+        userMoveTarget: 1,
+        orientation: trainedColor,
+      });
+      learnerDecisions += 1;
+      if (learnerDecisions >= initialDepth) break;
+      segmentStartingFen = asFenString(replay.fen());
+      segmentMoves = [];
+    }
   }
   const uniqueCards = [...new Map(cards.map((card) => [card.id, card])).values()];
   if (!uniqueCards.length) throw new Error('No playable main lines were found in this PGN.');

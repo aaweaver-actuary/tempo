@@ -523,22 +523,28 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
     """Admit unseen opening cards by impact without changing the active queue."""
 
     candidates = db.execute(
-        """SELECT DISTINCT c.id,linked.repertoire_id,c.moves_json,c.due_date,p.reason gameplay_priority_reason,
+        """SELECT DISTINCT c.id,linked.id repertoire_id,c.moves_json,c.due_date,p.reason gameplay_priority_reason,
                   p.priority_date,
                   COALESCE(published_priority.priority_score,legacy_priority.priority_score) priority_score,
                   COALESCE(published_priority.completed_line_ids_json,legacy_priority.completed_line_ids_json) completed_line_ids_json,
                   COALESCE(published_priority.frontier_decisions_json,legacy_priority.frontier_decisions_json) frontier_decisions_json
            FROM cards c
-           JOIN repertoire_cards linked ON linked.card_id=c.id
+           JOIN repertoires linked ON (
+               linked.id=c.repertoire_id OR EXISTS(
+                   SELECT 1 FROM repertoire_cards candidate_link
+                   WHERE candidate_link.card_id=c.id
+                     AND candidate_link.repertoire_id=linked.id
+               )
+           )
            LEFT JOIN gameplay_card_priorities p ON p.card_id=c.id AND p.priority_date<=?
            LEFT JOIN repertoire_priority_publications publication
-             ON publication.repertoire_id=linked.repertoire_id
+             ON publication.repertoire_id=linked.id
            LEFT JOIN repertoire_card_priority_generations published_priority
              ON published_priority.card_id=c.id
-            AND published_priority.repertoire_id=linked.repertoire_id
+            AND published_priority.repertoire_id=linked.id
             AND published_priority.generation=publication.generation
            LEFT JOIN repertoire_card_introduction_priorities legacy_priority
-             ON legacy_priority.card_id=c.id AND legacy_priority.repertoire_id=linked.repertoire_id
+             ON legacy_priority.card_id=c.id AND legacy_priority.repertoire_id=linked.id
            WHERE c.content_type='opening' AND (c.due_date<=? OR p.card_id IS NOT NULL)
              AND c.state='new' AND c.introduced_at IS NULL AND c.archived=0 AND COALESCE(c.pending_validation,0)=0
              AND EXISTS(SELECT 1 FROM repertoires r_ok
@@ -1109,7 +1115,7 @@ async def import_pgn(
         integrity = integrity_summary(db, rid)
         admitted = 0
     try:
-        enqueue_opening_graph_rebuild(rid)
+        enqueue_opening_graph_rebuild(rid, local_day=date.today().isoformat())
         enqueue_integrity_scans(rid)
         enqueue_coverage_refresh(rid, automatic=True)
         coordinator.wake()
@@ -1127,6 +1133,20 @@ async def import_pgn(
         ) - len(segment_ids)),
         cards_admitted_today=admitted,
         integrity=integrity,
+        decision_cards_created=created,
+        shared_decisions_reused=max(
+            0,
+            sum(
+                len(
+                    decision_segments(
+                        line.starting_fen, line.moves, trained_color, depth
+                    )
+                )
+                for line in lines
+            )
+            - created,
+        ),
+        graph_state="refreshing",
     )
 
 
@@ -1176,7 +1196,16 @@ def list_repertoires():
                    COALESCE(bc.blocked_due_count,0) AS blocked_due_count,
                    COALESCE(bc.blocked_card_count,0) AS blocked_card_count,
                    COALESCE(ic.issue_count,0) AS integrity_issue_count,
-                   COALESCE(ic.conflict_count,0) AS conflict_count
+                   COALESCE(ic.conflict_count,0) AS conflict_count,
+                   COALESCE(graph.generation,0) AS graph_generation,
+                   graph.published_at AS graph_updated_at,
+                   CASE
+                     WHEN graph_task.state IN ('queued','leased','retrying') THEN 'refreshing'
+                     WHEN graph_task.state='failed' THEN 'failed'
+                     WHEN graph.generation IS NOT NULL THEN 'ready'
+                     ELSE 'refreshing'
+                   END AS graph_state,
+                   graph_task.last_error AS graph_error
             FROM repertoires r
             LEFT JOIN repertoire_integrity_state rs ON rs.repertoire_id=r.id
             LEFT JOIN line_counts lc ON lc.repertoire_id=r.id
@@ -1184,6 +1213,10 @@ def list_repertoires():
             LEFT JOIN due_counts dc ON dc.repertoire_id=r.id
             LEFT JOIN blocked_counts bc ON bc.repertoire_id=r.id
             LEFT JOIN issue_counts ic ON ic.repertoire_id=r.id
+            LEFT JOIN opening_graph_publications graph ON graph.repertoire_id=r.id
+            LEFT JOIN background_tasks graph_task
+              ON graph_task.kind='opening_graph_rebuild'
+             AND graph_task.deduplication_key=r.id
             WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__')
             ORDER BY r.created_at DESC
         """,
@@ -1668,6 +1701,8 @@ def review(identifier: str, request: ReviewRequest):
             "UPDATE daily_queue SET review_result_json=? WHERE id=?",
             (json.dumps(persisted_result), entry["id"]),
         )
+    if persisted_result["state"] == "mature":
+        enqueue_daily_queue_refresh()
     return persisted_result
 
 
@@ -1744,7 +1779,9 @@ def branch(request: BranchRequest):
             )
         integrity = integrity_summary(db, request.repertoire_id)
     try:
-        enqueue_opening_graph_rebuild(request.repertoire_id)
+        enqueue_opening_graph_rebuild(
+            request.repertoire_id, local_day=date.today().isoformat()
+        )
         enqueue_integrity_scans(request.repertoire_id)
         enqueue_coverage_refresh(request.repertoire_id, automatic=True)
         coordinator.wake()
@@ -1801,7 +1838,9 @@ def remove_branch(request: RemoveBranchRequest):
         deleted_cards = 0
         integrity = integrity_summary(db, request.repertoire_id)
     try:
-        enqueue_opening_graph_rebuild(request.repertoire_id)
+        enqueue_opening_graph_rebuild(
+            request.repertoire_id, local_day=date.today().isoformat()
+        )
         enqueue_integrity_scans(request.repertoire_id)
         enqueue_coverage_refresh(request.repertoire_id, automatic=True)
         coordinator.wake()

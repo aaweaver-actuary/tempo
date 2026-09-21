@@ -9,6 +9,7 @@ from app.main import app
 from app.services.game_sync_coordinator import coordinator
 from app.services.repertoire_integrity import enqueue_integrity_scans
 from app.services import repertoire_integrity as integrity_service
+from helpers import wait_for_daily_queue
 
 
 START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -169,7 +170,9 @@ def test_legacy_integrity_issues_are_swept_in_background_and_excluded_from_train
     with TestClient(app) as client:
         summary = _integrity(client)
         assert summary["status"] == "needs_repair"
-        assert client.get("/api/queue/today").json()["count"] == 0
+        queue = wait_for_daily_queue(client, 1)
+        assert queue["count"] == 1
+        assert queue["cards"][0]["moves"] == ["e2e4"]
 
 
 def test_shared_cards_remain_trainable_only_through_clean_repertoires(tmp_path, monkeypatch):
