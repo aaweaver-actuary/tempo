@@ -743,11 +743,19 @@ export const repertoireCoverageSummarySchema = z.strictObject({
   last_error: z.string().nullable().optional(),
   settings: z
     .strictObject({
+      automatic_priority: z.boolean(),
       reply_denominator: integer,
       cumulative_target: z.number(),
       horizon_fullmoves: integer,
       path_floor: z.number(),
       maia_elo: integer,
+      explorer_rating: integer,
+      recent_median_rating: integer,
+      speed_weights: z.partialRecord(
+        z.enum(["blitz", "rapid", "classical"]),
+        z.number().finite().nonnegative(),
+      ),
+      cohort_games: integer,
     })
     .optional(),
 });

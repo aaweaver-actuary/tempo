@@ -251,6 +251,7 @@ Append every new reported issue and its test names here. All listed tests belong
 
 ## Fractional priority validation and card-level integrity recovery
 
+- Adaptive cohort fields make “Check coverage” reject a valid response — `test_coverage_summary_accepts_adaptive_cohort_settings_without_diagnostic`; `check coverage loads adaptive settings without a validation alert`.
 - Fractional weighted personal-game evidence invalidates repertoire records — `test_fractional_personal_game_evidence_is_valid_repertoire_data`; `test_workspace_validation_does_not_drop_fractional_priority_records`; `fractional priority evidence loads both repertoires without a diagnostic`.
 - Whole-repertoire repair status quarantines safe cards — `test_integrity_scan_blocks_only_cards_crossing_unresolved_positions`; `test_unaffected_due_reviews_remain_playable_when_repertoire_needs_repair`; `unaffected opening reviews remain mixed with tactics during repertoire repair`.
 - Blocked cards are hidden inside playable due totals — `test_blocked_opening_cards_are_reported_but_not_counted_as_playable`.
