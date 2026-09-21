@@ -239,6 +239,10 @@ Append every new reported issue and its test names here. All listed tests belong
 - `test_interrupted_priority_refresh_replays_once_after_restart` verifies startup recovery requeues an interrupted generation and publishes one replacement.
 - `test_stale_priority_generation_cannot_overwrite_newer_inputs` prevents stale calculations from committing after a newer trigger.
 - `test_optimized_priority_scoring_matches_existing_parity_fixtures` protects scoring parity across the indexed implementation.
+- Newly encountered replies lose to generic forecasts, or likely unseen replies are ignored — `test_recently_encountered_reply_can_outrank_public_forecast_for_tomorrow`; `test_unseen_likely_reply_outranks_unseen_rare_reply_for_tomorrow`.
+- An in-progress coverage refresh replaces reliable evidence with partial values — `test_priority_refresh_uses_last_completed_coverage_until_replacement_is_complete`.
+- Tomorrow's admission waits on pending scoring, ignores the last publication, or displaces due reviews — `test_next_day_admits_from_last_published_scores_without_delaying_due_review`.
+- Stockfish timeout erases opponent-move evidence or implies successful gap analysis — `test_stockfish_timeout_preserves_personal_priority_evidence_and_remains_retryable`.
 - Recurring SQLite contention and false-empty workspace projections — `test_concurrent_queue_progress_repertoire_and_settings_reads_never_return_busy`; `test_workspace_reads_complete_under_one_second_during_full_background_backlog`; `test_get_endpoints_are_query_only`.
 - Daily admission races, refresh replacement, and restart drift — `test_daily_queue_admission_is_single_flight_and_idempotent`; `test_last_published_queue_remains_playable_during_refresh`; `test_daily_queue_remains_exact_across_restart_and_midday_admission`.
 - Integrity-blocked openings hide or inflate playable tactics — `test_needs_repair_openings_do_not_hide_or_inflate_due_tactics`.

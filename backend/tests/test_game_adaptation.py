@@ -1,14 +1,74 @@
 from datetime import date, datetime, timedelta, timezone
 import json
 
+import chess
 from fastapi.testclient import TestClient
 
 from app import database
 from app.main import app
 from app.services.game_findings import refresh_game_findings
+from app.services import introduction_priorities
 
 
 START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+
+
+def test_stockfish_timeout_preserves_personal_priority_evidence_and_remains_retryable(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    now = datetime.now(timezone.utc).isoformat()
+    position_after_e4 = chess.Board(START)
+    position_after_e4.push_uci("e2e4")
+    opponent_position_key = " ".join(position_after_e4.fen().split()[:4])
+    with TestClient(app) as client:
+        with database.connection() as db:
+            db.execute(
+                """INSERT INTO imported_games(
+                       id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json,analysis_state
+                   ) VALUES('lichess:timeout','lichess','player',?,'rapid',1,'white','1-0',?,?,'analyzing')""",
+                (now, START, json.dumps(["e2e4", "e7e5"])),
+            )
+            db.execute(
+                """INSERT INTO game_analysis_jobs(
+                       game_id,status,lease_id,updated_at
+                   ) VALUES('lichess:timeout','leased','lease-timeout',?)""",
+                (now,),
+            )
+            db.execute(
+                """INSERT INTO game_position_occurrences(game_id,ply,fen_key,move_uci)
+                   VALUES('lichess:timeout',1,?,'e7e5')""",
+                (opponent_position_key,),
+            )
+        failed = client.post(
+            "/api/games/analysis/lichess:timeout/failure",
+            json={"lease_id": "lease-timeout", "error": "Stockfish took too long"},
+        )
+        assert failed.status_code == 200
+        assert failed.json() == {"status": "failed", "retryable": True}
+        refresh_game_findings("lichess:timeout")
+        with database.connection() as db:
+            job = db.execute(
+                "SELECT status,last_error FROM game_analysis_jobs WHERE game_id='lichess:timeout'"
+            ).fetchone()
+            game = db.execute(
+                "SELECT analysis_state FROM imported_games WHERE id='lichess:timeout'"
+            ).fetchone()
+            personal = introduction_priorities._personal_evidence(
+                db,
+                {opponent_position_key},
+                "white",
+            )
+            assert db.execute(
+                "SELECT COUNT(*) FROM game_findings WHERE game_id='lichess:timeout'"
+            ).fetchone()[0] == 0
+        assert job["status"] == "failed"
+        assert job["last_error"] == "Stockfish took too long"
+        assert game["analysis_state"] == "failed"
+        assert personal[opponent_position_key]["e7e5"] > 0
+        retried = client.post("/api/games/analysis/lichess:timeout/retry")
+        assert retried.status_code == 200
+        assert retried.json()["status"] == "queued"
 
 
 def seed_lapse(database_connection, finding_id: str = "lapse"):

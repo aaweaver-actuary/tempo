@@ -206,7 +206,8 @@ def _coverage_evidence(
 ) -> dict[str, dict]:
     run = database.execute(
         """SELECT id FROM repertoire_coverage_runs WHERE repertoire_id=?
-           ORDER BY created_at DESC LIMIT 1""",
+           ORDER BY CASE WHEN status='complete' THEN 0 ELSE 1 END,
+                    created_at DESC LIMIT 1""",
         (repertoire_id,),
     ).fetchone()
     if not run:
