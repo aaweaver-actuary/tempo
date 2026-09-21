@@ -35,6 +35,69 @@ def _seed_due_tactic() -> None:
         )
 
 
+def _seed_opening_card(
+    connection, identifier: str, *, blocked: bool = False, state: str = "learning"
+) -> None:
+    now = datetime.now(timezone.utc).isoformat()
+    connection.execute(
+        """INSERT OR IGNORE INTO repertoires(id,name,source_name,created_at)
+           VALUES('repair-rep','Repair repertoire','repair.pgn',?)""",
+        (now,),
+    )
+    connection.execute(
+        """INSERT OR IGNORE INTO repertoire_integrity_state(repertoire_id,status)
+           VALUES('repair-rep','needs_repair')"""
+    )
+    connection.execute(
+        """INSERT INTO cards(
+               id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+               content_type,trained_color
+           ) VALUES(?,'repair-rep','prefix',?,? ,?,'2000-01-01','opening','white')""",
+        (
+            identifier,
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            json.dumps(["e2e4"]),
+            state,
+        ),
+    )
+    connection.execute(
+        "INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('repair-rep',?)",
+        (identifier,),
+    )
+    if state != "new":
+        connection.execute(
+            """INSERT INTO reviews(
+                   card_id,rating,reviewed_at,previous_interval,next_interval
+               ) VALUES(?,'correct','2026-09-01',1,7)""",
+            (identifier,),
+        )
+    if not blocked:
+        return
+    issue_id = f"issue-{identifier}"
+    connection.execute(
+        """INSERT INTO repertoire_integrity_issues(
+               id,repertoire_id,kind,fen_key,fen,trained_color,signature,
+               moves_json,sources_json,created_at,updated_at
+           ) VALUES(?,'repair-rep','missing_response',?,?,'white',?,
+                    '[]',?, ?, ?)""",
+        (
+            issue_id,
+            f"position-{identifier}",
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKQ - 0 1",
+            f"signature-{identifier}",
+            json.dumps([{"type": "card", "id": identifier}]),
+            now,
+            now,
+        ),
+    )
+    connection.execute(
+        """INSERT INTO repertoire_integrity_card_blocks(
+               repertoire_id,card_id,issue_id,scan_generation,published_at
+           ) VALUES('repair-rep',?,?, 'fixture',?)""",
+        (identifier, issue_id, now),
+    )
+
+
 def _wait_for_queue_count(client: TestClient, expected: int) -> dict:
     payload = None
     for _ in range(200):
@@ -327,11 +390,121 @@ def test_needs_repair_openings_do_not_hide_or_inflate_due_tactics(tmp_path, monk
                     json.dumps(["e2e4"]),
                 ),
             )
+            connection.execute(
+                """INSERT INTO repertoire_integrity_issues(
+                       id,repertoire_id,kind,fen_key,fen,trained_color,signature,
+                       moves_json,sources_json,created_at,updated_at
+                   ) VALUES('broken-issue','broken','missing_response',?,?,
+                            'white','broken-signature','[]',?, ?, ?)""",
+                (
+                    "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq -",
+                    "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                    json.dumps([{"type": "card", "id": "broken-opening"}]),
+                    now,
+                    now,
+                ),
+            )
+            connection.execute(
+                """INSERT INTO repertoire_integrity_card_blocks(
+                       repertoire_id,card_id,issue_id,scan_generation,published_at
+                   ) VALUES('broken','broken-opening','broken-issue','fixture',?)""",
+                (now,),
+            )
         enqueue_daily_queue_refresh()
         queue = _wait_for_queue_count(client, 1)
         progress = client.get("/api/progress").json()
     assert [card["id"] for card in queue["cards"]] == ["durable-tactic"]
     assert progress["dueToday"] == 1
+
+
+def test_unaffected_due_reviews_remain_playable_when_repertoire_needs_repair(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        with database.connection() as connection:
+            _seed_opening_card(connection, "blocked-review", blocked=True)
+            _seed_opening_card(connection, "playable-review")
+        enqueue_daily_queue_refresh()
+        queue = _wait_for_queue_count(client, 1)
+    assert [card["id"] for card in queue["cards"]] == ["playable-review"]
+
+
+def test_blocked_opening_cards_are_reported_but_not_counted_as_playable(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        with database.connection() as connection:
+            _seed_opening_card(connection, "blocked-review", blocked=True)
+            _seed_opening_card(connection, "playable-review")
+        enqueue_daily_queue_refresh()
+        queue = None
+        for _ in range(200):
+            queue = client.get("/api/queue/today").json()
+            if (
+                queue["count"] == 1
+                and queue["projection"]["state"] == "ready"
+                and queue["projection"]["blocked_count"] == 1
+            ):
+                break
+            time.sleep(0.01)
+        assert queue is not None
+        progress = client.get("/api/progress").json()
+        repertoire = client.get("/api/repertoires").json()["repertoires"][0]
+    assert queue["projection"]["blocked_count"] == 1
+    assert progress["dueToday"] == 1
+    assert progress["blockedDue"] == 1
+    assert repertoire["due_count"] == 1
+    assert repertoire["blocked_due_count"] == 1
+    assert repertoire["blocked_card_count"] == 1
+
+
+def test_queue_refresh_never_resurrects_completed_attempts(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        _seed_due_tactic()
+        enqueue_daily_queue_refresh()
+        queued = _wait_for_queue_count(client, 1)
+        entry_id = queued["cards"][0]["queue_entry_id"]
+        with database.connection() as connection:
+            connection.execute(
+                "UPDATE daily_queue SET status='complete',attempt_state='complete' WHERE id=?",
+                (entry_id,),
+            )
+        enqueue_daily_queue_refresh()
+        _wait_for_queue_count(client, 0)
+        with database.read_connection() as connection:
+            completed = connection.execute(
+                "SELECT status,attempt_state FROM daily_queue WHERE id=?", (entry_id,)
+            ).fetchone()
+    assert tuple(completed) == ("complete", "complete")
+
+
+def test_same_day_repair_requeues_newly_unblocked_due_cards_once(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        with database.connection() as connection:
+            _seed_opening_card(connection, "recovered-review", blocked=True)
+            connection.execute(
+                """INSERT INTO daily_queue(queue_date,card_id,position,status)
+                   VALUES(?,?,0,'blocked')""",
+                (date.today().isoformat(), "recovered-review"),
+            )
+            entry_id = connection.execute(
+                "SELECT id FROM daily_queue WHERE card_id='recovered-review'"
+            ).fetchone()[0]
+            connection.execute(
+                "DELETE FROM repertoire_integrity_card_blocks WHERE card_id='recovered-review'"
+            )
+        enqueue_daily_queue_refresh()
+        first = _wait_for_queue_count(client, 1)
+        enqueue_daily_queue_refresh()
+        second = _wait_for_queue_count(client, 1)
+    assert [card["queue_entry_id"] for card in first["cards"]] == [entry_id]
+    assert [card["queue_entry_id"] for card in second["cards"]] == [entry_id]
 
 
 def test_daily_queue_remains_exact_across_restart_and_midday_admission(tmp_path, monkeypatch):

@@ -12,6 +12,9 @@ import uuid
 
 import chess
 
+from ..database import read_connection
+from .database_executor import submit_background_write
+
 from .cards import card_id
 from .repertoire_comparison import canonical_fen
 
@@ -189,6 +192,45 @@ def _record_position(
     )
 
 
+def _publish_card_blocks(
+    database: sqlite3.Connection,
+    repertoire_id: str,
+    issues: list[dict],
+    scan_generation: str,
+    published_at: str,
+) -> None:
+    """Atomically replace the card-level projection for one completed scan."""
+
+    database.execute(
+        "DELETE FROM repertoire_integrity_card_blocks WHERE repertoire_id=?",
+        (repertoire_id,),
+    )
+    rows = {
+        (repertoire_id, source["id"], issue["id"], scan_generation, published_at)
+        for issue in issues
+        for source in issue.get("sources", [])
+        if source.get("type") == "card"
+        and database.execute(
+            "SELECT 1 FROM cards WHERE id=?", (source.get("id"),)
+        ).fetchone()
+    }
+    database.executemany(
+        """INSERT INTO repertoire_integrity_card_blocks(
+               repertoire_id,card_id,issue_id,scan_generation,published_at
+           ) VALUES(?,?,?,?,?)""",
+        sorted(rows),
+    )
+    database.execute(
+        """UPDATE cards SET pending_validation=CASE WHEN EXISTS(
+               SELECT 1 FROM repertoire_integrity_card_blocks published_block
+               WHERE published_block.card_id=cards.id
+           ) THEN 1 ELSE 0 END
+           WHERE archived=0 AND content_type='opening' AND
+             (repertoire_id=? OR id IN (
+                 SELECT card_id FROM repertoire_cards WHERE repertoire_id=?
+             ))""",
+        (repertoire_id, repertoire_id),
+    )
 def sweep_repertoire(database: sqlite3.Connection, repertoire_id: str) -> dict:
     if not database.execute(
         "SELECT 1 FROM repertoires WHERE id=?", (repertoire_id,)
@@ -226,11 +268,7 @@ def sweep_repertoire(database: sqlite3.Connection, repertoire_id: str) -> dict:
            VALUES(?,?,?) ON CONFLICT(repertoire_id) DO UPDATE SET status=excluded.status,checked_at=excluded.checked_at""",
         (repertoire_id, status, now),
     )
-    if status != "clean":
-        database.execute(
-            "DELETE FROM repertoire_card_introduction_priorities WHERE repertoire_id=?",
-            (repertoire_id,),
-        )
+    _publish_card_blocks(database, repertoire_id, issues, f"sweep:{now}", now)
     return integrity_summary(database, repertoire_id)
 
 
@@ -382,6 +420,17 @@ def execute_integrity_slice(job: dict) -> None:
             issues = _issues_from_observations(job["repertoire_id"], observations, invalid)
             now = _now()
             with connection(background=True) as database:
+                current_job = database.execute(
+                    "SELECT run_id FROM repertoire_integrity_jobs WHERE repertoire_id=?",
+                    (job["repertoire_id"],),
+                ).fetchone()
+                if not current_job or current_job["run_id"] != job["run_id"]:
+                    _LOGGER.info(
+                        "discarded stale integrity publication repertoire_id=%s run_id=%s",
+                        job["repertoire_id"],
+                        job["run_id"],
+                    )
+                    return
                 database.execute("DELETE FROM repertoire_integrity_issues WHERE repertoire_id=?", (job["repertoire_id"],))
                 for issue in issues:
                     database.execute(
@@ -393,13 +442,13 @@ def execute_integrity_slice(job: dict) -> None:
                     "UPDATE repertoire_integrity_state SET status=?,checked_at=?,scan_status='idle',scan_generation=?,scan_completed_sources=scan_total_sources,scan_error=NULL WHERE repertoire_id=?",
                     (status, now, job["run_id"], job["repertoire_id"]),
                 )
-                if status == "clean":
-                    database.execute(
-                        """UPDATE cards SET pending_validation=0,state=CASE WHEN state='locked' THEN 'new' ELSE state END
-                           WHERE pending_validation=1 AND archived=0 AND
-                             (repertoire_id=? OR id IN (SELECT card_id FROM repertoire_cards WHERE repertoire_id=?))""",
-                        (job["repertoire_id"], job["repertoire_id"]),
-                    )
+                _publish_card_blocks(
+                    database,
+                    job["repertoire_id"],
+                    issues,
+                    job["run_id"],
+                    now,
+                )
                 database.execute(
                     "UPDATE repertoire_integrity_jobs SET status='complete',last_error=NULL,updated_at=? WHERE repertoire_id=?",
                     (now, job["repertoire_id"]),
@@ -655,6 +704,39 @@ def _reconcile_derived_cards(database: sqlite3.Connection, repertoire_id: str) -
     return changed
 
 
+def _archive_unsupported_card(
+    database: sqlite3.Connection, repertoire_id: str, card_identifier: str
+) -> bool:
+    """Detach an already-computed unsupported card without chess traversal."""
+
+    card = database.execute(
+        "SELECT repertoire_id FROM cards WHERE id=? AND archived=0",
+        (card_identifier,),
+    ).fetchone()
+    if not card:
+        return False
+    database.execute(
+        "DELETE FROM repertoire_cards WHERE repertoire_id=? AND card_id=?",
+        (repertoire_id, card_identifier),
+    )
+    remaining = database.execute(
+        "SELECT repertoire_id FROM repertoire_cards WHERE card_id=? LIMIT 1",
+        (card_identifier,),
+    ).fetchone()
+    if remaining:
+        if card["repertoire_id"] == repertoire_id:
+            database.execute(
+                "UPDATE cards SET repertoire_id=? WHERE id=?",
+                (remaining["repertoire_id"], card_identifier),
+            )
+    else:
+        database.execute(
+            "UPDATE cards SET archived=1,state='locked',superseded_by=NULL WHERE id=?",
+            (card_identifier,),
+        )
+    return True
+
+
 def resolve_issue(database: sqlite3.Connection, repertoire_id: str, issue_id: str, signature: str, selected_move: str) -> dict:
     row = database.execute(
         "SELECT * FROM repertoire_integrity_issues WHERE id=? AND repertoire_id=?",
@@ -695,3 +777,142 @@ def resolve_issue(database: sqlite3.Connection, repertoire_id: str, issue_id: st
     changed_cards += _reconcile_derived_cards(database, repertoire_id)
     summary = sweep_repertoire(database, repertoire_id)
     return {"summary": summary, "changed_line_count": changed_lines, "changed_card_count": changed_cards}
+
+
+def prepare_issue_resolution(
+    repertoire_id: str,
+    issue_id: str,
+    signature: str,
+    selected_move: str,
+) -> dict:
+    """Read and compute a guided repair without holding a SQLite connection."""
+
+    with read_connection() as database:
+        issue_row = database.execute(
+            "SELECT * FROM repertoire_integrity_issues WHERE id=? AND repertoire_id=?",
+            (issue_id, repertoire_id),
+        ).fetchone()
+        if not issue_row:
+            raise KeyError("Integrity issue not found")
+        issue = dict(issue_row)
+        source_descriptors = json.loads(issue["sources_json"])
+        line_rows = {
+            row["id"]: dict(row)
+            for row in database.execute(
+                "SELECT * FROM repertoire_lines WHERE repertoire_id=?",
+                (repertoire_id,),
+            ).fetchall()
+        }
+        card_rows = {
+            row["id"]: dict(row)
+            for row in database.execute(
+                """SELECT DISTINCT c.* FROM cards c
+                   LEFT JOIN repertoire_cards rc ON rc.card_id=c.id
+                   WHERE c.content_type='opening' AND c.archived=0
+                     AND (c.repertoire_id=? OR rc.repertoire_id=?)""",
+                (repertoire_id, repertoire_id),
+            ).fetchall()
+        }
+    if issue["signature"] != signature:
+        raise RuntimeError("This integrity issue changed; refresh and try again")
+    if not issue["fen"]:
+        raise ValueError("Invalid source issues must be repaired by editing or removing the source")
+    board = chess.Board(issue["fen"])
+    selected = selected_move.lower()
+    try:
+        move = chess.Move.from_uci(selected)
+    except ValueError as error:
+        raise ValueError("Selected move is not valid UCI") from error
+    if move not in board.legal_moves:
+        raise ValueError("Selected move is illegal from this position")
+
+    changed_lines: dict[str, list[str]] = {}
+    changed_cards: dict[str, list[str]] = {}
+    for source in source_descriptors:
+        if source.get("type") == "line" and source.get("id") in line_rows:
+            row = line_rows[source["id"]]
+            moves, changed = _transform_source(
+                row["start_fen"], json.loads(row["moves_json"]),
+                row["trained_color"], issue["fen_key"], selected,
+            )
+            if changed:
+                changed_lines[row["id"]] = moves
+        elif source.get("type") == "card" and source.get("id") in card_rows:
+            row = card_rows[source["id"]]
+            moves, changed = _transform_source(
+                row["start_fen"], json.loads(row["moves_json"]),
+                row.get("trained_color") or issue["trained_color"],
+                issue["fen_key"], selected,
+            )
+            if changed:
+                changed_cards[row["id"]] = moves
+
+    line_routes = [
+        (
+            canonical_fen(row["start_fen"]),
+            changed_lines.get(row_identifier, json.loads(row["moves_json"])),
+        )
+        for row_identifier, row in line_rows.items()
+    ]
+    unsupported_card_ids: list[str] = []
+    for row_identifier, row in card_rows.items():
+        final_moves = changed_cards.get(row_identifier, json.loads(row["moves_json"]))
+        final_card_identifier = (
+            card_id(row["start_fen"], final_moves)
+            if row_identifier in changed_cards
+            else row_identifier
+        )
+        if not any(
+            canonical_fen(row["start_fen"]) == line_start_fen
+            and line_moves[: len(final_moves)] == final_moves
+            for line_start_fen, line_moves in line_routes
+        ):
+            unsupported_card_ids.append(final_card_identifier)
+    return {
+        "repertoire_id": repertoire_id,
+        "issue_id": issue_id,
+        "signature": signature,
+        "changed_lines": changed_lines,
+        "changed_cards": changed_cards,
+        "unsupported_card_ids": unsupported_card_ids,
+    }
+
+
+def execute_durable_integrity_repair(task: dict) -> None:
+    payload = task["payload"]
+    prepared = prepare_issue_resolution(
+        payload["repertoire_id"],
+        payload["issue_id"],
+        payload["signature"],
+        payload["selected_move_uci"],
+    )
+
+    def publish(database: sqlite3.Connection) -> None:
+        current = database.execute(
+            "SELECT signature FROM repertoire_integrity_issues WHERE id=? AND repertoire_id=?",
+            (prepared["issue_id"], prepared["repertoire_id"]),
+        ).fetchone()
+        if not current or current["signature"] != prepared["signature"]:
+            raise RuntimeError("This integrity issue changed; refresh and try again")
+        for source_id, moves in prepared["changed_lines"].items():
+            source_row = database.execute(
+                "SELECT * FROM repertoire_lines WHERE id=?", (source_id,)
+            ).fetchone()
+            if source_row:
+                _rewrite_line(database, source_row, moves)
+        for source_id, moves in prepared["changed_cards"].items():
+            source_row = database.execute(
+                "SELECT * FROM cards WHERE id=?", (source_id,)
+            ).fetchone()
+            if source_row:
+                _rewrite_card(database, prepared["repertoire_id"], source_row, moves)
+        for card_identifier in prepared["unsupported_card_ids"]:
+            _archive_unsupported_card(
+                database, prepared["repertoire_id"], card_identifier
+            )
+
+    submit_background_write(
+        publish,
+        label=f"integrity-repair:{prepared['repertoire_id']}:{prepared['issue_id']}",
+    )
+    enqueue_integrity_scans(prepared["repertoire_id"])

@@ -309,6 +309,17 @@ def initialize() -> None:
         """,
         "CREATE INDEX IF NOT EXISTS idx_repertoire_integrity_repertoire ON repertoire_integrity_issues(repertoire_id,updated_at,id)",
         """
+        CREATE TABLE IF NOT EXISTS repertoire_integrity_card_blocks (
+            repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+            card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+            issue_id TEXT NOT NULL REFERENCES repertoire_integrity_issues(id) ON DELETE CASCADE,
+            scan_generation TEXT NOT NULL,
+            published_at TEXT NOT NULL,
+            PRIMARY KEY(repertoire_id,card_id,issue_id)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_integrity_card_blocks_card ON repertoire_integrity_card_blocks(card_id,repertoire_id)",
+        """
         CREATE TABLE IF NOT EXISTS repertoire_integrity_jobs (
             repertoire_id TEXT PRIMARY KEY REFERENCES repertoires(id) ON DELETE CASCADE,
             run_id TEXT NOT NULL,
@@ -883,7 +894,8 @@ def initialize() -> None:
             generation INTEGER NOT NULL DEFAULT 0,
             updated_at TEXT,
             refresh_pending INTEGER NOT NULL DEFAULT 1,
-            last_error TEXT
+            last_error TEXT,
+            blocked_count INTEGER NOT NULL DEFAULT 0
         )
         """,
         """
@@ -1010,6 +1022,9 @@ def initialize() -> None:
                 "scan_total_sources": "INTEGER NOT NULL DEFAULT 0",
                 "scan_error": "TEXT",
             },
+            "queue_projections": {
+                "blocked_count": "INTEGER NOT NULL DEFAULT 0",
+            },
         }
         for table, additions in columns.items():
             existing = {
@@ -1072,6 +1087,40 @@ def initialize() -> None:
         )
         database.execute("""INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id)
                             SELECT repertoire_id,id FROM cards WHERE content_type='opening'""")
+        # Publish card-level blocks from the last completed integrity result.
+        # This is an additive backfill: repertoire content, reviews, scheduling,
+        # and completed queue attempts are not rewritten.
+        database.execute(
+            """INSERT OR IGNORE INTO repertoire_integrity_card_blocks(
+                   repertoire_id,card_id,issue_id,scan_generation,published_at
+               )
+               SELECT issue.repertoire_id,
+                      json_extract(source.value,'$.id'),
+                      issue.id,
+                      COALESCE(state.scan_generation,'legacy'),
+                      COALESCE(state.checked_at,issue.updated_at)
+               FROM repertoire_integrity_issues issue
+               JOIN json_each(issue.sources_json) source
+               JOIN cards card ON card.id=json_extract(source.value,'$.id')
+               LEFT JOIN repertoire_integrity_state state
+                 ON state.repertoire_id=issue.repertoire_id
+               WHERE json_extract(source.value,'$.type')='card'"""
+        )
+        database.execute(
+            """UPDATE cards SET pending_validation=CASE WHEN EXISTS(
+                   SELECT 1 FROM repertoire_integrity_card_blocks block
+                   WHERE block.card_id=cards.id
+               ) THEN 1 ELSE 0 END
+               WHERE content_type='opening' AND archived=0 AND EXISTS(
+                   SELECT 1 FROM repertoire_integrity_state state
+                   WHERE state.scan_status='idle' AND state.status IN ('clean','needs_repair')
+                     AND (state.repertoire_id=cards.repertoire_id OR EXISTS(
+                         SELECT 1 FROM repertoire_cards linked
+                         WHERE linked.card_id=cards.id
+                           AND linked.repertoire_id=state.repertoire_id
+                     ))
+               )"""
+        )
         database.execute(
             """INSERT OR IGNORE INTO game_derivation_jobs(game_id,status,updated_at)
                SELECT id,'queued',? FROM imported_games g

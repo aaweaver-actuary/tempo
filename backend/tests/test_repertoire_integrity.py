@@ -1,5 +1,6 @@
 import json
 import time
+from contextlib import contextmanager
 
 from fastapi.testclient import TestClient
 
@@ -7,6 +8,7 @@ from app import database
 from app.main import app
 from app.services.game_sync_coordinator import coordinator
 from app.services.repertoire_integrity import enqueue_integrity_scans
+from app.services import repertoire_integrity as integrity_service
 
 
 START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -34,6 +36,26 @@ def _integrity(client, repertoire="rep"):
     return payload
 
 
+def _wait_for_repair(client, task_id: str, repertoire: str = "rep") -> dict:
+    task_payload = None
+    integrity_payload = None
+    for _ in range(300):
+        tasks = client.get("/api/system/tasks").json()["tasks"]
+        task_payload = next(item for item in tasks if item["id"] == task_id)
+        integrity_payload = client.get(
+            f"/api/repertoires/{repertoire}/integrity"
+        ).json()
+        if task_payload["state"] == "failed":
+            raise AssertionError(task_payload["last_error"])
+        if (
+            task_payload["state"] == "complete"
+            and integrity_payload["scan_status"] == "idle"
+        ):
+            return integrity_payload
+        time.sleep(0.01)
+    raise AssertionError((task_payload, integrity_payload))
+
+
 def test_repertoire_integrity_sweep_pauses_conflicting_transpositions_after_import(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
@@ -44,6 +66,49 @@ def test_repertoire_integrity_sweep_pauses_conflicting_transpositions_after_impo
         assert integrity["status"] == "needs_repair"
         assert any(issue["kind"] == "multiple_responses" for issue in integrity["issues"])
         assert client.get("/api/queue/today").json()["cards"] == []
+
+
+def test_integrity_scan_blocks_only_cards_crossing_unresolved_positions(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        with database.connection() as db:
+            _line(db, "one", "rep", ["e2e4", "e7e5", "g1f3"])
+            _line(db, "two", "rep", ["e2e4", "e7e5", "f1c4"])
+            for identifier, moves in (
+                ("unaffected", ["e2e4"]),
+                ("affected", ["e2e4", "e7e5", "g1f3"]),
+            ):
+                db.execute(
+                    """INSERT INTO cards(
+                           id,repertoire_id,kind,start_fen,moves_json,due_date,
+                           content_type,trained_color
+                       ) VALUES(?,?,?,?,?,?,?,?)""",
+                    (
+                        identifier,
+                        "rep",
+                        "prefix",
+                        START,
+                        json.dumps(moves),
+                        "2026-09-20",
+                        "opening",
+                        "white",
+                    ),
+                )
+                db.execute(
+                    "INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('rep',?)",
+                    (identifier,),
+                )
+        assert _integrity(client)["status"] == "needs_repair"
+        with database.read_connection() as db:
+            blocked = {
+                row[0]
+                for row in db.execute(
+                    "SELECT DISTINCT card_id FROM repertoire_integrity_card_blocks"
+                )
+            }
+        assert blocked == {"affected"}
 
 
 def test_repertoire_integrity_requires_one_response_at_player_turn_endpoints(tmp_path, monkeypatch):
@@ -71,8 +136,8 @@ def test_integrity_resolution_rewrites_routes_and_truncates_losing_continuations
             f"/api/repertoires/rep/integrity/issues/{issue['id']}/resolve",
             json={"signature": issue["signature"], "selected_move_uci": "d2d4"},
         )
-        assert result.status_code == 200
-        assert result.json()["summary"]["status"] == "clean"
+        assert result.status_code == 202
+        assert _wait_for_repair(client, result.json()["task_id"])["status"] == "clean"
         lines = client.get("/api/repertoire/lines").json()["lines"]
         assert any(line["moves"] == ["d2d4"] for line in lines)
 
@@ -154,11 +219,11 @@ def test_missing_endpoint_resolution_accepts_an_unsaved_legal_move(tmp_path, mon
             f"/api/repertoires/rep/integrity/issues/{issue['id']}/resolve",
             json={"signature": issue["signature"], "selected_move_uci": "g1f3"},
         )
-        assert response.status_code == 200
-        assert response.json()["summary"]["status"] == "clean"
+        assert response.status_code == 202
+        assert _wait_for_repair(client, response.json()["task_id"])["status"] == "clean"
 
 
-def test_integrity_repair_archives_losing_card_history_without_transferring_mastery(tmp_path, monkeypatch):
+def test_repair_preserves_unchanged_card_reviews_and_archives_changed_history(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         with database.connection() as db:
@@ -177,8 +242,119 @@ def test_integrity_repair_archives_losing_card_history_without_transferring_mast
             f"/api/repertoires/rep/integrity/issues/{issue['id']}/resolve",
             json={"signature": issue["signature"], "selected_move_uci": "d2d4"},
         )
-        assert response.status_code == 200
+        assert response.status_code == 202
+        _wait_for_repair(client, response.json()["task_id"])
         with database.connection() as db:
             card = db.execute("SELECT archived,state FROM cards WHERE id='losing-card'").fetchone()
             assert card["archived"] == 1
             assert db.execute("SELECT COUNT(*) FROM reviews WHERE card_id='losing-card'").fetchone()[0] == 1
+
+
+def test_guided_repair_never_auto_selects_a_move(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        with database.connection() as db:
+            _line(db, "one", "rep", ["e2e4", "e7e5"])
+            _line(db, "two", "rep", ["d2d4", "d7d5"])
+        issue = _integrity(client)["issues"][0]
+        response = client.post(
+            f"/api/repertoires/rep/integrity/issues/{issue['id']}/resolve",
+            json={"signature": issue["signature"]},
+        )
+        assert response.status_code == 422
+        assert not any(
+            task["kind"] == "integrity_repair"
+            for task in client.get("/api/system/tasks").json()["tasks"]
+        )
+
+
+def test_repair_worker_holds_no_sqlite_connection_during_chess_traversal(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        with database.connection() as db:
+            _line(db, "one", "rep", ["e2e4", "e7e5"])
+            _line(db, "two", "rep", ["d2d4", "d7d5"])
+        issue = _integrity(client)["issues"][0]
+
+        connection_open = False
+        original_read_connection = integrity_service.read_connection
+        original_board = integrity_service.chess.Board
+
+        @contextmanager
+        def observed_read_connection():
+            nonlocal connection_open
+            with original_read_connection() as connection:
+                connection_open = True
+                try:
+                    yield connection
+                finally:
+                    connection_open = False
+
+        def observed_board(*args, **kwargs):
+            assert connection_open is False
+            return original_board(*args, **kwargs)
+
+        monkeypatch.setattr(integrity_service, "read_connection", observed_read_connection)
+        monkeypatch.setattr(integrity_service.chess, "Board", observed_board)
+        prepared = integrity_service.prepare_issue_resolution(
+            "rep", issue["id"], issue["signature"], "d2d4"
+        )
+        assert prepared["changed_lines"]
+
+
+def test_integrity_block_publication_is_generation_guarded(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app):
+        now = "2026-09-21T00:00:00+00:00"
+        with database.connection() as connection:
+            _line(connection, "line", "rep", ["e2e4"])
+            connection.execute(
+                """INSERT INTO cards(
+                       id,repertoire_id,kind,start_fen,moves_json,due_date,
+                       content_type,trained_color
+                   ) VALUES('guarded','rep','prefix',?,'["e2e4"]',
+                            '2026-09-20','opening','white')""",
+                (START,),
+            )
+            connection.execute(
+                """INSERT INTO repertoire_integrity_issues(
+                       id,repertoire_id,kind,fen_key,fen,trained_color,signature,
+                       moves_json,sources_json,created_at,updated_at
+                   ) VALUES('guarded-issue','rep','missing_response','guarded-position',?,
+                            'white','guarded-signature','[]',?, ?, ?)""",
+                (
+                    START,
+                    json.dumps([{"type": "card", "id": "guarded"}]),
+                    now,
+                    now,
+                ),
+            )
+            connection.execute(
+                """INSERT INTO repertoire_integrity_card_blocks(
+                       repertoire_id,card_id,issue_id,scan_generation,published_at
+                   ) VALUES('rep','guarded','guarded-issue','current',?)""",
+                (now,),
+            )
+            connection.execute(
+                """INSERT INTO repertoire_integrity_jobs(
+                       repertoire_id,run_id,status,source_offset,total_sources,updated_at
+                   ) VALUES('rep','current','finalizing',1,1,?)""",
+                (now,),
+            )
+            connection.execute(
+                """INSERT INTO repertoire_integrity_source_runs(
+                       run_id,source_offset,observations_json,invalid_json
+                   ) VALUES('stale',0,'[]','[]')"""
+            )
+
+        integrity_service.execute_integrity_slice(
+            {"repertoire_id": "rep", "run_id": "stale", "status": "finalizing"}
+        )
+
+        with database.read_connection() as connection:
+            published = connection.execute(
+                "SELECT scan_generation FROM repertoire_integrity_card_blocks WHERE card_id='guarded'"
+            ).fetchone()
+        assert published["scan_generation"] == "current"

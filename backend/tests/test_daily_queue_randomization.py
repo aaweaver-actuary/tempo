@@ -18,7 +18,7 @@ def _seed_cards() -> None:
             (today,),
         )
         for index, content_type in enumerate(
-            ["opening", "puzzle", "endgame", "middlegame"] * 2
+            ["opening", "tactic", "endgame", "middlegame"] * 2
         ):
             card_id = f"review-{index}"
             db.execute(
@@ -32,7 +32,7 @@ def _seed_cards() -> None:
                 (card_id, f"{today}T00:00:00+00:00"),
             )
         for index, content_type in enumerate(
-            ["opening", "puzzle", "endgame", "middlegame"] * 2
+            ["opening", "tactic", "endgame", "middlegame"] * 2
         ):
             db.execute(
                 """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type,introduced_at)
@@ -55,6 +55,7 @@ def test_daily_queue_is_stable_within_a_day_and_mixed(tmp_path, monkeypatch):
         cohorts = ["review" if card["id"].startswith("review-") else "new" for card in first]
         assert all(left != right for left, right in zip(cohorts, cohorts[1:]))
         assert len({card["content_type"] for card in first[:6]}) >= 3
+        assert len({card["position"] for card in first}) == len(first)
 
 
 def test_daily_queue_uses_a_different_seed_for_the_next_day(tmp_path, monkeypatch):
