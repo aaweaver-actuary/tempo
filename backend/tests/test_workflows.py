@@ -121,7 +121,10 @@ def test_import_becomes_main_and_survives_reload(tmp_path, monkeypatch):
         assert queue["count"] == 1
         assert queue["cards"][0]["is_main"] == 1
         assert queue["cards"][0]["trained_color"] == "white"
-        assert queue["cards"][0]["moves"] == ["e2e4"]
+        assert queue["cards"][0]["moves"] == [
+            "e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5",
+            "c2c3", "g8f6", "d2d3", "d7d6", "e1g1",
+        ]
 
         card = queue["cards"][0]
         first_review = client.post(f"/api/cards/{card['id']}/review", json={"outcome": "correct", "queue_entry_id": card["queue_entry_id"]})
@@ -138,6 +141,52 @@ def test_import_becomes_main_and_survives_reload(tmp_path, monkeypatch):
         assert repeated.json()["repertoire_id"] == repertoire_id
         assert repeated.json()["cards_created"] == 0
         assert len(client.get("/api/repertoires").json()["repertoires"]) == 1
+
+
+def test_reimport_can_shorten_initial_prefix_without_truncating_descendants(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        first = client.post(
+            "/api/imports/pgn",
+            files={"file": ("depth-change.pgn", PGN, "application/x-chess-pgn")},
+            data={"trained_color": "white", "initial_depth": "6"},
+        ).json()
+        wait_for_integrity(client, first["repertoire_id"])
+
+        repeated = client.post(
+            "/api/imports/pgn",
+            files={"file": ("depth-change.pgn", PGN, "application/x-chess-pgn")},
+            data={"trained_color": "white", "initial_depth": "2"},
+        ).json()
+        assert repeated["repertoire_id"] == first["repertoire_id"]
+
+        published_steps = []
+        for _ in range(200):
+            with database.read_connection() as connection:
+                published_steps = connection.execute(
+                    """SELECT step.segment_kind,step.first_decision_index,
+                              step.last_decision_index
+                       FROM opening_graph_steps step
+                       JOIN opening_graph_publications publication
+                         ON publication.repertoire_id=step.repertoire_id
+                        AND publication.generation=step.generation
+                       WHERE step.repertoire_id=?
+                       ORDER BY step.decision_index""",
+                    (first["repertoire_id"],),
+                ).fetchall()
+            if len(published_steps) == 6:
+                break
+            time.sleep(0.01)
+
+        assert len(published_steps) == 6
+        assert tuple(published_steps[0]) == ("prefix", 0, 1)
+        assert all(
+            step["first_decision_index"] == step["last_decision_index"]
+            for step in published_steps[1:]
+        )
+        assert published_steps[-1]["last_decision_index"] == 6
 
 
 def test_tactic_and_endgame_are_admitted_to_scheduler(tmp_path, monkeypatch):
@@ -174,17 +223,17 @@ def test_new_card_limit_due_counts_and_repertoire_deletion(tmp_path, monkeypatch
 
         imported = client.post("/api/imports/pgn", files={"file": ("three.pgn", THREE_LINES_BLACK, "application/x-chess-pgn")}, data={"trained_color": "black", "initial_depth": "2"})
         assert imported.status_code == 200
-        assert imported.json()["cards_created"] == 4
+        assert imported.json()["cards_created"] == 3
         repertoire_id = imported.json()["repertoire_id"]
         wait_for_integrity(client, repertoire_id)
 
         queue = client.get("/api/queue/today").json()["cards"]
-        assert len(queue) == 1
+        assert len(queue) == 2
         assert all(card["trained_color"] == "black" for card in queue)
-        assert queue[0]["moves"] == ["e2e4", "e7e5"]
+        assert all(card["moves"][:2] == ["e2e4", "e7e5"] for card in queue)
         repertoire = client.get("/api/repertoires").json()["repertoires"][0]
-        assert repertoire["card_count"] == 4
-        assert repertoire["due_count"] == 1
+        assert repertoire["card_count"] == 3
+        assert repertoire["due_count"] == 2
 
         assert client.delete(f"/api/repertoires/{repertoire_id}").json()["deleted"] is True
         assert client.get("/api/repertoires").json()["repertoires"] == []

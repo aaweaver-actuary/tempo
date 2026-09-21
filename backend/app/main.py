@@ -1029,13 +1029,20 @@ async def import_pgn(
     depth = max(
         2, min(20, initial_depth if initial_depth is not None else saved_depth)
     )
-    segment_ids = {
-        segment.card_id
+    imported_segments = [
+        segment
         for line in lines
         for segment in decision_segments(
             line.starting_fen, line.moves, trained_color, depth
         )
+    ]
+    segment_ids = {segment.card_id for segment in imported_segments}
+    prefix_segment_ids = {
+        segment.card_id
+        for segment in imported_segments
+        if segment.segment_kind == "prefix"
     }
+    descendant_segment_ids = segment_ids - prefix_segment_ids
     unique_line_keys = {
         (" ".join(line.starting_fen.split()[:4]), tuple(line.moves)) for line in lines
     }
@@ -1082,10 +1089,7 @@ async def import_pgn(
                 """INSERT INTO repertoire_line_training_depths(
                        line_id,learner_decision_count
                    ) VALUES(?,?) ON CONFLICT(line_id) DO UPDATE SET
-                       learner_decision_count=MAX(
-                           repertoire_line_training_depths.learner_decision_count,
-                           excluded.learner_decision_count
-                       )""",
+                       learner_decision_count=excluded.learner_decision_count""",
                 (line_id, depth),
             )
             for annotation in line.annotations:
@@ -1103,15 +1107,22 @@ async def import_pgn(
                     ),
                 )
         placeholders = ",".join("?" for _ in segment_ids)
-        existing_segment_count = (
-            db.execute(
-                f"SELECT COUNT(*) FROM cards WHERE id IN ({placeholders})",
-                tuple(sorted(segment_ids)),
-            ).fetchone()[0]
-            if segment_ids
-            else 0
+        existing_segment_ids = {
+            row["id"]
+            for row in (
+                db.execute(
+                    f"SELECT id FROM cards WHERE id IN ({placeholders})",
+                    tuple(sorted(segment_ids)),
+                ).fetchall()
+                if segment_ids
+                else []
+            )
+        }
+        created = len(segment_ids - existing_segment_ids)
+        prefix_cards_created = len(prefix_segment_ids - existing_segment_ids)
+        descendant_cards_created = len(
+            descendant_segment_ids - existing_segment_ids
         )
-        created = len(segment_ids) - existing_segment_count
         integrity = integrity_summary(db, rid)
         admitted = 0
     try:
@@ -1133,19 +1144,25 @@ async def import_pgn(
         ) - len(segment_ids)),
         cards_admitted_today=admitted,
         integrity=integrity,
-        decision_cards_created=created,
+        decision_cards_created=descendant_cards_created,
         shared_decisions_reused=max(
             0,
             sum(
-                len(
-                    decision_segments(
-                        line.starting_fen, line.moves, trained_color, depth
-                    )
-                )
-                for line in lines
+                segment.segment_kind == "decision"
+                for segment in imported_segments
             )
-            - created,
+            - descendant_cards_created,
         ),
+        prefix_cards_created=prefix_cards_created,
+        shared_prefixes_reused=max(
+            0,
+            sum(
+                segment.segment_kind == "prefix"
+                for segment in imported_segments
+            )
+            - prefix_cards_created,
+        ),
+        descendant_decision_cards_created=descendant_cards_created,
         graph_state="refreshing",
     )
 
@@ -1931,7 +1948,22 @@ def validate_card(request: CardRevisionRequest):
 def prefix_split_preview(identifier: str):
     with connection() as database:
         try:
-            return preview_prefix_split(database, identifier)
+            result = preview_prefix_split(database, identifier)
+            usage = database.execute(
+                """SELECT COUNT(DISTINCT step.line_id) line_count,
+                          COUNT(DISTINCT step.repertoire_id) repertoire_count
+                   FROM opening_graph_steps step
+                   JOIN opening_graph_publications publication
+                     ON publication.repertoire_id=step.repertoire_id
+                    AND publication.generation=step.generation
+                   WHERE step.card_id=?""",
+                (identifier,),
+            ).fetchone()
+            return {
+                **result,
+                "shared_line_count": max(1, usage["line_count"]),
+                "shared_repertoire_count": max(1, usage["repertoire_count"]),
+            }
         except KeyError as error:
             raise HTTPException(404, str(error)) from error
         except ValueError as error:
@@ -1954,6 +1986,21 @@ def prefix_split_accept(identifier: str, request: PrefixSplitRequest):
                 "UPDATE cards SET pending_validation=1 WHERE id IN (?,?)",
                 (result["parent"]["card_id"], result["continuation"]["card_id"]),
             )
+            usage = database.execute(
+                """SELECT COUNT(DISTINCT step.line_id) line_count,
+                          COUNT(DISTINCT step.repertoire_id) repertoire_count
+                   FROM opening_graph_steps step
+                   JOIN opening_graph_publications publication
+                     ON publication.repertoire_id=step.repertoire_id
+                    AND publication.generation=step.generation
+                   WHERE step.card_id=?""",
+                (identifier,),
+            ).fetchone()
+            result = {
+                **result,
+                "shared_line_count": max(1, usage["line_count"]),
+                "shared_repertoire_count": max(1, usage["repertoire_count"]),
+            }
         except KeyError as error:
             raise HTTPException(404, str(error)) from error
         except ValueError as error:
@@ -1962,6 +2009,7 @@ def prefix_split_accept(identifier: str, request: PrefixSplitRequest):
             raise HTTPException(409, str(error)) from error
     for repertoire_id in set(repertoire_ids):
         try:
+            enqueue_opening_graph_rebuild(repertoire_id)
             enqueue_integrity_scans(repertoire_id)
         except (KeyError, sqlite3.OperationalError):
             continue

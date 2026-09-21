@@ -220,7 +220,12 @@ def test_delete_branch_prefix_removes_nimzo_descendants_and_preserves_qgd(
         assert any(line["moves"][:2] == ["d2d4", "d7d5"] for line in lines_after)
         assert all(line["moves"][:2] != ["d2d4", "g8f6"] for line in lines_after)
 
-        queue = client.get("/api/queue/today").json()["cards"]
+        queue = []
+        for _ in range(200):
+            queue = client.get("/api/queue/today").json()["cards"]
+            if all(card["moves"][:2] != ["d2d4", "g8f6"] for card in queue):
+                break
+            time.sleep(0.01)
         assert all(card["moves"][:2] != ["d2d4", "g8f6"] for card in queue)
 
 

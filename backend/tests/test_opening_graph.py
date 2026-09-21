@@ -1,7 +1,8 @@
-from datetime import date
+from datetime import date, timedelta
 import json
 import time
 
+import chess
 from fastapi.testclient import TestClient
 
 from app import database
@@ -59,7 +60,23 @@ def test_daily_queue_graph_unlock_has_a_card_first_lookup_index(
     ]
 
 
-def test_lines_sharing_a_prefix_materialize_one_card_per_shared_decision():
+def test_configured_black_route_materializes_as_one_cumulative_prefix():
+    route = [
+        "e2e4", "c7c6", "d2d4", "d7d5", "e4e5", "c6c5",
+        "c2c3", "b8c6", "g1f3", "c5d4", "c3d4", "c8g4",
+    ]
+
+    segments = decision_segments(STARTING_FEN, route, "black", 6)
+
+    assert len(segments) == 1
+    assert segments[0].segment_kind == "prefix"
+    assert segments[0].moves == tuple(route)
+    assert segments[0].first_decision_index == 0
+    assert segments[0].last_decision_index == 5
+    assert len(segments[0].decision_fen_keys) == 6
+
+
+def test_identical_complete_prefixes_share_one_global_schedule():
     first = decision_segments(
         STARTING_FEN,
         ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"],
@@ -73,35 +90,69 @@ def test_lines_sharing_a_prefix_materialize_one_card_per_shared_decision():
         3,
     )
 
-    assert [segment.card_id for segment in first[:2]] == [
-        segment.card_id for segment in second[:2]
-    ]
-    assert first[2].card_id != second[2].card_id
-    assert [segment.moves for segment in first] == [
-        ("e2e4",),
-        ("e7e5", "g1f3"),
-        ("b8c6", "f1b5"),
-    ]
+    assert len(first) == len(second) == 1
+    assert first[0].card_id != second[0].card_id
+
+    identical = decision_segments(
+        STARTING_FEN,
+        ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"],
+        "white",
+        3,
+    )
+    assert identical[0].card_id == first[0].card_id
 
 
-def test_branch_divergence_creates_distinct_cards_only_after_the_divergence():
+def test_early_divergent_route_prefixes_may_repeat_shared_moves():
     king_side = decision_segments(
         STARTING_FEN,
-        ["e2e4", "e7e5", "g1f3", "b8c6"],
+        ["e2e4", "c7c6", "d2d4", "d7d5", "e4e5", "c6c5"],
         "black",
-        2,
+        3,
     )
-    sicilian = decision_segments(
+    alternate = decision_segments(
         STARTING_FEN,
-        ["e2e4", "c7c5", "g1f3", "d7d6"],
+        ["e2e4", "c7c6", "d2d4", "d7d5", "g1f3", "c8g4"],
         "black",
+        3,
+    )
+
+    assert king_side[0].moves[:4] == alternate[0].moves[:4]
+    assert king_side[0].card_id != alternate[0].card_id
+
+
+def test_post_prefix_cards_test_exactly_one_learner_decision():
+    segments = decision_segments(
+        STARTING_FEN,
+        [
+            "e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6",
+            "b5a4", "g8f6", "e1g1",
+        ],
+        "white",
         2,
     )
 
-    assert king_side[0].moves == ("e2e4", "e7e5")
-    assert king_side[1].moves == ("g1f3", "b8c6")
-    assert king_side[1].parent_card_id == king_side[0].card_id
-    assert sicilian[0].card_id != king_side[0].card_id
+    assert [segment.segment_kind for segment in segments] == [
+        "prefix", "decision", "decision", "decision"
+    ]
+    assert segments[0].moves == ("e2e4", "e7e5", "g1f3")
+    assert all(
+        segment.first_decision_index == segment.last_decision_index
+        for segment in segments[1:]
+    )
+
+
+def test_full_line_descendants_are_materialized_beyond_prefix_depth():
+    segments = decision_segments(
+        STARTING_FEN,
+        [
+            "e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6",
+            "b5a4", "g8f6", "e1g1",
+        ],
+        "white",
+        2,
+    )
+    assert len(segments) == 4
+    assert segments[-1].moves == ("g8f6", "e1g1")
 
 
 def test_distinct_opponent_cues_to_the_same_position_remain_distinct_cards():
@@ -109,13 +160,13 @@ def test_distinct_opponent_cues_to_the_same_position_remain_distinct_cards():
         STARTING_FEN,
         ["g1f3", "g8f6", "g2g3"],
         "white",
-        2,
+        1,
     )
     alternate = decision_segments(
         STARTING_FEN,
         ["g2g3", "g8f6", "g1f3"],
         "white",
-        2,
+        1,
     )
 
     assert direct[1].card_id != alternate[1].card_id
@@ -127,21 +178,21 @@ def test_any_mature_incoming_path_unlocks_a_transposed_descendant():
         STARTING_FEN,
         ["g1f3", "d7d5", "g2g3", "g8f6", "f1g2"],
         "white",
-        3,
+        2,
     )
     second_route = decision_segments(
         STARTING_FEN,
         ["g2g3", "d7d5", "g1f3", "g8f6", "f1g2"],
         "white",
-        3,
+        2,
     )
 
-    assert first_route[1].card_id != second_route[1].card_id
-    assert first_route[2].card_id == second_route[2].card_id
+    assert first_route[0].card_id != second_route[0].card_id
+    assert first_route[1].card_id == second_route[1].card_id
     assert {
-        first_route[2].parent_card_id,
-        second_route[2].parent_card_id,
-    } == {first_route[1].card_id, second_route[1].card_id}
+        first_route[1].parent_card_id,
+        second_route[1].parent_card_id,
+    } == {first_route[0].card_id, second_route[0].card_id}
 
 
 def test_descendant_requires_a_mature_parent(tmp_path, monkeypatch):
@@ -154,7 +205,7 @@ def test_descendant_requires_a_mature_parent(tmp_path, monkeypatch):
                 connection,
                 "frontier-repertoire",
                 "line-1",
-                ["e2e4", "e7e5", "g1f3"],
+                ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6", "b5a4"],
             )
         _publish_graph("frontier-repertoire")
 
@@ -201,7 +252,7 @@ def test_graph_rebuild_holds_no_sqlite_connection_during_chess_traversal(
     graph = calculate_opening_graph_artifacts(
         GraphRebuildInput(graph_input, (), {}, frozenset(), "2026-09-21")
     ).graph_steps
-    assert len(graph) == 3
+    assert len(graph) == 1
 
 
 def test_production_scale_opening_graph_calculation_is_bounded():
@@ -238,7 +289,7 @@ def test_production_scale_opening_graph_calculation_is_bounded():
         GraphRebuildInput(graph_input, (), {}, frozenset(), "2026-09-21")
     )
 
-    assert len(artifacts.graph_steps) == 8_000
+    assert len(artifacts.graph_steps) == 1_600
     assert time.perf_counter() - calculation_started < 8
 
 
@@ -257,7 +308,7 @@ def test_failed_seed_verification_does_not_revoke_introduced_descendants(
                 connection,
                 "verification-repertoire",
                 "line-1",
-                ["e2e4", "e7e5", "g1f3"],
+                ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6", "b5a4"],
             )
         _publish_graph("verification-repertoire")
         with database.connection() as connection:
@@ -294,7 +345,7 @@ def test_failed_seed_verification_does_not_revoke_introduced_descendants(
             ).fetchone()[0] == "learning"
 
 
-def test_canonical_decision_cards_do_not_offer_prefix_splitting(
+def test_cumulative_graph_prefix_offers_splitting_but_decisions_do_not(
     tmp_path, monkeypatch
 ):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
@@ -304,15 +355,16 @@ def test_canonical_decision_cards_do_not_offer_prefix_splitting(
                 connection,
                 "split-repertoire",
                 "line-1",
-                ["e2e4", "e7e5", "g1f3"],
+                ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6", "b5a4"],
             )
         _publish_graph("split-repertoire")
         with database.connection() as connection:
-            card_identifier = connection.execute(
+            cards = connection.execute(
                 """SELECT card_id FROM opening_graph_steps
-                   WHERE repertoire_id='split-repertoire' ORDER BY decision_index LIMIT 1"""
-            ).fetchone()[0]
-        assert client.get(f"/api/cards/{card_identifier}/prefix-split").status_code == 422
+                   WHERE repertoire_id='split-repertoire' ORDER BY decision_index"""
+            ).fetchall()
+        assert client.get(f"/api/cards/{cards[0]['card_id']}/prefix-split").status_code == 200
+        assert client.get(f"/api/cards/{cards[1]['card_id']}/prefix-split").status_code == 422
 
 
 def test_graph_publication_restarts_integrity_scan_with_current_sources(
@@ -337,7 +389,7 @@ def test_graph_publication_restarts_integrity_scan_with_current_sources(
                    FROM repertoire_integrity_jobs WHERE repertoire_id='scan-repertoire'"""
             ).fetchone()
             assert current["run_id"] != first_run_id
-            assert current["total_sources"] == 3
+            assert current["total_sources"] == 2
             assert current["last_error"] is None
 
 
@@ -415,10 +467,10 @@ def test_repeated_graph_rebuilds_are_generation_guarded_and_idempotent(
                 """SELECT COUNT(DISTINCT card_id) FROM opening_graph_steps
                    WHERE repertoire_id='graph-repertoire' AND generation=?""",
                 (expected_generation,),
-            ).fetchone()[0] == 3
+            ).fetchone()[0] == 1
 
 
-def test_cumulative_migration_preserves_reviews_and_caps_seeded_stability(
+def test_exact_archived_prefix_restores_its_original_reviews_and_schedule(
     tmp_path, monkeypatch
 ):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
@@ -450,6 +502,9 @@ def test_cumulative_migration_preserves_reviews_and_caps_seeded_stability(
                 "INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)",
                 ("migration-repertoire", legacy_id),
             )
+            connection.execute(
+                "UPDATE cards SET archived=1 WHERE id=?", (legacy_id,)
+            )
             for day in ("2026-08-01", "2026-08-03", "2026-08-05"):
                 connection.execute(
                     """INSERT INTO reviews(
@@ -477,18 +532,17 @@ def test_cumulative_migration_preserves_reviews_and_caps_seeded_stability(
             ).fetchone()[0] == "complete"
             assert connection.execute(
                 "SELECT status FROM daily_queue WHERE card_id=? AND cycle=1", (legacy_id,)
-            ).fetchone()[0] == "superseded"
+            ).fetchone()[0] == "queued"
             seeded = connection.execute(
                 """SELECT card.stability,seed.baseline_successful_days,seed.verification_due
                    FROM opening_card_schedule_seeds seed
                    JOIN cards card ON card.id=seed.card_id"""
             ).fetchall()
-            assert len(seeded) == 3
-            assert all(row["stability"] <= 14 for row in seeded)
-            assert all(row["baseline_successful_days"] == 3 for row in seeded)
-            assert connection.execute(
-                "SELECT archived FROM cards WHERE id=?", (legacy_id,)
-            ).fetchone()[0] == 1
+            assert seeded == []
+            restored = connection.execute(
+                "SELECT archived,state,stability,due_date FROM cards WHERE id=?", (legacy_id,)
+            ).fetchone()
+            assert tuple(restored) == (0, "mature", 30, "2026-12-01")
 
 
 def test_graph_publication_never_rewrites_completed_queue_attempts(
@@ -540,3 +594,164 @@ def test_graph_publication_never_rewrites_completed_queue_attempts(
                 "status": "complete",
                 "attempt_state": "failed",
             }
+
+
+def test_synthesized_prefix_evidence_caps_stability_and_copies_no_reviews(
+    tmp_path, monkeypatch
+):
+    from app.services.cards import card_id
+
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app):
+        route = ["e2e4", "e7e5", "g1f3"]
+        with database.connection() as connection:
+            _insert_repertoire_line(
+                connection, "seeded-prefix-repertoire", "line-1", route
+            )
+            board_after_first = chess.Board(STARTING_FEN)
+            board_after_first.push_uci("e2e4")
+            legacy_cards = (
+                (card_id(STARTING_FEN, ["e2e4"]), STARTING_FEN, ["e2e4"]),
+                (
+                    card_id(board_after_first.fen(), ["e7e5", "g1f3"]),
+                    board_after_first.fen(),
+                    ["e7e5", "g1f3"],
+                ),
+            )
+            for identifier, starting_fen, moves in legacy_cards:
+                scheduled = schedule_review("correct")
+                connection.execute(
+                    """INSERT INTO cards(
+                           id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+                           interval_days,stability,fsrs_card_json,first_correct_at,
+                           introduced_at,content_type,trained_color
+                       ) VALUES(?,?,'response',?,?,'mature','2026-12-01',30,30,?,
+                                '2026-08-01','2026-08-01','opening','white')""",
+                    (
+                        identifier,
+                        "seeded-prefix-repertoire",
+                        starting_fen,
+                        json.dumps(moves),
+                        scheduled.fsrs_card_json,
+                    ),
+                )
+                connection.execute(
+                    "INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)",
+                    ("seeded-prefix-repertoire", identifier),
+                )
+                for review_day in ("2026-08-01", "2026-08-03", "2026-08-05"):
+                    connection.execute(
+                        """INSERT INTO reviews(
+                               card_id,rating,reviewed_at,previous_interval,next_interval
+                           ) VALUES(?,'correct',?,1,7)""",
+                        (identifier, review_day),
+                    )
+
+        _publish_graph("seeded-prefix-repertoire")
+
+        expected_prefix_id = card_id(STARTING_FEN, route)
+        with database.connection() as connection:
+            prefix = connection.execute(
+                "SELECT state,stability,due_date FROM cards WHERE id=?",
+                (expected_prefix_id,),
+            ).fetchone()
+            assert prefix["state"] == "mature"
+            assert prefix["stability"] == 14
+            assert date.fromisoformat(prefix["due_date"]) <= date.today() + timedelta(days=7)
+            assert connection.execute(
+                "SELECT COUNT(*) FROM reviews WHERE card_id=?",
+                (expected_prefix_id,),
+            ).fetchone()[0] == 0
+            assert connection.execute(
+                "SELECT COUNT(*) FROM reviews WHERE card_id IN (?,?)",
+                tuple(identifier for identifier, _, _ in legacy_cards),
+            ).fetchone()[0] == 6
+
+
+def test_manual_prefix_split_survives_graph_rebuild(tmp_path, monkeypatch):
+    from app.services.game_sync_coordinator import coordinator
+
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        client.portal.call(coordinator.stop)
+        route = ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"]
+        with database.connection() as connection:
+            _insert_repertoire_line(
+                connection, "split-persistence-repertoire", "line-1", route
+            )
+        _publish_graph("split-persistence-repertoire")
+        with database.connection() as connection:
+            source = connection.execute(
+                """SELECT card_id FROM opening_graph_steps
+                   WHERE repertoire_id='split-persistence-repertoire'
+                   ORDER BY decision_index LIMIT 1"""
+            ).fetchone()[0]
+            revision = connection.execute(
+                "SELECT revision FROM cards WHERE id=?", (source,)
+            ).fetchone()[0]
+
+        response = client.post(
+            f"/api/cards/{source}/prefix-split",
+            json={"expected_revision": revision},
+        )
+        assert response.status_code == 200
+        split = response.json()
+        rebuild = claim_task("opening_graph_rebuild")
+        assert rebuild is not None
+        execute_opening_graph_rebuild(rebuild)
+        assert complete_task(
+            rebuild["id"], rebuild["generation"], rebuild["lease_token"]
+        )
+
+        with database.connection() as connection:
+            published_steps = connection.execute(
+                """SELECT step.card_id,step.segment_kind
+                   FROM opening_graph_steps step
+                   JOIN opening_graph_publications publication
+                     ON publication.repertoire_id=step.repertoire_id
+                    AND publication.generation=step.generation
+                   WHERE step.repertoire_id='split-persistence-repertoire'
+                   ORDER BY step.decision_index"""
+            ).fetchall()
+            assert [row["card_id"] for row in published_steps] == [
+                split["parent"]["card_id"],
+                split["continuation"]["card_id"],
+            ]
+            assert [row["segment_kind"] for row in published_steps] == [
+                "prefix",
+                "decision",
+            ]
+
+
+def test_cumulative_prefix_integrity_block_covers_any_crossed_decision(
+    tmp_path, monkeypatch
+):
+    from app.services.game_sync_coordinator import coordinator
+
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        client.portal.call(coordinator.stop)
+        route = ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"]
+        segment = decision_segments(STARTING_FEN, route, "white", 3)[0]
+        with database.connection() as connection:
+            _insert_repertoire_line(
+                connection, "blocked-prefix-repertoire", "line-1", route
+            )
+            connection.execute(
+                """INSERT INTO repertoire_integrity_issues(
+                       id,repertoire_id,kind,fen_key,fen,trained_color,signature,
+                       moves_json,sources_json,created_at,updated_at
+                   ) VALUES('prefix-issue','blocked-prefix-repertoire',
+                            'multiple_responses',?,?,'white','prefix-signature',
+                            '[]','[]','2026-09-21','2026-09-21')""",
+                (segment.decision_fen_keys[1], STARTING_FEN),
+            )
+
+        _publish_graph("blocked-prefix-repertoire")
+
+        with database.connection() as connection:
+            blocked = connection.execute(
+                """SELECT card_id FROM repertoire_integrity_card_blocks
+                   WHERE repertoire_id='blocked-prefix-repertoire'"""
+            ).fetchall()
+            assert [row["card_id"] for row in blocked] == [segment.card_id]

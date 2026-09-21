@@ -907,6 +907,11 @@ def initialize() -> None:
             generation INTEGER NOT NULL,
             line_id TEXT NOT NULL REFERENCES repertoire_lines(id) ON DELETE CASCADE,
             decision_index INTEGER NOT NULL,
+            segment_kind TEXT NOT NULL DEFAULT 'decision'
+                CHECK(segment_kind IN ('prefix','decision')),
+            first_decision_index INTEGER NOT NULL DEFAULT 0,
+            last_decision_index INTEGER NOT NULL DEFAULT 0,
+            decision_fen_keys_json TEXT NOT NULL DEFAULT '[]',
             card_id TEXT NOT NULL,
             parent_card_id TEXT,
             decision_fen_key TEXT NOT NULL,
@@ -1080,6 +1085,10 @@ def initialize() -> None:
             },
             "opening_graph_steps": {
                 "decision_fen_key": "TEXT NOT NULL DEFAULT ''",
+                "segment_kind": "TEXT NOT NULL DEFAULT 'decision'",
+                "first_decision_index": "INTEGER NOT NULL DEFAULT 0",
+                "last_decision_index": "INTEGER NOT NULL DEFAULT 0",
+                "decision_fen_keys_json": "TEXT NOT NULL DEFAULT '[]'",
             },
         }
         for table, additions in columns.items():
