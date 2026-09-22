@@ -17,6 +17,7 @@ import chess
 from ..database import connection
 from ..models import GameSyncRequest
 from .game_findings import refresh_game_findings
+from .real_game_feedback import apply_real_game_misses
 from .gameplay_events import refresh_gameplay_events
 from .game_sync import sync_providers
 from .repertoire_comparison import compare_games
@@ -208,6 +209,11 @@ def _execute_derivation(game_id: str) -> None:
                 game_id,
                 "refreshing_findings",
                 lambda: refresh_game_findings(game_id, background=True),
+            )
+            _run_derivation_phase(
+                game_id,
+                "applying_real_game_misses",
+                lambda: apply_real_game_misses(game_id, background=True),
             )
             _run_derivation_phase(
                 game_id,

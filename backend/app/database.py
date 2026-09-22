@@ -598,6 +598,21 @@ def initialize() -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_game_repertoire_matches_primary ON game_repertoire_matches(game_id,is_primary)",
+        """CREATE TABLE IF NOT EXISTS repertoire_decision_events (
+            id TEXT PRIMARY KEY,
+            game_id TEXT NOT NULL REFERENCES imported_games(id) ON DELETE CASCADE,
+            repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+            card_id TEXT REFERENCES cards(id) ON DELETE SET NULL,
+            ply INTEGER NOT NULL,
+            fen_key TEXT NOT NULL,
+            expected_uci TEXT NOT NULL,
+            actual_uci TEXT NOT NULL,
+            outcome TEXT NOT NULL CHECK(outcome IN ('miss','success')),
+            played_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(game_id,repertoire_id,ply)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_repertoire_decision_events_card_time ON repertoire_decision_events(card_id,played_at,outcome)",
         """
         CREATE TABLE IF NOT EXISTS game_findings (
             id TEXT PRIMARY KEY,
@@ -1209,7 +1224,11 @@ def initialize() -> None:
             (now,),
         )
         database.execute("""INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id)
-                            SELECT repertoire_id,id FROM cards WHERE content_type='opening'""")
+                            SELECT card.repertoire_id,card.id FROM cards card
+                            WHERE card.content_type='opening' AND card.archived=0
+                              AND NOT EXISTS(
+                                  SELECT 1 FROM repertoire_cards link WHERE link.card_id=card.id
+                              )""")
         # Publish card-level blocks from the last completed integrity result.
         # This is an additive backfill: repertoire content, reviews, scheduling,
         # and completed queue attempts are not rewritten.

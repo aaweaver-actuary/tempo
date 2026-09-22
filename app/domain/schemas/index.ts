@@ -34,6 +34,7 @@ export const queueCardSchema = z.strictObject({
   position: integer.optional(),
   attempt_state: attemptStateSchema.optional(),
   attempt_failed: sqliteBooleanSchema.optional(),
+  gameplay_priority_reason: z.string().nullable().optional(),
   first_correct_at: nullableDate,
   recent_attempts_json: z.string().optional(),
   source_ref: z.string().nullable().optional(),

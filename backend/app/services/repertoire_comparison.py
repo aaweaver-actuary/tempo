@@ -75,7 +75,8 @@ def _load_repertoire_index(*, background: bool = False) -> tuple[list[dict], dic
         card_rows = [dict(row) for row in database.execute(
             """SELECT rc.repertoire_id,c.id,c.start_fen,c.moves_json FROM cards c
                JOIN repertoire_cards rc ON rc.card_id=c.id
-               WHERE c.archived=0 ORDER BY rc.repertoire_id,c.id"""
+               WHERE c.archived=0 AND c.content_type='opening'
+               ORDER BY rc.repertoire_id,c.id"""
         )]
     signature = hashlib.sha256(
         json.dumps([repertoires, line_rows, card_rows], sort_keys=True).encode()
@@ -117,11 +118,25 @@ def _compare_game_to_repertoire(game: dict, repertoire: dict, graph: tuple[dict[
     matched = opportunities = deepest = 0
     player_deviation = opponent_gap = out_of_book = None
     timeline: list[dict] = []
+    decision_events: list[dict] = []
     for ply, actual_uci in enumerate(game["moves"]):
         fen = board.fen()
         key = canonical_fen(fen)
         expected = expected_by_position.get(key, set())
         player_turn = board.turn == player_is_white
+        if player_turn and expected:
+            expected_move = actual_uci if actual_uci in expected else next(
+                (move for move in sorted(expected) if (repertoire["id"], key, move) in card_positions),
+                sorted(expected)[0],
+            )
+            decision_events.append({
+                "ply": ply,
+                "fen_key": key,
+                "expected_uci": expected_move,
+                "actual_uci": actual_uci,
+                "outcome": "success" if actual_uci in expected else "miss",
+                "card_id": card_positions.get((repertoire["id"], key, expected_move)),
+            })
         if key in known_positions:
             if not expected:
                 if out_of_book is None:
@@ -187,6 +202,7 @@ def _compare_game_to_repertoire(game: dict, repertoire: dict, graph: tuple[dict[
         "opponent_gap": opponent_gap,
         "out_of_book": out_of_book,
         "timeline": timeline,
+        "decision_events": decision_events,
     }
 
 
@@ -220,6 +236,7 @@ def compare_games(
     with connection(background=background) as database:
         for game, matches in computed:
             database.execute("DELETE FROM game_repertoire_matches WHERE game_id=?", (game["id"],))
+            database.execute("DELETE FROM repertoire_decision_events WHERE game_id=?", (game["id"],))
             for index, match in enumerate(matches):
                 deviation = match["deviation"]
                 database.execute(
@@ -234,6 +251,23 @@ def compare_games(
                     ),
                 )
             primary = matches[0] if matches else None
+            if primary:
+                for event in primary["decision_events"]:
+                    event_id = hashlib.sha256(
+                        f"{game['id']}\0{primary['repertoire_id']}\0{event['ply']}".encode()
+                    ).hexdigest()
+                    database.execute(
+                        """INSERT INTO repertoire_decision_events(
+                               id,game_id,repertoire_id,card_id,ply,fen_key,
+                               expected_uci,actual_uci,outcome,played_at,updated_at
+                           ) VALUES(?,?,?,?,?,?,?,?,?,?,?)""",
+                        (
+                            event_id, game["id"], primary["repertoire_id"],
+                            event["card_id"], event["ply"], event["fen_key"],
+                            event["expected_uci"], event["actual_uci"],
+                            event["outcome"], game["played_at"], now,
+                        ),
+                    )
             deviation = primary["deviation"] if primary else None
             database.execute(
                 """INSERT INTO repertoire_comparisons(game_id,repertoire_id,classification,divergence_ply,divergence_fen,expected_json,actual_uci,updated_at)

@@ -75,3 +75,40 @@ it("position notes and annotations reveal only at the failed position and remain
   expect(screen.queryByText("Private study note")).toBeNull();
   expect(screen.getByTestId("board").getAttribute("data-shapes")).toBe("[]");
 });
+
+it("real-game priority reason appears on the training card", () => {
+  useTrainingStore.setState({
+    currentFenString: asFenString(STANDARD_FEN),
+    feedback: "ready",
+    isAttemptFailed: false,
+    cardsLeft: 1,
+    step: 0,
+    attempt: {entryKey:"priority",generation:0,phase:"playerTurn"},
+  });
+  render(
+    <TrainingView
+      dateLabel="Today"
+      serviceError=""
+      refreshDatabaseQueue={vi.fn()}
+      cardsLeft={1}
+      card={{
+        id: asCardId("priority-card"),
+        kind: "opening",
+        title: "Prep",
+        subtitle: "",
+        startingFen: asFenString(STANDARD_FEN),
+        moves: [asSanMove("e4")],
+        userMoveTarget: 1,
+        priorityReason: "Priority review · missed in a recent game",
+      }}
+      boardTheme="brown"
+      pieceSet="cburnett"
+      rateCard={vi.fn(async () => undefined)}
+      handleAttemptFailure={vi.fn()}
+      resetCardAttempt={vi.fn()}
+      setEditorCard={vi.fn()}
+      onMove={vi.fn()}
+    />,
+  );
+  expect(screen.getByText("Priority review · missed in a recent game")).toBeTruthy();
+});

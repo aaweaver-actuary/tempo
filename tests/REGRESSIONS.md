@@ -79,6 +79,16 @@
 | A late-arriving game leaves a stale daily snapshot or insight | `test_late_game_arrival_invalidates_affected_daily_snapshot` |
 | Ignoring gameplay evidence changes scheduling | `test_ignored_gameplay_finding_never_changes_card_scheduling` |
 | A confirmed gameplay lapse double-counts or fails to queue | `test_confirmed_gameplay_lapse_records_exactly_one_again_and_queues_the_card` |
+| A real-game repertoire miss is not linked to its existing card or cannot bring it into training | `test_real_game_miss_maps_to_existing_card_once_and_reaches_introduction_queue`; `test_studied_real_game_miss_applies_one_again_and_later_success_is_recorded` |
+| Opponent moves, line endings, or missing cards create false player priority | `test_opponent_deviation_and_line_end_create_no_player_miss_event`; `test_missing_card_keeps_finding_without_priority_or_review` |
+| Transpositions lose decision identity or later correct gameplay is not measurable | `test_transposed_decision_keeps_canonical_card_identity`; `test_studied_real_game_miss_applies_one_again_and_later_success_is_recorded` |
+| Reprocessing or late imports double-count a game miss in FSRS | `test_studied_real_game_miss_applies_one_again_and_later_success_is_recorded`; `test_late_imported_miss_is_historical_and_does_not_change_fsrs` |
+| A repertoire card awaiting validation receives an automatic FSRS lapse it cannot train | `test_blocked_existing_card_keeps_game_evidence_without_automatic_again` |
+| A completed study review leaves a stale real-game miss bonus | `test_study_review_consumes_real_game_miss_bonus` |
+| Game-derived priority reason is lost between the queue and training card | `real-game priority reason crosses the strict queue schema into a practice card`; `real-game priority reason appears on the training card` |
+| Background game derivation prevents a foreground card review | `test_foreground_review_completes_while_real_game_derivation_computes` |
+| Startup backfill reattaches an archived opening card removed by graph publication | `test_restart_does_not_relink_archived_opening_card_removed_by_graph`; Docker durability fixture waits for graph and queue publication before checking restart persistence |
+| A reinforcement entry loses its placement and queue metadata on projection rebuild | `test_reinforcement_order_survives_daily_queue_projection_rebuild`; Docker study durability check |
 | First big mistake creates duplicate or unpreviewed cards | `test_first_big_mistake_creates_a_previewed_deduplicated_middlegame_card` |
 | Board clipped at narrow viewport | `local import respects the daily limit; Black prompts and Builder flip survive Settings and refresh`; `high-DPI board geometry stays aligned through narrow resize and orientation flips` |
 | Repair board / keyboard navigation inconsistent | `repair uses the shared board and arrows navigate the complete solution; Escape closes` |

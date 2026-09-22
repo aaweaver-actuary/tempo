@@ -64,7 +64,8 @@ from .services.analysis import AnalysisCapabilities
 from .services.activity_gate import activity_gate
 from .services.cards import card_id
 from .services.pgn import ends_on_trained_move, parse_pgn, prefix_through_user_moves
-from .services.review_service import apply_scheduling_review, ensure_card_queued_after
+from .services.review_service import apply_scheduling_review, ensure_card_queued_after, preserve_daily_queue_order
+from .services.real_game_feedback import MISS_REASON
 from .services.endgames import (
     category_for_player,
     generate_position,
@@ -109,6 +110,7 @@ from .services.repertoire_coverage import (
     submit_maia_coverage,
 )
 from .services.introduction_priorities import (
+    enqueue_priority_refresh,
     priority_status,
 )
 from .services.opening_graph import (
@@ -523,8 +525,20 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
     """Admit unseen opening cards by impact without changing the active queue."""
 
     candidates = db.execute(
-        """SELECT DISTINCT c.id,linked.id repertoire_id,c.moves_json,c.due_date,p.reason gameplay_priority_reason,
-                  p.priority_date,
+        """WITH active_miss AS (
+               SELECT DISTINCT event.card_id
+               FROM repertoire_decision_events event
+               JOIN imported_games game ON game.id=event.game_id
+               WHERE event.outcome='miss' AND game.adaptive_excluded=0
+                 AND NOT EXISTS(
+                     SELECT 1 FROM reviews review
+                     WHERE review.card_id=event.card_id AND review.source_kind='study'
+                       AND datetime(review.reviewed_at)>=datetime(event.played_at)
+                 )
+           )
+           SELECT DISTINCT c.id,linked.id repertoire_id,c.moves_json,c.due_date,
+                  CASE WHEN active_miss.card_id IS NOT NULL THEN ? ELSE p.reason END gameplay_priority_reason,
+                  CASE WHEN active_miss.card_id IS NOT NULL THEN ? ELSE p.priority_date END priority_date,
                   COALESCE(published_priority.priority_score,legacy_priority.priority_score) priority_score,
                   COALESCE(published_priority.completed_line_ids_json,legacy_priority.completed_line_ids_json) completed_line_ids_json,
                   COALESCE(published_priority.frontier_decisions_json,legacy_priority.frontier_decisions_json) frontier_decisions_json
@@ -537,6 +551,7 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
                )
            )
            LEFT JOIN gameplay_card_priorities p ON p.card_id=c.id AND p.priority_date<=?
+           LEFT JOIN active_miss ON active_miss.card_id=c.id
            LEFT JOIN repertoire_priority_publications publication
              ON publication.repertoire_id=linked.id
            LEFT JOIN repertoire_card_priority_generations published_priority
@@ -545,14 +560,14 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
             AND published_priority.generation=publication.generation
            LEFT JOIN repertoire_card_introduction_priorities legacy_priority
              ON legacy_priority.card_id=c.id AND legacy_priority.repertoire_id=linked.id
-           WHERE c.content_type='opening' AND (c.due_date<=? OR p.card_id IS NOT NULL)
+           WHERE c.content_type='opening' AND (c.due_date<=? OR p.card_id IS NOT NULL OR active_miss.card_id IS NOT NULL)
              AND c.state='new' AND c.introduced_at IS NULL AND c.archived=0 AND COALESCE(c.pending_validation,0)=0
              AND EXISTS(SELECT 1 FROM repertoires r_ok
                         WHERE (r_ok.id=c.repertoire_id OR EXISTS(SELECT 1 FROM repertoire_cards rc_ok WHERE rc_ok.card_id=c.id AND rc_ok.repertoire_id=r_ok.id))
                           AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
                                          WHERE block.repertoire_id=r_ok.id AND block.card_id=c.id))
              AND c.id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?)""",
-        (day, day, day),
+        (MISS_REASON, day, day, day, day),
     ).fetchall()
     introduced_by_repertoire = dict(
         db.execute(
@@ -776,6 +791,10 @@ def randomize_daily_queue(db, day: str) -> None:
             progressed = True
         if not progressed:
             break
+    prioritized_misses = [row for row in ordered if row["gameplay_priority_reason"] == MISS_REASON]
+    if prioritized_misses:
+        ordinary_cards = [row for row in ordered if row["gameplay_priority_reason"] != MISS_REASON]
+        ordered = ordinary_cards[:4] + prioritized_misses + ordinary_cards[4:]
     for position, row in enumerate(ordered):
         db.execute(
             """UPDATE daily_queue SET position=?,card_bucket=?,admission_kind=? WHERE id=?""",
@@ -965,7 +984,8 @@ def queue_today():
             (day,),
         ).fetchall()
         rows = db.execute(
-            """SELECT q.id queue_entry_id,q.position,q.cycle,q.attempt_state,q.attempt_failed,c.*,
+            """SELECT q.id queue_entry_id,q.position,q.cycle,q.attempt_state,q.attempt_failed,
+                                  q.gameplay_priority_reason,c.*,
                                   r.name repertoire_name,r.source_name repertoire_source,r.is_main,
                                   COALESCE(c.trained_color,(SELECT e.trained_color FROM endgame_templates e WHERE e.card_id=c.id), (SELECT l.trained_color FROM repertoire_lines l WHERE l.repertoire_id=r.id ORDER BY l.created_at LIMIT 1)) effective_trained_color
                            FROM daily_queue q JOIN cards c ON c.id=q.card_id
@@ -1465,6 +1485,7 @@ def migration_snapshot():
         "gameplay_card_priorities",
         "repertoire_comparisons",
         "game_repertoire_matches",
+        "repertoire_decision_events",
         "game_findings",
         "guided_review_sessions",
         "guided_review_attempts",
@@ -1600,6 +1621,13 @@ def requeue(db, day, cid, after, attempt):
         "INSERT INTO daily_queue(queue_date,card_id,cycle,position,attempt_state) VALUES(?,?,?,?,?)",
         (day, cid, cycle, position, attempt),
     )
+    db.execute(
+        """UPDATE daily_queue SET
+               card_bucket=(SELECT content_type FROM cards WHERE id=card_id),
+               admission_kind='review'
+           WHERE id=last_insert_rowid()"""
+    )
+    preserve_daily_queue_order(db, day)
 
 
 @app.post("/api/queue/entries/{entry_id}/fail")
@@ -1720,6 +1748,9 @@ def review(identifier: str, request: ReviewRequest):
         )
     if persisted_result["state"] == "mature":
         enqueue_daily_queue_refresh()
+    if entry["gameplay_priority_reason"] == MISS_REASON:
+        for repertoire_id in owner_ids:
+            enqueue_priority_refresh(repertoire_id)
     return persisted_result
 
 
@@ -3096,13 +3127,18 @@ def decide_game_finding(finding_id: str, request: GameFindingDecisionRequest):
                     422, "This repertoire lapse is not linked to a study card"
                 )
             try:
+                linked_event = db.execute(
+                    """SELECT id FROM repertoire_decision_events
+                       WHERE game_id=? AND repertoire_id=? AND ply=? AND outcome='miss'""",
+                    (finding["game_id"], finding["repertoire_id"], finding["ply"]),
+                ).fetchone()
                 scheduling_result = apply_scheduling_review(
                     db,
                     finding["card_id"],
                     "again",
                     guided=False,
                     source_kind="game",
-                    source_ref=finding_id,
+                    source_ref=linked_event["id"] if linked_event else finding_id,
                     light_first_interval_days=get_settings().light_first_interval_days,
                     reviewed_at=datetime.now(timezone.utc),
                     review_day=date.today(),
