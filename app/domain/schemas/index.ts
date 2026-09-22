@@ -489,6 +489,7 @@ export const dataDiagnosticSchema = z.strictObject({
 });
 export const studyReplySchema = z.strictObject({
   id: z.number().int().positive(),
+  state: z.literal("running").optional(),
   result: z.unknown().optional(),
   error: z.string().optional(),
   diagnostics: z.array(dataDiagnosticSchema).optional(),
@@ -727,6 +728,7 @@ export const coverageMaiaClaimSchema = z.strictObject({
   job: z
     .strictObject({
       node_id: z.string(),
+      run_id: z.string(),
       lease_id: z.string(),
       fen: fenStringSchema,
       elo: integer,

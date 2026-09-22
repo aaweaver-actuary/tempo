@@ -42,6 +42,12 @@ export function useGameAnalysis() {
     let activeLease: ActiveLease | undefined;
     let analysisController: AbortController | undefined;
     let lastForegroundActivity = Date.now();
+    const handleControl = (event: Event) => {
+      const detail = (event as CustomEvent<{source: string; id: string; action: string}>).detail;
+      if (detail?.source === "game_analysis" && detail.id === activeLease?.gameId && detail.action === "pause")
+        releaseActiveLease();
+      if (detail?.source === "game_analysis" && detail.action === "resume") schedule(0);
+    };
 
     const schedule = (delay: number) => {
       if (stopped) return;
@@ -89,6 +95,19 @@ export function useGameAnalysis() {
         activeLease = { gameId: job.game_id, leaseId: job.lease_id };
         analysisController = new AbortController();
         const signal = analysisController.signal;
+        let lastProgressSentAt = 0;
+        const reportProgress = (phase: string, completed: number, total: number) => {
+          if (completed < total && Date.now() - lastProgressSentAt < 2_000) return;
+          lastProgressSentAt = Date.now();
+          void backgroundFetch(`${API_URL}/api/system/activity/progress`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ source: "game_analysis", id: job.game_id,
+              generation: `${job.analysis_version}:${job.analysis_evidence_version}`,
+              lease_id: job.lease_id, phase, completed, total }),
+          }).then(response => { if (response.status === 409) analysisController?.abort(); })
+            .catch(() => undefined);
+        };
         heartbeatTimer = window.setInterval(() => {
           if (activeLease)
             void updateLease(activeLease, "heartbeat").catch(() => undefined);
@@ -102,6 +121,7 @@ export function useGameAnalysis() {
             (fen, depth) => requestBackgroundAnalysis(fen, depth, signal),
             job.divergence_ply,
             signal,
+            reportProgress,
           );
           const submitResponse = await backgroundFetch(
             `${API_URL}/api/games/${encodeURIComponent(job.game_id)}/analysis`,
@@ -121,6 +141,11 @@ export function useGameAnalysis() {
               signal,
             },
           );
+          if (submitResponse.status === 409) {
+            releaseActiveLease();
+            schedule(BUSY_RETRY_MS);
+            return;
+          }
           if (!submitResponse.ok)
             throw new Error("Could not save the completed game analysis.");
           activeLease = undefined;
@@ -183,6 +208,7 @@ export function useGameAnalysis() {
     window.addEventListener("pointerdown", recordForegroundActivity, true);
     window.addEventListener("keydown", recordForegroundActivity, true);
     document.addEventListener("visibilitychange", visibilityChanged);
+    window.addEventListener("tempo:background-control", handleControl);
     schedule(LOCAL_IDLE_DELAY_MS);
     return () => {
       stopped = true;
@@ -191,6 +217,7 @@ export function useGameAnalysis() {
       window.removeEventListener("pointerdown", recordForegroundActivity, true);
       window.removeEventListener("keydown", recordForegroundActivity, true);
       document.removeEventListener("visibilitychange", visibilityChanged);
+      window.removeEventListener("tempo:background-control", handleControl);
       releaseActiveLease();
     };
   }, []);

@@ -195,6 +195,7 @@ export async function prepareVisualUI(page: Page, fixedClock = true) {
       },
       "/api/tactics/progress": {},
       "/api/games/sync/status": { providers: [] },
+      "/api/system/activity": { items: [], counts: { running: 0, queued: 0, paused: 0, failed: 0 }, total: 0, next_offset: null, writer: { healthy: true, foreground: 0, background: 0 } },
       "/api/games/analysis/claim": { job: null },
       "/api/game-findings": { findings: [] },
       "/api/game-insights/motifs": { recommendations: [] },

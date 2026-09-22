@@ -68,6 +68,23 @@ test("service-unavailable", async ({ page }) => {
   await expect(page.getByRole("alert")).toBeVisible();
   await expect(page).toHaveScreenshot("service-unavailable.png");
 });
+
+for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 720 }]) {
+  test(`activity-tray-${viewport.width}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await prepareVisualUI(page);
+    await page.route("**/api/system/activity?**", route => route.fulfill({ json: {
+      items: [{ source: "integrity", id: "visual-repertoire", title: "Spanish opening integrity",
+        state: "running", phase: "Scanning sources", completed: 2, total: 5,
+        updated_at: "2026-09-18T16:00:00Z", error: null, paused: false, promoted: false }],
+      counts: { running: 1, queued: 0, paused: 0, failed: 0 }, total: 1, next_offset: null,
+    } }));
+    await page.reload();
+    await page.getByRole("button", { name: /Analysis activity/ }).click();
+    await expect(page.getByRole("progressbar", { name: "Spanish opening integrity progress" })).toBeVisible();
+    await expect(page).toHaveScreenshot(`activity-tray-${viewport.width}.png`, { animations: "disabled", fullPage: true });
+  });
+}
 test("import-dialog-phone", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await prepareVisualUI(page);

@@ -17,6 +17,25 @@ export function useRepertoireCoverageWorker() {
     let running = false;
     let lastForegroundActivity = Date.now();
     let timer: number | undefined;
+    let heartbeatTimer: number | undefined;
+    let activeRunId: string | undefined;
+    let activeLease: { nodeId: string; leaseId: string } | undefined;
+    let activeController: AbortController | undefined;
+    const releaseActiveLease = () => {
+      const lease = activeLease;
+      activeLease = undefined;
+      activeController?.abort();
+      if (lease) void backgroundFetch(`${API_URL}/api/repertoire-coverage/maia/release`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ node_id: lease.nodeId, lease_id: lease.leaseId }),
+      }).catch(() => undefined);
+    };
+    const handleControl = (event: Event) => {
+      const detail = (event as CustomEvent<{source: string; id: string; action: string}>).detail;
+      if (detail?.source === "coverage" && detail.id === activeRunId && detail.action === "pause")
+        releaseActiveLease();
+      if (detail?.source === "coverage" && detail.action === "resume") schedule(0);
+    };
 
     const schedule = (delay: number) => {
       if (!stopped) timer = window.setTimeout(() => void run(), delay);
@@ -48,8 +67,20 @@ export function useRepertoireCoverageWorker() {
           schedule(RETRY_DELAY_MS);
           return;
         }
-        const moves = await requestBackgroundMaia(job.fen, job.elo);
-        await backgroundFetch(`${API_URL}/api/repertoire-coverage/maia/submit`, {
+        activeRunId = job.run_id;
+        activeLease = { nodeId: job.node_id, leaseId: job.lease_id };
+        activeController = new AbortController();
+        heartbeatTimer = window.setInterval(() => {
+          if (!activeLease) return;
+          void backgroundFetch(`${API_URL}/api/repertoire-coverage/maia/heartbeat`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ node_id: activeLease.nodeId, lease_id: activeLease.leaseId }),
+          }).then(response => { if (response.status === 409) releaseActiveLease(); })
+            .catch(() => undefined);
+        }, 2_000);
+        const moves = await requestBackgroundMaia(job.fen, job.elo, undefined, activeController.signal);
+        if (activeController.signal.aborted) { schedule(RETRY_DELAY_MS); return; }
+        const submitResponse = await backgroundFetch(`${API_URL}/api/repertoire-coverage/maia/submit`, {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -63,8 +94,12 @@ export function useRepertoireCoverageWorker() {
               })),
           }),
         });
+        if (submitResponse.status === 409) { schedule(RETRY_DELAY_MS); return; }
+        if (!submitResponse.ok) throw new Error(`Coverage submission failed: HTTP ${submitResponse.status}`);
+        activeLease = undefined;
         schedule(1_000);
       } catch (error) {
+        if (error instanceof DOMException && error.name === "AbortError") { schedule(RETRY_DELAY_MS); return; }
         reportDebugError(error, {
           kind: "api",
           source: "background-repertoire-coverage",
@@ -74,12 +109,17 @@ export function useRepertoireCoverageWorker() {
         });
         schedule(RETRY_DELAY_MS);
       } finally {
+        if (heartbeatTimer !== undefined) { window.clearInterval(heartbeatTimer); heartbeatTimer = undefined; }
+        if (activeLease) releaseActiveLease();
+        activeRunId = undefined;
+        activeController = undefined;
         running = false;
       }
     }
     window.addEventListener("pointerdown", recordForegroundActivity, true);
     window.addEventListener("keydown", recordForegroundActivity, true);
     document.addEventListener("visibilitychange", recordForegroundActivity);
+    window.addEventListener("tempo:background-control", handleControl);
     schedule(IDLE_DELAY_MS);
     return () => {
       stopped = true;
@@ -87,6 +127,8 @@ export function useRepertoireCoverageWorker() {
       window.removeEventListener("pointerdown", recordForegroundActivity, true);
       window.removeEventListener("keydown", recordForegroundActivity, true);
       document.removeEventListener("visibilitychange", recordForegroundActivity);
+      window.removeEventListener("tempo:background-control", handleControl);
+      releaseActiveLease();
     };
   }, []);
 }
