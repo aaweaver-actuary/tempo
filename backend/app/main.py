@@ -90,6 +90,7 @@ from .services.database_executor import (
     submit_foreground_write,
 )
 from .services.durable_tasks import enqueue_task, list_tasks, retry_task
+from .services.background_activity import claimable, control_order, list_activity, report_progress, set_control
 from .services.repertoire_conflicts import (
     find_repertoire_conflicts,
     trained_move_index,
@@ -368,11 +369,54 @@ def system_tasks():
     }
 
 
+@app.get("/api/system/activity")
+def system_activity(offset: int = 0, limit: int = 50):
+    activity = list_activity(offset=offset, limit=limit)
+    activity["writer"] = {"healthy": database_writer.healthy, **database_writer.queued_counts}
+    return activity
+
+
+@app.post("/api/system/activity/control")
+def control_system_activity(request: dict):
+    source = request.get("source")
+    work_id = request.get("id")
+    action = request.get("action")
+    if not isinstance(source, str) or not isinstance(work_id, str) or not isinstance(action, str):
+        raise HTTPException(422, "Invalid activity control")
+    if not set_control(source, work_id, action):
+        raise HTTPException(404, "Background activity not found")
+    coordinator.wake()
+    return {"ok": True}
+
+
+@app.post("/api/system/activity/progress")
+def report_system_activity_progress(request: dict):
+    source = request.get("source")
+    work_id = request.get("id")
+    generation = request.get("generation")
+    phase = request.get("phase")
+    completed = request.get("completed")
+    total = request.get("total")
+    lease_id = request.get("lease_id")
+    if source != "game_analysis" or not all(isinstance(value, str) for value in (work_id, generation, phase, lease_id)):
+        raise HTTPException(422, "Invalid analysis progress")
+    if isinstance(completed, bool) or not isinstance(completed, int) or isinstance(total, bool) or not isinstance(total, int):
+        raise HTTPException(422, "Invalid analysis progress count")
+    try:
+        reported = report_progress(source, work_id, generation, phase, completed, total, background=True, lease_id=lease_id)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    if not reported:
+        raise HTTPException(409, "Analysis lease is no longer active")
+    return {"ok": True}
+
+
 @app.post("/api/system/tasks/{task_id}/retry")
 def retry_system_task(task_id: str):
     retried = retry_task(task_id)
     if retried is None:
         raise HTTPException(404, "Terminal task not found")
+    set_control("durable", task_id, "resume")
     coordinator.wake()
     return retried
 
@@ -2335,6 +2379,40 @@ def coverage_maia_submit(request: CoverageMaiaSubmission):
     return {"status": "complete"}
 
 
+@app.post("/api/repertoire-coverage/maia/heartbeat")
+def coverage_maia_heartbeat(request: dict):
+    node_id = request.get("node_id")
+    lease_id = request.get("lease_id")
+    if not isinstance(node_id, str) or not isinstance(lease_id, str):
+        raise HTTPException(422, "Invalid coverage lease")
+    with connection(background=activity_gate.in_background) as database:
+        changed = database.execute(
+            """UPDATE repertoire_coverage_nodes SET lease_expires_at=?,updated_at=?
+               WHERE id=? AND maia_status='leased' AND lease_id=?""",
+            ((datetime.now(timezone.utc) + timedelta(minutes=5)).isoformat(),
+             datetime.now(timezone.utc).isoformat(), node_id, lease_id),
+        ).rowcount
+    if not changed:
+        raise HTTPException(409, "Coverage lease is no longer active")
+    return {"status": "leased"}
+
+
+@app.post("/api/repertoire-coverage/maia/release")
+def coverage_maia_release(request: dict):
+    node_id = request.get("node_id")
+    lease_id = request.get("lease_id")
+    if not isinstance(node_id, str) or not isinstance(lease_id, str):
+        raise HTTPException(422, "Invalid coverage lease")
+    with connection(background=activity_gate.in_background) as database:
+        changed = database.execute(
+            """UPDATE repertoire_coverage_nodes SET maia_status='queued',lease_id=NULL,
+               lease_expires_at=NULL,updated_at=?
+               WHERE id=? AND maia_status='leased' AND lease_id=?""",
+            (datetime.now(timezone.utc).isoformat(), node_id, lease_id),
+        ).rowcount
+    return {"status": "queued" if changed else "stale"}
+
+
 @app.get("/api/explorer/{database_name}")
 async def explorer(
     database_name: str,
@@ -2746,14 +2824,15 @@ def claim_game_analysis():
             (now.isoformat(), now.isoformat()),
         )
         job = db.execute(
-            """SELECT j.game_id,j.analysis_version,j.analysis_evidence_version,
+            f"""SELECT j.game_id,j.analysis_version,j.analysis_evidence_version,
                       g.provider,g.username,g.played_at,g.color,g.start_fen,g.moves_json,
                       c.divergence_ply
                FROM game_analysis_jobs j
                JOIN imported_games g ON g.id=j.game_id
                LEFT JOIN repertoire_comparisons c ON c.game_id=g.id
                WHERE j.status='queued' AND g.rated=1 AND g.speed IN ('blitz','rapid','classical')
-               ORDER BY g.played_at DESC LIMIT 1"""
+                 AND {claimable('game_analysis', 'j.game_id')}
+               ORDER BY {control_order('game_analysis', 'j.game_id')}g.played_at DESC LIMIT 1"""
         ).fetchone()
         if not job:
             return {"job": None}
@@ -2851,6 +2930,12 @@ def retry_game_analysis(game_id: str):
         db.execute(
             "UPDATE imported_games SET analysis_state='pending' WHERE id=?", (game_id,)
         )
+        db.execute(
+            """UPDATE background_activity SET phase='Queued',completed_units=NULL,
+               total_units=NULL,updated_at=? WHERE source='game_analysis' AND work_id=?""",
+            (datetime.now(timezone.utc).isoformat(), game_id),
+        )
+    set_control("game_analysis", game_id, "resume")
     return {"status": "queued"}
 
 

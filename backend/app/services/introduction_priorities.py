@@ -754,14 +754,16 @@ def enqueue_priority_refreshes_for_game(
 
 def claim_priority_refresh() -> dict | None:
     from ..database import connection
+    from .background_activity import claimable, control_order
 
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
         database.execute("BEGIN IMMEDIATE")
         job = database.execute(
-            """SELECT * FROM repertoire_priority_jobs
+            f"""SELECT * FROM repertoire_priority_jobs
                WHERE status='queued' AND next_attempt_at<=?
-               ORDER BY next_attempt_at,updated_at LIMIT 1""",
+               AND {claimable('priority', 'repertoire_priority_jobs.repertoire_id')}
+               ORDER BY {control_order('priority', 'repertoire_priority_jobs.repertoire_id')}next_attempt_at,updated_at LIMIT 1""",
             (_now(),),
         ).fetchone()
         if not job:

@@ -488,6 +488,7 @@ def initialize() -> None:
                 CHECK(status IN ('queued','running','complete','failed')),
             attempts INTEGER NOT NULL DEFAULT 0,
             derivation_version INTEGER NOT NULL DEFAULT 1,
+            completed_phases INTEGER NOT NULL DEFAULT 0,
             phase TEXT,
             next_attempt_at TEXT,
             last_error TEXT,
@@ -901,6 +902,18 @@ def initialize() -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_background_task_events_task ON background_task_events(task_id,id DESC)",
+        """CREATE TABLE IF NOT EXISTS background_activity (
+            source TEXT NOT NULL,
+            work_id TEXT NOT NULL,
+            generation_key TEXT,
+            paused INTEGER NOT NULL DEFAULT 0,
+            promoted INTEGER NOT NULL DEFAULT 0,
+            phase TEXT,
+            completed_units INTEGER,
+            total_units INTEGER,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(source,work_id)
+        )""",
         """CREATE TABLE IF NOT EXISTS internal_migrations (
             name TEXT PRIMARY KEY,
             applied_at TEXT NOT NULL
@@ -1071,6 +1084,7 @@ def initialize() -> None:
             },
             "game_derivation_jobs": {
                 "derivation_version": "INTEGER NOT NULL DEFAULT 1",
+                "completed_phases": "INTEGER NOT NULL DEFAULT 0",
                 "phase": "TEXT",
                 "next_attempt_at": "TEXT",
             },

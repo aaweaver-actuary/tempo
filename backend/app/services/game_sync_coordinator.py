@@ -14,7 +14,7 @@ import uuid
 
 import chess
 
-from ..database import connection
+from ..database import connection, read_connection
 from ..models import GameSyncRequest
 from .game_findings import refresh_game_findings
 from .real_game_feedback import apply_real_game_misses
@@ -39,6 +39,7 @@ from .repertoire_integrity import (
     requeue_integrity_slice,
 )
 from .durable_tasks import claim_task, complete_task, fail_task, requeue_interrupted_tasks
+from .background_activity import claimable, control_order, emit_progress
 from .opening_graph import (
     calculate_opening_graph_artifacts,
     prepare_opening_graph_rebuild,
@@ -48,6 +49,10 @@ from .opening_graph import (
 
 _durable_task_handlers: dict[str, Callable[[dict], None]] = {}
 _maintenance_handlers: list[Callable[[], None]] = []
+
+
+class _DerivationStopped(Exception):
+    pass
 
 
 def register_durable_task_handler(kind: str, handler: Callable[[dict], None]) -> None:
@@ -87,8 +92,9 @@ def _claim_job() -> dict | None:
     with connection(background=True) as database:
         database.execute("BEGIN IMMEDIATE")
         row = database.execute(
-            """SELECT * FROM game_sync_jobs WHERE status IN ('queued','retrying')
-               ORDER BY created_at LIMIT 1"""
+            f"""SELECT * FROM game_sync_jobs WHERE status IN ('queued','retrying')
+               AND {claimable('sync', 'game_sync_jobs.id')}
+               ORDER BY {control_order('sync', 'game_sync_jobs.id')}created_at LIMIT 1"""
         ).fetchone()
         if not row:
             return None
@@ -127,11 +133,13 @@ def _execute_job(job: dict) -> None:
     with activity_gate.background_job("game_sync", job["id"]):
         try:
             request = GameSyncRequest.model_validate_json(job["request_json"])
+            emit_progress("sync", job["id"], job["id"], "Fetching provider games")
             result = asyncio.run(sync_providers(request))
             changed_game_ids = result.pop("_changed_game_ids", [])
             for game_id in changed_game_ids:
                 enqueue_game_derivation(game_id, background=True)
             _finish_job(job["id"], result)
+            emit_progress("sync", job["id"], job["id"], f"Imported {result['imported']} games")
         except Exception as error:  # The job error must not overwrite provider state.
             _fail_job(job["id"], error)
 
@@ -144,7 +152,8 @@ def enqueue_game_derivation(game_id: str, *, background: bool = False) -> None:
             """INSERT INTO game_derivation_jobs(game_id,status,updated_at)
                VALUES(?,'queued',?)
                ON CONFLICT(game_id) DO UPDATE SET status='queued',last_error=NULL,
-                   next_attempt_at=NULL,updated_at=excluded.updated_at""",
+                   derivation_version=game_derivation_jobs.derivation_version+1,
+                   completed_phases=0,next_attempt_at=NULL,updated_at=excluded.updated_at""",
             (game_id, _now()),
         )
 
@@ -154,9 +163,10 @@ def _claim_derivation() -> str | None:
     with connection(background=True) as database:
         database.execute("BEGIN IMMEDIATE")
         row = database.execute(
-            """SELECT game_id FROM game_derivation_jobs WHERE status='queued'
+            f"""SELECT game_id FROM game_derivation_jobs WHERE status='queued'
                AND (next_attempt_at IS NULL OR next_attempt_at<=?)
-               ORDER BY updated_at LIMIT 1"""
+               AND {claimable('derivation', 'game_derivation_jobs.game_id')}
+               ORDER BY {control_order('derivation', 'game_derivation_jobs.game_id')}updated_at LIMIT 1"""
             , (_now(),)
         ).fetchone()
         if not row:
@@ -176,15 +186,47 @@ def _set_derivation_phase(game_id: str, phase: str) -> None:
             "UPDATE game_derivation_jobs SET phase=?,updated_at=? WHERE game_id=? AND status='running'",
             (phase, _now(), game_id),
         )
+        row = database.execute("SELECT derivation_version FROM game_derivation_jobs WHERE game_id=?", (game_id,)).fetchone()
+    phases = ("indexing_positions", "comparing_repertoire", "refreshing_findings",
+              "applying_real_game_misses", "refreshing_events", "refreshing_features",
+              "enqueueing_priorities")
+    if row and phase in phases:
+        emit_progress("derivation", game_id, str(row[0]), phase, phases.index(phase), len(phases))
 
 
 def _run_derivation_phase(
     game_id: str, phase: str, operation: Callable[[], None]
 ) -> None:
+    phases = ("indexing_positions", "comparing_repertoire", "refreshing_findings",
+              "applying_real_game_misses", "refreshing_events", "refreshing_features",
+              "enqueueing_priorities")
+    phase_index = phases.index(phase)
+    with read_connection() as database:
+        current = database.execute(
+            "SELECT completed_phases,status FROM game_derivation_jobs WHERE game_id=?", (game_id,)
+        ).fetchone()
+    if not current or current["status"] != "running":
+        raise _DerivationStopped()
+    if current["completed_phases"] > phase_index:
+        return
+    _pause_derivation_if_requested(game_id)
     _set_derivation_phase(game_id, phase)
     phase_started = time.perf_counter()
     try:
         operation()
+        with connection(background=True) as database:
+            changed = database.execute(
+                """UPDATE game_derivation_jobs SET completed_phases=?,updated_at=?
+                   WHERE game_id=? AND status='running' AND completed_phases=?""",
+                (phase_index + 1, _now(), game_id, phase_index),
+            ).rowcount
+            version = database.execute(
+                "SELECT derivation_version FROM game_derivation_jobs WHERE game_id=?", (game_id,)
+            ).fetchone()[0]
+        if not changed:
+            raise _DerivationStopped()
+        emit_progress("derivation", game_id, str(version), phase, phase_index + 1, len(phases))
+        _pause_derivation_if_requested(game_id)
     finally:
         logging.getLogger("tempo.background").info(
             "derivation phase game_id=%s phase=%s duration=%.3fs",
@@ -194,9 +236,45 @@ def _run_derivation_phase(
         )
 
 
+def _pause_derivation_if_requested(game_id: str) -> None:
+    with read_connection() as database:
+        paused = database.execute(
+            "SELECT paused FROM background_activity WHERE source='derivation' AND work_id=?",
+            (game_id,),
+        ).fetchone()
+    if not paused or not paused[0]:
+        return
+    with connection(background=True) as database:
+        database.execute(
+            """UPDATE game_derivation_jobs SET status='queued',phase='paused',updated_at=?
+               WHERE game_id=? AND status='running'""",
+            (_now(), game_id),
+        )
+    raise _DerivationStopped()
+
+
 def _execute_derivation(game_id: str) -> None:
     with activity_gate.background_job("game_derivation", game_id):
         try:
+            with connection(background=True) as database:
+                database.execute(
+                    """INSERT OR IGNORE INTO game_derivation_jobs(game_id,status,updated_at)
+                       VALUES(?,'running',?)""",
+                    (game_id, _now()),
+                )
+                database.execute(
+                    """UPDATE game_derivation_jobs SET status='running',updated_at=?
+                       WHERE game_id=? AND status='queued' AND NOT EXISTS(
+                           SELECT 1 FROM background_activity a
+                           WHERE a.source='derivation' AND a.work_id=? AND a.paused=1
+                       )""",
+                    (_now(), game_id, game_id),
+                )
+                current_status = database.execute(
+                    "SELECT status FROM game_derivation_jobs WHERE game_id=?", (game_id,)
+                ).fetchone()
+            if not current_status or current_status[0] != "running":
+                return
             _run_derivation_phase(
                 game_id, "indexing_positions", lambda: _index_game_positions(game_id)
             )
@@ -232,11 +310,18 @@ def _execute_derivation(game_id: str) -> None:
             )
             activity_gate.wait_for_foreground()
             with connection(background=True) as database:
-                database.execute(
+                changed = database.execute(
                     """UPDATE game_derivation_jobs SET status='complete',phase=NULL,last_error=NULL,next_attempt_at=NULL,updated_at=?
-                       WHERE game_id=?""",
+                       WHERE game_id=? AND status='running'""",
                     (_now(), game_id),
-                )
+                ).rowcount
+                version = database.execute(
+                    "SELECT derivation_version FROM game_derivation_jobs WHERE game_id=?", (game_id,)
+                ).fetchone()[0]
+            if changed:
+                emit_progress("derivation", game_id, str(version), "Finished", 7, 7)
+        except _DerivationStopped:
+            return
         except sqlite3.OperationalError as error:
             for retry_number in range(5):
                 activity_gate.wait_for_foreground()
@@ -384,17 +469,21 @@ class GameSyncCoordinator:
                         if handler is None:
                             raise RuntimeError(f"No handler registered for task kind {item['kind']}")
                         try:
+                            await asyncio.to_thread(emit_progress, "durable", item["id"], str(item["generation"]), "Running")
                             if item["kind"] == "opening_graph_rebuild":
+                                await asyncio.to_thread(emit_progress, "durable", item["id"], str(item["generation"]), "Preparing opening graph")
                                 rebuild_input = await asyncio.to_thread(
                                     prepare_opening_graph_rebuild, item
                                 )
                                 if self._process_pool is None:
                                     self._process_pool = ProcessPoolExecutor(max_workers=1)
+                                await asyncio.to_thread(emit_progress, "durable", item["id"], str(item["generation"]), "Calculating opening graph")
                                 graph_artifacts = await asyncio.get_running_loop().run_in_executor(
                                     self._process_pool,
                                     calculate_opening_graph_artifacts,
                                     rebuild_input,
                                 )
+                                await asyncio.to_thread(emit_progress, "durable", item["id"], str(item["generation"]), "Publishing opening graph")
                                 await asyncio.to_thread(
                                     publish_opening_graph_rebuild,
                                     item,
@@ -408,6 +497,7 @@ class GameSyncCoordinator:
                                 item["generation"],
                                 item["lease_token"],
                             )
+                            await asyncio.to_thread(emit_progress, "durable", item["id"], str(item["generation"]), "Finished")
                         except Exception as error:
                             await asyncio.to_thread(
                                 fail_task,
@@ -427,6 +517,7 @@ class GameSyncCoordinator:
                     elif source == "statistics":
                         await asyncio.to_thread(execute_daily_snapshot, item)
                     else:
+                        await asyncio.to_thread(emit_progress, "priority", item["repertoire_id"], str(item["generation"]), "Loading priorities")
                         calculation_input = await asyncio.to_thread(
                             load_priority_calculation_input, item
                         )
@@ -437,7 +528,9 @@ class GameSyncCoordinator:
                             calculate_priority_records,
                             calculation_input,
                         )
+                        await asyncio.to_thread(emit_progress, "priority", item["repertoire_id"], str(item["generation"]), "Publishing priorities")
                         await asyncio.to_thread(publish_priority_records, item, records)
+                        await asyncio.to_thread(emit_progress, "priority", item["repertoire_id"], str(item["generation"]), "Finished")
                 except sqlite3.OperationalError as error:
                     if source == "integrity":
                         await asyncio.to_thread(requeue_integrity_slice, item, error)

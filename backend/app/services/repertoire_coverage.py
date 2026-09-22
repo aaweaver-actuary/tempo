@@ -279,14 +279,15 @@ def enqueue_coverage_refresh(
 
 
 def claim_coverage_node() -> dict | None:
+    from .background_activity import claimable, control_order
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
         database.execute("BEGIN IMMEDIATE")
         node = database.execute(
-            """SELECT n.*,r.settings_json FROM repertoire_coverage_nodes n
+            f"""SELECT n.*,r.settings_json FROM repertoire_coverage_nodes n
                JOIN repertoire_coverage_runs r ON r.id=n.run_id
-               WHERE n.explorer_status='queued'
-               ORDER BY r.created_at,n.ply,n.id LIMIT 1"""
+               WHERE n.explorer_status='queued' AND {claimable('coverage', 'n.run_id')}
+               ORDER BY {control_order('coverage', 'n.run_id')}r.created_at,n.ply,n.id LIMIT 1"""
         ).fetchone()
         if not node:
             return None
@@ -439,6 +440,7 @@ def _recalculate_node(database, node_id: str, settings: dict) -> None:
 
 
 def execute_coverage_node(node: dict) -> None:
+    from .background_activity import emit_progress
     try:
         settings = json.loads(node["settings_json"])
         rating_bucket = int(
@@ -530,9 +532,19 @@ def execute_coverage_node(node: dict) -> None:
                     node["run_id"],
                 ),
             )
+            progress_counts = database.execute(
+                """SELECT COUNT(*) AS total,
+                   SUM(CASE WHEN explorer_status='complete' THEN 1 ELSE 0 END) AS explorer_done,
+                   SUM(CASE WHEN maia_status='complete' THEN 1 ELSE 0 END) AS maia_done
+                   FROM repertoire_coverage_nodes WHERE run_id=?""",
+                (node["run_id"],),
+            ).fetchone()
         from .introduction_priorities import enqueue_priority_refresh
 
         enqueue_priority_refresh(node["repertoire_id"], background=True)
+        emit_progress("coverage", node["run_id"], node["run_id"], "Checking positions",
+                        (progress_counts["explorer_done"] or 0) + (progress_counts["maia_done"] or 0),
+                        progress_counts["total"] * 2)
     except Exception as error:
         with connection(background=True) as database:
             database.execute(
@@ -632,6 +644,7 @@ def coverage_gaps(repertoire_id: str) -> list[dict]:
 
 
 def claim_maia_coverage_node() -> dict | None:
+    from .background_activity import claimable, control_order
     now = datetime.now(timezone.utc)
     lease_id = str(uuid.uuid4())
     with connection(background=activity_gate.in_background) as database:
@@ -642,10 +655,11 @@ def claim_maia_coverage_node() -> dict | None:
             (now.isoformat(),),
         )
         node = database.execute(
-            """SELECT n.*,r.settings_json FROM repertoire_coverage_nodes n
+            f"""SELECT n.*,r.settings_json FROM repertoire_coverage_nodes n
                JOIN repertoire_coverage_runs r ON r.id=n.run_id
                WHERE n.explorer_status='complete' AND n.maia_status='queued'
-               ORDER BY r.created_at,n.ply,n.id LIMIT 1"""
+               AND {claimable('coverage', 'n.run_id')}
+               ORDER BY {control_order('coverage', 'n.run_id')}r.created_at,n.ply,n.id LIMIT 1"""
         ).fetchone()
         if not node:
             return None
@@ -661,6 +675,7 @@ def claim_maia_coverage_node() -> dict | None:
         settings = json.loads(node["settings_json"])
         return {
             "node_id": node["id"],
+            "run_id": node["run_id"],
             "lease_id": lease_id,
             "fen": node["fen"],
             "elo": settings["maia_elo"],
@@ -668,6 +683,7 @@ def claim_maia_coverage_node() -> dict | None:
 
 
 def submit_maia_coverage(node_id: str, lease_id: str, moves: list[dict]) -> None:
+    from .background_activity import emit_progress
     repertoire_id: str | None = None
     with connection(background=activity_gate.in_background) as database:
         node = database.execute(
@@ -700,6 +716,15 @@ def submit_maia_coverage(node_id: str, lease_id: str, moves: list[dict]) -> None
                       lease_expires_at=NULL,updated_at=? WHERE id=?""",
             (_now(), node_id),
         )
+        progress_counts = database.execute(
+            """SELECT COUNT(*) AS total,
+               SUM(CASE WHEN explorer_status='complete' THEN 1 ELSE 0 END) AS explorer_done,
+               SUM(CASE WHEN maia_status='complete' THEN 1 ELSE 0 END) AS maia_done
+               FROM repertoire_coverage_nodes WHERE run_id=?""", (node["run_id"],)
+        ).fetchone()
+    emit_progress("coverage", node["run_id"], node["run_id"], "Checking positions",
+                    (progress_counts["explorer_done"] or 0) + (progress_counts["maia_done"] or 0),
+                    progress_counts["total"] * 2)
     if repertoire_id:
         from .introduction_priorities import enqueue_priority_refresh
 
