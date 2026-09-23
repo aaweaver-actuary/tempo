@@ -99,6 +99,7 @@ export default function GamesView({
   onSettings,
   onSync,
   onRepair,
+  onQueueUpdated,
   syncState,
   theme,
   pieceSet,
@@ -110,6 +111,7 @@ export default function GamesView({
   onSettings: () => void;
   onSync: () => void;
   onRepair?: () => void;
+  onQueueUpdated?: () => Promise<void>;
   syncState: GameSyncState;
   theme: BoardTheme;
   pieceSet: PieceSet;
@@ -372,8 +374,18 @@ export default function GamesView({
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ decision }),
     });
-    if (!response.ok) setError("Could not save that gameplay decision.");
-    else await loadFindings();
+    if (!response.ok) {
+      const payload: unknown = await response.json().catch(() => null);
+      const detail = payload && typeof payload === "object" && "detail" in payload
+        ? (payload as { detail: unknown }).detail : null;
+      setError(typeof detail === "string" ? detail : "Could not save that gameplay decision.");
+    } else {
+      await loadFindings();
+      if (decision === "accepted") {
+        try { await onQueueUpdated?.(); }
+        catch { setError("Review priority was saved, but the training queue could not refresh. Reload Tempo to retry."); }
+      }
+    }
   }
   async function excludeSelectedGame() {
     if (!selected) return;
@@ -809,7 +821,7 @@ export default function GamesView({
               <article key={finding.id}>
                 <span>{finding.kind}{finding.kind === "tactical miss" ? ` · ${finding.confidence >= 0.8 ? finding.motif : "unclassified"}` : ""}</span>
                 <small>Move {Math.floor(finding.ply / 2) + 1}</small>
-                {finding.kind === "repertoire lapse" && finding.card_id && <button onClick={() => void decideFinding(finding.id, "accepted")}>Count as lapse</button>}
+                {finding.kind === "repertoire lapse" && finding.card_id && <button onClick={() => void decideFinding(finding.id, "accepted")}>Prioritize review</button>}
                 {finding.kind === "first big mistake" && !cardPreviews[finding.id] && <button onClick={() => void createFindingCard(finding.id, false)}>Preview study card</button>}
                 {finding.kind === "first big mistake" && cardPreviews[finding.id] && <>
                   <small>{cardPreviews[finding.id].starting_fen} · {cardPreviews[finding.id].moves.join(" ")}</small>

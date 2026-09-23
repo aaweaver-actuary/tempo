@@ -65,7 +65,7 @@ from .services.activity_gate import activity_gate
 from .services.cards import card_id
 from .services.pgn import ends_on_trained_move, parse_pgn, prefix_through_user_moves
 from .services.review_service import apply_scheduling_review, ensure_card_queued_after, preserve_daily_queue_order
-from .services.real_game_feedback import MISS_REASON
+from .services.real_game_feedback import MISS_REASON, prioritize_real_game_miss
 from .services.endgames import (
     category_for_player,
     generate_position,
@@ -577,7 +577,7 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
                  AND NOT EXISTS(
                      SELECT 1 FROM reviews review
                      WHERE review.card_id=event.card_id AND review.source_kind='study'
-                       AND datetime(review.reviewed_at)>=datetime(event.played_at)
+                       AND julianday(review.reviewed_at)>julianday(event.played_at)
                  )
            )
            SELECT DISTINCT c.id,linked.id repertoire_id,c.moves_json,c.due_date,
@@ -3205,32 +3205,20 @@ def decide_game_finding(finding_id: str, request: GameFindingDecisionRequest):
             raise HTTPException(404, "Gameplay finding not found")
         if request.decision == "accepted" and finding["adaptive_excluded"]:
             raise HTTPException(409, "This game is excluded from adaptation")
-        scheduling_result = None
+        queued = False
         if request.decision == "accepted" and finding["kind"] == "repertoire lapse":
             if not finding["card_id"]:
                 raise HTTPException(
                     422, "This repertoire lapse is not linked to a study card"
                 )
-            try:
-                linked_event = db.execute(
-                    """SELECT id FROM repertoire_decision_events
-                       WHERE game_id=? AND repertoire_id=? AND ply=? AND outcome='miss'""",
-                    (finding["game_id"], finding["repertoire_id"], finding["ply"]),
-                ).fetchone()
-                scheduling_result = apply_scheduling_review(
-                    db,
-                    finding["card_id"],
-                    "again",
-                    guided=False,
-                    source_kind="game",
-                    source_ref=linked_event["id"] if linked_event else finding_id,
-                    light_first_interval_days=get_settings().light_first_interval_days,
-                    reviewed_at=datetime.now(timezone.utc),
-                    review_day=date.today(),
-                )
-            except KeyError as error:
-                raise HTTPException(404, "Linked study card not found") from error
-            ensure_card_queued_after(db, finding["card_id"], 4)
+            linked_event = db.execute(
+                """SELECT id FROM repertoire_decision_events
+                   WHERE game_id=? AND repertoire_id=? AND ply=? AND card_id=? AND outcome='miss'""",
+                (finding["game_id"], finding["repertoire_id"], finding["ply"], finding["card_id"]),
+            ).fetchone()
+            if not linked_event:
+                raise HTTPException(409, "Canonical game decision is unavailable. Reanalyze this game and try again.")
+            queued = prioritize_real_game_miss(db, linked_event["id"])
         db.execute(
             "UPDATE game_findings SET status=?,updated_at=? WHERE id=?",
             (request.decision, datetime.now(timezone.utc).isoformat(), finding_id),
@@ -3238,7 +3226,8 @@ def decide_game_finding(finding_id: str, request: GameFindingDecisionRequest):
     return {
         "id": finding_id,
         "status": request.decision,
-        "scheduling": scheduling_result,
+        "scheduling": None,
+        "queued": queued,
     }
 
 

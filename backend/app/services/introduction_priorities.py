@@ -283,7 +283,7 @@ def _real_game_miss_evidence(database: sqlite3.Connection, repertoire_id: str) -
              AND NOT EXISTS(
                  SELECT 1 FROM reviews review
                  WHERE review.card_id=event.card_id AND review.source_kind='study'
-                   AND datetime(review.reviewed_at)>=datetime(event.played_at)
+                   AND julianday(review.reviewed_at)>julianday(event.played_at)
              )
            ORDER BY event.played_at DESC,event.id DESC""",
         (repertoire_id,),

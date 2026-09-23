@@ -1093,6 +1093,7 @@ export default function Home() {
               syncState={gameSync.state}
               onSync={() => void gameSync.sync(true)}
               onRepair={() => void gameSync.sync(true, true)}
+              onQueueUpdated={refreshQueueOnly}
               onSettings={() => setCurrentView("settings")}
               onAnalyze={(game, gameCursor) => {
                 const position = new Chess(game.startFen);
