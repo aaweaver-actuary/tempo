@@ -1,0 +1,13 @@
+# Repertoire Opportunities
+
+Tempo derives three opportunity kinds from existing SQLite evidence:
+
+- **Weak known decision:** a canonical locked card reached in at least five games in the last 90 days, with successful prerequisite traversal in at least 80% of those games, at least three target misses, and a target miss rate of at least 50%. A transposed route counts when its earlier recorded repertoire decisions are all correct and cover at least half the canonical prerequisite decisions. The card enters the ordinary daily introduction quota with its counts as the priority reason.
+- **Missing response:** an uncovered move at an existing coverage node qualifies with at least 5% fresh Maia probability, at least 5% fresh Lichess cohort probability backed by 200 games, or three personal encounters in the last 90 days. The existing coverage horizon applies; the path floor applies when at least 20 relevant personal games support a reach estimate, with repeated personal encounters overriding it. Unknown reach stays unknown and has a neutral ranking factor. Masters frequency is context, not a gate. A coverage run older than seven days is stale for this decision. Personal evidence can still qualify when a cohort source fails or is stale.
+- **Post-gap weakness:** the existing repertoire-gap finding provides the canonical opponent move and the first significant mistake within its three-player-decision window. Opportunities group those findings by repertoire, position, and opponent move, retaining game and analysis provenance. An existing matching unseen card is linked.
+
+The scan also publishes per-canonical-decision game summaries, including lifetime and 90-day encounters, successes, misses, and last encounter. Descendant summaries record successful prerequisite traversal separately. These figures come from game events and do not change study memory.
+
+Opportunity IDs are stable across reprocessing. Dismissal persists until three more supporting games, a new qualifying source, or a new major finding provides materially new evidence. Coverage or card progression resolves the associated opportunity. A user can request a rescan from Repertoire; game derivation, coverage updates, and graph publication also enqueue scans. The Background activity tray shows the durable scouting task.
+
+An early introduction changes only curriculum admission. It creates no review, FSRS rating, or mature ancestor. The published graph keeps the same parent chain, so normal cumulative-prefix progression and later route practice remain available to verify integration. Investigating a missing response opens Builder; it does not add a branch until the user saves one.

@@ -108,6 +108,7 @@ from .services.repertoire_coverage import (
     coverage_gaps,
     coverage_summary,
     enqueue_coverage_refresh,
+    set_explorer_session_token,
     submit_maia_coverage,
 )
 from .services.introduction_priorities import (
@@ -118,6 +119,10 @@ from .services.opening_graph import (
     decision_segments,
     enqueue_opening_graph_rebuild,
     execute_opening_graph_rebuild,
+)
+from .services.repertoire_opportunities import (
+    dismiss_opportunity, enqueue_opportunity_refresh, execute_opportunity_slice,
+    list_opportunities,
 )
 
 
@@ -581,7 +586,10 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
                  )
            )
            SELECT DISTINCT c.id,linked.id repertoire_id,c.moves_json,c.due_date,
-                  CASE WHEN active_miss.card_id IS NOT NULL THEN ? ELSE p.reason END gameplay_priority_reason,
+                  CASE WHEN c.state='locked' AND opportunity.id IS NOT NULL THEN
+                    'Priority introduction · reached ' || json_extract(opportunity.evidence_json,'$.encounter_count') ||
+                    ' times in games, missed ' || json_extract(opportunity.evidence_json,'$.miss_count') || ' times'
+                    WHEN active_miss.card_id IS NOT NULL THEN ? ELSE p.reason END gameplay_priority_reason,
                   CASE WHEN active_miss.card_id IS NOT NULL THEN ? ELSE p.priority_date END priority_date,
                   COALESCE(published_priority.priority_score,legacy_priority.priority_score) priority_score,
                   COALESCE(published_priority.completed_line_ids_json,legacy_priority.completed_line_ids_json) completed_line_ids_json,
@@ -596,6 +604,9 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
            )
            LEFT JOIN gameplay_card_priorities p ON p.card_id=c.id AND p.priority_date<=?
            LEFT JOIN active_miss ON active_miss.card_id=c.id
+           LEFT JOIN repertoire_opportunities opportunity ON opportunity.repertoire_id=linked.id
+             AND opportunity.card_id=c.id AND opportunity.kind='weak_known_decision'
+             AND opportunity.status='active'
            LEFT JOIN repertoire_priority_publications publication
              ON publication.repertoire_id=linked.id
            LEFT JOIN repertoire_card_priority_generations published_priority
@@ -604,8 +615,9 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
             AND published_priority.generation=publication.generation
            LEFT JOIN repertoire_card_introduction_priorities legacy_priority
              ON legacy_priority.card_id=c.id AND legacy_priority.repertoire_id=linked.id
-           WHERE c.content_type='opening' AND (c.due_date<=? OR p.card_id IS NOT NULL OR active_miss.card_id IS NOT NULL)
-             AND c.state='new' AND c.introduced_at IS NULL AND c.archived=0 AND COALESCE(c.pending_validation,0)=0
+           WHERE c.content_type='opening' AND (c.due_date<=? OR p.card_id IS NOT NULL OR active_miss.card_id IS NOT NULL OR opportunity.id IS NOT NULL)
+             AND (c.state='new' OR (c.state='locked' AND opportunity.id IS NOT NULL))
+             AND c.introduced_at IS NULL AND c.archived=0 AND COALESCE(c.pending_validation,0)=0
              AND EXISTS(SELECT 1 FROM repertoires r_ok
                         WHERE (r_ok.id=c.repertoire_id OR EXISTS(SELECT 1 FROM repertoire_cards rc_ok WHERE rc_ok.card_id=c.id AND rc_ok.repertoire_id=r_ok.id))
                           AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
@@ -680,6 +692,13 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
             db.execute(
                 "UPDATE cards SET introduced_at=?,state='learning' WHERE id=?",
                 (day, choice["id"]),
+            )
+            db.execute(
+                """UPDATE repertoire_opportunities SET status='resolved',resolved_at=?,updated_at=?
+                   WHERE repertoire_id=? AND card_id=? AND kind='weak_known_decision'
+                     AND status='active'""",
+                (datetime.now(timezone.utc).isoformat(), datetime.now(timezone.utc).isoformat(),
+                 repertoire_id, choice["id"]),
             )
             selected_ids.add(choice["id"])
             globally_selected_ids.add(choice["id"])
@@ -977,6 +996,7 @@ def _execute_daily_queue_task(task: dict) -> None:
 register_durable_task_handler("daily_queue", _execute_daily_queue_task)
 register_durable_task_handler("integrity_repair", execute_durable_integrity_repair)
 register_durable_task_handler("opening_graph_rebuild", execute_opening_graph_rebuild)
+register_durable_task_handler("repertoire_opportunity", execute_opportunity_slice)
 
 
 def _ensure_current_daily_queue() -> None:
@@ -2361,9 +2381,44 @@ def repertoire_coverage_gaps(identifier: str):
     return {"gaps": coverage_gaps(identifier)}
 
 
+@app.get("/api/repertoires/{identifier}/opportunities")
+def repertoire_opportunities(identifier: str):
+    with connection() as database:
+        if not database.execute("SELECT 1 FROM repertoires WHERE id=?", (identifier,)).fetchone():
+            raise HTTPException(404, "Repertoire not found")
+        return {"opportunities": list_opportunities(database, identifier)}
+
+
+@app.post("/api/repertoires/{identifier}/opportunities/refresh", status_code=202)
+def refresh_repertoire_opportunities(identifier: str):
+    with read_connection() as database:
+        if not database.execute("SELECT 1 FROM repertoires WHERE id=?", (identifier,)).fetchone():
+            raise HTTPException(404, "Repertoire not found")
+    enqueue_opportunity_refresh(identifier)
+    coordinator.wake()
+    return {"queued": True}
+
+
+@app.post("/api/repertoires/{identifier}/opportunities/{opportunity_id}/dismiss")
+def dismiss_repertoire_opportunity(identifier: str, opportunity_id: str):
+    with connection() as database:
+        if not dismiss_opportunity(database, identifier, opportunity_id):
+            raise HTTPException(404, "Active opportunity not found")
+    return {"dismissed": True}
+
+
 @app.post("/api/repertoire-coverage/maia/claim")
 def coverage_maia_claim():
     return {"job": claim_maia_coverage_node()}
+
+
+@app.post("/api/repertoire-coverage/explorer-session")
+def coverage_explorer_session(authorization: str | None = Header(None)):
+    token = authorization[7:].strip() if authorization and authorization[:7].lower() == "bearer " else None
+    set_explorer_session_token(token)
+    if token:
+        coordinator.wake()
+    return {"registered": bool(token)}
 
 
 @app.post("/api/repertoire-coverage/maia/submit")

@@ -7,7 +7,7 @@ import {
   removeBranchResultSchema,
 } from "../domain/schemas";
 import { readJsonResponse } from "../lib/validated-data";
-import { parseData, readStoredValue, reportDataDiagnostic } from "../lib/validated-data";
+import { readStoredValue, reportDataDiagnostic } from "../lib/validated-data";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import { Square, Chess } from "chess.js";
@@ -59,7 +59,17 @@ import {
   asUciMove,
 } from "../types";
 import { usesLocalApi } from "../utils/local";
-import { loadExplorer, readCachedExplorer } from "../lib/lichess-explorer";
+import {
+  loadExplorer,
+  readCachedExplorer,
+  type ExplorerSourceResult,
+} from "../lib/lichess-explorer";
+import { connectLichess } from "../utils/lichess";
+import {
+  clearLichessSessionToken,
+  readLichessSessionToken,
+  saveLichessSessionToken,
+} from "../lib/lichess-session";
 import { Settings } from "../utils/settings";
 import { canonicalFenKey, sanForUci } from "../utils/canonical-line";
 import {
@@ -79,6 +89,21 @@ type AnalysisMetric = "stockfish" | "lichess" | "masters";
 const emptyLines: CanonicalLine[] = [];
 const emptyPositions: IndexedPosition[] = [];
 const emptySimilar: Array<IndexedPosition & { distance: number }> = [];
+
+function explorerStatusLabel(status: ExplorerSourceResult): string {
+  if (status.state === "ready") return "Ready";
+  if (status.state === "off") return "Off";
+  if (status.state === "loading") return "Loading";
+  if (status.state === "stale")
+    return `Cached · ${status.category?.replaceAll("-", " ") ?? "refresh pending"}${status.status ? ` (HTTP ${status.status})` : ""}`;
+  if (status.state === "authentication-required") return "Sign in required";
+  if (status.state === "authentication-failed") return `Reconnect required${status.status ? ` (HTTP ${status.status})` : ""}`;
+  if (status.state === "rate-limited") return `Rate limited${status.status ? ` (HTTP ${status.status})` : ""}`;
+  if (status.state === "offline") return "Offline";
+  if (status.state === "network-error") return "Network error";
+  if (status.state === "invalid-response") return "Invalid response";
+  return `Unavailable${status.status ? ` (HTTP ${status.status})` : ""}`;
+}
 
 function candidatesThrough<T extends { uci: string }>(
   moves: T[],
@@ -183,10 +208,21 @@ export default function BuilderView({
     Number(getLocalStorageOrDefault("tempo-engine-window-cp", "30")),
   );
   const [lichessToken, setLichessToken] = useState(() =>
-    getLocalStorageOrDefault("tempo-lichess-token", ""),
+    readLichessSessionToken(),
   );
+  const [explorerAuthenticationRejected, setExplorerAuthenticationRejected] = useState(false);
+  const explorerAuthenticationRejectedRef = useRef(false);
+  const rejectedExplorerStatusCodeRef = useRef<number | undefined>(undefined);
   const [explorerMoves, setExplorerMoves] = useState<ExplorerMove[]>([]);
   const [mastersMoves, setMastersMoves] = useState<ExplorerMove[]>([]);
+  const [lichessExplorerStatus, setLichessExplorerStatus] = useState<ExplorerSourceResult>(() => ({
+    source: "lichess", state: lichessToken ? "loading" : "authentication-required",
+    moves: [], retryable: false, hasCachedData: false,
+  }));
+  const [mastersExplorerStatus, setMastersExplorerStatus] = useState<ExplorerSourceResult>(() => ({
+    source: "masters", state: lichessToken ? "loading" : "authentication-required",
+    moves: [], retryable: false, hasCachedData: false,
+  }));
   const [explorerSpeeds] = useState(() =>
     getLocalStorageOrDefault(
       "tempo-explorer-speeds",
@@ -203,9 +239,6 @@ export default function BuilderView({
     initialSession?.branchStart ?? null,
   );
   const [branchNote, setBranchNote] = useState("");
-  const [explorerState, setExplorerState] = useState<EngineStatus>(
-    settings.getLichessStatus(),
-  );
   const [stockfishMoves, setStockfishMoves] = useState<CandidateMove[]>([]);
   const [stockfishState, setStockfishState] = useState<EngineStatus>(
     settings.getEngine().state,
@@ -515,7 +548,12 @@ export default function BuilderView({
     const verifier = sessionStorage.getItem("tempo-lichess-verifier");
     const expectedState = sessionStorage.getItem("tempo-lichess-state");
     if (!verifier || params.get("state") !== expectedState) {
-      queueMicrotask(() => setExplorerState("error"));
+      queueMicrotask(() => {
+        explorerAuthenticationRejectedRef.current = true;
+        setExplorerAuthenticationRejected(true);
+        setLichessExplorerStatus({ source: "lichess", state: "authentication-failed", moves: [], retryable: false, hasCachedData: false, message: "Lichess sign-in could not be verified" });
+        setMastersExplorerStatus({ source: "masters", state: "authentication-failed", moves: [], retryable: false, hasCachedData: false, message: "Lichess sign-in could not be verified" });
+      });
       return;
     }
     const redirectUri = `${location.origin}${location.pathname}`;
@@ -537,11 +575,20 @@ export default function BuilderView({
       )
       .then((value) => {
         const data = value as { access_token: string };
-        localStorage.setItem("tempo-lichess-token", data.access_token);
+        if (typeof data.access_token !== "string" || !data.access_token) throw new Error("Invalid Lichess token response");
+        saveLichessSessionToken(data.access_token);
+        explorerAuthenticationRejectedRef.current = false;
+        rejectedExplorerStatusCodeRef.current = undefined;
+        setExplorerAuthenticationRejected(false);
         setLichessToken(data.access_token);
         window.history.replaceState({}, "", redirectUri);
       })
-      .catch(() => setExplorerState("error"));
+      .catch(() => {
+        explorerAuthenticationRejectedRef.current = true;
+        setExplorerAuthenticationRejected(true);
+        setLichessExplorerStatus({ source: "lichess", state: "authentication-failed", moves: [], retryable: false, hasCachedData: false, message: "Lichess sign-in failed. Reconnect to retry." });
+        setMastersExplorerStatus({ source: "masters", state: "authentication-failed", moves: [], retryable: false, hasCachedData: false, message: "Lichess sign-in failed. Reconnect to retry." });
+      });
   }, []);
 
   useEffect(() => {
@@ -608,42 +655,47 @@ export default function BuilderView({
     queueMicrotask(() => {
       if (!active) return;
       if (!explorerOn) {
-        setExplorerState("off");
+        setLichessExplorerStatus({ source: "lichess", state: "off", moves: [], retryable: false, hasCachedData: false });
+        setMastersExplorerStatus({ source: "masters", state: "off", moves: [], retryable: false, hasCachedData: false });
         return;
       }
       const cached = readCachedExplorer(fen, explorerSpeeds, explorerRatings);
       if (cached) {
-        const human = parseData(explorerResponseSchema, cached.human, "cached Lichess explorer");
-        const masters = parseData(explorerResponseSchema, cached.masters, "cached Masters explorer");
-        setExplorerMoves(adaptExplorerMoves(fen, human.moves ?? []));
-        setMastersMoves(adaptExplorerMoves(fen, masters.moves ?? []));
-        setExplorerState("stale");
+        const human = cached.human ? explorerResponseSchema.safeParse(cached.human) : undefined;
+        const masters = cached.masters ? explorerResponseSchema.safeParse(cached.masters) : undefined;
+        setExplorerMoves(human?.success ? adaptExplorerMoves(fen, human.data.moves) : []);
+        setMastersMoves(masters?.success ? adaptExplorerMoves(fen, masters.data.moves) : []);
+        setLichessExplorerStatus({ source: "lichess", state: human?.success ? "stale" : "loading", moves: human?.success ? human.data.moves : [], retryable: true, hasCachedData: Boolean(human?.success) });
+        setMastersExplorerStatus({ source: "masters", state: masters?.success ? "stale" : "loading", moves: masters?.success ? masters.data.moves : [], retryable: true, hasCachedData: Boolean(masters?.success) });
       } else {
         setExplorerMoves([]);
         setMastersMoves([]);
-        setExplorerState("loading");
+        setLichessExplorerStatus({ source: "lichess", state: "loading", moves: [], retryable: false, hasCachedData: false });
+        setMastersExplorerStatus({ source: "masters", state: "loading", moves: [], retryable: false, hasCachedData: false });
       }
-      loadExplorer(fen, explorerSpeeds, explorerRatings)
+      if (explorerAuthenticationRejectedRef.current) {
+        setLichessExplorerStatus({ source: "lichess", state: cached?.human ? "stale" : "authentication-failed", category: "authentication-failed", status: rejectedExplorerStatusCodeRef.current, moves: [], retryable: false, hasCachedData: Boolean(cached?.human), message: "Reconnect to Lichess to retry" });
+        setMastersExplorerStatus({ source: "masters", state: cached?.masters ? "stale" : "authentication-failed", category: "authentication-failed", status: rejectedExplorerStatusCodeRef.current, moves: [], retryable: false, hasCachedData: Boolean(cached?.masters), message: "Reconnect to Lichess to retry" });
+        return;
+      }
+      loadExplorer(fen, explorerSpeeds, explorerRatings, lichessToken)
         .then((value) => {
           if (!active) return;
-          const human = parseData(explorerResponseSchema, value.human, "Lichess explorer");
-          const masters = parseData(explorerResponseSchema, value.masters, "Masters explorer");
-          setExplorerMoves(adaptExplorerMoves(fen, human.moves ?? []));
-          setMastersMoves(adaptExplorerMoves(fen, masters.moves ?? []));
-          setExplorerState("ready");
-        })
-        .catch((error) => {
-          if (!active) return;
-          if (!navigator.onLine) setExplorerState(cached ? "stale" : "offline");
-          else if (error instanceof Error && error.message === "rate-limited")
-            setExplorerState(cached ? "stale" : "rate-limited");
-          else setExplorerState(cached ? "stale" : "error");
+          setExplorerMoves(adaptExplorerMoves(fen, value.lichess.moves));
+          setMastersMoves(adaptExplorerMoves(fen, value.masters.moves));
+          setLichessExplorerStatus(value.lichess);
+          setMastersExplorerStatus(value.masters);
+          if (value.lichess.category === "authentication-failed" || value.masters.category === "authentication-failed") {
+            explorerAuthenticationRejectedRef.current = true;
+            rejectedExplorerStatusCodeRef.current = value.lichess.category === "authentication-failed" ? value.lichess.status : value.masters.status;
+            setExplorerAuthenticationRejected(true);
+          }
         });
     });
     return () => {
       active = false;
     };
-  }, [fen, explorerOn, explorerRatings, explorerSpeeds]);
+  }, [fen, explorerOn, explorerRatings, explorerSpeeds, lichessToken]);
 
   useEffect(() => {
     let current = true;
@@ -1032,9 +1084,11 @@ export default function BuilderView({
     if (nextStart) setStartingFen(nextStart);
   }
   function disconnectLichess() {
-    localStorage.removeItem("tempo-lichess-token");
+    clearLichessSessionToken();
+    explorerAuthenticationRejectedRef.current = false;
+    rejectedExplorerStatusCodeRef.current = undefined;
     setLichessToken("");
-    setExplorerMoves([]);
+    setExplorerAuthenticationRejected(false);
   }
 
   return (
@@ -1297,6 +1351,11 @@ export default function BuilderView({
               >
                 {explorerOn ? "Pause databases" : "Enable databases"}
               </button>
+              {(!lichessToken || explorerAuthenticationRejected) && (
+                <button className="comparison-connect" onClick={() => void connectLichess()}>
+                  {lichessToken ? "Reconnect Lichess" : "Connect Lichess"}
+                </button>
+              )}
               {lichessToken && (
                 <button
                   className="comparison-connect"
@@ -1307,10 +1366,7 @@ export default function BuilderView({
               )}
             </div>
             <p className="source-status" role="status">
-              Stockfish: {stockfishState} · Maia: {maiaState} · Databases:{" "}
-              {!explorerOn
-                  ? "paused"
-                  : explorerState}
+              Stockfish: {stockfishState} · Maia: {maiaState} · Lichess: {explorerOn ? explorerStatusLabel(lichessExplorerStatus) : "Paused"} · Masters: {explorerOn ? explorerStatusLabel(mastersExplorerStatus) : "Paused"}
             </p>
             <p className="panel-message">
               {trainedTurn

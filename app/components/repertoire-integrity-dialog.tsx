@@ -5,6 +5,7 @@ import { Chessboard, type BoardTheme, type PieceSet } from "./chessboard";
 import CloseButton from "./buttons/CloseButton";
 import { useDialogFocus } from "../hooks/use-dialog-focus";
 import { loadExplorer } from "../lib/lichess-explorer";
+import { readLichessSessionToken } from "../lib/lichess-session";
 import { adaptExplorerMoves } from "../domain/adapters/analysis-adapters";
 import type { CandidateMove } from "../domain";
 import {
@@ -64,15 +65,15 @@ export function RepertoireIntegrityDialog({
       if (nextIssue?.fen) {
         const [gamesResponse, explorer] = await Promise.all([
           fetch(`${API_URL}/api/games/position-summary?fen=${encodeURIComponent(nextIssue.fen)}`),
-          loadExplorer(nextIssue.fen, "blitz,rapid,classical", "1600,1800,2000,2200,2500").catch(() => undefined),
+          loadExplorer(nextIssue.fen, "blitz,rapid,classical", "1600,1800,2000,2200,2500", readLichessSessionToken()),
         ]);
         if (gamesResponse.ok) {
           const games = (await gamesResponse.json()) as { moves?: { move_uci: string; games: number; score_percentage: number }[] };
           setPersonal(games.moves ?? []);
         } else setPersonal([]);
         if (explorer) {
-          setLichess(adaptExplorerMoves(nextIssue.fen, (explorer.human as { moves?: unknown[] }).moves ?? []));
-          setMasters(adaptExplorerMoves(nextIssue.fen, (explorer.masters as { moves?: unknown[] }).moves ?? []));
+          setLichess(adaptExplorerMoves(nextIssue.fen, explorer.lichess.moves));
+          setMasters(adaptExplorerMoves(nextIssue.fen, explorer.masters.moves));
         } else {
           setLichess([]);
           setMasters([]);

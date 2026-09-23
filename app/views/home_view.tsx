@@ -1070,8 +1070,10 @@ export default function Home() {
             setCurrentView("builder");
           }}
           onDeleteLocal={deleteLocalRepertoire}
+          onShowGamesAtPosition={(fen) => { setGamesFenFilter(fen); setCurrentView("games"); }}
           onRenameLocal={renameLocalRepertoire}
           onQueueChanged={refreshDatabaseQueue}
+          onTrain={() => setCurrentView("train")}
         />
       )}
       {currentView === "builder" && (

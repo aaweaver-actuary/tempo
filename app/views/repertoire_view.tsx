@@ -12,6 +12,7 @@ import { readJsonResponse } from "../lib/validated-data";
 import {
   repertoireCoverageGapsSchema,
   repertoireCoverageSummarySchema,
+  repertoireOpportunitiesSchema,
 } from "../domain/schemas";
 import type { z } from "zod";
 import { reportDebugError } from "../lib/debug-reporting";
@@ -20,6 +21,8 @@ import { Notice } from "../components/task-tabs";
 
 type CoverageSummary = z.infer<typeof repertoireCoverageSummarySchema>;
 type CoverageGap = z.infer<typeof repertoireCoverageGapsSchema>["gaps"][number];
+type RepertoireOpportunity = z.infer<typeof repertoireOpportunitiesSchema>["opportunities"][number];
+type GapTarget = Pick<CoverageGap, "gap_id" | "fen" | "move_uci" | "trained_color">;
 type IntroductionPriorityStatus = {
   state: "fallback" | "partial" | "ready";
   personal_games: number;
@@ -29,13 +32,16 @@ type IntroductionPriorityStatus = {
   error: string | null;
 };
 
-export default function RepertoireView({ imported, onImport, onBrowse, onResolveGap, onRepair, onDeleteLocal, onRenameLocal, onQueueChanged }: { imported: LocalRepertoire[]; onImport: () => void; onBrowse: (id: string) => void; onResolveGap: (repertoireId: string, gap: CoverageGap) => void; onRepair: (id: string) => void; onDeleteLocal: (id: string) => void; onRenameLocal: (id: string, name: string) => void; onQueueChanged: () => Promise<void> }) {
+export default function RepertoireView({ imported, onImport, onBrowse, onResolveGap, onShowGamesAtPosition, onRepair, onDeleteLocal, onRenameLocal, onQueueChanged, onTrain }: { imported: LocalRepertoire[]; onImport: () => void; onBrowse: (id: string) => void; onResolveGap: (repertoireId: string, gap: GapTarget) => void; onShowGamesAtPosition: (fen: string) => void; onRepair: (id: string) => void; onDeleteLocal: (id: string) => void; onRenameLocal: (id: string, name: string) => void; onQueueChanged: () => Promise<void>; onTrain: () => void }) {
   const [backendItems, setBackendItems] = useState<RepertoireItem[]>([]);
   const [loaded, setLoaded] = useState(!usesLocalApi());
   const [libraryPage, setLibraryPage] = useState(0);
   const [error, setError] = useState("");
   const [coverageByRepertoire, setCoverageByRepertoire] = useState<Record<string, CoverageSummary>>({});
   const [gapsByRepertoire, setGapsByRepertoire] = useState<Record<string, CoverageGap[]>>({});
+  const [opportunitiesByRepertoire, setOpportunitiesByRepertoire] = useState<Record<string, RepertoireOpportunity[]>>({});
+  const [openOpportunities, setOpenOpportunities] = useState<string | null>(null);
+  const [scoutingRepertoire, setScoutingRepertoire] = useState<string | null>(null);
   const [openMenu, setOpenMenu] = useState<string | null>(null);
 
   const loadBackend = useCallback(async () => {
@@ -130,6 +136,23 @@ export default function RepertoireView({ imported, onImport, onBrowse, onResolve
     if (!response.ok) throw new Error("Could not queue repertoire coverage.");
     await loadCoverage(repertoireId);
   }
+  async function loadOpportunities(repertoireId: string) {
+    const response = await fetch(`${API_URL}/api/repertoires/${repertoireId}/opportunities`);
+    const result = await readJsonResponse(response, repertoireOpportunitiesSchema, "repertoire opportunities");
+    setOpportunitiesByRepertoire((current) => ({ ...current, [repertoireId]: result.opportunities }));
+    setScoutingRepertoire(null);
+    setOpenOpportunities(repertoireId);
+  }
+  async function dismissOpportunity(repertoireId: string, opportunityId: string) {
+    const response = await fetch(`${API_URL}/api/repertoires/${repertoireId}/opportunities/${opportunityId}/dismiss`, { method: "POST" });
+    if (!response.ok) throw new Error(`Could not dismiss opportunity (HTTP ${response.status}).`);
+    await loadOpportunities(repertoireId);
+  }
+  async function refreshOpportunities(repertoireId: string) {
+    const response = await fetch(`${API_URL}/api/repertoires/${repertoireId}/opportunities/refresh`, { method: "POST" });
+    if (!response.ok) throw new Error(`Could not queue repertoire scouting (HTTP ${response.status}).`);
+    setScoutingRepertoire(repertoireId);
+  }
   return (
     <section className="library-page" id="repertoire">
       {error && <Notice error onRetry={() => { invalidateWorkspaceData(); void loadBackend(); }}>{loaded ? "Showing previously loaded records. " : ""}{error}</Notice>}
@@ -150,7 +173,36 @@ export default function RepertoireView({ imported, onImport, onBrowse, onResolve
               <small>{coverageByRepertoire[item.id].status}{coverageByRepertoire[item.id].unknown_nodes ? ` · ${coverageByRepertoire[item.id].unknown_nodes} positions awaiting data` : ""}</small>
               {gapsByRepertoire[item.id]?.slice(0, 3).map((gap) => <button key={gap.gap_id} onClick={() => onResolveGap(item.id, gap)}>Fill {gap.move_uci} gap · {gap.probability === null ? "unknown" : `${Math.round(gap.probability * 1000) / 10}%`}</button>)}
             </div>}
-            <div className="repertoire-actions"><button className="browse-button" onClick={() => onBrowse(item.id)}>Browse tree</button>{item.backend && <button onClick={() => void (coverageByRepertoire[item.id] ? refreshCoverage(item.id) : loadCoverage(item.id)).catch((failure) => { reportDebugError(failure, { kind: "api", source: "repertoire-coverage", operation: "load repertoire coverage", endpoint: `${API_URL}/api/repertoires/${item.id}/coverage` }); setError(failure instanceof Error ? failure.message : "Coverage unavailable"); })}>{coverageByRepertoire[item.id] ? "Refresh coverage" : "Check coverage"}</button>}</div>
+            {item.backend && openOpportunities === item.id && <div className="opportunities-panel" aria-label="Repertoire opportunities">
+              <strong>Opportunities</strong>
+              <button onClick={() => void refreshOpportunities(item.id).catch((failure) => setError(failure instanceof Error ? failure.message : "Could not queue scouting."))}>Refresh scouting</button>
+              {scoutingRepertoire === item.id && <small>Scouting queued in Background activity. Reopen Opportunities to see new results.</small>}
+              {opportunitiesByRepertoire[item.id]?.length === 0 && <p>No current opportunities. Refresh scouting to check existing evidence.</p>}
+              {opportunitiesByRepertoire[item.id]?.map((opportunity) => {
+                const evidence = opportunity.evidence;
+                const cohort = evidence.cohort && typeof evidence.cohort === "object" ? evidence.cohort as Record<string, unknown> : {};
+                const count = (key: string) => typeof evidence[key] === "number" ? String(evidence[key]) : "—";
+                const percentage = (key: string) => typeof evidence[key] === "number" ? `${Math.round(Number(evidence[key]) * 1000) / 10}%` : "unavailable";
+                return <div key={opportunity.id} className="opportunity-item">
+                  <strong>{opportunity.kind === "weak_known_decision" ? "Weak known decision" : opportunity.kind === "missing_response" ? `Missing response: ${opportunity.opponent_move_uci}` : `Post-gap weakness: ${opportunity.opponent_move_uci}`}</strong>
+                  <small>Position: {opportunity.fen_key}</small>
+                  {opportunity.kind === "weak_known_decision" ? <p>Reached {count("encounter_count")} times · correct {count("success_count")} · missed {count("miss_count")} · successful route {count("route_success_count")} times. Priority introduction within your daily limit.</p> : opportunity.kind === "missing_response" ? <p>Maia {String(cohort.maia_elo ?? "cohort")} {percentage("maia_probability")} ({String(evidence.maia_status ?? "unknown")}) · Lichess {String(cohort.explorer_rating ?? "cohort")} {percentage("explorer_probability")} ({String(evidence.explorer_status ?? "unknown")}, {count("explorer_games")} games) · your games {count("personal_count")}. Coverage missing.</p> : <p>{count("supporting_games")} supporting games · largest following mistake {count("max_loss_cp")} cp{opportunity.card_id ? " · matching existing card" : ""}.</p>}
+                  {opportunity.kind === "weak_known_decision" ? <button onClick={onTrain}>Go to Train</button> : opportunity.kind === "post_gap_weakness" && opportunity.card_id ? <button onClick={() => onBrowse(item.id)}>Browse existing repertoire</button> : opportunity.opponent_move_uci && <button onClick={() => onResolveGap(item.id, { gap_id: typeof evidence.coverage_node_id === "string" ? `${evidence.coverage_node_id}:${opportunity.opponent_move_uci}` : "", fen: opportunity.fen, move_uci: opportunity.opponent_move_uci!, trained_color: opportunity.trained_color })}>Investigate branch</button>}
+                  {opportunity.kind === "post_gap_weakness" && <>
+                    <button onClick={() => onShowGamesAtPosition(opportunity.fen)}>View supporting games</button>
+                    {Array.isArray(evidence.findings) && evidence.findings.length > 0 && <details>
+                      <summary>Engine and game evidence</summary>
+                      <ul>{evidence.findings.slice(0, 5).map((finding, index) => {
+                        const support = finding && typeof finding === "object" ? finding as Record<string, unknown> : {};
+                        return <li key={String(support.finding_id ?? index)}>Game {String(support.game_id ?? "unknown")} · ply {String(support.mistake_ply ?? "unknown")} · loss {String(support.mistake_loss_cp ?? "unknown")} cp · analysis {String(support.analysis_version ?? "unknown")}</li>;
+                      })}</ul>
+                    </details>}
+                  </>}
+                  <button onClick={() => void dismissOpportunity(item.id, opportunity.id).catch((failure) => setError(failure instanceof Error ? failure.message : "Could not dismiss opportunity."))}>Dismiss</button>
+                </div>;
+              })}
+            </div>}
+            <div className="repertoire-actions"><button className="browse-button" onClick={() => onBrowse(item.id)}>Browse tree</button>{item.backend && <button onClick={() => void (coverageByRepertoire[item.id] ? refreshCoverage(item.id) : loadCoverage(item.id)).catch((failure) => { reportDebugError(failure, { kind: "api", source: "repertoire-coverage", operation: "load repertoire coverage", endpoint: `${API_URL}/api/repertoires/${item.id}/coverage` }); setError(failure instanceof Error ? failure.message : "Coverage unavailable"); })}>{coverageByRepertoire[item.id] ? "Refresh coverage" : "Check coverage"}</button>}{item.backend && <button onClick={() => void loadOpportunities(item.id).catch((failure) => setError(failure instanceof Error ? failure.message : "Opportunities unavailable."))}>Opportunities</button>}</div>
           </article>
         ))}
         <button className="new-repertoire-card" onClick={(event) => { event.currentTarget.focus(); onImport(); }}><span>＋</span><strong>Add a repertoire</strong><small>PGN files stay on this computer</small></button>

@@ -17,6 +17,7 @@ from .motif_detectors import (
 )
 from .tactical_catalog import catalog_status
 from .tactical_opportunities import opportunity_id
+from .repertoire_comparison import canonical_fen
 
 
 def _finding_id(game_id: str, analysis_version: int, kind: str, ply: int) -> str:
@@ -225,6 +226,12 @@ def refresh_game_findings(
                 )
                 gap_analysis = decisions_after_gap[0] if decisions_after_gap else None
                 if mistake and gap_analysis:
+                    opponent_gap_ply = game["first_opponent_gap_ply"]
+                    opponent_gap_board = (
+                        _position_before_ply(game["start_fen"], moves, opponent_gap_ply)
+                        if opponent_gap_ply is not None and opponent_gap_ply < len(moves)
+                        else None
+                    )
                     gap_board = _position_before_ply(
                         game["start_fen"], moves, gap_analysis["ply"]
                     )
@@ -250,6 +257,8 @@ def refresh_game_findings(
                             "mistake_ply": mistake["ply"],
                             "mistake_loss_cp": mistake["loss_cp"],
                             "player_decisions_until_mistake": decisions_after_gap.index(mistake) + 1,
+                            "opponent_gap_fen_key": canonical_fen(opponent_gap_board.fen()) if opponent_gap_board else None,
+                            "opponent_gap_move_uci": moves[opponent_gap_ply] if opponent_gap_board else None,
                         },
                         repertoire_id=game["repertoire_id"],
                         card_id=linked_card,

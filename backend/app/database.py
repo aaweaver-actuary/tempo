@@ -614,6 +614,39 @@ def initialize() -> None:
             UNIQUE(game_id,repertoire_id,ply)
         )""",
         "CREATE INDEX IF NOT EXISTS idx_repertoire_decision_events_card_time ON repertoire_decision_events(card_id,played_at,outcome)",
+        "CREATE INDEX IF NOT EXISTS idx_repertoire_decision_events_position ON repertoire_decision_events(repertoire_id,fen_key,expected_uci,played_at)",
+        """CREATE TABLE IF NOT EXISTS repertoire_decision_gameplay_summaries (
+            repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+            fen_key TEXT NOT NULL,
+            expected_uci TEXT NOT NULL,
+            encounter_count INTEGER NOT NULL,
+            success_count INTEGER NOT NULL,
+            miss_count INTEGER NOT NULL,
+            recent_encounter_count INTEGER NOT NULL,
+            recent_success_count INTEGER NOT NULL,
+            recent_miss_count INTEGER NOT NULL,
+            last_encountered TEXT,
+            route_success_count INTEGER,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(repertoire_id,fen_key,expected_uci)
+        )""",
+        """CREATE TABLE IF NOT EXISTS repertoire_opportunities (
+            id TEXT PRIMARY KEY,
+            repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+            kind TEXT NOT NULL CHECK(kind IN ('weak_known_decision','missing_response','post_gap_weakness')),
+            fen_key TEXT NOT NULL,
+            card_id TEXT REFERENCES cards(id) ON DELETE SET NULL,
+            opponent_move_uci TEXT,
+            status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','dismissed','resolved')),
+            score REAL NOT NULL,
+            evidence_json TEXT NOT NULL,
+            evidence_fingerprint TEXT NOT NULL,
+            dismissed_evidence_json TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            resolved_at TEXT
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_repertoire_opportunities_list ON repertoire_opportunities(repertoire_id,status,score DESC)",
         """
         CREATE TABLE IF NOT EXISTS game_findings (
             id TEXT PRIMARY KEY,
@@ -632,6 +665,10 @@ def initialize() -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_game_findings_status ON game_findings(status,kind,updated_at)",
+        """CREATE INDEX IF NOT EXISTS idx_game_findings_repertoire_gap
+           ON game_findings(repertoire_id,kind,
+              json_extract(evidence_json,'$.opponent_gap_fen_key'),
+              json_extract(evidence_json,'$.opponent_gap_move_uci'))""",
         """
         CREATE TABLE IF NOT EXISTS tactical_opportunities (
             id TEXT PRIMARY KEY,

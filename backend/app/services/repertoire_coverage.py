@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+import threading
 import uuid
 from statistics import median
 
@@ -15,6 +16,31 @@ import httpx
 from ..database import connection
 from .repertoire_comparison import canonical_fen
 from .activity_gate import activity_gate
+
+
+_explorer_session_lock = threading.Lock()
+_explorer_session_token: str | None = None
+
+
+class ExplorerAuthenticationError(RuntimeError):
+    def __init__(self, status: int | None = None):
+        self.status = status
+        super().__init__(f"Lichess Explorer authentication required{f' (HTTP {status})' if status else ''}")
+
+
+class ExplorerRequestError(RuntimeError):
+    pass
+
+
+def set_explorer_session_token(token: str | None) -> None:
+    global _explorer_session_token
+    with _explorer_session_lock:
+        _explorer_session_token = token or None
+
+
+def get_explorer_session_token() -> str | None:
+    with _explorer_session_lock:
+        return _explorer_session_token
 
 
 @dataclass(frozen=True)
@@ -280,6 +306,8 @@ def enqueue_coverage_refresh(
 
 def claim_coverage_node() -> dict | None:
     from .background_activity import claimable, control_order
+    if not get_explorer_session_token():
+        return None
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
         database.execute("BEGIN IMMEDIATE")
@@ -322,7 +350,7 @@ def _cached_explorer_payload(
     return None, cache_key
 
 
-def _fetch_explorer(fen: str, speeds: str, ratings: str) -> dict:
+def _fetch_explorer(fen: str, speeds: str, ratings: str, access_token: str) -> dict:
     speed_weights = {}
     for speed_part in speeds.split(","):
         speed_name, _, raw_weight = speed_part.partition(":")
@@ -331,7 +359,11 @@ def _fetch_explorer(fen: str, speeds: str, ratings: str) -> dict:
     weighted_probabilities: dict[str, float] = {}
     explorer_games = 0
     with httpx.Client(
-        timeout=15, headers={"User-Agent": "Tempo repertoire coverage/1.0"}
+        timeout=15,
+        headers={
+            "User-Agent": "Tempo repertoire coverage/1.0",
+            "Authorization": f"Bearer {access_token}",
+        },
     ) as client:
         for speed_name, raw_weight in speed_weights.items():
             response = client.get(
@@ -343,7 +375,14 @@ def _fetch_explorer(fen: str, speeds: str, ratings: str) -> dict:
                     "ratings": ratings,
                 },
             )
-            response.raise_for_status()
+            if response.status_code in {401, 403}:
+                raise ExplorerAuthenticationError(response.status_code)
+            if response.status_code == 429:
+                raise ExplorerRequestError("Lichess Explorer rate limited (HTTP 429)")
+            if not response.is_success:
+                raise ExplorerRequestError(
+                    f"Lichess Explorer unavailable (HTTP {response.status_code})"
+                )
             payload = response.json()
             if not isinstance(payload, dict) or not isinstance(
                 payload.get("moves"), list
@@ -460,7 +499,10 @@ def execute_coverage_node(node: dict) -> None:
                 database, node["fen"], speeds, ratings
             )
         if payload is None:
-            payload = _fetch_explorer(node["fen"], speeds, ratings)
+            access_token = get_explorer_session_token()
+            if not access_token:
+                raise ExplorerAuthenticationError()
+            payload = _fetch_explorer(node["fen"], speeds, ratings, access_token)
         moves = payload.get("moves", [])
         counts = {
             str(move.get("uci")): int(move.get("white", 0))
@@ -540,11 +582,25 @@ def execute_coverage_node(node: dict) -> None:
                 (node["run_id"],),
             ).fetchone()
         from .introduction_priorities import enqueue_priority_refresh
+        from .repertoire_opportunities import enqueue_opportunity_refresh
 
         enqueue_priority_refresh(node["repertoire_id"], background=True)
+        if not remaining:
+            enqueue_opportunity_refresh(node["repertoire_id"], background=True)
         emit_progress("coverage", node["run_id"], node["run_id"], "Checking positions",
                         (progress_counts["explorer_done"] or 0) + (progress_counts["maia_done"] or 0),
                         progress_counts["total"] * 2)
+    except ExplorerAuthenticationError as error:
+        set_explorer_session_token(None)
+        with connection(background=True) as database:
+            database.execute(
+                "UPDATE repertoire_coverage_nodes SET explorer_status='queued',last_error=?,updated_at=? WHERE id=?",
+                (str(error), _now(), node["id"]),
+            )
+            database.execute(
+                "UPDATE repertoire_coverage_runs SET status='queued',last_error=?,updated_at=? WHERE id=?",
+                (str(error), _now(), node["run_id"]),
+            )
     except Exception as error:
         with connection(background=True) as database:
             database.execute(
@@ -727,5 +783,8 @@ def submit_maia_coverage(node_id: str, lease_id: str, moves: list[dict]) -> None
                     progress_counts["total"] * 2)
     if repertoire_id:
         from .introduction_priorities import enqueue_priority_refresh
+        from .repertoire_opportunities import enqueue_opportunity_refresh
 
         enqueue_priority_refresh(repertoire_id, background=True)
+        if (progress_counts["maia_done"] or 0) == progress_counts["total"]:
+            enqueue_opportunity_refresh(repertoire_id, background=True)

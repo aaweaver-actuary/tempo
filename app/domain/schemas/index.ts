@@ -114,7 +114,7 @@ export const explorerMoveSchema = z.looseObject({
   black: integer,
 });
 export const explorerResponseSchema = z.looseObject({
-  moves: z.array(z.unknown()),
+  moves: z.array(explorerMoveSchema),
   white: integer.optional(),
   draws: integer.optional(),
   black: integer.optional(),
@@ -776,6 +776,23 @@ export const repertoireCoverageGapsSchema = z.strictObject({
       trained_color: colorSchema,
     }),
   ),
+});
+export const repertoireOpportunitiesSchema = z.strictObject({
+  opportunities: z.array(z.strictObject({
+    id: z.string(),
+    repertoire_id: z.string(),
+    kind: z.enum(["weak_known_decision", "missing_response", "post_gap_weakness"]),
+    status: z.literal("active"),
+    fen_key: fenKeySchema,
+    fen: fenStringSchema,
+    card_id: z.string().nullable(),
+    opponent_move_uci: uciMoveSchema.nullable(),
+    trained_color: colorSchema,
+    score: z.number().finite(),
+    evidence: z.record(z.string(), z.unknown()),
+    created_at: z.string(),
+    updated_at: z.string(),
+  })),
 });
 export const progressResponseSchema = z.strictObject({
   states: z.record(z.string(), integer),

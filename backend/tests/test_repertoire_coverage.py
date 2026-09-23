@@ -117,6 +117,7 @@ def test_coverage_refresh_persists_required_gaps_without_marking_unknown_complet
             ),
         )
     run_id = repertoire_coverage.enqueue_coverage_refresh("r")
+    repertoire_coverage.set_explorer_session_token("test-session-token")
     node = repertoire_coverage.claim_coverage_node()
     assert node and node["run_id"] == run_id
     monkeypatch.setattr(
@@ -136,3 +137,117 @@ def test_coverage_refresh_persists_required_gaps_without_marking_unknown_complet
     assert summary["covered_branches"] == 1
     assert summary["is_complete"] is False
     assert [gap["move_uci"] for gap in gaps] == ["c7c5"]
+    repertoire_coverage.set_explorer_session_token(None)
+
+
+def test_coverage_claim_waits_for_in_memory_lichess_session_and_keeps_job_queued(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as database_connection:
+        database_connection.execute(
+            "INSERT INTO repertoires(id,name,source_name,created_at) VALUES('r','R','r.pgn','2026-09-19T00:00:00+00:00')"
+        )
+        database_connection.execute(
+            """INSERT INTO repertoire_lines(
+                   id,repertoire_id,name,trained_color,start_fen,moves_json,created_at
+               ) VALUES('l','r','line','white',?, ?, '2026-09-19T00:00:00+00:00')""",
+            ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", '["e2e4","e7e5"]'),
+        )
+    repertoire_coverage.set_explorer_session_token(None)
+    run_id = repertoire_coverage.enqueue_coverage_refresh("r")
+
+    assert repertoire_coverage.claim_coverage_node() is None
+    with database.connection() as database_connection:
+        status = database_connection.execute(
+            "SELECT explorer_status FROM repertoire_coverage_nodes WHERE run_id=?", (run_id,)
+        ).fetchone()["explorer_status"]
+    assert status == "queued"
+
+    repertoire_coverage.set_explorer_session_token("ephemeral-session-token")
+    try:
+        assert repertoire_coverage.claim_coverage_node() is not None
+    finally:
+        repertoire_coverage.set_explorer_session_token(None)
+
+
+def test_coverage_explorer_forwards_bearer_token_without_persisting_it(monkeypatch):
+    observed = {}
+
+    class Response:
+        status_code = 200
+        is_success = True
+
+        @staticmethod
+        def json():
+            return {"moves": []}
+
+    class Client:
+        def __init__(self, **kwargs):
+            observed["headers"] = kwargs["headers"]
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        @staticmethod
+        def get(*_args, **_kwargs):
+            return Response()
+
+    monkeypatch.setattr(repertoire_coverage.httpx, "Client", Client)
+    repertoire_coverage.set_explorer_session_token("ephemeral-session-token")
+    try:
+        repertoire_coverage._fetch_explorer("fen", "rapid", "1600", "ephemeral-session-token")
+    finally:
+        repertoire_coverage.set_explorer_session_token(None)
+
+    assert observed["headers"]["Authorization"] == "Bearer ephemeral-session-token"
+    assert repertoire_coverage.get_explorer_session_token() is None
+
+
+def test_explorer_session_handoff_keeps_authorization_in_memory_only():
+    from app.main import coverage_explorer_session
+
+    response = coverage_explorer_session("Bearer one-session-token")
+    assert response == {"registered": True}
+    assert repertoire_coverage.get_explorer_session_token() == "one-session-token"
+
+    response = coverage_explorer_session(None)
+    assert response == {"registered": False}
+    assert repertoire_coverage.get_explorer_session_token() is None
+
+
+def test_coverage_requeues_after_rejected_session_and_does_not_repeat_bad_token(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as database_connection:
+        database_connection.execute(
+            "INSERT INTO repertoires(id,name,source_name,created_at) VALUES('r','R','r.pgn','2026-09-19T00:00:00+00:00')"
+        )
+        database_connection.execute(
+            """INSERT INTO repertoire_lines(
+                   id,repertoire_id,name,trained_color,start_fen,moves_json,created_at
+               ) VALUES('l','r','line','white',?, ?, '2026-09-19T00:00:00+00:00')""",
+            ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", '["e2e4","e7e5"]'),
+        )
+    repertoire_coverage.set_explorer_session_token("rejected-token")
+    run_id = repertoire_coverage.enqueue_coverage_refresh("r")
+    node = repertoire_coverage.claim_coverage_node()
+    assert node is not None
+
+    def reject_request(*_args):
+        raise repertoire_coverage.ExplorerAuthenticationError(401)
+
+    monkeypatch.setattr(repertoire_coverage, "_fetch_explorer", reject_request)
+    try:
+        repertoire_coverage.execute_coverage_node(node)
+        assert repertoire_coverage.get_explorer_session_token() is None
+        assert repertoire_coverage.claim_coverage_node() is None
+        with database.connection() as database_connection:
+            status = database_connection.execute(
+                "SELECT explorer_status FROM repertoire_coverage_nodes WHERE run_id=?", (run_id,)
+            ).fetchone()["explorer_status"]
+        assert status == "queued"
+    finally:
+        repertoire_coverage.set_explorer_session_token(None)

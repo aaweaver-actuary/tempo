@@ -871,6 +871,9 @@ def publish_opening_graph_rebuild(
         priority=10,
         foreground=False,
     )
+    from .repertoire_opportunities import enqueue_opportunity_refresh
+
+    enqueue_opportunity_refresh(repertoire_id, background=True)
 
 
 def execute_opening_graph_rebuild(task: dict) -> None:

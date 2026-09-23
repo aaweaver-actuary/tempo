@@ -44,11 +44,11 @@ vi.mock("../../app/lib/analysis-engines", () => ({
   analyzeWithMaia: vi.fn(async () => []),
 }));
 
-it("Builder comparison exposes public database status without requiring authentication", () => {
-  vi.stubGlobal(
-    "fetch",
-    vi.fn(async () => Response.json({ lines: [], annotations: [] })),
-  );
+it("Builder requires Lichess sign-in before Explorer requests and offers its connection action", () => {
+  sessionStorage.removeItem("tempo-lichess-token");
+  localStorage.removeItem("tempo-lichess-token");
+  const fetcher = vi.fn(async () => Response.json({ lines: [], annotations: [] }));
+  vi.stubGlobal("fetch", fetcher);
   render(
     <BuilderView
       imported={[]}
@@ -63,8 +63,64 @@ it("Builder comparison exposes public database status without requiring authenti
   expect(panel.querySelector(".comparison-connect")?.textContent).toBe(
     "Pause databases",
   );
-  expect(panel.textContent).toContain("Databases:");
-  expect(panel.textContent).not.toContain("not connected");
+  expect(panel.textContent).toContain("Lichess: Sign in required");
+  expect(panel.textContent).toContain("Masters: Sign in required");
+  expect(screen.getByRole("button", { name: "Connect Lichess" })).toBeTruthy();
+  expect((fetcher.mock.calls as unknown as Array<[RequestInfo | URL]>).some(([url]) => String(url).includes("explorer.lichess.org"))).toBe(false);
+});
+
+it("Builder OAuth completion stores the session token and retries the current Explorer position", async () => {
+  localStorage.removeItem("tempo-lichess-token");
+  sessionStorage.removeItem("tempo-lichess-token");
+  sessionStorage.setItem("tempo-lichess-verifier", "pkce-verifier");
+  sessionStorage.setItem("tempo-lichess-state", "oauth-state");
+  window.history.replaceState({}, "", "/?code=oauth-code&state=oauth-state");
+  const explorerPayload = {
+    white: 10,
+    draws: 5,
+    black: 5,
+    moves: [{ uci: "e2e4", san: "e4", white: 6, draws: 2, black: 2 }],
+  };
+  const fetcher = vi.fn(async (input) => {
+    const url = String(input);
+    if (url.includes("lichess.org/api/token")) return Response.json({ access_token: "session-token" });
+    if (url.includes("explorer.lichess.org")) return Response.json(explorerPayload);
+    return Response.json({ lines: [], annotations: [] });
+  });
+  vi.stubGlobal("fetch", fetcher);
+
+  render(<BuilderView imported={[]} settings={new Settings()} theme="brown" pieceSet="cburnett" />);
+
+  await waitFor(() => expect(fetcher.mock.calls.filter(([url]) => String(url).includes("explorer.lichess.org"))).toHaveLength(2));
+  expect(sessionStorage.getItem("tempo-lichess-token")).toBe("session-token");
+  expect(localStorage.getItem("tempo-lichess-token")).toBeNull();
+  for (const [url, options] of fetcher.mock.calls as unknown as Array<[string, RequestInit]>)
+    if (url.includes("explorer.lichess.org"))
+      expect(options.headers).toEqual({ Authorization: "Bearer session-token" });
+  await waitFor(() => expect(screen.getByText(/Lichess: Ready/)).toBeTruthy());
+  window.history.replaceState({}, "", "/");
+});
+
+it("Builder does not retry Explorer requests with a rejected token until reconnection", async () => {
+  sessionStorage.setItem("tempo-lichess-token", "rejected-token");
+  const explorerUrls: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input) => {
+    const url = String(input);
+    if (url.includes("explorer.lichess.org")) {
+      explorerUrls.push(url);
+      return new Response("", { status: 401 });
+    }
+    return Response.json({ lines: [], annotations: [] });
+  }));
+
+  render(<BuilderView imported={[]} settings={new Settings()} theme="brown" pieceSet="cburnett" />);
+
+  await waitFor(() => expect(explorerUrls).toHaveLength(2));
+  expect(screen.getByRole("button", { name: "Reconnect Lichess" })).toBeTruthy();
+  fireEvent.click(screen.getByText("d2d4"));
+  await waitFor(() => expect(screen.getByText(/Lichess: Reconnect required/)).toBeTruthy());
+  expect(explorerUrls).toHaveLength(2);
+  sessionStorage.removeItem("tempo-lichess-token");
 });
 
 it("builder flip preserves repertoire identity and history across remounts", async () => {

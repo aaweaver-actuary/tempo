@@ -45,6 +45,7 @@ from .opening_graph import (
     prepare_opening_graph_rebuild,
     publish_opening_graph_rebuild,
 )
+from .repertoire_opportunities import enqueue_opportunity_refresh
 
 
 _durable_task_handlers: dict[str, Callable[[dict], None]] = {}
@@ -156,6 +157,18 @@ def enqueue_game_derivation(game_id: str, *, background: bool = False) -> None:
                    completed_phases=0,next_attempt_at=NULL,updated_at=excluded.updated_at""",
             (game_id, _now()),
         )
+
+
+def _enqueue_game_repertoire_refreshes(game_id: str) -> None:
+    enqueue_priority_refreshes_for_game(game_id, background=True)
+    with connection(background=True) as database:
+        repertoire_ids = [row[0] for row in database.execute(
+            "SELECT DISTINCT repertoire_id FROM game_repertoire_matches WHERE game_id=?",
+            (game_id,),
+        )]
+    for repertoire_id in repertoire_ids:
+        activity_gate.wait_for_foreground()
+        enqueue_opportunity_refresh(repertoire_id, background=True)
 
 
 def _claim_derivation() -> str | None:
@@ -306,7 +319,7 @@ def _execute_derivation(game_id: str) -> None:
             _run_derivation_phase(
                 game_id,
                 "enqueueing_priorities",
-                lambda: enqueue_priority_refreshes_for_game(game_id, background=True),
+                lambda: _enqueue_game_repertoire_refreshes(game_id),
             )
             activity_gate.wait_for_foreground()
             with connection(background=True) as database:
@@ -490,14 +503,15 @@ class GameSyncCoordinator:
                                     graph_artifacts,
                                 )
                             else:
-                                await asyncio.to_thread(handler, item)
-                            await asyncio.to_thread(
-                                complete_task,
-                                item["id"],
-                                item["generation"],
-                                item["lease_token"],
-                            )
-                            await asyncio.to_thread(emit_progress, "durable", item["id"], str(item["generation"]), "Finished")
+                                advanced = await asyncio.to_thread(handler, item)
+                            if item["kind"] != "repertoire_opportunity" or not advanced:
+                                await asyncio.to_thread(
+                                    complete_task,
+                                    item["id"],
+                                    item["generation"],
+                                    item["lease_token"],
+                                )
+                                await asyncio.to_thread(emit_progress, "durable", item["id"], str(item["generation"]), "Finished")
                         except Exception as error:
                             await asyncio.to_thread(
                                 fail_task,

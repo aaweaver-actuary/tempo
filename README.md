@@ -104,7 +104,7 @@ Tempo now uses the official `@lichess-org/chessground` package instead of a hand
 
 The Lichess puzzle database is public domain and provides FEN, UCI solution moves, rating, popularity, motifs, and source-game URLs. Tempo includes 7,150 globally distinct, validated records in `public/data/tactics-decks.json`: 100 in each fundamental stage and 250 in each focused stage for thirteen motifs. Focused stages cover ratings 1250–2000. Opening and puzzle scheduling stay independent even when their due cards are shuffled into one session.
 
-Lichess now requires authentication for Opening Explorer requests. Tempo uses Lichess's PKCE flow, requests no account permissions, and keeps the access token in session storage. Stockfish 19 runs locally in WebAssembly; Maia 3 runs locally through its simplified ONNX model. Engine inputs and repertoire data do not leave the browser.
+Lichess now requires authentication for Opening Explorer requests. Tempo uses Lichess's PKCE flow, requests no account permissions, and keeps the access token in session storage. Explorer requests authenticate each source independently; local repertoire-coverage work receives the token through a temporary in-memory backend session and pauses until a browser session registers credentials. The token is not stored with queued work or Explorer cache entries. Stockfish 19 runs locally in WebAssembly; Maia 3 runs locally through its simplified ONNX model. Engine inputs and repertoire data do not leave the browser.
 
 ## Recommended maturity and depth policy
 

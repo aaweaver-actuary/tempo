@@ -6,6 +6,7 @@ import { readJsonResponse } from "../lib/validated-data";
 import { usesLocalApi } from "../utils/local";
 import { backgroundFetch } from "../lib/background-fetch";
 import { reportDebugError } from "../lib/debug-reporting";
+import { onLichessSessionTokenChange, readLichessSessionToken } from "../lib/lichess-session";
 
 const IDLE_DELAY_MS = 3_000;
 const RETRY_DELAY_MS = 15_000;
@@ -21,6 +22,27 @@ export function useRepertoireCoverageWorker() {
     let activeRunId: string | undefined;
     let activeLease: { nodeId: string; leaseId: string } | undefined;
     let activeController: AbortController | undefined;
+    let sessionRegistration: Promise<void> = Promise.resolve();
+    let registeredSessionToken: string | null | undefined;
+    const registerExplorerSession = () => {
+      const token = readLichessSessionToken();
+      sessionRegistration = sessionRegistration.catch(() => undefined).then(async () => {
+        const response = await backgroundFetch(`${API_URL}/api/repertoire-coverage/explorer-session`, {
+          method: "POST",
+          headers: token ? { Authorization: `Bearer ${token}` } : {},
+        });
+        if (response.ok) registeredSessionToken = token || null;
+      }).catch(() => undefined);
+    };
+    registerExplorerSession();
+    const removeTokenListener = onLichessSessionTokenChange(registerExplorerSession);
+    const clearExplorerSessionOnPageExit = () => {
+      void fetch(`${API_URL}/api/repertoire-coverage/explorer-session`, {
+        method: "POST",
+        keepalive: true,
+        mode: "no-cors",
+      }).catch(() => undefined);
+    };
     const releaseActiveLease = () => {
       const lease = activeLease;
       activeLease = undefined;
@@ -54,6 +76,11 @@ export function useRepertoireCoverageWorker() {
       }
       running = true;
       try {
+        await sessionRegistration;
+        if (registeredSessionToken !== readLichessSessionToken()) {
+          registerExplorerSession();
+          await sessionRegistration;
+        }
         const claimResponse = await backgroundFetch(
           `${API_URL}/api/repertoire-coverage/maia/claim`,
           { method: "POST" },
@@ -120,9 +147,12 @@ export function useRepertoireCoverageWorker() {
     window.addEventListener("keydown", recordForegroundActivity, true);
     document.addEventListener("visibilitychange", recordForegroundActivity);
     window.addEventListener("tempo:background-control", handleControl);
+    window.addEventListener("pagehide", clearExplorerSessionOnPageExit);
     schedule(IDLE_DELAY_MS);
     return () => {
       stopped = true;
+      removeTokenListener();
+      window.removeEventListener("pagehide", clearExplorerSessionOnPageExit);
       if (timer !== undefined) window.clearTimeout(timer);
       window.removeEventListener("pointerdown", recordForegroundActivity, true);
       window.removeEventListener("keydown", recordForegroundActivity, true);

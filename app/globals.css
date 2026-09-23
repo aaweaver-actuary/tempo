@@ -2030,6 +2030,38 @@ button {
   font-size: 22px;
   font-weight: 500;
 }
+.opportunities-panel {
+  display: grid;
+  gap: 10px;
+  padding: 12px 0;
+  border-top: 1px solid var(--line);
+}
+.opportunities-panel > strong {
+  font-size: 15px;
+}
+.opportunity-item {
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: #fff;
+}
+.opportunity-item strong,
+.opportunity-item small {
+  display: block;
+}
+.opportunity-item small {
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+  color: var(--muted);
+}
+.opportunity-item p {
+  margin: 8px 0;
+  font-size: 12px;
+  line-height: 1.45;
+}
+.opportunity-item button {
+  margin: 3px 6px 0 0;
+}
 .connect-panel {
   padding: 13px;
   border-radius: 8px;
