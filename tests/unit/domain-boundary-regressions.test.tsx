@@ -39,4 +39,28 @@ describe("validated domain boundaries", () => {
     expect(() => mapQueueCardToPracticeCard({ ...record, start_fen: "bad FEN" })).toThrow(/FEN/);
     expect(mapPackagedPuzzleToPracticeCard({ DeckId: "deck", DeckPosition: 1, PuzzleId: "bad", FEN: "bad FEN", Moves: "e2e4", Rating: 1000 })).toBeNull();
   });
+
+  it("real-game priority reason crosses the strict queue schema into a practice card", () => {
+    const mapped = mapQueueCardToPracticeCard({
+      id: "game-priority-card",
+      queue_entry_id: 43,
+      start_fen: STANDARD_FEN,
+      moves: ["e2e4"],
+      content_type: "opening",
+      repertoire_name: "Main",
+      repertoire_source: "PGN",
+      gameplay_priority_reason: "Priority review · missed in a recent game",
+    });
+    expect(mapped.priorityReason).toBe("Priority review · missed in a recent game");
+    expect(() => mapQueueCardToPracticeCard({
+      id: "game-priority-card",
+      queue_entry_id: 43,
+      start_fen: STANDARD_FEN,
+      moves: ["e2e4"],
+      content_type: "opening",
+      repertoire_name: "Main",
+      repertoire_source: "PGN",
+      gameplay_priority_reason: { unexpected: true },
+    })).toThrow();
+  });
 });

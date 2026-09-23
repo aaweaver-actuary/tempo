@@ -322,10 +322,11 @@ def enqueue_daily_snapshot(local_day: str) -> str:
 
 
 def claim_daily_snapshot() -> str | None:
+    from .background_activity import claimable, control_order
     with connection(background=True) as database:
         database.execute("BEGIN IMMEDIATE")
         row = database.execute(
-            "SELECT local_day FROM daily_statistics_jobs WHERE status='queued' ORDER BY updated_at LIMIT 1"
+            f"SELECT local_day FROM daily_statistics_jobs WHERE status='queued' AND {claimable('statistics', 'daily_statistics_jobs.local_day')} ORDER BY {control_order('statistics', 'daily_statistics_jobs.local_day')}updated_at LIMIT 1"
         ).fetchone()
         if not row:
             return None
@@ -338,14 +339,17 @@ def claim_daily_snapshot() -> str | None:
 
 
 def execute_daily_snapshot(local_day: str) -> None:
+    from .background_activity import emit_progress
     try:
         with activity_gate.background_job("daily_statistics", local_day):
+            emit_progress("statistics", local_day, local_day, "Calculating daily insights")
             refresh_daily_snapshot(local_day, background=True)
             with connection(background=True) as database:
                 database.execute(
                     "UPDATE daily_statistics_jobs SET status='complete',last_error=NULL,updated_at=? WHERE local_day=?",
                     (datetime.now(timezone.utc).isoformat(), local_day),
                 )
+            emit_progress("statistics", local_day, local_day, "Finished")
     except Exception as error:
         with connection(background=True) as database:
             database.execute(

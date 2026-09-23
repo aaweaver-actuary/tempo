@@ -10,6 +10,7 @@ self.onmessage = ({ data: raw }: MessageEvent<unknown>) => {
   const data = parseData(studyRequestSchema, raw, "study worker request");
   clearDataDiagnostics();
   try {
+    self.postMessage({ id: data.id, state: "running" });
     self.postMessage({
       id: data.id,
       result: computeStudyTask(data.task),

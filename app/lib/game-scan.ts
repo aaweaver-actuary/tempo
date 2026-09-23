@@ -35,6 +35,7 @@ export async function scanGameTwoPass(
   analyze: (fen: string, depth: number) => Promise<EngineMove[]>,
   repertoireDeviationPly?: number | null,
   signal?: AbortSignal,
+  onProgress?: (phase: string, completed: number, total: number) => void,
 ): Promise<DurableMoveEvaluation[]> {
   const board = new Chess(startFen);
   const positionFens = [board.fen()];
@@ -62,6 +63,7 @@ export async function scanGameTwoPass(
   for (let positionIndex = 0; positionIndex < positionFens.length; positionIndex++) {
     if (signal?.aborted) throw new DOMException("Cancelled", "AbortError");
     shallowLines.push(await analyzePosition(positionIndex, 8));
+    onProgress?.("Scanning positions", positionIndex + 1, positionFens.length + moves.length);
   }
   const evaluations: DurableMoveEvaluation[] = [];
   for (let ply = 0; ply < moves.length; ply++) {
@@ -113,6 +115,7 @@ export async function scanGameTwoPass(
       is_player_move: moverColor === color,
       actual_move_uci: moves[ply],
     });
+    onProgress?.("Reviewing moves", positionFens.length + ply + 1, positionFens.length + moves.length);
   }
   return evaluations;
 }

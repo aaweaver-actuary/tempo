@@ -413,6 +413,13 @@ export default function CardEditor({
                   The continuation starts from the shortened position and tests
                   exactly one of your moves.
                 </p>
+                {(prefixSplitPreview.shared_line_count ?? 1) > 1 && (
+                  <p>
+                    This shared prefix is used by {prefixSplitPreview.shared_line_count} lines
+                    across {prefixSplitPreview.shared_repertoire_count ?? 1} repertoires.
+                    Shortening it updates every linked route.
+                  </p>
+                )}
                 <small>
                   Continuation: {movesToSanFormat(
                     prefixSplitPreview.continuation.starting_fen,

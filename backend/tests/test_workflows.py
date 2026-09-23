@@ -95,7 +95,11 @@ def test_legacy_incomplete_black_prefix_is_quarantined_from_queue(tmp_path, monk
         response = None
         for _ in range(100):
             response = client.get("/api/queue/today").json()
-            if response["count"] == 0:
+            if (
+                response["count"] == 0
+                and response["projection"]["state"] == "ready"
+                and response["diagnostics"]
+            ):
                 break
             time.sleep(0.01)
         assert response is not None
@@ -117,7 +121,10 @@ def test_import_becomes_main_and_survives_reload(tmp_path, monkeypatch):
         assert queue["count"] == 1
         assert queue["cards"][0]["is_main"] == 1
         assert queue["cards"][0]["trained_color"] == "white"
-        assert queue["cards"][0]["moves"][-1] == "e1g1"
+        assert queue["cards"][0]["moves"] == [
+            "e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5",
+            "c2c3", "g8f6", "d2d3", "d7d6", "e1g1",
+        ]
 
         card = queue["cards"][0]
         first_review = client.post(f"/api/cards/{card['id']}/review", json={"outcome": "correct", "queue_entry_id": card["queue_entry_id"]})
@@ -134,6 +141,52 @@ def test_import_becomes_main_and_survives_reload(tmp_path, monkeypatch):
         assert repeated.json()["repertoire_id"] == repertoire_id
         assert repeated.json()["cards_created"] == 0
         assert len(client.get("/api/repertoires").json()["repertoires"]) == 1
+
+
+def test_reimport_can_shorten_initial_prefix_without_truncating_descendants(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        first = client.post(
+            "/api/imports/pgn",
+            files={"file": ("depth-change.pgn", PGN, "application/x-chess-pgn")},
+            data={"trained_color": "white", "initial_depth": "6"},
+        ).json()
+        wait_for_integrity(client, first["repertoire_id"])
+
+        repeated = client.post(
+            "/api/imports/pgn",
+            files={"file": ("depth-change.pgn", PGN, "application/x-chess-pgn")},
+            data={"trained_color": "white", "initial_depth": "2"},
+        ).json()
+        assert repeated["repertoire_id"] == first["repertoire_id"]
+
+        published_steps = []
+        for _ in range(200):
+            with database.read_connection() as connection:
+                published_steps = connection.execute(
+                    """SELECT step.segment_kind,step.first_decision_index,
+                              step.last_decision_index
+                       FROM opening_graph_steps step
+                       JOIN opening_graph_publications publication
+                         ON publication.repertoire_id=step.repertoire_id
+                        AND publication.generation=step.generation
+                       WHERE step.repertoire_id=?
+                       ORDER BY step.decision_index""",
+                    (first["repertoire_id"],),
+                ).fetchall()
+            if len(published_steps) == 6:
+                break
+            time.sleep(0.01)
+
+        assert len(published_steps) == 6
+        assert tuple(published_steps[0]) == ("prefix", 0, 1)
+        assert all(
+            step["first_decision_index"] == step["last_decision_index"]
+            for step in published_steps[1:]
+        )
+        assert published_steps[-1]["last_decision_index"] == 6
 
 
 def test_tactic_and_endgame_are_admitted_to_scheduler(tmp_path, monkeypatch):
@@ -177,7 +230,7 @@ def test_new_card_limit_due_counts_and_repertoire_deletion(tmp_path, monkeypatch
         queue = client.get("/api/queue/today").json()["cards"]
         assert len(queue) == 2
         assert all(card["trained_color"] == "black" for card in queue)
-        assert all(len(card["moves"]) == 4 for card in queue)
+        assert all(card["moves"][:2] == ["e2e4", "e7e5"] for card in queue)
         repertoire = client.get("/api/repertoires").json()["repertoires"][0]
         assert repertoire["card_count"] == 3
         assert repertoire["due_count"] == 2
@@ -210,7 +263,9 @@ def test_legacy_eager_queue_is_reconciled_without_reviews(tmp_path, monkeypatch)
             assert db.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 0
 
 
-def test_overlapping_repertoires_share_card_history_when_one_is_deleted(tmp_path, monkeypatch):
+def test_identical_context_segments_share_one_global_schedule_across_repertoires(
+    tmp_path, monkeypatch
+):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         first = client.post("/api/imports/pgn", files={"file": ("first.pgn", PGN, "application/x-chess-pgn")}, data={"trained_color": "white", "initial_depth": "2"}).json()
@@ -229,6 +284,41 @@ def test_overlapping_repertoires_share_card_history_when_one_is_deleted(tmp_path
             assert db.execute("SELECT COUNT(*) FROM cards WHERE id=?", (card_id_value,)).fetchone()[0] == 1
             assert db.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (card_id_value,)).fetchone()[0] == 1
             assert db.execute("SELECT repertoire_id FROM cards WHERE id=?", (card_id_value,)).fetchone()[0] == second["repertoire_id"]
+
+
+def test_shared_card_counts_once_while_respecting_repertoire_admission_limits(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        settings = client.get("/api/settings").json()
+        settings["new_cards_per_day"] = 1
+        assert client.put("/api/settings", json=settings).status_code == 200
+
+        repertoire_ids = []
+        for source_name in ("shared-first.pgn", "shared-second.pgn"):
+            imported = client.post(
+                "/api/imports/pgn",
+                files={"file": (source_name, PGN, "application/x-chess-pgn")},
+                data={"trained_color": "white", "initial_depth": "2"},
+            ).json()
+            repertoire_ids.append(imported["repertoire_id"])
+            wait_for_integrity(client, imported["repertoire_id"])
+
+        queue = client.get("/api/queue/today").json()
+        assert queue["count"] == 1
+        assert len({card["id"] for card in queue["cards"]}) == 1
+        with database.connection() as db:
+            queued = db.execute(
+                """SELECT card_id,admission_repertoire_id FROM daily_queue
+                   WHERE status='queued'"""
+            ).fetchall()
+            assert len(queued) == 1
+            assert queued[0]["admission_repertoire_id"] in repertoire_ids
+            assert db.execute(
+                "SELECT COUNT(*) FROM repertoire_cards WHERE card_id=?",
+                (queued[0]["card_id"],),
+            ).fetchone()[0] == 2
 
 
 def test_position_annotations_are_scoped_and_round_trip_through_pgn(tmp_path, monkeypatch):

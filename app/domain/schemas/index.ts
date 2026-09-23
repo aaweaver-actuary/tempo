@@ -34,6 +34,7 @@ export const queueCardSchema = z.strictObject({
   position: integer.optional(),
   attempt_state: attemptStateSchema.optional(),
   attempt_failed: sqliteBooleanSchema.optional(),
+  gameplay_priority_reason: z.string().nullable().optional(),
   first_correct_at: nullableDate,
   recent_attempts_json: z.string().optional(),
   source_ref: z.string().nullable().optional(),
@@ -254,6 +255,10 @@ export const repertoiresResponseSchema = z.strictObject({
         updated_at: z.string().nullable(),
         error: z.string().nullable(),
       }).optional().catch(undefined),
+      graph_generation: integer.optional(),
+      graph_updated_at: isoDateSchema.nullable().optional(),
+      graph_state: z.enum(["refreshing", "ready", "failed"]).optional(),
+      graph_error: z.string().nullable().optional(),
     }),
   ),
 });
@@ -283,6 +288,12 @@ export const importResultSchema = z.strictObject({
   cards_created: integer,
   duplicates_merged: integer,
   cards_admitted_today: integer,
+  decision_cards_created: integer.optional(),
+  shared_decisions_reused: integer.optional(),
+  prefix_cards_created: integer.optional(),
+  shared_prefixes_reused: integer.optional(),
+  descendant_decision_cards_created: integer.optional(),
+  graph_state: z.enum(["refreshing", "ready", "failed"]).optional(),
   integrity: z.object({
     status: z.enum(["unchecked", "clean", "needs_repair"]),
     issue_count: integer,
@@ -384,6 +395,8 @@ export const prefixSplitResponseSchema = z.strictObject({
   continuation: prefixSplitCardSchema,
   applied: z.boolean(),
   idempotent: z.boolean(),
+  shared_line_count: integer.optional(),
+  shared_repertoire_count: integer.optional(),
 });
 export const tacticProgressSchema = z.record(
   z.string(),
@@ -476,6 +489,7 @@ export const dataDiagnosticSchema = z.strictObject({
 });
 export const studyReplySchema = z.strictObject({
   id: z.number().int().positive(),
+  state: z.literal("running").optional(),
   result: z.unknown().optional(),
   error: z.string().optional(),
   diagnostics: z.array(dataDiagnosticSchema).optional(),
@@ -714,6 +728,7 @@ export const coverageMaiaClaimSchema = z.strictObject({
   job: z
     .strictObject({
       node_id: z.string(),
+      run_id: z.string(),
       lease_id: z.string(),
       fen: fenStringSchema,
       elo: integer,
@@ -731,11 +746,19 @@ export const repertoireCoverageSummarySchema = z.strictObject({
   last_error: z.string().nullable().optional(),
   settings: z
     .strictObject({
+      automatic_priority: z.boolean(),
       reply_denominator: integer,
       cumulative_target: z.number(),
       horizon_fullmoves: integer,
       path_floor: z.number(),
       maia_elo: integer,
+      explorer_rating: integer,
+      recent_median_rating: integer,
+      speed_weights: z.partialRecord(
+        z.enum(["blitz", "rapid", "classical"]),
+        z.number().finite().nonnegative(),
+      ),
+      cohort_games: integer,
     })
     .optional(),
 });

@@ -66,7 +66,7 @@ def test_new_cards_per_day_applies_separately_to_each_repertoire(tmp_path, monke
             files={"file": ("white.pgn", THREE_LINES_WHITE, "application/x-chess-pgn")},
             data={"trained_color": "white", "initial_depth": "2"},
         ).json()
-        assert repertoire_1["cards_created"] == 3
+        assert repertoire_1["cards_created"] == 6
         wait_for_integrity(client, repertoire_1["repertoire_id"])
 
         # Import second repertoire with 3 black lines
@@ -81,7 +81,7 @@ def test_new_cards_per_day_applies_separately_to_each_repertoire(tmp_path, monke
         # Get today's queue
         queue = client.get("/api/queue/today").json()
 
-        # Should have 4 cards total: 2 from each repertoire
+        # Route-specific prefixes are roots, with the configured per-repertoire cap.
         assert queue["count"] == 4, f"Expected 4 cards in queue, got {queue['count']}"
 
         # Count cards by repertoire
@@ -94,10 +94,10 @@ def test_new_cards_per_day_applies_separately_to_each_repertoire(tmp_path, monke
         ]
 
         assert len(rep1_cards) == 2, (
-            f"Expected 2 cards from repertoire 1, got {len(rep1_cards)}"
+            f"Expected 2 frontier cards from repertoire 1, got {len(rep1_cards)}"
         )
         assert len(rep2_cards) == 2, (
-            f"Expected 2 cards from repertoire 2, got {len(rep2_cards)}"
+            f"Expected 2 frontier cards from repertoire 2, got {len(rep2_cards)}"
         )
 
         # Verify the cards are the right color
@@ -109,7 +109,7 @@ def test_new_cards_per_day_applies_separately_to_each_repertoire(tmp_path, monke
         rep1 = next(r for r in repertoires if r["id"] == repertoire_1["repertoire_id"])
         rep2 = next(r for r in repertoires if r["id"] == repertoire_2["repertoire_id"])
 
-        assert rep1["card_count"] == 3
+        assert rep1["card_count"] == 6
         assert rep1["due_count"] == 2
         assert rep2["card_count"] == 3
         assert rep2["due_count"] == 2
@@ -196,6 +196,10 @@ def test_new_cards_per_day_handles_uneven_repertoire_sizes(tmp_path, monkeypatch
                 ),
             )
             db.execute(
+                "INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)",
+                (rep_id, f"{rep_id}_extra1"),
+            )
+            db.execute(
                 "INSERT INTO cards(id, repertoire_id, kind, start_fen, moves_json, due_date, content_type) "
                 "VALUES(?, ?, 'prefix', 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1', ?, ?, 'opening')",
                 (
@@ -204,6 +208,10 @@ def test_new_cards_per_day_handles_uneven_repertoire_sizes(tmp_path, monkeypatch
                     json.dumps(["d2d4", "d7d5", "c2c4"]),
                     "2026-09-18",
                 ),
+            )
+            db.execute(
+                "INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)",
+                (rep_id, f"{rep_id}_extra2"),
             )
 
         # Import second repertoire with 1 card

@@ -489,12 +489,13 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
   overflow-wrap: anywhere;
 }
 
-.tempo-service-status {
-  position: fixed;
-  right: 1rem;
-  top: 1rem;
-  z-index: 45;
-  width: min(24rem, calc(100vw - 2rem));
+.tempo-activity-tray {
+  position: relative;
+  width: auto;
+}
+
+.tempo-activity-trigger,
+.tempo-activity-content {
   padding: 0.75rem;
   border: 1px solid color-mix(in srgb, var(--rust) 55%, transparent);
   border-radius: 0.75rem;
@@ -502,15 +503,69 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
   box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 18%);
 }
 
-.tempo-service-status p {
+.tempo-activity-trigger { min-height: 44px; cursor: pointer; }
+.tempo-activity-trigger-mobile { display: none; }
+.tempo-activity-attention { color: #a13c26; font-weight: 700; }
+
+.tempo-activity-content {
+  position: absolute;
+  top: calc(100% + 0.5rem);
+  right: 0;
+  z-index: 45;
+  width: min(28rem, calc(100vw - 2rem));
+  background: var(--paper);
+  max-height: min(70vh, 42rem);
+  overflow: auto;
+  overflow-wrap: anywhere;
+}
+
+.tempo-activity-content p {
   margin: 0.35rem 0;
 }
 
-.tempo-service-status div {
+.tempo-activity-heading,
+.tempo-activity-item-heading,
+.tempo-activity-actions {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.75rem;
+}
+
+.tempo-activity-item {
+  padding: 0.7rem 0;
+  border-top: 1px solid color-mix(in srgb, var(--rust) 22%, transparent);
+}
+.tempo-activity-list h3 { margin: 0.8rem 0 0.2rem; font-size: 0.95rem; }
+.tempo-activity-item time { display: block; margin: 0.35rem 0; font-size: 0.8rem; opacity: 0.75; }
+
+.tempo-activity-actions { justify-content: flex-start; flex-wrap: wrap; }
+.tempo-activity-actions button,
+.tempo-activity-heading button {
+  min-height: 36px;
+  padding: 0.35rem 0.6rem;
+  border: 1px solid var(--line);
+  background: var(--panel);
+  cursor: pointer;
+}
+@media (pointer: coarse) {
+  .tempo-activity-actions button,
+  .tempo-activity-heading button { min-height: 44px; }
+}
+.activity-progress-wrap { display: flex; align-items: center; gap: 0.6rem; }
+.activity-progress-wrap progress,
+.activity-indeterminate { flex: 1; min-width: 0; height: 0.65rem; }
+.activity-indeterminate { background: linear-gradient(90deg, var(--rust) 35%, color-mix(in srgb, var(--rust) 20%, transparent) 35%); border-radius: 1rem; background-size: 200% 100%; animation: activity-slide 2s linear infinite; }
+.activity-indeterminate.is-waiting { background: color-mix(in srgb, var(--rust) 20%, transparent); animation: none; }
+@keyframes activity-slide { to { background-position: -200% 0; } }
+@media (prefers-reduced-motion: reduce) { .activity-indeterminate { animation: none; } }
+@media (max-width: 1100px) {
+  .tempo-activity-trigger-desktop { display: none; }
+  .tempo-activity-trigger-mobile { display: inline; }
+  .tempo-activity-trigger { padding: 0.5rem; }
+}
+
+.tempo-activity-list {
   margin-top: 0.5rem;
 }
 .tempo-debug-panel-boundary {

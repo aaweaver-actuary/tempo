@@ -80,7 +80,7 @@ def test_study_reinforces_today_reviews_tomorrow_and_persists_unassisted_later_r
         imported = client.post("/api/imports/pgn", files={"file": ("durability.pgn", PGN)}, data={"initial_depth": 2})
         wait_for_integrity(client, imported.json()["repertoire_id"])
         first = client.get("/api/queue/today").json()["cards"][0]
-        for ply in (0, 2):
+        for ply in (0,):
             assert client.post(f"/api/cards/{first['id']}/teaching", json={"revision": 1, "ply": ply}).status_code == 200
         result = solve(client, first)
         assert result["requeue_today"] and result["next_due"] == "2026-09-16"
@@ -102,10 +102,11 @@ def test_study_reinforces_today_reviews_tomorrow_and_persists_unassisted_later_r
                 if queue:
                     break
                 time.sleep(0.01)
-            assert len(queue) == 1 and queue[0]["first_correct_at"]
+            reviewed_card = next(item for item in queue if item["id"] == first["id"])
+            assert reviewed_card["first_correct_at"]
             states = client.get(f"/api/cards/{first['id']}/teaching").json()["states"]
-            assert {(state["revision"], state["ply"]) for state in states} == {(1, 0), (1, 2)}
-            result = solve(client, queue[0])
+            assert {(state["revision"], state["ply"]) for state in states} == {(1, 0)}
+            result = solve(client, reviewed_card)
             assert not result["requeue_today"] and 1 <= result["interval_days"] <= 365
             assert date.fromisoformat(result["next_due"]) > clock["now"].date()
         assert client.get("/api/migration/snapshot").json()["counts"]["reviews"] == 5

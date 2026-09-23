@@ -269,6 +269,7 @@ export default function TrainingView({
               {card.queueAttemptState === "reinforcement" && (
                 <span className="pill">Reinforcement</span>
               )}
+              {card.priorityReason && <span className="pill">{card.priorityReason}</span>}
               {queueNotice && <em>{queueNotice}</em>}
             </div>
             <OpeningTitle card={card} />

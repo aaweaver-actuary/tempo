@@ -220,7 +220,12 @@ def test_delete_branch_prefix_removes_nimzo_descendants_and_preserves_qgd(
         assert any(line["moves"][:2] == ["d2d4", "d7d5"] for line in lines_after)
         assert all(line["moves"][:2] != ["d2d4", "g8f6"] for line in lines_after)
 
-        queue = client.get("/api/queue/today").json()["cards"]
+        queue = []
+        for _ in range(200):
+            queue = client.get("/api/queue/today").json()["cards"]
+            if all(card["moves"][:2] != ["d2d4", "g8f6"] for card in queue):
+                break
+            time.sleep(0.01)
         assert all(card["moves"][:2] != ["d2d4", "g8f6"] for card in queue)
 
 
@@ -261,14 +266,14 @@ def test_delete_branch_rebuilds_missing_retained_cards_without_server_error(
         body = removed.json()
         assert body["deleted_line_count"] >= 1
         assert body["retained_line_count"] >= 1
+        from helpers import wait_for_daily_queue
+
+        wait_for_daily_queue(client)
         with database.connection() as db:
-            assert (
-                db.execute(
-                    "SELECT COUNT(*) FROM cards WHERE repertoire_id=?",
-                    (repertoire_id,),
-                ).fetchone()[0]
-                >= 1
-            )
+            assert db.execute(
+                "SELECT COUNT(*) FROM cards WHERE repertoire_id=? AND archived=0",
+                (repertoire_id,),
+            ).fetchone()[0] >= 1
 
 
 def test_tactic_discovery_is_idempotent_and_cursors_are_per_deck(tmp_path, monkeypatch):

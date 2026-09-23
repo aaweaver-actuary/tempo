@@ -488,6 +488,7 @@ def initialize() -> None:
                 CHECK(status IN ('queued','running','complete','failed')),
             attempts INTEGER NOT NULL DEFAULT 0,
             derivation_version INTEGER NOT NULL DEFAULT 1,
+            completed_phases INTEGER NOT NULL DEFAULT 0,
             phase TEXT,
             next_attempt_at TEXT,
             last_error TEXT,
@@ -598,6 +599,21 @@ def initialize() -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_game_repertoire_matches_primary ON game_repertoire_matches(game_id,is_primary)",
+        """CREATE TABLE IF NOT EXISTS repertoire_decision_events (
+            id TEXT PRIMARY KEY,
+            game_id TEXT NOT NULL REFERENCES imported_games(id) ON DELETE CASCADE,
+            repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+            card_id TEXT REFERENCES cards(id) ON DELETE SET NULL,
+            ply INTEGER NOT NULL,
+            fen_key TEXT NOT NULL,
+            expected_uci TEXT NOT NULL,
+            actual_uci TEXT NOT NULL,
+            outcome TEXT NOT NULL CHECK(outcome IN ('miss','success')),
+            played_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(game_id,repertoire_id,ply)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_repertoire_decision_events_card_time ON repertoire_decision_events(card_id,played_at,outcome)",
         """
         CREATE TABLE IF NOT EXISTS game_findings (
             id TEXT PRIMARY KEY,
@@ -886,6 +902,79 @@ def initialize() -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_background_task_events_task ON background_task_events(task_id,id DESC)",
+        """CREATE TABLE IF NOT EXISTS background_activity (
+            source TEXT NOT NULL,
+            work_id TEXT NOT NULL,
+            generation_key TEXT,
+            paused INTEGER NOT NULL DEFAULT 0,
+            promoted INTEGER NOT NULL DEFAULT 0,
+            phase TEXT,
+            completed_units INTEGER,
+            total_units INTEGER,
+            updated_at TEXT NOT NULL,
+            PRIMARY KEY(source,work_id)
+        )""",
+        """CREATE TABLE IF NOT EXISTS internal_migrations (
+            name TEXT PRIMARY KEY,
+            applied_at TEXT NOT NULL
+        )""",
+        """
+        CREATE TABLE IF NOT EXISTS repertoire_line_training_depths (
+            line_id TEXT PRIMARY KEY REFERENCES repertoire_lines(id) ON DELETE CASCADE,
+            learner_decision_count INTEGER NOT NULL CHECK(learner_decision_count >= 0)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS opening_graph_publications (
+            repertoire_id TEXT PRIMARY KEY REFERENCES repertoires(id) ON DELETE CASCADE,
+            generation INTEGER NOT NULL,
+            state TEXT NOT NULL DEFAULT 'ready' CHECK(state IN ('ready','failed')),
+            last_error TEXT,
+            published_at TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS opening_graph_steps (
+            repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+            generation INTEGER NOT NULL,
+            line_id TEXT NOT NULL REFERENCES repertoire_lines(id) ON DELETE CASCADE,
+            decision_index INTEGER NOT NULL,
+            segment_kind TEXT NOT NULL DEFAULT 'decision'
+                CHECK(segment_kind IN ('prefix','decision')),
+            first_decision_index INTEGER NOT NULL DEFAULT 0,
+            last_decision_index INTEGER NOT NULL DEFAULT 0,
+            decision_fen_keys_json TEXT NOT NULL DEFAULT '[]',
+            card_id TEXT NOT NULL,
+            parent_card_id TEXT,
+            decision_fen_key TEXT NOT NULL,
+            starting_fen TEXT NOT NULL,
+            moves_json TEXT NOT NULL,
+            trained_color TEXT NOT NULL CHECK(trained_color IN ('white','black')),
+            PRIMARY KEY(repertoire_id,generation,line_id,decision_index)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_opening_graph_steps_card ON opening_graph_steps(repertoire_id,generation,card_id)",
+        "CREATE INDEX IF NOT EXISTS idx_opening_graph_steps_queue_card ON opening_graph_steps(card_id,repertoire_id,generation,parent_card_id)",
+        "CREATE INDEX IF NOT EXISTS idx_opening_graph_steps_parent ON opening_graph_steps(repertoire_id,generation,parent_card_id)",
+        """
+        CREATE TABLE IF NOT EXISTS opening_graph_legacy_mappings (
+            repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+            generation INTEGER NOT NULL,
+            legacy_card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+            decision_card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+            PRIMARY KEY(repertoire_id,generation,legacy_card_id,decision_card_id)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS opening_card_schedule_seeds (
+            card_id TEXT PRIMARY KEY REFERENCES cards(id) ON DELETE CASCADE,
+            source_card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+            baseline_successful_days INTEGER NOT NULL DEFAULT 0,
+            baseline_recent_clean INTEGER NOT NULL DEFAULT 0,
+            verification_due TEXT NOT NULL,
+            created_at TEXT NOT NULL
+        )
+        """,
         """
         CREATE TABLE IF NOT EXISTS queue_projections (
             queue_date TEXT PRIMARY KEY,
@@ -932,6 +1021,7 @@ def initialize() -> None:
                 "card_bucket": "TEXT",
                 "admission_kind": "TEXT",
                 "gameplay_priority_reason": "TEXT",
+                "admission_repertoire_id": "TEXT",
             },
             "game_sync_state": {
                 "username": "TEXT NOT NULL DEFAULT ''",
@@ -994,6 +1084,7 @@ def initialize() -> None:
             },
             "game_derivation_jobs": {
                 "derivation_version": "INTEGER NOT NULL DEFAULT 1",
+                "completed_phases": "INTEGER NOT NULL DEFAULT 0",
                 "phase": "TEXT",
                 "next_attempt_at": "TEXT",
             },
@@ -1024,6 +1115,13 @@ def initialize() -> None:
             },
             "queue_projections": {
                 "blocked_count": "INTEGER NOT NULL DEFAULT 0",
+            },
+            "opening_graph_steps": {
+                "decision_fen_key": "TEXT NOT NULL DEFAULT ''",
+                "segment_kind": "TEXT NOT NULL DEFAULT 'decision'",
+                "first_decision_index": "INTEGER NOT NULL DEFAULT 0",
+                "last_decision_index": "INTEGER NOT NULL DEFAULT 0",
+                "decision_fen_keys_json": "TEXT NOT NULL DEFAULT '[]'",
             },
         }
         for table, additions in columns.items():
@@ -1060,6 +1158,60 @@ def initialize() -> None:
                  AND substr(introduced_at,8,1)='-'"""
         )
         now = datetime.now(timezone.utc).isoformat()
+        hybrid_graph_migration_name = "hybrid-opening-graph-v1"
+        if not database.execute(
+            "SELECT 1 FROM internal_migrations WHERE name=?",
+            (hybrid_graph_migration_name,),
+        ).fetchone():
+            for repertoire in database.execute(
+                """SELECT id FROM repertoires
+                   WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__')"""
+            ).fetchall():
+                repertoire_id = repertoire["id"]
+                database.execute(
+                    """INSERT INTO background_tasks(
+                           id,kind,deduplication_key,generation,priority,state,phase,
+                           payload_version,payload_json,attempt_count,max_attempts,
+                           next_attempt_at,created_at,updated_at
+                       ) VALUES(?,'opening_graph_rebuild',?,1,40,'queued','queued',
+                                1,json_object('repertoire_id',?),0,5,?,?,?)
+                       ON CONFLICT(kind,deduplication_key) DO UPDATE SET
+                           generation=background_tasks.generation+1,
+                           priority=40,state='queued',phase='queued',payload_version=1,
+                           payload_json=excluded.payload_json,attempt_count=0,max_attempts=5,
+                           next_attempt_at=excluded.next_attempt_at,lease_token=NULL,
+                           lease_expires_at=NULL,last_error=NULL,started_at=NULL,
+                           completed_at=NULL,updated_at=excluded.updated_at""",
+                    (
+                        f"opening-graph:{repertoire_id}",
+                        repertoire_id,
+                        repertoire_id,
+                        now,
+                        now,
+                        now,
+                    ),
+                )
+            database.execute(
+                "INSERT INTO internal_migrations(name,applied_at) VALUES(?,?)",
+                (hybrid_graph_migration_name, now),
+            )
+        hybrid_depth_backfill_name = "hybrid-opening-depth-backfill-v1"
+        if not database.execute(
+            "SELECT 1 FROM internal_migrations WHERE name=?",
+            (hybrid_depth_backfill_name,),
+        ).fetchone():
+            database.execute(
+                """INSERT OR IGNORE INTO repertoire_line_training_depths(
+                       line_id,learner_decision_count
+                   )
+                   SELECT line.id,settings.initial_depth
+                   FROM repertoire_lines line CROSS JOIN settings
+                   WHERE settings.id=1"""
+            )
+            database.execute(
+                "INSERT INTO internal_migrations(name,applied_at) VALUES(?,?)",
+                (hybrid_depth_backfill_name, now),
+            )
         database.execute(
             """INSERT OR IGNORE INTO game_analysis_jobs(game_id,analysis_version,status,updated_at)
                SELECT id,1,CASE WHEN analysis_state IN ('ready','complete') THEN 'complete' WHEN analysis_state='failed' THEN 'failed' ELSE 'queued' END,?
@@ -1086,7 +1238,11 @@ def initialize() -> None:
             (now,),
         )
         database.execute("""INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id)
-                            SELECT repertoire_id,id FROM cards WHERE content_type='opening'""")
+                            SELECT card.repertoire_id,card.id FROM cards card
+                            WHERE card.content_type='opening' AND card.archived=0
+                              AND NOT EXISTS(
+                                  SELECT 1 FROM repertoire_cards link WHERE link.card_id=card.id
+                              )""")
         # Publish card-level blocks from the last completed integrity result.
         # This is an additive backfill: repertoire content, reviews, scheduling,
         # and completed queue attempts are not rewritten.
@@ -1126,5 +1282,22 @@ def initialize() -> None:
                SELECT id,'queued',? FROM imported_games g
                WHERE NOT EXISTS(SELECT 1 FROM game_position_occurrences p WHERE p.game_id=g.id)""",
             (now,),
+        )
+        database.execute(
+            """INSERT OR IGNORE INTO background_tasks(
+                   id,kind,deduplication_key,generation,priority,state,phase,
+                   payload_version,payload_json,attempt_count,max_attempts,
+                   next_attempt_at,created_at,updated_at
+               )
+               SELECT 'opening-graph:' || repertoire.id,'opening_graph_rebuild',
+                      repertoire.id,1,40,'queued','queued',1,
+                      json_object('repertoire_id',repertoire.id),0,5,?,?,?
+               FROM repertoires repertoire
+               WHERE repertoire.id NOT IN ('__tactics__','__endgames__','__game_mistakes__')
+                 AND NOT EXISTS(
+                     SELECT 1 FROM opening_graph_publications publication
+                     WHERE publication.repertoire_id=repertoire.id
+                 )""",
+            (now, now, now),
         )
         database.execute("PRAGMA optimize")

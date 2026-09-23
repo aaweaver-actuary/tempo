@@ -8,7 +8,7 @@ card before its later branches.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 import json
 import logging
@@ -22,7 +22,8 @@ from .repertoire_coverage import blend_probabilities
 from .activity_gate import activity_gate
 
 
-SCORING_VERSION = 1
+SCORING_VERSION = 2
+REAL_GAME_MISS_WEIGHT = 1.0
 PERSONAL_PRIOR_GAMES = 20.0
 RECENCY_HALF_LIFE_DAYS = 90.0
 FRONTIER_WEIGHTS = (1.0, 0.25, 0.0625)
@@ -58,6 +59,7 @@ class PriorityCalculationInput:
     personal_evidence: dict[str, dict[str, float]]
     horizon_fullmoves: int
     path_floor: float
+    real_game_misses: dict[str, dict] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -206,7 +208,8 @@ def _coverage_evidence(
 ) -> dict[str, dict]:
     run = database.execute(
         """SELECT id FROM repertoire_coverage_runs WHERE repertoire_id=?
-           ORDER BY created_at DESC LIMIT 1""",
+           ORDER BY CASE WHEN status='complete' THEN 0 ELSE 1 END,
+                    created_at DESC LIMIT 1""",
         (repertoire_id,),
     ).fetchone()
     if not run:
@@ -267,6 +270,34 @@ def _personal_evidence_from_rows(
         position["total"] += weight
         position[row["move_uci"]] = position.get(row["move_uci"], 0.0) + weight
     return evidence
+
+
+def _real_game_miss_evidence(database: sqlite3.Connection, repertoire_id: str) -> dict[str, dict]:
+    """Select one unstudied, non-excluded miss per card for a fixed bonus."""
+    rows = database.execute(
+        """SELECT event.id,event.card_id,event.game_id,event.played_at
+           FROM repertoire_decision_events event
+           JOIN imported_games game ON game.id=event.game_id
+           WHERE event.repertoire_id=? AND event.outcome='miss'
+             AND event.card_id IS NOT NULL AND game.adaptive_excluded=0
+             AND NOT EXISTS(
+                 SELECT 1 FROM reviews review
+                 WHERE review.card_id=event.card_id AND review.source_kind='study'
+                   AND datetime(review.reviewed_at)>=datetime(event.played_at)
+             )
+           ORDER BY event.played_at DESC,event.id DESC""",
+        (repertoire_id,),
+    )
+    misses: dict[str, dict] = {}
+    for row in rows:
+        misses.setdefault(row["card_id"], {
+            "kind": "real_game_repertoire_miss",
+            "weight": REAL_GAME_MISS_WEIGHT,
+            "event_id": row["id"],
+            "game_id": row["game_id"],
+            "played_at": row["played_at"],
+        })
+    return misses
 
 
 def _move_probability(
@@ -477,15 +508,13 @@ def calculate_priority_records(
                 route.end_ply,
             )
 
-    evidence_json = json.dumps(
-        {
+    shared_evidence = {
             **aggregate,
             "edge_states": {
                 f"{fen_key}:{move_uci}": provenance
                 for (fen_key, move_uci), (_, provenance) in edge_evidence.items()
             },
         }
-    )
     records: list[PriorityRecord] = []
     for card in cards:
         card_routes = routes_by_card[card["id"]]
@@ -524,8 +553,12 @@ def calculate_priority_records(
                 completion_mass,
                 json.dumps(weighted_values),
                 frontier_reach,
-                0.7 * completion_mass + 0.3 * frontier_reach,
-                evidence_json,
+                0.7 * completion_mass + 0.3 * frontier_reach
+                + (REAL_GAME_MISS_WEIGHT if card["id"] in calculation_input.real_game_misses else 0.0),
+                json.dumps({
+                    **shared_evidence,
+                    "real_game_repertoire_miss": calculation_input.real_game_misses.get(card["id"]),
+                }),
             )
         )
     return records
@@ -559,6 +592,7 @@ def _load_priority_calculation_input(
             ).fetchone()
         )
         coverage_evidence = _coverage_evidence(database, repertoire_id)
+        real_game_misses = _real_game_miss_evidence(database, repertoire_id)
     lines = tuple(_maximal_intended_lines(line_rows))
     reply_moves = _repertoire_reply_moves(list(lines))
     personal_rows: list[dict] = []
@@ -586,6 +620,7 @@ def _load_priority_calculation_input(
         _personal_evidence_from_rows(personal_rows),
         int(settings["coverage_horizon_fullmoves"]),
         float(settings["coverage_path_floor"]),
+        real_game_misses,
     )
 
 
@@ -660,6 +695,7 @@ def rebuild_introduction_priorities(
         ),
         int(settings["coverage_horizon_fullmoves"]),
         float(settings["coverage_path_floor"]),
+        _real_game_miss_evidence(database, repertoire_id),
     )
     _replace_priority_records(
         database,
@@ -718,14 +754,16 @@ def enqueue_priority_refreshes_for_game(
 
 def claim_priority_refresh() -> dict | None:
     from ..database import connection
+    from .background_activity import claimable, control_order
 
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
         database.execute("BEGIN IMMEDIATE")
         job = database.execute(
-            """SELECT * FROM repertoire_priority_jobs
+            f"""SELECT * FROM repertoire_priority_jobs
                WHERE status='queued' AND next_attempt_at<=?
-               ORDER BY next_attempt_at,updated_at LIMIT 1""",
+               AND {claimable('priority', 'repertoire_priority_jobs.repertoire_id')}
+               ORDER BY {control_order('priority', 'repertoire_priority_jobs.repertoire_id')}next_attempt_at,updated_at LIMIT 1""",
             (_now(),),
         ).fetchone()
         if not job:

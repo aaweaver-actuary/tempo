@@ -10,13 +10,13 @@ def wait_for_integrity(client, repertoire_id: str):
         if payload.get("scan_status") in {"idle", "failed"}:
             for _ in range(200):
                 task_status = client.get("/api/system/tasks").json()
-                daily_tasks = [
+                active_projection_tasks = [
                     task
                     for task in task_status["tasks"]
-                    if task["kind"] == "daily_queue"
+                    if task["kind"] in {"daily_queue", "opening_graph_rebuild"}
                     and task["state"] in {"queued", "leased", "retrying"}
                 ]
-                if not daily_tasks:
+                if not active_projection_tasks:
                     return payload
                 time.sleep(0.01)
             return payload
@@ -30,7 +30,7 @@ def wait_for_daily_queue(client, expected_count: int | None = None):
         tasks = client.get("/api/system/tasks").json()["tasks"]
         payload = client.get("/api/queue/today").json()
         active = any(
-            task["kind"] == "daily_queue"
+            task["kind"] in {"daily_queue", "opening_graph_rebuild"}
             and task["state"] in {"queued", "leased", "retrying"}
             for task in tasks
         )

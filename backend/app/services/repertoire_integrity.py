@@ -283,14 +283,18 @@ def sweep_all(database: sqlite3.Connection) -> None:
 
 
 def enqueue_integrity_scans(
-    repertoire_id: str | None = None, *, stale_only: bool = False
+    repertoire_id: str | None = None,
+    *,
+    stale_only: bool = False,
+    restart: bool = False,
+    background: bool = False,
 ) -> list[str]:
     """Queue integrity work without changing the last published result."""
 
     queued: list[str] = []
     from ..database import connection
 
-    with connection() as database:
+    with connection(background=background) as database:
         if repertoire_id:
             ids = [repertoire_id]
         elif stale_only:
@@ -323,7 +327,7 @@ def enqueue_integrity_scans(
                 "SELECT run_id,status FROM repertoire_integrity_jobs WHERE repertoire_id=? AND status IN ('queued','running','finalizing')",
                 (identifier,),
             ).fetchone()
-            if active:
+            if active and not restart:
                 queued.append(active["run_id"])
                 continue
             total = database.execute(
@@ -374,11 +378,12 @@ def _issues_from_observations(
 
 def claim_integrity_slice() -> dict | None:
     from ..database import connection
+    from .background_activity import claimable, control_order
 
     with connection(background=True) as database:
         database.execute("BEGIN IMMEDIATE")
         row = database.execute(
-            "SELECT * FROM repertoire_integrity_jobs WHERE status IN ('queued','running','finalizing') ORDER BY updated_at,repertoire_id LIMIT 1"
+            f"SELECT * FROM repertoire_integrity_jobs WHERE status IN ('queued','running','finalizing') AND {claimable('integrity', 'repertoire_integrity_jobs.repertoire_id')} ORDER BY {control_order('integrity', 'repertoire_integrity_jobs.repertoire_id')}updated_at,repertoire_id LIMIT 1"
         ).fetchone()
         if not row:
             return None
@@ -407,6 +412,7 @@ def claim_integrity_slice() -> dict | None:
 def execute_integrity_slice(job: dict) -> None:
     from ..database import connection
     from .activity_gate import activity_gate
+    from .background_activity import emit_progress
 
     with activity_gate.background_job("integrity", job["repertoire_id"]):
         if job["status"] == "finalizing":
@@ -464,10 +470,38 @@ def execute_integrity_slice(job: dict) -> None:
                     priority=10,
                     foreground=False,
                 )
+            emit_progress("integrity", job["repertoire_id"], job["run_id"], "Published integrity result", job["total_sources"], job["total_sources"])
             return
 
         with connection(background=True) as database:
             sources = _source_rows(database, job["repertoire_id"])
+            current_job = database.execute(
+                """SELECT run_id,total_sources FROM repertoire_integrity_jobs
+                   WHERE repertoire_id=?""",
+                (job["repertoire_id"],),
+            ).fetchone()
+            if not current_job or current_job["run_id"] != job["run_id"]:
+                return
+            if len(sources) != int(current_job["total_sources"]):
+                database.execute(
+                    """UPDATE repertoire_integrity_jobs
+                       SET source_offset=0,total_sources=?,status='running',updated_at=?
+                       WHERE repertoire_id=? AND run_id=?""",
+                    (len(sources), _now(), job["repertoire_id"], job["run_id"]),
+                )
+                database.execute(
+                    "DELETE FROM repertoire_integrity_source_runs WHERE run_id=?",
+                    (job["run_id"],),
+                )
+                return
+            if int(job["source_offset"]) >= len(sources):
+                database.execute(
+                    """UPDATE repertoire_integrity_jobs
+                       SET status='finalizing',updated_at=?
+                       WHERE repertoire_id=? AND run_id=?""",
+                    (_now(), job["repertoire_id"], job["run_id"]),
+                )
+                return
             source = sources[job["source_offset"]]
             repertoire_color = next((item.get("trained_color") for item in sources if item.get("trained_color") in {"white", "black"}), None)
         positions, invalid = _scan_source(source, repertoire_color)
@@ -487,6 +521,7 @@ def execute_integrity_slice(job: dict) -> None:
                 "UPDATE repertoire_integrity_state SET scan_status='running',scan_completed_sources=?,scan_total_sources=? WHERE repertoire_id=?",
                 (next_offset, job["total_sources"], job["repertoire_id"]),
             )
+        emit_progress("integrity", job["repertoire_id"], job["run_id"], "Scanning sources", next_offset, job["total_sources"])
 
 
 def requeue_integrity_slice(job: dict, error: Exception) -> None:

@@ -1,4 +1,5 @@
 import json
+from datetime import date, datetime, timedelta, timezone
 
 import chess
 from fastapi.testclient import TestClient
@@ -41,13 +42,13 @@ def _fen_after(moves: list[str]) -> str:
     return " ".join(board.fen().split()[:4])
 
 
-def _seed_public_probability(db, node_id: str, moves_before: list[str], move_uci: str, probability: float) -> None:
+def _seed_public_probability(db, node_id: str, moves_before: list[str], move_uci: str, probability: float, run_id: str = "run") -> None:
     db.execute(
         """INSERT INTO repertoire_coverage_nodes(
                id,run_id,repertoire_id,fen,fen_key,ply,trained_color,routes_json,
                covered_replies_json,explorer_status,maia_status,explorer_games,updated_at
            ) VALUES(?,?,?, ?,?,?,?,'[]','[]','complete','complete',100,?)""",
-        (node_id, "run", "rep", _fen_after(moves_before), _fen_after(moves_before), len(moves_before), "white", "2026-09-20T00:00:00+00:00"),
+        (node_id, run_id, "rep", _fen_after(moves_before), _fen_after(moves_before), len(moves_before), "white", "2026-09-20T00:00:00+00:00"),
     )
     db.execute(
         """INSERT INTO repertoire_coverage_candidates(
@@ -198,6 +199,175 @@ def test_seed_queue_introduces_the_highest_impact_line_first(tmp_path, monkeypat
             "SELECT card_id FROM daily_queue WHERE queue_date='2026-09-20'"
         ).fetchall()
     assert [row["card_id"] for row in introduced] == ["card-0"]
+
+
+def test_recently_encountered_reply_can_outrank_public_forecast_for_tomorrow(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    common = ["e2e4", "e7e5", "g1f3"]
+    encountered = ["d2d4", "d7d5", "c1f4"]
+    now = datetime.now(timezone.utc).isoformat()
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    with database.connection() as db:
+        _seed_repertoire(db, [common, encountered], [common, encountered])
+        db.execute("UPDATE settings SET new_cards_per_day=1 WHERE id=1")
+        db.execute(
+            """INSERT INTO repertoire_coverage_runs(
+                   id,repertoire_id,status,settings_json,total_nodes,completed_nodes,created_at,updated_at
+               ) VALUES('run','rep','complete','{}',2,2,?,?)""",
+            (now, now),
+        )
+        _seed_public_probability(db, "forecast", ["e2e4"], "e7e5", 0.9)
+        _seed_public_probability(db, "seen", ["d2d4"], "d7d5", 0.1)
+        for game_index in range(40):
+            game_id = f"seen-{game_index}"
+            db.execute(
+                """INSERT INTO imported_games(
+                       id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json
+                   ) VALUES(?,'lichess','player',?,'rapid',1,'white','1-0',?,?)""",
+                (game_id, now, START, json.dumps(encountered)),
+            )
+            db.execute(
+                "INSERT INTO game_position_occurrences(game_id,ply,fen_key,move_uci) VALUES(?,1,?,?)",
+                (game_id, _fen_after(["d2d4"]), "d7d5"),
+            )
+            alternative_game_id = f"other-{game_index}"
+            db.execute(
+                """INSERT INTO imported_games(
+                       id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json
+                   ) VALUES(?,'lichess','player',?,'rapid',1,'white','1-0',?,?)""",
+                (alternative_game_id, now, START, json.dumps(["e2e4", "c7c5"])),
+            )
+            db.execute(
+                "INSERT INTO game_position_occurrences(game_id,ply,fen_key,move_uci) VALUES(?,1,?,?)",
+                (alternative_game_id, _fen_after(["e2e4"]), "c7c5"),
+            )
+        priorities.rebuild_introduction_priorities(db, "rep")
+        seed_queue(db, tomorrow)
+        selected = db.execute(
+            "SELECT card_id FROM daily_queue WHERE queue_date=?", (tomorrow,)
+        ).fetchall()
+    assert [row["card_id"] for row in selected] == ["card-1"]
+
+
+def test_unseen_likely_reply_outranks_unseen_rare_reply_for_tomorrow(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    likely = ["e2e4", "e7e5", "g1f3"]
+    rare = ["d2d4", "d7d5", "c1f4"]
+    now = datetime.now(timezone.utc).isoformat()
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    with database.connection() as db:
+        _seed_repertoire(db, [likely, rare], [likely, rare])
+        db.execute("UPDATE settings SET new_cards_per_day=1 WHERE id=1")
+        db.execute(
+            """INSERT INTO repertoire_coverage_runs(
+                   id,repertoire_id,status,settings_json,total_nodes,completed_nodes,created_at,updated_at
+               ) VALUES('run','rep','complete','{}',2,2,?,?)""",
+            (now, now),
+        )
+        _seed_public_probability(db, "likely", ["e2e4"], "e7e5", 0.9)
+        _seed_public_probability(db, "rare", ["d2d4"], "d7d5", 0.1)
+        priorities.rebuild_introduction_priorities(db, "rep")
+        seed_queue(db, tomorrow)
+        selected = db.execute(
+            "SELECT card_id FROM daily_queue WHERE queue_date=?", (tomorrow,)
+        ).fetchall()
+    assert [row["card_id"] for row in selected] == ["card-0"]
+
+
+def test_priority_refresh_uses_last_completed_coverage_until_replacement_is_complete(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    older = "2026-09-20T00:00:00+00:00"
+    newer = "2026-09-21T00:00:00+00:00"
+    with database.connection() as db:
+        _seed_repertoire(db, [["e2e4", "e7e5", "g1f3"]], [["e2e4", "e7e5", "g1f3"]])
+        db.execute(
+            """INSERT INTO repertoire_coverage_runs(
+                   id,repertoire_id,status,settings_json,total_nodes,completed_nodes,created_at,updated_at
+               ) VALUES('run','rep','complete','{}',1,1,?,?)""",
+            (older, older),
+        )
+        _seed_public_probability(db, "old-node", ["e2e4"], "e7e5", 0.9)
+        db.execute(
+            """INSERT INTO repertoire_coverage_runs(
+                   id,repertoire_id,status,settings_json,total_nodes,completed_nodes,created_at,updated_at
+               ) VALUES('new-run','rep','running','{}',1,0,?,?)""",
+            (newer, newer),
+        )
+        _seed_public_probability(db, "new-node", ["e2e4"], "e7e5", 0.1, "new-run")
+        old_evidence = priorities._coverage_evidence(db, "rep")
+        assert old_evidence[_fen_after(["e2e4"])]["moves"]["e7e5"]["explorer_probability"] == 0.9
+        db.execute("UPDATE repertoire_coverage_runs SET status='complete',completed_nodes=1 WHERE id='new-run'")
+        new_evidence = priorities._coverage_evidence(db, "rep")
+    assert new_evidence[_fen_after(["e2e4"])]["moves"]["e7e5"]["explorer_probability"] == 0.1
+
+
+def test_next_day_admits_from_last_published_scores_without_delaying_due_review(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    today = date.today().isoformat()
+    tomorrow = (date.today() + timedelta(days=1)).isoformat()
+    now = datetime.now(timezone.utc).isoformat()
+    opening_lines = [
+        ["e2e4", "e7e5", "g1f3"],
+        ["d2d4", "d7d5", "c1f4"],
+        ["c2c4", "e7e5", "b1c3"],
+    ]
+    with database.connection() as db:
+        _seed_repertoire(db, opening_lines, opening_lines)
+        db.execute("UPDATE settings SET new_cards_per_day=1 WHERE id=1")
+        for generation, scores in (
+            (1, [0.9, 0.8, 0.1]),
+            (2, [0.1, 0.4, 0.95]),
+        ):
+            for card_index, score in enumerate(scores):
+                db.execute(
+                    """INSERT INTO repertoire_card_priority_generations(
+                           repertoire_id,generation,card_id,scoring_version,priority_score,updated_at
+                       ) VALUES('rep',?,?,1,?,?)""",
+                    (generation, f"card-{card_index}", score, now),
+                )
+        db.execute(
+            "INSERT INTO repertoire_priority_publications(repertoire_id,generation,updated_at) VALUES('rep',1,?)",
+            (now,),
+        )
+        seed_queue(db, today)
+        today_cards = [row["card_id"] for row in db.execute(
+            "SELECT card_id FROM daily_queue WHERE queue_date=?", (today,)
+        )]
+        assert today_cards == ["card-0"]
+        db.execute(
+            "INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES('card-0','good',?,0,1)",
+            (now,),
+        )
+        db.execute(
+            "UPDATE cards SET state='learning',due_date=? WHERE id='card-0'",
+            (tomorrow,),
+        )
+        db.execute(
+            "UPDATE repertoire_priority_publications SET generation=2,updated_at=? WHERE repertoire_id='rep'",
+            (now,),
+        )
+        db.execute(
+            """INSERT INTO repertoire_priority_jobs(
+                   repertoire_id,generation,status,attempts,next_attempt_at,updated_at
+               ) VALUES('rep',3,'queued',0,?,?)""",
+            (now, now),
+        )
+        seed_queue(db, tomorrow)
+        tomorrow_cards = [row["card_id"] for row in db.execute(
+            "SELECT card_id FROM daily_queue WHERE queue_date=? AND status='queued'",
+            (tomorrow,),
+        )]
+        seed_queue(db, tomorrow)
+        repeat_cards = [row["card_id"] for row in db.execute(
+            "SELECT card_id FROM daily_queue WHERE queue_date=? AND status='queued'",
+            (tomorrow,),
+        )]
+    assert set(tomorrow_cards) == {"card-0", "card-2"}
+    assert repeat_cards == tomorrow_cards
 
 
 def test_repertoire_listing_exposes_priority_evidence_state(tmp_path, monkeypatch):

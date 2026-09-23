@@ -4,6 +4,41 @@ import { prepareVisualUI } from "./visual-fixtures";
 const startFen =
   "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
+test("check coverage loads adaptive settings without a validation alert", async ({ page }) => {
+  await prepareVisualUI(page);
+  await page.route("**/api/repertoires/visual-repertoire/coverage", (route) =>
+    route.fulfill({ json: {
+      run_id: "80bffd5b-ff52-469f-8096-36cc8518b07b",
+      status: "complete",
+      required_branches: 2,
+      covered_branches: 1,
+      probability_coverage: 0.9,
+      is_complete: false,
+      unknown_nodes: 0,
+      last_error: null,
+      settings: {
+        automatic_priority: true,
+        reply_denominator: 100,
+        cumulative_target: 0.95,
+        horizon_fullmoves: 15,
+        path_floor: 0.0005,
+        maia_elo: 1500,
+        explorer_rating: 1400,
+        recent_median_rating: 1500,
+        speed_weights: { rapid: 1 },
+        cohort_games: 12,
+      },
+    } }),
+  );
+  await page.route("**/api/repertoires/visual-repertoire/coverage/gaps", (route) =>
+    route.fulfill({ json: { gaps: [] } }),
+  );
+  await navigate(page, "Repertoire");
+  await page.getByRole("button", { name: "Check coverage" }).click();
+  await expect(page.getByText("1 / 2")).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+});
+
 test("fractional priority evidence loads both repertoires without a diagnostic", async ({
   page,
 }) => {

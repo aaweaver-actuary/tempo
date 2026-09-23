@@ -2,11 +2,33 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime
+from datetime import date, datetime, timezone
+import hashlib
 import json
 import sqlite3
 
 from .scheduler import schedule_review, unlock_ready
+
+
+def preserve_daily_queue_order(database: sqlite3.Connection, queue_date: str) -> None:
+    """Keep a manually positioned queue entry stable across projection rebuilds."""
+    entries = database.execute(
+        """SELECT id,card_id FROM daily_queue
+           WHERE queue_date=? AND status='queued' ORDER BY id""",
+        (queue_date,),
+    ).fetchall()
+    membership_hash = hashlib.sha256(
+        ("queue-mix-v2\0" + "\0".join(
+            f"{entry['id']}:{entry['card_id']}" for entry in entries
+        )).encode()
+    ).hexdigest()
+    seed = int(hashlib.sha256(queue_date.encode()).hexdigest()[:15], 16)
+    database.execute(
+        """INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at)
+           VALUES(?,?,?,?) ON CONFLICT(queue_date) DO UPDATE SET
+           membership_hash=excluded.membership_hash,generated_at=excluded.generated_at""",
+        (queue_date, seed, membership_hash, datetime.now(timezone.utc).isoformat()),
+    )
 
 
 def apply_scheduling_review(
@@ -71,9 +93,20 @@ def apply_scheduling_review(
         "SELECT COUNT(DISTINCT date(reviewed_at)) FROM reviews WHERE card_id=? AND rating='correct'",
         (card_id,),
     ).fetchone()[0]
+    seed = database.execute(
+        """SELECT baseline_successful_days,baseline_recent_clean
+           FROM opening_card_schedule_seeds WHERE card_id=?""",
+        (card_id,),
+    ).fetchone()
+    successful_days += int(seed["baseline_successful_days"] if seed else 0)
     recent_outcomes = [row[0] for row in database.execute(
         "SELECT rating FROM reviews WHERE card_id=? ORDER BY reviewed_at DESC,id DESC LIMIT 2", (card_id,)
     )]
+    if seed:
+        recent_outcomes.extend(
+            ["correct"]
+            * min(int(seed["baseline_recent_clean"]), max(0, 2 - len(recent_outcomes)))
+        )
     state = "mature" if unlock_ready(schedule.stability, successful_days, recent_outcomes) else "learning"
     database.execute(
         """UPDATE cards SET due_date=?,interval_days=?,fsrs_card_json=?,first_correct_at=?,reinforcement_pending=?,
@@ -110,6 +143,7 @@ def ensure_card_queued_after(
     card_id: str,
     after_cards: int = 4,
     attempt_state: str = "gameplay",
+    priority_reason: str | None = None,
 ) -> None:
     day = date.today().isoformat()
     entry = database.execute(
@@ -122,10 +156,15 @@ def ensure_card_queued_after(
             (day, card_id),
         ).fetchone()[0]
         database.execute(
-            "INSERT INTO daily_queue(queue_date,card_id,cycle,position,attempt_state) VALUES(?,?,?,?,?)",
-            (day, card_id, cycle, 2_000_000_000, attempt_state),
+            "INSERT INTO daily_queue(queue_date,card_id,cycle,position,attempt_state,gameplay_priority_reason) VALUES(?,?,?,?,?,?)",
+            (day, card_id, cycle, 2_000_000_000, attempt_state, priority_reason),
         )
         entry = database.execute("SELECT last_insert_rowid() AS id").fetchone()
+    elif priority_reason:
+        database.execute(
+            "UPDATE daily_queue SET gameplay_priority_reason=? WHERE id=?",
+            (priority_reason, entry["id"]),
+        )
     ordered_ids = [row[0] for row in database.execute(
         "SELECT id FROM daily_queue WHERE queue_date=? AND status='queued' AND id!=? ORDER BY position,id",
         (day, entry["id"]),
@@ -133,3 +172,11 @@ def ensure_card_queued_after(
     ordered_ids.insert(min(after_cards, len(ordered_ids)), entry["id"])
     for position, entry_id in enumerate(ordered_ids):
         database.execute("UPDATE daily_queue SET position=? WHERE id=?", (position, entry_id))
+    database.execute(
+        """UPDATE daily_queue SET
+               card_bucket=(SELECT content_type FROM cards WHERE id=card_id),
+               admission_kind='review'
+           WHERE id=?""",
+        (entry["id"],),
+    )
+    preserve_daily_queue_order(database, day)

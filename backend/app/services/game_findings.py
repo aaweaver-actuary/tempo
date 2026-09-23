@@ -93,7 +93,10 @@ def _upsert_finding(database, *, game_id: str, analysis_version: int, ply: int, 
         """INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,repertoire_id,card_id,motif,source_opportunity_id,created_at,updated_at)
            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(id) DO UPDATE SET confidence=excluded.confidence,evidence_json=excluded.evidence_json,
-           repertoire_id=excluded.repertoire_id,card_id=COALESCE(excluded.card_id,game_findings.card_id),motif=excluded.motif,
+           repertoire_id=excluded.repertoire_id,
+           card_id=CASE WHEN excluded.kind='repertoire lapse' THEN excluded.card_id
+                        ELSE COALESCE(excluded.card_id,game_findings.card_id) END,
+           motif=excluded.motif,
            source_opportunity_id=excluded.source_opportunity_id,updated_at=excluded.updated_at""",
         (
             _finding_id(game_id, analysis_version, kind, ply), game_id, analysis_version, ply,

@@ -10,6 +10,7 @@ import uuid
 
 from ..database import read_connection
 from .database_executor import submit_background_write, submit_foreground_write
+from .background_activity import claimable, control_order
 
 
 ACTIVE_STATES = ("queued", "leased", "retrying")
@@ -124,7 +125,8 @@ def claim_task(kind: str | None = None, *, lease_seconds: int = 60) -> dict | No
         row = database.execute(
             f"""SELECT * FROM background_tasks
                 WHERE state IN ('queued','retrying') AND next_attempt_at<=?{kind_clause}
-                ORDER BY priority,next_attempt_at,created_at LIMIT 1""",
+                  AND {claimable('durable', 'background_tasks.id')}
+                ORDER BY priority,{control_order('durable', 'background_tasks.id')}next_attempt_at,created_at LIMIT 1""",
             parameters,
         ).fetchone()
         if not row:
@@ -218,6 +220,11 @@ def retry_task(task_id: str) -> dict | None:
                    next_attempt_at=?,lease_token=NULL,lease_expires_at=NULL,last_error=NULL,
                    completed_at=NULL,updated_at=? WHERE id=?""",
             (now, now, task_id),
+        )
+        database.execute(
+            """UPDATE background_activity SET phase='Queued',completed_units=NULL,
+               total_units=NULL,updated_at=? WHERE source='durable' AND work_id=?""",
+            (now, task_id),
         )
         _record_event(database, task_id, row["generation"], "manual_retry", "queued")
         return serialize_task(

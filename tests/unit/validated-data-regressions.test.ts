@@ -9,6 +9,7 @@ import {
   builderSessionSchema,
   gameAnalysisClaimSchema,
   portableSnapshotSchema,
+  repertoireCoverageSummarySchema,
   repertoiresResponseSchema,
 } from "../../app/domain/schemas";
 import {
@@ -37,6 +38,37 @@ const rawRepertoire = {
   card_count: 8,
   due_count: 3,
 };
+
+it("test_coverage_summary_accepts_adaptive_cohort_settings_without_diagnostic", () => {
+  const summary = {
+    run_id: "80bffd5b-ff52-469f-8096-36cc8518b07b",
+    status: "complete",
+    required_branches: 2,
+    covered_branches: 1,
+    probability_coverage: 0.9,
+    is_complete: false,
+    unknown_nodes: 0,
+    last_error: null,
+    settings: {
+      automatic_priority: true,
+      reply_denominator: 100,
+      cumulative_target: 0.95,
+      horizon_fullmoves: 15,
+      path_floor: 0.0005,
+      maia_elo: 1500,
+      explorer_rating: 1400,
+      recent_median_rating: 1500,
+      speed_weights: { rapid: 2 / 3, blitz: 1 / 3 },
+      cohort_games: 3,
+    },
+  };
+  expect(repertoireCoverageSummarySchema.parse(summary).settings?.cohort_games).toBe(3);
+  expect(dataDiagnostics()).toEqual([]);
+  expect(repertoireCoverageSummarySchema.safeParse({
+    ...summary,
+    settings: { ...summary.settings, unexpected: true },
+  }).success).toBe(false);
+});
 
 it("test_fractional_personal_game_evidence_is_valid_repertoire_data", () => {
   const parsed = repertoiresResponseSchema.parse({

@@ -348,7 +348,7 @@ export default function SettingsView({
           <h2>Training</h2>
           <label>
             <span>
-              Initial prefix length<small>User moves per opening card</small>
+              Default initial prefix length<small>Learner moves grouped when importing new routes</small>
             </span>
             <input
               type="number"

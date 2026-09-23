@@ -72,6 +72,7 @@ import { WorkspaceRefreshStatus } from "../components/workspace-refresh-status";
 import { RepertoireIntegrityDialog } from "../components/repertoire-integrity-dialog";
 import { repertoiresResponseSchema } from "../domain/schemas";
 import { DebugErrorPanel } from "../components/debug-error-panel";
+import { ServiceStatusPanel } from "../components/service-status-panel";
 import { setActiveDebugWorkspace } from "../lib/debug-reporting";
 
 async function responseErrorDetail(response: Response): Promise<string> {
@@ -962,6 +963,7 @@ export default function Home() {
         <div className="top-actions">
           <SoundToggleButton soundOn={soundOn} changeSound={changeSound} />
           <SavedLocallyButton setShowImport={setShowImport} />
+          <ServiceStatusPanel />
         </div>
       </header>
       {!usesLocalApi() && <DemoBanner />}
