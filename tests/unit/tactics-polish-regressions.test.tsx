@@ -8,6 +8,7 @@ import {
 import { expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
 import TacticsView from "../../app/views/tactics_view";
+import { playChessMoveSound } from "../../app/lib/move-sound";
 
 vi.mock("../../app/components/chessboard", () => ({
   Chessboard: (props: {
@@ -30,7 +31,10 @@ vi.mock("../../app/components/chessboard", () => ({
     </div>
   ),
 }));
-vi.mock("../../app/lib/move-sound", () => ({ playMoveSound: vi.fn() }));
+vi.mock("../../app/lib/move-sound", () => ({
+  playMoveSound: vi.fn(),
+  playChessMoveSound: vi.fn(),
+}));
 const catalog = {
   version: 1,
   groups: [{ id: "basic", name: "Basic motifs" }],
@@ -90,7 +94,7 @@ it("legacy clean puzzle identities select the next unattempted deck position rat
   await waitFor(() => expect(screen.getByText("Puzzle 25 of 25")).toBeTruthy());
 });
 
-it("tactic Show Move and Restart retain one guided attempt then clear X and unlock the next puzzle", async () => {
+it("tactic Show Move and Restart retain the guided attempt and classify the opponent reply sound", async () => {
   const submissions: Record<string, unknown>[] = [];
   vi.stubGlobal(
     "fetch",
@@ -116,6 +120,10 @@ it("tactic Show Move and Restart retain one guided attempt then clear X and unlo
   expect(screen.getByText("Puzzle 1 of 25")).toBeTruthy();
   expect(screen.getByText("Follow the arrow")).toBeTruthy();
   fireEvent.click(screen.getByText("a2e6"));
+  expect(playChessMoveSound).toHaveBeenCalledWith(
+    expect.objectContaining({ from: "d7", to: "d8" }),
+    false,
+  );
   fireEvent.click(screen.getByRole("button", { name: /Restart/ }));
   expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(
     startingFen,

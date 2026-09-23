@@ -23,7 +23,10 @@ const createBoard = vi.hoisted(() =>
 );
 
 vi.mock("@lichess-org/chessground", () => ({ Chessground: createBoard }));
-vi.mock("../../app/lib/move-sound", () => ({ playMoveSound: vi.fn() }));
+vi.mock("../../app/lib/move-sound", () => ({
+  playMoveSound: vi.fn(),
+  playChessMoveSound: vi.fn(),
+}));
 
 beforeEach(() => {
   createBoard.mockClear();

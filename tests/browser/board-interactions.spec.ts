@@ -9,6 +9,105 @@ import {
   move,
   clickSquare,
 } from "./product-fixtures";
+
+test("checked king gets a persistent translucent red cue that clears when the position changes", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    const audioSources: string[] = [];
+    Object.assign(window, { __tempoAudioSources: audioSources });
+    Object.defineProperty(window, "Audio", {
+      configurable: true,
+      value: class {
+        volume = 1;
+        currentTime = 0;
+        constructor(public src: string) {
+          audioSources.push(src);
+        }
+        play() {
+          return Promise.resolve();
+        }
+      },
+    });
+  });
+  await page.goto("/");
+  await nav(page, "Builder");
+  const board = page.locator(".board-frame");
+  const expectedPosition = new Chess();
+
+  for (const [from, to] of [
+    ["e2", "e4"],
+    ["e7", "e5"],
+    ["d1", "h5"],
+    ["b8", "c6"],
+    ["f1", "c4"],
+    ["g8", "f6"],
+    ["h5", "f7"],
+  ]) {
+    expectedPosition.move({ from, to, promotion: "q" });
+    await move(page, from, to);
+    await expect(board).toHaveAttribute("data-fen", expectedPosition.fen());
+  }
+
+  const checkedSquare = board.locator(".cg-wrap cg-board square.check:visible");
+  const checkedKing = board.locator(".cg-wrap piece.king.black");
+  await expect(checkedSquare).toHaveCount(1);
+  const [squareBounds, kingBounds] = await Promise.all([
+    checkedSquare.boundingBox(),
+    checkedKing.boundingBox(),
+  ]);
+  expect(squareBounds).not.toBeNull();
+  expect(kingBounds).not.toBeNull();
+  expect(
+    Math.abs(
+      squareBounds!.x + squareBounds!.width / 2 -
+        (kingBounds!.x + kingBounds!.width / 2),
+    ),
+  ).toBeLessThan(1);
+  expect(
+    Math.abs(
+      squareBounds!.y + squareBounds!.height / 2 -
+        (kingBounds!.y + kingBounds!.height / 2),
+    ),
+  ).toBeLessThan(1);
+  expect(await checkedSquare.evaluate((square) => getComputedStyle(square).backgroundImage)).toContain("radial-gradient");
+  const playedSoundSources = await page.evaluate(
+    () => (window as unknown as { __tempoAudioSources: string[] }).__tempoAudioSources,
+  );
+  expect(playedSoundSources.some((source) => source.includes("Check.wav"))).toBe(true);
+  expect(playedSoundSources.some((source) => source.includes("Capture.mp3"))).toBe(false);
+
+  await page.keyboard.press("f");
+  await expect(board).toHaveAttribute("data-orientation", "black");
+  await expect(checkedSquare).toHaveCount(1);
+  const [flippedSquareBounds, flippedKingBounds] = await Promise.all([
+    checkedSquare.boundingBox(),
+    checkedKing.boundingBox(),
+  ]);
+  expect(flippedSquareBounds).not.toBeNull();
+  expect(flippedKingBounds).not.toBeNull();
+  expect(
+    Math.abs(
+      flippedSquareBounds!.x + flippedSquareBounds!.width / 2 -
+        (flippedKingBounds!.x + flippedKingBounds!.width / 2),
+    ),
+  ).toBeLessThan(1);
+  expect(
+    Math.abs(
+      flippedSquareBounds!.y + flippedSquareBounds!.height / 2 -
+        (flippedKingBounds!.y + flippedKingBounds!.height / 2),
+    ),
+  ).toBeLessThan(1);
+
+  await page
+    .locator(".shared-board-toolbar .board-tools")
+    .getByRole("button", { name: /Back/ })
+    .click();
+  expectedPosition.undo();
+  await expect(board).toHaveAttribute("data-fen", expectedPosition.fen());
+  await expect(checkedSquare).toHaveCount(0);
+});
+
 test("local import respects the daily limit; Black prompts and Builder flip survive Settings and refresh", async ({
   page,
 }) => {

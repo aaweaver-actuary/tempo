@@ -2,6 +2,7 @@
 
 | Issue | Required regression |
 | --- | --- |
+| Played captures/checks sound differently by actor, or the checked king has no persistent board cue | `played moves use distinct move, capture, and check recordings and respect persisted sound settings`; `tactic Show Move and Restart retain the guided attempt and classify the opponent reply sound`; `checked king gets a persistent translucent red cue that clears when the position changes` |
 | Failed tactic advances before correction | `tactic failure remains interactive until the full guided solution is complete` |
 | Puzzle setup omitted / final move snaps back | `tactic setup is applied and the final mate remains during feedback` |
 | Motifs share counters or stale timers | `motif progress is independent and stale completion cannot advance another deck` |

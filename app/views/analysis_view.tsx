@@ -22,6 +22,7 @@ import {
 } from "react";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
+import { playChessMoveSound } from "../lib/move-sound";
 import CandidateMovesTable from "../CandidateMovesTable";
 import { MoveComparisonTable } from "../components/move-comparison-table";
 import { STANDARD_FEN, API_URL } from "../const";
@@ -251,6 +252,26 @@ export default function BuilderView({
 
   const visibleHistory = useMemo(() => history.slice(0, cursor), [history, cursor]);
   const fen = visibleHistory.at(-1)?.fen ?? startingFen;
+  const advanceHistoryOnePly = useCallback(() => {
+    const nextMove = history[cursor];
+    if (!nextMove) return;
+    try {
+      const resultingPosition = new Chess(fen);
+      const move = resultingPosition.move({
+        from: nextMove.uci.slice(0, 2) as Square,
+        to: nextMove.uci.slice(2, 4) as Square,
+        promotion: nextMove.uci[4] as "q" | "r" | "b" | "n" | undefined,
+      });
+      playChessMoveSound(move, resultingPosition.isCheck());
+      setCursor(cursor + 1);
+    } catch {
+      // Saved history has already been checked against legal moves.
+    }
+  }, [cursor, fen, history]);
+  const navigateHistoryToPly = useCallback((targetPly: number) => {
+    if (targetPly === cursor + 1) advanceHistoryOnePly();
+    else setCursor(targetPly);
+  }, [advanceHistoryOnePly, cursor]);
   const previousUci = visibleHistory.at(-1)?.uci;
   const lastMove = useMemo<[string, string] | undefined>(() => previousUci
     ? [previousUci.slice(0, 2), previousUci.slice(2, 4)]
@@ -538,7 +559,7 @@ export default function BuilderView({
       }
       if (event.key === "ArrowRight") {
         event.preventDefault();
-        setCursor((value) => Math.min(history.length, value + 1));
+        advanceHistoryOnePly();
       }
       if (event.key === "Home") {
         event.preventDefault();
@@ -574,6 +595,7 @@ export default function BuilderView({
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [
+    advanceHistoryOnePly,
     flipBuilder,
     history.length,
     lineMatches,
@@ -1175,9 +1197,7 @@ export default function BuilderView({
               ← <span>Back</span>
             </button>
             <button
-              onClick={() =>
-                setCursor((value) => Math.min(history.length, value + 1))
-              }
+              onClick={advanceHistoryOnePly}
               disabled={cursor === history.length}
             >
               → <span>Forward</span>
@@ -1200,7 +1220,7 @@ export default function BuilderView({
                     <button
                       className={index < cursor ? "shown" : ""}
                       key={`${move.uci}-${index}`}
-                      onClick={() => setCursor(index + 1)}
+                      onClick={() => navigateHistoryToPly(index + 1)}
                     >
                       {index % 2 === 0 ? `${Math.floor(index / 2) + 1}.` : ""}
                       {move.san}

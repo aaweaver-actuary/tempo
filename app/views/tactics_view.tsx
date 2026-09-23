@@ -11,7 +11,7 @@ import { OutcomeFlash } from "../components/board-controls";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
 import { API_URL, STANDARD_FEN } from "../const";
-import { playMoveSound } from "../lib/move-sound";
+import { playChessMoveSound } from "../lib/move-sound";
 import {
   readTacticProgress,
   advanceTacticProgress,
@@ -438,10 +438,10 @@ export default function TacticsView({
         return;
       }
       const replyBoard = new Chess(board.fen());
-      replyBoard.move(currentPuzzleMoves[replyIndex]);
+      const reply = replyBoard.move(currentPuzzleMoves[replyIndex]);
       nextAttempt.fen = asFenString(replyBoard.fen());
       nextAttempt.step = replyIndex + 1;
-      playMoveSound();
+      playChessMoveSound(reply, replyBoard.isCheck());
       if (replyIndex + 1 >= currentPuzzleMoves.length) void finish(nextAttempt);
       else setAttempt(nextAttempt);
     },

@@ -1,6 +1,6 @@
 # Third-party notices
 
-Move and capture recordings are unmodified [Lichess standard chess sounds](https://github.com/lichess-org/lila/tree/a558015505da237d46c335f669cd033370a05955/public/sound/standard), distributed under AGPL-3.0-or-later. See `public/sounds/standard/NOTICE.txt` and Lichess's COPYING.md for source and attribution. The older Woodland recordings remain unused legacy assets.
+Move and capture recordings are unmodified [Lichess standard chess sounds](https://github.com/lichess-org/lila/tree/a558015505da237d46c335f669cd033370a05955/public/sound/standard), distributed under AGPL-3.0-or-later. The check cue is an original synthesized recording created for Tempo. See `public/sounds/standard/NOTICE.txt` and Lichess's COPYING.md for source and attribution. The older Woodland recordings remain unused legacy assets.
 
 Tempo uses [Chessground](https://github.com/lichess-org/chessground), the chessboard UI developed for Lichess, under GPL-3.0-or-later.
 

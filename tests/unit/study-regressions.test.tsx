@@ -48,6 +48,7 @@ vi.mock("../../app/components/chessboard", () => ({
 }));
 vi.mock("../../app/lib/move-sound", () => ({
   playMoveSound: vi.fn(),
+  playChessMoveSound: vi.fn(),
   moveSoundEnabled: () => false,
 }));
 vi.mock("../../app/lib/analysis-engines", () => ({

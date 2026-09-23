@@ -276,6 +276,16 @@ button {
 .chessground-shell cg-board {
   border-radius: 1px;
 }
+.chessground-shell cg-board square.check {
+  background: radial-gradient(
+    ellipse at center,
+    rgba(255, 35, 35, 0.48) 0%,
+    rgba(230, 20, 20, 0.38) 27%,
+    rgba(205, 0, 0, 0.2) 56%,
+    rgba(180, 0, 0, 0) 89%,
+    rgba(158, 0, 0, 0) 100%
+  );
+}
 .chessground-shell .cg-wrap piece {
   filter: drop-shadow(0 2px 1px rgba(0, 0, 0, 0.18));
 }

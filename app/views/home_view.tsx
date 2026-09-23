@@ -19,7 +19,7 @@ import {
 } from "../lib/workspace-data";
 import { runStudyTask } from "../lib/background-study";
 import { ImportDialogBox } from "../ImportDialogBox";
-import { moveSoundEnabled, playMoveSound } from "../lib/move-sound";
+import { moveSoundEnabled, playChessMoveSound, playMoveSound } from "../lib/move-sound";
 import { bundledRepertoires, demoCards } from "../samples";
 import {
   View,
@@ -620,7 +620,7 @@ export default function Home() {
         useTrainingStore.getState().isAttemptFailed ? "guided" : "playerTurn",
       );
       setFeedback(nextStep >= card.moves.length ? "complete" : "ready");
-      playMoveSound();
+      playChessMoveSound(reply, replyPosition.isCheck());
       if (nextStep >= card.moves.length) completeAttempt(replyPosition.fen());
     }, 420);
   }
@@ -638,7 +638,7 @@ export default function Home() {
   function changeSound(value: boolean) {
     setSoundOn(value);
     localStorage.setItem("tempo-move-sound", String(value));
-    if (value) playMoveSound(true);
+    if (value) playMoveSound({ force: true });
   }
 
   async function rateCard(outcome: "again" | "correct") {

@@ -18,7 +18,10 @@ const createBoard = vi.hoisted(() =>
   }),
 );
 vi.mock("@lichess-org/chessground", () => ({ Chessground: createBoard }));
-vi.mock("../../app/lib/move-sound", () => ({ playMoveSound: vi.fn() }));
+vi.mock("../../app/lib/move-sound", () => ({
+  playMoveSound: vi.fn(),
+  playChessMoveSound: vi.fn(),
+}));
 
 it("resize and feedback locks reuse Chessground without toggling construction-only viewOnly or recalculating arrow destinations", () => {
   vi.stubGlobal(

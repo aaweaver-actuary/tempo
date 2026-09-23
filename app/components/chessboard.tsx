@@ -8,7 +8,7 @@ import { Chess, type Square } from "chess.js";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useBoardViewport } from "../hooks/use-board-viewport";
 import { measureTempoOperation } from "../lib/performance";
-import { playMoveSound } from "../lib/move-sound";
+import { playChessMoveSound, playMoveSound } from "../lib/move-sound";
 
 export type BoardTheme = "brown" | "blue" | "green";
 export type PieceSet = "cburnett" | "merida";
@@ -195,10 +195,20 @@ export function Chessboard({
           after: (from, to) => {
             const finishMove = measureTempoOperation("move-to-paint");
             const chess = positionRef.current.chess;
-            const capture =
-              Boolean(chess.get(to as Square)) ||
-              (chess.get(from as Square)?.type === "p" && from[0] !== to[0]);
-            playMoveSound(false, capture);
+            if (handlers.current.editMode) {
+              const capture =
+                Boolean(chess.get(to as Square)) ||
+                (chess.get(from as Square)?.type === "p" && from[0] !== to[0]);
+              playMoveSound({ capture });
+            } else {
+              try {
+                const nextPosition = new Chess(chess.fen());
+                const move = nextPosition.move({ from, to, promotion: "q" });
+                playChessMoveSound(move, nextPosition.isCheck());
+              } catch {
+                playMoveSound();
+              }
+            }
             apiRef.current?.setAutoShapes([]);
             if (handlers.current.editMode)
               handlers.current.onFreeMove?.(from as Square, to as Square);
@@ -224,8 +234,12 @@ export function Chessboard({
 
   useLayoutEffect(() => {
     apiRef.current?.cancelMove?.();
+    const positionIsChecked = position.chess.isCheck();
     apiRef.current?.set({
       fen,
+      check: positionIsChecked
+        ? position.chess.turn() === "w" ? "white" : "black"
+        : false,
       orientation: visualOrientation,
       turnColor: position.chess.turn() === "w" ? "white" : "black",
       lastMove: lastMove ? ([...lastMove] as Key[]) : undefined,

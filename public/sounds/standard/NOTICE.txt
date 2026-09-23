@@ -5,3 +5,6 @@ Copyright: Lichess authors and asset contributors
 License: GNU Affero General Public License version 3 or later
 License text: https://github.com/lichess-org/lila/blob/master/LICENSE
 Copying terms: https://github.com/lichess-org/lila/blob/master/COPYING.md
+
+Check.wav is an original synthesized audio asset created for Tempo. It contains
+no third-party recording or samples.

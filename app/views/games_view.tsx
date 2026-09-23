@@ -40,6 +40,7 @@ import { sampleGames } from "../samples";
 import { Chess, type Square } from "chess.js";
 import { gameRecordSchema } from "../domain/schemas";
 import { formatConversionRate, tacticalQueueBoardOrientation } from "../lib/tactical-opportunities";
+import { playChessMoveSound } from "../lib/move-sound";
 
 type GuidedReviewSession = {
   id: string;
@@ -178,6 +179,21 @@ export default function GamesView({
         selected.startFen,
       )
     : STANDARD_FEN;
+  const advanceGameOnePly = useCallback(() => {
+    if (!selected || cursor >= selected.moves.length) return;
+    const resultingPosition = new Chess(gameFen);
+    try {
+      const move = resultingPosition.move(selected.moves[cursor]);
+      playChessMoveSound(move, resultingPosition.isCheck());
+    } catch {
+      // Invalid saved move data is handled by the normal game-data validation.
+    }
+    setCursor(cursor + 1);
+  }, [cursor, gameFen, selected]);
+  const navigateGameToPly = useCallback((targetPly: number) => {
+    if (targetPly === cursor + 1) advanceGameOnePly();
+    else setCursor(targetPly);
+  }, [advanceGameOnePly, cursor]);
   const gameLast =
     selected && cursor
       ? convertSanToUci(selected.moves, selected.startFen)[cursor - 1]
@@ -512,7 +528,7 @@ export default function GamesView({
       }
       if (event.key === "ArrowRight") {
         event.preventDefault();
-        setCursor((value) => Math.min(length, value + 1));
+        advanceGameOnePly();
       }
       if (["Home", "ArrowUp"].includes(event.key)) {
         event.preventDefault();
@@ -525,7 +541,7 @@ export default function GamesView({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [selected?.moves.length]);
+  }, [advanceGameOnePly, selected?.moves.length]);
   const matchedDecisions = games.reduce((total, game) => total + (game.matchedPlayerDecisions ?? 0), 0);
   const repertoireOpportunities = games.reduce((total, game) => total + (game.repertoireOpportunities ?? 0), 0);
   const selectedFindings = findings.filter((finding) => finding.game_id === selected?.id);
@@ -664,11 +680,7 @@ export default function GamesView({
               ← Back
             </button>
             <button disabled={!selected || cursor >= selected.moves.length}
-              onClick={() =>
-                setCursor((value) =>
-                  Math.min(selected?.moves.length ?? 0, value + 1),
-                )
-              }
+              onClick={advanceGameOnePly}
             >
               Forward →
             </button>
@@ -700,7 +712,7 @@ export default function GamesView({
               {selected?.moves.map((move, index) => (
                 <button
                   className={`${index < cursor ? "shown" : ""}${index === selected.flagPly ? " flagged" : ""}`}
-                  onClick={() => setCursor(index + 1)}
+                  onClick={() => navigateGameToPly(index + 1)}
                   key={index}
                   title={[...(selected.timeline ?? []), ...selectedFindings].filter((event) => event.ply === index).map((event) => event.kind).join(", ")}
                 >
