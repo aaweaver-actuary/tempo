@@ -12,6 +12,15 @@ import { asSanMove, asUciMove } from "../types";
 
 export type EngineMove = CandidateMove;
 
+export type StockfishRequest = {
+  fen: FenString;
+  depth: number;
+  multipv?: number;
+  positionStartFen?: string;
+  positionPrefixUci?: string[];
+  rootMoveUci?: string;
+};
+
 let stockfishWorker: Worker | undefined;
 let stockfishRequest = 0;
 const STOCKFISH_REQUEST_TIMEOUT_MS = 60_000;
@@ -43,14 +52,21 @@ export function analyzeWithStockfish(
   depth = 10,
   signal?: AbortSignal,
 ): Promise<EngineMove[]> {
-  return stockfishAnalysis(fen, depth, signal);
+  return stockfishAnalysis({ fen, depth }, signal);
+}
+
+export function analyzeWithStockfishRequest(
+  request: StockfishRequest,
+  signal?: AbortSignal,
+): Promise<EngineMove[]> {
+  return stockfishAnalysis(request, signal);
 }
 
 async function stockfishAnalysis(
-  fen: FenString,
-  depth: number,
+  request: StockfishRequest,
   signal?: AbortSignal,
 ): Promise<EngineMove[]> {
+  const { fen, depth } = request;
   const worker = await loadStockfish();
   const id = ++stockfishRequest;
   return new Promise((resolve, reject) => {
@@ -94,6 +110,7 @@ async function stockfishAnalysis(
           if (!uci) return;
           const mate = line.match(/ score mate (-?\d+)/)?.[1];
           const cp = line.match(/ score cp (-?\d+)/)?.[1];
+          const completedDepth = Number(line.match(/ depth (\d+)/)?.[1] ?? 0);
           const chess = new Chess(fen);
           let move: Move | null = null;
           try {
@@ -120,6 +137,7 @@ async function stockfishAnalysis(
             pv,
             cp: cp === undefined ? undefined : Number(cp),
             mate: mate === undefined ? undefined : Number(mate),
+            depth: completedDepth,
           });
         }
         if (line.startsWith("bestmove ")) {
@@ -134,7 +152,13 @@ async function stockfishAnalysis(
     };
     worker.addEventListener("message", receive);
     signal?.addEventListener("abort", cancel, { once: true });
-    worker.postMessage({ type: "analyze", id, fen, depth });
+    worker.postMessage({
+      type: "analyze", id, fen, depth,
+      multipv: request.multipv ?? 5,
+      positionStartFen: request.positionStartFen,
+      positionPrefixUci: request.positionPrefixUci,
+      rootMoveUci: request.rootMoveUci,
+    });
   });
 }
 

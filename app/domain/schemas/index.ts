@@ -27,7 +27,7 @@ export const queueCardSchema = z.strictObject({
   queue_entry_id: queueEntryIdSchema,
   start_fen: fenStringSchema,
   moves: z.array(z.string()),
-  content_type: z.enum(["opening", "middlegame", "endgame", "tactic"]),
+  content_type: z.enum(["opening", "middlegame", "endgame", "tactic", "defense"]),
   repertoire_name: z.string(),
   repertoire_source: z.string(),
   cycle: integer.optional(),

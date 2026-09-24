@@ -47,19 +47,25 @@ export function mapQueueCardToPracticeCard(
       card.kind === "prefix" &&
       (card.recent_attempts_json?.match(/"again"/g)?.length ?? 0) >= 3,
     kind:
-      card.content_type === "tactic"
+      card.content_type === "defense"
+        ? "defense"
+        : card.content_type === "tactic"
         ? "puzzle"
         : card.content_type === "endgame"
           ? "endgame"
           : "opening",
     title:
-      card.content_type === "tactic"
+      card.content_type === "defense"
+        ? "Defensive decision"
+        : card.content_type === "tactic"
         ? "Tactics review"
         : card.content_type === "endgame"
           ? "Endgame study"
           : card.repertoire_name,
     subtitle:
-      card.content_type === "tactic"
+      card.content_type === "defense"
+        ? "From an analyzed game"
+        : card.content_type === "tactic"
         ? `Lichess puzzle ${card.source_ref ?? ""}`
         : card.repertoire_source,
     startingFen,
@@ -67,17 +73,20 @@ export function mapQueueCardToPracticeCard(
       card.content_type === "endgame"
         ? []
         : movesToSanFormat(startingFen, validatedLine.moves).map(asSanMove),
-    userMoveTarget: Math.ceil(card.moves.length / 2),
-    sourceUrl: card.source_ref
+    userMoveTarget: card.content_type === "defense" ? 1 : Math.ceil(card.moves.length / 2),
+    sourceUrl: card.content_type !== "defense" && card.source_ref
       ? `https://lichess.org/training/${card.source_ref}`
       : undefined,
     orientation:
-      card.content_type === "tactic"
+      card.content_type === "defense"
+        ? (card.trained_color ?? "white")
+        : card.content_type === "tactic"
         ? new Chess(card.start_fen).turn() === "b"
           ? "black"
           : "white"
         : (card.trained_color ?? "white"),
     revision: card.revision ?? 1,
+    defenseCandidateId: card.content_type === "defense" ? card.source_ref ?? undefined : undefined,
     repertoireId: card.repertoire_id
       ? asRepertoireId(String(card.repertoire_id))
       : undefined,

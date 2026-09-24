@@ -27,6 +27,7 @@ import {
 } from "../state/training-store";
 import { annotationToShapes } from "../utils/position-annotations";
 import { useShallow } from "zustand/react/shallow";
+import DefenseTrainingView from "./defense_training_view";
 
 interface TrainingViewProps {
   dateLabel: string;
@@ -52,9 +53,10 @@ interface TrainingViewProps {
   onMove: (from: Square, to: Square) => void;
   onOpenPosition?: (target: "analysis" | "builder" | "games") => void;
   useSharedBoard?: boolean;
+  onDefenseGraded?: () => Promise<void>;
 }
 
-export default function TrainingView({
+function StandardTrainingView({
   dateLabel,
   serviceError,
   cardsLeft,
@@ -351,4 +353,18 @@ export default function TrainingView({
       )}
     </>
   );
+}
+
+export default function TrainingView(props: TrainingViewProps) {
+  if (props.card.kind === "defense") {
+    return <DefenseTrainingView
+      key={`${props.card.queueEntryId ?? props.card.id}:${props.card.revision ?? 1}`}
+      card={props.card}
+      boardTheme={props.boardTheme}
+      pieceSet={props.pieceSet}
+      useSharedBoard={props.useSharedBoard ?? false}
+      onAdvance={props.onDefenseGraded ?? (async () => { props.refreshDatabaseQueue(); })}
+    />;
+  }
+  return <StandardTrainingView {...props} />;
 }

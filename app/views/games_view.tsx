@@ -82,6 +82,24 @@ type TacticalQueueItem = {
   };
 };
 type TacticalStats = { overall: { opportunities: number; exploited: number; missed: number; conversion_rate: number | null; average_missed_centipawn_cost: number | null; supporting_games: number }; motifs: Array<{ motif: string; opportunities: number; exploited: number; missed: number; conversion_rate: number | null; average_missed_centipawn_cost: number | null; supporting_games: number; pin_breakdown?: Record<string, { opportunities: number; exploited: number; missed: number; conversion_rate: number | null }> }> };
+type DefenseCandidate = {
+  id: string;
+  game_id: string;
+  player_ply: number;
+  validation_state: string;
+  diagnostic: string;
+  dismissed_at: string | null;
+  approved_at: string | null;
+  card_id: string | null;
+  evidence: {
+    anchor: { historical_move_uci: string };
+    seed: {
+      source_line: { origin: "played" | "engine" };
+      geometry: { knight_to: string; king: { square: string }; major: { square: string; piece: string } };
+    };
+  };
+  analysis_requests: Array<{ id: string; role: string; state: string; last_error: string | null }>;
+};
 function isTacticalStats(value: unknown): value is TacticalStats {
   if (!value || typeof value !== "object") return false;
   const overall = (value as { overall?: unknown }).overall;
@@ -148,6 +166,8 @@ export default function GamesView({
   const [engineText, setEngineText] = useState("");
   const [error, setError] = useState("");
   const [findings, setFindings] = useState<Array<{ id: string; game_id: string; ply: number; kind: string; confidence: number; motif?: string | null; card_id?: string | null }>>([]);
+  const [defenseCandidates, setDefenseCandidates] = useState<DefenseCandidate[]>([]);
+  const [defenseBusy, setDefenseBusy] = useState(false);
   const [cardPreviews, setCardPreviews] = useState<Record<string, { starting_fen: string; moves: string[]; best_move: string; existing_card_id?: string | null }>>({});
   const [positionSummary, setPositionSummary] = useState<{
     encounters: number;
@@ -358,6 +378,19 @@ export default function GamesView({
       setFindings(payload.findings ?? []);
     }
   }, [local]);
+  const loadDefenseCandidates = useCallback(async () => {
+    if (!local || !selected?.id) {
+      setDefenseCandidates([]);
+      return;
+    }
+    const response = await fetch(`${API_URL}/api/defensive-threats/candidates?game_id=${encodeURIComponent(selected.id)}`);
+    if (!response.ok) {
+      setError("Could not load defensive candidates from the local database.");
+      return;
+    }
+    const body = await response.json() as { candidates: DefenseCandidate[] };
+    setDefenseCandidates(body.candidates);
+  }, [local, selected]);
   const loadTacticalQueue = useCallback(async () => {
     if (!local) return;
     const response = await fetch(`${API_URL}/api/game-findings/tactical-queue`);
@@ -381,9 +414,50 @@ export default function GamesView({
   }, [filters, local]);
   useEffect(() => {
     queueMicrotask(() => void loadFindings());
+    queueMicrotask(() => void loadDefenseCandidates());
     queueMicrotask(() => void loadTacticalQueue());
     queueMicrotask(() => void loadTacticalStats());
-  }, [loadFindings, loadTacticalQueue, loadTacticalStats, syncState.lastSuccess, selectedId]);
+  }, [loadFindings, loadDefenseCandidates, loadTacticalQueue, loadTacticalStats, syncState.lastSuccess, selectedId]);
+  useEffect(() => {
+    if (!local || !selected?.id) return;
+    const timer = window.setInterval(() => void loadDefenseCandidates(), 10_000);
+    return () => window.clearInterval(timer);
+  }, [local, selected?.id, loadDefenseCandidates]);
+  async function refreshDefensiveThreats() {
+    if (!selected || defenseBusy) return;
+    setDefenseBusy(true);
+    try {
+      const response = await fetch(`${API_URL}/api/games/${encodeURIComponent(selected.id)}/defensive-threats/refresh`, { method: "POST" });
+      if (!response.ok) throw new Error("Could not queue defensive analysis for this game.");
+      await loadDefenseCandidates();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not refresh defensive threats.");
+    } finally {
+      setDefenseBusy(false);
+    }
+  }
+  async function decideDefenseCandidate(candidateId: string, action: "approve" | "dismiss") {
+    if (defenseBusy) return;
+    setDefenseBusy(true);
+    try {
+      const response = await fetch(`${API_URL}/api/defensive-threats/candidates/${candidateId}/${action}`, { method: "POST" });
+      if (!response.ok) {
+        const body = await response.json() as { detail?: string };
+        throw new Error(body.detail ?? "Could not save this defensive candidate.");
+      }
+      await loadDefenseCandidates();
+      if (action === "approve") await onQueueUpdated?.();
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Could not save this defensive candidate.");
+    } finally {
+      setDefenseBusy(false);
+    }
+  }
+  async function retryDefenseAnalysis(requestId: string) {
+    const response = await fetch(`${API_URL}/api/defensive-threats/analysis/${requestId}/retry`, { method: "POST" });
+    if (!response.ok) setError("Could not retry that defensive analysis.");
+    else await loadDefenseCandidates();
+  }
   async function decideFinding(findingId: string, decision: "accepted" | "ignored") {
     const response = await fetch(`${API_URL}/api/game-findings/${findingId}/decision`, {
       method: "POST",
@@ -544,7 +618,7 @@ export default function GamesView({
   }, [advanceGameOnePly, selected?.moves.length]);
   const matchedDecisions = games.reduce((total, game) => total + (game.matchedPlayerDecisions ?? 0), 0);
   const repertoireOpportunities = games.reduce((total, game) => total + (game.repertoireOpportunities ?? 0), 0);
-  const selectedFindings = findings.filter((finding) => finding.game_id === selected?.id);
+  const selectedFindings = findings.filter((finding) => finding.game_id === selected?.id && finding.kind !== "defensive tactical threat");
 
   useEffect(() => {
     if (!useSharedBoard) return;
@@ -747,6 +821,32 @@ export default function GamesView({
             )}
           </aside>
           <div className="games-metrics" data-task="Findings">
+            {local && selected && (
+              <article aria-label="Defensive threat candidates">
+                <span>Defensive threats</span>
+                <strong>{defenseCandidates.filter((candidate) => !candidate.dismissed_at).length} candidates</strong>
+                <button disabled={defenseBusy} onClick={() => void refreshDefensiveThreats()}>Check this game</button>
+                {defenseCandidates.length === 0 && <small>No checking knight-fork candidates found for this analysis.</small>}
+                {defenseCandidates.map((candidate) => (
+                  <div key={candidate.id}>
+                    <small>Move {Math.floor(candidate.player_ply / 2) + 1} · {candidate.evidence.seed.source_line.origin === "played" ? "Played game" : "Engine continuation"} · historical {candidate.evidence.anchor.historical_move_uci}</small>
+                    <small>{candidate.validation_state.replaceAll("_", " ")} · {candidate.diagnostic || "Waiting for compatible analysis"}</small>
+                    {candidate.approved_at && <small>Added to today&apos;s training queue.</small>}
+                    {candidate.dismissed_at && <small>Dismissed until the evidence changes.</small>}
+                    {!candidate.approved_at && !candidate.dismissed_at && candidate.validation_state === "engine_supported" && (
+                      <>
+                        <small>Evidence: knight to {candidate.evidence.seed.geometry.knight_to} checks king {candidate.evidence.seed.geometry.king.square} and attacks {candidate.evidence.seed.geometry.major.piece} {candidate.evidence.seed.geometry.major.square}.</small>
+                        <button disabled={defenseBusy} onClick={() => void decideDefenseCandidate(candidate.id, "approve")}>Approve for training</button>
+                      </>
+                    )}
+                    {!candidate.approved_at && !candidate.dismissed_at && <button disabled={defenseBusy} onClick={() => void decideDefenseCandidate(candidate.id, "dismiss")}>Dismiss</button>}
+                    {candidate.analysis_requests.filter((request) => request.state === "failed").map((request) => (
+                      <button key={request.id} onClick={() => void retryDefenseAnalysis(request.id)}>Retry analysis: {request.last_error ?? request.role}</button>
+                    ))}
+                  </div>
+                ))}
+              </article>
+            )}
             {local && tacticalStats && (
               <article aria-label="Tactical themes">
                 <span>Tactical themes</span>

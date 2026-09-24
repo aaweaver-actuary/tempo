@@ -47,8 +47,9 @@ def create_or_resume_session(game_id: str) -> dict:
             return read_session(existing["id"])
         findings = database.execute(
             """SELECT * FROM game_findings WHERE game_id=?
+                 AND analysis_version=? AND kind!='defensive tactical threat'
                  AND status NOT IN ('ignored','excluded') ORDER BY ply""",
-            (game_id,),
+            (game_id, game["analysis_version"]),
         ).fetchall()
         strongest_by_ply = {}
         for finding in findings:

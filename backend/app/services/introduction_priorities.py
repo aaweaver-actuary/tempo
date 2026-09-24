@@ -508,13 +508,9 @@ def calculate_priority_records(
                 route.end_ply,
             )
 
-    shared_evidence = {
-            **aggregate,
-            "edge_states": {
-                f"{fen_key}:{move_uci}": provenance
-                for (fen_key, move_uci), (_, provenance) in edge_evidence.items()
-            },
-        }
+    # Edge provenance is used while scoring but is not read from persisted
+    # priorities. Repeating it for every card multiplied the database by ~88 GB.
+    shared_evidence = aggregate
     records: list[PriorityRecord] = []
     for card in cards:
         card_routes = routes_by_card[card["id"]]
@@ -894,6 +890,7 @@ def publish_priority_records(job: dict, records: list[PriorityRecord]) -> bool:
     """Stage bounded chunks, then atomically publish the current generation."""
 
     from ..database import connection
+    from .durable_tasks import enqueue_task_in_transaction
 
     repertoire_id = job["repertoire_id"]
     generation = int(job["generation"])
@@ -952,6 +949,13 @@ def publish_priority_records(job: dict, records: list[PriorityRecord]) -> bool:
             """UPDATE repertoire_priority_jobs SET status='complete',last_error=NULL,updated_at=?
                WHERE repertoire_id=? AND generation=?""",
             (_now(), repertoire_id, generation),
+        )
+        enqueue_task_in_transaction(
+            database,
+            "priority_retention",
+            repertoire_id,
+            {"repertoire_id": repertoire_id},
+            priority=200,
         )
     return True
 

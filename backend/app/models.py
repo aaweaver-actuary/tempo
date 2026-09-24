@@ -236,6 +236,23 @@ class GameAnalysisLeaseRequest(BaseModel):
     lease_id: str
 
 
+class ThreatAnalysisSubmission(BaseModel):
+    lease_id: str = Field(min_length=1)
+    report: dict
+
+
+class ThreatAnalysisFailureRequest(BaseModel):
+    lease_id: str = Field(min_length=1)
+    error: str = Field(min_length=1, max_length=1000)
+
+
+class DefenseAttemptRequest(BaseModel):
+    attempt_id: str = Field(min_length=1, max_length=100)
+    exercise_revision: int = Field(ge=1)
+    queue_entry_id: int = Field(ge=1)
+    move_uci: str = Field(min_length=4, max_length=5)
+
+
 class GameFindingDecisionRequest(BaseModel):
     """Request model for making a decision on a game finding."""
 

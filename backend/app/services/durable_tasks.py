@@ -61,16 +61,38 @@ def enqueue_task(
     """Coalesce active work and advance its input generation."""
 
     def operation(database: sqlite3.Connection) -> dict:
-        existing = database.execute(
+        return enqueue_task_in_transaction(
+            database, kind, deduplication_key, payload,
+            priority=priority, max_attempts=max_attempts,
+            delay_seconds=delay_seconds,
+        )
+
+    submit = submit_foreground_write if foreground else submit_background_write
+    return submit(operation, label=f"enqueue:{kind}:{deduplication_key}")
+
+
+def enqueue_task_in_transaction(
+    database: sqlite3.Connection,
+    kind: str,
+    deduplication_key: str,
+    payload: dict,
+    *,
+    priority: int = 100,
+    max_attempts: int = 5,
+    delay_seconds: float = 0,
+) -> dict:
+    """Persist a task inside the caller's existing short publication transaction."""
+
+    existing = database.execute(
             "SELECT * FROM background_tasks WHERE kind=? AND deduplication_key=?",
             (kind, deduplication_key),
-        ).fetchone()
-        now = _now()
-        task_id = existing["id"] if existing else str(uuid.uuid4())
-        generation = int(existing["generation"]) + 1 if existing else 1
-        next_attempt_at = _iso(now + timedelta(seconds=delay_seconds))
-        created_at = existing["created_at"] if existing else _iso(now)
-        database.execute(
+    ).fetchone()
+    now = _now()
+    task_id = existing["id"] if existing else str(uuid.uuid4())
+    generation = int(existing["generation"]) + 1 if existing else 1
+    next_attempt_at = _iso(now + timedelta(seconds=delay_seconds))
+    created_at = existing["created_at"] if existing else _iso(now)
+    database.execute(
             """INSERT INTO background_tasks(
                    id,kind,deduplication_key,generation,priority,state,phase,
                    payload_version,payload_json,attempt_count,max_attempts,
@@ -97,14 +119,11 @@ def enqueue_task(
                 created_at,
                 _iso(now),
             ),
-        )
-        _record_event(database, task_id, generation, "enqueued", "queued")
-        return dict(
-            database.execute("SELECT * FROM background_tasks WHERE id=?", (task_id,)).fetchone()
-        )
-
-    submit = submit_foreground_write if foreground else submit_background_write
-    return submit(operation, label=f"enqueue:{kind}:{deduplication_key}")
+    )
+    _record_event(database, task_id, generation, "enqueued", "queued")
+    return dict(
+        database.execute("SELECT * FROM background_tasks WHERE id=?", (task_id,)).fetchone()
+    )
 
 
 def claim_task(kind: str | None = None, *, lease_seconds: int = 60) -> dict | None:

@@ -219,6 +219,14 @@ Append every new reported issue and its test names here. All listed tests belong
 - Annotation gestures wait for Chessground's drawing animation frame before releasing the pointer; the existing `Builder right-click annotation saves the exact clicked square` regression verifies the persisted square, while `builder annotations never appear in games` verifies isolation.
 - Endgames visual references assert a fixed FEN before capture so asynchronous random-number consumption cannot change the photographed position.
 
+## Defensive tactical threats (GitHub issues 9–13)
+
+- Issue 9 legal knight-fork geometry, king and major targets, actual-piece route, and played versus engine provenance: `backend/tests/test_defensive_threat_detection.py` (`test_issue9_*`).
+- Issue 10 real learner-turn anchors, bounded to three previous decisions and excluding hypothetical future turns: `backend/tests/test_defensive_threat_detection.py` (`test_issue10_*`).
+- Issue 11 compatible full-history requests, typed scores, legal refutations, capturable knights, net material exchange, mate and centipawn handling, and report lease identity: `backend/tests/test_defensive_threat_validation.py` (`test_issue11_*`); `backend/tests/test_defensive_threat_persistence.py::test_issue11_analysis_report_requires_matching_lease_and_request`.
+- Issue 12 stable candidate identity, dismissal and resurface on materially changed played evidence, no offensive or FSRS side effects, analysis supersession, foreground concurrency, and restart replay: `backend/tests/test_defensive_threat_persistence.py` (`test_issue12_*`).
+- Issue 13 manual approval, active queue admission, minimal prompt, flexible legal-move grading, ambiguous or illegal no-review outcomes, one definitive review, and idempotent retry: `backend/tests/test_defensive_threat_persistence.py::test_issue13_approved_rubric_grades_unlisted_move_and_schedules_once`; `backend/tests/test_defensive_threat_grading.py` (`test_issue13_*`).
+
 ## Tactical pack catalog expansion
 - `existing tactical puzzles survive splitting into 25-card packs` preserves every original Lichess puzzle and source field (`backend/tests/test_tactical_catalog.py`).
 - `expanded tactical catalog contains every requested theme and complete pack` verifies 47 themes, 692 packs, 17,300 unique legal puzzles, and source metadata (`backend/tests/test_tactical_catalog.py`).

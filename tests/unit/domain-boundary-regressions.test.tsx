@@ -63,4 +63,20 @@ describe("validated domain boundaries", () => {
       gameplay_priority_reason: { unexpected: true },
     })).toThrow();
   });
+
+  it("issue 13 approved defensive queue card retains its candidate and minimal move-free prompt", () => {
+    const mapped = mapQueueCardToPracticeCard({
+      id: "defense-card", queue_entry_id: 44,
+      start_fen: "4k3/8/8/8/1n6/8/P7/R3K3 w Q - 0 1",
+      moves: [], content_type: "defense", source_ref: "candidate-identity",
+      repertoire_name: "Defensive tactics", repertoire_source: "Your analyzed games",
+      trained_color: "white", revision: 2,
+    });
+    expect(mapped).toMatchObject({
+      kind: "defense", backendId: "defense-card", queueEntryId: 44,
+      defenseCandidateId: "candidate-identity", moves: [], userMoveTarget: 1,
+      orientation: "white", revision: 2,
+    });
+    expect(mapped.sourceUrl).toBeUndefined();
+  });
 });

@@ -665,6 +665,68 @@ def initialize() -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_game_findings_status ON game_findings(status,kind,updated_at)",
+        """
+        CREATE TABLE IF NOT EXISTS threat_training_candidates (
+            id TEXT PRIMARY KEY,
+            finding_id TEXT NOT NULL REFERENCES game_findings(id) ON DELETE CASCADE,
+            game_id TEXT NOT NULL REFERENCES imported_games(id) ON DELETE CASCADE,
+            analysis_version INTEGER NOT NULL,
+            incident_id TEXT NOT NULL,
+            player_ply INTEGER NOT NULL,
+            validation_state TEXT NOT NULL DEFAULT 'needs_analysis',
+            diagnostic TEXT NOT NULL DEFAULT '',
+            evidence_json TEXT NOT NULL,
+            validation_json TEXT NOT NULL DEFAULT '{}',
+            source_fingerprint TEXT NOT NULL,
+            detector_version INTEGER NOT NULL,
+            policy_json TEXT NOT NULL,
+            exercise_revision INTEGER NOT NULL DEFAULT 1,
+            dismissed_at TEXT,
+            dismissed_evidence_fingerprint TEXT,
+            approved_at TEXT,
+            card_id TEXT REFERENCES cards(id) ON DELETE SET NULL,
+            superseded_at TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(game_id,analysis_version,incident_id,player_ply)
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_threat_candidates_game_state ON threat_training_candidates(game_id,validation_state,superseded_at)",
+        """
+        CREATE TABLE IF NOT EXISTS threat_analysis_requests (
+            id TEXT PRIMARY KEY,
+            request_json TEXT NOT NULL,
+            state TEXT NOT NULL DEFAULT 'queued' CHECK(state IN ('queued','leased','complete','failed')),
+            report_json TEXT,
+            lease_id TEXT,
+            lease_expires_at TEXT,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )
+        """,
+        "CREATE INDEX IF NOT EXISTS idx_threat_analysis_requests_state ON threat_analysis_requests(state,updated_at)",
+        """
+        CREATE TABLE IF NOT EXISTS threat_candidate_requests (
+            candidate_id TEXT NOT NULL REFERENCES threat_training_candidates(id) ON DELETE CASCADE,
+            request_id TEXT NOT NULL REFERENCES threat_analysis_requests(id) ON DELETE CASCADE,
+            role TEXT NOT NULL CHECK(role IN ('best','historical','attempt')),
+            PRIMARY KEY(candidate_id,request_id,role)
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS defense_attempts (
+            attempt_id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL REFERENCES threat_training_candidates(id) ON DELETE CASCADE,
+            card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+            queue_entry_id INTEGER,
+            exercise_revision INTEGER NOT NULL,
+            move_uci TEXT NOT NULL,
+            grade_json TEXT NOT NULL,
+            reviewed_at TEXT NOT NULL
+        )
+        """,
         """CREATE INDEX IF NOT EXISTS idx_game_findings_repertoire_gap
            ON game_findings(repertoire_id,kind,
               json_extract(evidence_json,'$.opponent_gap_fen_key'),

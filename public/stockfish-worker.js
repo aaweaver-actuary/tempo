@@ -40,8 +40,14 @@ self.onmessage = async (event) => {
       if (!engine) await initialize()
       currentId = event.data.id
       engine.uci('stop')
-      engine.uci(`position fen ${event.data.fen}`)
-      engine.uci(`go depth ${event.data.depth ?? 13}`)
+      const multipv = Math.max(1, Math.min(5, Number(event.data.multipv ?? 5)))
+      engine.uci(`setoption name MultiPV value ${multipv}`)
+      const startFen = event.data.positionStartFen ?? event.data.fen
+      const prefix = event.data.positionPrefixUci ?? []
+      const moves = prefix.length ? ` moves ${prefix.join(' ')}` : ''
+      engine.uci(`position fen ${startFen}${moves}`)
+      const rootMove = event.data.rootMoveUci
+      engine.uci(`go depth ${event.data.depth ?? 13}${rootMove ? ` searchmoves ${rootMove}` : ''}`)
     }
     if (event.data.type === 'cancel' && currentId === event.data.id) {
       cancellingId = currentId

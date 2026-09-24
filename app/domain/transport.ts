@@ -12,6 +12,7 @@ export enum QueueContentTypeEnum {
   Middlegame = "middlegame",
   Endgame = "endgame",
   Tactic = "tactic",
+  Defense = "defense",
 }
 
 export type QueueContentType = `${QueueContentTypeEnum}`;

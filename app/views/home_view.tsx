@@ -49,6 +49,7 @@ import TacticsView from "./tactics_view";
 import { loadPositionAnnotation } from "../utils/position-annotations";
 import { useGameSync } from "../hooks/use-game-sync";
 import { useGameAnalysis } from "../hooks/use-game-analysis";
+import { useDefensiveThreatAnalysis } from "../hooks/use-defensive-threat-analysis";
 import { useRepertoireCoverageWorker } from "../hooks/use-repertoire-coverage";
 import { Chess, Move, Square } from "chess.js";
 import {
@@ -91,6 +92,7 @@ async function responseErrorDetail(response: Response): Promise<string> {
 export default function Home() {
   const gameSync = useGameSync();
   useGameAnalysis();
+  useDefensiveThreatAnalysis();
   useRepertoireCoverageWorker();
   const [currentView, setCurrentView] = useState<View>("train");
   const [repairRepertoireId, setRepairRepertoireId] = useState<string>();
@@ -267,7 +269,7 @@ export default function Home() {
     }
   }, [currentView, refreshDatabaseQueue]);
   useEffect(() => {
-    if (!usesLocalApi() || !attemptFailed || !card.queueEntryId) return;
+    if (!usesLocalApi() || card.kind === "defense" || !attemptFailed || !card.queueEntryId) return;
     void fetch(`${API_URL}/api/queue/entries/${card.queueEntryId}/fail`, {
       method: "POST",
     }).catch(() =>
@@ -275,7 +277,7 @@ export default function Home() {
         "Could not save guided-attempt state. Keep this page open and retry.",
       ),
     );
-  }, [attemptFailed, card.queueEntryId, setQueueNotice]);
+  }, [attemptFailed, card.kind, card.queueEntryId, setQueueNotice]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => {
@@ -983,6 +985,10 @@ export default function Home() {
               boardTheme={boardTheme}
               pieceSet={pieceSet}
               rateCard={rateCard}
+              onDefenseGraded={async () => {
+                await refreshDatabaseQueue(true);
+                setReviewed((count) => count + 1);
+              }}
               reviewPersistenceState={reviewPersistenceState}
               reviewSaveError={reviewSaveError}
               retryQueueAfterReview={() => {

@@ -59,6 +59,9 @@ from .models import (
     Settings,
     TacticAttemptRequest,
     TeachingStateRequest,
+    ThreatAnalysisSubmission,
+    ThreatAnalysisFailureRequest,
+    DefenseAttemptRequest,
 )
 from .services.analysis import AnalysisCapabilities
 from .services.activity_gate import activity_gate
@@ -73,6 +76,14 @@ from .services.endgames import (
 )
 from .services.game_analysis import classify_swings
 from .services.game_findings import motif_recommendations
+from .services.threat_pipeline import (
+    claim_analysis_request, enqueue_candidate_validation, enqueue_threat_scan,
+    execute_threat_scan_slice, execute_threat_validation, save_analysis_report,
+)
+from .services.threat_training import (
+    approve_defense_candidate, dismiss_defense_candidate, read_defense_exercise,
+    submit_defense_attempt,
+)
 from .services.tactical_opportunities import tactical_statistics
 from .services.statistics import enqueue_daily_snapshot, statistics_breakdown, statistics_overview
 from .services.guided_review import create_or_resume_session, read_session, submit_attempt
@@ -115,6 +126,7 @@ from .services.introduction_priorities import (
     enqueue_priority_refresh,
     priority_status,
 )
+from .services.priority_retention import execute_priority_retention_slice
 from .services.opening_graph import (
     decision_segments,
     enqueue_opening_graph_rebuild,
@@ -831,7 +843,7 @@ def randomize_daily_queue(db, day: str) -> None:
             16,
         )
         random.Random(group_seed).shuffle(values)
-    category_order = ["opening", "tactic", "endgame", "middlegame"]
+    category_order = ["opening", "tactic", "defense", "endgame", "middlegame"]
     category_offset = seed % len(category_order)
     category_order = category_order[category_offset:] + category_order[:category_offset]
     cohort_order = ["review", "new"] if seed % 2 == 0 else ["new", "review"]
@@ -997,6 +1009,9 @@ register_durable_task_handler("daily_queue", _execute_daily_queue_task)
 register_durable_task_handler("integrity_repair", execute_durable_integrity_repair)
 register_durable_task_handler("opening_graph_rebuild", execute_opening_graph_rebuild)
 register_durable_task_handler("repertoire_opportunity", execute_opportunity_slice)
+register_durable_task_handler("priority_retention", execute_priority_retention_slice)
+register_durable_task_handler("defensive_threat_scan", execute_threat_scan_slice)
+register_durable_task_handler("defensive_threat_validate", execute_threat_validation)
 
 
 def _ensure_current_daily_queue() -> None:
@@ -1551,6 +1566,10 @@ def migration_snapshot():
         "game_repertoire_matches",
         "repertoire_decision_events",
         "game_findings",
+        "threat_training_candidates",
+        "threat_analysis_requests",
+        "threat_candidate_requests",
+        "defense_attempts",
         "guided_review_sessions",
         "guided_review_attempts",
         "gameplay_events",
@@ -1710,6 +1729,9 @@ def review(identifier: str, request: ReviewRequest):
     now = datetime.now(timezone.utc)
     day = date.today().isoformat()
     with connection() as db:
+        content_row = db.execute("SELECT content_type FROM cards WHERE id=?", (identifier,)).fetchone()
+        if content_row and content_row["content_type"] == "defense":
+            raise HTTPException(409, "Defensive exercises must be graded through their move rubric")
         owner_ids = [
             row[0]
             for row in db.execute(
@@ -3123,6 +3145,19 @@ def save_game_analysis(game_id: str, request: GameAnalysisRequest):
             ),
         )
         db.execute(
+            """UPDATE cards SET pending_validation=1 WHERE id IN (
+                 SELECT card_id FROM threat_training_candidates
+                 WHERE game_id=? AND card_id IS NOT NULL AND analysis_version != (
+                    SELECT analysis_version FROM imported_games WHERE id=?))""",
+            (game_id, game_id),
+        )
+        db.execute(
+            """UPDATE threat_training_candidates SET superseded_at=COALESCE(superseded_at,?)
+               WHERE game_id=? AND analysis_version != (
+                    SELECT analysis_version FROM imported_games WHERE id=?)""",
+            (datetime.now(timezone.utc).isoformat(), game_id, game_id),
+        )
+        db.execute(
             """INSERT INTO game_analysis_jobs(game_id,analysis_version,analysis_evidence_version,status,idempotency_key,updated_at)
                VALUES(?,?,?,'complete',?,?)
                ON CONFLICT(game_id) DO UPDATE SET analysis_version=excluded.analysis_version,
@@ -3137,7 +3172,168 @@ def save_game_analysis(game_id: str, request: GameAnalysisRequest):
             ),
         )
     enqueue_game_derivation(game_id, background=background)
+    with read_connection() as database:
+        threat_analysis_version = database.execute(
+            "SELECT analysis_version FROM imported_games WHERE id=?", (game_id,)
+        ).fetchone()[0]
+    enqueue_threat_scan(game_id, threat_analysis_version, background=background)
     coordinator.wake()
+    return result
+
+
+@app.post("/api/defensive-threats/analysis/claim")
+def claim_defensive_threat_analysis():
+    return {"job": claim_analysis_request()}
+
+
+@app.post("/api/defensive-threats/analysis/{request_id}/report")
+def submit_defensive_threat_analysis(request_id: str, request: ThreatAnalysisSubmission):
+    try:
+        candidate_ids = save_analysis_report(request_id, request.lease_id, request.report)
+    except KeyError as error:
+        raise HTTPException(404, str(error)) from error
+    except (ValueError, TypeError, KeyError) as error:
+        raise HTTPException(409, str(error)) from error
+    for candidate_id in candidate_ids:
+        enqueue_candidate_validation(candidate_id, background=activity_gate.in_background)
+    if candidate_ids:
+        coordinator.wake()
+    return {"status": "complete", "candidate_count": len(candidate_ids)}
+
+
+@app.post("/api/defensive-threats/analysis/{request_id}/failure")
+def fail_defensive_threat_analysis(request_id: str, request: ThreatAnalysisFailureRequest):
+    with connection(background=activity_gate.in_background) as database:
+        updated = database.execute(
+            """UPDATE threat_analysis_requests SET state='failed',last_error=?,lease_id=NULL,
+                  lease_expires_at=NULL,updated_at=?
+               WHERE id=? AND state='leased' AND lease_id=?""",
+            (request.error, datetime.now(timezone.utc).isoformat(), request_id,
+             request.lease_id),
+        ).rowcount
+    if not updated:
+        raise HTTPException(409, "Analysis lease is no longer active")
+    return {"status": "failed"}
+
+
+@app.post("/api/defensive-threats/analysis/{request_id}/release")
+def release_defensive_threat_analysis(request_id: str, request: GameAnalysisLeaseRequest):
+    with connection(background=activity_gate.in_background) as database:
+        updated = database.execute(
+            """UPDATE threat_analysis_requests SET state='queued',lease_id=NULL,
+                  lease_expires_at=NULL,updated_at=?
+               WHERE id=? AND state='leased' AND lease_id=?""",
+            (datetime.now(timezone.utc).isoformat(), request_id, request.lease_id),
+        ).rowcount
+    return {"status": "queued" if updated else "stale"}
+
+
+@app.post("/api/defensive-threats/analysis/{request_id}/retry")
+def retry_defensive_threat_analysis(request_id: str):
+    with connection() as database:
+        updated = database.execute(
+            """UPDATE threat_analysis_requests SET state='queued',last_error=NULL,updated_at=?
+               WHERE id=? AND state='failed'""",
+            (datetime.now(timezone.utc).isoformat(), request_id),
+        ).rowcount
+    if not updated:
+        raise HTTPException(409, "Only failed analysis can be retried")
+    return {"status": "queued"}
+
+
+@app.post("/api/games/{game_id:path}/defensive-threats/refresh")
+def refresh_game_defensive_threats(game_id: str):
+    with read_connection() as database:
+        row = database.execute(
+            "SELECT analysis_version FROM imported_games WHERE id=? AND analysis_state='ready'",
+            (game_id,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(404, "Analyzed game not found")
+    enqueue_threat_scan(game_id, row["analysis_version"], background=False)
+    coordinator.wake()
+    return {"status": "queued", "analysis_version": row["analysis_version"]}
+
+
+@app.get("/api/defensive-threats/candidates")
+def list_defensive_threat_candidates(game_id: str | None = None):
+    with read_connection() as database:
+        rows = database.execute(
+            """SELECT c.*,r.name AS card_repertoire_name FROM threat_training_candidates c
+               JOIN imported_games g ON g.id=c.game_id
+               LEFT JOIN cards card ON card.id=c.card_id
+               LEFT JOIN repertoires r ON r.id=card.repertoire_id
+               WHERE c.superseded_at IS NULL AND c.analysis_version=g.analysis_version
+                 AND (? IS NULL OR c.game_id=?)
+               ORDER BY c.updated_at DESC,c.id LIMIT 100""",
+            (game_id, game_id),
+        ).fetchall()
+        candidates = []
+        for row in rows:
+            requests = [dict(request) for request in database.execute(
+                """SELECT relation.role,analysis.id,analysis.state,analysis.last_error
+                   FROM threat_candidate_requests relation
+                   JOIN threat_analysis_requests analysis ON analysis.id=relation.request_id
+                   WHERE relation.candidate_id=? ORDER BY relation.role,analysis.id""",
+                (row["id"],),
+            )]
+            candidates.append({
+                **dict(row), "evidence": json.loads(row["evidence_json"]),
+                "validation": json.loads(row["validation_json"]),
+                "analysis_requests": requests,
+            })
+    return {"candidates": candidates}
+
+
+@app.post("/api/defensive-threats/candidates/{candidate_id}/dismiss")
+def dismiss_defensive_threat_candidate(candidate_id: str):
+    try:
+        dismiss_defense_candidate(candidate_id)
+    except KeyError as error:
+        raise HTTPException(404, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from error
+    return {"status": "dismissed"}
+
+
+@app.post("/api/defensive-threats/candidates/{candidate_id}/approve")
+def approve_defensive_threat_candidate(candidate_id: str):
+    try:
+        card_id = approve_defense_candidate(candidate_id)
+    except KeyError as error:
+        raise HTTPException(404, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from error
+    enqueue_daily_queue_refresh()
+    return {"status": "approved", "card_id": card_id}
+
+
+@app.get("/api/defense-exercises/{candidate_id}")
+def get_defense_exercise(candidate_id: str):
+    try:
+        return read_defense_exercise(candidate_id)
+    except KeyError as error:
+        raise HTTPException(404, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from error
+
+
+@app.post("/api/defense-exercises/{candidate_id}/attempt")
+def attempt_defense_exercise(candidate_id: str, request: DefenseAttemptRequest):
+    try:
+        result = submit_defense_attempt(
+            candidate_id, attempt_id=request.attempt_id,
+            exercise_revision=request.exercise_revision,
+            queue_entry_id=request.queue_entry_id,
+            move_uci=request.move_uci,
+            light_first_interval_days=get_settings().light_first_interval_days,
+        )
+    except KeyError as error:
+        raise HTTPException(404, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from error
+    if result["status"] == "needs_analysis":
+        coordinator.wake()
     return result
 
 

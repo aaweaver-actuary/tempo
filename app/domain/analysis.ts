@@ -48,6 +48,7 @@ export type CandidateMove = {
   black?: number;
   cp?: number;
   mate?: number;
+  depth?: number;
   pv?: UciMove[];
 };
 
