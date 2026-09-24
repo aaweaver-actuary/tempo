@@ -8,6 +8,30 @@ from app.main import app
 from app.services.activity_gate import activity_gate
 
 
+def test_predeployment_browser_tab_cannot_claim_new_game_analysis_after_docker_rollout(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    game_id = "lichess:old-browser-claim"
+    with TestClient(app) as client:
+        with database.connection() as db:
+            db.execute(
+                """INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json)
+                   VALUES(?,'lichess','TempoPlayer',?,'rapid',1,'white','1-0',?,?)""",
+                (game_id, datetime.now(timezone.utc).isoformat(),
+                 "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                 json.dumps(["e2e4"])),
+            )
+            db.execute("INSERT INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
+                       (game_id, datetime.now(timezone.utc).isoformat()))
+        assert client.post("/api/games/analysis/claim").json() == {"job": None}
+        with database.connection() as db:
+            assert db.execute("SELECT status FROM game_analysis_jobs WHERE game_id=?",
+                              (game_id,)).fetchone()[0] == "queued"
+        docker_claim = client.post("/api/games/analysis/position/claim",
+                                   headers={"X-Tempo-Engine-Worker": "docker"}).json()["job"]
+        assert docker_claim["game_id"] == game_id
+        assert docker_claim["position_index"] == 0
+
+
 def test_stockfish_timeout_resumes_at_unfinished_position_without_saving_partial_game(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     game_id = "lichess:position-timeout"
@@ -185,14 +209,16 @@ def test_background_game_analysis_resumes_after_reload_and_submits_once(
                 "INSERT INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
                 (game_id, datetime.now(timezone.utc).isoformat()),
             )
-        first_claim = client.post("/api/games/analysis/claim").json()["job"]
+        first_claim = client.post("/api/games/analysis/claim",
+                                  headers={"X-Tempo-Engine-Worker": "docker"}).json()["job"]
         assert first_claim["game_id"] == game_id
         with database.connection() as db:
             db.execute(
                 "UPDATE game_analysis_jobs SET lease_expires_at=? WHERE game_id=?",
                 ((datetime.now(timezone.utc) - timedelta(seconds=1)).isoformat(), game_id),
             )
-        resumed_claim = client.post("/api/games/analysis/claim").json()["job"]
+        resumed_claim = client.post("/api/games/analysis/claim",
+                                    headers={"X-Tempo-Engine-Worker": "docker"}).json()["job"]
         assert resumed_claim["game_id"] == game_id
         assert resumed_claim["lease_id"] != first_claim["lease_id"]
         submission = {
@@ -217,7 +243,8 @@ def test_background_game_analysis_resumes_after_reload_and_submits_once(
         repeated = client.post(f"/api/games/{game_id}/analysis", json=submission)
         assert repeated.status_code == 200
         assert repeated.json()["idempotent"] is True
-        assert client.post("/api/games/analysis/claim").json()["job"] is None
+        assert client.post("/api/games/analysis/claim",
+                           headers={"X-Tempo-Engine-Worker": "docker"}).json()["job"] is None
         with database.connection() as db:
             assert db.execute(
                 "SELECT COUNT(*) FROM game_move_analysis WHERE game_id=?", (game_id,)
@@ -258,13 +285,15 @@ def test_paused_background_analysis_releases_its_lease_without_failure(
                 "INSERT INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
                 (game_id, datetime.now(timezone.utc).isoformat()),
             )
-        job = client.post("/api/games/analysis/claim").json()["job"]
+        job = client.post("/api/games/analysis/claim",
+                          headers={"X-Tempo-Engine-Worker": "docker"}).json()["job"]
         response = client.post(
             f"/api/games/analysis/{game_id}/release",
             json={"lease_id": job["lease_id"]},
         )
         assert response.json()["status"] == "queued"
-        resumed = client.post("/api/games/analysis/claim").json()["job"]
+        resumed = client.post("/api/games/analysis/claim",
+                              headers={"X-Tempo-Engine-Worker": "docker"}).json()["job"]
         assert resumed["game_id"] == game_id
         assert resumed["lease_id"] != job["lease_id"]
         with database.connection() as db:
@@ -303,7 +332,8 @@ def test_game_analysis_persists_bounded_candidate_lines_and_evidence_versions(
                 "INSERT INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
                 (game_id, datetime.now(timezone.utc).isoformat()),
             )
-        job = client.post("/api/games/analysis/claim").json()["job"]
+        job = client.post("/api/games/analysis/claim",
+                          headers={"X-Tempo-Engine-Worker": "docker"}).json()["job"]
         response = client.post(
             f"/api/games/{game_id}/analysis",
             json={
@@ -383,7 +413,8 @@ def test_game_analysis_rejects_illegal_candidate_pv_before_persistence(
                 "INSERT INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
                 (game_id, datetime.now(timezone.utc).isoformat()),
             )
-        job = client.post("/api/games/analysis/claim").json()["job"]
+        job = client.post("/api/games/analysis/claim",
+                          headers={"X-Tempo-Engine-Worker": "docker"}).json()["job"]
         response = client.post(
             f"/api/games/{game_id}/analysis",
             json={

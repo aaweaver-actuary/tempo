@@ -3106,7 +3106,17 @@ def sync_status():
 
 
 @app.post("/api/games/analysis/claim")
-def claim_game_analysis():
+def claim_game_analysis(
+    engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+):
+    # Tabs that loaded the former browser scanner before a Docker rollout keep
+    # polling this endpoint. Preserve its response shape without leasing work.
+    if engine_worker != "docker":
+        return {"job": None}
+    return _claim_game_analysis()
+
+
+def _claim_game_analysis():
     now = datetime.now(timezone.utc)
     lease_expires_at = now + timedelta(minutes=5)
     lease_id = str(uuid.uuid4())
@@ -3161,7 +3171,7 @@ def claim_game_analysis_position(
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
 ):
     _require_docker_engine(engine_worker)
-    parent_job = claim_game_analysis()["job"]
+    parent_job = _claim_game_analysis()["job"]
     return {"job": claim_position(parent_job)}
 
 
