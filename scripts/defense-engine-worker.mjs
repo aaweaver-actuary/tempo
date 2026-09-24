@@ -20,7 +20,7 @@ const sleep = (milliseconds) => new Promise((done) => setTimeout(done, milliseco
 async function request(path, options = {}) {
   const response = await fetch(`${api}${path}`, {
     ...options,
-    headers: { "X-Tempo-Work-Class": "background", "Content-Type": "application/json" },
+    headers: { "X-Tempo-Work-Class": "background", "X-Tempo-Engine-Worker": "docker", "Content-Type": "application/json" },
   });
   if (!response.ok) throw new Error(`${path}: HTTP ${response.status} ${await response.text()}`);
   return response.json();

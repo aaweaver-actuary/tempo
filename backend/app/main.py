@@ -3395,7 +3395,11 @@ def save_game_analysis(game_id: str, request: GameAnalysisRequest):
 
 
 @app.post("/api/defensive-threats/analysis/claim")
-def claim_defensive_threat_analysis():
+def claim_defensive_threat_analysis(
+    engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+):
+    if engine_worker != "docker":
+        raise HTTPException(403, "Defensive engine claims are handled by the Docker worker")
     return {"job": claim_analysis_request()}
 
 

@@ -301,6 +301,7 @@ Append every new reported issue and its test names here. All listed tests belong
 - `test_discovery_recommendation_worker_keeps_foreground_free_and_replays_once` protects full-history Docker recommendation requests, foreground access during computation, restart, and idempotent replay.
 - `test_discoveries_auto_admission_includes_one_validated_control_under_daily_cap` also protects automatic defensive admission provenance in the queue response.
 - `Docker owns defensive engine claims while the browser remains passive` protects removal of the browser defensive-analysis claimant; the Node worker smoke test verifies restricted searches.
+- `test_issue11_analysis_report_requires_matching_lease_and_request` also verifies that legacy browser clients cannot claim Docker defensive searches.
 
 ## Fractional priority validation and card-level integrity recovery
 

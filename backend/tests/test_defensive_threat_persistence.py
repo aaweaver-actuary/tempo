@@ -466,7 +466,9 @@ def test_issue11_analysis_report_requires_matching_lease_and_request(tmp_path, m
                 "UPDATE threat_training_candidates SET validation_state='needs_analysis' WHERE id=?",
                 (candidate_id,),
             )
-        claim = client.post("/api/defensive-threats/analysis/claim")
+        assert client.post("/api/defensive-threats/analysis/claim").status_code == 403
+        claim = client.post("/api/defensive-threats/analysis/claim",
+                            headers={"X-Tempo-Engine-Worker": "docker"})
         assert claim.status_code == 200
         job = claim.json()["job"]
         assert job["id"] == request_row["id"]
@@ -509,7 +511,8 @@ def test_discoveries_restricted_engine_report_rejects_wrong_root_and_short_depth
                 "UPDATE threat_training_candidates SET validation_state='needs_analysis' WHERE id=?",
                 (candidate_id,),
             )
-        job = client.post("/api/defensive-threats/analysis/claim").json()["job"]
+        job = client.post("/api/defensive-threats/analysis/claim",
+                          headers={"X-Tempo-Engine-Worker": "docker"}).json()["job"]
         assert job["id"] == request_id
         root = job["request"]["root_move_uci"]
         assert root == "a2a3"
