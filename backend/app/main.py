@@ -1141,7 +1141,11 @@ def queue_today():
         ).fetchall()
         rows = db.execute(
             """SELECT q.id queue_entry_id,q.position,q.cycle,q.attempt_state,q.attempt_failed,
-                                  q.gameplay_priority_reason,q.admission_kind,q.admission_source,c.*,
+                                  q.gameplay_priority_reason,q.admission_kind,
+                                  COALESCE(q.admission_source,
+                                    (SELECT 'defense:' || candidate.id
+                                     FROM threat_training_candidates candidate
+                                     WHERE candidate.card_id=c.id LIMIT 1)) admission_source,c.*,
                                   r.name repertoire_name,r.source_name repertoire_source,r.is_main,
                                   COALESCE(c.trained_color,(SELECT e.trained_color FROM endgame_templates e WHERE e.card_id=c.id), (SELECT l.trained_color FROM repertoire_lines l WHERE l.repertoire_id=r.id ORDER BY l.created_at LIMIT 1)) effective_trained_color
                            FROM daily_queue q JOIN cards c ON c.id=q.card_id

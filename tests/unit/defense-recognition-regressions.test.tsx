@@ -1,8 +1,16 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import type { ReactNode } from "react";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { expect, it, vi } from "vitest";
 import DefenseTrainingView from "../../app/views/defense_training_view";
 import type { PracticeCard } from "../../app/types";
+
+it("Docker owns defensive engine claims while the browser remains passive", () => {
+  const homeSource = readFileSync(resolve(process.cwd(), "app/views/home_view.tsx"), "utf8");
+  expect(homeSource).not.toContain("useDefensiveThreatAnalysis");
+  expect(homeSource).not.toContain("/api/defensive-threats/analysis/claim");
+});
 
 vi.mock("../../app/hooks/use-board-publisher", () => ({
   useBoardPublisher: () => ({ setShellBoardForOwner: vi.fn(), releaseShellBoardForOwner: vi.fn() }),

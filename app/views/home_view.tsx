@@ -49,7 +49,6 @@ import TacticsView from "./tactics_view";
 import { loadPositionAnnotation } from "../utils/position-annotations";
 import { useGameSync } from "../hooks/use-game-sync";
 import { useGameAnalysis } from "../hooks/use-game-analysis";
-import { useDefensiveThreatAnalysis } from "../hooks/use-defensive-threat-analysis";
 import { useRepertoireCoverageWorker } from "../hooks/use-repertoire-coverage";
 import { Chess, Move, Square } from "chess.js";
 import {
@@ -93,7 +92,6 @@ async function responseErrorDetail(response: Response): Promise<string> {
 export default function Home() {
   const gameSync = useGameSync();
   useGameAnalysis();
-  useDefensiveThreatAnalysis();
   useRepertoireCoverageWorker();
   const [currentView, setCurrentView] = useState<View>("train");
   const [safeBreakCounter, setSafeBreakCounter] = useState(0);

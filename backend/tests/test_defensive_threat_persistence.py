@@ -734,6 +734,17 @@ def test_discoveries_auto_admission_includes_one_validated_control_under_daily_c
             ).fetchall()
             assert [row[0] for row in admissions] == ["engine_supported", "validated_control"]
             assert db.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 0
+        from app.main import materialize_daily_queue
+        with database.connection() as db:
+            materialize_daily_queue(db, date.today().isoformat())
+        with TestClient(app) as client:
+            response = client.get("/api/queue/today")
+            assert response.status_code == 200
+            defense_cards = [card for card in response.json()["cards"]
+                             if card["content_type"] == "defense"]
+            assert len(defense_cards) == 2
+            assert all(card["admission_source"].startswith("defense:")
+                       for card in defense_cards)
     finally:
         database_writer.stop()
 

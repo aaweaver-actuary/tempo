@@ -299,6 +299,8 @@ Append every new reported issue and its test names here. All listed tests belong
 - `test_discoveries_reanalysis_keeps_defense_card_and_genuine_review_history` protects stable defensive card identity and real scheduling history while refreshed evidence is temporarily unavailable.
 - `test_discoveries_auto_admission_prioritizes_recurring_position_before_recent_isolated_one` protects recurrence priority over a more recently played isolated incident.
 - `test_discovery_recommendation_worker_keeps_foreground_free_and_replays_once` protects full-history Docker recommendation requests, foreground access during computation, restart, and idempotent replay.
+- `test_discoveries_auto_admission_includes_one_validated_control_under_daily_cap` also protects automatic defensive admission provenance in the queue response.
+- `Docker owns defensive engine claims while the browser remains passive` protects removal of the browser defensive-analysis claimant; the Node worker smoke test verifies restricted searches.
 
 ## Fractional priority validation and card-level integrity recovery
 
