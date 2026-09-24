@@ -259,6 +259,7 @@ class DefenseAttemptRequest(BaseModel):
 class DefenseRecognitionRequest(BaseModel):
     attempt_id: str = Field(min_length=1, max_length=100)
     exercise_revision: int = Field(ge=1)
+    rubric_version: int | None = Field(default=None, ge=1)
     queue_entry_id: int = Field(ge=1)
     no_concrete_threat: bool = False
     dangerous_piece_square: str | None = Field(default=None, pattern=r"^[a-h][1-8]$")

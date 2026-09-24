@@ -121,6 +121,227 @@ def seed_validated_control():
     return candidate_id
 
 
+def seed_reported_rc4_candidate():
+    fen = "8/k1p2p2/1p2p3/1P2Pn2/PR6/8/3r1PKP/8 w - - 3 36"
+    game = GameSnapshot("lichess:reported-rc4", 1, fen, ("b4c4",), "white")
+    seed = find_defensive_knight_forks(
+        game, SourceLine("engine", 1, ("f5e3", "g2g3", "e3c4", "f2f4")),
+    )[0]
+    with database.connection() as db:
+        db.execute("UPDATE settings SET defense_new_cards_per_day=0 WHERE id=1")
+        db.execute(
+            """INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,
+                 result,start_fen,moves_json,analysis_state,analysis_version)
+               VALUES(?,'lichess','learner',?,'rapid',1,'white','0-1',?,?,'ready',1)""",
+            (game.game_id, datetime.now(timezone.utc).isoformat(), fen,
+             json.dumps(game.moves_uci)),
+        )
+        _upsert_seed(db, game, seed)
+        candidate_id = db.execute(
+            "SELECT id FROM threat_training_candidates WHERE game_id=?", (game.game_id,),
+        ).fetchone()[0]
+        for item in db.execute(
+            """SELECT relation.role,request.id,request.request_json
+               FROM threat_candidate_requests relation JOIN threat_analysis_requests request
+                 ON request.id=relation.request_id WHERE relation.candidate_id=?""",
+            (candidate_id,),
+        ).fetchall():
+            request = threat_pipeline._request_from_json(json.loads(item["request_json"]))
+            line = (AnalysisLine("g2f3", ("g2f3", "a7b7"), EngineScore(cp=-405), 14)
+                    if item["role"] == "best" else
+                    AnalysisLine("b4c4", ("b4c4", "f5e3", "g2g3", "e3c4", "f2f4"),
+                                 EngineScore(cp=-841), 14))
+            db.execute(
+                "UPDATE threat_analysis_requests SET state='complete',report_json=? WHERE id=?",
+                (json.dumps(asdict(AnalysisReport(request, (line,), True))), item["id"]),
+            )
+    execute_threat_validation({"payload": {"candidate_id": candidate_id}})
+    return candidate_id
+
+
+def test_reported_rc4_preview_grades_c4_only_after_proposed_move(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        candidate_id = seed_reported_rc4_candidate()
+        card_id = client.post(f"/api/defensive-threats/candidates/{candidate_id}/approve").json()["card_id"]
+        with database.connection() as db:
+            materialize_daily_queue(db, date.today().isoformat())
+            entry_id = db.execute("SELECT id FROM daily_queue WHERE card_id=?", (card_id,)).fetchone()[0]
+        exercise = client.get(f"/api/defense-exercises/{candidate_id}").json()
+        assert exercise["proposed_move_san"] == "Rc4"
+        assert chess.Board(exercise["preview_fen"]).piece_at(chess.C4) == chess.Piece(chess.ROOK, chess.WHITE)
+        assert chess.Board(exercise["preview_fen"]).turn == chess.BLACK
+        stale = client.post(f"/api/defense-exercises/{candidate_id}/recognition", json={
+            "attempt_id": "stale-rc4", "exercise_revision": exercise["exercise_revision"],
+            "rubric_version": 2, "queue_entry_id": entry_id,
+            "dangerous_piece_square": "f5", "destination_square": "e3",
+            "king_square": "g2", "major_square": "b4", "consequence": "none",
+        })
+        assert stale.status_code == 409
+        answer = client.post(f"/api/defense-exercises/{candidate_id}/recognition", json={
+            "attempt_id": "new-rc4", "exercise_revision": exercise["exercise_revision"],
+            "rubric_version": 3, "queue_entry_id": entry_id,
+            "dangerous_piece_square": "f5", "destination_square": "e3",
+            "king_square": "g2", "major_square": "c4", "consequence": "checking_fork",
+        })
+        assert answer.status_code == 200, answer.text
+        assert answer.json()["recognition_correct"] is True
+        assert answer.json()["feedback"]["knight_route"] == [
+            {"from_square": "f5", "to_square": "e3"},
+        ]
+        assert answer.json()["feedback"]["refutation_uci"][:4] == [
+            "b4c4", "f5e3", "g2g3", "e3c4",
+        ]
+
+
+def test_reported_rc4_audit_preserves_attempts_and_removes_invalid_review_effect(tmp_path, monkeypatch, request):
+    from app.services.durable_tasks import enqueue_task_in_transaction
+    from app.services.database_executor import database_writer
+    from app.models import DefenseRecognitionRequest
+    from app.services.review_service import apply_scheduling_review
+    from app.services.threat_training import (
+        approve_defense_candidate, execute_defense_rubric_audit_slice,
+        submit_defense_recognition,
+    )
+    import pytest
+
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    database_writer.start()
+    request.addfinalizer(database_writer.stop)
+    candidate_id = seed_reported_rc4_candidate()
+    card_id = approve_defense_candidate(candidate_id)
+    with database.connection() as db:
+        materialize_daily_queue(db, date.today().isoformat())
+        entry_id = db.execute("SELECT id FROM daily_queue WHERE card_id=?", (card_id,)).fetchone()[0]
+        db.execute(
+            """INSERT INTO defense_recognition_submissions(
+                 attempt_id,candidate_id,queue_entry_id,exercise_revision,answer_json,
+                 recognition_correct,created_at) VALUES(?,?,?,?,?,0,?)""",
+            ("reported-raw-answer", candidate_id, entry_id, 1,
+             json.dumps({"major_square": "b4", "consequence": "none"}),
+             datetime.now(timezone.utc).isoformat()),
+        )
+        apply_scheduling_review(
+            db, card_id, "again", guided=False, source_kind="study",
+            source_ref="defense:old-rc4-review", light_first_interval_days=7,
+            reviewed_at=datetime.now(timezone.utc), review_day=date.today(),
+        )
+        db.execute(
+            """INSERT INTO defense_attempts(attempt_id,candidate_id,card_id,queue_entry_id,
+                 exercise_revision,move_uci,grade_json,reviewed_at)
+               VALUES('old-rc4-review',?,?,?,?,?,?,?)""",
+            (candidate_id, card_id, entry_id, 1, "g2f3", '{"status":"incorrect"}',
+             datetime.now(timezone.utc).isoformat()),
+        )
+        db.execute("UPDATE daily_queue SET status='complete' WHERE id=?", (entry_id,))
+        task = enqueue_task_in_transaction(
+            db, "defensive_rubric_audit", "test", {"cursor": ""}, priority=145,
+        )
+        db.execute("UPDATE background_tasks SET state='leased',lease_token='audit-lease' WHERE id=?",
+                   (task["id"],))
+        generation = db.execute("SELECT generation FROM background_tasks WHERE id=?",
+                                (task["id"],)).fetchone()[0]
+    claimed = {"id": task["id"], "generation": generation, "lease_token": "audit-lease",
+               "payload": {"cursor": ""}}
+    assert execute_defense_rubric_audit_slice(claimed)
+    with database.read_connection() as db:
+        candidate = db.execute("SELECT card_id,exercise_revision,approved_at FROM threat_training_candidates WHERE id=?",
+                               (candidate_id,)).fetchone()
+        assert candidate["card_id"] == card_id and candidate["exercise_revision"] == 2
+        assert candidate["approved_at"] is not None
+        assert db.execute("SELECT COUNT(*) FROM defense_recognition_submissions WHERE candidate_id=?",
+                          (candidate_id,)).fetchone()[0] == 1
+        review = db.execute("SELECT invalidated_at FROM reviews WHERE source_ref='defense:old-rc4-review'").fetchone()
+        assert review["invalidated_at"] is not None
+        card = db.execute("SELECT interval_days,fsrs_card_json,revision FROM cards WHERE id=?", (card_id,)).fetchone()
+        assert card["interval_days"] == 0 and card["fsrs_card_json"] is None and card["revision"] == 2
+        assert db.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id=? AND status='queued'",
+                          (card_id,)).fetchone()[0] == 1
+    with pytest.raises(ValueError, match="revision changed"):
+        submit_defense_recognition(candidate_id, DefenseRecognitionRequest(
+            attempt_id="stale-after-audit", exercise_revision=1, rubric_version=3,
+            queue_entry_id=entry_id, no_concrete_threat=True, consequence="none",
+        ))
+    assert execute_defense_rubric_audit_slice(claimed)
+    with database.read_connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (card_id,)).fetchone()[0] == 1
+
+
+def test_defensive_preview_queue_blocks_unteachable_card_without_erasing_history(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        candidate_id = seed_candidate()
+        card_id = client.post(f"/api/defensive-threats/candidates/{candidate_id}/approve").json()["card_id"]
+        with database.connection() as db:
+            materialize_daily_queue(db, date.today().isoformat())
+            entry_id = db.execute("SELECT id FROM daily_queue WHERE card_id=? AND status='queued'",
+                                  (card_id,)).fetchone()[0]
+            db.execute("""UPDATE threat_training_candidates
+                          SET validation_state='lesson_only',approved_at=NULL WHERE id=?""",
+                       (candidate_id,))
+            db.execute("UPDATE cards SET pending_validation=1 WHERE id=?", (card_id,))
+            materialize_daily_queue(db, date.today().isoformat())
+            assert db.execute("SELECT status FROM daily_queue WHERE id=?", (entry_id,)).fetchone()[0] == "blocked"
+        queue = client.get("/api/queue/today").json()
+        assert all(item.get("id") != card_id for item in queue.get("cards", []))
+        assert client.get(f"/api/defense-exercises/{candidate_id}").status_code == 409
+
+
+def test_defensive_rubric_audit_yields_to_foreground_and_replays_after_restart(tmp_path, monkeypatch, request):
+    from app.services import threat_training
+    from app.services.database_executor import database_writer
+    from app.services.durable_tasks import enqueue_task_in_transaction
+
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    database_writer.start()
+    request.addfinalizer(database_writer.stop)
+    candidate_id = seed_reported_rc4_candidate()
+    with database.connection() as db:
+        task = enqueue_task_in_transaction(
+            db, "defensive_rubric_audit", "restart-test", {"cursor": ""}, priority=145,
+        )
+        db.execute("UPDATE background_tasks SET state='leased',lease_token='first-lease' WHERE id=?",
+                   (task["id"],))
+        generation = db.execute("SELECT generation FROM background_tasks WHERE id=?",
+                                (task["id"],)).fetchone()[0]
+    claimed = {"id": task["id"], "generation": generation, "lease_token": "first-lease",
+               "payload": {"cursor": ""}}
+    began = threading.Event()
+    release = threading.Event()
+    original_validate = threat_training.validate_threat_anchor
+
+    def paused_validation(*args):
+        began.set()
+        assert release.wait(5)
+        return original_validate(*args)
+
+    monkeypatch.setattr(threat_training, "validate_threat_anchor", paused_validation)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        future = executor.submit(threat_training.execute_defense_rubric_audit_slice, claimed)
+        assert began.wait(2)
+        started = time.perf_counter()
+        with database.connection() as db:
+            assert db.execute("SELECT COUNT(*) FROM threat_training_candidates").fetchone()[0] == 1
+        assert time.perf_counter() - started < 1
+        release.set()
+        assert future.result(timeout=5)
+    with database.connection() as db:
+        row = db.execute("SELECT generation,payload_json FROM background_tasks WHERE id=?",
+                         (task["id"],)).fetchone()
+        assert json.loads(row["payload_json"])["cursor"] == candidate_id
+        db.execute("UPDATE background_tasks SET state='leased',lease_token='restarted-lease' WHERE id=?",
+                   (task["id"],))
+    resumed = {"id": task["id"], "generation": row["generation"],
+               "lease_token": "restarted-lease", "payload": {"cursor": candidate_id}}
+    assert threat_training.execute_defense_rubric_audit_slice(resumed) is False
+    assert threat_training.execute_defense_rubric_audit_slice(claimed) is True
+    with database.read_connection() as db:
+        assert db.execute("SELECT exercise_revision FROM threat_training_candidates WHERE id=?",
+                          (candidate_id,)).fetchone()[0] == 2
+
+
 def test_issue12_reprocessing_preserves_identity_dismissal_and_no_fsrs(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
@@ -243,10 +464,12 @@ def test_discovery_recognition_error_reinforces_even_with_sound_defense_once(tmp
                 "SELECT id FROM daily_queue WHERE card_id=? AND status='queued'", (card_id,),
             ).fetchone()[0]
         exercise = client.get(f"/api/defense-exercises/{candidate_id}").json()
-        assert exercise["rubric_version"] == 2
+        assert exercise["rubric_version"] == 3
+        assert exercise["preview_fen"] != FEN
+        assert exercise["proposed_move_san"] == "a3"
         assert "geometry" not in exercise
         recognition = client.post(f"/api/defense-exercises/{candidate_id}/recognition", json={
-            "attempt_id": "recognition-one", "exercise_revision": 1,
+            "attempt_id": "recognition-one", "exercise_revision": 1, "rubric_version": 3,
             "queue_entry_id": entry_id, "no_concrete_threat": True,
             "consequence": "none",
         })
@@ -277,7 +500,7 @@ def test_guided_recognition_reveals_route_after_assessment_and_sound_defense_pas
                 "SELECT id FROM daily_queue WHERE card_id=? AND status='queued'", (card_id,),
             ).fetchone()[0]
         answer = client.post(f"/api/defense-exercises/{candidate_id}/recognition", json={
-            "attempt_id": "recognition-correct", "exercise_revision": 1,
+            "attempt_id": "recognition-correct", "exercise_revision": 1, "rubric_version": 3,
             "queue_entry_id": entry_id, "dangerous_piece_square": "b4",
             "destination_square": "c2", "king_square": "e1", "major_square": "a1",
             "consequence": "checking_fork",
@@ -286,7 +509,7 @@ def test_guided_recognition_reveals_route_after_assessment_and_sound_defense_pas
         assert answer.json()["recognition_correct"] is True
         assert answer.json()["feedback"]["fork_geometry"]["knight_to"] == "c2"
         repeated_assessment = client.post(f"/api/defense-exercises/{candidate_id}/recognition", json={
-            "attempt_id": "recognition-correct", "exercise_revision": 1,
+            "attempt_id": "recognition-correct", "exercise_revision": 1, "rubric_version": 3,
             "queue_entry_id": entry_id, "dangerous_piece_square": "b4",
             "destination_square": "c2", "king_square": "e1", "major_square": "a1",
             "consequence": "checking_fork",
@@ -635,6 +858,42 @@ def test_discoveries_verified_defense_auto_admits_once_with_daily_cap(tmp_path, 
         database_writer.stop()
 
 
+def test_defensive_auto_admission_holds_legacy_fork_without_immediate_preview(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    from app.services.database_executor import database_writer
+    from app.services.durable_tasks import claim_task
+    from app.services.threat_training import enqueue_defense_admission, execute_defense_admission_slice
+    database_writer.start()
+    try:
+        candidate_id = seed_candidate()
+        with database.connection() as db:
+            db.execute("UPDATE settings SET defense_new_cards_per_day=1 WHERE id=1")
+            report_row = db.execute(
+                """SELECT request.id,request.report_json FROM threat_candidate_requests relation
+                   JOIN threat_analysis_requests request ON request.id=relation.request_id
+                   WHERE relation.candidate_id=? AND relation.role='historical'""",
+                (candidate_id,),
+            ).fetchone()
+            delayed_report = json.loads(report_row["report_json"])
+            delayed_report["lines"][0]["pv_uci"] = ["a2a3", "e8e7"]
+            db.execute(
+                "UPDATE threat_analysis_requests SET report_json=? WHERE id=?",
+                (json.dumps(delayed_report), report_row["id"]),
+            )
+        enqueue_defense_admission(background=False)
+        task = claim_task("defensive_admission")
+        assert task and execute_defense_admission_slice(task)
+        with database.read_connection() as db:
+            candidate = db.execute(
+                "SELECT card_id,approved_at FROM threat_training_candidates WHERE id=?",
+                (candidate_id,),
+            ).fetchone()
+            assert candidate["card_id"] is None and candidate["approved_at"] is None
+    finally:
+        database_writer.stop()
+
+
 def test_discoveries_backfill_restarts_after_one_game_without_duplicate_scan(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
@@ -709,6 +968,7 @@ def test_discoveries_validated_false_alarm_finishes_after_recognition_with_one_r
         exercise = client.get(f"/api/defense-exercises/{candidate_id}").json()
         assert "refutation" not in json.dumps(exercise)
         answer = {"attempt_id": "control-answer", "exercise_revision": exercise["exercise_revision"],
+                  "rubric_version": 3,
                   "queue_entry_id": queue_entry_id, "no_concrete_threat": True,
                   "consequence": "none"}
         first = client.post(f"/api/defense-exercises/{candidate_id}/recognition", json=answer)

@@ -85,6 +85,15 @@ class ValidationResult:
     refutation_uci: tuple[str, ...] = ()
 
 
+@dataclass(frozen=True)
+class RecognitionPreview:
+    proposed_move_uci: str
+    proposed_move_san: str
+    position_fen: str
+    fork_move_uci: str
+    fork_move_san: str
+
+
 def make_validation_plan(
     anchor: ExerciseAnchor, *, engine_version: str, network_version: str,
     policy: ThreatPolicy,
@@ -125,6 +134,40 @@ def _replay_line(board: chess.Board, line: AnalysisLine) -> tuple[chess.Board, .
         board.push(move)
         states.append(board.copy(stack=False))
     return tuple(states)
+
+
+def recognition_preview(
+    anchor: ExerciseAnchor, seed: ThreatSeed, historical_line: AnalysisLine,
+) -> RecognitionPreview | None:
+    """Describe an immediate fork using pieces visible after the proposed move."""
+    if (len(historical_line.pv_uci) < 2
+            or historical_line.pv_uci[0] != anchor.historical_move_uci):
+        return None
+    board = _anchor_board(anchor)
+    proposed_move = chess.Move.from_uci(anchor.historical_move_uci)
+    if proposed_move not in board.legal_moves:
+        return None
+    proposed_move_san = board.san(proposed_move)
+    board.push(proposed_move)
+    expected = seed.geometry
+    if (board.piece_at(chess.parse_square(expected.knight_from))
+            != chess.Piece(chess.KNIGHT, expected.attacker_color == "white")
+            or board.piece_at(chess.parse_square(expected.king.square))
+            != chess.Piece(chess.KING, anchor.position.learner_color == "white")
+            or board.piece_at(chess.parse_square(expected.major.square))
+            != chess.Piece(chess.QUEEN if expected.major.piece == "queen" else chess.ROOK,
+                           anchor.position.learner_color == "white")):
+        return None
+    fork_move = chess.Move.from_uci(historical_line.pv_uci[1])
+    if fork_move not in board.legal_moves:
+        return None
+    if defensive_fork_geometry(board, fork_move.uci()) != expected:
+        return None
+    return RecognitionPreview(
+        proposed_move_uci=proposed_move.uci(), proposed_move_san=proposed_move_san,
+        position_fen=board.fen(), fork_move_uci=fork_move.uci(),
+        fork_move_san=board.san(fork_move),
+    )
 
 
 def _learner_loss(
@@ -265,6 +308,11 @@ def validate_threat_anchor(
         states = _replay_line(board.copy(stack=False), historical_line)
     except ValueError:
         return ValidationResult("rejected", "Engine line is illegal or anchor history is invalid", report_ids)
+    if recognition_preview(anchor, seed, historical_line) is None:
+        return ValidationResult(
+            "lesson_only", "Fork is not an immediate, board-visible reply to the proposed move",
+            report_ids,
+        )
     loss_cp = _learner_loss(best_line.score, historical_line.score,
                             anchor.position.learner_color)
     if loss_cp is None:

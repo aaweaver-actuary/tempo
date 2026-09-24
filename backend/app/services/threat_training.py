@@ -14,17 +14,150 @@ from .activity_gate import activity_gate
 from .durable_tasks import enqueue_task
 from .review_service import (
     apply_scheduling_review, ensure_card_queued_after, preserve_daily_queue_order,
+    rebuild_defense_schedule,
 )
 from .threat_grading import DefenseExercise, grade_defense_move
 from .threat_pipeline import (
     _anchor_from_json, _request_from_json, _seed_from_json,
     report_from_json, validate_analysis_report,
 )
-from .threat_validation import AnalysisReport
+from .threat_validation import (
+    AnalysisReport, make_validation_plan, recognition_preview, validate_threat_anchor,
+)
 from .threat_models import ThreatPolicy
 
 
 DEFENSE_REPERTOIRE_ID = "__defense__"
+RECOGNITION_RUBRIC_VERSION = 3
+
+
+def execute_defense_rubric_audit_slice(task: dict) -> bool:
+    """Recheck one saved candidate and its old reviews without holding SQLite during replay."""
+    cursor = task["payload"].get("cursor", "")
+    activity_gate.wait_for_foreground()
+    with read_connection() as database:
+        row = database.execute(
+            """SELECT candidate.* FROM threat_training_candidates candidate
+               JOIN imported_games game ON game.id=candidate.game_id
+               WHERE candidate.id>? AND candidate.superseded_at IS NULL
+                 AND candidate.analysis_version=game.analysis_version
+                 AND (candidate.validation_state IN ('engine_supported','validated_control')
+                      OR candidate.approved_at IS NOT NULL)
+               ORDER BY candidate.id LIMIT 1""", (cursor,),
+        ).fetchone()
+        candidate = dict(row) if row else None
+        reports = [dict(item) for item in database.execute(
+            """SELECT relation.role,request.request_json,request.report_json
+               FROM threat_candidate_requests relation JOIN threat_analysis_requests request
+                 ON request.id=relation.request_id
+               WHERE relation.candidate_id=? AND relation.role IN ('best','historical')""",
+            (candidate["id"],),
+        )] if candidate else []
+    if not candidate:
+        return False
+    evidence = json.loads(candidate["evidence_json"])
+    anchor = _anchor_from_json(evidence["anchor"])
+    seed = _seed_from_json(evidence["seed"])
+    policy = ThreatPolicy(**json.loads(candidate["policy_json"]))
+    plan = make_validation_plan(
+        anchor, engine_version=next((json.loads(item["request_json"])["engine_version"]
+                                     for item in reports if item["role"] == "best"), ""),
+        network_version=next((json.loads(item["request_json"])["network_version"]
+                                      for item in reports if item["role"] == "best"), ""),
+        policy=policy,
+    )
+    by_role: dict[str, AnalysisReport] = {}
+    for item in reports:
+        if not item["report_json"]:
+            continue
+        try:
+            request = _request_from_json(json.loads(item["request_json"]))
+            report = report_from_json(json.loads(item["report_json"]))
+            validate_analysis_report(request, report)
+            by_role[item["role"]] = report
+        except (KeyError, TypeError, ValueError):
+            continue
+    result = validate_threat_anchor(
+        anchor, seed, plan, by_role.get("best"), by_role.get("historical"), policy,
+    )
+    root_board = chess.Board(anchor.position.start_fen)
+    for move_uci in anchor.position.prefix_uci:
+        root_board.push_uci(move_uci)
+    geometry = seed.geometry
+    target_on_root = root_board.piece_at(chess.parse_square(geometry.major.square))
+    rubric_was_misleading = (
+        result.state in {"lesson_only", "rejected"}
+        or target_on_root != chess.Piece(
+            chess.QUEEN if geometry.major.piece == "queen" else chess.ROOK,
+            anchor.position.learner_color == "white",
+        )
+    )
+    activity_gate.wait_for_foreground()
+    with connection(background=True) as database:
+        lease = database.execute(
+            "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
+        ).fetchone()
+        current = database.execute(
+            "SELECT source_fingerprint,exercise_revision,card_id FROM threat_training_candidates WHERE id=?",
+            (candidate["id"],),
+        ).fetchone()
+        if (not lease or lease["generation"] != task["generation"]
+                or lease["lease_token"] != task["lease_token"]):
+            return True
+        if (current and current["source_fingerprint"] == candidate["source_fingerprint"]
+                and current["exercise_revision"] == candidate["exercise_revision"]):
+            eligible = result.state in {"engine_supported", "validated_control"}
+            database.execute(
+                """UPDATE threat_training_candidates SET validation_state=?,diagnostic=?,
+                   validation_json=?,approved_at=CASE WHEN ? THEN approved_at ELSE NULL END,
+                   exercise_revision=exercise_revision+1,updated_at=? WHERE id=?""",
+                (result.state, result.diagnostic, json.dumps(asdict(result)), int(eligible),
+                 _now(), candidate["id"]),
+            )
+            if current["card_id"]:
+                database.execute(
+                    "UPDATE cards SET pending_validation=?,revision=revision+1 WHERE id=?",
+                    (0 if eligible else 1, current["card_id"]),
+                )
+                if not eligible:
+                    database.execute(
+                        "UPDATE daily_queue SET status='blocked' WHERE card_id=? AND status='queued'",
+                        (current["card_id"],),
+                    )
+                if rubric_was_misleading:
+                    database.execute(
+                        """UPDATE reviews SET invalidated_at=?,invalidation_reason=?
+                           WHERE card_id=? AND invalidated_at IS NULL AND source_kind='study'
+                             AND source_ref IN (
+                               SELECT 'defense:' || attempt_id FROM defense_attempts
+                               WHERE candidate_id=? AND exercise_revision<=?)""",
+                        (_now(), "Defensive recognition rubric showed the wrong board",
+                         current["card_id"], candidate["id"], candidate["exercise_revision"]),
+                    )
+                    light_interval = database.execute(
+                        "SELECT light_first_interval_days FROM settings WHERE id=1",
+                    ).fetchone()[0]
+                    rebuild_defense_schedule(database, current["card_id"], light_interval)
+                    if eligible and database.execute(
+                        "SELECT 1 FROM reviews WHERE card_id=? AND invalidated_at IS NOT NULL LIMIT 1",
+                        (current["card_id"],),
+                    ).fetchone():
+                        ensure_card_queued_after(database, current["card_id"], after_cards=1,
+                                                 attempt_state="guided")
+        database.execute(
+            """UPDATE background_tasks SET generation=generation+1,state='queued',phase='queued',
+                 payload_json=?,attempt_count=0,next_attempt_at=?,lease_token=NULL,
+                 lease_expires_at=NULL,updated_at=?
+               WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
+            (json.dumps({"cursor": candidate["id"]}), _now(), _now(), task["id"],
+             task["generation"], task["lease_token"]),
+        )
+    if result.state in {"engine_supported", "validated_control"}:
+        enqueue_defense_admission(background=True)
+    if candidate["card_id"]:
+        enqueue_task("daily_queue", "current", {"queue_date": date.today().isoformat()},
+                     priority=10, foreground=False)
+    return True
 
 
 def _now() -> str:
@@ -68,7 +201,9 @@ def _approve_in_transaction(database, candidate, *, reports_verified: bool = Fal
     if candidate["validation_state"] not in {"engine_supported", "validated_control"}:
         raise ValueError("Only a validated candidate can enter training")
     if not reports_verified:
-        _exercise_from_rows(database, candidate)
+        exercise = _exercise_from_rows(database, candidate)
+        if recognition_preview(exercise.anchor, exercise.seed, exercise.evaluated_reports[0].lines[0]) is None:
+            raise ValueError("This defensive exercise needs a validated board preview")
     if candidate["dismissed_at"]:
         raise ValueError("Dismissed candidate must be revisited after new evidence")
     if candidate["card_id"]:
@@ -238,12 +373,18 @@ def execute_defense_admission_slice(task: dict) -> bool:
     reports_verified = False
     try:
         roles = set()
+        historical_line = None
         for report_row in report_rows:
             request = _request_from_json(json.loads(report_row["request_json"]))
             report = report_from_json(json.loads(report_row["report_json"]))
             validate_analysis_report(request, report)
             roles.add(report_row["role"])
-        reports_verified = {"best", "historical"}.issubset(roles)
+            if report_row["role"] == "historical" and report.lines:
+                historical_line = report.lines[0]
+        reports_verified = ({"best", "historical"}.issubset(roles)
+                            and historical_line is not None
+                            and recognition_preview(anchor, _seed_from_json(evidence["seed"]),
+                                                    historical_line) is not None)
     except (TypeError, KeyError, ValueError):
         reports_verified = False
     candidate_position = " ".join(board.fen().split()[:4])
@@ -339,6 +480,9 @@ def read_defense_exercise(candidate_id: str) -> dict:
         if not candidate["approved_at"] or not candidate["card_id"]:
             raise ValueError("Candidate is not approved for training")
         exercise = _exercise_from_rows(database, candidate)
+        preview = recognition_preview(exercise.anchor, exercise.seed, exercise.evaluated_reports[0].lines[0])
+        if preview is None:
+            raise ValueError("This defensive exercise needs a validated board preview")
     return {
         "candidate_id": candidate_id,
         "finding_id": exercise.finding_id,
@@ -348,8 +492,12 @@ def read_defense_exercise(candidate_id: str) -> dict:
         "prefix_uci": exercise.anchor.position.prefix_uci,
         "learner_color": exercise.anchor.position.learner_color,
         "prompt": "What danger should your next move account for?",
-        "rubric_version": 2,
+        "rubric_version": RECOGNITION_RUBRIC_VERSION,
         "recognition_required": True,
+        "proposed_move_uci": preview.proposed_move_uci,
+        "proposed_move_san": preview.proposed_move_san,
+        "preview_fen": preview.position_fen,
+        "fork_move_san": preview.fork_move_san,
     }
 
 
@@ -426,7 +574,17 @@ def submit_defense_recognition(candidate_id: str, request) -> dict:
     """Persist recognition, then reveal its explanation before the defense move."""
     answer = request.model_dump()
     serialized = json.dumps(answer, sort_keys=True)
+    if request.rubric_version != RECOGNITION_RUBRIC_VERSION:
+        raise ValueError("Recognition rubric changed; reload this card before answering")
     with read_connection() as database:
+        candidate = _candidate(database, candidate_id)
+        _require_current(candidate)
+        if (not candidate["approved_at"] or candidate["exercise_revision"] != request.exercise_revision
+                or candidate["validation_state"] not in {"engine_supported", "validated_control"}):
+            raise ValueError("Exercise revision changed; reload before answering")
+        exercise = _exercise_from_rows(database, candidate)
+        if recognition_preview(exercise.anchor, exercise.seed, exercise.evaluated_reports[0].lines[0]) is None:
+            raise ValueError("This defensive exercise needs a validated board preview")
         prior = database.execute(
             """SELECT candidate_id,queue_entry_id,exercise_revision,answer_json
                FROM defense_recognition_submissions WHERE attempt_id=?""",
@@ -442,7 +600,6 @@ def submit_defense_recognition(candidate_id: str, request) -> dict:
             ).fetchone()
             if completed:
                 return {**json.loads(completed["grade_json"]), "idempotent": True}
-            candidate = _candidate(database, candidate_id)
             evidence = json.loads(candidate["evidence_json"])
             source_game = database.execute("SELECT game_url FROM imported_games WHERE id=?",
                                            (candidate["game_id"],)).fetchone()
@@ -451,16 +608,13 @@ def submit_defense_recognition(candidate_id: str, request) -> dict:
                         "SELECT recognition_correct FROM defense_recognition_submissions WHERE attempt_id=?",
                         (request.attempt_id,),
                     ).fetchone()[0]),
-                    "feedback": {"knight_route": evidence.get("knight_route", []),
+                    "feedback": {"knight_route": [{"from_square": evidence["seed"]["geometry"]["knight_from"],
+                                                   "to_square": evidence["seed"]["geometry"]["knight_to"]}],
                                  "fork_geometry": evidence["seed"]["geometry"],
-                                 "sound_moves": [], "refutation_uci": [],
+                                 "sound_moves": [], "refutation_uci": json.loads(candidate["validation_json"]).get("refutation_uci", []),
                                  "source_game_id": candidate["game_id"],
                                  "source_game_url": source_game["game_url"] if source_game else None},
                     "idempotent": True}
-        candidate = _candidate(database, candidate_id)
-        _require_current(candidate)
-        if not candidate["approved_at"] or candidate["exercise_revision"] != request.exercise_revision:
-            raise ValueError("Exercise revision changed; reload before answering")
         queue_entry = database.execute(
             "SELECT 1 FROM daily_queue WHERE id=? AND card_id=? AND status='queued'",
             (request.queue_entry_id, candidate["card_id"]),
@@ -468,11 +622,8 @@ def submit_defense_recognition(candidate_id: str, request) -> dict:
         if not queue_entry:
             raise ValueError("This defensive exercise is no longer active")
         evidence = json.loads(candidate["evidence_json"])
-        route = evidence.get("knight_route", [])
-        anchor_ply = int(json.loads(candidate["evidence_json"])["anchor"]["player_ply"])
-        first_future_hop = next((hop for hop in route if int(hop["ply"]) >= anchor_ply), None)
         geometry = evidence["seed"]["geometry"]
-        dangerous_square = first_future_hop["from_square"] if first_future_hop else geometry["knight_from"]
+        dangerous_square = geometry["knight_from"]
         control = candidate["validation_state"] == "validated_control"
         correct = (request.no_concrete_threat and request.consequence == "none" and not request.hinted
                    if control else
@@ -482,7 +633,8 @@ def submit_defense_recognition(candidate_id: str, request) -> dict:
                    and request.king_square == geometry["king"]["square"]
                    and request.major_square == geometry["major"]["square"]
                    and request.consequence == "checking_fork")
-        control_refutation = json.loads(candidate["validation_json"]).get("refutation_uci", []) if control else []
+        validated_line = json.loads(candidate["validation_json"]).get("refutation_uci", [])
+        visible_route = [{"from_square": geometry["knight_from"], "to_square": geometry["knight_to"]}]
         source_game = database.execute(
             "SELECT game_url FROM imported_games WHERE id=?", (candidate["game_id"],),
         ).fetchone()
@@ -522,9 +674,9 @@ def submit_defense_recognition(candidate_id: str, request) -> dict:
                 "diagnostic": "The apparent checking fork can be captured legally",
                 "recognition_correct": correct,
                 "defense_status": "not_applicable",
-                "feedback": {"knight_route": evidence.get("knight_route", []),
+                "feedback": {"knight_route": visible_route,
                              "fork_geometry": geometry, "sound_moves": [],
-                             "refutation_uci": control_refutation,
+                             "refutation_uci": validated_line,
                              "control_explanation": "The forking knight is capturable before it wins material.",
                              "source_game_id": candidate["game_id"],
                              "source_game_url": source_game["game_url"] if source_game else None},
@@ -540,8 +692,8 @@ def submit_defense_recognition(candidate_id: str, request) -> dict:
             )
     return {"status": "ready_for_move", "recognition_attempt_id": request.attempt_id,
             "recognition_correct": correct,
-            "feedback": {"knight_route": evidence.get("knight_route", []),
-                         "fork_geometry": geometry, "sound_moves": [], "refutation_uci": [],
+            "feedback": {"knight_route": visible_route,
+                         "fork_geometry": geometry, "sound_moves": [], "refutation_uci": validated_line,
                          "source_game_id": candidate["game_id"],
                          "source_game_url": source_game["game_url"] if source_game else None},
             "idempotent": False}
@@ -553,6 +705,11 @@ def submit_defense_attempt(
     recognition_attempt_id: str | None = None,
 ) -> dict:
     with read_connection() as database:
+        candidate = _candidate(database, candidate_id)
+        _require_current(candidate)
+        if (not candidate["approved_at"] or candidate["exercise_revision"] != exercise_revision
+                or candidate["validation_state"] not in {"engine_supported", "validated_control"}):
+            raise ValueError("Exercise revision changed; reload before trying again")
         prior = database.execute(
             "SELECT * FROM defense_attempts WHERE attempt_id=?", (attempt_id,)
         ).fetchone()
@@ -561,9 +718,7 @@ def submit_defense_attempt(
                     or prior["queue_entry_id"] != queue_entry_id):
                 raise ValueError("Attempt ID already belongs to a different submission")
             return {**json.loads(prior["grade_json"]), "idempotent": True}
-        candidate = _candidate(database, candidate_id)
-        _require_current(candidate)
-        if not candidate["approved_at"] or not candidate["card_id"]:
+        if not candidate["card_id"]:
             raise ValueError("Candidate is not approved for training")
         if candidate["validation_state"] == "validated_control":
             raise ValueError("Control exercises finish with recognition; no defense move is required")
@@ -612,8 +767,9 @@ def submit_defense_attempt(
         return response
     evidence = json.loads(candidate["evidence_json"])
     response["feedback"] = {
-        "knight_route": evidence["knight_route"] if grade.allows_target_fork
-                        or grade.status == "correct" else [],
+        "knight_route": [{"from_square": evidence["seed"]["geometry"]["knight_from"],
+                          "to_square": evidence["seed"]["geometry"]["knight_to"]}]
+                        if grade.allows_target_fork or grade.status == "correct" else [],
         "fork_geometry": evidence["seed"]["geometry"] if grade.allows_target_fork
                          or grade.status == "correct" else None,
         "sound_moves": [line.root_move_uci for line in exercise.best_report.lines],

@@ -1255,6 +1255,8 @@ def initialize() -> None:
                 "guided": "INTEGER NOT NULL DEFAULT 0",
                 "source_kind": "TEXT NOT NULL DEFAULT 'study'",
                 "source_ref": "TEXT",
+                "invalidated_at": "TEXT",
+                "invalidation_reason": "TEXT",
             },
             "imported_games": {
                 "analysis_state": "TEXT NOT NULL DEFAULT 'pending'",
@@ -1330,6 +1332,28 @@ def initialize() -> None:
         database.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_source ON reviews(source_kind,source_ref) WHERE source_ref IS NOT NULL"
         )
+        defensive_preview_migration = "defensive-recognition-preview-v3"
+        if not database.execute(
+            "SELECT 1 FROM internal_migrations WHERE name=?", (defensive_preview_migration,),
+        ).fetchone():
+            if database.execute(
+                """SELECT 1 FROM threat_training_candidates
+                   WHERE validation_state IN ('engine_supported','validated_control')
+                      OR approved_at IS NOT NULL LIMIT 1""",
+            ).fetchone():
+                database.execute(
+                    """INSERT OR IGNORE INTO background_tasks(
+                           id,kind,deduplication_key,generation,priority,state,phase,
+                           payload_version,payload_json,attempt_count,max_attempts,
+                           next_attempt_at,created_at,updated_at)
+                       VALUES('defense-rubric-audit:v3','defensive_rubric_audit','v3',1,55,
+                              'queued','queued',1,'{"cursor":""}',0,5,?,?,?)""",
+                    (datetime.now(timezone.utc).isoformat(),) * 3,
+                )
+            database.execute(
+                "INSERT INTO internal_migrations(name,applied_at) VALUES(?,?)",
+                (defensive_preview_migration, datetime.now(timezone.utc).isoformat()),
+            )
         database.execute("DROP INDEX IF EXISTS idx_imported_games_content_hash")
         database.execute(
             "CREATE INDEX idx_imported_games_content_hash ON imported_games(provider, username, content_hash) WHERE content_hash IS NOT NULL"

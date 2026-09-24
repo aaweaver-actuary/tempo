@@ -10,6 +10,61 @@ import sqlite3
 from .scheduler import schedule_review, unlock_ready
 
 
+def rebuild_defense_schedule(database: sqlite3.Connection, card_id: str,
+                             light_first_interval_days: int) -> None:
+    """Replay only valid reviews after a defective recognition rubric is retired."""
+    rows = database.execute(
+        """SELECT rating,reviewed_at FROM reviews WHERE card_id=? AND invalidated_at IS NULL
+           ORDER BY reviewed_at,id""", (card_id,),
+    ).fetchall()
+    if not rows:
+        database.execute(
+            """UPDATE cards SET due_date=?,interval_days=0,fsrs_card_json=NULL,
+               first_correct_at=NULL,reinforcement_pending=0,stability=0,
+               guided_review=0,state='learning',scheduling_mode='normal',
+               hard_correct_streak=0,recent_attempts_json='[]' WHERE id=? AND content_type='defense'""",
+            (date.today().isoformat(), card_id),
+        )
+        return
+    interval_days = 0
+    fsrs_card_json = None
+    first_correct_at = None
+    reinforcement_pending = False
+    scheduling_mode = "normal"
+    hard_correct_streak = 0
+    recent_attempts: list[str] = []
+    for row in rows:
+        reviewed_at = datetime.fromisoformat(row["reviewed_at"])
+        schedule = schedule_review(
+            row["rating"], interval_days=interval_days,
+            fsrs_card_json=fsrs_card_json, first_correct_at=first_correct_at,
+            reinforcement_pending=reinforcement_pending,
+            scheduling_mode=scheduling_mode, hard_correct_streak=hard_correct_streak,
+            recent_attempts=recent_attempts,
+            light_first_interval_days=light_first_interval_days,
+            reviewed_at=reviewed_at, review_day=reviewed_at.date(),
+        )
+        interval_days = schedule.interval_days
+        fsrs_card_json = schedule.fsrs_card_json
+        first_correct_at = schedule.first_correct_at
+        reinforcement_pending = schedule.reinforcement_pending
+        scheduling_mode = schedule.scheduling_mode
+        hard_correct_streak = schedule.hard_correct_streak
+        recent_attempts = list(schedule.recent_attempts)
+    successful_days = len({row["reviewed_at"][:10] for row in rows if row["rating"] == "correct"})
+    recent_outcomes = [row["rating"] for row in reversed(rows[-2:])]
+    state = "mature" if unlock_ready(schedule.stability, successful_days, recent_outcomes) else "learning"
+    database.execute(
+        """UPDATE cards SET due_date=?,interval_days=?,fsrs_card_json=?,first_correct_at=?,
+           reinforcement_pending=?,stability=?,guided_review=0,state=?,scheduling_mode=?,
+           hard_correct_streak=?,recent_attempts_json=? WHERE id=? AND content_type='defense'""",
+        (schedule.due_date.isoformat(), schedule.interval_days, schedule.fsrs_card_json,
+         schedule.first_correct_at, int(schedule.reinforcement_pending), schedule.stability,
+         state, schedule.scheduling_mode, schedule.hard_correct_streak,
+         json.dumps(schedule.recent_attempts), card_id),
+    )
+
+
 def preserve_daily_queue_order(database: sqlite3.Connection, queue_date: str) -> None:
     """Keep a manually positioned queue entry stable across projection rebuilds."""
     entries = database.execute(
@@ -90,7 +145,7 @@ def apply_scheduling_review(
         ),
     )
     successful_days = database.execute(
-        "SELECT COUNT(DISTINCT date(reviewed_at)) FROM reviews WHERE card_id=? AND rating='correct'",
+        "SELECT COUNT(DISTINCT date(reviewed_at)) FROM reviews WHERE card_id=? AND rating='correct' AND invalidated_at IS NULL",
         (card_id,),
     ).fetchone()[0]
     seed = database.execute(
@@ -100,7 +155,7 @@ def apply_scheduling_review(
     ).fetchone()
     successful_days += int(seed["baseline_successful_days"] if seed else 0)
     recent_outcomes = [row[0] for row in database.execute(
-        "SELECT rating FROM reviews WHERE card_id=? ORDER BY reviewed_at DESC,id DESC LIMIT 2", (card_id,)
+        "SELECT rating FROM reviews WHERE card_id=? AND invalidated_at IS NULL ORDER BY reviewed_at DESC,id DESC LIMIT 2", (card_id,)
     )]
     if seed:
         recent_outcomes.extend(

@@ -92,7 +92,7 @@ from .services.threat_training import (
     approve_defense_candidate, dismiss_defense_candidate, pause_defense_candidate,
     train_defense_candidate_now, read_defense_exercise,
     submit_defense_attempt, submit_defense_recognition, execute_defense_admission_slice,
-    enqueue_defense_admission,
+    enqueue_defense_admission, execute_defense_rubric_audit_slice,
 )
 from .services.tactical_opportunities import tactical_statistics
 from .services.statistics import enqueue_daily_snapshot, statistics_breakdown, statistics_overview
@@ -792,10 +792,27 @@ def seed_queue(db, day):
         (day,),
     )
     db.execute(
+        """UPDATE daily_queue SET status='blocked'
+           WHERE queue_date=? AND status='queued' AND card_id IN (
+               SELECT card.id FROM cards card
+               JOIN threat_training_candidates candidate ON candidate.card_id=card.id
+               WHERE card.content_type='defense' AND
+                 (card.pending_validation=1 OR candidate.approved_at IS NULL
+                  OR candidate.validation_state NOT IN ('engine_supported','validated_control'))
+           )""",
+        (day,),
+    )
+    db.execute(
         """UPDATE daily_queue SET status='queued'
            WHERE queue_date=? AND status='blocked' AND card_id IN (
                SELECT c.id FROM cards c
-               WHERE c.archived=0 AND c.due_date<=? AND COALESCE(c.pending_validation,0)=0
+           WHERE c.archived=0 AND c.due_date<=? AND COALESCE(c.pending_validation,0)=0
+                 AND (c.content_type!='defense' OR EXISTS(
+                     SELECT 1 FROM threat_training_candidates candidate
+                     WHERE candidate.card_id=c.id AND candidate.approved_at IS NOT NULL
+                       AND candidate.validation_state IN ('engine_supported','validated_control')
+                       AND candidate.superseded_at IS NULL
+                 ))
                  AND EXISTS(
                      SELECT 1 FROM repertoires eligible
                      WHERE (eligible.id=c.repertoire_id OR EXISTS(
@@ -848,7 +865,7 @@ def randomize_daily_queue(db, day: str) -> None:
     rows = db.execute(
         """SELECT q.id,q.card_id,c.content_type,
                   CASE WHEN q.admission_kind='explicit' THEN 'explicit'
-                       WHEN EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id) THEN 'review'
+                       WHEN EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id AND r.invalidated_at IS NULL) THEN 'review'
                        ELSE 'new' END admission_kind,
                   q.gameplay_priority_reason
            FROM daily_queue q JOIN cards c ON c.id=q.card_id
@@ -1058,6 +1075,7 @@ register_durable_task_handler("defensive_threat_validate", execute_threat_valida
 register_durable_task_handler("defensive_threat_report_audit", execute_threat_report_audit)
 register_durable_task_handler("defensive_threat_backfill", execute_threat_backfill_slice)
 register_durable_task_handler("defensive_admission", execute_defense_admission_slice)
+register_durable_task_handler("defensive_rubric_audit", execute_defense_rubric_audit_slice)
 register_durable_task_handler("discovery_admission", execute_admission_intent_slice)
 register_durable_task_handler("discovery_recommendation", execute_recommendation_request_slice)
 
@@ -2117,7 +2135,7 @@ def progress_summary():
             {
                 "date": (day - timedelta(days=offset)).isoformat(),
                 "count": db.execute(
-                    "SELECT COUNT(*) FROM reviews WHERE date(reviewed_at)=?",
+                    "SELECT COUNT(*) FROM reviews WHERE date(reviewed_at)=? AND invalidated_at IS NULL",
                     ((day - timedelta(days=offset)).isoformat(),),
                 ).fetchone()[0],
             }
@@ -2128,7 +2146,7 @@ def progress_summary():
             "activity": activity,
             "reviewedToday": activity[-1]["count"],
             "cleanCards": db.execute(
-                "SELECT COUNT(DISTINCT card_id) FROM reviews WHERE rating='correct' AND guided=0"
+                "SELECT COUNT(DISTINCT card_id) FROM reviews WHERE rating='correct' AND guided=0 AND invalidated_at IS NULL"
             ).fetchone()[0],
             "dueToday": db.execute(
                 "SELECT COUNT(*) FROM daily_queue WHERE queue_date=? AND status='queued'",

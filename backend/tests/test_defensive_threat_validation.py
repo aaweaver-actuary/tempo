@@ -141,6 +141,45 @@ def test_issue11_black_learner_scores_are_normalized_from_white_perspective():
     assert result.loss_cp == 180
 
 
+def test_reported_rc4_fork_requires_preview_with_rook_on_c4():
+    fen = "8/k1p2p2/1p2p3/1P2Pn2/PR6/8/3r1PKP/8 w - - 3 36"
+    game = GameSnapshot("reported-rc4", 1, fen, ("b4c4",), "white")
+    seed = find_defensive_knight_forks(
+        game, SourceLine("engine", 1, ("f5e3", "g2g3", "e3c4", "f2f4")),
+    )[0]
+    anchor = propose_exercise_anchors(game, seed, POLICY)[0]
+    plan = make_validation_plan(anchor, engine_version="sf19", network_version="nnue", policy=POLICY)
+    best = AnalysisReport(plan.best_request, (
+        AnalysisLine("g2f3", ("g2f3", "a7b7"), EngineScore(cp=-405), 14),
+    ), True)
+    historical = AnalysisReport(plan.historical_request, (
+        AnalysisLine("b4c4", ("b4c4", "f5e3", "g2g3", "e3c4", "f2f4"),
+                     EngineScore(cp=-841), 14),
+    ), True)
+    result = validate_threat_anchor(anchor, seed, plan, best, historical, POLICY)
+    assert result.state == "engine_supported"
+    assert chess.Board(fen).piece_at(chess.C4) is None
+    preview = chess.Board(fen)
+    preview.push_uci("b4c4")
+    assert preview.piece_at(chess.C4) == chess.Piece(chess.ROOK, chess.WHITE)
+
+
+def test_defensive_recognition_holds_forks_beyond_the_immediate_reply():
+    fen = "4k3/8/8/8/1n6/8/7P/R3K3 w Q - 0 1"
+    game = GameSnapshot("delayed-fork", 1, fen, ("h2h3",), "white")
+    continuation = ("e8e7", "h3h4", "b4c2", "e1d2", "c2a1", "d2c1")
+    seed = find_defensive_knight_forks(game, SourceLine("engine", 1, continuation))[0]
+    anchor = propose_exercise_anchors(game, seed, POLICY)[0]
+    plan = make_validation_plan(anchor, engine_version="sf19", network_version="nnue", policy=POLICY)
+    best = AnalysisReport(plan.best_request, (
+        AnalysisLine("e1f2", ("e1f2", "e8e7"), EngineScore(cp=0), 14),
+    ), True)
+    historical = AnalysisReport(plan.historical_request, (
+        AnalysisLine("h2h3", ("h2h3", *continuation), EngineScore(cp=-180), 14),
+    ), True)
+    assert validate_threat_anchor(anchor, seed, plan, best, historical, POLICY).state == "lesson_only"
+
+
 def test_issue11_request_identity_includes_history_engine_limits_and_root_move():
     anchor, _, plan, _, _ = evidence()
     other = make_validation_plan(anchor, engine_version="sf20", network_version="nnue", policy=POLICY)
