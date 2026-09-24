@@ -384,6 +384,7 @@ button {
 .defense-study-panel .feedback { margin: 16px 0; }
 .defense-recognition { display: grid; align-content: start; gap: 14px; padding: 12px 0; }
 .defense-stage-prompt { font-size: 1.1rem; font-weight: 600; line-height: 1.4; }
+.defense-preview-label { border: 1px solid var(--sage); border-radius: 10px; padding: 12px 14px; background: var(--surface, #f7f8f4); line-height: 1.4; }
 .defense-selection-trail { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
 .defense-selection-trail li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; }
 .defense-selection-trail button, .defense-stage-actions button, .defense-square-entry button, .defense-no-threat {

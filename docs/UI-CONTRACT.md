@@ -42,6 +42,10 @@ same decision with its available move route and a visible return control. A clos
 batch does not repeatedly interrupt study. Defensive recognition uses one board
 selection step at a time, keeps solution marks hidden until assessment submission,
 then shows recognition and move feedback separately.
+When recognition concerns a proposed move, the board displays and labels the position
+after that move. After assessment, the learner reviews the fork on that preview,
+then returns to the original decision position to choose a defense. Arrows must
+refer only to pieces and moves visible in the displayed position.
 
 Board leases isolate callbacks, automatic/drawn arrows, selection, feedback and hints.
 Only the active mounted session may publish. Returning to a workspace restores its own

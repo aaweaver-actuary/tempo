@@ -17,6 +17,10 @@ type DefenseExercisePayload = {
   prompt: string;
   rubric_version?: number;
   recognition_required?: boolean;
+  proposed_move_uci?: string;
+  proposed_move_san?: string;
+  preview_fen?: string;
+  fork_move_san?: string;
 };
 
 type DefenseGradePayload = {
@@ -77,7 +81,9 @@ export default function DefenseTrainingView({
   const [hintRevealed, setHintRevealed] = useState(false);
   const [consequence, setConsequence] = useState<"" | "checking_fork" | "other" | "none">("");
   const [recognitionDone, setRecognitionDone] = useState(false);
+  const [defenseReady, setDefenseReady] = useState(false);
   const recognitionAttemptId = useRef<string | null>(null);
+  const loadedRevision = useRef<number | null>(null);
   const pendingRef = useRef<PendingAttempt | null>(null);
   const submittingRef = useRef(false);
   const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
@@ -92,6 +98,16 @@ export default function DefenseTrainingView({
       if (!response.ok) throw new Error(`Exercise unavailable (${response.status}). Refresh the queue.`);
       const body = await response.json() as DefenseExercisePayload;
       if (body.card_id !== card.backendId) throw new Error("Exercise and queue card differ. Refresh the queue.");
+      if (body.rubric_version !== 3 || !body.preview_fen || !body.proposed_move_san) {
+        throw new Error("This exercise needs a refreshed board preview. Retry loading the exercise.");
+      }
+      if (loadedRevision.current !== null && loadedRevision.current !== body.exercise_revision) {
+        setGrade(null); setRecognitionResult(null); setRecognitionDone(false); setDefenseReady(false);
+        setSelectedSquares([]); setActiveSelection(0); setAssessmentDone(false);
+        setNoConcreteThreat(false); setConsequence(""); setHintRevealed(false);
+        recognitionAttemptId.current = null; pendingRef.current = null; setPending(null);
+      }
+      loadedRevision.current = body.exercise_revision;
       setExercise(body);
       setLoadError("");
     } catch (reason) {
@@ -143,7 +159,7 @@ export default function DefenseTrainingView({
   }, [pending, grade?.status, submit]);
 
   const onMove = useCallback((from: Square, to: Square) => {
-    if (!exercise || (exercise.recognition_required && !recognitionDone) || busy || pendingRef.current || grade?.status === "correct" || grade?.status === "incorrect") return;
+    if (!exercise || (exercise.recognition_required && !defenseReady) || busy || pendingRef.current || grade?.status === "correct" || grade?.status === "incorrect") return;
     try {
       const board = new Chess(card.startingFen);
       const move = board.move({ from, to, promotion: "q" });
@@ -159,7 +175,7 @@ export default function DefenseTrainingView({
     } catch {
       setSaveError("That move is not legal from this position.");
     }
-  }, [exercise, recognitionDone, busy, grade?.status, card.startingFen, submit]);
+  }, [exercise, defenseReady, busy, grade?.status, card.startingFen, submit]);
 
   const selectSquare = useCallback((square: Square) => {
     if (recognitionDone || assessmentDone || busy || activeSelection > 3) return;
@@ -181,6 +197,7 @@ export default function DefenseTrainingView({
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           attempt_id: attemptId, exercise_revision: exercise.exercise_revision,
+          rubric_version: exercise.rubric_version,
           queue_entry_id: queueEntryId, no_concrete_threat: noConcreteThreat,
           dangerous_piece_square: noConcreteThreat ? null : selectedSquares[0] ?? null,
           destination_square: noConcreteThreat ? null : selectedSquares[1] ?? null,
@@ -206,6 +223,11 @@ export default function DefenseTrainingView({
   };
 
   const recognitionStage = Boolean(exercise?.recognition_required && !recognitionDone);
+  const showingPreview = Boolean(exercise?.preview_fen && !defenseReady);
+  const boardFen = showingPreview ? exercise!.preview_fen! : card.startingFen;
+  const originalMoveNumber = Number(card.startingFen.split(" ")[5] ?? 1);
+  const proposedMoveLabel = exercise?.proposed_move_san
+    ? `${originalMoveNumber}${card.startingFen.split(" ")[1] === "b" ? "..." : "."}${exercise.proposed_move_san}` : "";
   const selectionLabels = ["Dangerous piece", "Destination", "Your king", "Threatened piece"];
   const selectionPrompts = [
     "Select the piece that could create the danger.",
@@ -214,7 +236,7 @@ export default function DefenseTrainingView({
     "Which other piece would be threatened?",
   ];
   const shownFeedback = grade?.feedback ?? recognitionResult?.feedback;
-  const recognitionShapes: DrawShape[] = useMemo(() => recognitionDone && shownFeedback
+  const recognitionShapes: DrawShape[] = useMemo(() => recognitionDone && showingPreview && shownFeedback
     ? [
         ...shownFeedback.knight_route.map((hop) => ({ orig: hop.from_square as Key, dest: hop.to_square as Key, brush: "red" })),
         ...(shownFeedback.fork_geometry ? [
@@ -227,13 +249,14 @@ export default function DefenseTrainingView({
         if (index === 1 && /^[a-h][1-8]$/.test(selectedSquares[0] ?? ""))
           return [{ orig: selectedSquares[0] as Key, dest: square as Key, brush: "blue" }];
         return [{ orig: square as Key, brush: "blue" }];
-      }), [recognitionDone, shownFeedback, selectedSquares]);
-  const locked = !exercise || busy || Boolean(pending) || recognitionStage || grade?.status === "correct" || grade?.status === "incorrect";
+      }), [recognitionDone, showingPreview, shownFeedback, selectedSquares]);
+  const locked = !exercise || busy || Boolean(pending) || recognitionStage
+    || (recognitionDone && !defenseReady) || grade?.status === "correct" || grade?.status === "incorrect";
   useEffect(() => {
     if (!useSharedBoard) return;
     setShellBoardForOwner("train", {
       unavailable: loadError || undefined,
-      fen: card.startingFen,
+      fen: boardFen,
       expectedSan: undefined,
       lastMove: undefined,
       interactionMode: recognitionStage && !assessmentDone ? "free" : locked ? "readonly" : "legal",
@@ -252,14 +275,14 @@ export default function DefenseTrainingView({
     });
     return () => releaseShellBoardForOwner("train");
   }, [useSharedBoard, setShellBoardForOwner, releaseShellBoardForOwner,
-      card.startingFen, card.orientation, card.revision, loadError, locked,
+      boardFen, card.orientation, card.revision, loadError, locked,
       boardTheme, pieceSet, onMove, recognitionStage, assessmentDone, selectSquare, recognitionShapes]);
 
   const definitive = grade?.status === "correct" || grade?.status === "incorrect";
   return (
     <section className={`training-grid${useSharedBoard ? " training-grid-shared" : ""}`} aria-label="Defensive decision exercise">
       <div className="board-column">
-        {!useSharedBoard && <Chessboard fen={card.startingFen} locked={Boolean(locked && (!recognitionStage || assessmentDone))} showHint={false}
+        {!useSharedBoard && <Chessboard fen={boardFen} locked={Boolean(locked && (!recognitionStage || assessmentDone))} showHint={false}
           theme={boardTheme} pieceSet={pieceSet} orientation={card.orientation} onMove={onMove} shapes={recognitionShapes}
           editMode={recognitionStage && !assessmentDone} onSquareSelect={recognitionStage && !assessmentDone ? selectSquare : undefined}
           onFreeMove={recognitionStage && !assessmentDone ? (from, to) => { selectSquare(from); selectSquare(to); } : undefined} />}
@@ -269,13 +292,13 @@ export default function DefenseTrainingView({
         </BoardTools>
       </div>
       <aside className="study-panel defense-study-panel">
-        <p className="side-to-play">{card.orientation} to play</p>
+        <p className="side-to-play">{showingPreview ? `Preview after ${proposedMoveLabel} · ${card.orientation === "white" ? "Black" : "White"} to play` : `${card.orientation} to play`}</p>
         <div className="card-meta"><span className="pill">Defensive decision</span>
           {card.queueAttemptState === "reinforcement" && <span className="pill">Reinforcement</span>}
         </div>
         <div className="opening-title"><p>Recognize, explain, respond</p><h2>What danger should your next move account for?</h2>
-          <span>{recognitionDone ? definitive ? "Review" : "Choose a move" : assessmentDone ? "Explain" : `Assess · step ${activeSelection + 1} of 4`}</span></div>
-        {!definitive && <p>{exercise?.prompt ?? "What danger should your next move account for?"}</p>}
+          <span>{recognitionDone ? definitive ? "Review" : defenseReady ? "Choose a move" : "Review the proposed move" : assessmentDone ? "Explain" : `Assess · step ${activeSelection + 1} of 4`}</span></div>
+        {showingPreview && <p className="defense-preview-label">Consider <strong>{proposedMoveLabel}</strong>. This board shows the position after that move.</p>}
         {recognitionStage && <div className="defense-recognition">
           {!assessmentDone ? <>
             <p className="defense-stage-prompt">{selectionPrompts[activeSelection]}</p>
@@ -303,11 +326,12 @@ export default function DefenseTrainingView({
           <span className="feedback-icon">{recognitionResult?.recognition_correct ? "✓" : "!"}</span><div>
             <strong>{recognitionResult?.recognition_correct ? "Danger assessed" : "Review the danger"}</strong>
             {recognitionResult?.feedback?.control_explanation ? <p>{recognitionResult.feedback.control_explanation}</p>
-              : recognitionResult?.feedback?.fork_geometry ? <p>The knight can reach {recognitionResult.feedback.fork_geometry.knight_to}, checking the king and attacking the {recognitionResult.feedback.fork_geometry.major.piece}. Follow the red arrows on the board.</p> : null}
+              : recognitionResult?.feedback?.fork_geometry ? <p>After {proposedMoveLabel}, {exercise?.fork_move_san ?? "the knight move"} checks the king on {recognitionResult.feedback.fork_geometry.king.square} and attacks the {recognitionResult.feedback.fork_geometry.major.piece} on {recognitionResult.feedback.fork_geometry.major.square}. The verified line continues {continuationNotation(card.startingFen, recognitionResult.feedback.refutation_uci.slice(0, 4))}.</p> : null}
           </div></div>}
-        {recognitionDone && !definitive && <p className="defense-stage-prompt">Now play a move that handles this danger. More than one sound defense may work.</p>}
+        {recognitionDone && !definitive && !defenseReady && <button type="button" onClick={() => setDefenseReady(true)}>Continue to defense</button>}
+        {recognitionDone && !definitive && defenseReady && <p className="defense-stage-prompt">Back at your original turn, play a move that avoids this danger. More than one sound defense may work.</p>}
         {loadError && <p role="alert">{loadError}</p>}
-        {saveError && <p role="alert">{saveError}</p>}
+        {saveError && <p role="alert">{saveError} {/reload|refresh/i.test(saveError) && <button type="button" onClick={() => void loadExercise()}>Reload exercise</button>}</p>}
         {grade?.status === "needs_analysis" && <p role="status">Analyzing this legal defense. Your study result has not been recorded yet.</p>}
         {grade?.status === "ambiguous" && <p role="status">This move is too close to the grading threshold. No review was recorded; choose another move.</p>}
         {grade?.status === "illegal" && <p role="alert">The submitted move is illegal. No review was recorded.</p>}
@@ -316,7 +340,7 @@ export default function DefenseTrainingView({
           <p role="status">{grade.feedback?.control_explanation
             ? grade.status === "correct" ? "Correct: the apparent danger has a concrete refutation." : "The apparent danger can be refuted; review the capture."
             : grade.status === "correct" ? "Threat recognized and sound defense." : grade.defense_status === "correct" ? "Sound defense, but the danger needs another look." : "This move loses value."}</p>
-          {grade.feedback?.fork_geometry && <p>The knight reaches {grade.feedback.fork_geometry.knight_to}, checking the king on {grade.feedback.fork_geometry.king.square} and attacking the {grade.feedback.fork_geometry.major.piece} on {grade.feedback.fork_geometry.major.square}.</p>}
+          {grade.feedback?.fork_geometry && <p>After the proposed {proposedMoveLabel}, the knight reaches {grade.feedback.fork_geometry.knight_to}, checking the king on {grade.feedback.fork_geometry.king.square} and attacking the {grade.feedback.fork_geometry.major.piece} on {grade.feedback.fork_geometry.major.square}.</p>}
           {grade.feedback?.knight_route.length ? <p>Knight route: {grade.feedback.knight_route.map((hop) => `${hop.from_square}–${hop.to_square}`).join(", ")}.</p> : null}
           {grade.feedback?.sound_moves.length ? <p>Sound defensive ideas: {grade.feedback.sound_moves.join(", ")}.</p> : null}
           {grade.feedback?.refutation_uci.length ? <p>Continuation: {continuationNotation(card.startingFen, grade.feedback.refutation_uci)}</p> : null}
