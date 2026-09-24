@@ -14,6 +14,8 @@ const requests = new Map<
 const WORKSPACE_CACHE_VERSION = 2;
 const WORKSPACE_CACHE_PREFIX = `tempo-workspace-cache-v${WORKSPACE_CACHE_VERSION}:`;
 const WORKSPACE_CACHE_LIMIT = 40;
+const WORKSPACE_CACHE_ENTRY_BYTES = 256 * 1024;
+const WORKSPACE_CACHE_TOTAL_BYTES = 2 * 1024 * 1024;
 
 type StoredWorkspaceValue = {
   version: number;
@@ -40,20 +42,30 @@ function readPersisted(url: string): StoredWorkspaceValue | undefined {
 function persist(url: string, data: unknown) {
   if (!canPersist(url)) return;
   try {
-    localStorage.setItem(
-      `${WORKSPACE_CACHE_PREFIX}${url}`,
-      JSON.stringify({ version: WORKSPACE_CACHE_VERSION, savedAt: Date.now(), data }),
-    );
-    const keys = Array.from({ length: localStorage.length }, (_, index) =>
-      localStorage.key(index),
-    ).filter((key): key is string => Boolean(key?.startsWith(WORKSPACE_CACHE_PREFIX)));
-    if (keys.length > WORKSPACE_CACHE_LIMIT) {
-      const oldest = keys
-        .map((key) => ({ key, value: JSON.parse(localStorage.getItem(key) ?? "{}") as Partial<StoredWorkspaceValue> }))
-        .sort((left, right) => (left.value.savedAt ?? 0) - (right.value.savedAt ?? 0));
-      for (const item of oldest.slice(0, keys.length - WORKSPACE_CACHE_LIMIT))
-        localStorage.removeItem(item.key);
+    const cacheKey = `${WORKSPACE_CACHE_PREFIX}${url}`;
+    const serialized = JSON.stringify({ version: WORKSPACE_CACHE_VERSION, savedAt: Date.now(), data });
+    const entryBytes = 2 * (cacheKey.length + serialized.length);
+    if (entryBytes > WORKSPACE_CACHE_ENTRY_BYTES) {
+      localStorage.removeItem(cacheKey);
+      return;
     }
+    const entries = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
+      .filter((key): key is string => Boolean(key?.startsWith(WORKSPACE_CACHE_PREFIX)) && key !== cacheKey)
+      .map((key) => {
+        const stored = localStorage.getItem(key) ?? "";
+        let savedAt = 0;
+        try { savedAt = Number((JSON.parse(stored) as Partial<StoredWorkspaceValue>).savedAt ?? 0); }
+        catch { /* Invalid entries are evicted first. */ }
+        return { key, savedAt, bytes: 2 * (key.length + stored.length) };
+      }).sort((left, right) => left.savedAt - right.savedAt);
+    let totalBytes = entryBytes + entries.reduce((total, entry) => total + entry.bytes, 0);
+    while (entries.length >= WORKSPACE_CACHE_LIMIT || totalBytes > WORKSPACE_CACHE_TOTAL_BYTES) {
+      const oldest = entries.shift();
+      if (!oldest) break;
+      localStorage.removeItem(oldest.key);
+      totalBytes -= oldest.bytes;
+    }
+    localStorage.setItem(cacheKey, serialized);
   } catch {
     // A full or disabled browser store must not prevent live reads.
   }

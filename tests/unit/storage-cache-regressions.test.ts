@@ -73,4 +73,18 @@ it("Pages service worker caches scoped static assets and bypasses API and extern
   fetchMock.mockRejectedValueOnce(new Error("offline"));
   const offlineAsset = dispatch("https://tempo.test/tempo/assets/app.js", "script");
   await expect(offlineAsset.respondWith.mock.calls[0][0]).resolves.toBeInstanceOf(Response);
+
+  fetchMock.mockRejectedValueOnce(new Error("offline"));
+  const uncachedAsset = dispatch("https://tempo.test/tempo/assets/missing.js", "script");
+  const missingResponse = await uncachedAsset.respondWith.mock.calls[0][0];
+  expect(missingResponse.type).toBe("error");
+
+  cached.set("https://tempo.test/tempo/index.html", new Response("shell"));
+  for (let index = 0; index < 125; index++) {
+    const nextAsset = dispatch(`https://tempo.test/tempo/assets/${index}.js`, "script");
+    await nextAsset.respondWith.mock.calls[0][0];
+    await Promise.all(nextAsset.waitUntil.mock.calls.map(([promise]) => promise));
+  }
+  expect(cached.size).toBeLessThanOrEqual(120);
+  expect(cached.has("https://tempo.test/tempo/index.html")).toBe(true);
 });
