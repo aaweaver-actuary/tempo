@@ -33,6 +33,11 @@ export type BackendQueueCard = {
   attempt_state?: QueueAttemptStateValue;
   attempt_failed?: boolean;
   gameplay_priority_reason?: string | null;
+  admission_kind?: string | null;
+  admission_source?: string | null;
+  encounter_badges?: Array<"Seen recently" | "Frequent">;
+  encounter_count_30d?: number;
+  last_encountered_at?: string | null;
   first_correct_at?: string | null;
   recent_attempts_json?: string;
   start_fen: string;

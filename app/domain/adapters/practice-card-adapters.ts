@@ -42,6 +42,9 @@ export function mapQueueCardToPracticeCard(
     queueAttemptState: card.attempt_state,
     attemptFailed: Boolean(card.attempt_failed),
     priorityReason: card.gameplay_priority_reason ?? undefined,
+    encounterBadges: card.encounter_badges,
+    encounterCount30d: card.encounter_count_30d,
+    lastEncounteredAt: card.last_encountered_at ?? undefined,
     firstCleanPassAt: card.first_correct_at ?? undefined,
     suggestShorterPrefix:
       card.kind === "prefix" &&

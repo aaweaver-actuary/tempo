@@ -41,7 +41,7 @@ export class MaiaCancelledError extends Error {
 
 async function loadStockfish() {
   if (!stockfishWorker)
-    stockfishWorker = new Worker(`${assetUrl("stockfish-worker.js")}?v=3`, {
+    stockfishWorker = new Worker(`${assetUrl("stockfish-worker.js")}?v=4`, {
       type: "module",
     });
   return stockfishWorker;

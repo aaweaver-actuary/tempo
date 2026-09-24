@@ -43,6 +43,9 @@ export type PracticeCard = {
   queueAttemptState?: QueueAttemptStateValue;
   attemptFailed?: boolean;
   priorityReason?: string;
+  encounterBadges?: Array<"Seen recently" | "Frequent">;
+  encounterCount30d?: number;
+  lastEncounteredAt?: string;
   firstCleanPassAt?: string;
   suggestShorterPrefix?: boolean;
   orientation?: PieceColor;
