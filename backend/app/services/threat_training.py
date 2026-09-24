@@ -3,18 +3,23 @@
 from __future__ import annotations
 
 from dataclasses import asdict
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 import hashlib
 import json
 
 import chess
 
 from ..database import connection, read_connection
+from .activity_gate import activity_gate
+from .durable_tasks import enqueue_task
 from .review_service import (
     apply_scheduling_review, ensure_card_queued_after, preserve_daily_queue_order,
 )
 from .threat_grading import DefenseExercise, grade_defense_move
-from .threat_pipeline import _anchor_from_json, _seed_from_json, report_from_json
+from .threat_pipeline import (
+    _anchor_from_json, _request_from_json, _seed_from_json,
+    report_from_json, validate_analysis_report,
+)
 from .threat_validation import AnalysisReport
 from .threat_models import ThreatPolicy
 
@@ -55,61 +60,252 @@ def dismiss_defense_candidate(candidate_id: str) -> None:
         )
 
 
-def approve_defense_candidate(candidate_id: str) -> str:
-    with connection() as database:
-        candidate = _candidate(database, candidate_id)
-        _require_current(candidate)
-        if candidate["validation_state"] != "engine_supported":
-            raise ValueError("Only an engine-supported candidate can enter training")
-        if candidate["dismissed_at"]:
-            raise ValueError("Dismissed candidate must be revisited after new evidence")
-        if candidate["card_id"]:
-            database.execute(
-                "UPDATE cards SET pending_validation=0,revision=? WHERE id=?",
-                (candidate["exercise_revision"], candidate["card_id"]),
-            )
-            database.execute(
-                """UPDATE threat_training_candidates SET approved_at=COALESCE(approved_at,?),
-                   updated_at=? WHERE id=?""",
-                (_now(), _now(), candidate_id),
-            )
-            return candidate["card_id"]
-        evidence = json.loads(candidate["evidence_json"])
-        anchor = _anchor_from_json(evidence["anchor"])
-        board = chess.Board(anchor.position.start_fen)
-        for move_uci in anchor.position.prefix_uci:
-            board.push_uci(move_uci)
-        if ("white" if board.turn else "black") != anchor.position.learner_color:
-            raise ValueError("Candidate is not a learner-turn position")
-        card_id = hashlib.sha256(f"defense\0{candidate_id}".encode()).hexdigest()
-        today = date.today().isoformat()
+def _approve_in_transaction(database, candidate, *, reports_verified: bool = False,
+                            prepared_position_fen: str | None = None,
+                            admission_mode: str = "manual") -> str:
+    _require_current(candidate)
+    candidate_id = candidate["id"]
+    if candidate["validation_state"] not in {"engine_supported", "validated_control"}:
+        raise ValueError("Only a validated candidate can enter training")
+    if not reports_verified:
+        _exercise_from_rows(database, candidate)
+    if candidate["dismissed_at"]:
+        raise ValueError("Dismissed candidate must be revisited after new evidence")
+    if candidate["card_id"]:
         database.execute(
-            """INSERT OR IGNORE INTO repertoires(id,name,source_name,created_at)
-               VALUES(?,?,?,?)""",
-            (DEFENSE_REPERTOIRE_ID, "Defensive tactics", "Your analyzed games", today),
-        )
-        database.execute(
-            """INSERT OR IGNORE INTO cards(
-                 id,repertoire_id,kind,start_fen,moves_json,state,due_date,
-                 content_type,scheduling_mode,source_ref,source_fen,trained_color,
-                 introduced_at,revision)
-               VALUES(?,?, 'checkpoint',?,'[]','learning',?,'defense','normal',?,?,?,?,?)""",
-            (card_id, DEFENSE_REPERTOIRE_ID, board.fen(), today,
-             candidate_id, anchor.position.start_fen, anchor.position.learner_color,
-             today, candidate["exercise_revision"]),
+            "UPDATE cards SET pending_validation=0,revision=? WHERE id=?",
+            (candidate["exercise_revision"], candidate["card_id"]),
         )
         database.execute(
             """UPDATE threat_training_candidates SET approved_at=COALESCE(approved_at,?),
-                  card_id=?,updated_at=? WHERE id=?""",
-            (_now(), card_id, _now(), candidate_id),
+               admission_mode=COALESCE(admission_mode,?),paused_at=NULL,
+               updated_at=? WHERE id=?""",
+            (_now(), admission_mode, _now(), candidate_id),
         )
-        return card_id
+        return candidate["card_id"]
+    evidence = json.loads(candidate["evidence_json"])
+    anchor = _anchor_from_json(evidence["anchor"])
+    board = chess.Board(prepared_position_fen or anchor.position.start_fen)
+    if prepared_position_fen is None:
+        for move_uci in anchor.position.prefix_uci:
+            board.push_uci(move_uci)
+    if ("white" if board.turn else "black") != anchor.position.learner_color:
+        raise ValueError("Candidate is not a learner-turn position")
+    card_id = hashlib.sha256(f"defense\0{candidate_id}".encode()).hexdigest()
+    today = date.today().isoformat()
+    database.execute(
+        """INSERT OR IGNORE INTO repertoires(id,name,source_name,created_at)
+           VALUES(?,?,?,?)""",
+        (DEFENSE_REPERTOIRE_ID, "Defensive tactics", "Your analyzed games", today),
+    )
+    database.execute(
+        """INSERT OR IGNORE INTO cards(
+             id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+             content_type,scheduling_mode,source_ref,source_fen,trained_color,
+             introduced_at,revision)
+           VALUES(?,?, 'checkpoint',?,'[]','learning',?,'defense','normal',?,?,?,?,?)""",
+        (card_id, DEFENSE_REPERTOIRE_ID, board.fen(), today,
+         candidate_id, anchor.position.start_fen, anchor.position.learner_color,
+         today, candidate["exercise_revision"]),
+    )
+    database.execute(
+        """UPDATE threat_training_candidates SET approved_at=COALESCE(approved_at,?),
+              card_id=?,admission_mode=COALESCE(admission_mode,?),paused_at=NULL,
+              updated_at=? WHERE id=?""",
+        (_now(), card_id, admission_mode, _now(), candidate_id),
+    )
+    return card_id
+
+
+def approve_defense_candidate(candidate_id: str) -> str:
+    with connection() as database:
+        return _approve_in_transaction(database, _candidate(database, candidate_id))
+
+
+def pause_defense_candidate(candidate_id: str, paused: bool) -> None:
+    with connection() as database:
+        candidate = _candidate(database, candidate_id)
+        _require_current(candidate)
+        if candidate["approved_at"]:
+            raise ValueError("A card already in training cannot be paused here")
+        database.execute(
+            "UPDATE threat_training_candidates SET paused_at=?,updated_at=? WHERE id=?",
+            (_now() if paused else None, _now(), candidate_id),
+        )
+
+
+def train_defense_candidate_now(candidate_id: str) -> str:
+    with connection() as database:
+        candidate = _candidate(database, candidate_id)
+        _require_current(candidate)
+        card_id = _approve_in_transaction(database, candidate, admission_mode="explicit")
+        ensure_card_queued_after(database, card_id, after_cards=0,
+                                 attempt_state="guided", priority_reason="Discovery · defensive recognition")
+        database.execute(
+            """UPDATE daily_queue SET admission_kind='explicit',admission_source=?
+               WHERE queue_date=? AND card_id=? AND status='queued'""",
+            (f"defense:{candidate_id}", date.today().isoformat(), card_id),
+        )
+    return card_id
+
+
+def enqueue_defense_admission(*, background: bool) -> None:
+    enqueue_task(
+        "defensive_admission", date.today().isoformat(),
+        {"queue_date": date.today().isoformat(), "phase": "threat",
+         "cursor": "", "control_exhausted": False},
+        priority=150, foreground=not background,
+    )
+
+
+def execute_defense_admission_slice(task: dict) -> bool:
+    """Consider one validated candidate, then yield to foreground work."""
+    day = task["payload"]["queue_date"]
+    if day != date.today().isoformat():
+        return False
+    previous_phase = task["payload"].get("phase", "threat")
+    phase = previous_phase
+    cursor = int(task["payload"].get("cursor", 0)) if str(task["payload"].get("cursor", 0)).isdigit() else 0
+    control_exhausted = bool(task["payload"].get("control_exhausted", False))
+    activity_gate.wait_for_foreground()
+    with read_connection() as database:
+        limit = database.execute(
+            "SELECT defense_new_cards_per_day FROM settings WHERE id=1",
+        ).fetchone()[0]
+        admitted_today = database.execute(
+            """SELECT COUNT(*) FROM threat_training_candidates admitted
+               JOIN cards card ON card.id=admitted.card_id
+               WHERE admitted.admission_mode='automatic' AND card.introduced_at=?""",
+            (day,),
+        ).fetchone()[0]
+        if admitted_today >= limit:
+            return False
+        admitted_controls_today = database.execute(
+            """SELECT COUNT(*) FROM threat_training_candidates admitted
+               JOIN cards card ON card.id=admitted.card_id
+               WHERE admitted.admission_mode='automatic' AND card.introduced_at=?
+                 AND admitted.validation_state='validated_control'""",
+            (day,),
+        ).fetchone()[0]
+        control_slot = int.from_bytes(
+            hashlib.sha256(day.encode()).digest()[:2], "big",
+        ) % min(5, limit)
+        if not admitted_controls_today and not control_exhausted and admitted_today >= control_slot:
+            phase = "control"
+        else:
+            phase = "threat"
+        if phase != previous_phase:
+            cursor = 0
+        selected_state = "validated_control" if phase == "control" else "engine_supported"
+        recent_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        selection_sql = """SELECT c.*,game.analysis_version current_analysis_version,
+                      COALESCE((SELECT COUNT(DISTINCT recurring.game_id)
+                          FROM game_position_occurrences anchor
+                          JOIN game_position_occurrences recurring ON recurring.fen_key=anchor.fen_key
+                          JOIN imported_games recent_game ON recent_game.id=recurring.game_id
+                          WHERE anchor.game_id=c.game_id AND anchor.ply=c.player_ply
+                            AND recent_game.played_at>=? AND recent_game.adaptive_excluded=0),0)
+                        recent_position_games
+               FROM threat_training_candidates c JOIN imported_games game ON game.id=c.game_id
+               WHERE c.validation_state=?
+                 AND c.approved_at IS NULL AND c.dismissed_at IS NULL AND c.paused_at IS NULL
+                 AND c.superseded_at IS NULL AND c.analysis_version=game.analysis_version
+                 AND NOT EXISTS(SELECT 1 FROM threat_training_candidates earlier
+                     WHERE earlier.incident_id=c.incident_id AND earlier.player_ply<c.player_ply
+                       AND earlier.superseded_at IS NULL AND earlier.dismissed_at IS NULL
+                       AND earlier.validation_state IN ('needs_analysis','engine_supported','validated_control'))
+               ORDER BY recent_position_games DESC,game.played_at DESC,c.id LIMIT 1 OFFSET ?"""
+        row = database.execute(selection_sql, (recent_cutoff, selected_state, cursor)).fetchone()
+        if row is None and phase == "control":
+            phase, cursor = "threat", 0
+            control_exhausted = True
+            row = database.execute(selection_sql, (recent_cutoff, "engine_supported", cursor)).fetchone()
+        candidate = dict(row) if row else None
+        report_rows = [dict(report_row) for report_row in database.execute(
+            """SELECT relation.role,request.request_json,request.report_json
+               FROM threat_candidate_requests relation
+               JOIN threat_analysis_requests request ON request.id=relation.request_id
+               WHERE relation.candidate_id=? AND relation.role IN ('best','historical')""",
+            (candidate["id"],),
+        )] if candidate else []
+    if not candidate:
+        return False
+    evidence = json.loads(candidate["evidence_json"])
+    anchor = _anchor_from_json(evidence["anchor"])
+    board = chess.Board(anchor.position.start_fen)
+    for move_uci in anchor.position.prefix_uci:
+        board.push_uci(move_uci)
+    reports_verified = False
+    try:
+        roles = set()
+        for report_row in report_rows:
+            request = _request_from_json(json.loads(report_row["request_json"]))
+            report = report_from_json(json.loads(report_row["report_json"]))
+            validate_analysis_report(request, report)
+            roles.add(report_row["role"])
+        reports_verified = {"best", "historical"}.issubset(roles)
+    except (TypeError, KeyError, ValueError):
+        reports_verified = False
+    candidate_position = " ".join(board.fen().split()[:4])
+    introduced = False
+    activity_gate.wait_for_foreground()
+    with connection(background=True) as database:
+        lease = database.execute(
+            "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
+        ).fetchone()
+        if not lease or lease["generation"] != task["generation"] or lease["lease_token"] != task["lease_token"]:
+            return True
+        limit = database.execute(
+            "SELECT defense_new_cards_per_day FROM settings WHERE id=1"
+        ).fetchone()[0]
+        admitted_today = database.execute(
+            """SELECT COUNT(*) FROM threat_training_candidates admitted
+               JOIN cards card ON card.id=admitted.card_id
+               WHERE admitted.admission_mode='automatic' AND card.introduced_at=?""",
+            (day,),
+        ).fetchone()[0]
+        same_incident = database.execute(
+            """SELECT 1 FROM threat_training_candidates
+               WHERE incident_id=? AND approved_at IS NOT NULL LIMIT 1""",
+            (candidate["incident_id"],),
+        ).fetchone()
+        same_position = database.execute(
+            """SELECT 1 FROM cards WHERE content_type='defense' AND archived=0
+               AND substr(start_fen,1,length(?))=? LIMIT 1""",
+            (candidate_position, candidate_position),
+        ).fetchone()
+        refreshed = _candidate(database, candidate["id"])
+        if (reports_verified and (candidate["card_id"] or not same_incident and not same_position)
+                and refreshed
+                and refreshed["validation_state"] in {"engine_supported", "validated_control"}
+                and not refreshed["approved_at"]
+                and not refreshed["paused_at"]
+                and (candidate["card_id"] or admitted_today < limit)):
+            _approve_in_transaction(database, refreshed, reports_verified=True,
+                                    prepared_position_fen=board.fen(),
+                                    admission_mode="automatic")
+            introduced = True
+        database.execute(
+            """UPDATE background_tasks SET generation=generation+1,state='queued',phase='queued',
+                 payload_json=?,attempt_count=0,next_attempt_at=?,lease_token=NULL,
+                 lease_expires_at=NULL,updated_at=?
+               WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
+            (json.dumps({"queue_date": day,
+                         "phase": "threat" if introduced and phase == "control" else phase,
+                         "cursor": 0 if introduced else cursor + 1,
+                         "control_exhausted": control_exhausted}),
+             _now(), _now(),
+             task["id"], task["generation"], task["lease_token"]),
+        )
+    if introduced:
+        enqueue_task("daily_queue", "current", {"queue_date": day}, priority=10, foreground=False)
+    return True
 
 
 def _exercise_from_rows(database, candidate) -> DefenseExercise:
     evidence = json.loads(candidate["evidence_json"])
     reports = [dict(row) for row in database.execute(
-        """SELECT relation.role,request.report_json FROM threat_candidate_requests relation
+        """SELECT relation.role,request.request_json,request.report_json FROM threat_candidate_requests relation
            JOIN threat_analysis_requests request ON request.id=relation.request_id
            WHERE relation.candidate_id=? AND request.state='complete'""",
         (candidate["id"],),
@@ -117,9 +313,10 @@ def _exercise_from_rows(database, candidate) -> DefenseExercise:
     by_role: dict[str, list[AnalysisReport]] = {}
     for row in reports:
         if row["report_json"]:
-            by_role.setdefault(row["role"], []).append(
-                report_from_json(json.loads(row["report_json"]))
-            )
+            request = _request_from_json(json.loads(row["request_json"]))
+            report = report_from_json(json.loads(row["report_json"]))
+            validate_analysis_report(request, report)
+            by_role.setdefault(row["role"], []).append(report)
     if not by_role.get("best") or not by_role.get("historical"):
         raise ValueError("Required validation reports are unavailable")
     validation = json.loads(candidate["validation_json"])
@@ -150,13 +347,192 @@ def read_defense_exercise(candidate_id: str) -> dict:
         "start_fen": exercise.anchor.position.start_fen,
         "prefix_uci": exercise.anchor.position.prefix_uci,
         "learner_color": exercise.anchor.position.learner_color,
-        "prompt": "Choose your move.",
+        "prompt": "What danger should your next move account for?",
+        "rubric_version": 2,
+        "recognition_required": True,
     }
+
+
+def _complete_defense_in_transaction(
+    database, candidate, *, attempt_id: str, exercise_revision: int,
+    queue_entry_id: int, move_uci: str, response: dict,
+    light_first_interval_days: int,
+) -> dict:
+    """Record one real review and one completed queue attempt atomically."""
+    previous = database.execute(
+        "SELECT * FROM defense_attempts WHERE attempt_id=?", (attempt_id,),
+    ).fetchone()
+    if previous:
+        if (previous["candidate_id"] != candidate["id"] or previous["move_uci"] != move_uci
+                or previous["queue_entry_id"] != queue_entry_id):
+            raise ValueError("Attempt ID already belongs to a different submission")
+        return {**json.loads(previous["grade_json"]), "idempotent": True}
+    _require_current(candidate)
+    if candidate["exercise_revision"] != exercise_revision:
+        raise ValueError("Exercise revision changed; reload before trying again")
+    entry = database.execute(
+        """SELECT * FROM daily_queue WHERE id=? AND card_id=? AND status='queued'""",
+        (queue_entry_id, candidate["card_id"]),
+    ).fetchone()
+    if not entry:
+        raise ValueError("This defensive exercise is no longer the active queue entry")
+    now = datetime.now(timezone.utc)
+    today = date.today()
+    correct = response["status"] == "correct"
+    scheduling = apply_scheduling_review(
+        database, candidate["card_id"], "correct" if correct else "again",
+        guided=False, source_kind="study", source_ref=f"defense:{attempt_id}",
+        light_first_interval_days=light_first_interval_days,
+        reviewed_at=now, review_day=today,
+    )
+    database.execute(
+        """UPDATE daily_queue SET status='complete',attempt_state=?,review_result_json=?
+           WHERE id=?""",
+        ("clean" if correct else "again", json.dumps(scheduling), queue_entry_id),
+    )
+    if scheduling["requeue_today"]:
+        if scheduling["requeue_after_cards"] is None:
+            next_cycle = database.execute(
+                "SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue WHERE queue_date=? AND card_id=?",
+                (today.isoformat(), candidate["card_id"]),
+            ).fetchone()[0]
+            final_position = database.execute(
+                "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=?",
+                (today.isoformat(),),
+            ).fetchone()[0]
+            database.execute(
+                """INSERT INTO daily_queue(queue_date,card_id,cycle,position,attempt_state,
+                     card_bucket,admission_kind) VALUES(?,?,?,?,?,'defense','review')""",
+                (today.isoformat(), candidate["card_id"], next_cycle, final_position,
+                 "reinforcement"),
+            )
+            preserve_daily_queue_order(database, today.isoformat())
+        else:
+            ensure_card_queued_after(
+                database, candidate["card_id"], scheduling["requeue_after_cards"],
+                "reinforcement" if correct else "again",
+            )
+    database.execute(
+        """INSERT INTO defense_attempts(attempt_id,candidate_id,card_id,
+              queue_entry_id,exercise_revision,move_uci,grade_json,reviewed_at)
+           VALUES(?,?,?,?,?,?,?,?)""",
+        (attempt_id, candidate["id"], candidate["card_id"], queue_entry_id,
+         exercise_revision, move_uci, json.dumps(response), now.isoformat()),
+    )
+    return {**response, "idempotent": False}
+
+
+def submit_defense_recognition(candidate_id: str, request) -> dict:
+    """Persist a neutral, staged recognition answer without revealing the solution."""
+    answer = request.model_dump()
+    serialized = json.dumps(answer, sort_keys=True)
+    with read_connection() as database:
+        prior = database.execute(
+            """SELECT candidate_id,queue_entry_id,exercise_revision,answer_json
+               FROM defense_recognition_submissions WHERE attempt_id=?""",
+            (request.attempt_id,),
+        ).fetchone()
+        if prior:
+            if (prior["candidate_id"] != candidate_id or prior["queue_entry_id"] != request.queue_entry_id
+                    or prior["exercise_revision"] != request.exercise_revision
+                    or prior["answer_json"] != serialized):
+                raise ValueError("Recognition attempt ID belongs to a different answer")
+            completed = database.execute(
+                "SELECT grade_json FROM defense_attempts WHERE attempt_id=?", (request.attempt_id,),
+            ).fetchone()
+            if completed:
+                return {**json.loads(completed["grade_json"]), "idempotent": True}
+            return {"status": "ready_for_move", "recognition_attempt_id": request.attempt_id,
+                    "idempotent": True}
+        candidate = _candidate(database, candidate_id)
+        _require_current(candidate)
+        if not candidate["approved_at"] or candidate["exercise_revision"] != request.exercise_revision:
+            raise ValueError("Exercise revision changed; reload before answering")
+        queue_entry = database.execute(
+            "SELECT 1 FROM daily_queue WHERE id=? AND card_id=? AND status='queued'",
+            (request.queue_entry_id, candidate["card_id"]),
+        ).fetchone()
+        if not queue_entry:
+            raise ValueError("This defensive exercise is no longer active")
+        evidence = json.loads(candidate["evidence_json"])
+        route = evidence.get("knight_route", [])
+        anchor_ply = int(json.loads(candidate["evidence_json"])["anchor"]["player_ply"])
+        first_future_hop = next((hop for hop in route if int(hop["ply"]) >= anchor_ply), None)
+        geometry = evidence["seed"]["geometry"]
+        dangerous_square = first_future_hop["from_square"] if first_future_hop else geometry["knight_from"]
+        control = candidate["validation_state"] == "validated_control"
+        correct = (request.no_concrete_threat and request.consequence == "none" and not request.hinted
+                   if control else
+                   not request.no_concrete_threat and not request.hinted
+                   and request.dangerous_piece_square == dangerous_square
+                   and request.destination_square == geometry["knight_to"]
+                   and request.king_square == geometry["king"]["square"]
+                   and request.major_square == geometry["major"]["square"]
+                   and request.consequence == "checking_fork")
+        control_refutation = json.loads(candidate["validation_json"]).get("refutation_uci", []) if control else []
+        source_game = database.execute(
+            "SELECT game_url FROM imported_games WHERE id=?", (candidate["game_id"],),
+        ).fetchone()
+    with connection() as database:
+        prior = database.execute(
+            """SELECT candidate_id,queue_entry_id,exercise_revision,answer_json
+               FROM defense_recognition_submissions WHERE attempt_id=?""",
+            (request.attempt_id,),
+        ).fetchone()
+        if prior:
+            if (prior["candidate_id"] != candidate_id or prior["queue_entry_id"] != request.queue_entry_id
+                    or prior["exercise_revision"] != request.exercise_revision
+                    or prior["answer_json"] != serialized):
+                raise ValueError("Recognition attempt ID belongs to a different answer")
+            completed = database.execute(
+                "SELECT grade_json FROM defense_attempts WHERE attempt_id=?", (request.attempt_id,),
+            ).fetchone()
+            return ({**json.loads(completed["grade_json"]), "idempotent": True} if completed
+                    else {"status": "ready_for_move", "recognition_attempt_id": request.attempt_id,
+                          "idempotent": True})
+        current = _candidate(database, candidate_id)
+        _require_current(current)
+        if current["exercise_revision"] != request.exercise_revision:
+            raise ValueError("Exercise revision changed; reload before answering")
+        if current["validation_state"] != candidate["validation_state"]:
+            raise ValueError("Exercise evidence changed; reload before answering")
+        database.execute(
+            """INSERT INTO defense_recognition_submissions(
+                 attempt_id,candidate_id,queue_entry_id,exercise_revision,answer_json,
+                 recognition_correct,created_at) VALUES(?,?,?,?,?,?,?)""",
+            (request.attempt_id, candidate_id, request.queue_entry_id,
+             request.exercise_revision, serialized, int(correct), _now()),
+        )
+        if control:
+            response = {
+                "status": "correct" if correct else "incorrect",
+                "diagnostic": "The apparent checking fork can be captured legally",
+                "recognition_correct": correct,
+                "defense_status": "not_applicable",
+                "feedback": {"knight_route": evidence.get("knight_route", []),
+                             "fork_geometry": geometry, "sound_moves": [],
+                             "refutation_uci": control_refutation,
+                             "control_explanation": "The forking knight is capturable before it wins material.",
+                             "source_game_id": candidate["game_id"],
+                             "source_game_url": source_game["game_url"] if source_game else None},
+            }
+            light_interval = database.execute(
+                "SELECT light_first_interval_days FROM settings WHERE id=1",
+            ).fetchone()[0]
+            return _complete_defense_in_transaction(
+                database, current, attempt_id=request.attempt_id,
+                exercise_revision=request.exercise_revision,
+                queue_entry_id=request.queue_entry_id, move_uci="", response=response,
+                light_first_interval_days=light_interval,
+            )
+    return {"status": "ready_for_move", "recognition_attempt_id": request.attempt_id,
+            "idempotent": False}
 
 
 def submit_defense_attempt(
     candidate_id: str, *, attempt_id: str, exercise_revision: int,
     queue_entry_id: int, move_uci: str, light_first_interval_days: int,
+    recognition_attempt_id: str | None = None,
 ) -> dict:
     with read_connection() as database:
         prior = database.execute(
@@ -171,9 +547,23 @@ def submit_defense_attempt(
         _require_current(candidate)
         if not candidate["approved_at"] or not candidate["card_id"]:
             raise ValueError("Candidate is not approved for training")
+        if candidate["validation_state"] == "validated_control":
+            raise ValueError("Control exercises finish with recognition; no defense move is required")
         if candidate["exercise_revision"] != exercise_revision:
             raise ValueError("Exercise revision changed; reload before trying again")
+        recognition = None
+        if recognition_attempt_id:
+            recognition = database.execute(
+                """SELECT * FROM defense_recognition_submissions WHERE attempt_id=?
+                   AND candidate_id=? AND queue_entry_id=? AND exercise_revision=?""",
+                (recognition_attempt_id, candidate_id, queue_entry_id, exercise_revision),
+            ).fetchone()
+            if not recognition:
+                raise ValueError("Recognition answer is missing or stale")
         exercise = _exercise_from_rows(database, candidate)
+        source_game = database.execute(
+            "SELECT game_url FROM imported_games WHERE id=?", (candidate["game_id"],),
+        ).fetchone()
     grade = grade_defense_move(exercise, move_uci)
     if grade.status == "needs_analysis" and grade.analysis_request:
         request = grade.analysis_request
@@ -193,9 +583,13 @@ def submit_defense_attempt(
             )
         return {"status": "needs_analysis", "diagnostic": grade.diagnostic,
                 "analysis_request_id": request.request_id}
-    response = {"status": grade.status, "diagnostic": grade.diagnostic,
+    recognition_correct = bool(recognition["recognition_correct"]) if recognition else None
+    completed_status = "incorrect" if recognition_correct is False and grade.status == "correct" else grade.status
+    response = {"status": completed_status, "diagnostic": grade.diagnostic,
                 "loss_cp": grade.loss_cp,
-                "allows_target_fork": grade.allows_target_fork}
+                "allows_target_fork": grade.allows_target_fork,
+                "recognition_correct": recognition_correct,
+                "defense_status": grade.status}
     if grade.status not in {"correct", "incorrect"}:
         return response
     evidence = json.loads(candidate["evidence_json"])
@@ -206,67 +600,14 @@ def submit_defense_attempt(
                          or grade.status == "correct" else None,
         "sound_moves": [line.root_move_uci for line in exercise.best_report.lines],
         "refutation_uci": list(exercise.refutation_uci) if grade.allows_target_fork else [],
+        "source_game_id": candidate["game_id"],
+        "source_game_url": source_game["game_url"] if source_game else None,
     }
-    now = datetime.now(timezone.utc)
-    today = date.today()
     with connection() as database:
-        existing = database.execute(
-            "SELECT * FROM defense_attempts WHERE attempt_id=?", (attempt_id,)
-        ).fetchone()
-        if existing:
-            if existing["candidate_id"] != candidate_id or existing["move_uci"] != move_uci:
-                raise ValueError("Attempt ID already belongs to a different submission")
-            return {**json.loads(existing["grade_json"]), "idempotent": True}
         current = _candidate(database, candidate_id)
-        _require_current(current)
-        if current["exercise_revision"] != exercise_revision:
-            raise ValueError("Exercise revision changed; reload before trying again")
-        entry = database.execute(
-            """SELECT * FROM daily_queue WHERE id=? AND card_id=? AND status='queued'""",
-            (queue_entry_id, current["card_id"]),
-        ).fetchone()
-        if not entry:
-            raise ValueError("This defensive exercise is no longer the active queue entry")
-        scheduling = apply_scheduling_review(
-            database, current["card_id"],
-            "correct" if grade.status == "correct" else "again",
-            guided=False, source_kind="study", source_ref=f"defense:{attempt_id}",
+        return _complete_defense_in_transaction(
+            database, current, attempt_id=attempt_id,
+            exercise_revision=exercise_revision, queue_entry_id=queue_entry_id,
+            move_uci=move_uci, response=response,
             light_first_interval_days=light_first_interval_days,
-            reviewed_at=now, review_day=today,
         )
-        database.execute(
-            """UPDATE daily_queue SET status='complete',attempt_state=?,review_result_json=?
-               WHERE id=?""",
-            ("clean" if grade.status == "correct" else "again",
-             json.dumps(scheduling), queue_entry_id),
-        )
-        if scheduling["requeue_today"]:
-            if scheduling["requeue_after_cards"] is None:
-                next_cycle = database.execute(
-                    "SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue WHERE queue_date=? AND card_id=?",
-                    (today.isoformat(), current["card_id"]),
-                ).fetchone()[0]
-                final_position = database.execute(
-                    "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=?",
-                    (today.isoformat(),),
-                ).fetchone()[0]
-                database.execute(
-                    """INSERT INTO daily_queue(queue_date,card_id,cycle,position,attempt_state,
-                         card_bucket,admission_kind) VALUES(?,?,?,?,?,'defense','review')""",
-                    (today.isoformat(), current["card_id"], next_cycle, final_position,
-                     "reinforcement"),
-                )
-                preserve_daily_queue_order(database, today.isoformat())
-            else:
-                ensure_card_queued_after(
-                    database, current["card_id"], scheduling["requeue_after_cards"],
-                    "reinforcement" if grade.status == "correct" else "again",
-                )
-        database.execute(
-            """INSERT INTO defense_attempts(attempt_id,candidate_id,card_id,
-                  queue_entry_id,exercise_revision,move_uci,grade_json,reviewed_at)
-               VALUES(?,?,?,?,?,?,?,?)""",
-            (attempt_id, candidate_id, current["card_id"], queue_entry_id,
-             exercise_revision, move_uci, json.dumps(response), now.isoformat()),
-        )
-    return {**response, "idempotent": False}

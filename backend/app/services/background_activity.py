@@ -18,6 +18,7 @@ SOURCES = {
     "statistics": ("daily_statistics_jobs", "local_day"),
     "priority": ("repertoire_priority_jobs", "repertoire_id"),
     "game_analysis": ("game_analysis_jobs", "game_id"),
+    "threat_analysis": ("threat_analysis_requests", "id"),
 }
 
 
@@ -96,7 +97,7 @@ def set_control(source: str, work_id: str, action: str) -> bool:
         return False
     table, id_column = SOURCES[source]
     with connection() as database:
-        state_column = "state" if source == "durable" else "status"
+        state_column = "state" if source in {"durable", "threat_analysis"} else "status"
         work_row = database.execute(
             f"SELECT {state_column} FROM {table} WHERE {id_column}=?", (work_id,)
         ).fetchone()
@@ -140,6 +141,13 @@ def set_control(source: str, work_id: str, action: str) -> bool:
                    WHERE run_id=? AND maia_status='leased'""",
                 (now, work_id),
             )
+        if source == "threat_analysis" and action == "pause":
+            database.execute(
+                """UPDATE threat_analysis_requests SET state='queued',lease_id=NULL,
+                     lease_expires_at=NULL,updated_at=?
+                   WHERE id=? AND state='leased'""",
+                (now, work_id),
+            )
     return True
 
 
@@ -163,6 +171,15 @@ def list_activity(*, offset: int = 0, limit: int = 50) -> dict:
     with read_connection() as database:
         for row in database.execute("SELECT * FROM background_tasks WHERE state!='complete' OR updated_at>=?", (cutoff,)):
             items.append(_base_item("durable", row["id"], row["kind"].replace("_", " ").title(), row["state"], row["updated_at"], str(row["generation"]), row["phase"], error=row["last_error"]))
+        for row in database.execute(
+            """SELECT id,state,attempts,last_error,updated_at FROM threat_analysis_requests
+               WHERE state!='complete' OR updated_at>=?""", (cutoff,),
+        ):
+            state = ("running" if row["state"] == "leased" else
+                     "retrying" if row["state"] == "queued" and row["attempts"] else row["state"])
+            items.append(_base_item("threat_analysis", row["id"], "Defensive engine search",
+                                    state, row["updated_at"], str(row["attempts"]),
+                                    error=row["last_error"]))
         for row in database.execute("SELECT * FROM game_sync_jobs WHERE status!='complete' OR updated_at>=?", (cutoff,)):
             items.append(_base_item("sync", row["id"], "Game sync", row["status"], row["updated_at"], row["id"], error=row["error"]))
         for row in database.execute("""SELECT j.*,g.provider,g.played_at FROM game_derivation_jobs j

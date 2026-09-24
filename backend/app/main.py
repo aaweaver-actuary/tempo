@@ -62,6 +62,8 @@ from .models import (
     ThreatAnalysisSubmission,
     ThreatAnalysisFailureRequest,
     DefenseAttemptRequest,
+    DefenseRecognitionRequest,
+    DiscoveryAcceptanceRequest,
 )
 from .services.analysis import AnalysisCapabilities
 from .services.activity_gate import activity_gate
@@ -78,11 +80,15 @@ from .services.game_analysis import classify_swings
 from .services.game_findings import motif_recommendations
 from .services.threat_pipeline import (
     claim_analysis_request, enqueue_candidate_validation, enqueue_threat_scan,
-    execute_threat_scan_slice, execute_threat_validation, save_analysis_report,
+    enqueue_threat_backfill, execute_threat_backfill_slice,
+    execute_threat_report_audit, execute_threat_scan_slice,
+    execute_threat_validation, save_analysis_report,
 )
 from .services.threat_training import (
-    approve_defense_candidate, dismiss_defense_candidate, read_defense_exercise,
-    submit_defense_attempt,
+    approve_defense_candidate, dismiss_defense_candidate, pause_defense_candidate,
+    train_defense_candidate_now, read_defense_exercise,
+    submit_defense_attempt, submit_defense_recognition, execute_defense_admission_slice,
+    enqueue_defense_admission,
 )
 from .services.tactical_opportunities import tactical_statistics
 from .services.statistics import enqueue_daily_snapshot, statistics_breakdown, statistics_overview
@@ -133,8 +139,14 @@ from .services.opening_graph import (
     execute_opening_graph_rebuild,
 )
 from .services.repertoire_opportunities import (
-    dismiss_opportunity, enqueue_opportunity_refresh, execute_opportunity_slice,
-    list_opportunities,
+    acknowledge_opportunity, admit_existing_decision, dismiss_opportunity,
+    enqueue_opportunity_refresh, execute_opportunity_slice, list_opportunities,
+    snooze_opportunity,
+)
+from .services.discovery_admission import (
+    create_admission_intent, enqueue_admission_intent,
+    execute_admission_intent_slice, execute_recommendation_request_slice,
+    recommend_missing_continuations,
 )
 
 
@@ -355,6 +367,12 @@ def health():
     }
 
 
+@app.get("/api/system/foreground-active")
+def foreground_active():
+    """Allow the isolated engine worker to yield without acquiring SQLite."""
+    return {"active": activity_gate.foreground_waiting}
+
+
 @app.get("/api/system/tasks")
 def system_tasks():
     tasks = list_tasks()
@@ -447,7 +465,7 @@ def capabilities():
 def get_settings():
     with read_connection() as db:
         row = db.execute(
-            "SELECT tactics_new_per_day,initial_depth,timezone,new_cards_per_day,lichess_username,chesscom_username,auto_sync_minutes,engine_line_window_cp,major_mistake_cp,light_first_interval_days,draw_hold_user_moves,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
+            "SELECT tactics_new_per_day,defense_new_cards_per_day,discovery_window_days,initial_depth,timezone,new_cards_per_day,lichess_username,chesscom_username,auto_sync_minutes,engine_line_window_cp,major_mistake_cp,light_first_interval_days,draw_hold_user_moves,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
         ).fetchone()
     return Settings(**dict(row))
 
@@ -463,12 +481,14 @@ def put_settings(s: Settings):
     )
     def persist_settings(db):
         previous_settings = db.execute(
-            "SELECT coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
+            "SELECT discovery_window_days,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
         ).fetchone()
         db.execute(
-            "UPDATE settings SET tactics_new_per_day=?,initial_depth=?,timezone=?,new_cards_per_day=?,lichess_username=?,chesscom_username=?,auto_sync_minutes=?,engine_line_window_cp=?,major_mistake_cp=?,light_first_interval_days=?,draw_hold_user_moves=?,coverage_reply_denominator=?,coverage_cumulative_target=?,coverage_horizon_fullmoves=?,coverage_path_floor=?,coverage_maia_elo=? WHERE id=1",
+            "UPDATE settings SET tactics_new_per_day=?,defense_new_cards_per_day=?,discovery_window_days=?,initial_depth=?,timezone=?,new_cards_per_day=?,lichess_username=?,chesscom_username=?,auto_sync_minutes=?,engine_line_window_cp=?,major_mistake_cp=?,light_first_interval_days=?,draw_hold_user_moves=?,coverage_reply_denominator=?,coverage_cumulative_target=?,coverage_horizon_fullmoves=?,coverage_path_floor=?,coverage_maia_elo=? WHERE id=1",
             (
                 s.tactics_new_per_day,
+                s.defense_new_cards_per_day,
+                s.discovery_window_days,
                 s.initial_depth,
                 s.timezone,
                 s.new_cards_per_day,
@@ -500,7 +520,7 @@ def put_settings(s: Settings):
         coverage_changed = previous_settings is None or any(
             previous_settings[field] != getattr(s, field) for field in coverage_fields
         )
-        return [
+        eligible_repertoires = [
             row["id"]
             for row in db.execute(
                 """SELECT r.id FROM repertoires r
@@ -508,9 +528,12 @@ def put_settings(s: Settings):
                    WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__')
                      AND state.status='clean'"""
             )
-        ] if coverage_changed else []
+        ] if coverage_changed or previous_settings["discovery_window_days"] != s.discovery_window_days else []
+        return eligible_repertoires if coverage_changed else [], (
+            eligible_repertoires if previous_settings["discovery_window_days"] != s.discovery_window_days else []
+        )
 
-    repertoire_ids = submit_foreground_write(
+    repertoire_ids, discovery_repertoire_ids = submit_foreground_write(
         persist_settings,
         label="settings-update",
     )
@@ -526,7 +549,9 @@ def put_settings(s: Settings):
             enqueued_coverage = True
         except (KeyError, sqlite3.OperationalError):
             continue
-    if enqueued_coverage:
+    for repertoire_id in discovery_repertoire_ids:
+        enqueue_opportunity_refresh(repertoire_id, background=False)
+    if enqueued_coverage or discovery_repertoire_ids:
         coordinator.wake()
     return s
 
@@ -538,6 +563,7 @@ def reconcile_unseen_queue(db, day, limit):
         SELECT q.id,q.card_id,COALESCE(q.admission_repertoire_id,c.repertoire_id) repertoire_id FROM daily_queue q
         JOIN cards c ON c.id=q.card_id
         WHERE q.queue_date=? AND q.status='queued' AND c.content_type='opening'
+          AND COALESCE(q.admission_kind,'')!='explicit'
           AND (c.introduced_at IS NULL OR c.introduced_at=?)
           AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)
         ORDER BY q.position,q.id
@@ -619,6 +645,7 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
            LEFT JOIN repertoire_opportunities opportunity ON opportunity.repertoire_id=linked.id
              AND opportunity.card_id=c.id AND opportunity.kind='weak_known_decision'
              AND opportunity.status='active'
+             AND json_extract(opportunity.evidence_json,'$.analysis_based') IS NULL
            LEFT JOIN repertoire_priority_publications publication
              ON publication.repertoire_id=linked.id
            LEFT JOIN repertoire_card_priority_generations published_priority
@@ -708,6 +735,7 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
             db.execute(
                 """UPDATE repertoire_opportunities SET status='resolved',resolved_at=?,updated_at=?
                    WHERE repertoire_id=? AND card_id=? AND kind='weak_known_decision'
+                     AND json_extract(evidence_json,'$.analysis_based') IS NULL
                      AND status='active'""",
                 (datetime.now(timezone.utc).isoformat(), datetime.now(timezone.utc).isoformat(),
                  repertoire_id, choice["id"]),
@@ -809,7 +837,9 @@ def randomize_daily_queue(db, day: str) -> None:
     """Create a stable mixed queue whenever that day's membership changes."""
     rows = db.execute(
         """SELECT q.id,q.card_id,c.content_type,
-                  CASE WHEN EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id) THEN 'review' ELSE 'new' END admission_kind,
+                  CASE WHEN q.admission_kind='explicit' THEN 'explicit'
+                       WHEN EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id) THEN 'review'
+                       ELSE 'new' END admission_kind,
                   q.gameplay_priority_reason
            FROM daily_queue q JOIN cards c ON c.id=q.card_id
            WHERE q.queue_date=? AND q.status='queued'
@@ -833,8 +863,11 @@ def randomize_daily_queue(db, day: str) -> None:
         if saved
         else int(hashlib.sha256(day.encode()).hexdigest()[:15], 16)
     )
+    explicit_rows = [row for row in rows if row["admission_kind"] == "explicit"]
     groups: dict[tuple[str, str], list] = {}
     for row in rows:
+        if row["admission_kind"] == "explicit":
+            continue
         bucket = row["content_type"] or "opening"
         groups.setdefault((row["admission_kind"], bucket), []).append(row)
     for key, values in groups.items():
@@ -848,7 +881,7 @@ def randomize_daily_queue(db, day: str) -> None:
     category_order = category_order[category_offset:] + category_order[:category_offset]
     cohort_order = ["review", "new"] if seed % 2 == 0 else ["new", "review"]
     category_cursors = {cohort: 0 for cohort in cohort_order}
-    ordered = []
+    ordered = list(explicit_rows)
     while len(ordered) < len(rows):
         progressed = False
         for cohort in cohort_order:
@@ -1012,6 +1045,11 @@ register_durable_task_handler("repertoire_opportunity", execute_opportunity_slic
 register_durable_task_handler("priority_retention", execute_priority_retention_slice)
 register_durable_task_handler("defensive_threat_scan", execute_threat_scan_slice)
 register_durable_task_handler("defensive_threat_validate", execute_threat_validation)
+register_durable_task_handler("defensive_threat_report_audit", execute_threat_report_audit)
+register_durable_task_handler("defensive_threat_backfill", execute_threat_backfill_slice)
+register_durable_task_handler("defensive_admission", execute_defense_admission_slice)
+register_durable_task_handler("discovery_admission", execute_admission_intent_slice)
+register_durable_task_handler("discovery_recommendation", execute_recommendation_request_slice)
 
 
 def _ensure_current_daily_queue() -> None:
@@ -1025,6 +1063,45 @@ def _ensure_current_daily_queue() -> None:
 
 
 register_maintenance_handler(_ensure_current_daily_queue)
+
+
+def _ensure_daily_defense_admission() -> None:
+    today = date.today().isoformat()
+    with read_connection() as database:
+        existing = database.execute(
+            """SELECT 1 FROM background_tasks WHERE kind='defensive_admission'
+               AND deduplication_key=? LIMIT 1""", (today,),
+        ).fetchone()
+        eligible = database.execute(
+            """SELECT 1 FROM threat_training_candidates
+               WHERE validation_state IN ('engine_supported','validated_control')
+               AND approved_at IS NULL AND dismissed_at IS NULL AND paused_at IS NULL
+               AND superseded_at IS NULL
+               LIMIT 1"""
+        ).fetchone()
+    if not existing and eligible:
+        enqueue_defense_admission(background=True)
+
+
+register_maintenance_handler(_ensure_daily_defense_admission)
+
+
+def _ensure_discovery_admissions() -> None:
+    with read_connection() as database:
+        intent = database.execute(
+            """SELECT admission.id FROM discovery_admission_intents admission
+               WHERE admission.state!='queued'
+                 AND EXISTS(SELECT 1 FROM repertoire_lines line WHERE line.id=admission.line_id)
+                 AND NOT EXISTS(SELECT 1 FROM background_tasks task
+                     WHERE task.kind='discovery_admission' AND task.deduplication_key=admission.id
+                       AND task.state IN ('queued','leased'))
+               ORDER BY admission.created_at,admission.id LIMIT 1"""
+        ).fetchone()
+    if intent:
+        enqueue_admission_intent(intent["id"])
+
+
+register_maintenance_handler(_ensure_discovery_admissions)
 
 
 def enqueue_daily_queue_refresh(*, foreground: bool = True) -> dict:
@@ -1064,7 +1141,7 @@ def queue_today():
         ).fetchall()
         rows = db.execute(
             """SELECT q.id queue_entry_id,q.position,q.cycle,q.attempt_state,q.attempt_failed,
-                                  q.gameplay_priority_reason,c.*,
+                                  q.gameplay_priority_reason,q.admission_kind,q.admission_source,c.*,
                                   r.name repertoire_name,r.source_name repertoire_source,r.is_main,
                                   COALESCE(c.trained_color,(SELECT e.trained_color FROM endgame_templates e WHERE e.card_id=c.id), (SELECT l.trained_color FROM repertoire_lines l WHERE l.repertoire_id=r.id ORDER BY l.created_at LIMIT 1)) effective_trained_color
                            FROM daily_queue q JOIN cards c ON c.id=q.card_id
@@ -1084,7 +1161,29 @@ def queue_today():
                            ORDER BY q.position,q.id""",
             (day,),
         ).fetchall()
-    cards = [{**dict(r), "moves": json.loads(r["moves_json"])} for r in rows]
+        cards = [{**dict(r), "moves": json.loads(r["moves_json"])} for r in rows]
+        badge_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        for card in cards:
+            fen_key = " ".join(card["start_fen"].split()[:4])
+            encounters = db.execute(
+                """SELECT COUNT(DISTINCT occurrence.game_id) encounter_count,
+                          MAX(game.played_at) last_seen_at
+                   FROM game_position_occurrences occurrence
+                   JOIN imported_games game ON game.id=occurrence.game_id
+                   WHERE occurrence.fen_key=? AND game.played_at>=?
+                     AND game.adaptive_excluded=0""",
+                (fen_key, badge_cutoff),
+            ).fetchone()
+            encounter_count = int(encounters["encounter_count"])
+            last_seen_at = encounters["last_seen_at"]
+            card["encounter_count_30d"] = encounter_count
+            card["last_encountered_at"] = last_seen_at
+            badges = []
+            if last_seen_at and last_seen_at >= (datetime.now(timezone.utc) - timedelta(days=7)).isoformat():
+                badges.append("Seen recently")
+            if encounter_count >= 3:
+                badges.append("Frequent")
+            card["encounter_badges"] = badges
     for card in cards:
         card.pop("moves_json", None)
         card["trained_color"] = card.pop("effective_trained_color")
@@ -2411,6 +2510,83 @@ def repertoire_opportunities(identifier: str):
         return {"opportunities": list_opportunities(database, identifier)}
 
 
+@app.get("/api/discoveries")
+def discoveries_feed(offset: int = 0, limit: int = 25):
+    if offset < 0 or not 1 <= limit <= 100:
+        raise HTTPException(422, "Use a nonnegative offset and a limit from 1 to 100")
+    with read_connection() as database:
+        total, unread_count = database.execute(
+            """SELECT COUNT(*), SUM(CASE WHEN opportunity.seen_at IS NULL
+                       AND opportunity.snoozed_until IS NULL
+                       OR opportunity.snoozed_until<=? THEN 1 ELSE 0 END)
+               FROM repertoire_opportunities opportunity
+               WHERE opportunity.status='active'
+                 AND opportunity.repertoire_id NOT IN
+                     ('__tactics__','__endgames__','__game_mistakes__','__defense__')""",
+            (datetime.now(timezone.utc).isoformat(),),
+        ).fetchone()
+        identifiers = [dict(row) for row in database.execute(
+            """SELECT id,repertoire_id FROM repertoire_opportunities
+               WHERE status='active' AND repertoire_id NOT IN
+                   ('__tactics__','__endgames__','__game_mistakes__','__defense__')
+               ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?""",
+            (limit, offset),
+        )]
+        by_repertoire: dict[str, list[str]] = {}
+        for item in identifiers:
+            by_repertoire.setdefault(item["repertoire_id"], []).append(item["id"])
+        details = {item["id"]: item for repertoire_id, selected_ids in by_repertoire.items()
+                   for item in list_opportunities(database, repertoire_id, selected_ids)}
+        page = [details[item["id"]] for item in identifiers if item["id"] in details]
+    return {"discoveries": page, "total": total,
+            "next_offset": offset + limit if offset + limit < total else None,
+            "unread_count": unread_count or 0}
+
+
+@app.get("/api/discoveries/{opportunity_id}/recommendations")
+def discovery_recommendations(opportunity_id: str):
+    try:
+        return recommend_missing_continuations(opportunity_id)
+    except KeyError as error:
+        raise HTTPException(404, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from error
+
+
+@app.post("/api/discoveries/{opportunity_id}/accept", status_code=202)
+def accept_discovery_continuation(opportunity_id: str, request: DiscoveryAcceptanceRequest):
+    try:
+        intent = create_admission_intent(opportunity_id, request.selected_move_uci,
+                                         request.evidence_fingerprint)
+    except KeyError as error:
+        raise HTTPException(404, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from error
+    with read_connection() as database:
+        saved_line = database.execute(
+            "SELECT 1 FROM repertoire_lines WHERE id=?", (intent["line_id"],),
+        ).fetchone()
+    if not saved_line:
+        try:
+            branch(BranchRequest(
+                repertoire_id=intent["repertoire_id"],
+                starting_fen=intent["starting_fen"],
+                moves=intent["preview_moves_uci"],
+                trained_color=intent["learner_color"],
+                name="Discovery continuation",
+            ))
+        except Exception as error:
+            with connection() as database:
+                database.execute(
+                    "UPDATE discovery_admission_intents SET last_error=?,updated_at=? WHERE id=?",
+                    (str(error)[:1000], datetime.now(timezone.utc).isoformat(), intent["id"]),
+                )
+            raise
+    enqueue_admission_intent(intent["id"])
+    coordinator.wake()
+    return {"status": "preparing", "intent_id": intent["id"]}
+
+
 @app.post("/api/repertoires/{identifier}/opportunities/refresh", status_code=202)
 def refresh_repertoire_opportunities(identifier: str):
     with read_connection() as database:
@@ -2427,6 +2603,33 @@ def dismiss_repertoire_opportunity(identifier: str, opportunity_id: str):
         if not dismiss_opportunity(database, identifier, opportunity_id):
             raise HTTPException(404, "Active opportunity not found")
     return {"dismissed": True}
+
+
+@app.post("/api/repertoires/{identifier}/opportunities/{opportunity_id}/acknowledge")
+def acknowledge_repertoire_opportunity(identifier: str, opportunity_id: str):
+    with connection() as database:
+        if not acknowledge_opportunity(database, identifier, opportunity_id):
+            raise HTTPException(404, "Active discovery not found")
+    return {"acknowledged": True}
+
+
+@app.post("/api/repertoires/{identifier}/opportunities/{opportunity_id}/snooze")
+def snooze_repertoire_opportunity(identifier: str, opportunity_id: str):
+    with connection() as database:
+        if not snooze_opportunity(database, identifier, opportunity_id):
+            raise HTTPException(404, "Active discovery not found")
+    return {"snoozed": True}
+
+
+@app.post("/api/repertoires/{identifier}/opportunities/{opportunity_id}/train")
+def train_repertoire_opportunity(identifier: str, opportunity_id: str):
+    with connection() as database:
+        try:
+            return admit_existing_decision(database, identifier, opportunity_id)
+        except KeyError as error:
+            raise HTTPException(404, str(error)) from error
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from error
 
 
 @app.post("/api/repertoire-coverage/maia/claim")
@@ -3177,6 +3380,12 @@ def save_game_analysis(game_id: str, request: GameAnalysisRequest):
             "SELECT analysis_version FROM imported_games WHERE id=?", (game_id,)
         ).fetchone()[0]
     enqueue_threat_scan(game_id, threat_analysis_version, background=background)
+    with read_connection() as database:
+        affected_repertoires = [row[0] for row in database.execute(
+            "SELECT repertoire_id FROM game_repertoire_matches WHERE game_id=?", (game_id,),
+        )]
+    for repertoire_id in affected_repertoires:
+        enqueue_opportunity_refresh(repertoire_id, background=True)
     coordinator.wake()
     return result
 
@@ -3184,6 +3393,22 @@ def save_game_analysis(game_id: str, request: GameAnalysisRequest):
 @app.post("/api/defensive-threats/analysis/claim")
 def claim_defensive_threat_analysis():
     return {"job": claim_analysis_request()}
+
+
+@app.post("/api/defensive-threats/analysis/audit")
+def audit_defensive_threat_reports():
+    task = enqueue_task(
+        "defensive_threat_report_audit", "saved-reports", {"cursor": ""}, priority=135,
+    )
+    coordinator.wake()
+    return {"status": "queued", "task_id": task["id"]}
+
+
+@app.post("/api/defensive-threats/backfill")
+def backfill_defensive_threats():
+    task = enqueue_threat_backfill()
+    coordinator.wake()
+    return {"status": "queued", "task_id": task["id"]}
 
 
 @app.post("/api/defensive-threats/analysis/{request_id}/report")
@@ -3205,7 +3430,8 @@ def submit_defensive_threat_analysis(request_id: str, request: ThreatAnalysisSub
 def fail_defensive_threat_analysis(request_id: str, request: ThreatAnalysisFailureRequest):
     with connection(background=activity_gate.in_background) as database:
         updated = database.execute(
-            """UPDATE threat_analysis_requests SET state='failed',last_error=?,lease_id=NULL,
+            """UPDATE threat_analysis_requests SET state=CASE WHEN attempts<3 THEN 'queued' ELSE 'failed' END,
+                  last_error=?,lease_id=NULL,
                   lease_expires_at=NULL,updated_at=?
                WHERE id=? AND state='leased' AND lease_id=?""",
             (request.error, datetime.now(timezone.utc).isoformat(), request_id,
@@ -3213,7 +3439,11 @@ def fail_defensive_threat_analysis(request_id: str, request: ThreatAnalysisFailu
         ).rowcount
     if not updated:
         raise HTTPException(409, "Analysis lease is no longer active")
-    return {"status": "failed"}
+    with read_connection() as database:
+        state = database.execute(
+            "SELECT state FROM threat_analysis_requests WHERE id=?", (request_id,),
+        ).fetchone()[0]
+    return {"status": "retrying" if state == "queued" else state}
 
 
 @app.post("/api/defensive-threats/analysis/{request_id}/release")
@@ -3232,7 +3462,7 @@ def release_defensive_threat_analysis(request_id: str, request: GameAnalysisLeas
 def retry_defensive_threat_analysis(request_id: str):
     with connection() as database:
         updated = database.execute(
-            """UPDATE threat_analysis_requests SET state='queued',last_error=NULL,updated_at=?
+            """UPDATE threat_analysis_requests SET state='queued',attempts=0,last_error=NULL,updated_at=?
                WHERE id=? AND state='failed'""",
             (datetime.now(timezone.utc).isoformat(), request_id),
         ).rowcount
@@ -3308,6 +3538,41 @@ def approve_defensive_threat_candidate(candidate_id: str):
     return {"status": "approved", "card_id": card_id}
 
 
+@app.post("/api/defensive-threats/candidates/{candidate_id}/train-now")
+def train_defensive_threat_candidate_now(candidate_id: str):
+    try:
+        card_id = train_defense_candidate_now(candidate_id)
+    except KeyError as error:
+        raise HTTPException(404, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from error
+    return {"status": "queued", "card_id": card_id}
+
+
+@app.post("/api/defensive-threats/candidates/{candidate_id}/pause")
+def pause_defensive_threat_candidate(candidate_id: str):
+    try:
+        pause_defense_candidate(candidate_id, True)
+    except KeyError as error:
+        raise HTTPException(404, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from error
+    return {"status": "paused"}
+
+
+@app.post("/api/defensive-threats/candidates/{candidate_id}/resume")
+def resume_defensive_threat_candidate(candidate_id: str):
+    try:
+        pause_defense_candidate(candidate_id, False)
+    except KeyError as error:
+        raise HTTPException(404, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from error
+    enqueue_defense_admission(background=True)
+    coordinator.wake()
+    return {"status": "eligible"}
+
+
 @app.get("/api/defense-exercises/{candidate_id}")
 def get_defense_exercise(candidate_id: str):
     try:
@@ -3326,6 +3591,7 @@ def attempt_defense_exercise(candidate_id: str, request: DefenseAttemptRequest):
             exercise_revision=request.exercise_revision,
             queue_entry_id=request.queue_entry_id,
             move_uci=request.move_uci,
+            recognition_attempt_id=request.recognition_attempt_id,
             light_first_interval_days=get_settings().light_first_interval_days,
         )
     except KeyError as error:
@@ -3335,6 +3601,16 @@ def attempt_defense_exercise(candidate_id: str, request: DefenseAttemptRequest):
     if result["status"] == "needs_analysis":
         coordinator.wake()
     return result
+
+
+@app.post("/api/defense-exercises/{candidate_id}/recognition")
+def recognize_defense_exercise(candidate_id: str, request: DefenseRecognitionRequest):
+    try:
+        return submit_defense_recognition(candidate_id, request)
+    except KeyError as error:
+        raise HTTPException(404, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(409, str(error)) from error
 
 
 @app.get("/api/game-findings")
@@ -3622,6 +3898,12 @@ def exclude_game_from_adaptation(game_id: str, request: GameExclusionRequest):
                 (datetime.now(timezone.utc).isoformat(), game_id),
             )
     enqueue_game_derivation(game_id)
+    with read_connection() as database:
+        affected_repertoires = [row[0] for row in database.execute(
+            "SELECT repertoire_id FROM game_repertoire_matches WHERE game_id=?", (game_id,),
+        )]
+    for repertoire_id in affected_repertoires:
+        enqueue_opportunity_refresh(repertoire_id, background=True)
     coordinator.wake()
     return {"game_id": game_id, "excluded": request.excluded}
 

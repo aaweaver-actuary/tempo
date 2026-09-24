@@ -221,6 +221,20 @@ Append every new reported issue and its test names here. All listed tests belong
 
 ## Defensive tactical threats (GitHub issues 9–13)
 
+- Discovery engine reports cannot authorize defensive training with a wrong restricted root, insufficient depth, or illegal PV: `backend/tests/test_defensive_threat_persistence.py::test_discoveries_restricted_engine_report_rejects_wrong_root_and_short_depth`.
+- Saved defensive reports are audited in one foreground-preemptible slice and archived only once on replay: `backend/tests/test_defensive_threat_persistence.py::test_discoveries_report_repair_yields_to_foreground_and_replays_once`.
+- Verified defensive threats automatically enter the daily queue once within the separate introduction limit: `backend/tests/test_defensive_threat_persistence.py::test_discoveries_verified_defense_auto_admits_once_with_daily_cap`.
+- Studied opening decisions are promoted only by recurring engine-confirmed loss, with sound deviations and incomplete horizons excluded from the loss average: `backend/tests/test_repertoire_opportunities.py::test_discovery_studied_engine_mistakes_exclude_sound_deviations_and_incomplete_horizons`.
+- Explicit discovery admission bypasses locked ancestors and the automatic daily cap while duplicate clicks remain idempotent: `backend/tests/test_repertoire_opportunities.py::test_discovery_explicit_locked_decision_survives_daily_cap_and_duplicate_clicks`.
+- A recognition error requires reinforcement even after a sound defensive move, and replay records one review: `backend/tests/test_defensive_threat_persistence.py::test_discovery_recognition_error_reinforces_even_with_sound_defense_once`.
+- A supported knight route and sound move complete the staged recognition exercise: `backend/tests/test_defensive_threat_persistence.py::test_discovery_recognition_correct_route_and_sound_defense_pass`.
+- The Discoveries badge waits for an exercise or editing safe break, does not open over an editor, and acknowledgement prevents a second automatic interruption: `tests/unit/discoveries-tray-regressions.test.tsx::discoveries badge waits for a safe break and does not interrupt twice`.
+- Black-side evaluation changes keep the learner sign, while mate outcomes stay typed and separate from centipawn averages: `backend/tests/test_repertoire_opportunities.py::test_discovery_black_evaluation_sign_and_mate_are_typed_separately`.
+- A discovery inside a prefix card splits the final learner decision and queues that continuation without inventing reviews: `backend/tests/test_repertoire_opportunities.py::test_discovery_prefix_split_isolates_target_without_transferring_reviews`.
+- A paused verified defense can be explicitly queued beyond the automatic daily cap, with its admission source retained: `backend/tests/test_defensive_threat_persistence.py::test_discovery_paused_defense_can_train_now_beyond_automatic_daily_cap`.
+- An accepted engine continuation persists its intent through branch save, waits for graph and integrity publication, then queues the new card without a synthetic review: `backend/tests/test_repertoire_opportunities.py::test_discovery_accepted_engine_branch_survives_publication_restart`.
+- Defensive engine requests appear in Analysis activity and pause prevents another worker claim: `backend/tests/test_defensive_threat_persistence.py::test_discovery_engine_activity_states_and_pause_preempts_claim`.
+
 - Issue 9 legal knight-fork geometry, king and major targets, actual-piece route, and played versus engine provenance: `backend/tests/test_defensive_threat_detection.py` (`test_issue9_*`).
 - Issue 10 real learner-turn anchors, bounded to three previous decisions and excluding hypothetical future turns: `backend/tests/test_defensive_threat_detection.py` (`test_issue10_*`).
 - Issue 11 compatible full-history requests, typed scores, legal refutations, capturable knights, net material exchange, mate and centipawn handling, and report lease identity: `backend/tests/test_defensive_threat_validation.py` (`test_issue11_*`); `backend/tests/test_defensive_threat_persistence.py::test_issue11_analysis_report_requires_matching_lease_and_request`.
@@ -276,6 +290,15 @@ Append every new reported issue and its test names here. All listed tests belong
 - Durable work is duplicated, lost on restart, or publishes stale generations — `test_repeated_triggers_coalesce_by_kind_key_and_generation`; `test_durable_task_replays_once_after_process_restart`; `test_stale_task_generation_cannot_publish`.
 - Terminal background failures are invisible or cannot be retried — `test_terminal_task_failure_is_visible_and_retryable`.
 - `automatic game sync backs off after service failure and resumes after recovery` protects 5/10/20/60-second failure backoff, recovery reset, and idle polling.
+- `test_discoveries_backfill_restarts_after_one_game_without_duplicate_scan` protects foreground writes during a paused backfill, resumable one-game slices across restart, and stale replay.
+- `defense recognition keeps findings hidden until the staged answer is submitted` protects assessment, explanation, and answer concealment in the defensive UI.
+- `test_discovery_accepted_engine_branch_survives_publication_restart` also protects source-game links, learner color, and saving the inspected continuation rather than only its first move.
+- `test_discoveries_feed_paginates_beyond_first_hundred_per_repertoire` protects total counts and later pages when a repertoire has more than 100 active findings.
+- `discoveries tray loads later pages without losing the first page` protects paginated discovery browsing while the badge refreshes.
+- `test_discoveries_complete_sound_refuted_fork_becomes_validated_control`; `test_discoveries_validated_false_alarm_finishes_after_recognition_with_one_review`; `test_discoveries_auto_admission_includes_one_validated_control_under_daily_cap`; and `validated false alarm ends after explanation without requesting a move` protect conservative capturable-knight controls, their admission, and a single scheduled review without a move stage.
+- `test_discoveries_reanalysis_keeps_defense_card_and_genuine_review_history` protects stable defensive card identity and real scheduling history while refreshed evidence is temporarily unavailable.
+- `test_discoveries_auto_admission_prioritizes_recurring_position_before_recent_isolated_one` protects recurrence priority over a more recently played isolated incident.
+- `test_discovery_recommendation_worker_keeps_foreground_free_and_replays_once` protects full-history Docker recommendation requests, foreground access during computation, restart, and idempotent replay.
 
 ## Fractional priority validation and card-level integrity recovery
 

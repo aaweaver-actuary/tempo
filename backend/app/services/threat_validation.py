@@ -65,7 +65,7 @@ class AnalysisReport:
 
 
 ValidationState = Literal[
-    "needs_analysis", "engine_supported", "lesson_only", "rejected", "inconclusive"
+    "needs_analysis", "engine_supported", "validated_control", "lesson_only", "rejected", "inconclusive"
 ]
 
 
@@ -189,6 +189,53 @@ def _fork_consequence(
     return "absent", None
 
 
+def _capturable_control_line(
+    states: tuple[chess.Board, ...], line: AnalysisLine, seed: ThreatSeed,
+) -> tuple[str, ...] | None:
+    """Return a concrete capture of the apparent forking knight, if present."""
+    for index, move_uci in enumerate(line.pv_uci):
+        if defensive_fork_geometry(states[index], move_uci) != seed.geometry:
+            continue
+        fork_position = states[index + 1]
+        knight_square = chess.parse_square(seed.geometry.knight_to)
+        captures = sorted(move.uci() for move in fork_position.legal_moves
+                          if move.to_square == knight_square and fork_position.is_capture(move))
+        if captures:
+            return (*line.pv_uci[:index + 1], captures[0])
+    return None
+
+
+def _validated_control(
+    board: chess.Board, seed: ThreatSeed, best_report: AnalysisReport,
+    historical_line: AnalysisLine, historical_states: tuple[chess.Board, ...],
+    loss_cp: int | None, policy: ThreatPolicy,
+) -> tuple[str, ...] | None:
+    """Require complete, distinct top routes and a legal fork refutation."""
+    if (loss_cp is None or loss_cp > policy.correct_tolerance_cp
+            or best_report.request.multipv < 5):
+        return None
+    required_roots = min(5, board.legal_moves.count())
+    if len({line.root_move_uci for line in best_report.lines}) < required_roots:
+        return None
+    minimum_horizon = len(historical_line.pv_uci)
+    if minimum_horizon < 4:
+        return None
+    refutation = _capturable_control_line(historical_states, historical_line, seed)
+    if refutation is None:
+        return None
+    for line in best_report.lines:
+        if line.depth < policy.minimum_depth or len(line.pv_uci) < minimum_horizon:
+            return None
+        try:
+            states = _replay_line(board.copy(stack=False), line)
+        except ValueError:
+            return None
+        consequence, _ = _fork_consequence(states, line, seed)
+        if consequence in {"proved", "incomplete"}:
+            return None
+    return refutation
+
+
 def validate_threat_anchor(
     anchor: ExerciseAnchor, seed: ThreatSeed, plan: ValidationPlan,
     best_report: AnalysisReport | None, historical_report: AnalysisReport | None,
@@ -215,7 +262,7 @@ def validate_threat_anchor(
     try:
         board = _anchor_board(anchor)
         _replay_line(board.copy(stack=False), best_line)
-        states = _replay_line(board, historical_line)
+        states = _replay_line(board.copy(stack=False), historical_line)
     except ValueError:
         return ValidationResult("rejected", "Engine line is illegal or anchor history is invalid", report_ids)
     loss_cp = _learner_loss(best_line.score, historical_line.score,
@@ -230,6 +277,14 @@ def validate_threat_anchor(
     else:
         materially_worse = loss_cp >= policy.minimum_loss_cp
     if not materially_worse:
+        control_refutation = _validated_control(
+            board, seed, best_report, historical_line, states, loss_cp, policy,
+        )
+        if control_refutation:
+            return ValidationResult(
+                "validated_control", "Apparent checking fork is refuted by a legal capture",
+                report_ids, loss_cp=loss_cp, refutation_uci=control_refutation,
+            )
         return ValidationResult("lesson_only", "Earlier move was not materially worse", report_ids,
                                 loss_cp=loss_cp)
     consequence, net_material_cp = _fork_consequence(states, historical_line, seed)

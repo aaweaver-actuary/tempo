@@ -7,10 +7,12 @@ from datetime import datetime, timedelta, timezone
 import hashlib
 import json
 import uuid
+import chess
 
 from ..database import connection, read_connection
 from .activity_gate import activity_gate
-from .durable_tasks import enqueue_task
+from .background_activity import claimable, control_order
+from .durable_tasks import enqueue_task, enqueue_task_in_transaction
 from .threat_detection import (
     find_defensive_knight_forks, propose_exercise_anchors, trace_knight_route,
 )
@@ -55,6 +57,97 @@ def report_from_json(raw: dict) -> AnalysisReport:
     )
 
 
+def validate_analysis_report(request: AnalysisRequest, report: AnalysisReport) -> None:
+    """Reject incomplete or misattributed engine output before it enters durable evidence."""
+    if report.request != request or not report.complete or not report.lines:
+        raise ValueError("Engine report is incomplete or belongs to another request")
+    board = chess.Board(request.position_start_fen)
+    for move_uci in request.position_prefix_uci:
+        move = chess.Move.from_uci(move_uci)
+        if move not in board.legal_moves:
+            raise ValueError("Engine request has an illegal position history")
+        board.push(move)
+    if request.root_move_uci and len(report.lines) != 1:
+        raise ValueError("Restricted search returned multiple root moves")
+    for line in report.lines:
+        if (line.depth < request.depth or not line.pv_uci
+                or line.root_move_uci != line.pv_uci[0]
+                or request.root_move_uci and line.root_move_uci != request.root_move_uci):
+            raise ValueError("Engine report has insufficient depth or the wrong root move")
+        position = board.copy(stack=False)
+        for move_uci in line.pv_uci:
+            move = chess.Move.from_uci(move_uci)
+            if move not in position.legal_moves:
+                raise ValueError("Engine report contains an illegal principal variation")
+            position.push(move)
+
+
+def execute_threat_report_audit(task: dict) -> bool:
+    """Audit one saved report and retain invalid evidence before requesting replacement."""
+    cursor = task["payload"].get("cursor", "")
+    activity_gate.wait_for_foreground()
+    with read_connection() as database:
+        row = database.execute(
+            """SELECT id,request_json,report_json FROM threat_analysis_requests
+               WHERE id>? AND state='complete' ORDER BY id LIMIT 1""", (cursor,),
+        ).fetchone()
+        item = dict(row) if row else None
+    if not item:
+        return False
+    rejection_reason = None
+    try:
+        validate_analysis_report(
+            _request_from_json(json.loads(item["request_json"])),
+            report_from_json(json.loads(item["report_json"])),
+        )
+    except (TypeError, KeyError, ValueError) as error:
+        rejection_reason = str(error)
+    activity_gate.wait_for_foreground()
+    with connection(background=True) as database:
+        lease = database.execute(
+            "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
+        ).fetchone()
+        if not lease or lease["generation"] != task["generation"] or lease["lease_token"] != task["lease_token"]:
+            return True
+        saved = database.execute(
+            "SELECT report_json,state FROM threat_analysis_requests WHERE id=?", (item["id"],),
+        ).fetchone()
+        if (rejection_reason and saved and saved["state"] == "complete"
+                and saved["report_json"] == item["report_json"]):
+            database.execute(
+                """INSERT INTO threat_analysis_report_history(
+                     request_id,report_json,rejection_reason,archived_at) VALUES(?,?,?,?)""",
+                (item["id"], item["report_json"], rejection_reason, _now()),
+            )
+            database.execute(
+                """UPDATE threat_analysis_requests SET state='queued',report_json=NULL,
+                     last_error=?,updated_at=? WHERE id=?""",
+                (f"Repair: {rejection_reason}", _now(), item["id"]),
+            )
+            database.execute(
+                """UPDATE threat_training_candidates SET validation_state='needs_analysis',
+                     validation_json='{}',approved_at=NULL,updated_at=?
+                   WHERE id IN (SELECT candidate_id FROM threat_candidate_requests WHERE request_id=?)""",
+                (_now(), item["id"]),
+            )
+            database.execute(
+                """UPDATE cards SET pending_validation=1 WHERE id IN (
+                     SELECT candidate.card_id FROM threat_training_candidates candidate
+                     JOIN threat_candidate_requests relation ON relation.candidate_id=candidate.id
+                     WHERE relation.request_id=? AND candidate.card_id IS NOT NULL)""",
+                (item["id"],),
+            )
+        database.execute(
+            """UPDATE background_tasks SET generation=generation+1,state='queued',phase='queued',
+                 payload_json=?,attempt_count=0,next_attempt_at=?,lease_token=NULL,
+                 lease_expires_at=NULL,updated_at=?
+               WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
+            (json.dumps({"cursor": item["id"]}), _now(), _now(), task["id"],
+             task["generation"], task["lease_token"]),
+        )
+    return True
+
+
 def _seed_from_json(raw: dict) -> ThreatSeed:
     geometry = raw["geometry"]
     return ThreatSeed(
@@ -88,6 +181,68 @@ def enqueue_threat_scan(game_id: str, analysis_version: int, *, background: bool
     )
 
 
+def enqueue_threat_backfill() -> dict:
+    """Resume a one-game-at-a-time scan of previously analyzed imports."""
+    return enqueue_task(
+        "defensive_threat_backfill", "analyzed-games",
+        {"phase": "games", "cursor": ""}, priority=160,
+    )
+
+
+def execute_threat_backfill_slice(task: dict) -> bool:
+    """Publish one existing game scan or repertoire refresh, then yield."""
+    phase = task["payload"].get("phase", "games")
+    cursor = task["payload"].get("cursor", "")
+    activity_gate.wait_for_foreground()
+    with read_connection() as database:
+        if phase == "games":
+            row = database.execute(
+                """SELECT id,analysis_version FROM imported_games
+                   WHERE id>? AND analysis_version>0
+                     AND analysis_state IN ('ready','complete')
+                   ORDER BY id LIMIT 1""", (cursor,),
+            ).fetchone()
+        else:
+            row = database.execute(
+                "SELECT id FROM repertoires WHERE id>? AND id!=? ORDER BY id LIMIT 1",
+                (cursor, "__defense__"),
+            ).fetchone()
+        item = dict(row) if row else None
+    if item is None and phase == "repertoires":
+        return False
+    activity_gate.wait_for_foreground()
+    with connection(background=True) as database:
+        lease = database.execute(
+            "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
+        ).fetchone()
+        if not lease or lease["generation"] != task["generation"] or lease["lease_token"] != task["lease_token"]:
+            return True
+        if item is not None:
+            if phase == "games":
+                enqueue_task_in_transaction(
+                    database, "defensive_threat_scan", item["id"],
+                    {"game_id": item["id"], "analysis_version": item["analysis_version"], "cursor": 0},
+                    priority=145,
+                )
+            else:
+                enqueue_task_in_transaction(
+                    database, "repertoire_opportunity", item["id"],
+                    {"repertoire_id": item["id"], "phase": "summaries", "cursor": ""},
+                    priority=130,
+                )
+        next_phase = phase if item is not None else "repertoires"
+        next_cursor = item["id"] if item is not None else ""
+        database.execute(
+            """UPDATE background_tasks SET generation=generation+1,state='queued',phase='queued',
+                 payload_json=?,attempt_count=0,next_attempt_at=?,lease_token=NULL,
+                 lease_expires_at=NULL,updated_at=?
+               WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
+            (json.dumps({"phase": next_phase, "cursor": next_cursor}), _now(), _now(),
+             task["id"], task["generation"], task["lease_token"]),
+        )
+    return True
+
+
 def _advance_scan(database, task: dict, next_cursor: int) -> None:
     payload = {**task["payload"], "cursor": next_cursor}
     database.execute(
@@ -102,7 +257,7 @@ def _advance_scan(database, task: dict, next_cursor: int) -> None:
 
 def _upsert_seed(database, game: GameSnapshot, seed: ThreatSeed) -> None:
     incident_id = _digest({
-        "game": game.game_id, "analysis": game.analysis_version,
+        "game": game.game_id,
         "fork_ply": seed.fork_ply, "geometry": asdict(seed.geometry),
     })
     finding_id = _digest({"kind": "defensive tactical threat", "incident": incident_id})
@@ -127,7 +282,7 @@ def _upsert_seed(database, game: GameSnapshot, seed: ThreatSeed) -> None:
             seed.source_line.origin == "played", seed.source_line.start_ply,
             seed.seed_id,
         )
-        if incoming_rank <= previous_rank:
+        if previous_seed["analysis_version"] == game.analysis_version and incoming_rank <= previous_rank:
             return
     anchors = propose_exercise_anchors(game, seed, POLICY)
     now = _now()
@@ -135,7 +290,8 @@ def _upsert_seed(database, game: GameSnapshot, seed: ThreatSeed) -> None:
         """INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,
                   evidence_json,motif,created_at,updated_at)
            VALUES(?,?,?,?, 'defensive tactical threat',0,?,'fork',?,?)
-           ON CONFLICT(id) DO UPDATE SET evidence_json=excluded.evidence_json,
+           ON CONFLICT(id) DO UPDATE SET analysis_version=excluded.analysis_version,
+                  evidence_json=excluded.evidence_json,
                   updated_at=excluded.updated_at""",
         (finding_id, game.game_id, game.analysis_version, seed.source_line.start_ply,
          json.dumps(finding_evidence), now, now),
@@ -173,6 +329,7 @@ def _upsert_seed(database, game: GameSnapshot, seed: ThreatSeed) -> None:
                    created_at,updated_at)
                VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
                ON CONFLICT(id) DO UPDATE SET
+                   analysis_version=excluded.analysis_version,
                    evidence_json=excluded.evidence_json,
                    source_fingerprint=excluded.source_fingerprint,
                    superseded_at=NULL,
@@ -275,7 +432,7 @@ def execute_threat_validation(task: dict) -> None:
                JOIN imported_games g ON g.id=c.game_id WHERE c.id=?""", (candidate_id,)
         ).fetchone()
         reports = [dict(item) for item in database.execute(
-            """SELECT relation.role,request.report_json FROM threat_candidate_requests relation
+            """SELECT relation.role,request.request_json,request.report_json FROM threat_candidate_requests relation
                JOIN threat_analysis_requests request ON request.id=relation.request_id
                WHERE relation.candidate_id=? AND relation.role IN ('best','historical')""",
             (candidate_id,),
@@ -288,10 +445,17 @@ def execute_threat_validation(task: dict) -> None:
     policy = ThreatPolicy(**json.loads(row["policy_json"]))
     plan = make_validation_plan(anchor, engine_version=ENGINE_VERSION,
                                 network_version=NETWORK_VERSION, policy=policy)
-    report_by_role = {
-        item["role"]: report_from_json(json.loads(item["report_json"]))
-        for item in reports if item["report_json"]
-    }
+    report_by_role = {}
+    for item in reports:
+        if not item["report_json"]:
+            continue
+        try:
+            request = _request_from_json(json.loads(item["request_json"]))
+            report = report_from_json(json.loads(item["report_json"]))
+            validate_analysis_report(request, report)
+        except (TypeError, KeyError, ValueError):
+            continue
+        report_by_role[item["role"]] = report
     result = validate_threat_anchor(
         anchor, seed, plan, report_by_role.get("best"),
         report_by_role.get("historical"), policy,
@@ -305,6 +469,9 @@ def execute_threat_validation(task: dict) -> None:
             (result.state, result.diagnostic, json.dumps(asdict(result)),
              _now(), candidate_id, row["source_fingerprint"]),
         )
+    if result.state in {"engine_supported", "validated_control"}:
+        from .threat_training import enqueue_defense_admission
+        enqueue_defense_admission(background=True)
 
 
 def enqueue_candidate_validation(candidate_id: str, *, background: bool) -> None:
@@ -322,15 +489,26 @@ def claim_analysis_request() -> dict | None:
                WHERE state='leased' AND lease_expires_at<=?""", (now, now),
         )
         row = database.execute(
-            """SELECT request.id,request.request_json FROM threat_analysis_requests request
-               WHERE request.state='queued' AND EXISTS(
+            f"""SELECT request.id,request.request_json FROM threat_analysis_requests request
+               WHERE request.state='queued' AND {claimable('threat_analysis', 'request.id')}
+                 AND (EXISTS(
                    SELECT 1 FROM threat_candidate_requests relation
                    JOIN threat_training_candidates candidate ON candidate.id=relation.candidate_id
                    JOIN imported_games game ON game.id=candidate.game_id
                    WHERE relation.request_id=request.id AND candidate.superseded_at IS NULL
                      AND candidate.analysis_version=game.analysis_version
                      AND (candidate.validation_state='needs_analysis' OR relation.role='attempt'))
-               ORDER BY request.created_at,request.id LIMIT 1"""
+                   OR EXISTS(
+                     SELECT 1 FROM discovery_recommendation_requests recommendation
+                     JOIN repertoire_opportunities opportunity
+                       ON opportunity.id=recommendation.opportunity_id
+                     WHERE recommendation.request_id=request.id
+                       AND opportunity.status='active' AND opportunity.card_id IS NULL))
+               ORDER BY CASE WHEN EXISTS(SELECT 1 FROM threat_candidate_requests foreground
+                   WHERE foreground.request_id=request.id AND foreground.role='attempt')
+                   THEN 0 ELSE 1 END,
+                   {control_order('threat_analysis', 'request.id')}
+                   request.created_at,request.id LIMIT 1"""
         ).fetchone()
         if not row:
             return None
@@ -349,9 +527,17 @@ def save_analysis_report(request_id: str, lease_id: str, raw_report: dict) -> tu
     report = report_from_json(raw_report)
     if report.request.request_id != request_id:
         raise ValueError("Analysis report does not match its request")
+    with read_connection() as database:
+        saved_request = database.execute(
+            "SELECT request_json FROM threat_analysis_requests WHERE id=?", (request_id,),
+        ).fetchone()
+    if not saved_request:
+        raise KeyError("Analysis request not found")
+    request_json = saved_request["request_json"]
+    validate_analysis_report(_request_from_json(json.loads(request_json)), report)
     with connection(background=activity_gate.in_background) as database:
         row = database.execute(
-            "SELECT state,lease_id FROM threat_analysis_requests WHERE id=?", (request_id,)
+            "SELECT state,lease_id,request_json FROM threat_analysis_requests WHERE id=?", (request_id,)
         ).fetchone()
         if not row:
             raise KeyError("Analysis request not found")
@@ -359,6 +545,8 @@ def save_analysis_report(request_id: str, lease_id: str, raw_report: dict) -> tu
             return ()
         if row["state"] != "leased" or row["lease_id"] != lease_id:
             raise ValueError("Analysis lease is stale")
+        if row["request_json"] != request_json:
+            raise ValueError("Analysis request changed while report was checked")
         database.execute(
             """UPDATE threat_analysis_requests SET state='complete',report_json=?,
                   lease_id=NULL,lease_expires_at=NULL,last_error=NULL,updated_at=? WHERE id=?""",

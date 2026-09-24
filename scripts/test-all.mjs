@@ -14,6 +14,7 @@ protectRegressionSuite("backend/tests");
 const python = existsSync(".venv/bin/python") ? ".venv/bin/python" : "python3";
 const commands = [
   ["npm", ["run", "test:unit"]],
+  ["node", ["scripts/test-defense-engine.mjs"]],
   [python, ["-m", "pytest", "backend/tests", "-q", "-o", "cache_dir=.pytest_cache", "--rootdir=."]],
   ["cargo", ["fmt", "--all", "--", "--check"]],
   ["cargo", ["clippy", "--all-targets", "--", "-D", "warnings"]],

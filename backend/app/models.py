@@ -9,6 +9,8 @@ class Settings(BaseModel):
     initial_depth: int = Field(default=6, ge=2, le=20)
     timezone: str = "local"
     tactics_new_per_day: int = Field(default=5, ge=0, le=100)
+    defense_new_cards_per_day: int = Field(default=5, ge=0, le=100)
+    discovery_window_days: Literal[30, 90] = 90
     new_cards_per_day: int = Field(default=10, ge=0, le=100)
     lichess_username: str = ""
     chesscom_username: str = ""
@@ -251,6 +253,25 @@ class DefenseAttemptRequest(BaseModel):
     exercise_revision: int = Field(ge=1)
     queue_entry_id: int = Field(ge=1)
     move_uci: str = Field(min_length=4, max_length=5)
+    recognition_attempt_id: str | None = Field(default=None, min_length=1, max_length=100)
+
+
+class DefenseRecognitionRequest(BaseModel):
+    attempt_id: str = Field(min_length=1, max_length=100)
+    exercise_revision: int = Field(ge=1)
+    queue_entry_id: int = Field(ge=1)
+    no_concrete_threat: bool = False
+    dangerous_piece_square: str | None = Field(default=None, pattern=r"^[a-h][1-8]$")
+    destination_square: str | None = Field(default=None, pattern=r"^[a-h][1-8]$")
+    king_square: str | None = Field(default=None, pattern=r"^[a-h][1-8]$")
+    major_square: str | None = Field(default=None, pattern=r"^[a-h][1-8]$")
+    consequence: Literal["checking_fork", "other", "none"]
+    hinted: bool = False
+
+
+class DiscoveryAcceptanceRequest(BaseModel):
+    selected_move_uci: str = Field(pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$")
+    evidence_fingerprint: str = Field(min_length=1)
 
 
 class GameFindingDecisionRequest(BaseModel):

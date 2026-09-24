@@ -8,9 +8,11 @@ import json
 import math
 import sqlite3
 
+import chess
+
 from ..database import connection, read_connection
 from .activity_gate import activity_gate
-from .durable_tasks import enqueue_task
+from .durable_tasks import enqueue_task, enqueue_task_in_transaction
 
 
 RECENT_DAYS = 90
@@ -24,6 +26,11 @@ MIN_COHORT_PROBABILITY = 0.05
 MIN_EXPLORER_GAMES = 200
 MAX_RECENT_DECISION_GAMES = 200
 SCORING_VERSION = 1
+
+
+def _window_days(database: sqlite3.Connection) -> int:
+    row = database.execute("SELECT discovery_window_days FROM settings WHERE id=1").fetchone()
+    return int(row[0]) if row else RECENT_DAYS
 
 
 def _now() -> str:
@@ -42,7 +49,7 @@ def _fingerprint(evidence: dict) -> str:
 
 def _load_decision_summary(database: sqlite3.Connection, repertoire_id: str,
                            fen_key: str, expected_uci: str) -> dict:
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=RECENT_DAYS)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=_window_days(database))).isoformat()
     row = database.execute(
         """SELECT COUNT(DISTINCT event.game_id) encounter_count,
                   COUNT(DISTINCT CASE WHEN event.outcome='success' THEN event.game_id END) success_count,
@@ -81,8 +88,8 @@ def _publish_decision_summary(database: sqlite3.Connection, repertoire_id: str, 
 def _materially_new(evidence: dict, dismissed: dict) -> bool:
     return (
         evidence.get("supporting_games", 0) >= dismissed.get("supporting_games", 0) + 3
-        or bool(set(evidence.get("finding_ids", [])) - set(dismissed.get("finding_ids", [])))
-        or bool(set(evidence.get("qualifying_sources", [])) - set(dismissed.get("qualifying_sources", [])))
+        or (bool(evidence.get("validated_recommendation"))
+            and evidence.get("validated_recommendation") != dismissed.get("validated_recommendation"))
     )
 
 
@@ -110,12 +117,19 @@ def _publish(database: sqlite3.Connection, *, repertoire_id: str, kind: str,
              evidence_fingerprint=excluded.evidence_fingerprint,
              dismissed_evidence_json=CASE WHEN excluded.status='active' THEN NULL
                ELSE repertoire_opportunities.dismissed_evidence_json END,
+             seen_at=CASE WHEN repertoire_opportunities.status='dismissed'
+                AND excluded.status='active' THEN NULL ELSE repertoire_opportunities.seen_at END,
              updated_at=excluded.updated_at,resolved_at=NULL""",
         (opportunity_id, repertoire_id, kind, fen_key, card_id,
          opponent_move_uci, status, score, json.dumps(evidence, sort_keys=True),
          _fingerprint(evidence), json.dumps(previous_dismissal) if previous_dismissal else None,
          _now(), _now()),
     )
+    if kind == "post_gap_weakness" and card_id is None and status == "active":
+        enqueue_task_in_transaction(
+            database, "discovery_recommendation", opportunity_id,
+            {"opportunity_id": opportunity_id}, priority=128,
+        )
 
 
 def _resolve(database: sqlite3.Connection, opportunity_id: str) -> None:
@@ -180,7 +194,7 @@ def _load_card_inputs(database: sqlite3.Connection, repertoire_id: str, card_id:
     routes = _route_keys(database, repertoire_id, card_id)
     if not routes:
         return None
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=RECENT_DAYS)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=_window_days(database))).isoformat()
     target_rows = database.execute(
         """SELECT event.game_id FROM repertoire_decision_events event
            JOIN imported_games game ON game.id=event.game_id
@@ -255,6 +269,123 @@ def _calculate_card_evidence(inputs: dict) -> dict:
 def refresh_card_opportunity(database: sqlite3.Connection, repertoire_id: str, card_id: str) -> None:
     evidence = card_evidence(database, repertoire_id, card_id)
     _apply_card_opportunity(database, repertoire_id, card_id, evidence)
+    recurring_rows = _load_recurring_decisions(database, repertoire_id, card_id)
+    _apply_recurring_decisions(database, repertoire_id, card_id,
+                               _calculate_recurring_decisions(recurring_rows, _window_days(database)))
+
+
+def _load_recurring_decisions(database: sqlite3.Connection, repertoire_id: str,
+                              card_id: str) -> list[dict]:
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=_window_days(database))).isoformat()
+    return [dict(row) for row in database.execute(
+        """SELECT event.game_id,event.fen_key,event.expected_uci,event.ply,
+                  game.color,analysis.loss_cp,analysis.eval_after_cp,
+                  analysis.mate_before,analysis.mate_after,
+                  previous.eval_after_cp previous_eval_cp,previous.mate_after previous_mate,
+                  following.eval_after_cp following_eval_cp,following.mate_after following_mate,
+                  (SELECT COUNT(*) FROM game_move_analysis earlier
+                   WHERE earlier.game_id=event.game_id AND earlier.ply<event.ply
+                     AND (event.ply-earlier.ply)%2=0 AND earlier.loss_cp IS NOT NULL)
+                     previous_analyzed_count,
+                  (SELECT COUNT(*) FROM game_move_analysis earlier
+                   WHERE earlier.game_id=event.game_id AND earlier.ply<event.ply
+                     AND (event.ply-earlier.ply)%2=0 AND earlier.loss_cp>30)
+                     previous_weak_count
+           FROM repertoire_decision_events event
+           JOIN imported_games game ON game.id=event.game_id
+           LEFT JOIN game_move_analysis analysis
+             ON analysis.game_id=event.game_id AND analysis.ply=event.ply
+           LEFT JOIN game_move_analysis previous
+             ON previous.game_id=event.game_id AND previous.ply=event.ply-2
+           LEFT JOIN game_move_analysis following
+             ON following.game_id=event.game_id AND following.ply=event.ply+6
+           WHERE event.repertoire_id=? AND event.card_id=? AND event.played_at>=?
+             AND game.adaptive_excluded=0
+           ORDER BY event.fen_key,event.game_id,event.ply""",
+        (repertoire_id, card_id, cutoff),
+    )]
+
+
+def _calculate_recurring_decisions(rows: list[dict], window_days: int) -> list[dict]:
+    grouped: dict[tuple[str, str], dict[str, dict]] = {}
+    for row in rows:
+        grouped.setdefault((row["fen_key"], row["expected_uci"]), {})[row["game_id"]] = row
+    findings = []
+    for (fen_key, expected_uci), game_rows in grouped.items():
+        encounters = list(game_rows.values())
+        analyzed = [row for row in encounters if row["loss_cp"] is not None
+                    or row["mate_after"] is not None]
+        mistakes = [row for row in analyzed if
+                    (row["mate_after"] is not None
+                     and int(row["mate_after"]) * (1 if row["color"] == "white" else -1) < 0
+                     and (row["mate_before"] is None or int(row["mate_before"]) * (1 if row["color"] == "white" else -1) >= 0))
+                    or (row["loss_cp"] is not None and row["mate_after"] is None
+                        and int(row["loss_cp"]) >= 100)]
+        if len(encounters) < 5 or len(mistakes) < 3 or len(mistakes) * 2 < len(analyzed):
+            continue
+        sufficiently_analyzed = [row for row in analyzed if row["ply"] >= 2
+                                 and row["previous_analyzed_count"] >= row["ply"] // 2]
+        strong_prefix = [row for row in sufficiently_analyzed
+                         if row["previous_weak_count"] == 0]
+        complete_horizons = [row for row in mistakes if row["previous_eval_cp"] is not None
+                             and row["following_eval_cp"] is not None
+                             and row["previous_mate"] is None and row["following_mate"] is None]
+        centipawn_mistakes = [row for row in mistakes if row["mate_after"] is None
+                              and row["loss_cp"] is not None]
+        mate_outcomes = [
+            {"game_id": row["game_id"],
+             "preceding_move_mate": row["previous_mate"],
+             "third_later_turn_mate": row["following_mate"]}
+            for row in mistakes if row["previous_mate"] is not None
+            or row["following_mate"] is not None
+        ]
+        delayed_losses = [
+            (int(row["previous_eval_cp"]) - int(row["following_eval_cp"]))
+            * (1 if row["color"] == "white" else -1)
+            for row in complete_horizons
+        ]
+        findings.append({
+            "fen_key": fen_key, "expected_uci": expected_uci,
+            "score": len(mistakes) / len(analyzed),
+            "evidence": {
+                "version": SCORING_VERSION, "window_days": window_days,
+                "supporting_games": len(mistakes), "encounter_count": len(encounters),
+                "analyzed_count": len(analyzed), "miss_count": len(mistakes),
+                "strong_prefix_count": len(strong_prefix),
+                "sufficient_prefix_count": len(sufficiently_analyzed),
+                "strong_prefix_rate": len(strong_prefix) / len(sufficiently_analyzed) if sufficiently_analyzed else None,
+                "strong_prefix_qualifies": len(sufficiently_analyzed) >= 3
+                    and len(strong_prefix) / len(sufficiently_analyzed) >= 0.8,
+                "immediate_average_loss_cp": round(sum(int(row["loss_cp"]) for row in centipawn_mistakes) / len(centipawn_mistakes)) if centipawn_mistakes else None,
+                "immediate_cp_sample_count": len(centipawn_mistakes),
+                "later_average_change_cp": round(sum(delayed_losses) / len(delayed_losses)) if delayed_losses else None,
+                "later_sample_count": len(delayed_losses),
+                "mate_outcomes": mate_outcomes,
+                "game_ids": sorted(row["game_id"] for row in mistakes),
+            },
+        })
+    return findings
+
+
+def _apply_recurring_decisions(database: sqlite3.Connection, repertoire_id: str,
+                               card_id: str, findings: list[dict]) -> None:
+    active_ids = set()
+    for finding in findings:
+        opportunity_id = _stable_id(repertoire_id, "weak_known_decision",
+                                    finding["fen_key"], f"engine:{card_id}")
+        active_ids.add(opportunity_id)
+        _publish(database, repertoire_id=repertoire_id, kind="weak_known_decision",
+                 fen_key=finding["fen_key"], target=f"engine:{card_id}", card_id=card_id,
+                 opponent_move_uci=None, score=finding["score"],
+                 evidence={**finding["evidence"], "analysis_based": True})
+    for existing in database.execute(
+        """SELECT id FROM repertoire_opportunities WHERE repertoire_id=?
+           AND kind='weak_known_decision' AND card_id=? AND status='active'
+           AND json_extract(evidence_json,'$.analysis_based')=1""",
+        (repertoire_id, card_id),
+    ).fetchall():
+        if existing["id"] not in active_ids:
+            _resolve(database, existing["id"])
 
 
 def _apply_card_opportunity(database: sqlite3.Connection, repertoire_id: str,
@@ -273,7 +404,8 @@ def _apply_card_opportunity(database: sqlite3.Connection, repertoire_id: str,
         )
     existing = database.execute(
         """SELECT id FROM repertoire_opportunities WHERE repertoire_id=?
-           AND kind='weak_known_decision' AND card_id=?""", (repertoire_id, card_id),
+           AND kind='weak_known_decision' AND card_id=?
+           AND json_extract(evidence_json,'$.analysis_based') IS NULL""", (repertoire_id, card_id),
     ).fetchall()
     qualifies = bool(evidence and evidence["card_state"] == "locked"
                      and evidence["encounter_count"] >= MIN_ROUTE_GAMES
@@ -319,7 +451,7 @@ def _load_node_inputs(database: sqlite3.Connection, repertoire_id: str, node_id:
     ).fetchone()
     if not node:
         return None
-    cutoff = (datetime.now(timezone.utc) - timedelta(days=RECENT_DAYS)).isoformat()
+    cutoff = (datetime.now(timezone.utc) - timedelta(days=_window_days(database))).isoformat()
     personal = database.execute(
         """SELECT occurrence.move_uci,COUNT(DISTINCT occurrence.game_id) encounters
            FROM game_position_occurrences occurrence
@@ -526,6 +658,10 @@ def _cleanup_opportunity(database: sqlite3.Connection, repertoire_id: str, oppor
     ).fetchone()
     if not opportunity or opportunity["status"] == "resolved":
         return
+    if opportunity["admission_state"] == "preparing":
+        return
+    if opportunity["kind"] == "weak_known_decision" and json.loads(opportunity["evidence_json"]).get("analysis_based"):
+        return
     if opportunity["kind"] == "weak_known_decision":
         card = database.execute("SELECT state,archived FROM cards WHERE id=?", (opportunity["card_id"],)).fetchone()
         if not card or card["state"] != "locked" or card["archived"]:
@@ -636,6 +772,8 @@ def execute_opportunity_slice(task: dict) -> bool:
             inputs = _load_decision_summary(database, repertoire_id, fen_key, expected_uci)
         elif phase == "cards":
             inputs = _load_card_inputs(database, repertoire_id, item_id)
+            recurring_rows = _load_recurring_decisions(database, repertoire_id, item_id)
+            window_days = _window_days(database)
         elif phase == "nodes":
             inputs = _load_node_inputs(database, repertoire_id, item_id)
         elif phase == "findings":
@@ -643,6 +781,7 @@ def execute_opportunity_slice(task: dict) -> bool:
         else:
             inputs = None
     evidence = _calculate_card_evidence(inputs) if phase == "cards" and inputs else None
+    recurring_decisions = _calculate_recurring_decisions(recurring_rows, window_days) if phase == "cards" else []
     node_decisions = _calculate_node_opportunities(inputs) if phase == "nodes" and inputs else []
     post_gap_decision = _calculate_post_gap_opportunity(inputs) if phase == "findings" and inputs else None
     activity_gate.wait_for_foreground()
@@ -657,6 +796,7 @@ def execute_opportunity_slice(task: dict) -> bool:
             _publish_decision_summary(database, repertoire_id, inputs)
         elif phase == "cards":
             card_became_trainable = _apply_card_opportunity(database, repertoire_id, item_id, evidence)
+            _apply_recurring_decisions(database, repertoire_id, item_id, recurring_decisions)
         elif phase == "nodes" and inputs:
             _apply_node_opportunities(database, repertoire_id, node_decisions)
         elif phase == "findings" and post_gap_decision:
@@ -680,23 +820,72 @@ def execute_opportunity_slice(task: dict) -> bool:
     return True
 
 
-def list_opportunities(database: sqlite3.Connection, repertoire_id: str) -> list[dict]:
+def list_opportunities(database: sqlite3.Connection, repertoire_id: str,
+                       opportunity_ids: list[str] | None = None) -> list[dict]:
     result = []
+    if opportunity_ids is not None and not opportunity_ids:
+        return result
+    identifier_clause = (
+        f" AND opportunity.id IN ({','.join('?' for _ in opportunity_ids)})"
+        if opportunity_ids is not None else ""
+    )
+    limit_clause = "" if opportunity_ids is not None else " LIMIT 100"
     for row in database.execute(
-                """SELECT opportunity.*,card.trained_color card_trained_color
+                f"""SELECT opportunity.*,card.trained_color card_trained_color
                    FROM repertoire_opportunities opportunity
                    LEFT JOIN cards card ON card.id=opportunity.card_id
                    WHERE opportunity.repertoire_id=? AND opportunity.status='active'
-                   ORDER BY opportunity.score DESC,opportunity.id LIMIT 100""", (repertoire_id,),
+                   {identifier_clause}
+                   ORDER BY opportunity.score DESC,opportunity.id{limit_clause}""",
+                (repertoire_id, *(opportunity_ids or [])),
             ):
         fen_key = row["fen_key"]
+        evidence = json.loads(row["evidence_json"])
+        finding_plies = {finding.get("game_id"): finding.get("mistake_ply")
+                         for finding in evidence.get("findings", []) if finding.get("game_id")}
+        supporting_game_ids = evidence.get("game_ids") or list(finding_plies)
+        source_games = []
+        distinct_routes: list[str] = []
+        for game_id in supporting_game_ids[:5]:
+            game = database.execute(
+                "SELECT id,game_url,start_fen,moves_json FROM imported_games WHERE id=?",
+                (game_id,),
+            ).fetchone()
+            event = database.execute(
+                """SELECT ply FROM repertoire_decision_events WHERE repertoire_id=?
+                   AND game_id=? AND fen_key=? ORDER BY ply LIMIT 1""",
+                (repertoire_id, game_id, fen_key),
+            ).fetchone()
+            if not game:
+                continue
+            target_ply = event["ply"] if event else finding_plies.get(game_id)
+            if target_ply is None:
+                continue
+            board = chess.Board(game["start_fen"])
+            notation: list[str] = []
+            for move_uci in json.loads(game["moves_json"])[:target_ply + 1]:
+                move = chess.Move.from_uci(move_uci)
+                if move not in board.legal_moves:
+                    break
+                notation.append(board.san(move))
+                board.push(move)
+            route = " ".join(notation)
+            if route and route not in distinct_routes:
+                distinct_routes.append(route)
+            source_games.append({"id": game["id"], "url": game["game_url"], "route": route})
         result.append({
             "id": row["id"], "repertoire_id": repertoire_id,
             "kind": row["kind"], "status": row["status"],
             "fen_key": fen_key, "fen": f"{fen_key} 0 1",
             "card_id": row["card_id"], "opponent_move_uci": row["opponent_move_uci"],
-            "trained_color": row["card_trained_color"] or ("black" if fen_key.split()[1] == "w" else "white"),
-            "score": row["score"], "evidence": json.loads(row["evidence_json"]),
+            "trained_color": row["card_trained_color"] or ("white" if fen_key.split()[1] == "w" else "black"),
+            "score": row["score"], "evidence": evidence,
+            "evidence_fingerprint": row["evidence_fingerprint"],
+            "seen_at": row["seen_at"], "snoozed_until": row["snoozed_until"],
+            "admission_state": row["admission_state"], "admitted_card_id": row["admitted_card_id"],
+            "unread": (row["seen_at"] is None and not row["snoozed_until"])
+                or bool(row["snoozed_until"] and row["snoozed_until"] <= _now()),
+            "source_games": source_games, "routes": distinct_routes,
             "created_at": row["created_at"], "updated_at": row["updated_at"],
         })
     return result
@@ -714,3 +903,111 @@ def dismiss_opportunity(database: sqlite3.Connection, repertoire_id: str, opport
            WHERE id=?""", (row["evidence_json"], _now(), opportunity_id),
     )
     return True
+
+
+def acknowledge_opportunity(database: sqlite3.Connection, repertoire_id: str,
+                            opportunity_id: str) -> bool:
+    result = database.execute(
+        """UPDATE repertoire_opportunities SET seen_at=?,snoozed_until=NULL,updated_at=?
+           WHERE id=? AND repertoire_id=? AND status='active'""",
+        (_now(), _now(), opportunity_id, repertoire_id),
+    )
+    return result.rowcount > 0
+
+
+def snooze_opportunity(database: sqlite3.Connection, repertoire_id: str,
+                       opportunity_id: str) -> bool:
+    until = (datetime.now(timezone.utc) + timedelta(days=7)).isoformat()
+    result = database.execute(
+        """UPDATE repertoire_opportunities SET seen_at=COALESCE(seen_at,?),
+             snoozed_until=?,updated_at=?
+           WHERE id=? AND repertoire_id=? AND status='active'""",
+        (_now(), until, _now(), opportunity_id, repertoire_id),
+    )
+    return result.rowcount > 0
+
+
+def admit_existing_decision(database: sqlite3.Connection, repertoire_id: str,
+                            opportunity_id: str) -> dict:
+    """Explicitly queue a saved decision without changing ancestor mastery or reviews."""
+    opportunity = database.execute(
+        """SELECT * FROM repertoire_opportunities WHERE id=? AND repertoire_id=?""",
+        (opportunity_id, repertoire_id),
+    ).fetchone()
+    if not opportunity:
+        raise KeyError("Discovery not found")
+    if opportunity["admission_state"] == "queued" and opportunity["admitted_card_id"]:
+        return {"card_id": opportunity["admitted_card_id"], "queued": True,
+                "idempotent": True}
+    if opportunity["status"] != "active":
+        raise ValueError("Discovery is no longer actionable")
+    if not opportunity["card_id"]:
+        raise ValueError("This continuation is not saved in the repertoire")
+    card = database.execute(
+        """SELECT * FROM cards WHERE id=? AND content_type='opening'
+           AND archived=0 AND COALESCE(pending_validation,0)=0""",
+        (opportunity["card_id"],),
+    ).fetchone()
+    if not card:
+        raise ValueError("The saved card is unavailable or awaiting validation")
+    if database.execute(
+        """SELECT 1 FROM repertoire_integrity_card_blocks
+           WHERE repertoire_id=? AND card_id=?""",
+        (repertoire_id, card["id"]),
+    ).fetchone():
+        raise ValueError("Repair this repertoire before training the decision")
+    if not database.execute(
+        """SELECT 1 FROM repertoire_cards WHERE repertoire_id=? AND card_id=?""",
+        (repertoire_id, card["id"]),
+    ).fetchone() and card["repertoire_id"] != repertoire_id:
+        raise ValueError("The card is no longer in this repertoire")
+    target_card_id = card["id"]
+    if card["kind"] == "prefix":
+        from .prefix_split import apply_prefix_split, preview_prefix_split
+        preview = preview_prefix_split(database, card["id"])
+        continuation_board = chess.Board(preview["continuation"]["starting_fen"])
+        learner_color = chess.WHITE if card["trained_color"] == "white" else chess.BLACK
+        for move_uci in preview["continuation"]["moves"]:
+            if continuation_board.turn == learner_color:
+                break
+            continuation_board.push_uci(move_uci)
+        continuation_key = " ".join(continuation_board.fen().split()[:4])
+        if continuation_key != opportunity["fen_key"]:
+            raise ValueError("The target decision cannot be isolated from this prefix card")
+        split = apply_prefix_split(database, card["id"], int(card["revision"]))
+        target_card_id = split["continuation"]["card_id"]
+    else:
+        board = chess.Board(card["start_fen"])
+        trained_color = chess.WHITE if card["trained_color"] == "white" else chess.BLACK
+        learner_decisions = 0
+        decision_fen_key = None
+        for move_uci in json.loads(card["moves_json"]):
+            if board.turn == trained_color:
+                learner_decisions += 1
+                decision_fen_key = " ".join(board.fen().split()[:4])
+            board.push_uci(move_uci)
+        if learner_decisions != 1:
+            raise ValueError("This card contains more than one decision")
+        if decision_fen_key != opportunity["fen_key"]:
+            raise ValueError("The saved card no longer tests this decision")
+    from .review_service import ensure_card_queued_after
+    from datetime import date
+    today = date.today().isoformat()
+    database.execute(
+        """UPDATE cards SET state=CASE WHEN state IN ('locked','new') THEN 'learning' ELSE state END,
+             introduced_at=COALESCE(introduced_at,?) WHERE id=?""",
+        (today, target_card_id),
+    )
+    ensure_card_queued_after(database, target_card_id, after_cards=0,
+                             attempt_state="guided", priority_reason="Discovery · train this decision")
+    database.execute(
+        """UPDATE daily_queue SET admission_kind='explicit',admission_source=?
+           WHERE queue_date=? AND card_id=? AND status='queued'""",
+        (f"discovery:{opportunity_id}", today, target_card_id),
+    )
+    database.execute(
+        """UPDATE repertoire_opportunities SET admission_state='queued',
+             admitted_card_id=?,seen_at=COALESCE(seen_at,?),updated_at=? WHERE id=?""",
+        (target_card_id, _now(), _now(), opportunity_id),
+    )
+    return {"card_id": target_card_id, "queued": True, "idempotent": False}

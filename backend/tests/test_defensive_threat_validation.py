@@ -45,6 +45,29 @@ def test_issue11_capturable_knight_geometry_is_not_approved():
     assert validate_threat_anchor(anchor, seed, plan, best, historical, POLICY).state == "rejected"
 
 
+def test_discoveries_complete_sound_refuted_fork_becomes_validated_control():
+    fen = "4k3/8/8/8/1n2B3/8/P7/R3K3 w Q - 0 1"
+    anchor, seed, plan, _, historical = evidence(fen)
+    historical = AnalysisReport(plan.historical_request, (
+        AnalysisLine("a2a3", historical.lines[0].pv_uci, EngineScore(cp=-10), 14),
+    ), True)
+    board = chess.Board(fen)
+    lines = []
+    for root in sorted(board.legal_moves, key=lambda move: move.uci())[:5]:
+        position = board.copy()
+        variation = [root.uci()]
+        position.push(root)
+        while len(variation) < 5:
+            reply = sorted(position.legal_moves, key=lambda move: move.uci())[0]
+            variation.append(reply.uci())
+            position.push(reply)
+        lines.append(AnalysisLine(root.uci(), tuple(variation), EngineScore(cp=0), 14))
+    best = AnalysisReport(plan.best_request, tuple(lines), True)
+    result = validate_threat_anchor(anchor, seed, plan, best, historical, POLICY)
+    assert result.state == "validated_control"
+    assert result.refutation_uci[-1] == "e4c2"
+
+
 def test_issue11_rook_capture_and_knight_recapture_counts_net_exchange():
     fen = "4k3/8/8/8/1n6/8/PB6/R3K3 w Q - 0 1"
     pv = ("a2a3", "b4c2", "e1d2", "c2a1", "b2a1")

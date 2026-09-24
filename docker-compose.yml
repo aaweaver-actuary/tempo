@@ -22,6 +22,18 @@ services:
       - api
     restart: unless-stopped
 
+  defense-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile.engine
+    environment:
+      TEMPO_API_URL: http://api:8000
+    depends_on:
+      - api
+    mem_limit: 512m
+    cpus: 1
+    restart: unless-stopped
+
 volumes:
   tempo-data:
     name: tempo-data

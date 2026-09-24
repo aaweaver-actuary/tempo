@@ -647,6 +647,32 @@ def initialize() -> None:
             resolved_at TEXT
         )""",
         "CREATE INDEX IF NOT EXISTS idx_repertoire_opportunities_list ON repertoire_opportunities(repertoire_id,status,score DESC)",
+        """CREATE TABLE IF NOT EXISTS discovery_admission_intents (
+            id TEXT PRIMARY KEY,
+            opportunity_id TEXT NOT NULL REFERENCES repertoire_opportunities(id) ON DELETE CASCADE,
+            repertoire_id TEXT NOT NULL REFERENCES repertoires(id) ON DELETE CASCADE,
+            evidence_fingerprint TEXT NOT NULL,
+            starting_fen TEXT NOT NULL,
+            selected_move_uci TEXT NOT NULL,
+            preview_moves_json TEXT NOT NULL,
+            recommendation_json TEXT NOT NULL,
+            line_id TEXT NOT NULL,
+            state TEXT NOT NULL DEFAULT 'preparing',
+            card_id TEXT,
+            last_error TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            UNIQUE(opportunity_id,selected_move_uci)
+        )""",
+        """CREATE TABLE IF NOT EXISTS defense_recognition_submissions (
+            attempt_id TEXT PRIMARY KEY,
+            candidate_id TEXT NOT NULL REFERENCES threat_training_candidates(id) ON DELETE CASCADE,
+            queue_entry_id INTEGER NOT NULL REFERENCES daily_queue(id) ON DELETE CASCADE,
+            exercise_revision INTEGER NOT NULL,
+            answer_json TEXT NOT NULL,
+            recognition_correct INTEGER NOT NULL,
+            created_at TEXT NOT NULL
+        )""",
         """
         CREATE TABLE IF NOT EXISTS game_findings (
             id TEXT PRIMARY KEY,
@@ -707,6 +733,22 @@ def initialize() -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_threat_analysis_requests_state ON threat_analysis_requests(state,updated_at)",
+        """CREATE TABLE IF NOT EXISTS discovery_recommendation_requests (
+            opportunity_id TEXT PRIMARY KEY REFERENCES repertoire_opportunities(id) ON DELETE CASCADE,
+            request_id TEXT NOT NULL REFERENCES threat_analysis_requests(id) ON DELETE CASCADE,
+            source_game_id TEXT NOT NULL REFERENCES imported_games(id) ON DELETE CASCADE,
+            source_ply INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_discovery_recommendation_request ON discovery_recommendation_requests(request_id)",
+        """CREATE TABLE IF NOT EXISTS threat_analysis_report_history (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            request_id TEXT NOT NULL,
+            report_json TEXT NOT NULL,
+            rejection_reason TEXT NOT NULL,
+            archived_at TEXT NOT NULL
+        )""",
         """
         CREATE TABLE IF NOT EXISTS threat_candidate_requests (
             candidate_id TEXT NOT NULL REFERENCES threat_training_candidates(id) ON DELETE CASCADE,
@@ -1121,6 +1163,7 @@ def initialize() -> None:
                 "admission_kind": "TEXT",
                 "gameplay_priority_reason": "TEXT",
                 "admission_repertoire_id": "TEXT",
+                "admission_source": "TEXT",
             },
             "game_sync_state": {
                 "username": "TEXT NOT NULL DEFAULT ''",
@@ -1140,6 +1183,18 @@ def initialize() -> None:
                 "coverage_horizon_fullmoves": "INTEGER NOT NULL DEFAULT 15",
                 "coverage_path_floor": "REAL NOT NULL DEFAULT 0.0005",
                 "coverage_maia_elo": "INTEGER NOT NULL DEFAULT 1500",
+                "defense_new_cards_per_day": "INTEGER NOT NULL DEFAULT 5",
+                "discovery_window_days": "INTEGER NOT NULL DEFAULT 90",
+            },
+            "repertoire_opportunities": {
+                "seen_at": "TEXT",
+                "snoozed_until": "TEXT",
+                "admission_state": "TEXT",
+                "admitted_card_id": "TEXT",
+            },
+            "threat_training_candidates": {
+                "paused_at": "TEXT",
+                "admission_mode": "TEXT",
             },
             "cards": {
                 "fsrs_card_json": "TEXT",
