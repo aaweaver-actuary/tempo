@@ -198,6 +198,8 @@ export async function prepareVisualUI(page: Page, fixedClock = true) {
       "/api/system/activity": { items: [], counts: { running: 0, queued: 0, paused: 0, failed: 0 }, total: 0, next_offset: null, writer: { healthy: true, foreground: 0, background: 0 } },
       "/api/games/analysis/claim": { job: null },
       "/api/game-findings": { findings: [] },
+      "/api/game-findings/tactical-queue": { item: null, remaining: 0 },
+      "/api/defensive-threats/candidates": { candidates: [] },
       "/api/game-insights/motifs": { recommendations: [] },
     };
     await route.fulfill({
