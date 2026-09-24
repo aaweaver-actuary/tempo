@@ -43,7 +43,10 @@ it("issue 4 opportunities explain promotion, degraded sources, and explicit acti
       updated_at: "2026-09-23T00:00:00Z",
       evidence: { supporting_games: 2, max_loss_cp: 180, findings: [{ finding_id: "finding-1", game_id: "game-1", mistake_ply: 12, mistake_loss_cp: 180, analysis_version: 3 }] },
     },
-  ];
+  ].map((item) => ({ ...item, seen_at: null, snoozed_until: null,
+    admission_state: null, admitted_card_id: null, unread: true,
+    evidence_fingerprint: "fingerprint",
+    source_games: [], routes: [] }));
   const fetcher = vi.fn(async (input: RequestInfo | URL) => {
     if (String(input).endsWith("/opportunities")) return Response.json({ opportunities });
     return Response.json({ dismissed: true });
@@ -63,10 +66,8 @@ it("issue 4 opportunities explain promotion, degraded sources, and explicit acti
   expect(screen.getByText(/Game game-1 · ply 12 · loss 180 cp · analysis 3/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "View supporting games" }));
   expect(onShowGamesAtPosition).toHaveBeenCalledWith(startFen);
-  fireEvent.click(screen.getByRole("button", { name: "Go to Train" }));
-  expect(onTrain).toHaveBeenCalledOnce();
-  fireEvent.click(screen.getByRole("button", { name: "Browse existing repertoire" }));
-  expect(onBrowse).toHaveBeenCalledWith("rep");
+  fireEvent.click(screen.getAllByRole("button", { name: "Train this decision" })[0]);
+  await waitFor(() => expect(onTrain).toHaveBeenCalledOnce());
   fireEvent.click(screen.getByRole("button", { name: "Investigate branch" }));
   expect(onResolveGap).toHaveBeenCalledWith("rep", expect.objectContaining({ move_uci: "e2e4", gap_id: "node:e2e4" }));
 });

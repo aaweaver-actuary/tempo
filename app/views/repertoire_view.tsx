@@ -148,6 +148,16 @@ export default function RepertoireView({ imported, onImport, onBrowse, onResolve
     if (!response.ok) throw new Error(`Could not dismiss opportunity (HTTP ${response.status}).`);
     await loadOpportunities(repertoireId);
   }
+  async function trainOpportunity(repertoireId: string, opportunityId: string) {
+    const response = await fetch(`${API_URL}/api/repertoires/${repertoireId}/opportunities/${opportunityId}/train`, { method: "POST" });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({})) as { detail?: string };
+      throw new Error(body.detail ?? `Could not queue decision (HTTP ${response.status}).`);
+    }
+    await onQueueChanged();
+    await loadOpportunities(repertoireId);
+    onTrain();
+  }
   async function refreshOpportunities(repertoireId: string) {
     const response = await fetch(`${API_URL}/api/repertoires/${repertoireId}/opportunities/refresh`, { method: "POST" });
     if (!response.ok) throw new Error(`Could not queue repertoire scouting (HTTP ${response.status}).`);
@@ -184,10 +194,10 @@ export default function RepertoireView({ imported, onImport, onBrowse, onResolve
                 const count = (key: string) => typeof evidence[key] === "number" ? String(evidence[key]) : "—";
                 const percentage = (key: string) => typeof evidence[key] === "number" ? `${Math.round(Number(evidence[key]) * 1000) / 10}%` : "unavailable";
                 return <div key={opportunity.id} className="opportunity-item">
-                  <strong>{opportunity.kind === "weak_known_decision" ? "Weak known decision" : opportunity.kind === "missing_response" ? `Missing response: ${opportunity.opponent_move_uci}` : `Post-gap weakness: ${opportunity.opponent_move_uci}`}</strong>
+                  <strong>{opportunity.evidence.analysis_based ? "Recurring weak decision" : opportunity.kind === "weak_known_decision" ? "Weak known decision" : opportunity.kind === "missing_response" ? `Missing response: ${opportunity.opponent_move_uci}` : `Post-gap weakness: ${opportunity.opponent_move_uci}`}</strong>
                   <small>Position: {opportunity.fen_key}</small>
-                  {opportunity.kind === "weak_known_decision" ? <p>Reached {count("encounter_count")} times · correct {count("success_count")} · missed {count("miss_count")} · successful route {count("route_success_count")} times. Priority introduction within your daily limit.</p> : opportunity.kind === "missing_response" ? <p>Maia {String(cohort.maia_elo ?? "cohort")} {percentage("maia_probability")} ({String(evidence.maia_status ?? "unknown")}) · Lichess {String(cohort.explorer_rating ?? "cohort")} {percentage("explorer_probability")} ({String(evidence.explorer_status ?? "unknown")}, {count("explorer_games")} games) · your games {count("personal_count")}. Coverage missing.</p> : <p>{count("supporting_games")} supporting games · largest following mistake {count("max_loss_cp")} cp{opportunity.card_id ? " · matching existing card" : ""}.</p>}
-                  {opportunity.kind === "weak_known_decision" ? <button onClick={onTrain}>Go to Train</button> : opportunity.kind === "post_gap_weakness" && opportunity.card_id ? <button onClick={() => onBrowse(item.id)}>Browse existing repertoire</button> : opportunity.opponent_move_uci && <button onClick={() => onResolveGap(item.id, { gap_id: typeof evidence.coverage_node_id === "string" ? `${evidence.coverage_node_id}:${opportunity.opponent_move_uci}` : "", fen: opportunity.fen, move_uci: opportunity.opponent_move_uci!, trained_color: opportunity.trained_color })}>Investigate branch</button>}
+                  {opportunity.evidence.analysis_based ? <p>Past {count("window_days")} days: {count("encounter_count")} encounters, {count("miss_count")} engine-confirmed mistakes in {count("analyzed_count")} analyzed decisions. Immediate loss {count("immediate_average_loss_cp")} cp; observed change through your third later turn {count("later_average_change_cp")} cp across {count("later_sample_count")} complete games.</p> : opportunity.kind === "weak_known_decision" ? <p>Reached {count("encounter_count")} times · correct {count("success_count")} · missed {count("miss_count")} · successful route {count("route_success_count")} times. Priority introduction within your daily limit.</p> : opportunity.kind === "missing_response" ? <p>Maia {String(cohort.maia_elo ?? "cohort")} {percentage("maia_probability")} ({String(evidence.maia_status ?? "unknown")}) · Lichess {String(cohort.explorer_rating ?? "cohort")} {percentage("explorer_probability")} ({String(evidence.explorer_status ?? "unknown")}, {count("explorer_games")} games) · your games {count("personal_count")}. Coverage missing.</p> : <p>{count("supporting_games")} supporting games · largest following mistake {count("max_loss_cp")} cp{opportunity.card_id ? " · matching existing card" : ""}.</p>}
+                  {opportunity.card_id ? <button disabled={opportunity.admission_state === "queued"} onClick={() => void trainOpportunity(item.id, opportunity.id).catch((failure) => setError(failure instanceof Error ? failure.message : "Could not queue decision."))}>{opportunity.admission_state === "queued" ? "In training queue" : "Train this decision"}</button> : opportunity.opponent_move_uci && <button onClick={() => onResolveGap(item.id, { gap_id: typeof evidence.coverage_node_id === "string" ? `${evidence.coverage_node_id}:${opportunity.opponent_move_uci}` : "", fen: opportunity.fen, move_uci: opportunity.opponent_move_uci!, trained_color: opportunity.trained_color })}>Investigate branch</button>}
                   {opportunity.kind === "post_gap_weakness" && <>
                     <button onClick={() => onShowGamesAtPosition(opportunity.fen)}>View supporting games</button>
                     {Array.isArray(evidence.findings) && evidence.findings.length > 0 && <details>

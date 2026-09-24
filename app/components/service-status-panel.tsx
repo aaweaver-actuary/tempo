@@ -106,6 +106,7 @@ export function ServiceStatusPanel() {
 
   const retry = async (item: ActivityItem) => {
     const path = item.source === "durable" ? `/api/system/tasks/${encodeURIComponent(item.id)}/retry`
+      : item.source === "threat_analysis" ? `/api/defensive-threats/analysis/${encodeURIComponent(item.id)}/retry`
       : `/api/games/analysis/${encodeURIComponent(item.id)}/retry`;
     setBusyKey(`${item.source}:${item.id}`);
     try {
@@ -159,7 +160,7 @@ export function ServiceStatusPanel() {
               <button type="button" disabled={busyKey === key} onClick={() => void control(item, item.paused ? "resume" : "pause")}>{item.paused ? "Resume" : "Pause"}</button>
               <button type="button" disabled={busyKey === key} onClick={() => void control(item, item.promoted ? "normal" : "prioritize")}>{item.promoted ? "Normal priority" : "Prioritize"}</button>
             </div>}
-            {item.state === "failed" && (item.source === "durable" || item.source === "game_analysis") &&
+            {item.state === "failed" && (item.source === "durable" || item.source === "game_analysis" || item.source === "threat_analysis") &&
               <button type="button" disabled={busyKey === key} onClick={() => void retry(item)}>Retry {item.title}</button>}
             </article>
           </Fragment>;

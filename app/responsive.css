@@ -505,6 +505,11 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
 
 .tempo-activity-trigger { min-height: 44px; cursor: pointer; }
 .tempo-activity-trigger-mobile { display: none; }
+.tempo-discoveries-badge { font-weight: 700; color: var(--rust); }
+.tempo-discoveries-tray .tempo-activity-content { width: min(34rem, calc(100vw - 1rem)); }
+.tempo-discoveries-tray .tempo-activity-item { overflow-wrap: anywhere; }
+.tempo-discoveries-tray .tempo-activity-item p { line-height: 1.45; }
+.tempo-discoveries-tray .tempo-activity-item ul { padding-left: 1.25rem; }
 .tempo-activity-attention { color: #a13c26; font-weight: 700; }
 
 .tempo-activity-content {
@@ -563,6 +568,10 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
   .tempo-activity-trigger-desktop { display: none; }
   .tempo-activity-trigger-mobile { display: inline; }
   .tempo-activity-trigger { padding: 0.5rem; }
+}
+@media (max-width: 767px) {
+  .top-actions { gap: 0.35rem; }
+  .tempo-discoveries-tray .tempo-activity-content { position: fixed; top: 3.5rem; right: 0.5rem; max-height: calc(100dvh - 4rem); }
 }
 
 .tempo-activity-list {

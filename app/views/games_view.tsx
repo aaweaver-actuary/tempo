@@ -89,7 +89,9 @@ type DefenseCandidate = {
   validation_state: string;
   diagnostic: string;
   dismissed_at: string | null;
+  paused_at: string | null;
   approved_at: string | null;
+  admission_mode: string | null;
   card_id: string | null;
   evidence: {
     anchor: { historical_move_uci: string };
@@ -436,7 +438,7 @@ export default function GamesView({
       setDefenseBusy(false);
     }
   }
-  async function decideDefenseCandidate(candidateId: string, action: "approve" | "dismiss") {
+  async function decideDefenseCandidate(candidateId: string, action: "approve" | "dismiss" | "pause" | "resume" | "train-now") {
     if (defenseBusy) return;
     setDefenseBusy(true);
     try {
@@ -446,7 +448,7 @@ export default function GamesView({
         throw new Error(body.detail ?? "Could not save this defensive candidate.");
       }
       await loadDefenseCandidates();
-      if (action === "approve") await onQueueUpdated?.();
+      if (action === "approve" || action === "train-now") await onQueueUpdated?.();
     } catch (reason) {
       setError(reason instanceof Error ? reason.message : "Could not save this defensive candidate.");
     } finally {
@@ -831,12 +833,14 @@ export default function GamesView({
                   <div key={candidate.id}>
                     <small>Move {Math.floor(candidate.player_ply / 2) + 1} · {candidate.evidence.seed.source_line.origin === "played" ? "Played game" : "Engine continuation"} · historical {candidate.evidence.anchor.historical_move_uci}</small>
                     <small>{candidate.validation_state.replaceAll("_", " ")} · {candidate.diagnostic || "Waiting for compatible analysis"}</small>
-                    {candidate.approved_at && <small>Added to today&apos;s training queue.</small>}
+                    {candidate.approved_at && <small>Admitted for training{candidate.admission_mode === "automatic" ? " automatically" : ""}.</small>}
                     {candidate.dismissed_at && <small>Dismissed until the evidence changes.</small>}
+                    {candidate.paused_at && !candidate.approved_at && <small>Automatic introduction paused.</small>}
                     {!candidate.approved_at && !candidate.dismissed_at && candidate.validation_state === "engine_supported" && (
                       <>
                         <small>Evidence: knight to {candidate.evidence.seed.geometry.knight_to} checks king {candidate.evidence.seed.geometry.king.square} and attacks {candidate.evidence.seed.geometry.major.piece} {candidate.evidence.seed.geometry.major.square}.</small>
-                        <button disabled={defenseBusy} onClick={() => void decideDefenseCandidate(candidate.id, "approve")}>Approve for training</button>
+                        <button disabled={defenseBusy} onClick={() => void decideDefenseCandidate(candidate.id, "train-now")}>Train now</button>
+                        <button disabled={defenseBusy} onClick={() => void decideDefenseCandidate(candidate.id, candidate.paused_at ? "resume" : "pause")}>{candidate.paused_at ? "Resume automatic training" : "Pause automatic training"}</button>
                       </>
                     )}
                     {!candidate.approved_at && !candidate.dismissed_at && <button disabled={defenseBusy} onClick={() => void decideDefenseCandidate(candidate.id, "dismiss")}>Dismiss</button>}

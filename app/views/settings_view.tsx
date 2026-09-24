@@ -21,6 +21,8 @@ type SettingsValues = {
   timezone: string;
   new_cards_per_day: number;
   tactics_new_per_day: number;
+  defense_new_cards_per_day: number;
+  discovery_window_days: 30 | 90;
   lichess_username: string;
   chesscom_username: string;
   auto_sync_minutes: number;
@@ -65,6 +67,8 @@ export default function SettingsView({
     timezone: "local",
     new_cards_per_day: 10,
     tactics_new_per_day: 5,
+    defense_new_cards_per_day: 5,
+    discovery_window_days: 90,
     lichess_username: "",
     chesscom_username: "",
     auto_sync_minutes: 3,
@@ -201,6 +205,8 @@ export default function SettingsView({
         timezone: values.timezone,
         new_cards_per_day: values.new_cards_per_day,
         tactics_new_per_day: values.tactics_new_per_day,
+        defense_new_cards_per_day: values.defense_new_cards_per_day,
+        discovery_window_days: values.discovery_window_days,
         lichess_username: values.lichess_username.trim(),
         chesscom_username: values.chesscom_username.trim(),
         auto_sync_minutes: values.auto_sync_minutes,
@@ -394,6 +400,19 @@ export default function SettingsView({
                 update("tactics_new_per_day", Number(event.target.value))
               }
             />
+          </label>
+          <label>
+            <span>New defensive exercises per day<small>Verified threats and false alarms; due reviews are additional</small></span>
+            <input type="number" min="0" max="100"
+              value={values.defense_new_cards_per_day}
+              onChange={(event) => update("defense_new_cards_per_day", Number(event.target.value))} />
+          </label>
+          <label>
+            <span>Discovery evidence window<small>How far back Tempo counts analyzed games</small></span>
+            <select value={values.discovery_window_days}
+              onChange={(event) => update("discovery_window_days", Number(event.target.value) as 30 | 90)}>
+              <option value={30}>30 days</option><option value={90}>90 days</option>
+            </select>
           </label>
           <label>
             <span>

@@ -74,6 +74,7 @@ import { RepertoireIntegrityDialog } from "../components/repertoire-integrity-di
 import { repertoiresResponseSchema } from "../domain/schemas";
 import { DebugErrorPanel } from "../components/debug-error-panel";
 import { ServiceStatusPanel } from "../components/service-status-panel";
+import { DiscoveriesTray } from "../components/discoveries-tray";
 import { setActiveDebugWorkspace } from "../lib/debug-reporting";
 
 async function responseErrorDetail(response: Response): Promise<string> {
@@ -95,6 +96,7 @@ export default function Home() {
   useDefensiveThreatAnalysis();
   useRepertoireCoverageWorker();
   const [currentView, setCurrentView] = useState<View>("train");
+  const [safeBreakCounter, setSafeBreakCounter] = useState(0);
   const [repairRepertoireId, setRepairRepertoireId] = useState<string>();
   const [pausedIntegrity, setPausedIntegrity] = useState<{ id: string; issueCount: number; blockedDue: number }>();
   const deferredRepairIds = useRef(new Set<string>());
@@ -679,6 +681,7 @@ export default function Home() {
         try {
           await refreshDatabaseQueue(true);
           setReviewPersistenceState("idle");
+          setSafeBreakCounter((count) => count + 1);
         } catch {
           setReviewPersistenceState("queueFailed");
           setQueueNotice(
@@ -739,6 +742,7 @@ export default function Home() {
     resetLine(practiceCards[nextIndex]);
     reviewPending.current = false;
     setReviewPersistenceState("idle");
+    setSafeBreakCounter((count) => count + 1);
   }
 
   function completeAttempt(finalFen: string) {
@@ -966,6 +970,10 @@ export default function Home() {
           <SoundToggleButton soundOn={soundOn} changeSound={changeSound} />
           <SavedLocallyButton setShowImport={setShowImport} />
           <ServiceStatusPanel />
+          <DiscoveriesTray safeToOpen={currentView !== "train" && currentView !== "builder"}
+            interactionBlocked={Boolean(editorCard || showImport || repairRepertoireId)}
+            safeBreakCounter={safeBreakCounter} onOpenRepertoire={() => changeWorkspace("repertoire")}
+            onQueueChanged={() => refreshDatabaseQueue()} />
         </div>
       </header>
       {!usesLocalApi() && <DemoBanner />}
@@ -988,6 +996,7 @@ export default function Home() {
               onDefenseGraded={async () => {
                 await refreshDatabaseQueue(true);
                 setReviewed((count) => count + 1);
+                setSafeBreakCounter((count) => count + 1);
               }}
               reviewPersistenceState={reviewPersistenceState}
               reviewSaveError={reviewSaveError}
@@ -1156,7 +1165,7 @@ export default function Home() {
       </BoardWorkspaceContainer>
       {showImport && (
         <ImportDialogBox
-          onClose={() => setShowImport(false)}
+          onClose={() => { setShowImport(false); setSafeBreakCounter((count) => count + 1); }}
           onImported={addImportedRepertoire}
           onDatabaseUpdated={refreshQueueOnly}
           onViewRepertoire={() => setCurrentView("repertoire")}
@@ -1174,7 +1183,7 @@ export default function Home() {
           practiceCard={editorCard}
           boardTheme={boardTheme}
           pieceSet={pieceSet}
-          onClose={() => setEditorCard(null)}
+          onClose={() => { setEditorCard(null); setSafeBreakCounter((count) => count + 1); }}
           onOpenBuilderForLineRemoval={(sessionFromEditor: BuilderSession) => {
             const existingSession = JSON.parse(
               localStorage.getItem("tempo-builder-session") ?? "null",

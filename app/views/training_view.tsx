@@ -272,6 +272,7 @@ function StandardTrainingView({
                 <span className="pill">Reinforcement</span>
               )}
               {card.priorityReason && <span className="pill">{card.priorityReason}</span>}
+              {card.encounterBadges?.map((badge) => <span key={badge} className="pill" title={`${card.encounterCount30d ?? 0} distinct games in 30 days${card.lastEncounteredAt ? ` · latest ${card.lastEncounteredAt.slice(0, 10)}` : ""}`}>{badge}</span>)}
               {queueNotice && <em>{queueNotice}</em>}
             </div>
             <OpeningTitle card={card} />
