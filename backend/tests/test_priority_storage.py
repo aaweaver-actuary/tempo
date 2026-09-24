@@ -8,6 +8,7 @@ import chess
 
 from app import database
 from app.services import introduction_priorities as priorities
+from app.services.activity_gate import activity_gate
 from app.services.database_executor import database_writer
 from app.services.durable_tasks import claim_task, requeue_interrupted_tasks
 
@@ -66,6 +67,38 @@ def test_priority_evidence_omits_repeated_edge_states_and_preserves_status(tmp_p
         assert evidence["maia"] == "unknown"
         assert "real_game_repertoire_miss" in evidence
         assert len(record.evidence_json) < 256
+    with database.connection() as database_connection:
+        _seed_repertoire(database_connection)
+        database_connection.executemany(
+            """INSERT INTO repertoire_card_priority_generations(
+                   repertoire_id,generation,card_id,scoring_version,
+                   completed_line_ids_json,completion_mass,frontier_decisions_json,
+                   frontier_reach,priority_score,evidence_json,updated_at)
+               VALUES(?,1,?,2,?,?,?,?,?,?,?)""",
+            [
+                (
+                    record.repertoire_id, record.card_id,
+                    record.completed_line_ids_json, record.completion_mass,
+                    record.frontier_decisions_json, record.frontier_reach,
+                    record.priority_score, record.evidence_json,
+                    datetime.now(timezone.utc).isoformat(),
+                )
+                for record in records
+            ],
+        )
+        database_connection.execute(
+            """INSERT INTO repertoire_priority_publications(repertoire_id,generation,updated_at)
+               VALUES('storage-rep',1,?)""",
+            (datetime.now(timezone.utc).isoformat(),),
+        )
+        compact_status = priorities.priority_status(database_connection, "storage-rep")
+        database_connection.execute(
+            """UPDATE repertoire_card_priority_generations
+               SET evidence_json=json_set(evidence_json,'$.edge_states',json('{}'))
+               WHERE repertoire_id='storage-rep'"""
+        )
+        legacy_status = priorities.priority_status(database_connection, "storage-rep")
+    assert compact_status == legacy_status
 
 
 def test_priority_retention_keeps_only_published_and_active_generation(tmp_path, monkeypatch, request):
@@ -100,6 +133,42 @@ def test_priority_retention_keeps_only_published_and_active_generation(tmp_path,
     assert generations == [2, 3]
 
 
+def test_priority_publication_atomically_enqueues_retention(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    now = datetime.now(timezone.utc).isoformat()
+    with database.connection() as database_connection:
+        _seed_repertoire(database_connection)
+        _insert_generation(database_connection, 1)
+        database_connection.execute(
+            "INSERT INTO repertoire_priority_publications(repertoire_id,generation,updated_at) VALUES('storage-rep',1,?)",
+            (now,),
+        )
+        database_connection.execute(
+            """INSERT INTO repertoire_priority_jobs(repertoire_id,generation,status,next_attempt_at,updated_at)
+               VALUES('storage-rep',2,'running',?,?)""",
+            (now, now),
+        )
+    records = [
+        priorities.PriorityRecord(
+            "storage-rep", card_id, "[]", 0, "[]", 0, 0,
+            '{"personal_games":0,"explorer":"unknown","maia":"unknown"}',
+        )
+        for card_id in ("card-a", "card-b")
+    ]
+    assert priorities.publish_priority_records(
+        {"repertoire_id": "storage-rep", "generation": 2}, records,
+    )
+    with database.connection() as database_connection:
+        assert database_connection.execute(
+            "SELECT generation FROM repertoire_priority_publications WHERE repertoire_id='storage-rep'"
+        ).fetchone()[0] == 2
+        assert database_connection.execute(
+            """SELECT state FROM background_tasks
+               WHERE kind='priority_retention' AND deduplication_key='storage-rep'"""
+        ).fetchone()[0] == "queued"
+
+
 def test_priority_retention_restarts_and_foreground_reads_continue(tmp_path, monkeypatch, request):
     from app.services.priority_retention import execute_priority_retention_slice
 
@@ -119,19 +188,32 @@ def test_priority_retention_restarts_and_foreground_reads_continue(tmp_path, mon
     enqueue_task("priority_retention", "storage-rep", {"repertoire_id": "storage-rep"})
     claimed = claim_task("priority_retention")
     assert claimed is not None
-    foreground_completed = threading.Event()
+    assert execute_priority_retention_slice(claimed) is True
+    with database.read_connection() as database_connection:
+        assert database_connection.execute(
+            "SELECT COUNT(*) FROM repertoire_card_priority_generations WHERE generation=1"
+        ).fetchone()[0] == 40 - 16
+    interrupted = claim_task("priority_retention")
+    assert interrupted is not None
+    requeue_interrupted_tasks()
+    replayed = claim_task("priority_retention")
+    assert replayed is not None
+    assert replayed["lease_token"] != interrupted["lease_token"]
+    assert execute_priority_retention_slice(interrupted) is False
+    finished = threading.Event()
 
-    def read_foreground():
+    def cleanup_while_foreground_active():
+        execute_priority_retention_slice(replayed)
+        finished.set()
+
+    with activity_gate.foreground():
         with database.read_connection() as foreground_database:
             assert foreground_database.execute("SELECT COUNT(*) FROM cards").fetchone()[0] == 42
-        foreground_completed.set()
-
-    foreground = threading.Thread(target=read_foreground)
-    foreground.start()
-    assert execute_priority_retention_slice(claimed) is True
-    foreground.join(timeout=2)
-    assert foreground_completed.is_set()
-    requeue_interrupted_tasks()
+        worker = threading.Thread(target=cleanup_while_foreground_active)
+        worker.start()
+        assert not finished.wait(timeout=0.05)
+    worker.join(timeout=2)
+    assert finished.is_set()
     while next_claimed := claim_task("priority_retention"):
         if not execute_priority_retention_slice(next_claimed):
             break
