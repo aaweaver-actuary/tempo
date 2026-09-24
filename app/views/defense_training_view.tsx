@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess, type Square } from "chess.js";
+import type { DrawShape } from "@lichess-org/chessground/draw";
+import type { Key } from "@lichess-org/chessground/types";
 import { Chessboard, type BoardTheme, type PieceSet } from "../components/chessboard";
 import { BoardTools } from "../components/board-workspace";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
@@ -18,7 +20,7 @@ type DefenseExercisePayload = {
 };
 
 type DefenseGradePayload = {
-  status: "correct" | "incorrect" | "needs_analysis" | "ambiguous" | "illegal";
+  status: "correct" | "incorrect" | "needs_analysis" | "ambiguous" | "illegal" | "ready_for_move";
   diagnostic: string;
   loss_cp?: number | null;
   allows_target_fork?: boolean;
@@ -67,6 +69,9 @@ export default function DefenseTrainingView({
   const [pending, setPending] = useState<PendingAttempt | null>(null);
   const [busy, setBusy] = useState(false);
   const [selectedSquares, setSelectedSquares] = useState<string[]>([]);
+  const [activeSelection, setActiveSelection] = useState(0);
+  const [squareInput, setSquareInput] = useState("");
+  const [recognitionResult, setRecognitionResult] = useState<DefenseGradePayload | null>(null);
   const [noConcreteThreat, setNoConcreteThreat] = useState(false);
   const [assessmentDone, setAssessmentDone] = useState(false);
   const [hintRevealed, setHintRevealed] = useState(false);
@@ -157,10 +162,13 @@ export default function DefenseTrainingView({
   }, [exercise, recognitionDone, busy, grade?.status, card.startingFen, submit]);
 
   const selectSquare = useCallback((square: Square) => {
-    if (recognitionDone || assessmentDone || busy) return;
-    setSelectedSquares((current) => [...current.slice(0, 3), square]);
+    if (recognitionDone || assessmentDone || busy || activeSelection > 3) return;
+    setSelectedSquares((current) => [...current.slice(0, activeSelection), square]);
+    setSquareInput("");
+    if (activeSelection === 3) setAssessmentDone(true);
+    else setActiveSelection((current) => current + 1);
     setNoConcreteThreat(false);
-  }, [recognitionDone, assessmentDone, busy]);
+  }, [recognitionDone, assessmentDone, busy, activeSelection]);
 
   const submitRecognition = async () => {
     if (!candidateId || !queueEntryId || !exercise || busy) return;
@@ -188,6 +196,7 @@ export default function DefenseTrainingView({
       }
       const result = await response.json() as DefenseGradePayload;
       setRecognitionDone(true);
+      setRecognitionResult(result);
       if (result.status === "correct" || result.status === "incorrect") setGrade(result);
     } catch (reason) {
       setSaveError(reason instanceof Error ? reason.message : "Could not save recognition answer");
@@ -197,6 +206,28 @@ export default function DefenseTrainingView({
   };
 
   const recognitionStage = Boolean(exercise?.recognition_required && !recognitionDone);
+  const selectionLabels = ["Dangerous piece", "Destination", "Your king", "Threatened piece"];
+  const selectionPrompts = [
+    "Select the piece that could create the danger.",
+    "Where could that piece move to create the danger?",
+    "Which king would be threatened?",
+    "Which other piece would be threatened?",
+  ];
+  const shownFeedback = grade?.feedback ?? recognitionResult?.feedback;
+  const recognitionShapes: DrawShape[] = useMemo(() => recognitionDone && shownFeedback
+    ? [
+        ...shownFeedback.knight_route.map((hop) => ({ orig: hop.from_square as Key, dest: hop.to_square as Key, brush: "red" })),
+        ...(shownFeedback.fork_geometry ? [
+          { orig: shownFeedback.fork_geometry.knight_to as Key, dest: shownFeedback.fork_geometry.king.square as Key, brush: "red" },
+          { orig: shownFeedback.fork_geometry.knight_to as Key, dest: shownFeedback.fork_geometry.major.square as Key, brush: "red" },
+        ] : []),
+      ]
+    : selectedSquares.flatMap((square, index) => {
+        if (!/^[a-h][1-8]$/.test(square)) return [];
+        if (index === 1 && /^[a-h][1-8]$/.test(selectedSquares[0] ?? ""))
+          return [{ orig: selectedSquares[0] as Key, dest: square as Key, brush: "blue" }];
+        return [{ orig: square as Key, brush: "blue" }];
+      }), [recognitionDone, shownFeedback, selectedSquares]);
   const locked = !exercise || busy || Boolean(pending) || recognitionStage || grade?.status === "correct" || grade?.status === "incorrect";
   useEffect(() => {
     if (!useSharedBoard) return;
@@ -210,7 +241,7 @@ export default function DefenseTrainingView({
       theme: boardTheme,
       pieceSet,
       orientation: card.orientation === "black" ? "black" : "white",
-      shapes: [],
+      shapes: recognitionShapes,
       drawnShapes: [],
       positionRevision: card.revision ?? 1,
       onMove,
@@ -222,14 +253,14 @@ export default function DefenseTrainingView({
     return () => releaseShellBoardForOwner("train");
   }, [useSharedBoard, setShellBoardForOwner, releaseShellBoardForOwner,
       card.startingFen, card.orientation, card.revision, loadError, locked,
-      boardTheme, pieceSet, onMove, recognitionStage, assessmentDone, selectSquare]);
+      boardTheme, pieceSet, onMove, recognitionStage, assessmentDone, selectSquare, recognitionShapes]);
 
   const definitive = grade?.status === "correct" || grade?.status === "incorrect";
   return (
     <section className={`training-grid${useSharedBoard ? " training-grid-shared" : ""}`} aria-label="Defensive decision exercise">
       <div className="board-column">
         {!useSharedBoard && <Chessboard fen={card.startingFen} locked={Boolean(locked && (!recognitionStage || assessmentDone))} showHint={false}
-          theme={boardTheme} pieceSet={pieceSet} orientation={card.orientation} onMove={onMove}
+          theme={boardTheme} pieceSet={pieceSet} orientation={card.orientation} onMove={onMove} shapes={recognitionShapes}
           editMode={recognitionStage && !assessmentDone} onSquareSelect={recognitionStage && !assessmentDone ? selectSquare : undefined}
           onFreeMove={recognitionStage && !assessmentDone ? (from, to) => { selectSquare(from); selectSquare(to); } : undefined} />}
         <BoardTools>
@@ -237,26 +268,44 @@ export default function DefenseTrainingView({
           {loadError && <button onClick={() => void loadExercise()}>Retry loading exercise</button>}
         </BoardTools>
       </div>
-      <div className="training-panel">
-        <h2>Defensive decision</h2>
+      <aside className="study-panel defense-study-panel">
+        <p className="side-to-play">{card.orientation} to play</p>
+        <div className="card-meta"><span className="pill">Defensive decision</span>
+          {card.queueAttemptState === "reinforcement" && <span className="pill">Reinforcement</span>}
+        </div>
+        <div className="opening-title"><p>Recognize, explain, respond</p><h2>What danger should your next move account for?</h2>
+          <span>{recognitionDone ? definitive ? "Review" : "Choose a move" : assessmentDone ? "Explain" : `Assess · step ${activeSelection + 1} of 4`}</span></div>
         {!definitive && <p>{exercise?.prompt ?? "What danger should your next move account for?"}</p>}
         {recognitionStage && <div className="defense-recognition">
           {!assessmentDone ? <>
-            <p>Assess the position. Select the dangerous piece, its destination, your king, and the threatened piece on the board. You can also type square names.</p>
-            <div className="defense-recognition-squares">{["Dangerous piece", "Destination", "King", "Threatened piece"].map((label, index) => <label key={label}>{label}<input aria-label={label} maxLength={2} pattern="[a-h][1-8]" value={selectedSquares[index] ?? ""}
-              onChange={(event) => { const value = event.target.value.toLowerCase(); setSelectedSquares((current) => { const next = [...current]; next[index] = value; return next; }); setNoConcreteThreat(false); }} /></label>)}</div>
-            <label><input type="checkbox" checked={noConcreteThreat} onChange={(event) => setNoConcreteThreat(event.target.checked)} /> No concrete threat</label>
-            <button type="button" onClick={() => setHintRevealed(true)}>Reveal hint</button>
+            <p className="defense-stage-prompt">{selectionPrompts[activeSelection]}</p>
+            <ol className="defense-selection-trail">{selectedSquares.map((square, index) =>
+              <li key={index}><span>{selectionLabels[index]}: <strong>{square}</strong></span>
+                <button type="button" onClick={() => { setSelectedSquares((current) => current.slice(0, index)); setActiveSelection(index); setSquareInput(""); }}
+                  aria-label={`Change ${selectionLabels[index].toLowerCase()}`}>Change</button></li>)}</ol>
+            <label className="defense-square-entry">{selectionLabels[activeSelection]} square
+              <input aria-label={`${selectionLabels[activeSelection]} square`} inputMode="text" autoComplete="off" maxLength={2}
+                value={squareInput} onChange={(event) => setSquareInput(event.target.value.toLowerCase())}
+                onKeyDown={(event) => { if (event.key === "Enter" && /^[a-h][1-8]$/.test(squareInput)) { event.preventDefault(); selectSquare(squareInput as Square); } }} />
+              <button type="button" disabled={!/^[a-h][1-8]$/.test(squareInput)} onClick={() => selectSquare(squareInput as Square)}>Select</button>
+            </label>
+            <button type="button" className="defense-no-threat" onClick={() => { setNoConcreteThreat(true); setSelectedSquares([]); setConsequence("none"); setAssessmentDone(true); }}>No concrete threat</button>
+            <button type="button" onClick={() => setHintRevealed(true)}>Hint</button>
             {hintRevealed && <p>Trace forcing moves and check whether the attacking piece can be captured. A revealed hint requires reinforcement.</p>}
-            <button disabled={busy || (!noConcreteThreat && selectedSquares.filter((square) => /^[a-h][1-8]$/.test(square)).length !== 4)} onClick={() => setAssessmentDone(true)}>Explain danger</button>
           </> : <>
-            <p>What would happen if you ignored the danger?</p>
+            <p className="defense-stage-prompt">{noConcreteThreat ? "You found no concrete checking fork. Submit that assessment." : "What would happen if you ignored the danger?"}</p>
             {!noConcreteThreat && <label>Consequence <select value={consequence} onChange={(event) => setConsequence(event.target.value as typeof consequence)}><option value="">Choose an explanation</option><option value="checking_fork">Check followed by material loss</option><option value="other">Material threat without check</option><option value="none">No forcing consequence</option></select></label>}
-            {noConcreteThreat && <p>You found no concrete checking fork in the assessed route.</p>}
-            <button disabled={busy || (!noConcreteThreat && !consequence)} onClick={() => void submitRecognition()}>Continue to move</button>
+            <div className="defense-stage-actions"><button type="button" onClick={() => { setAssessmentDone(false); setActiveSelection(noConcreteThreat ? 0 : 3); setNoConcreteThreat(false); }}>Back to board</button>
+              <button disabled={busy || (!noConcreteThreat && !consequence)} onClick={() => void submitRecognition()}>Submit assessment</button></div>
           </>}
         </div>}
-        {recognitionDone && !definitive && <p>Now choose a move that addresses the position.</p>}
+        {recognitionDone && <div className={`feedback ${recognitionResult?.recognition_correct ? "complete" : "wrong"}`} role="status">
+          <span className="feedback-icon">{recognitionResult?.recognition_correct ? "✓" : "!"}</span><div>
+            <strong>{recognitionResult?.recognition_correct ? "Danger assessed" : "Review the danger"}</strong>
+            {recognitionResult?.feedback?.control_explanation ? <p>{recognitionResult.feedback.control_explanation}</p>
+              : recognitionResult?.feedback?.fork_geometry ? <p>The knight can reach {recognitionResult.feedback.fork_geometry.knight_to}, checking the king and attacking the {recognitionResult.feedback.fork_geometry.major.piece}. Follow the red arrows on the board.</p> : null}
+          </div></div>}
+        {recognitionDone && !definitive && <p className="defense-stage-prompt">Now play a move that handles this danger. More than one sound defense may work.</p>}
         {loadError && <p role="alert">{loadError}</p>}
         {saveError && <p role="alert">{saveError}</p>}
         {grade?.status === "needs_analysis" && <p role="status">Analyzing this legal defense. Your study result has not been recorded yet.</p>}
@@ -268,7 +317,6 @@ export default function DefenseTrainingView({
             ? grade.status === "correct" ? "Correct: the apparent danger has a concrete refutation." : "The apparent danger can be refuted; review the capture."
             : grade.status === "correct" ? "Threat recognized and sound defense." : grade.defense_status === "correct" ? "Sound defense, but the danger needs another look." : "This move loses value."}</p>
           {grade.feedback?.fork_geometry && <p>The knight reaches {grade.feedback.fork_geometry.knight_to}, checking the king on {grade.feedback.fork_geometry.king.square} and attacking the {grade.feedback.fork_geometry.major.piece} on {grade.feedback.fork_geometry.major.square}.</p>}
-          {grade.feedback?.control_explanation && <p>{grade.feedback.control_explanation}</p>}
           {grade.feedback?.knight_route.length ? <p>Knight route: {grade.feedback.knight_route.map((hop) => `${hop.from_square}–${hop.to_square}`).join(", ")}.</p> : null}
           {grade.feedback?.sound_moves.length ? <p>Sound defensive ideas: {grade.feedback.sound_moves.join(", ")}.</p> : null}
           {grade.feedback?.refutation_uci.length ? <p>Continuation: {continuationNotation(card.startingFen, grade.feedback.refutation_uci)}</p> : null}
@@ -277,7 +325,7 @@ export default function DefenseTrainingView({
             : grade.feedback.source_game_id}</p>}
           <button onClick={() => void onAdvance().catch(() => setSaveError("Result saved, but the next card could not load. Retry Continue."))}>Continue</button>
         </>}
-      </div>
+      </aside>
     </section>
   );
 }

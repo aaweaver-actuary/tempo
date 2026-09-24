@@ -423,7 +423,7 @@ def _complete_defense_in_transaction(
 
 
 def submit_defense_recognition(candidate_id: str, request) -> dict:
-    """Persist a neutral, staged recognition answer without revealing the solution."""
+    """Persist recognition, then reveal its explanation before the defense move."""
     answer = request.model_dump()
     serialized = json.dumps(answer, sort_keys=True)
     with read_connection() as database:
@@ -442,7 +442,20 @@ def submit_defense_recognition(candidate_id: str, request) -> dict:
             ).fetchone()
             if completed:
                 return {**json.loads(completed["grade_json"]), "idempotent": True}
+            candidate = _candidate(database, candidate_id)
+            evidence = json.loads(candidate["evidence_json"])
+            source_game = database.execute("SELECT game_url FROM imported_games WHERE id=?",
+                                           (candidate["game_id"],)).fetchone()
             return {"status": "ready_for_move", "recognition_attempt_id": request.attempt_id,
+                    "recognition_correct": bool(database.execute(
+                        "SELECT recognition_correct FROM defense_recognition_submissions WHERE attempt_id=?",
+                        (request.attempt_id,),
+                    ).fetchone()[0]),
+                    "feedback": {"knight_route": evidence.get("knight_route", []),
+                                 "fork_geometry": evidence["seed"]["geometry"],
+                                 "sound_moves": [], "refutation_uci": [],
+                                 "source_game_id": candidate["game_id"],
+                                 "source_game_url": source_game["game_url"] if source_game else None},
                     "idempotent": True}
         candidate = _candidate(database, candidate_id)
         _require_current(candidate)
@@ -526,6 +539,11 @@ def submit_defense_recognition(candidate_id: str, request) -> dict:
                 light_first_interval_days=light_interval,
             )
     return {"status": "ready_for_move", "recognition_attempt_id": request.attempt_id,
+            "recognition_correct": correct,
+            "feedback": {"knight_route": evidence.get("knight_route", []),
+                         "fork_geometry": geometry, "sound_moves": [], "refutation_uci": [],
+                         "source_game_id": candidate["game_id"],
+                         "source_game_url": source_game["game_url"] if source_game else None},
             "idempotent": False}
 
 

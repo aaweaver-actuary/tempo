@@ -379,6 +379,20 @@ button {
   flex-direction: column;
   overflow: auto;
 }
+.defense-study-panel .opening-title { padding: 18px 0 16px; }
+.defense-study-panel .opening-title h2 { font-size: clamp(25px, 2.5vw, 36px); line-height: 1.1; }
+.defense-study-panel .feedback { margin: 16px 0; }
+.defense-recognition { display: grid; align-content: start; gap: 14px; padding: 12px 0; }
+.defense-stage-prompt { font-size: 1.1rem; font-weight: 600; line-height: 1.4; }
+.defense-selection-trail { display: grid; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.defense-selection-trail li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 10px; border: 1px solid var(--line); border-radius: 8px; }
+.defense-selection-trail button, .defense-stage-actions button, .defense-square-entry button, .defense-no-threat {
+  min-height: 44px; padding: 7px 12px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); cursor: pointer;
+}
+.defense-square-entry { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.defense-square-entry input { width: 4.5rem; min-height: 44px; padding: 6px; border: 1px solid var(--line); border-radius: 6px; text-align: center; font-size: 1rem; }
+.defense-stage-actions { display: flex; flex-wrap: wrap; gap: 10px; }
+.defense-stage-actions button:last-child { background: var(--sage); color: var(--green-dark); font-weight: 700; }
 .outcome-flash {
   pointer-events: none;
 }

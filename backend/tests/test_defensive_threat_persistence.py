@@ -266,7 +266,7 @@ def test_discovery_recognition_error_reinforces_even_with_sound_defense_once(tmp
             assert db.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (card_id,)).fetchone()[0] == 1
 
 
-def test_discovery_recognition_correct_route_and_sound_defense_pass(tmp_path, monkeypatch):
+def test_guided_recognition_reveals_route_after_assessment_and_sound_defense_pass(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         candidate_id = seed_candidate()
@@ -283,6 +283,15 @@ def test_discovery_recognition_correct_route_and_sound_defense_pass(tmp_path, mo
             "consequence": "checking_fork",
         })
         assert answer.status_code == 200, answer.text
+        assert answer.json()["recognition_correct"] is True
+        assert answer.json()["feedback"]["fork_geometry"]["knight_to"] == "c2"
+        repeated_assessment = client.post(f"/api/defense-exercises/{candidate_id}/recognition", json={
+            "attempt_id": "recognition-correct", "exercise_revision": 1,
+            "queue_entry_id": entry_id, "dangerous_piece_square": "b4",
+            "destination_square": "c2", "king_square": "e1", "major_square": "a1",
+            "consequence": "checking_fork",
+        })
+        assert repeated_assessment.json()["feedback"]["fork_geometry"]["knight_to"] == "c2"
         grade = client.post(f"/api/defense-exercises/{candidate_id}/attempt", json={
             "attempt_id": "move-correct", "exercise_revision": 1,
             "queue_entry_id": entry_id, "move_uci": "e1f2",

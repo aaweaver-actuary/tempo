@@ -19,8 +19,11 @@ vi.mock("../../app/components/board-workspace", () => ({
   BoardTools: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 vi.mock("../../app/components/chessboard", () => ({
-  Chessboard: ({ onSquareSelect }: { onSquareSelect?: (square: string) => void }) =>
-    <button onClick={() => onSquareSelect?.("b4")}>Board square b4</button>,
+  Chessboard: ({ onSquareSelect, shapes }: { onSquareSelect?: (square: string) => void; shapes?: unknown[] }) =>
+    <div data-testid="recognition-board" data-shapes={JSON.stringify(shapes)}>
+      {["b4", "c2", "e1", "a1"].map((square) =>
+        <button key={square} onClick={() => onSquareSelect?.(square)}>Board square {square}</button>)}
+    </div>,
 }));
 
 const card = {
@@ -30,9 +33,12 @@ const card = {
   lastEncounteredAt: "2026-09-24T00:00:00Z",
 } as unknown as PracticeCard;
 
-it("defense recognition keeps findings hidden until the staged answer is submitted", async () => {
+it("guided defensive recognition reveals board arrows only after the assessment", async () => {
   const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-    if (String(input).endsWith("/recognition")) return Response.json({ status: "ready_for_move" });
+    if (String(input).endsWith("/recognition")) return Response.json({ status: "ready_for_move",
+      recognition_correct: true, feedback: { knight_route: [{ from_square: "b4", to_square: "c2" }],
+        fork_geometry: { knight_to: "c2", king: { square: "e1" },
+          major: { square: "a1", piece: "rook" } }, sound_moves: [], refutation_uci: [] } });
     return Response.json({ candidate_id: "candidate", card_id: "defense-card",
       exercise_revision: 2, prompt: "What danger should your next move account for?",
       rubric_version: 2, recognition_required: true });
@@ -40,16 +46,19 @@ it("defense recognition keeps findings hidden until the staged answer is submitt
   vi.stubGlobal("fetch", fetcher);
   render(<DefenseTrainingView card={card} boardTheme={{} as never} pieceSet={{} as never}
     useSharedBoard={false} onAdvance={async () => {}} />);
-  await waitFor(() => expect(screen.getByText("Assess the position.", { exact: false })).toBeTruthy());
+  await waitFor(() => expect(screen.getByText("Select the piece that could create the danger.")).toBeTruthy());
   expect(screen.queryByText("Seen recently")).toBeNull();
-  expect(screen.queryByText("Knight route:", { exact: false })).toBeNull();
+  expect(screen.getByTestId("recognition-board").getAttribute("data-shapes")).not.toContain('"brush":"red"');
   fireEvent.click(screen.getByRole("button", { name: "Board square b4" }));
-  fireEvent.click(screen.getByLabelText("No concrete threat"));
-  fireEvent.click(screen.getByRole("button", { name: "Explain danger" }));
+  fireEvent.click(screen.getByRole("button", { name: "Board square c2" }));
+  fireEvent.click(screen.getByRole("button", { name: "Board square e1" }));
+  fireEvent.click(screen.getByRole("button", { name: "Board square a1" }));
   expect(screen.getByText("What would happen if you ignored the danger?")).toBeTruthy();
   expect(screen.queryByText("Seen recently")).toBeNull();
-  fireEvent.click(screen.getByRole("button", { name: "Continue to move" }));
-  await waitFor(() => expect(screen.getByText("Now choose a move that addresses the position.")).toBeTruthy());
+  fireEvent.change(screen.getByLabelText("Consequence"), { target: { value: "checking_fork" } });
+  fireEvent.click(screen.getByRole("button", { name: "Submit assessment" }));
+  await waitFor(() => expect(screen.getByText("Now play a move that handles this danger.", { exact: false })).toBeTruthy());
+  expect(screen.getByTestId("recognition-board").getAttribute("data-shapes")).toContain('"brush":"red"');
   expect(fetcher).toHaveBeenCalledTimes(2);
 });
 
@@ -66,11 +75,10 @@ it("validated false alarm ends after explanation without requesting a move", asy
           prompt: "What danger should your next move account for?", recognition_required: true })));
   render(<DefenseTrainingView card={card} boardTheme={{} as never} pieceSet={{} as never}
     useSharedBoard={false} onAdvance={async () => {}} />);
-  await waitFor(() => expect(screen.getByRole("button", { name: "Explain danger" })).toBeTruthy());
-  fireEvent.click(screen.getByLabelText("No concrete threat"));
-  fireEvent.click(screen.getByRole("button", { name: "Explain danger" }));
-  fireEvent.click(screen.getByRole("button", { name: "Continue to move" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "No concrete threat" })).toBeTruthy());
+  fireEvent.click(screen.getByRole("button", { name: "No concrete threat" }));
+  fireEvent.click(screen.getByRole("button", { name: "Submit assessment" }));
   await waitFor(() => expect(screen.getByText("The forking knight is capturable before it wins material.")).toBeTruthy());
-  expect(screen.queryByText("Now choose a move that addresses the position.")).toBeNull();
+  expect(screen.queryByText("Now play a move that handles this danger.", { exact: false })).toBeNull();
   expect(screen.getByText("Seen recently")).toBeTruthy();
 });
