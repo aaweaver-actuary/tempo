@@ -40,6 +40,13 @@ If macOS blocks the launcher the first time, right-click **Start Tempo.command**
 docker compose up --build
 ```
 
+To keep Lichess Explorer coverage running while the browser is closed, set
+`TEMPO_LICHESS_EXPLORER_TOKEN` in your Docker Compose environment before starting
+Tempo. A missing or rejected token appears as an actionable coverage job error;
+replace the token and restart `analysis-worker` to retry. This credential is
+passed to the worker environment, not saved in SQLite. The `analysis-worker`
+and `maia-worker` services continue durable analysis with the tab closed.
+
 Open `http://localhost:3000`. The local API is available at `http://localhost:8000`, and all durable data is stored in the named Docker volume `tempo-data`, independent of the checkout location. See [storage operations](docs/STORAGE.md) for backups and restore.
 
 You can study in Docker Tempo now. Reviews, FSRS state, daily queue order, reinforcement, guided attempts, tactic discovery progress, repertoire notes, and teaching history are saved automatically in SQLite. Rebuilding or recreating the containers retains the host `data` directory; deleting that directory deletes your study data, so keep a backup. The mandatory Docker test recreates containers and verifies every SQLite store checksum and the exact queue order.
@@ -68,7 +75,7 @@ backend/app/services/      PGN, identity, and scheduling logic
 tempo-core/                Rust/WASM deterministic chess and scheduling core
 app/lib/tempo-db.ts        Versioned browser persistence and SQLite transfer
 static/                    GitHub Pages entry point (base path /tempo/)
-docker-compose.yml         Local two-service runtime
+docker-compose.yml         Local API, web, and analysis workers
 ```
 
 The [code organization audit](docs/CODE-ORGANIZATION-AUDIT.md) explains the
@@ -104,7 +111,7 @@ Tempo now uses the official `@lichess-org/chessground` package instead of a hand
 
 The Lichess puzzle database is public domain and provides FEN, UCI solution moves, rating, popularity, motifs, and source-game URLs. Tempo includes 7,150 globally distinct, validated records in `public/data/tactics-decks.json`: 100 in each fundamental stage and 250 in each focused stage for thirteen motifs. Focused stages cover ratings 1250–2000. Opening and puzzle scheduling stay independent even when their due cards are shuffled into one session.
 
-Lichess now requires authentication for Opening Explorer requests. Tempo uses Lichess's PKCE flow, requests no account permissions, and keeps the access token in session storage. Explorer requests authenticate each source independently; local repertoire-coverage work receives the token through a temporary in-memory backend session and pauses until a browser session registers credentials. The token is not stored with queued work or Explorer cache entries. Stockfish 19 runs locally in WebAssembly; Maia 3 runs locally through its simplified ONNX model. Engine inputs and repertoire data do not leave the browser.
+Lichess now requires authentication for Opening Explorer requests. Interactive Explorer requests use Lichess's PKCE flow and keep the access token in browser session storage. Unattended repertoire-coverage work uses `TEMPO_LICHESS_EXPLORER_TOKEN` in the analysis worker environment. The token is not stored with queued work or Explorer cache entries. Interactive Stockfish 19 and Maia 3 analysis runs in browser workers; durable Stockfish and Maia analysis runs in Docker workers with the same packaged models.
 
 ## Recommended maturity and depth policy
 

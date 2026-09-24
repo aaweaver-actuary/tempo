@@ -168,15 +168,25 @@ async def lifespan(_: FastAPI):
         )
     initialize()
     database_writer.start()
-    submit_foreground_write(
-        lambda database: materialize_daily_queue(database, date.today().isoformat()),
-        label="startup-daily-queue",
-    )
-    await coordinator.start()
+    if os.getenv("TEMPO_COORDINATOR_MODE", "embedded") == "external":
+        with read_connection() as database:
+            current_projection = database.execute(
+                "SELECT state FROM queue_projections WHERE queue_date=?",
+                (date.today().isoformat(),),
+            ).fetchone()
+        if current_projection is None:
+            enqueue_daily_queue_refresh()
+    else:
+        submit_foreground_write(
+            lambda database: materialize_daily_queue(database, date.today().isoformat()),
+            label="startup-daily-queue",
+        )
+        await coordinator.start()
     try:
         yield
     finally:
-        await coordinator.stop()
+        if os.getenv("TEMPO_COORDINATOR_MODE", "embedded") == "embedded":
+            await coordinator.stop()
         database_writer.stop()
 
 
@@ -375,6 +385,12 @@ def health():
 def foreground_active():
     """Allow the isolated engine worker to yield without acquiring SQLite."""
     return {"active": activity_gate.foreground_waiting}
+
+
+@app.get("/api/system/foreground-requests-active")
+def foreground_requests_active():
+    """Let the external database worker yield to in-flight API requests."""
+    return {"active": activity_gate.foreground_requests_active}
 
 
 @app.post("/api/system/browser-activity")
@@ -2732,6 +2748,34 @@ def coverage_maia_release(request: dict):
             (datetime.now(timezone.utc).isoformat(), node_id, lease_id),
         ).rowcount
     return {"status": "queued" if changed else "stale"}
+
+
+@app.post("/api/repertoire-coverage/maia/failure")
+def coverage_maia_failure(request: dict):
+    node_id = request.get("node_id")
+    lease_id = request.get("lease_id")
+    error = request.get("error")
+    if not all(isinstance(value, str) and value for value in (node_id, lease_id, error)):
+        raise HTTPException(422, "Invalid coverage failure report")
+    with connection(background=activity_gate.in_background) as database:
+        node = database.execute(
+            "SELECT run_id FROM repertoire_coverage_nodes WHERE id=? AND maia_status='leased' AND lease_id=?",
+            (node_id, lease_id),
+        ).fetchone()
+        if not node:
+            raise HTTPException(409, "Coverage lease is no longer active")
+        now = datetime.now(timezone.utc).isoformat()
+        message = f"Maia coverage failed: {error[:900]}"
+        database.execute(
+            """UPDATE repertoire_coverage_nodes SET maia_status='failed',lease_id=NULL,
+               lease_expires_at=NULL,last_error=?,updated_at=? WHERE id=?""",
+            (message, now, node_id),
+        )
+        database.execute(
+            "UPDATE repertoire_coverage_runs SET status='failed',last_error=?,updated_at=? WHERE id=?",
+            (message, now, node["run_id"]),
+        )
+    return {"status": "failed"}
 
 
 @app.get("/api/explorer/{database_name}")

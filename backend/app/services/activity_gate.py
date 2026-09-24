@@ -6,6 +6,9 @@ from contextlib import contextmanager
 from contextvars import ContextVar
 import threading
 import time
+import json
+import os
+from urllib.request import Request, urlopen
 from typing import Iterator
 
 
@@ -57,6 +60,18 @@ class ApplicationActivityGate:
             _work_class.reset(token)
 
     def wait_for_foreground(self) -> None:
+        activity_url = os.getenv("TEMPO_FOREGROUND_ACTIVITY_URL")
+        if activity_url:
+            while True:
+                try:
+                    request = Request(activity_url, headers={"X-Tempo-Work-Class": "background"})
+                    with urlopen(request, timeout=2) as response:
+                        active = bool(json.load(response)["active"])
+                except (OSError, ValueError, KeyError):
+                    active = True
+                if not active:
+                    break
+                time.sleep(0.25)
         with self._condition:
             self._condition.wait_for(lambda: self._foreground_requests == 0)
 
@@ -75,6 +90,7 @@ class ApplicationActivityGate:
         section is bounded and the next background section will yield to it.
         """
 
+        self.wait_for_foreground()
         with self._condition:
             self._condition.wait_for(
                 lambda: self._foreground_requests == 0
@@ -128,6 +144,11 @@ class ApplicationActivityGate:
     def foreground_waiting(self) -> bool:
         with self._condition:
             return self._foreground_requests > 0 or time.monotonic() < self._browser_active_until
+
+    @property
+    def foreground_requests_active(self) -> bool:
+        with self._condition:
+            return self._foreground_requests > 0
 
     @property
     def active_background_sections(self) -> int:

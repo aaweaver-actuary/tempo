@@ -8,9 +8,23 @@ import { reportDebugError } from "../lib/debug-reporting";
 let requestGeneration = 0;
 
 async function loadTodayQueueWithRetry(): Promise<unknown> {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
+  let failedRequests = 0;
+  for (let attempt = 0; attempt < 20; attempt += 1) {
     const response = await fetch(`${API_URL}/api/queue/today`);
-    if (response.ok) return response.json();
+    if (response.ok) {
+      failedRequests = 0;
+      const payload = await response.json() as {
+        cards?: unknown[];
+        projection?: { state?: string; generation?: number; last_error?: string };
+      };
+      if (payload.projection?.state === "failed")
+        throw new Error(payload.projection.last_error ?? "Daily queue refresh failed");
+      if (payload.projection?.state !== "refreshing" || payload.cards?.length)
+        return payload;
+      if (attempt === 19) throw new Error("Daily queue is still preparing. Check the analysis worker and retry.");
+      await new Promise((resolve) => window.setTimeout(resolve, 250));
+      continue;
+    }
 
     let detail = `HTTP ${response.status}`;
     let retryable = response.status === 503;
@@ -24,7 +38,8 @@ async function loadTodayQueueWithRetry(): Promise<unknown> {
     } catch {
       // Keep the stable HTTP fallback when the service returned no JSON body.
     }
-    if (!retryable || attempt === 2) throw new Error(detail);
+    failedRequests += 1;
+    if (!retryable || failedRequests >= 3) throw new Error(detail);
     await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
   }
   throw new Error("The local queue could not be loaded.");

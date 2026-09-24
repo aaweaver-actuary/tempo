@@ -5,6 +5,7 @@ services:
       dockerfile: backend/Dockerfile
     environment:
       TEMPO_DB_PATH: /data/tempo.db
+      TEMPO_COORDINATOR_MODE: external
       TZ: ${TZ:-America/New_York}
     ports:
       - "8000:8000"
@@ -31,6 +32,36 @@ services:
     depends_on:
       - api
     mem_limit: 512m
+    cpus: 1
+    restart: unless-stopped
+
+  analysis-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["python", "-m", "app.background_worker"]
+    environment:
+      TEMPO_DB_PATH: /data/tempo.db
+      TEMPO_FOREGROUND_ACTIVITY_URL: http://api:8000/api/system/foreground-requests-active
+      TEMPO_BACKGROUND_WORKER: "1"
+      TEMPO_LICHESS_EXPLORER_TOKEN: ${TEMPO_LICHESS_EXPLORER_TOKEN:-}
+      TZ: ${TZ:-America/New_York}
+    volumes:
+      - tempo-data:/data
+    depends_on:
+      - api
+    cpus: 1
+    restart: unless-stopped
+
+  maia-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.maia
+    environment:
+      TEMPO_API_URL: http://api:8000
+    depends_on:
+      - api
+    mem_limit: 768m
     cpus: 1
     restart: unless-stopped
 

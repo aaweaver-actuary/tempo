@@ -1,0 +1,8 @@
+FROM node:22-slim
+WORKDIR /app
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev
+COPY scripts/maia-coverage-worker.mjs ./scripts/maia-coverage-worker.mjs
+COPY app/lib/all_moves_maia3.json app/lib/all_moves_maia3_reversed.json ./app/lib/
+COPY public/maia3/parts ./public/maia3/parts
+CMD ["node", "scripts/maia-coverage-worker.mjs"]

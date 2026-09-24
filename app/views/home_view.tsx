@@ -48,7 +48,6 @@ import SettingsView from "./settings_view";
 import TacticsView from "./tactics_view";
 import { loadPositionAnnotation } from "../utils/position-annotations";
 import { useGameSync } from "../hooks/use-game-sync";
-import { useRepertoireCoverageWorker } from "../hooks/use-repertoire-coverage";
 import { Chess, Move, Square } from "chess.js";
 import {
   useTrainingStore,
@@ -90,7 +89,6 @@ async function responseErrorDetail(response: Response): Promise<string> {
 
 export default function Home() {
   const gameSync = useGameSync();
-  useRepertoireCoverageWorker();
   useEffect(() => {
     if (!usesLocalApi()) return;
     let lastSentAt = 0;

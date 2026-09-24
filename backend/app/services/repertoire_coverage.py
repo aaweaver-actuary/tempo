@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+import os
 import threading
 import uuid
 from statistics import median
@@ -20,6 +21,7 @@ from .activity_gate import activity_gate
 
 _explorer_session_lock = threading.Lock()
 _explorer_session_token: str | None = None
+_explorer_environment_token_rejected = False
 
 
 class ExplorerAuthenticationError(RuntimeError):
@@ -40,6 +42,8 @@ def set_explorer_session_token(token: str | None) -> None:
 
 def get_explorer_session_token() -> str | None:
     with _explorer_session_lock:
+        if os.getenv("TEMPO_LICHESS_EXPLORER_TOKEN") and not _explorer_environment_token_rejected:
+            return os.environ["TEMPO_LICHESS_EXPLORER_TOKEN"]
         return _explorer_session_token
 
 
@@ -307,6 +311,17 @@ def enqueue_coverage_refresh(
 def claim_coverage_node() -> dict | None:
     from .background_activity import claimable, control_order
     if not get_explorer_session_token():
+        if os.getenv("TEMPO_BACKGROUND_WORKER") == "1":
+            reason = ("Lichess Explorer token was rejected; replace TEMPO_LICHESS_EXPLORER_TOKEN and restart the analysis worker."
+                      if _explorer_environment_token_rejected else
+                      "Set TEMPO_LICHESS_EXPLORER_TOKEN for unattended Explorer coverage and restart the analysis worker.")
+            with connection(background=True) as database:
+                database.execute(
+                    """UPDATE repertoire_coverage_runs SET status='failed',last_error=?,updated_at=?
+                       WHERE id IN (SELECT run_id FROM repertoire_coverage_nodes WHERE explorer_status='queued')
+                         AND COALESCE(last_error,'')!=?""",
+                    (reason, _now(), reason),
+                )
         return None
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
@@ -591,6 +606,9 @@ def execute_coverage_node(node: dict) -> None:
                         (progress_counts["explorer_done"] or 0) + (progress_counts["maia_done"] or 0),
                         progress_counts["total"] * 2)
     except ExplorerAuthenticationError as error:
+        global _explorer_environment_token_rejected
+        if os.getenv("TEMPO_LICHESS_EXPLORER_TOKEN"):
+            _explorer_environment_token_rejected = True
         set_explorer_session_token(None)
         with connection(background=True) as database:
             database.execute(

@@ -5,6 +5,7 @@ services:
       dockerfile: backend/Dockerfile
     environment:
       TEMPO_DB_PATH: /data/tempo.db
+      TEMPO_COORDINATOR_MODE: external
       TEMPO_TEST_INSTANCE: disposable
       TZ: America/New_York
     volumes:
@@ -15,5 +16,27 @@ services:
       dockerfile: Dockerfile.web
     ports:
       - "4180:80"
+    depends_on:
+      - api
+  analysis-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["python", "-m", "app.background_worker"]
+    environment:
+      TEMPO_DB_PATH: /data/tempo.db
+      TEMPO_FOREGROUND_ACTIVITY_URL: http://api:8000/api/system/foreground-requests-active
+      TEMPO_BACKGROUND_WORKER: "1"
+      TZ: America/New_York
+    volumes:
+      - ${TEMPO_TEST_DATA}:/data
+    depends_on:
+      - api
+  maia-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.maia
+    environment:
+      TEMPO_API_URL: http://api:8000
     depends_on:
       - api

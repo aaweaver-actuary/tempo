@@ -6,12 +6,14 @@ from collections import deque
 from concurrent.futures import Future
 from dataclasses import dataclass
 import logging
+import os
 import sqlite3
 import threading
 import time
 from typing import Callable, Generic, TypeVar
 
 from .. import database as database_module
+from .activity_gate import activity_gate
 
 
 Result = TypeVar("Result")
@@ -145,6 +147,8 @@ class DatabaseWriter:
                 wait_seconds = time.perf_counter() - pending.submitted_at
                 transaction_started = time.perf_counter()
                 try:
+                    if pending.background and os.getenv("TEMPO_FOREGROUND_ACTIVITY_URL"):
+                        activity_gate.wait_for_foreground()
                     with database_module.write_compatibility_lock:
                         database_connection.execute("BEGIN IMMEDIATE")
                         result = pending.operation(database_connection)
