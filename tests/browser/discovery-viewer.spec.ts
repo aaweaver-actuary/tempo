@@ -24,7 +24,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1470, height: 836 
       accepted_moves_uci: [], candidates: [{ move_uci: "g1f3", score: { cp: 20, mate: null },
         loss_cp: 0, similarity: "no supported similarity", example_line_id: null,
         example_line_name: null, preview_moves_uci: ["g1f3"], engine_version: "Stockfish",
-        network_version: "NNUE", depth: 14, source_game_id: "coverage:node", source_ply: 2 }],
+        network_version: "NNUE", depth: 14, report_id: "a".repeat(64),
+        source_game_id: "coverage:node", source_ply: 2 }],
       engine_lines: [{ move_uci: "g1f3", score: { cp: 20, mate: null }, loss_cp: 0, depth: 14 }],
     } }));
     await prepareUI(page);

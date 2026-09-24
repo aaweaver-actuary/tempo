@@ -843,6 +843,7 @@ export const discoveryRecommendationSchema = z.strictObject({
     example_line_name: z.string().nullable(),
     preview_moves_uci: z.array(uciMoveSchema),
     engine_version: z.string(), network_version: z.string(), depth: integer,
+    report_id: z.string(),
     source_game_id: z.string(), source_ply: integer,
   })),
 });

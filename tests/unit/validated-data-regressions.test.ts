@@ -7,6 +7,7 @@ import {
 } from "../../app/domain/adapters/analysis-adapters";
 import {
   builderSessionSchema,
+  discoveryRecommendationSchema,
   gameAnalysisClaimSchema,
   portableSnapshotSchema,
   repertoireCoverageSummarySchema,
@@ -20,6 +21,28 @@ import {
 } from "../../app/lib/validated-data";
 
 beforeEach(clearDataDiagnostics);
+
+it("continuation preview accepts report provenance and rejects unknown candidate fields", () => {
+  const candidate = {
+    move_uci: "g1f3", score: { cp: 25, mate: null }, loss_cp: 0,
+    similarity: "no supported similarity", example_line_id: null,
+    example_line_name: null, preview_moves_uci: ["g1f3"],
+    engine_version: "Stockfish", network_version: "NNUE", depth: 14,
+    report_id: "a".repeat(64), source_game_id: "coverage:node", source_ply: 2,
+  };
+  const readyPreview = { state: "ready", opportunity_id: "gap", candidates: [candidate] };
+  expect(discoveryRecommendationSchema.safeParse(readyPreview).success).toBe(true);
+  expect(discoveryRecommendationSchema.safeParse({
+    ...readyPreview, candidates: [{ ...candidate, unexpected: true }],
+  }).success).toBe(false);
+  expect(discoveryRecommendationSchema.safeParse({
+    ...readyPreview, candidates: [{ ...candidate, report_id: undefined }],
+  }).success).toBe(false);
+  expect(discoveryRecommendationSchema.safeParse({
+    state: "waiting", opportunity_id: "gap", candidates: [],
+  }).success).toBe(true);
+});
+
 const rawCard = {
   id: "saved",
   queue_entry_id: 42,
