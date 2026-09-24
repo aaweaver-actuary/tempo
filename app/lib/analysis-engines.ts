@@ -75,21 +75,37 @@ async function stockfishAnalysis(
       return;
     }
     const lines = new Map<number, EngineMove>();
+    let timedOut = false;
+    let drainTimer: number | undefined;
     const cleanup = () => {
       window.clearTimeout(timeout);
+      if (drainTimer !== undefined) window.clearTimeout(drainTimer);
       worker.removeEventListener("message", receive);
       signal?.removeEventListener("abort", cancel);
     };
     const cancel = () => worker.postMessage({ type: "cancel", id });
     const timeout = window.setTimeout(() => {
-      cleanup();
-      reject(new Error("Stockfish took too long"));
+      timedOut = true;
+      cancel();
+      drainTimer = window.setTimeout(() => {
+        worker.terminate();
+        if (stockfishWorker === worker) stockfishWorker = undefined;
+        cleanup();
+        reject(new Error("Stockfish took too long and did not stop"));
+      }, 5_000);
     }, STOCKFISH_REQUEST_TIMEOUT_MS);
     const receive = (event: MessageEvent<unknown>) => {
       const parsed = stockfishMessageSchema.safeParse(event.data);
       if (!parsed.success) return;
       const data = parsed.data;
       if (data.id !== id) return;
+      if (timedOut && (data.type === "cancelled" ||
+          (data.type === "line" && data.line?.includes("bestmove ")))) {
+        cleanup();
+        reject(new Error("Stockfish took too long"));
+        return;
+      }
+      if (timedOut) return;
       if (data.type === "cancelled") {
         cleanup();
         reject(new StockfishCancelledError());

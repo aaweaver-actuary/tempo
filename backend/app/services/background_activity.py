@@ -217,11 +217,30 @@ def list_activity(*, offset: int = 0, limit: int = 50) -> dict:
                                       JOIN repertoires r ON r.id=j.repertoire_id
                                       WHERE j.status!='complete' OR j.updated_at>=?""", (cutoff,)):
             items.append(_base_item("priority", row["repertoire_id"], f"{row['repertoire_name']} priorities", row["status"], row["updated_at"], str(row["generation"]), error=row["last_error"]))
-        for row in database.execute("""SELECT j.*,g.provider,g.played_at FROM game_analysis_jobs j
+        game_position_counts = {(item["game_id"], item["analysis_version"]): item
+                                for item in database.execute(
+            """SELECT game_id,analysis_version,
+                      SUM(CASE WHEN state='complete' THEN 1 ELSE 0 END) AS completed,
+                      COUNT(*) AS started,
+                      MAX(CASE WHEN scan_pass='confirmed' THEN 1 ELSE 0 END) AS confirming
+               FROM game_analysis_position_reports GROUP BY game_id,analysis_version"""
+        )}
+        for row in database.execute("""SELECT j.*,g.provider,g.played_at,
+                                             json_array_length(g.moves_json)+1 AS position_total
+                                      FROM game_analysis_jobs j
                                       JOIN imported_games g ON g.id=j.game_id
                                       WHERE j.status!='complete' OR j.updated_at>=?""", (cutoff,)):
             title = f"{row['provider'].title()} game {row['played_at'][:10]} · {row['game_id'][-8:]} analysis"
-            items.append(_base_item("game_analysis", row["game_id"], title, row["status"], row["updated_at"], f"{row['analysis_version']}:{row['analysis_evidence_version']}", error=row["last_error"]))
+            progress = game_position_counts.get((row["game_id"], row["analysis_version"]))
+            state = "running" if row["status"] == "leased" else (
+                "retrying" if row["status"] == "queued" and progress and progress["started"] else row["status"])
+            phase = "Confirming critical positions" if progress and progress["confirming"] else "Scanning positions"
+            items.append(_base_item("game_analysis", row["game_id"], title, state,
+                                    row["updated_at"], f"{row['analysis_version']}:{row['analysis_evidence_version']}",
+                                    phase, progress["completed"] if progress else 0,
+                                    (row["position_total"] * (2 if progress and progress["confirming"] else 1))
+                                    if row["position_total"] else None,
+                                    row["last_error"]))
         controls = {(row["source"], row["work_id"]): row for row in database.execute("SELECT * FROM background_activity")}
     for item in items:
         control = controls.get((item["source"], item["id"]))

@@ -77,6 +77,10 @@ from .services.endgames import (
     normalized_material,
 )
 from .services.game_analysis import classify_swings
+from .services.game_analysis_worker import (
+    EVIDENCE_VERSION as GAME_WORKER_EVIDENCE_VERSION,
+    build_game_evaluations, claim_position, release_position, save_position_report,
+)
 from .services.game_findings import motif_recommendations
 from .services.threat_pipeline import (
     claim_analysis_request, enqueue_candidate_validation, enqueue_threat_scan,
@@ -371,6 +375,12 @@ def health():
 def foreground_active():
     """Allow the isolated engine worker to yield without acquiring SQLite."""
     return {"active": activity_gate.foreground_waiting}
+
+
+@app.post("/api/system/browser-activity")
+def record_browser_activity():
+    activity_gate.record_browser_activity()
+    return {"active": True}
 
 
 @app.get("/api/system/tasks")
@@ -3139,6 +3149,109 @@ def claim_game_analysis():
             "lease_expires_at": lease_expires_at.isoformat(),
         }
     }
+
+
+def _require_docker_engine(engine_worker: str | None) -> None:
+    if engine_worker != "docker":
+        raise HTTPException(403, "Engine claims are handled by the Docker worker")
+
+
+@app.post("/api/games/analysis/position/claim")
+def claim_game_analysis_position(
+    engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+):
+    _require_docker_engine(engine_worker)
+    parent_job = claim_game_analysis()["job"]
+    return {"job": claim_position(parent_job)}
+
+
+@app.post("/api/games/analysis/position/{report_id}/report")
+def submit_game_analysis_position(
+    report_id: str, request: ThreatAnalysisSubmission,
+    engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+):
+    _require_docker_engine(engine_worker)
+    try:
+        return {"status": save_position_report(report_id, request.lease_id, request.report)}
+    except (KeyError, ValueError) as error:
+        raise HTTPException(422, str(error)) from error
+
+
+@app.post("/api/games/analysis/position/{report_id}/release")
+def release_game_analysis_position(
+    report_id: str, request: GameAnalysisLeaseRequest,
+    engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+):
+    _require_docker_engine(engine_worker)
+    return {"status": release_position(report_id, request.lease_id)}
+
+
+@app.post("/api/games/analysis/position/{report_id}/failure")
+def fail_game_analysis_position(
+    report_id: str, request: ThreatAnalysisFailureRequest,
+    engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+):
+    _require_docker_engine(engine_worker)
+    return {"status": release_position(report_id, request.lease_id, request.error)}
+
+
+@app.post("/api/games/analysis/position/finalize")
+def finalize_game_analysis_position(
+    request: GameAnalysisLeaseRequest,
+    engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+):
+    _require_docker_engine(engine_worker)
+    with read_connection() as database:
+        row = database.execute(
+            """SELECT j.game_id,j.analysis_version,j.analysis_evidence_version,
+                      j.lease_id,g.color,g.start_fen,g.moves_json,c.divergence_ply
+               FROM game_analysis_jobs j JOIN imported_games g ON g.id=j.game_id
+               LEFT JOIN repertoire_comparisons c ON c.game_id=j.game_id
+               WHERE j.status='leased' AND j.lease_id=?""", (request.lease_id,),
+        ).fetchone()
+    if not row:
+        raise HTTPException(409, "Analysis lease is no longer active")
+    parent_job = {**dict(row), "moves": json.loads(row["moves_json"])}
+    try:
+        evaluations = build_game_evaluations(parent_job)
+    except (KeyError, ValueError) as error:
+        raise HTTPException(409, f"Game analysis is incomplete: {error}") from error
+    submission = GameAnalysisRequest(
+        evaluations=evaluations, depth=14, lease_id=request.lease_id,
+        idempotency_key=f"{row['game_id']}:analysis:{row['analysis_version']}:evidence:{GAME_WORKER_EVIDENCE_VERSION}",
+        analysis_version=row["analysis_version"],
+        analysis_evidence_version=GAME_WORKER_EVIDENCE_VERSION,
+        engine_version="Stockfish 19 WASM", network_version="nn-61e7af4bb97d.nnue",
+    )
+    return save_game_analysis(row["game_id"], submission)
+
+
+@app.post("/api/games/analysis/repair-timeout")
+def repair_one_stockfish_timeout(
+    engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+):
+    _require_docker_engine(engine_worker)
+    with connection(background=activity_gate.in_background) as database:
+        row = database.execute(
+            """SELECT game_id,last_error FROM game_analysis_jobs
+               WHERE status='failed' AND last_error='Stockfish took too long'
+               ORDER BY updated_at,game_id LIMIT 1"""
+        ).fetchone()
+        if not row:
+            return {"requeued": False}
+        database.execute(
+            "INSERT INTO game_analysis_position_errors(report_id,game_id,error,recorded_at) VALUES(?,?,?,?)",
+            (f"legacy:{row['game_id']}", row["game_id"], row["last_error"],
+             datetime.now(timezone.utc).isoformat()),
+        )
+        database.execute(
+            """UPDATE game_analysis_jobs SET status='queued',last_error=NULL,
+                   lease_id=NULL,lease_expires_at=NULL,updated_at=? WHERE game_id=?""",
+            (datetime.now(timezone.utc).isoformat(), row["game_id"]),
+        )
+        database.execute("UPDATE imported_games SET analysis_state='pending' WHERE id=?",
+                         (row["game_id"],))
+    return {"requeued": True, "game_id": row["game_id"]}
 
 
 @app.post("/api/games/analysis/{game_id:path}/failure")

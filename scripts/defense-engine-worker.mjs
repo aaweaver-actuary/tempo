@@ -32,24 +32,33 @@ function evaluate(job) {
     const lines = new Map();
     let finished = false;
     let preempted = false;
+    let stopReason = "preempted";
+    let stopWatchdog;
+    const stopSearch = () => {
+      if (preempted) return;
+      preempted = true;
+      engine.uci("stop");
+      stopWatchdog = setTimeout(() => {
+        fatalEngineError = true;
+        rejectReport(new Error("Stockfish did not drain after cancellation"));
+      }, 5_000);
+    };
     const position = specification.position_prefix_uci ?? [];
     const whiteTurn = (specification.position_start_fen.split(" ")[1] === "w") === (position.length % 2 === 0);
     const whiteSign = whiteTurn ? 1 : -1;
     const timeout = setTimeout(() => {
-      preempted = true;
-      engine.uci("stop");
+      stopReason = "Engine timed out before requested depth";
+      stopSearch();
     }, 55_000);
     const foregroundPoll = setInterval(async () => {
       if (finished || preempted) return;
       try {
         const { active } = await request("/api/system/foreground-active");
         if (active) {
-          preempted = true;
-          engine.uci("stop");
+          stopSearch();
         }
       } catch {
-        preempted = true;
-        engine.uci("stop");
+        stopSearch();
       }
     }, 750);
     engine.listen = (text) => {
@@ -74,7 +83,8 @@ function evaluate(job) {
         finished = true;
         clearTimeout(timeout);
         clearInterval(foregroundPoll);
-        if (preempted) return rejectReport(new Error("preempted"));
+        clearTimeout(stopWatchdog);
+        if (preempted) return rejectReport(new Error(stopReason));
         const completeLines = [...lines.entries()]
           .sort(([left], [right]) => left - right)
           .map(([, line]) => line)
@@ -89,6 +99,7 @@ function evaluate(job) {
         finished = true;
         clearTimeout(timeout);
         clearInterval(foregroundPoll);
+        clearTimeout(stopWatchdog);
         rejectReport(new Error(String(message)));
       }
     };
@@ -111,20 +122,45 @@ if (process.env.TEMPO_ENGINE_SMOKE === "1") {
 
 while (true) {
   let job;
+  let jobKind;
   try {
     const available = await request("/api/system/foreground-active");
     if (available.active) { await sleep(2_000); continue; }
     job = (await request("/api/defensive-threats/analysis/claim", { method: "POST" })).job;
+    if (job) jobKind = "defense";
+    else {
+      await request("/api/games/analysis/repair-timeout", { method: "POST" });
+      job = (await request("/api/games/analysis/position/claim", { method: "POST" })).job;
+      jobKind = "game";
+    }
     if (!job) { await sleep(2_000); continue; }
+    if (job.kind === "finalize") {
+      await request("/api/games/analysis/position/finalize", {
+        method: "POST", body: JSON.stringify({ lease_id: job.lease_id }),
+      });
+      job = undefined;
+      continue;
+    }
     const report = await evaluate(job);
-    await request(`/api/defensive-threats/analysis/${job.id}/report`, {
+    await request(jobKind === "defense"
+      ? `/api/defensive-threats/analysis/${job.id}/report`
+      : `/api/games/analysis/position/${job.id}/report`, {
       method: "POST", body: JSON.stringify({ lease_id: job.lease_id, report }),
     });
   } catch (error) {
     if (job) {
       const preempted = error.message === "preempted";
       try {
-        await request(`/api/defensive-threats/analysis/${job.id}/${preempted ? "release" : "failure"}`, {
+        if (job.kind === "finalize") {
+          await request(`/api/games/analysis/${encodeURIComponent(job.game_id)}/failure`, {
+            method: "POST", body: JSON.stringify({ lease_id: job.lease_id,
+              error: `Game finalization failed: ${error.message.slice(0, 900)}` }),
+          });
+          job = undefined;
+          continue;
+        }
+        const prefix = jobKind === "defense" ? "/api/defensive-threats/analysis" : "/api/games/analysis/position";
+        await request(`${prefix}/${job.id}/${preempted ? "release" : "failure"}`, {
           method: "POST", body: JSON.stringify(preempted
             ? { lease_id: job.lease_id }
             : { lease_id: job.lease_id, error: error.message.slice(0, 1000) }),

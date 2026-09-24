@@ -48,7 +48,6 @@ import SettingsView from "./settings_view";
 import TacticsView from "./tactics_view";
 import { loadPositionAnnotation } from "../utils/position-annotations";
 import { useGameSync } from "../hooks/use-game-sync";
-import { useGameAnalysis } from "../hooks/use-game-analysis";
 import { useRepertoireCoverageWorker } from "../hooks/use-repertoire-coverage";
 import { Chess, Move, Square } from "chess.js";
 import {
@@ -91,8 +90,24 @@ async function responseErrorDetail(response: Response): Promise<string> {
 
 export default function Home() {
   const gameSync = useGameSync();
-  useGameAnalysis();
   useRepertoireCoverageWorker();
+  useEffect(() => {
+    if (!usesLocalApi()) return;
+    let lastSentAt = 0;
+    const markActivity = () => {
+      if (Date.now() - lastSentAt < 1_000) return;
+      lastSentAt = Date.now();
+      void fetch(`${API_URL}/api/system/browser-activity`, {
+        method: "POST", headers: { "X-Tempo-Work-Class": "background" },
+      }).catch(() => undefined);
+    };
+    window.addEventListener("pointerdown", markActivity, true);
+    window.addEventListener("keydown", markActivity, true);
+    return () => {
+      window.removeEventListener("pointerdown", markActivity, true);
+      window.removeEventListener("keydown", markActivity, true);
+    };
+  }, []);
   const [currentView, setCurrentView] = useState<View>("train");
   const [safeBreakCounter, setSafeBreakCounter] = useState(0);
   const [repairRepertoireId, setRepairRepertoireId] = useState<string>();

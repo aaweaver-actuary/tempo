@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import contextmanager
 from contextvars import ContextVar
 import threading
+import time
 from typing import Iterator
 
 
@@ -24,6 +25,12 @@ class ApplicationActivityGate:
         self._foreground_requests = 0
         self._active_background_sections = 0
         self._background_work: tuple[str, str] | None = None
+        self._browser_active_until = 0.0
+
+    def record_browser_activity(self, seconds: float = 3.0) -> None:
+        with self._condition:
+            self._browser_active_until = max(self._browser_active_until, time.monotonic() + seconds)
+            self._condition.notify_all()
 
     @contextmanager
     def foreground(self):
@@ -120,7 +127,7 @@ class ApplicationActivityGate:
     @property
     def foreground_waiting(self) -> bool:
         with self._condition:
-            return self._foreground_requests > 0
+            return self._foreground_requests > 0 or time.monotonic() < self._browser_active_until
 
     @property
     def active_background_sections(self) -> int:

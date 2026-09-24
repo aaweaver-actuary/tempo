@@ -565,6 +565,31 @@ def initialize() -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_game_analysis_jobs_status ON game_analysis_jobs(status, updated_at)",
+        """CREATE TABLE IF NOT EXISTS game_analysis_position_reports (
+            id TEXT PRIMARY KEY,
+            game_id TEXT NOT NULL REFERENCES imported_games(id) ON DELETE CASCADE,
+            analysis_version INTEGER NOT NULL,
+            scan_pass TEXT NOT NULL CHECK(scan_pass IN ('shallow','confirmed')),
+            position_index INTEGER NOT NULL,
+            request_json TEXT NOT NULL,
+            report_json TEXT,
+            state TEXT NOT NULL CHECK(state IN ('leased','complete','queued','failed')),
+            lease_id TEXT,
+            parent_lease_id TEXT,
+            lease_expires_at TEXT,
+            attempts INTEGER NOT NULL DEFAULT 0,
+            last_error TEXT,
+            updated_at TEXT NOT NULL,
+            UNIQUE(game_id,analysis_version,scan_pass,position_index)
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_game_analysis_positions_state ON game_analysis_position_reports(game_id,analysis_version,state)",
+        """CREATE TABLE IF NOT EXISTS game_analysis_position_errors (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            report_id TEXT NOT NULL,
+            game_id TEXT NOT NULL,
+            error TEXT NOT NULL,
+            recorded_at TEXT NOT NULL
+        )""",
         """
         CREATE TABLE IF NOT EXISTS repertoire_comparisons (
             game_id TEXT PRIMARY KEY REFERENCES imported_games(id) ON DELETE CASCADE,

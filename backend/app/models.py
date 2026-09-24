@@ -222,7 +222,7 @@ class GameAnalysisRequest(BaseModel):
     analysis_version: int = Field(default=1, ge=1)
     analysis_evidence_version: int = Field(default=2, ge=1, le=10)
     engine_version: str = "Stockfish 19 WASM"
-    network_version: str = "nn-1c0000000000.nnue"
+    network_version: str = "nn-61e7af4bb97d.nnue"
 
 
 class GameAnalysisFailureRequest(BaseModel):

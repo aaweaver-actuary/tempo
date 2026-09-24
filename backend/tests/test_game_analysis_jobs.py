@@ -5,6 +5,124 @@ from fastapi.testclient import TestClient
 
 from app import database
 from app.main import app
+from app.services.activity_gate import activity_gate
+
+
+def test_stockfish_timeout_resumes_at_unfinished_position_without_saving_partial_game(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    game_id = "lichess:position-timeout"
+    with TestClient(app) as client:
+        with database.connection() as db:
+            db.execute(
+                """INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json)
+                   VALUES(?,'lichess','TempoPlayer',?,'rapid',1,'white','1-0',?,?)""",
+                (game_id, datetime.now(timezone.utc).isoformat(),
+                 "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                 json.dumps(["e2e4", "e7e5"])),
+            )
+            db.execute("INSERT INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
+                       (game_id, datetime.now(timezone.utc).isoformat()))
+        first = client.post("/api/games/analysis/position/claim",
+                            headers={"X-Tempo-Engine-Worker": "docker"}).json()["job"]
+        assert first["position_index"] == 0
+        report = {"request": first["request"], "complete": True, "lines": [{
+            "root_move_uci": "e2e4", "pv_uci": ["e2e4"],
+            "score": {"cp": 20, "mate": None}, "depth": 8,
+        }]}
+        assert client.post(f"/api/games/analysis/position/{first['id']}/report",
+                           headers={"X-Tempo-Engine-Worker": "docker"},
+                           json={"lease_id": first["lease_id"], "report": report}).status_code == 200
+        second = client.post("/api/games/analysis/position/claim",
+                             headers={"X-Tempo-Engine-Worker": "docker"}).json()["job"]
+        assert second["position_index"] == 1
+        assert client.post(f"/api/games/analysis/position/{second['id']}/release",
+                           headers={"X-Tempo-Engine-Worker": "docker"},
+                           json={"lease_id": second["lease_id"]}).status_code == 200
+        resumed = client.post("/api/games/analysis/position/claim",
+                              headers={"X-Tempo-Engine-Worker": "docker"}).json()["job"]
+        assert resumed["position_index"] == 1
+        with database.connection() as db:
+            assert db.execute("SELECT COUNT(*) FROM game_move_analysis WHERE game_id=?", (game_id,)).fetchone()[0] == 0
+
+
+def test_docker_game_scan_finalizes_complete_positions_once_with_actual_network(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    game_id = "lichess:docker-scan"
+    with TestClient(app) as client:
+        with database.connection() as db:
+            db.execute(
+                """INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json)
+                   VALUES(?,'lichess','TempoPlayer',?,'rapid',1,'white','1-0',?,?)""",
+                (game_id, datetime.now(timezone.utc).isoformat(),
+                 "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                 json.dumps(["e2e4", "e7e5"])),
+            )
+            db.execute("INSERT INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
+                       (game_id, datetime.now(timezone.utc).isoformat()))
+        expected_roots = ["e2e4", "e7e5", "g1f3"]
+        for expected_index, root in enumerate(expected_roots):
+            job = client.post("/api/games/analysis/position/claim",
+                              headers={"X-Tempo-Engine-Worker": "docker"}).json()["job"]
+            assert job["position_index"] == expected_index
+            report = {"request": job["request"], "complete": True, "lines": [{
+                "root_move_uci": root, "pv_uci": [root],
+                "score": {"cp": 0, "mate": None}, "depth": 8,
+            }]}
+            result = client.post(f"/api/games/analysis/position/{job['id']}/report",
+                                 headers={"X-Tempo-Engine-Worker": "docker"},
+                                 json={"lease_id": job["lease_id"], "report": report})
+            assert result.status_code == 200, result.text
+        final_job = client.post("/api/games/analysis/position/claim",
+                                headers={"X-Tempo-Engine-Worker": "docker"}).json()["job"]
+        assert final_job["kind"] == "finalize"
+        finalized = client.post("/api/games/analysis/position/finalize",
+                                headers={"X-Tempo-Engine-Worker": "docker"},
+                                json={"lease_id": final_job["lease_id"]})
+        assert finalized.status_code == 200, finalized.text
+        with database.connection() as db:
+            rows = db.execute("SELECT network_version FROM game_move_analysis WHERE game_id=? ORDER BY ply",
+                              (game_id,)).fetchall()
+            assert len(rows) == 2
+            assert {row["network_version"] for row in rows} == {"nn-61e7af4bb97d.nnue"}
+            assert db.execute("SELECT status FROM game_analysis_jobs WHERE game_id=?", (game_id,)).fetchone()[0] == "complete"
+
+
+def test_docker_game_report_rejects_wrong_history_and_depth_without_advancing(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    game_id = "lichess:wrong-report"
+    with TestClient(app) as client:
+        with database.connection() as db:
+            db.execute(
+                """INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json)
+                   VALUES(?,'lichess','TempoPlayer',?,'rapid',1,'white','1-0',?,?)""",
+                (game_id, datetime.now(timezone.utc).isoformat(),
+                 "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", json.dumps(["e2e4"])),
+            )
+            db.execute("INSERT INTO game_analysis_jobs(game_id,updated_at) VALUES(?,?)",
+                       (game_id, datetime.now(timezone.utc).isoformat()))
+        job = client.post("/api/games/analysis/position/claim",
+                          headers={"X-Tempo-Engine-Worker": "docker"}).json()["job"]
+        report = {"request": {**job["request"], "position_prefix_uci": ["e2e4"]},
+                  "complete": True, "lines": [{"root_move_uci": "e2e4", "pv_uci": ["e2e4"],
+                                                "score": {"cp": 20, "mate": None}, "depth": 7}]}
+        response = client.post(f"/api/games/analysis/position/{job['id']}/report",
+                               headers={"X-Tempo-Engine-Worker": "docker"},
+                               json={"lease_id": job["lease_id"], "report": report})
+        assert response.status_code == 422
+        with database.connection() as db:
+            assert db.execute("SELECT state FROM game_analysis_position_reports WHERE id=?",
+                              (job["id"],)).fetchone()[0] == "leased"
+
+
+def test_browser_activity_preempts_docker_search_without_database_access(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        response = client.post("/api/system/browser-activity",
+                               headers={"X-Tempo-Work-Class": "background"})
+        assert response.status_code == 200
+        assert client.get("/api/system/foreground-active",
+                          headers={"X-Tempo-Work-Class": "background"}).json()["active"] is True
+    assert activity_gate.foreground_waiting
 
 
 def test_background_game_analysis_resumes_after_reload_and_submits_once(
