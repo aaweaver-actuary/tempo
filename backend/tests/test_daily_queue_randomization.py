@@ -90,3 +90,51 @@ def test_daily_queue_uses_a_different_seed_for_the_next_day(tmp_path, monkeypatc
                 )
             ]
         assert today_order != tomorrow_order
+
+
+def test_defensive_stack_toggle_hides_today_without_erasing_reviews_or_queue_entries(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        _seed_cards()
+        today = date.today().isoformat()
+        with database.connection() as db:
+            db.execute(
+                """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type)
+                   VALUES('defense-toggle','queue-test','checkpoint',?,'[]','learning',?,'defense')""",
+                (START_FEN, today),
+            )
+            db.execute(
+                """INSERT INTO daily_queue(queue_date,card_id,position)
+                   VALUES(?,'defense-toggle',-1)""",
+                (today,),
+            )
+            db.execute(
+                """INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval)
+                   VALUES('defense-toggle','correct',?,0,1)""",
+                (f"{today}T00:00:00+00:00",),
+            )
+            entry_id = db.execute(
+                "SELECT id FROM daily_queue WHERE card_id='defense-toggle'"
+            ).fetchone()[0]
+        before = client.get("/api/queue/today").json()
+        assert entry_id in {card["queue_entry_id"] for card in before["cards"]}
+        settings = client.get("/api/settings").json()
+        assert settings["include_defensive_cards_in_daily_stack"] is True
+        response = client.put("/api/settings", json={
+            **settings, "include_defensive_cards_in_daily_stack": False,
+        })
+        assert response.status_code == 200
+        hidden = client.get("/api/queue/today").json()
+        assert entry_id not in {card["queue_entry_id"] for card in hidden["cards"]}
+        assert hidden["count"] == before["count"] - 1
+        assert client.get("/api/progress").json()["dueToday"] == hidden["count"]
+        assert client.post(f"/api/queue/entries/{entry_id}/fail").status_code == 409
+        with database.connection() as db:
+            assert db.execute("SELECT status FROM daily_queue WHERE id=?", (entry_id,)).fetchone()[0] == "queued"
+            assert db.execute("SELECT COUNT(*) FROM reviews WHERE card_id='defense-toggle'").fetchone()[0] == 1
+        response = client.put("/api/settings", json={
+            **settings, "include_defensive_cards_in_daily_stack": True,
+        })
+        assert response.status_code == 200
+        restored = client.get("/api/queue/today").json()
+        assert entry_id in {card["queue_entry_id"] for card in restored["cards"]}

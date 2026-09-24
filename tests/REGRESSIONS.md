@@ -311,6 +311,7 @@ Append every new reported issue and its test names here. All listed tests belong
 
 ## Fractional priority validation and card-level integrity recovery
 
+- Disabling defensive cards leaves them in today's stack or erases their history — `test_defensive_stack_toggle_hides_today_without_erasing_reviews_or_queue_entries` checks same-day restoration, accurate due counts, and stale queue actions; `defensive daily stack setting persists across navigation and reload` covers the Settings workflow.
 - Adaptive cohort fields make “Check coverage” reject a valid response — `test_coverage_summary_accepts_adaptive_cohort_settings_without_diagnostic`; `check coverage loads adaptive settings without a validation alert`.
 - Fractional weighted personal-game evidence invalidates repertoire records — `test_fractional_personal_game_evidence_is_valid_repertoire_data`; `test_workspace_validation_does_not_drop_fractional_priority_records`; `fractional priority evidence loads both repertoires without a diagnostic`.
 - Whole-repertoire repair status quarantines safe cards — `test_integrity_scan_blocks_only_cards_crossing_unresolved_positions`; `test_unaffected_due_reviews_remain_playable_when_repertoire_needs_repair`; `unaffected opening reviews remain mixed with tactics during repertoire repair`.

@@ -10,6 +10,7 @@ class Settings(BaseModel):
     timezone: str = "local"
     tactics_new_per_day: int = Field(default=5, ge=0, le=100)
     defense_new_cards_per_day: int = Field(default=5, ge=0, le=100)
+    include_defensive_cards_in_daily_stack: bool = True
     discovery_window_days: Literal[30, 90] = 90
     new_cards_per_day: int = Field(default=10, ge=0, le=100)
     lichess_username: str = ""

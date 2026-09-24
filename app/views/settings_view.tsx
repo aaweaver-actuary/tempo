@@ -22,6 +22,7 @@ type SettingsValues = {
   new_cards_per_day: number;
   tactics_new_per_day: number;
   defense_new_cards_per_day: number;
+  include_defensive_cards_in_daily_stack: boolean;
   discovery_window_days: 30 | 90;
   lichess_username: string;
   chesscom_username: string;
@@ -68,6 +69,7 @@ export default function SettingsView({
     new_cards_per_day: 10,
     tactics_new_per_day: 5,
     defense_new_cards_per_day: 5,
+    include_defensive_cards_in_daily_stack: true,
     discovery_window_days: 90,
     lichess_username: "",
     chesscom_username: "",
@@ -206,6 +208,7 @@ export default function SettingsView({
         new_cards_per_day: values.new_cards_per_day,
         tactics_new_per_day: values.tactics_new_per_day,
         defense_new_cards_per_day: values.defense_new_cards_per_day,
+        include_defensive_cards_in_daily_stack: values.include_defensive_cards_in_daily_stack,
         discovery_window_days: values.discovery_window_days,
         lichess_username: values.lichess_username.trim(),
         chesscom_username: values.chesscom_username.trim(),
@@ -231,9 +234,7 @@ export default function SettingsView({
         setStatus("Saved.");
         setDirty(false);
       } catch {
-        setStatus(
-          "Browser settings saved. The local service could not be reached.",
-        );
+        setStatus("The local service could not save these settings. Retry when it is available.");
       }
     } else {
       setStatus("Saved in this browser.");
@@ -406,6 +407,12 @@ export default function SettingsView({
             <input type="number" min="0" max="100"
               value={values.defense_new_cards_per_day}
               onChange={(event) => update("defense_new_cards_per_day", Number(event.target.value))} />
+          </label>
+          <label>
+            <span>Defensive cards in daily stack<small>Turn off to hide them now; your cards and review history are kept</small></span>
+            <input type="checkbox"
+              checked={values.include_defensive_cards_in_daily_stack}
+              onChange={(event) => update("include_defensive_cards_in_daily_stack", event.target.checked)} />
           </label>
           <label>
             <span>Discovery evidence window<small>How far back Tempo counts analyzed games</small></span>

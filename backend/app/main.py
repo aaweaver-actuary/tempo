@@ -475,7 +475,7 @@ def capabilities():
 def get_settings():
     with read_connection() as db:
         row = db.execute(
-            "SELECT tactics_new_per_day,defense_new_cards_per_day,discovery_window_days,initial_depth,timezone,new_cards_per_day,lichess_username,chesscom_username,auto_sync_minutes,engine_line_window_cp,major_mistake_cp,light_first_interval_days,draw_hold_user_moves,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
+            "SELECT tactics_new_per_day,defense_new_cards_per_day,include_defensive_cards_in_daily_stack,discovery_window_days,initial_depth,timezone,new_cards_per_day,lichess_username,chesscom_username,auto_sync_minutes,engine_line_window_cp,major_mistake_cp,light_first_interval_days,draw_hold_user_moves,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
         ).fetchone()
     return Settings(**dict(row))
 
@@ -491,13 +491,14 @@ def put_settings(s: Settings):
     )
     def persist_settings(db):
         previous_settings = db.execute(
-            "SELECT discovery_window_days,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
+            "SELECT discovery_window_days,include_defensive_cards_in_daily_stack,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
         ).fetchone()
         db.execute(
-            "UPDATE settings SET tactics_new_per_day=?,defense_new_cards_per_day=?,discovery_window_days=?,initial_depth=?,timezone=?,new_cards_per_day=?,lichess_username=?,chesscom_username=?,auto_sync_minutes=?,engine_line_window_cp=?,major_mistake_cp=?,light_first_interval_days=?,draw_hold_user_moves=?,coverage_reply_denominator=?,coverage_cumulative_target=?,coverage_horizon_fullmoves=?,coverage_path_floor=?,coverage_maia_elo=? WHERE id=1",
+            "UPDATE settings SET tactics_new_per_day=?,defense_new_cards_per_day=?,include_defensive_cards_in_daily_stack=?,discovery_window_days=?,initial_depth=?,timezone=?,new_cards_per_day=?,lichess_username=?,chesscom_username=?,auto_sync_minutes=?,engine_line_window_cp=?,major_mistake_cp=?,light_first_interval_days=?,draw_hold_user_moves=?,coverage_reply_denominator=?,coverage_cumulative_target=?,coverage_horizon_fullmoves=?,coverage_path_floor=?,coverage_maia_elo=? WHERE id=1",
             (
                 s.tactics_new_per_day,
                 s.defense_new_cards_per_day,
+                int(s.include_defensive_cards_in_daily_stack) if "include_defensive_cards_in_daily_stack" in s.model_fields_set else previous_settings["include_defensive_cards_in_daily_stack"],
                 s.discovery_window_days,
                 s.initial_depth,
                 s.timezone,
@@ -563,7 +564,7 @@ def put_settings(s: Settings):
         enqueue_opportunity_refresh(repertoire_id, background=False)
     if enqueued_coverage or discovery_repertoire_ids:
         coordinator.wake()
-    return s
+    return get_settings()
 
 
 def reconcile_unseen_queue(db, day, limit):
@@ -1185,6 +1186,7 @@ def queue_today():
                                 ORDER BY linked.is_main DESC,linked.created_at DESC LIMIT 1),
                                c.repertoire_id)
                            WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
+                             AND (c.content_type!='defense' OR (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
                              AND COALESCE(c.pending_validation,0)=0
                              AND (c.content_type!='opening' OR NOT EXISTS(
                                  SELECT 1 FROM repertoire_integrity_card_blocks block
@@ -1816,7 +1818,10 @@ def requeue(db, day, cid, after, attempt):
         ).fetchone()[0]
     else:
         row = db.execute(
-            "SELECT position FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id LIMIT 1 OFFSET ?",
+            """SELECT q.position FROM daily_queue q JOIN cards c ON c.id=q.card_id
+               WHERE q.queue_date=? AND q.status='queued'
+                 AND (c.content_type!='defense' OR (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
+               ORDER BY q.position,q.id LIMIT 1 OFFSET ?""",
             (day, max(0, after)),
         ).fetchone()
         position = (
@@ -1848,7 +1853,9 @@ def requeue(db, day, cid, after, attempt):
 def mark_attempt_failed(entry_id: int):
     with connection() as db:
         if not db.execute(
-            "UPDATE daily_queue SET attempt_failed=1 WHERE id=? AND status='queued'",
+            """UPDATE daily_queue SET attempt_failed=1 WHERE id=? AND status='queued'
+               AND ((SELECT content_type FROM cards WHERE id=card_id)!='defense'
+                    OR (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)""",
             (entry_id,),
         ).rowcount:
             raise HTTPException(409, "This queue attempt is no longer active")
@@ -2149,7 +2156,9 @@ def progress_summary():
                 "SELECT COUNT(DISTINCT card_id) FROM reviews WHERE rating='correct' AND guided=0 AND invalidated_at IS NULL"
             ).fetchone()[0],
             "dueToday": db.execute(
-                "SELECT COUNT(*) FROM daily_queue WHERE queue_date=? AND status='queued'",
+                """SELECT COUNT(*) FROM daily_queue q JOIN cards c ON c.id=q.card_id
+                   WHERE q.queue_date=? AND q.status='queued'
+                     AND (c.content_type!='defense' OR (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)""",
                 (day.isoformat(),),
             ).fetchone()[0],
             "blockedDue": db.execute(
