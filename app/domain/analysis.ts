@@ -99,6 +99,7 @@ export type BuilderSession = {
   branchStart: number | null;
   dismissedTranspositions?: string[];
   sourceGapId?: string;
+  selectedMoveUci?: UciMove;
 };
 
 export type CardNameSource = "title" | "moves" | "startingFen";

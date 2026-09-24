@@ -125,7 +125,7 @@ def _publish(database: sqlite3.Connection, *, repertoire_id: str, kind: str,
          _fingerprint(evidence), json.dumps(previous_dismissal) if previous_dismissal else None,
          _now(), _now()),
     )
-    if kind == "post_gap_weakness" and card_id is None and status == "active":
+    if kind in {"post_gap_weakness", "missing_response"} and card_id is None and status == "active":
         enqueue_task_in_transaction(
             database, "discovery_recommendation", opportunity_id,
             {"opportunity_id": opportunity_id}, priority=128,
@@ -825,6 +825,23 @@ def list_opportunities(database: sqlite3.Connection, repertoire_id: str,
     result = []
     if opportunity_ids is not None and not opportunity_ids:
         return result
+    accepted_by_position: dict[str, set[str]] = {}
+    for line in database.execute(
+        "SELECT start_fen,moves_json,trained_color FROM repertoire_lines WHERE repertoire_id=?",
+        (repertoire_id,),
+    ):
+        board = chess.Board(line["start_fen"])
+        learner_turn = line["trained_color"] == "white"
+        for move_uci in json.loads(line["moves_json"]):
+            try:
+                move = chess.Move.from_uci(move_uci)
+                if move not in board.legal_moves:
+                    break
+                if board.turn == learner_turn:
+                    accepted_by_position.setdefault(" ".join(board.fen().split()[:4]), set()).add(move_uci)
+                board.push(move)
+            except ValueError:
+                break
     identifier_clause = (
         f" AND opportunity.id IN ({','.join('?' for _ in opportunity_ids)})"
         if opportunity_ids is not None else ""
@@ -873,12 +890,75 @@ def list_opportunities(database: sqlite3.Connection, repertoire_id: str,
             if route and route not in distinct_routes:
                 distinct_routes.append(route)
             source_games.append({"id": game["id"], "url": game["game_url"], "route": route})
+        decision_fen = f"{fen_key} 0 1"
+        decision_start_fen = decision_fen
+        decision_route_uci: list[str] = []
+        trained_color = row["card_trained_color"] or ("white" if fen_key.split()[1] == "w" else "black")
+        if row["kind"] == "missing_response" and row["opponent_move_uci"]:
+            node = database.execute(
+                "SELECT fen,routes_json,trained_color FROM repertoire_coverage_nodes WHERE id=?",
+                (evidence.get("coverage_node_id"),),
+            ).fetchone()
+            try:
+                decision_board = chess.Board(node["fen"] if node else decision_fen)
+                decision_board.push_uci(row["opponent_move_uci"])
+                decision_fen = decision_board.fen()
+                trained_color = node["trained_color"] if node else ("white" if decision_board.turn else "black")
+                routes_uci = json.loads(node["routes_json"]) if node else []
+                for route_uci in sorted(routes_uci, key=lambda route: (len(route), route)):
+                    for line in database.execute(
+                        "SELECT start_fen,moves_json FROM repertoire_lines WHERE repertoire_id=? ORDER BY id",
+                        (repertoire_id,),
+                    ):
+                        if json.loads(line["moves_json"])[:len(route_uci)] != route_uci:
+                            continue
+                        route_board = chess.Board(line["start_fen"])
+                        try:
+                            for move_uci in [*route_uci, row["opponent_move_uci"]]:
+                                route_board.push_uci(move_uci)
+                        except ValueError:
+                            continue
+                        if " ".join(route_board.fen().split()[:4]) == " ".join(decision_fen.split()[:4]):
+                            decision_start_fen = line["start_fen"]
+                            decision_route_uci = [*route_uci, row["opponent_move_uci"]]
+                            break
+                    if decision_route_uci:
+                        break
+            except ValueError:
+                pass
+        elif evidence.get("findings"):
+            for finding in evidence["findings"]:
+                game_id, mistake_ply = finding.get("game_id"), finding.get("mistake_ply")
+                if game_id is None or not isinstance(mistake_ply, int):
+                    continue
+                game = database.execute(
+                    "SELECT start_fen,moves_json FROM imported_games WHERE id=?", (game_id,),
+                ).fetchone()
+                if not game:
+                    continue
+                route_uci = json.loads(game["moves_json"])[:mistake_ply]
+                route_board = chess.Board(game["start_fen"])
+                try:
+                    for move_uci in route_uci:
+                        route_board.push_uci(move_uci)
+                except ValueError:
+                    continue
+                if " ".join(route_board.fen().split()[:4]) == fen_key:
+                    decision_start_fen = game["start_fen"]
+                    decision_route_uci = route_uci
+                    decision_fen = route_board.fen()
+                    break
         result.append({
             "id": row["id"], "repertoire_id": repertoire_id,
             "kind": row["kind"], "status": row["status"],
             "fen_key": fen_key, "fen": f"{fen_key} 0 1",
             "card_id": row["card_id"], "opponent_move_uci": row["opponent_move_uci"],
-            "trained_color": row["card_trained_color"] or ("white" if fen_key.split()[1] == "w" else "black"),
+            "trained_color": trained_color,
+            "decision_fen": decision_fen,
+            "decision_start_fen": decision_start_fen,
+            "decision_route_uci": decision_route_uci,
+            "accepted_moves_uci": sorted(accepted_by_position.get(
+                " ".join(decision_fen.split()[:4]), set())),
             "score": row["score"], "evidence": evidence,
             "evidence_fingerprint": row["evidence_fingerprint"],
             "seen_at": row["seen_at"], "snoozed_until": row["snoozed_until"],

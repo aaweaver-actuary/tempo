@@ -51,13 +51,47 @@ def _source_game(database, opportunity) -> dict | None:
         if not game:
             continue
         return {**dict(game), "ply": int(mistake_ply)}
+    if opportunity["kind"] == "missing_response" and opportunity["opponent_move_uci"]:
+        node_id = evidence.get("coverage_node_id")
+        node = database.execute(
+            "SELECT fen_key,routes_json FROM repertoire_coverage_nodes WHERE id=? AND repertoire_id=?",
+            (node_id, opportunity["repertoire_id"]),
+        ).fetchone()
+        if not node:
+            return None
+        routes = json.loads(node["routes_json"])
+        lines = database.execute(
+            "SELECT start_fen,moves_json,trained_color FROM repertoire_lines WHERE repertoire_id=? ORDER BY id",
+            (opportunity["repertoire_id"],),
+        ).fetchall()
+        for route in sorted(routes, key=lambda moves: (len(moves), moves)):
+            for line in lines:
+                if json.loads(line["moves_json"])[:len(route)] != route:
+                    continue
+                board = chess.Board(line["start_fen"])
+                try:
+                    for move_uci in route:
+                        board.push_uci(move_uci)
+                    if _key(board) != node["fen_key"]:
+                        continue
+                    board.push_uci(opportunity["opponent_move_uci"])
+                except ValueError:
+                    continue
+                if board.turn != (line["trained_color"] == "white"):
+                    continue
+                decision_route = [*route, opportunity["opponent_move_uci"]]
+                return {"id": f"coverage:{node_id}", "source_kind": "coverage",
+                        "coverage_node_id": node_id, "start_fen": line["start_fen"],
+                        "moves_json": json.dumps(decision_route),
+                        "color": line["trained_color"], "analysis_version": 0,
+                        "ply": len(decision_route)}
     return None
 
 
 def _full_history_request(game: dict) -> tuple[chess.Board, AnalysisRequest]:
     board = chess.Board(game["start_fen"])
     all_moves = json.loads(game["moves_json"])
-    if game["ply"] < 0 or game["ply"] >= len(all_moves):
+    if game["ply"] < 0 or game["ply"] > len(all_moves):
         raise ValueError("Source game does not contain the discovered decision")
     prefix = tuple(all_moves[:game["ply"]])
     for move_uci in prefix:
@@ -77,7 +111,7 @@ def execute_recommendation_request_slice(task: dict) -> None:
     with read_connection() as database:
         opportunity = database.execute(
             """SELECT * FROM repertoire_opportunities WHERE id=? AND status='active'
-               AND kind='post_gap_weakness' AND card_id IS NULL""",
+               AND kind IN ('post_gap_weakness','missing_response') AND card_id IS NULL""",
             (task["payload"]["opportunity_id"],),
         ).fetchone()
         game = _source_game(database, opportunity) if opportunity else None
@@ -104,16 +138,28 @@ def execute_recommendation_request_slice(task: dict) -> None:
                  id,request_json,created_at,updated_at) VALUES(?,?,?,?)""",
             (request.request_id, json.dumps(asdict(request)), _now(), _now()),
         )
-        database.execute(
-            """INSERT INTO discovery_recommendation_requests(
+        if game.get("source_kind") == "coverage":
+            database.execute(
+                """INSERT INTO coverage_discovery_recommendation_requests(
+                     opportunity_id,request_id,coverage_node_id,route_json,created_at,updated_at)
+                   VALUES(?,?,?,?,?,?)
+                   ON CONFLICT(opportunity_id) DO UPDATE SET request_id=excluded.request_id,
+                     coverage_node_id=excluded.coverage_node_id,route_json=excluded.route_json,
+                     updated_at=excluded.updated_at""",
+                (task["payload"]["opportunity_id"], request.request_id,
+                 game["coverage_node_id"], game["moves_json"], _now(), _now()),
+            )
+        else:
+            database.execute(
+                """INSERT INTO discovery_recommendation_requests(
                  opportunity_id,request_id,source_game_id,source_ply,created_at,updated_at)
                VALUES(?,?,?,?,?,?)
                ON CONFLICT(opportunity_id) DO UPDATE SET
                  request_id=excluded.request_id,source_game_id=excluded.source_game_id,
                  source_ply=excluded.source_ply,updated_at=excluded.updated_at""",
-            (task["payload"]["opportunity_id"], request.request_id, game["id"],
-             game["ply"], _now(), _now()),
-        )
+                (task["payload"]["opportunity_id"], request.request_id, game["id"],
+                 game["ply"], _now(), _now()),
+            )
 
 
 def _repertoire_positions(lines: list[dict], learner_color: str) -> tuple[list[dict], set[str]]:
@@ -155,17 +201,27 @@ def recommend_missing_continuations(opportunity_id: str) -> dict:
         fingerprint = opportunity["evidence_fingerprint"]
         repertoire_id = opportunity["repertoire_id"]
     if not game:
-        return {"state": "waiting", "opportunity_id": opportunity_id,
-                "reason": "An analyzed source game is not available yet", "candidates": []}
+        return {"state": "unavailable" if opportunity["kind"] == "missing_response" else "waiting",
+                "opportunity_id": opportunity_id,
+                "reason": ("No legal repertoire route reaches this gap. Rebuild coverage or inspect it in Builder"
+                           if opportunity["kind"] == "missing_response"
+                           else "An analyzed source game is not available yet"), "candidates": []}
     board, request = _full_history_request(game)
     with read_connection() as database:
+        relation_table = ("coverage_discovery_recommendation_requests"
+                          if game.get("source_kind") == "coverage" else "discovery_recommendation_requests")
+        source_constraint = ("recommendation.coverage_node_id=? AND recommendation.route_json=?"
+                             if game.get("source_kind") == "coverage"
+                             else "recommendation.source_game_id=? AND recommendation.source_ply=?")
+        source_parameters = ((game["coverage_node_id"], game["moves_json"])
+                             if game.get("source_kind") == "coverage" else (game["id"], game["ply"]))
         saved_report = database.execute(
-            """SELECT request.state,request.report_json,request.last_error
-               FROM discovery_recommendation_requests recommendation
+            f"""SELECT request.state,request.report_json,request.last_error
+               FROM {relation_table} recommendation
                JOIN threat_analysis_requests request ON request.id=recommendation.request_id
                WHERE recommendation.opportunity_id=? AND recommendation.request_id=?
-                 AND recommendation.source_game_id=? AND recommendation.source_ply=?""",
-            (opportunity_id, request.request_id, game["id"], game["ply"]),
+                 AND {source_constraint}""",
+            (opportunity_id, request.request_id, *source_parameters),
         ).fetchone()
     if saved_report and saved_report["state"] == "failed":
         return {"state": "waiting", "opportunity_id": opportunity_id,
@@ -250,10 +306,18 @@ def recommend_missing_continuations(opportunity_id: str) -> dict:
     sound_candidates.sort(key=lambda row: (similarity_rank[row["similarity"]],
                                            row["loss_cp"] if row["loss_cp"] is not None else 0,
                                            row["move_uci"]))
-    return {"state": "ready" if sound_candidates else "waiting",
+    engine_lines = []
+    for line in report.lines[:5]:
+        loss_cp = (learner_sign * (best.score.cp - line.score.cp)
+                   if best.score.cp is not None and line.score.cp is not None else None)
+        engine_lines.append({"move_uci": line.root_move_uci,
+                             "score": asdict(line.score), "loss_cp": loss_cp,
+                             "depth": line.depth})
+    return {"state": "ready" if sound_candidates else "unavailable",
             "opportunity_id": opportunity_id, "repertoire_id": repertoire_id,
             "evidence_fingerprint": fingerprint, "starting_fen": board.fen(),
             "accepted_moves_uci": accepted, "candidates": sound_candidates[:3],
+            "engine_lines": engine_lines,
             "reason": None if sound_candidates else "No compatible sound engine continuation is available"}
 
 

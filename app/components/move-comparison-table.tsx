@@ -5,6 +5,7 @@ type Column =
   | "Move"
   | "Repertoire"
   | "Stockfish"
+  | "From best"
   | "Maia"
   | "Lichess"
   | "Masters";
@@ -39,6 +40,9 @@ export function MoveComparisonTable({
   turn,
   onPlay,
   onHover,
+  mode = "builder",
+  engineLossCp = {},
+  selectedMove,
 }: {
   repertoire: CandidateMove[];
   engine: CandidateMove[];
@@ -48,7 +52,14 @@ export function MoveComparisonTable({
   turn: "white" | "black";
   onPlay: (uci: string) => void;
   onHover: (uci: string | null) => void;
+  mode?: "builder" | "discovery";
+  engineLossCp?: Record<string, number | null>;
+  selectedMove?: string | null;
 }) {
+  const visibleColumns = mode === "discovery"
+    ? columns.filter((column) => column !== "Maia").flatMap((column) =>
+        column === "Stockfish" ? [column, "From best" as Column] : [column])
+    : columns;
   const [sort, setSort] = useState<{
     column: Column;
     direction: "ascending" | "descending";
@@ -83,6 +94,8 @@ export function MoveComparisonTable({
         return covered.has(move.uci) ? 1 : 0;
       case "Stockfish":
         return engineQuality(sources.Stockfish.get(move.uci));
+      case "From best":
+        return engineLossCp[move.uci] ?? undefined;
       case "Maia":
         return sources.Maia.get(move.uci)?.probability;
       case "Lichess":
@@ -167,7 +180,7 @@ export function MoveComparisonTable({
       <table aria-label="Move source comparison">
         <thead>
           <tr>
-            {columns.map((column) => (
+            {visibleColumns.map((column) => (
               <th
                 key={column}
                 scope="col"
@@ -205,6 +218,7 @@ export function MoveComparisonTable({
             return (
               <tr
                 key={move.uci}
+                aria-selected={selectedMove === move.uci}
                 onMouseEnter={() => onHover(move.uci)}
                 onMouseLeave={() => onHover(null)}
               >
@@ -228,11 +242,13 @@ export function MoveComparisonTable({
                         ? (engineMove.cp / 100).toFixed(2)
                         : "—")}
                 </td>
-                <td>
+                {mode === "discovery" && <td>{engineLossCp[move.uci] === null || engineLossCp[move.uci] === undefined
+                  ? "—" : `${engineLossCp[move.uci]} cp`}</td>}
+                {mode === "builder" && <td>
                   {maiaMove?.probability !== undefined
                     ? `${Math.round(maiaMove.probability * 100)}%`
                     : "—"}
-                </td>
+                </td>}
                 <td>{databaseCell("Lichess", move)}</td>
                 <td>{databaseCell("Masters", move)}</td>
               </tr>

@@ -503,6 +503,12 @@ def claim_analysis_request() -> dict | None:
                      JOIN repertoire_opportunities opportunity
                        ON opportunity.id=recommendation.opportunity_id
                      WHERE recommendation.request_id=request.id
+                       AND opportunity.status='active' AND opportunity.card_id IS NULL)
+                   OR EXISTS(
+                     SELECT 1 FROM coverage_discovery_recommendation_requests recommendation
+                     JOIN repertoire_opportunities opportunity
+                       ON opportunity.id=recommendation.opportunity_id
+                     WHERE recommendation.request_id=request.id
                        AND opportunity.status='active' AND opportunity.card_id IS NULL))
                ORDER BY CASE WHEN EXISTS(SELECT 1 FROM threat_candidate_requests foreground
                    WHERE foreground.request_id=request.id AND foreground.role='attempt')

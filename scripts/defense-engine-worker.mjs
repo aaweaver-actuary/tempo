@@ -130,6 +130,7 @@ while (true) {
     if (job) jobKind = "defense";
     else {
       await request("/api/games/analysis/repair-timeout", { method: "POST" });
+      await request("/api/games/analysis/repair-provenance", { method: "POST" });
       job = (await request("/api/games/analysis/position/claim", { method: "POST" })).job;
       jobKind = "game";
     }

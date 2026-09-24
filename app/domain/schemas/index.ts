@@ -212,6 +212,7 @@ export const builderSessionSchema = z
     branchStart: integer.nullable(),
     dismissedTranspositions: z.array(z.string()).optional(),
     sourceGapId: z.string().optional(),
+    selectedMoveUci: uciMoveSchema.optional(),
   })
   .refine(
     (value) =>
@@ -792,6 +793,10 @@ export const repertoireOpportunitiesSchema = z.strictObject({
     status: z.literal("active"),
     fen_key: fenKeySchema,
     fen: fenStringSchema,
+    decision_fen: fenStringSchema.optional(),
+    decision_start_fen: fenStringSchema.optional(),
+    decision_route_uci: z.array(uciMoveSchema).optional(),
+    accepted_moves_uci: z.array(uciMoveSchema).optional(),
     card_id: z.string().nullable(),
     opponent_move_uci: uciMoveSchema.nullable(),
     trained_color: colorSchema,
@@ -816,13 +821,19 @@ export const discoveriesFeedSchema = z.strictObject({
   unread_count: integer,
 });
 export const discoveryRecommendationSchema = z.strictObject({
-  state: z.enum(["ready", "waiting"]),
+  state: z.enum(["ready", "waiting", "unavailable"]),
   opportunity_id: z.string(),
   reason: z.string().nullable().optional(),
   repertoire_id: z.string().optional(),
   evidence_fingerprint: z.string().optional(),
   starting_fen: fenStringSchema.optional(),
   accepted_moves_uci: z.array(uciMoveSchema).optional(),
+  engine_lines: z.array(z.strictObject({
+    move_uci: uciMoveSchema,
+    score: z.strictObject({ cp: z.number().nullable(), mate: z.number().nullable() }),
+    loss_cp: z.number().nullable(),
+    depth: integer,
+  })).optional(),
   candidates: z.array(z.strictObject({
     move_uci: uciMoveSchema,
     score: z.strictObject({ cp: z.number().nullable(), mate: z.number().nullable() }),

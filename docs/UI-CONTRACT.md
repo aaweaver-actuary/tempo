@@ -35,6 +35,14 @@ Insights contains Training and Games views. Secondary and destructive actions st
 compact action or overflow menus so one task remains visually dominant.
 Dialogs trap focus, Escape dismisses, and closing restores the prior focus.
 
+Discoveries opens at a safe study break as a board-sized dialog with one decision at a
+time. Its board and comparison table appear side by side on desktop and in one scrollable
+column on phones. Selecting a table move highlights its arrow; Builder opens at the
+same decision with its available move route and a visible return control. A closed
+batch does not repeatedly interrupt study. Defensive recognition uses one board
+selection step at a time, keeps solution marks hidden until assessment submission,
+then shows recognition and move feedback separately.
+
 Board leases isolate callbacks, automatic/drawn arrows, selection, feedback and hints.
 Only the active mounted session may publish. Returning to a workspace restores its own
 session; it never inherits another workspace's graphical state.

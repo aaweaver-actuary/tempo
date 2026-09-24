@@ -532,6 +532,44 @@ def test_issue4_personal_common_move_surfaces_without_masters_or_cohort_data(tmp
         assert len(list_opportunities(db, "rep")) == 1
 
 
+def test_coverage_discovery_prepares_learner_decision_after_uncovered_reply(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as db:
+        _seed_decision_route(db)
+        before_reply = chess.Board()
+        before_reply.push_uci("e2e4")
+        before_key = " ".join(before_reply.fen().split()[:4])
+        now = datetime.now(timezone.utc).isoformat()
+        db.execute("""INSERT INTO repertoire_coverage_runs(id,repertoire_id,status,settings_json,created_at,updated_at)
+                      VALUES('coverage-run','rep','complete','{}',?,?)""", (now, now))
+        db.execute("""INSERT INTO repertoire_coverage_nodes(
+                   id,run_id,repertoire_id,fen,fen_key,ply,trained_color,routes_json,
+                   covered_replies_json,updated_at) VALUES('coverage-node','coverage-run','rep',?, ?,1,
+                   'white','[["e2e4"]]','["e7e5"]',?)""", (before_reply.fen(), before_key, now))
+        db.execute("""INSERT INTO repertoire_opportunities(id,repertoire_id,kind,fen_key,
+                   opponent_move_uci,score,evidence_json,evidence_fingerprint,created_at,updated_at)
+                   VALUES('coverage-gap','rep','missing_response',?,'c7c5',1,?,'fingerprint',?,?)""",
+                   (before_key, json.dumps({"coverage_node_id": "coverage-node"}), now, now))
+        listed = list_opportunities(db, "rep")[0]
+        assert chess.Board(listed["decision_fen"]).turn == chess.WHITE
+        assert listed["decision_route_uci"] == ["e2e4", "c7c5"]
+        assert listed["decision_start_fen"] == chess.Board().fen()
+    assert recommend_missing_continuations("coverage-gap")["state"] == "waiting"
+    execute_recommendation_request_slice({"payload": {"opportunity_id": "coverage-gap"}})
+    request = threat_pipeline.claim_analysis_request()
+    assert request and request["request"]["position_prefix_uci"] == ["e2e4", "c7c5"]
+    report = {"request": request["request"], "complete": True, "lines": [{
+        "root_move_uci": "g1f3", "pv_uci": ["g1f3"],
+        "score": {"cp": 25, "mate": None}, "depth": 14,
+    }]}
+    threat_pipeline.save_analysis_report(request["id"], request["lease_id"], report)
+    ready = recommend_missing_continuations("coverage-gap")
+    assert ready["state"] == "ready"
+    assert ready["starting_fen"] == listed["decision_fen"]
+    assert ready["candidates"][0]["move_uci"] == "g1f3"
+
+
 def test_issue4_post_gap_finding_reuses_existing_card_and_api_lists_it(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()

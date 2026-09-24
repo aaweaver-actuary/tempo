@@ -3254,6 +3254,41 @@ def repair_one_stockfish_timeout(
     return {"requeued": True, "game_id": row["game_id"]}
 
 
+@app.post("/api/games/analysis/repair-provenance")
+def repair_one_legacy_network_identity(
+    engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+):
+    _require_docker_engine(engine_worker)
+    with connection(background=activity_gate.in_background) as database:
+        row = database.execute(
+            """SELECT j.game_id,j.analysis_version,g.analysis_version AS published_version
+               FROM game_analysis_jobs j JOIN imported_games g ON g.id=j.game_id
+               WHERE j.status='complete' AND j.analysis_evidence_version<3
+                 AND EXISTS(SELECT 1 FROM game_move_analysis move
+                            WHERE move.game_id=j.game_id
+                              AND move.network_version='nn-1c0000000000.nnue')
+               ORDER BY j.updated_at,j.game_id LIMIT 1"""
+        ).fetchone()
+        if not row:
+            return {"requeued": False}
+        now = datetime.now(timezone.utc).isoformat()
+        database.execute(
+            """UPDATE game_analysis_jobs SET status='queued',analysis_version=?,
+                   analysis_evidence_version=3,lease_id=NULL,lease_expires_at=NULL,
+                   last_error=NULL,updated_at=? WHERE game_id=? AND status='complete'""",
+            (max(row["analysis_version"] + 1, row["published_version"] + 1),
+             now, row["game_id"]),
+        )
+        database.execute("UPDATE imported_games SET analysis_state='pending' WHERE id=?",
+                         (row["game_id"],))
+        database.execute(
+            "INSERT INTO game_analysis_position_errors(report_id,game_id,error,recorded_at) VALUES(?,?,?,?)",
+            (f"legacy-network:{row['game_id']}", row["game_id"],
+             "Stored network identity differs from the browser's loaded NNUE; queued for verified Docker reanalysis", now),
+        )
+    return {"requeued": True, "game_id": row["game_id"]}
+
+
 @app.post("/api/games/analysis/{game_id:path}/failure")
 def fail_game_analysis(game_id: str, request: GameAnalysisFailureRequest):
     with connection(background=activity_gate.in_background) as db:

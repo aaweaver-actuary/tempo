@@ -72,7 +72,7 @@ import { RepertoireIntegrityDialog } from "../components/repertoire-integrity-di
 import { repertoiresResponseSchema } from "../domain/schemas";
 import { DebugErrorPanel } from "../components/debug-error-panel";
 import { ServiceStatusPanel } from "../components/service-status-panel";
-import { DiscoveriesTray } from "../components/discoveries-tray";
+import { DiscoveriesTray, type DiscoveryItem } from "../components/discoveries-tray";
 import { setActiveDebugWorkspace } from "../lib/debug-reporting";
 
 async function responseErrorDetail(response: Response): Promise<string> {
@@ -109,6 +109,8 @@ export default function Home() {
     };
   }, []);
   const [currentView, setCurrentView] = useState<View>("train");
+  const [discoveryReturn, setDiscoveryReturn] = useState<{ view: View; id: string }>();
+  const [discoveryOpenRequest, setDiscoveryOpenRequest] = useState<{ id: string; token: number }>();
   const [safeBreakCounter, setSafeBreakCounter] = useState(0);
   const [repairRepertoireId, setRepairRepertoireId] = useState<string>();
   const [pausedIntegrity, setPausedIntegrity] = useState<{ id: string; issueCount: number; blockedDue: number }>();
@@ -972,6 +974,39 @@ export default function Home() {
     changeWorkspace("builder");
   }
 
+  function openDiscoveryInBuilder(discovery: DiscoveryItem, selectedMove: string | null) {
+    const positionFen = discovery.decision_fen ?? discovery.fen;
+    const routeStartFen = discovery.decision_start_fen ?? positionFen;
+    const routeBoard = new Chess(routeStartFen);
+    const routeHistory: BuilderSession["history"] = [];
+    try {
+      for (const moveUci of discovery.decision_route_uci ?? []) {
+        const played = routeBoard.move({ from: moveUci.slice(0, 2), to: moveUci.slice(2, 4),
+          promotion: moveUci[4] });
+        routeHistory.push({ san: asSanMove(played.san), uci: asUciMove(moveUci),
+          fen: asFenString(routeBoard.fen()) });
+      }
+      if (canonicalFenKey(routeBoard.fen()) !== canonicalFenKey(new Chess(positionFen).fen()))
+        throw new Error("Route does not reach the decision");
+    } catch {
+      routeHistory.length = 0;
+    }
+    const repertoireId = asRepertoireId(discovery.repertoire_id);
+    const session: BuilderSession = {
+      version: 1,
+      activeRepertoireByColor: { [discovery.trained_color]: repertoireId },
+      activeRepertoireId: repertoireId,
+      orientation: discovery.trained_color,
+      startingFen: asFenString(routeHistory.length ? routeStartFen : positionFen),
+      history: routeHistory, cursor: routeHistory.length, branchStart: routeHistory.length,
+      selectedMoveUci: selectedMove ? asUciMove(selectedMove) : undefined,
+    };
+    localStorage.setItem("tempo-builder-session", JSON.stringify(session));
+    sessionStorage.setItem("tempo-builder-tools", "Compare");
+    setDiscoveryReturn({ view: currentView, id: discovery.id });
+    changeWorkspace("builder");
+  }
+
   return (
     <main
       className={`app-shell${boardWorkspace ? " board-workspace-shell" : ""}`}
@@ -983,14 +1018,24 @@ export default function Home() {
           <SoundToggleButton soundOn={soundOn} changeSound={changeSound} />
           <SavedLocallyButton setShowImport={setShowImport} />
           <ServiceStatusPanel />
-          <DiscoveriesTray safeToOpen={currentView !== "train" && currentView !== "builder"}
+          <DiscoveriesTray safeToOpen={!(["train", "tactics", "endgames", "builder"] as View[]).includes(currentView)}
             interactionBlocked={Boolean(editorCard || showImport || repairRepertoireId)}
             safeBreakCounter={safeBreakCounter} onOpenRepertoire={() => changeWorkspace("repertoire")}
-            onQueueChanged={() => refreshDatabaseQueue()} />
+            onOpenBuilder={openDiscoveryInBuilder} boardTheme={boardTheme} pieceSet={pieceSet}
+            openRequest={discoveryOpenRequest} onQueueChanged={() => refreshDatabaseQueue()} />
         </div>
       </header>
       {!usesLocalApi() && <DemoBanner />}
       <WorkspaceRefreshStatus />
+      {currentView === "builder" && discoveryReturn && <div className="discovery-builder-return" role="status">
+        <span>Investigating a discovery in Builder.</span>
+        <button onClick={() => {
+          changeWorkspace(discoveryReturn.view);
+          setDiscoveryOpenRequest((previous) => ({ id: discoveryReturn.id, token: (previous?.token ?? 0) + 1 }));
+          setDiscoveryReturn(undefined);
+        }}>Return to discovery</button>
+        <button onClick={() => { changeWorkspace(discoveryReturn.view); setDiscoveryReturn(undefined); }}>Back to work</button>
+      </div>}
       <DebugErrorPanel />
 
       <BoardWorkspaceContainer enabled={boardWorkspace} view={currentView}>

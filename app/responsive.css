@@ -506,10 +506,30 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
 .tempo-activity-trigger { min-height: 44px; cursor: pointer; }
 .tempo-activity-trigger-mobile { display: none; }
 .tempo-discoveries-badge { font-weight: 700; color: var(--rust); }
-.tempo-discoveries-tray .tempo-activity-content { width: min(34rem, calc(100vw - 1rem)); }
-.tempo-discoveries-tray .tempo-activity-item { overflow-wrap: anywhere; }
-.tempo-discoveries-tray .tempo-activity-item p { line-height: 1.45; }
-.tempo-discoveries-tray .tempo-activity-item ul { padding-left: 1.25rem; }
+.tempo-discovery-backdrop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 0.75rem; background: rgb(18 25 20 / 65%); }
+.tempo-discovery-viewer { width: min(1500px, 100%); height: min(940px, calc(100dvh - 1.5rem)); display: flex; flex-direction: column; min-height: 0; background: var(--paper); border-radius: 14px; box-shadow: 0 1.5rem 4rem rgb(0 0 0 / 35%); overflow: hidden; }
+.tempo-discovery-header { flex: 0 0 auto; display: flex; justify-content: space-between; align-items: center; gap: 1rem; padding: 1rem 1.25rem; border-bottom: 1px solid var(--line); }
+.tempo-discovery-header h2 { margin: 0.5rem 0 0.2rem; font-family: Georgia, 'Times New Roman', serif; font-size: clamp(1.35rem, 2.2vw, 2rem); }
+.tempo-discovery-header p { margin: 0; color: var(--muted); }
+.tempo-discovery-navigation, .tempo-discovery-actions, .tempo-discovery-secondary-actions { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+.tempo-discovery-viewer button, .discovery-builder-return button { min-height: 44px; padding: 0.45rem 0.7rem; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); cursor: pointer; }
+.tempo-discovery-viewer button:disabled { opacity: 0.5; cursor: not-allowed; }
+.tempo-discovery-main { display: grid; grid-template-columns: minmax(320px, 0.9fr) minmax(0, 1.25fr); gap: clamp(1rem, 2vw, 2rem); padding: 1.25rem; min-height: 0; overflow: auto; }
+.tempo-discovery-board { display: grid; align-content: start; justify-items: center; gap: 0.75rem; min-width: 0; }
+.tempo-discovery-board .board-viewport { width: min(100%, 58vh, 560px); }
+.tempo-discovery-board > p { width: 100%; margin: 0; line-height: 1.4; }
+.tempo-discovery-actions { width: 100%; }
+.tempo-discovery-actions button:first-child { background: var(--sage); color: var(--green-dark); font-weight: 700; }
+.tempo-discovery-detail { min-width: 0; display: flex; flex-direction: column; gap: 0.65rem; overflow: auto; }
+.tempo-discovery-detail p { margin: 0; line-height: 1.45; }
+.tempo-discovery-summary { font-weight: 600; }
+.tempo-discovery-detail .move-comparison-scroll { min-height: 12rem; max-height: min(44vh, 27rem); overflow: auto; }
+.tempo-discovery-detail .move-comparison-scroll tr[aria-selected="true"] { background: color-mix(in srgb, var(--sage) 65%, transparent); }
+.tempo-discovery-evidence { border-top: 1px solid var(--line); padding-top: 0.65rem; }
+.tempo-discovery-evidence summary { cursor: pointer; font-weight: 700; }
+.tempo-discovery-evidence ul { padding-left: 1.25rem; }
+.tempo-discovery-secondary-actions { margin-top: 0.5rem; }
+.discovery-builder-return { display: flex; align-items: center; flex-wrap: wrap; gap: 0.75rem; padding: 0.55rem 1rem; background: var(--sage); }
 .tempo-activity-attention { color: #a13c26; font-weight: 700; }
 
 .tempo-activity-content {
@@ -571,7 +591,15 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
 }
 @media (max-width: 767px) {
   .top-actions { gap: 0.35rem; }
-  .tempo-discoveries-tray .tempo-activity-content { position: fixed; top: 3.5rem; right: 0.5rem; max-height: calc(100dvh - 4rem); }
+  .tempo-discovery-backdrop { padding: 0; }
+  .tempo-discovery-viewer { height: 100dvh; width: 100vw; border-radius: 0; }
+  .tempo-discovery-header { align-items: stretch; flex-direction: column; gap: 0.5rem; padding: 0.75rem; }
+  .tempo-discovery-header h2 { font-size: 1.3rem; line-height: 1.2; margin-top: 0.3rem; }
+  .tempo-discovery-navigation { justify-content: flex-start; }
+  .tempo-discovery-navigation button { padding-inline: 0.5rem; }
+  .tempo-discovery-main { grid-template-columns: minmax(0, 1fr); padding: 0.75rem; }
+  .tempo-discovery-board .board-viewport { width: min(100%, 42vh, 440px); }
+  .tempo-discovery-detail { overflow: visible; }
 }
 
 .tempo-activity-list {

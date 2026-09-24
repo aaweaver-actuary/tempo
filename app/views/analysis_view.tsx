@@ -268,7 +268,7 @@ export default function BuilderView({
   );
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
-  const [hoveredMove, setHoveredMove] = useState<string | null>(null);
+  const [hoveredMove, setHoveredMove] = useState<string | null>(initialSession?.selectedMoveUci ?? null);
   const [annotation, setAnnotation] = useState<PositionAnnotation>();
   const [annotationStatus, setAnnotationStatus] = useState("");
   const [transpositions, setTranspositions] = useState<TranspositionResult[]>(
@@ -443,6 +443,7 @@ export default function BuilderView({
       branchStart,
       dismissedTranspositions,
       sourceGapId: initialSession?.sourceGapId,
+      selectedMoveUci: initialSession?.selectedMoveUci,
     };
     localStorage.setItem("tempo-builder-session", JSON.stringify(session));
   }, [
@@ -455,6 +456,7 @@ export default function BuilderView({
     selectedRepertoire,
     startingFen,
     initialSession?.sourceGapId,
+    initialSession?.selectedMoveUci,
   ]);
 
   useEffect(() => {

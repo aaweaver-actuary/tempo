@@ -125,6 +125,37 @@ def test_browser_activity_preempts_docker_search_without_database_access(tmp_pat
     assert activity_gate.foreground_waiting
 
 
+def test_legacy_browser_network_is_requeued_one_game_at_a_time_without_erasing_analysis(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    game_id = "lichess:legacy-network"
+    with TestClient(app) as client:
+        with database.connection() as db:
+            db.execute(
+                """INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json,
+                   analysis_state,analysis_version,analysis_evidence_version)
+                   VALUES(?,'lichess','TempoPlayer',?,'rapid',1,'white','1-0',?,'["e2e4"]','ready',1,2)""",
+                (game_id, datetime.now(timezone.utc).isoformat(),
+                 "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"),
+            )
+            db.execute("""INSERT INTO game_move_analysis(game_id,ply,eval_before_cp,eval_after_cp,loss_cp,depth,
+                       network_version) VALUES(?,0,0,0,0,8,'nn-1c0000000000.nnue')""", (game_id,))
+            db.execute("""INSERT INTO game_analysis_jobs(game_id,analysis_version,analysis_evidence_version,
+                       status,updated_at) VALUES(?,1,2,'complete',?)""",
+                       (game_id, datetime.now(timezone.utc).isoformat()))
+        first = client.post("/api/games/analysis/repair-provenance",
+                            headers={"X-Tempo-Engine-Worker": "docker"})
+        assert first.status_code == 200 and first.json()["requeued"] is True
+        second = client.post("/api/games/analysis/repair-provenance",
+                             headers={"X-Tempo-Engine-Worker": "docker"})
+        assert second.json()["requeued"] is False
+        with database.connection() as db:
+            job = db.execute("SELECT status,analysis_version,analysis_evidence_version FROM game_analysis_jobs WHERE game_id=?",
+                             (game_id,)).fetchone()
+            assert tuple(job) == ("queued", 2, 3)
+            assert db.execute("SELECT COUNT(*) FROM game_move_analysis WHERE game_id=?",
+                              (game_id,)).fetchone()[0] == 1
+
+
 def test_background_game_analysis_resumes_after_reload_and_submits_once(
     tmp_path, monkeypatch
 ):

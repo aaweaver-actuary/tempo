@@ -766,7 +766,16 @@ def initialize() -> None:
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         )""",
+        """CREATE TABLE IF NOT EXISTS coverage_discovery_recommendation_requests (
+            opportunity_id TEXT PRIMARY KEY REFERENCES repertoire_opportunities(id) ON DELETE CASCADE,
+            request_id TEXT NOT NULL REFERENCES threat_analysis_requests(id) ON DELETE CASCADE,
+            coverage_node_id TEXT NOT NULL REFERENCES repertoire_coverage_nodes(id) ON DELETE CASCADE,
+            route_json TEXT NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )""",
         "CREATE INDEX IF NOT EXISTS idx_discovery_recommendation_request ON discovery_recommendation_requests(request_id)",
+        "CREATE INDEX IF NOT EXISTS idx_coverage_discovery_recommendation_request ON coverage_discovery_recommendation_requests(request_id)",
         """CREATE TABLE IF NOT EXISTS threat_analysis_report_history (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             request_id TEXT NOT NULL,
