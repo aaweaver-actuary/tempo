@@ -2,11 +2,14 @@ from datetime import datetime, timezone
 import time
 from datetime import date
 import json
+import sqlite3
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from app import database
+from app.models import GameSyncRequest
 from app.main import app
 import app.main as main_module
 import app.services.game_sync_coordinator as game_sync_coordinator
@@ -209,6 +212,55 @@ def test_provider_status_never_inherits_another_provider_error(tmp_path, monkeyp
         }
         assert providers["lichess"]["last_error"] == "Lichess username not found"
         assert providers["chess.com"]["last_error"] is None
+
+
+@pytest.mark.parametrize("locked_step", ["derivation", "finalization"])
+def test_sync_finalization_retries_transient_database_lock_without_refetching_providers(
+    tmp_path, monkeypatch, locked_step
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    provider_calls = []
+
+    async def successful_providers(_request):
+        provider_calls.append(1)
+        return {"imported": 0, "providers": {
+            "lichess": {"provider": "lichess", "status": "idle", "error": None},
+            "chess.com": {"provider": "chess.com", "status": "idle", "error": None},
+        }, "_changed_game_ids": ["lichess:one"]}
+
+    monkeypatch.setattr(game_sync_coordinator, "sync_providers", successful_providers)
+    original_finish = game_sync_coordinator._finish_job
+    operation_attempts = []
+
+    def transiently_locked_finish(job_id, result):
+        if locked_step == "finalization":
+            operation_attempts.append(1)
+        if locked_step == "finalization" and len(operation_attempts) == 1:
+            raise sqlite3.OperationalError("database is locked")
+        original_finish(job_id, result)
+
+    def transiently_locked_derivation(_game_id, *, background):
+        assert background is True
+        if locked_step == "derivation":
+            operation_attempts.append(1)
+        if locked_step == "derivation" and len(operation_attempts) == 1:
+            raise sqlite3.OperationalError("database is locked")
+
+    monkeypatch.setattr(game_sync_coordinator, "_finish_job", transiently_locked_finish)
+    monkeypatch.setattr(game_sync_coordinator, "enqueue_game_derivation", transiently_locked_derivation)
+    database.initialize()
+    job_id = game_sync_coordinator.enqueue_sync(GameSyncRequest(lichess_username="TempoPlayer"))
+    with database.read_connection() as db:
+        job = dict(db.execute("SELECT * FROM game_sync_jobs WHERE id=?", (job_id,)).fetchone())
+    game_sync_coordinator._execute_job(job)
+    with database.read_connection() as db:
+        completed = dict(db.execute("SELECT status,result_json FROM game_sync_jobs WHERE id=?", (job_id,)).fetchone())
+    assert completed["status"] == "complete"
+    provider_results = json.loads(completed["result_json"])["providers"]
+    assert provider_results["lichess"]["error"] is None
+    assert provider_results["chess.com"]["error"] is None
+    assert len(operation_attempts) == 2
+    assert len(provider_calls) == 1
 
 
 def test_slow_game_sync_does_not_delay_settings_read(tmp_path, monkeypatch):

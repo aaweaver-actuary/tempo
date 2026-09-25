@@ -121,6 +121,12 @@
 
 Append every new reported issue and its test names here. All listed tests belong to the regular suites.
 
+- Analysis activity count growth shifts desktop navigation — `analysis activity count growth keeps desktop navigation anchored`.
+- Saving status moves the training board and card layout — `saving result notification does not move the board or card`.
+- Games displays an unrelated tactical position or mismatched arrows while reviewing a game — `Games selection and move navigation keep the board on the selected game`; `selecting another game changes piece placement and move highlights together`.
+- Games displays a placeholder position before full game moves load — `Games shows loading until the selected game's full moves arrive`.
+- Game sync records a SQLite lock after provider success — `test_sync_finalization_retries_transient_database_lock_without_refetching_providers`.
+
 - Sync status exposes SQLite-only fields to strict clients — `test_sync_status_never_exposes_persistence_only_result_json`.
 - One provider inherits another provider's error — `test_provider_status_never_inherits_another_provider_error`.
 - Game sync blocks foreground Settings reads — `test_slow_game_sync_does_not_delay_settings_read`.

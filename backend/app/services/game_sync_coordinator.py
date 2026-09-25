@@ -130,6 +130,18 @@ def _fail_job(job_id: str, error: Exception) -> None:
         )
 
 
+def _retry_sync_database_write(operation: Callable[[], None]) -> None:
+    for retry_number in range(6):
+        activity_gate.wait_for_foreground()
+        try:
+            operation()
+            return
+        except sqlite3.OperationalError as error:
+            if not any(reason in str(error).lower() for reason in ("locked", "busy")) or retry_number == 5:
+                raise
+            time.sleep(min(0.05 * (2 ** retry_number), 0.4))
+
+
 def _execute_job(job: dict) -> None:
     with activity_gate.background_job("game_sync", job["id"]):
         try:
@@ -138,11 +150,11 @@ def _execute_job(job: dict) -> None:
             result = asyncio.run(sync_providers(request))
             changed_game_ids = result.pop("_changed_game_ids", [])
             for game_id in changed_game_ids:
-                enqueue_game_derivation(game_id, background=True)
-            _finish_job(job["id"], result)
+                _retry_sync_database_write(lambda game_id=game_id: enqueue_game_derivation(game_id, background=True))
+            _retry_sync_database_write(lambda: _finish_job(job["id"], result))
             emit_progress("sync", job["id"], job["id"], f"Imported {result['imported']} games")
         except Exception as error:  # The job error must not overwrite provider state.
-            _fail_job(job["id"], error)
+            _retry_sync_database_write(lambda: _fail_job(job["id"], error))
 
 
 def enqueue_game_derivation(game_id: str, *, background: bool = False) -> None:
