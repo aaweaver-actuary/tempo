@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
 import { DiscoveriesTray } from "../../app/components/discoveries-tray";
 
@@ -13,6 +13,36 @@ vi.mock("../../app/lib/engine-broker", () => ({ requestInteractiveAnalysis: asyn
 vi.mock("../../app/lib/lichess-explorer", () => ({ loadExplorer: () => new Promise(() => {}) }));
 
 const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+it("slow discovery pagination does not start overlapping background refreshes", async () => {
+  let finishFirstPage: ((response: Response) => void) | undefined;
+  let refreshTick: (() => void) | undefined;
+  backgroundFetch.mockReset();
+  backgroundFetch.mockImplementationOnce(() => new Promise<Response>((resolve) => { finishFirstPage = resolve; }));
+  backgroundFetch.mockImplementation(async () => Response.json({
+    discoveries: [], total: 0, next_offset: null, unread_count: 0,
+  }));
+  const originalSetInterval = window.setInterval.bind(window);
+  const interval = vi.spyOn(window, "setInterval").mockImplementation((callback, delay) => {
+    if ((delay ?? 0) < 5_000)
+      return originalSetInterval(callback, delay) as unknown as NodeJS.Timeout;
+    refreshTick = callback as () => void;
+    return originalSetInterval(() => undefined, delay) as unknown as NodeJS.Timeout;
+  });
+  try {
+    render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+    await waitFor(() => expect(backgroundFetch).toHaveBeenCalledTimes(1));
+    act(() => { refreshTick?.(); refreshTick?.(); refreshTick?.(); });
+    expect(backgroundFetch).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      finishFirstPage?.(Response.json({ discoveries: [], total: 0, next_offset: null, unread_count: 0 }));
+    });
+    act(() => { refreshTick?.(); });
+    await waitFor(() => expect(backgroundFetch).toHaveBeenCalledTimes(2));
+  } finally {
+    interval.mockRestore();
+  }
+});
 
 it("discoveries badge waits for a safe break and does not interrupt twice", async () => {
   const discovery = {
@@ -70,8 +100,12 @@ it("refreshes stale discovery evidence once and displays the recalculated values
   backgroundFetch.mockImplementation(async () => Response.json({ discoveries: [
     { ...discovery, evidence: evidenceIsFresh ? evidence : discovery.evidence },
   ], total: 1, next_offset: null, unread_count: 0 }));
+  let finishEvidenceRefresh: (() => void) | undefined;
   const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-    if (String(input).endsWith("/opportunities/refresh")) evidenceIsFresh = true;
+    if (String(input).endsWith("/opportunities/refresh")) {
+      await new Promise<void>((resolve) => { finishEvidenceRefresh = resolve; });
+      evidenceIsFresh = true;
+    }
     return Response.json({ queued: true });
   });
   vi.stubGlobal("fetch", fetcher);
@@ -79,6 +113,7 @@ it("refreshes stale discovery evidence once and displays the recalculated values
   fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
   await waitFor(() => expect(screen.getByText(/Refreshing older analysis evidence/)).toBeTruthy());
   expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("/opportunities/refresh"))).toHaveLength(1);
+  finishEvidenceRefresh?.();
   await waitFor(() => expect(screen.getByText(/Analysis coverage: 5 of 5 encounters/)).toBeTruthy(), { timeout: 7000 });
   fireEvent.click(screen.getByText("Why this position was flagged"));
   expect(screen.getByText(/Immediate loss: 140 cp over 2 complete samples/)).toBeTruthy();

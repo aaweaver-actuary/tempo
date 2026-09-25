@@ -131,6 +131,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   const initialPreflightStarted = useRef(false);
   const pendingSafeBreak = useRef(false);
   const preflightState = useRef({ discoveries, previewFingerprints, previewStatuses });
+  const refreshInFlight = useRef<Promise<void> | null>(null);
   const lastSafeBreak = useRef(safeBreakCounter);
   const lastOpenRequestToken = useRef(openRequest?.token);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -157,8 +158,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     preflightState.current = { discoveries, previewFingerprints, previewStatuses };
   }, [discoveries, previewFingerprints, previewStatuses]);
 
-  const refresh = useCallback(async () => {
-    if (!usesLocalApi()) return;
+  const loadFeed = useCallback(async (): Promise<void> => {
     try {
       const pages: Array<z.infer<typeof discoveriesFeedSchema>> = [];
       let offset: number | null = 0;
@@ -180,10 +180,29 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not load discoveries"); }
   }, []);
 
+  const startRefresh = useCallback((): Promise<void> => {
+    const currentRefresh = refreshInFlight.current;
+    if (currentRefresh) return currentRefresh;
+    const pendingRefresh = loadFeed();
+    refreshInFlight.current = pendingRefresh;
+    void pendingRefresh.finally(() => {
+      if (refreshInFlight.current === pendingRefresh) refreshInFlight.current = null;
+    });
+    return pendingRefresh;
+  }, [loadFeed]);
+
+  const refresh = useCallback((force = false): Promise<void> => {
+    if (!usesLocalApi()) return Promise.resolve();
+    const currentRefresh = refreshInFlight.current;
+    return force && currentRefresh
+      ? currentRefresh.then(startRefresh)
+      : startRefresh();
+  }, [startRefresh]);
+
   useEffect(() => {
     if (!usesLocalApi()) return;
     const initialTimer = window.setTimeout(() => void refresh(), 0);
-    const interval = window.setInterval(() => void refresh(), 5_000);
+    const interval = window.setInterval(() => void refresh(), 30_000);
     return () => { window.clearTimeout(initialTimer); window.clearInterval(interval); };
   }, [refresh]);
 
@@ -247,7 +266,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     lastOpenRequestToken.current = openRequest.token;
     setActiveId(openRequest.id);
     setOpen(true);
-    void refresh();
+    void refresh(true);
   }, [openRequest, refresh]);
 
   useEffect(() => {
@@ -271,7 +290,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     openedIds.current.add(active.id);
     void fetch(`${API_URL}/api/repertoires/${active.repertoire_id}/opportunities/${active.id}/acknowledge`,
       { method: "POST" })
-      .then((response) => { if (!response.ok) throw new Error(`Could not acknowledge discovery (HTTP ${response.status})`); return refresh(); })
+      .then((response) => { if (!response.ok) throw new Error(`Could not acknowledge discovery (HTTP ${response.status})`); return refresh(true); })
       .catch((cause) => setError(cause instanceof Error ? cause.message : "Could not acknowledge discovery"));
   }, [open, active, refresh]);
 
@@ -288,13 +307,20 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
           const body = await response.json().catch(() => ({})) as { detail?: string };
           throw new Error(body.detail ?? `Could not refresh discovery evidence (HTTP ${response.status})`);
         }
+        await refresh(true);
       })
       .catch((cause) => {
         requestedEvidenceRefreshes.current.delete(active.id);
         setEvidenceRefreshPendingId(null);
         setError(cause instanceof Error ? cause.message : "Could not refresh discovery evidence");
       });
-  }, [open, active, evidenceRefreshPendingId]);
+  }, [open, active, evidenceRefreshPendingId, refresh]);
+
+  useEffect(() => {
+    if (!evidenceRefreshPendingId || !open) return;
+    const interval = window.setInterval(() => void refresh(), 5_000);
+    return () => window.clearInterval(interval);
+  }, [evidenceRefreshPendingId, open, refresh]);
 
   const closeViewer = useCallback(() => {
     pendingSafeBreak.current = false;
@@ -388,7 +414,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
         throw new Error(body.detail ?? `${action} failed (HTTP ${response.status})`);
       }
       if (action === "train") await onQueueChanged();
-      await refresh();
+      await refresh(true);
       if (action !== "train") setActiveId(null);
     } catch (cause) { setError(cause instanceof Error ? cause.message : `Could not ${action} discovery`); }
     finally { setBusyId(null); }
@@ -405,7 +431,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
         const body = await response.json().catch(() => ({})) as { detail?: string };
         throw new Error(body.detail ?? `Could not add continuation (HTTP ${response.status})`);
       }
-      await refresh();
+      await refresh(true);
     } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not add continuation"); }
     finally { setBusyId(null); }
   };
@@ -429,7 +455,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
             <button ref={closeRef} type="button" onClick={closeViewer}>Back to work</button>
           </div>
         </header>
-        {error && <p role="alert">{error} <button onClick={() => { setError(null); void refresh(); }}>Retry</button></p>}
+        {error && <p role="alert">{error} <button onClick={() => { setError(null); void refresh(true); }}>Retry</button></p>}
         {active && <div className="tempo-discovery-main">
           <div className="tempo-discovery-board">
             <Chessboard owner="discoveries" fen={fen} orientation={active.trained_color} locked showHint={false}
