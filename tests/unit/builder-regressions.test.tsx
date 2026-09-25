@@ -393,6 +393,9 @@ it("builder annotation save preserves exact clicked square identity", async () =
       ).toBe("white-repertoire"),
     { timeout: 3000 },
   );
+  await waitFor(() =>
+    expect((screen.getByRole("textbox", { name: "Position comment" }) as HTMLTextAreaElement).disabled).toBe(false),
+  );
 
   fireEvent.click(screen.getByText("mark-a4"));
   fireEvent.click(screen.getByRole("button", { name: "Save note" }));
