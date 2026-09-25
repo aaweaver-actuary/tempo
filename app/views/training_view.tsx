@@ -46,6 +46,7 @@ interface TrainingViewProps {
     | "refreshingQueue"
     | "queueFailed";
   reviewSaveError?: string;
+  retryReviewSave?: () => void;
   retryQueueAfterReview?: () => void;
   handleAttemptFailure: () => void;
   resetCardAttempt: () => void;
@@ -68,6 +69,7 @@ function StandardTrainingView({
   rateCard,
   reviewPersistenceState = "idle",
   reviewSaveError = "",
+  retryReviewSave,
   retryQueueAfterReview = () => undefined,
   handleAttemptFailure,
   resetCardAttempt,
@@ -192,7 +194,7 @@ function StandardTrainingView({
       {reviewPersistenceState === "saveFailed" && (
         <div role="alert">
           {reviewSaveError}{" "}
-          <button onClick={() => void rateCard(attemptFailed ? "again" : "correct")}>
+          <button onClick={() => retryReviewSave ? retryReviewSave() : void rateCard(attemptFailed ? "again" : "correct")}>
             Retry save
           </button>
         </div>

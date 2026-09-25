@@ -8,6 +8,7 @@ export type PendingReview = {
 };
 
 const storageKey = "tempo-pending-training-reviews-v1";
+const reviewRequestTimeoutMs = 15_000;
 let activeFlush: Promise<void> | undefined;
 
 export function pendingReviews(): PendingReview[] {
@@ -31,13 +32,28 @@ export function enqueuePendingReview(review: PendingReview): void {
   localStorage.setItem(storageKey, JSON.stringify([...pending, review]));
 }
 
+async function requestReviewSave(url: string, options: RequestInit): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), reviewRequestTimeoutMs);
+  try {
+    return await fetch(url, { ...options, signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted)
+      throw new Error("Review save timed out after 15 seconds. Retry save.", { cause: error });
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function savePendingReviews(): Promise<void> {
-  for (const review of pendingReviews()) {
+  while (pendingReviews().length) {
+    const review = pendingReviews()[0];
     if (review.guided) {
-      const failureResponse = await fetch(`${API_URL}/api/queue/entries/${review.queueEntryId}/fail`, { method: "POST" });
+      const failureResponse = await requestReviewSave(`${API_URL}/api/queue/entries/${review.queueEntryId}/fail`, { method: "POST" });
       if (!failureResponse.ok) throw new Error(await responseDetail(failureResponse));
     }
-    const reviewResponse = await fetch(`${API_URL}/api/cards/${review.backendId}/review`, {
+    const reviewResponse = await requestReviewSave(`${API_URL}/api/cards/${review.backendId}/review`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({

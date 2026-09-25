@@ -188,7 +188,8 @@ export default function Home() {
     initializeCardState,
     resetTrainingLine,
   } = useTrainingStore(useShallow(selectTrainingActions));
-  const reviewPending = useRef(false);
+  const reviewPendingEntries = useRef(new Set<string>());
+  const reviewTransitionGeneration = useRef(0);
   const replyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -673,23 +674,28 @@ export default function Home() {
     if (value) playMoveSound({ force: true });
   }
 
-  async function rateCard(outcome: "again" | "correct", reviewRecordedAtCompletion = false) {
-    if (reviewPending.current || cardsLeft === 0) return;
-    clearTimeout(completionTimer.current);
+  async function rateCard(
+    outcome: "again" | "correct",
+    options: { recordedAtCompletion?: boolean; retryPending?: boolean } = {},
+  ) {
+    const entryKey = String(card.queueEntryId ?? card.id);
+    if (reviewPendingEntries.current.has(entryKey) || cardsLeft === 0) return;
     const pendingBeforeReview = databaseQueue ? pendingReviews() : [];
-    const retryingPendingReview = pendingBeforeReview.length > 0 && !reviewRecordedAtCompletion;
-    const retryNeedsAdvance = retryingPendingReview &&
-      pendingBeforeReview[0].queueEntryId === card.queueEntryId;
-    reviewPending.current = true;
+    reviewPendingEntries.current.add(entryKey);
+    const transitionGeneration = ++reviewTransitionGeneration.current;
+    const { recordedAtCompletion = false, retryPending = false } = options;
+    clearTimeout(completionTimer.current);
+    const retryNeedsAdvance = retryPending &&
+      pendingBeforeReview[0]?.queueEntryId === card.queueEntryId;
     setReviewPersistenceState("saving");
     setReviewSaveError("");
-    if (!retryingPendingReview) setAttemptPhase("feedbackPause");
+    if (!retryPending) setAttemptPhase("feedbackPause");
     if (databaseQueue && card.backendId) {
       let advancedFromCache = false;
       try {
-        if (!retryingPendingReview) {
+        if (!retryPending) {
           if (!card.queueEntryId) throw new Error("The active queue entry is unavailable. Refresh the queue.");
-          if (!reviewRecordedAtCompletion) {
+          if (!recordedAtCompletion) {
             enqueuePendingReview({
               backendId: card.backendId,
               queueEntryId: card.queueEntryId,
@@ -701,23 +707,27 @@ export default function Home() {
           setReviewed((count) => count + 1);
         }
         await flushPendingReviews();
-        setReviewPersistenceState("saved");
+        if (transitionGeneration === reviewTransitionGeneration.current)
+          setReviewPersistenceState("saved");
         setQueueNotice("");
-        reviewPending.current = false;
-        if (!advancedFromCache && (!retryingPendingReview || retryNeedsAdvance))
+        reviewPendingEntries.current.delete(entryKey);
+        if (transitionGeneration === reviewTransitionGeneration.current &&
+            !advancedFromCache && (!retryPending || retryNeedsAdvance))
           setReviewPersistenceState("refreshingQueue");
-        void refreshDatabaseQueue(!advancedFromCache && (!retryingPendingReview || retryNeedsAdvance))
+        void refreshDatabaseQueue(!advancedFromCache && (!retryPending || retryNeedsAdvance))
           .then(() => {
-            setReviewPersistenceState("idle");
+            if (transitionGeneration === reviewTransitionGeneration.current)
+              setReviewPersistenceState("idle");
             setSafeBreakCounter((count) => count + 1);
           })
           .catch(() => {
-            setReviewPersistenceState("queueFailed");
+            if (transitionGeneration === reviewTransitionGeneration.current)
+              setReviewPersistenceState("queueFailed");
             setQueueNotice("Result saved. The queue could not be refreshed.");
           });
         return;
       } catch (error) {
-        reviewPending.current = false;
+        reviewPendingEntries.current.delete(entryKey);
         setReviewPersistenceState("saveFailed");
         setReviewSaveError(
           error instanceof Error && error.message
@@ -725,12 +735,12 @@ export default function Home() {
             : "The local database could not save this result. Please retry.",
         );
         setQueueNotice("");
-        if (!advancedFromCache && !retryingPendingReview) setAttemptPhase("feedbackPause");
+        if (!advancedFromCache && !retryPending) setAttemptPhase("feedbackPause");
         return;
       }
     }
     if (usesLocalApi()) {
-      reviewPending.current = false;
+      reviewPendingEntries.current.delete(entryKey);
       setReviewPersistenceState("saveFailed");
       setReviewSaveError("Connect to the local service before reviewing.");
       setServiceError("Connect to the local service before reviewing.");
@@ -767,7 +777,7 @@ export default function Home() {
     const nextIndex = nextQueue[0] ?? 0;
     setActiveCardIndex(nextIndex);
     resetLine(practiceCards[nextIndex]);
-    reviewPending.current = false;
+    reviewPendingEntries.current.delete(entryKey);
     setReviewPersistenceState("idle");
     setSafeBreakCounter((count) => count + 1);
   }
@@ -796,7 +806,7 @@ export default function Home() {
     clearTimeout(completionTimer.current);
     completionTimer.current = setTimeout(() => {
       if (isCurrentAttempt(useTrainingStore.getState().attempt, token))
-        void rateCard(outcome, reviewRecordedAtCompletion);
+        void rateCard(outcome, { recordedAtCompletion: reviewRecordedAtCompletion });
     }, 750);
   }
 
@@ -1085,6 +1095,7 @@ export default function Home() {
               }}
               reviewPersistenceState={reviewPersistenceState}
               reviewSaveError={reviewSaveError}
+              retryReviewSave={() => void rateCard("correct", { retryPending: true })}
               retryQueueAfterReview={() => {
                 setReviewPersistenceState("refreshingQueue");
                 void refreshDatabaseQueue(true)

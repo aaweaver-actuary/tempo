@@ -107,6 +107,28 @@ describe("review attempt reliability", () => {
     expect(useTrainingStore.getState().practiceCards[0].queueEntryId).toBe(44);
     expect(useTrainingStore.getState().serviceError).toBe("");
   });
+  it("timed-out queue read retains a completed tactic for an actionable retry", async () => {
+    const store = useTrainingStore.getState();
+    store.hydrateLocalQueue([card], true, 1);
+    store.setStep(card.moves.length);
+    store.setFeedback("complete");
+    store.setAttemptPhase("feedbackPause");
+    const completedAttempt = useTrainingStore.getState().attempt;
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn((_input, options) => new Promise<Response>((_resolve, reject) => {
+      options.signal.addEventListener("abort", () => reject(options.signal.reason));
+    })));
+    try {
+      const queueRead = fetchAndInitializeQueue();
+      const rejected = expect(queueRead).rejects.toThrow(/timed out/i);
+      await vi.advanceTimersByTimeAsync(15_000);
+      await rejected;
+      expect(useTrainingStore.getState().attempt).toEqual(completedAttempt);
+      expect(useTrainingStore.getState().serviceError).toContain("Retry loading the queue");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
   it("readable renamed store fields retain local authority, failure, and sound through Home selectors", () => {
     const store = useTrainingStore.getState();
     store.setDatabaseQueue(true);

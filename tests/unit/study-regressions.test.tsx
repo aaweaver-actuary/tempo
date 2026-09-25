@@ -161,6 +161,99 @@ async function pause(ms = 751) {
 }
 
 describe("reported study regressions", () => {
+  it("completed tactic advances while the previous review save is still pending", async () => {
+    const first = {
+      id: "first-overlap", queue_entry_id: 901, start_fen: new Chess().fen(),
+      moves: ["e2e4"], content_type: "opening", repertoire_name: "First",
+      repertoire_source: "PGN", cycle: 0,
+    };
+    const tactic = {
+      id: "mate-overlap", queue_entry_id: 902, start_fen: startingFen,
+      moves: ["a2e6", "d7d8", "f7f8"], content_type: "tactic",
+      repertoire_name: "Tactics", repertoire_source: "Lichess", cycle: 0,
+    };
+    const third = {
+      id: "third-overlap", queue_entry_id: 903, start_fen: new Chess().fen(),
+      moves: ["d2d4"], content_type: "opening", repertoire_name: "Third",
+      repertoire_source: "PGN", cycle: 0,
+    };
+    let finishFirstReview: ((response: Response) => void) | undefined;
+    const savedEntries: number[] = [];
+    vi.stubGlobal("fetch", vi.fn((input, options) => {
+      const url = String(input);
+      if (url.includes("/api/queue/window"))
+        return Promise.resolve(Response.json({ cards: [first, tactic, third], count: 3 }));
+      if (url.endsWith("/review")) {
+        const queueEntryId = JSON.parse(options.body).queue_entry_id as number;
+        savedEntries.push(queueEntryId);
+        if (queueEntryId === 901)
+          return new Promise<Response>((resolve) => { finishFirstReview = resolve; });
+        return Promise.resolve(Response.json({ persisted: true }));
+      }
+      return Promise.resolve(Response.json({ providers: [], states: [], lines: [] }));
+    }));
+    render(<Home />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Correct" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Correct" }));
+    await waitFor(() => expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(startingFen));
+    fireEvent.click(screen.getByText("a2e6"));
+    await pause(430);
+    fireEvent.click(screen.getByText("f7f8"));
+    expect(pendingReviews().map((review) => review.queueEntryId)).toEqual([901, 902]);
+    await pause(751);
+    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(903);
+    finishFirstReview?.(Response.json({ persisted: true }));
+    await waitFor(() => expect(pendingReviews()).toHaveLength(0));
+    expect(savedEntries).toEqual([901, 902]);
+  });
+  it("failed earlier save blocks grading after a completed tactic until ordered retry succeeds", async () => {
+    const first = {
+      id: "first-retry-overlap", queue_entry_id: 911, start_fen: new Chess().fen(),
+      moves: ["e2e4"], content_type: "opening", repertoire_name: "First",
+      repertoire_source: "PGN", cycle: 0,
+    };
+    const tactic = {
+      id: "mate-retry-overlap", queue_entry_id: 912, start_fen: startingFen,
+      moves: ["a2e6", "d7d8", "f7f8"], content_type: "tactic",
+      repertoire_name: "Tactics", repertoire_source: "Lichess", cycle: 0,
+    };
+    const third = {
+      id: "third-retry-overlap", queue_entry_id: 913, start_fen: new Chess().fen(),
+      moves: ["d2d4"], content_type: "opening", repertoire_name: "Third",
+      repertoire_source: "PGN", cycle: 0,
+    };
+    let finishFirstReview: ((response: Response) => void) | undefined;
+    const savedEntries: number[] = [];
+    vi.stubGlobal("fetch", vi.fn((input, options) => {
+      const url = String(input);
+      if (url.includes("/api/queue/window"))
+        return Promise.resolve(Response.json({ cards: [first, tactic, third], count: 3 }));
+      if (url.endsWith("/review")) {
+        const queueEntryId = JSON.parse(options.body).queue_entry_id as number;
+        savedEntries.push(queueEntryId);
+        if (queueEntryId === 911 && savedEntries.length === 1)
+          return new Promise<Response>((resolve) => { finishFirstReview = resolve; });
+        return Promise.resolve(Response.json({ persisted: true }));
+      }
+      return Promise.resolve(Response.json({ providers: [], states: [], lines: [] }));
+    }));
+    render(<Home />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Correct" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Correct" }));
+    await waitFor(() => expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(startingFen));
+    fireEvent.click(screen.getByText("a2e6"));
+    await pause(430);
+    fireEvent.click(screen.getByText("f7f8"));
+    await pause(751);
+    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(913);
+    finishFirstReview?.(Response.json({ detail: "Database busy" }, { status: 503 }));
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry save" })).toBeTruthy());
+    expect(screen.getByText("e2e4").closest("button")?.disabled).toBe(true);
+    expect(pendingReviews().map((review) => review.queueEntryId)).toEqual([911, 912]);
+    fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
+    await waitFor(() => expect(pendingReviews()).toHaveLength(0));
+    expect(savedEntries).toEqual([911, 911, 912]);
+  });
   it("completed tactic survives queue reconciliation before its feedback timer grades it", async () => {
     const tactic = {
       id: "mate-refresh", queue_entry_id: 811, start_fen: startingFen,

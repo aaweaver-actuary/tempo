@@ -33,4 +33,41 @@ describe("optimistic training review outbox", () => {
     ]);
     expect(pendingReviews()).toEqual([]);
   });
+
+  it("drains a review appended while an earlier review request is still in flight", async () => {
+    enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, outcome: "correct", guided: false });
+    let finishFirst: ((response: Response) => void) | undefined;
+    const savedEntries: number[] = [];
+    vi.stubGlobal("fetch", vi.fn((input) => {
+      const queueEntryId = String(input).includes("card-a") ? 17 : 18;
+      savedEntries.push(queueEntryId);
+      return queueEntryId === 17
+        ? new Promise<Response>((resolve) => { finishFirst = resolve; })
+        : Promise.resolve(Response.json({ persisted: true }));
+    }));
+    const saving = flushPendingReviews();
+    enqueuePendingReview({ backendId: "card-b", queueEntryId: 18, outcome: "correct", guided: false });
+    finishFirst?.(Response.json({ persisted: true }));
+    await saving;
+    expect(savedEntries).toEqual([17, 18]);
+    expect(pendingReviews()).toEqual([]);
+  });
+
+  it("times out an unresponsive review save and keeps it available for retry", async () => {
+    const review = { backendId: "card-stalled", queueEntryId: 19, outcome: "correct" as const, guided: false };
+    enqueuePendingReview(review);
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn((_input, options) => new Promise<Response>((_resolve, reject) => {
+      options.signal.addEventListener("abort", () => reject(options.signal.reason));
+    })));
+    try {
+      const saving = flushPendingReviews();
+      const rejected = expect(saving).rejects.toThrow(/timed out/i);
+      await vi.advanceTimersByTimeAsync(15_000);
+      await rejected;
+      expect(pendingReviews()).toEqual([review]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
 });

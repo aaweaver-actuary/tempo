@@ -16,10 +16,24 @@ type QueuePayload = {
   projection?: { state?: string; generation?: number; last_error?: string };
 };
 
+async function fetchQueueWindow(): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15_000);
+  try {
+    return await fetch(`${API_URL}/api/queue/window?limit=20`, { signal: controller.signal });
+  } catch (error) {
+    if (controller.signal.aborted)
+      throw new Error("Queue request timed out after 15 seconds. Retry loading the queue.", { cause: error });
+    throw error;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 async function loadTodayQueueWithRetry(): Promise<QueuePayload> {
   let failedRequests = 0;
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const response = await fetch(`${API_URL}/api/queue/window?limit=20`);
+    const response = await fetchQueueWindow();
     if (response.ok) {
       failedRequests = 0;
       const payload = await response.json() as QueuePayload;
