@@ -9,9 +9,11 @@ test("defensive daily stack setting persists across navigation and reload", asyn
     await page.goto("/");
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     const toggle = page.getByRole("checkbox", { name: /Defensive cards in daily stack/ });
+    const saveButton = page.getByRole("button", { name: "Save settings" });
+    await expect(saveButton).toBeEnabled();
     await expect(toggle).toBeChecked();
     await toggle.uncheck();
-    await page.getByRole("button", { name: "Save settings" }).click();
+    await saveButton.click();
     await expect(page.locator(".settings-status")).toHaveText("Saved.");
     await expect.poll(async () =>
       (await (await request.get(`${api}/settings`)).json()).include_defensive_cards_in_daily_stack,

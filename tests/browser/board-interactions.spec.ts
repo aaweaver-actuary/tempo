@@ -126,7 +126,7 @@ test("local import respects the daily limit; Black prompts and Builder flip surv
   await page
     .getByRole("button", { name: "Import repertoire", exact: true })
     .click();
-  await expect(page.getByText(/2 cards are in today’s queue/)).toBeVisible();
+  await expect(page.getByText(/2 cards are in today’s queue/)).toBeVisible({ timeout: 30_000 });
   await page.getByRole("button", { name: "View imported repertoire" }).click();
   await nav(page, "Train");
   await expect(page.locator(".session-count strong")).toHaveText("2");

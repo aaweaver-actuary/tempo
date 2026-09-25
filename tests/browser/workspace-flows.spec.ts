@@ -154,9 +154,15 @@ test("Edit card opens Builder line-removal context and deletes the selected bran
       '[Event "QGD"]\n\n1. d4 d5 2. c4 e6 3. Nc3 *\n\n[Event "Nimzo"]\n\n1. d4 Nf6 2. c4 e6 3. Nc3 Bb4 4. e3 *',
     ),
   });
-  await page
-    .getByRole("button", { name: "Import repertoire", exact: true })
-    .click();
+  const [importResponse] = await Promise.all([
+    page.waitForResponse((response) => response.url().includes("/api/imports/pgn") && response.request().method() === "POST"),
+    page.getByRole("button", { name: "Import repertoire", exact: true }).click(),
+  ]);
+  const importedRepertoireId = (await importResponse.json()).repertoire_id as string;
+  await expect.poll(async () => {
+    const queue = await (await request.get(`${api}/queue/today`)).json();
+    return (queue.cards as { repertoire_id: string }[]).some((card) => card.repertoire_id === importedRepertoireId);
+  }, { timeout: 30_000 }).toBe(true);
   await page.getByRole("button", { name: "View imported repertoire" }).click();
   await nav(page, "Train");
   await expect(
