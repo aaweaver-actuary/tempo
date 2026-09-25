@@ -171,12 +171,14 @@ export default function BuilderView({
   settings,
   theme,
   pieceSet,
+  onPasteAnalysis,
   useSharedBoard = false,
 }: {
   imported: LocalRepertoire[];
   settings: Settings;
   theme: BoardTheme;
   pieceSet: PieceSet;
+  onPasteAnalysis?: (context: { startingFen: string; sourceGapId?: string }) => void;
   useSharedBoard?: boolean;
 }) {
   const tools = useTaskTabs(["Moves", "Compare", "Repertoire", "Notes"], "Compare", "tempo-builder-tools");
@@ -1098,6 +1100,10 @@ export default function BuilderView({
       <div className="analysis-heading compact-analysis">
         <h1>Builder</h1>
         <div className="analysis-switches">
+          {onPasteAnalysis && <button className="analysis-paste-trigger" onClick={() => onPasteAnalysis({
+            startingFen: initialSession?.sourceGapId ? startingFen : fen,
+            sourceGapId: initialSession?.sourceGapId,
+          })}>Paste analysis</button>}
           <select
             aria-label="Active repertoire"
             value={selectedRepertoire?.id ?? ""}

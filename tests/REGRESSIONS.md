@@ -311,6 +311,8 @@ Append every new reported issue and its test names here. All listed tests belong
 
 ## Fractional priority validation and card-level integrity recovery
 
+- Pasted SAN/PGN analysis is misplaced, duplicated, silently truncated, or marks a gap covered without a response — `test_paste_san_variations_matches_repertoire_and_saves_batch`; `test_paste_pgn_fen_variations_and_partial_gap_context`; `test_paste_preview_requires_choice_when_multiple_match_or_none_match`; `test_paste_matches_a_line_starting_at_existing_terminal_position`; `test_paste_duplicate_conflict_and_stale_preview_are_safe`; `test_paste_marks_gap_covered_only_with_opponent_move_and_response`; `test_paste_batch_conflict_requires_confirmation_and_is_atomic`; `test_paste_rejects_incomplete_trained_side_line_without_writing`; `paste SAN from a repertoire gap previews its destination and saves the continuation`; `paste analysis reports a preview service failure without claiming a save`.
+
 - Disabling defensive cards leaves them in today's stack or erases their history — `test_defensive_stack_toggle_hides_today_without_erasing_reviews_or_queue_entries` checks same-day restoration, accurate due counts, and stale queue actions; `defensive daily stack setting persists across navigation and reload` covers the Settings workflow.
 - Background analysis stops with the browser or starves foreground work — `test_external_worker_gate_yields_to_foreground_and_replays_bounded_task`; Docker integration waits for analysis publication with no browser open.
 - Container Maia probabilities drift from interactive Maia — `container Maia probabilities match browser inference for both colors`.

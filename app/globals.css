@@ -1411,6 +1411,7 @@ button {
   cursor: pointer;
   white-space: nowrap;
 }
+.analysis-switches .analysis-paste-trigger { flex-shrink: 0; min-width: 112px; min-height: 44px; font-size: 12px; }
 .analysis-switches button i {
   width: 7px;
   height: 7px;
@@ -2410,6 +2411,21 @@ button {
   background: var(--panel);
   box-shadow: 0 28px 80px rgba(20, 24, 19, 0.3);
 }
+.analysis-paste-dialog { width: min(760px, 100%); max-height: min(92vh, 900px); overflow: auto; }
+.analysis-paste-input { display: grid; gap: 7px; margin-top: 18px; font-weight: 600; }
+.analysis-paste-input textarea, .analysis-paste-input input, .analysis-paste-line select {
+  width: 100%; padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel); color: var(--ink); font: inherit;
+}
+.analysis-paste-input textarea { resize: vertical; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
+.analysis-paste-preview { display: grid; gap: 12px; margin-top: 20px; }
+.analysis-paste-preview h3 { margin: 0; }
+.analysis-paste-line { padding: 14px; border: 1px solid var(--line); border-radius: 10px; }
+.analysis-paste-line > p { overflow-wrap: anywhere; }
+.analysis-paste-line > label { display: grid; gap: 6px; margin: 8px 0; }
+.analysis-paste-line > label:first-child, .analysis-paste-conflict label { display: flex; align-items: center; gap: 8px; }
+.analysis-paste-conflict { padding: 10px; border-radius: 8px; background: color-mix(in srgb, var(--rust) 12%, var(--panel)); }
+.analysis-paste-dialog .dialog-footer { gap: 12px; flex-wrap: wrap; }
 .integrity-dialog {
   position: relative;
   width: min(980px, 100%);

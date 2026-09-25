@@ -32,7 +32,7 @@ type IntroductionPriorityStatus = {
   error: string | null;
 };
 
-export default function RepertoireView({ imported, onImport, onBrowse, onResolveGap, onShowGamesAtPosition, onRepair, onDeleteLocal, onRenameLocal, onQueueChanged, onTrain }: { imported: LocalRepertoire[]; onImport: () => void; onBrowse: (id: string) => void; onResolveGap: (repertoireId: string, gap: GapTarget) => void; onShowGamesAtPosition: (fen: string) => void; onRepair: (id: string) => void; onDeleteLocal: (id: string) => void; onRenameLocal: (id: string, name: string) => void; onQueueChanged: () => Promise<void>; onTrain: () => void }) {
+export default function RepertoireView({ imported, refreshRevision = 0, onImport, onPaste, onPasteGap, onBrowse, onResolveGap, onShowGamesAtPosition, onRepair, onDeleteLocal, onRenameLocal, onQueueChanged, onTrain }: { imported: LocalRepertoire[]; refreshRevision?: number; onImport: () => void; onPaste?: () => void; onPasteGap?: (repertoireId: string, gap: GapTarget) => void; onBrowse: (id: string) => void; onResolveGap: (repertoireId: string, gap: GapTarget) => void; onShowGamesAtPosition: (fen: string) => void; onRepair: (id: string) => void; onDeleteLocal: (id: string) => void; onRenameLocal: (id: string, name: string) => void; onQueueChanged: () => Promise<void>; onTrain: () => void }) {
   const [backendItems, setBackendItems] = useState<RepertoireItem[]>([]);
   const [loaded, setLoaded] = useState(!usesLocalApi());
   const [libraryPage, setLibraryPage] = useState(0);
@@ -77,7 +77,7 @@ export default function RepertoireView({ imported, onImport, onBrowse, onResolve
       void loadBackend();
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [loadBackend]);
+  }, [loadBackend, refreshRevision]);
   const backendSources = new Set(backendItems.map((item) => item.sourceName));
   const importedItems: RepertoireItem[] = (usesLocalApi() ? [] : imported.filter((item) => !backendSources.has(item.sourceName))).map((item) => ({ id: item.id, side: item.side, title: item.title, sourceName: item.sourceName, detail: `${item.cards.length} unique ${item.cards.length === 1 ? 'line' : 'lines'} · stored in this browser`, progress: 0, due: 0, pgn: item.pgn }));
   const repertoires = [...backendItems, ...importedItems];
@@ -110,7 +110,7 @@ export default function RepertoireView({ imported, onImport, onBrowse, onResolve
     const url=URL.createObjectURL(new Blob([text],{type:'application/x-chess-pgn'}));
     const link=document.createElement('a'); link.href=url; link.download=item?`${item.title}.pgn`:'tempo-repertoires.pgn'; link.click(); URL.revokeObjectURL(url);
   }
-  async function loadCoverage(repertoireId: string) {
+  const loadCoverage = useCallback(async (repertoireId: string) => {
     const [summaryResponse, gapsResponse] = await Promise.all([
       fetch(`${API_URL}/api/repertoires/${repertoireId}/coverage`),
       fetch(`${API_URL}/api/repertoires/${repertoireId}/coverage/gaps`),
@@ -127,7 +127,19 @@ export default function RepertoireView({ imported, onImport, onBrowse, onResolve
     );
     setCoverageByRepertoire((current) => ({ ...current, [repertoireId]: summary }));
     setGapsByRepertoire((current) => ({ ...current, [repertoireId]: gaps.gaps }));
-  }
+  }, []);
+  useEffect(() => {
+    if (!refreshRevision) return;
+    const timer = window.setTimeout(() => {
+      for (const repertoireId of Object.keys(coverageByRepertoire)) {
+        void loadCoverage(repertoireId).catch((failure) =>
+          setError(failure instanceof Error ? failure.message : "Coverage unavailable."));
+      }
+    }, 0);
+    return () => window.clearTimeout(timer);
+  // The revision is the event; rereading the existing coverage panels is intentional.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshRevision, loadCoverage]);
   async function refreshCoverage(repertoireId: string) {
     const response = await fetch(
       `${API_URL}/api/repertoires/${repertoireId}/coverage/refresh`,
@@ -169,7 +181,7 @@ export default function RepertoireView({ imported, onImport, onBrowse, onResolve
       {!loaded && !error && <Notice>Loading repertoires…</Notice>}
       <div className="page-heading compact">
         <h1>Repertoire</h1>
-        <div className="heading-actions"><details className="action-menu"><summary>More</summary><button disabled={!loaded} onClick={()=>exportPgn()}>⇩ Export all PGN</button></details><button className="primary-button" onClick={(event) => { event.currentTarget.focus(); onImport(); }}>＋ Import PGN</button></div>
+        <div className="heading-actions"><details className="action-menu"><summary>More</summary><button disabled={!loaded} onClick={()=>exportPgn()}>⇩ Export all PGN</button></details>{onPaste && <button onClick={onPaste}>Paste analysis</button>}<button className="primary-button" onClick={(event) => { event.currentTarget.focus(); onImport(); }}>＋ Import PGN</button></div>
       </div>
       <div className="library-grid">
         {repertoires.slice(libraryPage * 50, (libraryPage + 1) * 50).map((item) => (
@@ -181,7 +193,7 @@ export default function RepertoireView({ imported, onImport, onBrowse, onResolve
               <div><span>Required replies</span><strong>{coverageByRepertoire[item.id].covered_branches} / {coverageByRepertoire[item.id].required_branches}</strong></div>
               <div><span>Probability coverage</span><strong>{coverageByRepertoire[item.id].probability_coverage === null ? "—" : `${Math.round(coverageByRepertoire[item.id].probability_coverage! * 1000) / 10}%`}</strong></div>
               <small>{coverageByRepertoire[item.id].status}{coverageByRepertoire[item.id].unknown_nodes ? ` · ${coverageByRepertoire[item.id].unknown_nodes} positions awaiting data` : ""}</small>
-              {gapsByRepertoire[item.id]?.slice(0, 3).map((gap) => <button key={gap.gap_id} onClick={() => onResolveGap(item.id, gap)}>Fill {gap.move_uci} gap · {gap.probability === null ? "unknown" : `${Math.round(gap.probability * 1000) / 10}%`}</button>)}
+              {gapsByRepertoire[item.id]?.slice(0, 3).map((gap) => <span key={gap.gap_id}><button onClick={() => onResolveGap(item.id, gap)}>Fill {gap.move_uci} gap · {gap.probability === null ? "unknown" : `${Math.round(gap.probability * 1000) / 10}%`}</button>{onPasteGap && <button onClick={() => onPasteGap(item.id, gap)}>Paste line for gap</button>}</span>)}
             </div>}
             {item.backend && openOpportunities === item.id && <div className="opportunities-panel" aria-label="Repertoire opportunities">
               <strong>Opportunities</strong>

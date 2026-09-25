@@ -375,6 +375,40 @@ export const branchResultSchema = z.strictObject({
     checked_at: z.string().nullable().optional(),
   }).optional(),
 });
+export const analysisPastePreviewSchema = z.strictObject({
+  preview_token: z.string(),
+  lines: z.array(z.strictObject({
+    index: integer,
+    starting_fen: fenStringSchema,
+    san: z.string(),
+    moves: z.array(uciMoveSchema),
+    suggested_repertoire_id: repertoireIdSchema.nullable(),
+    options: z.array(z.strictObject({
+      repertoire_id: repertoireIdSchema,
+      name: z.string(),
+      trained_color: colorSchema.nullable(),
+      score: integer,
+      duplicate: z.boolean(),
+      trainable: z.boolean(),
+      conflicts: z.array(z.strictObject({
+        fen: z.string(),
+        existing_moves: z.array(uciMoveSchema),
+        pasted_move: uciMoveSchema,
+      })),
+      matched: z.boolean(),
+    })),
+  })),
+});
+export const analysisPasteCommitSchema = z.strictObject({
+  saved: z.array(z.strictObject({
+    index: integer,
+    repertoire_id: repertoireIdSchema,
+    duplicate: z.boolean(),
+    conflict: z.boolean(),
+  })),
+  affected_repertoire_ids: z.array(repertoireIdSchema),
+  gap_resolved: z.boolean(),
+});
 export const removeBranchResultSchema = z.strictObject({
   deleted_line_count: integer,
   deleted_card_count: integer,

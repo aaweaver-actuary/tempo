@@ -19,6 +19,7 @@ import {
 } from "../lib/workspace-data";
 import { runStudyTask } from "../lib/background-study";
 import { ImportDialogBox } from "../ImportDialogBox";
+import { AnalysisPasteDialog, type AnalysisPasteContext } from "../AnalysisPasteDialog";
 import { moveSoundEnabled, playChessMoveSound, playMoveSound } from "../lib/move-sound";
 import { bundledRepertoires, demoCards } from "../samples";
 import {
@@ -111,6 +112,8 @@ export default function Home() {
   const [discoveryOpenRequest, setDiscoveryOpenRequest] = useState<{ id: string; token: number }>();
   const [safeBreakCounter, setSafeBreakCounter] = useState(0);
   const [repairRepertoireId, setRepairRepertoireId] = useState<string>();
+  const [pasteContext, setPasteContext] = useState<AnalysisPasteContext | null>(null);
+  const [pasteRevision, setPasteRevision] = useState(0);
   const [pausedIntegrity, setPausedIntegrity] = useState<{ id: string; issueCount: number; blockedDue: number }>();
   const deferredRepairIds = useRef(new Set<string>());
   const [insightsTab, setInsightsTab] = useState<"training" | "games">(
@@ -1017,7 +1020,7 @@ export default function Home() {
           <SavedLocallyButton setShowImport={setShowImport} />
           <ServiceStatusPanel />
           <DiscoveriesTray safeToOpen={!(["train", "tactics", "endgames", "builder"] as View[]).includes(currentView)}
-            interactionBlocked={Boolean(editorCard || showImport || repairRepertoireId)}
+            interactionBlocked={Boolean(editorCard || showImport || pasteContext || repairRepertoireId)}
             safeBreakCounter={safeBreakCounter} onOpenRepertoire={() => changeWorkspace("repertoire")}
             onOpenBuilder={openDiscoveryInBuilder} boardTheme={boardTheme} pieceSet={pieceSet}
             openRequest={discoveryOpenRequest} onQueueChanged={() => refreshDatabaseQueue()} />
@@ -1094,7 +1097,13 @@ export default function Home() {
       {currentView === "repertoire" && (
         <RepertoireView
           imported={importedRepertoires}
+          refreshRevision={pasteRevision}
           onImport={() => setShowImport(true)}
+          onPaste={() => setPasteContext({})}
+          onPasteGap={(_repertoireId, gap) => setPasteContext({
+            startingFen: gap.fen,
+            sourceGapId: gap.gap_id,
+          })}
           onBrowse={(id) => {
             const existing = JSON.parse(
               localStorage.getItem("tempo-builder-session") ?? "null",
@@ -1154,6 +1163,7 @@ export default function Home() {
               pieceSet={pieceSet}
               imported={importedRepertoires}
               settings={new Settings()}
+              onPasteAnalysis={setPasteContext}
               useSharedBoard
             />
         </>
@@ -1227,6 +1237,20 @@ export default function Home() {
           onViewRepertoire={() => setCurrentView("repertoire")}
         />
       )}
+      {pasteContext && <AnalysisPasteDialog
+        context={pasteContext}
+        onClose={() => { setPasteContext(null); setSafeBreakCounter((count) => count + 1); }}
+        onSaved={(affectedRepertoireIds, conflictingRepertoireIds) => {
+          invalidateWorkspaceData();
+          setPasteRevision((revision) => revision + 1);
+          void refreshQueueOnly();
+          setPasteContext(null);
+          if (conflictingRepertoireIds.length) setRepairRepertoireId(conflictingRepertoireIds[0]);
+          for (const repertoireId of affectedRepertoireIds) {
+            window.dispatchEvent(new CustomEvent("tempo:integrity", { detail: { repertoireId } }));
+          }
+        }}
+      />}
       {showTree && (
         <TreeBrowser
           onClose={() => setShowTree(false)}

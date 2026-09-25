@@ -47,6 +47,23 @@ class BranchRequest(BaseModel):
     source_gap_id: str | None = None
 
 
+class AnalysisPastePreviewRequest(BaseModel):
+    text: str
+    starting_fen: str | None = None
+    source_gap_id: str | None = None
+
+
+class AnalysisPasteSelection(BaseModel):
+    index: int = Field(ge=0)
+    repertoire_id: str
+    acknowledge_conflict: bool = False
+
+
+class AnalysisPasteCommitRequest(AnalysisPastePreviewRequest):
+    preview_token: str
+    selections: list[AnalysisPasteSelection]
+
+
 class IntegrityResolutionRequest(BaseModel):
     """Request for choosing the single response at an integrity issue."""
 

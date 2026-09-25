@@ -29,6 +29,8 @@ from .services.tactical_catalog import (
 )
 from .models import (
     AccountSettings,
+    AnalysisPasteCommitRequest,
+    AnalysisPastePreviewRequest,
     BranchRequest,
     CardRevisionRequest,
     CoverageMaiaSubmission,
@@ -66,6 +68,10 @@ from .models import (
     DiscoveryAcceptanceRequest,
 )
 from .services.analysis import AnalysisCapabilities
+from .services.analysis_paste import (
+    PasteInputError, StalePastePreview, build_paste_preview, commit_pasted_lines,
+    parse_pasted_lines,
+)
 from .services.activity_gate import activity_gate
 from .services.cards import card_id
 from .services.pgn import ends_on_trained_move, parse_pgn, prefix_through_user_moves
@@ -1992,6 +1998,45 @@ def review(identifier: str, request: ReviewRequest):
         for repertoire_id in owner_ids:
             enqueue_priority_refresh(repertoire_id)
     return persisted_result
+
+
+@app.post("/api/repertoire/paste/preview")
+def preview_analysis_paste(request: AnalysisPastePreviewRequest):
+    try:
+        with read_connection() as database:
+            return build_paste_preview(
+                database, request.text, request.starting_fen, request.source_gap_id,
+            )
+    except PasteInputError as error:
+        raise HTTPException(422, str(error)) from error
+
+
+@app.post("/api/repertoire/paste/commit")
+def commit_analysis_paste(request: AnalysisPasteCommitRequest):
+    try:
+        parsed = parse_pasted_lines(request.text, request.starting_fen)
+        with read_connection() as database:
+            prepared_preview = build_paste_preview(
+                database, request.text, request.starting_fen, request.source_gap_id,
+            )
+        with connection() as database:
+            result = commit_pasted_lines(
+                database, request.text, request.starting_fen,
+                request.source_gap_id, request.preview_token,
+                [selection.model_dump() for selection in request.selections],
+                prepared_preview, parsed,
+            )
+    except StalePastePreview as error:
+        raise HTTPException(409, str(error)) from error
+    except PasteInputError as error:
+        raise HTTPException(422, str(error)) from error
+    for repertoire_id in result["affected_repertoire_ids"]:
+        enqueue_opening_graph_rebuild(repertoire_id, local_day=date.today().isoformat())
+        enqueue_integrity_scans(repertoire_id)
+        enqueue_coverage_refresh(repertoire_id, automatic=True)
+    if result["affected_repertoire_ids"]:
+        coordinator.wake()
+    return result
 
 
 @app.post("/api/repertoire/branches")
