@@ -157,6 +157,9 @@ export default function GamesView({
   });
   const [selectedId, setSelectedId] = useState<GameId | "">(savedSession?.id ?? "");
   const [cursor, setCursor] = useState(savedSession?.cursor ?? 0);
+  const loadedGameIdsRef = useRef(new Set<GameId>());
+  const [loadedGameIds, setLoadedGameIds] = useState<ReadonlySet<GameId>>(() => new Set());
+  const [boardMode, setBoardMode] = useState<"game" | "tactical" | "guided">("game");
   useEffect(() => { sessionStorage.setItem('tempo-games-session', JSON.stringify({version:1,id:selectedId,cursor})); }, [selectedId,cursor]);
   const selectedIdRef = useRef(selectedId);
   useEffect(() => {
@@ -193,7 +196,15 @@ export default function GamesView({
     result: "All",
     from: new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10),
   }));
-  const selected = records.find((game) => game.id === selectedId) ?? records[0];
+  const selected = selectedId ? records.find((game) => game.id === selectedId) : records[0];
+  const selectedDetailsReady = Boolean(selected && (!local || loadedGameIds.has(selected.id)));
+  const selectGame = (gameId: GameId, ply: number) => {
+    setSelectedId(gameId);
+    setCursor(ply);
+    setBoardMode("game");
+    setGuidedReview(null);
+    setGuidedReveal(null);
+  };
   const gameFen = selected
     ? fenAfterMoves(
         selected.moves,
@@ -213,6 +224,7 @@ export default function GamesView({
     setCursor(cursor + 1);
   }, [cursor, gameFen, selected]);
   const navigateGameToPly = useCallback((targetPly: number) => {
+    setBoardMode("game");
     if (targetPly === cursor + 1) advanceGameOnePly();
     else setCursor(targetPly);
   }, [advanceGameOnePly, cursor]);
@@ -225,7 +237,7 @@ export default function GamesView({
     [lines],
   );
   const positions = useBackgroundStudy<IndexedPosition[]>(indexTask, []);
-  const shapes = positions
+  const shapes = useMemo(() => positions
     .filter(
       (position) =>
         canonicalFenKey(position.fen) === canonicalFenKey(gameFen) &&
@@ -240,7 +252,7 @@ export default function GamesView({
           dest: position.nextUci!.slice(2, 4),
           brush: "yellow",
         }) as DrawShape,
-    );
+    ), [positions, gameFen, selected]);
   const games = records.filter(
     (game) =>
       game.date >= filters.from &&
@@ -273,10 +285,22 @@ export default function GamesView({
       };
       const loaded = body.games.map(importGameSummaryToGameViewRecord);
       setNextPageCursor(body.next_cursor ?? null);
-      setRecords(loaded);
-      if (!loaded.some((game) => game.id === selectedIdRef.current)) {
-        setSelectedId(loaded[0]?.id ?? "");
-        setCursor(loaded[0]?.flagPly ?? 0);
+      setRecords((current) => {
+        const refreshed = loaded.map((summary) => {
+          const detailed = current.find((game) => game.id === summary.id);
+          return detailed && loadedGameIdsRef.current.has(summary.id)
+            ? { ...summary, moves: detailed.moves, startFen: detailed.startFen, timeline: detailed.timeline }
+            : summary;
+        });
+        const selectedDetail = current.find((game) => game.id === selectedIdRef.current);
+        return selectedDetail && loadedGameIdsRef.current.has(selectedDetail.id)
+          && !refreshed.some((game) => game.id === selectedDetail.id)
+          ? [selectedDetail, ...refreshed] : refreshed;
+      });
+      if (!loaded.some((game) => game.id === selectedIdRef.current)
+        && !loadedGameIdsRef.current.has(selectedIdRef.current as GameId)) {
+        if (loaded[0]) selectGame(loaded[0].id, loaded[0].flagPly);
+        else setSelectedId("");
       }
       setError("");
       setLoaded(true);
@@ -303,8 +327,7 @@ export default function GamesView({
   }, [local, initialFenFilter, summaryUrl]);
   useEffect(() => {
     if (!local || !selectedId) return;
-    const selectedSummary = records.find((game) => game.id === selectedId);
-    if (!selectedSummary || selectedSummary.moves.length > 0) return;
+    if (loadedGameIdsRef.current.has(selectedId)) return;
     const requestedId = selectedId;
     const controller = new AbortController();
     void fetch(`${API_URL}/api/games/${encodeURIComponent(requestedId)}`, { signal: controller.signal })
@@ -313,9 +336,14 @@ export default function GamesView({
         const detailedGame = importGameAndReformatToGameViewRecord(
           gameRecordSchema.parse(await response.json()),
         );
-        if (!detailedGame || selectedIdRef.current !== requestedId) return;
-        setRecords((current) => current.map((game) => game.id === requestedId ? detailedGame : game));
-        setCursor((current) => Math.min(current || detailedGame.flagPly, detailedGame.moves.length));
+        if (!detailedGame) throw new Error("The selected game's moves are invalid. Retry the local service.");
+        if (selectedIdRef.current !== requestedId) return;
+        loadedGameIdsRef.current.add(requestedId);
+        setLoadedGameIds(new Set(loadedGameIdsRef.current));
+        setRecords((current) => current.some((game) => game.id === requestedId)
+          ? current.map((game) => game.id === requestedId ? detailedGame : game)
+          : [detailedGame, ...current]);
+        setCursor((current) => Math.min(current, detailedGame.moves.length));
       })
       .catch((reason) => {
         if (reason instanceof DOMException && reason.name === "AbortError") return;
@@ -541,6 +569,7 @@ export default function GamesView({
     }
     setGuidedReview((await response.json()) as GuidedReviewSession);
     setGuidedReveal(null);
+    setBoardMode("guided");
   }
   const attemptGuidedMove = useCallback(async (from: Square, to: Square) => {
     if (!guidedReview?.current || guidedReveal) return;
@@ -559,10 +588,16 @@ export default function GamesView({
     }
     setGuidedReveal((await response.json()) as GuidedReviewAttempt);
   }, [guidedReview, guidedReveal]);
-  const displayedFen = guidedReveal?.revealed.fen ?? guidedReview?.current?.fen ?? tacticalQueue.item?.evidence.fen ?? gameFen;
+  const displayedFen = boardMode === "guided"
+    ? guidedReveal?.revealed.fen ?? guidedReview?.current?.fen ?? gameFen
+    : boardMode === "tactical"
+      ? tacticalQueue.item?.evidence.fen ?? gameFen
+      : gameFen;
+  const displayedShapes = useMemo(() => boardMode === "game" ? shapes : [], [boardMode, shapes]);
+  const displayedLastMove = boardMode === "game" ? gameLast : undefined;
   useEffect(() => {
     let active = true;
-    if (!engineOn || !selected) return;
+    if (!engineOn || !selectedDetailsReady) return;
     const debounceTimer = window.setTimeout(() => {
       if (active) setEngineText("Analyzing…");
       void requestInteractiveAnalysis(displayedFen, 12)
@@ -587,9 +622,10 @@ export default function GamesView({
       active = false;
       window.clearTimeout(debounceTimer);
     };
-  }, [engineOn, displayedFen, selected]);
+  }, [engineOn, displayedFen, selectedDetailsReady]);
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
+      if (boardMode !== "game" || !selectedDetailsReady) return;
       if (
         (event.target as HTMLElement)?.matches(
           'input,textarea,select,[contenteditable="true"]',
@@ -617,7 +653,7 @@ export default function GamesView({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [advanceGameOnePly, selected?.moves.length]);
+  }, [advanceGameOnePly, boardMode, selected?.moves.length, selectedDetailsReady]);
   const matchedDecisions = games.reduce((total, game) => total + (game.matchedPlayerDecisions ?? 0), 0);
   const repertoireOpportunities = games.reduce((total, game) => total + (game.repertoireOpportunities ?? 0), 0);
   const selectedFindings = findings.filter((finding) => finding.game_id === selected?.id && finding.kind !== "defensive tactical threat");
@@ -625,22 +661,25 @@ export default function GamesView({
   useEffect(() => {
     if (!useSharedBoard) return;
     setShellBoardForOwner("games", {
-      unavailable: !selected ? (error ? "Game position unavailable. Retry the local service." : loaded ? "Select an imported game to review." : "Loading games…") : undefined,
+      unavailable: !selected ? (error ? "Game position unavailable. Retry the local service." : loaded ? "Select an imported game to review." : "Loading games…")
+        : !selectedDetailsReady ? (error ? "Could not load the selected game. Retry the local service." : "Loading selected game…") : undefined,
       fen: displayedFen,
-      lastMove: !guidedReview && gameLast
-        ? ([gameLast.slice(0, 2), gameLast.slice(2, 4)] as readonly [
+      lastMove: displayedLastMove
+        ? ([displayedLastMove.slice(0, 2), displayedLastMove.slice(2, 4)] as readonly [
             string,
             string,
           ])
         : undefined,
-      shapes,
-      interactionMode: (guidedReview?.current && !guidedReveal) || (tacticalQueue.item && !tacticalReveal) ? "legal" : "readonly",
+      shapes: displayedShapes,
+      interactionMode: (boardMode === "guided" && guidedReview?.current && !guidedReveal)
+        || (boardMode === "tactical" && tacticalQueue.item && !tacticalReveal) ? "legal" : "readonly",
       showHint: false,
       theme,
       pieceSet,
-      orientation: tacticalQueue.item ? tacticalQueueBoardOrientation(tacticalQueue.item.color) : selected?.color === "black" ? "black" : "white",
+      orientation: boardMode === "tactical" && tacticalQueue.item ? tacticalQueueBoardOrientation(tacticalQueue.item.color) : selected?.color === "black" ? "black" : "white",
       positionRevision: cursor,
-      onMove: guidedReview?.current && !guidedReveal ? attemptGuidedMove : tacticalQueue.item && !tacticalReveal ? attemptTacticalMove : undefined,
+      onMove: boardMode === "guided" && guidedReview?.current && !guidedReveal ? attemptGuidedMove
+        : boardMode === "tactical" && tacticalQueue.item && !tacticalReveal ? attemptTacticalMove : undefined,
       onSquareSelect: undefined,
       onFreeMove: undefined,
       onDrawnShapesChange: undefined,
@@ -651,14 +690,16 @@ export default function GamesView({
     loaded,
     error,
     selected,
+    selectedDetailsReady,
     cursor,
     displayedFen,
-    gameLast,
+    displayedLastMove,
+    displayedShapes,
+    boardMode,
     pieceSet,
     releaseShellBoardForOwner,
     selected?.color,
     setShellBoardForOwner,
-    shapes,
     theme,
     useSharedBoard,
     guidedReview,
@@ -735,33 +776,34 @@ export default function GamesView({
             <Chessboard
               fen={displayedFen}
               lastMove={
-                gameLast
-                  ? [gameLast.slice(0, 2), gameLast.slice(2, 4)]
+                displayedLastMove
+                  ? [displayedLastMove.slice(0, 2), displayedLastMove.slice(2, 4)]
                   : undefined
               }
-              shapes={shapes}
-              locked={(!guidedReview?.current && !tacticalQueue.item) || Boolean(guidedReveal) || tacticalReveal}
+              shapes={displayedShapes}
+              locked={!selectedDetailsReady || (boardMode === "game") || (boardMode === "guided" && (!guidedReview?.current || Boolean(guidedReveal))) || (boardMode === "tactical" && (!tacticalQueue.item || tacticalReveal))}
               showHint={false}
               theme={theme}
               pieceSet={pieceSet}
-              onMove={(from, to) => guidedReview?.current && !guidedReveal ? void attemptGuidedMove(from, to) : attemptTacticalMove(from, to)}
-              orientation={tacticalQueue.item?.color ?? selected?.color}
+              onMove={(from, to) => boardMode === "guided" ? void attemptGuidedMove(from, to) : attemptTacticalMove(from, to)}
+              orientation={boardMode === "tactical" ? tacticalQueue.item?.color : selected?.color}
             />
           )}
           <BoardTools>
+            {boardMode !== "game" && <button onClick={() => setBoardMode("game")}>Return to game</button>}
             <button
-              disabled={!selected || cursor === 0}
+              disabled={!selectedDetailsReady || boardMode !== "game" || cursor === 0}
               onClick={() => setCursor((value) => Math.max(0, value - 1))}
             >
               ← Back
             </button>
-            <button disabled={!selected || cursor >= selected.moves.length}
+            <button disabled={!selectedDetailsReady || boardMode !== "game" || cursor >= selected!.moves.length}
               onClick={advanceGameOnePly}
             >
               Forward →
             </button>
             <button
-              disabled={!selected}
+              disabled={!selectedDetailsReady || boardMode !== "game"}
               onClick={() => setCursor(selected?.flagPly ?? 0)}
             >
               ⚑ First mistake
@@ -781,11 +823,12 @@ export default function GamesView({
         </div>
         <div className="game-side-scroll">
           <aside className="game-inspector" data-task="Review">
+            {selected && !selectedDetailsReady && <p role="status">Loading selected game…</p>}
             <h2>{selected?.opening ?? "No games imported"}</h2>
             <strong>{selected?.flag}</strong>
             {engineOn && <p>{engineText}</p>}
             <div className="game-moves">
-              {selected?.moves.map((move, index) => (
+              {selectedDetailsReady && selected?.moves.map((move, index) => (
                 <button
                   className={`${index < cursor ? "shown" : ""}${index === selected.flagPly ? " flagged" : ""}`}
                   onClick={() => navigateGameToPly(index + 1)}
@@ -798,7 +841,7 @@ export default function GamesView({
                 </button>
               ))}
             </div>
-            {selected && (
+            {selectedDetailsReady && selected && (
               <>
                 <button className="primary-button" onClick={() => void startGuidedReview()}>
                   Review this game
@@ -873,6 +916,7 @@ export default function GamesView({
                   <small>Opportunity {tacticalQueue.item.opportunity_value_cp} cp · cost {tacticalQueue.item.evaluation_loss_cp} cp · played {tacticalQueue.item.evidence.actual_move_uci ?? "—"} · best {tacticalQueue.item.accepted_moves[0] ?? "—"}</small>
                   {!tacticalReveal && <p>Try the move on the board, or reveal the engine-supported conversion.</p>}
                   {tacticalReveal && <p>Engine line: {(tacticalQueue.item.evidence.candidate_lines?.[0]?.pv ?? []).join(" ") || tacticalQueue.item.accepted_moves[0]}</p>}
+                  <button onClick={() => setBoardMode("tactical")}>Review tactic on board</button>
                   <button onClick={() => setTacticalReveal(true)} disabled={tacticalReveal}>Reveal line</button>
                   {!tacticalPreview ? <button onClick={() => void previewTacticalCard(false)} disabled={tacticalBusy}>Preview puzzle</button> : <>
                     <small>Preview: {tacticalPreview.moves.join(" ")}</small>
@@ -880,7 +924,7 @@ export default function GamesView({
                   </>}
                   <button onClick={() => void tacticalCurationAction("skip")} disabled={tacticalBusy}>Skip for now</button>
                   <button onClick={() => void tacticalCurationAction("ignore")} disabled={tacticalBusy}>Ignore permanently</button>
-                  <button onClick={() => { setSelectedId(tacticalQueue.item!.game_id as GameId); setCursor(tacticalQueue.item!.ply); }}>Open source game</button>
+                  <button onClick={() => selectGame(tacticalQueue.item!.game_id as GameId, tacticalQueue.item!.ply)}>Open source game</button>
                 </> : <small>No pending tactical misses.</small>}
               </article>
             )}
@@ -986,8 +1030,7 @@ export default function GamesView({
                 className={`game-row${selected?.id === game.id ? " selected" : ""}`}
                 key={game.id}
                 onClick={() => {
-                  setSelectedId(game.id);
-                  setCursor(game.flagPly);
+                  selectGame(game.id, game.flagPly);
                 }}
               >
                 <span>
