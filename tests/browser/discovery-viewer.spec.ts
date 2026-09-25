@@ -20,7 +20,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1470, height: 836 
       total: 1, next_offset: null, unread_count: 0,
     } }));
     await page.route("**/api/discoveries/gap/recommendations", route => route.fulfill({ json: {
-      state: "ready", opportunity_id: "gap", starting_fen: decisionFen,
+      state: "ready", opportunity_id: "gap", evidence_fingerprint: "gap-revision", starting_fen: decisionFen,
       accepted_moves_uci: [], candidates: [{ move_uci: "g1f3", score: { cp: 20, mate: null },
         loss_cp: 0, similarity: "no supported similarity", example_line_id: null,
         example_line_name: null, preview_moves_uci: ["g1f3"], engine_version: "Stockfish",

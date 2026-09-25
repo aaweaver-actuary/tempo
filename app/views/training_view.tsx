@@ -16,7 +16,7 @@ import FailureNote from "../components/FailureNote";
 import FeedbackIcon from "../components/feedback/FeedbackIcon";
 import FeedbackText from "../components/feedback/FeedbackText";
 import OpeningTitle from "../components/OpeningTitle";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { usesLocalApi } from "../utils/local";
 import { Square } from "chess.js";
 import { getFeedbackCopy } from "./getFeedbackCopy";
@@ -54,6 +54,7 @@ interface TrainingViewProps {
   onOpenPosition?: (target: "analysis" | "builder" | "games") => void;
   useSharedBoard?: boolean;
   onDefenseGraded?: () => Promise<void>;
+  onBury?: () => Promise<void>;
 }
 
 function StandardTrainingView({
@@ -73,8 +74,11 @@ function StandardTrainingView({
   setEditorCard,
   onMove,
   onOpenPosition = () => undefined,
+  onBury = async () => undefined,
   useSharedBoard = false,
 }: TrainingViewProps) {
+  const [burying, setBurying] = useState(false);
+  const [buryError, setBuryError] = useState("");
   const {
     boardAttempt,
     attemptFailed,
@@ -200,6 +204,7 @@ function StandardTrainingView({
           <button onClick={retryQueueAfterReview}>Retry loading the queue</button>
         </div>
       )}
+      {buryError && <div role="alert">{buryError} <button onClick={() => { setBuryError(""); void runBury(); }}>Retry bury</button></div>}
       {cardsLeft > 0 && isEndgame && (
         <EndgamesView
           key={card.queueEntryId}
@@ -208,6 +213,7 @@ function StandardTrainingView({
           theme={boardTheme}
           pieceSet={pieceSet}
           onQueueChanged={() => void refreshDatabaseQueue()}
+          onBury={onBury}
           useSharedBoard={useSharedBoard}
         />
       )}
@@ -242,6 +248,7 @@ function StandardTrainingView({
               />
             )}
             <BoardTools>
+              <button type="button" disabled={burying || feedback === "complete" || reviewPersistenceState === "saving" || reviewPersistenceState === "refreshingQueue"} onClick={() => void runBury()}>{burying ? "Burying…" : "Bury"}</button>
               <AgainButton
                 handleAgain={handleAttemptFailure}
                 isAttemptFailed={attemptFailed}
@@ -352,8 +359,17 @@ function StandardTrainingView({
           </aside>
         </section>
       )}
-    </>
+      </>
   );
+
+  async function runBury() {
+    if (burying) return;
+    setBurying(true);
+    setBuryError("");
+    try { await onBury(); }
+    catch (error) { setBuryError(`Could not bury this card. ${error instanceof Error ? error.message : "Retry the action."}`); }
+    finally { setBurying(false); }
+  }
 }
 
 export default function TrainingView(props: TrainingViewProps) {
@@ -365,6 +381,7 @@ export default function TrainingView(props: TrainingViewProps) {
       pieceSet={props.pieceSet}
       useSharedBoard={props.useSharedBoard ?? false}
       onAdvance={props.onDefenseGraded ?? (async () => { props.refreshDatabaseQueue(); })}
+      onBury={props.onBury}
     />;
   }
   return <StandardTrainingView {...props} />;

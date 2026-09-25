@@ -10,6 +10,16 @@ function run(command, args, extra = {}) {
   const result = spawnSync(command, args, { stdio: "inherit", env: { ...env, ...extra } });
   if (result.error || result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed`);
 }
+function verifyTempoDataVolumeIsExternal() {
+  const result = spawnSync("docker", ["compose", "-f", "docker-compose.yml", "config", "--format", "json"], {
+    encoding: "utf8", env,
+  });
+  if (result.error || result.status !== 0) throw new Error("docker compose config could not resolve docker-compose.yml");
+  const composeConfig = JSON.parse(result.stdout);
+  assert.equal(composeConfig.volumes?.["tempo-data"]?.external, true, "tempo-data is an external Docker volume");
+  assert.equal(composeConfig.volumes["tempo-data"].name, "tempo-data", "tempo-data keeps its existing Docker volume name");
+  console.log("PASS test_tempo_data_volume_is_external: Compose uses the existing tempo-data volume.");
+}
 let exitCode = 0;
 const base = "http://127.0.0.1:4180/api";
 async function json(path, options) {
@@ -90,6 +100,7 @@ async function verifyStudySurvivesContainerRecreation() {
   console.log("PASS Docker study data survives container recreation: every store checksum, queue order, reviews, FSRS, teaching, notes and guided attempts.");
 }
 try {
+  verifyTempoDataVolumeIsExternal();
   run("docker", ["info", "--format", "{{.ServerVersion}}"]);
   run("docker", [...composeArgs, "up", "--build", "-d"]);
   await waitForHealth();

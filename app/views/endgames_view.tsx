@@ -33,6 +33,7 @@ export default function EndgamesView({
   onQueueChanged,
   scheduledCard,
   onReview,
+  onBury,
   useSharedBoard = false,
 }: {
   theme: BoardTheme;
@@ -40,6 +41,7 @@ export default function EndgamesView({
   onQueueChanged: () => void;
   scheduledCard?: PracticeCard;
   onReview?: (outcome: "correct" | "again") => void;
+  onBury?: () => Promise<void>;
   useSharedBoard?: boolean;
 }) {
   const [templates, setTemplates] =
@@ -66,6 +68,8 @@ export default function EndgamesView({
   const [busy, setBusy] = useState(true);
   const [userMoves, setUserMoves] = useState(0);
   const [complete, setComplete] = useState(false);
+  const [burying, setBurying] = useState(false);
+  const [buryError, setBuryError] = useState("");
   const [admitted, setAdmitted] = useState<
     Record<number, { templateId: string; cardId: string }>
   >({});
@@ -430,6 +434,7 @@ export default function EndgamesView({
             />
           )}
           <BoardTools>
+            {scheduledCard && onBury && <button type="button" disabled={burying || complete} onClick={() => void runBury()}>{burying ? "Burying…" : "Bury"}</button>}
             <button
               disabled={Boolean(scheduledCard) && !complete}
               onClick={() => void newPosition()}
@@ -443,6 +448,7 @@ export default function EndgamesView({
             )}
           </BoardTools>
           {outcome && <OutcomeFlash outcome={outcome} />}
+          {buryError && <p role="alert">{buryError} <button type="button" onClick={() => void runBury()}>Retry bury</button></p>}
         </div>
         <aside className="study-panel endgame-study">
           <span className="pill">Material template</span>
@@ -536,4 +542,12 @@ export default function EndgamesView({
       )}
     </section>
   );
+
+  async function runBury() {
+    if (!onBury || burying) return;
+    setBurying(true); setBuryError("");
+    try { await onBury(); }
+    catch (error) { setBuryError(`Could not bury this card. ${error instanceof Error ? error.message : "Retry the action."}`); }
+    finally { setBurying(false); }
+  }
 }

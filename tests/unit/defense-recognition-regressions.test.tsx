@@ -34,6 +34,16 @@ const card = {
 } as unknown as PracticeCard;
 const previewFen = "4k3/8/8/8/1n6/P7/8/R3K3 b Q - 0 1";
 
+it("defensive training can bury before loading or grading the exercise", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ candidate_id: "candidate", card_id: "defense-card",
+    exercise_revision: 2, prompt: "What danger should your next move account for?", recognition_required: true })));
+  const onBury = vi.fn(async () => undefined);
+  render(<DefenseTrainingView card={card} boardTheme={{} as never} pieceSet={{} as never}
+    useSharedBoard={false} onAdvance={async () => {}} onBury={onBury} />);
+  fireEvent.click(screen.getByRole("button", { name: "Bury" }));
+  await waitFor(() => expect(onBury).toHaveBeenCalledOnce());
+});
+
 it("guided defensive recognition reveals board arrows only after the assessment", async () => {
   const fetcher = vi.fn(async (input: RequestInfo | URL) => {
     if (String(input).endsWith("/recognition")) return Response.json({ status: "ready_for_move",

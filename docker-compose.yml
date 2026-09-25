@@ -67,4 +67,5 @@ services:
 
 volumes:
   tempo-data:
+    external: true
     name: tempo-data

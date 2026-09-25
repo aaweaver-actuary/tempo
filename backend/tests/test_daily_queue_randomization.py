@@ -92,6 +92,30 @@ def test_daily_queue_uses_a_different_seed_for_the_next_day(tmp_path, monkeypatc
         assert today_order != tomorrow_order
 
 
+def test_bury_moves_active_entry_later_without_review_or_count_change(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        _seed_cards()
+        before = client.get("/api/queue/today").json()["cards"]
+        assert len(before) > 2
+        buried = before[0]
+        other_ids = [card["queue_entry_id"] for card in before[1:]]
+        result = client.post(f"/api/queue/entries/{buried['queue_entry_id']}/bury")
+        assert result.status_code == 200
+        after = client.get("/api/queue/today").json()["cards"]
+        after_ids = [card["queue_entry_id"] for card in after]
+        assert len(after) == len(before)
+        assert set(after_ids) == {card["queue_entry_id"] for card in before}
+        assert after_ids.index(buried["queue_entry_id"]) >= 1
+        assert [entry_id for entry_id in after_ids if entry_id != buried["queue_entry_id"]] == other_ids
+        with database.connection() as db:
+            reviews = db.execute("SELECT COUNT(*) FROM reviews").fetchone()[0]
+            queued = db.execute("SELECT COUNT(*) FROM daily_queue WHERE queue_date=? AND status='queued'", (date.today().isoformat(),)).fetchone()[0]
+        assert reviews == 8
+        assert queued == len(before)
+        assert client.post(f"/api/queue/entries/{buried['queue_entry_id']}/bury").status_code == 409
+
+
 def test_defensive_stack_toggle_hides_today_without_erasing_reviews_or_queue_entries(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:

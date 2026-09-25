@@ -23,6 +23,20 @@ export type TrainingQueueState = {
   firstCleanPasses: Set<string>;
 };
 
+export function buryQueuedCard(
+  queue: number[],
+  activeCardIndex: number,
+  randomValue = Math.random(),
+): number[] {
+  const activePosition = queue.indexOf(activeCardIndex);
+  if (activePosition < 0 || queue.length < 2) return queue;
+  const reorderedQueue = [...queue];
+  reorderedQueue.splice(activePosition, 1);
+  const insertionPosition = 1 + Math.floor(randomValue * reorderedQueue.length);
+  reorderedQueue.splice(insertionPosition, 0, activeCardIndex);
+  return reorderedQueue;
+}
+
 export type AttemptLifecycleState = {
   fen: FenString;
   step: number;

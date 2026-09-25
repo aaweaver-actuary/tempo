@@ -7,6 +7,44 @@ import {
   boardVisible,
   move,
 } from "./product-fixtures";
+
+test("training Bury defers the active card and reports a failed defer", async ({ page, request }) => {
+  const settings = await (await request.get(`${api}/settings`)).json();
+  await request.put(`${api}/settings`, { data: { ...settings, new_cards_per_day: 10 } });
+  const imported = await request.post(`${api}/imports/pgn`, {
+    multipart: {
+      file: {
+        name: "bury-training.pgn",
+        mimeType: "application/x-chess-pgn",
+        buffer: Buffer.from(pgn),
+      },
+      initial_depth: "2",
+    },
+  });
+  expect(imported.ok()).toBeTruthy();
+  await expect.poll(async () => {
+    const queue = await (await request.get(`${api}/queue/today`)).json();
+    return queue.cards.length;
+  }, { timeout: 20_000 }).toBeGreaterThan(1);
+  await page.goto("/");
+  await nav(page, "Train");
+  await expect(page.getByRole("button", { name: "Bury", exact: true })).toBeVisible();
+  await page.route("**/api/queue/entries/*/bury", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Queue defer unavailable" }) }));
+  await page.getByRole("button", { name: "Bury", exact: true }).click();
+  await expect(page.getByRole("alert")).toContainText("Queue defer unavailable");
+  await page.unroute("**/api/queue/entries/*/bury");
+  const before = (await (await request.get(`${api}/queue/today`)).json()).cards;
+  await page.getByRole("button", { name: "Retry bury" }).click();
+  await expect.poll(async () => {
+    const after = (await (await request.get(`${api}/queue/today`)).json()).cards;
+    return after[0]?.queue_entry_id;
+  }).not.toBe(before[0]?.queue_entry_id);
+  const after = (await (await request.get(`${api}/queue/today`)).json()).cards;
+  expect(after).toHaveLength(before.length);
+  await page.reload();
+  await nav(page, "Train");
+  await expect(page.getByRole("button", { name: "Bury", exact: true })).toBeVisible();
+});
 test("sample deletion uses repertoire identity and does not delete its same-filename sibling", async ({
   page,
   request,
@@ -144,6 +182,10 @@ test("Edit card opens Builder line-removal context and deletes the selected bran
   page,
   request,
 }) => {
+  const settings = await (await request.get(`${api}/settings`)).json();
+  await request.put(`${api}/settings`, {
+    data: { ...settings, new_cards_per_day: 100 },
+  });
   await page.goto("/");
   await nav(page, "Repertoire");
   await page.getByRole("button", { name: "＋ Import PGN" }).click();

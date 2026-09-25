@@ -56,19 +56,22 @@ function continuationNotation(startingFen: string, movesUci: string[]): string {
 }
 
 export default function DefenseTrainingView({
-  card, boardTheme, pieceSet, useSharedBoard, onAdvance,
+  card, boardTheme, pieceSet, useSharedBoard, onAdvance, onBury = async () => undefined,
 }: {
   card: PracticeCard;
   boardTheme: BoardTheme;
   pieceSet: PieceSet;
   useSharedBoard: boolean;
   onAdvance: () => Promise<void>;
+  onBury?: () => Promise<void>;
 }) {
   const candidateId = card.defenseCandidateId;
   const queueEntryId = card.queueEntryId;
   const [exercise, setExercise] = useState<DefenseExercisePayload | null>(null);
   const [loadError, setLoadError] = useState("");
   const [saveError, setSaveError] = useState("");
+  const [burying, setBurying] = useState(false);
+  const [buryError, setBuryError] = useState("");
   const [grade, setGrade] = useState<DefenseGradePayload | null>(null);
   const [pending, setPending] = useState<PendingAttempt | null>(null);
   const [busy, setBusy] = useState(false);
@@ -287,6 +290,7 @@ export default function DefenseTrainingView({
           editMode={recognitionStage && !assessmentDone} onSquareSelect={recognitionStage && !assessmentDone ? selectSquare : undefined}
           onFreeMove={recognitionStage && !assessmentDone ? (from, to) => { selectSquare(from); selectSquare(to); } : undefined} />}
         <BoardTools>
+          <button type="button" disabled={burying || busy || Boolean(definitive)} onClick={() => void runBury()}>{burying ? "Burying…" : "Bury"}</button>
           {saveError && pending && <button disabled={busy} onClick={() => void submit(pending)}>Retry move submission</button>}
           {loadError && <button onClick={() => void loadExercise()}>Retry loading exercise</button>}
         </BoardTools>
@@ -332,6 +336,7 @@ export default function DefenseTrainingView({
         {recognitionDone && !definitive && defenseReady && <p className="defense-stage-prompt">Back at your original turn, play a move that avoids this danger. More than one sound defense may work.</p>}
         {loadError && <p role="alert">{loadError}</p>}
         {saveError && <p role="alert">{saveError} {/reload|refresh/i.test(saveError) && <button type="button" onClick={() => void loadExercise()}>Reload exercise</button>}</p>}
+        {buryError && <p role="alert">{buryError} <button type="button" onClick={() => void runBury()}>Retry bury</button></p>}
         {grade?.status === "needs_analysis" && <p role="status">Analyzing this legal defense. Your study result has not been recorded yet.</p>}
         {grade?.status === "ambiguous" && <p role="status">This move is too close to the grading threshold. No review was recorded; choose another move.</p>}
         {grade?.status === "illegal" && <p role="alert">The submitted move is illegal. No review was recorded.</p>}
@@ -352,4 +357,12 @@ export default function DefenseTrainingView({
       </aside>
     </section>
   );
+
+  async function runBury() {
+    if (burying) return;
+    setBurying(true); setBuryError("");
+    try { await onBury(); }
+    catch (reason) { setBuryError(`Could not bury this card. ${reason instanceof Error ? reason.message : "Retry the action."}`); }
+    finally { setBurying(false); }
+  }
 }

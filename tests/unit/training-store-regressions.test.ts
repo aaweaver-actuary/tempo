@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { useTrainingStore } from "../../app/state/training-store";
+import { buryQueuedCard } from "../../app/domain/training-session";
 import {
   asCardId,
   asFenString,
@@ -8,6 +9,16 @@ import {
 } from "../../app/types";
 
 describe("training store", () => {
+  it("bury advances the active card while retaining it later without changing queue size", () => {
+    const queue = [4, 8, 12, 16];
+    const buriedQueue = buryQueuedCard(queue, 4, 0);
+    expect(buriedQueue).toEqual([8, 4, 12, 16]);
+    expect(buriedQueue).toHaveLength(queue.length);
+    expect([...buriedQueue].sort()).toEqual([...queue].sort());
+    expect(queue).toEqual([4, 8, 12, 16]);
+    expect(buryQueuedCard([4], 4, 0)).toEqual([4]);
+  });
+
   it("resets the current card to the correct opening start state", () => {
     const card: PracticeCard = {
       id: asCardId("opening-1"),

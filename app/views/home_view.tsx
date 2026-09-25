@@ -39,6 +39,7 @@ import { canonicalFenKey } from "../utils/canonical-line";
 import { IndexedPosition } from "../lib/position-similarity";
 import { usesLocalApi, localDayKey } from "../utils/local";
 import { trainedColor } from "../utils/cards";
+import { buryQueuedCard } from "../domain/training-session";
 import BuilderView from "./analysis_view";
 import CardEditor from "./card_editor";
 import EndgamesView from "./endgames_view";
@@ -529,6 +530,29 @@ export default function Home() {
     clearTimeout(replyTimer.current);
     clearTimeout(completionTimer.current);
     resetTrainingLine(nextCard);
+  }
+
+  async function buryCurrentCard() {
+    if (databaseQueue) {
+      if (!card.queueEntryId) throw new Error("The active queue entry is unavailable. Refresh the queue.");
+      const response = await fetch(`${API_URL}/api/queue/entries/${card.queueEntryId}/bury`, { method: "POST" });
+      if (!response.ok) {
+        const detail = await response.json().catch(() => ({})) as { detail?: string };
+        throw new Error(detail.detail ?? `Local service returned HTTP ${response.status}.`);
+      }
+      await refreshDatabaseQueue(true);
+      setSafeBreakCounter((count) => count + 1);
+      return;
+    }
+    const remainingQueue = buryQueuedCard(dailyQueue, activeCardIndex);
+    if (remainingQueue === dailyQueue) throw new Error("There are no other cards to move this card behind.");
+    setDailyQueue(remainingQueue);
+    setActiveCardIndex(remainingQueue[0] ?? 0);
+    setCardsLeft(remainingQueue.length);
+    localStorage.setItem("tempo-daily-queue", JSON.stringify(remainingQueue));
+    localStorage.setItem("tempo-cards-left", String(remainingQueue.length));
+    resetLine(practiceCards[remainingQueue[0] ?? 0] ?? demoCards[0]);
+    setSafeBreakCounter((count) => count + 1);
   }
 
   function tryMove(from: Square, to: Square) {
@@ -1052,6 +1076,7 @@ export default function Home() {
               boardTheme={boardTheme}
               pieceSet={pieceSet}
               rateCard={rateCard}
+              onBury={buryCurrentCard}
               onDefenseGraded={async () => {
                 await refreshDatabaseQueue(true);
                 setReviewed((count) => count + 1);

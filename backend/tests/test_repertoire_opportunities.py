@@ -209,6 +209,48 @@ def test_discovery_black_evaluation_sign_and_mate_are_typed_separately():
     }]
 
 
+def test_stale_discovery_evidence_refresh_persists_current_fields_and_feed_returns_them(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as db:
+        root_key, target_key = _seed_decision_route(db)
+        db.execute("UPDATE cards SET state='learning',introduced_at=? WHERE id='target'",
+                   (date.today().isoformat(),))
+        for number in range(1, 7):
+            _seed_decision_game(db, number, root_key, target_key)
+            for ply, evaluation, loss in ((0, 20, 0), (2, -130, 150), (8, -250, 0)):
+                db.execute(
+                    "INSERT INTO game_move_analysis(game_id,ply,eval_after_cp,loss_cp,depth) VALUES(?,?,?,?,18)",
+                    (f"game-{number}", ply, evaluation, loss),
+                )
+        refresh_card_opportunity(db, "rep", "target")
+        opportunity = next(item for item in list_opportunities(db, "rep")
+                           if item["evidence"].get("analysis_based"))
+        legacy_evidence = {"version": 1, "analysis_based": True,
+                           "encounter_count": 6, "game_ids": opportunity["evidence"]["game_ids"]}
+        db.execute("UPDATE repertoire_opportunities SET evidence_json=? WHERE id=?",
+                   (json.dumps(legacy_evidence), opportunity["id"]))
+        refresh_card_opportunity(db, "rep", "target")
+        persisted = json.loads(db.execute(
+            "SELECT evidence_json FROM repertoire_opportunities WHERE id=?", (opportunity["id"],),
+        ).fetchone()[0])
+        required_keys = {
+            "window_days", "encounter_count", "analyzed_count", "miss_count",
+            "strong_prefix_count", "sufficient_prefix_count", "immediate_average_loss_cp",
+            "immediate_cp_sample_count", "later_average_change_cp", "later_sample_count",
+        }
+        assert persisted["version"] == 2
+        assert required_keys <= persisted.keys()
+
+    response = TestClient(app).get("/api/discoveries")
+    assert response.status_code == 200
+    feed_evidence = next(item["evidence"] for item in response.json()["discoveries"]
+                         if item["id"] == opportunity["id"])
+    assert required_keys <= feed_evidence.keys()
+    assert feed_evidence["analyzed_count"] == 6
+    assert feed_evidence["immediate_cp_sample_count"] == 6
+
+
 def test_discovery_prefix_split_isolates_target_without_transferring_reviews(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
