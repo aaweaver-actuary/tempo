@@ -35,6 +35,27 @@ const card: PracticeCard = {
 beforeEach(() => useTrainingStore.getState().initializeCardState(card));
 
 describe("review attempt reliability", () => {
+  it("advances to a prefetched card before review persistence and retains the total queue count", () => {
+    const nextCard = { ...card, id: asCardId("next-card"), queueEntryId: asQueueEntryId(43) };
+    const store = useTrainingStore.getState();
+    store.hydrateLocalQueue([card, nextCard], true, 135);
+    expect(useTrainingStore.getState().advanceCachedQueue()).toBe(true);
+    expect(useTrainingStore.getState().practiceCards[0].queueEntryId).toBe(43);
+    expect(useTrainingStore.getState().cardsLeft).toBe(134);
+    expect(useTrainingStore.getState().attempt.phase).toBe("playerTurn");
+  });
+  it("pauses an active attempt when queue reconciliation removes its entry", () => {
+    const replacement = { ...card, id: asCardId("replacement"), queueEntryId: asQueueEntryId(44) };
+    const store = useTrainingStore.getState();
+    store.hydrateLocalQueue([card], true);
+    store.setStep(1);
+    store.hydrateLocalQueue([replacement]);
+    expect(useTrainingStore.getState().practiceCards[0].queueEntryId).toBe(42);
+    expect(useTrainingStore.getState().attempt.phase).toBe("feedbackPause");
+    expect(useTrainingStore.getState().serviceError).toContain("no longer in today's queue");
+    store.hydrateLocalQueue([replacement]);
+    expect(useTrainingStore.getState().practiceCards[0].queueEntryId).toBe(44);
+  });
   it("late queue responses cannot replace a newer playable queue entry", async () => {
     const responses: ((response: Response) => void)[] = [];
     vi.stubGlobal(

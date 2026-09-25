@@ -342,6 +342,13 @@ async def prioritize_foreground_requests(request: Request, call_next):
         with activity_gate.foreground():
             return await call_next(request)
     finally:
+        if request.url.path.startswith("/api/queue/") or request.url.path.endswith("/review"):
+            logging.getLogger("tempo.foreground_latency").info(
+                "request path=%s class=%s duration_ms=%.1f",
+                request.url.path,
+                "background" if is_background else "foreground",
+                (time.monotonic() - request.state.started_monotonic) * 1000,
+            )
         if request_scope is not None:
             request_scope.__exit__(None, None, None)
 
@@ -1179,8 +1186,7 @@ def enqueue_daily_queue_refresh(*, foreground: bool = True) -> dict:
     return task
 
 
-@app.get("/api/queue/today")
-def queue_today():
+def _queue_payload(limit: int | None = None):
     day = date.today().isoformat()
     with read_connection() as db:
         projection_row = db.execute(
@@ -1190,8 +1196,7 @@ def queue_today():
             "SELECT card_id,message FROM queue_projection_diagnostics WHERE queue_date=? ORDER BY card_id",
             (day,),
         ).fetchall()
-        rows = db.execute(
-            """SELECT q.id queue_entry_id,q.position,q.cycle,q.attempt_state,q.attempt_failed,
+        queue_sql = """SELECT q.id queue_entry_id,q.position,q.cycle,q.attempt_state,q.attempt_failed,
                                   q.gameplay_priority_reason,q.admission_kind,
                                   COALESCE(q.admission_source,
                                     (SELECT 'defense:' || candidate.id
@@ -1214,24 +1219,36 @@ def queue_today():
                                  SELECT 1 FROM repertoire_integrity_card_blocks block
                                  WHERE block.repertoire_id=r.id AND block.card_id=c.id
                              ))
-                           ORDER BY q.position,q.id""",
-            (day,),
+                           ORDER BY q.position,q.id"""
+        rows = db.execute(
+            queue_sql + (" LIMIT ?" if limit is not None else ""),
+            (day, limit) if limit is not None else (day,),
         ).fetchall()
         cards = [{**dict(r), "moves": json.loads(r["moves_json"])} for r in rows]
         badge_cutoff = (datetime.now(timezone.utc) - timedelta(days=30)).isoformat()
+        fen_keys = {" ".join(card["start_fen"].split()[:4]) for card in cards}
+        encounter_by_fen = {}
+        unique_fen_keys = list(fen_keys)
+        for offset in range(0, len(unique_fen_keys), 400):
+            fen_key_batch = unique_fen_keys[offset:offset + 400]
+            placeholders = ",".join("?" for _ in fen_key_batch)
+            encounter_rows = db.execute(
+                f"""SELECT occurrence.fen_key,
+                           COUNT(DISTINCT occurrence.game_id) encounter_count,
+                           MAX(game.played_at) last_seen_at
+                    FROM game_position_occurrences occurrence
+                    JOIN imported_games game ON game.id=occurrence.game_id
+                    WHERE occurrence.fen_key IN ({placeholders})
+                      AND game.played_at>=? AND game.adaptive_excluded=0
+                    GROUP BY occurrence.fen_key""",
+                (*fen_key_batch, badge_cutoff),
+            ).fetchall()
+            encounter_by_fen.update({row["fen_key"]: row for row in encounter_rows})
         for card in cards:
             fen_key = " ".join(card["start_fen"].split()[:4])
-            encounters = db.execute(
-                """SELECT COUNT(DISTINCT occurrence.game_id) encounter_count,
-                          MAX(game.played_at) last_seen_at
-                   FROM game_position_occurrences occurrence
-                   JOIN imported_games game ON game.id=occurrence.game_id
-                   WHERE occurrence.fen_key=? AND game.played_at>=?
-                     AND game.adaptive_excluded=0""",
-                (fen_key, badge_cutoff),
-            ).fetchone()
-            encounter_count = int(encounters["encounter_count"])
-            last_seen_at = encounters["last_seen_at"]
+            encounters = encounter_by_fen.get(fen_key)
+            encounter_count = int(encounters["encounter_count"]) if encounters else 0
+            last_seen_at = encounters["last_seen_at"] if encounters else None
             card["encounter_count_30d"] = encounter_count
             card["last_encountered_at"] = last_seen_at
             badges = []
@@ -1240,13 +1257,24 @@ def queue_today():
             if encounter_count >= 3:
                 badges.append("Frequent")
             card["encounter_badges"] = badges
+        total_count = len(cards) if limit is None else db.execute(
+            """SELECT COUNT(*) FROM daily_queue q JOIN cards c ON c.id=q.card_id
+               WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
+                 AND COALESCE(c.pending_validation,0)=0
+                 AND (c.content_type!='defense' OR
+                      (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
+                 AND (c.content_type!='opening' OR NOT EXISTS(
+                     SELECT 1 FROM repertoire_integrity_card_blocks block
+                     WHERE block.card_id=c.id))""",
+            (day,),
+        ).fetchone()[0]
     for card in cards:
         card.pop("moves_json", None)
         card["trained_color"] = card.pop("effective_trained_color")
     return {
         "local_date": day,
         "cards": cards,
-        "count": len(cards),
+        "count": total_count,
         "diagnostics": [dict(row) for row in diagnostic_rows],
         "projection": (
             dict(projection_row)
@@ -1261,6 +1289,18 @@ def queue_today():
             }
         ),
     }
+
+
+@app.get("/api/queue/today")
+def queue_today():
+    return _queue_payload()
+
+
+@app.get("/api/queue/window")
+def queue_window(limit: int = 20):
+    if not 1 <= limit <= 20:
+        raise HTTPException(422, "Queue window limit must be between 1 and 20")
+    return _queue_payload(limit)
 
 
 @app.post("/api/imports/pgn", response_model=ImportResult)

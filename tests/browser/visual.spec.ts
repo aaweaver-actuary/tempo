@@ -96,7 +96,7 @@ test("import-dialog-phone", async ({ page }) => {
 
 test("board-unavailable", async ({ page }) => {
   await prepareVisualUI(page);
-  await page.route("**/api/queue/today", (route) =>
+  await page.route("**/api/queue/window?**", (route) =>
     route.fulfill({
       status: 503,
       json: { detail: "Local database unavailable" },

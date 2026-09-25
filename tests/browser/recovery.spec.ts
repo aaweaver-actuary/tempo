@@ -115,7 +115,7 @@ test("unaffected opening reviews remain mixed with tactics during repertoire rep
       },
     }),
   );
-  await page.route("**/api/queue/today", (route) =>
+  await page.route("**/api/queue/window?**", (route) =>
     route.fulfill({
       json: {
         count: 2,

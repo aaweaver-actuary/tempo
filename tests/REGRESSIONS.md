@@ -4,6 +4,9 @@
 
 | Issue | Required regression |
 | --- | --- |
+| Slow daily queue read and card-to-card transition | `test_training_queue_window_limits_cards_and_preserves_order`; `advances to a prefetched card before review persistence and retains the total queue count`; `shows the prefetched next training card while the prior review request is still pending`; `next training card paints before the previous review finishes saving` |
+| Review persistence fails after an optimistic card advance | `retains a failed review for retry after reload without duplicating the queue entry`; `replays failed-attempt marking before grading and preserves order` |
+| Background queue reconciliation removes a card during an active attempt | `pauses an active attempt when queue reconciliation removes its entry` |
 | Browser Stockfish timeout loses whole game scan and labels engine failure as save failure | `test_stockfish_timeout_resumes_at_unfinished_position_without_saving_partial_game`; `test_docker_game_scan_finalizes_complete_positions_once_with_actual_network`; `test_docker_game_report_rejects_wrong_history_and_depth_without_advancing`; `test_browser_activity_preempts_docker_search_without_database_access`; `test_legacy_browser_network_is_requeued_one_game_at_a_time_without_erasing_analysis` |
 | An already-open browser tab can keep claiming full-game scans after the Docker worker is deployed | `test_predeployment_browser_tab_cannot_claim_new_game_analysis_after_docker_rollout` |
 | Defensive recognition asks for four unmarked squares at once and hides useful feedback until the move | `guided defensive recognition reveals board arrows only after the assessment`; `validated false alarm ends after explanation without requesting a move`; `test_guided_recognition_reveals_route_after_assessment_and_sound_defense_pass` |

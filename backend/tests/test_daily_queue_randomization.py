@@ -58,6 +58,21 @@ def test_daily_queue_is_stable_within_a_day_and_mixed(tmp_path, monkeypatch):
         assert len({card["position"] for card in first}) == len(first)
 
 
+def test_training_queue_window_limits_cards_and_preserves_order(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        _seed_cards()
+        complete = client.get("/api/queue/today").json()
+        window_response = client.get("/api/queue/window?limit=3")
+        assert window_response.status_code == 200
+        window = window_response.json()
+        assert [card["queue_entry_id"] for card in window["cards"]] == [
+            card["queue_entry_id"] for card in complete["cards"][:3]
+        ]
+        assert window["count"] == complete["count"]
+        assert len(window["cards"]) == 3
+
+
 def test_daily_queue_uses_a_different_seed_for_the_next_day(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:

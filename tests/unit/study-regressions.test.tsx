@@ -159,6 +159,29 @@ async function pause(ms = 751) {
 }
 
 describe("reported study regressions", () => {
+  it("shows the prefetched next training card while the prior review request is still pending", async () => {
+    const queueCard = (entryId: number, title: string) => ({
+      id: `card-${entryId}`, queue_entry_id: entryId, start_fen: new Chess().fen(),
+      moves: ["e2e4"], content_type: "opening", repertoire_name: title,
+      repertoire_source: "PGN", attempt_state: "clean",
+    });
+    let finishReview: ((response: Response) => void) | undefined;
+    vi.stubGlobal("fetch", vi.fn((input) => {
+      const url = String(input);
+      if (url.includes("/api/queue/window"))
+        return Promise.resolve(Response.json({ cards: [queueCard(901, "First prep"), queueCard(902, "Next prep")], count: 2 }));
+      if (url.endsWith("/review"))
+        return new Promise<Response>((resolve) => { finishReview = resolve; });
+      return Promise.resolve(Response.json(url.endsWith("/teaching") ? { states: [] } :
+        url.endsWith("/sync-status") ? { providers: [] } : { lines: [] }));
+    }));
+    render(<Home />);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Correct" })).toBeTruthy());
+    fireEvent.click(screen.getByRole("button", { name: "Correct" }));
+    await waitFor(() => expect(useTrainingStore.getState().practiceCards[0].queueEntryId).toBe(902));
+    expect(finishReview).toBeTypeOf("function");
+    finishReview?.(Response.json({ persisted: true }));
+  });
   it("failed review save retains the completed card for retry; successful review is not reported as failed when queue refresh fails", async () => {
     const queueCard = {
       id: "retry-review",
@@ -176,7 +199,7 @@ describe("reported study regressions", () => {
       "fetch",
       vi.fn(async (input) => {
         const url = String(input);
-        if (url.endsWith("/api/queue/today")) {
+        if (url.includes("/api/queue/window")) {
           if (reviewSaved)
             return Response.json(
               { code: "database_busy", retryable: true, detail: "Database busy" },
@@ -238,7 +261,7 @@ describe("reported study regressions", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input) =>
-        String(input).endsWith("/api/queue/today")
+        String(input).includes("/api/queue/window")
           ? Response.json({
               cards: [
                 {
@@ -276,7 +299,7 @@ describe("reported study regressions", () => {
       "fetch",
       vi.fn(async (input, options) => {
         const url = String(input);
-        if (url.endsWith("/api/queue/today"))
+        if (url.includes("/api/queue/window"))
           return Response.json({
             cards: [
               {
@@ -336,7 +359,7 @@ describe("reported study regressions", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input) => {
-        if (String(input).endsWith("/api/queue/today"))
+        if (String(input).includes("/api/queue/window"))
           return Response.json({ cards: queue });
         if (String(input).endsWith("/review"))
           queue = [
@@ -381,7 +404,7 @@ describe("reported study regressions", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input, options) => {
-        if (String(input).endsWith("/api/queue/today"))
+        if (String(input).includes("/api/queue/window"))
           return Response.json({ cards });
         if (String(input).endsWith("/review")) {
           reviews.push(JSON.parse(options.body));
@@ -540,7 +563,7 @@ describe("reported study regressions", () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input, options) => {
-        if (String(input).endsWith("/api/queue/today"))
+        if (String(input).includes("/api/queue/window"))
           return Response.json({ cards: queue });
         if (String(input).endsWith("/review")) {
           reviews.push(JSON.parse(options.body));

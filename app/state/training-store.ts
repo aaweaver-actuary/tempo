@@ -85,7 +85,8 @@ export type TrainingStoreState = {
   ) => void;
   setAttemptPhase: (phase: AttemptPhase, expected?: AttemptToken) => void;
   setReviewSaveError: (error: string) => void;
-  hydrateLocalQueue: (cards: PracticeCard[], advance?: boolean) => void;
+  hydrateLocalQueue: (cards: PracticeCard[], advance?: boolean, totalCount?: number) => void;
+  advanceCachedQueue: () => boolean;
   setBoardAttempt: (value: number | ((value: number) => number)) => void;
   setShowHint: (value: boolean | ((value: boolean) => boolean)) => void;
   setCardsLeft: (cardsLeft: number | ((current: number) => number)) => void;
@@ -512,19 +513,28 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
         : undefined,
     });
   },
-  hydrateLocalQueue: (practiceCards, advance = false) => {
+  hydrateLocalQueue: (practiceCards, advance = false, totalCount = practiceCards.length) => {
     const current = get();
     const retainedIndex = advance
       ? -1
       : practiceCards.findIndex(
           (card) => attemptEntryKey(card) === current.attempt.entryKey,
         );
+    if (!advance && retainedIndex < 0 && current.isDatabaseQueueActive &&
+        current.practiceCards[current.activeCardIndex] && current.step > 0 &&
+        current.attempt.phase !== "feedbackPause") {
+      set({
+        serviceError: "This active card is no longer in today's queue. Refresh before continuing.",
+        attempt: { ...current.attempt, phase: "feedbackPause" },
+      });
+      return;
+    }
     const activeCardIndex = Math.max(0, retainedIndex);
     const card = practiceCards[activeCardIndex];
     const queueState = {
       practiceCards,
       dailyQueue: practiceCards.map((_, index) => index),
-      cardsLeft: practiceCards.length,
+      cardsLeft: totalCount,
       activeCardIndex,
       isDatabaseQueueActive: true,
       serviceError: "",
@@ -582,6 +592,13 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
         phase: card ? (failed ? "guided" : "playerTurn") : "complete",
       },
     });
+  },
+  advanceCachedQueue: () => {
+    const current = get();
+    const remainingCards = current.practiceCards.slice(current.activeCardIndex + 1);
+    if (!remainingCards.length) return false;
+    get().hydrateLocalQueue(remainingCards, true, Math.max(0, current.cardsLeft - 1));
+    return true;
   },
   getCard: () => get().practiceCards[get().activeCardIndex] ?? demoCards[0],
 }));

@@ -6,7 +6,7 @@ const previewFen = "8/k1p2p2/1p2p3/1P2Pn2/P1R5/8/3r1PKP/8 b - - 4 36";
 for (const width of [390, 1440]) {
   test(`reported Rc4 defensive preview stays readable and returns to the decision at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height: width < 600 ? 844 : 900 });
-    await page.route("**/api/queue/today", (route) => route.fulfill({
+    await page.route("**/api/queue/window?**", (route) => route.fulfill({
       contentType: "application/json",
       body: JSON.stringify({ cards: [{
         id: "defense-preview", queue_entry_id: 1001, start_fen: originalFen,

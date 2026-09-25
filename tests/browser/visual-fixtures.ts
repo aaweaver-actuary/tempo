@@ -34,7 +34,7 @@ export async function prepareVisualUI(page: Page, fixedClock = true) {
         test_instance: true,
       },
       "/api/settings": settings,
-      "/api/queue/today": {
+      "/api/queue/window": {
         cards: [
           {
             id: "visual-card",

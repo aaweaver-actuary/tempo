@@ -743,6 +743,7 @@ def initialize() -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_threat_candidates_game_state ON threat_training_candidates(game_id,validation_state,superseded_at)",
+        "CREATE INDEX IF NOT EXISTS idx_threat_candidates_card_id ON threat_training_candidates(card_id)",
         """
         CREATE TABLE IF NOT EXISTS threat_analysis_requests (
             id TEXT PRIMARY KEY,
