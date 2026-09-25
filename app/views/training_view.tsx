@@ -95,6 +95,7 @@ function StandardTrainingView({
     currentFenString,
     teachingEncounterKey,
   } = useTrainingStore(useShallow(selectTrainingViewState));
+  const reviewBlocked = reviewPersistenceState === "saveFailed";
   const isEndgame = card.kind === "endgame";
   const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
   const feedbackCopy = getFeedbackCopy(attemptFailed, card)[feedback];
@@ -129,7 +130,7 @@ function StandardTrainingView({
       expectedSan: card.moves[step],
       lastMove,
       interactionMode:
-        isLocked || step >= card.moves.length || cardsLeft === 0
+        isLocked || reviewBlocked || step >= card.moves.length || cardsLeft === 0
           ? "readonly"
           : "legal",
       showHint: cardsLeft > 0 && showTeachingArrow,
@@ -156,6 +157,7 @@ function StandardTrainingView({
     currentFenString,
     isEndgame,
     isLocked,
+    reviewBlocked,
     lastMove,
     onMove,
     pieceSet,
@@ -168,7 +170,7 @@ function StandardTrainingView({
   ]);
 
   function handleAnalyzeOnLichessClick() {
-    if (!attemptFailed) void rateCard("again");
+    if (!attemptFailed && !reviewBlocked) void rateCard("again");
   }
 
   return (
@@ -231,7 +233,7 @@ function StandardTrainingView({
                 expectedSan={card.moves[step]}
                 lastMove={lastMove}
                 locked={
-                  isLocked || step >= card.moves.length || cardsLeft === 0
+                  isLocked || reviewBlocked || step >= card.moves.length || cardsLeft === 0
                 }
                 showHint={showTeachingArrow}
                 shapes={trainingShapes}
@@ -248,14 +250,15 @@ function StandardTrainingView({
               />
             )}
             <BoardTools>
-              <button type="button" disabled={burying || feedback === "complete" || reviewPersistenceState === "saving" || reviewPersistenceState === "refreshingQueue"} onClick={() => void runBury()}>{burying ? "Burying…" : "Bury"}</button>
+              <button type="button" disabled={burying || feedback === "complete" || reviewBlocked || reviewPersistenceState === "saving" || reviewPersistenceState === "refreshingQueue"} onClick={() => void runBury()}>{burying ? "Burying…" : "Bury"}</button>
               <AgainButton
                 handleAgain={handleAttemptFailure}
                 isAttemptFailed={attemptFailed}
                 isFeedbackComplete={feedback === "complete"}
                 hasNoCardsLeft={cardsLeft === 0}
+                isReviewBlocked={reviewBlocked}
               />
-              <RestartButton handleRestart={resetCardAttempt} />
+              <RestartButton handleRestart={resetCardAttempt} disabled={reviewBlocked} />
               <AnalyzeOnLichessButton
                 moves={card.moves.slice(0, step)}
                 fen={card.startingFen}
@@ -338,12 +341,12 @@ function StandardTrainingView({
                 </div>
               )}
             <div className="ratings binary">
-              <button disabled={isLocked} onClick={handleAttemptFailure}>
+              <button disabled={isLocked || reviewBlocked} onClick={handleAttemptFailure}>
                 <strong>Again</strong>
               </button>
               <button
                 className="primary"
-                disabled={attemptFailed || isLocked}
+                disabled={attemptFailed || isLocked || reviewBlocked}
                 onClick={() => void rateCard("correct")}
               >
                 <strong>

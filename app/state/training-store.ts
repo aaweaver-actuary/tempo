@@ -515,6 +515,24 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
   },
   hydrateLocalQueue: (practiceCards, advance = false, totalCount = practiceCards.length) => {
     const current = get();
+    const completedCard = current.practiceCards[current.activeCardIndex];
+    if (!advance && completedCard && current.attempt.phase === "feedbackPause" &&
+        current.feedback === "complete") {
+      const upcomingCards = practiceCards.filter(
+        (queuedCard) => attemptEntryKey(queuedCard) !== current.attempt.entryKey,
+      );
+      const completedCardStillQueued = upcomingCards.length !== practiceCards.length;
+      const retainedCards = [completedCard, ...upcomingCards];
+      set({
+        practiceCards: retainedCards,
+        dailyQueue: retainedCards.map((_, index) => index),
+        cardsLeft: totalCount + (completedCardStillQueued ? 0 : 1),
+        activeCardIndex: 0,
+        isDatabaseQueueActive: true,
+        serviceError: "",
+      });
+      return;
+    }
     const retainedIndex = advance
       ? -1
       : practiceCards.findIndex(

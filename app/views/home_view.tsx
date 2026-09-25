@@ -673,10 +673,11 @@ export default function Home() {
     if (value) playMoveSound({ force: true });
   }
 
-  async function rateCard(outcome: "again" | "correct") {
+  async function rateCard(outcome: "again" | "correct", reviewRecordedAtCompletion = false) {
     if (reviewPending.current || cardsLeft === 0) return;
+    clearTimeout(completionTimer.current);
     const pendingBeforeReview = databaseQueue ? pendingReviews() : [];
-    const retryingPendingReview = pendingBeforeReview.length > 0;
+    const retryingPendingReview = pendingBeforeReview.length > 0 && !reviewRecordedAtCompletion;
     const retryNeedsAdvance = retryingPendingReview &&
       pendingBeforeReview[0].queueEntryId === card.queueEntryId;
     reviewPending.current = true;
@@ -688,12 +689,14 @@ export default function Home() {
       try {
         if (!retryingPendingReview) {
           if (!card.queueEntryId) throw new Error("The active queue entry is unavailable. Refresh the queue.");
-          enqueuePendingReview({
-            backendId: card.backendId,
-            queueEntryId: card.queueEntryId,
-            outcome,
-            guided: attemptFailed,
-          });
+          if (!reviewRecordedAtCompletion) {
+            enqueuePendingReview({
+              backendId: card.backendId,
+              queueEntryId: card.queueEntryId,
+              outcome,
+              guided: attemptFailed,
+            });
+          }
           advancedFromCache = useTrainingStore.getState().advanceCachedQueue();
           setReviewed((count) => count + 1);
         }
@@ -774,12 +777,26 @@ export default function Home() {
     setAttemptPhase("feedbackPause");
     setFeedback("complete");
     const token = useTrainingStore.getState().attempt;
+    const outcome = useTrainingStore.getState().isAttemptFailed ? "again" : "correct";
+    let reviewRecordedAtCompletion = false;
+    if (databaseQueue && card.backendId && card.queueEntryId) {
+      try {
+        enqueuePendingReview({
+          backendId: card.backendId,
+          queueEntryId: card.queueEntryId,
+          outcome,
+          guided: useTrainingStore.getState().isAttemptFailed,
+        });
+        reviewRecordedAtCompletion = true;
+      } catch (error) {
+        setReviewPersistenceState("saveFailed");
+        setReviewSaveError(`The completed result could not be stored locally. ${String(error)}`);
+      }
+    }
     clearTimeout(completionTimer.current);
     completionTimer.current = setTimeout(() => {
       if (isCurrentAttempt(useTrainingStore.getState().attempt, token))
-        void rateCard(
-          useTrainingStore.getState().isAttemptFailed ? "again" : "correct",
-        );
+        void rateCard(outcome, reviewRecordedAtCompletion);
     }, 750);
   }
 

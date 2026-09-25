@@ -161,7 +161,7 @@ describe("review attempt reliability", () => {
     );
   });
 
-  it("same-entry tactical refresh clears stale feedback pause so the board stays playable", () => {
+  it("queue refresh during completed tactic feedback preserves the final position and attempt token", () => {
     const store = useTrainingStore.getState();
     const tacticalCard: PracticeCard = {
       ...card,
@@ -188,10 +188,27 @@ describe("review attempt reliability", () => {
       currentFenString: asFenString(new Chess().fen()),
       feedback: "complete",
     }));
+    const completedToken = useTrainingStore.getState().attempt;
     store.hydrateLocalQueue([tacticalCard]);
     const refreshed = useTrainingStore.getState();
-    expect(refreshed.attempt.phase).toBe("playerTurn");
-    expect(refreshed.currentFenString).toBe(tacticalCard.startingFen);
-    expect(selectTrainingViewState(refreshed).isLocked).toBe(false);
+    expect(refreshed.attempt).toEqual(completedToken);
+    expect(refreshed.currentFenString).not.toBe(tacticalCard.startingFen);
+    expect(selectTrainingViewState(refreshed).isLocked).toBe(true);
+  });
+
+  it("queue refresh removing a completed tactic retains its final board until grading", () => {
+    const store = useTrainingStore.getState();
+    const nextCard = { ...card, id: asCardId("next"), queueEntryId: asQueueEntryId(43) };
+    store.hydrateLocalQueue([card], true, 2);
+    store.setStep(card.moves.length);
+    store.setFeedback("complete");
+    store.setAttemptPhase("feedbackPause");
+    const completed = useTrainingStore.getState();
+    store.hydrateLocalQueue([nextCard], false, 1);
+    const refreshed = useTrainingStore.getState();
+    expect(refreshed.getCard().queueEntryId).toBe(card.queueEntryId);
+    expect(refreshed.attempt).toEqual(completed.attempt);
+    expect(refreshed.step).toBe(completed.step);
+    expect(refreshed.practiceCards[1].queueEntryId).toBe(nextCard.queueEntryId);
   });
 });

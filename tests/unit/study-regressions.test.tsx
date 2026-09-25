@@ -11,6 +11,8 @@ import TacticsView from "../../app/views/tactics_view";
 import Home from "../../app/views/home_view";
 import { advanceTacticProgress } from "../../app/lib/tactics-progress";
 import { useTrainingStore } from "../../app/state/training-store";
+import { fetchAndInitializeQueue } from "../../app/views/fetchAndInitializeQueue";
+import { pendingReviews } from "../../app/lib/review-outbox";
 
 vi.mock("../../app/components/chessboard", () => ({
   Chessboard: (props: {
@@ -159,6 +161,147 @@ async function pause(ms = 751) {
 }
 
 describe("reported study regressions", () => {
+  it("completed tactic survives queue reconciliation before its feedback timer grades it", async () => {
+    const tactic = {
+      id: "mate-refresh", queue_entry_id: 811, start_fen: startingFen,
+      moves: ["a2e6", "d7d8", "f7f8"], content_type: "tactic",
+      repertoire_name: "Tactics", repertoire_source: "Lichess", cycle: 0,
+    };
+    const next = {
+      id: "next-opening", queue_entry_id: 812, start_fen: new Chess().fen(),
+      moves: ["e2e4"], content_type: "opening", repertoire_name: "Next",
+      repertoire_source: "PGN", cycle: 0,
+    };
+    let queue = [tactic, next];
+    const reviews: unknown[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input, options) => {
+      const url = String(input);
+      if (url.includes("/api/queue/window")) return Response.json({ cards: queue, count: queue.length });
+      if (url.endsWith("/review")) {
+        reviews.push(JSON.parse(options.body));
+        queue = [next];
+        return Response.json({ persisted: true });
+      }
+      return Response.json({ providers: [], states: [], lines: [] });
+    }));
+    render(<Home />);
+    await waitFor(() => expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(startingFen));
+    fireEvent.click(screen.getByText("a2e6"));
+    await pause(430);
+    fireEvent.click(screen.getByText("f7f8"));
+    const finalFen = screen.getByTestId("board").getAttribute("data-fen");
+    const completedToken = useTrainingStore.getState().attempt;
+    expect(new Chess(finalFen!).isCheckmate()).toBe(true);
+    expect(pendingReviews()).toHaveLength(1);
+    await act(async () => { await fetchAndInitializeQueue(); });
+    expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(finalFen);
+    expect(useTrainingStore.getState().attempt).toEqual(completedToken);
+    await pause(751);
+    await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(812));
+    expect(reviews).toHaveLength(1);
+    expect(pendingReviews()).toHaveLength(0);
+  });
+
+  it("reload during completed tactic feedback replays its durable result once", async () => {
+    const tactic = {
+      id: "mate-reload", queue_entry_id: 821, start_fen: startingFen,
+      moves: ["a2e6", "d7d8", "f7f8"], content_type: "tactic",
+      repertoire_name: "Tactics", repertoire_source: "Lichess", cycle: 0,
+    };
+    let queue = [tactic];
+    let reviewCount = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/queue/window")) return Response.json({ cards: queue, count: queue.length });
+      if (url.endsWith("/review")) {
+        reviewCount += 1;
+        queue = [];
+        return Response.json({ persisted: true });
+      }
+      return Response.json({ providers: [], states: [], lines: [] });
+    }));
+    const mounted = render(<Home />);
+    await waitFor(() => expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(startingFen));
+    fireEvent.click(screen.getByText("a2e6"));
+    await pause(430);
+    fireEvent.click(screen.getByText("f7f8"));
+    expect(pendingReviews()).toHaveLength(1);
+    mounted.unmount();
+    render(<Home />);
+    await waitFor(() => expect(reviewCount).toBe(1));
+    expect(pendingReviews()).toHaveLength(0);
+    await pause(751);
+    expect(reviewCount).toBe(1);
+  });
+
+  it("failed tactic review save keeps the next card visible but blocks grading until retry", async () => {
+    const tactic = {
+      id: "mate-save-failure", queue_entry_id: 831, start_fen: startingFen,
+      moves: ["a2e6", "d7d8", "f7f8"], content_type: "tactic",
+      repertoire_name: "Tactics", repertoire_source: "Lichess", cycle: 0,
+    };
+    const next = {
+      id: "next-after-failure", queue_entry_id: 832, start_fen: new Chess().fen(),
+      moves: ["e2e4"], content_type: "opening", repertoire_name: "Next",
+      repertoire_source: "PGN", cycle: 0,
+    };
+    let reviews = 0;
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/queue/window")) return Response.json({ cards: [tactic, next], count: 2 });
+      if (url.endsWith("/review")) {
+        reviews += 1;
+        return reviews === 1
+          ? Response.json({ detail: "Database busy" }, { status: 503 })
+          : Response.json({ persisted: true });
+      }
+      return Response.json({ providers: [], states: [], lines: [] });
+    }));
+    render(<Home />);
+    await waitFor(() => expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(startingFen));
+    fireEvent.click(screen.getByText("a2e6"));
+    await pause(430);
+    fireEvent.click(screen.getByText("f7f8"));
+    await pause(751);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry save" })).toBeTruthy());
+    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(832);
+    expect(screen.getByText("e2e4").closest("button")?.disabled).toBe(true);
+    expect(pendingReviews()).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Retry save" }));
+    await waitFor(() => expect(pendingReviews()).toHaveLength(0));
+    expect(reviews).toBe(2);
+  });
+
+  it("failed next-card read leaves a completed tactic on its final board for retry", async () => {
+    const tactic = {
+      id: "mate-queue-failure", queue_entry_id: 841, start_fen: startingFen,
+      moves: ["a2e6", "d7d8", "f7f8"], content_type: "tactic",
+      repertoire_name: "Tactics", repertoire_source: "Lichess", cycle: 0,
+    };
+    let saved = false;
+    vi.stubGlobal("fetch", vi.fn(async (input) => {
+      const url = String(input);
+      if (url.includes("/api/queue/window"))
+        return saved
+          ? Response.json({ detail: "Queue read failed" }, { status: 500 })
+          : Response.json({ cards: [tactic], count: 1 });
+      if (url.endsWith("/review")) {
+        saved = true;
+        return Response.json({ persisted: true });
+      }
+      return Response.json({ providers: [], states: [], lines: [] });
+    }));
+    render(<Home />);
+    await waitFor(() => expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(startingFen));
+    fireEvent.click(screen.getByText("a2e6"));
+    await pause(430);
+    fireEvent.click(screen.getByText("f7f8"));
+    const finalFen = screen.getByTestId("board").getAttribute("data-fen");
+    await pause(751);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Retry loading the queue" })).toBeTruthy());
+    expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(finalFen);
+    expect(pendingReviews()).toHaveLength(0);
+  });
   it("shows the prefetched next training card while the prior review request is still pending", async () => {
     const queueCard = (entryId: number, title: string) => ({
       id: `card-${entryId}`, queue_entry_id: entryId, start_fen: new Chess().fen(),
