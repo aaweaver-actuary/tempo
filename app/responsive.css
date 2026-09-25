@@ -55,18 +55,26 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
 .topbar {
   height: var(--nav-height);
   padding: 0 var(--gutter);
-  grid-template-columns: auto 1fr auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 24px;
 }
 .nav {
   display: block;
   overflow: visible;
   width: auto;
+  min-width: 0;
 }
 .desktop-navigation {
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   gap: 8px;
+}
+@media (min-width: 1440px) and (min-height: 600px) {
+  .topbar { grid-template-columns: auto minmax(0, 1fr) 426px; }
+  .desktop-navigation { justify-content: center; }
+}
+@media (min-width: 1100px) and (max-width: 1439px) and (min-height: 600px) {
+  .nav { padding-inline-start: 10px; }
 }
 .nav button {
   padding: 8px 10px;
@@ -503,7 +511,21 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
   box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 18%);
 }
 
-.tempo-activity-trigger { min-height: 44px; cursor: pointer; }
+.tempo-activity-trigger { min-height: 44px; cursor: pointer; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.review-save-status {
+  position: fixed;
+  right: var(--gutter);
+  bottom: calc(16px + env(safe-area-inset-bottom));
+  z-index: 45;
+  max-width: min(320px, calc(100vw - 2 * var(--gutter)));
+  margin: 0;
+  padding: 10px 14px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--panel);
+  box-shadow: 0 8px 30px rgba(30, 36, 31, 0.18);
+  pointer-events: none;
+}
 .tempo-activity-trigger-mobile { display: none; }
 .tempo-discoveries-badge { font-weight: 700; color: var(--rust); }
 .tempo-discovery-backdrop { position: fixed; inset: 0; z-index: 80; display: grid; place-items: center; padding: 0.75rem; background: rgb(18 25 20 / 65%); }
@@ -591,6 +613,7 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
 }
 @media (max-width: 767px) {
   .top-actions { gap: 0.35rem; }
+  .review-save-status { bottom: calc(84px + env(safe-area-inset-bottom)); }
   .tempo-discovery-backdrop { padding: 0; }
   .tempo-discovery-viewer { height: 100dvh; width: 100vw; border-radius: 0; }
   .tempo-discovery-header { align-items: stretch; flex-direction: column; gap: 0.5rem; padding: 0.75rem; }

@@ -56,6 +56,30 @@ test("next training card paints before the previous review finishes saving", asy
   releaseReview?.();
 });
 
+test("saving result notification does not move the board or card", async ({ page }) => {
+  await prepareVisualUI(page);
+  await page.route("**/api/queue/window?**", route => route.fulfill({ json: {
+    local_date: "2026-09-18", count: 2, cards: [
+      { id: "save-toast-first", queue_entry_id: 301, start_fen: startFen, moves: ["e2e4"], content_type: "opening", repertoire_name: "First card", repertoire_source: "PGN", attempt_state: "clean" },
+      { id: "save-toast-second", queue_entry_id: 302, start_fen: startFen, moves: ["d2d4"], content_type: "opening", repertoire_name: "Second card", repertoire_source: "PGN", attempt_state: "clean" },
+    ],
+  } }));
+  let releaseReview: (() => void) | undefined;
+  await page.route("**/api/cards/save-toast-first/review", async route => {
+    await new Promise<void>(resolve => { releaseReview = resolve; });
+    await route.fulfill({ json: { persisted: true } });
+  });
+  await page.goto("/");
+  const board = page.locator(".unified-board-shell-panel");
+  const before = (await board.boundingBox())!;
+  await page.getByRole("button", { name: "Correct" }).click();
+  await expect(page.getByRole("status", { name: "Saving result" })).toBeVisible();
+  const during = (await board.boundingBox())!;
+  expect(Math.abs(during.y - before.y)).toBeLessThanOrEqual(1);
+  expect(Math.abs(during.x - before.x)).toBeLessThanOrEqual(1);
+  releaseReview?.();
+});
+
 test("completed tactic advances while an earlier review save is still pending", async ({ page }) => {
   await prepareVisualUI(page);
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: {

@@ -189,7 +189,7 @@ function StandardTrainingView({
         </div>
       )}
       {reviewPersistenceState === "saving" && (
-        <p role="status">Saving result…</p>
+        <p className="review-save-status" role="status" aria-label="Saving result">Saving result…</p>
       )}
       {reviewPersistenceState === "saveFailed" && (
         <div role="alert">
@@ -200,7 +200,7 @@ function StandardTrainingView({
         </div>
       )}
       {reviewPersistenceState === "refreshingQueue" && (
-        <p role="status">Result saved. Loading the next card…</p>
+        <p className="review-save-status" role="status">Result saved. Loading the next card…</p>
       )}
       {reviewPersistenceState === "queueFailed" && (
         <div role="alert">
