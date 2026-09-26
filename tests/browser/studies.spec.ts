@@ -1,0 +1,246 @@
+import { test, expect, api, nav } from "./product-fixtures";
+
+const fen = "4k3/8/8/8/8/8/8/4K1N1 w - - 0 1";
+const originalPgn = `[Event "Original synthetic study"]\n[SetUp "1"]\n[FEN "${fen}"]\n\n*\n`;
+
+test("FEN-only study square exercise is authored enrolled and reviewed through the real workspace", async ({ page, request }) => {
+  await page.goto("/");
+  await nav(page, "Studies");
+  await page.getByLabel("Title", { exact: true }).fill("Synthetic knight study");
+  await page.getByRole("button", { name: "Create study" }).click();
+  await expect(page.getByText("Study created")).toBeVisible();
+  await page.getByLabel("New chapter").fill("Geometry");
+  await page.getByRole("button", { name: "Add chapter" }).click();
+  await page.getByLabel("Or paste PGN").fill(originalPgn);
+  await page.getByRole("button", { name: "Preview PGN" }).click();
+  await expect(page.getByText(/Record 1: Original synthetic study, 1 positions, valid/)).toBeVisible();
+  await page.getByRole("button", { name: "Commit selected records" }).click();
+  await expect(page.getByRole("button", { name: new RegExp(`Root position.*${fen}`) })).toBeVisible();
+  await page.getByLabel("Question").fill("Select the white knight square");
+  await page.getByLabel("Authored criterion").fill("The square occupied by the white knight");
+  await page.getByLabel("Required squares").fill("g1");
+  await page.getByRole("button", { name: "Create draft exercise" }).click();
+  await expect(page.getByText("Draft exercise created; enroll it when ready")).toBeVisible();
+  await page.getByRole("button", { name: /Select the white knight square.*draft/ }).click();
+  await page.getByRole("button", { name: "Preview learner prompt" }).click();
+  await expect(page.getByLabel("Learner preview")).toContainText("Select the white knight square");
+  await page.getByRole("button", { name: "Enroll in daily queue" }).click();
+  await expect(page.getByText("Exercise enrolled")).toBeVisible();
+  await expect.poll(async () => {
+    const queue = await (await request.get(`${api}/queue/today`)).json();
+    return queue.cards.find((card: { content_type: string }) => card.content_type === "study_exercise")?.queue_entry_id;
+  }).toBeGreaterThan(0);
+  await nav(page, "Train");
+  await expect(page.getByText("Select the white knight square")).toBeVisible();
+  await expect(page.getByText("Original synthetic study")).toHaveCount(0);
+  const beforeFen = await page.locator(".board-frame").first().getAttribute("data-fen");
+  await page.getByLabel("Coordinates or UCI move").fill("g1");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  expect(await page.locator(".board-frame").first().getAttribute("data-fen")).toBe(beforeFen);
+  await page.getByRole("button", { name: "Submit" }).click();
+  await expect(page.getByRole("status").filter({ hasText: "Square selection assessed" })).toBeVisible();
+  const queue = await (await request.get(`${api}/queue/today`)).json();
+  const card = queue.cards.find((item: { content_type: string }) => item.content_type === "study_exercise");
+  expect(card?.study_exercise_id).toBeTruthy();
+  const bundle = await (await request.get(`${api}/studies/${card.study_id}/export`)).json();
+  expect(bundle.tables.study_positions).toHaveLength(1);
+});
+
+test("prepared study response is graded offline and replayed with its actual squares", async ({ page }) => {
+  const today = new Date();
+  const localDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const studyCard = {
+    id: "prepared-study-card", queue_entry_id: 901, cycle: 0, latest_review_id: 0, revision: 1,
+    start_fen: fen, moves: [], content_type: "study_exercise", kind: "exercise",
+    repertoire_id: null, repertoire_name: "Synthetic study", repertoire_source: "Study",
+    study_id: "prepared-study", study_exercise_id: "prepared-exercise",
+    study_snapshot: { schema_version: 1, grader_version: 1, exercise_id: "prepared-exercise", revision: 1,
+      fen, specification: { type: "square_set", prompt: "Mark the knight square", hint: "", explanation: "The knight starts on g1.",
+        criterion: "Square occupied by the white knight", required: ["g1"], optional: [], candidate_region: null } },
+  };
+  const queue = { local_date: localDate, count: 1, cards: [studyCard] };
+  await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: queue }));
+  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: {
+    ...queue, prepared_at: new Date().toISOString(), projection: { state: "ready", generation: 1,
+      updated_at: null, refresh_pending: 0, last_error: null, blocked_count: 0 },
+  } }));
+  await page.goto("/");
+  await expect(page.getByText("Mark the knight square")).toBeVisible();
+  await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+  await page.reload();
+  await expect(page.getByText("Mark the knight square")).toBeVisible();
+  await page.getByLabel("Coordinates or UCI move").fill("g1");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("button", { name: "Submit" }).click();
+  await expect(page.getByText("The knight starts on g1.")).toBeVisible();
+  const journal = await page.evaluate(async () => {
+    const request = indexedDB.open("tempo-offline-training", 1);
+    const database = await new Promise<IDBDatabase>((resolve, reject) => {
+      request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+    });
+    const read = database.transaction("training").objectStore("training").get("prepared-daily-queue");
+    return await new Promise<{ attempts: Array<{ answer: unknown }> }>((resolve, reject) => {
+      read.onsuccess = () => resolve(read.result); read.onerror = () => reject(read.error);
+    });
+  });
+  expect(journal.attempts[0].answer).toEqual({ type: "square_set", squares: ["g1"] });
+  const replayed: unknown[] = [];
+  await page.unroute("**/api/**");
+  await page.route("**/api/studies/prepared-study/exercises/prepared-exercise/attempts", (route) => {
+    replayed.push(route.request().postDataJSON());
+    return route.fulfill({ json: { attempt_id: "saved", rating: "correct",
+      assessment: { outcome: "correct", feedback: "Saved" },
+      review: { review_id: 903, requeue_entry_id: 904 } } });
+  });
+  await page.reload();
+  await expect.poll(() => replayed.length).toBe(1);
+  expect(replayed[0]).toMatchObject({ answer: { type: "square_set", squares: ["g1"] },
+    revision: 1, queue_entry_id: 901 });
+});
+
+test("all five study exercise types can be authored from the workspace", async ({ page, request }) => {
+  const study = await (await request.post(`${api}/studies`, { data: { title: "Original exercise forms" } })).json();
+  const chapter = await (await request.post(`${api}/studies/${study.id}/chapters`, { data: { title: "Forms" } })).json();
+  const preview = await (await request.post(`${api}/studies/${study.id}/import/preview`, {
+    data: { chapter_id: chapter.id, raw_pgn: originalPgn },
+  })).json();
+  expect((await request.post(`${api}/studies/${study.id}/import/commit`, {
+    data: { chapter_id: chapter.id, raw_pgn: originalPgn, preview_digest: preview.digest, selected_records: [0] },
+  })).ok()).toBeTruthy();
+  await page.goto("/");
+  await nav(page, "Studies");
+  await page.getByRole("combobox", { name: "Study" }).selectOption(study.id);
+  await expect(page.getByRole("button", { name: new RegExp(`Root position.*${fen}`) })).toBeVisible();
+
+  await page.getByLabel("Interaction").selectOption("move_line");
+  await page.getByLabel("Question").fill("Develop the knight");
+  await page.getByLabel("Accepted UCI lines; one per row").fill("g1f3");
+  await page.getByRole("button", { name: "Create draft exercise" }).click();
+  await expect(page.getByRole("button", { name: /Develop the knight · draft/ })).toBeVisible();
+
+  await page.getByLabel("Interaction").selectOption("knight_path");
+  await page.getByLabel("Question").fill("Attack c1 with the knight");
+  await page.getByLabel("Starting knight square").fill("g1");
+  await page.getByLabel("Squares attacked by final knight").fill("c1");
+  await page.getByLabel("Maximum hops").fill("1");
+  await page.getByRole("button", { name: "Create draft exercise" }).click();
+  await expect(page.getByRole("button", { name: /Attack c1 with the knight · draft/ })).toBeVisible();
+
+  await page.getByLabel("Interaction").selectOption("choice");
+  await page.getByLabel("Question").fill("Is the knight on g1?");
+  await page.getByLabel("Options, one ID|text per row").fill("yes|Yes\nno|No");
+  await page.getByLabel("Correct option IDs").fill("yes");
+  await page.getByRole("button", { name: "Create draft exercise" }).click();
+  await expect(page.getByRole("button", { name: /Is the knight on g1\? · draft/ })).toBeVisible();
+
+  await page.getByLabel("Interaction").selectOption("explanation");
+  await page.getByLabel("Question").fill("Explain the knight placement");
+  await page.getByLabel("Rubric shown after response").fill("It starts on g1.");
+  await page.getByRole("button", { name: "Create draft exercise" }).click();
+  await expect(page.getByRole("button", { name: /Explain the knight placement · draft/ })).toBeVisible();
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await expect(page.getByRole("button", { name: "Learn", exact: true })).toBeVisible();
+});
+
+test("stale study revisions retain the phone answer as a replay conflict", async ({ page }) => {
+  const today = new Date();
+  const localDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const card = {
+    id: "stale-card", queue_entry_id: 951, cycle: 0, latest_review_id: 0, revision: 1,
+    start_fen: fen, moves: [], content_type: "study_exercise", kind: "exercise",
+    repertoire_id: null, repertoire_name: "Synthetic study", repertoire_source: "Study",
+    study_id: "stale-study", study_exercise_id: "stale-exercise",
+    study_snapshot: { schema_version: 1, grader_version: 1, exercise_id: "stale-exercise", revision: 1,
+      fen, specification: { type: "square_set", prompt: "Mark the knight square", hint: "", explanation: "Knight on g1.",
+        criterion: "White knight", required: ["g1"], optional: [], candidate_region: null } },
+  };
+  const queue = { local_date: localDate, count: 1, cards: [card] };
+  await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: queue }));
+  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: { ...queue,
+    prepared_at: new Date().toISOString(), projection: { state: "ready", generation: 1,
+      updated_at: null, refresh_pending: 0, last_error: null, blocked_count: 0 } } }));
+  await page.goto("/");
+  await expect(page.getByText("Mark the knight square")).toBeVisible();
+  await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+  await page.reload();
+  await page.getByLabel("Coordinates or UCI move").fill("g1");
+  await page.getByRole("button", { name: "Add", exact: true }).click();
+  await page.getByRole("button", { name: "Submit" }).click();
+  await expect(page.getByText("Knight on g1.")).toBeVisible();
+  await page.unroute("**/api/**");
+  await page.route("**/api/studies/stale-study/exercises/stale-exercise/attempts", (route) =>
+    route.fulfill({ status: 409, json: { detail: "Exercise revision changed; reload before answering" } }));
+  await page.reload();
+  await expect.poll(async () => page.evaluate(async () => {
+    const request = indexedDB.open("tempo-offline-training", 1);
+    const database = await new Promise<IDBDatabase>((resolve) => { request.onsuccess = () => resolve(request.result); });
+    const read = database.transaction("training").objectStore("training").get("prepared-daily-queue");
+    return new Promise<{ answer: unknown; conflict: string }>((resolve) => { read.onsuccess = () => resolve(read.result.attempts[0]); });
+  })).toMatchObject({ answer: { type: "square_set", squares: ["g1"] },
+    conflict: "Exercise revision changed; reload before answering" });
+});
+
+test("unknown prepared study grader versions are unavailable offline", async ({ page }) => {
+  const today = new Date();
+  const localDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const card = { id: "future-card", queue_entry_id: 961, cycle: 0, latest_review_id: 0, revision: 1,
+    start_fen: fen, moves: [], content_type: "study_exercise", kind: "exercise",
+    repertoire_id: null, repertoire_name: "Synthetic study", repertoire_source: "Study",
+    study_id: "future-study", study_exercise_id: "future-exercise",
+    study_snapshot: { schema_version: 1, grader_version: 99, exercise_id: "future-exercise", revision: 1,
+      fen, specification: { type: "square_set", prompt: "Unavailable future question", hint: "", explanation: "", criterion: "Knight",
+        required: ["g1"], optional: [], candidate_region: null } } };
+  const queue = { local_date: localDate, count: 1, cards: [card] };
+  await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: queue }));
+  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: { ...queue,
+    prepared_at: new Date().toISOString(), projection: { state: "ready", generation: 1,
+      updated_at: null, refresh_pending: 0, last_error: null, blocked_count: 0 } } }));
+  await page.goto("/");
+  await expect.poll(async () => page.evaluate(async () => {
+    const request = indexedDB.open("tempo-offline-training", 1);
+    const database = await new Promise<IDBDatabase>((resolve) => { request.onsuccess = () => resolve(request.result); });
+    const read = database.transaction("training").objectStore("training").get("prepared-daily-queue");
+    return new Promise<number>((resolve) => { read.onsuccess = () => resolve(read.result?.cards?.length ?? 0); });
+  })).toBe(1);
+  await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+  await page.reload();
+  await expect(page.getByText("Unavailable future question")).toHaveCount(0);
+  await expect(page.getByText(/1 exercise requires the computer/)).toBeVisible();
+});
+
+test("saved study attempt can retry feedback without a duplicate review", async ({ page, request }) => {
+  const study = await (await request.post(`${api}/studies`, { data: { title: "Feedback recovery" } })).json();
+  const chapter = await (await request.post(`${api}/studies/${study.id}/chapters`, { data: { title: "Recovery" } })).json();
+  const preview = await (await request.post(`${api}/studies/${study.id}/import/preview`, {
+    data: { chapter_id: chapter.id, raw_pgn: originalPgn },
+  })).json();
+  await request.post(`${api}/studies/${study.id}/import/commit`, {
+    data: { chapter_id: chapter.id, raw_pgn: originalPgn, preview_digest: preview.digest, selected_records: [0] },
+  });
+  const chapterContent = await (await request.get(`${api}/studies/${study.id}/chapters/${chapter.id}`)).json();
+  const created = await request.post(`${api}/studies/${study.id}/exercises`, { data: {
+    position_id: chapterContent.positions[0].id,
+    specification: { type: "choice", prompt: "Is the white knight on g1?", hint: "", explanation: "The knight starts on g1.",
+      options: [{ id: "yes", text: "Yes" }, { id: "no", text: "No" }], correct_option_ids: ["yes"] },
+  } });
+  expect(created.ok()).toBeTruthy();
+  await page.goto("/");
+  await nav(page, "Studies");
+  await page.getByRole("combobox", { name: "Study" }).selectOption(study.id);
+  await page.getByRole("button", { name: /Is the white knight on g1\? · draft/ }).click();
+  await page.getByRole("button", { name: "Practice without scheduling" }).click();
+  let feedbackCalls = 0;
+  await page.route("**/api/studies/*/exercises/*/attempts/*/feedback", (route) => {
+    feedbackCalls += 1;
+    return feedbackCalls === 1 ? route.fulfill({ status: 503, json: { detail: "Temporary outage" } }) : route.continue();
+  });
+  await page.getByLabel("Yes", { exact: true }).check();
+  await page.getByRole("button", { name: "Submit" }).click();
+  await expect(page.getByRole("button", { name: "Retry feedback" })).toBeVisible();
+  await page.getByRole("button", { name: "Retry feedback" }).click();
+  await expect(page.getByText("The knight starts on g1.")).toBeVisible();
+  expect(feedbackCalls).toBe(2);
+  const summary = await (await request.get(`${api}/studies/${study.id}/summary`)).json();
+  expect(summary.chapters[0].attempts).toBe(1);
+});

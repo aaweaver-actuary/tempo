@@ -3,6 +3,7 @@ import {
   queueCardSchema,
   packagedPuzzleSchema,
 } from "../schemas";
+import { studySnapshotSchema } from "../study-exercises";
 import {
   parseData,
   validRecords,
@@ -54,7 +55,9 @@ export function mapQueueCardToPracticeCard(
       (card.recent_attempts_json?.match(/"again"/g)?.length ?? 0) >= 3,
     prefixSplitLatestFailureId: card.latest_failed_review_id,
     kind:
-      card.content_type === "defense"
+      card.content_type === "study_exercise"
+        ? "study"
+        : card.content_type === "defense"
         ? "defense"
         : card.content_type === "tactic"
         ? "puzzle"
@@ -62,7 +65,9 @@ export function mapQueueCardToPracticeCard(
           ? "endgame"
           : "opening",
     title:
-      card.content_type === "defense"
+      card.content_type === "study_exercise"
+        ? card.repertoire_name
+        : card.content_type === "defense"
         ? "Defensive decision"
         : card.content_type === "tactic"
         ? "Tactics review"
@@ -70,7 +75,9 @@ export function mapQueueCardToPracticeCard(
           ? "Endgame study"
           : card.repertoire_name,
     subtitle:
-      card.content_type === "defense"
+      card.content_type === "study_exercise"
+        ? "Study exercise"
+        : card.content_type === "defense"
         ? "From an analyzed game"
         : card.content_type === "tactic"
         ? `Lichess puzzle ${card.source_ref ?? ""}`
@@ -94,6 +101,9 @@ export function mapQueueCardToPracticeCard(
         : (card.trained_color ?? "white"),
     revision: card.revision ?? 1,
     defenseCandidateId: card.content_type === "defense" ? card.source_ref ?? undefined : undefined,
+    studyId: card.study_id ?? undefined,
+    studyExerciseId: card.study_exercise_id ?? undefined,
+    studySnapshot: card.study_snapshot ? studySnapshotSchema.safeParse(card.study_snapshot).data : undefined,
     repertoireId: card.repertoire_id
       ? asRepertoireId(String(card.repertoire_id))
       : undefined,

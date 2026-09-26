@@ -1,6 +1,7 @@
 import { API_URL } from "../const";
 import { queueCardSchema, queueEnvelopeSchema } from "../domain/schemas";
 import type { BackendQueueCard } from "../domain/transport";
+import { evaluateStudyAnswer, studyAnswerSchema, studySnapshotSchema, type StudyAnswer, type StudyAssessment } from "../domain/study-exercises";
 import { localDayKey } from "../utils/local";
 
 export type OfflineAttempt = {
@@ -12,10 +13,17 @@ export type OfflineAttempt = {
   completedAt: string;
   expectedReviewId: number;
   expectedRevision: number;
+  queueCycle?: number;
   serverEntryId?: number;
   serverReviewId?: number;
   serverRepeatEntryId?: number | null;
   conflict?: string;
+  studyId?: string;
+  exerciseId?: string;
+  attemptId?: string;
+  answer?: StudyAnswer;
+  assessment?: StudyAssessment;
+  selfRating?: "correct" | "again";
 };
 
 export type PreparedTraining = {
@@ -29,6 +37,12 @@ export type PreparedTraining = {
 const DATABASE_NAME = "tempo-offline-training";
 const RECORD_KEY = "prepared-daily-queue";
 let databasePromise: Promise<IDBDatabase> | undefined;
+
+export function requiresConnectedGrading(card: Pick<BackendQueueCard, "content_type">): boolean {
+  if (card.content_type === "defense") return true;
+  if (card.content_type !== "study_exercise") return false;
+  return !studySnapshotSchema.safeParse((card as BackendQueueCard).study_snapshot).success;
+}
 
 function database(): Promise<IDBDatabase> {
   databasePromise ??= new Promise((resolve, reject) => {
@@ -119,6 +133,8 @@ export async function recordOfflineAttempt(
   localEntryId: number,
   outcome: "again" | "correct",
   guided: boolean,
+  studyResponse?: { studyId: string; exerciseId: string; attemptId: string; answer: StudyAnswer;
+    assessment: StudyAssessment; selfRating?: "correct" | "again" },
 ): Promise<PreparedTraining> {
   return updatePreparedTraining((current) => {
     if (!current || current.localDate !== localDayKey())
@@ -127,8 +143,8 @@ export async function recordOfflineAttempt(
     const card = current.cards[cardIndex];
     if (!card)
       throw new Error("The active card differs from the saved phone queue. Reload before reviewing.");
-    if (card.content_type === "defense")
-      throw new Error("Defensive exercises require the computer's grading service.");
+    if (requiresConnectedGrading(card))
+      throw new Error("This exercise requires the computer's grading service.");
     const scheduledOutcome = guided ? "again" : outcome;
     let recentOutcomes: string[] = [];
     try { recentOutcomes = JSON.parse(card.recent_attempts_json ?? "[]") as string[]; }
@@ -147,6 +163,8 @@ export async function recordOfflineAttempt(
       cardId: card.id, outcome, guided, completedAt: new Date().toISOString(),
       expectedReviewId: parent?.serverReviewId ?? card.latest_review_id ?? 0,
       expectedRevision: card.revision ?? 1,
+      queueCycle: card.cycle ?? 0,
+      ...(studyResponse ?? {}),
     };
     const remaining = current.cards.filter((_, index) => index !== cardIndex);
     let nextTemporaryId = current.nextTemporaryId;
@@ -166,6 +184,27 @@ export async function recordOfflineAttempt(
     }
     return { ...current, cards: remaining, attempts: [...current.attempts, attempt], nextTemporaryId };
   });
+}
+
+export async function recordOfflineStudyAttempt(localEntryId: number, studyId: string,
+  answer: StudyAnswer, selfRating?: "correct" | "again", guided = false): Promise<{ prepared: PreparedTraining; assessment: StudyAssessment }> {
+  const current = await readPreparedTraining();
+  const card = current?.cards.find((item) => item.queue_entry_id === localEntryId);
+  if (!card || card.content_type !== "study_exercise" || !card.study_snapshot || !card.study_exercise_id)
+    throw new Error("This prepared study exercise is unavailable. Reconnect before reviewing.");
+  const snapshot = studySnapshotSchema.parse(card.study_snapshot);
+  const response = studyAnswerSchema.parse(answer);
+  const assessment = evaluateStudyAnswer(snapshot.specification, response, snapshot.fen);
+  if (assessment.outcome === "invalid_submission") throw new Error(assessment.feedback);
+  if (assessment.outcome === "unrecognized" || assessment.outcome === "needs_self_assessment") {
+    if (!selfRating) throw new Error("Compare with the rubric and choose a self-assessment before saving offline.");
+  }
+  const outcome = selfRating ?? (assessment.outcome === "correct" ? "correct" : "again");
+  const prepared = await recordOfflineAttempt(localEntryId, outcome, guided || Boolean(card.attempt_failed), {
+    studyId, exerciseId: card.study_exercise_id, attemptId: crypto.randomUUID(),
+    answer: response, assessment, selfRating,
+  });
+  return { prepared, assessment };
 }
 
 async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> {
@@ -201,14 +240,24 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
     const timeout = window.setTimeout(() => controller.abort(), 5_000);
     let response: Response;
     try {
-      response = await fetch(`${API_URL}/api/cards/${encodeURIComponent(attempt.cardId)}/review`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
-        body: JSON.stringify({
-          queue_entry_id: serverEntryId, outcome: attempt.outcome, guided: attempt.guided,
-          recorded_at: attempt.completedAt, expected_review_id: expectedReviewId,
-          expected_revision: attempt.expectedRevision,
-        }),
-      });
+      if (attempt.studyId && attempt.exerciseId && attempt.answer && attempt.attemptId) {
+        response = await fetch(`${API_URL}/api/studies/${encodeURIComponent(attempt.studyId)}/exercises/${encodeURIComponent(attempt.exerciseId)}/attempts`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
+          body: JSON.stringify({ attempt_id: attempt.attemptId, revision: attempt.expectedRevision,
+            answer: attempt.answer, context: "review", card_id: attempt.cardId,
+            queue_entry_id: serverEntryId, queue_cycle: attempt.queueCycle ?? 0,
+            expected_review_id: expectedReviewId, hint_seen: attempt.guided }),
+        });
+      } else {
+        response = await fetch(`${API_URL}/api/cards/${encodeURIComponent(attempt.cardId)}/review`, {
+          method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
+          body: JSON.stringify({
+            queue_entry_id: serverEntryId, outcome: attempt.outcome, guided: attempt.guided,
+            recorded_at: attempt.completedAt, expected_review_id: expectedReviewId,
+            expected_revision: attempt.expectedRevision,
+          }),
+        });
+      }
     } finally {
       window.clearTimeout(timeout);
     }
@@ -221,7 +270,23 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       continue;
     }
     if (!response.ok) throw new Error(`Could not sync phone review (HTTP ${response.status})`);
-    const result = await response.json() as { review_id: number; requeue_entry_id: number | null };
+    let result = await response.json() as { review_id: number; requeue_entry_id: number | null;
+      pending_self_assessment?: boolean; review?: { review_id: number; requeue_entry_id: number | null } };
+    if (result.pending_self_assessment && attempt.studyId && attempt.exerciseId && attempt.attemptId && attempt.selfRating) {
+      const assessed = await fetch(`${API_URL}/api/studies/${encodeURIComponent(attempt.studyId)}/exercises/${encodeURIComponent(attempt.exerciseId)}/attempts/${encodeURIComponent(attempt.attemptId)}/self-assess`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ rating: attempt.selfRating }),
+      });
+      if (assessed.status === 409) {
+        const detail = (await assessed.json().catch(() => ({}))) as { detail?: string };
+        current = await updatePreparedTraining((saved) => ({ ...saved!, attempts: saved!.attempts.map((item) => item.localEntryId === attempt.localEntryId
+          ? { ...item, conflict: detail.detail ?? "Study revision changed before sync" } : item) }));
+        continue;
+      }
+      if (!assessed.ok) throw new Error(`Could not sync study self-assessment (HTTP ${assessed.status})`);
+      result = await assessed.json() as typeof result;
+    }
+    if (result.review) result = { ...result.review };
     if (!Number.isInteger(result.review_id)) throw new Error("Review sync did not confirm a saved review");
     current = await updatePreparedTraining((saved) => ({
       ...saved!, attempts: saved!.attempts.map((item) => item.localEntryId === attempt.localEntryId

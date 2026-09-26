@@ -74,13 +74,14 @@ import SoundToggleButton from "../components/buttons/SoundToggleButton";
 import SavedLocallyButton from "../components/buttons/SavedLocallyButton";
 import DemoBanner from "../components/DemoBanner";
 import TrainingView from "./training_view";
+import StudiesView from "./studies_view";
 import { fetchAndInitializeQueue, invalidateTrainingQueueCache } from "./fetchAndInitializeQueue";
 import {
   enqueuePendingReview,
   flushPendingReviews,
   pendingReviews,
 } from "../lib/review-outbox";
-import { markOfflineAttemptFailed, recordOfflineAttempt } from "../lib/offline-training";
+import { markOfflineAttemptFailed, recordOfflineAttempt, requiresConnectedGrading } from "../lib/offline-training";
 import { enqueueTrainingFailure, flushTrainingFailures } from "../lib/training-failure-outbox";
 import { Settings } from "../utils/settings";
 import { TreeBrowser } from "./tree_browser";
@@ -837,7 +838,7 @@ export default function Home() {
           card.queueEntryId, outcome,
           attemptFailed || useTrainingStore.getState().assistedThisAttempt,
         );
-        const availableCards = saved.cards.filter((queuedCard) => queuedCard.content_type !== "defense");
+        const availableCards = saved.cards.filter((queuedCard) => !requiresConnectedGrading(queuedCard));
         const nextCards = await runStudyTask<typeof practiceCards>({
           kind: "queue", payload: {
             cards: availableCards, count: availableCards.length, local_date: saved.localDate,
@@ -1158,6 +1159,7 @@ export default function Home() {
     "tactics",
     "endgames",
     "builder",
+    "studies",
     "games",
   ].includes(currentView);
 
@@ -1555,6 +1557,9 @@ export default function Home() {
               useSharedBoard
             />
           </>
+        )}
+        {currentView === "studies" && (
+          <StudiesView boardTheme={boardTheme} pieceSet={pieceSet} />
         )}
         {currentView === "games" && (
           <>

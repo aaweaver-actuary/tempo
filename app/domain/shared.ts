@@ -93,6 +93,7 @@ export enum ViewEnum {
   Progress = "progress",
   Statistics = "statistics",
   Settings = "settings",
+  Studies = "studies",
 }
 
 export type PieceColor = `${PieceColorEnum}`;

@@ -98,7 +98,7 @@ it("Pages service worker caches scoped static assets and bypasses API and extern
   const waitUntil = vi.fn();
   onMessage!({ data: { type: "tempo:offline-shell-status" }, ports: [{ postMessage }], waitUntil });
   await waitUntil.mock.calls[0][0];
-  expect(postMessage).toHaveBeenCalledWith({ version: "tempo-static-v5", ready: false });
+  expect(postMessage).toHaveBeenCalledWith({ version: "tempo-static-v6", ready: false });
 
   for (const path of ["favicon.svg", "tempo-icon.png", "manifest.webmanifest",
     ...["w", "b"].flatMap((color) => ["P", "N", "B", "R", "Q", "K"]
@@ -106,5 +106,5 @@ it("Pages service worker caches scoped static assets and bypasses API and extern
     cached.set(`https://tempo.test/tempo/${path}`, new Response(path));
   onMessage!({ data: { type: "tempo:offline-shell-status" }, ports: [{ postMessage }], waitUntil });
   await waitUntil.mock.calls[1][0];
-  expect(postMessage).toHaveBeenLastCalledWith({ version: "tempo-static-v5", ready: true });
+  expect(postMessage).toHaveBeenLastCalledWith({ version: "tempo-static-v6", ready: true });
 });

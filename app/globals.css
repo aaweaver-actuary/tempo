@@ -3960,6 +3960,63 @@ button {
 .repertoire-position-list { display: grid; gap: 8px; align-content: start; max-height: 560px; overflow: auto; }
 .repertoire-position-list button { text-align: left; white-space: normal; }
 .repertoire-position-list button.selected { outline: 2px solid var(--green); }
+
+.studies-workspace,
+.study-exercise-runner {
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+  max-width: 100%;
+  padding: clamp(12px, 2vw, 24px);
+}
+.studies-workspace section,
+.study-exercise-runner {
+  min-width: 0;
+  padding: clamp(14px, 2vw, 22px);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+}
+.studies-workspace section > h2,
+.study-exercise-runner > h2 { margin-top: 0; }
+.studies-workspace label,
+.study-exercise-runner label {
+  display: block;
+  margin: 10px 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+.studies-workspace input:not([type="checkbox"]):not([type="file"]),
+.studies-workspace textarea,
+.studies-workspace select,
+.study-exercise-runner input:not([type="checkbox"]),
+.study-exercise-runner textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  margin-top: 6px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: #fff;
+}
+.studies-workspace textarea,
+.study-exercise-runner textarea { min-height: 82px; }
+.studies-workspace button,
+.study-exercise-runner button { margin: 3px 6px 3px 0; }
+.studies-workspace ul { margin: 8px 0; padding-left: 20px; }
+.studies-workspace li,
+.studies-workspace article,
+.study-exercise-runner p { overflow-wrap: anywhere; }
+.study-source-list { display: grid; gap: 12px; }
+.study-source-list > div {
+  min-width: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+}
+.study-source-list button { max-width: 100%; white-space: normal; text-align: left; overflow-wrap: anywhere; }
+.study-exercise-runner fieldset { border: 1px solid var(--line); border-radius: 8px; }
 .repertoire-position-board { width: min(100%, 420px); }
 .repertoire-position-detail ul { margin: 12px 0 18px; padding-left: 20px; line-height: 1.5; }
 .repertoire-stats-method { font-size: .85rem; line-height: 1.5; }

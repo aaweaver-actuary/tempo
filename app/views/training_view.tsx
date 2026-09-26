@@ -30,6 +30,7 @@ import {
 import { annotationToShapes } from "../utils/position-annotations";
 import { useShallow } from "zustand/react/shallow";
 import DefenseTrainingView from "./defense_training_view";
+import StudyExerciseRunner from "./study_exercise_runner";
 
 interface TrainingViewProps {
   dateLabel: string;
@@ -148,7 +149,9 @@ function StandardTrainingView({
         cardsLeft <= 0
           ? serviceError
             ? "Training position unavailable. Retry the local service."
-            : "No cards due. Your next session will appear here."
+            : /requires? the computer/.test(queueNotice)
+              ? "Prepared exercises require the computer. Reconnect to continue."
+              : "No cards due. Your next session will appear here."
           : undefined,
       fen: currentFenString,
       expectedSan: card.moves[step],
@@ -206,6 +209,7 @@ function StandardTrainingView({
         dateLabel={dateLabel}
         serviceError={serviceError}
         cardsLeft={cardsLeft}
+        queueNotice={queueNotice}
       />
       {serviceError && (
         <div role="alert">
@@ -494,6 +498,14 @@ function StandardTrainingView({
 }
 
 export default function TrainingView(props: TrainingViewProps) {
+  if (props.card.kind === "study" && props.card.studyId && props.card.studyExerciseId) {
+    return <StudyExerciseRunner
+      key={`${props.card.queueEntryId ?? props.card.id}:${props.card.revision ?? 1}`}
+      studyId={props.card.studyId} exerciseId={props.card.studyExerciseId}
+      card={props.card} boardTheme={props.boardTheme} pieceSet={props.pieceSet}
+      useSharedBoard={props.useSharedBoard ?? false}
+      onAdvance={async () => { props.refreshDatabaseQueue(); }} />;
+  }
   if (props.card.kind === "defense") {
     return (
       <DefenseTrainingView

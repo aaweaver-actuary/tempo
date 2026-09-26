@@ -34,6 +34,7 @@ type ChessboardProps = {
   drawnShapes?: DrawShape[];
   onDrawnShapesChange?: (shapes: DrawShape[]) => void;
   editMode?: boolean;
+  selectOnly?: boolean;
   onSquareSelect?: (square: Square) => void;
   onFreeMove?: (from: Square, to: Square) => void;
   onMove: (from: Square, to: Square) => void;
@@ -55,6 +56,7 @@ export function Chessboard({
   drawnShapes = EMPTY_SHAPES,
   onDrawnShapesChange,
   editMode = false,
+  selectOnly = false,
   onSquareSelect,
   onFreeMove,
   onMove,
@@ -71,6 +73,7 @@ export function Chessboard({
     onSquareSelect,
     onDrawnShapesChange,
     editMode,
+    selectOnly,
   });
   const surfaceSize = useBoardViewport(hostRef);
   const [flippedOwner, setFlippedOwner] = useState<string | null>(null);
@@ -107,6 +110,7 @@ export function Chessboard({
       onSquareSelect,
       onDrawnShapesChange,
       editMode,
+      selectOnly,
     };
     positionRef.current = position;
   }, [
@@ -115,6 +119,7 @@ export function Chessboard({
     onSquareSelect,
     onDrawnShapesChange,
     editMode,
+    selectOnly,
     position,
   ]);
 
@@ -219,7 +224,7 @@ export function Chessboard({
       },
       events: {
         select: (square) => {
-          if (handlers.current.editMode)
+          if (handlers.current.editMode || handlers.current.selectOnly)
             handlers.current.onSquareSelect?.(square as Square);
         },
       },
@@ -245,7 +250,9 @@ export function Chessboard({
       lastMove: lastMove ? ([...lastMove] as Key[]) : undefined,
       movable: {
         free: editMode,
-        color: editMode
+        color: selectOnly
+          ? undefined
+          : editMode
           ? "both"
           : locked
             ? undefined
@@ -255,8 +262,8 @@ export function Chessboard({
         dests: editMode ? new Map() : position.destinations,
         showDests: true,
       },
-      draggable: { enabled: editMode || !locked, showGhost: true },
-      selectable: { enabled: editMode || !locked },
+      draggable: { enabled: !selectOnly && (editMode || !locked), showGhost: true },
+      selectable: { enabled: selectOnly || editMode || !locked },
     });
   }, [
     fen,
@@ -266,6 +273,7 @@ export function Chessboard({
     lastMove,
     locked,
     editMode,
+    selectOnly,
     positionRevision,
   ]);
 
@@ -306,7 +314,7 @@ export function Chessboard({
         data-fen={fen}
         data-orientation={visualOrientation}
         data-hint={Boolean(hint)}
-        data-input-enabled={editMode || !locked}
+        data-input-enabled={selectOnly || editMode || !locked}
         style={
           surfaceSize
             ? { width: surfaceSize + 18, height: surfaceSize + 18 }

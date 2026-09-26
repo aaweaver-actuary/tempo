@@ -6,7 +6,7 @@ import type { BoardTheme, PieceSet } from "../components/chessboard";
 import { STANDARD_FEN } from "../const";
 
 export type BoardShellOwner = View | "modal-tree" | "modal-editor";
-export type BoardInteractionMode = "readonly" | "legal" | "free";
+export type BoardInteractionMode = "readonly" | "legal" | "free" | "select";
 
 export type BoardShellSnapshot = {
   owner: BoardShellOwner;

@@ -24,6 +24,7 @@ type SettingsValues = {
   initial_depth: number;
   timezone: string;
   new_cards_per_day: number;
+  study_new_per_day: number;
   tactics_new_per_day: number;
   defense_new_cards_per_day: number;
   include_defensive_cards_in_daily_stack: boolean;
@@ -71,6 +72,7 @@ export default function SettingsView({
     initial_depth: 6,
     timezone: "local",
     new_cards_per_day: 10,
+    study_new_per_day: 2,
     tactics_new_per_day: 5,
     defense_new_cards_per_day: 5,
     include_defensive_cards_in_daily_stack: true,
@@ -210,6 +212,7 @@ export default function SettingsView({
         initial_depth: values.initial_depth,
         timezone: values.timezone,
         new_cards_per_day: values.new_cards_per_day,
+        study_new_per_day: values.study_new_per_day,
         tactics_new_per_day: values.tactics_new_per_day,
         defense_new_cards_per_day: values.defense_new_cards_per_day,
         include_defensive_cards_in_daily_stack: values.include_defensive_cards_in_daily_stack,
@@ -389,6 +392,11 @@ export default function SettingsView({
                 update("new_cards_per_day", Number(event.target.value))
               }
             />
+          </label>
+          <label>
+            <span>New study exercises per day<small>Independent of opening cards; due study reviews still appear</small></span>
+            <TextInput type="number" min="0" max="100" value={values.study_new_per_day}
+              onChange={(event) => update("study_new_per_day", Number(event.target.value))} />
           </label>
           <label>
             <span>

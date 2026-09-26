@@ -16,7 +16,7 @@ test("local Tempo shell opens after the network drops", async ({ page }) => {
   await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
   await expect(page.getByText(/Tempo update ready/)).toHaveCount(0);
   await expect.poll(() => page.evaluate(async () => Boolean(
-    await (await caches.open("tempo-static-v5")).match("/pieces/merida/wP.svg"),
+    await (await caches.open("tempo-static-v6")).match("/pieces/merida/wP.svg"),
   ))).toBe(true);
   await page.context().setOffline(true);
   await page.reload();
@@ -47,7 +47,7 @@ test("prepared phone queue survives API outage reload and syncs its review", asy
   await expect(page.getByText(`Phone queue prepared for ${localDate}.`)).toBeVisible();
   await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
   await expect.poll(() => page.evaluate(async () => {
-    const cache = await caches.open("tempo-static-v5");
+    const cache = await caches.open("tempo-static-v6");
     return (await cache.keys()).map((request) => new URL(request.url).pathname)
       .filter((path) => path.startsWith("/assets/")).length;
   })).toBeGreaterThanOrEqual(2);
@@ -81,6 +81,36 @@ test("prepared phone queue survives API outage reload and syncs its review", asy
   expect(replayedEntries).toEqual([501, 502, 602]);
   await page.reload();
   expect(replayedEntries).toEqual([501, 502, 602]);
+});
+
+test("prepared phone queue validates study metadata beyond the live window and keeps offline exercises", async ({ page }) => {
+  const cards: Array<Record<string, unknown>> = Array.from({ length: 20 }, (_, index) => ({
+    ...preparedCards[0], id: `opening-${index}`, queue_entry_id: 700 + index,
+    study_exercise_id: null,
+  }));
+  cards.push({
+    ...preparedCards[0], id: "study-exercise", queue_entry_id: 720,
+    content_type: "study_exercise", kind: "exercise", moves: [],
+    repertoire_id: null, study_id: "study-1", study_exercise_id: "exercise-1",
+    study_snapshot: { schema_version: 1, grader_version: 1, exercise_id: "exercise-1",
+      revision: 1, fen: startFen, specification: { type: "choice", prompt: "Choose", hint: "",
+        explanation: "", options: [{ id: "a", text: "A" }], correct_option_ids: ["a"] } },
+  });
+  await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: {
+    local_date: localDate, count: cards.length, cards: cards.slice(0, 20),
+  } }));
+  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: {
+    local_date: localDate, count: cards.length, cards,
+    prepared_at: new Date().toISOString(),
+    projection: { state: "ready", generation: 1, updated_at: null,
+      refresh_pending: 0, last_error: null, blocked_count: 0 },
+  } }));
+  await page.goto("/");
+  await expect(page.getByText(`Phone queue prepared for ${localDate}.`)).toBeVisible();
+  await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+  await page.reload();
+  await expect(page.getByText("First phone card")).toBeVisible();
+  await expect(page.getByText(/Prepared phone queue for/)).toBeVisible();
 });
 
 test("yesterday's prepared phone queue never becomes today's training", async ({ page }) => {

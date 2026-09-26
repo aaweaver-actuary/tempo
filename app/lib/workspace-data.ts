@@ -242,6 +242,7 @@ export async function preloadView(view: View) {
     progress: ["progress"],
     statistics: ["statistics/overview?window_days=30"],
     settings: ["settings"],
+    studies: ["studies"],
   };
   await Promise.all(
     (paths[view] ?? []).map((path) =>

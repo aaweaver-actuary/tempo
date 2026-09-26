@@ -13,6 +13,7 @@ export enum QueueContentTypeEnum {
   Endgame = "endgame",
   Tactic = "tactic",
   Defense = "defense",
+  StudyExercise = "study_exercise",
 }
 
 export type QueueContentType = `${QueueContentTypeEnum}`;
@@ -54,6 +55,10 @@ export type BackendQueueCard = {
   is_main?: boolean;
   trained_color?: PieceColor | null;
   revision?: number;
-  repertoire_id?: string;
+  repertoire_id?: string | null;
+  study_id?: string | null;
+  study_exercise_id?: string | null;
+  study_snapshot?: { schema_version: number; grader_version: number; exercise_id: string;
+    revision: number; fen: string; specification: unknown };
   pending_validation?: boolean;
 };

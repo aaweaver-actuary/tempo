@@ -28,6 +28,7 @@ export function PersistentBoardShell() {
         drawnShapes={board.drawnShapes ?? EMPTY_SHAPES}
         onDrawnShapesChange={board.onDrawnShapesChange}
         editMode={board.interactionMode === "free"}
+        selectOnly={board.interactionMode === "select"}
         onSquareSelect={board.onSquareSelect}
         onFreeMove={board.onFreeMove}
         onMove={board.onMove ?? noopMove}

@@ -244,6 +244,25 @@ it("queue cards accept persisted pending-validation state without a diagnostic",
   expect(dataDiagnostics()).toEqual([]);
 });
 
+it("queue cards accept study migration metadata from existing opening and tactic records", () => {
+  const cards = queueCardsFromPayload({ cards: [
+    { ...rawCard, study_exercise_id: null, study_id: null },
+    { ...rawCard, id: "tactic", queue_entry_id: 43, content_type: "tactic", study_exercise_id: null },
+  ] });
+  expect(cards).toHaveLength(2);
+  expect(dataDiagnostics()).toEqual([]);
+});
+
+it("published study exercise queue cards retain their nullable repertoire and study identity", () => {
+  const cards = queueCardsFromPayload({ cards: [{
+    ...rawCard, id: "study-card", content_type: "study_exercise", kind: "exercise",
+    moves: [], repertoire_id: null, study_id: "study-1", study_exercise_id: "exercise-1",
+  }] });
+  expect(cards).toHaveLength(1);
+  expect(cards[0]).toMatchObject({ kind: "study", studyId: "study-1", studyExerciseId: "exercise-1" });
+  expect(dataDiagnostics()).toEqual([]);
+});
+
 it("third-party analysis accepts new provider fields but rejects invalid counts, probabilities and illegal moves", () => {
   const fen = new Chess().fen();
   expect(

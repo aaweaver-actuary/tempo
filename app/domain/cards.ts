@@ -13,6 +13,7 @@ export enum CardKindEnum {
   Endgame = "endgame",
   Puzzle = "puzzle",
   Defense = "defense",
+  Study = "study",
 }
 
 export enum QueueAttemptState {
@@ -56,4 +57,7 @@ export type PracticeCard = {
   repertoireId?: RepertoireId;
   editingIntent?: "standard" | "shorten-prefix";
   defenseCandidateId?: string;
+  studyId?: string;
+  studyExerciseId?: string;
+  studySnapshot?: import("./study-exercises").StudySnapshot;
 };

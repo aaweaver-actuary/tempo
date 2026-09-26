@@ -17,6 +17,7 @@ describe("UI focus regressions", () => {
       "Endgames",
       "Repertoire",
       "Builder",
+      "Studies",
       "Games",
       "Insights",
       "Settings",

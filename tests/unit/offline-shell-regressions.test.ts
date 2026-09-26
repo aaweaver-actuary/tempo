@@ -24,7 +24,7 @@ it("phone preparation waits for the new service worker to control the page", asy
   const waiting = waitForOfflineShell(500);
   await Promise.resolve();
   serviceWorkers.controller = {
-    postMessage: () => fakePort.onmessage?.({ data: { version: "tempo-static-v5", ready: true } } as MessageEvent),
+    postMessage: () => fakePort.onmessage?.({ data: { version: "tempo-static-v6", ready: true } } as MessageEvent),
   } as unknown as ServiceWorker;
   listeners.forEach((listener) => listener());
   await expect(waiting).resolves.toBeUndefined();

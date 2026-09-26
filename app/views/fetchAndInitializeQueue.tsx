@@ -5,7 +5,7 @@ import { runStudyTask } from "../lib/background-study";
 import type { PracticeCard } from "../domain/cards";
 import { reportDebugError } from "../lib/debug-reporting";
 import { flushPendingReviews, pendingReviews } from "../lib/review-outbox";
-import { readPreparedTraining, replayOfflineAttempts, savePreparedTraining } from "../lib/offline-training";
+import { readPreparedTraining, replayOfflineAttempts, requiresConnectedGrading, savePreparedTraining } from "../lib/offline-training";
 import { waitForOfflineShell } from "../lib/offline-shell";
 import { flushTrainingFailures, pendingTrainingFailures } from "../lib/training-failure-outbox";
 
@@ -166,8 +166,8 @@ export async function fetchAndInitializeQueue(advance = false): Promise<void> {
         if (generation === requestGeneration && !hasConflicts && prepared.localDate === localDayKey())
           useTrainingStore.getState().setQueueNotice(
             `Phone queue prepared for ${prepared.localDate}.` +
-            (prepared.cards.some((card) => card.content_type === "defense")
-              ? ` ${prepared.cards.filter((card) => card.content_type === "defense").length} defensive exercise(s) still require the computer.`
+            (prepared.cards.some(requiresConnectedGrading)
+              ? ` ${prepared.cards.filter(requiresConnectedGrading).length} exercise(s) still require the computer.`
               : ""),
           );
       })
@@ -181,7 +181,7 @@ export async function fetchAndInitializeQueue(advance = false): Promise<void> {
     if (generation !== requestGeneration) return;
     const prepared = await readPreparedTraining().catch(() => null);
     if (prepared?.localDate === localDayKey()) {
-      const supportedCards = prepared.cards.filter((card) => card.content_type !== "defense");
+      const supportedCards = prepared.cards.filter((card) => !requiresConnectedGrading(card));
       const cards = await runStudyTask<PracticeCard[]>({
         kind: "queue", payload: { cards: supportedCards, count: supportedCards.length, local_date: prepared.localDate },
       });
@@ -189,10 +189,10 @@ export async function fetchAndInitializeQueue(advance = false): Promise<void> {
       useTrainingStore.getState().hydrateLocalQueue(cards, advance, cards.length);
       useTrainingStore.getState().setOfflineQueue(true);
       useTrainingStore.getState().setServiceError("");
-      const remainingDefense = prepared.cards.length - supportedCards.length;
+      const remainingConnectedExercises = prepared.cards.length - supportedCards.length;
       const unsynced = prepared.attempts.filter((attempt) => !attempt.serverReviewId && !attempt.conflict).length;
       useTrainingStore.getState().setQueueNotice(
-        `Prepared phone queue for ${prepared.localDate} · ${unsynced} review${unsynced === 1 ? "" : "s"} saved on phone${remainingDefense ? ` · ${remainingDefense} defensive exercise${remainingDefense === 1 ? "" : "s"} require the computer` : ""}.`,
+        `Prepared phone queue for ${prepared.localDate} · ${unsynced} review${unsynced === 1 ? "" : "s"} saved on phone${remainingConnectedExercises ? ` · ${remainingConnectedExercises} exercise${remainingConnectedExercises === 1 ? " requires" : "s require"} the computer` : ""}.`,
       );
       return;
     }
