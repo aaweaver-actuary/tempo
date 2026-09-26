@@ -1072,3 +1072,33 @@ button {
     flex: 0 0 auto;
   }
 }
+
+/* Keep hover feedback on controls, never on the interactive board surface. */
+@media (hover: hover) {
+  :is(
+    button:not(:disabled):not([aria-disabled="true"]),
+    [role="button"]:not([aria-disabled="true"]),
+    summary,
+    .drop-zone
+  ):not(.board-viewport *):hover {
+    background-image: linear-gradient(rgb(82 107 85 / 10%), rgb(82 107 85 / 10%));
+  }
+
+  a[href]:not([aria-disabled="true"]):not(.board-viewport *):hover {
+    text-decoration-line: underline;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 0.18em;
+  }
+
+  :is(
+    input:not([type="hidden"]):not(:disabled),
+    select:not(:disabled),
+    textarea:not(:disabled)
+  ):not(.board-viewport *):hover {
+    border-color: var(--green);
+  }
+
+  .board-divider [role="separator"]:hover {
+    filter: brightness(0.9);
+  }
+}

@@ -83,6 +83,50 @@ test("board controls retain consistent placement across workspaces", async ({
   }
 });
 
+test("hover feedback covers controls outside the chessboard without changing the board", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await prepareUI(page);
+
+  const hoverImage = async (selector: string) => {
+    const control = page.locator(selector).first();
+    await expect(control).toBeVisible();
+    await expect(control).toHaveCSS("background-image", "none");
+    await control.hover();
+    await expect(control).toHaveCSS("background-image", /linear-gradient/);
+  };
+
+  const board = page.locator(".persistent-board-shell .cg-wrap");
+  const boardBackground = await board.evaluate(
+    (element) => getComputedStyle(element).backgroundImage,
+  );
+
+  await hoverImage('.desktop-navigation button[aria-current="page"]');
+  const disabledFlip = page.locator('.board-tools button[aria-label="Flip board"]');
+  await expect(disabledFlip).toBeDisabled();
+  await disabledFlip.hover();
+  await expect(disabledFlip).toHaveCSS("background-image", "none");
+  await navigate(page, "Builder");
+  await hoverImage('.board-tools button[aria-label="Flip board"]');
+  await board.hover();
+  await expect(board).toHaveCSS("background-image", boardBackground);
+  await navigate(page, "Repertoire");
+  await hoverImage(".action-menu summary");
+
+  await page.locator(".app-shell").evaluate((shell) => {
+    shell.insertAdjacentHTML(
+      "beforeend",
+      '<a href="#hover-link" data-hover-fixture="link">Link hover fixture</a>',
+    );
+  });
+  const link = page.locator('[data-hover-fixture="link"]');
+  await link.hover();
+  await expect(link).toHaveCSS("text-decoration-line", "underline");
+
+  await expect(board).toHaveCSS("background-image", boardBackground);
+});
+
 test("endgame study actions remain reachable on narrow screens", async ({
   page,
 }) => {
