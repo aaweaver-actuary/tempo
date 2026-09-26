@@ -1,5 +1,6 @@
 "use client";
-import { Button, TextInput } from "./components/ui";
+import { TextInput } from "./components/inputs/TextInput";
+import { Button } from "./components/buttons/BaseButton";
 import { useRef as useDialogRef } from "react";
 import { useDialogFocus } from "./hooks/use-dialog-focus";
 import { useState, useEffect, useCallback } from "react";
@@ -15,6 +16,7 @@ import {
   settingsResponseSchema,
   importResultSchema,
   repertoiresResponseSchema,
+  queueEnvelopeSchema,
 } from "./domain/schemas";
 import { readJsonResponse } from "./lib/validated-data";
 import { reportDebugError } from "./lib/debug-reporting";
@@ -74,9 +76,8 @@ export function ImportDialogBox({
 
   async function waitForPublishedAdmission(
     repertoireId: string,
-    fallback: number,
   ): Promise<number> {
-    for (let attempt = 0; attempt < 100; attempt += 1) {
+    for (let attempt = 0; attempt < 200; attempt += 1) {
       const response = await fetch(`${API_URL}/api/repertoires`);
       if (response.ok) {
         const result = await readJsonResponse(
@@ -87,12 +88,29 @@ export function ImportDialogBox({
         const repertoire = result.repertoires.find(
           (candidate) => candidate.id === repertoireId,
         );
-        if (repertoire?.integrity_status === "clean") return repertoire.due_count;
+        if (repertoire?.graph_state === "failed") throw new Error("Repertoire graph failed after import. Retry the failed task in Settings → Service status.");
+        if (repertoire?.integrity_status === "clean" && repertoire.graph_state === "ready" && repertoire.graph_updated_at) {
+          const queueResponse = await fetch(`${API_URL}/api/queue/window?limit=1`);
+          if (queueResponse.ok) {
+            const queue = await readJsonResponse(queueResponse, queueEnvelopeSchema, "imported repertoire queue");
+            const projection = queue.projection;
+            if (projection?.state === "failed") throw new Error("Daily queue failed after import. Retry the failed task in Settings → Service status.");
+            if (projection?.state === "ready" && !projection.refresh_pending && projection.updated_at &&
+                Date.parse(projection.updated_at) >= Date.parse(repertoire.graph_updated_at)) {
+              const refreshedResponse = await fetch(`${API_URL}/api/repertoires`);
+              if (refreshedResponse.ok) {
+                const refreshed = await readJsonResponse(refreshedResponse, repertoiresResponseSchema, "published repertoire admission");
+                const refreshedRepertoire = refreshed.repertoires.find((candidate) => candidate.id === repertoireId);
+                if (refreshedRepertoire) return refreshedRepertoire.due_count;
+              }
+            }
+          }
+        }
         if (repertoire?.integrity_status === "needs_repair") return 0;
       }
       await new Promise((resolve) => window.setTimeout(resolve, 50));
     }
-    return fallback;
+    throw new Error("Repertoire imported, but today's queue is still preparing. Check Activity before starting training.");
   }
 
   async function importFile() {
@@ -135,7 +153,6 @@ export function ImportDialogBox({
           if (result.integrity?.status === "needs_repair") integrityRepertoireId = result.repertoire_id;
           admitted = await waitForPublishedAdmission(
             result.repertoire_id,
-            admitted,
           );
           await onDatabaseUpdated();
         }
