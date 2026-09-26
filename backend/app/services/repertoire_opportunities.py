@@ -13,6 +13,7 @@ import chess
 from ..database import connection, read_connection
 from .activity_gate import activity_gate
 from .durable_tasks import enqueue_task, enqueue_task_in_transaction
+from .discovery_admission import _full_history_request, _source_game
 
 
 RECENT_DAYS = 90
@@ -926,6 +927,17 @@ def list_opportunities(database: sqlite3.Connection, repertoire_id: str,
                         break
             except ValueError:
                 pass
+        elif row["kind"] == "post_gap_weakness":
+            source_game = _source_game(database, row)
+            if source_game:
+                try:
+                    decision_board, _ = _full_history_request(source_game)
+                    decision_fen = decision_board.fen()
+                    decision_start_fen = source_game["start_fen"]
+                    decision_route_uci = json.loads(source_game["moves_json"])[:source_game["ply"]]
+                    trained_color = source_game["color"]
+                except (ValueError, TypeError, KeyError):
+                    pass
         elif evidence.get("findings"):
             for finding in evidence["findings"]:
                 game_id, mistake_ply = finding.get("game_id"), finding.get("mistake_ply")

@@ -86,6 +86,78 @@ def _seed_decision_game(db, number, root_key, target_key, *, miss=True):
              outcome, played_at, played_at))
 
 
+def _seed_black_post_gap_discovery(db):
+    now = datetime.now(timezone.utc).isoformat()
+    route = ["e2e4", "c7c6", "d2d4", "d7d5", "e4e5", "c6c5", "g1f3",
+             "c5d4", "f3d4", "b8c6", "c1e3", "c6d4", "d1d4", "e7e6", "b1c3"]
+    gap_board = chess.Board()
+    gap_board.push_uci(route[0])
+    gap_key = " ".join(gap_board.fen().split()[:4])
+    decision_board = chess.Board()
+    for move_uci in route:
+        decision_board.push_uci(move_uci)
+    db.execute("INSERT INTO repertoires(id,name,source_name,created_at,is_main) VALUES('rep','Black','black.pgn',?,1)", (now,))
+    db.execute("""INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
+                  VALUES('black-line','rep','Black line','black',?,?,?)""",
+               (chess.STARTING_FEN, json.dumps([*route, "g8e7"]), now))
+    db.execute("""INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,
+                  start_fen,moves_json,analysis_state,analysis_version)
+                  VALUES('black-game','lichess','player',?,'rapid',1,'black','*',?,?,'ready',1)""",
+               (now, chess.STARTING_FEN, json.dumps([*route, "g8e7"])))
+    repertoire_opportunities._publish(
+        db, repertoire_id="rep", kind="post_gap_weakness", fen_key=gap_key,
+        target="c7c6", card_id=None, opponent_move_uci="c7c6", score=1,
+        evidence={"supporting_games": 1, "findings": [{"game_id": "black-game", "mistake_ply": len(route)}]},
+    )
+    return route, decision_board
+
+
+def test_post_gap_discovery_recommendation_matches_displayed_black_decision(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as db:
+        route, decision_board = _seed_black_post_gap_discovery(db)
+        discovery = list_opportunities(db, "rep")[0]
+        opportunity_id = discovery["id"]
+        assert discovery["decision_fen"] == decision_board.fen()
+        assert discovery["decision_route_uci"] == route
+        assert discovery["trained_color"] == "black"
+    execute_recommendation_request_slice({"payload": {"opportunity_id": opportunity_id}})
+    with database.connection() as db:
+        request_row = db.execute("SELECT id,request_json FROM threat_analysis_requests").fetchone()
+        report_request = _request_from_json(json.loads(request_row["request_json"]))
+        report = AnalysisReport(report_request, (
+            AnalysisLine("g8e7", ("g8e7",), EngineScore(cp=-11), 14),
+        ), True)
+        db.execute("UPDATE threat_analysis_requests SET state='complete',report_json=? WHERE id=?",
+                   (json.dumps(asdict(report)), request_row["id"]))
+    recommendation = recommend_missing_continuations(opportunity_id)
+    assert recommendation["state"] == "ready"
+    assert recommendation["starting_fen"] == discovery["decision_fen"]
+    assert chess.Move.from_uci(recommendation["suggested_move_uci"]) in chess.Board(discovery["decision_fen"]).legal_moves
+
+
+def test_discovery_rejects_illegal_recommendation_root_with_actionable_reason(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as db:
+        _seed_black_post_gap_discovery(db)
+        opportunity_id = list_opportunities(db, "rep")[0]["id"]
+    execute_recommendation_request_slice({"payload": {"opportunity_id": opportunity_id}})
+    with database.connection() as db:
+        request_row = db.execute("SELECT id,request_json FROM threat_analysis_requests").fetchone()
+        report_request = _request_from_json(json.loads(request_row["request_json"]))
+        report = AnalysisReport(report_request, (
+            AnalysisLine("a1a8", ("a1a8",), EngineScore(cp=-11), 14),
+        ), True)
+        db.execute("UPDATE threat_analysis_requests SET state='complete',report_json=? WHERE id=?",
+                   (json.dumps(asdict(report)), request_row["id"]))
+    recommendation = recommend_missing_continuations(opportunity_id)
+    assert recommendation["state"] == "unavailable"
+    assert recommendation["candidates"] == []
+    assert "repair" in recommendation["reason"].lower()
+
+
 def test_issue4_strong_route_weak_target_promotes_without_reviews_or_parent_maturity(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()
@@ -346,7 +418,7 @@ def test_discovery_accepted_engine_branch_survives_publication_restart(tmp_path,
             "UPDATE threat_analysis_requests SET state='complete',report_json=? WHERE id=?",
             (json.dumps(wrong_history), request_row["id"]),
         )
-    assert recommend_missing_continuations(opportunity_id)["state"] == "waiting"
+    assert recommend_missing_continuations(opportunity_id)["state"] == "unavailable"
     with database.connection() as db:
         db.execute(
             "UPDATE threat_analysis_requests SET state='complete',report_json=? WHERE id=?",

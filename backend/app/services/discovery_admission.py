@@ -150,7 +150,10 @@ def execute_recommendation_request_slice(task: dict) -> None:
         game = _source_game(database, opportunity) if opportunity else None
     if not game:
         return
-    _, request = _full_history_request(game)
+    try:
+        _, request = _full_history_request(game)
+    except (ValueError, KeyError, TypeError):
+        return
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
         if "id" in task:
@@ -243,7 +246,12 @@ def recommend_missing_continuations(opportunity_id: str) -> dict:
                 "reason": ("No legal repertoire route reaches this gap. Rebuild coverage or inspect it in Builder"
                            if opportunity["kind"] == "missing_response"
                            else "An analyzed source game is not available yet"), "candidates": []}
-    board, request = _full_history_request(game)
+    try:
+        board, request = _full_history_request(game)
+    except (ValueError, KeyError, TypeError):
+        return {"state": "unavailable", "opportunity_id": opportunity_id,
+                "reason": "The source game does not reach a legal learner decision; inspect it in Builder",
+                "candidates": []}
     with read_connection() as database:
         relation_table = ("coverage_discovery_recommendation_requests"
                           if game.get("source_kind") == "coverage" else "discovery_recommendation_requests")
@@ -271,8 +279,9 @@ def recommend_missing_continuations(opportunity_id: str) -> dict:
         report = report_from_json(json.loads(saved_report["report_json"]))
         validate_analysis_report(request, report)
     except (TypeError, KeyError, ValueError):
-        return {"state": "waiting", "opportunity_id": opportunity_id,
-                "reason": "Engine evidence needs repair before this branch can be accepted", "candidates": []}
+        return {"state": "unavailable", "opportunity_id": opportunity_id,
+                "reason": "Saved engine evidence is invalid; repair analysis and retry this discovery",
+                "candidates": []}
     target_key = _key(board)
     best = report.lines[0]
     examples, _ = _repertoire_positions(lines, game["color"])
@@ -283,6 +292,12 @@ def recommend_missing_continuations(opportunity_id: str) -> dict:
     sound_candidates = []
     learner_sign = 1 if game["color"] == "white" else -1
     for line in report.lines[:5]:
+        try:
+            root_move = chess.Move.from_uci(line.root_move_uci)
+        except ValueError:
+            continue
+        if root_move not in board.legal_moves:
+            continue
         if best.score.cp is not None and line.score.cp is not None:
             loss_cp = learner_sign * (best.score.cp - line.score.cp)
         elif best.score.mate is not None and line.score.mate is not None:
