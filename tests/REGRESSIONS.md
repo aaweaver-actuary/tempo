@@ -385,6 +385,7 @@ Append every new reported issue and its test names here. All listed tests belong
 - A prepared study answer cannot be completed offline or syncs only a grade: `tests/browser/studies.spec.ts` (`prepared study response is graded offline and replayed with its actual squares`).
 - A stale study revision discards the phone's actual response, or an unknown grader version is answered offline: `tests/browser/studies.spec.ts` (`stale study revisions retain the phone answer as a replay conflict`; `unknown prepared study grader versions are unavailable offline`).
 - Feedback transport failure after a committed study answer blocks recovery or duplicates an attempt: `tests/browser/studies.spec.ts` (`saved study attempt can retry feedback without a duplicate review`).
+- A Study service outage presents a raw fetch failure without a recovery instruction: `tests/browser/studies.spec.ts` (`Study workspace reports an actionable local service outage`).
 - Reviewing one study exercise exposes a sibling answer on the same day, or an explicit practice override stays hidden: `backend/tests/test_studies.py::test_study_answer_revealing_sibling_is_buried_until_explicit_practice`.
 - PGN branches or annotations vanish and malformed source records look enrollable: `backend/tests/test_studies.py::test_study_pgn_preview_keeps_variations_annotations_and_invalid_record_diagnostics`.
 - A failed card migration leaves partial schema or no restorable pre-migration backup: `backend/tests/test_studies.py::test_study_migration_failure_rolls_back_and_backup_restores`.

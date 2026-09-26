@@ -244,3 +244,10 @@ test("saved study attempt can retry feedback without a duplicate review", async 
   const summary = await (await request.get(`${api}/studies/${study.id}/summary`)).json();
   expect(summary.chapters[0].attempts).toBe(1);
 });
+
+test("Study workspace reports an actionable local service outage", async ({ page }) => {
+  await page.route("**/api/studies", (route) => route.abort("failed"));
+  await page.goto("/");
+  await nav(page, "Studies");
+  await expect(page.getByRole("alert")).toContainText("Start local Docker Tempo and retry");
+});

@@ -23,11 +23,18 @@ type Preview = { digest: string; records: Array<{ index: number; headers: Record
 type ExerciseType = "square_set" | "move_line" | "knight_path" | "choice" | "explanation";
 
 async function api<T>(path: string, method = "GET", body?: unknown): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
-    method, headers: body === undefined ? undefined : { "Content-Type": "application/json" },
-    body: body === undefined ? undefined : JSON.stringify(body),
-  });
-  const data = await response.json() as T & { detail?: string };
+  let response: Response;
+  try {
+    response = await fetch(`${API_URL}${path}`, {
+      method, headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+  } catch {
+    throw new Error("Study service unavailable. Start local Docker Tempo and retry.");
+  }
+  let data: T & { detail?: string };
+  try { data = await response.json() as T & { detail?: string }; }
+  catch { throw new Error("Study service returned unreadable data. Restart local Docker Tempo and retry."); }
   if (!response.ok) throw new Error(data.detail ?? `Study service returned HTTP ${response.status}`);
   return data;
 }
