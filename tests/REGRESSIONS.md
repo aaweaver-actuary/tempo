@@ -374,6 +374,7 @@ Append every new reported issue and its test names here. All listed tests belong
 ## Authored Studies and generalized study exercises
 
 - A FEN-only PGN root is discarded or imports directly into training: `backend/tests/test_studies.py::test_study_fen_only_import_preserves_root_and_does_not_enroll`.
+- Updating changed source text replaces old position occurrences or local rubrics, or fails exact reimport idempotency: `backend/tests/test_studies.py::test_study_changed_source_update_preserves_old_occurrences_and_rubrics`.
 - A square exercise from a zero-move root cannot use the shared queue exactly once: `backend/tests/test_studies.py::test_study_square_exercise_from_fen_only_position_reviews_once`; `tests/browser/studies.spec.ts` (`FEN-only study square exercise is authored enrolled and reviewed through the real workspace`).
 - A correct response after revealing a hint receives unguided scheduling: `backend/tests/test_studies.py::test_study_correct_answer_after_hint_is_saved_as_guided_again`.
 - A queued card whose pinned revision diverged from its exercise can still create an attempt or review: `backend/tests/test_studies.py::test_study_attempt_rejects_card_revision_mismatch_without_scheduling`.

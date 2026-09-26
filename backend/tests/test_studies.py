@@ -63,6 +63,34 @@ def test_study_fen_only_import_preserves_root_and_does_not_enroll(tmp_path, monk
         assert len(client.get(f"/api/studies/{study_id}/chapters/{chapter_id}").json()["positions"]) == 1
 
 
+def test_study_changed_source_update_preserves_old_occurrences_and_rubrics(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        study_id, chapter_id, old_position_id = make_study(client)
+        chapter = client.get(f"/api/studies/{study_id}/chapters/{chapter_id}").json()
+        source_group_id = chapter["sources"][0]["source_group_id"]
+        exercise_id = client.post(f"/api/studies/{study_id}/exercises", json={"position_id": old_position_id,
+            "specification": {"type": "square_set", "prompt": "Mark the knight", "criterion": "White knight",
+                              "required": ["g1"]}}).json()["id"]
+        changed_pgn = ROOT_PGN.replace("Original synthetic position", "Revised synthetic position")
+        preview = client.post(f"/api/studies/{study_id}/import/preview", json={
+            "chapter_id": chapter_id, "source_group_id": source_group_id, "raw_pgn": changed_pgn}).json()
+        payload = {"chapter_id": chapter_id, "source_group_id": source_group_id,
+                   "raw_pgn": changed_pgn, "preview_digest": preview["digest"],
+                   "selected_records": [0], "mode": "update"}
+        update = client.post(f"/api/studies/{study_id}/import/commit", json=payload)
+        assert update.status_code == 200, update.text
+        assert update.json()["version"] == 2
+        assert client.post(f"/api/studies/{study_id}/import/commit", json=payload).json()["idempotent"]
+        refreshed = client.get(f"/api/studies/{study_id}/chapters/{chapter_id}").json()
+        assert [source["version"] for source in refreshed["sources"]] == [1, 2]
+        assert len(refreshed["positions"]) == 2
+        assert old_position_id in {position["id"] for position in refreshed["positions"]}
+        assert refreshed["exercises"][0]["id"] == exercise_id
+        assert refreshed["exercises"][0]["position_id"] == old_position_id
+        assert refreshed["exercises"][0]["specification"]["required"] == ["g1"]
+
+
 def test_study_square_exercise_from_fen_only_position_reviews_once(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
