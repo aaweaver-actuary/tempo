@@ -55,6 +55,26 @@ function decisionFen(discovery: DiscoveryItem): string {
   } catch { return discovery.fen; }
 }
 
+function decisionMoves(fen: string): Set<string> {
+  return new Set(new Chess(fen).moves({ verbose: true }).map((move) =>
+    `${move.from}${move.to}${move.promotion ?? ""}`));
+}
+
+function previewMatchesDecision(discovery: DiscoveryItem, preview: Recommendation): boolean {
+  if (preview.state !== "ready" || !preview.starting_fen) return false;
+  try {
+    const decisionPosition = decisionFen(discovery);
+    if (preview.starting_fen.split(" ").slice(0, 4).join(" ") !==
+        decisionPosition.split(" ").slice(0, 4).join(" ")) return false;
+    const decisionBoard = new Chess(decisionPosition);
+    if ((decisionBoard.turn() === "w" ? "white" : "black") !== discovery.trained_color) return false;
+    const legalMoves = decisionMoves(decisionPosition);
+    return Boolean(preview.candidates.length) &&
+      preview.candidates.every((candidate) => legalMoves.has(candidate.move_uci)) &&
+      (!preview.suggested_move_uci || legalMoves.has(preview.suggested_move_uci));
+  } catch { return false; }
+}
+
 function moveSan(fen: string, uci: string): string {
   try {
     return new Chess(fen).move({ from: uci.slice(0, 2), to: uci.slice(2, 4),
@@ -216,7 +236,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   const dialogRef = useRef<HTMLElement>(null);
   const [completedAdmissions, setCompletedAdmissions] = useState<string[]>([]);
   const outboxRecoveryStarted = useRef(false);
-  const readyDiscoveries = discoveries.filter((item) => {
+  const readyDiscoveries = useMemo(() => discoveries.filter((item) => {
     if (!initialPreflightComplete) return false;
     if (item.admission_state === "preparing") return false;
     if (item.card_id) return true;
@@ -224,8 +244,8 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     return previewFingerprints[item.id] === item.evidence_fingerprint &&
       recommendation?.state === "ready" &&
       recommendation.evidence_fingerprint === item.evidence_fingerprint &&
-      (recommendation.candidates?.length ?? 0) > 0;
-  });
+      previewMatchesDecision(item, recommendation);
+  }), [discoveries, initialPreflightComplete, previews, previewFingerprints]);
   const visibleDiscoveries = readyDiscoveries.filter((item) => !item.snoozed_until ||
     new Date(item.snoozed_until).getTime() <= currentTime);
   const reviewItems = sessionItems.length ? sessionItems : visibleDiscoveries;
@@ -240,7 +260,10 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
       activeSnapshot)
     : undefined;
   const fen = active ? decisionFen(active) : "";
-  const preview = active ? previews[active.id] : undefined;
+  const legalDecisionMoves = useMemo(() => fen ? decisionMoves(fen) : new Set<string>(), [fen]);
+  const savedPreview = active ? previews[active.id] : undefined;
+  const preview = active && savedPreview?.state === "ready" && !previewMatchesDecision(active, savedPreview)
+    ? undefined : savedPreview;
   const selectedMove = active
     ? (manualSelections[active.id] ??
       preview?.suggested_move_uci ??
@@ -330,19 +353,22 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     try {
       const response = await backgroundFetch(`${API_URL}/api/discoveries/${item.id}/recommendations`);
       const result = await readJsonResponse(response, discoveryRecommendationSchema, "continuation preview");
-      const unusableReadyResult = result.state === "ready" && (
-        result.evidence_fingerprint !== item.evidence_fingerprint || !result.candidates?.length
-      );
-      setPreviews((current) => ({ ...current, [item.id]: result }));
+      const unusableReadyResult = result.state === "ready" &&
+        (result.evidence_fingerprint !== item.evidence_fingerprint || !previewMatchesDecision(item, result));
+      const checkedResult: Recommendation = unusableReadyResult
+        ? { state: "unavailable", opportunity_id: item.id, candidates: [],
+            reason: "Discovery position and recommendation disagree; refresh evidence or inspect it in Builder" }
+        : result;
+      setPreviews((current) => ({ ...current, [item.id]: checkedResult }));
       setPreviewFingerprints((current) => ({ ...current, [item.id]: item.evidence_fingerprint }));
       setPreviewStatuses((current) => {
         const remaining = { ...current };
         delete remaining[item.id];
-        const status = result.state === "waiting" || result.state === "unavailable"
-          ? result.state : unusableReadyResult ? "failed" : null;
+        const status = checkedResult.state === "waiting" || checkedResult.state === "unavailable"
+          ? checkedResult.state : null;
         return status ? { ...remaining, [item.id]: status } : remaining;
       });
-      if (result.state === "waiting" || unusableReadyResult)
+      if (checkedResult.state === "waiting")
         nextPreflightRetryAt.current.set(key, performance.now() + previewRetryDelayMs);
       else nextPreflightRetryAt.current.delete(key);
     } catch {
@@ -604,7 +630,8 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   const mateOutcomes = Array.isArray(active?.evidence.mate_outcomes)
     ? active.evidence.mate_outcomes as Array<{ game_id?: string; preceding_move_mate?: number | null; third_later_turn_mate?: number | null }>
     : [];
-  const displayedArrow = atDecision ? (hoveredMove ?? selectedMove) : null;
+  const arrowMove = hoveredMove ?? selectedMove;
+  const displayedArrow = atDecision && arrowMove && legalDecisionMoves.has(arrowMove) ? arrowMove : null;
   const shapes = useMemo<DrawShape[]>(
     () => [
       ...(boardStep?.moveUci
@@ -659,6 +686,9 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     !item.card_id && previewFingerprints[item.id] === item.evidence_fingerprint &&
     (previewStatuses[item.id] === "waiting" || previewStatuses[item.id] === "failed"));
   const requestedDiscoveryNotReady = activeId !== null && activeIndex < 0;
+  const unavailableReason = activeId
+    ? previews[activeId]?.reason
+    : discoveries.length === 1 ? previews[discoveries[0].id]?.reason : undefined;
 
   const act = async (item: DiscoveryItem, action: "train" | "snooze" | "dismiss") => {
     setBusyId(item.id);
@@ -776,12 +806,12 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
                 </h2>
                 <p>
                   {active
-                    ? `${activeIndex + 1} of ${reviewItems.length} · ${active.trained_color} to move`
+                    ? `${activeIndex + 1} of ${reviewItems.length} · ${new Chess(fen).turn() === "w" ? "white" : "black"} to move`
                     : requestedDiscoveryNotReady
-                      ? "Choose Next to review a complete discovery."
+                      ? unavailableReason ?? "Choose Next to review a complete discovery."
                       : preflightPending
                         ? "Preparing review-ready discoveries."
-                        : "There are no complete discoveries to review right now."}
+                        : unavailableReason ?? "There are no complete discoveries to review right now."}
                 </p>
               </div>
               <div className="tempo-discovery-navigation">

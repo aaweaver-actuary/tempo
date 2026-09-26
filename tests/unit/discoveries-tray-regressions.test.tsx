@@ -411,7 +411,7 @@ it("discovery board keys inspect route and preview while the familiar default st
   expect(screen.getByTestId("discovery-board").getAttribute("data-shapes")).toContain('"brush":"blue"');
   expect(screen.getByTestId("discovery-board").getAttribute("data-shapes")).toContain('"brush":"green"');
   fireEvent.keyDown(window, { key: "ArrowLeft" });
-  expect(screen.getByTestId("discovery-board").getAttribute("data-fen")).toBe(afterE4);
+  await waitFor(() => expect(screen.getByTestId("discovery-board").getAttribute("data-fen")).toBe(afterE4));
   expect(screen.getByTestId("discovery-board").getAttribute("data-last-move")).toContain("e2");
   fireEvent.click(screen.getByRole("button", { name: "Next move" }));
   expect(screen.getByTestId("discovery-board").getAttribute("data-fen")).toBe(afterE5);
