@@ -1516,3 +1516,6 @@ def initialize() -> None:
             (now, now, now),
         )
         database.execute("PRAGMA optimize")
+    from .study_migration import migrate_studies
+
+    migrate_studies()

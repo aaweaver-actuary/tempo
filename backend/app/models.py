@@ -13,6 +13,7 @@ class Settings(BaseModel):
     include_defensive_cards_in_daily_stack: bool = True
     discovery_window_days: Literal[30, 90] = 90
     new_cards_per_day: int = Field(default=10, ge=0, le=100)
+    study_new_per_day: int = Field(default=2, ge=0, le=100)
     lichess_username: str = ""
     chesscom_username: str = ""
     auto_sync_minutes: int = Field(default=3, ge=2, le=60)

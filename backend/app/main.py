@@ -20,6 +20,7 @@ from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import connection, initialize, query_only_request, read_connection
+from .study_routes import router as study_router
 from .models import TacticActivationRequest
 from .services.tactical_catalog import (
     catalog_status,
@@ -200,6 +201,7 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="Tempo local API", version="0.2.0", lifespan=lifespan)
+app.include_router(study_router)
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
@@ -509,7 +511,7 @@ def capabilities():
 def get_settings():
     with read_connection() as db:
         row = db.execute(
-            "SELECT tactics_new_per_day,defense_new_cards_per_day,include_defensive_cards_in_daily_stack,discovery_window_days,initial_depth,timezone,new_cards_per_day,lichess_username,chesscom_username,auto_sync_minutes,engine_line_window_cp,major_mistake_cp,light_first_interval_days,draw_hold_user_moves,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
+            "SELECT tactics_new_per_day,defense_new_cards_per_day,include_defensive_cards_in_daily_stack,discovery_window_days,initial_depth,timezone,new_cards_per_day,study_new_per_day,lichess_username,chesscom_username,auto_sync_minutes,engine_line_window_cp,major_mistake_cp,light_first_interval_days,draw_hold_user_moves,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
         ).fetchone()
     return Settings(**dict(row))
 
@@ -528,7 +530,7 @@ def put_settings(s: Settings):
             "SELECT discovery_window_days,include_defensive_cards_in_daily_stack,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
         ).fetchone()
         db.execute(
-            "UPDATE settings SET tactics_new_per_day=?,defense_new_cards_per_day=?,include_defensive_cards_in_daily_stack=?,discovery_window_days=?,initial_depth=?,timezone=?,new_cards_per_day=?,lichess_username=?,chesscom_username=?,auto_sync_minutes=?,engine_line_window_cp=?,major_mistake_cp=?,light_first_interval_days=?,draw_hold_user_moves=?,coverage_reply_denominator=?,coverage_cumulative_target=?,coverage_horizon_fullmoves=?,coverage_path_floor=?,coverage_maia_elo=? WHERE id=1",
+            "UPDATE settings SET tactics_new_per_day=?,defense_new_cards_per_day=?,include_defensive_cards_in_daily_stack=?,discovery_window_days=?,initial_depth=?,timezone=?,new_cards_per_day=?,study_new_per_day=?,lichess_username=?,chesscom_username=?,auto_sync_minutes=?,engine_line_window_cp=?,major_mistake_cp=?,light_first_interval_days=?,draw_hold_user_moves=?,coverage_reply_denominator=?,coverage_cumulative_target=?,coverage_horizon_fullmoves=?,coverage_path_floor=?,coverage_maia_elo=? WHERE id=1",
             (
                 s.tactics_new_per_day,
                 s.defense_new_cards_per_day,
@@ -537,6 +539,7 @@ def put_settings(s: Settings):
                 s.initial_depth,
                 s.timezone,
                 s.new_cards_per_day,
+                s.study_new_per_day,
                 s.lichess_username,
                 s.chesscom_username,
                 s.auto_sync_minutes,
@@ -861,6 +864,20 @@ def seed_queue(db, day):
            )""",
         (day, day),
     )
+    db.execute(
+        """UPDATE daily_queue SET status='queued'
+           WHERE queue_date=? AND status='blocked' AND card_id IN (
+             SELECT card.id FROM cards card
+             JOIN study_exercises exercise ON exercise.id=card.study_exercise_id
+             JOIN studies study ON study.id=exercise.study_id
+             WHERE card.content_type='study_exercise' AND card.archived=0
+               AND card.pending_validation=0 AND study.archived=0
+               AND exercise.status='published' AND card.due_date<=?
+               AND NOT EXISTS(SELECT 1 FROM study_sibling_burials burial
+                              WHERE burial.exercise_id=exercise.id AND burial.study_day=?)
+           )""",
+        (day, day, day),
+    )
     seed_tactical_introductions(db, day)
     db.execute("""UPDATE cards SET state='new' WHERE content_type='opening' AND state='learning'
                   AND introduced_at IS NULL AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=cards.id)""")
@@ -883,8 +900,13 @@ def seed_queue(db, day):
                       WHERE (rr.id=cards.repertoire_id OR EXISTS(SELECT 1 FROM repertoire_cards rc WHERE rc.card_id=cards.id AND rc.repertoire_id=rr.id))
                         AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
                                        WHERE block.repertoire_id=rr.id AND block.card_id=cards.id)))
+           AND (cards.content_type!='study_exercise' OR (
+             EXISTS(SELECT 1 FROM study_exercises exercise JOIN studies study ON study.id=exercise.study_id
+                    WHERE exercise.id=cards.study_exercise_id AND exercise.status='published' AND study.archived=0)
+             AND NOT EXISTS(SELECT 1 FROM study_sibling_burials burial
+                            WHERE burial.exercise_id=cards.study_exercise_id AND burial.study_day=?)))
            AND id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?) ORDER BY due_date,id""",
-        (day, day),
+        (day, day, day),
     ).fetchall()
     for offset, row in enumerate(rows, 1):
         db.execute(
@@ -893,6 +915,29 @@ def seed_queue(db, day):
         )
     maximum += len(rows)
     admit_prioritized_opening_cards(db, day, limit, maximum)
+    study_allowance = db.execute("SELECT study_new_per_day FROM settings WHERE id=1").fetchone()[0]
+    admitted_studies = db.execute(
+        """SELECT COUNT(*) FROM daily_queue q JOIN cards c ON c.id=q.card_id
+           WHERE q.queue_date=? AND c.content_type='study_exercise' AND c.state='new'
+             AND q.status IN ('queued','complete')""", (day,),
+    ).fetchone()[0]
+    remaining_studies = max(0, study_allowance - admitted_studies)
+    if remaining_studies:
+        next_position = db.execute("SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=?", (day,)).fetchone()[0]
+        study_rows = db.execute(
+            """SELECT c.id FROM cards c
+               JOIN study_exercises e ON e.id=c.study_exercise_id
+               JOIN studies s ON s.id=e.study_id
+               WHERE c.content_type='study_exercise' AND c.state='new' AND c.archived=0
+                 AND c.pending_validation=0 AND c.due_date<=? AND e.status='published' AND s.archived=0
+                 AND NOT EXISTS(SELECT 1 FROM study_sibling_burials b WHERE b.exercise_id=e.id AND b.study_day=?)
+                 AND NOT EXISTS(SELECT 1 FROM daily_queue q WHERE q.card_id=c.id AND q.queue_date=?)
+               ORDER BY e.created_at,e.id LIMIT ?""",
+            (day, day, day, remaining_studies),
+        ).fetchall()
+        for offset, study_row in enumerate(study_rows):
+            db.execute("INSERT INTO daily_queue(queue_date,card_id,position,card_bucket,admission_kind) VALUES(?,?,?,'study_exercise','new')",
+                       (day, study_row["id"], next_position + offset))
 
 
 def randomize_daily_queue(db, day: str) -> None:
@@ -938,7 +983,7 @@ def randomize_daily_queue(db, day: str) -> None:
             16,
         )
         random.Random(group_seed).shuffle(values)
-    category_order = ["opening", "tactic", "defense", "endgame", "middlegame"]
+    category_order = ["opening", "tactic", "defense", "endgame", "middlegame", "study_exercise"]
     category_offset = seed % len(category_order)
     category_order = category_order[category_offset:] + category_order[:category_offset]
     cohort_order = ["review", "new"] if seed % 2 == 0 else ["new", "review"]
@@ -1221,19 +1266,28 @@ def _queue_payload(limit: int | None = None):
                                     (SELECT 'defense:' || candidate.id
                                      FROM threat_training_candidates candidate
                                      WHERE candidate.card_id=c.id LIMIT 1)) admission_source,c.*,
-                                  r.name repertoire_name,r.source_name repertoire_source,r.is_main,
+                                  COALESCE(r.name,study.title,'Study') repertoire_name,
+                                  COALESCE(r.source_name,'Study') repertoire_source,
+                                  COALESCE(r.is_main,0) is_main,study.id study_id,
                                   COALESCE(c.trained_color,(SELECT e.trained_color FROM endgame_templates e WHERE e.card_id=c.id), (SELECT l.trained_color FROM repertoire_lines l WHERE l.repertoire_id=r.id ORDER BY l.created_at LIMIT 1)) effective_trained_color
                            FROM daily_queue q JOIN cards c ON c.id=q.card_id
-                           JOIN repertoires r ON r.id=COALESCE(
+                           LEFT JOIN repertoires r ON r.id=COALESCE(
                                (SELECT rc.repertoire_id FROM repertoire_cards rc JOIN repertoires linked ON linked.id=rc.repertoire_id
                                 WHERE (rc.card_id=c.id OR c.repertoire_id=linked.id)
                                   AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
                                                  WHERE block.repertoire_id=linked.id AND block.card_id=c.id)
                                 ORDER BY linked.is_main DESC,linked.created_at DESC LIMIT 1),
                                c.repertoire_id)
+                           LEFT JOIN study_exercises exercise ON exercise.id=c.study_exercise_id
+                           LEFT JOIN studies study ON study.id=exercise.study_id
                            WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
                              AND (c.content_type!='defense' OR (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
                              AND COALESCE(c.pending_validation,0)=0
+                             AND (c.content_type!='study_exercise' OR
+                                  (exercise.status='published' AND study.archived=0
+                                   AND (q.admission_kind='explicit' OR NOT EXISTS(
+                                     SELECT 1 FROM study_sibling_burials burial
+                                     WHERE burial.exercise_id=exercise.id AND burial.study_day=q.queue_date))))
                              AND (c.content_type!='opening' OR NOT EXISTS(
                                  SELECT 1 FROM repertoire_integrity_card_blocks block
                                  WHERE block.repertoire_id=r.id AND block.card_id=c.id
@@ -1281,13 +1335,22 @@ def _queue_payload(limit: int | None = None):
             card["encounter_badges"] = badges
         total_count = len(cards) if limit is None else db.execute(
             """SELECT COUNT(*) FROM daily_queue q JOIN cards c ON c.id=q.card_id
+               LEFT JOIN study_exercises exercise ON exercise.id=c.study_exercise_id
+               LEFT JOIN studies study ON study.id=exercise.study_id
                WHERE q.queue_date=? AND q.status='queued' AND c.archived=0
                  AND COALESCE(c.pending_validation,0)=0
                  AND (c.content_type!='defense' OR
                       (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
+                 AND (c.content_type!='study_exercise' OR
+                      (exercise.status='published' AND study.archived=0
+                       AND (q.admission_kind='explicit' OR NOT EXISTS(
+                         SELECT 1 FROM study_sibling_burials burial
+                         WHERE burial.exercise_id=exercise.id AND burial.study_day=q.queue_date))))
                  AND (c.content_type!='opening' OR NOT EXISTS(
                      SELECT 1 FROM repertoire_integrity_card_blocks block
-                     WHERE block.card_id=c.id))""",
+                     WHERE block.repertoire_id=COALESCE(c.repertoire_id,
+                       (SELECT rc.repertoire_id FROM repertoire_cards rc WHERE rc.card_id=c.id LIMIT 1))
+                       AND block.card_id=c.id))""",
             (day,),
         ).fetchone()[0]
     for card in cards:
@@ -1320,7 +1383,27 @@ def queue_today():
 
 @app.get("/api/queue/prepared")
 def prepared_queue():
-    return {**_queue_payload(), "prepared_at": datetime.now(timezone.utc).isoformat()}
+    payload = _queue_payload()
+    study_cards = [card for card in payload["cards"] if card["content_type"] == "study_exercise"]
+    if study_cards:
+        with read_connection() as database:
+            for card in study_cards:
+                row = database.execute(
+                    """SELECT exercise.current_revision,revision.specification_json
+                       FROM study_exercises exercise JOIN study_exercise_revisions revision
+                         ON revision.exercise_id=exercise.id AND revision.revision=exercise.current_revision
+                       WHERE exercise.id=?""", (card["study_exercise_id"],),
+                ).fetchone()
+                if not row:
+                    raise HTTPException(409, f"Study exercise {card['study_exercise_id']} has no current revision")
+                card["study_snapshot"] = {
+                    "schema_version": 1, "grader_version": 1,
+                    "exercise_id": card["study_exercise_id"],
+                    "revision": row["current_revision"],
+                    "fen": card["start_fen"],
+                    "specification": json.loads(row["specification_json"]),
+                }
+    return {**payload, "prepared_at": datetime.now(timezone.utc).isoformat()}
 
 
 @app.get("/api/queue/window")
