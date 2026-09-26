@@ -152,6 +152,22 @@ def test_studied_game_miss_prioritizes_without_changing_fsrs_or_creating_review(
         assert queued[0]["gameplay_priority_reason"] == "Priority review · missed in a recent game"
 
 
+def test_priority_game_miss_queue_reports_prior_study_without_a_clean_pass(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    now = datetime.now(timezone.utc)
+    with database.connection() as db:
+        _seed_repertoire(db, studied_at=(now - timedelta(days=2)).isoformat())
+        db.execute("UPDATE reviews SET rating='again' WHERE card_id='card'")
+        _seed_game(db, "miss", ["d2d4"], (now - timedelta(days=1)).isoformat())
+    compare_games(["miss"])
+    apply_real_game_misses("miss")
+    queued = queue_today()["cards"][0]
+    assert queued["gameplay_priority_reason"] == "Priority review · missed in a recent game"
+    assert queued["first_correct_at"] is None
+    assert queued["has_study_review"] == 1
+
+
 def test_targeted_study_updates_fsrs_and_later_success_is_measurable(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     database.initialize()

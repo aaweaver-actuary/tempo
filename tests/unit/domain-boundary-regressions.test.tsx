@@ -50,8 +50,16 @@ describe("validated domain boundaries", () => {
       repertoire_name: "Main",
       repertoire_source: "PGN",
       gameplay_priority_reason: "Priority review · missed in a recent game",
+      has_study_review: 1,
     });
     expect(mapped.priorityReason).toBe("Priority review · missed in a recent game");
+    expect(mapped.hasPriorStudyReview).toBe(true);
+    expect(mapQueueCardToPracticeCard({
+      id: "new-game-priority-card", queue_entry_id: 45, start_fen: STANDARD_FEN,
+      moves: ["e2e4"], content_type: "opening", repertoire_name: "Main",
+      repertoire_source: "PGN", gameplay_priority_reason: "Priority review · missed in a recent game",
+      has_study_review: 0,
+    }).hasPriorStudyReview).toBe(false);
     expect(() => mapQueueCardToPracticeCard({
       id: "game-priority-card",
       queue_entry_id: 43,

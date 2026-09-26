@@ -36,6 +36,20 @@ test("Games prioritizes a canonical miss and explains the targeted study card", 
   await expect(page.getByText(priorityReason)).toBeVisible();
 });
 
+test("previously studied game-miss priority card starts without a teaching arrow", async ({ page }) => {
+  await prepareVisualUI(page);
+  await page.route("**/api/queue/window?**", route => route.fulfill({ json: { cards: [{
+    id: "previously-studied-miss", queue_entry_id: 2, start_fen: startFen,
+    moves: ["e2e4", "e7e5", "g1f3"], content_type: "opening",
+    repertoire_name: "Spanish opening", repertoire_source: "PGN",
+    first_correct_at: null, has_study_review: 1, trained_color: "white",
+    gameplay_priority_reason: priorityReason,
+  }] } }));
+  await page.reload();
+  await expect(page.getByText(priorityReason)).toBeVisible();
+  await expect(page.locator(".cg-wrap svg.cg-shapes > g > g[cgHash]")).toHaveCount(0);
+});
+
 test("Games shows the reanalysis instruction when a canonical miss is missing", async ({ page }) => {
   await prepareVisualUI(page);
   await page.route("**/api/game-findings?**", route => route.fulfill({ json: { findings: [finding] } }));

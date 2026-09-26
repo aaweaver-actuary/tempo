@@ -44,6 +44,7 @@ export type TrainingStoreState = {
   suggestShorter: boolean;
   seenMoves: Set<TeachingMoveKey>;
   teachingEncounterKey: string | null;
+  assistedThisAttempt: boolean;
   teachingReadyCard: TeachingCardKey | "";
   firstCleanPasses: Set<string>;
   isAttemptFailed: boolean;
@@ -106,6 +107,7 @@ export type TrainingStoreState = {
   setTeachingEncounterKey: (
     key: string | null | ((current: string | null) => string | null),
   ) => void;
+  setAssistedThisAttempt: (assisted: boolean) => void;
   setTeachingReadyCard: (
     key: TeachingCardKey | "" | ((current: TeachingCardKey | "") => TeachingCardKey | ""),
   ) => void;
@@ -177,6 +179,7 @@ const defaultState = {
   suggestShorter: false,
   seenMoves: new Set<TeachingMoveKey>(),
   teachingEncounterKey: null,
+  assistedThisAttempt: false,
   teachingReadyCard: "" as const,
   firstCleanPasses: new Set<string>(),
   isAttemptFailed: false,
@@ -273,6 +276,7 @@ export const selectTrainingActions = (state: TrainingStoreState) => ({
   setSuggestShorter: state.setSuggestShorter,
   setSeenMoves: state.setSeenMoves,
   setTeachingEncounterKey: state.setTeachingEncounterKey,
+  setAssistedThisAttempt: state.setAssistedThisAttempt,
   setTeachingReadyCard: state.setTeachingReadyCard,
   setFirstCleanPasses: state.setFirstCleanPasses,
   setAttemptFailed: state.setAttemptFailed,
@@ -379,6 +383,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       teachingEncounterKey:
         typeof value === "function" ? value(state.teachingEncounterKey) : value,
     })),
+  setAssistedThisAttempt: (assistedThisAttempt) => set({ assistedThisAttempt }),
   setTeachingReadyCard: (value) =>
     set((state) => ({
       teachingReadyCard:
@@ -461,6 +466,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       reviewSaveError: "",
       showHint: false,
       teachingEncounterKey: null,
+      assistedThisAttempt: false,
       isAttemptFailed: false,
       failureAnnotation: undefined,
       failureFen: undefined,
@@ -506,6 +512,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       reviewSaveError: "",
       showHint: nextShowHint,
       teachingEncounterKey: null,
+      assistedThisAttempt: false,
       isAttemptFailed: nextAttemptFailed,
       failureAnnotation: undefined,
       failureFen: nextAttemptFailed
@@ -572,6 +579,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
           feedback: failed ? "wrong" : "ready",
           showHint: failed,
           teachingEncounterKey: null,
+          assistedThisAttempt: false,
           isAttemptFailed: failed,
           failureAnnotation: undefined,
           failureFen: failed ? start.fen : undefined,
@@ -600,6 +608,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       feedback: failed ? "wrong" : "ready",
       showHint: failed,
       teachingEncounterKey: null,
+      assistedThisAttempt: false,
       isAttemptFailed: failed,
       failureAnnotation: undefined,
       failureFen: failed ? start.fen : undefined,

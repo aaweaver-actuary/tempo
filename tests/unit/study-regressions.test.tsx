@@ -531,6 +531,57 @@ describe("reported study regressions", () => {
     await pause(430);
     expect(screen.getByTestId("board").getAttribute("data-hint")).toBe("false");
   });
+  it("previously studied game miss without a clean pass tests recall without arrows", async () => {
+    const teachingPosts: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input, options) => {
+      const url = String(input);
+      if (url.includes("/api/queue/window")) return Response.json({ cards: [{
+        id: "game-miss", queue_entry_id: 81, start_fen: new Chess().fen(),
+        moves: ["e2e4"], content_type: "opening", repertoire_name: "Prep",
+        repertoire_source: "PGN", first_correct_at: null, has_study_review: 1,
+        gameplay_priority_reason: "Priority review · missed in a recent game",
+      }] });
+      if (url.endsWith("/teaching") && options?.method === "POST") teachingPosts.push(url);
+      return Response.json(url.endsWith("/teaching") ? { states: [] } :
+        url.endsWith("/sync-status") ? { providers: [] } : { lines: [] });
+    }));
+    render(<Home />);
+    await waitFor(() => expect(screen.getByText("Priority review · missed in a recent game")).toBeTruthy());
+    expect(screen.getByTestId("board").getAttribute("data-hint")).toBe("false");
+    fireEvent.click(screen.getByText("e2e4"));
+    expect(pendingReviews()[0]).toMatchObject({ outcome: "correct", guided: false });
+    expect(teachingPosts).toEqual([]);
+  });
+  it("unseen game-miss priority introduction teaches once and returns for unassisted recall", async () => {
+    let firstAttemptComplete = false;
+    const reviewRequests: Array<{ outcome: string; guided: boolean }> = [];
+    vi.stubGlobal("fetch", vi.fn(async (input, options) => {
+      const url = String(input);
+      if (url.includes("/api/queue/window")) return Response.json({ cards: [{
+        id: "new-opening", queue_entry_id: firstAttemptComplete ? 83 : 82,
+        start_fen: new Chess().fen(), moves: ["e2e4"], content_type: "opening",
+        repertoire_name: "Prep", repertoire_source: "PGN",
+        has_study_review: firstAttemptComplete ? 1 : 0,
+        gameplay_priority_reason: firstAttemptComplete ? null : "Priority review · missed in a recent game",
+        attempt_state: firstAttemptComplete ? "guided" : "clean",
+      }] });
+      if (url.endsWith("/review")) {
+        reviewRequests.push(JSON.parse(String(options?.body)));
+        firstAttemptComplete = true;
+        return Response.json({ persisted: true });
+      }
+      return Response.json(url.endsWith("/teaching") ? { states: [] } :
+        url.endsWith("/sync-status") ? { providers: [] } : { lines: [] });
+    }));
+    render(<Home />);
+    await waitFor(() => expect(screen.getByTestId("board").getAttribute("data-hint")).toBe("true"));
+    expect(screen.getByText("Priority review · missed in a recent game")).toBeTruthy();
+    fireEvent.click(screen.getByText("e2e4"));
+    await waitFor(() => expect(reviewRequests).toHaveLength(1), { timeout: 2_000 });
+    expect(reviewRequests[0]).toMatchObject({ guided: true });
+    await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(83));
+    expect(screen.getByTestId("board").getAttribute("data-hint")).toBe("false");
+  });
   it("Show move during initial teaching records failure and keeps required guidance", async () => {
     const failures: string[] = [];
     vi.stubGlobal(

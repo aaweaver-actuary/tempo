@@ -47,6 +47,7 @@ export type PracticeCard = {
   encounterCount30d?: number;
   lastEncounteredAt?: string;
   firstCleanPassAt?: string;
+  hasPriorStudyReview?: boolean;
   suggestShorterPrefix?: boolean;
   orientation?: PieceColor;
   revision?: number;

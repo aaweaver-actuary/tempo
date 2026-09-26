@@ -111,6 +111,29 @@ def test_study_reinforces_today_reviews_tomorrow_and_persists_unassisted_later_r
             assert date.fromisoformat(result["next_due"]) > clock["now"].date()
         assert client.get("/api/migration/snapshot").json()["counts"]["reviews"] == 5
 
+
+def test_assisted_opening_teaching_returns_for_a_separate_clean_recall(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        imported = client.post("/api/imports/pgn", files={"file": ("assisted.pgn", PGN)}, data={"initial_depth": 2})
+        wait_for_integrity(client, imported.json()["repertoire_id"])
+        taught = client.get("/api/queue/today").json()["cards"][0]
+        assert taught["has_study_review"] == 0
+        assert client.post(f"/api/cards/{taught['id']}/teaching", json={"revision": 1, "ply": 0}).status_code == 200
+        assisted = client.post(f"/api/cards/{taught['id']}/review", json={
+            "outcome": "correct", "guided": True, "queue_entry_id": taught["queue_entry_id"],
+        })
+        assert assisted.status_code == 200 and assisted.json()["requeue_today"]
+        recall = client.get("/api/queue/today").json()["cards"][0]
+        assert recall["queue_entry_id"] != taught["queue_entry_id"]
+        assert recall["attempt_state"] == "guided" and recall["has_study_review"] == 1
+        assert recall["first_correct_at"] is None
+        clean = solve(client, recall)
+        assert clean["requeue_today"]
+        with database.connection() as db:
+            reviews = db.execute("SELECT rating,guided FROM reviews WHERE card_id=? ORDER BY id", (taught["id"],)).fetchall()
+            assert [tuple(review) for review in reviews] == [("again", 1), ("correct", 0)]
+
 def test_tactical_failures_requeue_once_and_clean_reviews_survive_restart_and_return_when_due(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     clock = install_clock(monkeypatch)

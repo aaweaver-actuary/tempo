@@ -35,6 +35,7 @@ export const queueCardSchema = z.strictObject({
   attempt_state: attemptStateSchema.optional(),
   attempt_failed: sqliteBooleanSchema.optional(),
   gameplay_priority_reason: z.string().nullable().optional(),
+  has_study_review: sqliteBooleanSchema.optional(),
   admission_kind: z.string().nullable().optional(),
   admission_source: z.string().nullable().optional(),
   encounter_badges: z.array(z.enum(["Seen recently", "Frequent"])).optional(),

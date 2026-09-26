@@ -106,7 +106,8 @@ function StandardTrainingView({
   const currentMoveKey = `${card.backendId ?? card.id}:${card.revision ?? 1}:${step}`;
   const showTeachingArrow =
     showHint ||
-    (card.kind === "opening" && teachingEncounterKey === currentMoveKey);
+    (card.kind === "opening" && !card.hasPriorStudyReview && !card.firstCleanPassAt &&
+      card.queueAttemptState !== "reinforcement" && teachingEncounterKey === currentMoveKey);
   const isFailedPosition = attemptFailed && currentFenString === failureFen;
   const trainingShapes = useMemo<DrawShape[]>(() => [
     ...(opponentLastMove

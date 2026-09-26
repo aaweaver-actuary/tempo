@@ -1200,6 +1200,9 @@ def _queue_payload(limit: int | None = None):
         ).fetchall()
         queue_sql = """SELECT q.id queue_entry_id,q.position,q.cycle,q.attempt_state,q.attempt_failed,
                                   q.gameplay_priority_reason,q.admission_kind,
+                                  EXISTS(SELECT 1 FROM reviews study_review
+                                         WHERE study_review.card_id=c.id AND study_review.source_kind='study'
+                                           AND study_review.invalidated_at IS NULL) has_study_review,
                                   COALESCE(q.admission_source,
                                     (SELECT 'defense:' || candidate.id
                                      FROM threat_training_candidates candidate

@@ -46,6 +46,7 @@ export function mapQueueCardToPracticeCard(
     encounterCount30d: card.encounter_count_30d,
     lastEncounteredAt: card.last_encountered_at ?? undefined,
     firstCleanPassAt: card.first_correct_at ?? undefined,
+    hasPriorStudyReview: card.has_study_review ?? Boolean(card.first_correct_at),
     suggestShorterPrefix:
       card.kind === "prefix" &&
       (card.recent_attempts_json?.match(/"again"/g)?.length ?? 0) >= 3,

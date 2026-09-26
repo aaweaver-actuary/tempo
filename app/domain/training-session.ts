@@ -50,5 +50,6 @@ export type AttemptLifecycleState = {
   failureFen: FenString | undefined;
   failureAnnotation: PositionAnnotation | undefined;
   teachingEncounterKey: string | null;
+  assistedThisAttempt: boolean;
   teachingReadyCard: TeachingCardKey | "";
 };

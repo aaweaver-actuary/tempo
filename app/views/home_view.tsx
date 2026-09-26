@@ -177,6 +177,7 @@ export default function Home() {
     setSuggestShorter,
     setSeenMoves,
     setTeachingEncounterKey,
+    setAssistedThisAttempt,
     setTeachingReadyCard,
     setFirstCleanPasses,
     setAttemptFailed,
@@ -724,7 +725,7 @@ export default function Home() {
               backendId: card.backendId,
               queueEntryId: card.queueEntryId,
               outcome,
-              guided: attemptFailed,
+              guided: attemptFailed || useTrainingStore.getState().assistedThisAttempt,
             });
           }
           advancedFromCache = useTrainingStore.getState().advanceCachedQueue();
@@ -819,7 +820,7 @@ export default function Home() {
           backendId: card.backendId,
           queueEntryId: card.queueEntryId,
           outcome,
-          guided: useTrainingStore.getState().isAttemptFailed,
+          guided: useTrainingStore.getState().isAttemptFailed || useTrainingStore.getState().assistedThisAttempt,
         });
         reviewRecordedAtCompletion = true;
       } catch (error) {
@@ -915,6 +916,7 @@ export default function Home() {
       if (
         card.kind !== "opening" ||
         card.firstCleanPassAt ||
+        card.hasPriorStudyReview ||
         card.queueAttemptState === "reinforcement"
       ) {
         setTeachingEncounterKey(null);
@@ -927,6 +929,7 @@ export default function Home() {
         return;
       }
       setTeachingEncounterKey(currentMoveKey);
+      setAssistedThisAttempt(true);
       setSeenMoves((current) => {
         if (current.has(currentMoveKey)) return current;
         const next = new Set(current).add(currentMoveKey);
@@ -945,6 +948,7 @@ export default function Home() {
     card.kind,
     card.queueAttemptState,
     card.firstCleanPassAt,
+    card.hasPriorStudyReview,
     card.backendId,
     card.revision,
     currentMoveKey,
@@ -956,6 +960,7 @@ export default function Home() {
     teachingCardKey,
     setSeenMoves,
     setTeachingEncounterKey,
+    setAssistedThisAttempt,
   ]);
 
   useEffect(() => {

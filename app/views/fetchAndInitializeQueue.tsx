@@ -7,7 +7,7 @@ import { reportDebugError } from "../lib/debug-reporting";
 import { flushPendingReviews, pendingReviews } from "../lib/review-outbox";
 
 let requestGeneration = 0;
-const queueCacheKey = "tempo-training-queue-window-v1";
+const queueCacheKey = "tempo-training-queue-window-v2";
 
 type QueuePayload = {
   cards?: unknown[];
