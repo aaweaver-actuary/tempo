@@ -21,7 +21,7 @@ import {
 import { runStudyTask } from "../lib/background-study";
 import { ImportDialogBox } from "../ImportDialogBox";
 import { AnalysisPasteDialog, type AnalysisPasteContext } from "../AnalysisPasteDialog";
-import { moveSoundEnabled, playChessMoveSound, playMoveSound } from "../lib/move-sound";
+import { cancelMoveSounds, moveSoundEnabled, playChessMoveSound, playMoveSound, prepareMoveSounds } from "../lib/move-sound";
 import { bundledRepertoires, demoCards } from "../samples";
 import {
   View,
@@ -80,6 +80,7 @@ import { setActiveDebugWorkspace } from "../lib/debug-reporting";
 
 export default function Home() {
   const gameSync = useGameSync();
+  useEffect(() => prepareMoveSounds(), []);
   useEffect(() => {
     if (!usesLocalApi()) return;
     let lastSentAt = 0;
@@ -693,6 +694,7 @@ export default function Home() {
   function changeSound(value: boolean) {
     setSoundOn(value);
     localStorage.setItem("tempo-move-sound", String(value));
+    if (!value) cancelMoveSounds();
     if (value) playMoveSound({ force: true });
   }
 

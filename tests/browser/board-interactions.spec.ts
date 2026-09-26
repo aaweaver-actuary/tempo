@@ -10,6 +10,63 @@ import {
   clickSquare,
 } from "./product-fixtures";
 
+test("delayed startup audio never replays earlier board moves and the next move sounds normally", async ({ page }) => {
+  let releaseSoundRequests: (() => void) | undefined;
+  const soundRequestsReleased = new Promise<void>((resolve) => { releaseSoundRequests = resolve; });
+  const requestedSoundPaths = new Set<string>();
+  await page.route("**/sounds/standard/*", async (route) => {
+    requestedSoundPaths.add(new URL(route.request().url()).pathname);
+    await soundRequestsReleased;
+    await route.continue();
+  });
+  await page.addInitScript(() => {
+    const sounds: HTMLAudioElement[] = [];
+    const events: string[] = [];
+    Object.assign(window, { __tempoSounds: sounds, __tempoSoundEvents: events });
+    Object.defineProperty(window, "Audio", {
+      configurable: true,
+      value: function (source: string) {
+        const sound = document.createElement("audio");
+        sound.src = source;
+        sound.addEventListener("playing", () => events.push("playing"));
+        const play = sound.play.bind(sound);
+        sound.play = () => {
+          events.push("play requested");
+          return play();
+        };
+        sounds.push(sound);
+        return sound;
+      },
+    });
+  });
+
+  try {
+    await page.goto("/", { waitUntil: "domcontentloaded" });
+    await expect.poll(() => requestedSoundPaths.size).toBe(3);
+    await nav(page, "Builder");
+    await move(page, "e2", "e4");
+    await move(page, "e7", "e5");
+    expect(await page.evaluate(() => (window as unknown as { __tempoSoundEvents: string[] }).__tempoSoundEvents)).toEqual([]);
+
+    releaseSoundRequests?.();
+    await expect.poll(() => page.evaluate(() =>
+      (window as unknown as { __tempoSounds: HTMLAudioElement[] }).__tempoSounds.every((sound) => sound.readyState >= 2),
+    )).toBe(true);
+    await page.waitForTimeout(350);
+    expect(await page.evaluate(() => (window as unknown as { __tempoSoundEvents: string[] }).__tempoSoundEvents)).toEqual([]);
+
+    await move(page, "g1", "f3");
+    await expect.poll(() => page.evaluate(() =>
+      (window as unknown as { __tempoSoundEvents: string[] }).__tempoSoundEvents.filter((event) => event === "playing").length,
+    )).toBe(1);
+    expect(await page.evaluate(() => (window as unknown as { __tempoSoundEvents: string[] }).__tempoSoundEvents)).toEqual([
+      "play requested", "playing",
+    ]);
+  } finally {
+    releaseSoundRequests?.();
+  }
+});
+
 test("checked king gets a persistent translucent red cue that clears when the position changes", async ({
   page,
 }) => {
@@ -21,10 +78,13 @@ test("checked king gets a persistent translucent red cue that clears when the po
       value: class {
         volume = 1;
         currentTime = 0;
-        constructor(public src: string) {
-          audioSources.push(src);
-        }
+        readyState = 2;
+        preload = "none";
+        constructor(public src: string) {}
+        load() {}
+        pause() {}
         play() {
+          audioSources.push(this.src);
           return Promise.resolve();
         }
       },

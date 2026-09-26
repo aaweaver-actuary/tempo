@@ -9,8 +9,10 @@ import "../../app/responsive.css";
 import Home from "../../app/views/home_view";
 import { TempoErrorBoundary } from "../../app/components/error-boundary";
 import { installGlobalDebugErrorHandlers } from "../../app/lib/debug-reporting";
+import { prepareMoveSounds } from "../../app/lib/move-sound";
 
 installGlobalDebugErrorHandlers();
+prepareMoveSounds();
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>

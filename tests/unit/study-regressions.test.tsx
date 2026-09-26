@@ -52,6 +52,8 @@ vi.mock("../../app/lib/move-sound", () => ({
   playMoveSound: vi.fn(),
   playChessMoveSound: vi.fn(),
   moveSoundEnabled: () => false,
+  prepareMoveSounds: vi.fn(),
+  cancelMoveSounds: vi.fn(),
 }));
 vi.mock("../../app/lib/analysis-engines", () => ({
   analyzeWithStockfish: vi.fn(async () => []),
