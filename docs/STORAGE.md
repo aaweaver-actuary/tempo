@@ -44,6 +44,13 @@ docker compose exec api python -c 'import sqlite3; source=sqlite3.connect("/data
 docker compose cp api:/data/tempo-backup.db ./tempo-backup.db
 ```
 
+This full SQLite backup includes Studies, source records, exercise revisions,
+attempts, cards, and reviews. A content-only `.tempo-study.json` export omits
+personal attempts and scheduling. Before the one-time Studies card ownership
+migration, Tempo creates `tempo.db.before-studies-v1.bak` next to the database.
+Restore that file only while the API is stopped, then check `PRAGMA
+foreign_key_check` and open the Study workspace before resuming training.
+
 Restore with the API stopped: copy the backup into the `tempo-data` volume using a
 one-shot container mounting that volume, then start the API and verify `/api/health`.
 Do not overwrite a running database. Keep backups outside the git checkout.

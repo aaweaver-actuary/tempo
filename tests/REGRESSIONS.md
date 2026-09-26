@@ -383,6 +383,7 @@ Append every new reported issue and its test names here. All listed tests belong
 - Card ownership migration loses legacy reviews, queue rows, or foreign keys: `backend/tests/test_studies.py::test_study_migration_preserves_legacy_cards_reviews_and_foreign_keys`.
 - Python and browser exercise graders disagree on authored move, square, route, choice, or explanation cases: `backend/tests/test_studies.py::test_study_python_grader_matches_original_golden_cases`; `tests/unit/study-exercise-grading.test.ts`.
 - A prepared study answer cannot be completed offline or syncs only a grade: `tests/browser/studies.spec.ts` (`prepared study response is graded offline and replayed with its actual squares`).
+- A committed explanation cannot be self-assessed and validated after a phone disconnect: `tests/browser/studies.spec.ts` (`prepared explanation is self assessed offline and replayed through server validation`).
 - A stale study revision discards the phone's actual response, or an unknown grader version is answered offline: `tests/browser/studies.spec.ts` (`stale study revisions retain the phone answer as a replay conflict`; `unknown prepared study grader versions are unavailable offline`).
 - Feedback transport failure after a committed study answer blocks recovery or duplicates an attempt: `tests/browser/studies.spec.ts` (`saved study attempt can retry feedback without a duplicate review`).
 - A Study service outage presents a raw fetch failure without a recovery instruction: `tests/browser/studies.spec.ts` (`Study workspace reports an actionable local service outage`).
@@ -391,3 +392,4 @@ Append every new reported issue and its test names here. All listed tests belong
 - A failed card migration leaves partial schema or no restorable pre-migration backup: `backend/tests/test_studies.py::test_study_migration_failure_rolls_back_and_backup_restores`.
 - Study introductions consume the opening allowance or exceed their own allowance: `backend/tests/test_studies.py::test_study_new_exercise_allowance_is_independent_and_due_reviews_remain`.
 - Exercise types cannot be authored from the actual workspace: `tests/browser/studies.spec.ts` (`all five study exercise types can be authored from the workspace`).
+- A large mixed queue makes foreground workspace reads exceed one second while background work is backlogged: `backend/tests/test_durable_work_queue.py::test_workspace_reads_complete_under_one_second_during_full_background_backlog`.

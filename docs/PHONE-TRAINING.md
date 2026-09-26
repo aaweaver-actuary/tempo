@@ -11,6 +11,8 @@ Tempo's SQLite database stays on the computer. The phone keeps one prepared dail
 
 The phone will not invent a new day's queue. Reconnect to prepare each day. Defensive exercises need the computer's grading service and are identified separately when offline. If another device reviewed the same card first, Tempo keeps the SQLite result and shows the unsynced phone conflict. Keep the Home Screen app installed until every review has synced; browser storage can be evicted under device storage pressure.
 
+Prepared authored Study exercises with a supported rubric snapshot can be answered offline. Tempo saves the actual move, square set, route, choice, or explanation response in the phone journal and validates it again against the pinned revision when syncing. Unsupported rubric versions, stale revisions, and another device's completed review remain visible as unavailable or conflicted evidence rather than an incorrect answer. An offline explanation or unrecognized open move requires an explicit self-assessment after the rubric is shown.
+
 If Tempo says an update is ready, finish the current attempt and reopen the Home Screen app while connected. Do not clear Safari website data or uninstall Tempo while reviews are saved on the phone.
 
 Tailscale Serve must remain enabled, and the computer and Docker Tempo must be running for a fresh queue or sync. See the [Tailscale Serve documentation](https://tailscale.com/docs/features/tailscale-serve) for HTTPS and access controls.

@@ -191,6 +191,7 @@ function StandardTrainingView({
     lastMove,
     onMove,
     pieceSet,
+    queueNotice,
     releaseShellBoardForOwner,
     setShellBoardForOwner,
     showTeachingArrow,

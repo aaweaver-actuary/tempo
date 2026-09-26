@@ -192,13 +192,24 @@ def test_study_assessment_revision_reset_preserves_old_review(tmp_path, monkeypa
 def test_study_native_bundle_preserves_identity_and_rejects_changed_content(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
-        study_id, _, _ = make_study(client)
+        study_id, _, position_id = make_study(client)
+        exercise_id = client.post(f"/api/studies/{study_id}/exercises", json={"position_id": position_id,
+            "specification": {"type": "choice", "prompt": "Where is the knight?", "options": [
+                {"id": "g1", "text": "g1"}, {"id": "h1", "text": "h1"}], "correct_option_ids": ["g1"]}}).json()["id"]
+        assert client.post(f"/api/studies/{study_id}/links", json={"source_position_id": position_id,
+            "target_exercise_id": exercise_id, "relation": "illustrates"}).status_code == 200
         bundle = client.get(f"/api/studies/{study_id}/export").json()
         assert "study_attempts" not in bundle["tables"] and "cards" not in bundle["tables"]
         assert client.post("/api/studies/import-bundle", json={"bundle": bundle}).json()["idempotent"]
         copied = client.post("/api/studies/import-bundle", json={"bundle": bundle, "mode": "copy"})
         assert copied.status_code == 200, copied.text
         assert copied.json()["study_id"] != study_id
+        copied_bundle = client.get(f"/api/studies/{copied.json()['study_id']}/export").json()
+        copied_position = copied_bundle["tables"]["study_positions"][0]
+        copied_exercise = copied_bundle["tables"]["study_exercises"][0]
+        assert copied_position["id"] != position_id
+        assert copied_exercise["position_id"] == copied_position["id"]
+        assert copied_bundle["tables"]["study_links"][0]["target_exercise_id"] == copied_exercise["id"]
         changed = json.loads(json.dumps(bundle))
         changed["tables"]["studies"][0]["title"] = "Conflicting title"
         assert client.post("/api/studies/import-bundle", json={"bundle": changed}).status_code == 422

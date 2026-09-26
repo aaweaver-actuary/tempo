@@ -139,7 +139,7 @@ test("all five study exercise types can be authored from the workspace", async (
   await page.getByRole("button", { name: "Create draft exercise" }).click();
   await expect(page.getByRole("button", { name: /Explain the knight placement · draft/ })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
   await expect(page.getByRole("button", { name: "Learn", exact: true })).toBeVisible();
 });
 
@@ -250,4 +250,53 @@ test("Study workspace reports an actionable local service outage", async ({ page
   await page.goto("/");
   await nav(page, "Studies");
   await expect(page.getByRole("alert")).toContainText("Start local Docker Tempo and retry");
+});
+
+test("prepared explanation is self assessed offline and replayed through server validation", async ({ page }) => {
+  const today = new Date();
+  const localDate = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const card = { id: "explanation-card", queue_entry_id: 971, cycle: 0, latest_review_id: 0, revision: 1,
+    start_fen: fen, moves: [], content_type: "study_exercise", kind: "exercise",
+    repertoire_id: null, repertoire_name: "Synthetic study", repertoire_source: "Study",
+    study_id: "explanation-study", study_exercise_id: "explanation-exercise",
+    study_snapshot: { schema_version: 1, grader_version: 1, exercise_id: "explanation-exercise", revision: 1,
+      fen, specification: { type: "explanation", prompt: "Explain the knight placement", hint: "", explanation: "",
+        rubric: "The knight starts on g1." } } };
+  const queue = { local_date: localDate, count: 1, cards: [card] };
+  await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: queue }));
+  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: { ...queue,
+    prepared_at: new Date().toISOString(), projection: { state: "ready", generation: 1,
+      updated_at: null, refresh_pending: 0, last_error: null, blocked_count: 0 } } }));
+  await page.goto("/");
+  await expect(page.getByText("Explain the knight placement")).toBeVisible();
+  await expect.poll(async () => page.evaluate(async () => {
+    const request = indexedDB.open("tempo-offline-training", 1);
+    const database = await new Promise<IDBDatabase>((resolve) => { request.onsuccess = () => resolve(request.result); });
+    const read = database.transaction("training").objectStore("training").get("prepared-daily-queue");
+    return new Promise<number>((resolve) => { read.onsuccess = () => resolve(read.result?.cards?.length ?? 0); });
+  })).toBe(1);
+  await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+  await page.reload();
+  await page.getByLabel("Optional written answer").fill("The knight develops from g1.");
+  await page.getByRole("button", { name: "I have my answer" }).click();
+  await expect(page.getByText("The knight starts on g1.")).toBeVisible();
+  await page.getByRole("button", { name: "Correct (self-assessed)" }).click();
+  await expect(page.getByRole("button", { name: "Continue" })).toBeVisible();
+  const submissions: unknown[] = [];
+  let selfAssessments = 0;
+  await page.unroute("**/api/**");
+  await page.route("**/api/studies/explanation-study/exercises/explanation-exercise/attempts", (route) => {
+    submissions.push(route.request().postDataJSON());
+    return route.fulfill({ json: { attempt_id: "pending", assessment: { outcome: "needs_self_assessment", feedback: "Compare" }, pending_self_assessment: true } });
+  });
+  await page.route("**/api/studies/explanation-study/exercises/explanation-exercise/attempts/*/self-assess", (route) => {
+    selfAssessments += 1;
+    return route.fulfill({ json: { attempt_id: "saved", rating: "correct", assessment: { outcome: "needs_self_assessment", feedback: "Saved" },
+      review: { review_id: 973, requeue_entry_id: null } } });
+  });
+  await page.reload();
+  await expect.poll(() => selfAssessments).toBe(1);
+  expect(submissions).toHaveLength(1);
+  expect(submissions[0]).toMatchObject({ answer: { type: "explanation", text: "The knight develops from g1.", ready: true },
+    revision: 1, queue_entry_id: 971 });
 });
