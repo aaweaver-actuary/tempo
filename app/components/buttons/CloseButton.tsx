@@ -1,4 +1,4 @@
-import { IconButton } from "../ui";
+import { IconButton } from "./IconButton";
 import React from "react";
 
 interface CloseButtonProps {

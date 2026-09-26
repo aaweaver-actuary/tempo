@@ -1,4 +1,4 @@
-import { Button } from "../ui";
+import { Button } from "./BaseButton";
 interface SoundToggleButtonProps {
   soundOn: boolean;
   changeSound: (soundOn: boolean) => void;

@@ -1,4 +1,4 @@
-import { Button } from "../ui";
+import { Button } from "./BaseButton";
 interface AgainButtonProps {
   handleAgain: () => void;
   isAttemptFailed: boolean;
@@ -17,7 +17,12 @@ export default function AgainButton({
   return (
     <Button
       onClick={handleAgain}
-      disabled={isAttemptFailed || isFeedbackComplete || hasNoCardsLeft || isReviewBlocked}
+      disabled={
+        isAttemptFailed ||
+        isFeedbackComplete ||
+        hasNoCardsLeft ||
+        isReviewBlocked
+      }
     >
       ⌁ <span>Show move</span>
     </Button>

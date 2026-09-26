@@ -3,54 +3,14 @@ import {
   cloneElement,
   useId,
   type AnchorHTMLAttributes,
-  type ButtonHTMLAttributes,
   type DetailsHTMLAttributes,
-  type InputHTMLAttributes,
   type HTMLAttributes,
   type ReactElement,
   type ReactNode,
-  type SelectHTMLAttributes,
   type TextareaHTMLAttributes,
   type TableHTMLAttributes,
 } from "react";
-
-type ButtonVariant = "primary" | "secondary" | "quiet" | "danger";
-type ButtonSize = "default" | "compact";
-
-export type ButtonProps = ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: ButtonVariant;
-  size?: ButtonSize;
-  pending?: boolean;
-};
-
-export const Button = forwardRef<HTMLButtonElement, ButtonProps>(function Button(
-  { variant = "secondary", size = "default", pending = false, disabled, className, type = "button", ...props },
-  ref,
-) {
-  return (
-    <button
-      {...props}
-      ref={ref}
-      type={type}
-      className={["ui-button", className].filter(Boolean).join(" ")}
-      data-ui-custom={className ? "" : undefined}
-      data-variant={variant}
-      data-size={size}
-      aria-busy={pending || undefined}
-      disabled={disabled || pending}
-    />
-  );
-});
-
-export type IconButtonProps = Omit<ButtonProps, "aria-label"> & {
-  "aria-label": string;
-};
-
-export const IconButton = forwardRef<HTMLButtonElement, IconButtonProps>(function IconButton(
-  { className, ...props }, ref,
-) {
-  return <Button {...props} ref={ref} className={["ui-icon-button", className].filter(Boolean).join(" ")} />;
-});
+import { ButtonSize, ButtonVariant } from "./buttons/types";
 
 export function ActionLink({
   variant = "secondary", size = "default", className, ...props
@@ -64,18 +24,6 @@ export function ActionLink({
     />
   );
 }
-
-export const TextInput = forwardRef<HTMLInputElement, InputHTMLAttributes<HTMLInputElement>>(
-  function TextInput({ className, ...props }, ref) {
-    return <input {...props} ref={ref} className={["ui-input", className].filter(Boolean).join(" ")} />;
-  },
-);
-
-export const SelectInput = forwardRef<HTMLSelectElement, SelectHTMLAttributes<HTMLSelectElement>>(
-  function SelectInput({ className, ...props }, ref) {
-    return <select {...props} ref={ref} className={["ui-select", className].filter(Boolean).join(" ")} />;
-  },
-);
 
 export const TextArea = forwardRef<HTMLTextAreaElement, TextareaHTMLAttributes<HTMLTextAreaElement>>(
   function TextArea({ className, ...props }, ref) {
@@ -162,16 +110,5 @@ export function ActionMenu({
       <summary aria-label={summaryAriaLabel}>{label}</summary>
       <div className="ui-menu-content" role={menuRole}>{children}</div>
     </details>
-  );
-}
-
-export function Notice({
-  children, onRetry, error = false,
-}: { children: ReactNode; onRetry?: () => void; error?: boolean }) {
-  return (
-    <div className={`ui-notice${error ? " error" : ""}`} role={error ? "alert" : "status"}>
-      <span>{children}</span>
-      {onRetry && <Button onClick={onRetry}>Retry</Button>}
-    </div>
   );
 }
