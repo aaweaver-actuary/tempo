@@ -81,7 +81,7 @@ import {
   flushPendingReviews,
   pendingReviews,
 } from "../lib/review-outbox";
-import { markOfflineAttemptFailed, recordOfflineAttempt, requiresConnectedGrading } from "../lib/offline-training";
+import { describeOfflineQueue, markOfflineAttemptFailed, recordOfflineAttempt, requiresConnectedGrading } from "../lib/offline-training";
 import { enqueueTrainingFailure, flushTrainingFailures } from "../lib/training-failure-outbox";
 import { Settings } from "../utils/settings";
 import { TreeBrowser } from "./tree_browser";
@@ -199,6 +199,7 @@ export default function Home() {
     soundOn,
     databaseQueue,
     offlineQueue,
+    queueNotice,
     serviceError,
     reviewSaveError,
   } = useTrainingStore(useShallow(selectHomeViewState));
@@ -330,18 +331,30 @@ export default function Home() {
   }, [currentView, refreshDatabaseQueue]);
 
   useEffect(() => {
-    if (!offlineQueue || currentView !== "train") return;
-    const retryWhenVisible = () => {
-      if (document.visibilityState === "visible")
-        void refreshDatabaseQueue().catch(() => undefined);
+    if (!usesLocalApi() || currentView !== "train") return;
+    let visibleRefreshCount = 0;
+    const refreshWhenVisible = () => {
+      if (document.visibilityState !== "visible") return;
+      if (useTrainingStore.getState().serviceError.includes("no longer in today's queue")) return;
+      visibleRefreshCount = 0;
+      void fetchAndInitializeQueue(false, { preparePhoneQueue: true }).catch(() => undefined);
     };
-    window.addEventListener("online", retryWhenVisible);
-    document.addEventListener("visibilitychange", retryWhenVisible);
+    const refreshTimer = window.setInterval(() => {
+      if (document.visibilityState !== "visible") return;
+      if (useTrainingStore.getState().serviceError.includes("no longer in today's queue")) return;
+      visibleRefreshCount += 1;
+      void fetchAndInitializeQueue(false, {
+        preparePhoneQueue: visibleRefreshCount % 2 === 0,
+      }).catch(() => undefined);
+    }, 30_000);
+    window.addEventListener("online", refreshWhenVisible);
+    document.addEventListener("visibilitychange", refreshWhenVisible);
     return () => {
-      window.removeEventListener("online", retryWhenVisible);
-      document.removeEventListener("visibilitychange", retryWhenVisible);
+      window.clearInterval(refreshTimer);
+      window.removeEventListener("online", refreshWhenVisible);
+      document.removeEventListener("visibilitychange", refreshWhenVisible);
     };
-  }, [currentView, offlineQueue, refreshDatabaseQueue]);
+  }, [currentView]);
 
   useEffect(() => {
     const timer = window.setTimeout(
@@ -847,7 +860,7 @@ export default function Home() {
         useTrainingStore.getState().hydrateLocalQueue(nextCards, true, nextCards.length);
         setReviewed((count) => count + 1);
         setReviewPersistenceState("idle");
-        setQueueNotice(`Saved on phone · ${saved.attempts.filter((attempt) => !attempt.serverReviewId && !attempt.conflict).length} review(s) waiting to sync.`);
+        setQueueNotice(describeOfflineQueue(saved));
         setSafeBreakCounter((count) => count + 1);
       } catch (error) {
         setReviewPersistenceState("saveFailed");
@@ -1330,6 +1343,15 @@ export default function Home() {
       <BoardWorkspaceContainer enabled={boardWorkspace} view={currentView}>
         {currentView === "train" && (
           <>
+            {offlineQueue && (
+              <div className="ui-notice training-offline-notice" role="status">
+                <strong>Offline queue</strong>
+                <span>{queueNotice}</span>
+                <Button onClick={() => void refreshDatabaseQueue().catch(() => undefined)}>
+                  Retry sync
+                </Button>
+              </div>
+            )}
             {branchIndexLoadError && (
               <div className="ui-notice error" role="alert">
                 <span>
@@ -1370,6 +1392,7 @@ export default function Home() {
             <TrainingView
               dateLabel={new Date().toLocaleDateString()}
               serviceError={serviceError}
+              offlineQueue={offlineQueue}
               refreshDatabaseQueue={refreshDatabaseQueue}
               cardsLeft={cardsLeft}
               card={card}

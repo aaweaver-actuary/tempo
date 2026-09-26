@@ -34,6 +34,17 @@ export type PreparedTraining = {
   nextTemporaryId: number;
 };
 
+export function describeOfflineQueue(prepared: PreparedTraining): string {
+  const preparedTime = new Date(prepared.preparedAt);
+  const preparedLabel = Number.isNaN(preparedTime.getTime())
+    ? prepared.preparedAt : preparedTime.toLocaleString();
+  const unsynced = prepared.attempts.filter((attempt) => !attempt.serverReviewId && !attempt.conflict).length;
+  const connectedExercises = prepared.cards.filter(requiresConnectedGrading).length;
+  return `Offline queue prepared ${preparedLabel} · ${unsynced} review${unsynced === 1 ? "" : "s"} saved on phone` +
+    (connectedExercises ? ` · ${connectedExercises} exercise${connectedExercises === 1 ? " requires" : "s require"} the computer` : "") +
+    ". The live count may differ until you reconnect.";
+}
+
 const DATABASE_NAME = "tempo-offline-training";
 const RECORD_KEY = "prepared-daily-queue";
 let databasePromise: Promise<IDBDatabase> | undefined;
@@ -100,6 +111,9 @@ export async function savePreparedTraining(raw: unknown): Promise<PreparedTraini
   const preparedAt = (raw as { prepared_at: string }).prepared_at;
   return updatePreparedTraining((current) => {
     if (current?.attempts.some((attempt) => !attempt.serverReviewId && !attempt.conflict))
+      return current;
+    if (current && current.localDate === envelope.local_date &&
+        Date.parse(current.preparedAt) > Date.parse(preparedAt))
       return current;
     return {
       localDate: envelope.local_date!, preparedAt, cards,

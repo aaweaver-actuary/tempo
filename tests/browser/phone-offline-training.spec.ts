@@ -54,10 +54,10 @@ test("prepared phone queue survives API outage reload and syncs its review", asy
   await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
   await page.reload();
   await expect(page.getByText("First phone card")).toBeVisible();
-  await expect(page.getByText(/Prepared phone queue for/)).toBeVisible();
+  await expect(page.getByText(/Offline queue prepared/)).toBeVisible();
   await page.getByRole("button", { name: "Correct" }).click();
   await expect(page.getByText("Second phone card")).toBeVisible();
-  await expect(page.getByText(/Saved on phone/)).toBeVisible();
+  await expect(page.getByText(/saved on phone/i)).toBeVisible();
   await page.getByRole("button", { name: "Correct" }).click();
   await expect(page.getByText("First phone card")).toBeVisible();
   await page.getByRole("button", { name: "Correct" }).click();
@@ -81,6 +81,175 @@ test("prepared phone queue survives API outage reload and syncs its review", asy
   expect(replayedEntries).toEqual([501, 502, 602]);
   await page.reload();
   expect(replayedEntries).toEqual([501, 502, 602]);
+});
+
+test("phone 225-card offline queue reconciles to the desktop 241-card count and next card after reconnect", async ({ page, browser }) => {
+  const queueCards = (count: number, prefix: string) => Array.from({ length: count }, (_, index) => ({
+    ...preparedCards[0], id: `${prefix}-${index}`, queue_entry_id: 10_000 + index,
+    repertoire_name: index === 0 ? `${prefix} first card` : `${prefix} card ${index}`,
+  }));
+  const phoneCards = queueCards(225, "old");
+  const desktopCards = queueCards(241, "new");
+  let phoneConnected = true;
+  let authoritativeCards = phoneCards;
+  const queuePayload = (cards: typeof phoneCards) => ({
+    local_date: localDate, count: cards.length, cards,
+    projection: { state: "ready", generation: 1, updated_at: null,
+      refresh_pending: 0, last_error: null, blocked_count: 0 },
+  });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/queue/window?**", (route) => phoneConnected
+    ? route.fulfill({ json: { ...queuePayload(authoritativeCards), cards: authoritativeCards.slice(0, 20) } })
+    : route.abort("internetdisconnected"));
+  await page.route("**/api/queue/prepared", (route) => phoneConnected
+    ? route.fulfill({ json: { ...queuePayload(authoritativeCards), prepared_at: new Date().toISOString() } })
+    : route.abort("internetdisconnected"));
+  await page.goto("/");
+  await expect(page.getByText(`Phone queue prepared for ${localDate}.`)).toBeVisible();
+  phoneConnected = false;
+  await page.reload();
+  await expect(page.getByText("Offline queue", { exact: true })).toBeVisible();
+  await expect(page.getByText(/live count may differ until you reconnect/)).toBeVisible();
+  await expect(page.locator(".session-count strong")).toHaveText("225");
+  await expect(page.getByText("old first card")).toBeVisible();
+
+  authoritativeCards = desktopCards;
+  const desktopContext = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  try {
+    const desktop = await desktopContext.newPage();
+    await desktop.route("**/api/queue/window?**", (route) => route.fulfill({ json: {
+      ...queuePayload(authoritativeCards), cards: authoritativeCards.slice(0, 20),
+    } }));
+    await desktop.route("**/api/queue/prepared", (route) => route.fulfill({ json: {
+      ...queuePayload(authoritativeCards), prepared_at: new Date().toISOString(),
+    } }));
+    await desktop.goto("/");
+    await expect(desktop.locator(".session-count strong")).toHaveText("241");
+    await expect(desktop.getByText("new first card")).toBeVisible();
+
+    phoneConnected = true;
+    await page.evaluate(() => window.dispatchEvent(new Event("online")));
+    await expect(page.locator(".session-count strong")).toHaveText("241");
+    await expect(page.getByText("new first card")).toBeVisible();
+    await expect(page.getByText("Offline queue", { exact: true })).toHaveCount(0);
+  } finally {
+    await desktopContext.close();
+  }
+});
+
+test("pending phone review retains its offline queue until replay and a conflict remains recorded after reconciliation", async ({ page }) => {
+  const replacement = { ...preparedCards[0], id: "replacement", queue_entry_id: 601,
+    repertoire_name: "Replacement card" };
+  let canonicalCards = preparedCards;
+  const payload = () => ({ local_date: localDate, count: canonicalCards.length, cards: canonicalCards,
+    projection: { state: "ready", generation: 1, updated_at: null,
+      refresh_pending: 0, last_error: null, blocked_count: 0 } });
+  await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: payload() }));
+  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: {
+    ...payload(), prepared_at: new Date().toISOString(),
+  } }));
+  await page.goto("/");
+  await expect(page.getByText(`Phone queue prepared for ${localDate}.`)).toBeVisible();
+  await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+  await page.reload();
+  await expect(page.getByText("Offline queue", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Correct" }).click();
+  await expect(page.getByText(/1 review saved on phone/)).toBeVisible();
+
+  canonicalCards = [replacement, preparedCards[1], {
+    ...preparedCards[1], id: "added", queue_entry_id: 602, repertoire_name: "Added card",
+  }];
+  await page.route("**/api/cards/phone-first/review", (route) => route.fulfill({ status: 503,
+    json: { detail: "Review service unavailable" } }));
+  await page.unroute("**/api/**");
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(page.getByText("Offline queue", { exact: true })).toBeVisible();
+  await expect(page.getByText(/1 review saved on phone/)).toBeVisible();
+  await expect(page.locator(".session-count strong")).toHaveText("2");
+
+  await page.unroute("**/api/cards/phone-first/review");
+  await page.route("**/api/cards/phone-first/review", (route) => route.fulfill({ status: 409,
+    json: { detail: "This card was reviewed on another device" } }));
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(page.locator(".session-count strong")).toHaveText("3");
+  await expect(page.getByText("Second phone card")).toBeVisible();
+  await expect(page.getByText(/1 phone review conflict/)).toBeVisible();
+  const savedQueue = await page.evaluate(() => new Promise<{
+    conflict?: string; cardIds: string[];
+  }>((resolve, reject) => {
+    const opened = indexedDB.open("tempo-offline-training", 1);
+    opened.onerror = () => reject(opened.error);
+    opened.onsuccess = () => {
+      const request = opened.result.transaction("training").objectStore("training").get("prepared-daily-queue");
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve({
+        conflict: request.result?.attempts?.[0]?.conflict,
+        cardIds: request.result?.cards?.map((card: { id: string }) => card.id),
+      });
+    };
+  }));
+  expect(savedQueue.conflict).toContain("another device");
+  expect(savedQueue.cardIds).toContain("replacement");
+});
+
+test("an older prepared response cannot replace a newer saved phone queue", async ({ page }) => {
+  const newerCards = [preparedCards[0], preparedCards[1], {
+    ...preparedCards[1], id: "newer-third", queue_entry_id: 503, repertoire_name: "Newer third card",
+  }];
+  const newerPreparationTime = new Date(Date.now() + 60_000).toISOString();
+  const olderPreparationTime = new Date().toISOString();
+  let serveOlderSnapshot = false;
+  const currentCards = () => serveOlderSnapshot ? preparedCards : newerCards;
+  await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: {
+    local_date: localDate, count: currentCards().length, cards: currentCards(),
+  } }));
+  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: {
+    local_date: localDate, count: currentCards().length, cards: currentCards(),
+    prepared_at: serveOlderSnapshot ? olderPreparationTime : newerPreparationTime,
+    projection: { state: "ready", generation: 1, updated_at: null,
+      refresh_pending: 0, last_error: null, blocked_count: 0 },
+  } }));
+  await page.goto("/");
+  await expect(page.getByText(`Phone queue prepared for ${localDate}.`)).toBeVisible();
+  serveOlderSnapshot = true;
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(page.getByText(/A newer phone queue is already saved/)).toBeVisible();
+  const savedCardIds = await page.evaluate(() => new Promise<string[]>((resolve, reject) => {
+    const opened = indexedDB.open("tempo-offline-training", 1);
+    opened.onerror = () => reject(opened.error);
+    opened.onsuccess = () => {
+      const request = opened.result.transaction("training").objectStore("training").get("prepared-daily-queue");
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result.cards.map((card: { id: string }) => card.id));
+    };
+  }));
+  expect(savedCardIds).toContain("newer-third");
+});
+
+test("complete queue reconciliation keeps a removed in-progress board paused until Retry", async ({ page }) => {
+  const activeCard = { ...preparedCards[0], moves: ["e2e4", "e7e5", "g1f3"],
+    repertoire_name: "In-progress card" };
+  const nextCard = { ...preparedCards[1], repertoire_name: "Next live card" };
+  let canonicalCards = [activeCard, nextCard];
+  await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: {
+    local_date: localDate, count: canonicalCards.length, cards: canonicalCards,
+  } }));
+  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: {
+    local_date: localDate, count: canonicalCards.length, cards: canonicalCards,
+    prepared_at: new Date().toISOString(),
+    projection: { state: "ready", generation: 1, updated_at: null,
+      refresh_pending: 0, last_error: null, blocked_count: 0 },
+  } }));
+  await page.goto("/");
+  await expect(page.getByText("In-progress card")).toBeVisible();
+  await playBoardSquare(page, "e2");
+  await playBoardSquare(page, "e4");
+  canonicalCards = [nextCard];
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(page.getByText(/active card is no longer in today's queue/)).toBeVisible();
+  await expect(page.getByText("In-progress card")).toBeVisible();
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.getByText("Next live card")).toBeVisible();
 });
 
 test("prepared phone queue validates study metadata beyond the live window and keeps offline exercises", async ({ page }) => {
@@ -110,7 +279,7 @@ test("prepared phone queue validates study metadata beyond the live window and k
   await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
   await page.reload();
   await expect(page.getByText("First phone card")).toBeVisible();
-  await expect(page.getByText(/Prepared phone queue for/)).toBeVisible();
+  await expect(page.getByText(/Offline queue prepared/)).toBeVisible();
 });
 
 test("yesterday's prepared phone queue never becomes today's training", async ({ page }) => {

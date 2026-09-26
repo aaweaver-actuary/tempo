@@ -35,7 +35,8 @@ import StudyExerciseRunner from "./study_exercise_runner";
 interface TrainingViewProps {
   dateLabel: string;
   serviceError: string;
-  refreshDatabaseQueue: () => void;
+  offlineQueue?: boolean;
+  refreshDatabaseQueue: (advance?: boolean) => void;
   cardsLeft: number;
   card: PracticeCard;
   boardTheme: BoardTheme;
@@ -66,6 +67,7 @@ interface TrainingViewProps {
 function StandardTrainingView({
   dateLabel,
   serviceError,
+  offlineQueue = false,
   cardsLeft,
   refreshDatabaseQueue,
   card,
@@ -210,12 +212,12 @@ function StandardTrainingView({
         dateLabel={dateLabel}
         serviceError={serviceError}
         cardsLeft={cardsLeft}
-        queueNotice={queueNotice}
+        queueNotice={offlineQueue ? "" : queueNotice}
       />
       {serviceError && (
         <div role="alert">
           {serviceError}{" "}
-          <RetryButton onRetry={() => void refreshDatabaseQueue()} />
+          <RetryButton onRetry={() => void refreshDatabaseQueue(serviceError.includes("no longer in today's queue"))} />
         </div>
       )}
       {reviewPersistenceState === "saving" && (
@@ -372,7 +374,7 @@ function StandardTrainingView({
                   {badge}
                 </span>
               ))}
-              {queueNotice && <em>{queueNotice}</em>}
+              {!offlineQueue && queueNotice && <em>{queueNotice}</em>}
             </div>
             <OpeningTitle card={card} />
             <div

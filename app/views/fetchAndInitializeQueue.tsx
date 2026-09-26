@@ -5,7 +5,7 @@ import { runStudyTask } from "../lib/background-study";
 import type { PracticeCard } from "../domain/cards";
 import { reportDebugError } from "../lib/debug-reporting";
 import { flushPendingReviews, pendingReviews } from "../lib/review-outbox";
-import { readPreparedTraining, replayOfflineAttempts, requiresConnectedGrading, savePreparedTraining } from "../lib/offline-training";
+import { describeOfflineQueue, readPreparedTraining, replayOfflineAttempts, requiresConnectedGrading, savePreparedTraining } from "../lib/offline-training";
 import { waitForOfflineShell } from "../lib/offline-shell";
 import { flushTrainingFailures, pendingTrainingFailures } from "../lib/training-failure-outbox";
 
@@ -97,7 +97,10 @@ async function loadTodayQueueWithRetry(signal: AbortSignal): Promise<QueuePayloa
   throw new Error("The local queue could not be loaded.");
 }
 
-export async function fetchAndInitializeQueue(advance = false): Promise<void> {
+export async function fetchAndInitializeQueue(
+  advance = false,
+  options: { preparePhoneQueue?: boolean } = {},
+): Promise<void> {
   if (!usesLocalApi()) return;
   const generation = ++requestGeneration;
   activeQueueController?.abort();
@@ -146,7 +149,6 @@ export async function fetchAndInitializeQueue(advance = false): Promise<void> {
     try { localStorage.setItem(queueCacheKey, JSON.stringify(raw)); } catch {
       // A full browser storage quota must not turn a successful queue read into a failure.
     }
-    useTrainingStore.getState().setServiceError("");
     if (replayed?.attempts.some((attempt) => attempt.conflict))
       useTrainingStore.getState().setQueueNotice(
         `${replayed.attempts.filter((attempt) => attempt.conflict).length} phone review conflict(s) remain saved on this phone: ${replayed.attempts.filter((attempt) => attempt.conflict).map((attempt) => attempt.cardId).join(", ")}. The computer's saved results take priority.`,
@@ -154,16 +156,40 @@ export async function fetchAndInitializeQueue(advance = false): Promise<void> {
     else useTrainingStore.getState().setQueueNotice(failureSaveError ??
       (pendingTrainingFailures().length ? "Guided attempt save pending. Tempo will retry." : ""));
     const hasConflicts = Boolean(replayed?.attempts.some((attempt) => attempt.conflict));
-    if (typeof indexedDB !== "undefined") void fetch(`${API_URL}/api/queue/prepared`)
+    if (typeof indexedDB !== "undefined" && options.preparePhoneQueue !== false) void fetch(`${API_URL}/api/queue/prepared`, { signal: controller.signal })
       .then(async (response) => {
         if (response.status === 404)
           throw new Error("Tempo on the computer is an older version. Update it, then reopen Tempo on the phone.");
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return savePreparedTraining(await response.json());
+        const payload = await response.json() as QueuePayload & { prepared_at: string };
+        if (generation !== requestGeneration) return null;
+        const prepared = await savePreparedTraining(payload);
+        if (generation !== requestGeneration) return null;
+        if (prepared.preparedAt !== payload.prepared_at || prepared.localDate !== payload.local_date)
+          throw new Error(prepared.attempts.some((attempt) => !attempt.serverReviewId && !attempt.conflict)
+            ? "Saved phone reviews are still waiting to sync. The older offline queue was kept."
+            : "A newer phone queue is already saved. Retry when the live queue is available.");
+        const liveWindowMatchesPrepared = raw.local_date === prepared.localDate &&
+          raw.count === prepared.cards.length && Array.isArray(raw.cards) &&
+          raw.cards.every((windowCard, index) =>
+            typeof windowCard === "object" && windowCard !== null &&
+            (windowCard as { queue_entry_id?: unknown }).queue_entry_id === prepared.cards[index]?.queue_entry_id);
+        if (liveWindowMatchesPrepared &&
+            !useTrainingStore.getState().serviceError.includes("no longer in today's queue")) {
+          const completeCards = await runStudyTask<PracticeCard[]>({ kind: "queue", payload: {
+            cards: payload.cards, count: payload.count, local_date: payload.local_date,
+            projection: payload.projection,
+          } });
+          if (generation !== requestGeneration) return null;
+          useTrainingStore.getState().hydrateLocalQueue(retainPendingFailures(completeCards), false, prepared.cards.length);
+        }
+        return prepared;
       })
       .then(async (prepared) => {
+        if (!prepared) return;
         await waitForOfflineShell();
-        if (generation === requestGeneration && !hasConflicts && prepared.localDate === localDayKey())
+        if (generation === requestGeneration && !hasConflicts && prepared.localDate === localDayKey() &&
+            !useTrainingStore.getState().serviceError.includes("no longer in today's queue"))
           useTrainingStore.getState().setQueueNotice(
             `Phone queue prepared for ${prepared.localDate}.` +
             (prepared.cards.some(requiresConnectedGrading)
@@ -172,7 +198,7 @@ export async function fetchAndInitializeQueue(advance = false): Promise<void> {
           );
       })
       .catch((error) => {
-        if (generation === requestGeneration && !hasConflicts)
+        if (generation === requestGeneration && !hasConflicts && !controller.signal.aborted)
           useTrainingStore.getState().setQueueNotice(
             `Phone queue could not be prepared. ${error instanceof Error ? error.message : "Keep the computer connected and retry loading the queue."}`,
           );
@@ -188,12 +214,7 @@ export async function fetchAndInitializeQueue(advance = false): Promise<void> {
       if (generation !== requestGeneration) return;
       useTrainingStore.getState().hydrateLocalQueue(cards, advance, cards.length);
       useTrainingStore.getState().setOfflineQueue(true);
-      useTrainingStore.getState().setServiceError("");
-      const remainingConnectedExercises = prepared.cards.length - supportedCards.length;
-      const unsynced = prepared.attempts.filter((attempt) => !attempt.serverReviewId && !attempt.conflict).length;
-      useTrainingStore.getState().setQueueNotice(
-        `Prepared phone queue for ${prepared.localDate} · ${unsynced} review${unsynced === 1 ? "" : "s"} saved on phone${remainingConnectedExercises ? ` · ${remainingConnectedExercises} exercise${remainingConnectedExercises === 1 ? " requires" : "s require"} the computer` : ""}.`,
-      );
+      useTrainingStore.getState().setQueueNotice(describeOfflineQueue(prepared));
       return;
     }
     reportDebugError(error, {

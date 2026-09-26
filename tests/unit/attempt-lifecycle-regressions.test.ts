@@ -56,6 +56,19 @@ describe("review attempt reliability", () => {
     store.hydrateLocalQueue([replacement]);
     expect(useTrainingStore.getState().practiceCards[0].queueEntryId).toBe(44);
   });
+  it("keeps an in-progress phone attempt while a 225-card queue refreshes to 241 cards", () => {
+    const nextCard = { ...card, id: asCardId("new-first"), queueEntryId: asQueueEntryId(44) };
+    const store = useTrainingStore.getState();
+    store.hydrateLocalQueue([card], true, 225);
+    store.setStep(1);
+    const attemptBeforeRefresh = useTrainingStore.getState().attempt;
+    store.hydrateLocalQueue([nextCard, card], false, 241);
+    const refreshed = useTrainingStore.getState();
+    expect(refreshed.cardsLeft).toBe(241);
+    expect(refreshed.getCard().queueEntryId).toBe(42);
+    expect(refreshed.step).toBe(1);
+    expect(refreshed.attempt).toEqual(attemptBeforeRefresh);
+  });
   it("late queue responses cannot replace a newer playable queue entry", async () => {
     const responses: ((response: Response) => void)[] = [];
     vi.stubGlobal(
