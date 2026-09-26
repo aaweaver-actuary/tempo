@@ -526,7 +526,7 @@ def _finish_attempt(database, attempt, rating: str) -> dict:
                                 (attempt["card_id"], attempt["exercise_id"])).fetchone()
         queue = database.execute("SELECT * FROM daily_queue WHERE id=? AND card_id=? AND cycle=? AND status='queued'",
                                  (attempt["queue_entry_id"], attempt["card_id"], attempt["cycle"])).fetchone()
-        if not card or not queue:
+        if not card or not queue or card["revision"] != attempt["revision"]:
             raise HTTPException(409, "Queue entry or card changed before completion")
         guided = bool(queue["attempt_failed"] or attempt["hint_seen"] or attempt["solution_seen_before_answer"])
         if guided:
@@ -553,16 +553,16 @@ def _finish_attempt(database, attempt, rating: str) -> dict:
         database.execute("UPDATE daily_queue SET review_result_json=? WHERE id=?",
                          (_json(result), attempt["queue_entry_id"]))
         exercise = _require(database, "study_exercises", attempt["exercise_id"])
-        if exercise["sibling_group"]:
-            siblings = database.execute(
-                "SELECT id FROM study_exercises WHERE study_id=? AND sibling_group=? AND id!=?",
-                (exercise["study_id"], exercise["sibling_group"], exercise["id"]),
-            )
-            for sibling in siblings:
-                database.execute("INSERT OR IGNORE INTO study_sibling_burials VALUES(?,?,?)",
-                                 (sibling[0], date.today().isoformat(), "answer exposure"))
-                database.execute("UPDATE daily_queue SET status='blocked' WHERE queue_date=? AND status='queued' AND card_id IN (SELECT id FROM cards WHERE study_exercise_id=?)",
-                                 (date.today().isoformat(), sibling[0]))
+        siblings = database.execute(
+            """SELECT id FROM study_exercises WHERE study_id=? AND id!=?
+               AND (position_id=? OR (sibling_group IS NOT NULL AND sibling_group=?))""",
+            (exercise["study_id"], exercise["id"], exercise["position_id"], exercise["sibling_group"]),
+        )
+        for sibling in siblings:
+            database.execute("INSERT OR IGNORE INTO study_sibling_burials VALUES(?,?,?)",
+                             (sibling[0], date.today().isoformat(), "answer exposure"))
+            database.execute("UPDATE daily_queue SET status='blocked' WHERE queue_date=? AND status='queued' AND card_id IN (SELECT id FROM cards WHERE study_exercise_id=?)",
+                             (date.today().isoformat(), sibling[0]))
     return result
 
 
@@ -592,7 +592,7 @@ def submit_attempt(study_id: str, exercise_id: str, request: StudyAttemptRequest
                                     (request.card_id, exercise_id)).fetchone()
             queue = database.execute("SELECT * FROM daily_queue WHERE id=? AND card_id=? AND cycle=? AND status='queued'",
                                      (request.queue_entry_id, request.card_id, request.queue_cycle)).fetchone()
-            if not card or not queue:
+            if not card or not queue or card["revision"] != request.revision:
                 raise HTTPException(409, "The selected exercise is no longer queued")
             if request.expected_review_id is not None:
                 latest = database.execute("SELECT COALESCE(MAX(id),0) FROM reviews WHERE card_id=?", (card["id"],)).fetchone()[0]

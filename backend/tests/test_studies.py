@@ -115,6 +115,28 @@ def test_study_correct_answer_after_hint_is_saved_as_guided_again(tmp_path, monk
             assert tuple(review) == ("again", 1)
 
 
+def test_study_attempt_rejects_card_revision_mismatch_without_scheduling(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        study_id, _, position_id = make_study(client)
+        exercise_id = client.post(f"/api/studies/{study_id}/exercises", json={"position_id": position_id,
+            "specification": {"type": "square_set", "prompt": "Mark the knight", "criterion": "White knight",
+                              "required": ["g1"]}}).json()["id"]
+        client.post(f"/api/studies/{study_id}/exercises/{exercise_id}/enroll")
+        card = wait_for_study_card(client, exercise_id)
+        with database.connection() as connection:
+            connection.execute("UPDATE cards SET revision=2 WHERE id=?", (card["id"],))
+        attempt = client.post(f"/api/studies/{study_id}/exercises/{exercise_id}/attempts", json={
+            "attempt_id": str(uuid.uuid4()), "revision": 1,
+            "answer": {"type": "square_set", "squares": ["g1"]}, "context": "review",
+            "card_id": card["id"], "queue_entry_id": card["queue_entry_id"], "queue_cycle": card["cycle"],
+        })
+        assert attempt.status_code == 409
+        with database.read_connection() as connection:
+            assert connection.execute("SELECT COUNT(*) FROM study_attempts").fetchone()[0] == 0
+            assert connection.execute("SELECT COUNT(*) FROM reviews WHERE card_id=?", (card["id"],)).fetchone()[0] == 0
+
+
 def test_study_assessment_revision_reset_preserves_old_review(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
@@ -200,7 +222,7 @@ def test_study_answer_revealing_sibling_is_buried_until_explicit_practice(tmp_pa
         exercise_ids = []
         for index in range(2):
             response = client.post(f"/api/studies/{study_id}/exercises", json={
-                "position_id": position_id, "sibling_group": "same-answer",
+                "position_id": position_id,
                 "specification": {"type": "square_set", "prompt": f"Mark the knight square {index}",
                                   "criterion": "White knight", "required": ["g1"]},
             })

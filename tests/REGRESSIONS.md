@@ -370,3 +370,22 @@ Append every new reported issue and its test names here. All listed tests belong
 - First publication never presents placeholder zero counts as real statistics: `repertoire statistics hides empty counts until the first graph is published`.
 - Failed game recomparisons show a recovery path rather than a silent stale figure: `repertoire statistics directs a failed comparison task to service status`.
 - Repertoire statistics retain readable metric and board layouts at phone and desktop widths: pinned `Repertoire statistics 390` and `Repertoire statistics 1280` visual baselines.
+
+## Authored Studies and generalized study exercises
+
+- A FEN-only PGN root is discarded or imports directly into training: `backend/tests/test_studies.py::test_study_fen_only_import_preserves_root_and_does_not_enroll`.
+- A square exercise from a zero-move root cannot use the shared queue exactly once: `backend/tests/test_studies.py::test_study_square_exercise_from_fen_only_position_reviews_once`; `tests/browser/studies.spec.ts` (`FEN-only study square exercise is authored enrolled and reviewed through the real workspace`).
+- A correct response after revealing a hint receives unguided scheduling: `backend/tests/test_studies.py::test_study_correct_answer_after_hint_is_saved_as_guided_again`.
+- A queued card whose pinned revision diverged from its exercise can still create an attempt or review: `backend/tests/test_studies.py::test_study_attempt_rejects_card_revision_mismatch_without_scheduling`.
+- Editing an assessment silently changes old meaning or erases scheduling evidence: `backend/tests/test_studies.py::test_study_assessment_revision_reset_preserves_old_review`.
+- Native content transfer loses stable IDs or accepts changed content under an existing identity: `backend/tests/test_studies.py::test_study_native_bundle_preserves_identity_and_rejects_changed_content`.
+- Card ownership migration loses legacy reviews, queue rows, or foreign keys: `backend/tests/test_studies.py::test_study_migration_preserves_legacy_cards_reviews_and_foreign_keys`.
+- Python and browser exercise graders disagree on authored move, square, route, choice, or explanation cases: `backend/tests/test_studies.py::test_study_python_grader_matches_original_golden_cases`; `tests/unit/study-exercise-grading.test.ts`.
+- A prepared study answer cannot be completed offline or syncs only a grade: `tests/browser/studies.spec.ts` (`prepared study response is graded offline and replayed with its actual squares`).
+- A stale study revision discards the phone's actual response, or an unknown grader version is answered offline: `tests/browser/studies.spec.ts` (`stale study revisions retain the phone answer as a replay conflict`; `unknown prepared study grader versions are unavailable offline`).
+- Feedback transport failure after a committed study answer blocks recovery or duplicates an attempt: `tests/browser/studies.spec.ts` (`saved study attempt can retry feedback without a duplicate review`).
+- Reviewing one study exercise exposes a sibling answer on the same day, or an explicit practice override stays hidden: `backend/tests/test_studies.py::test_study_answer_revealing_sibling_is_buried_until_explicit_practice`.
+- PGN branches or annotations vanish and malformed source records look enrollable: `backend/tests/test_studies.py::test_study_pgn_preview_keeps_variations_annotations_and_invalid_record_diagnostics`.
+- A failed card migration leaves partial schema or no restorable pre-migration backup: `backend/tests/test_studies.py::test_study_migration_failure_rolls_back_and_backup_restores`.
+- Study introductions consume the opening allowance or exceed their own allowance: `backend/tests/test_studies.py::test_study_new_exercise_allowance_is_independent_and_due_reviews_remain`.
+- Exercise types cannot be authored from the actual workspace: `tests/browser/studies.spec.ts` (`all five study exercise types can be authored from the workspace`).
