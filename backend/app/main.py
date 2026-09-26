@@ -342,7 +342,9 @@ async def prioritize_foreground_requests(request: Request, call_next):
         with activity_gate.foreground():
             return await call_next(request)
     finally:
-        if request.url.path.startswith("/api/queue/") or request.url.path.endswith("/review"):
+        if (request.url.path.startswith("/api/queue/")
+                or request.url.path.endswith("/review")
+                or request.url.path == "/api/repertoire/lines"):
             logging.getLogger("tempo.foreground_latency").info(
                 "request path=%s class=%s duration_ms=%.1f",
                 request.url.path,
@@ -1547,7 +1549,7 @@ def list_repertoires():
 
 @app.get("/api/repertoire/lines")
 def repertoire_lines():
-    with connection() as db:
+    with read_connection() as db:
         rows = db.execute("""SELECT l.id,l.repertoire_id,l.name,l.trained_color,l.start_fen,l.moves_json,
                                   r.name repertoire_name,r.is_main
                            FROM repertoire_lines l JOIN repertoires r ON r.id=l.repertoire_id

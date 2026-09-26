@@ -249,19 +249,3 @@ export async function preloadView(view: View) {
     ),
   );
 }
-
-export function preloadWorkspaces() {
-  return Promise.allSettled(
-    (
-      [
-        "tactics",
-        "builder",
-        "games",
-        "repertoire",
-        "endgames",
-        "insights",
-        "settings",
-      ] as View[]
-    ).map(preloadView),
-  );
-}

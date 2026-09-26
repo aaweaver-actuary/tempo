@@ -4,6 +4,38 @@ import { prepareVisualUI } from "./visual-fixtures";
 const startFen =
   "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
+test("training startup does not preload unrelated workspace requests", async ({ page }) => {
+  const requestedPaths: string[] = [];
+  page.on("request", (request) => {
+    const path = new URL(request.url()).pathname;
+    if (path.startsWith("/api/")) requestedPaths.push(path);
+  });
+  await prepareVisualUI(page);
+  await expect(page.getByText("Spanish opening", { exact: true }).first()).toBeVisible();
+  await page.waitForTimeout(400);
+  expect(requestedPaths).toContain("/api/repertoire/lines");
+  for (const unrelatedPath of ["/api/games/summary", "/api/progress", "/api/endgames/templates"])
+    expect(requestedPaths).not.toContain(unrelatedPath);
+});
+
+test("unavailable repertoire lines do not falsely grade another legal move", async ({ page }) => {
+  await prepareVisualUI(page);
+  await page.route("**/api/repertoire/lines", (route) => route.fulfill({ status: 503, json: { detail: "Temporarily unavailable" } }));
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await expect(page.getByRole("button", { name: "Retry loading lines" })).toBeVisible();
+  await expect(page.getByText("Spanish opening", { exact: true }).first()).toBeVisible();
+  await expect(page.getByRole("button", { name: "Bury", exact: true })).toBeVisible();
+  const board = (await page.locator(".cg-wrap").boundingBox())!;
+  for (const rank of [6, 4])
+    await page.mouse.click(board.x + (3.5 * board.width) / 8, board.y + ((rank + 0.5) * board.height) / 8);
+  await expect(page.getByText(/Cannot verify another repertoire move until lines load/)).toBeVisible();
+  await expect(page.getByText(/Again recorded/)).toHaveCount(0);
+  await page.unroute("**/api/repertoire/lines");
+  await page.getByRole("button", { name: "Retry loading lines" }).click();
+  await expect(page.getByRole("button", { name: "Retry loading lines" })).toHaveCount(0);
+});
+
 test("check coverage loads adaptive settings without a validation alert", async ({ page }) => {
   await prepareVisualUI(page);
   await page.route("**/api/repertoires/visual-repertoire/coverage", (route) =>

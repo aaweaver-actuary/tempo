@@ -1,3 +1,4 @@
+import { Button } from "../components/ui";
 import { teachingResponseSchema } from "../domain/schemas";
 import {
   readJsonResponse,
@@ -13,8 +14,8 @@ import { useState, useCallback, useEffect, useRef } from "react";
 import { BoardTheme, PieceSet } from "../components/chessboard";
 import { API_URL } from "../const";
 import {
-  preloadWorkspaces,
   invalidateWorkspaceData,
+  preloadView,
   readWorkspaceData,
 } from "../lib/workspace-data";
 import { runStudyTask } from "../lib/background-study";
@@ -126,7 +127,9 @@ export default function Home() {
     }
     requestAnimationFrame(() => requestAnimationFrame(finished));
   }, []);
-  const branchPositions = useRef<IndexedPosition[]>([]);
+  const branchPositions = useRef<IndexedPosition[] | null>(null);
+  const [branchIndexLoadError, setBranchIndexLoadError] = useState("");
+  const [branchIndexRetry, setBranchIndexRetry] = useState(0);
   const {
     practiceCards,
     importedRepertoires,
@@ -252,30 +255,44 @@ export default function Home() {
   }, [checkPendingIntegrity]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void preloadWorkspaces(), 100);
+    window.scrollTo({ top: 0, behavior: "auto" });
+    if (usesLocalApi() && currentView === "train") {
+      queueMicrotask(() => void refreshDatabaseQueue().catch(() => undefined));
+    }
+  }, [currentView, refreshDatabaseQueue]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void preloadView("tactics").catch(() => undefined), 100);
     return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
-    window.scrollTo({ top: 0, behavior: "auto" });
     if (usesLocalApi() && currentView === "train") {
-      queueMicrotask(() => void refreshDatabaseQueue().catch(() => undefined));
+      let active = true;
+      branchPositions.current = null;
       void readWorkspaceData(`${API_URL}/api/repertoire/lines`)
         .then(async (body) => {
           const lines = await runStudyTask<AnalysisLine[]>({
             kind: "transportLines",
             payload: body,
           });
-          branchPositions.current = await runStudyTask<IndexedPosition[]>({
+          const indexedPositions = await runStudyTask<IndexedPosition[]>({
             kind: "index",
             lines,
           });
+          if (active) {
+            branchPositions.current = indexedPositions;
+            setBranchIndexLoadError("");
+          }
         })
-        .catch(() => {
-          branchPositions.current = [];
+        .catch((failure) => {
+          if (!active) return;
+          branchPositions.current = null;
+          setBranchIndexLoadError(failure instanceof Error ? failure.message : "Could not load repertoire lines.");
         });
+      return () => { active = false; };
     }
-  }, [currentView, refreshDatabaseQueue]);
+  }, [currentView, branchIndexRetry]);
   useEffect(() => {
     if (!usesLocalApi() || card.kind === "defense" || !attemptFailed || !card.queueEntryId) return;
     void fetch(`${API_URL}/api/queue/entries/${card.queueEntryId}/fail`, {
@@ -576,8 +593,13 @@ export default function Home() {
       return;
     }
     if (move.san !== card.moves[step]) {
+      if (usesLocalApi() && branchPositions.current === null) {
+        setBoardAttempt((value) => value + 1);
+        setQueueNotice("Cannot verify another repertoire move until lines load. Retry loading lines, then try again.");
+        return;
+      }
       const alternateBranch = usesLocalApi()
-        ? branchPositions.current.some(
+        ? branchPositions.current!.some(
             (other) =>
               other.repertoireId === card.repertoireId &&
               canonicalFenKey(other.fen) ===
@@ -1065,19 +1087,20 @@ export default function Home() {
       <WorkspaceRefreshStatus />
       {currentView === "builder" && discoveryReturn && <div className="discovery-builder-return" role="status">
         <span>Investigating a discovery in Builder.</span>
-        <button onClick={() => {
+        <Button onClick={() => {
           changeWorkspace(discoveryReturn.view);
           setDiscoveryOpenRequest((previous) => ({ id: discoveryReturn.id, token: (previous?.token ?? 0) + 1 }));
           setDiscoveryReturn(undefined);
-        }}>Return to discovery</button>
-        <button onClick={() => { changeWorkspace(discoveryReturn.view); setDiscoveryReturn(undefined); }}>Back to work</button>
+        }}>Return to discovery</Button>
+        <Button onClick={() => { changeWorkspace(discoveryReturn.view); setDiscoveryReturn(undefined); }}>Back to work</Button>
       </div>}
       <DebugErrorPanel />
 
       <BoardWorkspaceContainer enabled={boardWorkspace} view={currentView}>
       {currentView === "train" && (
         <>
-            {pausedIntegrity && <div className="integrity-train-notice" role="status"><strong>{pausedIntegrity.blockedDue} opening card{pausedIntegrity.blockedDue === 1 ? "" : "s"} paused by repertoire repair.</strong><span>Unaffected openings and tactics remain available · {pausedIntegrity.issueCount} issue{pausedIntegrity.issueCount === 1 ? "" : "s"} remaining.</span><button onClick={() => { deferredRepairIds.current.delete(pausedIntegrity.id); setRepairRepertoireId(pausedIntegrity.id); }}>Resume repair</button></div>}
+            {branchIndexLoadError && <div className="ui-notice error" role="alert"><span>Repertoire lines unavailable: {branchIndexLoadError}</span><Button onClick={() => { setBranchIndexLoadError(""); setBranchIndexRetry((attempt) => attempt + 1); }}>Retry loading lines</Button></div>}
+            {pausedIntegrity && <div className="integrity-train-notice" role="status"><strong>{pausedIntegrity.blockedDue} opening card{pausedIntegrity.blockedDue === 1 ? "" : "s"} paused by repertoire repair.</strong><span>Unaffected openings and tactics remain available · {pausedIntegrity.issueCount} issue{pausedIntegrity.issueCount === 1 ? "" : "s"} remaining.</span><Button onClick={() => { deferredRepairIds.current.delete(pausedIntegrity.id); setRepairRepertoireId(pausedIntegrity.id); }}>Resume repair</Button></div>}
             <TrainingView
               dateLabel={new Date().toLocaleDateString()}
               serviceError={serviceError}

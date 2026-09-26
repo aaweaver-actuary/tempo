@@ -230,6 +230,9 @@ Append every new reported issue and its test names here. All listed tests belong
 - Existing `test_new_cards_per_day_applies_separately_to_each_repertoire`, `test_new_cards_per_day_respects_lower_limit`, and `test_new_cards_per_day_handles_uneven_repertoire_sizes` protect the restored per-repertoire admission limit.
 - `tablet section menu stays inside the header and never overlaps the board` — removes inherited two-row navigation positioning at tablet breakpoints, discovered during baseline review.
 - `workspace timeout is actionable and a retry can recover` — bounded service reads abort after 15 seconds, evict the failed request, and allow a fresh retry.
+- `test_repertoire_lines_read_stays_available_during_write_compatibility_contention` — a repertoire-line read stays available during a competing write-compatible section. This confirms the GET query-only path; the reported timeout still needs live-service timing evidence.
+- `training startup does not preload unrelated workspace requests` — the active training screen fetches its required data without launching other workspace reads at startup, reducing foreground contention during repertoire-line loading.
+- `unavailable repertoire lines do not falsely grade another legal move` — failed line loading is actionable and blocks grading an unverified alternate move until a retry succeeds.
 - `application navigation retains one Chessground instance` additionally traverses Settings, Progress, and Repertoire; the hidden board remains mounted while its workspace relinquishes ownership.
 - `shared toolbar flip persists while stepping through a game` — toolbar flip and keyboard flip share the rendered board's orientation behavior, so move navigation cannot overwrite it.
 - `owner changes clear an unfinished square selection at the same position` — same-FEN ownership transitions still cancel transient board selection.
