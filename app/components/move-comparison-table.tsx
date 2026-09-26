@@ -1,3 +1,4 @@
+import { Button, DataTable } from "./ui";
 import { useState } from "react";
 import type { CandidateMove } from "../domain";
 
@@ -132,7 +133,7 @@ export function MoveComparisonTable({
     const expanded = detail?.source === source && detail.uci === candidate.uci;
     return (
       <div className="database-cell">
-        <button
+        <Button
           aria-label={`${source} details for ${candidate.san ?? candidate.uci}`}
           aria-expanded={expanded}
           onClick={() =>
@@ -147,7 +148,7 @@ export function MoveComparisonTable({
         >
           <span>{games.toLocaleString()}</span>
           <small>{percent(score)}</small>
-        </button>
+        </Button>
         {expanded && (
           <div
             className="database-detail"
@@ -164,12 +165,12 @@ export function MoveComparisonTable({
             <span>
               {Math.round((games / Math.max(1, population)) * 100)}% frequency
             </span>
-            <button
+            <Button
               aria-label="Close results"
               onClick={() => setDetail(undefined)}
             >
               ×
-            </button>
+            </Button>
           </div>
         )}
       </div>
@@ -177,7 +178,7 @@ export function MoveComparisonTable({
   };
   return (
     <div className="move-comparison-scroll">
-      <table aria-label="Move source comparison">
+      <DataTable aria-label="Move source comparison">
         <thead>
           <tr>
             {visibleColumns.map((column) => (
@@ -186,7 +187,7 @@ export function MoveComparisonTable({
                 scope="col"
                 aria-sort={sort?.column === column ? sort.direction : "none"}
               >
-                <button
+                <Button
                   onClick={() =>
                     setSort((previous) => ({
                       column,
@@ -206,7 +207,7 @@ export function MoveComparisonTable({
                         : " ↓"
                       : ""}
                   </span>
-                </button>
+                </Button>
               </th>
             ))}
           </tr>
@@ -223,13 +224,13 @@ export function MoveComparisonTable({
                 onMouseLeave={() => onHover(null)}
               >
                 <th scope="row">
-                  <button
+                  <Button
                     onClick={() => onPlay(move.uci)}
                     onFocus={() => onHover(move.uci)}
                     onBlur={() => onHover(null)}
                   >
                     {move.san ?? move.uci}
-                  </button>
+                  </Button>
                 </th>
                 <td className="comparison-covered">
                   {covered.has(move.uci) ? "Covered" : "Gap"}
@@ -255,7 +256,7 @@ export function MoveComparisonTable({
             );
           })}
         </tbody>
-      </table>
+      </DataTable>
       {!moves.length && (
         <p className="panel-message">
           No moves from the enabled sources at this position.

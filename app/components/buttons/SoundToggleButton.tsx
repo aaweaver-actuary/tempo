@@ -1,3 +1,4 @@
+import { Button } from "../ui";
 interface SoundToggleButtonProps {
   soundOn: boolean;
   changeSound: (soundOn: boolean) => void;
@@ -8,7 +9,7 @@ export default function SoundToggleButton({
   changeSound,
 }: SoundToggleButtonProps) {
   return (
-    <button
+    <Button
       className="sound-toggle"
       aria-pressed={soundOn}
       aria-label={`${soundOn ? "Turn off" : "Turn on"} board sounds`}
@@ -16,6 +17,6 @@ export default function SoundToggleButton({
     >
       <span aria-hidden="true">{soundOn ? "🔊" : "🔇"}</span>
       <span>Sound</span>
-    </button>
+    </Button>
   );
 }

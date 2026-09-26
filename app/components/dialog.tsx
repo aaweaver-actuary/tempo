@@ -17,7 +17,7 @@ export function Dialog({
     <div className="modal-backdrop" onMouseDown={onClose}>
       <div
         ref={dialogRef}
-        className={className}
+        className={["ui-dialog", className].filter(Boolean).join(" ")}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}

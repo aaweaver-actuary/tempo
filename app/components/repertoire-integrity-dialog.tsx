@@ -1,3 +1,4 @@
+import { Button } from "./ui";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import { API_URL } from "../const";
@@ -158,7 +159,7 @@ export function RepertoireIntegrityDialog({
 
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
-      <section className="integrity-dialog" ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="integrity-title" onMouseDown={(event) => event.stopPropagation()}>
+      <section className="ui-dialog integrity-dialog" ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="integrity-title" onMouseDown={(event) => event.stopPropagation()}>
         <CloseButton onClose={onClose} ariaLabel="Defer repertoire repair" />
         <p className="eyebrow">Repertoire repair</p>
         <h2 id="integrity-title">Choose one response per position</h2>
@@ -186,7 +187,7 @@ export function RepertoireIntegrityDialog({
                   <p className="source-status">Personal games: {personal.length ? personal.map((move) => `${move.move_uci} · ${move.games} games · ${move.score_percentage}%`).join(" · ") : "unavailable"} · Stockfish: unavailable · Maia: unavailable</p>
                   <p>Selected response: <strong>{selected ?? "Choose a legal move"}</strong></p>
                   {taskState && <p className="source-status" role="status">Repair task: {taskState}.</p>}
-                  <button className="primary-button" disabled={!selected || working} onClick={() => void resolve()}>{working ? "Saving…" : "Keep this response"}</button>
+                  <Button variant="primary" className="primary-button" disabled={!selected || working} onClick={() => void resolve()}>{working ? "Saving…" : "Keep this response"}</Button>
                 </div>
               </div>
             ) : (

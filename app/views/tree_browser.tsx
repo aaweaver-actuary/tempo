@@ -1,4 +1,5 @@
 "use client";
+import { Button } from "../components/ui";
 import { useRef as useDialogRef } from "react";
 import { useDialogFocus } from "../hooks/use-dialog-focus";
 import { useState } from "react";
@@ -28,7 +29,7 @@ export function TreeBrowser({
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section
-        className="tree-browser"
+        className="ui-dialog tree-browser"
         ref={dialogRef}
         tabIndex={-1}
         role="dialog"
@@ -59,14 +60,14 @@ export function TreeBrowser({
           </div>
           <div className="tree-panel">
             <div className="tree-path">
-              <button
+              <Button
                 className={ply === 0 ? "current" : ""}
                 onClick={() => setPly(0)}
               >
                 Start
-              </button>
+              </Button>
               {line.map((move, index) => (
-                <button
+                <Button
                   className={ply === index + 1 ? "current" : ""}
                   key={`${move}-${index}`}
                   onClick={() => setPly(index + 1)}
@@ -75,23 +76,23 @@ export function TreeBrowser({
                     {index % 2 === 0 ? `${Math.floor(index / 2) + 1}.` : "…"}
                   </span>
                   {move}
-                </button>
+                </Button>
               ))}
             </div>
             <div className="branch-list">
               <span>Branches from the first move</span>
-              <button className="selected">
+              <Button className="selected">
                 <b>1… c5</b>
                 <small>Open Sicilian · 168 cards</small>
-              </button>
-              <button>
+              </Button>
+              <Button>
                 <b>1… e6</b>
                 <small>French Defense · 74 cards</small>
-              </button>
-              <button>
+              </Button>
+              <Button>
                 <b>1… c6</b>
                 <small>Caro-Kann · 51 cards</small>
-              </button>
+              </Button>
             </div>
             <AnalyzeThisButton line={line} ply={ply} />
           </div>

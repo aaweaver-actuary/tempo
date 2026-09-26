@@ -1,3 +1,4 @@
+import { Button } from "../ui";
 import { View } from "@/app/types";
 
 interface BrandButtonProps {
@@ -6,13 +7,13 @@ interface BrandButtonProps {
 
 export default function BrandButton({ setView }: BrandButtonProps) {
   return (
-    <button
+    <Button
       className="brand"
       onClick={() => setView("train")}
       aria-label="Tempo home"
     >
       <span className="brand-mark">T</span>
       <span>Tempo</span>
-    </button>
+    </Button>
   );
 }

@@ -1,4 +1,5 @@
 "use client";
+import { Button, TextInput } from "./components/ui";
 import { useRef as useDialogRef } from "react";
 import { useDialogFocus } from "./hooks/use-dialog-focus";
 import { useState, useEffect, useCallback } from "react";
@@ -173,7 +174,7 @@ export function ImportDialogBox({
   return (
     <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
       <section
-        className="import-dialog"
+        className="ui-dialog import-dialog"
         ref={dialogRef}
         tabIndex={-1}
         role="dialog"
@@ -199,15 +200,15 @@ export function ImportDialogBox({
                 ? `${summary.admitted} cards are in today’s queue; remaining new cards will follow your daily limit.`
                 : "This browser’s repertoire and practice queue are updated."}
             </p>
-            <button
-              className="primary-button"
+            <Button
+              variant="primary" className="primary-button"
               onClick={() => {
                 onClose();
                 onViewRepertoire();
               }}
             >
               View imported repertoire
-            </button>
+            </Button>
           </div>
         ) : (
           <>
@@ -219,7 +220,7 @@ export function ImportDialogBox({
               full prefixes or descendant decisions.
             </p>
             <label className={`drop-zone${file ? " has-file" : ""}`}>
-              <input
+              <TextInput
                 type="file"
                 accept=".pgn"
                 onChange={(event) => {
@@ -237,18 +238,18 @@ export function ImportDialogBox({
                 <small>Only your moves count toward line depth</small>
               </span>
               <span className="color-toggle">
-                <button
+                <Button
                   className={trainedColor === "white" ? "active" : ""}
                   onClick={() => setTrainedColor("white")}
                 >
                   White
-                </button>
-                <button
+                </Button>
+                <Button
                   className={trainedColor === "black" ? "active" : ""}
                   onClick={() => setTrainedColor("black")}
                 >
                   Black
-                </button>
+                </Button>
               </span>
             </div>
             <label className="depth-setting">
@@ -257,19 +258,19 @@ export function ImportDialogBox({
                 <small>Later moves become locked one-move descendants</small>
               </span>
               <span className="stepper">
-                <button
+                <Button
                   onClick={() => setInitialDepth(Math.max(2, initialDepth - 1))}
                 >
                   −
-                </button>
+                </Button>
                 <b>{initialDepth} user moves</b>
-                <button
+                <Button
                   onClick={() =>
                     setInitialDepth(Math.min(20, initialDepth + 1))
                   }
                 >
                   ＋
-                </button>
+                </Button>
               </span>
             </label>
             {!settingsLoaded && !settingsError && <Notice>Loading import settings…</Notice>}
@@ -279,13 +280,13 @@ export function ImportDialogBox({
               <span>
                 <i className="status-dot" /> Stored locally
               </span>
-              <button
-                className="primary-button"
+              <Button
+                variant="primary" className="primary-button"
                 disabled={!file || working || !settingsLoaded}
                 onClick={() => void importFile()}
               >
                 {working ? "Importing…" : "Import repertoire"}
-              </button>
+              </Button>
             </div>
           </>
         )}

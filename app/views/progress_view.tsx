@@ -1,5 +1,6 @@
 "use client";
 import { Notice } from "../components/task-tabs";
+import { Surface } from "../components/ui";
 import { useEffect, useState } from "react";
 import { API_URL } from "../const";
 import { readWorkspaceResponse } from "../lib/workspace-data";
@@ -77,14 +78,14 @@ export default function ProgressView({
           ["Reviewed today", data.reviewedToday],
           ["Cards recalled cleanly", data.cleanCards],
         ].map(([label, count]) => (
-          <article key={label}>
+          <Surface as="article" key={label}>
             <span>{label}</span>
             <strong>{count}</strong>
-          </article>
+          </Surface>
         ))}
       </div>
       <div className="analytics-grid">
-        <article className="chart-card">
+        <Surface as="article" className="chart-card">
           <div className="chart-heading">
             <strong>Review activity</strong>
             <small>Last 7 days</small>
@@ -102,8 +103,8 @@ export default function ProgressView({
               </div>
             ))}
           </div>
-        </article>
-        <article className="maturity-card">
+        </Surface>
+        <Surface as="article" className="maturity-card">
           <h2>Card maturity</h2>
           <ul>
             {["new", "learning", "mature", "locked"].map((state) => (
@@ -113,7 +114,7 @@ export default function ProgressView({
               </li>
             ))}
           </ul>
-        </article>
+        </Surface>
       </div>
       </>}
     </section>

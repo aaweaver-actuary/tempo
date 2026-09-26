@@ -1,3 +1,4 @@
+import { Button } from "../ui";
 import { useState } from "react";
 
 interface SavedLocallyButtonProps {
@@ -10,7 +11,7 @@ export default function SavedLocallyButton({
   const [open, setOpen] = useState(false);
   return (
     <div className="local-data-menu">
-      <button
+      <Button
         className="local-status"
         aria-expanded={open}
         aria-controls="local-data-menu"
@@ -19,12 +20,12 @@ export default function SavedLocallyButton({
       >
         <span className="status-dot" aria-hidden="true" />
         <span>Local data</span>
-      </button>
+      </Button>
       {open && (
         <div id="local-data-menu" className="local-data-popover" role="menu">
           <strong>Local data</strong>
           <small>Saved on this computer</small>
-          <button
+          <Button
             role="menuitem"
             onClick={() => {
               setOpen(false);
@@ -32,7 +33,7 @@ export default function SavedLocallyButton({
             }}
           >
             Import or transfer data
-          </button>
+          </Button>
         </div>
       )}
     </div>

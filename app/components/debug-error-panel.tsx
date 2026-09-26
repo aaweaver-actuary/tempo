@@ -1,3 +1,4 @@
+import { Button, TextArea } from "./ui";
 import { useState, useSyncExternalStore } from "react";
 import {
   buildDebugBundle,
@@ -41,7 +42,7 @@ export function DebugErrorPanel({ boundaryFallback = false }: { boundaryFallback
       </div>
       <p>{latest.message}</p>
       <div className="tempo-debug-actions">
-        <button
+        <Button
           type="button"
           onClick={() => {
             setCopyRecordId(latest.id);
@@ -51,15 +52,15 @@ export function DebugErrorPanel({ boundaryFallback = false }: { boundaryFallback
           }}
         >
           {copyRecordId === latest.id && copyState === "copied" ? "Copied debug info" : "Copy debug info"}
-        </button>
-        <button type="button" onClick={() => setDismissedId(latest.id)}>Dismiss</button>
+        </Button>
+        <Button type="button" onClick={() => setDismissedId(latest.id)}>Dismiss</Button>
       </div>
       {copyRecordId === latest.id && copyState === "failed" && (
         <p className="tempo-debug-copy-help">Clipboard access was unavailable. Select the debug information below and copy it manually.</p>
       )}
       <details>
         <summary>Preview debug information</summary>
-        <textarea aria-label="Debug information" readOnly value={payload} />
+        <TextArea aria-label="Debug information" readOnly value={payload} />
       </details>
     </section>
   );

@@ -1,4 +1,5 @@
 "use client";
+import { Button, TextInput, SelectInput, TabList } from "../components/ui";
 import { useRef, useState, useEffect, useCallback } from "react";
 import type { BoardTheme, PieceSet } from "../components/chessboard";
 import { API_URL } from "../const";
@@ -315,13 +316,13 @@ export default function SettingsView({
         <div>
           <h1>Settings</h1>
         </div>
-        <button
-          className="primary-button"
+        <Button
+          variant="primary" className="primary-button"
           disabled={!settingsLoaded}
           onClick={() => void save()}
         >
           Save settings
-        </button>
+        </Button>
         {dirty && <small className="settings-unsaved" role="status">Unsaved changes</small>}
       </div>
       {loadError && (
@@ -337,27 +338,29 @@ export default function SettingsView({
       )}
       {!settingsLoaded && !loadError && <Notice>Loading settings…</Notice>}
       {status && <Notice>{status}</Notice>}
-      <nav className="settings-section-nav" aria-label="Settings sections" role="tablist">
+      <TabList as="nav" className="settings-section-nav" label="Settings sections">
         {["training", "board", "builder", "games", "data"].map((section) => (
-          <button
+          <Button
             key={section}
+            id={`settings-tab-${section}`}
             role="tab"
             aria-selected={activeSection === section}
             aria-controls={`settings-section-${section}`}
+            tabIndex={activeSection === section ? 0 : -1}
             onClick={() => setActiveSection(section)}
           >
             {section === "data" ? "Data & backup" : section[0].toUpperCase() + section.slice(1)}
-          </button>
+          </Button>
         ))}
-      </nav>
+      </TabList>
       <div className="settings-grid">
-        <section id="settings-section-training" className="settings-card" hidden={activeSection !== "training"}>
+        <section id="settings-section-training" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-training" hidden={activeSection !== "training"}>
           <h2>Training</h2>
           <label>
             <span>
               Default initial prefix length<small>Learner moves grouped when importing new routes</small>
             </span>
-            <input
+            <TextInput
               type="number"
               min="2"
               max="20"
@@ -374,7 +377,7 @@ export default function SettingsView({
                 Reviews are always shown; only unseen cards are limited
               </small>
             </span>
-            <input
+            <TextInput
               type="number"
               min="0"
               max="100"
@@ -392,7 +395,7 @@ export default function SettingsView({
                 are additional
               </small>
             </span>
-            <input
+            <TextInput
               type="number"
               min="0"
               max="100"
@@ -404,29 +407,29 @@ export default function SettingsView({
           </label>
           <label>
             <span>New defensive exercises per day<small>Verified threats and false alarms; due reviews are additional</small></span>
-            <input type="number" min="0" max="100"
+            <TextInput type="number" min="0" max="100"
               value={values.defense_new_cards_per_day}
               onChange={(event) => update("defense_new_cards_per_day", Number(event.target.value))} />
           </label>
           <label>
             <span>Defensive cards in daily stack<small>Turn off to hide them now; your cards and review history are kept</small></span>
-            <input type="checkbox"
+            <TextInput type="checkbox"
               checked={values.include_defensive_cards_in_daily_stack}
               onChange={(event) => update("include_defensive_cards_in_daily_stack", event.target.checked)} />
           </label>
           <label>
             <span>Discovery evidence window<small>How far back Tempo counts analyzed games</small></span>
-            <select value={values.discovery_window_days}
+            <SelectInput value={values.discovery_window_days}
               onChange={(event) => update("discovery_window_days", Number(event.target.value) as 30 | 90)}>
               <option value={30}>30 days</option><option value={90}>90 days</option>
-            </select>
+            </SelectInput>
           </label>
           <label>
             <span>
               Light first interval
               <small>Days after a clean tactics discovery</small>
             </span>
-            <input
+            <TextInput
               type="number"
               min="1"
               max="90"
@@ -441,7 +444,7 @@ export default function SettingsView({
               Draw hold length
               <small>User moves required in endgame studies</small>
             </span>
-            <input
+            <TextInput
               type="number"
               min="5"
               max="100"
@@ -452,11 +455,11 @@ export default function SettingsView({
             />
           </label>
         </section>
-        <section id="settings-section-board" className="settings-card" hidden={activeSection !== "board"}>
+        <section id="settings-section-board" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-board" hidden={activeSection !== "board"}>
           <h2>Board</h2>
           <label>
             <span>Board colors</span>
-            <select
+            <SelectInput
               value={values.board_theme}
               onChange={(event) =>
                 update("board_theme", event.target.value as BoardTheme)
@@ -465,11 +468,11 @@ export default function SettingsView({
               <option value="brown">Brown</option>
               <option value="blue">Blue</option>
               <option value="green">Green</option>
-            </select>
+            </SelectInput>
           </label>
           <label>
             <span>Piece set</span>
-            <select
+            <SelectInput
               value={values.piece_set}
               onChange={(event) =>
                 update("piece_set", event.target.value as PieceSet)
@@ -477,23 +480,23 @@ export default function SettingsView({
             >
               <option value="cburnett">Cburnett</option>
               <option value="merida">Merida</option>
-            </select>
+            </SelectInput>
           </label>
           <label>
             <span>
               Chess-piece sounds
               <small>Lichess standard move and capture recordings</small>
             </span>
-            <button
+            <Button
               className={`setting-switch${values.sound ? " on" : ""}`}
               onClick={() => update("sound", !values.sound)}
             >
               {values.sound ? "On" : "Off"}
-            </button>
+            </Button>
           </label>
           <label>
             <span>Sound volume</span>
-            <input
+            <TextInput
               type="range"
               min="0"
               max="1"
@@ -505,11 +508,11 @@ export default function SettingsView({
             />
           </label>
         </section>
-        <section id="settings-section-builder" className="settings-card" hidden={activeSection !== "builder"}>
+        <section id="settings-section-builder" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-builder" hidden={activeSection !== "builder"}>
           <h2>Builder</h2>
           <label>
             <span>Coverage target</span>
-            <select
+            <SelectInput
               value={values.coverage_target}
               onChange={(event) =>
                 update("coverage_target", Number(event.target.value))
@@ -518,14 +521,14 @@ export default function SettingsView({
               <option value="80">80%</option>
               <option value="90">90%</option>
               <option value="95">95%</option>
-            </select>
+            </SelectInput>
           </label>
           <label>
             <span>
               Required reply threshold
               <small>Cover opponent moves occurring at least this often</small>
             </span>
-            <select
+            <SelectInput
               value={values.coverage_reply_denominator}
               onChange={(event) =>
                 update("coverage_reply_denominator", Number(event.target.value))
@@ -534,11 +537,11 @@ export default function SettingsView({
               <option value="100">1 in 100</option>
               <option value="200">1 in 200</option>
               <option value="300">1 in 300</option>
-            </select>
+            </SelectInput>
           </label>
           <label>
             <span>Cumulative reply coverage</span>
-            <select
+            <SelectInput
               value={values.coverage_cumulative_target}
               onChange={(event) =>
                 update("coverage_cumulative_target", Number(event.target.value))
@@ -547,11 +550,11 @@ export default function SettingsView({
               <option value="90">90%</option>
               <option value="95">95%</option>
               <option value="99">99%</option>
-            </select>
+            </SelectInput>
           </label>
           <label>
             <span>Coverage horizon<small>Full move number</small></span>
-            <input
+            <TextInput
               type="number"
               min="4"
               max="40"
@@ -563,7 +566,7 @@ export default function SettingsView({
           </label>
           <label>
             <span>Candidate colors</span>
-            <select
+            <SelectInput
               value={values.arrow_metric}
               onChange={(event) =>
                 update(
@@ -575,13 +578,13 @@ export default function SettingsView({
               <option value="stockfish">Stockfish quality</option>
               <option value="lichess">Lichess practical score</option>
               <option value="masters">Masters practical score</option>
-            </select>
+            </SelectInput>
           </label>
           <label>
             <span>
               Engine move window<small>Centipawns from the best move</small>
             </span>
-            <input
+            <TextInput
               type="number"
               min="0"
               max="300"
@@ -593,20 +596,20 @@ export default function SettingsView({
           </label>
           <label>
             <span>Maia strength</span>
-            <select
+            <SelectInput
               value={values.maia_elo}
               onChange={(event) => update("maia_elo", event.target.value)}
             >
               <option>1100</option>
               <option>1500</option>
               <option>1900</option>
-            </select>
+            </SelectInput>
           </label>
           <label>
             <span>
               Transposition search<small>Maia lookahead plies</small>
             </span>
-            <input
+            <TextInput
               type="number"
               min="2"
               max="8"
@@ -618,7 +621,7 @@ export default function SettingsView({
           </label>
           <label>
             <span>Explorer games</span>
-            <select
+            <SelectInput
               value={values.explorer_speeds}
               onChange={(event) =>
                 update("explorer_speeds", event.target.value)
@@ -629,11 +632,11 @@ export default function SettingsView({
               </option>
               <option value="rapid,classical">Rapid + classical</option>
               <option value="classical">Classical only</option>
-            </select>
+            </SelectInput>
           </label>
           <label>
             <span>Explorer ratings</span>
-            <select
+            <SelectInput
               value={values.explorer_ratings}
               onChange={(event) =>
                 update("explorer_ratings", event.target.value)
@@ -642,15 +645,15 @@ export default function SettingsView({
               <option value="1600,1800,2000,2200,2500">1600+</option>
               <option value="2000,2200,2500">2000+</option>
               <option value="2200,2500">2200+</option>
-            </select>
+            </SelectInput>
           </label>
         </section>
-        <section id="settings-section-games" className="settings-card" hidden={activeSection !== "games"}>
+        <section id="settings-section-games" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-games" hidden={activeSection !== "games"}>
           <h2>Games</h2>
           <p>Tempo syncs rated standard blitz, rapid, and classical games from the last 90 days. Bullet, casual, variant, and older games are excluded.</p>
           <label>
             <span>Lichess username</span>
-            <input
+            <TextInput
               value={values.lichess_username}
               onChange={(event) =>
                 update("lichess_username", event.target.value)
@@ -660,7 +663,7 @@ export default function SettingsView({
           </label>
           <label>
             <span>Chess.com username</span>
-            <input
+            <TextInput
               value={values.chesscom_username}
               onChange={(event) =>
                 update("chesscom_username", event.target.value)
@@ -672,7 +675,7 @@ export default function SettingsView({
             <span>
               Automatic sync<small>Minutes while Tempo is open</small>
             </span>
-            <input
+            <TextInput
               type="number"
               min="2"
               max="60"
@@ -686,7 +689,7 @@ export default function SettingsView({
             <span>
               Major mistake threshold<small>Centipawn loss</small>
             </span>
-            <input
+            <TextInput
               type="number"
               min="25"
               max="1000"
@@ -697,7 +700,7 @@ export default function SettingsView({
             />
           </label>
         </section>
-        <section id="settings-section-data" className="settings-card" hidden={activeSection !== "data"}>
+        <section id="settings-section-data" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-data" hidden={activeSection !== "data"}>
           <h2>Data &amp; backup</h2>
           <p className="settings-card-copy">
             Keep an encrypted portable copy of browser data. Docker’s SQLite
@@ -705,17 +708,17 @@ export default function SettingsView({
           </p>
           <div className="settings-actions">
             {usesLocalApi() && (
-              <button onClick={() => void transferLocalData()}>
+              <Button onClick={() => void transferLocalData()}>
                 Transfer Docker data
-              </button>
+              </Button>
             )}
-            <button onClick={() => void exportBackup()}>
+            <Button onClick={() => void exportBackup()}>
               Export encrypted backup
-            </button>
-            <button onClick={() => backupInput.current?.click()}>
+            </Button>
+            <Button onClick={() => backupInput.current?.click()}>
               Import encrypted backup
-            </button>
-            <input
+            </Button>
+            <TextInput
               ref={backupInput}
               type="file"
               accept=".tempo,application/vnd.tempo.backup+json,application/json"

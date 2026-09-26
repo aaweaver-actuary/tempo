@@ -1,3 +1,4 @@
+import { Button } from "./ui";
 import { useSyncExternalStore } from "react";
 import {
   dataDiagnostics,
@@ -49,7 +50,7 @@ export function DataDiagnosticsNotice() {
           </li>
         ))}
       </ul>
-      <button onClick={exportDiagnostics}>Export diagnostics for repair</button>
+      <Button onClick={exportDiagnostics}>Export diagnostics for repair</Button>
     </details>
   );
 }

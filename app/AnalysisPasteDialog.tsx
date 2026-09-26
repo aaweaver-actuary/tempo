@@ -1,3 +1,4 @@
+import { Button, TextInput, SelectInput, TextArea } from "./components/ui";
 import { useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import type { z } from "zod";
@@ -131,17 +132,17 @@ export function AnalysisPasteDialog({ context, onClose, onSaved }: {
   }
 
   return <div className="modal-backdrop" role="presentation" onMouseDown={onClose}>
-    <section className="import-dialog analysis-paste-dialog" ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="analysis-paste-title" onMouseDown={(event) => event.stopPropagation()}>
+    <section className="ui-dialog import-dialog analysis-paste-dialog" ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="analysis-paste-title" onMouseDown={(event) => event.stopPropagation()}>
       <CloseButton onClose={onClose} ariaLabel="Close paste analysis" />
       <p className="eyebrow">Repertoire analysis</p>
       <h2 id="analysis-paste-title">Paste analysis</h2>
       <p className="dialog-copy">Paste SAN lines separated by blank lines, or PGN with variations. {context.startingFen ? "Partial moves start from the selected position." : "Partial moves need a FEN or an open Builder position."}</p>
       {!usesLocalApi() && <p role="status">Saving pasted analysis requires local Docker Tempo. This practice demo does not save repertoire changes.</p>}
       <label className="analysis-paste-input">SAN or PGN
-        <textarea aria-label="SAN or PGN" value={text} onChange={(event) => updateText(event.target.value)} rows={7} placeholder="1. e4 e5 2. Nf3 Nc6\n\n1. d4 d5 2. c4" />
+        <TextArea aria-label="SAN or PGN" value={text} onChange={(event) => updateText(event.target.value)} rows={7} placeholder="1. e4 e5 2. Nf3 Nc6\n\n1. d4 d5 2. c4" />
       </label>
       {!context.startingFen && <label className="analysis-paste-input">Starting FEN for a partial line (optional)
-        <input aria-label="Starting FEN" value={startingFen} onChange={(event) => { setStartingFen(event.target.value); setPreview(undefined); }} placeholder="Paste a FEN if the moves start midgame" />
+        <TextInput aria-label="Starting FEN" value={startingFen} onChange={(event) => { setStartingFen(event.target.value); setPreview(undefined); }} placeholder="Paste a FEN if the moves start midgame" />
       </label>}
       {error && <p className="editor-error" role="alert">{error}</p>}
       {savedMessage && <p role="status">{savedMessage}</p>}
@@ -150,29 +151,29 @@ export function AnalysisPasteDialog({ context, onClose, onSaved }: {
         {preview.lines.map((line) => {
           const selectedOption = line.options.find((option) => option.repertoire_id === destinations[line.index]);
           return <div className="analysis-paste-line" key={line.index}>
-            <label><input type="checkbox" checked={included[line.index] ?? true} onChange={(event) => setIncluded((current) => ({ ...current, [line.index]: event.target.checked }))} /> Include line {line.index + 1}</label>
+            <label><TextInput type="checkbox" checked={included[line.index] ?? true} onChange={(event) => setIncluded((current) => ({ ...current, [line.index]: event.target.checked }))} /> Include line {line.index + 1}</label>
             <p>{line.san}</p>
             <label>Destination repertoire
-              <select aria-label={`Destination for line ${line.index + 1}`} value={destinations[line.index] ?? ""} disabled={!included[line.index]} onChange={(event) => {
+              <SelectInput aria-label={`Destination for line ${line.index + 1}`} value={destinations[line.index] ?? ""} disabled={!included[line.index]} onChange={(event) => {
                 setDestinations((current) => ({ ...current, [line.index]: event.target.value }));
                 setConfirmed((current) => ({ ...current, [line.index]: false }));
               }}>
                 <option value="">Choose a repertoire</option>
                 {line.options.map((option) => <option key={option.repertoire_id} value={option.repertoire_id}>{option.name}{option.matched ? " · matching route" : ""}</option>)}
-              </select>
+              </SelectInput>
             </label>
             {selectedOption?.duplicate && <p>Already in this repertoire; saving will not duplicate it.</p>}
             {selectedOption && !selectedOption.trainable && <p role="status">This line needs one more move by the side trained in this repertoire.</p>}
             {selectedOption?.conflicts.length || batchConflictIndices.has(line.index) ? <div className="analysis-paste-conflict">
               <p>Trained-move conflict{batchConflictIndices.has(line.index) ? " with another selected line" : ""}: {selectedOption?.conflicts.map((conflict) => `${conflict.existing_moves.join("/")} vs ${conflict.pasted_move}`).join(", ")}. Tempo will open integrity repair after saving.</p>
-              <label><input type="checkbox" checked={confirmed[line.index] ?? false} onChange={(event) => setConfirmed((current) => ({ ...current, [line.index]: event.target.checked }))} /> Save this conflict and open repair</label>
+              <label><TextInput type="checkbox" checked={confirmed[line.index] ?? false} onChange={(event) => setConfirmed((current) => ({ ...current, [line.index]: event.target.checked }))} /> Save this conflict and open repair</label>
             </div> : null}
           </div>;
         })}
       </div>}
       <div className="dialog-footer">
-        <button disabled={!usesLocalApi() || !text.trim() || working} onClick={() => void showPreview()}>{working ? "Working…" : "Preview lines"}</button>
-        <button className="primary-button" disabled={!usesLocalApi() || !preview || working} onClick={() => void saveLines()}>{working ? "Saving…" : "Save selected lines"}</button>
+        <Button disabled={!usesLocalApi() || !text.trim() || working} onClick={() => void showPreview()}>{working ? "Working…" : "Preview lines"}</Button>
+        <Button variant="primary" className="primary-button" disabled={!usesLocalApi() || !preview || working} onClick={() => void saveLines()}>{working ? "Saving…" : "Save selected lines"}</Button>
       </div>
     </section>
   </div>;

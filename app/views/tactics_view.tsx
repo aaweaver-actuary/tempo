@@ -1,3 +1,4 @@
+import { Button } from "../components/ui";
 import { BoardTools } from "../components/board-workspace";
 import { Chess, Square, Move } from "chess.js";
 import {
@@ -513,7 +514,7 @@ export default function TacticsView({
             : deckState === "empty"
               ? "No validated puzzles are available for this pack. Check the packaged tactics data."
               : deckState)}
-        <button
+        <Button
           onClick={() => {
             invalidateWorkspaceData();
             setDeckState("loading");
@@ -521,7 +522,7 @@ export default function TacticsView({
           }}
         >
           Retry
-        </button>
+        </Button>
       </section>
     );
   if (!selectedPuzzle)
@@ -563,7 +564,7 @@ export default function TacticsView({
       {activationError && (
         <div role="alert">
           {activationError}
-          <button onClick={() => setActivationError("")}>Dismiss</button>
+          <Button onClick={() => setActivationError("")}>Dismiss</Button>
         </div>
       )}
       <div className="tactics-workspace">
@@ -604,18 +605,18 @@ export default function TacticsView({
             />
           )}
           <BoardTools>
-            <button
+            <Button
               disabled={attempt.phase === "feedbackPause"}
               onClick={() => guideAttempt()}
             >
               ⌁ <span>Show move</span>
-            </button>
-            <button
+            </Button>
+            <Button
               disabled={attempt.phase === "feedbackPause"}
               onClick={() => guideAttempt(true)}
             >
               ↻ <span>Restart</span>
-            </button>
+            </Button>
             {puzzle.sourceUrl && (
               <a href={puzzle.sourceUrl} target="_blank" rel="noreferrer">
                 ↗ <span>Original</span>
@@ -631,7 +632,7 @@ export default function TacticsView({
           {saveError && (
             <div role="alert">
               {saveError}
-              <button onClick={() => void finish()}>Retry save</button>
+              <Button onClick={() => void finish()}>Retry save</Button>
             </div>
           )}
         </div>

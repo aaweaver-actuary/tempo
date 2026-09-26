@@ -1,3 +1,4 @@
+import { Button } from "../ui";
 interface RestartButtonProps {
   handleRestart: () => void;
   disabled?: boolean;
@@ -5,8 +6,8 @@ interface RestartButtonProps {
 
 export default function RestartButton({ handleRestart, disabled = false }: RestartButtonProps) {
   return (
-    <button onClick={handleRestart} disabled={disabled}>
+    <Button onClick={handleRestart} disabled={disabled}>
       ↻ <span>Restart</span>
-    </button>
+    </Button>
   );
 }

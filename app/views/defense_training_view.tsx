@@ -1,4 +1,5 @@
 "use client";
+import { Button, TextInput, SelectInput } from "../components/ui";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess, type Square } from "chess.js";
@@ -290,9 +291,9 @@ export default function DefenseTrainingView({
           editMode={recognitionStage && !assessmentDone} onSquareSelect={recognitionStage && !assessmentDone ? selectSquare : undefined}
           onFreeMove={recognitionStage && !assessmentDone ? (from, to) => { selectSquare(from); selectSquare(to); } : undefined} />}
         <BoardTools>
-          <button type="button" disabled={burying || busy || Boolean(definitive)} onClick={() => void runBury()}>{burying ? "Burying…" : "Bury"}</button>
-          {saveError && pending && <button disabled={busy} onClick={() => void submit(pending)}>Retry move submission</button>}
-          {loadError && <button onClick={() => void loadExercise()}>Retry loading exercise</button>}
+          <Button type="button" disabled={burying || busy || Boolean(definitive)} onClick={() => void runBury()}>{burying ? "Burying…" : "Bury"}</Button>
+          {saveError && pending && <Button disabled={busy} onClick={() => void submit(pending)}>Retry move submission</Button>}
+          {loadError && <Button onClick={() => void loadExercise()}>Retry loading exercise</Button>}
         </BoardTools>
       </div>
       <aside className="study-panel defense-study-panel">
@@ -308,22 +309,22 @@ export default function DefenseTrainingView({
             <p className="defense-stage-prompt">{selectionPrompts[activeSelection]}</p>
             <ol className="defense-selection-trail">{selectedSquares.map((square, index) =>
               <li key={index}><span>{selectionLabels[index]}: <strong>{square}</strong></span>
-                <button type="button" onClick={() => { setSelectedSquares((current) => current.slice(0, index)); setActiveSelection(index); setSquareInput(""); }}
-                  aria-label={`Change ${selectionLabels[index].toLowerCase()}`}>Change</button></li>)}</ol>
+                <Button type="button" onClick={() => { setSelectedSquares((current) => current.slice(0, index)); setActiveSelection(index); setSquareInput(""); }}
+                  aria-label={`Change ${selectionLabels[index].toLowerCase()}`}>Change</Button></li>)}</ol>
             <label className="defense-square-entry">{selectionLabels[activeSelection]} square
-              <input aria-label={`${selectionLabels[activeSelection]} square`} inputMode="text" autoComplete="off" maxLength={2}
+              <TextInput aria-label={`${selectionLabels[activeSelection]} square`} inputMode="text" autoComplete="off" maxLength={2}
                 value={squareInput} onChange={(event) => setSquareInput(event.target.value.toLowerCase())}
                 onKeyDown={(event) => { if (event.key === "Enter" && /^[a-h][1-8]$/.test(squareInput)) { event.preventDefault(); selectSquare(squareInput as Square); } }} />
-              <button type="button" disabled={!/^[a-h][1-8]$/.test(squareInput)} onClick={() => selectSquare(squareInput as Square)}>Select</button>
+              <Button type="button" disabled={!/^[a-h][1-8]$/.test(squareInput)} onClick={() => selectSquare(squareInput as Square)}>Select</Button>
             </label>
-            <button type="button" className="defense-no-threat" onClick={() => { setNoConcreteThreat(true); setSelectedSquares([]); setConsequence("none"); setAssessmentDone(true); }}>No concrete threat</button>
-            <button type="button" onClick={() => setHintRevealed(true)}>Hint</button>
+            <Button type="button" className="defense-no-threat" onClick={() => { setNoConcreteThreat(true); setSelectedSquares([]); setConsequence("none"); setAssessmentDone(true); }}>No concrete threat</Button>
+            <Button type="button" onClick={() => setHintRevealed(true)}>Hint</Button>
             {hintRevealed && <p>Trace forcing moves and check whether the attacking piece can be captured. A revealed hint requires reinforcement.</p>}
           </> : <>
             <p className="defense-stage-prompt">{noConcreteThreat ? "You found no concrete checking fork. Submit that assessment." : "What would happen if you ignored the danger?"}</p>
-            {!noConcreteThreat && <label>Consequence <select value={consequence} onChange={(event) => setConsequence(event.target.value as typeof consequence)}><option value="">Choose an explanation</option><option value="checking_fork">Check followed by material loss</option><option value="other">Material threat without check</option><option value="none">No forcing consequence</option></select></label>}
-            <div className="defense-stage-actions"><button type="button" onClick={() => { setAssessmentDone(false); setActiveSelection(noConcreteThreat ? 0 : 3); setNoConcreteThreat(false); }}>Back to board</button>
-              <button disabled={busy || (!noConcreteThreat && !consequence)} onClick={() => void submitRecognition()}>Submit assessment</button></div>
+            {!noConcreteThreat && <label>Consequence <SelectInput value={consequence} onChange={(event) => setConsequence(event.target.value as typeof consequence)}><option value="">Choose an explanation</option><option value="checking_fork">Check followed by material loss</option><option value="other">Material threat without check</option><option value="none">No forcing consequence</option></SelectInput></label>}
+            <div className="defense-stage-actions"><Button type="button" onClick={() => { setAssessmentDone(false); setActiveSelection(noConcreteThreat ? 0 : 3); setNoConcreteThreat(false); }}>Back to board</Button>
+              <Button disabled={busy || (!noConcreteThreat && !consequence)} onClick={() => void submitRecognition()}>Submit assessment</Button></div>
           </>}
         </div>}
         {recognitionDone && <div className={`feedback ${recognitionResult?.recognition_correct ? "complete" : "wrong"}`} role="status">
@@ -332,11 +333,11 @@ export default function DefenseTrainingView({
             {recognitionResult?.feedback?.control_explanation ? <p>{recognitionResult.feedback.control_explanation}</p>
               : recognitionResult?.feedback?.fork_geometry ? <p>After {proposedMoveLabel}, {exercise?.fork_move_san ?? "the knight move"} checks the king on {recognitionResult.feedback.fork_geometry.king.square} and attacks the {recognitionResult.feedback.fork_geometry.major.piece} on {recognitionResult.feedback.fork_geometry.major.square}. The verified line continues {continuationNotation(card.startingFen, recognitionResult.feedback.refutation_uci.slice(0, 4))}.</p> : null}
           </div></div>}
-        {recognitionDone && !definitive && !defenseReady && <button type="button" onClick={() => setDefenseReady(true)}>Continue to defense</button>}
+        {recognitionDone && !definitive && !defenseReady && <Button type="button" onClick={() => setDefenseReady(true)}>Continue to defense</Button>}
         {recognitionDone && !definitive && defenseReady && <p className="defense-stage-prompt">Back at your original turn, play a move that avoids this danger. More than one sound defense may work.</p>}
         {loadError && <p role="alert">{loadError}</p>}
-        {saveError && <p role="alert">{saveError} {/reload|refresh/i.test(saveError) && <button type="button" onClick={() => void loadExercise()}>Reload exercise</button>}</p>}
-        {buryError && <p role="alert">{buryError} <button type="button" onClick={() => void runBury()}>Retry bury</button></p>}
+        {saveError && <p role="alert">{saveError} {/reload|refresh/i.test(saveError) && <Button type="button" onClick={() => void loadExercise()}>Reload exercise</Button>}</p>}
+        {buryError && <p role="alert">{buryError} <Button type="button" onClick={() => void runBury()}>Retry bury</Button></p>}
         {grade?.status === "needs_analysis" && <p role="status">Analyzing this legal defense. Your study result has not been recorded yet.</p>}
         {grade?.status === "ambiguous" && <p role="status">This move is too close to the grading threshold. No review was recorded; choose another move.</p>}
         {grade?.status === "illegal" && <p role="alert">The submitted move is illegal. No review was recorded.</p>}
@@ -352,7 +353,7 @@ export default function DefenseTrainingView({
           {grade.feedback?.source_game_id && <p>Source game: {grade.feedback.source_game_url
             ? <a href={grade.feedback.source_game_url} target="_blank" rel="noreferrer">{grade.feedback.source_game_id}</a>
             : grade.feedback.source_game_id}</p>}
-          <button onClick={() => void onAdvance().catch(() => setSaveError("Result saved, but the next card could not load. Retry Continue."))}>Continue</button>
+          <Button onClick={() => void onAdvance().catch(() => setSaveError("Result saved, but the next card could not load. Retry Continue."))}>Continue</Button>
         </>}
       </aside>
     </section>

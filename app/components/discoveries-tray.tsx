@@ -1,4 +1,5 @@
 "use client";
+import { Button } from "./ui";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DrawShape } from "@lichess-org/chessground/draw";
@@ -437,36 +438,36 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   };
 
   return <aside className="tempo-activity-tray tempo-discoveries-tray">
-    <button ref={triggerRef} type="button" className="tempo-activity-trigger" aria-label="Discoveries"
+    <Button ref={triggerRef} type="button" className="tempo-activity-trigger" aria-label="Discoveries"
       aria-expanded={open} onClick={() => {
         if (open) closeViewer();
         else { setActiveId(visibleDiscoveries[0]?.id ?? null); setOpen(true); }
       }}>
       Discoveries{unreadCount > 0 && <span className="tempo-discoveries-badge" aria-label={`${unreadCount} new discoveries`}> {unreadCount}</span>}
-    </button>
+    </Button>
     {open && <div className="tempo-discovery-backdrop">
-      <section ref={dialogRef} className="tempo-discovery-viewer" role="dialog" aria-modal="true" aria-label="Discoveries">
+      <section ref={dialogRef} className="ui-dialog tempo-discovery-viewer" role="dialog" aria-modal="true" aria-label="Discoveries">
         <header className="tempo-discovery-header">
           <div><span className="pill">Discoveries</span><h2>{active ? discoveryTitle(active) : requestedDiscoveryNotReady ? "This discovery is not ready for review" : preflightPending ? "Preparing review-ready discoveries" : "No discoveries ready for review"}</h2>
             <p>{active ? `${activeIndex + 1} of ${visibleDiscoveries.length} · ${active.trained_color} to move` : requestedDiscoveryNotReady ? "Choose Next to review a complete discovery." : preflightPending ? "Preparing review-ready discoveries." : "There are no complete discoveries to review right now."}</p></div>
           <div className="tempo-discovery-navigation">
-            <button type="button" disabled={activeIndex <= 0} onClick={() => setActiveId(visibleDiscoveries[activeIndex - 1].id)}>Previous</button>
-            <button type="button" disabled={activeIndex >= visibleDiscoveries.length - 1} onClick={() => setActiveId(visibleDiscoveries[activeIndex + 1].id)}>Next</button>
-            <button ref={closeRef} type="button" onClick={closeViewer}>Back to work</button>
+            <Button type="button" disabled={activeIndex <= 0} onClick={() => setActiveId(visibleDiscoveries[activeIndex - 1].id)}>Previous</Button>
+            <Button type="button" disabled={activeIndex >= visibleDiscoveries.length - 1} onClick={() => setActiveId(visibleDiscoveries[activeIndex + 1].id)}>Next</Button>
+            <Button ref={closeRef} type="button" onClick={closeViewer}>Back to work</Button>
           </div>
         </header>
-        {error && <p role="alert">{error} <button onClick={() => { setError(null); void refresh(true); }}>Retry</button></p>}
+        {error && <p role="alert">{error} <Button onClick={() => { setError(null); void refresh(true); }}>Retry</Button></p>}
         {active && <div className="tempo-discovery-main">
           <div className="tempo-discovery-board">
             <Chessboard owner="discoveries" fen={fen} orientation={active.trained_color} locked showHint={false}
               theme={boardTheme} pieceSet={pieceSet} shapes={shapes} onMove={() => undefined} />
             <p role="status">{displayedArrow ? `${moveSan(fen, displayedArrow)} selected. The green arrow shows its destination.` : "Select a move in the table to see it on the board."}</p>
             <div className="tempo-discovery-actions">
-              {active.card_id && <button disabled={busyId === active.id || active.admission_state === "queued"}
-                onClick={() => void act(active, "train")}>{active.admission_state === "queued" ? "In training queue" : "Train this decision"}</button>}
-              {!active.card_id && <button disabled={!soundSelection || busyId === active.id || active.admission_state === "preparing"}
-                onClick={() => { if (soundSelection) void accept(active, soundSelection.move_uci); }}>Add and train</button>}
-              <button onClick={() => { closeViewer(); if (onOpenBuilder) onOpenBuilder(active, selectedMove); else onOpenRepertoire?.(); }}>Open in Builder</button>
+              {active.card_id && <Button disabled={busyId === active.id || active.admission_state === "queued"}
+                onClick={() => void act(active, "train")}>{active.admission_state === "queued" ? "In training queue" : "Train this decision"}</Button>}
+              {!active.card_id && <Button disabled={!soundSelection || busyId === active.id || active.admission_state === "preparing"}
+                onClick={() => { if (soundSelection) void accept(active, soundSelection.move_uci); }}>Add and train</Button>}
+              <Button onClick={() => { closeViewer(); if (onOpenBuilder) onOpenBuilder(active, selectedMove); else onOpenRepertoire?.(); }}>Open in Builder</Button>
             </div>
             {active.admission_state === "preparing" && <p role="status">Preparing training card. Tempo is publishing and checking the repertoire branch.</p>}
             {!active.card_id && selectedMove && !soundSelection && <p role="status">This move needs engine validation before Add and train is available. You can investigate it in Builder.</p>}
@@ -495,8 +496,8 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
                 : game.route || game.id}</li>)}</ul>}
             </details>
             <div className="tempo-discovery-secondary-actions">
-              <button disabled={busyId === active.id} onClick={() => void act(active, "snooze")}>Snooze 7 days</button>
-              <button disabled={busyId === active.id} onClick={() => void act(active, "dismiss")}>Dismiss</button>
+              <Button disabled={busyId === active.id} onClick={() => void act(active, "snooze")}>Snooze 7 days</Button>
+              <Button disabled={busyId === active.id} onClick={() => void act(active, "dismiss")}>Dismiss</Button>
             </div>
           </div>
         </div>}

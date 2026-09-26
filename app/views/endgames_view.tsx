@@ -1,3 +1,4 @@
+import { Button, TextInput } from "../components/ui";
 import { Dialog } from "../components/dialog";
 import { BoardTools } from "../components/board-workspace";
 import { API_URL, STANDARD_FEN } from "../const";
@@ -392,15 +393,15 @@ export default function EndgamesView({
           <h1>Endgames</h1>
         </div>
         {!scheduledCard && (
-          <button
-            className="primary-button"
+          <Button
+            variant="primary" className="primary-button"
             disabled={Boolean(admitted[selected]) || !usesLocalApi()}
             onClick={() => void admitTemplate()}
           >
             {admitted[selected]
               ? "✓ In daily training"
               : "＋ Add to daily training"}
-          </button>
+          </Button>
         )}
       </div>
       {!scheduledCard && <div className="workspace-context-tabs">{tools.tabs}</div>}
@@ -408,7 +409,7 @@ export default function EndgamesView({
         {!scheduledCard && tools.activeTab === "Positions" && (
           <aside className="template-list">
             {templates.map((template, index) => (
-              <button
+              <Button
                 className={selected === index ? "active" : ""}
                 key={template.name}
                 onClick={() => setSelected(index)}
@@ -417,7 +418,7 @@ export default function EndgamesView({
                 <small>
                   {template.white} vs {template.black} · White
                 </small>
-              </button>
+              </Button>
             ))}
           </aside>
         )}
@@ -434,21 +435,21 @@ export default function EndgamesView({
             />
           )}
           <BoardTools>
-            {scheduledCard && onBury && <button type="button" disabled={burying || complete} onClick={() => void runBury()}>{burying ? "Burying…" : "Bury"}</button>}
-            <button
+            {scheduledCard && onBury && <Button type="button" disabled={burying || complete} onClick={() => void runBury()}>{burying ? "Burying…" : "Bury"}</Button>}
+            <Button
               disabled={Boolean(scheduledCard) && !complete}
               onClick={() => void newPosition()}
             >
               ⤨ <span>New position</span>
-            </button>
+            </Button>
             {!scheduledCard && (
-              <button onClick={(event) => { event.currentTarget.focus(); setEditingMaterial(true); }}>
+              <Button onClick={(event) => { event.currentTarget.focus(); setEditingMaterial(true); }}>
                 ⚙ <span>Edit material</span>
-              </button>
+              </Button>
             )}
           </BoardTools>
           {outcome && <OutcomeFlash outcome={outcome} />}
-          {buryError && <p role="alert">{buryError} <button type="button" onClick={() => void runBury()}>Retry bury</button></p>}
+          {buryError && <p role="alert">{buryError} <Button type="button" onClick={() => void runBury()}>Retry bury</Button></p>}
         </div>
         <aside className="study-panel endgame-study">
           <span className="pill">Material template</span>
@@ -457,20 +458,20 @@ export default function EndgamesView({
             {scheduledCard?.orientation === "black" ? "Black" : "White"} to play
           </p>
           <div className="classification">
-            <button
+            <Button
               className={classification === "win" ? "active" : ""}
               disabled={busy || complete}
               onClick={() => classify("win")}
             >
               Win
-            </button>
-            <button
+            </Button>
+            <Button
               className={classification === "draw" ? "active" : ""}
               disabled={busy || complete}
               onClick={() => classify("draw")}
             >
               Draw
-            </button>
+            </Button>
           </div>
           <div
             className={`feedback ${complete && status.startsWith("Failed") ? "wrong" : "ready"}`}
@@ -501,7 +502,7 @@ export default function EndgamesView({
             {(["white", "black"] as const).map((side) => (
               <label key={side}>
                 {side}
-                <input
+                <TextInput
                   value={materialDraft[side]}
                   onChange={(event) =>
                     setMaterialDraft((current) => ({
@@ -512,7 +513,7 @@ export default function EndgamesView({
                 />
               </label>
             ))}
-            <button
+            <Button
               onClick={() => {
                 if (
                   !/^K[QRBNP]*$/.test(materialDraft.white) ||
@@ -536,8 +537,8 @@ export default function EndgamesView({
               }}
             >
               Practice material
-            </button>
-            <button onClick={() => setEditingMaterial(false)}>Cancel</button>
+            </Button>
+            <Button onClick={() => setEditingMaterial(false)}>Cancel</Button>
         </Dialog>
       )}
     </section>

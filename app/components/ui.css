@@ -1,0 +1,112 @@
+:root {
+  --ui-font-control: Arial, Helvetica, sans-serif;
+  --ui-font-display: Georgia, "Times New Roman", serif;
+  --ui-radius-control: 8px;
+  --ui-radius-surface: 12px;
+  --ui-control-height: 36px;
+  --ui-control-height-touch: 44px;
+  --ui-border: var(--line);
+  --ui-surface: var(--panel);
+  --ui-primary: var(--green-dark);
+  --ui-primary-hover: #293d2c;
+  --ui-danger: var(--rust);
+  --ui-focus: #496d91;
+}
+
+.ui-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: var(--ui-control-height);
+  padding: 8px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface);
+  color: var(--ink);
+  font-family: var(--ui-font-control);
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-decoration: none;
+  cursor: pointer;
+}
+.ui-button[data-size="compact"] { padding: 6px 9px; font-size: 12px; }
+.ui-button[data-variant="primary"] { border-color: var(--ui-primary); background: var(--ui-primary); color: white; }
+.ui-button[data-variant="quiet"] { border-color: transparent; background: transparent; color: var(--green-dark); }
+.ui-button[data-variant="danger"] { border-color: var(--ui-danger); background: var(--ui-danger); color: white; }
+.ui-button[data-variant="primary"]:hover:not(:disabled) { background-color: var(--ui-primary-hover); }
+.ui-button[data-variant="secondary"]:not([data-ui-custom]):hover:not(:disabled),
+.ui-button[data-variant="quiet"]:hover:not(:disabled) { background-color: var(--sage); }
+.ui-button:disabled { opacity: .55; cursor: not-allowed; }
+.ui-icon-button { padding: 6px; min-width: var(--ui-control-height); }
+.ui-action-link { width: fit-content; }
+
+.ui-input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+.ui-select,
+.ui-textarea {
+  min-height: var(--ui-control-height);
+  padding: 9px 11px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface);
+  color: var(--ink);
+  font: 14px/1.35 var(--ui-font-control);
+}
+.ui-textarea { resize: vertical; }
+.ui-input[type="checkbox"], .ui-input[type="radio"] { accent-color: var(--green-dark); }
+.ui-input:disabled, .ui-select:disabled, .ui-textarea:disabled { opacity: .6; cursor: not-allowed; }
+.ui-field { display: grid; gap: 6px; }
+.ui-field-label { font-weight: 700; }
+.ui-field-hint { color: var(--muted); }
+.ui-field-error { color: var(--ui-danger); }
+.ui-surface { border: 1px solid var(--ui-border); border-radius: var(--ui-radius-surface); background: var(--ui-surface); }
+.ui-table { width: 100%; border-collapse: collapse; }
+.ui-table th, .ui-table td { border-bottom: 1px solid var(--ui-border); }
+.ui-table th { text-align: left; color: var(--muted); font-size: 12px; }
+.ui-menu { position: relative; }
+.ui-menu summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: var(--ui-control-height);
+  padding: 8px 12px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface);
+  cursor: pointer;
+  list-style: none;
+  font-size: 12px;
+  font-weight: 700;
+}
+.ui-menu summary::-webkit-details-marker { display: none; }
+.ui-menu-content {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  right: 0;
+  display: grid;
+  gap: 4px;
+  min-width: 160px;
+  padding: 8px;
+  border: 1px solid var(--ui-border);
+  border-radius: var(--ui-radius-control);
+  background: var(--ui-surface);
+  box-shadow: 0 8px 24px #2222;
+}
+.ui-menu-content .ui-button { justify-content: flex-start; width: 100%; }
+:where(.ui-tabs) { display: flex; gap: 4px; padding: 4px; border: 1px solid var(--ui-border); border-radius: var(--ui-radius-control); background: #ebeae4; }
+:where(.ui-tabs) [role="tab"][aria-selected="true"] { background: var(--ui-surface); color: var(--ink); }
+:where(.ui-dialog) { border-radius: var(--ui-radius-surface); background: var(--ui-surface); }
+
+.ui-button:focus-visible, .ui-input:focus-visible, .ui-select:focus-visible,
+.ui-textarea:focus-visible, .ui-action-link:focus-visible {
+  outline: 3px solid var(--ui-focus);
+  outline-offset: 3px;
+}
+
+@media (max-width: 767px), (pointer: coarse) {
+  .ui-button, .ui-input:not([type="checkbox"]):not([type="radio"]):not([type="file"]),
+  .ui-select { min-height: var(--ui-control-height-touch); }
+  .ui-icon-button { min-width: var(--ui-control-height-touch); }
+}

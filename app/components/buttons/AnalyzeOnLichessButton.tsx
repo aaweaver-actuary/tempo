@@ -1,4 +1,5 @@
 import { lichessAnalysisUrl } from "@/app/utils/urls";
+import { ActionLink } from "../ui";
 
 interface AnalyzeOnLichessButtonProps {
   moves: string[];
@@ -13,8 +14,8 @@ export default function AnalyzeOnLichessButton({
 }: AnalyzeOnLichessButtonProps) {
   const analysisUrl = lichessAnalysisUrl(moves, fen);
   return (
-    <a href={analysisUrl} onClick={onClick} target="_blank" rel="noreferrer">
+    <ActionLink href={analysisUrl} onClick={onClick} target="_blank" rel="noreferrer">
       ↗ <span>Analyze</span>
-    </a>
+    </ActionLink>
   );
 }

@@ -1,3 +1,4 @@
+import { Button } from "./ui";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { DebugErrorPanel } from "./debug-error-panel";
 import { reportDebugError } from "../lib/debug-reporting";
@@ -26,7 +27,7 @@ export class TempoErrorBoundary extends Component<ErrorBoundaryProps, ErrorBound
       <main className="tempo-debug-crash-screen">
         <h1>Tempo needs to reload</h1>
         <p>The workspace could not render this screen. Your local data was not changed.</p>
-        <button type="button" onClick={() => window.location.reload()}>Reload Tempo</button>
+        <Button type="button" onClick={() => window.location.reload()}>Reload Tempo</Button>
         <DebugErrorPanel boundaryFallback />
       </main>
     );

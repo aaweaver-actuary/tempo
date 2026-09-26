@@ -1,3 +1,4 @@
+import { SelectInput, DataTable } from "../components/ui";
 import { useEffect, useState } from "react";
 import { API_URL } from "../const";
 import {
@@ -60,10 +61,10 @@ export default function StatisticsView({ embedded = false }: { embedded?: boolea
         <div>
           <label>
             Window{" "}
-            <select value={windowDays} onChange={(event) => setWindowDays(Number(event.target.value) as WindowDays)}>
+            <SelectInput value={windowDays} onChange={(event) => setWindowDays(Number(event.target.value) as WindowDays)}>
               <option value={7}>7 days</option><option value={30}>30 days</option>
               <option value={90}>90 days</option><option value={36500}>Lifetime</option>
-            </select>
+            </SelectInput>
           </label>
         </div>
       </header>
@@ -95,16 +96,16 @@ export default function StatisticsView({ embedded = false }: { embedded?: boolea
       <section className="statistics-breakdown">
         <h2>Breakdown</h2>
         <label>Compare by{" "}
-          <select value={dimension} onChange={(event) => setDimension(event.target.value as Dimension)}>
+          <SelectInput value={dimension} onChange={(event) => setDimension(event.target.value as Dimension)}>
             <option value="color">Color</option><option value="speed">Speed</option>
             <option value="provider">Provider</option><option value="opponent_rating">Opponent rating</option>
             <option value="relative_rating">Relative rating</option><option value="weekday">Day of week</option>
             <option value="hour">Hour</option><option value="opening">Opening</option>
             <option value="repertoire">Repertoire</option>
-          </select>
+          </SelectInput>
         </label>
         {breakdown && (
-          <table>
+          <DataTable>
             <caption>Performance by {breakdown.dimension.replaceAll("_", " ")}</caption>
             <thead><tr><th>Segment</th><th>Games</th><th>Score</th><th>Mean loss</th><th>Tactics</th></tr></thead>
             <tbody>{breakdown.segments.map((segment) => (
@@ -112,7 +113,7 @@ export default function StatisticsView({ embedded = false }: { embedded?: boolea
                 <td>{percentage(segment.score)}</td><td>{segment.mean_loss_cp?.toFixed(0) ?? "—"} cp</td>
                 <td>{segment.tactical_found}/{segment.tactical_opportunities}</td></tr>
             ))}</tbody>
-          </table>
+          </DataTable>
         )}
       </section>
       <details><summary>Methodology</summary>

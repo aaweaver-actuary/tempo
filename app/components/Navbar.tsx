@@ -1,3 +1,4 @@
+import { Button } from "./ui";
 import { useState } from "react";
 import type { View } from "@/app/types";
 import { preloadView } from "../lib/workspace-data";
@@ -30,7 +31,7 @@ export default function Navbar({
     item: (typeof WORKSPACES)[number],
     className?: string,
   ) => (
-    <button
+    <Button
       key={item.id}
       className={className}
       aria-current={view === item.id ? "page" : undefined}
@@ -39,7 +40,7 @@ export default function Navbar({
       onClick={() => select(item.id)}
     >
       {item.label}
-    </button>
+    </Button>
   );
   return (
     <nav
@@ -62,23 +63,23 @@ export default function Navbar({
         {WORKSPACES.filter((item) => PHONE_PRIMARY.includes(item.id)).map(
           (item) => destination(item),
         )}
-        <button
+        <Button
           aria-expanded={menuOpen}
           aria-controls="workspace-menu"
           aria-current={!PHONE_PRIMARY.includes(view) ? "page" : undefined}
           onClick={() => setMenuOpen(!menuOpen)}
         >
           More
-        </button>
+        </Button>
       </div>
-      <button
+      <Button
         className="tablet-navigation"
         aria-expanded={menuOpen}
         aria-controls="workspace-menu"
         onClick={() => setMenuOpen(!menuOpen)}
       >
         {WORKSPACES.find((item) => item.id === view)?.label} ▾
-      </button>
+      </Button>
       {menuOpen && (
         <div
           id="workspace-menu"

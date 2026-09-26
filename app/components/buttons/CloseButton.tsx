@@ -1,3 +1,4 @@
+import { IconButton } from "../ui";
 import React from "react";
 
 interface CloseButtonProps {
@@ -7,12 +8,12 @@ interface CloseButtonProps {
 
 export default function CloseButton({ onClose, ariaLabel }: CloseButtonProps) {
   return (
-    <button
+    <IconButton
       className="close-button"
       onClick={onClose}
       aria-label={ariaLabel ?? "Close window"}
     >
       ×
-    </button>
+    </IconButton>
   );
 }

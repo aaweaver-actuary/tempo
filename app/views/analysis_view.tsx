@@ -1,3 +1,4 @@
+import { Button, SelectInput, TextArea } from "../components/ui";
 import { useTaskTabs } from "../components/task-tabs";
 import { BoardTools } from "../components/board-workspace";
 import {
@@ -1100,11 +1101,11 @@ export default function BuilderView({
       <div className="analysis-heading compact-analysis">
         <h1>Builder</h1>
         <div className="analysis-switches">
-          {onPasteAnalysis && <button className="analysis-paste-trigger" onClick={() => onPasteAnalysis({
+          {onPasteAnalysis && <Button className="analysis-paste-trigger" onClick={() => onPasteAnalysis({
             startingFen: initialSession?.sourceGapId ? startingFen : fen,
             sourceGapId: initialSession?.sourceGapId,
-          })}>Paste analysis</button>}
-          <select
+          })}>Paste analysis</Button>}
+          <SelectInput
             aria-label="Active repertoire"
             value={selectedRepertoire?.id ?? ""}
             onChange={(event) => {
@@ -1146,11 +1147,11 @@ export default function BuilderView({
                 {item.name} · {item.side}
               </option>
             ))}
-          </select>
-          {!useSharedBoard && <button title="Flip board (F)" onClick={flipBuilder}>
+          </SelectInput>
+          {!useSharedBoard && <Button title="Flip board (F)" onClick={flipBuilder}>
             ⇅ {orientation === "white" ? "White" : "Black"}
-          </button>}
-          <button
+          </Button>}
+          <Button
             className={isStockfishOn ? "on" : ""}
             onClick={() =>
               rememberToggle(
@@ -1161,13 +1162,13 @@ export default function BuilderView({
             }
           >
             <i /> Stockfish 19
-          </button>
-          <button
+          </Button>
+          <Button
             className={maiaOn ? "on" : ""}
             onClick={() => rememberToggle("tempo-maia-on", !maiaOn, setMaiaOn)}
           >
             <i /> Maia 3
-          </button>
+          </Button>
         </div>
       </div>
       {tools.tabs}
@@ -1185,7 +1186,7 @@ export default function BuilderView({
                     : exactTransposition.repertoireName}
                 </strong>
               </span>
-              <button
+              <Button
                 onClick={() => {
                   setBranchStart(branchStart ?? 0);
                   setBranchNote(
@@ -1198,8 +1199,8 @@ export default function BuilderView({
                 }}
               >
                 Add as branch
-              </button>
-              <button
+              </Button>
+              <Button
                 aria-label="Dismiss transposition"
                 onClick={() =>
                   setDismissedTranspositions((current) => [
@@ -1209,7 +1210,7 @@ export default function BuilderView({
                 }
               >
                 ×
-              </button>
+              </Button>
             </div>
           )}
           {!useSharedBoard && (
@@ -1252,21 +1253,21 @@ export default function BuilderView({
             </span>
           </div>
           <BoardTools>
-            <button
+            <Button
               onClick={() => setCursor((value) => Math.max(0, value - 1))}
               disabled={!cursor}
             >
               ← <span>Back</span>
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={advanceHistoryOnePly}
               disabled={cursor === history.length}
             >
               → <span>Forward</span>
-            </button>
-            <button onClick={reset}>
+            </Button>
+            <Button onClick={reset}>
               ↻ <span>Reset</span>
-            </button>
+            </Button>
             <a
               href={`https://lichess.org/analysis/standard/${encodeURIComponent(fen)}`}
               target="_blank"
@@ -1279,21 +1280,21 @@ export default function BuilderView({
             <span>
               {history.length
                 ? history.map((move, index) => (
-                    <button
+                    <Button
                       className={index < cursor ? "shown" : ""}
                       key={`${move.uci}-${index}`}
                       onClick={() => navigateHistoryToPly(index + 1)}
                     >
                       {index % 2 === 0 ? `${Math.floor(index / 2) + 1}.` : ""}
                       {move.san}
-                    </button>
+                    </Button>
                   ))
                 : "Make a move to search your repertoire"}
             </span>
             <small>←/→ move · Home/End jump</small>
-            <button onClick={() => navigator.clipboard?.writeText(fen)}>
+            <Button onClick={() => navigator.clipboard?.writeText(fen)}>
               Copy FEN
-            </button>
+            </Button>
           </div>
           <div className="branch-editor" data-task="Repertoire">
             <span>
@@ -1308,20 +1309,20 @@ export default function BuilderView({
               </small>
             </span>
             {branchStart === null ? (
-              <button
+              <Button
                 onClick={() => {
                   setBranchStart(cursor);
                   setBranchNote("");
                 }}
               >
                 ＋ Add branch here
-              </button>
+              </Button>
             ) : (
               <>
-                <button className="save" onClick={saveBranch}>
+                <Button className="save" onClick={saveBranch}>
                   Save branch
-                </button>
-                <button
+                </Button>
+                <Button
                   onClick={() => {
                     setHistory((h) => h.slice(0, branchStart));
                     setCursor(branchStart);
@@ -1329,17 +1330,17 @@ export default function BuilderView({
                   }}
                 >
                   Cancel
-                </button>
+                </Button>
               </>
             )}
             {usesLocalApi() && (
-              <button
+              <Button
                 className="danger"
                 onClick={() => void removeBranchFromCurrentPosition()}
                 disabled={!selectedRepertoire || cursor === 0}
               >
                 Delete line from here
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -1347,7 +1348,7 @@ export default function BuilderView({
           <section className="analysis-panel comparison-panel" data-task="Compare" data-turn-context={trainedTurn ? "trained-player" : "opponent"}>
             <div className="comparison-toolbar">
               <h2 className="sr-only">Compare moves</h2>
-              <button
+              <Button
                 className="comparison-connect"
                 onClick={() =>
                   rememberToggle(
@@ -1358,19 +1359,19 @@ export default function BuilderView({
                 }
               >
                 {explorerOn ? "Pause databases" : "Enable databases"}
-              </button>
+              </Button>
               {(!lichessToken || explorerAuthenticationRejected) && (
-                <button className="comparison-connect" onClick={() => void connectLichess()}>
+                <Button className="comparison-connect" onClick={() => void connectLichess()}>
                   {lichessToken ? "Reconnect Lichess" : "Connect Lichess"}
-                </button>
+                </Button>
               )}
               {lichessToken && (
-                <button
+                <Button
                   className="comparison-connect"
                   onClick={disconnectLichess}
                 >
                   Disconnect
-                </button>
+                </Button>
               )}
             </div>
             <p className="source-status" role="status">
@@ -1475,7 +1476,7 @@ export default function BuilderView({
                   <strong>Shown only after a mistake</strong>
                 </div>
               </div>
-              <textarea
+              <TextArea
                 aria-label="Position comment"
                 disabled={!annotation}
                 placeholder="Add a reminder for this exact position…"
@@ -1494,7 +1495,7 @@ export default function BuilderView({
               </small>
               <div className="annotation-actions">
                 <span role="status">{annotationStatus}</span>
-                <button
+                <Button
                   onClick={() => {
                     setAnnotation((current) =>
                       current
@@ -1505,13 +1506,13 @@ export default function BuilderView({
                   }}
                 >
                   Clear
-                </button>
-                <button
+                </Button>
+                <Button
                   className="save"
                   onClick={() => void persistAnnotation()}
                 >
                   Save note
-                </button>
+                </Button>
               </div>
             </section>
             <section className="analysis-panel similarity-panel" data-task="Repertoire">
@@ -1525,7 +1526,7 @@ export default function BuilderView({
               {similarPositions.length ? (
                 <div className="similar-position-list">
                   {similarPositions.map((position) => (
-                    <button
+                    <Button
                       key={`${position.lineId}-${position.ply}-${position.nextUci}`}
                       onClick={() =>
                         position.nextUci && playUci(position.nextUci)
@@ -1545,7 +1546,7 @@ export default function BuilderView({
                       <small>
                         {position.repertoireName} · ply {position.ply}
                       </small>
-                    </button>
+                    </Button>
                   ))}
                 </div>
               ) : (
@@ -1561,7 +1562,7 @@ export default function BuilderView({
                   <strong>Likely transpositions</strong>
                 </div>
               </div>
-              <button
+              <Button
                 className="find-transpositions"
                 disabled={!maiaOn || transpositionState === "loading"}
                 onClick={() => void findTranspositions()}
@@ -1569,7 +1570,7 @@ export default function BuilderView({
                 {transpositionState === "loading"
                   ? "Searching…"
                   : "Find likely paths"}
-              </button>
+              </Button>
               {transpositionState === "error" && (
                 <p className="panel-message error">
                   Maia could not complete this search.
@@ -1581,7 +1582,7 @@ export default function BuilderView({
                 </p>
               )}
               {transpositions.map((result) => (
-                <button
+                <Button
                   className="transposition-result"
                   key={`${result.lineId}-${result.ply}-${result.path.join("-")}`}
                   onClick={() => result.path[0] && playUci(result.path[0])}
@@ -1596,10 +1597,10 @@ export default function BuilderView({
                     {Math.round(result.probability * 100)}% path ·{" "}
                     {result.repertoireName}
                   </small>
-                </button>
+                </Button>
               ))}
             </section>
-            <button
+            <Button
               className="analysis-panel repertoire-results position-preview" data-task="Repertoire"
               onClick={() => {
                 setCurrentSearchIndex(0);
@@ -1624,7 +1625,7 @@ export default function BuilderView({
                   <strong>{lineMoveName(line)}</strong>
                 </span>
               ))}
-            </button>
+            </Button>
             <section className="analysis-panel engine-panel" data-task="Compare">
               <div className="panel-heading">
                 <div>
@@ -1689,7 +1690,7 @@ export default function BuilderView({
           onMouseDown={() => setIsSearchOpen(false)}
         >
           <section
-            className="position-search-modal"
+            className="ui-dialog position-search-modal"
             role="dialog"
             aria-modal="true"
             aria-label="Position search"
@@ -1703,7 +1704,7 @@ export default function BuilderView({
             <p>{lineMatches.length} matching branches</p>
             <div className="position-search-list">
               {lineMatches.map((line, index) => (
-                <button
+                <Button
                   className={index === currentSearchIndex ? "active" : ""}
                   key={line.id}
                   onMouseEnter={() => setCurrentSearchIndex(index)}
@@ -1717,7 +1718,7 @@ export default function BuilderView({
                     {line.moves.slice(cursor, cursor + 4).join(" · ") ||
                       "Exact line endpoint"}
                   </small>
-                </button>
+                </Button>
               ))}
             </div>
           </section>

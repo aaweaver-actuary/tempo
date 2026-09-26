@@ -1,3 +1,4 @@
+import { Button, TextInput, TextArea } from "../components/ui";
 import { useRef as useDialogRef } from "react";
 import { useDialogFocus } from "../hooks/use-dialog-focus";
 import { reportDebugError } from "../lib/debug-reporting";
@@ -305,7 +306,7 @@ export default function CardEditor({
   return (
     <div className="modal-backdrop" onMouseDown={onClose}>
       <section
-        className="card-editor"
+        className="ui-dialog card-editor"
         ref={dialogRef}
         tabIndex={-1}
         role="dialog"
@@ -324,36 +325,36 @@ export default function CardEditor({
             </h2>
           </div>
           {card.sourceUrl && (
-            <button onClick={restoreOriginal}>Restore Lichess original</button>
+            <Button onClick={restoreOriginal}>Restore Lichess original</Button>
           )}
         </div>
         <div className="editor-tabs">
-          <button
+          <Button
             className={tab === "position" ? "active" : ""}
             onClick={() => setTab("position")}
           >
             Position
-          </button>
-          <button
+          </Button>
+          <Button
             className={tab === "solution" ? "active" : ""}
             onClick={() => setTab("solution")}
           >
             Solution
-          </button>
+          </Button>
         </div>
         <div className="editor-layout">
           <div className="editor-board-column">
             {tab === "position" && (
               <div className="piece-palette">
                 {Object.entries(pieceSymbols).map(([id, symbol]) => (
-                  <button
+                  <Button
                     className={piece === id ? "active" : ""}
                     key={id || "remove"}
                     onClick={() => setPiece(id)}
                     aria-label={id ? `Place ${id}` : "Remove piece"}
                   >
                     {symbol}
-                  </button>
+                  </Button>
                 ))}
               </div>
             )}
@@ -387,7 +388,7 @@ export default function CardEditor({
                 <div className="solution-line">
                   {solutionSanMovesList.length ? (
                     solutionSanMovesList.map((move, index) => (
-                      <button
+                      <Button
                         className={
                           index < currentPositionInMoveList ? "shown" : ""
                         }
@@ -396,7 +397,7 @@ export default function CardEditor({
                       >
                         {index % 2 === 0 ? `${Math.floor(index / 2) + 1}.` : ""}
                         {move}
-                      </button>
+                      </Button>
                     ))
                   ) : (
                     <span>Play the solution on the board.</span>
@@ -430,7 +431,7 @@ export default function CardEditor({
             )}
             <label>
               FEN
-              <textarea
+              <TextArea
                 value={currentFenString}
                 onChange={(event) => {
                   try {
@@ -449,7 +450,7 @@ export default function CardEditor({
             {card.editingIntent !== "shorten-prefix" && <fieldset>
               <legend>Scheduling history</legend>
               <label>
-                <input
+                <TextInput
                   type="radio"
                   checked={historyMode === "preserve"}
                   onChange={() => setHistoryMode("preserve")}
@@ -457,7 +458,7 @@ export default function CardEditor({
                 Preserve history
               </label>
               <label>
-                <input
+                <TextInput
                   type="radio"
                   checked={historyMode === "reset"}
                   onChange={() => setHistoryMode("reset")}
@@ -468,16 +469,16 @@ export default function CardEditor({
             {error && <p className="editor-error">{error}</p>}
             <div className="editor-actions">
               {usesLocalApi() && card.kind === "opening" && (
-                <button onClick={openBuilderForLineRemoval}>
+                <Button onClick={openBuilderForLineRemoval}>
                   Open Builder to remove line
-                </button>
+                </Button>
               )}
-              <button onClick={onClose}>Cancel</button>
-              <button className="primary-button" onClick={save}>
+              <Button onClick={onClose}>Cancel</Button>
+              <Button variant="primary" className="primary-button" onClick={save}>
                 {card.editingIntent === "shorten-prefix"
                   ? "Accept split"
                   : "Validate & save"}
-              </button>
+              </Button>
             </div>
           </div>
         </div>

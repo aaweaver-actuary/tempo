@@ -1,3 +1,4 @@
+import { Button } from "../ui";
 import { PracticeCard } from "../../types";
 
 interface EditCardButtonProps {
@@ -10,8 +11,8 @@ export default function EditCardButton({
   setEditorCard,
 }: EditCardButtonProps) {
   return (
-    <button onClick={() => setEditorCard(card)}>
+    <Button onClick={() => setEditorCard(card)}>
       ✎ <span>Edit card</span>
-    </button>
+    </Button>
   );
 }

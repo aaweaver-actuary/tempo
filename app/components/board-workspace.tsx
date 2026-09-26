@@ -1,4 +1,5 @@
 "use client";
+import { Button } from "./ui";
 import {
   createContext,
   useContext,
@@ -140,7 +141,7 @@ export function BoardWorkspace({
         <PersistentBoardShell />
         <div className="shared-board-toolbar" ref={toolbarRef}>
           <div className="board-tools" aria-label="Board controls">
-            <button
+            <Button
               disabled={Boolean(board.unavailable)}
               aria-label="Flip board"
               title="Flip board (F)"
@@ -150,7 +151,7 @@ export function BoardWorkspace({
               }}
             >
               ⇅ <span>Flip</span>
-            </button>
+            </Button>
             <div className="workspace-board-actions" ref={setToolbarTarget} />
           </div>
         </div>
@@ -191,13 +192,13 @@ export function BoardWorkspace({
             dragPointer.current = null;
           }}
         />
-        <button
+        <Button
           aria-label="Reset board size"
           title="Reset board size"
           onClick={() => changeSplit(DEFAULT_BOARD_SPLIT)}
         >
           ↺
-        </button>
+        </Button>
       </div>
       <BoardToolbarTarget.Provider value={toolbarTarget}>
         <div

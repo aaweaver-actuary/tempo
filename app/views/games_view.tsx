@@ -1,4 +1,5 @@
 "use client";
+import { ActionLink, Button, TextInput, SelectInput } from "../components/ui";
 import { Notice, useTaskTabs } from "../components/task-tabs";
 import { BoardTools } from "../components/board-workspace";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -723,11 +724,11 @@ export default function GamesView({
         </div>
         {local && (
           <div>
-            <button className="primary-button sync-button" onClick={onSync} disabled={syncState.syncing} aria-label={syncState.syncing ? "Syncing games" : "↻ Sync games"}>
+            <Button variant="primary" className="primary-button sync-button" onClick={onSync} disabled={syncState.syncing} aria-label={syncState.syncing ? "Syncing games" : "↻ Sync games"}>
               {syncState.syncing && <i />}
               {syncState.syncing ? "Syncing games" : "↻ Sync now"}
-            </button>
-            <button onClick={() => onRepair?.()} disabled={syncState.syncing}>Repair last 90 days</button>
+            </Button>
+            <Button onClick={() => onRepair?.()} disabled={syncState.syncing}>Repair last 90 days</Button>
           </div>
         )}
       </div>
@@ -736,7 +737,7 @@ export default function GamesView({
         <section className="position-game-summary" aria-label="Games from reviewed position">
           <p>
             Position filter · {positionSummary?.encounters ?? 0} encounters · {positionSummary?.analyzed_encounters ?? 0} analyzed
-            {" "}<button onClick={onClearFenFilter}>Clear</button>
+            {" "}<Button onClick={onClearFenFilter}>Clear</Button>
           </p>
           {positionSummary?.moves.map((move) => (
             <p key={move.move_uci}>
@@ -755,8 +756,8 @@ export default function GamesView({
       {(error || syncState.error) && (
         <p role="alert">
           {error || syncState.error}{" "}
-          {error && <button onClick={() => { invalidateWorkspaceData(); void loadGames(); }}>Retry</button>}
-          <button onClick={onSettings}>Account settings</button>
+          {error && <Button onClick={() => { invalidateWorkspaceData(); void loadGames(); }}>Retry</Button>}
+          <Button onClick={onSettings}>Account settings</Button>
         </p>
       )}
       {!local && (
@@ -790,25 +791,25 @@ export default function GamesView({
             />
           )}
           <BoardTools>
-            {boardMode !== "game" && <button onClick={() => setBoardMode("game")}>Return to game</button>}
-            <button
+            {boardMode !== "game" && <Button onClick={() => setBoardMode("game")}>Return to game</Button>}
+            <Button
               disabled={!selectedDetailsReady || boardMode !== "game" || cursor === 0}
               onClick={() => setCursor((value) => Math.max(0, value - 1))}
             >
               ← Back
-            </button>
-            <button disabled={!selectedDetailsReady || boardMode !== "game" || cursor >= selected!.moves.length}
+            </Button>
+            <Button disabled={!selectedDetailsReady || boardMode !== "game" || cursor >= selected!.moves.length}
               onClick={advanceGameOnePly}
             >
               Forward →
-            </button>
-            <button
+            </Button>
+            <Button
               disabled={!selectedDetailsReady || boardMode !== "game"}
               onClick={() => setCursor(selected?.flagPly ?? 0)}
             >
               ⚑ First mistake
-            </button>
-            <button
+            </Button>
+            <Button
               className={engineOn ? "active" : ""}
               onClick={() =>
                 setEngineOn((value) => {
@@ -818,7 +819,7 @@ export default function GamesView({
               }
             >
               Stockfish
-            </button>
+            </Button>
           </BoardTools>
         </div>
         <div className="game-side-scroll">
@@ -829,7 +830,7 @@ export default function GamesView({
             {engineOn && <p>{engineText}</p>}
             <div className="game-moves">
               {selectedDetailsReady && selected?.moves.map((move, index) => (
-                <button
+                <Button
                   className={`${index < cursor ? "shown" : ""}${index === selected.flagPly ? " flagged" : ""}`}
                   onClick={() => navigateGameToPly(index + 1)}
                   key={index}
@@ -838,21 +839,21 @@ export default function GamesView({
                   {index % 2 === 0 ? `${Math.floor(index / 2) + 1}.` : ""}
                   {move}
                   {[...(selected.timeline ?? []), ...selectedFindings].some((event) => event.ply === index) ? " •" : ""}
-                </button>
+                </Button>
               ))}
             </div>
             {selectedDetailsReady && selected && (
               <>
-                <button className="primary-button" onClick={() => void startGuidedReview()}>
+                <Button variant="primary" className="primary-button" onClick={() => void startGuidedReview()}>
                   Review this game
-                </button>
-                <button
-                  className="primary-button"
+                </Button>
+                <Button
+                  variant="primary" className="primary-button"
                   onClick={() => onAnalyze(selected, cursor)}
                 >
                   Open position in Builder
-                </button>
-                <a
+                </Button>
+                <ActionLink variant="quiet"
                   href={lichessAnalysisUrl(
                     selected.moves.slice(0, cursor),
                     selected.startFen,
@@ -861,7 +862,7 @@ export default function GamesView({
                   rel="noreferrer"
                 >
                   Lichess analysis ↗
-                </a>
+                </ActionLink>
               </>
             )}
           </aside>
@@ -870,7 +871,7 @@ export default function GamesView({
               <article aria-label="Defensive threat candidates">
                 <span>Defensive threats</span>
                 <strong>{defenseCandidates.filter((candidate) => !candidate.dismissed_at).length} candidates</strong>
-                <button disabled={defenseBusy} onClick={() => void refreshDefensiveThreats()}>Check this game</button>
+                <Button disabled={defenseBusy} onClick={() => void refreshDefensiveThreats()}>Check this game</Button>
                 {defenseCandidates.length === 0 && <small>No checking knight-fork candidates found for this analysis.</small>}
                 {defenseCandidates.map((candidate) => (
                   <div key={candidate.id}>
@@ -882,13 +883,13 @@ export default function GamesView({
                     {!candidate.approved_at && !candidate.dismissed_at && candidate.validation_state === "engine_supported" && (
                       <>
                         <small>Evidence: knight to {candidate.evidence.seed.geometry.knight_to} checks king {candidate.evidence.seed.geometry.king.square} and attacks {candidate.evidence.seed.geometry.major.piece} {candidate.evidence.seed.geometry.major.square}.</small>
-                        <button disabled={defenseBusy} onClick={() => void decideDefenseCandidate(candidate.id, "train-now")}>Train now</button>
-                        <button disabled={defenseBusy} onClick={() => void decideDefenseCandidate(candidate.id, candidate.paused_at ? "resume" : "pause")}>{candidate.paused_at ? "Resume automatic training" : "Pause automatic training"}</button>
+                        <Button disabled={defenseBusy} onClick={() => void decideDefenseCandidate(candidate.id, "train-now")}>Train now</Button>
+                        <Button disabled={defenseBusy} onClick={() => void decideDefenseCandidate(candidate.id, candidate.paused_at ? "resume" : "pause")}>{candidate.paused_at ? "Resume automatic training" : "Pause automatic training"}</Button>
                       </>
                     )}
-                    {!candidate.approved_at && !candidate.dismissed_at && <button disabled={defenseBusy} onClick={() => void decideDefenseCandidate(candidate.id, "dismiss")}>Dismiss</button>}
+                    {!candidate.approved_at && !candidate.dismissed_at && <Button disabled={defenseBusy} onClick={() => void decideDefenseCandidate(candidate.id, "dismiss")}>Dismiss</Button>}
                     {candidate.analysis_requests.filter((request) => request.state === "failed").map((request) => (
-                      <button key={request.id} onClick={() => void retryDefenseAnalysis(request.id)}>Retry analysis: {request.last_error ?? request.role}</button>
+                      <Button key={request.id} onClick={() => void retryDefenseAnalysis(request.id)}>Retry analysis: {request.last_error ?? request.role}</Button>
                     ))}
                   </div>
                 ))}
@@ -916,15 +917,15 @@ export default function GamesView({
                   <small>Opportunity {tacticalQueue.item.opportunity_value_cp} cp · cost {tacticalQueue.item.evaluation_loss_cp} cp · played {tacticalQueue.item.evidence.actual_move_uci ?? "—"} · best {tacticalQueue.item.accepted_moves[0] ?? "—"}</small>
                   {!tacticalReveal && <p>Try the move on the board, or reveal the engine-supported conversion.</p>}
                   {tacticalReveal && <p>Engine line: {(tacticalQueue.item.evidence.candidate_lines?.[0]?.pv ?? []).join(" ") || tacticalQueue.item.accepted_moves[0]}</p>}
-                  <button onClick={() => setBoardMode("tactical")}>Review tactic on board</button>
-                  <button onClick={() => setTacticalReveal(true)} disabled={tacticalReveal}>Reveal line</button>
-                  {!tacticalPreview ? <button onClick={() => void previewTacticalCard(false)} disabled={tacticalBusy}>Preview puzzle</button> : <>
+                  <Button onClick={() => setBoardMode("tactical")}>Review tactic on board</Button>
+                  <Button onClick={() => setTacticalReveal(true)} disabled={tacticalReveal}>Reveal line</Button>
+                  {!tacticalPreview ? <Button onClick={() => void previewTacticalCard(false)} disabled={tacticalBusy}>Preview puzzle</Button> : <>
                     <small>Preview: {tacticalPreview.moves.join(" ")}</small>
-                    <button onClick={() => void previewTacticalCard(true)} disabled={tacticalBusy}>{tacticalPreview.existing_card_id ? "Add existing puzzle" : "Add to deck"}</button>
+                    <Button onClick={() => void previewTacticalCard(true)} disabled={tacticalBusy}>{tacticalPreview.existing_card_id ? "Add existing puzzle" : "Add to deck"}</Button>
                   </>}
-                  <button onClick={() => void tacticalCurationAction("skip")} disabled={tacticalBusy}>Skip for now</button>
-                  <button onClick={() => void tacticalCurationAction("ignore")} disabled={tacticalBusy}>Ignore permanently</button>
-                  <button onClick={() => selectGame(tacticalQueue.item!.game_id as GameId, tacticalQueue.item!.ply)}>Open source game</button>
+                  <Button onClick={() => void tacticalCurationAction("skip")} disabled={tacticalBusy}>Skip for now</Button>
+                  <Button onClick={() => void tacticalCurationAction("ignore")} disabled={tacticalBusy}>Ignore permanently</Button>
+                  <Button onClick={() => selectGame(tacticalQueue.item!.game_id as GameId, tacticalQueue.item!.ply)}>Open source game</Button>
                 </> : <small>No pending tactical misses.</small>}
               </article>
             )}
@@ -943,11 +944,11 @@ export default function GamesView({
                       {guidedReveal.revealed.answer.loss_cp != null ? ` · ${guidedReveal.revealed.answer.loss_cp} cp` : ""}
                     </small>
                     <p>{guidedReveal.revealed.answer.principal_variation.join(" ")}</p>
-                    <button onClick={() => {
+                    <Button onClick={() => {
                       setGuidedReview(guidedReveal.session);
                       setGuidedReveal(null);
-                    }}>{guidedReveal.session.status === "complete" ? "Finish review" : "Next correction"}</button>
-                    {selected && <button onClick={() => onAnalyze(selected, guidedReveal.revealed.ply)}>Open full Builder analysis</button>}
+                    }}>{guidedReveal.session.status === "complete" ? "Finish review" : "Next correction"}</Button>
+                    {selected && <Button onClick={() => onAnalyze(selected, guidedReveal.revealed.ply)}>Open full Builder analysis</Button>}
                   </>
                 )}
                 {guidedReview.status === "complete" && !guidedReveal && <p>All selected corrections reviewed. No study scheduling changed.</p>}
@@ -975,27 +976,27 @@ export default function GamesView({
             {selected && <article>
               <span>Adaptation review</span>
               <strong>{selectedFindings.length}</strong>
-              <button onClick={excludeSelectedGame}>Ignore this game for adaptation</button>
+              <Button onClick={excludeSelectedGame}>Ignore this game for adaptation</Button>
             </article>}
             {selectedFindings.map((finding) => (
               <article key={finding.id}>
                 <span>{finding.kind}{finding.kind === "tactical miss" ? ` · ${finding.confidence >= 0.8 ? finding.motif : "unclassified"}` : ""}</span>
                 <small>Move {Math.floor(finding.ply / 2) + 1}</small>
-                {finding.kind === "repertoire lapse" && finding.card_id && <button onClick={() => void decideFinding(finding.id, "accepted")}>Prioritize review</button>}
-                {finding.kind === "first big mistake" && !cardPreviews[finding.id] && <button onClick={() => void createFindingCard(finding.id, false)}>Preview study card</button>}
+                {finding.kind === "repertoire lapse" && finding.card_id && <Button onClick={() => void decideFinding(finding.id, "accepted")}>Prioritize review</Button>}
+                {finding.kind === "first big mistake" && !cardPreviews[finding.id] && <Button onClick={() => void createFindingCard(finding.id, false)}>Preview study card</Button>}
                 {finding.kind === "first big mistake" && cardPreviews[finding.id] && <>
                   <small>{cardPreviews[finding.id].starting_fen} · {cardPreviews[finding.id].moves.join(" ")}</small>
-                  {selected && <button onClick={() => onAnalyze(selected, finding.ply)}>Edit position in Builder</button>}
-                  <button onClick={() => void createFindingCard(finding.id, true)}>{cardPreviews[finding.id].existing_card_id ? "Use existing card" : "Save card due today"}</button>
+                  {selected && <Button onClick={() => onAnalyze(selected, finding.ply)}>Edit position in Builder</Button>}
+                  <Button onClick={() => void createFindingCard(finding.id, true)}>{cardPreviews[finding.id].existing_card_id ? "Use existing card" : "Save card due today"}</Button>
                 </>}
-                <button onClick={() => void decideFinding(finding.id, "ignored")}>Ignore</button>
+                <Button onClick={() => void decideFinding(finding.id, "ignored")}>Ignore</Button>
               </article>
             ))}
           </div>
           <div data-task="Library"><div className="game-filters">
             {(["source", "status", "color", "speed", "result"] as const).map(
               (field) => (
-                <select
+                <SelectInput
                   key={field}
                   aria-label={`Filter ${field}`}
                   value={filters[field]}
@@ -1010,10 +1011,10 @@ export default function GamesView({
                       <option key={value}>{value}</option>
                     ),
                   )}
-                </select>
+                </SelectInput>
               ),
             )}
-            <input
+            <TextInput
               aria-label="Games since"
               type="date"
               value={filters.from}
@@ -1026,7 +1027,7 @@ export default function GamesView({
           </div>
           <section className="game-list">
             {games.map((game) => (
-              <button
+              <Button
                 className={`game-row${selected?.id === game.id ? " selected" : ""}`}
                 key={game.id}
                 onClick={() => {
@@ -1044,25 +1045,25 @@ export default function GamesView({
                   <em>{game.status}</em>
                   <small>{game.detail}</small>
                 </span>
-              </button>
+              </Button>
             ))}
             {!games.length && (
               <div className="games-empty">
                 <strong>No matching games.</strong>
-                <button onClick={onSettings}>Set game accounts</button>
+                <Button onClick={onSettings}>Set game accounts</Button>
               </div>
             )}
           </section>
           <div className="pagination" aria-label="Game pages">
-            <button disabled={!cursorHistory.length} onClick={() => {
+            <Button disabled={!cursorHistory.length} onClick={() => {
               const previous = cursorHistory[cursorHistory.length - 1] ?? null;
               setCursorHistory((history) => history.slice(0, -1));
               setPageCursor(previous);
-            }}>Previous games</button>
-            <button disabled={!nextPageCursor} onClick={() => {
+            }}>Previous games</Button>
+            <Button disabled={!nextPageCursor} onClick={() => {
               setCursorHistory((history) => [...history, pageCursor]);
               setPageCursor(nextPageCursor);
-            }}>Next games</button>
+            }}>Next games</Button>
           </div>
           </div>
         </div>

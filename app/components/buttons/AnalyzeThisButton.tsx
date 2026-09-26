@@ -1,4 +1,5 @@
 import { lichessAnalysisUrl } from "../../utils/urls";
+import { ActionLink } from "../ui";
 
 export default function AnalyzeThisButton({
   line,
@@ -8,13 +9,13 @@ export default function AnalyzeThisButton({
   ply: number;
 }) {
   return (
-    <a
+    <ActionLink
       className="tree-analysis"
       href={lichessAnalysisUrl(line.slice(0, ply))}
       target="_blank"
       rel="noreferrer"
     >
       ↗ Analyze this position on Lichess
-    </a>
+    </ActionLink>
   );
 }

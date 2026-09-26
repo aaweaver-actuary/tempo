@@ -1,4 +1,5 @@
 "use client";
+import { Button } from "./ui";
 
 import { Fragment, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { API_URL } from "../const";
@@ -130,17 +131,17 @@ export function ServiceStatusPanel() {
     + localItems.filter(item => item.state === "running" || item.state === "queued").length;
 
   return <aside className="tempo-activity-tray">
-    <button type="button" className="tempo-activity-trigger" aria-label="Analysis activity" aria-expanded={open} aria-controls="tempo-activity-content"
+    <Button type="button" className="tempo-activity-trigger" aria-label="Analysis activity" aria-expanded={open} aria-controls="tempo-activity-content"
       onClick={() => setOpen(value => !value)}>
       <span className="tempo-activity-trigger-desktop">Analysis activity</span>
       <span className="tempo-activity-trigger-mobile">Activity</span>
       {activeCount > 0 && <span> · {activeCount}</span>}
       {((status?.counts.failed ?? 0) > 0 || status?.writer?.healthy === false || error) && <span className="tempo-activity-attention" aria-label="needs attention"> !</span>}
-    </button>
+    </Button>
     {open && <section id="tempo-activity-content" className="tempo-activity-content" aria-label="Analysis activity">
-      <div className="tempo-activity-heading"><strong>Background activity</strong><button type="button" onClick={() => setOpen(false)}>Close</button></div>
+      <div className="tempo-activity-heading"><strong>Background activity</strong><Button type="button" onClick={() => setOpen(false)}>Close</Button></div>
       {!usesLocalApi() && <p>This practice demo has no local analysis service.</p>}
-      {error && <p role="alert">{error} <button type="button" onClick={() => void refresh()}>Retry status</button></p>}
+      {error && <p role="alert">{error} <Button type="button" onClick={() => void refresh()}>Retry status</Button></p>}
       {status?.writer?.healthy === false && <p role="alert">The database writer is unavailable. Restart Tempo before making changes.</p>}
       {status && <p>{status.counts.running} running · {status.counts.queued} queued · {status.counts.paused} paused · {status.counts.failed} failed</p>}
       {!error && visibleItems.length === 0 && <p>No background activity yet.</p>}
@@ -157,18 +158,18 @@ export function ServiceStatusPanel() {
             <ProgressBar item={item} />
             <time dateTime={item.updated_at}>Updated {item.updated_at.replace("T", " ").slice(0, 16)} UTC</time>
             {controlEligible && <div className="tempo-activity-actions">
-              <button type="button" disabled={busyKey === key} onClick={() => void control(item, item.paused ? "resume" : "pause")}>{item.paused ? "Resume" : "Pause"}</button>
-              <button type="button" disabled={busyKey === key} onClick={() => void control(item, item.promoted ? "normal" : "prioritize")}>{item.promoted ? "Normal priority" : "Prioritize"}</button>
+              <Button type="button" disabled={busyKey === key} onClick={() => void control(item, item.paused ? "resume" : "pause")}>{item.paused ? "Resume" : "Pause"}</Button>
+              <Button type="button" disabled={busyKey === key} onClick={() => void control(item, item.promoted ? "normal" : "prioritize")}>{item.promoted ? "Normal priority" : "Prioritize"}</Button>
             </div>}
             {item.state === "failed" && (item.source === "durable" || item.source === "game_analysis" || item.source === "threat_analysis") &&
-              <button type="button" disabled={busyKey === key} onClick={() => void retry(item)}>Retry {item.title}</button>}
+              <Button type="button" disabled={busyKey === key} onClick={() => void retry(item)}>Retry {item.title}</Button>}
             </article>
           </Fragment>;
         })}
       </div>
       <div className="tempo-activity-pages">
-        {offset > 0 && <button type="button" onClick={() => setOffset(Math.max(0, offset - 50))}>Previous</button>}
-        {nextOffset !== null && <button type="button" onClick={() => setOffset(nextOffset)}>Show more</button>}
+        {offset > 0 && <Button type="button" onClick={() => setOffset(Math.max(0, offset - 50))}>Previous</Button>}
+        {nextOffset !== null && <Button type="button" onClick={() => setOffset(nextOffset)}>Show more</Button>}
       </div>
     </section>}
   </aside>;

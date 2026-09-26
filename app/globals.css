@@ -801,47 +801,6 @@ button {
   gap: 9px;
   align-items: center;
 }
-.action-menu,
-.card-menu { position: relative; }
-.action-menu summary,
-.card-menu summary {
-  min-height: 36px;
-  padding: 10px 14px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 700;
-  list-style: none;
-}
-.action-menu summary::-webkit-details-marker,
-.card-menu summary::-webkit-details-marker { display: none; }
-.action-menu > button,
-.card-menu > div {
-  position: absolute;
-  right: 0;
-  z-index: 20;
-  display: grid;
-  gap: 4px;
-  min-width: 150px;
-  padding: 8px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
-  background: var(--panel);
-  box-shadow: 0 8px 24px #2222;
-}
-.action-menu > button { top: calc(100% + 4px); }
-.card-menu > div { top: calc(100% + 4px); }
-.action-menu > button,
-.card-menu > div button {
-  min-height: 36px;
-  padding: 8px 10px;
-  border: 0;
-  background: transparent;
-  text-align: left;
-  font-weight: 700;
-}
 .heading-actions > button:not(.primary-button) {
   padding: 12px 15px;
   border: 1px solid var(--line);

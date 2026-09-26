@@ -1,4 +1,6 @@
-import { useId, useState, type ReactNode } from "react";
+import { Button, TabList } from "./ui";
+import { useId, useState } from "react";
+export { Notice } from "./ui";
 export function useTaskTabs(
   names: readonly string[],
   initial: string,
@@ -16,9 +18,9 @@ export function useTaskTabs(
   }
   const id = useId();
   const tabs = (
-    <div className="task-tabs" role="tablist" aria-label="Workspace tools">
+    <TabList className="task-tabs" label="Workspace tools">
       {names.map((name, index) => (
-        <button
+        <Button
           key={name}
           id={`${id}-${name}`}
           role="tab"
@@ -45,9 +47,9 @@ export function useTaskTabs(
           }}
         >
           {name}
-        </button>
+        </Button>
       ))}
-    </div>
+    </TabList>
   );
   return {
     activeTab,
@@ -55,23 +57,4 @@ export function useTaskTabs(
     panelProps: { id: `${id}-panel`, "data-active-task": activeTab },
     label: id,
   };
-}
-export function Notice({
-  children,
-  onRetry,
-  error = false,
-}: {
-  children: ReactNode;
-  onRetry?: () => void;
-  error?: boolean;
-}) {
-  return (
-    <div
-      className={`ui-notice${error ? " error" : ""}`}
-      role={error ? "alert" : "status"}
-    >
-      <span>{children}</span>
-      {onRetry && <button onClick={onRetry}>Retry</button>}
-    </div>
-  );
 }

@@ -1,4 +1,5 @@
 "use client";
+import { Button } from "./components/ui";
 
 import type { CandidateMove } from "./domain";
 export default function CandidateMovesTable({
@@ -41,7 +42,7 @@ export default function CandidateMovesTable({
               ? games.toLocaleString()
               : (move.score ?? "Repertoire");
         return (
-          <button
+          <Button
             className="candidate-row"
             key={move.uci}
             onClick={() => onPlay?.(move.uci)}
@@ -73,7 +74,7 @@ export default function CandidateMovesTable({
                 %
               </span>
             )}
-          </button>
+          </Button>
         );
       })}
     </div>

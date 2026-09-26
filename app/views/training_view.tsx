@@ -1,3 +1,4 @@
+import { Button } from "../components/ui";
 import { BoardTools } from "../components/board-workspace";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
@@ -194,9 +195,9 @@ function StandardTrainingView({
       {reviewPersistenceState === "saveFailed" && (
         <div role="alert">
           {reviewSaveError}{" "}
-          <button onClick={() => retryReviewSave ? retryReviewSave() : void rateCard(attemptFailed ? "again" : "correct")}>
+          <Button onClick={() => retryReviewSave ? retryReviewSave() : void rateCard(attemptFailed ? "again" : "correct")}>
             Retry save
-          </button>
+          </Button>
         </div>
       )}
       {reviewPersistenceState === "refreshingQueue" && (
@@ -205,10 +206,10 @@ function StandardTrainingView({
       {reviewPersistenceState === "queueFailed" && (
         <div role="alert">
           Result saved; the next card could not be loaded.{" "}
-          <button onClick={retryQueueAfterReview}>Retry loading the queue</button>
+          <Button onClick={retryQueueAfterReview}>Retry loading the queue</Button>
         </div>
       )}
-      {buryError && <div role="alert">{buryError} <button onClick={() => { setBuryError(""); void runBury(); }}>Retry bury</button></div>}
+      {buryError && <div role="alert">{buryError} <Button onClick={() => { setBuryError(""); void runBury(); }}>Retry bury</Button></div>}
       {cardsLeft > 0 && isEndgame && (
         <EndgamesView
           key={card.queueEntryId}
@@ -252,7 +253,7 @@ function StandardTrainingView({
               />
             )}
             <BoardTools>
-              <button type="button" disabled={burying || feedback === "complete" || reviewBlocked || reviewPersistenceState === "saving" || reviewPersistenceState === "refreshingQueue"} onClick={() => void runBury()}>{burying ? "Burying…" : "Bury"}</button>
+              <Button type="button" disabled={burying || feedback === "complete" || reviewBlocked || reviewPersistenceState === "saving" || reviewPersistenceState === "refreshingQueue"} onClick={() => void runBury()}>{burying ? "Burying…" : "Bury"}</Button>
               <AgainButton
                 handleAgain={handleAttemptFailure}
                 isAttemptFailed={attemptFailed}
@@ -329,7 +330,7 @@ function StandardTrainingView({
               card.moves.length > 2 && (
                 <div className="shorten-suggestion">
                   <strong>This prefix may be carrying too much at once.</strong>
-                  <button
+                  <Button
                     onClick={() =>
                       setEditorCard({
                         ...card,
@@ -339,14 +340,15 @@ function StandardTrainingView({
                     }
                   >
                     Preview one move shorter
-                  </button>
+                  </Button>
                 </div>
               )}
             <div className="ratings binary">
-              <button disabled={isLocked || reviewBlocked} onClick={handleAttemptFailure}>
+              <Button disabled={isLocked || reviewBlocked} onClick={handleAttemptFailure}>
                 <strong>Again</strong>
-              </button>
-              <button
+              </Button>
+              <Button
+                variant="primary"
                 className="primary"
                 disabled={attemptFailed || isLocked || reviewBlocked}
                 onClick={() => void rateCard("correct")}
@@ -354,12 +356,12 @@ function StandardTrainingView({
                 <strong>
                   {attemptFailed ? "Finish on the board" : "Correct"}
                 </strong>
-              </button>
+              </Button>
             </div>
             <div className="position-actions" aria-label="Open review position">
-              <button onClick={() => onOpenPosition("analysis")}>Analysis</button>
-              <button onClick={() => onOpenPosition("builder")}>Builder</button>
-              <button onClick={() => onOpenPosition("games")}>Games here</button>
+              <Button onClick={() => onOpenPosition("analysis")}>Analysis</Button>
+              <Button onClick={() => onOpenPosition("builder")}>Builder</Button>
+              <Button onClick={() => onOpenPosition("games")}>Games here</Button>
             </div>
           </aside>
         </section>

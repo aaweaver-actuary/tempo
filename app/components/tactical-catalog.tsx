@@ -1,3 +1,4 @@
+import { Button, TextInput, SelectInput } from "./ui";
 import { useState } from "react";
 import type { TacticalCatalog, TacticalPack } from "../lib/tactical-catalog";
 import { packProgress } from "../lib/tactical-catalog";
@@ -73,12 +74,12 @@ export function TacticalCatalogPanel({
                 )}% conversion
               </small>
               {recommendation.recommended_pack_id && (
-                <button
+                <Button
                   disabled={busy}
                   onClick={() => onStartSuggested?.(recommendation)}
                 >
                   {recommendation.recommended_pack_active ? "Resume this motif" : "Start this motif"}
-                </button>
+                </Button>
               )}
             </article>
           ))}
@@ -92,7 +93,7 @@ export function TacticalCatalogPanel({
       <div className="tactic-catalog-filters" aria-label="Filter tactical packs">
         <label>
           <span className="sr-only">Search themes</span>
-          <input
+          <TextInput
             type="search"
             placeholder="Search themes"
             value={themeQuery}
@@ -101,11 +102,11 @@ export function TacticalCatalogPanel({
         </label>
         <label>
           <span className="sr-only">Pack status</span>
-          <select value={packFilter} onChange={(event) => setPackFilter(event.target.value as typeof packFilter)}>
+          <SelectInput value={packFilter} onChange={(event) => setPackFilter(event.target.value as typeof packFilter)}>
             <option value="all">All packs</option>
             <option value="active">Active packs</option>
             <option value="unfinished">Unfinished packs</option>
-          </select>
+          </SelectInput>
         </label>
       </div>
       {catalog.groups.map((group) => {
@@ -146,7 +147,7 @@ export function TacticalCatalogPanel({
             </summary>
             {expandedGroups.includes(group.id) && <>
             <div className="tactic-group-actions">
-              <button
+              <Button
                 disabled={busy}
                 onClick={() =>
                   onActivate(
@@ -156,8 +157,8 @@ export function TacticalCatalogPanel({
                 }
               >
                 Activate {packs.length} packs
-              </button>
-              <button
+              </Button>
+              <Button
                 disabled={busy || !active}
                 onClick={() =>
                   onActivate(
@@ -167,7 +168,7 @@ export function TacticalCatalogPanel({
                 }
               >
                 Deactivate {active} packs
-              </button>
+              </Button>
             </div>
             {catalog.themes
               .filter((theme) => theme.group === group.id)
@@ -206,7 +207,7 @@ export function TacticalCatalogPanel({
                             selectedPackId === pack.id ? "selected" : ""
                           }
                         >
-                          <button
+                          <Button
                             className="tactic-pack-select"
                             aria-current={
                               selectedPackId === pack.id ? "true" : undefined
@@ -223,15 +224,15 @@ export function TacticalCatalogPanel({
                             <small>
                               {pack.introduced} introduced · {pack.due} due
                             </small>
-                          </button>
-                          <button
+                          </Button>
+                          <Button
                             aria-label={`${pack.active ? "Deactivate" : "Activate"} ${theme.name} ${pack.difficulty} pack ${pack.ordinal}`}
                             aria-pressed={pack.active}
                             disabled={busy}
                             onClick={() => onActivate([pack.id], !pack.active)}
                           >
                             {pack.active ? "Active" : "Activate"}
-                          </button>
+                          </Button>
                         </article>
                       ))}
                     </div>
