@@ -115,7 +115,7 @@ test("all five study exercise types can be authored from the workspace", async (
   await page.getByLabel("Interaction").selectOption("move_line");
   await page.getByLabel("Question").fill("Develop the knight");
   await page.getByLabel("Accepted UCI lines; one per row").fill("g1f3");
-  await page.getByRole("button", { name: "Create draft exercise" }).click();
+  await page.getByRole("button", { name: "Create draft exercise" }).press("Enter");
   await expect(page.getByRole("button", { name: /Develop the knight · draft/ })).toBeVisible();
 
   await page.getByLabel("Interaction").selectOption("knight_path");
@@ -123,20 +123,20 @@ test("all five study exercise types can be authored from the workspace", async (
   await page.getByLabel("Starting knight square").fill("g1");
   await page.getByLabel("Squares attacked by final knight").fill("c1");
   await page.getByLabel("Maximum hops").fill("1");
-  await page.getByRole("button", { name: "Create draft exercise" }).click();
+  await page.getByRole("button", { name: "Create draft exercise" }).press("Enter");
   await expect(page.getByRole("button", { name: /Attack c1 with the knight · draft/ })).toBeVisible();
 
   await page.getByLabel("Interaction").selectOption("choice");
   await page.getByLabel("Question").fill("Is the knight on g1?");
   await page.getByLabel("Options, one ID|text per row").fill("yes|Yes\nno|No");
   await page.getByLabel("Correct option IDs").fill("yes");
-  await page.getByRole("button", { name: "Create draft exercise" }).click();
+  await page.getByRole("button", { name: "Create draft exercise" }).press("Enter");
   await expect(page.getByRole("button", { name: /Is the knight on g1\? · draft/ })).toBeVisible();
 
   await page.getByLabel("Interaction").selectOption("explanation");
   await page.getByLabel("Question").fill("Explain the knight placement");
   await page.getByLabel("Rubric shown after response").fill("It starts on g1.");
-  await page.getByRole("button", { name: "Create draft exercise" }).click();
+  await page.getByRole("button", { name: "Create draft exercise" }).press("Enter");
   await expect(page.getByRole("button", { name: /Explain the knight placement · draft/ })).toBeVisible();
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
