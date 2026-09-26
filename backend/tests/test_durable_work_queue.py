@@ -177,15 +177,15 @@ def test_workspace_reads_complete_under_one_second_during_full_background_backlo
                 delay_seconds=3600,
             )
         started = time.perf_counter()
-        responses = [
-            client.get("/api/queue/today"),
-            client.get("/api/progress"),
-            client.get("/api/repertoires"),
-            client.get("/api/settings"),
-        ]
+        response_durations = {}
+        responses = []
+        for path in ("/api/queue/today", "/api/progress", "/api/repertoires", "/api/settings"):
+            request_started = time.perf_counter()
+            responses.append(client.get(path))
+            response_durations[path] = round(time.perf_counter() - request_started, 3)
         elapsed = time.perf_counter() - started
     assert all(response.status_code == 200 for response in responses)
-    assert elapsed < 1.0
+    assert elapsed < 1.0, response_durations
 
 
 def test_get_endpoints_are_query_only(tmp_path, monkeypatch):

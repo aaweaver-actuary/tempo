@@ -1272,8 +1272,12 @@ def _queue_payload(limit: int | None = None):
                                   COALESCE(c.trained_color,(SELECT e.trained_color FROM endgame_templates e WHERE e.card_id=c.id), (SELECT l.trained_color FROM repertoire_lines l WHERE l.repertoire_id=r.id ORDER BY l.created_at LIMIT 1)) effective_trained_color
                            FROM daily_queue q JOIN cards c ON c.id=q.card_id
                            LEFT JOIN repertoires r ON r.id=COALESCE(
-                               (SELECT rc.repertoire_id FROM repertoire_cards rc JOIN repertoires linked ON linked.id=rc.repertoire_id
-                                WHERE (rc.card_id=c.id OR c.repertoire_id=linked.id)
+                               (SELECT linked.id FROM repertoires linked
+                                WHERE ((linked.id=c.repertoire_id AND EXISTS(
+                                    SELECT 1 FROM repertoire_cards primary_link
+                                    WHERE primary_link.repertoire_id=linked.id)) OR EXISTS(
+                                    SELECT 1 FROM repertoire_cards rc
+                                    WHERE rc.card_id=c.id AND rc.repertoire_id=linked.id))
                                   AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
                                                  WHERE block.repertoire_id=linked.id AND block.card_id=c.id)
                                 ORDER BY linked.is_main DESC,linked.created_at DESC LIMIT 1),
