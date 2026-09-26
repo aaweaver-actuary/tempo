@@ -85,6 +85,30 @@ describe("review attempt reliability", () => {
     expect(useTrainingStore.getState().practiceCards[0].queueEntryId).toBe(44);
     expect(useTrainingStore.getState().attempt.phase).toBe("playerTurn");
   });
+  it("superseded queue request releases its browser connection without replacing the current attempt", async () => {
+    let firstRequestSignal: AbortSignal | undefined;
+    const fetchMock = vi.fn()
+      .mockImplementationOnce((_input: RequestInfo | URL, options: RequestInit) => {
+        firstRequestSignal = options.signal ?? undefined;
+        return new Promise<Response>((_resolve, reject) => {
+          options.signal?.addEventListener("abort", () => reject(options.signal?.reason));
+        });
+      })
+      .mockResolvedValueOnce(Response.json({ cards: [{
+        id: "persisted-card", queue_entry_id: 44, start_fen: card.startingFen,
+        moves: ["e2e4"], content_type: "opening", repertoire_name: "Prep",
+        repertoire_source: "PGN",
+      }] }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    const first = fetchAndInitializeQueue();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    const second = fetchAndInitializeQueue();
+    await Promise.all([first, second]);
+    expect(firstRequestSignal?.aborted).toBe(true);
+    expect(useTrainingStore.getState().practiceCards[0].queueEntryId).toBe(44);
+    expect(useTrainingStore.getState().serviceError).toBe("");
+  });
   it("retryable queue contention retries before reporting a failure and retains the active attempt", async () => {
     const payload = {
       cards: [{

@@ -7,7 +7,13 @@ import { reportDebugError } from "../lib/debug-reporting";
 import { flushPendingReviews, pendingReviews } from "../lib/review-outbox";
 
 let requestGeneration = 0;
+let activeQueueController: AbortController | null = null;
 const queueCacheKey = "tempo-training-queue-window-v2";
+
+export function invalidateTrainingQueueCache(): void {
+  requestGeneration += 1;
+  localStorage.removeItem(queueCacheKey);
+}
 
 type QueuePayload = {
   cards?: unknown[];
@@ -16,24 +22,47 @@ type QueuePayload = {
   projection?: { state?: string; generation?: number; last_error?: string };
 };
 
-async function fetchQueueWindow(): Promise<Response> {
+async function fetchQueueWindow(signal: AbortSignal): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15_000);
+  const abortSupersededRequest = () => controller.abort();
+  if (signal.aborted) abortSupersededRequest();
+  else signal.addEventListener("abort", abortSupersededRequest, { once: true });
+  let timedOut = false;
+  const timeout = setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, 15_000);
   try {
     return await fetch(`${API_URL}/api/queue/window?limit=20`, { signal: controller.signal });
   } catch (error) {
-    if (controller.signal.aborted)
+    if (timedOut)
       throw new Error("Queue request timed out after 15 seconds. Retry loading the queue.", { cause: error });
     throw error;
   } finally {
     clearTimeout(timeout);
+    signal.removeEventListener("abort", abortSupersededRequest);
   }
 }
 
-async function loadTodayQueueWithRetry(): Promise<QueuePayload> {
+function waitForQueueRetry(milliseconds: number, signal: AbortSignal): Promise<void> {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) { reject(signal.reason); return; }
+    const onAbort = () => {
+      clearTimeout(timeout);
+      reject(signal.reason);
+    };
+    const timeout = window.setTimeout(() => {
+      signal.removeEventListener("abort", onAbort);
+      resolve();
+    }, milliseconds);
+    signal.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+async function loadTodayQueueWithRetry(signal: AbortSignal): Promise<QueuePayload> {
   let failedRequests = 0;
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const response = await fetchQueueWindow();
+    const response = await fetchQueueWindow(signal);
     if (response.ok) {
       failedRequests = 0;
       const payload = await response.json() as QueuePayload;
@@ -42,7 +71,7 @@ async function loadTodayQueueWithRetry(): Promise<QueuePayload> {
       if (payload.projection?.state !== "refreshing" || payload.cards?.length)
         return payload;
       if (attempt === 19) throw new Error("Daily queue is still preparing. Check the analysis worker and retry.");
-      await new Promise((resolve) => window.setTimeout(resolve, 250));
+      await waitForQueueRetry(250, signal);
       continue;
     }
 
@@ -60,7 +89,7 @@ async function loadTodayQueueWithRetry(): Promise<QueuePayload> {
     }
     failedRequests += 1;
     if (!retryable || failedRequests >= 3) throw new Error(detail);
-    await new Promise((resolve) => window.setTimeout(resolve, 250 * (attempt + 1)));
+    await waitForQueueRetry(250 * (attempt + 1), signal);
   }
   throw new Error("The local queue could not be loaded.");
 }
@@ -68,6 +97,9 @@ async function loadTodayQueueWithRetry(): Promise<QueuePayload> {
 export async function fetchAndInitializeQueue(advance = false): Promise<void> {
   if (!usesLocalApi()) return;
   const generation = ++requestGeneration;
+  activeQueueController?.abort();
+  const controller = new AbortController();
+  activeQueueController = controller;
   try {
     if (!useTrainingStore.getState().isDatabaseQueueActive && !pendingReviews().length) {
       const stored = localStorage.getItem(queueCacheKey);
@@ -85,7 +117,7 @@ export async function fetchAndInitializeQueue(advance = false): Promise<void> {
       }
     }
     if (pendingReviews().length) await flushPendingReviews();
-    const raw = await loadTodayQueueWithRetry();
+    const raw = await loadTodayQueueWithRetry(controller.signal);
     const cards = await runStudyTask<PracticeCard[]>({
       kind: "queue",
       payload: raw,
@@ -110,5 +142,7 @@ export async function fetchAndInitializeQueue(advance = false): Promise<void> {
         `The local queue could not be loaded. Your active attempt is retained. ${String(error)}`,
       );
     throw error;
+  } finally {
+    if (activeQueueController === controller) activeQueueController = null;
   }
 }

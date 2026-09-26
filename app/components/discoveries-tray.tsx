@@ -22,6 +22,8 @@ import { usesLocalApi } from "../utils/local";
 export type DiscoveryItem = z.infer<typeof discoveriesFeedSchema>["discoveries"][number];
 type Recommendation = z.infer<typeof discoveryRecommendationSchema>;
 type PreviewStatus = "waiting" | "unavailable" | "failed";
+const previewRetryDelayMs = 30_000;
+const previewConcurrency = 2;
 
 async function withConcurrency<T>(items: T[], limit: number, visit: (item: T) => Promise<void>) {
   let nextIndex = 0;
@@ -129,6 +131,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   const suppressedIds = useRef(new Set<string>());
   const requestedEvidenceRefreshes = useRef(new Set<string>());
   const requestedPreflights = useRef(new Set<string>());
+  const nextPreflightRetryAt = useRef(new Map<string, number>());
   const initialPreflightStarted = useRef(false);
   const pendingSafeBreak = useRef(false);
   const preflightState = useRef({ discoveries, previewFingerprints, previewStatuses });
@@ -170,6 +173,10 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
         offset = page.next_offset;
       }
       const byId = new Map(pages.flatMap((page) => page.discoveries).map((item) => [item.id, item]));
+      const currentPreviewKeys = new Set([...byId.values()].map((item) =>
+        `${item.id}:${item.evidence_fingerprint}`));
+      for (const key of nextPreflightRetryAt.current.keys())
+        if (!currentPreviewKeys.has(key)) nextPreflightRetryAt.current.delete(key);
       setDiscoveries([...byId.values()]);
       setEvidenceRefreshPendingId((pendingId) => {
         const refreshedItem = pendingId ? byId.get(pendingId) : undefined;
@@ -212,23 +219,27 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     if (requestedPreflights.current.has(key)) return;
     requestedPreflights.current.add(key);
     try {
-      const response = await fetch(`${API_URL}/api/discoveries/${item.id}/recommendations`);
+      const response = await backgroundFetch(`${API_URL}/api/discoveries/${item.id}/recommendations`);
       const result = await readJsonResponse(response, discoveryRecommendationSchema, "continuation preview");
+      const unusableReadyResult = result.state === "ready" && (
+        result.evidence_fingerprint !== item.evidence_fingerprint || !result.candidates?.length
+      );
       setPreviews((current) => ({ ...current, [item.id]: result }));
       setPreviewFingerprints((current) => ({ ...current, [item.id]: item.evidence_fingerprint }));
       setPreviewStatuses((current) => {
         const remaining = { ...current };
         delete remaining[item.id];
-        const unusableReadyResult = result.state === "ready" && (
-          result.evidence_fingerprint !== item.evidence_fingerprint || !result.candidates?.length
-        );
         const status = result.state === "waiting" || result.state === "unavailable"
           ? result.state : unusableReadyResult ? "failed" : null;
         return status ? { ...remaining, [item.id]: status } : remaining;
       });
+      if (result.state === "waiting" || unusableReadyResult)
+        nextPreflightRetryAt.current.set(key, performance.now() + previewRetryDelayMs);
+      else nextPreflightRetryAt.current.delete(key);
     } catch {
       setPreviewFingerprints((current) => ({ ...current, [item.id]: item.evidence_fingerprint }));
       setPreviewStatuses((current) => ({ ...current, [item.id]: "failed" }));
+      nextPreflightRetryAt.current.set(key, performance.now() + previewRetryDelayMs);
     } finally {
       requestedPreflights.current.delete(key);
     }
@@ -242,9 +253,9 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     if (!initialPreflightComplete) {
       if (initialPreflightStarted.current) return;
       initialPreflightStarted.current = true;
-      void withConcurrency(preflightItems, 4, loadPreview).finally(() => setInitialPreflightComplete(true));
+      void withConcurrency(preflightItems, previewConcurrency, loadPreview).finally(() => setInitialPreflightComplete(true));
     } else if (preflightItems.length) {
-      void withConcurrency(preflightItems, 4, loadPreview);
+      void withConcurrency(preflightItems, previewConcurrency, loadPreview);
     }
   }, [feedLoaded, discoveries, previewFingerprints, previews, previewStatuses,
     initialPreflightComplete, loadPreview]);
@@ -256,8 +267,9 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
         previewStatuses: currentStatuses } = preflightState.current;
       const waitingItems = currentDiscoveries.filter((item) => !item.card_id &&
         currentFingerprints[item.id] === item.evidence_fingerprint &&
-        (currentStatuses[item.id] === "waiting" || currentStatuses[item.id] === "failed"));
-      void withConcurrency(waitingItems, 4, loadPreview);
+        (currentStatuses[item.id] === "waiting" || currentStatuses[item.id] === "failed") &&
+        performance.now() >= (nextPreflightRetryAt.current.get(`${item.id}:${item.evidence_fingerprint}`) ?? 0));
+      void withConcurrency(waitingItems, previewConcurrency, loadPreview);
     }, 3_000);
     return () => window.clearInterval(retryTimer);
   }, [initialPreflightComplete, loadPreview]);

@@ -4,7 +4,12 @@ import { DiscoveriesTray } from "../../app/components/discoveries-tray";
 
 vi.mock("../../app/utils/local", () => ({ usesLocalApi: () => true }));
 const backgroundFetch = vi.hoisted(() => vi.fn());
-vi.mock("../../app/lib/background-fetch", () => ({ backgroundFetch: (...args: unknown[]) => backgroundFetch(...args) }));
+vi.mock("../../app/lib/background-fetch", () => ({
+  backgroundFetch: (input: RequestInfo | URL, init?: RequestInit) =>
+    String(input).includes("/recommendations")
+      ? fetch(input, init)
+      : backgroundFetch(input, init),
+}));
 vi.mock("../../app/components/chessboard", () => ({
   Chessboard: ({ fen, shapes }: { fen: string; shapes: unknown[] }) =>
     <div data-testid="discovery-board" data-fen={fen} data-shapes={JSON.stringify(shapes)} />,
