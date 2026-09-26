@@ -6,6 +6,7 @@ from fastapi.testclient import TestClient
 
 from app import database
 from app.main import app
+from app import main as main_module
 from app.services.cards import card_id
 
 
@@ -197,6 +198,11 @@ def test_prefix_split_retry_creates_exactly_one_parent_child_and_queue_entry(
             f"/api/cards/{source_card_id}/prefix-split",
             json={"expected_revision": 3},
         ).json()
+        with database.connection() as database_connection:
+            database_connection.execute(
+                "UPDATE cards SET pending_validation=0 WHERE id IN (?,?)",
+                (first["parent"]["card_id"], first["continuation"]["card_id"]),
+            )
         repeated = client.post(
             f"/api/cards/{source_card_id}/prefix-split",
             json={"expected_revision": 3},
@@ -213,6 +219,109 @@ def test_prefix_split_retry_creates_exactly_one_parent_child_and_queue_entry(
             assert database_connection.execute(
                 "SELECT COUNT(*) FROM daily_queue WHERE card_id=?",
                 (first["continuation"]["card_id"],),
+            ).fetchone()[0] == 1
+            assert database_connection.execute(
+                "SELECT COUNT(*) FROM cards WHERE id IN (?,?) AND pending_validation=1",
+                (first["parent"]["card_id"], first["continuation"]["card_id"]),
+            ).fetchone()[0] == 0
+
+
+def test_rejected_prefix_split_stays_hidden_until_another_failed_review(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        with database.connection() as database_connection:
+            source_card_id = seed_prefix_card(
+                database_connection, "white", ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"]
+            )
+        response = client.post(
+            f"/api/cards/{source_card_id}/prefix-split/reject",
+            json={"expected_revision": 3},
+        )
+        assert response.status_code == 200
+        queue_card = next(card for card in client.get("/api/queue/window?limit=20").json()["cards"] if card["id"] == source_card_id)
+        assert queue_card["prefix_split_offer_available"] is False
+        with database.connection() as database_connection:
+            database_connection.execute(
+                "INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES(?,'correct',?,0,1)",
+                (source_card_id, datetime.now(timezone.utc).isoformat()),
+            )
+        queue_card = next(card for card in client.get("/api/queue/window?limit=20").json()["cards"] if card["id"] == source_card_id)
+        assert queue_card["prefix_split_offer_available"] is False
+        with database.connection() as database_connection:
+            database_connection.execute(
+                "INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES(?,'again',?,0,0)",
+                (source_card_id, datetime.now(timezone.utc).isoformat()),
+            )
+        queue_card = next(card for card in client.get("/api/queue/window?limit=20").json()["cards"] if card["id"] == source_card_id)
+        assert queue_card["prefix_split_offer_available"] is True
+
+
+def test_prefix_split_accept_enqueues_rebuild_atomically_without_preview(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        with database.connection() as database_connection:
+            source_card_id = seed_prefix_card(
+                database_connection, "white", ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"]
+            )
+        response = client.post(
+            f"/api/cards/{source_card_id}/prefix-split",
+            json={"expected_revision": 3},
+        )
+        assert response.status_code == 200
+        with database.connection() as database_connection:
+            assert database_connection.execute(
+                "SELECT COUNT(*) FROM background_tasks WHERE kind='opening_graph_rebuild' AND deduplication_key='white-repertoire'"
+            ).fetchone()[0] == 1
+            queued_cards = [
+                row[0] for row in database_connection.execute(
+                    "SELECT card_id FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id",
+                    (date.today().isoformat(),),
+                )
+            ]
+            assert queued_cards == [response.json()["parent"]["card_id"], response.json()["continuation"]["card_id"]]
+
+
+def test_prefix_split_rolls_back_cards_when_rebuild_cannot_be_persisted(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        with database.connection() as database_connection:
+            source_card_id = seed_prefix_card(
+                database_connection, "white", ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"]
+            )
+        monkeypatch.setattr(main_module, "enqueue_task_in_transaction", lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("enqueue failed")))
+        response = client.post(
+            f"/api/cards/{source_card_id}/prefix-split",
+            json={"expected_revision": 3},
+        )
+        assert response.status_code == 503
+        with database.connection() as database_connection:
+            assert database_connection.execute(
+                "SELECT archived FROM cards WHERE id=?", (source_card_id,)
+            ).fetchone()[0] == 0
+            assert database_connection.execute(
+                "SELECT COUNT(*) FROM prefix_splits WHERE source_card_id=?", (source_card_id,)
+            ).fetchone()[0] == 0
+
+
+def test_prefix_split_stale_revision_keeps_original_card_and_queue(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        with database.connection() as database_connection:
+            source_card_id = seed_prefix_card(
+                database_connection, "white", ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"]
+            )
+        response = client.post(
+            f"/api/cards/{source_card_id}/prefix-split",
+            json={"expected_revision": 2},
+        )
+        assert response.status_code == 409
+        with database.connection() as database_connection:
+            assert database_connection.execute(
+                "SELECT archived FROM cards WHERE id=?", (source_card_id,)
+            ).fetchone()[0] == 0
+            assert database_connection.execute(
+                "SELECT COUNT(*) FROM daily_queue WHERE card_id=? AND status='queued'",
+                (source_card_id,),
             ).fetchone()[0] == 1
 
 

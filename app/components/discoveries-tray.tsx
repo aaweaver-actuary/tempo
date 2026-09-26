@@ -1,5 +1,5 @@
 "use client";
-import { Button } from "./ui";
+import { Button } from "./buttons/BaseButton";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DrawShape } from "@lichess-org/chessground/draw";
@@ -7,12 +7,22 @@ import type { Key } from "@lichess-org/chessground/types";
 import { Chess } from "chess.js";
 import type { z } from "zod";
 import { API_URL } from "../const";
-import { Chessboard, type BoardTheme, type PieceSet } from "./chessboard";
+import { Chessboard, type BoardTheme, type PieceSet } from "./board/chessboard";
 import { MoveComparisonTable } from "./move-comparison-table";
 import { discoveriesFeedSchema, discoveryRecommendationSchema } from "../domain/schemas";
 import { adaptEngineMoves, adaptExplorerMoves } from "../domain/adapters/analysis-adapters";
 import type { CandidateMove } from "../domain";
 import { backgroundFetch } from "../lib/background-fetch";
+import {
+  DISCOVERY_ADMISSIONS_CHANGED,
+  DISCOVERY_ADMISSION_QUEUED,
+  enqueuePendingDiscoveryAdmission,
+  flushPendingDiscoveryAdmissions,
+  pendingDiscoveryAdmissions,
+  recoverUnacknowledgedDiscoveryAdmissions,
+  retryPendingDiscoveryAdmission,
+  type PendingDiscoveryAdmission,
+} from "../lib/discovery-admission-outbox";
 import { requestInteractiveAnalysis } from "../lib/engine-broker";
 import { loadExplorer, type ExplorerResult } from "../lib/lichess-explorer";
 import { readLichessSessionToken } from "../lib/lichess-session";
@@ -58,6 +68,58 @@ function notation(fen: string, moves: string[]): string {
     return moves.map((uci) => board.move({ from: uci.slice(0, 2), to: uci.slice(2, 4),
       promotion: uci[4] })?.san ?? uci).join(" ");
   } catch { return moves.join(" "); }
+}
+
+type BoardStep = {
+  fen: string;
+  moveUci: string | null;
+  moveSan: string | null;
+};
+
+function discoveryBoardHistory(
+  discovery: DiscoveryItem,
+  decisionPosition: string,
+  previewMoves: string[],
+): { steps: BoardStep[]; decisionIndex: number } {
+  const startFen = discovery.decision_start_fen ?? decisionPosition;
+  const route = discovery.decision_route_uci ?? [];
+  let steps: BoardStep[] = [{ fen: decisionPosition, moveUci: null, moveSan: null }];
+  try {
+    const board = new Chess(startFen);
+    steps = [{ fen: board.fen(), moveUci: null, moveSan: null }];
+    for (const moveUci of route) {
+      const move = board.move({
+        from: moveUci.slice(0, 2),
+        to: moveUci.slice(2, 4),
+        promotion: moveUci[4],
+      });
+      steps.push({ fen: board.fen(), moveUci, moveSan: move.san });
+    }
+    if (
+      board.fen().split(" ").slice(0, 4).join(" ") !==
+      new Chess(decisionPosition).fen().split(" ").slice(0, 4).join(" ")
+    ) {
+      throw new Error("Discovery route does not reach the decision");
+    }
+  } catch {
+    steps = [{ fen: decisionPosition, moveUci: null, moveSan: null }];
+  }
+  const decisionIndex = steps.length - 1;
+  steps[decisionIndex] = { ...steps[decisionIndex], fen: decisionPosition };
+  const previewBoard = new Chess(decisionPosition);
+  for (const moveUci of previewMoves) {
+    try {
+      const move = previewBoard.move({
+        from: moveUci.slice(0, 2),
+        to: moveUci.slice(2, 4),
+        promotion: moveUci[4],
+      });
+      steps.push({ fen: previewBoard.fen(), moveUci, moveSan: move.san });
+    } catch {
+      break;
+    }
+  }
+  return { steps, decisionIndex };
 }
 
 function evidenceNumber(discovery: DiscoveryItem, key: string): string {
@@ -113,7 +175,17 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   const [open, setOpen] = useState(false);
   const [discoveries, setDiscoveries] = useState<DiscoveryItem[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
-  const [selectedMove, setSelectedMove] = useState<string | null>(null);
+  const [sessionItems, setSessionItems] = useState<DiscoveryItem[]>([]);
+  const [manualSelections, setManualSelections] = useState<
+    Record<string, string>
+  >({});
+  const [boardNavigation, setBoardNavigation] = useState<{
+    discoveryId: string;
+    cursor: number;
+  } | null>(null);
+  const [pendingAdmissions, setPendingAdmissions] = useState<
+    PendingDiscoveryAdmission[]
+  >([]);
   const [hoveredMove, setHoveredMove] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -122,6 +194,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   const [previewStatuses, setPreviewStatuses] = useState<Record<string, PreviewStatus>>({});
   const [feedLoaded, setFeedLoaded] = useState(() => !usesLocalApi());
   const [initialPreflightComplete, setInitialPreflightComplete] = useState(() => !usesLocalApi());
+  const [initialAdmissionFlushFinished, setInitialAdmissionFlushFinished] = useState(() => !usesLocalApi());
   const [explorer, setExplorer] = useState<ExplorerResult | null>(null);
   const [engine, setEngine] = useState<CandidateMove[]>([]);
   const [engineStatus, setEngineStatus] = useState("Waiting");
@@ -141,6 +214,8 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   const triggerRef = useRef<HTMLButtonElement>(null);
   const closeRef = useRef<HTMLButtonElement>(null);
   const dialogRef = useRef<HTMLElement>(null);
+  const [completedAdmissions, setCompletedAdmissions] = useState<string[]>([]);
+  const outboxRecoveryStarted = useRef(false);
   const readyDiscoveries = discoveries.filter((item) => {
     if (!initialPreflightComplete) return false;
     if (item.admission_state === "preparing") return false;
@@ -153,10 +228,44 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   });
   const visibleDiscoveries = readyDiscoveries.filter((item) => !item.snoozed_until ||
     new Date(item.snoozed_until).getTime() <= currentTime);
-  const activeIndex = activeId === null ? 0 : visibleDiscoveries.findIndex((item) => item.id === activeId);
-  const active = activeIndex < 0 ? undefined : visibleDiscoveries[activeIndex];
+  const reviewItems = sessionItems.length ? sessionItems : visibleDiscoveries;
+  const activeIndex =
+    activeId === null
+      ? -1
+      : reviewItems.findIndex((item) => item.id === activeId);
+  const activeSnapshot =
+    activeIndex < 0 ? undefined : reviewItems[activeIndex];
+  const active = activeSnapshot
+    ? (discoveries.find((item) => item.id === activeSnapshot.id) ??
+      activeSnapshot)
+    : undefined;
   const fen = active ? decisionFen(active) : "";
   const preview = active ? previews[active.id] : undefined;
+  const selectedMove = active
+    ? (manualSelections[active.id] ??
+      preview?.suggested_move_uci ??
+      preview?.candidates[0]?.move_uci ??
+      null)
+    : null;
+
+  const openViewer = useCallback(
+    (requestedId: string | null) => {
+      setSessionItems(visibleDiscoveries);
+      setActiveId(requestedId ?? visibleDiscoveries[0]?.id ?? null);
+      setOpen(true);
+    },
+    [visibleDiscoveries],
+  );
+
+  useEffect(() => {
+    if (!open || sessionItems.length || !visibleDiscoveries.length) return;
+    const timer = window.setTimeout(() => {
+      setSessionItems(visibleDiscoveries);
+      if (activeId === null) setActiveId(visibleDiscoveries[0].id);
+    }, 0);
+    return () => window.clearTimeout(timer);
+  }, [open, sessionItems.length, visibleDiscoveries, activeId]);
+
 
   useEffect(() => {
     preflightState.current = { discoveries, previewFingerprints, previewStatuses };
@@ -246,7 +355,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   }, []);
 
   useEffect(() => {
-    if (!feedLoaded) return;
+    if (!feedLoaded || !initialAdmissionFlushFinished) return;
     const preflightItems = discoveries.filter((item) => !item.card_id &&
       (previewFingerprints[item.id] !== item.evidence_fingerprint ||
         (!previews[item.id] && !previewStatuses[item.id])));
@@ -257,7 +366,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     } else if (preflightItems.length) {
       void withConcurrency(preflightItems, previewConcurrency, loadPreview);
     }
-  }, [feedLoaded, discoveries, previewFingerprints, previews, previewStatuses,
+  }, [feedLoaded, initialAdmissionFlushFinished, discoveries, previewFingerprints, previews, previewStatuses,
     initialPreflightComplete, loadPreview]);
 
   useEffect(() => {
@@ -275,16 +384,75 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   }, [initialPreflightComplete, loadPreview]);
 
   useEffect(() => {
-    if (!openRequest || openRequest.token === lastOpenRequestToken.current) return;
+    if (!openRequest || openRequest.token === lastOpenRequestToken.current)
+      return;
     lastOpenRequestToken.current = openRequest.token;
-    setActiveId(openRequest.id);
-    setOpen(true);
+    openViewer(openRequest.id);
     void refresh(true);
-  }, [openRequest, refresh]);
+  }, [openRequest, openViewer, refresh]);
 
   useEffect(() => {
-    const nextUnread = visibleDiscoveries.find((item) => item.unread &&
-      !openedIds.current.has(item.id) && !suppressedIds.current.has(item.id));
+    const updatePending = () => {
+      try {
+        setPendingAdmissions(pendingDiscoveryAdmissions());
+      } catch (cause) {
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Could not read pending discovery saves",
+        );
+      }
+    };
+    if (!outboxRecoveryStarted.current) {
+      outboxRecoveryStarted.current = true;
+      try { recoverUnacknowledgedDiscoveryAdmissions(); }
+      catch { /* updatePending reports malformed or unavailable browser storage below. */ }
+    }
+    const onQueued = (event: Event) => {
+      const opportunityId = (event as CustomEvent<{ opportunityId: string }>)
+        .detail.opportunityId;
+      setCompletedAdmissions((current) => current.includes(opportunityId)
+        ? current : [...current, opportunityId]);
+      void onQueueChanged().catch((cause) =>
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Could not refresh the training queue",
+        ),
+      );
+      void refresh(true);
+    };
+    updatePending();
+    window.addEventListener(DISCOVERY_ADMISSIONS_CHANGED, updatePending);
+    window.addEventListener(DISCOVERY_ADMISSION_QUEUED, onQueued);
+    window.addEventListener("storage", updatePending);
+    const flush = () =>
+      void flushPendingDiscoveryAdmissions().catch((cause) =>
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Could not check discovery saves",
+        ),
+      );
+    void flushPendingDiscoveryAdmissions()
+      .catch((cause) => setError(cause instanceof Error ? cause.message : "Could not check discovery saves"))
+      .finally(() => setInitialAdmissionFlushFinished(true));
+    const interval = window.setInterval(flush, 3_000);
+    return () => {
+      window.clearInterval(interval);
+      window.removeEventListener(DISCOVERY_ADMISSIONS_CHANGED, updatePending);
+      window.removeEventListener(DISCOVERY_ADMISSION_QUEUED, onQueued);
+      window.removeEventListener("storage", updatePending);
+    };
+  }, [onQueueChanged, refresh]);
+
+  useEffect(() => {
+    const nextUnread = visibleDiscoveries.find(
+      (item) =>
+        item.unread &&
+        !openedIds.current.has(item.id) &&
+        !suppressedIds.current.has(item.id),
+    );
     const reachedBreak = safeBreakCounter !== lastSafeBreak.current;
     lastSafeBreak.current = safeBreakCounter;
     if (interactionBlocked || open) {
@@ -294,9 +462,15 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     if (safeToOpen || reachedBreak) pendingSafeBreak.current = true;
     if (!nextUnread || !pendingSafeBreak.current) return;
     pendingSafeBreak.current = false;
-    setActiveId(nextUnread.id);
-    setOpen(true);
-  }, [visibleDiscoveries, safeToOpen, safeBreakCounter, interactionBlocked, open]);
+    openViewer(nextUnread.id);
+  }, [
+    visibleDiscoveries,
+    safeToOpen,
+    safeBreakCounter,
+    interactionBlocked,
+    open,
+    openViewer,
+  ]);
 
   useEffect(() => {
     if (!open || !active?.unread || openedIds.current.has(active.id)) return;
@@ -370,7 +544,6 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     let cancelled = false;
     const resetTimer = window.setTimeout(() => {
       if (cancelled) return;
-      setSelectedMove(null);
       setHoveredMove(null);
       setExplorer(null);
       setEngine([]);
@@ -401,16 +574,85 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     for (const move of engineMoves) engineLossCp[move.uci] = best === undefined || move.cp === undefined ? null : best - move.cp;
   }
   const soundSelection = preview?.candidates.find((candidate) => candidate.move_uci === selectedMove);
+  const suggestedCandidate = preview?.candidates.find(
+    (candidate) => candidate.move_uci === preview.suggested_move_uci);
+  const otherCandidate = preview?.candidates.find(
+    (candidate) => candidate.move_uci !== preview.suggested_move_uci);
+  const activeAdmission = active
+    ? pendingAdmissions.find((admission) => admission.opportunityId === active.id)
+    : undefined;
+  const boardHistory = useMemo(
+    () =>
+      active
+        ? discoveryBoardHistory(
+            active,
+            fen,
+            soundSelection?.preview_moves_uci ?? [],
+          )
+        : { steps: [], decisionIndex: 0 },
+    [active, fen, soundSelection],
+  );
+  const boardCursor =
+    active && boardNavigation?.discoveryId === active.id
+      ? Math.min(boardNavigation.cursor, boardHistory.steps.length - 1)
+      : boardHistory.decisionIndex;
+  const boardStep = boardHistory.steps[boardCursor];
+  const atDecision = boardCursor === boardHistory.decisionIndex;
   const observedChange = active?.evidence.later_average_change_cp;
   const observedChangeText = typeof observedChange === "number"
     ? `${Math.abs(observedChange)} cp ${observedChange >= 0 ? "worse" : "better"}` : "unavailable";
   const mateOutcomes = Array.isArray(active?.evidence.mate_outcomes)
     ? active.evidence.mate_outcomes as Array<{ game_id?: string; preceding_move_mate?: number | null; third_later_turn_mate?: number | null }>
     : [];
-  const displayedArrow = hoveredMove ?? selectedMove;
-  const shapes = useMemo<DrawShape[]>(() => displayedArrow
-    ? [{ orig: displayedArrow.slice(0, 2) as Key, dest: displayedArrow.slice(2, 4) as Key, brush: "green" }]
-    : [], [displayedArrow]);
+  const displayedArrow = atDecision ? (hoveredMove ?? selectedMove) : null;
+  const shapes = useMemo<DrawShape[]>(
+    () => [
+      ...(boardStep?.moveUci
+        ? [
+            {
+              orig: boardStep.moveUci.slice(0, 2) as Key,
+              dest: boardStep.moveUci.slice(2, 4) as Key,
+              brush: "blue",
+            },
+          ]
+        : []),
+      ...(displayedArrow
+        ? [
+            {
+              orig: displayedArrow.slice(0, 2) as Key,
+              dest: displayedArrow.slice(2, 4) as Key,
+              brush: "green",
+            },
+          ]
+        : []),
+    ],
+    [boardStep, displayedArrow],
+  );
+
+  useEffect(() => {
+    if (!open || !active) return;
+    const onArrowKey = (event: KeyboardEvent) => {
+      if (
+        event.target instanceof HTMLInputElement ||
+        event.target instanceof HTMLSelectElement ||
+        event.target instanceof HTMLTextAreaElement ||
+        (event.target instanceof HTMLElement && event.target.isContentEditable)
+      )
+        return;
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      const change = event.key === "ArrowLeft" ? -1 : 1;
+      setBoardNavigation({
+        discoveryId: active.id,
+        cursor: Math.max(
+          0,
+          Math.min(boardHistory.steps.length - 1, boardCursor + change),
+        ),
+      });
+    };
+    window.addEventListener("keydown", onArrowKey);
+    return () => window.removeEventListener("keydown", onArrowKey);
+  }, [open, active, boardCursor, boardHistory.steps.length]);
 
   const unreadCount = visibleDiscoveries.filter((item) => item.unread).length;
   const preflightPending = !initialPreflightComplete || discoveries.some((item) =>
@@ -433,87 +675,472 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     finally { setBusyId(null); }
   };
 
-  const accept = async (item: DiscoveryItem, moveUci: string) => {
-    setBusyId(item.id);
+  const accept = (item: DiscoveryItem, moveUci: string) => {
     try {
-      const response = await fetch(`${API_URL}/api/discoveries/${item.id}/accept`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ selected_move_uci: moveUci, evidence_fingerprint: item.evidence_fingerprint }),
+      enqueuePendingDiscoveryAdmission({
+        opportunityId: item.id,
+        selectedMoveUci: moveUci,
+        evidenceFingerprint: item.evidence_fingerprint,
       });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({})) as { detail?: string };
-        throw new Error(body.detail ?? `Could not add continuation (HTTP ${response.status})`);
+      const next = reviewItems
+        .slice(activeIndex + 1)
+        .find(
+          (candidate) =>
+            !pendingDiscoveryAdmissions().some(
+              (pending) => pending.opportunityId === candidate.id,
+            ) &&
+            !completedAdmissions.includes(candidate.id) &&
+            candidate.admission_state !== "preparing" &&
+            candidate.admission_state !== "queued",
+        );
+      if (next) {
+        setHoveredMove(null);
+        setActiveId(next.id);
       }
-      await refresh(true);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not add continuation"); }
-    finally { setBusyId(null); }
+      void flushPendingDiscoveryAdmissions().catch((cause) =>
+        setError(
+          cause instanceof Error
+            ? cause.message
+            : "Could not save the discovery",
+        ),
+      );
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Could not add continuation",
+      );
+    }
   };
 
-  return <aside className="tempo-activity-tray tempo-discoveries-tray">
-    <Button ref={triggerRef} type="button" className="tempo-activity-trigger" aria-label="Discoveries"
-      aria-expanded={open} onClick={() => {
-        if (open) closeViewer();
-        else { setActiveId(visibleDiscoveries[0]?.id ?? null); setOpen(true); }
-      }}>
-      Discoveries{unreadCount > 0 && <span className="tempo-discoveries-badge" aria-label={`${unreadCount} new discoveries`}> {unreadCount}</span>}
-    </Button>
-    {open && <div className="tempo-discovery-backdrop">
-      <section ref={dialogRef} className="ui-dialog tempo-discovery-viewer" role="dialog" aria-modal="true" aria-label="Discoveries">
-        <header className="tempo-discovery-header">
-          <div><span className="pill">Discoveries</span><h2>{active ? discoveryTitle(active) : requestedDiscoveryNotReady ? "This discovery is not ready for review" : preflightPending ? "Preparing review-ready discoveries" : "No discoveries ready for review"}</h2>
-            <p>{active ? `${activeIndex + 1} of ${visibleDiscoveries.length} · ${active.trained_color} to move` : requestedDiscoveryNotReady ? "Choose Next to review a complete discovery." : preflightPending ? "Preparing review-ready discoveries." : "There are no complete discoveries to review right now."}</p></div>
-          <div className="tempo-discovery-navigation">
-            <Button type="button" disabled={activeIndex <= 0} onClick={() => setActiveId(visibleDiscoveries[activeIndex - 1].id)}>Previous</Button>
-            <Button type="button" disabled={activeIndex >= visibleDiscoveries.length - 1} onClick={() => setActiveId(visibleDiscoveries[activeIndex + 1].id)}>Next</Button>
-            <Button ref={closeRef} type="button" onClick={closeViewer}>Back to work</Button>
-          </div>
-        </header>
-        {error && <p role="alert">{error} <Button onClick={() => { setError(null); void refresh(true); }}>Retry</Button></p>}
-        {active && <div className="tempo-discovery-main">
-          <div className="tempo-discovery-board">
-            <Chessboard owner="discoveries" fen={fen} orientation={active.trained_color} locked showHint={false}
-              theme={boardTheme} pieceSet={pieceSet} shapes={shapes} onMove={() => undefined} />
-            <p role="status">{displayedArrow ? `${moveSan(fen, displayedArrow)} selected. The green arrow shows its destination.` : "Select a move in the table to see it on the board."}</p>
-            <div className="tempo-discovery-actions">
-              {active.card_id && <Button disabled={busyId === active.id || active.admission_state === "queued"}
-                onClick={() => void act(active, "train")}>{active.admission_state === "queued" ? "In training queue" : "Train this decision"}</Button>}
-              {!active.card_id && <Button disabled={!soundSelection || busyId === active.id || active.admission_state === "preparing"}
-                onClick={() => { if (soundSelection) void accept(active, soundSelection.move_uci); }}>Add and train</Button>}
-              <Button onClick={() => { closeViewer(); if (onOpenBuilder) onOpenBuilder(active, selectedMove); else onOpenRepertoire?.(); }}>Open in Builder</Button>
-            </div>
-            {active.admission_state === "preparing" && <p role="status">Preparing training card. Tempo is publishing and checking the repertoire branch.</p>}
-            {!active.card_id && selectedMove && !soundSelection && <p role="status">This move needs engine validation before Add and train is available. You can investigate it in Builder.</p>}
-            {soundSelection && <p>Preview: {notation(fen, soundSelection.preview_moves_uci)} · {soundSelection.similarity}{soundSelection.example_line_name ? ` in ${soundSelection.example_line_name}` : ""}</p>}
-          </div>
-          <div className="tempo-discovery-detail">
-            <p className="tempo-discovery-summary">{active.evidence.analysis_based
-              ? `Past ${evidenceNumber(active, "window_days")} days: ${evidenceNumber(active, "encounter_count")} encounters, ${evidenceNumber(active, "miss_count")} confirmed mistakes in ${evidenceNumber(active, "analyzed_count")} analyzed decisions.`
-              : `${evidenceNumber(active, "supporting_games")} supporting games. ${acceptedMoves.length ? "A continuation is saved." : "This response is missing from your repertoire."}`}</p>
-            {active.kind === "missing_response" && active.opponent_move_uci && <p>After the opponent plays <strong>{moveSan(active.fen, active.opponent_move_uci)}</strong>, this is your decision.</p>}
-            {active.routes[0] && <p>Example route: {active.routes[0]}{active.routes.length > 1 ? ` · ${active.routes.length} distinct routes reach this position` : ""}</p>}
-            <p className="source-status" role="status">Stockfish: {active.card_id ? engineStatus : preview?.state === "ready" ? "Ready" : preview?.reason ?? "Preparing"} · Lichess: {explorer?.lichess.message ?? explorer?.lichess.state ?? "Loading"} · Masters: {explorer?.masters.message ?? explorer?.masters.state ?? "Loading"}</p>
-            {evidenceRefreshPendingId === active.id && <p role="status">Refreshing older analysis evidence. This will update when the background refresh finishes.</p>}
-            <p className="panel-message">Stockfish grades move quality. Explorer counts show what people played; popularity does not establish that a move is sound.</p>
-            <MoveComparisonTable mode="discovery" repertoire={repertoireMoves} engine={engineMoves}
-              engineLossCp={engineLossCp} lichess={explorerMoves} masters={mastersMoves} maia={[]}
-              turn={active.trained_color} selectedMove={selectedMove} onPlay={setSelectedMove} onHover={setHoveredMove} />
-            <details className="tempo-discovery-evidence"><summary>Why this position was flagged</summary>
-              <p>Analysis coverage: {evidenceNumber(active, "analyzed_count")} of {evidenceNumber(active, "encounter_count")} encounters. Strong prefix: {evidenceNumber(active, "strong_prefix_count")} of {evidenceNumber(active, "sufficient_prefix_count")} sufficiently analyzed routes.</p>
-              <p>Immediate loss: {active.evidence.immediate_cp_sample_count === 0 ? "no complete samples" : `${evidenceNumber(active, "immediate_average_loss_cp")} cp over ${evidenceNumber(active, "immediate_cp_sample_count")} complete samples`}. Observed change through your third later turn: {active.evidence.later_sample_count === 0 ? "no complete games" : `${observedChangeText} over ${evidenceNumber(active, "later_sample_count")} complete games`}. The later change is an observed outcome, not solely the result of one move.</p>
-              {mateOutcomes.length > 0 && <ul>{mateOutcomes.map((outcome, index) => <li key={`${outcome.game_id ?? "game"}-${index}`}>
-                {outcome.game_id ?? "Game"}: after the preceding move {outcome.preceding_move_mate === null || outcome.preceding_move_mate === undefined ? "no mate score" : `mate ${outcome.preceding_move_mate}`}; after your third later turn {outcome.third_later_turn_mate === null || outcome.third_later_turn_mate === undefined ? "no mate score" : `mate ${outcome.third_later_turn_mate}`}
-              </li>)}</ul>}
-              {active.source_games.length > 0 && <ul>{active.source_games.map((game) => <li key={game.id}>{game.url
-                ? <a href={game.url} target="_blank" rel="noreferrer">{game.route || game.id}</a>
-                : game.route || game.id}</li>)}</ul>}
-            </details>
-            <div className="tempo-discovery-secondary-actions">
-              <Button disabled={busyId === active.id} onClick={() => void act(active, "snooze")}>Snooze 7 days</Button>
-              <Button disabled={busyId === active.id} onClick={() => void act(active, "dismiss")}>Dismiss</Button>
-            </div>
-          </div>
-        </div>}
-      </section>
-    </div>}
-  </aside>;
+  return (
+    <aside className="tempo-activity-tray tempo-discoveries-tray">
+      <Button
+        ref={triggerRef}
+        type="button"
+        className="tempo-activity-trigger"
+        aria-label="Discoveries"
+        aria-expanded={open}
+        onClick={() => {
+          if (open) closeViewer();
+          else openViewer(visibleDiscoveries[0]?.id ?? null);
+        }}
+      >
+        Discoveries
+        {unreadCount > 0 && (
+          <span
+            className="tempo-discoveries-badge"
+            aria-label={`${unreadCount} new discoveries`}
+          >
+            {" "}
+            {unreadCount}
+          </span>
+        )}
+      </Button>
+      {pendingAdmissions.some((admission) => admission.error) && (
+        <div className="tempo-discovery-save-alert"
+          role={pendingAdmissions.some((admission) => admission.state === "failed") ? "alert" : "status"}>
+          {pendingAdmissions
+            .filter((admission) => admission.error)
+            .map((admission) => (
+              <p key={admission.opportunityId}>
+                {admission.state === "failed"
+                  ? `Discovery save failed: ${admission.error}`
+                  : `Discovery save unconfirmed; Tempo will retry. ${admission.error}`}
+                {admission.state === "failed" && <Button type="button"
+                  onClick={() => void retryPendingDiscoveryAdmission(admission.opportunityId)}>
+                  Retry save
+                </Button>}
+              </p>
+            ))}
+        </div>
+      )}
+      {open && (
+        <div className="tempo-discovery-backdrop">
+          <section
+            ref={dialogRef}
+            className="ui-dialog tempo-discovery-viewer"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Discoveries"
+          >
+            <header className="tempo-discovery-header">
+              <div>
+                <span className="pill">Discoveries</span>
+                <h2>
+                  {active
+                    ? discoveryTitle(active)
+                    : requestedDiscoveryNotReady
+                      ? "This discovery is not ready for review"
+                      : preflightPending
+                        ? "Preparing review-ready discoveries"
+                        : "No discoveries ready for review"}
+                </h2>
+                <p>
+                  {active
+                    ? `${activeIndex + 1} of ${reviewItems.length} · ${active.trained_color} to move`
+                    : requestedDiscoveryNotReady
+                      ? "Choose Next to review a complete discovery."
+                      : preflightPending
+                        ? "Preparing review-ready discoveries."
+                        : "There are no complete discoveries to review right now."}
+                </p>
+              </div>
+              <div className="tempo-discovery-navigation">
+                <Button
+                  type="button"
+                  disabled={activeIndex <= 0}
+                  onClick={() => setActiveId(reviewItems[activeIndex - 1].id)}
+                >
+                  Previous
+                </Button>
+                <Button
+                  type="button"
+                  disabled={
+                    activeIndex < 0 || activeIndex >= reviewItems.length - 1
+                  }
+                  onClick={() => setActiveId(reviewItems[activeIndex + 1].id)}
+                >
+                  Next
+                </Button>
+                <Button ref={closeRef} type="button" onClick={closeViewer}>
+                  Back to work
+                </Button>
+              </div>
+            </header>
+            {error && (
+              <p role="alert">
+                {error}{" "}
+                <Button
+                  onClick={() => {
+                    setError(null);
+                    void refresh(true);
+                  }}
+                >
+                  Retry
+                </Button>
+              </p>
+            )}
+            {active && (
+              <div className="tempo-discovery-main">
+                <div className="tempo-discovery-board">
+                  <Chessboard
+                    owner="discoveries"
+                    fen={boardStep?.fen ?? fen}
+                    orientation={active.trained_color}
+                    locked
+                    showHint={false}
+                    lastMove={
+                      boardStep?.moveUci
+                        ? [
+                            boardStep.moveUci.slice(0, 2),
+                            boardStep.moveUci.slice(2, 4),
+                          ]
+                        : undefined
+                    }
+                    theme={boardTheme}
+                    pieceSet={pieceSet}
+                    shapes={shapes}
+                    onMove={() => undefined}
+                  />
+                  <div className="tempo-discovery-move-navigation">
+                    <Button
+                      type="button"
+                      aria-label="Previous move"
+                      disabled={boardCursor <= 0}
+                      onClick={() =>
+                        setBoardNavigation({
+                          discoveryId: active.id,
+                          cursor: boardCursor - 1,
+                        })
+                      }
+                    >
+                      ◀
+                    </Button>
+                    <span>
+                      {boardStep?.moveSan ?? "Start"}
+                      {atDecision ? " · decision" : ""}
+                    </span>
+                    <Button
+                      type="button"
+                      aria-label="Next move"
+                      disabled={boardCursor >= boardHistory.steps.length - 1}
+                      onClick={() =>
+                        setBoardNavigation({
+                          discoveryId: active.id,
+                          cursor: boardCursor + 1,
+                        })
+                      }
+                    >
+                      ▶
+                    </Button>
+                  </div>
+                  <p role="status">
+                    {displayedArrow
+                      ? `${moveSan(fen, displayedArrow)} selected. The green arrow shows its destination.`
+                      : boardStep?.moveUci
+                        ? "The blue arrow shows the previous move."
+                        : "Select a move in the table to see it on the board."}
+                  </p>
+                  <div className="tempo-discovery-actions">
+                    {active.card_id && (
+                      <Button
+                        disabled={
+                          busyId === active.id ||
+                          active.admission_state === "queued"
+                        }
+                        onClick={() => void act(active, "train")}
+                      >
+                        {active.admission_state === "queued"
+                          ? "In training queue"
+                          : "Train this decision"}
+                      </Button>
+                    )}
+                    {!active.card_id && (
+                      <Button
+                        disabled={
+                          !soundSelection ||
+                          busyId === active.id ||
+                          active.admission_state === "preparing" ||
+                          active.admission_state === "queued" ||
+                          pendingAdmissions.some(
+                            (item) => item.opportunityId === active.id,
+                          ) ||
+                          completedAdmissions.includes(active.id)
+                        }
+                        onClick={() => {
+                          if (soundSelection)
+                            accept(active, soundSelection.move_uci);
+                        }}
+                      >
+                        Add and train
+                      </Button>
+                    )}
+                    <Button
+                      onClick={() => {
+                        closeViewer();
+                        if (onOpenBuilder) onOpenBuilder(active, selectedMove);
+                        else onOpenRepertoire?.();
+                      }}
+                    >
+                      Open in Builder
+                    </Button>
+                  </div>
+                  {active.admission_state === "preparing" && (
+                    <p role="status">
+                      Preparing training card. Tempo is publishing and checking
+                      the repertoire branch.
+                    </p>
+                  )}
+                  {activeAdmission && (
+                    <p role="status">
+                      {activeAdmission.state === "failed"
+                        ? `Save failed: ${activeAdmission.error ?? "Retry the save."}`
+                        : activeAdmission.error
+                          ? `Save unconfirmed; retrying. ${activeAdmission.error}`
+                          : "Save pending. Tempo will confirm when this card reaches the training queue."}
+                    </p>
+                  )}
+                  {!active.card_id && selectedMove && !soundSelection && (
+                    <p role="status">
+                      This move needs engine validation before Add and train is
+                      available. You can investigate it in Builder.
+                    </p>
+                  )}
+                  {soundSelection && (
+                    <p>
+                      Preview: {notation(fen, soundSelection.preview_moves_uci)}{" "}
+                      · {soundSelection.similarity}
+                      {soundSelection.example_line_name
+                        ? ` in ${soundSelection.example_line_name}`
+                        : ""}
+                    </p>
+                  )}
+                </div>
+                <div className="tempo-discovery-detail">
+                  <p className="tempo-discovery-summary">
+                    {active.evidence.analysis_based
+                      ? `Past ${evidenceNumber(active, "window_days")} days: ${evidenceNumber(active, "encounter_count")} encounters, ${evidenceNumber(active, "miss_count")} confirmed mistakes in ${evidenceNumber(active, "analyzed_count")} analyzed decisions.`
+                      : `${evidenceNumber(active, "supporting_games")} supporting games. ${acceptedMoves.length ? "A continuation is saved." : "This response is missing from your repertoire."}`}
+                  </p>
+                  {active.kind === "missing_response" &&
+                    active.opponent_move_uci && (
+                      <p>
+                        After the opponent plays{" "}
+                        <strong>
+                          {moveSan(active.fen, active.opponent_move_uci)}
+                        </strong>
+                        , this is your decision.
+                      </p>
+                    )}
+                  {active.routes[0] && (
+                    <p>
+                      Example route: {active.routes[0]}
+                      {active.routes.length > 1
+                        ? ` · ${active.routes.length} distinct routes reach this position`
+                        : ""}
+                    </p>
+                  )}
+                  <p className="source-status" role="status">
+                    Stockfish:{" "}
+                    {active.card_id
+                      ? engineStatus
+                      : preview?.state === "ready"
+                        ? "Ready"
+                        : (preview?.reason ?? "Preparing")}{" "}
+                    · Lichess:{" "}
+                    {explorer?.lichess.message ??
+                      explorer?.lichess.state ??
+                      "Loading"}{" "}
+                    · Masters:{" "}
+                    {explorer?.masters.message ??
+                      explorer?.masters.state ??
+                      "Loading"}
+                  </p>
+                  {evidenceRefreshPendingId === active.id && (
+                    <p role="status">
+                      Refreshing older analysis evidence. This will update when
+                      the background refresh finishes.
+                    </p>
+                  )}
+                  <p className="panel-message">
+                    Stockfish grades move quality. Explorer counts show what
+                    people played; popularity does not establish that a move is
+                    sound.
+                  </p>
+                  {!active.card_id && preview?.state === "ready" && preview.candidates.length > 0 && (
+                    <section className="tempo-discovery-candidate-comparison" aria-label="Discovery move comparison">
+                      <h3>Compare eligible moves</h3>
+                      <p>Tempo suggests a familiar eligible move first, then the one closest to the engine best move. Familiar moves may be up to 100 cp from best; unfamiliar moves must be within 30 cp.</p>
+                      {suggestedCandidate && otherCandidate && <p>
+                        Compared with {moveSan(fen, otherCandidate.move_uci)}, the suggestion appears in {suggestedCandidate.repertoire_line_count} versus {otherCandidate.repertoire_line_count} comparable repertoire lines.
+                        {suggestedCandidate.loss_cp !== null && otherCandidate.loss_cp !== null
+                          ? ` Their engine gaps are ${suggestedCandidate.loss_cp} versus ${otherCandidate.loss_cp} cp from best.`
+                          : " A mate line has no centipawn gap for comparison."}
+                      </p>}
+                      <ul>
+                        {preview.candidates.map((candidate) => {
+                          const isSuggested = candidate.move_uci === preview.suggested_move_uci;
+                          const lineCount = candidate.repertoire_line_count;
+                          return <li key={candidate.move_uci}>
+                            <Button type="button" aria-pressed={selectedMove === candidate.move_uci}
+                              onClick={() => {
+                                setManualSelections((current) => ({ ...current, [active.id]: candidate.move_uci }));
+                                setBoardNavigation({ discoveryId: active.id, cursor: boardHistory.decisionIndex });
+                              }}>
+                              {isSuggested ? "Suggested " : "Choose "}{moveSan(fen, candidate.move_uci)}
+                            </Button>
+                            <span>{lineCount} comparable repertoire {lineCount === 1 ? "line" : "lines"}</span>
+                            <span>{candidate.loss_cp === null ? "Mate line; no cp gap" : `${candidate.loss_cp} cp from best`}</span>
+                            <span>{candidate.exact_transposition ? "Exact transposition" : candidate.similarity}</span>
+                            {candidate.example_line_name && <span>Example: {candidate.example_line_name}</span>}
+                          </li>;
+                        })}
+                      </ul>
+                    </section>
+                  )}
+                  <MoveComparisonTable
+                    mode="discovery"
+                    repertoire={repertoireMoves}
+                    engine={engineMoves}
+                    engineLossCp={engineLossCp}
+                    lichess={explorerMoves}
+                    masters={mastersMoves}
+                    maia={[]}
+                    turn={active.trained_color}
+                    selectedMove={selectedMove}
+                    onPlay={(moveUci) => {
+                      setManualSelections((current) => ({
+                        ...current,
+                        [active.id]: moveUci,
+                      }));
+                      setBoardNavigation({
+                        discoveryId: active.id,
+                        cursor: boardHistory.decisionIndex,
+                      });
+                    }}
+                    onHover={setHoveredMove}
+                  />
+                  <details className="tempo-discovery-evidence">
+                    <summary>Why this position was flagged</summary>
+                    <p>
+                      Analysis coverage:{" "}
+                      {evidenceNumber(active, "analyzed_count")} of{" "}
+                      {evidenceNumber(active, "encounter_count")} encounters.
+                      Strong prefix:{" "}
+                      {evidenceNumber(active, "strong_prefix_count")} of{" "}
+                      {evidenceNumber(active, "sufficient_prefix_count")}{" "}
+                      sufficiently analyzed routes.
+                    </p>
+                    <p>
+                      Immediate loss:{" "}
+                      {active.evidence.immediate_cp_sample_count === 0
+                        ? "no complete samples"
+                        : `${evidenceNumber(active, "immediate_average_loss_cp")} cp over ${evidenceNumber(active, "immediate_cp_sample_count")} complete samples`}
+                      . Observed change through your third later turn:{" "}
+                      {active.evidence.later_sample_count === 0
+                        ? "no complete games"
+                        : `${observedChangeText} over ${evidenceNumber(active, "later_sample_count")} complete games`}
+                      . The later change is an observed outcome, not solely the
+                      result of one move.
+                    </p>
+                    {mateOutcomes.length > 0 && (
+                      <ul>
+                        {mateOutcomes.map((outcome, index) => (
+                          <li key={`${outcome.game_id ?? "game"}-${index}`}>
+                            {outcome.game_id ?? "Game"}: after the preceding
+                            move{" "}
+                            {outcome.preceding_move_mate === null ||
+                            outcome.preceding_move_mate === undefined
+                              ? "no mate score"
+                              : `mate ${outcome.preceding_move_mate}`}
+                            ; after your third later turn{" "}
+                            {outcome.third_later_turn_mate === null ||
+                            outcome.third_later_turn_mate === undefined
+                              ? "no mate score"
+                              : `mate ${outcome.third_later_turn_mate}`}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                    {active.source_games.length > 0 && (
+                      <ul>
+                        {active.source_games.map((game) => (
+                          <li key={game.id}>
+                            {game.url ? (
+                              <a
+                                href={game.url}
+                                target="_blank"
+                                rel="noreferrer"
+                              >
+                                {game.route || game.id}
+                              </a>
+                            ) : (
+                              game.route || game.id
+                            )}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </details>
+                  <div className="tempo-discovery-secondary-actions">
+                    <Button
+                      disabled={busyId === active.id}
+                      onClick={() => void act(active, "snooze")}
+                    >
+                      Snooze 7 days
+                    </Button>
+                    <Button
+                      disabled={busyId === active.id}
+                      onClick={() => void act(active, "dismiss")}
+                    >
+                      Dismiss
+                    </Button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
+    </aside>
+  );
 }

@@ -4,9 +4,8 @@ import type { Page } from "@playwright/test";
 import { test as base, expect } from "./observability";
 import { Chess } from "chess.js";
 
-const api = process.env.TEMPO_DOCKER_URL
-  ? `${process.env.TEMPO_DOCKER_URL}/api`
-  : "http://127.0.0.1:8001/api";
+const api = process.env.TEMPO_BROWSER_API_URL ?? (process.env.TEMPO_DOCKER_URL
+  ? `${process.env.TEMPO_DOCKER_URL}/api` : "http://127.0.0.1:8001/api");
 const pgn =
   '[Event "Open game"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bb5 *\n\n[Event "Sicilian"]\n\n1. e4 c5 2. Nf3 d6 3. d4 *\n\n[Event "French"]\n\n1. e4 e6 2. d4 d5 3. Nc3 *';
 const blackPgn =
@@ -44,19 +43,21 @@ async function boardVisible(
       ),
   );
   const board = page.locator(".board-frame").first();
-  if (
-    await page
-      .locator('.persistent-board-shell[data-unavailable="true"]')
-      .count()
-  ) {
-    await expect(page.locator(".board-unavailable")).toBeVisible();
-    const region = (await page
-      .locator(".persistent-board-shell")
-      .boundingBox())!;
-    expect(region.x + region.width).toBeLessThanOrEqual(
-      page.viewportSize()!.width + 1,
-    );
-    return;
+  const unavailableShell = page.locator('.persistent-board-shell[data-unavailable="true"]');
+  if (await unavailableShell.count()) {
+    const unavailableMessage = page.locator(".board-unavailable");
+    if (!(await unavailableMessage.isVisible())) {
+      // The board may become ready between the shell check and the message check.
+      await expect(unavailableShell).toHaveCount(0);
+    } else {
+      const region = (await page
+        .locator(".persistent-board-shell")
+        .boundingBox())!;
+      expect(region.x + region.width).toBeLessThanOrEqual(
+        page.viewportSize()!.width + 1,
+      );
+      return;
+    }
   }
   await expect(board).toBeVisible();
   await expect(board.locator("piece.anim")).toHaveCount(0);

@@ -1,6 +1,6 @@
 import { act, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { OutcomeFlash } from "../../app/components/board-controls";
+import { OutcomeFlash } from "@/app/components/board/OutcomeFlash";
 
 it("red board feedback disappears after one second even while the failed attempt remains active", () => {
   vi.useFakeTimers();

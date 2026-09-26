@@ -11,7 +11,7 @@ test("high-DPI board geometry stays aligned through narrow resize and orientatio
   const context = await browser.newContext({
     deviceScaleFactor: 2,
     viewport: { width: 1280, height: 800 },
-    baseURL: process.env.TEMPO_DOCKER_URL ?? "http://127.0.0.1:3001",
+    baseURL: process.env.TEMPO_BROWSER_URL ?? process.env.TEMPO_DOCKER_URL ?? "http://127.0.0.1:3001",
   });
   const page = await context.newPage();
   await page.addInitScript(() => {

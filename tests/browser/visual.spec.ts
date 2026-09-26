@@ -32,10 +32,12 @@ for (const viewport of [
           "8/8/8/7R/K7/8/8/6k1 w - - 0 1",
         );
       await page.evaluate(() => document.fonts.ready);
-      if (workspace === "Train")
+      if (workspace === "Train") {
         await expect(
           page.getByText("Spanish opening", { exact: true }).first(),
         ).toBeVisible();
+        await expect(page.getByText("Phone queue prepared for 2026-09-18.")).toBeVisible();
+      }
       if (workspace === "Tactics")
         await expect(page.getByText(/Puzzle \d+ of/)).toBeVisible();
       if (workspace === "Builder")
@@ -55,6 +57,20 @@ for (const viewport of [
       );
     });
   }
+}
+
+for (const width of [390, 1280]) {
+  test(`Repertoire statistics ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 720 });
+    await prepareVisualUI(page);
+    await navigate(page, "Repertoire");
+    await page.getByRole("button", { name: "Statistics", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Prefix cards" })).toBeVisible();
+    await expect(page.locator(".repertoire-position-board .board-frame")).toBeVisible();
+    await expect(page).toHaveScreenshot(`repertoire-statistics-${width}.png`, {
+      animations: "disabled", fullPage: true,
+    });
+  });
 }
 test("service-unavailable", async ({ page }) => {
   await prepareVisualUI(page);
@@ -82,6 +98,8 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 720 
     await page.reload();
     await page.getByRole("button", { name: /Analysis activity/ }).click();
     await expect(page.getByRole("progressbar", { name: "Spanish opening integrity progress" })).toBeVisible();
+    await expect(page.getByText("Phone queue prepared for 2026-09-18.")).toBeVisible();
+    await page.addStyleTag({ content: "#tempo-activity-content .tempo-activity-item:not(:first-of-type), #tempo-activity-content .tempo-activity-list h3:not(:first-child) { display: none; }" });
     await expect(page).toHaveScreenshot(`activity-tray-${viewport.width}.png`, { animations: "disabled", fullPage: true });
   });
 }

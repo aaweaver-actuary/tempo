@@ -29,7 +29,7 @@ it("Pages service worker caches scoped static assets and bypasses API and extern
     put: vi.fn(async (request: { url: string }, response: Response) => {
       cached.set(request.url, response);
     }),
-    match: vi.fn(async (request: { url: string }) => cached.get(request.url)),
+    match: vi.fn(async (request: { url: string } | string) => cached.get(typeof request === "string" ? request : request.url)?.clone()),
     keys: vi.fn(async () => Array.from(cached.keys(), (url) => ({ url }))),
     delete: vi.fn(async (request: { url: string }) => cached.delete(request.url)),
   };
@@ -45,7 +45,7 @@ it("Pages service worker caches scoped static assets and bypasses API and extern
       open: vi.fn(async () => cache),
       keys: vi.fn(async () => []),
       delete: vi.fn(async () => true),
-      match: vi.fn(async (request: { url: string }) => cached.get(request.url)),
+      match: vi.fn(async (request: { url: string } | string) => cached.get(typeof request === "string" ? request : request.url)?.clone()),
     },
     fetch: fetchMock,
     URL,
@@ -79,7 +79,9 @@ it("Pages service worker caches scoped static assets and bypasses API and extern
   const missingResponse = await uncachedAsset.respondWith.mock.calls[0][0];
   expect(missingResponse.type).toBe("error");
 
-  cached.set("https://tempo.test/tempo/index.html", new Response("shell"));
+  cached.set("https://tempo.test/tempo/index.html", new Response('<script src="/tempo/assets/app.js"></script>'));
+  cached.set("https://tempo.test/tempo/assets/app.js", new Response("app"));
+  cached.set("https://tempo.test/tempo/", new Response("shell"));
   for (let index = 0; index < 125; index++) {
     const nextAsset = dispatch(`https://tempo.test/tempo/assets/${index}.js`, "script");
     await nextAsset.respondWith.mock.calls[0][0];
@@ -87,4 +89,22 @@ it("Pages service worker caches scoped static assets and bypasses API and extern
   }
   expect(cached.size).toBeLessThanOrEqual(120);
   expect(cached.has("https://tempo.test/tempo/index.html")).toBe(true);
+  expect(cached.has("https://tempo.test/tempo/assets/app.js")).toBe(true);
+  expect(cached.has("https://tempo.test/tempo/")).toBe(true);
+
+  const onMessage = listeners.get("message");
+  expect(onMessage).toBeDefined();
+  const postMessage = vi.fn();
+  const waitUntil = vi.fn();
+  onMessage!({ data: { type: "tempo:offline-shell-status" }, ports: [{ postMessage }], waitUntil });
+  await waitUntil.mock.calls[0][0];
+  expect(postMessage).toHaveBeenCalledWith({ version: "tempo-static-v5", ready: false });
+
+  for (const path of ["favicon.svg", "tempo-icon.png", "manifest.webmanifest",
+    ...["w", "b"].flatMap((color) => ["P", "N", "B", "R", "Q", "K"]
+      .map((piece) => `pieces/merida/${color}${piece}.svg`))])
+    cached.set(`https://tempo.test/tempo/${path}`, new Response(path));
+  onMessage!({ data: { type: "tempo:offline-shell-status" }, ports: [{ postMessage }], waitUntil });
+  await waitUntil.mock.calls[1][0];
+  expect(postMessage).toHaveBeenLastCalledWith({ version: "tempo-static-v5", ready: true });
 });

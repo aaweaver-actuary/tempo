@@ -82,6 +82,33 @@ describe("frontend debug reporting", () => {
     cleanup?.();
   });
 
+  it("iPhone script error retains safe source coordinates without inventing a cause", () => {
+    const cleanup = installGlobalDebugErrorHandlers();
+    window.dispatchEvent(new ErrorEvent("error", {
+      message: "Script error.", filename: "https://tempo.example/assets/app.js?token=secret",
+      lineno: 42, colno: 7,
+    }));
+    const bundle = JSON.parse(buildDebugBundle()) as {
+      error: { message: string; context: { scriptPath: string; line: number; column: number } };
+    };
+    expect(bundle.error.message).toBe("Script error.");
+    expect(bundle.error.context).toMatchObject({ scriptPath: "/assets/app.js", line: 42, column: 7 });
+    expect(JSON.stringify(bundle)).not.toContain("token=secret");
+    cleanup?.();
+  });
+
+  it("iPhone script error without source stays explicit about missing evidence", () => {
+    const cleanup = installGlobalDebugErrorHandlers();
+    window.dispatchEvent(new ErrorEvent("error", { message: "Script error." }));
+    const bundle = JSON.parse(buildDebugBundle()) as {
+      error: { message: string; context: { scriptPath?: string; line?: number } };
+    };
+    expect(bundle.error.message).toBe("Script error.");
+    expect(bundle.error.context.scriptPath).toBeUndefined();
+    expect(bundle.error.context.line).toBeUndefined();
+    cleanup?.();
+  });
+
   it("shows a copy action and reports clipboard success", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     Object.defineProperty(navigator, "clipboard", {

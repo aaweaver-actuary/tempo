@@ -1,4 +1,6 @@
-import { Button, TextInput, SelectInput } from "./ui";
+import { SelectInput } from "./inputs/SelectInput";
+import { TextInput } from "./inputs/TextInput";
+import { Button } from "./buttons/BaseButton";
 import { useState } from "react";
 import type { TacticalCatalog, TacticalPack } from "../lib/tactical-catalog";
 import { packProgress } from "../lib/tactical-catalog";
@@ -47,38 +49,50 @@ export function TacticalCatalogPanel({
     }
   });
   const [themeQuery, setThemeQuery] = useState("");
-  const [packFilter, setPackFilter] = useState<"all" | "active" | "unfinished">("all");
+  const [packFilter, setPackFilter] = useState<"all" | "active" | "unfinished">(
+    "all",
+  );
   const [expandedThemeId, setExpandedThemeId] = useState<string | null>(null);
   const normalizedQuery = themeQuery.trim().toLowerCase();
   return (
     <section className="tactical-catalog" aria-label="Tactical puzzle catalog">
       {recommendations.length > 0 && (
-        <section className="tactics-suggestions" aria-labelledby="suggested-tactics-heading">
+        <section
+          className="tactics-suggestions"
+          aria-labelledby="suggested-tactics-heading"
+        >
           <h2 id="suggested-tactics-heading">Suggested</h2>
           {recommendations.map((recommendation) => (
             <article key={recommendation.motif}>
               <strong>{recommendation.motif}</strong>
               <p>
-                You missed {recommendation.miss_count} of {recommendation.opportunity_count}{" "}
-                {recommendation.motif} opportunities in the past {recommendation.window_days} days.
+                You missed {recommendation.miss_count} of{" "}
+                {recommendation.opportunity_count} {recommendation.motif}{" "}
+                opportunities in the past {recommendation.window_days} days.
               </p>
               <small>
                 {recommendation.exploited_count ??
-                  recommendation.opportunity_count - recommendation.miss_count} exploited ·{" "}
+                  recommendation.opportunity_count -
+                    recommendation.miss_count}{" "}
+                exploited ·{" "}
                 {Math.round(
                   (recommendation.conversion_rate ??
                     (recommendation.opportunity_count
-                      ? (recommendation.opportunity_count - recommendation.miss_count) /
+                      ? (recommendation.opportunity_count -
+                          recommendation.miss_count) /
                         recommendation.opportunity_count
                       : 0)) * 100,
-                )}% conversion
+                )}
+                % conversion
               </small>
               {recommendation.recommended_pack_id && (
                 <Button
                   disabled={busy}
                   onClick={() => onStartSuggested?.(recommendation)}
                 >
-                  {recommendation.recommended_pack_active ? "Resume this motif" : "Start this motif"}
+                  {recommendation.recommended_pack_active
+                    ? "Resume this motif"
+                    : "Start this motif"}
                 </Button>
               )}
             </article>
@@ -90,7 +104,10 @@ export function TacticalCatalogPanel({
         continue after deactivation. Practicing any puzzle also adds it to daily
         reviews, in addition to automatic introductions.
       </p>
-      <div className="tactic-catalog-filters" aria-label="Filter tactical packs">
+      <div
+        className="tactic-catalog-filters"
+        aria-label="Filter tactical packs"
+      >
         <label>
           <span className="sr-only">Search themes</span>
           <TextInput
@@ -102,7 +119,12 @@ export function TacticalCatalogPanel({
         </label>
         <label>
           <span className="sr-only">Pack status</span>
-          <SelectInput value={packFilter} onChange={(event) => setPackFilter(event.target.value as typeof packFilter)}>
+          <SelectInput
+            value={packFilter}
+            onChange={(event) =>
+              setPackFilter(event.target.value as typeof packFilter)
+            }
+          >
             <option value="all">All packs</option>
             <option value="active">Active packs</option>
             <option value="unfinished">Unfinished packs</option>
@@ -145,101 +167,120 @@ export function TacticalCatalogPanel({
                 max={packs.length * 25}
               />
             </summary>
-            {expandedGroups.includes(group.id) && <>
-            <div className="tactic-group-actions">
-              <Button
-                disabled={busy}
-                onClick={() =>
-                  onActivate(
-                    packs.map((pack) => pack.id),
-                    true,
-                  )
-                }
-              >
-                Activate {packs.length} packs
-              </Button>
-              <Button
-                disabled={busy || !active}
-                onClick={() =>
-                  onActivate(
-                    packs.map((pack) => pack.id),
-                    false,
-                  )
-                }
-              >
-                Deactivate {active} packs
-              </Button>
-            </div>
-            {catalog.themes
-              .filter((theme) => theme.group === group.id)
-              .filter((theme) => !normalizedQuery || theme.name.toLowerCase().includes(normalizedQuery))
-              .map((theme) => {
-                const themePacks = packs.filter(
-                  (pack) => pack.theme === theme.id,
-                );
-                const themeClean = themePacks.reduce(
-                  (total, pack) => total + packProgress(pack, progress).clean,
-                  0,
-                );
-                const visiblePacks = themePacks.filter((pack) => {
-                  if (packFilter === "active") return pack.active;
-                  if (packFilter === "unfinished") return packProgress(pack, progress).clean < 25;
-                  return true;
-                });
-                return (
-                  <details
-                    key={theme.id}
-                    className="tactic-theme"
-                    open={expandedThemeId === theme.id || themePacks.some((pack) => pack.id === selectedPackId)}
-                    onToggle={(event) => setExpandedThemeId(event.currentTarget.open ? theme.id : null)}
+            {expandedGroups.includes(group.id) && (
+              <>
+                <div className="tactic-group-actions">
+                  <Button
+                    disabled={busy}
+                    onClick={() =>
+                      onActivate(
+                        packs.map((pack) => pack.id),
+                        true,
+                      )
+                    }
                   >
-                    <summary>
-                      {theme.name}
-                      <span>
-                        {themeClean} / {themePacks.length * 25} clean
-                      </span>
-                    </summary>
-                    <div className="tactic-pack-grid">
-                      {visiblePacks.map((pack) => (
-                        <article
-                          key={pack.id}
-                          className={
-                            selectedPackId === pack.id ? "selected" : ""
-                          }
-                        >
-                          <Button
-                            className="tactic-pack-select"
-                            aria-current={
-                              selectedPackId === pack.id ? "true" : undefined
-                            }
-                            onClick={() => onSelect(pack)}
-                          >
-                            {pack.difficulty[0].toUpperCase() +
-                              pack.difficulty.slice(1)}{" "}
-                            · Pack {pack.ordinal}
-                            <small>
-                              {packProgress(pack, progress).clean} / 25 clean ·{" "}
-                              {pack.minRating}–{pack.maxRating}
-                            </small>
-                            <small>
-                              {pack.introduced} introduced · {pack.due} due
-                            </small>
-                          </Button>
-                          <Button
-                            aria-label={`${pack.active ? "Deactivate" : "Activate"} ${theme.name} ${pack.difficulty} pack ${pack.ordinal}`}
-                            aria-pressed={pack.active}
-                            disabled={busy}
-                            onClick={() => onActivate([pack.id], !pack.active)}
-                          >
-                            {pack.active ? "Active" : "Activate"}
-                          </Button>
-                        </article>
-                      ))}
-                    </div>
-                  </details>
-                );
-              })}
-            </>}
+                    Activate {packs.length} packs
+                  </Button>
+                  <Button
+                    disabled={busy || !active}
+                    onClick={() =>
+                      onActivate(
+                        packs.map((pack) => pack.id),
+                        false,
+                      )
+                    }
+                  >
+                    Deactivate {active} packs
+                  </Button>
+                </div>
+                {catalog.themes
+                  .filter((theme) => theme.group === group.id)
+                  .filter(
+                    (theme) =>
+                      !normalizedQuery ||
+                      theme.name.toLowerCase().includes(normalizedQuery),
+                  )
+                  .map((theme) => {
+                    const themePacks = packs.filter(
+                      (pack) => pack.theme === theme.id,
+                    );
+                    const themeClean = themePacks.reduce(
+                      (total, pack) =>
+                        total + packProgress(pack, progress).clean,
+                      0,
+                    );
+                    const visiblePacks = themePacks.filter((pack) => {
+                      if (packFilter === "active") return pack.active;
+                      if (packFilter === "unfinished")
+                        return packProgress(pack, progress).clean < 25;
+                      return true;
+                    });
+                    return (
+                      <details
+                        key={theme.id}
+                        className="tactic-theme"
+                        open={
+                          expandedThemeId === theme.id ||
+                          themePacks.some((pack) => pack.id === selectedPackId)
+                        }
+                        onToggle={(event) =>
+                          setExpandedThemeId(
+                            event.currentTarget.open ? theme.id : null,
+                          )
+                        }
+                      >
+                        <summary>
+                          {theme.name}
+                          <span>
+                            {themeClean} / {themePacks.length * 25} clean
+                          </span>
+                        </summary>
+                        <div className="tactic-pack-grid">
+                          {visiblePacks.map((pack) => (
+                            <article
+                              key={pack.id}
+                              className={
+                                selectedPackId === pack.id ? "selected" : ""
+                              }
+                            >
+                              <Button
+                                className="tactic-pack-select"
+                                aria-current={
+                                  selectedPackId === pack.id
+                                    ? "true"
+                                    : undefined
+                                }
+                                onClick={() => onSelect(pack)}
+                              >
+                                {pack.difficulty[0].toUpperCase() +
+                                  pack.difficulty.slice(1)}{" "}
+                                · Pack {pack.ordinal}
+                                <small>
+                                  {packProgress(pack, progress).clean} / 25
+                                  clean · {pack.minRating}–{pack.maxRating}
+                                </small>
+                                <small>
+                                  {pack.introduced} introduced · {pack.due} due
+                                </small>
+                              </Button>
+                              <Button
+                                aria-label={`${pack.active ? "Deactivate" : "Activate"} ${theme.name} ${pack.difficulty} pack ${pack.ordinal}`}
+                                aria-pressed={pack.active}
+                                disabled={busy}
+                                onClick={() =>
+                                  onActivate([pack.id], !pack.active)
+                                }
+                              >
+                                {pack.active ? "Active" : "Activate"}
+                              </Button>
+                            </article>
+                          ))}
+                        </div>
+                      </details>
+                    );
+                  })}
+              </>
+            )}
           </details>
         );
       })}

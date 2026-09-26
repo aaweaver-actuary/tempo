@@ -478,6 +478,31 @@ def test_help_failure_survives_reload_and_cannot_be_graded_as_a_clean_solve(
         )
 
 
+def test_stale_failed_attempt_request_cannot_mark_a_later_queue_entry(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        imported = client.post(
+            "/api/imports/pgn",
+            files={"file": ("one.pgn", PGN)},
+            data={"initial_depth": 2},
+        )
+        wait_for_integrity(client, imported.json()["repertoire_id"])
+        first = client.get("/api/queue/today").json()["cards"][0]
+        with database.connection() as db:
+            later_entry = db.execute(
+                """INSERT INTO daily_queue(queue_date,card_id,cycle,position)
+                   VALUES(?,?,?,?) RETURNING id""",
+                (date.today().isoformat(), first["id"], 99, 999),
+            ).fetchone()[0]
+        assert client.post(f"/api/queue/entries/{later_entry}/fail").status_code == 409
+        with database.read_connection() as db:
+            assert db.execute(
+                "SELECT attempt_failed FROM daily_queue WHERE id=?", (later_entry,)
+            ).fetchone()[0] == 0
+
+
 def test_unfinished_unreviewed_cards_do_not_bypass_tomorrows_new_card_limit(
     tmp_path, monkeypatch
 ):

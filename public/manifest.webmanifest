@@ -1,0 +1,11 @@
+{
+  "name": "Tempo Chess Training",
+  "short_name": "Tempo",
+  "description": "Practice a prepared daily chess queue",
+  "start_url": "./",
+  "scope": "./",
+  "display": "standalone",
+  "background_color": "#f5f3e9",
+  "theme_color": "#344737",
+  "icons": [{ "src": "./tempo-icon.png", "sizes": "180x180", "type": "image/png" }]
+}

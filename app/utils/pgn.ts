@@ -81,7 +81,8 @@ export function importGameAndReformatToGameViewRecord(
       : null;
   const divergence =
     typeof value.divergence_ply === "number" ? value.divergence_ply : null;
-  const flagPly = major ?? missed ?? divergence ?? 0;
+  const flagPly = typeof value.matched_position_ply === "number"
+    ? value.matched_position_ply : major ?? missed ?? divergence ?? 0;
   const status = normalizeCoverageStatus(value.classification);
   const flag =
     major !== null

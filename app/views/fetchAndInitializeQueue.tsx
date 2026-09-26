@@ -5,6 +5,9 @@ import { runStudyTask } from "../lib/background-study";
 import type { PracticeCard } from "../domain/cards";
 import { reportDebugError } from "../lib/debug-reporting";
 import { flushPendingReviews, pendingReviews } from "../lib/review-outbox";
+import { readPreparedTraining, replayOfflineAttempts, savePreparedTraining } from "../lib/offline-training";
+import { waitForOfflineShell } from "../lib/offline-shell";
+import { flushTrainingFailures, pendingTrainingFailures } from "../lib/training-failure-outbox";
 
 let requestGeneration = 0;
 let activeQueueController: AbortController | null = null;
@@ -101,7 +104,21 @@ export async function fetchAndInitializeQueue(advance = false): Promise<void> {
   const controller = new AbortController();
   activeQueueController = controller;
   try {
-    if (!useTrainingStore.getState().isDatabaseQueueActive && !pendingReviews().length) {
+    const pendingFailureEntries = new Set(pendingTrainingFailures());
+    let failureSaveError: string | null = null;
+    if (pendingFailureEntries.size)
+      void flushTrainingFailures().catch((error) => {
+        failureSaveError = `Could not confirm a guided attempt. Refresh the training queue. ${String(error)}`;
+        useTrainingStore.getState().setQueueNotice(
+          failureSaveError,
+        );
+      });
+    const retainPendingFailures = (cards: PracticeCard[]) => cards.map((card) =>
+      card.queueEntryId && pendingFailureEntries.has(card.queueEntryId)
+        ? { ...card, attemptFailed: true } : card);
+    const savedPhoneQueue = typeof indexedDB === "undefined" ? null : await readPreparedTraining().catch(() => null);
+    if (!useTrainingStore.getState().isDatabaseQueueActive && !pendingReviews().length &&
+        savedPhoneQueue?.localDate !== localDayKey()) {
       const stored = localStorage.getItem(queueCacheKey);
       if (stored) {
         try {
@@ -109,13 +126,14 @@ export async function fetchAndInitializeQueue(advance = false): Promise<void> {
           if (cached.local_date === localDayKey() && cached.cards?.length) {
             const cachedCards = await runStudyTask<PracticeCard[]>({ kind: "queue", payload: cached });
             if (generation === requestGeneration)
-              useTrainingStore.getState().hydrateLocalQueue(cachedCards, false, cached.count);
+              useTrainingStore.getState().hydrateLocalQueue(retainPendingFailures(cachedCards), false, cached.count);
           }
         } catch {
           localStorage.removeItem(queueCacheKey);
         }
       }
     }
+    const replayed = typeof indexedDB === "undefined" ? null : await replayOfflineAttempts();
     if (pendingReviews().length) await flushPendingReviews();
     const raw = await loadTodayQueueWithRetry(controller.signal);
     const cards = await runStudyTask<PracticeCard[]>({
@@ -123,13 +141,61 @@ export async function fetchAndInitializeQueue(advance = false): Promise<void> {
       payload: raw,
     });
     if (generation !== requestGeneration) return;
-    useTrainingStore.getState().hydrateLocalQueue(cards, advance, raw.count);
+    useTrainingStore.getState().hydrateLocalQueue(retainPendingFailures(cards), advance, raw.count);
+    useTrainingStore.getState().setOfflineQueue(false);
     try { localStorage.setItem(queueCacheKey, JSON.stringify(raw)); } catch {
       // A full browser storage quota must not turn a successful queue read into a failure.
     }
     useTrainingStore.getState().setServiceError("");
+    if (replayed?.attempts.some((attempt) => attempt.conflict))
+      useTrainingStore.getState().setQueueNotice(
+        `${replayed.attempts.filter((attempt) => attempt.conflict).length} phone review conflict(s) remain saved on this phone: ${replayed.attempts.filter((attempt) => attempt.conflict).map((attempt) => attempt.cardId).join(", ")}. The computer's saved results take priority.`,
+      );
+    else useTrainingStore.getState().setQueueNotice(failureSaveError ??
+      (pendingTrainingFailures().length ? "Guided attempt save pending. Tempo will retry." : ""));
+    const hasConflicts = Boolean(replayed?.attempts.some((attempt) => attempt.conflict));
+    if (typeof indexedDB !== "undefined") void fetch(`${API_URL}/api/queue/prepared`)
+      .then(async (response) => {
+        if (response.status === 404)
+          throw new Error("Tempo on the computer is an older version. Update it, then reopen Tempo on the phone.");
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return savePreparedTraining(await response.json());
+      })
+      .then(async (prepared) => {
+        await waitForOfflineShell();
+        if (generation === requestGeneration && !hasConflicts && prepared.localDate === localDayKey())
+          useTrainingStore.getState().setQueueNotice(
+            `Phone queue prepared for ${prepared.localDate}.` +
+            (prepared.cards.some((card) => card.content_type === "defense")
+              ? ` ${prepared.cards.filter((card) => card.content_type === "defense").length} defensive exercise(s) still require the computer.`
+              : ""),
+          );
+      })
+      .catch((error) => {
+        if (generation === requestGeneration && !hasConflicts)
+          useTrainingStore.getState().setQueueNotice(
+            `Phone queue could not be prepared. ${error instanceof Error ? error.message : "Keep the computer connected and retry loading the queue."}`,
+          );
+      });
   } catch (error) {
     if (generation !== requestGeneration) return;
+    const prepared = await readPreparedTraining().catch(() => null);
+    if (prepared?.localDate === localDayKey()) {
+      const supportedCards = prepared.cards.filter((card) => card.content_type !== "defense");
+      const cards = await runStudyTask<PracticeCard[]>({
+        kind: "queue", payload: { cards: supportedCards, count: supportedCards.length, local_date: prepared.localDate },
+      });
+      if (generation !== requestGeneration) return;
+      useTrainingStore.getState().hydrateLocalQueue(cards, advance, cards.length);
+      useTrainingStore.getState().setOfflineQueue(true);
+      useTrainingStore.getState().setServiceError("");
+      const remainingDefense = prepared.cards.length - supportedCards.length;
+      const unsynced = prepared.attempts.filter((attempt) => !attempt.serverReviewId && !attempt.conflict).length;
+      useTrainingStore.getState().setQueueNotice(
+        `Prepared phone queue for ${prepared.localDate} · ${unsynced} review${unsynced === 1 ? "" : "s"} saved on phone${remainingDefense ? ` · ${remainingDefense} defensive exercise${remainingDefense === 1 ? "" : "s"} require the computer` : ""}.`,
+      );
+      return;
+    }
     reportDebugError(error, {
       kind: "api",
       source: "training-queue",

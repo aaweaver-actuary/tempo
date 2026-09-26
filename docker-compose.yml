@@ -8,7 +8,7 @@ services:
       TEMPO_COORDINATOR_MODE: external
       TZ: ${TZ:-America/New_York}
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - tempo-data:/data
     restart: unless-stopped
@@ -18,7 +18,7 @@ services:
       context: .
       dockerfile: Dockerfile.web
     ports:
-      - "3000:80"
+      - "127.0.0.1:3000:80"
     depends_on:
       - api
     restart: unless-stopped

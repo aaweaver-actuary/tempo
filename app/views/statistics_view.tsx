@@ -1,4 +1,5 @@
-import { SelectInput, DataTable } from "../components/ui";
+import { DataTable } from "../components/ui";
+import { SelectInput } from "../components/inputs/SelectInput";
 import { useEffect, useState } from "react";
 import { API_URL } from "../const";
 import {
@@ -16,7 +17,11 @@ type Dimension = Breakdown["dimension"];
 const percentage = (value: number | null) =>
   value === null ? "—" : `${(value * 100).toFixed(1)}%`;
 
-export default function StatisticsView({ embedded = false }: { embedded?: boolean }) {
+export default function StatisticsView({
+  embedded = false,
+}: {
+  embedded?: boolean;
+}) {
   const [windowDays, setWindowDays] = useState<WindowDays>(30);
   const [dimension, setDimension] = useState<Dimension>("color");
   const [overview, setOverview] = useState<Overview | null>(null);
@@ -34,36 +39,57 @@ export default function StatisticsView({ embedded = false }: { embedded?: boolea
         `${API_URL}/api/statistics/breakdown?dimension=${dimension}&window_days=${windowDays}`,
         chessStatisticsBreakdownSchema,
       ),
-    ]).then(([nextOverview, nextBreakdown]) => {
-      if (!active) return;
-      setOverview(nextOverview);
-      setBreakdown(nextBreakdown);
-      setError("");
-    }).catch((reason) => {
-      reportDebugError(reason, {
-        kind: "api",
-        source: "statistics-view",
-        operation: "load chess statistics",
-        endpoint: `${API_URL}/api/statistics/overview`,
+    ])
+      .then(([nextOverview, nextBreakdown]) => {
+        if (!active) return;
+        setOverview(nextOverview);
+        setBreakdown(nextBreakdown);
+        setError("");
+      })
+      .catch((reason) => {
+        reportDebugError(reason, {
+          kind: "api",
+          source: "statistics-view",
+          operation: "load chess statistics",
+          endpoint: `${API_URL}/api/statistics/overview`,
+        });
+        if (active)
+          setError(
+            reason instanceof Error
+              ? reason.message
+              : "Statistics unavailable.",
+          );
       });
-      if (active) setError(reason instanceof Error ? reason.message : "Statistics unavailable.");
-    });
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [windowDays, dimension]);
 
   return (
     <section className="library-page statistics-page">
-      <header className={embedded ? "sr-only" : "page-heading statistics-heading"}>
+      <header
+        className={embedded ? "sr-only" : "page-heading statistics-heading"}
+      >
         <div>
           <h1>Chess statistics</h1>
-          <p>Game outcomes use all valid games. Engine metrics use analyzed games only.</p>
+          <p>
+            Game outcomes use all valid games. Engine metrics use analyzed games
+            only.
+          </p>
         </div>
         <div>
           <label>
             Window{" "}
-            <SelectInput value={windowDays} onChange={(event) => setWindowDays(Number(event.target.value) as WindowDays)}>
-              <option value={7}>7 days</option><option value={30}>30 days</option>
-              <option value={90}>90 days</option><option value={36500}>Lifetime</option>
+            <SelectInput
+              value={windowDays}
+              onChange={(event) =>
+                setWindowDays(Number(event.target.value) as WindowDays)
+              }
+            >
+              <option value={7}>7 days</option>
+              <option value={30}>30 days</option>
+              <option value={90}>90 days</option>
+              <option value={36500}>Lifetime</option>
             </SelectInput>
           </label>
         </div>
@@ -74,50 +100,116 @@ export default function StatisticsView({ embedded = false }: { embedded?: boolea
         <>
           <div className="statistics-kpi-grid">
             <article className="statistics-kpi">
-              <h2>Game score</h2><strong>{percentage(overview.score.value)}</strong>
-              <p>{overview.score.wins} W · {overview.score.draws} D · {overview.score.losses} L</p>
-              <small>{overview.score.numerator} points / {overview.score.denominator} games</small>
+              <h2>Game score</h2>
+              <strong>{percentage(overview.score.value)}</strong>
+              <p>
+                {overview.score.wins} W · {overview.score.draws} D ·{" "}
+                {overview.score.losses} L
+              </p>
+              <small>
+                {overview.score.numerator} points / {overview.score.denominator}{" "}
+                games
+              </small>
             </article>
             <article className="statistics-kpi">
               <h2>Decision quality</h2>
-              <strong>{overview.decision_quality.mean_loss_cp?.toFixed(0) ?? "—"} cp</strong>
-              <p>{overview.decision_quality.major_mistakes_per_game?.toFixed(2) ?? "—"} major mistakes/game</p>
-              <small>{overview.decision_quality.denominator} analyzed games</small>
+              <strong>
+                {overview.decision_quality.mean_loss_cp?.toFixed(0) ?? "—"} cp
+              </strong>
+              <p>
+                {overview.decision_quality.major_mistakes_per_game?.toFixed(
+                  2,
+                ) ?? "—"}{" "}
+                major mistakes/game
+              </p>
+              <small>
+                {overview.decision_quality.denominator} analyzed games
+              </small>
             </article>
             <article className="statistics-kpi">
-              <h2>Tactical performance</h2><strong>{percentage(overview.tactical_performance.value)}</strong>
-              <p>{overview.tactical_performance.found} found / {overview.tactical_performance.opportunities} opportunities</p>
-              <small>{overview.tactical_performance.conceded_per_100_decisions?.toFixed(1) ?? "—"} conceded / 100 decisions</small>
+              <h2>Tactical performance</h2>
+              <strong>{percentage(overview.tactical_performance.value)}</strong>
+              <p>
+                {overview.tactical_performance.found} found /{" "}
+                {overview.tactical_performance.opportunities} opportunities
+              </p>
+              <small>
+                {overview.tactical_performance.conceded_per_100_decisions?.toFixed(
+                  1,
+                ) ?? "—"}{" "}
+                conceded / 100 decisions
+              </small>
             </article>
           </div>
-          <p>{overview.analyzed_games} of {overview.games} games analyzed ({percentage(overview.analysis_coverage)} coverage).</p>
+          <p>
+            {overview.analyzed_games} of {overview.games} games analyzed (
+            {percentage(overview.analysis_coverage)} coverage).
+          </p>
         </>
       )}
       <section className="statistics-breakdown">
         <h2>Breakdown</h2>
-        <label>Compare by{" "}
-          <SelectInput value={dimension} onChange={(event) => setDimension(event.target.value as Dimension)}>
-            <option value="color">Color</option><option value="speed">Speed</option>
-            <option value="provider">Provider</option><option value="opponent_rating">Opponent rating</option>
-            <option value="relative_rating">Relative rating</option><option value="weekday">Day of week</option>
-            <option value="hour">Hour</option><option value="opening">Opening</option>
+        <label>
+          Compare by{" "}
+          <SelectInput
+            value={dimension}
+            onChange={(event) => setDimension(event.target.value as Dimension)}
+          >
+            <option value="color">Color</option>
+            <option value="speed">Speed</option>
+            <option value="provider">Provider</option>
+            <option value="opponent_rating">Opponent rating</option>
+            <option value="relative_rating">Relative rating</option>
+            <option value="weekday">Day of week</option>
+            <option value="hour">Hour</option>
+            <option value="opening">Opening</option>
             <option value="repertoire">Repertoire</option>
           </SelectInput>
         </label>
         {breakdown && (
           <DataTable>
-            <caption>Performance by {breakdown.dimension.replaceAll("_", " ")}</caption>
-            <thead><tr><th>Segment</th><th>Games</th><th>Score</th><th>Mean loss</th><th>Tactics</th></tr></thead>
-            <tbody>{breakdown.segments.map((segment) => (
-              <tr key={segment.segment}><th>{segment.segment}<span className="statistics-bar" aria-hidden="true"><i style={{ width: `${(segment.score ?? 0) * 100}%` }} /></span></th><td>{segment.games}</td>
-                <td>{percentage(segment.score)}</td><td>{segment.mean_loss_cp?.toFixed(0) ?? "—"} cp</td>
-                <td>{segment.tactical_found}/{segment.tactical_opportunities}</td></tr>
-            ))}</tbody>
+            <caption>
+              Performance by {breakdown.dimension.replaceAll("_", " ")}
+            </caption>
+            <thead>
+              <tr>
+                <th>Segment</th>
+                <th>Games</th>
+                <th>Score</th>
+                <th>Mean loss</th>
+                <th>Tactics</th>
+              </tr>
+            </thead>
+            <tbody>
+              {breakdown.segments.map((segment) => (
+                <tr key={segment.segment}>
+                  <th>
+                    {segment.segment}
+                    <span className="statistics-bar" aria-hidden="true">
+                      <i style={{ width: `${(segment.score ?? 0) * 100}%` }} />
+                    </span>
+                  </th>
+                  <td>{segment.games}</td>
+                  <td>{percentage(segment.score)}</td>
+                  <td>{segment.mean_loss_cp?.toFixed(0) ?? "—"} cp</td>
+                  <td>
+                    {segment.tactical_found}/{segment.tactical_opportunities}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
           </DataTable>
         )}
       </section>
-      <details><summary>Methodology</summary>
-        <p>Score = (wins + 0.5 × draws) / games. Decision quality excludes unanalyzed games. Tactical rate includes only high-confidence opportunities. Opening exit is the first out-of-repertoire position, or ply 20; endgame entry uses N/B=1, R=2, Q=4 and begins at a total phase score of six.</p>
+      <details>
+        <summary>Methodology</summary>
+        <p>
+          Score = (wins + 0.5 × draws) / games. Decision quality excludes
+          unanalyzed games. Tactical rate includes only high-confidence
+          opportunities. Opening exit is the first out-of-repertoire position,
+          or ply 20; endgame entry uses N/B=1, R=2, Q=4 and begins at a total
+          phase score of six.
+        </p>
       </details>
     </section>
   );

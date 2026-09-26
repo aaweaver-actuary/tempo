@@ -6,6 +6,8 @@ Tempo is a functional local-first chess-opening spaced-repetition trainer. The i
 
 Docker Tempo is the full product. Python/SQLite is authoritative for repertoires, daily queues, reviews, accounts, and games. The public GitHub Pages build is a limited practice demo: it does not sync personal games or promise Docker persistence. Use **Start Tempo.command** for the full application.
 
+For prepared daily training on an iPhone while the computer is unavailable, see [phone training](docs/PHONE-TRAINING.md).
+
 Every reported defect must have a named regression test before closure. Run `npm test` for the required frontend, backend, Rust, browser, and Docker checks; CI runs the same command. See [CONTRIBUTING.md](CONTRIBUTING.md) and [tests/REGRESSIONS.md](tests/REGRESSIONS.md).
 
 - Interactive opening and tactics drills using Lichess's Chessground board, with click-to-move or drag-and-drop.

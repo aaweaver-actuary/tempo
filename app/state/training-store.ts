@@ -56,6 +56,7 @@ export type TrainingStoreState = {
   pieceSet: PieceSet;
   isSoundEnabled: boolean;
   isDatabaseQueueActive: boolean;
+  isOfflineQueueActive: boolean;
   // Service errors intentionally retain actionable server text rather than a closed enum.
   serviceError: string;
   setPracticeCards: (
@@ -137,6 +138,7 @@ export type TrainingStoreState = {
   setPieceSet: (pieceSet: PieceSet | ((current: PieceSet) => PieceSet)) => void;
   setSoundOn: (value: boolean | ((current: boolean) => boolean)) => void;
   setDatabaseQueue: (value: boolean | ((current: boolean) => boolean)) => void;
+  setOfflineQueue: (value: boolean) => void;
   setServiceError: (error: string | ((current: string) => string)) => void;
   resetTrainingLine: (nextCard?: PracticeCard) => void;
   hydrateQueue: (payload: {
@@ -194,6 +196,7 @@ const defaultState = {
   pieceSet: "cburnett" as PieceSet,
   isSoundEnabled: true,
   isDatabaseQueueActive: false,
+  isOfflineQueueActive: false,
   serviceError: "",
 };
 
@@ -249,6 +252,7 @@ export function selectHomeViewState(state: TrainingStoreState) {
     pieceSet: state.pieceSet,
     soundOn: state.isSoundEnabled,
     databaseQueue: state.isDatabaseQueueActive,
+    offlineQueue: state.isOfflineQueueActive,
     serviceError: state.serviceError,
     reviewSaveError: state.reviewSaveError,
   };
@@ -288,6 +292,7 @@ export const selectTrainingActions = (state: TrainingStoreState) => ({
   setPieceSet: state.setPieceSet,
   setSoundOn: state.setSoundOn,
   setDatabaseQueue: state.setDatabaseQueue,
+  setOfflineQueue: state.setOfflineQueue,
   setServiceError: state.setServiceError,
   initializeCardState: state.initializeCardState,
   hydrateQueue: state.hydrateQueue,
@@ -443,6 +448,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
           ? value(state.isDatabaseQueueActive)
           : value,
     })),
+  setOfflineQueue: (value) => set({ isOfflineQueueActive: value }),
   setServiceError: (value) =>
     set((state) => ({
       serviceError:
@@ -493,8 +499,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
   },
   initializeCardState: (card, overrides = {}) => {
     const start = initialTrainingState(card);
-    const nextFeedback =
-      overrides.feedback ?? (card.attemptFailed ? "wrong" : "ready");
+    const nextFeedback = overrides.feedback ?? "ready";
     const nextAttemptFailed =
       overrides.attemptFailed ?? Boolean(card.attemptFailed);
     const nextShowHint = overrides.showHint ?? nextAttemptFailed;
@@ -576,7 +581,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
           step: start.step,
           lastMove: start.lastMove,
           opponentLastMove: start.lastMove,
-          feedback: failed ? "wrong" : "ready",
+          feedback: "ready",
           showHint: failed,
           teachingEncounterKey: null,
           assistedThisAttempt: false,
@@ -605,7 +610,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       step: start.step,
       lastMove: start.lastMove,
       opponentLastMove: start.lastMove,
-      feedback: failed ? "wrong" : "ready",
+      feedback: "ready",
       showHint: failed,
       teachingEncounterKey: null,
       assistedThisAttempt: false,

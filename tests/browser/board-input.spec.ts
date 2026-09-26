@@ -24,7 +24,7 @@ for (const deviceScaleFactor of [1, 2])
       hasTouch: true,
       deviceScaleFactor,
       viewport: { width: 390, height: 844 },
-      baseURL: process.env.TEMPO_DOCKER_URL ?? "http://127.0.0.1:3001",
+      baseURL: process.env.TEMPO_BROWSER_URL ?? process.env.TEMPO_DOCKER_URL ?? "http://127.0.0.1:3001",
     });
     try {
       const page = await context.newPage();

@@ -26,12 +26,15 @@ it("continuation preview accepts report provenance and rejects unknown candidate
   const candidate = {
     move_uci: "g1f3", score: { cp: 25, mate: null }, loss_cp: 0,
     similarity: "no supported similarity", example_line_id: null,
+    repertoire_line_count: 0, exact_transposition: false,
     example_line_name: null, preview_moves_uci: ["g1f3"],
     engine_version: "Stockfish", network_version: "NNUE", depth: 14,
     report_id: "a".repeat(64), source_game_id: "coverage:node", source_ply: 2,
   };
   const readyPreview = { state: "ready", opportunity_id: "gap", candidates: [candidate] };
   expect(discoveryRecommendationSchema.safeParse(readyPreview).success).toBe(true);
+  expect(discoveryRecommendationSchema.safeParse({ ...readyPreview,
+    candidates: [{ ...candidate, repertoire_line_count: undefined }] }).success).toBe(false);
   expect(discoveryRecommendationSchema.safeParse({
     ...readyPreview, candidates: [{ ...candidate, unexpected: true }],
   }).success).toBe(false);

@@ -1,0 +1,45 @@
+"""Durable one-game slices after the repertoire graph changes."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+
+from ..database import connection
+from .activity_gate import activity_gate
+from .durable_tasks import enqueue_task, enqueue_task_in_transaction
+
+
+def enqueue_repertoire_game_refresh(*, background: bool) -> None:
+    enqueue_task("repertoire_game_refresh", "all", {"after_game_id": ""},
+                 priority=90, foreground=not background)
+
+
+def execute_repertoire_game_refresh_slice(task: dict) -> bool:
+    """Queue one derivation, then persist a cursor for the following slice."""
+    activity_gate.wait_for_foreground()
+    with connection(background=True) as database:
+        current = database.execute(
+            "SELECT 1 FROM background_tasks WHERE id=? AND generation=? AND lease_token=? AND state='leased'",
+            (task["id"], task["generation"], task["lease_token"]),
+        ).fetchone()
+        if not current:
+            return False
+        game = database.execute(
+            "SELECT id FROM imported_games WHERE id>? ORDER BY id LIMIT 1",
+            (task["payload"].get("after_game_id", ""),),
+        ).fetchone()
+        if not game:
+            return False
+        now = datetime.now(timezone.utc).isoformat()
+        database.execute(
+            """INSERT INTO game_derivation_jobs(game_id,status,updated_at) VALUES(?,'queued',?)
+               ON CONFLICT(game_id) DO UPDATE SET status='queued',last_error=NULL,
+                 derivation_version=game_derivation_jobs.derivation_version+1,
+                 completed_phases=0,next_attempt_at=NULL,updated_at=excluded.updated_at""",
+            (game["id"], now),
+        )
+        enqueue_task_in_transaction(
+            database, "repertoire_game_refresh", "all",
+            {"after_game_id": game["id"]}, priority=90,
+        )
+        return True

@@ -1,6 +1,17 @@
 import { fireEvent, render, screen } from "@testing-library/react";
 import { expect, it, vi } from "vitest";
-import { ActionLink, ActionMenu, Button, DataTable, Field, IconButton, SelectInput, TabList, TextArea, TextInput } from "../../app/components/ui";
+import {
+  ActionLink,
+  ActionMenu,
+  DataTable,
+  Field,
+  TabList,
+  TextArea,
+} from "../../app/components/ui";
+import { SelectInput } from "@/app/components/inputs/SelectInput";
+import { TextInput } from "@/app/components/inputs/TextInput";
+import { IconButton } from "@/app/components/buttons/IconButton";
+import { Button } from "@/app/components/buttons/BaseButton";
 
 it("shared buttons preserve native actions, state, and accessible names", () => {
   const onClick = vi.fn();

@@ -1,4 +1,4 @@
-import { Button } from "./ui";
+import { Button } from "./buttons/BaseButton";
 import { useSyncExternalStore } from "react";
 import {
   dataDiagnostics,
@@ -15,7 +15,11 @@ export function DataDiagnosticsNotice() {
   const groupedDiagnostics = Array.from(
     diagnostics.reduce((groups, issue) => {
       const key = `${issue.source}\u0000${issue.message}`;
-      const group = groups.get(key) ?? { issue, count: 0, recordIds: [] as string[] };
+      const group = groups.get(key) ?? {
+        issue,
+        count: 0,
+        recordIds: [] as string[],
+      };
       group.count += 1;
       if (issue.recordId && group.recordIds.length < 3)
         group.recordIds.push(issue.recordId);
@@ -39,14 +43,16 @@ export function DataDiagnosticsNotice() {
     <details className="data-diagnostics-notice">
       <summary>
         {groupedDiagnostics.length} data issue type
-        {groupedDiagnostics.length === 1 ? "" : "s"} affecting {diagnostics.length}{" "}
-        record{diagnostics.length === 1 ? "" : "s"}
+        {groupedDiagnostics.length === 1 ? "" : "s"} affecting{" "}
+        {diagnostics.length} record{diagnostics.length === 1 ? "" : "s"}
       </summary>
       <ul>
         {groupedDiagnostics.map(({ issue, count, recordIds }) => (
           <li key={`${issue.source}:${issue.message}`}>
             {issue.source} · {count} affected
-            {recordIds.length ? ` · examples ${recordIds.join(", ")}` : ""}: {issue.message}
+            {recordIds.length
+              ? ` · examples ${recordIds.join(", ")}`
+              : ""}: {issue.message}
           </li>
         ))}
       </ul>

@@ -65,7 +65,7 @@ it("issue 4 opportunities explain promotion, degraded sources, and explicit acti
   fireEvent.click(screen.getByText("Engine and game evidence"));
   expect(screen.getByText(/Game game-1 · ply 12 · loss 180 cp · analysis 3/)).toBeTruthy();
   fireEvent.click(screen.getByRole("button", { name: "View supporting games" }));
-  expect(onShowGamesAtPosition).toHaveBeenCalledWith(startFen);
+  expect(onShowGamesAtPosition).toHaveBeenCalledWith(startFen, "rep");
   fireEvent.click(screen.getAllByRole("button", { name: "Train this decision" })[0]);
   await waitFor(() => expect(onTrain).toHaveBeenCalledOnce());
   fireEvent.click(screen.getByRole("button", { name: "Investigate branch" }));

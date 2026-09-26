@@ -1,10 +1,12 @@
-import { Button, TextInput, TextArea } from "../components/ui";
+import { TextArea } from "../components/ui";
+import { TextInput } from "../components/inputs/TextInput";
+import { Button } from "../components/buttons/BaseButton";
 import { useRef as useDialogRef } from "react";
 import { useDialogFocus } from "../hooks/use-dialog-focus";
 import { reportDebugError } from "../lib/debug-reporting";
 import { Square, Chess } from "chess.js";
 import { useEffect, useMemo, useState } from "react";
-import { MoveNavigator } from "../components/board-controls";
+import { MoveNavigationControls } from "../components/board/MoveNavigationControls";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
 import { pieceSymbols } from "../const";
 import {
@@ -71,16 +73,21 @@ export default function CardEditor({
     let active = true;
     void fetch(`${API_URL}/api/cards/${card.backendId}/prefix-split`)
       .then((response) =>
-        readJsonResponse(response, prefixSplitResponseSchema, "prefix split preview"),
+        readJsonResponse(
+          response,
+          prefixSplitResponseSchema,
+          "prefix split preview",
+        ),
       )
       .then((preview) => {
         if (!active) return;
         setPrefixSplitPreview(preview);
         setCurrentFenString(preview.parent.starting_fen);
         setSolutionSanMovesList(
-          movesToSanFormat(preview.parent.starting_fen, preview.parent.moves).map(
-            asSanMove,
-          ),
+          movesToSanFormat(
+            preview.parent.starting_fen,
+            preview.parent.moves,
+          ).map(asSanMove),
         );
       })
       .catch((failure) => {
@@ -380,7 +387,7 @@ export default function CardEditor({
             />
             {tab === "solution" && (
               <>
-                <MoveNavigator
+                <MoveNavigationControls
                   cursor={currentPositionInMoveList}
                   length={solutionSanMovesList.length}
                   onChange={setCurrentPositionInMoveList}
@@ -408,7 +415,10 @@ export default function CardEditor({
           </div>
           <div className="editor-fields">
             {card.editingIntent === "shorten-prefix" && prefixSplitPreview && (
-              <section className="shorten-suggestion" aria-label="Prefix split preview">
+              <section
+                className="shorten-suggestion"
+                aria-label="Prefix split preview"
+              >
                 <strong>One shorter prefix plus one continuation card</strong>
                 <p>
                   The continuation starts from the shortened position and tests
@@ -416,13 +426,15 @@ export default function CardEditor({
                 </p>
                 {(prefixSplitPreview.shared_line_count ?? 1) > 1 && (
                   <p>
-                    This shared prefix is used by {prefixSplitPreview.shared_line_count} lines
-                    across {prefixSplitPreview.shared_repertoire_count ?? 1} repertoires.
-                    Shortening it updates every linked route.
+                    This shared prefix is used by{" "}
+                    {prefixSplitPreview.shared_line_count} lines across{" "}
+                    {prefixSplitPreview.shared_repertoire_count ?? 1}{" "}
+                    repertoires. Shortening it updates every linked route.
                   </p>
                 )}
                 <small>
-                  Continuation: {movesToSanFormat(
+                  Continuation:{" "}
+                  {movesToSanFormat(
                     prefixSplitPreview.continuation.starting_fen,
                     prefixSplitPreview.continuation.moves,
                   ).join(" ")}
@@ -447,25 +459,27 @@ export default function CardEditor({
             <p className="editor-key-help">
               ←/→ step · ↑ start · ↓ end · Esc close
             </p>
-            {card.editingIntent !== "shorten-prefix" && <fieldset>
-              <legend>Scheduling history</legend>
-              <label>
-                <TextInput
-                  type="radio"
-                  checked={historyMode === "preserve"}
-                  onChange={() => setHistoryMode("preserve")}
-                />{" "}
-                Preserve history
-              </label>
-              <label>
-                <TextInput
-                  type="radio"
-                  checked={historyMode === "reset"}
-                  onChange={() => setHistoryMode("reset")}
-                />{" "}
-                Reset as a new card
-              </label>
-            </fieldset>}
+            {card.editingIntent !== "shorten-prefix" && (
+              <fieldset>
+                <legend>Scheduling history</legend>
+                <label>
+                  <TextInput
+                    type="radio"
+                    checked={historyMode === "preserve"}
+                    onChange={() => setHistoryMode("preserve")}
+                  />{" "}
+                  Preserve history
+                </label>
+                <label>
+                  <TextInput
+                    type="radio"
+                    checked={historyMode === "reset"}
+                    onChange={() => setHistoryMode("reset")}
+                  />{" "}
+                  Reset as a new card
+                </label>
+              </fieldset>
+            )}
             {error && <p className="editor-error">{error}</p>}
             <div className="editor-actions">
               {usesLocalApi() && card.kind === "opening" && (
@@ -474,7 +488,11 @@ export default function CardEditor({
                 </Button>
               )}
               <Button onClick={onClose}>Cancel</Button>
-              <Button variant="primary" className="primary-button" onClick={save}>
+              <Button
+                variant="primary"
+                className="primary-button"
+                onClick={save}
+              >
                 {card.editingIntent === "shorten-prefix"
                   ? "Accept split"
                   : "Validate & save"}

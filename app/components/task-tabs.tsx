@@ -1,6 +1,7 @@
-import { Button, TabList } from "./ui";
+import { TabList } from "./ui";
+import { Button } from "./buttons/BaseButton";
 import { useId, useState } from "react";
-export { Notice } from "./ui";
+export { Notice } from "./Notice";
 export function useTaskTabs(
   names: readonly string[],
   initial: string,

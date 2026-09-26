@@ -1,6 +1,9 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { beforeEach, expect, it, vi } from "vitest";
 import { DiscoveriesTray } from "../../app/components/discoveries-tray";
+import { flushPendingDiscoveryAdmissions, pendingDiscoveryAdmissions } from
+  "../../app/lib/discovery-admission-outbox";
+import { Chess } from "chess.js";
 
 vi.mock("../../app/utils/local", () => ({ usesLocalApi: () => true }));
 const backgroundFetch = vi.hoisted(() => vi.fn());
@@ -10,14 +13,17 @@ vi.mock("../../app/lib/background-fetch", () => ({
       ? fetch(input, init)
       : backgroundFetch(input, init),
 }));
-vi.mock("../../app/components/chessboard", () => ({
-  Chessboard: ({ fen, shapes }: { fen: string; shapes: unknown[] }) =>
-    <div data-testid="discovery-board" data-fen={fen} data-shapes={JSON.stringify(shapes)} />,
+vi.mock("../../app/components/board/chessboard", () => ({
+  Chessboard: ({ fen, shapes, lastMove }: { fen: string; shapes: unknown[]; lastMove?: readonly string[] }) =>
+    <div data-testid="discovery-board" data-fen={fen} data-shapes={JSON.stringify(shapes)}
+      data-last-move={JSON.stringify(lastMove)} />,
 }));
 vi.mock("../../app/lib/engine-broker", () => ({ requestInteractiveAnalysis: async () => [] }));
 vi.mock("../../app/lib/lichess-explorer", () => ({ loadExplorer: () => new Promise(() => {}) }));
 
 const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+
+beforeEach(() => localStorage.clear());
 
 it("slow discovery pagination does not start overlapping background refreshes", async () => {
   let finishFirstPage: ((response: Response) => void) | undefined;
@@ -207,6 +213,7 @@ it("shows only ready discoveries in feed order and does not acknowledge hidden i
       return Response.json({ state: "ready", opportunity_id: id, evidence_fingerprint: fingerprint,
         starting_fen: startFen, candidates: [{ move_uci: "g1f3", score: { cp: 20, mate: null },
           loss_cp: 0, similarity: "no supported similarity", example_line_id: null,
+          repertoire_line_count: 0, exact_transposition: false,
           example_line_name: null, preview_moves_uci: ["g1f3"], engine_version: "Stockfish",
           network_version: "net", depth: 14, report_id: "a".repeat(64),
           source_game_id: `coverage:${id}`, source_ply: 2 }],
@@ -279,6 +286,7 @@ it("missing-response viewer shows the learner board after the reply and selects 
     ? { state: "ready", opportunity_id: "gap", evidence_fingerprint: "gap-revision", starting_fen: afterReply,
         candidates: [{ move_uci: "g1f3", score: { cp: 20, mate: null }, loss_cp: 0,
           similarity: "no supported similarity", example_line_id: null, example_line_name: null,
+          repertoire_line_count: 0, exact_transposition: false,
           preview_moves_uci: ["g1f3"], engine_version: "Stockfish", network_version: "net",
           depth: 14, report_id: "a".repeat(64), source_game_id: "coverage:node", source_ply: 2 }],
         engine_lines: [{ move_uci: "g1f3", score: { cp: 20, mate: null }, loss_cp: 0, depth: 14 }],
@@ -294,4 +302,178 @@ it("missing-response viewer shows the learner board after the reply and selects 
   expect(screen.getByTestId("discovery-board").getAttribute("data-shapes")).toContain('"dest":"f3"');
   fireEvent.click(screen.getByRole("button", { name: "Open in Builder" }));
   expect(openBuilder).toHaveBeenCalledWith(expect.objectContaining({ id: "gap", decision_fen: afterReply }), "g1f3");
+});
+
+const routeBoard = new Chess(startFen);
+routeBoard.move("e4");
+const afterE4 = routeBoard.fen();
+routeBoard.move("e5");
+const afterE5 = routeBoard.fen();
+routeBoard.move("Nf3");
+const afterNf3 = routeBoard.fen();
+
+function reviewDiscovery(id: string) {
+  return { id, repertoire_id: "rep", kind: "missing_response", status: "active",
+    fen_key: afterE4.split(" ").slice(0, 4).join(" "), fen: afterE4,
+    decision_start_fen: startFen, decision_route_uci: ["e2e4", "e7e5"],
+    decision_fen: afterE5, card_id: null, opponent_move_uci: "e7e5",
+    trained_color: "white", score: 1, evidence: { supporting_games: 1 },
+    evidence_fingerprint: `${id}-revision`, seen_at: "2026-09-24T00:00:00Z",
+    snoozed_until: null, admission_state: null, admitted_card_id: null,
+    unread: false, source_games: [], routes: ["e4 e5"],
+    created_at: "2026-09-24T00:00:00Z", updated_at: "2026-09-24T00:00:00Z" };
+}
+
+function reviewRecommendation(id: string) {
+  return { state: "ready", opportunity_id: id, evidence_fingerprint: `${id}-revision`,
+    starting_fen: afterE5, accepted_moves_uci: [], suggested_move_uci: "g1f3",
+    suggestion_reason: "same move in a comparable repertoire position",
+    candidates: [
+      { move_uci: "g1f3", score: { cp: 20, mate: null }, loss_cp: 83,
+        similarity: "same move in a comparable repertoire position", example_line_id: "line",
+        repertoire_line_count: 3, exact_transposition: false,
+        example_line_name: "London", preview_moves_uci: ["g1f3"],
+        engine_version: "Stockfish", network_version: "NNUE", depth: 14,
+        report_id: "a".repeat(64), source_game_id: "game", source_ply: 2 },
+      { move_uci: "d2d4", score: { cp: 10, mate: null }, loss_cp: 10,
+        similarity: "no supported similarity", example_line_id: null,
+        repertoire_line_count: 1, exact_transposition: true,
+        example_line_name: null, preview_moves_uci: ["d2d4"],
+        engine_version: "Stockfish", network_version: "NNUE", depth: 14,
+        report_id: "a".repeat(64), source_game_id: "game", source_ply: 2 },
+    ],
+    engine_lines: [{ move_uci: "g1f3", score: { cp: 20, mate: null }, loss_cp: 83, depth: 14 },
+      { move_uci: "d2d4", score: { cp: 10, mate: null }, loss_cp: 10, depth: 14 }],
+  };
+}
+
+it("pending discovery save is checked before startup preview reads", async () => {
+  localStorage.setItem("tempo-pending-discovery-admissions-v1", JSON.stringify([{
+    opportunityId: "pending-save", selectedMoveUci: "g1f3",
+    evidenceFingerprint: "pending-save-revision", state: "pending",
+  }]));
+  backgroundFetch.mockImplementation(async () => Response.json({
+    discoveries: [reviewDiscovery("preview")], total: 1, next_offset: null, unread_count: 0,
+  }));
+  let finishSave: ((response: Response) => void) | undefined;
+  const fetcher = vi.fn((url: string) => String(url).endsWith("/accept")
+    ? new Promise<Response>((resolve) => { finishSave = resolve; })
+    : Promise.resolve(Response.json(reviewRecommendation("preview"))));
+  vi.stubGlobal("fetch", fetcher);
+  render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  await waitFor(() => expect(backgroundFetch).toHaveBeenCalled());
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+  expect(String(fetcher.mock.calls[0][0])).toContain("/accept");
+  await act(async () => finishSave?.(Response.json({ status: "preparing", intent_id: "intent" })));
+  await waitFor(() => expect(fetcher.mock.calls.some(([url]) => String(url).includes("/recommendations"))).toBe(true));
+});
+
+it("discovery comparison shows repertoire counts, engine tradeoffs, and an eligible alternative", async () => {
+  backgroundFetch.mockImplementation(async () => Response.json({ discoveries: [reviewDiscovery("comparison")],
+    total: 1, next_offset: null, unread_count: 0 }));
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json(reviewRecommendation("comparison"))));
+  render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+  const comparison = await screen.findByRole("region", { name: "Discovery move comparison" });
+  expect(comparison.textContent).toContain("3 comparable repertoire lines");
+  expect(comparison.textContent).toContain("83 cp from best");
+  expect(comparison.textContent).toContain("1 comparable repertoire line");
+  expect(comparison.textContent).toContain("3 versus 1 comparable repertoire lines");
+  expect(comparison.textContent).toContain("83 versus 10 cp from best");
+  expect(comparison.textContent).toContain("Exact transposition");
+  expect(comparison.textContent).toContain("100 cp from best");
+  expect(comparison.textContent).toContain("30 cp");
+  fireEvent.click(screen.getByRole("button", { name: "Choose d4" }));
+  expect(screen.getByRole("button", { name: "Choose d4" }).getAttribute("aria-pressed")).toBe("true");
+});
+
+it("discovery comparison keeps mate evaluations separate from centipawn gaps", async () => {
+  backgroundFetch.mockImplementation(async () => Response.json({ discoveries: [reviewDiscovery("mate")],
+    total: 1, next_offset: null, unread_count: 0 }));
+  const baseRecommendation = reviewRecommendation("mate");
+  const recommendation = { ...baseRecommendation, candidates: baseRecommendation.candidates.map((candidate, index) =>
+    index === 0 ? { ...candidate, score: { cp: null, mate: 3 }, loss_cp: null } : candidate) };
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json(recommendation)));
+  render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+  const comparison = await screen.findByRole("region", { name: "Discovery move comparison" });
+  expect(comparison.textContent).toContain("Mate line; no cp gap");
+});
+
+it("discovery board keys inspect route and preview while the familiar default stays selected", async () => {
+  backgroundFetch.mockImplementation(async () => Response.json({ discoveries: [reviewDiscovery("route")],
+    total: 1, next_offset: null, unread_count: 0 }));
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json(reviewRecommendation("route"))));
+  render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+  await waitFor(() => expect(screen.getByText(/Suggested Nf3/)).toBeTruthy());
+  expect(screen.getByRole("button", { name: "Add and train" }).hasAttribute("disabled")).toBe(false);
+  expect(screen.getByTestId("discovery-board").getAttribute("data-shapes")).toContain('"brush":"blue"');
+  expect(screen.getByTestId("discovery-board").getAttribute("data-shapes")).toContain('"brush":"green"');
+  fireEvent.keyDown(window, { key: "ArrowLeft" });
+  expect(screen.getByTestId("discovery-board").getAttribute("data-fen")).toBe(afterE4);
+  expect(screen.getByTestId("discovery-board").getAttribute("data-last-move")).toContain("e2");
+  fireEvent.click(screen.getByRole("button", { name: "Next move" }));
+  expect(screen.getByTestId("discovery-board").getAttribute("data-fen")).toBe(afterE5);
+  fireEvent.keyDown(window, { key: "ArrowRight" });
+  expect(screen.getByTestId("discovery-board").getAttribute("data-fen")).toBe(afterNf3);
+  fireEvent.click(screen.getByRole("button", { name: "d4" }));
+  expect(screen.getByRole("button", { name: "Suggested Nf3" }).getAttribute("aria-pressed")).toBe("false");
+  expect(screen.getByTestId("discovery-board").getAttribute("data-fen")).toBe(afterE5);
+});
+
+it("invalid discovery route falls back to the decision board", async () => {
+  backgroundFetch.mockImplementation(async () => Response.json({ discoveries: [
+    { ...reviewDiscovery("invalid-route"), decision_route_uci: ["e2e5"] },
+  ], total: 1, next_offset: null, unread_count: 0 }));
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json(reviewRecommendation("invalid-route"))));
+  render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+  await waitFor(() => expect(screen.getByText(/Suggested Nf3/)).toBeTruthy());
+  expect(screen.getByTestId("discovery-board").getAttribute("data-fen")).toBe(afterE5);
+  expect(screen.getByRole("button", { name: "Previous move" }).hasAttribute("disabled")).toBe(true);
+  expect(screen.getByTestId("discovery-board").getAttribute("data-shapes")).toContain('"brush":"green"');
+});
+
+it("Add and train advances before saving and preserves the review order after refresh", async () => {
+  let feedOrder = [reviewDiscovery("first"), reviewDiscovery("second")];
+  backgroundFetch.mockImplementation(async () => Response.json({ discoveries: feedOrder,
+    total: 2, next_offset: null, unread_count: 0 }));
+  let finishSave: ((response: Response) => void) | undefined;
+  vi.stubGlobal("fetch", vi.fn((url: string) => {
+    if (url.includes("/recommendations"))
+      return Promise.resolve(Response.json(reviewRecommendation(url.includes("first") ? "first" : "second")));
+    if (url.includes("/accept"))
+      return new Promise<Response>((resolve) => { finishSave = resolve; });
+    if (url.includes("/api/discovery-admissions/"))
+      return Promise.resolve(Response.json({ state: "queued", error: null }));
+    return Promise.resolve(Response.json({ acknowledged: true }));
+  }));
+  render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+  await waitFor(() => expect(screen.getByText(/Suggested Nf3/)).toBeTruthy());
+  fireEvent.click(screen.getByRole("button", { name: "Add and train" }));
+  expect(screen.getByText("2 of 2 · white to move")).toBeTruthy();
+  expect(pendingDiscoveryAdmissions()).toHaveLength(1);
+  feedOrder = [...feedOrder].reverse();
+  await act(async () => finishSave?.(Response.json({ status: "preparing", intent_id: "intent" })));
+  await act(async () => { await flushPendingDiscoveryAdmissions(); });
+  await waitFor(() => expect(backgroundFetch.mock.calls.length).toBeGreaterThan(1));
+  fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+  expect(screen.getByText("1 of 2 · white to move")).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Add and train" }).hasAttribute("disabled")).toBe(true);
+});
+
+it("confirmed failed discovery save remains visible with a retry action", async () => {
+  backgroundFetch.mockImplementation(async () => Response.json({ discoveries: [reviewDiscovery("failure")],
+    total: 1, next_offset: null, unread_count: 0 }));
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => url.includes("/recommendations")
+    ? Response.json(reviewRecommendation("failure"))
+    : Response.json({ detail: "stale evidence" }, { status: 409 })));
+  render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+  await waitFor(() => expect(screen.getByText(/Suggested Nf3/)).toBeTruthy());
+  fireEvent.click(screen.getByRole("button", { name: "Add and train" }));
+  await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("stale evidence"));
+  expect(screen.getByRole("button", { name: "Retry save" })).toBeTruthy();
 });

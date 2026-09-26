@@ -47,9 +47,12 @@ export function mapQueueCardToPracticeCard(
     lastEncounteredAt: card.last_encountered_at ?? undefined,
     firstCleanPassAt: card.first_correct_at ?? undefined,
     hasPriorStudyReview: card.has_study_review ?? Boolean(card.first_correct_at),
+    priorStudyReviewCount: card.study_review_count,
     suggestShorterPrefix:
       card.kind === "prefix" &&
+      card.prefix_split_offer_available !== false &&
       (card.recent_attempts_json?.match(/"again"/g)?.length ?? 0) >= 3,
+    prefixSplitLatestFailureId: card.latest_failed_review_id,
     kind:
       card.content_type === "defense"
         ? "defense"

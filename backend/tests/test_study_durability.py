@@ -134,6 +134,29 @@ def test_assisted_opening_teaching_returns_for_a_separate_clean_recall(tmp_path,
             reviews = db.execute("SELECT rating,guided FROM reviews WHERE card_id=? ORDER BY id", (taught["id"],)).fetchall()
             assert [tuple(review) for review in reviews] == [("again", 1), ("correct", 0)]
 
+def test_queue_reports_only_valid_saved_study_review_count(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        imported = client.post("/api/imports/pgn", files={"file": ("seen-count.pgn", PGN)}, data={"initial_depth": 2})
+        wait_for_integrity(client, imported.json()["repertoire_id"])
+        card = client.get("/api/queue/today").json()["cards"][0]
+        assert card["study_review_count"] == 0
+
+        with database.connection() as db:
+            for source_kind, invalidated_at in (
+                ("study", None), ("study", None), ("study", "2026-09-16T13:00:00+00:00"), ("game", None),
+            ):
+                db.execute(
+                    """INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval,
+                                              source_kind,invalidated_at)
+                       VALUES(?,'correct','2026-09-16T12:00:00+00:00',0,1,?,?)""",
+                    (card["id"], source_kind, invalidated_at),
+                )
+
+        refreshed = client.get("/api/queue/today").json()["cards"]
+        card_after_reviews = next(item for item in refreshed if item["id"] == card["id"])
+        assert card_after_reviews["study_review_count"] == 2
+
 def test_tactical_failures_requeue_once_and_clean_reviews_survive_restart_and_return_when_due(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     clock = install_clock(monkeypatch)

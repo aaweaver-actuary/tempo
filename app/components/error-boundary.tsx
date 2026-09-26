@@ -1,4 +1,4 @@
-import { Button } from "./ui";
+import { Button } from "./buttons/BaseButton";
 import { Component, type ErrorInfo, type ReactNode } from "react";
 import { DebugErrorPanel } from "./debug-error-panel";
 import { reportDebugError } from "../lib/debug-reporting";
@@ -6,7 +6,10 @@ import { reportDebugError } from "../lib/debug-reporting";
 type ErrorBoundaryProps = { children: ReactNode };
 type ErrorBoundaryState = { hasError: boolean };
 
-export class TempoErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+export class TempoErrorBoundary extends Component<
+  ErrorBoundaryProps,
+  ErrorBoundaryState
+> {
   state: ErrorBoundaryState = { hasError: false };
 
   static getDerivedStateFromError(): ErrorBoundaryState {
@@ -26,8 +29,13 @@ export class TempoErrorBoundary extends Component<ErrorBoundaryProps, ErrorBound
     return (
       <main className="tempo-debug-crash-screen">
         <h1>Tempo needs to reload</h1>
-        <p>The workspace could not render this screen. Your local data was not changed.</p>
-        <Button type="button" onClick={() => window.location.reload()}>Reload Tempo</Button>
+        <p>
+          The workspace could not render this screen. Your local data was not
+          changed.
+        </p>
+        <Button type="button" onClick={() => window.location.reload()}>
+          Reload Tempo
+        </Button>
         <DebugErrorPanel boundaryFallback />
       </main>
     );

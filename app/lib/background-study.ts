@@ -2,6 +2,7 @@ import { computeStudyTask, type StudyTask } from "./study-computation";
 import { studyReplySchema } from "../domain/schemas";
 import { parseData, reportDataDiagnostic } from "./validated-data";
 import { updateBrowserActivity } from "./browser-activity";
+import { reportDebugError } from "./debug-reporting";
 
 let worker: Worker | undefined;
 let nextId = 0;
@@ -80,12 +81,17 @@ export function runStudyTask<T>(
       request.resolve(data.result);
     }
   };
-  worker.onerror = () => {
+  worker.onerror = (event) => {
+    reportDebugError(event.message || "Study worker failed to load or run", {
+      kind: "uncaught-exception", source: "study-worker",
+      script: event.filename, line: event.lineno || undefined,
+      column: event.colno || undefined,
+    });
     for (const [requestId, request] of pending)
       updateBrowserActivity(`study:${requestId}`, request.title, "failed", "Failed", "Study worker failed");
     for (const request of pending.values())
       request.reject(
-        new Error("Background study worker failed. Reload Tempo to retry."),
+        new Error("Study worker failed. Reopen Tempo while connected to retry."),
       );
     pending.clear();
     worker?.terminate();

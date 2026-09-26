@@ -28,6 +28,7 @@ test("training Bury defers the active card and reports a failed defer", async ({
   }, { timeout: 20_000 }).toBeGreaterThan(1);
   await page.goto("/");
   await nav(page, "Train");
+  await expect(page.getByRole("heading", { name: "bury-training" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Bury", exact: true })).toBeVisible();
   await page.route("**/api/queue/entries/*/bury", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Queue defer unavailable" }) }));
   await page.getByRole("button", { name: "Bury", exact: true }).click();

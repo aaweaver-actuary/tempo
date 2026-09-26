@@ -1,5 +1,5 @@
 "use client";
-import { Button } from "./components/ui";
+import { Button } from "./components/buttons/BaseButton";
 
 import type { CandidateMove } from "./domain";
 export default function CandidateMovesTable({

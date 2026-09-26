@@ -1,0 +1,240 @@
+import { API_URL } from "../const";
+import { queueCardSchema, queueEnvelopeSchema } from "../domain/schemas";
+import type { BackendQueueCard } from "../domain/transport";
+import { localDayKey } from "../utils/local";
+
+export type OfflineAttempt = {
+  localEntryId: number;
+  parentLocalEntryId?: number;
+  cardId: string;
+  outcome: "again" | "correct";
+  guided: boolean;
+  completedAt: string;
+  expectedReviewId: number;
+  expectedRevision: number;
+  serverEntryId?: number;
+  serverReviewId?: number;
+  serverRepeatEntryId?: number | null;
+  conflict?: string;
+};
+
+export type PreparedTraining = {
+  localDate: string;
+  preparedAt: string;
+  cards: BackendQueueCard[];
+  attempts: OfflineAttempt[];
+  nextTemporaryId: number;
+};
+
+const DATABASE_NAME = "tempo-offline-training";
+const RECORD_KEY = "prepared-daily-queue";
+let databasePromise: Promise<IDBDatabase> | undefined;
+
+function database(): Promise<IDBDatabase> {
+  databasePromise ??= new Promise((resolve, reject) => {
+    const request = indexedDB.open(DATABASE_NAME, 1);
+    request.onupgradeneeded = () => request.result.createObjectStore("training");
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error);
+  });
+  return databasePromise;
+}
+
+export async function readPreparedTraining(): Promise<PreparedTraining | null> {
+  if (typeof indexedDB === "undefined") return null;
+  const opened = await database();
+  return new Promise((resolve, reject) => {
+    const request = opened.transaction("training").objectStore("training").get(RECORD_KEY);
+    request.onsuccess = () => resolve(request.result ?? null);
+    request.onerror = () => reject(request.error);
+  });
+}
+
+async function updatePreparedTraining(
+  update: (current: PreparedTraining | null) => PreparedTraining,
+): Promise<PreparedTraining> {
+  const opened = await database();
+  return new Promise((resolve, reject) => {
+    const transaction = opened.transaction("training", "readwrite");
+    const store = transaction.objectStore("training");
+    let updated: PreparedTraining;
+    const request = store.get(RECORD_KEY);
+    request.onsuccess = () => {
+      try {
+        updated = update(request.result ?? null);
+        store.put(updated, RECORD_KEY);
+      } catch (error) {
+        transaction.abort();
+        reject(error);
+      }
+    };
+    transaction.oncomplete = () => resolve(updated);
+    transaction.onerror = () => reject(transaction.error);
+    transaction.onabort = () => reject(transaction.error);
+  });
+}
+
+export async function savePreparedTraining(raw: unknown): Promise<PreparedTraining> {
+  if (!raw || typeof raw !== "object" || typeof (raw as { prepared_at?: unknown }).prepared_at !== "string")
+    throw new Error("Prepared queue has no preparation time");
+  const queuePayload = { ...(raw as Record<string, unknown>) };
+  delete queuePayload.prepared_at;
+  const envelope = queueEnvelopeSchema.parse(queuePayload);
+  if (!envelope.local_date || envelope.projection?.state !== "ready" || envelope.count !== envelope.cards.length)
+    throw new Error("The daily queue is not fully prepared yet");
+  const cards = envelope.cards.map((card) => queueCardSchema.parse(card));
+  const preparedAt = (raw as { prepared_at: string }).prepared_at;
+  return updatePreparedTraining((current) => {
+    if (current?.attempts.some((attempt) => !attempt.serverReviewId && !attempt.conflict))
+      return current;
+    return {
+      localDate: envelope.local_date!, preparedAt, cards,
+      attempts: current?.attempts.filter((attempt) => attempt.conflict) ?? [],
+      nextTemporaryId: 1_000_000_000_000,
+    };
+  });
+}
+
+export function offlineRepeatPosition(
+  card: BackendQueueCard,
+  outcome: "again" | "correct",
+): number | null {
+  if (outcome === "again") return 4;
+  if (card.scheduling_mode === "light" || card.scheduling_mode === "hard") return null;
+  return card.first_correct_at ? null : Number.POSITIVE_INFINITY;
+}
+
+export async function markOfflineAttemptFailed(localEntryId: number): Promise<void> {
+  await updatePreparedTraining((current) => {
+    if (!current || current.localDate !== localDayKey())
+      throw new Error("The prepared queue is from another day. Reconnect before reviewing.");
+    const cardIndex = current.cards.findIndex((card) => card.queue_entry_id === localEntryId);
+    if (cardIndex < 0) throw new Error("The failed card is no longer in the prepared queue.");
+    return { ...current, cards: current.cards.map((card, index) =>
+      index === cardIndex ? { ...card, attempt_failed: true } : card) };
+  });
+}
+
+export async function recordOfflineAttempt(
+  localEntryId: number,
+  outcome: "again" | "correct",
+  guided: boolean,
+): Promise<PreparedTraining> {
+  return updatePreparedTraining((current) => {
+    if (!current || current.localDate !== localDayKey())
+      throw new Error("The prepared queue is from another day. Reconnect before reviewing.");
+    const cardIndex = current.cards.findIndex((queuedCard) => queuedCard.queue_entry_id === localEntryId);
+    const card = current.cards[cardIndex];
+    if (!card)
+      throw new Error("The active card differs from the saved phone queue. Reload before reviewing.");
+    if (card.content_type === "defense")
+      throw new Error("Defensive exercises require the computer's grading service.");
+    const scheduledOutcome = guided ? "again" : outcome;
+    let recentOutcomes: string[] = [];
+    try { recentOutcomes = JSON.parse(card.recent_attempts_json ?? "[]") as string[]; }
+    catch { throw new Error("The prepared card has invalid attempt history. Reconnect before reviewing."); }
+    recentOutcomes = [scheduledOutcome, ...recentOutcomes].slice(0, 5);
+    const nextSchedulingMode = card.scheduling_mode === "light" && scheduledOutcome === "again"
+      ? "normal"
+      : card.scheduling_mode !== "hard" && recentOutcomes.filter((item) => item === "again").length >= 3
+        ? "hard" : card.scheduling_mode;
+    const repeatPosition = offlineRepeatPosition(
+      { ...card, scheduling_mode: nextSchedulingMode }, scheduledOutcome,
+    );
+    const parent = current.attempts.find((attempt) => attempt.localEntryId === card.parent_local_entry_id);
+    const attempt: OfflineAttempt = {
+      localEntryId, parentLocalEntryId: card.parent_local_entry_id,
+      cardId: card.id, outcome, guided, completedAt: new Date().toISOString(),
+      expectedReviewId: parent?.serverReviewId ?? card.latest_review_id ?? 0,
+      expectedRevision: card.revision ?? 1,
+    };
+    const remaining = current.cards.filter((_, index) => index !== cardIndex);
+    let nextTemporaryId = current.nextTemporaryId;
+    if (repeatPosition !== null) {
+      const repeatedCard = {
+        ...card,
+        queue_entry_id: nextTemporaryId++,
+        parent_local_entry_id: localEntryId,
+        cycle: (card.cycle ?? 0) + 1,
+        attempt_state: scheduledOutcome === "again" ? "guided" : "reinforcement",
+        attempt_failed: false,
+        first_correct_at: scheduledOutcome === "correct" ? attempt.completedAt : card.first_correct_at,
+        recent_attempts_json: JSON.stringify(recentOutcomes),
+        scheduling_mode: nextSchedulingMode,
+      } as BackendQueueCard;
+      remaining.splice(Math.min(repeatPosition, remaining.length), 0, repeatedCard);
+    }
+    return { ...current, cards: remaining, attempts: [...current.attempts, attempt], nextTemporaryId };
+  });
+}
+
+async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> {
+  let current = await readPreparedTraining();
+  if (!current) return null;
+  for (const [attemptIndex, attempt] of current.attempts.entries()) {
+    if (attempt.serverReviewId || attempt.conflict) continue;
+    if (current.attempts.slice(0, attemptIndex).some((earlier) => earlier.cardId === attempt.cardId && earlier.conflict)) {
+      current = await updatePreparedTraining((saved) => ({
+        ...saved!, attempts: saved!.attempts.map((item) => item.localEntryId === attempt.localEntryId
+          ? { ...item, conflict: "An earlier phone attempt for this card conflicted with the computer" } : item),
+      }));
+      continue;
+    }
+    const parent = current.attempts.find((candidate) => candidate.localEntryId === attempt.parentLocalEntryId);
+    if (parent?.conflict) {
+      current = await updatePreparedTraining((saved) => ({
+        ...saved!, attempts: saved!.attempts.map((item) => item.localEntryId === attempt.localEntryId
+          ? { ...item, conflict: "An earlier repeat conflicted with a computer review" } : item),
+      }));
+      continue;
+    }
+    if (parent && !parent.serverRepeatEntryId) {
+      current = await updatePreparedTraining((saved) => ({
+        ...saved!, attempts: saved!.attempts.map((item) => item.localEntryId === attempt.localEntryId
+          ? { ...item, conflict: "The computer did not schedule the expected repeat" } : item),
+      }));
+      continue;
+    }
+    const serverEntryId = parent?.serverRepeatEntryId ?? attempt.localEntryId;
+    const expectedReviewId = parent?.serverReviewId ?? attempt.expectedReviewId;
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 5_000);
+    let response: Response;
+    try {
+      response = await fetch(`${API_URL}/api/cards/${encodeURIComponent(attempt.cardId)}/review`, {
+        method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
+        body: JSON.stringify({
+          queue_entry_id: serverEntryId, outcome: attempt.outcome, guided: attempt.guided,
+          recorded_at: attempt.completedAt, expected_review_id: expectedReviewId,
+          expected_revision: attempt.expectedRevision,
+        }),
+      });
+    } finally {
+      window.clearTimeout(timeout);
+    }
+    if (response.status === 409) {
+      const detail = (await response.json().catch(() => ({}))) as { detail?: string };
+      current = await updatePreparedTraining((saved) => ({
+        ...saved!, attempts: saved!.attempts.map((item) => item.localEntryId === attempt.localEntryId
+          ? { ...item, conflict: detail.detail ?? "This review conflicts with the computer" } : item),
+      }));
+      continue;
+    }
+    if (!response.ok) throw new Error(`Could not sync phone review (HTTP ${response.status})`);
+    const result = await response.json() as { review_id: number; requeue_entry_id: number | null };
+    if (!Number.isInteger(result.review_id)) throw new Error("Review sync did not confirm a saved review");
+    current = await updatePreparedTraining((saved) => ({
+      ...saved!, attempts: saved!.attempts.map((item) => item.localEntryId === attempt.localEntryId
+        ? { ...item, serverEntryId, serverReviewId: result.review_id,
+            serverRepeatEntryId: result.requeue_entry_id } : item),
+    }));
+  }
+  return current;
+}
+
+let activeReplay: Promise<PreparedTraining | null> | undefined;
+
+export function replayOfflineAttempts(): Promise<PreparedTraining | null> {
+  activeReplay ??= performReplayOfflineAttempts().finally(() => { activeReplay = undefined; });
+  return activeReplay;
+}

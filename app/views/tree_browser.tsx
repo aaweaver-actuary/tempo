@@ -1,5 +1,5 @@
 "use client";
-import { Button } from "../components/ui";
+import { Button } from "../components/buttons/BaseButton";
 import { useRef as useDialogRef } from "react";
 import { useDialogFocus } from "../hooks/use-dialog-focus";
 import { useState } from "react";

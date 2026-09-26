@@ -1,12 +1,15 @@
 "use client";
-import { Button, TextInput, SelectInput } from "../components/ui";
+import { SelectInput } from "../components/inputs/SelectInput";
+import { TextInput } from "../components/inputs/TextInput";
+import { Button } from "../components/buttons/BaseButton";
+import StudyReviewBadge from "../components/StudyReviewBadge";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess, type Square } from "chess.js";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import { Chessboard, type BoardTheme, type PieceSet } from "../components/chessboard";
-import { BoardTools } from "../components/board-workspace";
+import { BoardTools } from "../components/board/board-workspace";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
 import { API_URL } from "../const";
 import type { PracticeCard } from "../types";
@@ -300,6 +303,7 @@ export default function DefenseTrainingView({
         <p className="side-to-play">{showingPreview ? `Preview after ${proposedMoveLabel} · ${card.orientation === "white" ? "Black" : "White"} to play` : `${card.orientation} to play`}</p>
         <div className="card-meta"><span className="pill">Defensive decision</span>
           {card.queueAttemptState === "reinforcement" && <span className="pill">Reinforcement</span>}
+          <StudyReviewBadge count={card.priorStudyReviewCount} />
         </div>
         <div className="opening-title"><p>Recognize, explain, respond</p><h2>What danger should your next move account for?</h2>
           <span>{recognitionDone ? definitive ? "Review" : defenseReady ? "Choose a move" : "Review the proposed move" : assessmentDone ? "Explain" : `Assess · step ${activeSelection + 1} of 4`}</span></div>

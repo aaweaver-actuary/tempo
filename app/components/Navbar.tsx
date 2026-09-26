@@ -1,4 +1,4 @@
-import { Button } from "./ui";
+import { Button } from "./buttons/BaseButton";
 import { useState } from "react";
 import type { View } from "@/app/types";
 import { preloadView } from "../lib/workspace-data";
@@ -51,8 +51,13 @@ export default function Navbar({
           event.preventDefault();
           event.stopPropagation();
           setMenuOpen(false);
-          [...event.currentTarget.querySelectorAll<HTMLButtonElement>('[aria-expanded="true"]')]
-            .find(button => button.getClientRects().length > 0)?.focus();
+          [
+            ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
+              '[aria-expanded="true"]',
+            ),
+          ]
+            .find((button) => button.getClientRects().length > 0)
+            ?.focus();
         }
       }}
     >

@@ -1,11 +1,21 @@
 import { spawnSync } from "node:child_process";
 import { mkdtempSync, rmSync } from "node:fs";
 import { join } from "node:path";
+import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
 const directory = mkdtempSync(join(tmpdir(), "tempo-docker-tests-"));
-const env = { ...process.env, TEMPO_TEST_DATA: directory };
-const composeArgs = ["compose", "-p", "tempo-regressions", "-f", "docker-compose.test.yml"];
+const testPort = await new Promise((resolve, reject) => {
+  const server = createServer();
+  server.once("error", reject);
+  server.listen(0, "127.0.0.1", () => {
+    const address = server.address();
+    if (!address || typeof address === "string") return reject(new Error("Could not reserve a test port"));
+    server.close(() => resolve(address.port));
+  });
+});
+const env = { ...process.env, TEMPO_TEST_DATA: directory, TEMPO_TEST_PORT: String(testPort) };
+const composeArgs = ["compose", "-p", `tempo-regressions-${process.pid}`, "-f", "docker-compose.test.yml"];
 function run(command, args, extra = {}) {
   const result = spawnSync(command, args, { stdio: "inherit", env: { ...env, ...extra } });
   if (result.error || result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed`);
@@ -21,7 +31,7 @@ function verifyTempoDataVolumeIsExternal() {
   console.log("PASS test_tempo_data_volume_is_external: Compose uses the existing tempo-data volume.");
 }
 let exitCode = 0;
-const base = "http://127.0.0.1:4180/api";
+const base = `http://127.0.0.1:${testPort}/api`;
 async function json(path, options) {
   const response = await fetch(`${base}/${path}`, options);
   assert(response.ok, `${path}: HTTP ${response.status}`);
@@ -80,7 +90,9 @@ async function verifyStudySurvivesContainerRecreation() {
   await json(`cards/${card.id}/review`, post({ outcome: "correct", queue_entry_id: card.queue_entry_id }));
   const reinforcement = (await json("queue/today")).cards.find(item => item.id === card.id);
   assert.equal(reinforcement.attempt_state, "reinforcement");
-  await json(`queue/entries/${reinforcement.queue_entry_id}/fail`, { method: "POST" });
+  const activeEntry = (await json("queue/today")).cards[0];
+  assert(activeEntry, "An active study entry is available for guided-state durability");
+  await json(`queue/entries/${activeEntry.queue_entry_id}/fail`, { method: "POST" });
   const queueBefore = await waitForImportSettled(imported.repertoire_id);
   const snapshotBefore = await json("migration/snapshot");
   assert(snapshotBefore.counts.reviews > 0 && snapshotBefore.counts.teaching_states > 0 && snapshotBefore.counts.position_annotations > 0);
@@ -104,7 +116,10 @@ try {
   run("docker", ["info", "--format", "{{.ServerVersion}}"]);
   run("docker", [...composeArgs, "up", "--build", "-d"]);
   await waitForHealth();
-  run("npx", ["playwright", "test"], { TEMPO_DOCKER_URL: "http://127.0.0.1:4180" });
+  run("npx", ["playwright", "test"], {
+    TEMPO_DOCKER_URL: `http://127.0.0.1:${testPort}`,
+    TEMPO_TEST_OUTPUT_DIR: join(process.cwd(), "test-results", `browser-docker-${process.pid}`),
+  });
   await verifyStudySurvivesContainerRecreation();
 } catch (error) { console.error(error.message); exitCode = 1; }
 finally {

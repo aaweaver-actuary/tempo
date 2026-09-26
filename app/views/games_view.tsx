@@ -1,7 +1,10 @@
 "use client";
-import { ActionLink, Button, TextInput, SelectInput } from "../components/ui";
+import { ActionLink } from "../components/ui";
+import { SelectInput } from "../components/inputs/SelectInput";
+import { TextInput } from "../components/inputs/TextInput";
+import { Button } from "../components/buttons/BaseButton";
 import { Notice, useTaskTabs } from "../components/task-tabs";
-import { BoardTools } from "../components/board-workspace";
+import { BoardTools } from "../components/board/board-workspace";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import {
@@ -127,6 +130,7 @@ export default function GamesView({
   pieceSet,
   useSharedBoard = false,
   initialFenFilter = "",
+  initialRepertoireFilter = "",
   onClearFenFilter,
 }: {
   onAnalyze: (game: GameViewRecord, cursor: number) => void;
@@ -139,10 +143,15 @@ export default function GamesView({
   pieceSet: PieceSet;
   useSharedBoard?: boolean;
   initialFenFilter?: string;
+  initialRepertoireFilter?: string;
   onClearFenFilter?: () => void;
 }) {
   const local = usesLocalApi();
-  const tools = useTaskTabs(["Review", "Findings", "Library"], "Review", "tempo-games-tools");
+  const tools = useTaskTabs(
+    ["Review", "Findings", "Library"],
+    "Review",
+    "tempo-games-tools",
+  );
   const [loaded, setLoaded] = useState(!local);
   const [pageCursor, setPageCursor] = useState<string | null>(null);
   const [cursorHistory, setCursorHistory] = useState<Array<string | null>>([]);
@@ -152,16 +161,36 @@ export default function GamesView({
   );
   const [savedSession] = useState(() => {
     try {
-      const saved = JSON.parse(sessionStorage.getItem('tempo-games-session') ?? 'null');
-      return saved?.version === 1 && typeof saved.id === 'string' && Number.isInteger(saved.cursor) && saved.cursor >= 0 ? saved as {id:GameId;cursor:number} : null;
-    } catch { return null; }
+      const saved = JSON.parse(
+        sessionStorage.getItem("tempo-games-session") ?? "null",
+      );
+      return saved?.version === 1 &&
+        typeof saved.id === "string" &&
+        Number.isInteger(saved.cursor) &&
+        saved.cursor >= 0
+        ? (saved as { id: GameId; cursor: number })
+        : null;
+    } catch {
+      return null;
+    }
   });
-  const [selectedId, setSelectedId] = useState<GameId | "">(savedSession?.id ?? "");
+  const [selectedId, setSelectedId] = useState<GameId | "">(
+    savedSession?.id ?? "",
+  );
   const [cursor, setCursor] = useState(savedSession?.cursor ?? 0);
   const loadedGameIdsRef = useRef(new Set<GameId>());
-  const [loadedGameIds, setLoadedGameIds] = useState<ReadonlySet<GameId>>(() => new Set());
-  const [boardMode, setBoardMode] = useState<"game" | "tactical" | "guided">("game");
-  useEffect(() => { sessionStorage.setItem('tempo-games-session', JSON.stringify({version:1,id:selectedId,cursor})); }, [selectedId,cursor]);
+  const [loadedGameIds, setLoadedGameIds] = useState<ReadonlySet<GameId>>(
+    () => new Set(),
+  );
+  const [boardMode, setBoardMode] = useState<"game" | "tactical" | "guided">(
+    "game",
+  );
+  useEffect(() => {
+    sessionStorage.setItem(
+      "tempo-games-session",
+      JSON.stringify({ version: 1, id: selectedId, cursor }),
+    );
+  }, [selectedId, cursor]);
   const selectedIdRef = useRef(selectedId);
   useEffect(() => {
     selectedIdRef.current = selectedId;
@@ -171,34 +200,83 @@ export default function GamesView({
   );
   const [engineText, setEngineText] = useState("");
   const [error, setError] = useState("");
-  const [findings, setFindings] = useState<Array<{ id: string; game_id: string; ply: number; kind: string; confidence: number; motif?: string | null; card_id?: string | null }>>([]);
-  const [defenseCandidates, setDefenseCandidates] = useState<DefenseCandidate[]>([]);
+  const [findings, setFindings] = useState<
+    Array<{
+      id: string;
+      game_id: string;
+      ply: number;
+      kind: string;
+      confidence: number;
+      motif?: string | null;
+      card_id?: string | null;
+    }>
+  >([]);
+  const [defenseCandidates, setDefenseCandidates] = useState<
+    DefenseCandidate[]
+  >([]);
   const [defenseBusy, setDefenseBusy] = useState(false);
-  const [cardPreviews, setCardPreviews] = useState<Record<string, { starting_fen: string; moves: string[]; best_move: string; existing_card_id?: string | null }>>({});
+  const [cardPreviews, setCardPreviews] = useState<
+    Record<
+      string,
+      {
+        starting_fen: string;
+        moves: string[];
+        best_move: string;
+        existing_card_id?: string | null;
+      }
+    >
+  >({});
   const [positionSummary, setPositionSummary] = useState<{
     encounters: number;
     analyzed_encounters: number;
-    moves: Array<{ move_uci: string; games: number; score_percentage: number; average_loss_cp: number | null; mistakes: number }>;
+    moves: Array<{
+      move_uci: string;
+      games: number;
+      score_percentage: number;
+      average_loss_cp: number | null;
+      mistakes: number;
+    }>;
   } | null>(null);
-  const [guidedReview, setGuidedReview] = useState<GuidedReviewSession | null>(null);
-  const [guidedReveal, setGuidedReveal] = useState<GuidedReviewAttempt | null>(null);
-  const [tacticalQueue, setTacticalQueue] = useState<{ item: TacticalQueueItem | null; remaining: number }>({ item: null, remaining: 0 });
-  const [tacticalStats, setTacticalStats] = useState<TacticalStats | null>(null);
+  const [guidedReview, setGuidedReview] = useState<GuidedReviewSession | null>(
+    null,
+  );
+  const [guidedReveal, setGuidedReveal] = useState<GuidedReviewAttempt | null>(
+    null,
+  );
+  const [tacticalQueue, setTacticalQueue] = useState<{
+    item: TacticalQueueItem | null;
+    remaining: number;
+  }>({ item: null, remaining: 0 });
+  const [tacticalStats, setTacticalStats] = useState<TacticalStats | null>(
+    null,
+  );
   const [tacticalReveal, setTacticalReveal] = useState(false);
-  const [tacticalPreview, setTacticalPreview] = useState<{ starting_fen: string; moves: string[]; best_move: string; existing_card_id?: string | null } | null>(null);
+  const [tacticalPreview, setTacticalPreview] = useState<{
+    starting_fen: string;
+    moves: string[];
+    best_move: string;
+    existing_card_id?: string | null;
+  } | null>(null);
   const [tacticalBusy, setTacticalBusy] = useState(false);
   const [lines, setLines] = useState<AnalysisLine[]>([]);
-  const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
+  const { setShellBoardForOwner, releaseShellBoardForOwner } =
+    useBoardPublisher();
   const [filters, setFilters] = useState(() => ({
     source: "All",
     status: "All",
     color: "All",
     speed: "All",
     result: "All",
-    from: new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10),
+    from: initialFenFilter
+      ? ""
+      : new Date(Date.now() - 90 * 86400000).toISOString().slice(0, 10),
   }));
-  const selected = selectedId ? records.find((game) => game.id === selectedId) : records[0];
-  const selectedDetailsReady = Boolean(selected && (!local || loadedGameIds.has(selected.id)));
+  const selected = selectedId
+    ? records.find((game) => game.id === selectedId)
+    : records[0];
+  const selectedDetailsReady = Boolean(
+    selected && (!local || loadedGameIds.has(selected.id)),
+  );
   const selectGame = (gameId: GameId, ply: number) => {
     setSelectedId(gameId);
     setCursor(ply);
@@ -224,11 +302,14 @@ export default function GamesView({
     }
     setCursor(cursor + 1);
   }, [cursor, gameFen, selected]);
-  const navigateGameToPly = useCallback((targetPly: number) => {
-    setBoardMode("game");
-    if (targetPly === cursor + 1) advanceGameOnePly();
-    else setCursor(targetPly);
-  }, [advanceGameOnePly, cursor]);
+  const navigateGameToPly = useCallback(
+    (targetPly: number) => {
+      setBoardMode("game");
+      if (targetPly === cursor + 1) advanceGameOnePly();
+      else setCursor(targetPly);
+    },
+    [advanceGameOnePly, cursor],
+  );
   const gameLast =
     selected && cursor
       ? convertSanToUci(selected.moves, selected.startFen)[cursor - 1]
@@ -238,22 +319,26 @@ export default function GamesView({
     [lines],
   );
   const positions = useBackgroundStudy<IndexedPosition[]>(indexTask, []);
-  const shapes = useMemo(() => positions
-    .filter(
-      (position) =>
-        canonicalFenKey(position.fen) === canonicalFenKey(gameFen) &&
-        position.nextUci &&
-        (!selected?.repertoireId ||
-          position.repertoireId === selected.repertoireId),
-    )
-    .map(
-      (position) =>
-        ({
-          orig: position.nextUci!.slice(0, 2),
-          dest: position.nextUci!.slice(2, 4),
-          brush: "yellow",
-        }) as DrawShape,
-    ), [positions, gameFen, selected]);
+  const shapes = useMemo(
+    () =>
+      positions
+        .filter(
+          (position) =>
+            canonicalFenKey(position.fen) === canonicalFenKey(gameFen) &&
+            position.nextUci &&
+            (!selected?.repertoireId ||
+              position.repertoireId === selected.repertoireId),
+        )
+        .map(
+          (position) =>
+            ({
+              orig: position.nextUci!.slice(0, 2),
+              dest: position.nextUci!.slice(2, 4),
+              brush: "yellow",
+            }) as DrawShape,
+        ),
+    [positions, gameFen, selected],
+  );
   const games = records.filter(
     (game) =>
       game.date >= filters.from &&
@@ -264,9 +349,14 @@ export default function GamesView({
   const summaryUrl = useMemo(() => {
     const parameters = new URLSearchParams();
     if (initialFenFilter) parameters.set("fen", initialFenFilter);
+    if (initialRepertoireFilter)
+      parameters.set("repertoire_id", initialRepertoireFilter);
     if (pageCursor) parameters.set("cursor", pageCursor);
     if (filters.source !== "All")
-      parameters.set("provider", filters.source === "Chess.com" ? "chess.com" : "lichess");
+      parameters.set(
+        "provider",
+        filters.source === "Chess.com" ? "chess.com" : "lichess",
+      );
     if (filters.status !== "All") parameters.set("status", filters.status);
     if (filters.color !== "All") parameters.set("color", filters.color);
     if (filters.speed !== "All") parameters.set("speed", filters.speed);
@@ -274,7 +364,7 @@ export default function GamesView({
     if (filters.from) parameters.set("played_from", filters.from);
     const query = parameters.toString();
     return `${API_URL}/api/games/summary${query ? `?${query}` : ""}`;
-  }, [filters, initialFenFilter, pageCursor]);
+  }, [filters, initialFenFilter, initialRepertoireFilter, pageCursor]);
   const loadGames = useCallback(async () => {
     if (!local) return;
     try {
@@ -290,16 +380,27 @@ export default function GamesView({
         const refreshed = loaded.map((summary) => {
           const detailed = current.find((game) => game.id === summary.id);
           return detailed && loadedGameIdsRef.current.has(summary.id)
-            ? { ...summary, moves: detailed.moves, startFen: detailed.startFen, timeline: detailed.timeline }
+            ? {
+                ...summary,
+                moves: detailed.moves,
+                startFen: detailed.startFen,
+                timeline: detailed.timeline,
+              }
             : summary;
         });
-        const selectedDetail = current.find((game) => game.id === selectedIdRef.current);
-        return selectedDetail && loadedGameIdsRef.current.has(selectedDetail.id)
-          && !refreshed.some((game) => game.id === selectedDetail.id)
-          ? [selectedDetail, ...refreshed] : refreshed;
+        const selectedDetail = current.find(
+          (game) => game.id === selectedIdRef.current,
+        );
+        return selectedDetail &&
+          loadedGameIdsRef.current.has(selectedDetail.id) &&
+          !refreshed.some((game) => game.id === selectedDetail.id)
+          ? [selectedDetail, ...refreshed]
+          : refreshed;
       });
-      if (!loaded.some((game) => game.id === selectedIdRef.current)
-        && !loadedGameIdsRef.current.has(selectedIdRef.current as GameId)) {
+      if (
+        !loaded.some((game) => game.id === selectedIdRef.current) &&
+        !loadedGameIdsRef.current.has(selectedIdRef.current as GameId)
+      ) {
         if (loaded[0]) selectGame(loaded[0].id, loaded[0].flagPly);
         else setSelectedId("");
       }
@@ -307,10 +408,14 @@ export default function GamesView({
       setLoaded(true);
       if (initialFenFilter) {
         const positionResponse = await readWorkspaceResponse(
-          `${API_URL}/api/games/position-summary?fen=${encodeURIComponent(initialFenFilter)}`,
+          `${API_URL}/api/games/position-summary?fen=${encodeURIComponent(initialFenFilter)}${initialRepertoireFilter ? `&repertoire_id=${encodeURIComponent(initialRepertoireFilter)}` : ""}`,
         );
-        if (positionResponse.ok)
-          setPositionSummary(await positionResponse.json());
+        if (!positionResponse.ok)
+          throw new Error(`Position summary unavailable (HTTP ${positionResponse.status}).`);
+        const positionResult = await positionResponse.json() as Partial<NonNullable<typeof positionSummary>>;
+        if (!Array.isArray(positionResult.moves) || typeof positionResult.encounters !== "number" || typeof positionResult.analyzed_encounters !== "number")
+          throw new Error("Position summary response is incomplete.");
+        setPositionSummary(positionResult as NonNullable<typeof positionSummary>);
       } else {
         setPositionSummary(null);
       }
@@ -325,36 +430,50 @@ export default function GamesView({
         reason instanceof Error ? reason.message : "Could not load games.",
       );
     }
-  }, [local, initialFenFilter, summaryUrl]);
+  }, [local, initialFenFilter, initialRepertoireFilter, summaryUrl]);
   useEffect(() => {
     if (!local || !selectedId) return;
     if (loadedGameIdsRef.current.has(selectedId)) return;
     const requestedId = selectedId;
     const controller = new AbortController();
-    void fetch(`${API_URL}/api/games/${encodeURIComponent(requestedId)}`, { signal: controller.signal })
+    void fetch(`${API_URL}/api/games/${encodeURIComponent(requestedId)}`, {
+      signal: controller.signal,
+    })
       .then(async (response) => {
         if (!response.ok) throw new Error("Could not load the selected game.");
         const detailedGame = importGameAndReformatToGameViewRecord(
           gameRecordSchema.parse(await response.json()),
         );
-        if (!detailedGame) throw new Error("The selected game's moves are invalid. Retry the local service.");
+        if (!detailedGame)
+          throw new Error(
+            "The selected game's moves are invalid. Retry the local service.",
+          );
         if (selectedIdRef.current !== requestedId) return;
         loadedGameIdsRef.current.add(requestedId);
         setLoadedGameIds(new Set(loadedGameIdsRef.current));
-        setRecords((current) => current.some((game) => game.id === requestedId)
-          ? current.map((game) => game.id === requestedId ? detailedGame : game)
-          : [detailedGame, ...current]);
+        setRecords((current) =>
+          current.some((game) => game.id === requestedId)
+            ? current.map((game) =>
+                game.id === requestedId ? detailedGame : game,
+              )
+            : [detailedGame, ...current],
+        );
         setCursor((current) => Math.min(current, detailedGame.moves.length));
       })
       .catch((reason) => {
-        if (reason instanceof DOMException && reason.name === "AbortError") return;
+        if (reason instanceof DOMException && reason.name === "AbortError")
+          return;
         reportDebugError(reason, {
           kind: "api",
           source: "games-view",
           operation: "load selected game",
           endpoint: `${API_URL}/api/games/${encodeURIComponent(requestedId)}`,
         });
-        setError(reason instanceof Error ? reason.message : "Could not load the selected game.");
+        setError(
+          reason instanceof Error
+            ? reason.message
+            : "Could not load the selected game.",
+        );
       });
     return () => controller.abort();
   }, [local, records, selectedId]);
@@ -364,13 +483,17 @@ export default function GamesView({
   }, [loadGames, syncState.lastSuccess]);
   useEffect(() => {
     const applySuccessfulRefresh = (event: Event) => {
-      const detail = (event as CustomEvent<{ state: string; url: string }>).detail;
+      const detail = (event as CustomEvent<{ state: string; url: string }>)
+        .detail;
       if (detail?.state === "ready" && detail.url === summaryUrl)
         void loadGames();
     };
     window.addEventListener("tempo-workspace-data", applySuccessfulRefresh);
     return () =>
-      window.removeEventListener("tempo-workspace-data", applySuccessfulRefresh);
+      window.removeEventListener(
+        "tempo-workspace-data",
+        applySuccessfulRefresh,
+      );
   }, [loadGames, summaryUrl]);
   useEffect(() => {
     if (!local) return;
@@ -405,7 +528,9 @@ export default function GamesView({
       `${API_URL}/api/game-findings?status=pending&game_id=${encodeURIComponent(selectedIdRef.current)}`,
     );
     if (findingResponse.ok) {
-      const payload = (await findingResponse.json()) as { findings?: typeof findings };
+      const payload = (await findingResponse.json()) as {
+        findings?: typeof findings;
+      };
       setFindings(payload.findings ?? []);
     }
   }, [local]);
@@ -414,19 +539,29 @@ export default function GamesView({
       setDefenseCandidates([]);
       return;
     }
-    const response = await fetch(`${API_URL}/api/defensive-threats/candidates?game_id=${encodeURIComponent(selected.id)}`);
+    const response = await fetch(
+      `${API_URL}/api/defensive-threats/candidates?game_id=${encodeURIComponent(selected.id)}`,
+    );
     if (!response.ok) {
       setError("Could not load defensive candidates from the local database.");
       return;
     }
-    const body = await response.json() as { candidates: DefenseCandidate[] };
+    const body = (await response.json()) as { candidates: DefenseCandidate[] };
     setDefenseCandidates(body.candidates);
   }, [local, selected]);
   const loadTacticalQueue = useCallback(async () => {
     if (!local) return;
     const response = await fetch(`${API_URL}/api/game-findings/tactical-queue`);
-    if (!response.ok) { setError("Could not load the missed-tactics queue. Check the local Tempo service."); return; }
-    const payload = await response.json() as { item: TacticalQueueItem | null; remaining: number };
+    if (!response.ok) {
+      setError(
+        "Could not load the missed-tactics queue. Check the local Tempo service.",
+      );
+      return;
+    }
+    const payload = (await response.json()) as {
+      item: TacticalQueueItem | null;
+      remaining: number;
+    };
     setTacticalQueue(payload);
     setTacticalReveal(false);
     setTacticalPreview(null);
@@ -435,11 +570,20 @@ export default function GamesView({
     if (!local) return;
     const parameters = new URLSearchParams();
     if (filters.from) parameters.set("from_date", filters.from);
-    if (filters.source !== "All") parameters.set("provider", filters.source === "Chess.com" ? "chess.com" : "lichess");
+    if (filters.source !== "All")
+      parameters.set(
+        "provider",
+        filters.source === "Chess.com" ? "chess.com" : "lichess",
+      );
     if (filters.color !== "All") parameters.set("color", filters.color);
     if (filters.speed !== "All") parameters.set("speed", filters.speed);
-    const response = await fetch(`${API_URL}/api/game-insights/tactical?${parameters}`);
-    if (!response.ok) { setError("Could not load tactical statistics from the local database."); return; }
+    const response = await fetch(
+      `${API_URL}/api/game-insights/tactical?${parameters}`,
+    );
+    if (!response.ok) {
+      setError("Could not load tactical statistics from the local database.");
+      return;
+    }
     const payload: unknown = await response.json();
     setTacticalStats(isTacticalStats(payload) ? payload : null);
   }, [filters, local]);
@@ -448,113 +592,215 @@ export default function GamesView({
     queueMicrotask(() => void loadDefenseCandidates());
     queueMicrotask(() => void loadTacticalQueue());
     queueMicrotask(() => void loadTacticalStats());
-  }, [loadFindings, loadDefenseCandidates, loadTacticalQueue, loadTacticalStats, syncState.lastSuccess, selectedId]);
+  }, [
+    loadFindings,
+    loadDefenseCandidates,
+    loadTacticalQueue,
+    loadTacticalStats,
+    syncState.lastSuccess,
+    selectedId,
+  ]);
   useEffect(() => {
     if (!local || !selected?.id) return;
-    const timer = window.setInterval(() => void loadDefenseCandidates(), 10_000);
+    const timer = window.setInterval(
+      () => void loadDefenseCandidates(),
+      10_000,
+    );
     return () => window.clearInterval(timer);
   }, [local, selected?.id, loadDefenseCandidates]);
   async function refreshDefensiveThreats() {
     if (!selected || defenseBusy) return;
     setDefenseBusy(true);
     try {
-      const response = await fetch(`${API_URL}/api/games/${encodeURIComponent(selected.id)}/defensive-threats/refresh`, { method: "POST" });
-      if (!response.ok) throw new Error("Could not queue defensive analysis for this game.");
+      const response = await fetch(
+        `${API_URL}/api/games/${encodeURIComponent(selected.id)}/defensive-threats/refresh`,
+        { method: "POST" },
+      );
+      if (!response.ok)
+        throw new Error("Could not queue defensive analysis for this game.");
       await loadDefenseCandidates();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not refresh defensive threats.");
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Could not refresh defensive threats.",
+      );
     } finally {
       setDefenseBusy(false);
     }
   }
-  async function decideDefenseCandidate(candidateId: string, action: "approve" | "dismiss" | "pause" | "resume" | "train-now") {
+  async function decideDefenseCandidate(
+    candidateId: string,
+    action: "approve" | "dismiss" | "pause" | "resume" | "train-now",
+  ) {
     if (defenseBusy) return;
     setDefenseBusy(true);
     try {
-      const response = await fetch(`${API_URL}/api/defensive-threats/candidates/${candidateId}/${action}`, { method: "POST" });
+      const response = await fetch(
+        `${API_URL}/api/defensive-threats/candidates/${candidateId}/${action}`,
+        { method: "POST" },
+      );
       if (!response.ok) {
-        const body = await response.json() as { detail?: string };
-        throw new Error(body.detail ?? "Could not save this defensive candidate.");
+        const body = (await response.json()) as { detail?: string };
+        throw new Error(
+          body.detail ?? "Could not save this defensive candidate.",
+        );
       }
       await loadDefenseCandidates();
-      if (action === "approve" || action === "train-now") await onQueueUpdated?.();
+      if (action === "approve" || action === "train-now")
+        await onQueueUpdated?.();
     } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Could not save this defensive candidate.");
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Could not save this defensive candidate.",
+      );
     } finally {
       setDefenseBusy(false);
     }
   }
   async function retryDefenseAnalysis(requestId: string) {
-    const response = await fetch(`${API_URL}/api/defensive-threats/analysis/${requestId}/retry`, { method: "POST" });
+    const response = await fetch(
+      `${API_URL}/api/defensive-threats/analysis/${requestId}/retry`,
+      { method: "POST" },
+    );
     if (!response.ok) setError("Could not retry that defensive analysis.");
     else await loadDefenseCandidates();
   }
-  async function decideFinding(findingId: string, decision: "accepted" | "ignored") {
-    const response = await fetch(`${API_URL}/api/game-findings/${findingId}/decision`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ decision }),
-    });
+  async function decideFinding(
+    findingId: string,
+    decision: "accepted" | "ignored",
+  ) {
+    const response = await fetch(
+      `${API_URL}/api/game-findings/${findingId}/decision`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ decision }),
+      },
+    );
     if (!response.ok) {
       const payload: unknown = await response.json().catch(() => null);
-      const detail = payload && typeof payload === "object" && "detail" in payload
-        ? (payload as { detail: unknown }).detail : null;
-      setError(typeof detail === "string" ? detail : "Could not save that gameplay decision.");
+      const detail =
+        payload && typeof payload === "object" && "detail" in payload
+          ? (payload as { detail: unknown }).detail
+          : null;
+      setError(
+        typeof detail === "string"
+          ? detail
+          : "Could not save that gameplay decision.",
+      );
     } else {
       await loadFindings();
       if (decision === "accepted") {
-        try { await onQueueUpdated?.(); }
-        catch { setError("Review priority was saved, but the training queue could not refresh. Reload Tempo to retry."); }
+        try {
+          await onQueueUpdated?.();
+        } catch {
+          setError(
+            "Review priority was saved, but the training queue could not refresh. Reload Tempo to retry.",
+          );
+        }
       }
     }
   }
   async function excludeSelectedGame() {
     if (!selected) return;
-    const response = await fetch(`${API_URL}/api/games/${encodeURIComponent(selected.id)}/exclusion`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ excluded: true }),
-    });
+    const response = await fetch(
+      `${API_URL}/api/games/${encodeURIComponent(selected.id)}/exclusion`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ excluded: true }),
+      },
+    );
     if (!response.ok) setError("Could not exclude this game from adaptation.");
     else await loadFindings();
   }
   async function createFindingCard(findingId: string, save: boolean) {
-    const response = await fetch(`${API_URL}/api/game-findings/${findingId}/card`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ save }),
-    });
+    const response = await fetch(
+      `${API_URL}/api/game-findings/${findingId}/card`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ save }),
+      },
+    );
     if (!response.ok) {
       setError("Could not prepare that game position as a study card.");
       return;
     }
-    const payload = (await response.json()) as { preview: { starting_fen: string; moves: string[]; best_move: string; existing_card_id?: string | null }; saved: boolean };
-    setCardPreviews((current) => ({ ...current, [findingId]: payload.preview }));
+    const payload = (await response.json()) as {
+      preview: {
+        starting_fen: string;
+        moves: string[];
+        best_move: string;
+        existing_card_id?: string | null;
+      };
+      saved: boolean;
+    };
+    setCardPreviews((current) => ({
+      ...current,
+      [findingId]: payload.preview,
+    }));
     if (payload.saved) await loadFindings();
   }
-  const attemptTacticalMove = useCallback((from: Square, to: Square) => {
-    const item = tacticalQueue.item;
-    if (!item || tacticalReveal) return;
-    const board = new Chess(item.evidence.fen ?? STANDARD_FEN);
-    const move = board.move({ from, to, promotion: "q" });
-    if (!move) return;
-    setTacticalReveal(item.accepted_moves.includes(`${move.from}${move.to}${move.promotion ?? ""}`));
-  }, [tacticalQueue.item, tacticalReveal]);
+  const attemptTacticalMove = useCallback(
+    (from: Square, to: Square) => {
+      const item = tacticalQueue.item;
+      if (!item || tacticalReveal) return;
+      const board = new Chess(item.evidence.fen ?? STANDARD_FEN);
+      const move = board.move({ from, to, promotion: "q" });
+      if (!move) return;
+      setTacticalReveal(
+        item.accepted_moves.includes(
+          `${move.from}${move.to}${move.promotion ?? ""}`,
+        ),
+      );
+    },
+    [tacticalQueue.item, tacticalReveal],
+  );
   async function tacticalCurationAction(action: "skip" | "ignore") {
     if (!tacticalQueue.item || tacticalBusy) return;
     setTacticalBusy(true);
-    const response = await fetch(`${API_URL}/api/game-findings/${tacticalQueue.item.id}/curation`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action }) });
+    const response = await fetch(
+      `${API_URL}/api/game-findings/${tacticalQueue.item.id}/curation`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action }),
+      },
+    );
     setTacticalBusy(false);
-    if (!response.ok) { setError("Could not save that curation decision. The current candidate is still visible."); return; }
+    if (!response.ok) {
+      setError(
+        "Could not save that curation decision. The current candidate is still visible.",
+      );
+      return;
+    }
     await loadTacticalQueue();
   }
   async function previewTacticalCard(save: boolean) {
     if (!tacticalQueue.item || tacticalBusy) return;
     setTacticalBusy(true);
-    const response = await fetch(`${API_URL}/api/game-findings/${tacticalQueue.item.id}/card`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ save }) });
+    const response = await fetch(
+      `${API_URL}/api/game-findings/${tacticalQueue.item.id}/card`,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ save }),
+      },
+    );
     setTacticalBusy(false);
-    if (!response.ok) { setError("Could not prepare this tactical position. The candidate remains available."); return; }
-    const payload = await response.json() as { preview: typeof tacticalPreview; saved: boolean };
+    if (!response.ok) {
+      setError(
+        "Could not prepare this tactical position. The candidate remains available.",
+      );
+      return;
+    }
+    const payload = (await response.json()) as {
+      preview: typeof tacticalPreview;
+      saved: boolean;
+    };
     setTacticalPreview(payload.preview);
     if (payload.saved) await loadTacticalQueue();
   }
@@ -572,29 +818,39 @@ export default function GamesView({
     setGuidedReveal(null);
     setBoardMode("guided");
   }
-  const attemptGuidedMove = useCallback(async (from: Square, to: Square) => {
-    if (!guidedReview?.current || guidedReveal) return;
-    const board = new Chess(guidedReview.current.fen);
-    const legalMove = board.move({ from, to, promotion: "q" });
-    if (!legalMove) return;
-    const moveUci = `${legalMove.from}${legalMove.to}${legalMove.promotion ?? ""}`;
-    const response = await fetch(`${API_URL}/api/guided-reviews/${guidedReview.id}/attempt`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ move_uci: moveUci }),
-    });
-    if (!response.ok) {
-      setError("Could not save that correction attempt.");
-      return;
-    }
-    setGuidedReveal((await response.json()) as GuidedReviewAttempt);
-  }, [guidedReview, guidedReveal]);
-  const displayedFen = boardMode === "guided"
-    ? guidedReveal?.revealed.fen ?? guidedReview?.current?.fen ?? gameFen
-    : boardMode === "tactical"
-      ? tacticalQueue.item?.evidence.fen ?? gameFen
-      : gameFen;
-  const displayedShapes = useMemo(() => boardMode === "game" ? shapes : [], [boardMode, shapes]);
+  const attemptGuidedMove = useCallback(
+    async (from: Square, to: Square) => {
+      if (!guidedReview?.current || guidedReveal) return;
+      const board = new Chess(guidedReview.current.fen);
+      const legalMove = board.move({ from, to, promotion: "q" });
+      if (!legalMove) return;
+      const moveUci = `${legalMove.from}${legalMove.to}${legalMove.promotion ?? ""}`;
+      const response = await fetch(
+        `${API_URL}/api/guided-reviews/${guidedReview.id}/attempt`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ move_uci: moveUci }),
+        },
+      );
+      if (!response.ok) {
+        setError("Could not save that correction attempt.");
+        return;
+      }
+      setGuidedReveal((await response.json()) as GuidedReviewAttempt);
+    },
+    [guidedReview, guidedReveal],
+  );
+  const displayedFen =
+    boardMode === "guided"
+      ? (guidedReveal?.revealed.fen ?? guidedReview?.current?.fen ?? gameFen)
+      : boardMode === "tactical"
+        ? (tacticalQueue.item?.evidence.fen ?? gameFen)
+        : gameFen;
+  const displayedShapes = useMemo(
+    () => (boardMode === "game" ? shapes : []),
+    [boardMode, shapes],
+  );
   const displayedLastMove = boardMode === "game" ? gameLast : undefined;
   useEffect(() => {
     let active = true;
@@ -602,22 +858,25 @@ export default function GamesView({
     const debounceTimer = window.setTimeout(() => {
       if (active) setEngineText("Analyzing…");
       void requestInteractiveAnalysis(displayedFen, 12)
-      .then((moves) => {
-        if (active)
-          setEngineText(
-            moves[0]
-              ? `${moves[0].san} · ${moves[0].score}`
-              : "Terminal position",
-          );
-      })
-      .catch((reason) => {
-        reportDebugError(reason, {
-          kind: "ui",
-          source: "games-engine",
-          operation: "interactive game analysis",
+        .then((moves) => {
+          if (active)
+            setEngineText(
+              moves[0]
+                ? `${moves[0].san} · ${moves[0].score}`
+                : "Terminal position",
+            );
+        })
+        .catch((reason) => {
+          reportDebugError(reason, {
+            kind: "ui",
+            source: "games-engine",
+            operation: "interactive game analysis",
+          });
+          if (active)
+            setEngineText(
+              `Engine error: ${reason instanceof Error ? reason.message : "unknown error"}`,
+            );
         });
-        if (active) setEngineText(`Engine error: ${reason instanceof Error ? reason.message : "unknown error"}`);
-      });
     }, 200);
     return () => {
       active = false;
@@ -654,33 +913,69 @@ export default function GamesView({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [advanceGameOnePly, boardMode, selected?.moves.length, selectedDetailsReady]);
-  const matchedDecisions = games.reduce((total, game) => total + (game.matchedPlayerDecisions ?? 0), 0);
-  const repertoireOpportunities = games.reduce((total, game) => total + (game.repertoireOpportunities ?? 0), 0);
-  const selectedFindings = findings.filter((finding) => finding.game_id === selected?.id && finding.kind !== "defensive tactical threat");
+  }, [
+    advanceGameOnePly,
+    boardMode,
+    selected?.moves.length,
+    selectedDetailsReady,
+  ]);
+  const matchedDecisions = games.reduce(
+    (total, game) => total + (game.matchedPlayerDecisions ?? 0),
+    0,
+  );
+  const repertoireOpportunities = games.reduce(
+    (total, game) => total + (game.repertoireOpportunities ?? 0),
+    0,
+  );
+  const selectedFindings = findings.filter(
+    (finding) =>
+      finding.game_id === selected?.id &&
+      finding.kind !== "defensive tactical threat",
+  );
 
   useEffect(() => {
     if (!useSharedBoard) return;
     setShellBoardForOwner("games", {
-      unavailable: !selected ? (error ? "Game position unavailable. Retry the local service." : loaded ? "Select an imported game to review." : "Loading games…")
-        : !selectedDetailsReady ? (error ? "Could not load the selected game. Retry the local service." : "Loading selected game…") : undefined,
+      unavailable: !selected
+        ? error
+          ? "Game position unavailable. Retry the local service."
+          : loaded
+            ? "Select an imported game to review."
+            : "Loading games…"
+        : !selectedDetailsReady
+          ? error
+            ? "Could not load the selected game. Retry the local service."
+            : "Loading selected game…"
+          : undefined,
       fen: displayedFen,
       lastMove: displayedLastMove
-        ? ([displayedLastMove.slice(0, 2), displayedLastMove.slice(2, 4)] as readonly [
-            string,
-            string,
-          ])
+        ? ([
+            displayedLastMove.slice(0, 2),
+            displayedLastMove.slice(2, 4),
+          ] as readonly [string, string])
         : undefined,
       shapes: displayedShapes,
-      interactionMode: (boardMode === "guided" && guidedReview?.current && !guidedReveal)
-        || (boardMode === "tactical" && tacticalQueue.item && !tacticalReveal) ? "legal" : "readonly",
+      interactionMode:
+        (boardMode === "guided" && guidedReview?.current && !guidedReveal) ||
+        (boardMode === "tactical" && tacticalQueue.item && !tacticalReveal)
+          ? "legal"
+          : "readonly",
       showHint: false,
       theme,
       pieceSet,
-      orientation: boardMode === "tactical" && tacticalQueue.item ? tacticalQueueBoardOrientation(tacticalQueue.item.color) : selected?.color === "black" ? "black" : "white",
+      orientation:
+        boardMode === "tactical" && tacticalQueue.item
+          ? tacticalQueueBoardOrientation(tacticalQueue.item.color)
+          : selected?.color === "black"
+            ? "black"
+            : "white",
       positionRevision: cursor,
-      onMove: boardMode === "guided" && guidedReview?.current && !guidedReveal ? attemptGuidedMove
-        : boardMode === "tactical" && tacticalQueue.item && !tacticalReveal ? attemptTacticalMove : undefined,
+      onMove:
+        boardMode === "guided" && guidedReview?.current && !guidedReveal
+          ? attemptGuidedMove
+          : boardMode === "tactical" && tacticalQueue.item && !tacticalReveal
+            ? attemptTacticalMove
+            : undefined,
       onSquareSelect: undefined,
       onFreeMove: undefined,
       onDrawnShapesChange: undefined,
@@ -724,39 +1019,75 @@ export default function GamesView({
         </div>
         {local && (
           <div>
-            <Button variant="primary" className="primary-button sync-button" onClick={onSync} disabled={syncState.syncing} aria-label={syncState.syncing ? "Syncing games" : "↻ Sync games"}>
+            <Button
+              variant="primary"
+              className="primary-button sync-button"
+              onClick={onSync}
+              disabled={syncState.syncing}
+              aria-label={syncState.syncing ? "Syncing games" : "↻ Sync games"}
+            >
               {syncState.syncing && <i />}
               {syncState.syncing ? "Syncing games" : "↻ Sync now"}
             </Button>
-            <Button onClick={() => onRepair?.()} disabled={syncState.syncing}>Repair last 90 days</Button>
+            <Button onClick={() => onRepair?.()} disabled={syncState.syncing}>
+              Repair last 90 days
+            </Button>
           </div>
         )}
       </div>
-      {local && <p className="muted">Import filter: {syncState.filterLabel ?? "Rated blitz, rapid, and classical · last 90 days"}. Bullet, casual, variants, and older games are skipped.</p>}
+      {local && (
+        <p className="muted">
+          Import filter:{" "}
+          {syncState.filterLabel ??
+            "Rated blitz, rapid, and classical · last 90 days"}
+          . Bullet, casual, variants, and older games are skipped.
+        </p>
+      )}
       {initialFenFilter && (
-        <section className="position-game-summary" aria-label="Games from reviewed position">
+        <section
+          className="position-game-summary"
+          aria-label="Games from reviewed position"
+        >
           <p>
-            Position filter · {positionSummary?.encounters ?? 0} encounters · {positionSummary?.analyzed_encounters ?? 0} analyzed
-            {" "}<Button onClick={onClearFenFilter}>Clear</Button>
+            Position filter · {positionSummary?.encounters ?? 0} encounters ·{" "}
+            {positionSummary?.analyzed_encounters ?? 0} analyzed{" "}
+            <Button onClick={onClearFenFilter}>Clear</Button>
           </p>
-          {positionSummary?.moves.map((move) => (
+          {positionSummary?.moves?.map((move) => (
             <p key={move.move_uci}>
-              <strong>{move.move_uci}</strong> · {move.games} games · {move.score_percentage}% score
-              {move.average_loss_cp === null ? " · awaiting analysis" : ` · ${move.average_loss_cp} cp average loss · ${move.mistakes} mistakes`}
+              <strong>{move.move_uci}</strong> · {move.games} games ·{" "}
+              {move.score_percentage}% score
+              {move.average_loss_cp === null
+                ? " · awaiting analysis"
+                : ` · ${move.average_loss_cp} cp average loss · ${move.mistakes} mistakes`}
             </p>
           ))}
-          {positionSummary?.encounters === 0 && <p>No imported game has reached this position.</p>}
+          {positionSummary?.encounters === 0 && (
+            <p>No imported game has reached this position.</p>
+          )}
         </section>
       )}
       {(syncState.providers ?? []).map((provider) => (
         <p className="muted" key={provider.provider}>
-          {provider.provider}: {provider.inserted} new, {provider.updated} updated, {provider.duplicates} duplicates, {provider.filtered} filtered, {provider.rejected} rejected{provider.failed ? ", failed" : ""}
+          {provider.provider}: {provider.inserted} new, {provider.updated}{" "}
+          updated, {provider.duplicates} duplicates, {provider.filtered}{" "}
+          filtered, {provider.rejected} rejected
+          {provider.failed ? ", failed" : ""}
         </p>
       ))}
       {(error || syncState.error) && (
         <p role="alert">
           {error || syncState.error}{" "}
-          {error && <Button onClick={() => { invalidateWorkspaceData(); void loadGames(); }}>Retry</Button>}
+          {error && (
+            <Button
+              onClick={() => {
+                invalidateWorkspaceData();
+                void loadGames();
+              }}
+            >
+              Retry
+            </Button>
+          )}
           <Button onClick={onSettings}>Account settings</Button>
         </p>
       )}
@@ -771,303 +1102,658 @@ export default function GamesView({
       )}
       {tools.tabs}
       {!loaded && !error && <Notice>Loading games…</Notice>}
-      {(loaded || records.length > 0) && <div className="game-review">
-        <div className="game-board">
-          {!useSharedBoard && (
-            <Chessboard
-              fen={displayedFen}
-              lastMove={
-                displayedLastMove
-                  ? [displayedLastMove.slice(0, 2), displayedLastMove.slice(2, 4)]
-                  : undefined
-              }
-              shapes={displayedShapes}
-              locked={!selectedDetailsReady || (boardMode === "game") || (boardMode === "guided" && (!guidedReview?.current || Boolean(guidedReveal))) || (boardMode === "tactical" && (!tacticalQueue.item || tacticalReveal))}
-              showHint={false}
-              theme={theme}
-              pieceSet={pieceSet}
-              onMove={(from, to) => boardMode === "guided" ? void attemptGuidedMove(from, to) : attemptTacticalMove(from, to)}
-              orientation={boardMode === "tactical" ? tacticalQueue.item?.color : selected?.color}
-            />
-          )}
-          <BoardTools>
-            {boardMode !== "game" && <Button onClick={() => setBoardMode("game")}>Return to game</Button>}
-            <Button
-              disabled={!selectedDetailsReady || boardMode !== "game" || cursor === 0}
-              onClick={() => setCursor((value) => Math.max(0, value - 1))}
-            >
-              ← Back
-            </Button>
-            <Button disabled={!selectedDetailsReady || boardMode !== "game" || cursor >= selected!.moves.length}
-              onClick={advanceGameOnePly}
-            >
-              Forward →
-            </Button>
-            <Button
-              disabled={!selectedDetailsReady || boardMode !== "game"}
-              onClick={() => setCursor(selected?.flagPly ?? 0)}
-            >
-              ⚑ First mistake
-            </Button>
-            <Button
-              className={engineOn ? "active" : ""}
-              onClick={() =>
-                setEngineOn((value) => {
-                  localStorage.setItem("tempo-games-engine-on", String(!value));
-                  return !value;
-                })
-              }
-            >
-              Stockfish
-            </Button>
-          </BoardTools>
-        </div>
-        <div className="game-side-scroll">
-          <aside className="game-inspector" data-task="Review">
-            {selected && !selectedDetailsReady && <p role="status">Loading selected game…</p>}
-            <h2>{selected?.opening ?? "No games imported"}</h2>
-            <strong>{selected?.flag}</strong>
-            {engineOn && <p>{engineText}</p>}
-            <div className="game-moves">
-              {selectedDetailsReady && selected?.moves.map((move, index) => (
-                <Button
-                  className={`${index < cursor ? "shown" : ""}${index === selected.flagPly ? " flagged" : ""}`}
-                  onClick={() => navigateGameToPly(index + 1)}
-                  key={index}
-                  title={[...(selected.timeline ?? []), ...selectedFindings].filter((event) => event.ply === index).map((event) => event.kind).join(", ")}
-                >
-                  {index % 2 === 0 ? `${Math.floor(index / 2) + 1}.` : ""}
-                  {move}
-                  {[...(selected.timeline ?? []), ...selectedFindings].some((event) => event.ply === index) ? " •" : ""}
-                </Button>
-              ))}
-            </div>
-            {selectedDetailsReady && selected && (
-              <>
-                <Button variant="primary" className="primary-button" onClick={() => void startGuidedReview()}>
-                  Review this game
-                </Button>
-                <Button
-                  variant="primary" className="primary-button"
-                  onClick={() => onAnalyze(selected, cursor)}
-                >
-                  Open position in Builder
-                </Button>
-                <ActionLink variant="quiet"
-                  href={lichessAnalysisUrl(
-                    selected.moves.slice(0, cursor),
-                    selected.startFen,
-                  )}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Lichess analysis ↗
-                </ActionLink>
-              </>
+      {(loaded || records.length > 0) && (
+        <div className="game-review">
+          <div className="game-board">
+            {!useSharedBoard && (
+              <Chessboard
+                fen={displayedFen}
+                lastMove={
+                  displayedLastMove
+                    ? [
+                        displayedLastMove.slice(0, 2),
+                        displayedLastMove.slice(2, 4),
+                      ]
+                    : undefined
+                }
+                shapes={displayedShapes}
+                locked={
+                  !selectedDetailsReady ||
+                  boardMode === "game" ||
+                  (boardMode === "guided" &&
+                    (!guidedReview?.current || Boolean(guidedReveal))) ||
+                  (boardMode === "tactical" &&
+                    (!tacticalQueue.item || tacticalReveal))
+                }
+                showHint={false}
+                theme={theme}
+                pieceSet={pieceSet}
+                onMove={(from, to) =>
+                  boardMode === "guided"
+                    ? void attemptGuidedMove(from, to)
+                    : attemptTacticalMove(from, to)
+                }
+                orientation={
+                  boardMode === "tactical"
+                    ? tacticalQueue.item?.color
+                    : selected?.color
+                }
+              />
             )}
-          </aside>
-          <div className="games-metrics" data-task="Findings">
-            {local && selected && (
-              <article aria-label="Defensive threat candidates">
-                <span>Defensive threats</span>
-                <strong>{defenseCandidates.filter((candidate) => !candidate.dismissed_at).length} candidates</strong>
-                <Button disabled={defenseBusy} onClick={() => void refreshDefensiveThreats()}>Check this game</Button>
-                {defenseCandidates.length === 0 && <small>No checking knight-fork candidates found for this analysis.</small>}
-                {defenseCandidates.map((candidate) => (
-                  <div key={candidate.id}>
-                    <small>Move {Math.floor(candidate.player_ply / 2) + 1} · {candidate.evidence.seed.source_line.origin === "played" ? "Played game" : "Engine continuation"} · historical {candidate.evidence.anchor.historical_move_uci}</small>
-                    <small>{candidate.validation_state.replaceAll("_", " ")} · {candidate.diagnostic || "Waiting for compatible analysis"}</small>
-                    {candidate.approved_at && <small>Admitted for training{candidate.admission_mode === "automatic" ? " automatically" : ""}.</small>}
-                    {candidate.dismissed_at && <small>Dismissed until the evidence changes.</small>}
-                    {candidate.paused_at && !candidate.approved_at && <small>Automatic introduction paused.</small>}
-                    {!candidate.approved_at && !candidate.dismissed_at && candidate.validation_state === "engine_supported" && (
+            <BoardTools>
+              {boardMode !== "game" && (
+                <Button onClick={() => setBoardMode("game")}>
+                  Return to game
+                </Button>
+              )}
+              <Button
+                disabled={
+                  !selectedDetailsReady || boardMode !== "game" || cursor === 0
+                }
+                onClick={() => setCursor((value) => Math.max(0, value - 1))}
+              >
+                ← Back
+              </Button>
+              <Button
+                disabled={
+                  !selectedDetailsReady ||
+                  boardMode !== "game" ||
+                  cursor >= selected!.moves.length
+                }
+                onClick={advanceGameOnePly}
+              >
+                Forward →
+              </Button>
+              <Button
+                disabled={!selectedDetailsReady || boardMode !== "game"}
+                onClick={() => setCursor(selected?.flagPly ?? 0)}
+              >
+                ⚑ First mistake
+              </Button>
+              <Button
+                className={engineOn ? "active" : ""}
+                onClick={() =>
+                  setEngineOn((value) => {
+                    localStorage.setItem(
+                      "tempo-games-engine-on",
+                      String(!value),
+                    );
+                    return !value;
+                  })
+                }
+              >
+                Stockfish
+              </Button>
+            </BoardTools>
+          </div>
+          <div className="game-side-scroll">
+            <aside className="game-inspector" data-task="Review">
+              {selected && !selectedDetailsReady && (
+                <p role="status">Loading selected game…</p>
+              )}
+              <h2>{selected?.opening ?? "No games imported"}</h2>
+              <strong>{selected?.flag}</strong>
+              {engineOn && <p>{engineText}</p>}
+              <div className="game-moves">
+                {selectedDetailsReady &&
+                  selected?.moves.map((move, index) => (
+                    <Button
+                      className={`${index < cursor ? "shown" : ""}${index === selected.flagPly ? " flagged" : ""}`}
+                      onClick={() => navigateGameToPly(index + 1)}
+                      key={index}
+                      title={[...(selected.timeline ?? []), ...selectedFindings]
+                        .filter((event) => event.ply === index)
+                        .map((event) => event.kind)
+                        .join(", ")}
+                    >
+                      {index % 2 === 0 ? `${Math.floor(index / 2) + 1}.` : ""}
+                      {move}
+                      {[...(selected.timeline ?? []), ...selectedFindings].some(
+                        (event) => event.ply === index,
+                      )
+                        ? " •"
+                        : ""}
+                    </Button>
+                  ))}
+              </div>
+              {selectedDetailsReady && selected && (
+                <>
+                  <Button
+                    variant="primary"
+                    className="primary-button"
+                    onClick={() => void startGuidedReview()}
+                  >
+                    Review this game
+                  </Button>
+                  <Button
+                    variant="primary"
+                    className="primary-button"
+                    onClick={() => onAnalyze(selected, cursor)}
+                  >
+                    Open position in Builder
+                  </Button>
+                  <ActionLink
+                    variant="quiet"
+                    href={lichessAnalysisUrl(
+                      selected.moves.slice(0, cursor),
+                      selected.startFen,
+                    )}
+                    target="_blank"
+                    rel="noreferrer"
+                  >
+                    Lichess analysis ↗
+                  </ActionLink>
+                </>
+              )}
+            </aside>
+            <div className="games-metrics" data-task="Findings">
+              {local && selected && (
+                <article aria-label="Defensive threat candidates">
+                  <span>Defensive threats</span>
+                  <strong>
+                    {
+                      defenseCandidates.filter(
+                        (candidate) => !candidate.dismissed_at,
+                      ).length
+                    }{" "}
+                    candidates
+                  </strong>
+                  <Button
+                    disabled={defenseBusy}
+                    onClick={() => void refreshDefensiveThreats()}
+                  >
+                    Check this game
+                  </Button>
+                  {defenseCandidates.length === 0 && (
+                    <small>
+                      No checking knight-fork candidates found for this
+                      analysis.
+                    </small>
+                  )}
+                  {defenseCandidates.map((candidate) => (
+                    <div key={candidate.id}>
+                      <small>
+                        Move {Math.floor(candidate.player_ply / 2) + 1} ·{" "}
+                        {candidate.evidence.seed.source_line.origin === "played"
+                          ? "Played game"
+                          : "Engine continuation"}{" "}
+                        · historical{" "}
+                        {candidate.evidence.anchor.historical_move_uci}
+                      </small>
+                      <small>
+                        {candidate.validation_state.replaceAll("_", " ")} ·{" "}
+                        {candidate.diagnostic ||
+                          "Waiting for compatible analysis"}
+                      </small>
+                      {candidate.approved_at && (
+                        <small>
+                          Admitted for training
+                          {candidate.admission_mode === "automatic"
+                            ? " automatically"
+                            : ""}
+                          .
+                        </small>
+                      )}
+                      {candidate.dismissed_at && (
+                        <small>Dismissed until the evidence changes.</small>
+                      )}
+                      {candidate.paused_at && !candidate.approved_at && (
+                        <small>Automatic introduction paused.</small>
+                      )}
+                      {!candidate.approved_at &&
+                        !candidate.dismissed_at &&
+                        candidate.validation_state === "engine_supported" && (
+                          <>
+                            <small>
+                              Evidence: knight to{" "}
+                              {candidate.evidence.seed.geometry.knight_to}{" "}
+                              checks king{" "}
+                              {candidate.evidence.seed.geometry.king.square} and
+                              attacks{" "}
+                              {candidate.evidence.seed.geometry.major.piece}{" "}
+                              {candidate.evidence.seed.geometry.major.square}.
+                            </small>
+                            <Button
+                              disabled={defenseBusy}
+                              onClick={() =>
+                                void decideDefenseCandidate(
+                                  candidate.id,
+                                  "train-now",
+                                )
+                              }
+                            >
+                              Train now
+                            </Button>
+                            <Button
+                              disabled={defenseBusy}
+                              onClick={() =>
+                                void decideDefenseCandidate(
+                                  candidate.id,
+                                  candidate.paused_at ? "resume" : "pause",
+                                )
+                              }
+                            >
+                              {candidate.paused_at
+                                ? "Resume automatic training"
+                                : "Pause automatic training"}
+                            </Button>
+                          </>
+                        )}
+                      {!candidate.approved_at && !candidate.dismissed_at && (
+                        <Button
+                          disabled={defenseBusy}
+                          onClick={() =>
+                            void decideDefenseCandidate(candidate.id, "dismiss")
+                          }
+                        >
+                          Dismiss
+                        </Button>
+                      )}
+                      {candidate.analysis_requests
+                        .filter((request) => request.state === "failed")
+                        .map((request) => (
+                          <Button
+                            key={request.id}
+                            onClick={() =>
+                              void retryDefenseAnalysis(request.id)
+                            }
+                          >
+                            Retry analysis: {request.last_error ?? request.role}
+                          </Button>
+                        ))}
+                    </div>
+                  ))}
+                </article>
+              )}
+              {local && tacticalStats && (
+                <article aria-label="Tactical themes">
+                  <span>Tactical themes</span>
+                  <strong>
+                    {tacticalStats.overall.exploited} of{" "}
+                    {tacticalStats.overall.opportunities} exploited
+                    {tacticalStats.overall.conversion_rate === null
+                      ? ""
+                      : ` (${formatConversionRate(tacticalStats.overall.exploited, tacticalStats.overall.opportunities)})`}
+                  </strong>
+                  <small>
+                    {tacticalStats.overall.missed} missed ·{" "}
+                    {tacticalStats.overall.supporting_games} games · rates are
+                    descriptive until the sample grows
+                  </small>
+                  {tacticalStats.motifs.map((themeStats) => (
+                    <p key={themeStats.motif}>
+                      <strong>{themeStats.motif}</strong>:{" "}
+                      {themeStats.exploited}/{themeStats.opportunities} (
+                      {formatConversionRate(
+                        themeStats.exploited,
+                        themeStats.opportunities,
+                      )}
+                      ) · {themeStats.missed} missed
+                      {themeStats.motif === "pin" &&
+                        themeStats.pin_breakdown && (
+                          <small>
+                            {" "}
+                            · absolute{" "}
+                            {themeStats.pin_breakdown.absolute?.opportunities ??
+                              0}
+                            , relative{" "}
+                            {themeStats.pin_breakdown.relative?.opportunities ??
+                              0}
+                            , existing{" "}
+                            {themeStats.pin_breakdown.existing?.opportunities ??
+                              0}
+                            , created{" "}
+                            {themeStats.pin_breakdown.created?.opportunities ??
+                              0}
+                          </small>
+                        )}
+                    </p>
+                  ))}
+                </article>
+              )}
+              {local && (
+                <article aria-label="Missed tactics review" aria-live="polite">
+                  <span>Missed tactics</span>
+                  <strong>{tacticalQueue.remaining} remaining</strong>
+                  {tacticalQueue.item ? (
+                    <>
+                      <small>
+                        {tacticalQueue.item.motif ?? "tactical"} ·{" "}
+                        {new Date(
+                          tacticalQueue.item.played_at,
+                        ).toLocaleDateString()}{" "}
+                        · move {Math.floor(tacticalQueue.item.ply / 2) + 1}
+                      </small>
+                      <small>
+                        Opportunity {tacticalQueue.item.opportunity_value_cp} cp
+                        · cost {tacticalQueue.item.evaluation_loss_cp} cp ·
+                        played{" "}
+                        {tacticalQueue.item.evidence.actual_move_uci ?? "—"} ·
+                        best {tacticalQueue.item.accepted_moves[0] ?? "—"}
+                      </small>
+                      {!tacticalReveal && (
+                        <p>
+                          Try the move on the board, or reveal the
+                          engine-supported conversion.
+                        </p>
+                      )}
+                      {tacticalReveal && (
+                        <p>
+                          Engine line:{" "}
+                          {(
+                            tacticalQueue.item.evidence.candidate_lines?.[0]
+                              ?.pv ?? []
+                          ).join(" ") || tacticalQueue.item.accepted_moves[0]}
+                        </p>
+                      )}
+                      <Button onClick={() => setBoardMode("tactical")}>
+                        Review tactic on board
+                      </Button>
+                      <Button
+                        onClick={() => setTacticalReveal(true)}
+                        disabled={tacticalReveal}
+                      >
+                        Reveal line
+                      </Button>
+                      {!tacticalPreview ? (
+                        <Button
+                          onClick={() => void previewTacticalCard(false)}
+                          disabled={tacticalBusy}
+                        >
+                          Preview puzzle
+                        </Button>
+                      ) : (
+                        <>
+                          <small>
+                            Preview: {tacticalPreview.moves.join(" ")}
+                          </small>
+                          <Button
+                            onClick={() => void previewTacticalCard(true)}
+                            disabled={tacticalBusy}
+                          >
+                            {tacticalPreview.existing_card_id
+                              ? "Add existing puzzle"
+                              : "Add to deck"}
+                          </Button>
+                        </>
+                      )}
+                      <Button
+                        onClick={() => void tacticalCurationAction("skip")}
+                        disabled={tacticalBusy}
+                      >
+                        Skip for now
+                      </Button>
+                      <Button
+                        onClick={() => void tacticalCurationAction("ignore")}
+                        disabled={tacticalBusy}
+                      >
+                        Ignore permanently
+                      </Button>
+                      <Button
+                        onClick={() =>
+                          selectGame(
+                            tacticalQueue.item!.game_id as GameId,
+                            tacticalQueue.item!.ply,
+                          )
+                        }
+                      >
+                        Open source game
+                      </Button>
+                    </>
+                  ) : (
+                    <small>No pending tactical misses.</small>
+                  )}
+                </article>
+              )}
+              {guidedReview && (
+                <article className="guided-game-review" aria-live="polite">
+                  <span>Guided review</span>
+                  <strong>
+                    {guidedReview.status === "complete"
+                      ? "Complete"
+                      : `${guidedReview.current_index + 1} of ${guidedReview.total}`}
+                  </strong>
+                  {guidedReview.current && !guidedReveal && (
+                    <p>
+                      Find a correction for this {guidedReview.current.kind}.
+                      Play it on the board.
+                    </p>
+                  )}
+                  {guidedReveal && (
+                    <>
+                      <p>
+                        {guidedReveal.correct
+                          ? "That correction works."
+                          : "There is a stronger correction."}
+                      </p>
+                      <small>
+                        Actual{" "}
+                        {guidedReveal.revealed.answer.actual_move_uci ?? "—"} ·
+                        Recommended{" "}
+                        {guidedReveal.revealed.answer.best_move_uci ??
+                          guidedReveal.revealed.answer.expected_moves[0] ??
+                          "—"}
+                        {guidedReveal.revealed.answer.loss_cp != null
+                          ? ` · ${guidedReveal.revealed.answer.loss_cp} cp`
+                          : ""}
+                      </small>
+                      <p>
+                        {guidedReveal.revealed.answer.principal_variation.join(
+                          " ",
+                        )}
+                      </p>
+                      <Button
+                        onClick={() => {
+                          setGuidedReview(guidedReveal.session);
+                          setGuidedReveal(null);
+                        }}
+                      >
+                        {guidedReveal.session.status === "complete"
+                          ? "Finish review"
+                          : "Next correction"}
+                      </Button>
+                      {selected && (
+                        <Button
+                          onClick={() =>
+                            onAnalyze(selected, guidedReveal.revealed.ply)
+                          }
+                        >
+                          Open full Builder analysis
+                        </Button>
+                      )}
+                    </>
+                  )}
+                  {guidedReview.status === "complete" && !guidedReveal && (
+                    <p>
+                      All selected corrections reviewed. No study scheduling
+                      changed.
+                    </p>
+                  )}
+                </article>
+              )}
+              <article>
+                <span>Repertoire adherence</span>
+                <strong>
+                  {repertoireOpportunities
+                    ? `${Math.round((matchedDecisions / repertoireOpportunities) * 100)}%`
+                    : "—"}
+                </strong>
+                <small>
+                  {matchedDecisions} of {repertoireOpportunities} player
+                  decisions
+                </small>
+              </article>
+              {["opponent gap", "player deviation"].map((value) => (
+                <article key={value}>
+                  <span>{value}</span>
+                  <strong>
+                    {games.filter((game) => game.status === value).length}
+                  </strong>
+                </article>
+              ))}
+              {selected && (
+                <article>
+                  <span>Adaptation review</span>
+                  <strong>{selectedFindings.length}</strong>
+                  <Button onClick={excludeSelectedGame}>
+                    Ignore this game for adaptation
+                  </Button>
+                </article>
+              )}
+              {selectedFindings.map((finding) => (
+                <article key={finding.id}>
+                  <span>
+                    {finding.kind}
+                    {finding.kind === "tactical miss"
+                      ? ` · ${finding.confidence >= 0.8 ? finding.motif : "unclassified"}`
+                      : ""}
+                  </span>
+                  <small>Move {Math.floor(finding.ply / 2) + 1}</small>
+                  {finding.kind === "repertoire lapse" && finding.card_id && (
+                    <Button
+                      onClick={() => void decideFinding(finding.id, "accepted")}
+                    >
+                      Prioritize review
+                    </Button>
+                  )}
+                  {finding.kind === "first big mistake" &&
+                    !cardPreviews[finding.id] && (
+                      <Button
+                        onClick={() =>
+                          void createFindingCard(finding.id, false)
+                        }
+                      >
+                        Preview study card
+                      </Button>
+                    )}
+                  {finding.kind === "first big mistake" &&
+                    cardPreviews[finding.id] && (
                       <>
-                        <small>Evidence: knight to {candidate.evidence.seed.geometry.knight_to} checks king {candidate.evidence.seed.geometry.king.square} and attacks {candidate.evidence.seed.geometry.major.piece} {candidate.evidence.seed.geometry.major.square}.</small>
-                        <Button disabled={defenseBusy} onClick={() => void decideDefenseCandidate(candidate.id, "train-now")}>Train now</Button>
-                        <Button disabled={defenseBusy} onClick={() => void decideDefenseCandidate(candidate.id, candidate.paused_at ? "resume" : "pause")}>{candidate.paused_at ? "Resume automatic training" : "Pause automatic training"}</Button>
+                        <small>
+                          {cardPreviews[finding.id].starting_fen} ·{" "}
+                          {cardPreviews[finding.id].moves.join(" ")}
+                        </small>
+                        {selected && (
+                          <Button
+                            onClick={() => onAnalyze(selected, finding.ply)}
+                          >
+                            Edit position in Builder
+                          </Button>
+                        )}
+                        <Button
+                          onClick={() =>
+                            void createFindingCard(finding.id, true)
+                          }
+                        >
+                          {cardPreviews[finding.id].existing_card_id
+                            ? "Use existing card"
+                            : "Save card due today"}
+                        </Button>
                       </>
                     )}
-                    {!candidate.approved_at && !candidate.dismissed_at && <Button disabled={defenseBusy} onClick={() => void decideDefenseCandidate(candidate.id, "dismiss")}>Dismiss</Button>}
-                    {candidate.analysis_requests.filter((request) => request.state === "failed").map((request) => (
-                      <Button key={request.id} onClick={() => void retryDefenseAnalysis(request.id)}>Retry analysis: {request.last_error ?? request.role}</Button>
-                    ))}
-                  </div>
+                  <Button
+                    onClick={() => void decideFinding(finding.id, "ignored")}
+                  >
+                    Ignore
+                  </Button>
+                </article>
+              ))}
+            </div>
+            <div data-task="Library">
+              <div className="game-filters">
+                {(
+                  ["source", "status", "color", "speed", "result"] as const
+                ).map((field) => (
+                  <SelectInput
+                    key={field}
+                    aria-label={`Filter ${field}`}
+                    value={filters[field]}
+                    onChange={(event) => {
+                      setPageCursor(null);
+                      setCursorHistory([]);
+                      setFilters((current) => ({
+                        ...current,
+                        [field]: event.target.value,
+                      }));
+                    }}
+                  >
+                    <option value="All">All {field}</option>
+                    {[...new Set(records.map((game) => game[field]))].map(
+                      (value) => (
+                        <option key={value}>{value}</option>
+                      ),
+                    )}
+                  </SelectInput>
                 ))}
-              </article>
-            )}
-            {local && tacticalStats && (
-              <article aria-label="Tactical themes">
-                <span>Tactical themes</span>
-                <strong>{tacticalStats.overall.exploited} of {tacticalStats.overall.opportunities} exploited{tacticalStats.overall.conversion_rate === null ? "" : ` (${formatConversionRate(tacticalStats.overall.exploited, tacticalStats.overall.opportunities)})`}</strong>
-                <small>{tacticalStats.overall.missed} missed · {tacticalStats.overall.supporting_games} games · rates are descriptive until the sample grows</small>
-                {tacticalStats.motifs.map((themeStats) => (
-                  <p key={themeStats.motif}>
-                    <strong>{themeStats.motif}</strong>: {themeStats.exploited}/{themeStats.opportunities} ({formatConversionRate(themeStats.exploited, themeStats.opportunities)}) · {themeStats.missed} missed
-                    {themeStats.motif === "pin" && themeStats.pin_breakdown && <small> · absolute {themeStats.pin_breakdown.absolute?.opportunities ?? 0}, relative {themeStats.pin_breakdown.relative?.opportunities ?? 0}, existing {themeStats.pin_breakdown.existing?.opportunities ?? 0}, created {themeStats.pin_breakdown.created?.opportunities ?? 0}</small>}
-                  </p>
-                ))}
-              </article>
-            )}
-            {local && (
-              <article aria-label="Missed tactics review" aria-live="polite">
-                <span>Missed tactics</span>
-                <strong>{tacticalQueue.remaining} remaining</strong>
-                {tacticalQueue.item ? <>
-                  <small>{tacticalQueue.item.motif ?? "tactical"} · {new Date(tacticalQueue.item.played_at).toLocaleDateString()} · move {Math.floor(tacticalQueue.item.ply / 2) + 1}</small>
-                  <small>Opportunity {tacticalQueue.item.opportunity_value_cp} cp · cost {tacticalQueue.item.evaluation_loss_cp} cp · played {tacticalQueue.item.evidence.actual_move_uci ?? "—"} · best {tacticalQueue.item.accepted_moves[0] ?? "—"}</small>
-                  {!tacticalReveal && <p>Try the move on the board, or reveal the engine-supported conversion.</p>}
-                  {tacticalReveal && <p>Engine line: {(tacticalQueue.item.evidence.candidate_lines?.[0]?.pv ?? []).join(" ") || tacticalQueue.item.accepted_moves[0]}</p>}
-                  <Button onClick={() => setBoardMode("tactical")}>Review tactic on board</Button>
-                  <Button onClick={() => setTacticalReveal(true)} disabled={tacticalReveal}>Reveal line</Button>
-                  {!tacticalPreview ? <Button onClick={() => void previewTacticalCard(false)} disabled={tacticalBusy}>Preview puzzle</Button> : <>
-                    <small>Preview: {tacticalPreview.moves.join(" ")}</small>
-                    <Button onClick={() => void previewTacticalCard(true)} disabled={tacticalBusy}>{tacticalPreview.existing_card_id ? "Add existing puzzle" : "Add to deck"}</Button>
-                  </>}
-                  <Button onClick={() => void tacticalCurationAction("skip")} disabled={tacticalBusy}>Skip for now</Button>
-                  <Button onClick={() => void tacticalCurationAction("ignore")} disabled={tacticalBusy}>Ignore permanently</Button>
-                  <Button onClick={() => selectGame(tacticalQueue.item!.game_id as GameId, tacticalQueue.item!.ply)}>Open source game</Button>
-                </> : <small>No pending tactical misses.</small>}
-              </article>
-            )}
-            {guidedReview && (
-              <article className="guided-game-review" aria-live="polite">
-                <span>Guided review</span>
-                <strong>{guidedReview.status === "complete" ? "Complete" : `${guidedReview.current_index + 1} of ${guidedReview.total}`}</strong>
-                {guidedReview.current && !guidedReveal && (
-                  <p>Find a correction for this {guidedReview.current.kind}. Play it on the board.</p>
-                )}
-                {guidedReveal && (
-                  <>
-                    <p>{guidedReveal.correct ? "That correction works." : "There is a stronger correction."}</p>
-                    <small>
-                      Actual {guidedReveal.revealed.answer.actual_move_uci ?? "—"} · Recommended {guidedReveal.revealed.answer.best_move_uci ?? guidedReveal.revealed.answer.expected_moves[0] ?? "—"}
-                      {guidedReveal.revealed.answer.loss_cp != null ? ` · ${guidedReveal.revealed.answer.loss_cp} cp` : ""}
-                    </small>
-                    <p>{guidedReveal.revealed.answer.principal_variation.join(" ")}</p>
-                    <Button onClick={() => {
-                      setGuidedReview(guidedReveal.session);
-                      setGuidedReveal(null);
-                    }}>{guidedReveal.session.status === "complete" ? "Finish review" : "Next correction"}</Button>
-                    {selected && <Button onClick={() => onAnalyze(selected, guidedReveal.revealed.ply)}>Open full Builder analysis</Button>}
-                  </>
-                )}
-                {guidedReview.status === "complete" && !guidedReveal && <p>All selected corrections reviewed. No study scheduling changed.</p>}
-              </article>
-            )}
-            <article>
-              <span>Repertoire adherence</span>
-              <strong>
-                {repertoireOpportunities
-                  ? `${Math.round((matchedDecisions / repertoireOpportunities) * 100)}%`
-                  : "—"}
-              </strong>
-              <small>
-                {matchedDecisions} of {repertoireOpportunities} player decisions
-              </small>
-            </article>
-            {["opponent gap", "player deviation"].map((value) => (
-              <article key={value}>
-                <span>{value}</span>
-                <strong>
-                  {games.filter((game) => game.status === value).length}
-                </strong>
-              </article>
-            ))}
-            {selected && <article>
-              <span>Adaptation review</span>
-              <strong>{selectedFindings.length}</strong>
-              <Button onClick={excludeSelectedGame}>Ignore this game for adaptation</Button>
-            </article>}
-            {selectedFindings.map((finding) => (
-              <article key={finding.id}>
-                <span>{finding.kind}{finding.kind === "tactical miss" ? ` · ${finding.confidence >= 0.8 ? finding.motif : "unclassified"}` : ""}</span>
-                <small>Move {Math.floor(finding.ply / 2) + 1}</small>
-                {finding.kind === "repertoire lapse" && finding.card_id && <Button onClick={() => void decideFinding(finding.id, "accepted")}>Prioritize review</Button>}
-                {finding.kind === "first big mistake" && !cardPreviews[finding.id] && <Button onClick={() => void createFindingCard(finding.id, false)}>Preview study card</Button>}
-                {finding.kind === "first big mistake" && cardPreviews[finding.id] && <>
-                  <small>{cardPreviews[finding.id].starting_fen} · {cardPreviews[finding.id].moves.join(" ")}</small>
-                  {selected && <Button onClick={() => onAnalyze(selected, finding.ply)}>Edit position in Builder</Button>}
-                  <Button onClick={() => void createFindingCard(finding.id, true)}>{cardPreviews[finding.id].existing_card_id ? "Use existing card" : "Save card due today"}</Button>
-                </>}
-                <Button onClick={() => void decideFinding(finding.id, "ignored")}>Ignore</Button>
-              </article>
-            ))}
-          </div>
-          <div data-task="Library"><div className="game-filters">
-            {(["source", "status", "color", "speed", "result"] as const).map(
-              (field) => (
-                <SelectInput
-                  key={field}
-                  aria-label={`Filter ${field}`}
-                  value={filters[field]}
+                <TextInput
+                  aria-label="Games since"
+                  type="date"
+                  value={filters.from}
                   onChange={(event) => {
-                    setPageCursor(null); setCursorHistory([]);
-                    setFilters((current) => ({ ...current, [field]: event.target.value }));
+                    setPageCursor(null);
+                    setCursorHistory([]);
+                    setFilters((current) => ({
+                      ...current,
+                      from: event.target.value,
+                    }));
+                  }}
+                />
+              </div>
+              <section className="game-list">
+                {games.map((game) => (
+                  <Button
+                    className={`game-row${selected?.id === game.id ? " selected" : ""}`}
+                    key={game.id}
+                    onClick={() => {
+                      selectGame(game.id, game.flagPly);
+                    }}
+                  >
+                    <span>
+                      <b>{game.opening}</b>
+                      <small>
+                        {game.source} · {game.date} · {game.speed} ·{" "}
+                        {game.color} · {game.result}
+                      </small>
+                    </span>
+                    <span>
+                      <em>{game.status}</em>
+                      <small>{game.detail}</small>
+                    </span>
+                  </Button>
+                ))}
+                {!games.length && (
+                  <div className="games-empty">
+                    <strong>No matching games.</strong>
+                    <Button onClick={onSettings}>Set game accounts</Button>
+                  </div>
+                )}
+              </section>
+              <div className="pagination" aria-label="Game pages">
+                <Button
+                  disabled={!cursorHistory.length}
+                  onClick={() => {
+                    const previous =
+                      cursorHistory[cursorHistory.length - 1] ?? null;
+                    setCursorHistory((history) => history.slice(0, -1));
+                    setPageCursor(previous);
                   }}
                 >
-                  <option value="All">All {field}</option>
-                  {[...new Set(records.map((game) => game[field]))].map(
-                    (value) => (
-                      <option key={value}>{value}</option>
-                    ),
-                  )}
-                </SelectInput>
-              ),
-            )}
-            <TextInput
-              aria-label="Games since"
-              type="date"
-              value={filters.from}
-              onChange={(event) =>
-                { setPageCursor(null); setCursorHistory([]); setFilters((current) => ({
-                  ...current, from: event.target.value,
-                })); }
-              }
-            />
-          </div>
-          <section className="game-list">
-            {games.map((game) => (
-              <Button
-                className={`game-row${selected?.id === game.id ? " selected" : ""}`}
-                key={game.id}
-                onClick={() => {
-                  selectGame(game.id, game.flagPly);
-                }}
-              >
-                <span>
-                  <b>{game.opening}</b>
-                  <small>
-                    {game.source} · {game.date} · {game.speed} · {game.color} ·{" "}
-                    {game.result}
-                  </small>
-                </span>
-                <span>
-                  <em>{game.status}</em>
-                  <small>{game.detail}</small>
-                </span>
-              </Button>
-            ))}
-            {!games.length && (
-              <div className="games-empty">
-                <strong>No matching games.</strong>
-                <Button onClick={onSettings}>Set game accounts</Button>
+                  Previous games
+                </Button>
+                <Button
+                  disabled={!nextPageCursor}
+                  onClick={() => {
+                    setCursorHistory((history) => [...history, pageCursor]);
+                    setPageCursor(nextPageCursor);
+                  }}
+                >
+                  Next games
+                </Button>
               </div>
-            )}
-          </section>
-          <div className="pagination" aria-label="Game pages">
-            <Button disabled={!cursorHistory.length} onClick={() => {
-              const previous = cursorHistory[cursorHistory.length - 1] ?? null;
-              setCursorHistory((history) => history.slice(0, -1));
-              setPageCursor(previous);
-            }}>Previous games</Button>
-            <Button disabled={!nextPageCursor} onClick={() => {
-              setCursorHistory((history) => [...history, pageCursor]);
-              setPageCursor(nextPageCursor);
-            }}>Next games</Button>
-          </div>
+            </div>
           </div>
         </div>
-      </div>}
+      )}
     </section>
   );
 }

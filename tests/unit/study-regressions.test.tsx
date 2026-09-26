@@ -14,7 +14,7 @@ import { useTrainingStore } from "../../app/state/training-store";
 import { fetchAndInitializeQueue } from "../../app/views/fetchAndInitializeQueue";
 import { pendingReviews } from "../../app/lib/review-outbox";
 
-vi.mock("../../app/components/chessboard", () => ({
+vi.mock("../../app/components/board/chessboard", () => ({
   Chessboard: (props: {
     fen: string;
     showHint: boolean;
@@ -631,6 +631,24 @@ describe("reported study regressions", () => {
         "http://127.0.0.1:8000/api/queue/entries/60/fail",
       ),
     );
+  });
+  it("reopening a saved guided card without input sends no failure and shows no red X", async () => {
+    const failedRequests: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input, options) => {
+      const url = String(input);
+      if (url.includes("/api/queue/window"))
+        return Response.json({ cards: [{
+          id: "resumed-card", queue_entry_id: 1974, start_fen: new Chess().fen(),
+          moves: ["e2e4", "e7e5", "g1f3"], content_type: "opening",
+          repertoire_name: "Resumed", repertoire_source: "PGN", attempt_failed: true,
+        }], count: 1 });
+      if (options?.method === "POST" && url.endsWith("/fail")) failedRequests.push(url);
+      return Response.json(url.endsWith("/teaching") ? { states: [] } : { lines: [] });
+    }));
+    render(<Home />);
+    await waitFor(() => expect(screen.getByText("Resumed")).toBeTruthy());
+    expect(screen.queryByText("×")).toBeNull();
+    expect(failedRequests).toEqual([]);
   });
   it("self-reported first clean solves receive reinforcement without teaching later plies", async () => {
     let queue = [

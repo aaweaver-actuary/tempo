@@ -1,5 +1,5 @@
-import { Button } from "../components/ui";
-import { BoardTools } from "../components/board-workspace";
+import { Button } from "../components/buttons/BaseButton";
+import { BoardTools } from "../components/board/board-workspace";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import TrainingViewHeader from "./headers/TrainingViewHeader";
@@ -8,10 +8,11 @@ import EndgamesView from "./endgames_view";
 import { PracticeCard } from "../types";
 import { BoardTheme, Chessboard, PieceSet } from "../components/chessboard";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
-import { OutcomeFlash } from "../components/board-controls";
+import { OutcomeFlash } from "../components/board/OutcomeFlash";
 import AgainButton from "../components/buttons/AgainButton";
 import AnalyzeOnLichessButton from "../components/buttons/AnalyzeOnLichessButton";
 import EditCardButton from "../components/buttons/EditCardButton";
+import StudyReviewBadge from "../components/StudyReviewBadge";
 import RestartButton from "../components/buttons/RestartButton";
 import FailureNote from "../components/FailureNote";
 import FeedbackIcon from "../components/feedback/FeedbackIcon";
@@ -52,6 +53,8 @@ interface TrainingViewProps {
   handleAttemptFailure: () => void;
   resetCardAttempt: () => void;
   setEditorCard: (card: PracticeCard | null) => void;
+  onAcceptPrefixSplit?: (card: PracticeCard) => Promise<void>;
+  onRejectPrefixSplit?: (card: PracticeCard) => Promise<void>;
   onMove: (from: Square, to: Square) => void;
   onOpenPosition?: (target: "analysis" | "builder" | "games") => void;
   useSharedBoard?: boolean;
@@ -75,6 +78,8 @@ function StandardTrainingView({
   handleAttemptFailure,
   resetCardAttempt,
   setEditorCard,
+  onAcceptPrefixSplit = async () => { throw new Error("Prefix splitting is unavailable. Reload training."); },
+  onRejectPrefixSplit = async () => { throw new Error("Prefix splitting is unavailable. Reload training."); },
   onMove,
   onOpenPosition = () => undefined,
   onBury = async () => undefined,
@@ -82,6 +87,10 @@ function StandardTrainingView({
 }: TrainingViewProps) {
   const [burying, setBurying] = useState(false);
   const [buryError, setBuryError] = useState("");
+  const [prefixSplitPendingAction, setPrefixSplitPendingAction] = useState<"accept" | "reject" | null>(null);
+  const [rejectedPrefixOfferKey, setRejectedPrefixOfferKey] = useState("");
+  const [prefixSplitError, setPrefixSplitError] = useState<{ key: string; message: string }>();
+  const prefixOfferKey = `${card.backendId ?? card.id}:${card.revision ?? 1}:${card.prefixSplitLatestFailureId ?? 0}`;
   const {
     boardAttempt,
     attemptFailed,
@@ -94,33 +103,39 @@ function StandardTrainingView({
     queueNotice,
     failureAnnotation,
     failureFen,
-    suggestShorter,
     currentFenString,
     teachingEncounterKey,
   } = useTrainingStore(useShallow(selectTrainingViewState));
   const reviewBlocked = reviewPersistenceState === "saveFailed";
   const isEndgame = card.kind === "endgame";
-  const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
+  const { setShellBoardForOwner, releaseShellBoardForOwner } =
+    useBoardPublisher();
   const feedbackCopy = getFeedbackCopy(attemptFailed, card)[feedback];
   const playerName = trainedColor(card) === "white" ? "White" : "Black";
   const currentMoveKey = `${card.backendId ?? card.id}:${card.revision ?? 1}:${step}`;
   const showTeachingArrow =
     showHint ||
-    (card.kind === "opening" && !card.hasPriorStudyReview && !card.firstCleanPassAt &&
-      card.queueAttemptState !== "reinforcement" && teachingEncounterKey === currentMoveKey);
+    (card.kind === "opening" &&
+      !card.hasPriorStudyReview &&
+      !card.firstCleanPassAt &&
+      card.queueAttemptState !== "reinforcement" &&
+      teachingEncounterKey === currentMoveKey);
   const isFailedPosition = attemptFailed && currentFenString === failureFen;
-  const trainingShapes = useMemo<DrawShape[]>(() => [
-    ...(opponentLastMove
-      ? [
-          {
-            orig: opponentLastMove[0] as Key,
-            dest: opponentLastMove[1] as Key,
-            brush: "red",
-          } as DrawShape,
-        ]
-      : []),
-    ...(isFailedPosition ? annotationToShapes(failureAnnotation) : []),
-  ], [opponentLastMove, isFailedPosition, failureAnnotation]);
+  const trainingShapes = useMemo<DrawShape[]>(
+    () => [
+      ...(opponentLastMove
+        ? [
+            {
+              orig: opponentLastMove[0] as Key,
+              dest: opponentLastMove[1] as Key,
+              brush: "red",
+            } as DrawShape,
+          ]
+        : []),
+      ...(isFailedPosition ? annotationToShapes(failureAnnotation) : []),
+    ],
+    [opponentLastMove, isFailedPosition, failureAnnotation],
+  );
   const revealedMoves = card.moves.slice(
     0,
     feedback === "complete" ? card.moves.length : step,
@@ -129,12 +144,20 @@ function StandardTrainingView({
   useEffect(() => {
     if (!useSharedBoard || isEndgame) return;
     setShellBoardForOwner("train", {
-      unavailable: cardsLeft <= 0 ? (serviceError ? "Training position unavailable. Retry the local service." : "No cards due. Your next session will appear here.") : undefined,
+      unavailable:
+        cardsLeft <= 0
+          ? serviceError
+            ? "Training position unavailable. Retry the local service."
+            : "No cards due. Your next session will appear here."
+          : undefined,
       fen: currentFenString,
       expectedSan: card.moves[step],
       lastMove,
       interactionMode:
-        isLocked || reviewBlocked || step >= card.moves.length || cardsLeft === 0
+        isLocked ||
+        reviewBlocked ||
+        step >= card.moves.length ||
+        cardsLeft === 0
           ? "readonly"
           : "legal",
       showHint: cardsLeft > 0 && showTeachingArrow,
@@ -191,26 +214,54 @@ function StandardTrainingView({
         </div>
       )}
       {reviewPersistenceState === "saving" && (
-        <p className="review-save-status" role="status" aria-label="Saving result">Saving result…</p>
+        <p
+          className="review-save-status"
+          role="status"
+          aria-label="Saving result"
+        >
+          Saving result…
+        </p>
       )}
       {reviewPersistenceState === "saveFailed" && (
         <div role="alert">
           {reviewSaveError}{" "}
-          <Button onClick={() => retryReviewSave ? retryReviewSave() : void rateCard(attemptFailed ? "again" : "correct")}>
+          <Button
+            onClick={() =>
+              retryReviewSave
+                ? retryReviewSave()
+                : void rateCard(attemptFailed ? "again" : "correct")
+            }
+          >
             Retry save
           </Button>
         </div>
       )}
       {reviewPersistenceState === "refreshingQueue" && (
-        <p className="review-save-status" role="status">Result saved. Loading the next card…</p>
+        <p className="review-save-status" role="status">
+          Result saved. Loading the next card…
+        </p>
       )}
       {reviewPersistenceState === "queueFailed" && (
         <div role="alert">
           Result saved; the next card could not be loaded.{" "}
-          <Button onClick={retryQueueAfterReview}>Retry loading the queue</Button>
+          <Button onClick={retryQueueAfterReview}>
+            Retry loading the queue
+          </Button>
         </div>
       )}
-      {buryError && <div role="alert">{buryError} <Button onClick={() => { setBuryError(""); void runBury(); }}>Retry bury</Button></div>}
+      {buryError && (
+        <div role="alert">
+          {buryError}{" "}
+          <Button
+            onClick={() => {
+              setBuryError("");
+              void runBury();
+            }}
+          >
+            Retry bury
+          </Button>
+        </div>
+      )}
       {cardsLeft > 0 && isEndgame && (
         <EndgamesView
           key={card.queueEntryId}
@@ -237,7 +288,10 @@ function StandardTrainingView({
                 expectedSan={card.moves[step]}
                 lastMove={lastMove}
                 locked={
-                  isLocked || reviewBlocked || step >= card.moves.length || cardsLeft === 0
+                  isLocked ||
+                  reviewBlocked ||
+                  step >= card.moves.length ||
+                  cardsLeft === 0
                 }
                 showHint={showTeachingArrow}
                 shapes={trainingShapes}
@@ -247,14 +301,26 @@ function StandardTrainingView({
                 orientation={card.orientation}
               />
             )}
-            {(attemptFailed || feedback === "complete") && (
+            {(feedback === "wrong" || feedback === "complete") && (
               <OutcomeFlash
                 key={`${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${attemptFailed ? "wrong" : "correct"}`}
                 outcome={attemptFailed ? "wrong" : "correct"}
               />
             )}
             <BoardTools>
-              <Button type="button" disabled={burying || feedback === "complete" || reviewBlocked || reviewPersistenceState === "saving" || reviewPersistenceState === "refreshingQueue"} onClick={() => void runBury()}>{burying ? "Burying…" : "Bury"}</Button>
+              <Button
+                type="button"
+                disabled={
+                  burying ||
+                  feedback === "complete" ||
+                  reviewBlocked ||
+                  reviewPersistenceState === "saving" ||
+                  reviewPersistenceState === "refreshingQueue"
+                }
+                onClick={() => void runBury()}
+              >
+                {burying ? "Burying…" : "Bury"}
+              </Button>
               <AgainButton
                 handleAgain={handleAttemptFailure}
                 isAttemptFailed={attemptFailed}
@@ -262,7 +328,10 @@ function StandardTrainingView({
                 hasNoCardsLeft={cardsLeft === 0}
                 isReviewBlocked={reviewBlocked}
               />
-              <RestartButton handleRestart={resetCardAttempt} disabled={reviewBlocked} />
+              <RestartButton
+                handleRestart={resetCardAttempt}
+                disabled={reviewBlocked}
+              />
               <AnalyzeOnLichessButton
                 moves={card.moves.slice(0, step)}
                 fen={card.startingFen}
@@ -285,8 +354,19 @@ function StandardTrainingView({
               {card.queueAttemptState === "reinforcement" && (
                 <span className="pill">Reinforcement</span>
               )}
-              {card.priorityReason && <span className="pill">{card.priorityReason}</span>}
-              {card.encounterBadges?.map((badge) => <span key={badge} className="pill" title={`${card.encounterCount30d ?? 0} distinct games in 30 days${card.lastEncounteredAt ? ` · latest ${card.lastEncounteredAt.slice(0, 10)}` : ""}`}>{badge}</span>)}
+              <StudyReviewBadge count={card.priorStudyReviewCount} />
+              {card.priorityReason && (
+                <span className="pill">{card.priorityReason}</span>
+              )}
+              {card.encounterBadges?.map((badge) => (
+                <span
+                  key={badge}
+                  className="pill"
+                  title={`${card.encounterCount30d ?? 0} distinct games in 30 days${card.lastEncounteredAt ? ` · latest ${card.lastEncounteredAt.slice(0, 10)}` : ""}`}
+                >
+                  {badge}
+                </span>
+              ))}
               {queueNotice && <em>{queueNotice}</em>}
             </div>
             <OpeningTitle card={card} />
@@ -297,8 +377,8 @@ function StandardTrainingView({
             >
               <FeedbackIcon feedback={feedback} />
               <FeedbackText
-                title={feedbackCopy.title}
-                body={feedbackCopy.body}
+                title={attemptFailed && feedback === "ready" ? "Guided attempt resumed" : feedbackCopy.title}
+                body={attemptFailed && feedback === "ready" ? "Follow the highlighted move to finish this line." : feedbackCopy.body}
               />
             </div>
             {isFailedPosition && failureAnnotation?.comment && (
@@ -326,26 +406,27 @@ function StandardTrainingView({
                 <p>Nothing is revealed until you play it.</p>
               )}
             </div>
-            {(usesLocalApi() ? card.suggestShorterPrefix : suggestShorter) &&
+            {usesLocalApi() && card.suggestShorterPrefix &&
+              rejectedPrefixOfferKey !== prefixOfferKey &&
               card.kind === "opening" &&
               card.moves.length > 2 && (
-                <div className="shorten-suggestion">
-                  <strong>This prefix may be carrying too much at once.</strong>
-                  <Button
-                    onClick={() =>
-                      setEditorCard({
-                        ...card,
-                        moves: card.moves.slice(0, -2),
-                        editingIntent: "shorten-prefix",
-                      })
-                    }
-                  >
-                    Preview one move shorter
-                  </Button>
+                <div className="shorten-suggestion" aria-label="Shorten prefix suggestion">
+                  <strong>This prefix may be carrying too much at once. Shorten it by one of your moves?</strong>
+                  <div className="shorten-suggestion-actions">
+                    <Button disabled={prefixSplitPendingAction !== null || reviewBlocked} onClick={() => void decidePrefixSplit("reject")}>Reject</Button>
+                    <Button variant="primary" disabled={prefixSplitPendingAction !== null || reviewBlocked} onClick={() => void decidePrefixSplit("accept")}>
+                      {prefixSplitPendingAction === "accept" ? "Saving…" : "Accept"}
+                    </Button>
+                  </div>
+                  {prefixSplitPendingAction === "reject" && <span role="status">Saving choice…</span>}
+                  {prefixSplitError?.key === prefixOfferKey && <span role="alert">{prefixSplitError.message}</span>}
                 </div>
               )}
             <div className="ratings binary">
-              <Button disabled={isLocked || reviewBlocked} onClick={handleAttemptFailure}>
+              <Button
+                disabled={isLocked || reviewBlocked}
+                onClick={handleAttemptFailure}
+              >
                 <strong>Again</strong>
               </Button>
               <Button
@@ -360,37 +441,76 @@ function StandardTrainingView({
               </Button>
             </div>
             <div className="position-actions" aria-label="Open review position">
-              <Button onClick={() => onOpenPosition("analysis")}>Analysis</Button>
+              <Button onClick={() => onOpenPosition("analysis")}>
+                Analysis
+              </Button>
               <Button onClick={() => onOpenPosition("builder")}>Builder</Button>
-              <Button onClick={() => onOpenPosition("games")}>Games here</Button>
+              <Button onClick={() => onOpenPosition("games")}>
+                Games here
+              </Button>
             </div>
           </aside>
         </section>
       )}
-      </>
+    </>
   );
 
   async function runBury() {
     if (burying) return;
     setBurying(true);
     setBuryError("");
-    try { await onBury(); }
-    catch (error) { setBuryError(`Could not bury this card. ${error instanceof Error ? error.message : "Retry the action."}`); }
-    finally { setBurying(false); }
+    try {
+      await onBury();
+    } catch (error) {
+      setBuryError(
+        `Could not bury this card. ${error instanceof Error ? error.message : "Retry the action."}`,
+      );
+    } finally {
+      setBurying(false);
+    }
+  }
+
+  async function decidePrefixSplit(action: "accept" | "reject") {
+    if (prefixSplitPendingAction) return;
+    setPrefixSplitPendingAction(action);
+    setPrefixSplitError(undefined);
+    try {
+      if (action === "accept") {
+        await onAcceptPrefixSplit(card);
+        setRejectedPrefixOfferKey(prefixOfferKey);
+      } else {
+        await onRejectPrefixSplit(card);
+        setRejectedPrefixOfferKey(prefixOfferKey);
+      }
+    } catch (error) {
+      setPrefixSplitError({
+        key: prefixOfferKey,
+        message: `${action === "accept" ? "Could not split the prefix" : "Could not save your choice"}. ${error instanceof Error ? error.message : "Retry the action."}`,
+      });
+    } finally {
+      setPrefixSplitPendingAction(null);
+    }
   }
 }
 
 export default function TrainingView(props: TrainingViewProps) {
   if (props.card.kind === "defense") {
-    return <DefenseTrainingView
-      key={`${props.card.queueEntryId ?? props.card.id}:${props.card.revision ?? 1}`}
-      card={props.card}
-      boardTheme={props.boardTheme}
-      pieceSet={props.pieceSet}
-      useSharedBoard={props.useSharedBoard ?? false}
-      onAdvance={props.onDefenseGraded ?? (async () => { props.refreshDatabaseQueue(); })}
-      onBury={props.onBury}
-    />;
+    return (
+      <DefenseTrainingView
+        key={`${props.card.queueEntryId ?? props.card.id}:${props.card.revision ?? 1}`}
+        card={props.card}
+        boardTheme={props.boardTheme}
+        pieceSet={props.pieceSet}
+        useSharedBoard={props.useSharedBoard ?? false}
+        onAdvance={
+          props.onDefenseGraded ??
+          (async () => {
+            props.refreshDatabaseQueue();
+          })
+        }
+        onBury={props.onBury}
+      />
+    );
   }
   return <StandardTrainingView {...props} />;
 }

@@ -1,6 +1,7 @@
-import { Button, TextInput } from "../components/ui";
+import { TextInput } from "../components/inputs/TextInput";
+import { Button } from "../components/buttons/BaseButton";
 import { Dialog } from "../components/dialog";
-import { BoardTools } from "../components/board-workspace";
+import { BoardTools } from "../components/board/board-workspace";
 import { API_URL, STANDARD_FEN } from "../const";
 import {
   readWorkspaceResponse,
@@ -16,7 +17,7 @@ import { probeTablebase, tablebaseCategoryForWhite } from "../utils/tablebase";
 import { usesLocalApi } from "../utils/local";
 import { PracticeCard, PieceColor } from "../types";
 import { EndgameMaterial } from "../lib/endgame-generator";
-import { OutcomeFlash } from "../components/board-controls";
+import { OutcomeFlash } from "../components/board/OutcomeFlash";
 import {
   endgameTemplatesSchema,
   endgameCreatedSchema,
@@ -65,7 +66,8 @@ export default function EndgamesView({
   const [target, setTarget] = useState<"win" | "draw">("win");
   const [status, setStatus] = useState("Finding a legal tablebase position…");
   const [fen, setFen] = useState(STANDARD_FEN);
-  const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
+  const { setShellBoardForOwner, releaseShellBoardForOwner } =
+    useBoardPublisher();
   const [busy, setBusy] = useState(true);
   const [userMoves, setUserMoves] = useState(0);
   const [complete, setComplete] = useState(false);
@@ -74,7 +76,11 @@ export default function EndgamesView({
   const [admitted, setAdmitted] = useState<
     Record<number, { templateId: string; cardId: string }>
   >({});
-  const tools = useTaskTabs(["Study", "Positions"], "Study", "tempo-endgames-tools");
+  const tools = useTaskTabs(
+    ["Study", "Positions"],
+    "Study",
+    "tempo-endgames-tools",
+  );
 
   useEffect(() => {
     if (!usesLocalApi()) return;
@@ -152,15 +158,18 @@ export default function EndgamesView({
     onQueueChanged();
   }
 
-  const recordEndgame = useCallback((result: "correct" | "again") => {
-    setOutcome(result === "correct" ? "correct" : "wrong");
-    if (!scheduledCard || !onReview) return;
-    const token = generation.current;
-    clearTimeout(resultTimer.current);
-    resultTimer.current = setTimeout(() => {
-      if (token === generation.current) onReview(result);
-    }, 750);
-  }, [scheduledCard, onReview]);
+  const recordEndgame = useCallback(
+    (result: "correct" | "again") => {
+      setOutcome(result === "correct" ? "correct" : "wrong");
+      if (!scheduledCard || !onReview) return;
+      const token = generation.current;
+      clearTimeout(resultTimer.current);
+      resultTimer.current = setTimeout(() => {
+        if (token === generation.current) onReview(result);
+      }, 750);
+    },
+    [scheduledCard, onReview],
+  );
 
   const newPosition = useCallback(
     async (index = selected) => {
@@ -264,86 +273,100 @@ export default function EndgamesView({
     }
   }
 
-  const play = useCallback(async (from: Square, to: Square) => {
-    if (classification !== target || busy || complete) return;
-    const board = new Chess(fen);
-    const token = generation.current;
-    try {
-      board.move({ from, to, promotion: "q" });
-    } catch {
-      return;
-    }
-    setFen(board.fen());
-    setBusy(true);
-    if (board.isCheckmate()) {
-      setComplete(true);
-      setStatus("Converted · template review complete.");
-      setBusy(false);
-      recordEndgame("correct");
-      return;
-    }
-    try {
-      const afterUser = await probeTablebase(board.fen());
-      if (token !== generation.current) return;
-      let userCategory = tablebaseCategoryForWhite(
-        board.fen(),
-        afterUser.category,
-      );
-      if (scheduledCard?.orientation === "black")
-        userCategory =
-          userCategory === "win"
-            ? "loss"
-            : userCategory === "loss"
-              ? "win"
-              : "draw";
-      if (
-        (target === "win" && userCategory !== "win") ||
-        (target === "draw" && userCategory === "loss")
-      ) {
-        setComplete(true);
-        setStatus(`Failed · the position is now a ${userCategory}.`);
-        setBusy(false);
-        recordEndgame("again");
+  const play = useCallback(
+    async (from: Square, to: Square) => {
+      if (classification !== target || busy || complete) return;
+      const board = new Chess(fen);
+      const token = generation.current;
+      try {
+        board.move({ from, to, promotion: "q" });
+      } catch {
         return;
       }
-      const defense = afterUser.moves?.[0]?.uci;
-      if (defense) {
-        board.move({
-          from: defense.slice(0, 2) as Square,
-          to: defense.slice(2, 4) as Square,
-          promotion: defense[4],
-        });
-        setFen(board.fen());
-      }
-      const count = userMoves + 1;
-      setUserMoves(count);
-      if (board.isGameOver()) {
-        const success = target === "draw" && !board.isCheckmate();
+      setFen(board.fen());
+      setBusy(true);
+      if (board.isCheckmate()) {
         setComplete(true);
-        setStatus(
-          success
-            ? "Draw secured · template review complete."
-            : "The defender held the position.",
-        );
-        recordEndgame(success ? "correct" : "again");
-      } else if (
-        target === "draw" &&
-        count >=
-          Number(localStorage.getItem("tempo-draw-hold-user-moves") ?? 20)
-      ) {
-        setComplete(true);
-        setStatus("Draw held for 20 moves · template review complete.");
+        setStatus("Converted · template review complete.");
+        setBusy(false);
         recordEndgame("correct");
-      } else
-        setStatus(
-          `${target === "win" ? "Winning" : "Drawing"} status preserved · tablebase defense played.`,
+        return;
+      }
+      try {
+        const afterUser = await probeTablebase(board.fen());
+        if (token !== generation.current) return;
+        let userCategory = tablebaseCategoryForWhite(
+          board.fen(),
+          afterUser.category,
         );
-    } catch {
-      setFen(fen);
-      setStatus("The tablebase response failed. Replay the move when online.");
-    }
-    setBusy(false);
-  }, [classification, target, busy, complete, fen, scheduledCard, userMoves, recordEndgame]);
+        if (scheduledCard?.orientation === "black")
+          userCategory =
+            userCategory === "win"
+              ? "loss"
+              : userCategory === "loss"
+                ? "win"
+                : "draw";
+        if (
+          (target === "win" && userCategory !== "win") ||
+          (target === "draw" && userCategory === "loss")
+        ) {
+          setComplete(true);
+          setStatus(`Failed · the position is now a ${userCategory}.`);
+          setBusy(false);
+          recordEndgame("again");
+          return;
+        }
+        const defense = afterUser.moves?.[0]?.uci;
+        if (defense) {
+          board.move({
+            from: defense.slice(0, 2) as Square,
+            to: defense.slice(2, 4) as Square,
+            promotion: defense[4],
+          });
+          setFen(board.fen());
+        }
+        const count = userMoves + 1;
+        setUserMoves(count);
+        if (board.isGameOver()) {
+          const success = target === "draw" && !board.isCheckmate();
+          setComplete(true);
+          setStatus(
+            success
+              ? "Draw secured · template review complete."
+              : "The defender held the position.",
+          );
+          recordEndgame(success ? "correct" : "again");
+        } else if (
+          target === "draw" &&
+          count >=
+            Number(localStorage.getItem("tempo-draw-hold-user-moves") ?? 20)
+        ) {
+          setComplete(true);
+          setStatus("Draw held for 20 moves · template review complete.");
+          recordEndgame("correct");
+        } else
+          setStatus(
+            `${target === "win" ? "Winning" : "Drawing"} status preserved · tablebase defense played.`,
+          );
+      } catch {
+        setFen(fen);
+        setStatus(
+          "The tablebase response failed. Replay the move when online.",
+        );
+      }
+      setBusy(false);
+    },
+    [
+      classification,
+      target,
+      busy,
+      complete,
+      fen,
+      scheduledCard,
+      userMoves,
+      recordEndgame,
+    ],
+  );
 
   useEffect(() => {
     if (!useSharedBoard) return;
@@ -394,7 +417,8 @@ export default function EndgamesView({
         </div>
         {!scheduledCard && (
           <Button
-            variant="primary" className="primary-button"
+            variant="primary"
+            className="primary-button"
             disabled={Boolean(admitted[selected]) || !usesLocalApi()}
             onClick={() => void admitTemplate()}
           >
@@ -404,7 +428,9 @@ export default function EndgamesView({
           </Button>
         )}
       </div>
-      {!scheduledCard && <div className="workspace-context-tabs">{tools.tabs}</div>}
+      {!scheduledCard && (
+        <div className="workspace-context-tabs">{tools.tabs}</div>
+      )}
       <div className="endgame-workspace">
         {!scheduledCard && tools.activeTab === "Positions" && (
           <aside className="template-list">
@@ -435,7 +461,15 @@ export default function EndgamesView({
             />
           )}
           <BoardTools>
-            {scheduledCard && onBury && <Button type="button" disabled={burying || complete} onClick={() => void runBury()}>{burying ? "Burying…" : "Bury"}</Button>}
+            {scheduledCard && onBury && (
+              <Button
+                type="button"
+                disabled={burying || complete}
+                onClick={() => void runBury()}
+              >
+                {burying ? "Burying…" : "Bury"}
+              </Button>
+            )}
             <Button
               disabled={Boolean(scheduledCard) && !complete}
               onClick={() => void newPosition()}
@@ -443,13 +477,25 @@ export default function EndgamesView({
               ⤨ <span>New position</span>
             </Button>
             {!scheduledCard && (
-              <Button onClick={(event) => { event.currentTarget.focus(); setEditingMaterial(true); }}>
+              <Button
+                onClick={(event) => {
+                  event.currentTarget.focus();
+                  setEditingMaterial(true);
+                }}
+              >
                 ⚙ <span>Edit material</span>
               </Button>
             )}
           </BoardTools>
           {outcome && <OutcomeFlash outcome={outcome} />}
-          {buryError && <p role="alert">{buryError} <Button type="button" onClick={() => void runBury()}>Retry bury</Button></p>}
+          {buryError && (
+            <p role="alert">
+              {buryError}{" "}
+              <Button type="button" onClick={() => void runBury()}>
+                Retry bury
+              </Button>
+            </p>
+          )}
         </div>
         <aside className="study-panel endgame-study">
           <span className="pill">Material template</span>
@@ -496,49 +542,53 @@ export default function EndgamesView({
         </aside>
       </div>
       {editingMaterial && (
-        <Dialog className="import-dialog" titleId="endgame-material-title" onClose={() => setEditingMaterial(false)}>
-            <h2 id="endgame-material-title">Endgame material</h2>
-            <p>Use K, Q, R, B, N, P. One king per side; seven pieces total.</p>
-            {(["white", "black"] as const).map((side) => (
-              <label key={side}>
-                {side}
-                <TextInput
-                  value={materialDraft[side]}
-                  onChange={(event) =>
-                    setMaterialDraft((current) => ({
-                      ...current,
-                      [side]: event.target.value.toUpperCase(),
-                    }))
-                  }
-                />
-              </label>
-            ))}
-            <Button
-              onClick={() => {
-                if (
-                  !/^K[QRBNP]*$/.test(materialDraft.white) ||
-                  !/^K[QRBNP]*$/.test(materialDraft.black) ||
-                  materialDraft.white.length + materialDraft.black.length > 7
-                ) {
-                  setStatus(
-                    "Use one king per side and at most seven total pieces.",
-                  );
-                  return;
+        <Dialog
+          className="import-dialog"
+          titleId="endgame-material-title"
+          onClose={() => setEditingMaterial(false)}
+        >
+          <h2 id="endgame-material-title">Endgame material</h2>
+          <p>Use K, Q, R, B, N, P. One king per side; seven pieces total.</p>
+          {(["white", "black"] as const).map((side) => (
+            <label key={side}>
+              {side}
+              <TextInput
+                value={materialDraft[side]}
+                onChange={(event) =>
+                  setMaterialDraft((current) => ({
+                    ...current,
+                    [side]: event.target.value.toUpperCase(),
+                  }))
                 }
-                setTemplates((current) => [
-                  ...current,
-                  {
-                    name: `${materialDraft.white} vs ${materialDraft.black}`,
-                    ...materialDraft,
-                  },
-                ]);
-                setSelected(templates.length);
-                setEditingMaterial(false);
-              }}
-            >
-              Practice material
-            </Button>
-            <Button onClick={() => setEditingMaterial(false)}>Cancel</Button>
+              />
+            </label>
+          ))}
+          <Button
+            onClick={() => {
+              if (
+                !/^K[QRBNP]*$/.test(materialDraft.white) ||
+                !/^K[QRBNP]*$/.test(materialDraft.black) ||
+                materialDraft.white.length + materialDraft.black.length > 7
+              ) {
+                setStatus(
+                  "Use one king per side and at most seven total pieces.",
+                );
+                return;
+              }
+              setTemplates((current) => [
+                ...current,
+                {
+                  name: `${materialDraft.white} vs ${materialDraft.black}`,
+                  ...materialDraft,
+                },
+              ]);
+              setSelected(templates.length);
+              setEditingMaterial(false);
+            }}
+          >
+            Practice material
+          </Button>
+          <Button onClick={() => setEditingMaterial(false)}>Cancel</Button>
         </Dialog>
       )}
     </section>
@@ -546,9 +596,16 @@ export default function EndgamesView({
 
   async function runBury() {
     if (!onBury || burying) return;
-    setBurying(true); setBuryError("");
-    try { await onBury(); }
-    catch (error) { setBuryError(`Could not bury this card. ${error instanceof Error ? error.message : "Retry the action."}`); }
-    finally { setBurying(false); }
+    setBurying(true);
+    setBuryError("");
+    try {
+      await onBury();
+    } catch (error) {
+      setBuryError(
+        `Could not bury this card. ${error instanceof Error ? error.message : "Retry the action."}`,
+      );
+    } finally {
+      setBurying(false);
+    }
   }
 }

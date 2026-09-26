@@ -10,6 +10,7 @@ import time
 import uuid
 from contextlib import asynccontextmanager
 from datetime import date, datetime, timedelta, timezone
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import chess
 import chess.pgn
@@ -102,6 +103,8 @@ from .services.threat_training import (
 )
 from .services.tactical_opportunities import tactical_statistics
 from .services.statistics import enqueue_daily_snapshot, statistics_breakdown, statistics_overview
+from .services.repertoire_statistics import repertoire_statistics, repertoire_positions
+from .services.repertoire_game_refresh import enqueue_repertoire_game_refresh, execute_repertoire_game_refresh_slice
 from .services.guided_review import create_or_resume_session, read_session, submit_attempt
 from .services.game_sync_coordinator import (
     coordinator,
@@ -116,7 +119,7 @@ from .services.database_executor import (
     submit_background_write,
     submit_foreground_write,
 )
-from .services.durable_tasks import enqueue_task, list_tasks, retry_task
+from .services.durable_tasks import enqueue_task, enqueue_task_in_transaction, list_tasks, retry_task
 from .services.background_activity import claimable, control_order, list_activity, report_progress, set_control
 from .services.repertoire_conflicts import (
     find_repertoire_conflicts,
@@ -1102,6 +1105,7 @@ register_durable_task_handler("integrity_repair", execute_durable_integrity_repa
 register_durable_task_handler("opening_graph_rebuild", execute_opening_graph_rebuild)
 register_durable_task_handler("repertoire_opportunity", execute_opportunity_slice)
 register_durable_task_handler("priority_retention", execute_priority_retention_slice)
+register_durable_task_handler("repertoire_game_refresh", execute_repertoire_game_refresh_slice)
 register_durable_task_handler("defensive_threat_scan", execute_threat_scan_slice)
 register_durable_task_handler("defensive_threat_validate", execute_threat_validation)
 register_durable_task_handler("defensive_threat_report_audit", execute_threat_report_audit)
@@ -1151,10 +1155,8 @@ def _ensure_discovery_admissions() -> None:
         intent = database.execute(
             """SELECT admission.id FROM discovery_admission_intents admission
                WHERE admission.state!='queued'
-                 AND EXISTS(SELECT 1 FROM repertoire_lines line WHERE line.id=admission.line_id)
                  AND NOT EXISTS(SELECT 1 FROM background_tasks task
-                     WHERE task.kind='discovery_admission' AND task.deduplication_key=admission.id
-                       AND task.state IN ('queued','leased'))
+                     WHERE task.kind='discovery_admission' AND task.deduplication_key=admission.id)
                ORDER BY admission.created_at,admission.id LIMIT 1"""
         ).fetchone()
     if intent:
@@ -1199,10 +1201,22 @@ def _queue_payload(limit: int | None = None):
             (day,),
         ).fetchall()
         queue_sql = """SELECT q.id queue_entry_id,q.position,q.cycle,q.attempt_state,q.attempt_failed,
+                                  (SELECT COALESCE(MAX(id),0) FROM reviews WHERE card_id=c.id AND invalidated_at IS NULL) latest_review_id,
                                   q.gameplay_priority_reason,q.admission_kind,
+                                  CASE WHEN c.kind='prefix'
+                                              AND instr(c.recent_attempts_json,'"again"')>0
+                                    THEN COALESCE((SELECT MAX(failed_review.id) FROM reviews failed_review
+                                      WHERE failed_review.card_id=c.id AND failed_review.rating='again'
+                                        AND failed_review.source_kind='study'
+                                        AND failed_review.invalidated_at IS NULL),0)
+                                    ELSE 0 END latest_failed_review_id,
                                   EXISTS(SELECT 1 FROM reviews study_review
                                          WHERE study_review.card_id=c.id AND study_review.source_kind='study'
                                            AND study_review.invalidated_at IS NULL) has_study_review,
+                                  (SELECT COUNT(*) FROM reviews study_review_count
+                                   WHERE study_review_count.card_id=c.id
+                                     AND study_review_count.source_kind='study'
+                                     AND study_review_count.invalidated_at IS NULL) study_review_count,
                                   COALESCE(q.admission_source,
                                     (SELECT 'defense:' || candidate.id
                                      FROM threat_training_candidates candidate
@@ -1250,6 +1264,9 @@ def _queue_payload(limit: int | None = None):
             ).fetchall()
             encounter_by_fen.update({row["fen_key"]: row for row in encounter_rows})
         for card in cards:
+            card["prefix_split_offer_available"] = (
+                card["latest_failed_review_id"] > card["prefix_split_rejected_after_review_id"]
+            )
             fen_key = " ".join(card["start_fen"].split()[:4])
             encounters = encounter_by_fen.get(fen_key)
             encounter_count = int(encounters["encounter_count"]) if encounters else 0
@@ -1299,6 +1316,11 @@ def _queue_payload(limit: int | None = None):
 @app.get("/api/queue/today")
 def queue_today():
     return _queue_payload()
+
+
+@app.get("/api/queue/prepared")
+def prepared_queue():
+    return {**_queue_payload(), "prepared_at": datetime.now(timezone.utc).isoformat()}
 
 
 @app.get("/api/queue/window")
@@ -1479,6 +1501,17 @@ def list_repertoires():
                 SELECT repertoire_id,COUNT(*) AS card_count
                 FROM repertoire_cards
                 GROUP BY repertoire_id
+            ), active_prefix_counts AS (
+                SELECT step.repertoire_id,COUNT(DISTINCT card.id) AS active_prefix_count
+                FROM opening_graph_steps step
+                JOIN opening_graph_publications published ON published.repertoire_id=step.repertoire_id AND published.generation=step.generation
+                JOIN cards card ON card.id=step.card_id
+                JOIN repertoire_cards link ON link.repertoire_id=step.repertoire_id AND link.card_id=card.id
+                WHERE card.kind='prefix' AND card.content_type='opening' AND card.archived=0
+                  AND card.state!='locked' AND card.pending_validation=0
+                  AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
+                                 WHERE block.repertoire_id=step.repertoire_id AND block.card_id=card.id)
+                GROUP BY step.repertoire_id
             ), due_counts AS (
                 SELECT rc.repertoire_id,COUNT(DISTINCT q.card_id) AS due_count
                 FROM daily_queue q
@@ -1507,6 +1540,7 @@ def list_repertoires():
                    (SELECT ii.id FROM repertoire_integrity_issues ii WHERE ii.repertoire_id=r.id ORDER BY ii.updated_at,ii.id LIMIT 1) integrity_first_issue_id,
                    COALESCE(lc.line_count,0) AS line_count,
                    COALESCE(cc.card_count,0) AS card_count,
+                   COALESCE(apc.active_prefix_count,0) AS active_prefix_count,
                    (SELECT l2.trained_color FROM repertoire_lines l2 WHERE l2.repertoire_id=r.id ORDER BY l2.created_at LIMIT 1) AS trained_color,
                    COALESCE(dc.due_count,0) AS due_count,
                    COALESCE(bc.blocked_due_count,0) AS blocked_due_count,
@@ -1526,6 +1560,7 @@ def list_repertoires():
             LEFT JOIN repertoire_integrity_state rs ON rs.repertoire_id=r.id
             LEFT JOIN line_counts lc ON lc.repertoire_id=r.id
             LEFT JOIN card_counts cc ON cc.repertoire_id=r.id
+            LEFT JOIN active_prefix_counts apc ON apc.repertoire_id=r.id
             LEFT JOIN due_counts dc ON dc.repertoire_id=r.id
             LEFT JOIN blocked_counts bc ON bc.repertoire_id=r.id
             LEFT JOIN issue_counts ic ON ic.repertoire_id=r.id
@@ -1870,6 +1905,8 @@ def delete_repertoire(identifier: str):
                 "UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__')",
                 (replacement[0],),
             )
+    enqueue_repertoire_game_refresh(background=False)
+    coordinator.wake()
     return {"deleted": True, "id": identifier}
 
 
@@ -1914,11 +1951,24 @@ def requeue(db, day, cid, after, attempt):
            WHERE id=last_insert_rowid()"""
     )
     preserve_daily_queue_order(db, day)
+    return db.execute(
+        "SELECT id FROM daily_queue WHERE queue_date=? AND card_id=? AND cycle=?",
+        (day, cid, cycle),
+    ).fetchone()[0]
 
 
 @app.post("/api/queue/entries/{entry_id}/fail")
 def mark_attempt_failed(entry_id: int):
     with connection() as db:
+        active_entry = db.execute(
+            """SELECT id FROM daily_queue WHERE queue_date=? AND status='queued'
+               AND ((SELECT content_type FROM cards WHERE id=card_id)!='defense'
+                    OR (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
+               ORDER BY position,id LIMIT 1""",
+            (date.today().isoformat(),),
+        ).fetchone()
+        if not active_entry or active_entry["id"] != entry_id:
+            raise HTTPException(409, "This queue attempt is no longer active")
         if not db.execute(
             """UPDATE daily_queue SET attempt_failed=1 WHERE id=? AND status='queued'
                AND ((SELECT content_type FROM cards WHERE id=card_id)!='defense'
@@ -1965,7 +2015,16 @@ def bury_queue_entry(entry_id: int):
 
 @app.post("/api/cards/{identifier}/review")
 def review(identifier: str, request: ReviewRequest):
+    original_request = {"outcome": request.outcome, "guided": request.guided}
     now = datetime.now(timezone.utc)
+    if request.recorded_at:
+        try:
+            recorded_at = datetime.fromisoformat(request.recorded_at.replace("Z", "+00:00"))
+        except ValueError as error:
+            raise HTTPException(422, "Invalid recorded_at timestamp") from error
+        if recorded_at.tzinfo is None or recorded_at > now + timedelta(minutes=5):
+            raise HTTPException(422, "Review timestamp must include a timezone and cannot be in the future")
+        now = recorded_at.astimezone(timezone.utc)
     day = date.today().isoformat()
     with connection() as db:
         content_row = db.execute("SELECT content_type FROM cards WHERE id=?", (identifier,)).fetchone()
@@ -2006,16 +2065,40 @@ def review(identifier: str, request: ReviewRequest):
             raise HTTPException(409, "This queue attempt is no longer available")
         if entry["status"] != "queued":
             if entry["review_result_json"]:
+                stored_result = json.loads(entry["review_result_json"])
+                recorded_request = stored_result.pop("_request", None)
+                recorded_time = stored_result.pop("_recorded_at", None)
+                if recorded_request is not None and recorded_request != original_request:
+                    raise HTTPException(409, "A different review already completed this queue attempt")
+                if request.recorded_at and recorded_time != now.isoformat():
+                    raise HTTPException(409, "This queue attempt was already reviewed on another device")
                 return {
-                    **json.loads(entry["review_result_json"]),
+                    **stored_result,
                     "queue_entry_id": entry["id"],
                     "persisted": True,
                     "idempotent": True,
                 }
             raise HTTPException(409, "This attempt was already completed")
+        if request.expected_revision is not None:
+            current_revision = db.execute("SELECT revision FROM cards WHERE id=?", (identifier,)).fetchone()
+            if not current_revision or current_revision["revision"] != request.expected_revision:
+                raise HTTPException(409, "This card changed after the phone queue was prepared")
+        latest_review_id = db.execute(
+            "SELECT COALESCE(MAX(id),0) FROM reviews WHERE card_id=? AND invalidated_at IS NULL",
+            (identifier,),
+        ).fetchone()[0]
+        if request.expected_review_id is not None and latest_review_id != request.expected_review_id:
+            raise HTTPException(409, "This card was reviewed on another device after the phone queue was prepared")
+        settings = get_settings()
+        if request.recorded_at:
+            try:
+                review_day = now.astimezone(ZoneInfo(settings.timezone)).date() if settings.timezone != "local" else now.astimezone().date()
+            except ZoneInfoNotFoundError:
+                review_day = now.astimezone().date()
+        else:
+            review_day = date.today()
         if entry["attempt_failed"] or request.guided:
             request = request.model_copy(update={"outcome": "again", "guided": True})
-        settings = get_settings()
         try:
             result = apply_scheduling_review(
                 db,
@@ -2026,7 +2109,7 @@ def review(identifier: str, request: ReviewRequest):
                 source_ref=None,
                 light_first_interval_days=settings.light_first_interval_days,
                 reviewed_at=now,
-                review_day=date.today(),
+                review_day=review_day,
             )
         except KeyError as error:
             raise HTTPException(404, "Card not found") from error
@@ -2053,10 +2136,11 @@ def review(identifier: str, request: ReviewRequest):
                 "UPDATE tactic_progress SET clean_pass_at=COALESCE(clean_pass_at,?) WHERE card_id=?",
                 (now.isoformat(), identifier),
             )
+        repeated_entry_id = None
         if result["requeue_today"]:
-            requeue(
+            repeated_entry_id = requeue(
                 db,
-                day,
+                entry["queue_date"],
                 identifier,
                 result["requeue_after_cards"],
                 "guided" if request.outcome == "again" else "reinforcement",
@@ -2064,12 +2148,15 @@ def review(identifier: str, request: ReviewRequest):
         persisted_result = {
             **result,
             "queue_entry_id": entry["id"],
+            "requeue_entry_id": repeated_entry_id,
+            "review_id": db.execute("SELECT MAX(id) FROM reviews WHERE card_id=?", (identifier,)).fetchone()[0],
             "persisted": True,
             "idempotent": False,
         }
         db.execute(
             "UPDATE daily_queue SET review_result_json=? WHERE id=?",
-            (json.dumps(persisted_result), entry["id"]),
+            (json.dumps({**persisted_result, "_request": original_request,
+                         "_recorded_at": now.isoformat() if request.recorded_at else None}), entry["id"]),
         )
     if persisted_result["state"] == "mature":
         enqueue_daily_queue_refresh()
@@ -2379,10 +2466,11 @@ def prefix_split_accept(identifier: str, request: PrefixSplitRequest):
                     (result["parent"]["card_id"], result["continuation"]["card_id"]),
                 )
             ]
-            database.execute(
-                "UPDATE cards SET pending_validation=1 WHERE id IN (?,?)",
-                (result["parent"]["card_id"], result["continuation"]["card_id"]),
-            )
+            if not result["idempotent"]:
+                database.execute(
+                    "UPDATE cards SET pending_validation=1 WHERE id IN (?,?)",
+                    (result["parent"]["card_id"], result["continuation"]["card_id"]),
+                )
             usage = database.execute(
                 """SELECT COUNT(DISTINCT step.line_id) line_count,
                           COUNT(DISTINCT step.repertoire_id) repertoire_count
@@ -2404,14 +2492,44 @@ def prefix_split_accept(identifier: str, request: PrefixSplitRequest):
             raise HTTPException(422, str(error)) from error
         except RuntimeError as error:
             raise HTTPException(409, str(error)) from error
-    for repertoire_id in set(repertoire_ids):
-        try:
-            enqueue_opening_graph_rebuild(repertoire_id)
-            enqueue_integrity_scans(repertoire_id)
-        except (KeyError, sqlite3.OperationalError):
-            continue
+        if not result["idempotent"]:
+            try:
+                for repertoire_id in set(repertoire_ids):
+                    enqueue_task_in_transaction(
+                        database,
+                        "opening_graph_rebuild",
+                        repertoire_id,
+                        {"repertoire_id": repertoire_id, "local_day": date.today().isoformat()},
+                        priority=40,
+                    )
+            except (RuntimeError, sqlite3.OperationalError) as error:
+                raise HTTPException(503, "Could not save the prefix split and queue its follow-up work. Retry.") from error
     coordinator.wake()
     return result
+
+
+@app.post("/api/cards/{identifier}/prefix-split/reject")
+def prefix_split_reject(identifier: str, request: PrefixSplitRequest):
+    with connection() as database:
+        try:
+            preview = preview_prefix_split(database, identifier)
+            if preview["source_revision"] != request.expected_revision:
+                raise HTTPException(409, "The card changed; refresh it and try again")
+            latest_failed_review_id = database.execute(
+                """SELECT COALESCE(MAX(id),0) FROM reviews
+                   WHERE card_id=? AND rating='again' AND source_kind='study'
+                     AND invalidated_at IS NULL""",
+                (identifier,),
+            ).fetchone()[0]
+            database.execute(
+                "UPDATE cards SET prefix_split_rejected_after_review_id=? WHERE id=?",
+                (latest_failed_review_id, identifier),
+            )
+        except KeyError as error:
+            raise HTTPException(404, str(error)) from error
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+    return {"rejected_after_review_id": latest_failed_review_id}
 
 
 @app.put("/api/cards/{identifier}")
@@ -2673,6 +2791,27 @@ def refresh_repertoire_coverage(identifier: str):
     return {"run_id": run_id, "status": "queued"}
 
 
+@app.get("/api/repertoires/{identifier}/statistics")
+def repertoire_statistics_summary(identifier: str, window: str = "90d"):
+    try:
+        return repertoire_statistics(identifier, window)
+    except KeyError as error:
+        raise HTTPException(404, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+
+
+@app.get("/api/repertoires/{identifier}/statistics/positions")
+def repertoire_statistics_positions(identifier: str, window: str = "90d", sort: str = "attention",
+                                   cursor: str | None = None, limit: int = 20):
+    try:
+        return repertoire_positions(identifier, window, sort, cursor, limit)
+    except KeyError as error:
+        raise HTTPException(404, str(error)) from error
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+
+
 @app.get("/api/repertoires/{identifier}/coverage")
 def repertoire_coverage(identifier: str):
     return coverage_summary(identifier)
@@ -2743,29 +2882,28 @@ def accept_discovery_continuation(opportunity_id: str, request: DiscoveryAccepta
         raise HTTPException(404, str(error)) from error
     except ValueError as error:
         raise HTTPException(409, str(error)) from error
-    with read_connection() as database:
-        saved_line = database.execute(
-            "SELECT 1 FROM repertoire_lines WHERE id=?", (intent["line_id"],),
-        ).fetchone()
-    if not saved_line:
-        try:
-            branch(BranchRequest(
-                repertoire_id=intent["repertoire_id"],
-                starting_fen=intent["starting_fen"],
-                moves=intent["preview_moves_uci"],
-                trained_color=intent["learner_color"],
-                name="Discovery continuation",
-            ))
-        except Exception as error:
-            with connection() as database:
-                database.execute(
-                    "UPDATE discovery_admission_intents SET last_error=?,updated_at=? WHERE id=?",
-                    (str(error)[:1000], datetime.now(timezone.utc).isoformat(), intent["id"]),
-                )
-            raise
-    enqueue_admission_intent(intent["id"])
     coordinator.wake()
     return {"status": "preparing", "intent_id": intent["id"]}
+
+
+@app.get("/api/discovery-admissions/{intent_id}")
+def discovery_admission_status(intent_id: str):
+    with read_connection() as database:
+        intent = database.execute(
+            "SELECT state,last_error FROM discovery_admission_intents WHERE id=?", (intent_id,),
+        ).fetchone()
+        if not intent:
+            raise HTTPException(404, "Discovery admission was not found")
+        task = database.execute(
+            """SELECT state,last_error FROM background_tasks
+               WHERE kind='discovery_admission' AND deduplication_key=?""",
+            (intent_id,),
+        ).fetchone()
+    failed = bool(task and task["state"] == "failed")
+    return {"state": "queued" if intent["state"] == "queued" else
+            "failed" if failed else "preparing",
+            "error": (task["last_error"] or intent["last_error"] or "Admission failed; retry Add and train")
+            if failed else None}
 
 
 @app.post("/api/repertoires/{identifier}/opportunities/refresh", status_code=202)
@@ -4331,6 +4469,7 @@ GAME_SUMMARY_SELECT = """g.id,g.provider,g.played_at,g.speed,g.color,g.result,
 @app.get("/api/games/summary", response_model=GamesSummaryResponse)
 def summary(
     fen: str | None = None,
+    repertoire_id: str | None = None,
     cursor: str | None = None,
     limit: int = 50,
     provider: str | None = None,
@@ -4355,6 +4494,9 @@ def summary(
         "(? IS NULL OR EXISTS(SELECT 1 FROM game_position_occurrences p WHERE p.game_id=g.id AND p.fen_key=?))"
     ]
     parameters: list[object] = [position_key, position_key]
+    if repertoire_id:
+        clauses.append("m.repertoire_id=?")
+        parameters.append(repertoire_id)
     filters = {
         "g.provider": provider, "m.classification": status, "g.color": color,
         "g.speed": speed,
@@ -4396,6 +4538,17 @@ def summary(
                  WHERE {' AND '.join(count_clauses)}""",
             count_parameters,
         ).fetchone()[0]
+        position_plies = {
+            row["id"]: db.execute(
+                """SELECT COALESCE(
+                     (SELECT MIN(event.ply) FROM repertoire_decision_events event
+                      WHERE event.game_id=? AND event.repertoire_id=? AND event.fen_key=?),
+                     (SELECT MIN(occurrence.ply) FROM game_position_occurrences occurrence
+                      WHERE occurrence.game_id=? AND occurrence.fen_key=?))""",
+                (row["id"], repertoire_id, position_key, row["id"], position_key),
+            ).fetchone()[0]
+            for row in rows[:limit]
+        } if position_key else {}
     page_rows = rows[:limit]
     next_cursor = None
     if len(rows) > limit and page_rows:
@@ -4417,6 +4570,7 @@ def summary(
             matched_player_decisions=row["matched_player_decisions"],
             repertoire_opportunities=opportunities,
             adherence=(row["matched_player_decisions"] / opportunities if opportunities else None),
+            matched_position_ply=position_plies.get(row["id"]),
         ))
     return GamesSummaryResponse(
         total=total, games=summary_rows, next_cursor=next_cursor,
@@ -4425,7 +4579,7 @@ def summary(
 
 
 @app.get("/api/games/position-summary")
-def game_position_summary(fen: str):
+def game_position_summary(fen: str, repertoire_id: str | None = None):
     position_key = fen_key(fen)
     with connection() as db:
         occurrences = db.execute(
@@ -4433,9 +4587,11 @@ def game_position_summary(fen: str):
                       a.loss_cp,a.label
                FROM game_position_occurrences p
                JOIN imported_games g ON g.id=p.game_id
+               LEFT JOIN game_repertoire_matches match ON match.game_id=g.id AND match.is_primary=1
                LEFT JOIN game_move_analysis a ON a.game_id=p.game_id AND a.ply=p.ply
-               WHERE p.fen_key=? ORDER BY g.played_at DESC""",
-            (position_key,),
+               WHERE p.fen_key=? AND (? IS NULL OR match.repertoire_id=?)
+               ORDER BY g.played_at DESC""",
+            (position_key, repertoire_id, repertoire_id),
         ).fetchall()
     by_move: dict[str, dict] = {}
     for row in occurrences:

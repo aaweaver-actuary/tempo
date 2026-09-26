@@ -33,6 +33,9 @@ class ReviewRequest(BaseModel):
     outcome: Literal["correct", "again"]
     guided: bool = False
     queue_entry_id: int | None = None
+    recorded_at: str | None = None
+    expected_review_id: int | None = None
+    expected_revision: int | None = None
 
 
 class BranchRequest(BaseModel):
@@ -101,7 +104,7 @@ class CardRevisionRequest(BaseModel):
 
 
 class PrefixSplitRequest(BaseModel):
-    """Accept a previously previewed one-decision prefix split."""
+    """Decide on a one-decision prefix split at the observed card revision."""
 
     expected_revision: int = Field(ge=1)
 
@@ -482,6 +485,7 @@ class GameSummaryRecord(BaseModel):
     matched_player_decisions: int | None = None
     repertoire_opportunities: int | None = None
     adherence: float | None = None
+    matched_position_ply: int | None = None
 
 
 class ImportResult(BaseModel):

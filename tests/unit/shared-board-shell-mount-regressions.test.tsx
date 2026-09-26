@@ -1,7 +1,7 @@
 import { act, render } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { STANDARD_FEN } from "../../app/const";
-import { PersistentBoardShell } from "../../app/components/persistent-board-shell";
+import { PersistentBoardShell } from "../../app/components/board/persistent-board-shell";
 import {
   defaultBoardState,
   useBoardShellStore,

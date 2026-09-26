@@ -49,6 +49,19 @@ export async function prepareVisualUI(page: Page, fixedClock = true) {
           },
         ],
       },
+      "/api/queue/prepared": {
+        prepared_at: "2026-09-18T16:00:00Z",
+        local_date: "2026-09-18",
+        count: 1,
+        projection: { state: "ready", generation: 1, updated_at: "2026-09-18T16:00:00Z",
+          refresh_pending: 0, last_error: null, blocked_count: 0 },
+        cards: [{
+          id: "visual-card", queue_entry_id: 1, latest_review_id: 0,
+          start_fen: startFen, moves, content_type: "opening",
+          repertoire_name: "Spanish opening", repertoire_source: "PGN",
+          first_correct_at: "2026-09-17T12:00:00Z", trained_color: "white",
+        }],
+      },
       "/api/repertoires": {
         repertoires: [
           {
@@ -57,10 +70,27 @@ export async function prepareVisualUI(page: Page, fixedClock = true) {
             source_name: "Spanish.pgn",
             line_count: 3,
             card_count: 8,
+            active_prefix_count: 2,
+            graph_updated_at: "2026-09-18T12:00:00Z",
             due_count: 1,
             trained_color: "white",
           },
         ],
+      },
+      "/api/repertoires/visual-repertoire/statistics": {
+        window: "90d", graph_updated_at: "2026-09-18T12:00:00Z", graph_state: "ready", game_state: "ready",
+        prefix: { total: 3, active: 2, studied: 1, unseen: 2, locked: 1, paused: 0 },
+        cards: { total: 8, new: 2, learning: 3, mature: 2, locked: 1, difficult: 1, due_today: 1, due_next_seven_days: 2 },
+        study: { correct: 4, attempts: 5, accuracy: 0.8 },
+        games: { matched: 3, correct: 2, decisions: 3, adherence: 2 / 3, wins: 2, draws: 0, losses: 1, positions_seen: 1, positions_total: 4 },
+        unlocks: [{ card_id: "child", parent_card_id: "parent", line_name: "Spanish continuation", parent_due_date: "2026-09-19", earliest_unlock_date: "2026-09-22", status: "forecast" }],
+      },
+      "/api/repertoires/visual-repertoire/statistics/positions": {
+        positions: [{ fen_key: startFen.split(" ").slice(0, 4).join(" "), fen: startFen,
+          games: 3, encounters: 3, correct: 2, missed: 1, last_seen_at: "2026-09-18T12:00:00Z",
+          expected_moves: ["e2e4"], played_moves: [{ move_uci: "e2e4", count: 2 }, { move_uci: "d2d4", count: 1 }],
+          card_id: "visual-card", sample_game_id: "visual-game", sample_ply: 0 }],
+        total: 1, next_cursor: null,
       },
       "/api/repertoire/lines": {
         lines: [
@@ -195,6 +225,7 @@ export async function prepareVisualUI(page: Page, fixedClock = true) {
       },
       "/api/tactics/progress": {},
       "/api/games/sync/status": { providers: [] },
+      "/api/games/position-summary": { encounters: 0, analyzed_encounters: 0, moves: [] },
       "/api/system/activity": { items: [], counts: { running: 0, queued: 0, paused: 0, failed: 0 }, total: 0, next_offset: null, writer: { healthy: true, foreground: 0, background: 0 } },
       "/api/games/analysis/claim": { job: null },
       "/api/game-findings": { findings: [] },

@@ -3,6 +3,7 @@ import { useTrainingStore } from "../state/training-store";
 import { dataDiagnostics } from "./validated-data";
 import { usesLocalApi } from "../utils/local";
 import { serviceStatusSnapshot } from "./service-status";
+import { offlineShellVersion } from "./offline-shell";
 
 export type DebugErrorKind =
   | "uncaught-exception"
@@ -20,6 +21,9 @@ export type DebugErrorContext = {
   method?: string;
   status?: number;
   retryable?: boolean;
+  script?: string;
+  line?: number;
+  column?: number;
 };
 
 export type DebugErrorRecord = {
@@ -36,6 +40,9 @@ export type DebugErrorRecord = {
     method?: string;
     status?: number;
     retryable?: boolean;
+    scriptPath?: string;
+    line?: number;
+    column?: number;
   };
 };
 
@@ -125,6 +132,9 @@ export function reportDebugError(
     method: context.method,
     status: context.status,
     retryable: context.retryable,
+    scriptPath: endpointPath(context.script),
+    line: context.line,
+    column: context.column,
   };
   const signature = [
     context.kind ?? "ui",
@@ -183,6 +193,8 @@ function environmentSnapshot() {
     language: navigator.language,
     timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
     online: navigator.onLine,
+    serviceWorkerPath: endpointPath(navigator.serviceWorker?.controller?.scriptURL),
+    offlineShellVersion: offlineShellVersion(),
     viewport: {
       width: window.innerWidth,
       height: window.innerHeight,
@@ -209,6 +221,9 @@ export function buildDebugBundle(recordId?: string): string {
       message: record.message,
       source: record.context.source,
       endpointPath: record.context.endpointPath,
+      scriptPath: record.context.scriptPath,
+      line: record.context.line,
+      column: record.context.column,
     })),
     environment: environmentSnapshot(),
     workspace: {
@@ -277,10 +292,23 @@ export async function copyDebugBundle(recordId?: string): Promise<boolean> {
 
 export function installGlobalDebugErrorHandlers() {
   if (globalCleanup || typeof window === "undefined") return globalCleanup;
-  const onError = (event: ErrorEvent) => {
+  const onError = (event: Event) => {
+    if (!(event instanceof ErrorEvent)) {
+      const resource = event.target;
+      if (resource instanceof HTMLScriptElement || resource instanceof HTMLLinkElement) {
+        reportDebugError(new Error("A Tempo script or stylesheet failed to load. Reopen Tempo while connected."), {
+          kind: "uncaught-exception", source: "resource.error",
+          script: resource instanceof HTMLScriptElement ? resource.src : resource.href,
+        });
+      }
+      return;
+    }
     reportDebugError(event.error ?? event.message, {
       kind: "uncaught-exception",
       source: "window.error",
+      script: event.filename,
+      line: event.lineno || undefined,
+      column: event.colno || undefined,
     });
   };
   const onUnhandledRejection = (event: PromiseRejectionEvent) => {
@@ -289,10 +317,10 @@ export function installGlobalDebugErrorHandlers() {
       source: "window.unhandledrejection",
     });
   };
-  window.addEventListener("error", onError);
+  window.addEventListener("error", onError, true);
   window.addEventListener("unhandledrejection", onUnhandledRejection);
   globalCleanup = () => {
-    window.removeEventListener("error", onError);
+    window.removeEventListener("error", onError, true);
     window.removeEventListener("unhandledrejection", onUnhandledRejection);
     globalCleanup = undefined;
   };

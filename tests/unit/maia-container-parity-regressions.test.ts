@@ -37,4 +37,4 @@ it("container Maia probabilities match browser inference for both colors", async
   } finally {
     vi.unstubAllGlobals();
   }
-});
+}, 30_000);

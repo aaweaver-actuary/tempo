@@ -12,7 +12,7 @@ import chess
 from ..database import connection, read_connection
 from .activity_gate import activity_gate
 from .cards import card_id
-from .durable_tasks import enqueue_task
+from .durable_tasks import enqueue_task, enqueue_task_in_transaction
 from .review_service import ensure_card_queued_after
 from .threat_pipeline import ENGINE_VERSION, NETWORK_VERSION, report_from_json, validate_analysis_report
 from .threat_validation import AnalysisRequest
@@ -34,6 +34,39 @@ def _pawn_signature(board: chess.Board) -> tuple[tuple[bool, int], ...]:
 def _piece_signature(board: chess.Board) -> set[tuple[bool, int, int]]:
     return {(piece.color, piece.piece_type, square) for square, piece in board.piece_map().items()
             if piece.piece_type != chess.PAWN}
+
+
+def _learner_pawns(board: chess.Board, learner_is_white: bool) -> set[int]:
+    return {square for square, piece in board.piece_map().items()
+            if piece.color == learner_is_white and piece.piece_type == chess.PAWN}
+
+
+def _rank_candidates(candidates: list[dict]) -> list[dict]:
+    """Keep engine quality as the gate, then choose the strongest familiar move."""
+    eligible = [candidate for candidate in candidates
+                if candidate["loss_cp"] is None
+                or candidate["loss_cp"] <= (100 if candidate["familiar"] else 30)]
+    eligible.sort(key=lambda candidate: (
+        not candidate["familiar"],
+        candidate["loss_cp"] if candidate["loss_cp"] is not None else 0,
+        candidate["move_uci"],
+    ))
+    return eligible
+
+
+def _comparable_move_examples(examples: list[dict], board: chess.Board,
+                              learner_color: str, move_uci: str) -> list[dict]:
+    learner_pawns = _learner_pawns(board, learner_color == "white")
+    piece_positions = _piece_signature(board)
+    return [example for example in examples
+            if example["learner_turn"] and example["next_move"] == move_uci
+            and example["learner_pawns"] == learner_pawns
+            and len(example["pieces"] & piece_positions) >= 8]
+
+
+def _comparable_move_example(examples: list[dict], board: chess.Board,
+                             learner_color: str, move_uci: str) -> dict | None:
+    return next(iter(_comparable_move_examples(examples, board, learner_color, move_uci)), None)
 
 
 def _source_game(database, opportunity) -> dict | None:
@@ -166,17 +199,21 @@ def _repertoire_positions(lines: list[dict], learner_color: str) -> tuple[list[d
     examples = []
     accepted_moves = set()
     for line in lines:
+        if line.get("trained_color", learner_color) != learner_color:
+            continue
         board = chess.Board(line["start_fen"])
         for move_uci in json.loads(line["moves_json"]):
             move = chess.Move.from_uci(move_uci)
             if move not in board.legal_moves:
                 break
             examples.append({"fen_key": _key(board), "pawn": _pawn_signature(board),
+                             "learner_pawns": _learner_pawns(board, learner_color == "white"),
                              "pieces": _piece_signature(board), "line_id": line["id"],
                              "line_name": line["name"], "next_move": move_uci,
                              "learner_turn": board.turn == (learner_color == "white")})
             board.push(move)
         examples.append({"fen_key": _key(board), "pawn": _pawn_signature(board),
+                         "learner_pawns": _learner_pawns(board, learner_color == "white"),
                          "pieces": _piece_signature(board), "line_id": line["id"],
                          "line_name": line["name"], "next_move": None,
                          "learner_turn": board.turn == (learner_color == "white")})
@@ -248,8 +285,6 @@ def recommend_missing_continuations(opportunity_id: str) -> dict:
     for line in report.lines[:5]:
         if best.score.cp is not None and line.score.cp is not None:
             loss_cp = learner_sign * (best.score.cp - line.score.cp)
-            if loss_cp > 30:
-                continue
         elif best.score.mate is not None and line.score.mate is not None:
             if ((best.score.mate > 0) != (line.score.mate > 0)
                     or abs(line.score.mate) > abs(best.score.mate) + 2):
@@ -287,25 +322,29 @@ def recommend_missing_continuations(opportunity_id: str) -> dict:
             example["line_id"],
         ))
         nearest = ranked_examples[0] if ranked_examples else None
-        similarity = ("exact transposition" if nearest and nearest["fen_key"] == after_key
-                      else "matching pawn structure" if nearest and nearest["pawn"] == pawn_signature
-                      else "familiar piece placement" if nearest and len(nearest["pieces"] & piece_signature) >= 8
-                      else "no supported similarity")
+        comparable_examples = _comparable_move_examples(
+            examples, board, game["color"], line.root_move_uci)
+        same_move_example = comparable_examples[0] if comparable_examples else None
+        transposition = nearest if nearest and nearest["fen_key"] == after_key else None
+        familiar_example = transposition or same_move_example
+        similarity = ("exact transposition" if transposition else
+                      "same move in a comparable repertoire position" if same_move_example else
+                      "no supported similarity")
         sound_candidates.append({
             "move_uci": line.root_move_uci, "score": asdict(line.score),
-            "loss_cp": loss_cp, "similarity": similarity,
-            "example_line_id": nearest["line_id"] if nearest and similarity != "no supported similarity" else None,
-            "example_line_name": nearest["line_name"] if nearest and similarity != "no supported similarity" else None,
+            "loss_cp": loss_cp, "similarity": similarity, "familiar": bool(familiar_example),
+            "repertoire_line_count": len({example["line_id"] for example in comparable_examples}),
+            "exact_transposition": transposition is not None,
+            "example_line_id": familiar_example["line_id"] if familiar_example else None,
+            "example_line_name": familiar_example["line_name"] if familiar_example else None,
             "preview_moves_uci": preview_moves,
             "engine_version": request.engine_version, "network_version": request.network_version,
             "depth": line.depth, "report_id": report.report_id,
             "source_game_id": game["id"], "source_ply": game["ply"],
         })
-    similarity_rank = {"exact transposition": 0, "matching pawn structure": 1,
-                       "familiar piece placement": 2, "no supported similarity": 3}
-    sound_candidates.sort(key=lambda row: (similarity_rank[row["similarity"]],
-                                           row["loss_cp"] if row["loss_cp"] is not None else 0,
-                                           row["move_uci"]))
+    sound_candidates = _rank_candidates(sound_candidates)
+    for candidate in sound_candidates:
+        del candidate["familiar"]
     engine_lines = []
     for line in report.lines[:5]:
         loss_cp = (learner_sign * (best.score.cp - line.score.cp)
@@ -316,9 +355,14 @@ def recommend_missing_continuations(opportunity_id: str) -> dict:
     return {"state": "ready" if sound_candidates else "unavailable",
             "opportunity_id": opportunity_id, "repertoire_id": repertoire_id,
             "evidence_fingerprint": fingerprint, "starting_fen": board.fen(),
-            "accepted_moves_uci": accepted, "candidates": sound_candidates[:3],
+            "accepted_moves_uci": accepted, "candidates": sound_candidates,
+            "suggested_move_uci": sound_candidates[0]["move_uci"] if sound_candidates else None,
+            "suggestion_reason": (sound_candidates[0]["similarity"] if sound_candidates else None),
             "engine_lines": engine_lines,
             "reason": None if sound_candidates else "No compatible sound engine continuation is available"}
+
+
+DISCOVERY_ADMISSION_PRIORITY = 80
 
 
 def create_admission_intent(opportunity_id: str, selected_move_uci: str,
@@ -332,6 +376,26 @@ def create_admission_intent(opportunity_id: str, selected_move_uci: str,
     if prior:
         if prior["evidence_fingerprint"] != expected_fingerprint:
             raise ValueError("This continuation was accepted from a different evidence revision")
+        if prior["state"] != "queued":
+            with read_connection() as database:
+                existing_task = database.execute(
+                    "SELECT state,priority FROM background_tasks WHERE kind='discovery_admission' AND deduplication_key=?",
+                    (prior["id"],),
+                ).fetchone()
+            if not existing_task or existing_task["state"] == "failed":
+                with connection() as database:
+                    enqueue_task_in_transaction(
+                        database, "discovery_admission", prior["id"],
+                        {"intent_id": prior["id"]}, priority=DISCOVERY_ADMISSION_PRIORITY,
+                    )
+            elif (existing_task["state"] in {"queued", "retrying"}
+                  and existing_task["priority"] > DISCOVERY_ADMISSION_PRIORITY):
+                with connection() as database:
+                    database.execute(
+                        """UPDATE background_tasks SET priority=? WHERE kind='discovery_admission'
+                           AND deduplication_key=? AND state IN ('queued','retrying') AND priority>?""",
+                        (DISCOVERY_ADMISSION_PRIORITY, prior["id"], DISCOVERY_ADMISSION_PRIORITY),
+                    )
         return {"id": prior["id"], "line_id": prior["line_id"],
                 "repertoire_id": prior["repertoire_id"],
                 "starting_fen": prior["starting_fen"],
@@ -367,6 +431,10 @@ def create_admission_intent(opportunity_id: str, selected_move_uci: str,
                  seen_at=COALESCE(seen_at,?),updated_at=? WHERE id=?""",
             (_now(), _now(), opportunity_id),
         )
+        enqueue_task_in_transaction(
+            database, "discovery_admission", intent_id, {"intent_id": intent_id},
+            priority=DISCOVERY_ADMISSION_PRIORITY,
+        )
     return {"id": intent_id, "line_id": line_id, "repertoire_id": repertoire_id,
             "starting_fen": starting_fen, "selected_move_uci": selected_move_uci,
             "preview_moves_uci": preview_moves,
@@ -375,11 +443,93 @@ def create_admission_intent(opportunity_id: str, selected_move_uci: str,
 
 def enqueue_admission_intent(intent_id: str) -> None:
     enqueue_task("discovery_admission", intent_id, {"intent_id": intent_id},
-                 priority=125, foreground=False)
+                 priority=DISCOVERY_ADMISSION_PRIORITY, foreground=False)
+
+
+def _materialize_admission_branch(task: dict) -> None:
+    """Write one selected branch and its rebuild request in a short transaction."""
+    with read_connection() as database:
+        intent = database.execute(
+            "SELECT * FROM discovery_admission_intents WHERE id=?",
+            (task["payload"]["intent_id"],),
+        ).fetchone()
+        if not intent or intent["state"] == "queued":
+            return
+        if database.execute(
+            "SELECT 1 FROM repertoire_lines WHERE id=?", (intent["line_id"],),
+        ).fetchone():
+            return
+    preview_moves = json.loads(intent["preview_moves_json"])
+    board = chess.Board(intent["starting_fen"])
+    learner_color = "white" if board.turn else "black"
+    for move_uci in preview_moves:
+        board.push_uci(move_uci)
+    activity_gate.wait_for_foreground()
+    with connection(background=True) as database:
+        lease = database.execute(
+            "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
+        ).fetchone()
+        if (not lease or lease["generation"] != task["generation"]
+                or lease["lease_token"] != task["lease_token"]):
+            return
+        inserted = database.execute(
+            """INSERT OR IGNORE INTO repertoire_lines(
+                 id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
+               VALUES(?,?,'Discovery continuation',?,?,?,?)""",
+            (intent["line_id"], intent["repertoire_id"], learner_color,
+             intent["starting_fen"], json.dumps(preview_moves), _now()),
+        ).rowcount
+        if inserted:
+            depth = database.execute(
+                "SELECT initial_depth FROM settings WHERE id=1",
+            ).fetchone()[0]
+            database.execute(
+                """INSERT OR IGNORE INTO repertoire_line_training_depths(
+                     line_id,learner_decision_count) VALUES(?,?)""",
+                (intent["line_id"], depth),
+            )
+            enqueue_task_in_transaction(
+                database, "opening_graph_rebuild", intent["repertoire_id"],
+                {"repertoire_id": intent["repertoire_id"], "local_day": date.today().isoformat()},
+                priority=40,
+            )
+
+
+def _ensure_admission_coverage_refresh(task: dict) -> None:
+    """Resume the existing coverage pipeline after branch materialization."""
+    with read_connection() as database:
+        intent = database.execute(
+            "SELECT repertoire_id,line_id,state FROM discovery_admission_intents WHERE id=?",
+            (task["payload"]["intent_id"],),
+        ).fetchone()
+        if not intent or intent["state"] == "queued":
+            return
+        line = database.execute(
+            "SELECT created_at FROM repertoire_lines WHERE id=?", (intent["line_id"],),
+        ).fetchone()
+        if not line:
+            return
+        run = database.execute(
+            """SELECT 1 FROM repertoire_coverage_runs
+               WHERE repertoire_id=? AND created_at>=? LIMIT 1""",
+            (intent["repertoire_id"], line["created_at"]),
+        ).fetchone()
+        lease = database.execute(
+            "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
+        ).fetchone()
+    if run or not lease or lease["generation"] != task["generation"] or lease["lease_token"] != task["lease_token"]:
+        return
+    activity_gate.wait_for_foreground()
+    from .repertoire_coverage import enqueue_coverage_refresh
+
+    enqueue_coverage_refresh(intent["repertoire_id"], automatic=True, background=True)
 
 
 def execute_admission_intent_slice(task: dict) -> bool:
-    """Wait for one published target card, then admit it in one short transaction."""
+    """Materialize one branch or wait for publication, then admit one card."""
+    activity_gate.wait_for_foreground()
+    _materialize_admission_branch(task)
+    _ensure_admission_coverage_refresh(task)
     activity_gate.wait_for_foreground()
     with read_connection() as database:
         intent = database.execute(

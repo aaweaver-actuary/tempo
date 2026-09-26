@@ -18,8 +18,87 @@ test("training startup does not preload unrelated workspace requests", async ({ 
     expect(requestedPaths).not.toContain(unrelatedPath);
 });
 
+test("reopening a saved guided card without input does not record a new failure or show a red X", async ({ page }) => {
+  await prepareVisualUI(page);
+  let failureRequests = 0;
+  await page.route("**/api/queue/entries/*/fail", async (route) => {
+    failureRequests += 1;
+    await route.fulfill({ json: { attempt_failed: true } });
+  });
+  await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: {
+    count: 1,
+    cards: [{
+      id: "resumed-card", queue_entry_id: 1974, start_fen: startFen,
+      moves: ["e2e4", "e7e5", "g1f3"], content_type: "opening",
+      repertoire_name: "Resumed", repertoire_source: "PGN", trained_color: "white",
+      attempt_failed: true,
+    }],
+  } }));
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Resumed" })).toBeVisible();
+  await expect(page.getByText("Guided attempt resumed")).toBeVisible();
+  await expect(page.locator(".outcome-flash.wrong")).toHaveCount(0);
+  expect(failureRequests).toBe(0);
+});
+
+test("intentional training failure is saved once and reload resumes it without another failure", async ({ page }) => {
+  await prepareVisualUI(page);
+  let failureRequests = 0;
+  let savedFailure = false;
+  await page.route("**/api/queue/entries/*/fail", async (route) => {
+    failureRequests += 1;
+    savedFailure = true;
+    await route.fulfill({ json: { attempt_failed: true } });
+  });
+  await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: {
+    count: 1,
+    cards: [{
+      id: "intentional-card", queue_entry_id: 1975, start_fen: startFen,
+      moves: ["e2e4", "e7e5", "g1f3"], content_type: "opening",
+      repertoire_name: "Intentional", repertoire_source: "PGN", trained_color: "white",
+      attempt_failed: savedFailure,
+    }],
+  } }));
+  await page.evaluate(() => localStorage.clear());
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "Intentional" })).toBeVisible();
+  await page.getByRole("button", { name: /Show move/ }).click();
+  await expect.poll(() => failureRequests).toBe(1);
+  await page.reload();
+  await expect(page.getByText("Guided attempt resumed")).toBeVisible();
+  await expect(page.locator(".outcome-flash.wrong")).toHaveCount(0);
+  expect(failureRequests).toBe(1);
+});
+
+test("legacy discovery timeout reopens as an unconfirmed save and retries the same choice", async ({ page }) => {
+  await prepareVisualUI(page);
+  let finishAccept: (() => void) | undefined;
+  let acceptedMove = "";
+  await page.route("**/api/discoveries/legacy-timeout/accept", async (route) => {
+    acceptedMove = (route.request().postDataJSON() as { selected_move_uci: string }).selected_move_uci;
+    await new Promise<void>((resolve) => { finishAccept = resolve; });
+    await route.fulfill({ status: 202, json: { status: "preparing", intent_id: "intent" } });
+  });
+  await page.route("**/api/discovery-admissions/intent", (route) =>
+    route.fulfill({ json: { state: "queued", error: null } }));
+  await page.evaluate(() => localStorage.setItem("tempo-pending-discovery-admissions-v1", JSON.stringify([{
+    opportunityId: "legacy-timeout", selectedMoveUci: "g1f3",
+    evidenceFingerprint: "revision", state: "failed",
+    error: "Discovery save timed out after 15 seconds. Retry save.",
+  }])));
+  await page.reload();
+  await expect(page.getByText(/Discovery save unconfirmed; Tempo will retry/)).toBeVisible();
+  await expect(page.getByText(/Discovery save failed:/)).toHaveCount(0);
+  await expect.poll(() => acceptedMove).toBe("g1f3");
+  finishAccept?.();
+  await expect(page.getByText(/Discovery save unconfirmed; Tempo will retry/)).toHaveCount(0);
+});
+
 test("unavailable repertoire lines do not falsely grade another legal move", async ({ page }) => {
   await prepareVisualUI(page);
+  // Initial service worker activation can reload the page; finish it before injecting the failure.
+  await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
   await page.route("**/api/repertoire/lines", (route) => route.fulfill({ status: 503, json: { detail: "Temporarily unavailable" } }));
   await page.evaluate(() => localStorage.clear());
   await page.reload();

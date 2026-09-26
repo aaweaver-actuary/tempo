@@ -14,11 +14,12 @@
     "build:local": "TEMPO_TARGET=local vite build --config vite.static.config.ts",
     "test": "node scripts/test-all.mjs",
     "test:unit": "vitest run",
-    "test:browser": "playwright test",
+    "test:browser": "node scripts/test-browser.mjs",
     "test:docker": "node scripts/test-docker.mjs",
     "typecheck": "tsc --noEmit --incremental false",
     "preview:static": "vite preview --config vite.static.config.ts --host 127.0.0.1 --port 4173 --strictPort",
     "verify:static": "node scripts/verify-static-build.mjs",
+    "verify:phone-deployment": "node scripts/verify-phone-deployment.mjs",
     "start": "vinext start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern pages-dist --ignore-pattern local-dist --ignore-pattern public/tempo-core --ignore-pattern test-results --ignore-pattern playwright-report",
     "test:visual": "node scripts/test-visual.mjs"

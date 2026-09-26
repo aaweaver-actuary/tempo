@@ -1251,6 +1251,7 @@ def initialize() -> None:
                 "introduced_at": "TEXT",
                 "trained_color": "TEXT",
                 "pending_validation": "INTEGER NOT NULL DEFAULT 0",
+                "prefix_split_rejected_after_review_id": "INTEGER NOT NULL DEFAULT -1",
             },
             "reviews": {
                 "internal_rating": "TEXT NOT NULL DEFAULT 'again'",

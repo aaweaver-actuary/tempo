@@ -15,7 +15,7 @@ services:
       context: .
       dockerfile: Dockerfile.web
     ports:
-      - "4180:80"
+      - "${TEMPO_TEST_PORT:-4180}:80"
     depends_on:
       - api
   analysis-worker:

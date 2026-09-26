@@ -9,7 +9,7 @@ import sqlite3
 import chess
 
 from .cards import card_id
-from .review_service import ensure_card_queued_after
+from .review_service import preserve_daily_queue_order
 
 
 def _trained_color_for_card(database: sqlite3.Connection, card: sqlite3.Row) -> str:
@@ -122,6 +122,59 @@ def _copy_card(
     )
 
 
+def _queue_split_followups(
+    database: sqlite3.Connection,
+    shortened_card_id: str,
+    continuation_card_id: str,
+    today: str,
+) -> None:
+    """Place both split cards after four other queued cards in one queue pass."""
+    followup_ids: list[int] = []
+    for card_id, attempt_state in (
+        (shortened_card_id, "guided"),
+        (continuation_card_id, "guided"),
+    ):
+        queued_entry = database.execute(
+            """SELECT id FROM daily_queue WHERE queue_date=? AND card_id=?
+               AND status='queued' ORDER BY position,id LIMIT 1""",
+            (today, card_id),
+        ).fetchone()
+        if queued_entry is None:
+            cycle = database.execute(
+                "SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue WHERE queue_date=? AND card_id=?",
+                (today, card_id),
+            ).fetchone()[0]
+            database.execute(
+                """INSERT INTO daily_queue(
+                       queue_date,card_id,cycle,position,attempt_state,card_bucket,admission_kind
+                   ) VALUES(?,?,?,?,?,'opening','review')""",
+                (today, card_id, cycle, 2_000_000_000, attempt_state),
+            )
+            queued_entry = database.execute("SELECT last_insert_rowid() AS id").fetchone()
+        followup_ids.append(queued_entry["id"])
+    queued_entries = database.execute(
+        "SELECT id,position FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id",
+        (today,),
+    ).fetchall()
+    unaffected_ids = [entry["id"] for entry in queued_entries if entry["id"] not in followup_ids]
+    insertion_index = min(4, len(unaffected_ids))
+    reordered_ids = (
+        unaffected_ids[:insertion_index]
+        + followup_ids
+        + unaffected_ids[insertion_index:]
+    )
+    current_positions = {entry["id"]: entry["position"] for entry in queued_entries}
+    database.executemany(
+        "UPDATE daily_queue SET position=? WHERE id=?",
+        (
+            (position, entry_id)
+            for position, entry_id in enumerate(reordered_ids)
+            if current_positions[entry_id] != position
+        ),
+    )
+    preserve_daily_queue_order(database, today)
+
+
 def apply_prefix_split(
     database: sqlite3.Connection,
     source_card_id: str,
@@ -146,7 +199,7 @@ def apply_prefix_split(
             idempotent=True,
         )
     if int(source_card["revision"]) != expected_revision:
-        raise RuntimeError("The card changed after this split was previewed")
+        raise RuntimeError("The card changed. Refresh the queue and try again")
 
     now = datetime.now(timezone.utc).isoformat()
     today = date.today().isoformat()
@@ -267,9 +320,7 @@ def apply_prefix_split(
         "UPDATE cards SET archived=1,superseded_by=? WHERE id=?",
         (shortened_card_id, source_card_id),
     )
-    ensure_card_queued_after(
-        database, continuation_card_id, after_cards=4, attempt_state="guided"
-    )
+    _queue_split_followups(database, shortened_card_id, continuation_card_id, today)
     database.execute(
         """INSERT INTO prefix_splits(
                source_card_id,source_revision,shortened_card_id,

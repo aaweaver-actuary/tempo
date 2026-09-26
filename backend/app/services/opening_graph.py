@@ -874,6 +874,9 @@ def publish_opening_graph_rebuild(
     from .repertoire_opportunities import enqueue_opportunity_refresh
 
     enqueue_opportunity_refresh(repertoire_id, background=True)
+    from .repertoire_game_refresh import enqueue_repertoire_game_refresh
+
+    enqueue_repertoire_game_refresh(background=True)
 
 
 def execute_opening_graph_rebuild(task: dict) -> None:

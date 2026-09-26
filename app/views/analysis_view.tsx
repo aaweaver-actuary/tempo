@@ -1,6 +1,8 @@
-import { Button, SelectInput, TextArea } from "../components/ui";
+import { TextArea } from "../components/ui";
+import { SelectInput } from "../components/inputs/SelectInput";
+import { Button } from "../components/buttons/BaseButton";
 import { useTaskTabs } from "../components/task-tabs";
-import { BoardTools } from "../components/board-workspace";
+import { BoardTools } from "../components/board/board-workspace";
 import {
   explorerResponseSchema,
   branchResultSchema,
@@ -98,8 +100,10 @@ function explorerStatusLabel(status: ExplorerSourceResult): string {
   if (status.state === "stale")
     return `Cached · ${status.category?.replaceAll("-", " ") ?? "refresh pending"}${status.status ? ` (HTTP ${status.status})` : ""}`;
   if (status.state === "authentication-required") return "Sign in required";
-  if (status.state === "authentication-failed") return `Reconnect required${status.status ? ` (HTTP ${status.status})` : ""}`;
-  if (status.state === "rate-limited") return `Rate limited${status.status ? ` (HTTP ${status.status})` : ""}`;
+  if (status.state === "authentication-failed")
+    return `Reconnect required${status.status ? ` (HTTP ${status.status})` : ""}`;
+  if (status.state === "rate-limited")
+    return `Rate limited${status.status ? ` (HTTP ${status.status})` : ""}`;
   if (status.state === "offline") return "Offline";
   if (status.state === "network-error") return "Network error";
   if (status.state === "invalid-response") return "Invalid response";
@@ -179,10 +183,17 @@ export default function BuilderView({
   settings: Settings;
   theme: BoardTheme;
   pieceSet: PieceSet;
-  onPasteAnalysis?: (context: { startingFen: string; sourceGapId?: string }) => void;
+  onPasteAnalysis?: (context: {
+    startingFen: string;
+    sourceGapId?: string;
+  }) => void;
   useSharedBoard?: boolean;
 }) {
-  const tools = useTaskTabs(["Moves", "Compare", "Repertoire", "Notes"], "Compare", "tempo-builder-tools");
+  const tools = useTaskTabs(
+    ["Moves", "Compare", "Repertoire", "Notes"],
+    "Compare",
+    "tempo-builder-tools",
+  );
   const initialSession = useMemo(readBuilderSession, []);
   const [history, setHistory] = useState(initialSession?.history ?? []);
   const [cursor, setCursor] = useState(initialSession?.cursor ?? 0);
@@ -213,19 +224,28 @@ export default function BuilderView({
   const [lichessToken, setLichessToken] = useState(() =>
     readLichessSessionToken(),
   );
-  const [explorerAuthenticationRejected, setExplorerAuthenticationRejected] = useState(false);
+  const [explorerAuthenticationRejected, setExplorerAuthenticationRejected] =
+    useState(false);
   const explorerAuthenticationRejectedRef = useRef(false);
   const rejectedExplorerStatusCodeRef = useRef<number | undefined>(undefined);
   const [explorerMoves, setExplorerMoves] = useState<ExplorerMove[]>([]);
   const [mastersMoves, setMastersMoves] = useState<ExplorerMove[]>([]);
-  const [lichessExplorerStatus, setLichessExplorerStatus] = useState<ExplorerSourceResult>(() => ({
-    source: "lichess", state: lichessToken ? "loading" : "authentication-required",
-    moves: [], retryable: false, hasCachedData: false,
-  }));
-  const [mastersExplorerStatus, setMastersExplorerStatus] = useState<ExplorerSourceResult>(() => ({
-    source: "masters", state: lichessToken ? "loading" : "authentication-required",
-    moves: [], retryable: false, hasCachedData: false,
-  }));
+  const [lichessExplorerStatus, setLichessExplorerStatus] =
+    useState<ExplorerSourceResult>(() => ({
+      source: "lichess",
+      state: lichessToken ? "loading" : "authentication-required",
+      moves: [],
+      retryable: false,
+      hasCachedData: false,
+    }));
+  const [mastersExplorerStatus, setMastersExplorerStatus] =
+    useState<ExplorerSourceResult>(() => ({
+      source: "masters",
+      state: lichessToken ? "loading" : "authentication-required",
+      moves: [],
+      retryable: false,
+      hasCachedData: false,
+    }));
   const [explorerSpeeds] = useState(() =>
     getLocalStorageOrDefault(
       "tempo-explorer-speeds",
@@ -271,7 +291,9 @@ export default function BuilderView({
   );
   const [isSearchOpen, setIsSearchOpen] = useState(false);
   const [currentSearchIndex, setCurrentSearchIndex] = useState(0);
-  const [hoveredMove, setHoveredMove] = useState<string | null>(initialSession?.selectedMoveUci ?? null);
+  const [hoveredMove, setHoveredMove] = useState<string | null>(
+    initialSession?.selectedMoveUci ?? null,
+  );
   const [annotation, setAnnotation] = useState<PositionAnnotation>();
   const [annotationStatus, setAnnotationStatus] = useState("");
   const [transpositions, setTranspositions] = useState<TranspositionResult[]>(
@@ -280,13 +302,17 @@ export default function BuilderView({
   const [transpositionState, setTranspositionState] = useState<
     "idle" | "loading" | "ready" | "error"
   >("idle");
-  const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
+  const { setShellBoardForOwner, releaseShellBoardForOwner } =
+    useBoardPublisher();
   const transpositionController = useRef<AbortController | null>(null);
   const [dismissedTranspositions, setDismissedTranspositions] = useState<
     string[]
   >(initialSession?.dismissedTranspositions ?? []);
 
-  const visibleHistory = useMemo(() => history.slice(0, cursor), [history, cursor]);
+  const visibleHistory = useMemo(
+    () => history.slice(0, cursor),
+    [history, cursor],
+  );
   const fen = visibleHistory.at(-1)?.fen ?? startingFen;
   const advanceHistoryOnePly = useCallback(() => {
     const nextMove = history[cursor];
@@ -304,15 +330,25 @@ export default function BuilderView({
       // Saved history has already been checked against legal moves.
     }
   }, [cursor, fen, history]);
-  const navigateHistoryToPly = useCallback((targetPly: number) => {
-    if (targetPly === cursor + 1) advanceHistoryOnePly();
-    else setCursor(targetPly);
-  }, [advanceHistoryOnePly, cursor]);
+  const navigateHistoryToPly = useCallback(
+    (targetPly: number) => {
+      if (targetPly === cursor + 1) advanceHistoryOnePly();
+      else setCursor(targetPly);
+    },
+    [advanceHistoryOnePly, cursor],
+  );
   const previousUci = visibleHistory.at(-1)?.uci;
-  const lastMove = useMemo<[string, string] | undefined>(() => previousUci
-    ? [previousUci.slice(0, 2), previousUci.slice(2, 4)]
-    : undefined, [previousUci]);
-  const playedUci = useMemo(() => visibleHistory.map((move) => move.uci), [visibleHistory]);
+  const lastMove = useMemo<[string, string] | undefined>(
+    () =>
+      previousUci
+        ? [previousUci.slice(0, 2), previousUci.slice(2, 4)]
+        : undefined,
+    [previousUci],
+  );
+  const playedUci = useMemo(
+    () => visibleHistory.map((move) => move.uci),
+    [visibleHistory],
+  );
   const lineTask = useMemo<StudyTask>(() => {
     const browserLines = imported.flatMap((repertoire) =>
       repertoire.cards.map((card) => ({
@@ -340,18 +376,27 @@ export default function BuilderView({
   const selectedRepertoire =
     repertoires.find((item) => item.id === activeRepertoire) ?? repertoires[0];
   const selectedRepertoireId = selectedRepertoire?.id;
-  const lineMatches = useMemo(() => availableLines.filter(
-    (line) =>
-      (!selectedRepertoireId || line.repertoireId === selectedRepertoireId) &&
-      canonicalFenKey(line.startingFen) === canonicalFenKey(startingFen) &&
-      playedUci.every((move, index) => line.moves[index] === move),
-  ), [availableLines, selectedRepertoireId, startingFen, playedUci]);
-  const coveredReplies = useMemo(() => new Set<UciMove>(
-    lineMatches.flatMap((line) => {
-      const uci = line.moves[cursor];
-      return uci ? [uci] : [];
-    }),
-  ), [lineMatches, cursor]);
+  const lineMatches = useMemo(
+    () =>
+      availableLines.filter(
+        (line) =>
+          (!selectedRepertoireId ||
+            line.repertoireId === selectedRepertoireId) &&
+          canonicalFenKey(line.startingFen) === canonicalFenKey(startingFen) &&
+          playedUci.every((move, index) => line.moves[index] === move),
+      ),
+    [availableLines, selectedRepertoireId, startingFen, playedUci],
+  );
+  const coveredReplies = useMemo(
+    () =>
+      new Set<UciMove>(
+        lineMatches.flatMap((line) => {
+          const uci = line.moves[cursor];
+          return uci ? [uci] : [];
+        }),
+      ),
+    [lineMatches, cursor],
+  );
   const indexTask = useMemo<StudyTask>(
     () => ({
       kind: "index",
@@ -526,7 +571,8 @@ export default function BuilderView({
             positions,
           }),
         horizon,
-        analyze: (positionFen) => requestInteractiveMaia(positionFen, Number(maiaElo)),
+        analyze: (positionFen) =>
+          requestInteractiveMaia(positionFen, Number(maiaElo)),
         signal: controller.signal,
       });
       if (!controller.signal.aborted) {
@@ -556,8 +602,22 @@ export default function BuilderView({
       queueMicrotask(() => {
         explorerAuthenticationRejectedRef.current = true;
         setExplorerAuthenticationRejected(true);
-        setLichessExplorerStatus({ source: "lichess", state: "authentication-failed", moves: [], retryable: false, hasCachedData: false, message: "Lichess sign-in could not be verified" });
-        setMastersExplorerStatus({ source: "masters", state: "authentication-failed", moves: [], retryable: false, hasCachedData: false, message: "Lichess sign-in could not be verified" });
+        setLichessExplorerStatus({
+          source: "lichess",
+          state: "authentication-failed",
+          moves: [],
+          retryable: false,
+          hasCachedData: false,
+          message: "Lichess sign-in could not be verified",
+        });
+        setMastersExplorerStatus({
+          source: "masters",
+          state: "authentication-failed",
+          moves: [],
+          retryable: false,
+          hasCachedData: false,
+          message: "Lichess sign-in could not be verified",
+        });
       });
       return;
     }
@@ -580,7 +640,8 @@ export default function BuilderView({
       )
       .then((value) => {
         const data = value as { access_token: string };
-        if (typeof data.access_token !== "string" || !data.access_token) throw new Error("Invalid Lichess token response");
+        if (typeof data.access_token !== "string" || !data.access_token)
+          throw new Error("Invalid Lichess token response");
         saveLichessSessionToken(data.access_token);
         explorerAuthenticationRejectedRef.current = false;
         rejectedExplorerStatusCodeRef.current = undefined;
@@ -591,8 +652,22 @@ export default function BuilderView({
       .catch(() => {
         explorerAuthenticationRejectedRef.current = true;
         setExplorerAuthenticationRejected(true);
-        setLichessExplorerStatus({ source: "lichess", state: "authentication-failed", moves: [], retryable: false, hasCachedData: false, message: "Lichess sign-in failed. Reconnect to retry." });
-        setMastersExplorerStatus({ source: "masters", state: "authentication-failed", moves: [], retryable: false, hasCachedData: false, message: "Lichess sign-in failed. Reconnect to retry." });
+        setLichessExplorerStatus({
+          source: "lichess",
+          state: "authentication-failed",
+          moves: [],
+          retryable: false,
+          hasCachedData: false,
+          message: "Lichess sign-in failed. Reconnect to retry.",
+        });
+        setMastersExplorerStatus({
+          source: "masters",
+          state: "authentication-failed",
+          moves: [],
+          retryable: false,
+          hasCachedData: false,
+          message: "Lichess sign-in failed. Reconnect to retry.",
+        });
       });
   }, []);
 
@@ -660,42 +735,111 @@ export default function BuilderView({
     queueMicrotask(() => {
       if (!active) return;
       if (!explorerOn) {
-        setLichessExplorerStatus({ source: "lichess", state: "off", moves: [], retryable: false, hasCachedData: false });
-        setMastersExplorerStatus({ source: "masters", state: "off", moves: [], retryable: false, hasCachedData: false });
+        setLichessExplorerStatus({
+          source: "lichess",
+          state: "off",
+          moves: [],
+          retryable: false,
+          hasCachedData: false,
+        });
+        setMastersExplorerStatus({
+          source: "masters",
+          state: "off",
+          moves: [],
+          retryable: false,
+          hasCachedData: false,
+        });
         return;
       }
       const cached = readCachedExplorer(fen, explorerSpeeds, explorerRatings);
       if (cached) {
-        const human = cached.human ? explorerResponseSchema.safeParse(cached.human) : undefined;
-        const masters = cached.masters ? explorerResponseSchema.safeParse(cached.masters) : undefined;
-        setExplorerMoves(human?.success ? adaptExplorerMoves(fen, human.data.moves) : []);
-        setMastersMoves(masters?.success ? adaptExplorerMoves(fen, masters.data.moves) : []);
-        setLichessExplorerStatus({ source: "lichess", state: human?.success ? "stale" : "loading", moves: human?.success ? human.data.moves : [], retryable: true, hasCachedData: Boolean(human?.success) });
-        setMastersExplorerStatus({ source: "masters", state: masters?.success ? "stale" : "loading", moves: masters?.success ? masters.data.moves : [], retryable: true, hasCachedData: Boolean(masters?.success) });
+        const human = cached.human
+          ? explorerResponseSchema.safeParse(cached.human)
+          : undefined;
+        const masters = cached.masters
+          ? explorerResponseSchema.safeParse(cached.masters)
+          : undefined;
+        setExplorerMoves(
+          human?.success ? adaptExplorerMoves(fen, human.data.moves) : [],
+        );
+        setMastersMoves(
+          masters?.success ? adaptExplorerMoves(fen, masters.data.moves) : [],
+        );
+        setLichessExplorerStatus({
+          source: "lichess",
+          state: human?.success ? "stale" : "loading",
+          moves: human?.success ? human.data.moves : [],
+          retryable: true,
+          hasCachedData: Boolean(human?.success),
+        });
+        setMastersExplorerStatus({
+          source: "masters",
+          state: masters?.success ? "stale" : "loading",
+          moves: masters?.success ? masters.data.moves : [],
+          retryable: true,
+          hasCachedData: Boolean(masters?.success),
+        });
       } else {
         setExplorerMoves([]);
         setMastersMoves([]);
-        setLichessExplorerStatus({ source: "lichess", state: "loading", moves: [], retryable: false, hasCachedData: false });
-        setMastersExplorerStatus({ source: "masters", state: "loading", moves: [], retryable: false, hasCachedData: false });
+        setLichessExplorerStatus({
+          source: "lichess",
+          state: "loading",
+          moves: [],
+          retryable: false,
+          hasCachedData: false,
+        });
+        setMastersExplorerStatus({
+          source: "masters",
+          state: "loading",
+          moves: [],
+          retryable: false,
+          hasCachedData: false,
+        });
       }
       if (explorerAuthenticationRejectedRef.current) {
-        setLichessExplorerStatus({ source: "lichess", state: cached?.human ? "stale" : "authentication-failed", category: "authentication-failed", status: rejectedExplorerStatusCodeRef.current, moves: [], retryable: false, hasCachedData: Boolean(cached?.human), message: "Reconnect to Lichess to retry" });
-        setMastersExplorerStatus({ source: "masters", state: cached?.masters ? "stale" : "authentication-failed", category: "authentication-failed", status: rejectedExplorerStatusCodeRef.current, moves: [], retryable: false, hasCachedData: Boolean(cached?.masters), message: "Reconnect to Lichess to retry" });
+        setLichessExplorerStatus({
+          source: "lichess",
+          state: cached?.human ? "stale" : "authentication-failed",
+          category: "authentication-failed",
+          status: rejectedExplorerStatusCodeRef.current,
+          moves: [],
+          retryable: false,
+          hasCachedData: Boolean(cached?.human),
+          message: "Reconnect to Lichess to retry",
+        });
+        setMastersExplorerStatus({
+          source: "masters",
+          state: cached?.masters ? "stale" : "authentication-failed",
+          category: "authentication-failed",
+          status: rejectedExplorerStatusCodeRef.current,
+          moves: [],
+          retryable: false,
+          hasCachedData: Boolean(cached?.masters),
+          message: "Reconnect to Lichess to retry",
+        });
         return;
       }
-      loadExplorer(fen, explorerSpeeds, explorerRatings, lichessToken)
-        .then((value) => {
+      loadExplorer(fen, explorerSpeeds, explorerRatings, lichessToken).then(
+        (value) => {
           if (!active) return;
           setExplorerMoves(adaptExplorerMoves(fen, value.lichess.moves));
           setMastersMoves(adaptExplorerMoves(fen, value.masters.moves));
           setLichessExplorerStatus(value.lichess);
           setMastersExplorerStatus(value.masters);
-          if (value.lichess.category === "authentication-failed" || value.masters.category === "authentication-failed") {
+          if (
+            value.lichess.category === "authentication-failed" ||
+            value.masters.category === "authentication-failed"
+          ) {
             explorerAuthenticationRejectedRef.current = true;
-            rejectedExplorerStatusCodeRef.current = value.lichess.category === "authentication-failed" ? value.lichess.status : value.masters.status;
+            rejectedExplorerStatusCodeRef.current =
+              value.lichess.category === "authentication-failed"
+                ? value.lichess.status
+                : value.masters.status;
             setExplorerAuthenticationRejected(true);
           }
-        });
+        },
+      );
     });
     return () => {
       active = false;
@@ -761,27 +905,30 @@ export default function BuilderView({
     };
   }, [fen, maiaElo, maiaOn]);
 
-  const playMove = useCallback((from: Square, to: Square) => {
-    const chess = new Chess(fen);
-    try {
-      const move = chess.move({ from, to, promotion: "q" });
-      setStockfishMoves([]);
-      setExplorerMoves([]);
-      setMastersMoves([]);
-      setMaiaMoves([]);
-      setHoveredMove(null);
-      const uci = asUciMove(`${move.from}${move.to}${move.promotion ?? ""}`);
-      if (!coveredReplies.has(asUciMove(uci)) && branchStart === null)
-        setBranchStart(cursor);
-      setHistory((current) => [
-        ...current.slice(0, cursor),
-        { san: asSanMove(move.san), uci, fen: asFenString(chess.fen()) },
-      ]);
-      setCursor((value) => value + 1);
-    } catch {
-      /* Chessground only offers legal destinations. */
-    }
-  }, [fen, coveredReplies, branchStart, cursor]);
+  const playMove = useCallback(
+    (from: Square, to: Square) => {
+      const chess = new Chess(fen);
+      try {
+        const move = chess.move({ from, to, promotion: "q" });
+        setStockfishMoves([]);
+        setExplorerMoves([]);
+        setMastersMoves([]);
+        setMaiaMoves([]);
+        setHoveredMove(null);
+        const uci = asUciMove(`${move.from}${move.to}${move.promotion ?? ""}`);
+        if (!coveredReplies.has(asUciMove(uci)) && branchStart === null)
+          setBranchStart(cursor);
+        setHistory((current) => [
+          ...current.slice(0, cursor),
+          { san: asSanMove(move.san), uci, fen: asFenString(chess.fen()) },
+        ]);
+        setCursor((value) => value + 1);
+      } catch {
+        /* Chessground only offers legal destinations. */
+      }
+    },
+    [fen, coveredReplies, branchStart, cursor],
+  );
 
   function playUci(uci: string) {
     playMove(uci.slice(0, 2) as Square, uci.slice(2, 4) as Square);
@@ -818,7 +965,11 @@ export default function BuilderView({
         );
         invalidateWorkspaceData();
         if (result.integrity?.status === "needs_repair") {
-          window.dispatchEvent(new CustomEvent("tempo:integrity", { detail: { repertoireId: selectedRepertoire.id } }));
+          window.dispatchEvent(
+            new CustomEvent("tempo:integrity", {
+              detail: { repertoireId: selectedRepertoire.id },
+            }),
+          );
         }
         setBackendLines((current) => [
           ...current.filter((line) => line.id !== result.id),
@@ -897,7 +1048,11 @@ export default function BuilderView({
       );
       invalidateWorkspaceData();
       if (result.integrity?.status === "needs_repair") {
-        window.dispatchEvent(new CustomEvent("tempo:integrity", { detail: { repertoireId: selectedRepertoire.id } }));
+        window.dispatchEvent(
+          new CustomEvent("tempo:integrity", {
+            detail: { repertoireId: selectedRepertoire.id },
+          }),
+        );
       }
       await refreshBackendLines();
       if (result.deleted_line_count > 0) {
@@ -1101,10 +1256,19 @@ export default function BuilderView({
       <div className="analysis-heading compact-analysis">
         <h1>Builder</h1>
         <div className="analysis-switches">
-          {onPasteAnalysis && <Button className="analysis-paste-trigger" onClick={() => onPasteAnalysis({
-            startingFen: initialSession?.sourceGapId ? startingFen : fen,
-            sourceGapId: initialSession?.sourceGapId,
-          })}>Paste analysis</Button>}
+          {onPasteAnalysis && (
+            <Button
+              className="analysis-paste-trigger"
+              onClick={() =>
+                onPasteAnalysis({
+                  startingFen: initialSession?.sourceGapId ? startingFen : fen,
+                  sourceGapId: initialSession?.sourceGapId,
+                })
+              }
+            >
+              Paste analysis
+            </Button>
+          )}
           <SelectInput
             aria-label="Active repertoire"
             value={selectedRepertoire?.id ?? ""}
@@ -1148,9 +1312,11 @@ export default function BuilderView({
               </option>
             ))}
           </SelectInput>
-          {!useSharedBoard && <Button title="Flip board (F)" onClick={flipBuilder}>
-            ⇅ {orientation === "white" ? "White" : "Black"}
-          </Button>}
+          {!useSharedBoard && (
+            <Button title="Flip board (F)" onClick={flipBuilder}>
+              ⇅ {orientation === "white" ? "White" : "Black"}
+            </Button>
+          )}
           <Button
             className={isStockfishOn ? "on" : ""}
             onClick={() =>
@@ -1345,7 +1511,11 @@ export default function BuilderView({
           </div>
         </div>
         <aside className="analysis-sidebar">
-          <section className="analysis-panel comparison-panel" data-task="Compare" data-turn-context={trainedTurn ? "trained-player" : "opponent"}>
+          <section
+            className="analysis-panel comparison-panel"
+            data-task="Compare"
+            data-turn-context={trainedTurn ? "trained-player" : "opponent"}
+          >
             <div className="comparison-toolbar">
               <h2 className="sr-only">Compare moves</h2>
               <Button
@@ -1361,7 +1531,10 @@ export default function BuilderView({
                 {explorerOn ? "Pause databases" : "Enable databases"}
               </Button>
               {(!lichessToken || explorerAuthenticationRejected) && (
-                <Button className="comparison-connect" onClick={() => void connectLichess()}>
+                <Button
+                  className="comparison-connect"
+                  onClick={() => void connectLichess()}
+                >
                   {lichessToken ? "Reconnect Lichess" : "Connect Lichess"}
                 </Button>
               )}
@@ -1375,7 +1548,14 @@ export default function BuilderView({
               )}
             </div>
             <p className="source-status" role="status">
-              Stockfish: {stockfishState} · Maia: {maiaState} · Lichess: {explorerOn ? explorerStatusLabel(lichessExplorerStatus) : "Paused"} · Masters: {explorerOn ? explorerStatusLabel(mastersExplorerStatus) : "Paused"}
+              Stockfish: {stockfishState} · Maia: {maiaState} · Lichess:{" "}
+              {explorerOn
+                ? explorerStatusLabel(lichessExplorerStatus)
+                : "Paused"}{" "}
+              · Masters:{" "}
+              {explorerOn
+                ? explorerStatusLabel(mastersExplorerStatus)
+                : "Paused"}
             </p>
             <p className="panel-message">
               {trainedTurn
@@ -1417,7 +1597,10 @@ export default function BuilderView({
                 )}
               </section>
             )}
-            <section className="analysis-panel repertoire-panel" data-task="Repertoire">
+            <section
+              className="analysis-panel repertoire-panel"
+              data-task="Repertoire"
+            >
               <div className="panel-heading">
                 <div>
                   <span>Active repertoire</span>
@@ -1440,7 +1623,10 @@ export default function BuilderView({
                 </p>
               )}
             </section>
-            <section className="analysis-panel coverage-panel" data-task="Repertoire">
+            <section
+              className="analysis-panel coverage-panel"
+              data-task="Repertoire"
+            >
               <div className="panel-heading">
                 <div>
                   <span>Coverage</span>
@@ -1469,7 +1655,10 @@ export default function BuilderView({
                 </div>
               </div>
             </section>
-            <section className="analysis-panel annotation-panel" data-task="Notes">
+            <section
+              className="analysis-panel annotation-panel"
+              data-task="Notes"
+            >
               <div className="panel-heading">
                 <div>
                   <span>Position note</span>
@@ -1515,7 +1704,10 @@ export default function BuilderView({
                 </Button>
               </div>
             </section>
-            <section className="analysis-panel similarity-panel" data-task="Repertoire">
+            <section
+              className="analysis-panel similarity-panel"
+              data-task="Repertoire"
+            >
               <div className="panel-heading">
                 <div>
                   <span>Consistency</span>
@@ -1555,7 +1747,10 @@ export default function BuilderView({
                 </p>
               )}
             </section>
-            <section className="analysis-panel transposition-panel" data-task="Repertoire">
+            <section
+              className="analysis-panel transposition-panel"
+              data-task="Repertoire"
+            >
               <div className="panel-heading">
                 <div>
                   <span>Maia paths</span>
@@ -1601,7 +1796,8 @@ export default function BuilderView({
               ))}
             </section>
             <Button
-              className="analysis-panel repertoire-results position-preview" data-task="Repertoire"
+              className="analysis-panel repertoire-results position-preview"
+              data-task="Repertoire"
               onClick={() => {
                 setCurrentSearchIndex(0);
                 setIsSearchOpen(true);
@@ -1626,7 +1822,10 @@ export default function BuilderView({
                 </span>
               ))}
             </Button>
-            <section className="analysis-panel engine-panel" data-task="Compare">
+            <section
+              className="analysis-panel engine-panel"
+              data-task="Compare"
+            >
               <div className="panel-heading">
                 <div>
                   <span>Stockfish 19</span>
@@ -1652,7 +1851,10 @@ export default function BuilderView({
                 />
               )}
             </section>
-            <section className="analysis-panel engine-panel" data-task="Compare">
+            <section
+              className="analysis-panel engine-panel"
+              data-task="Compare"
+            >
               <div className="panel-heading">
                 <div>
                   <span>Maia 3</span>

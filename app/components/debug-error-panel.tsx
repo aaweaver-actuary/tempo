@@ -1,4 +1,5 @@
-import { Button, TextArea } from "./ui";
+import { TextArea } from "./ui";
+import { Button } from "./buttons/BaseButton";
 import { useState, useSyncExternalStore } from "react";
 import {
   buildDebugBundle,
@@ -8,7 +9,11 @@ import {
   type DebugErrorRecord,
 } from "../lib/debug-reporting";
 
-export function DebugErrorPanel({ boundaryFallback = false }: { boundaryFallback?: boolean }) {
+export function DebugErrorPanel({
+  boundaryFallback = false,
+}: {
+  boundaryFallback?: boolean;
+}) {
   const errors = useSyncExternalStore(
     subscribeDebugErrors,
     debugErrors,
@@ -17,14 +22,22 @@ export function DebugErrorPanel({ boundaryFallback = false }: { boundaryFallback
   const latest = errors[errors.length - 1];
   const [dismissedId, setDismissedId] = useState<string>();
   const [copyRecordId, setCopyRecordId] = useState<string>();
-  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
+  const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(
+    "idle",
+  );
 
   if (!latest && !boundaryFallback) return null;
   if (!latest || latest.id === dismissedId) {
     return boundaryFallback ? (
-      <section className="tempo-debug-panel tempo-debug-panel-boundary" role="alert">
+      <section
+        className="tempo-debug-panel tempo-debug-panel-boundary"
+        role="alert"
+      >
         <strong>Tempo encountered an unexpected error.</strong>
-        <p>Reload the page and try again. If it repeats, use the debug information after the error is captured.</p>
+        <p>
+          Reload the page and try again. If it repeats, use the debug
+          information after the error is captured.
+        </p>
       </section>
     ) : null;
   }
@@ -38,7 +51,9 @@ export function DebugErrorPanel({ boundaryFallback = false }: { boundaryFallback
     >
       <div className="tempo-debug-heading">
         <strong>Tempo encountered an error</strong>
-        <span>{latest.context.source} · {latest.kind}</span>
+        <span>
+          {latest.context.source} · {latest.kind}
+        </span>
       </div>
       <p>{latest.message}</p>
       <div className="tempo-debug-actions">
@@ -51,12 +66,19 @@ export function DebugErrorPanel({ boundaryFallback = false }: { boundaryFallback
             });
           }}
         >
-          {copyRecordId === latest.id && copyState === "copied" ? "Copied debug info" : "Copy debug info"}
+          {copyRecordId === latest.id && copyState === "copied"
+            ? "Copied debug info"
+            : "Copy debug info"}
         </Button>
-        <Button type="button" onClick={() => setDismissedId(latest.id)}>Dismiss</Button>
+        <Button type="button" onClick={() => setDismissedId(latest.id)}>
+          Dismiss
+        </Button>
       </div>
       {copyRecordId === latest.id && copyState === "failed" && (
-        <p className="tempo-debug-copy-help">Clipboard access was unavailable. Select the debug information below and copy it manually.</p>
+        <p className="tempo-debug-copy-help">
+          Clipboard access was unavailable. Select the debug information below
+          and copy it manually.
+        </p>
       )}
       <details>
         <summary>Preview debug information</summary>

@@ -1,5 +1,5 @@
-import { Button } from "../components/ui";
-import { BoardTools } from "../components/board-workspace";
+import { Button } from "../components/buttons/BaseButton";
+import { BoardTools } from "../components/board/board-workspace";
 import { Chess, Square, Move } from "chess.js";
 import {
   useState,
@@ -8,7 +8,7 @@ import {
   useLayoutEffect,
   useCallback,
 } from "react";
-import { OutcomeFlash } from "../components/board-controls";
+import { OutcomeFlash } from "../components/board/OutcomeFlash";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
 import { API_URL, STANDARD_FEN } from "../const";
@@ -18,7 +18,10 @@ import {
   advanceTacticProgress,
   writeTacticProgress,
 } from "../lib/tactics-progress";
-import { TacticalCatalogPanel, type MotifRecommendation } from "../components/tactical-catalog";
+import {
+  TacticalCatalogPanel,
+  type MotifRecommendation,
+} from "../components/tactical-catalog";
 import {
   loadTacticalCatalog,
   setPackActivation,
@@ -33,7 +36,10 @@ import {
   readWorkspaceData,
   invalidateWorkspaceData,
 } from "../lib/workspace-data";
-import { motifRecommendationsSchema, tacticProgressSchema } from "../domain/schemas";
+import {
+  motifRecommendationsSchema,
+  tacticProgressSchema,
+} from "../domain/schemas";
 import { reportDebugError } from "../lib/debug-reporting";
 import { useTaskTabs } from "../components/task-tabs";
 
@@ -97,7 +103,9 @@ export default function TacticsView({
   const [catalogError, setCatalogError] = useState("");
   const [activationError, setActivationError] = useState("");
   const [activationBusy, setActivationBusy] = useState(false);
-  const [recommendations, setRecommendations] = useState<MotifRecommendation[]>([]);
+  const [recommendations, setRecommendations] = useState<MotifRecommendation[]>(
+    [],
+  );
   const tools = useTaskTabs(["Solve", "Packs"], "Solve", "tempo-tactics-tools");
   const [progress, setProgress] = useState(readTacticProgress);
   const [progressReady, setProgressReady] = useState(() => !usesLocalApi());
@@ -168,7 +176,12 @@ export default function TacticsView({
           source: "tactics-view",
           operation: "load tactics catalog",
         });
-        if (active) setCatalogError(error instanceof Error ? error.message : "Could not load tactics catalog.");
+        if (active)
+          setCatalogError(
+            error instanceof Error
+              ? error.message
+              : "Could not load tactics catalog.",
+          );
       });
     return () => {
       active = false;
@@ -180,11 +193,13 @@ export default function TacticsView({
     void readWorkspaceData(
       `${API_URL}/api/game-insights/motifs`,
       motifRecommendationsSchema,
-    ).then((payload) => {
-      if (active) setRecommendations(payload.recommendations);
-    }).catch(() => {
-      if (active) setRecommendations([]);
-    });
+    )
+      .then((payload) => {
+        if (active) setRecommendations(payload.recommendations);
+      })
+      .catch(() => {
+        if (active) setRecommendations([]);
+      });
     return () => {
       active = false;
     };
@@ -528,7 +543,9 @@ export default function TacticsView({
   if (!selectedPuzzle)
     return (
       <section className="library-page" aria-live="polite">
-        <p>This pack is complete. Select another pack to continue practicing.</p>
+        <p>
+          This pack is complete. Select another pack to continue practicing.
+        </p>
         <TacticalCatalogPanel
           catalog={catalog}
           progress={progress}
@@ -542,7 +559,8 @@ export default function TacticsView({
               (pack) => pack.id === recommendation.recommended_pack_id,
             );
             if (!suggestedPack) return;
-            if (!suggestedPack.active) void activatePacks([suggestedPack.id], true);
+            if (!suggestedPack.active)
+              void activatePacks([suggestedPack.id], true);
             selectPack(suggestedPack);
           }}
         />

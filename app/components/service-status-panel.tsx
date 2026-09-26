@@ -1,5 +1,5 @@
 "use client";
-import { Button } from "./ui";
+import { Button } from "./buttons/BaseButton";
 
 import { Fragment, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { API_URL } from "../const";

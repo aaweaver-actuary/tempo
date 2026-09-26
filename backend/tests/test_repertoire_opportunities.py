@@ -18,11 +18,14 @@ from app.services.repertoire_opportunities import (
     refresh_node_opportunities, refresh_post_gap_opportunity,
     _calculate_recurring_decisions,
 )
-from app.services.durable_tasks import claim_task, complete_task, enqueue_task
+from app.services.durable_tasks import (
+    claim_task, complete_task, enqueue_task, enqueue_task_in_transaction,
+)
 from app.services.database_executor import database_writer
 from app.services import discovery_admission, repertoire_opportunities, threat_pipeline
 from app.services.discovery_admission import (
-    execute_admission_intent_slice, execute_recommendation_request_slice,
+    create_admission_intent, execute_admission_intent_slice,
+    execute_recommendation_request_slice,
     recommend_missing_continuations,
 )
 from app.services.threat_pipeline import _request_from_json
@@ -274,12 +277,20 @@ def test_discovery_prefix_split_isolates_target_without_transferring_reviews(tmp
 
 def test_discovery_accepted_engine_branch_survives_publication_restart(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    # This test drives the durable admission slice itself; an embedded worker
+    # racing that manual claim would materialize the line before the assertion.
+    monkeypatch.setenv("TEMPO_COORDINATOR_MODE", "external")
     monkeypatch.setattr("app.main.enqueue_opening_graph_rebuild", lambda *args, **kwargs: None)
     monkeypatch.setattr("app.main.enqueue_integrity_scans", lambda *args, **kwargs: None)
     monkeypatch.setattr("app.main.enqueue_coverage_refresh", lambda *args, **kwargs: None)
     database.initialize()
     with database.connection() as db:
         root_key, target_key = _seed_decision_route(db)
+        db.execute(
+            """INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
+               SELECT 'line-copy',repertoire_id,'Second line',trained_color,start_fen,moves_json,created_at
+               FROM repertoire_lines WHERE id='line'"""
+        )
         _seed_decision_game(db, 1, root_key, target_key)
         db.execute("UPDATE imported_games SET analysis_state='ready',analysis_version=1 WHERE id='game-1'")
         board = chess.Board()
@@ -324,7 +335,10 @@ def test_discovery_accepted_engine_branch_survives_publication_restart(tmp_path,
         assert full_history_request.position_prefix_uci == ("e2e4", "e7e5")
         report = AnalysisReport(full_history_request, (
             AnalysisLine("g1f3", ("g1f3", "b8c6"), EngineScore(cp=20), 14),
+            AnalysisLine("f1c4", ("f1c4", "g8f6"), EngineScore(cp=15), 14),
             AnalysisLine("b1c3", ("b1c3", "g8f6"), EngineScore(cp=10), 14),
+            AnalysisLine("d2d4", ("d2d4", "e5d4"), EngineScore(cp=5), 14),
+            AnalysisLine("f2f4", ("f2f4", "e5f4"), EngineScore(cp=0), 14),
         ), True)
         wrong_history = asdict(report)
         wrong_history["request"]["position_prefix_uci"] = ["d2d4"]
@@ -343,17 +357,46 @@ def test_discovery_accepted_engine_branch_survives_publication_restart(tmp_path,
     assert recommendation["accepted_moves_uci"] == ["g1f3"]
     assert recommendation["candidates"][0]["move_uci"] == "g1f3"
     assert recommendation["candidates"][0]["similarity"] == "exact transposition"
+    assert recommendation["candidates"][0]["repertoire_line_count"] == 2
+    assert recommendation["candidates"][0]["exact_transposition"] is True
+    assert len(recommendation["candidates"]) == 5
+    assert recommendation["suggested_move_uci"] == "g1f3"
+    assert recommendation["suggestion_reason"] == "exact transposition"
+    from app import main as main_module
+    def branch_must_not_run_in_accept(_request):
+        raise AssertionError("discovery accept must not publish a branch synchronously")
+    monkeypatch.setattr(main_module, "branch", branch_must_not_run_in_accept)
     with TestClient(app) as client:
         accepted = client.post(f"/api/discoveries/{opportunity_id}/accept", json={
             "selected_move_uci": "b1c3", "evidence_fingerprint": fingerprint,
         })
         assert accepted.status_code == 202, accepted.text
         intent_id = accepted.json()["intent_id"]
+        replayed = client.post(f"/api/discoveries/{opportunity_id}/accept", json={
+            "selected_move_uci": "b1c3", "evidence_fingerprint": fingerprint,
+        })
+        assert replayed.status_code == 202, replayed.text
+        assert replayed.json()["intent_id"] == intent_id
+        assert client.get(f"/api/discovery-admissions/{intent_id}").json()["state"] == "preparing"
     with database.connection() as db:
         intent = db.execute("SELECT * FROM discovery_admission_intents WHERE id=?", (intent_id,)).fetchone()
         assert intent["state"] == "preparing"
         saved_line = db.execute("SELECT moves_json FROM repertoire_lines WHERE id=?", (intent["line_id"],)).fetchone()
+        assert saved_line is None
+        first_task = db.execute(
+            "SELECT * FROM background_tasks WHERE kind='discovery_admission' AND deduplication_key=?",
+            (intent_id,),
+        ).fetchone()
+        db.execute("UPDATE background_tasks SET state='leased',lease_token='first-lease' WHERE id=?", (first_task["id"],))
+        first_work = {**dict(first_task), "lease_token": "first-lease", "payload": json.loads(first_task["payload_json"])}
+    assert execute_admission_intent_slice(first_work) is True
+    with database.connection() as db:
+        saved_line = db.execute("SELECT moves_json FROM repertoire_lines WHERE id=?", (intent["line_id"],)).fetchone()
         assert saved_line and json.loads(saved_line["moves_json"]) == ["b1c3", "g8f6"]
+        assert db.execute(
+            "SELECT 1 FROM repertoire_coverage_runs WHERE repertoire_id='rep' AND created_at>=?",
+            (intent["created_at"],),
+        ).fetchone()
         from app.services.cards import card_id
         target_card_id = card_id(position_fen, ["b1c3"])
         db.execute(
@@ -384,10 +427,174 @@ def test_discovery_accepted_engine_branch_survives_publication_restart(tmp_path,
         db.execute("UPDATE background_tasks SET state='leased',lease_token='lease' WHERE id=?", (task["id"],))
         work = {**dict(task), "lease_token": "lease", "payload": json.loads(task["payload_json"])}
     assert execute_admission_intent_slice(work) is False
+    with TestClient(app) as client:
+        assert client.get(f"/api/discovery-admissions/{intent_id}").json() == {
+            "state": "queued", "error": None,
+        }
     with database.connection() as db:
         assert db.execute("SELECT state FROM discovery_admission_intents WHERE id=?", (intent_id,)).fetchone()[0] == "queued"
         assert db.execute("SELECT admission_kind FROM daily_queue WHERE card_id=?", (target_card_id,)).fetchone()[0] == "explicit"
         assert db.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 0
+
+
+def test_discovery_admission_replay_promotes_stalled_save_ahead_of_recurring_refresh(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    created_at = datetime.now(timezone.utc).isoformat()
+    with database.connection() as db:
+        _seed_decision_route(db)
+        db.execute(
+            """INSERT INTO repertoire_opportunities(
+                 id,repertoire_id,kind,fen_key,score,evidence_json,evidence_fingerprint,
+                 created_at,updated_at)
+               VALUES('opportunity','rep','missing_response','position',1,'{}','fingerprint',?,?)""",
+            (created_at, created_at),
+        )
+        db.execute(
+            """INSERT INTO discovery_admission_intents(
+                 id,opportunity_id,repertoire_id,evidence_fingerprint,starting_fen,
+                 selected_move_uci,preview_moves_json,recommendation_json,line_id,created_at,updated_at)
+               VALUES('intent','opportunity','rep','fingerprint',?,'e2e4','["e2e4"]',
+                      '{}','new-line',?,?)""",
+            (chess.STARTING_FEN, created_at, created_at),
+        )
+        enqueue_task_in_transaction(db, "repertoire_game_refresh", "all", {}, priority=90)
+        enqueue_task_in_transaction(
+            db, "discovery_admission", "intent", {"intent_id": "intent"}, priority=125,
+        )
+    replayed = create_admission_intent("opportunity", "e2e4", "fingerprint")
+    assert replayed["id"] == "intent"
+    with database.read_connection() as db:
+        task = db.execute(
+            "SELECT priority FROM background_tasks WHERE kind='discovery_admission' AND deduplication_key='intent'"
+        ).fetchone()
+        assert task["priority"] == 80
+    database_writer.start()
+    try:
+        claimed = claim_task()
+    finally:
+        database_writer.stop()
+    assert claimed["kind"] == "discovery_admission"
+    assert claimed["deduplication_key"] == "intent"
+
+
+def test_discovery_familiar_default_prefers_quality_within_one_hundred_cp():
+    rank = discovery_admission._rank_candidates
+    candidates = [
+        {"move_uci": "a2a3", "loss_cp": 0, "familiar": False},
+        {"move_uci": "f3e5", "loss_cp": 100, "familiar": True},
+        {"move_uci": "d1e2", "loss_cp": 35, "familiar": True},
+        {"move_uci": "f2f4", "loss_cp": 101, "familiar": True},
+        {"move_uci": "b1c3", "loss_cp": 31, "familiar": False},
+        {"move_uci": "h2h3", "loss_cp": 30, "familiar": False},
+    ]
+    assert [item["move_uci"] for item in rank(candidates)] == ["d1e2", "f3e5", "a2a3", "h2h3"]
+    assert rank([{"move_uci": "a2a3", "loss_cp": 31, "familiar": False}]) == []
+
+
+def test_discovery_branch_materialization_keeps_foreground_free_and_replays_once(tmp_path, monkeypatch, request):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    database_writer.start()
+    request.addfinalizer(database_writer.stop)
+    with database.connection() as db:
+        _, target_key = _seed_decision_route(db)
+        now = datetime.now(timezone.utc).isoformat()
+        db.execute(
+            """INSERT INTO repertoire_opportunities(
+                 id,repertoire_id,kind,fen_key,status,score,evidence_json,evidence_fingerprint,
+                 created_at,updated_at) VALUES('gap','rep','missing_response',?,'active',1,'{}','revision',?,?)""",
+            (target_key, now, now),
+        )
+        db.execute(
+            """INSERT INTO discovery_admission_intents(
+                 id,opportunity_id,repertoire_id,evidence_fingerprint,starting_fen,
+                 selected_move_uci,preview_moves_json,recommendation_json,line_id,created_at,updated_at)
+               VALUES('intent','gap','rep','revision',?,'b1c3','["b1c3"]','{}','new-line',?,?)""",
+            (chess.STARTING_FEN, now, now),
+        )
+    discovery_admission.enqueue_admission_intent("intent")
+    task = claim_task("discovery_admission")
+    assert task is not None
+    entered = threading.Event()
+    release = threading.Event()
+    original_push = chess.Board.push_uci
+
+    def paused_push(board, move_uci):
+        if move_uci == "b1c3" and threading.current_thread().name != "MainThread":
+            entered.set()
+            assert release.wait(timeout=5)
+        return original_push(board, move_uci)
+
+    monkeypatch.setattr(chess.Board, "push_uci", paused_push)
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        result = executor.submit(execute_admission_intent_slice, task)
+        try:
+            assert entered.wait(timeout=5)
+            started = time.monotonic()
+            with database.connection() as db:
+                db.execute("UPDATE settings SET initial_depth=initial_depth WHERE id=1")
+            with database.read_connection() as db:
+                assert db.execute("SELECT state FROM discovery_admission_intents WHERE id='intent'").fetchone()[0] == "preparing"
+            assert time.monotonic() - started < 1
+        finally:
+            release.set()
+        assert result.result(timeout=5) is True
+    with database.read_connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM repertoire_lines WHERE id='new-line'").fetchone()[0] == 1
+        graph_task = db.execute(
+            "SELECT generation FROM background_tasks WHERE kind='opening_graph_rebuild' AND deduplication_key='rep'",
+        ).fetchone()
+        assert graph_task is not None
+    assert execute_admission_intent_slice(task) is True
+    with database.read_connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM repertoire_lines WHERE id='new-line'").fetchone()[0] == 1
+        assert db.execute(
+            "SELECT generation FROM background_tasks WHERE kind='opening_graph_rebuild' AND deduplication_key='rep'",
+        ).fetchone()[0] == graph_task["generation"]
+
+
+def test_discovery_same_move_recognizes_comparable_repertoire_position():
+    examples, _ = discovery_admission._repertoire_positions([{
+        "id": "line", "name": "Opening", "start_fen": chess.STARTING_FEN,
+        "moves_json": json.dumps(["e2e4", "e7e5", "g1f3"]),
+    }], "white")
+    board = chess.Board()
+    board.push_uci("e2e4")
+    board.push_uci("h7h6")
+    matched = discovery_admission._comparable_move_example(examples, board, "white", "g1f3")
+    assert matched and matched["line_id"] == "line"
+    assert discovery_admission._comparable_move_example(examples, board, "white", "d2d4") is None
+    board.push_uci("d2d4")
+    board.push_uci("h6h5")
+    assert discovery_admission._comparable_move_example(examples, board, "white", "g1f3") is None
+
+
+def test_discovery_admission_status_reports_terminal_failure(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as db:
+        _, target_key = _seed_decision_route(db)
+        repertoire_opportunities._publish(db, repertoire_id="rep", kind="post_gap_weakness",
+                                          fen_key=target_key, target="e7e5", card_id=None,
+                                          opponent_move_uci="e7e5", score=1,
+                                          evidence={"supporting_games": 1})
+        opportunity_id = list_opportunities(db, "rep")[0]["id"]
+        now = datetime.now(timezone.utc).isoformat()
+        db.execute("""INSERT INTO discovery_admission_intents(
+                   id,opportunity_id,repertoire_id,evidence_fingerprint,starting_fen,
+                   selected_move_uci,preview_moves_json,recommendation_json,line_id,created_at,updated_at)
+                   VALUES('intent',?,'rep','fingerprint',?,'g1f3','["g1f3"]','{}','line',?,?)""",
+                   (opportunity_id, chess.STARTING_FEN, now, now))
+        db.execute("""INSERT INTO background_tasks(
+                   id,kind,deduplication_key,state,last_error,next_attempt_at,created_at,updated_at)
+                   VALUES('task','discovery_admission','intent','failed','publication stopped',?,?,?)""",
+                   (now, now, now))
+    with TestClient(app) as client:
+        result = client.get("/api/discovery-admissions/intent")
+        assert result.status_code == 200
+        assert result.json() == {"state": "failed", "error": "publication stopped"}
+        assert client.get("/api/discovery-admissions/missing").status_code == 404
 
 
 def test_discoveries_feed_paginates_beyond_first_hundred_per_repertoire(tmp_path, monkeypatch):

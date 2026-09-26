@@ -13,7 +13,7 @@ export default defineConfig({
   css: { postcss: { plugins: [tailwindcss()] } },
   plugins: [react()],
   build: {
-    outDir: process.env.TEMPO_TARGET === "local" ? "../local-dist" : "../pages-dist",
+    outDir: process.env.TEMPO_BROWSER_BUILD_DIR ?? (process.env.TEMPO_TARGET === "local" ? "../local-dist" : "../pages-dist"),
     emptyOutDir: true,
     sourcemap: true,
   },

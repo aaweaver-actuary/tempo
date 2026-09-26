@@ -541,10 +541,19 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
 .tempo-discovery-board .board-viewport { width: min(100%, 58vh, 560px); }
 .tempo-discovery-board > p { width: 100%; margin: 0; line-height: 1.4; }
 .tempo-discovery-actions { width: 100%; }
+.tempo-discovery-move-navigation { display: flex; align-items: center; justify-content: center; gap: 0.75rem; width: 100%; }
+.tempo-discovery-move-navigation span { min-width: 7rem; text-align: center; }
+.tempo-discovery-save-alert { position: fixed; z-index: 1100; right: 1rem; bottom: 1rem; max-width: min(26rem, calc(100vw - 2rem)); padding: 0.75rem; border: 2px solid var(--rust); border-radius: 8px; background: var(--paper); box-shadow: 0 0.5rem 1.5rem rgb(0 0 0 / 20%); }
+.tempo-discovery-save-alert p { margin: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
 .tempo-discovery-actions button:first-child { background: var(--sage); color: var(--green-dark); font-weight: 700; }
 .tempo-discovery-detail { min-width: 0; display: flex; flex-direction: column; gap: 0.65rem; overflow: auto; }
 .tempo-discovery-detail p { margin: 0; line-height: 1.45; }
 .tempo-discovery-summary { font-weight: 600; }
+.tempo-discovery-candidate-comparison { border: 1px solid var(--line); border-radius: 8px; padding: 0.75rem; }
+.tempo-discovery-candidate-comparison h3 { margin: 0 0 0.35rem; font-size: 1rem; }
+.tempo-discovery-candidate-comparison ul { list-style: none; padding: 0; margin: 0.65rem 0 0; display: grid; gap: 0.45rem; }
+.tempo-discovery-candidate-comparison li { display: flex; align-items: center; flex-wrap: wrap; gap: 0.3rem 0.65rem; padding: 0.4rem 0; border-top: 1px solid var(--line); }
+.tempo-discovery-candidate-comparison li span { font-size: 0.85rem; }
 .tempo-discovery-detail .move-comparison-scroll { min-height: 12rem; max-height: min(44vh, 27rem); overflow: auto; }
 .tempo-discovery-detail .move-comparison-scroll tr[aria-selected="true"] { background: color-mix(in srgb, var(--sage) 65%, transparent); }
 .tempo-discovery-evidence { border-top: 1px solid var(--line); padding-top: 0.65rem; }

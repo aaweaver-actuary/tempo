@@ -1,4 +1,5 @@
-import { Button, DataTable } from "./ui";
+import { DataTable } from "./ui";
+import { Button } from "./buttons/BaseButton";
 import { useState } from "react";
 import type { CandidateMove } from "../domain";
 
@@ -57,10 +58,14 @@ export function MoveComparisonTable({
   engineLossCp?: Record<string, number | null>;
   selectedMove?: string | null;
 }) {
-  const visibleColumns = mode === "discovery"
-    ? columns.filter((column) => column !== "Maia").flatMap((column) =>
-        column === "Stockfish" ? [column, "From best" as Column] : [column])
-    : columns;
+  const visibleColumns =
+    mode === "discovery"
+      ? columns
+          .filter((column) => column !== "Maia")
+          .flatMap((column) =>
+            column === "Stockfish" ? [column, "From best" as Column] : [column],
+          )
+      : columns;
   const [sort, setSort] = useState<{
     column: Column;
     direction: "ascending" | "descending";
@@ -243,13 +248,21 @@ export function MoveComparisonTable({
                         ? (engineMove.cp / 100).toFixed(2)
                         : "—")}
                 </td>
-                {mode === "discovery" && <td>{engineLossCp[move.uci] === null || engineLossCp[move.uci] === undefined
-                  ? "—" : `${engineLossCp[move.uci]} cp`}</td>}
-                {mode === "builder" && <td>
-                  {maiaMove?.probability !== undefined
-                    ? `${Math.round(maiaMove.probability * 100)}%`
-                    : "—"}
-                </td>}
+                {mode === "discovery" && (
+                  <td>
+                    {engineLossCp[move.uci] === null ||
+                    engineLossCp[move.uci] === undefined
+                      ? "—"
+                      : `${engineLossCp[move.uci]} cp`}
+                  </td>
+                )}
+                {mode === "builder" && (
+                  <td>
+                    {maiaMove?.probability !== undefined
+                      ? `${Math.round(maiaMove.probability * 100)}%`
+                      : "—"}
+                  </td>
+                )}
                 <td>{databaseCell("Lichess", move)}</td>
                 <td>{databaseCell("Masters", move)}</td>
               </tr>

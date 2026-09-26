@@ -1,5 +1,5 @@
-import { Button } from "../components/ui";
-import { teachingResponseSchema } from "../domain/schemas";
+import { Button } from "../components/buttons/BaseButton";
+import { prefixSplitResponseSchema, teachingResponseSchema } from "../domain/schemas";
 import {
   readJsonResponse,
   readStoredValue,
@@ -20,8 +20,17 @@ import {
 } from "../lib/workspace-data";
 import { runStudyTask } from "../lib/background-study";
 import { ImportDialogBox } from "../ImportDialogBox";
-import { AnalysisPasteDialog, type AnalysisPasteContext } from "../AnalysisPasteDialog";
-import { cancelMoveSounds, moveSoundEnabled, playChessMoveSound, playMoveSound, prepareMoveSounds } from "../lib/move-sound";
+import {
+  AnalysisPasteDialog,
+  type AnalysisPasteContext,
+} from "../AnalysisPasteDialog";
+import {
+  cancelMoveSounds,
+  moveSoundEnabled,
+  playChessMoveSound,
+  playMoveSound,
+  prepareMoveSounds,
+} from "../lib/move-sound";
 import { bundledRepertoires, demoCards } from "../samples";
 import {
   View,
@@ -59,14 +68,20 @@ import {
 } from "../state/training-store";
 import Footer from "../components/Footer";
 import Navbar from "../components/Navbar";
-import { BoardWorkspace } from "../components/board-workspace";
+import { BoardWorkspace } from "../components/board/board-workspace";
 import BrandButton from "../components/buttons/BrandButton";
 import SoundToggleButton from "../components/buttons/SoundToggleButton";
 import SavedLocallyButton from "../components/buttons/SavedLocallyButton";
 import DemoBanner from "../components/DemoBanner";
 import TrainingView from "./training_view";
-import { fetchAndInitializeQueue } from "./fetchAndInitializeQueue";
-import { enqueuePendingReview, flushPendingReviews, pendingReviews } from "../lib/review-outbox";
+import { fetchAndInitializeQueue, invalidateTrainingQueueCache } from "./fetchAndInitializeQueue";
+import {
+  enqueuePendingReview,
+  flushPendingReviews,
+  pendingReviews,
+} from "../lib/review-outbox";
+import { markOfflineAttemptFailed, recordOfflineAttempt } from "../lib/offline-training";
+import { enqueueTrainingFailure, flushTrainingFailures } from "../lib/training-failure-outbox";
 import { Settings } from "../utils/settings";
 import { TreeBrowser } from "./tree_browser";
 import { useShallow } from "zustand/react/shallow";
@@ -75,7 +90,10 @@ import { RepertoireIntegrityDialog } from "../components/repertoire-integrity-di
 import { repertoiresResponseSchema } from "../domain/schemas";
 import { DebugErrorPanel } from "../components/debug-error-panel";
 import { ServiceStatusPanel } from "../components/service-status-panel";
-import { DiscoveriesTray, type DiscoveryItem } from "../components/discoveries-tray";
+import {
+  DiscoveriesTray,
+  type DiscoveryItem,
+} from "../components/discoveries-tray";
 import { setActiveDebugWorkspace } from "../lib/debug-reporting";
 
 export default function Home() {
@@ -88,7 +106,8 @@ export default function Home() {
       if (Date.now() - lastSentAt < 1_000) return;
       lastSentAt = Date.now();
       void fetch(`${API_URL}/api/system/browser-activity`, {
-        method: "POST", headers: { "X-Tempo-Work-Class": "background" },
+        method: "POST",
+        headers: { "X-Tempo-Work-Class": "background" },
       }).catch(() => undefined);
     };
     window.addEventListener("pointerdown", markActivity, true);
@@ -99,21 +118,45 @@ export default function Home() {
     };
   }, []);
   const [currentView, setCurrentView] = useState<View>("train");
-  const [discoveryReturn, setDiscoveryReturn] = useState<{ view: View; id: string }>();
-  const [discoveryOpenRequest, setDiscoveryOpenRequest] = useState<{ id: string; token: number }>();
+  const [discoveryReturn, setDiscoveryReturn] = useState<{
+    view: View;
+    id: string;
+  }>();
+  const [discoveryOpenRequest, setDiscoveryOpenRequest] = useState<{
+    id: string;
+    token: number;
+  }>();
   const [safeBreakCounter, setSafeBreakCounter] = useState(0);
   const [repairRepertoireId, setRepairRepertoireId] = useState<string>();
-  const [pasteContext, setPasteContext] = useState<AnalysisPasteContext | null>(null);
+  const [pasteContext, setPasteContext] = useState<AnalysisPasteContext | null>(
+    null,
+  );
   const [pasteRevision, setPasteRevision] = useState(0);
-  const [pausedIntegrity, setPausedIntegrity] = useState<{ id: string; issueCount: number; blockedDue: number }>();
+  const [pausedIntegrity, setPausedIntegrity] = useState<{
+    id: string;
+    issueCount: number;
+    blockedDue: number;
+  }>();
   const deferredRepairIds = useRef(new Set<string>());
   const [insightsTab, setInsightsTab] = useState<"training" | "games">(
     "training",
   );
   const [gamesFenFilter, setGamesFenFilter] = useState("");
+  const [gamesRepertoireFilter, setGamesRepertoireFilter] = useState("");
   const [reviewPersistenceState, setReviewPersistenceState] = useState<
-    "idle" | "saving" | "saveFailed" | "saved" | "refreshingQueue" | "queueFailed"
+    | "idle"
+    | "saving"
+    | "saveFailed"
+    | "saved"
+    | "refreshingQueue"
+    | "queueFailed"
   >("idle");
+  const [offlineUpdateReady, setOfflineUpdateReady] = useState(false);
+  useEffect(() => {
+    const showUpdate = () => setOfflineUpdateReady(true);
+    window.addEventListener("tempo:update-ready", showUpdate);
+    return () => window.removeEventListener("tempo:update-ready", showUpdate);
+  }, []);
   const changeWorkspace = useCallback((view: View) => {
     const finished = measureTempoOperation("view-switch");
     setRepairRepertoireId((currentRepairId) => {
@@ -154,6 +197,7 @@ export default function Home() {
     pieceSet,
     soundOn,
     databaseQueue,
+    offlineQueue,
     serviceError,
     reviewSaveError,
   } = useTrainingStore(useShallow(selectHomeViewState));
@@ -215,29 +259,50 @@ export default function Home() {
       const response = await fetch(`${API_URL}/api/repertoires`);
       const data = await response.json();
       const parsed = repertoiresResponseSchema.parse(data);
-      const candidate = parsed.repertoires.find((item) =>
-        item.integrity_status === "needs_repair" &&
-        !deferredRepairIds.current.has(item.id),
+      const candidate = parsed.repertoires.find(
+        (item) =>
+          item.integrity_status === "needs_repair" &&
+          !deferredRepairIds.current.has(item.id),
       );
-      const preferredCandidate = preferred ? parsed.repertoires.find((item) => item.id === preferred && item.integrity_status === "needs_repair") : undefined;
+      const preferredCandidate = preferred
+        ? parsed.repertoires.find(
+            (item) =>
+              item.id === preferred && item.integrity_status === "needs_repair",
+          )
+        : undefined;
       setRepairRepertoireId(preferredCandidate?.id);
       const paused = preferredCandidate ?? candidate;
-      const repairItems = parsed.repertoires.filter((item) => item.integrity_status === "needs_repair");
-      setPausedIntegrity(paused ? {
-        id: paused.id,
-        issueCount: repairItems.reduce((total, item) => total + (item.integrity_issue_count ?? 0), 0),
-        blockedDue: repairItems.reduce((total, item) => total + (item.blocked_due_count ?? 0), 0),
-      } : undefined);
+      const repairItems = parsed.repertoires.filter(
+        (item) => item.integrity_status === "needs_repair",
+      );
+      setPausedIntegrity(
+        paused
+          ? {
+              id: paused.id,
+              issueCount: repairItems.reduce(
+                (total, item) => total + (item.integrity_issue_count ?? 0),
+                0,
+              ),
+              blockedDue: repairItems.reduce(
+                (total, item) => total + (item.blocked_due_count ?? 0),
+                0,
+              ),
+            }
+          : undefined,
+      );
     } catch {
       // The normal workspace refresh path reports the service error.
     }
   }, []);
 
-  const refreshDatabaseQueue = useCallback(async (advance = false) => {
-    invalidateWorkspaceData();
-    await fetchAndInitializeQueue(advance);
-    await checkPendingIntegrity();
-  }, [checkPendingIntegrity]);
+  const refreshDatabaseQueue = useCallback(
+    async (advance = false) => {
+      invalidateWorkspaceData();
+      await fetchAndInitializeQueue(advance);
+      await checkPendingIntegrity();
+    },
+    [checkPendingIntegrity],
+  );
   const refreshQueueOnly = useCallback(async () => {
     invalidateWorkspaceData();
     await fetchAndInitializeQueue(false);
@@ -264,7 +329,24 @@ export default function Home() {
   }, [currentView, refreshDatabaseQueue]);
 
   useEffect(() => {
-    const timer = window.setTimeout(() => void preloadView("tactics").catch(() => undefined), 100);
+    if (!offlineQueue || currentView !== "train") return;
+    const retryWhenVisible = () => {
+      if (document.visibilityState === "visible")
+        void refreshDatabaseQueue().catch(() => undefined);
+    };
+    window.addEventListener("online", retryWhenVisible);
+    document.addEventListener("visibilitychange", retryWhenVisible);
+    return () => {
+      window.removeEventListener("online", retryWhenVisible);
+      document.removeEventListener("visibilitychange", retryWhenVisible);
+    };
+  }, [currentView, offlineQueue, refreshDatabaseQueue]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(
+      () => void preloadView("tactics").catch(() => undefined),
+      100,
+    );
     return () => window.clearTimeout(timer);
   }, []);
 
@@ -290,22 +372,17 @@ export default function Home() {
         .catch((failure) => {
           if (!active) return;
           branchPositions.current = null;
-          setBranchIndexLoadError(failure instanceof Error ? failure.message : "Could not load repertoire lines.");
+          setBranchIndexLoadError(
+            failure instanceof Error
+              ? failure.message
+              : "Could not load repertoire lines.",
+          );
         });
-      return () => { active = false; };
+      return () => {
+        active = false;
+      };
     }
   }, [currentView, branchIndexRetry]);
-  useEffect(() => {
-    if (!usesLocalApi() || card.kind === "defense" || !attemptFailed || !card.queueEntryId) return;
-    void fetch(`${API_URL}/api/queue/entries/${card.queueEntryId}/fail`, {
-      method: "POST",
-    }).catch(() =>
-      setQueueNotice(
-        "Could not save guided-attempt state. Keep this page open and retry.",
-      ),
-    );
-  }, [attemptFailed, card.kind, card.queueEntryId, setQueueNotice]);
-
   useEffect(() => {
     const timer = window.setTimeout(() => {
       const params = new URLSearchParams(window.location.search);
@@ -324,11 +401,13 @@ export default function Home() {
         setImportedRepertoires([]);
         setSeenMoves(
           new Set(
-            (readStoredValue(
-              localStorage,
-              "tempo-seen-moves",
-              z.array(z.string()),
-            ) ?? []).map(asTeachingMoveKey),
+            (
+              readStoredValue(
+                localStorage,
+                "tempo-seen-moves",
+                z.array(z.string()),
+              ) ?? []
+            ).map(asTeachingMoveKey),
           ),
         );
         setBoardTheme(
@@ -357,11 +436,13 @@ export default function Home() {
       setReviewed(Number(localStorage.getItem("tempo-reviewed") ?? 0));
       setSeenMoves(
         new Set(
-          (readStoredValue(
-            localStorage,
-            "tempo-seen-moves",
-            z.array(z.string()),
-          ) ?? []).map(asTeachingMoveKey),
+          (
+            readStoredValue(
+              localStorage,
+              "tempo-seen-moves",
+              z.array(z.string()),
+            ) ?? []
+          ).map(asTeachingMoveKey),
         ),
       );
       setFirstCleanPasses(
@@ -540,20 +621,49 @@ export default function Home() {
     resetTrainingLine(nextCard);
   }
 
+  function persistExplicitAttemptFailure() {
+    if (!usesLocalApi() || card.kind === "defense" || !card.queueEntryId) return;
+    if (offlineQueue) {
+      void markOfflineAttemptFailed(card.queueEntryId)
+        .then(() => setQueueNotice("Guided attempt saved on phone."))
+        .catch((error) => setQueueNotice(`The phone could not save the guided attempt. ${String(error)}`));
+      return;
+    }
+    try {
+      enqueueTrainingFailure(card.queueEntryId);
+      void flushTrainingFailures().catch((error) =>
+        setQueueNotice(`Could not save guided-attempt state. Tempo will retry. ${String(error)}`));
+    } catch (error) {
+      setQueueNotice(`Could not save guided-attempt state in this browser. Keep this page open. ${String(error)}`);
+    }
+  }
+
   async function buryCurrentCard() {
+    if (offlineQueue) throw new Error("Burying needs the computer. Continue reviewing or reconnect.");
     if (databaseQueue) {
-      if (!card.queueEntryId) throw new Error("The active queue entry is unavailable. Refresh the queue.");
-      const response = await fetch(`${API_URL}/api/queue/entries/${card.queueEntryId}/bury`, { method: "POST" });
+      if (!card.queueEntryId)
+        throw new Error(
+          "The active queue entry is unavailable. Refresh the queue.",
+        );
+      const response = await fetch(
+        `${API_URL}/api/queue/entries/${card.queueEntryId}/bury`,
+        { method: "POST" },
+      );
       if (!response.ok) {
-        const detail = await response.json().catch(() => ({})) as { detail?: string };
-        throw new Error(detail.detail ?? `Local service returned HTTP ${response.status}.`);
+        const detail = (await response.json().catch(() => ({}))) as {
+          detail?: string;
+        };
+        throw new Error(
+          detail.detail ?? `Local service returned HTTP ${response.status}.`,
+        );
       }
       await refreshDatabaseQueue(true);
       setSafeBreakCounter((count) => count + 1);
       return;
     }
     const remainingQueue = buryQueuedCard(dailyQueue, activeCardIndex);
-    if (remainingQueue === dailyQueue) throw new Error("There are no other cards to move this card behind.");
+    if (remainingQueue === dailyQueue)
+      throw new Error("There are no other cards to move this card behind.");
     setDailyQueue(remainingQueue);
     setActiveCardIndex(remainingQueue[0] ?? 0);
     setCardsLeft(remainingQueue.length);
@@ -583,7 +693,8 @@ export default function Home() {
       setShowHint(true);
       setAttemptFailed(true);
       setFailureFen(currentFenString);
-      setQueueNotice("Again recorded · replay the guided move");
+      setQueueNotice(offlineQueue ? "Again · saving guided attempt on phone..." : "Again recorded · replay the guided move");
+      persistExplicitAttemptFailure();
       return;
     }
     if (!move) return;
@@ -595,22 +706,25 @@ export default function Home() {
       return;
     }
     if (move.san !== card.moves[step]) {
-      if (usesLocalApi() && branchPositions.current === null) {
+      if (usesLocalApi() && !offlineQueue && branchPositions.current === null) {
         setBoardAttempt((value) => value + 1);
-        setQueueNotice("Cannot verify another repertoire move until lines load. Retry loading lines, then try again.");
+        setQueueNotice(
+          "Cannot verify another repertoire move until lines load. Retry loading lines, then try again.",
+        );
         return;
       }
-      const alternateBranch = usesLocalApi()
-        ? branchPositions.current!.some(
+      const alternateBranch = usesLocalApi() && branchPositions.current
+        ? branchPositions.current.some(
             (other) =>
               other.repertoireId === card.repertoireId &&
               canonicalFenKey(other.fen) ===
                 canonicalFenKey(currentFenString) &&
               other.nextUci === `${move.from}${move.to}${move.promotion ?? ""}`,
           )
-        : demoCards.some(
+        : (usesLocalApi() ? practiceCards : demoCards).some(
             (other) =>
               other.id !== card.id &&
+              (!usesLocalApi() || ("repertoireId" in other && other.repertoireId === card.repertoireId)) &&
               other.startingFen === card.startingFen &&
               other.moves
                 .slice(0, step)
@@ -631,7 +745,8 @@ export default function Home() {
       setShowHint(true);
       setAttemptFailed(true);
       setFailureFen(currentFenString);
-      setQueueNotice("Again recorded · replay this move, then finish the line");
+      setQueueNotice(offlineQueue ? "Again · saving guided attempt on phone..." : "Again recorded · replay this move, then finish the line");
+      persistExplicitAttemptFailure();
       return;
     }
     markMoveSeen(step);
@@ -705,27 +820,58 @@ export default function Home() {
   ) {
     const entryKey = String(card.queueEntryId ?? card.id);
     if (reviewPendingEntries.current.has(entryKey) || cardsLeft === 0) return;
-    const pendingBeforeReview = databaseQueue ? pendingReviews() : [];
+    const pendingBeforeReview = databaseQueue && !offlineQueue ? pendingReviews() : [];
     reviewPendingEntries.current.add(entryKey);
     const transitionGeneration = ++reviewTransitionGeneration.current;
     const { recordedAtCompletion = false, retryPending = false } = options;
     clearTimeout(completionTimer.current);
-    const retryNeedsAdvance = retryPending &&
+    const retryNeedsAdvance =
+      retryPending &&
       pendingBeforeReview[0]?.queueEntryId === card.queueEntryId;
     setReviewPersistenceState("saving");
     setReviewSaveError("");
     if (!retryPending) setAttemptPhase("feedbackPause");
+    if (offlineQueue && card.queueEntryId) {
+      try {
+        const saved = await recordOfflineAttempt(
+          card.queueEntryId, outcome,
+          attemptFailed || useTrainingStore.getState().assistedThisAttempt,
+        );
+        const availableCards = saved.cards.filter((queuedCard) => queuedCard.content_type !== "defense");
+        const nextCards = await runStudyTask<typeof practiceCards>({
+          kind: "queue", payload: {
+            cards: availableCards, count: availableCards.length, local_date: saved.localDate,
+          },
+        });
+        useTrainingStore.getState().hydrateLocalQueue(nextCards, true, nextCards.length);
+        setReviewed((count) => count + 1);
+        setReviewPersistenceState("idle");
+        setQueueNotice(`Saved on phone · ${saved.attempts.filter((attempt) => !attempt.serverReviewId && !attempt.conflict).length} review(s) waiting to sync.`);
+        setSafeBreakCounter((count) => count + 1);
+      } catch (error) {
+        setReviewPersistenceState("saveFailed");
+        setReviewSaveError(`The phone could not save this review. ${String(error)}`);
+      } finally {
+        reviewPendingEntries.current.delete(entryKey);
+      }
+      return;
+    }
     if (databaseQueue && card.backendId) {
       let advancedFromCache = false;
       try {
         if (!retryPending) {
-          if (!card.queueEntryId) throw new Error("The active queue entry is unavailable. Refresh the queue.");
+          if (!card.queueEntryId)
+            throw new Error(
+              "The active queue entry is unavailable. Refresh the queue.",
+            );
           if (!recordedAtCompletion) {
             enqueuePendingReview({
               backendId: card.backendId,
               queueEntryId: card.queueEntryId,
               outcome,
-              guided: attemptFailed || useTrainingStore.getState().assistedThisAttempt,
+              guided:
+                attemptFailed ||
+                useTrainingStore.getState().assistedThisAttempt,
             });
           }
           advancedFromCache = useTrainingStore.getState().advanceCachedQueue();
@@ -736,10 +882,15 @@ export default function Home() {
           setReviewPersistenceState("saved");
         setQueueNotice("");
         reviewPendingEntries.current.delete(entryKey);
-        if (transitionGeneration === reviewTransitionGeneration.current &&
-            !advancedFromCache && (!retryPending || retryNeedsAdvance))
+        if (
+          transitionGeneration === reviewTransitionGeneration.current &&
+          !advancedFromCache &&
+          (!retryPending || retryNeedsAdvance)
+        )
           setReviewPersistenceState("refreshingQueue");
-        void refreshDatabaseQueue(!advancedFromCache && (!retryPending || retryNeedsAdvance))
+        void refreshDatabaseQueue(
+          !advancedFromCache && (!retryPending || retryNeedsAdvance),
+        )
           .then(() => {
             if (transitionGeneration === reviewTransitionGeneration.current)
               setReviewPersistenceState("idle");
@@ -760,7 +911,8 @@ export default function Home() {
             : "The local database could not save this result. Please retry.",
         );
         setQueueNotice("");
-        if (!advancedFromCache && !retryPending) setAttemptPhase("feedbackPause");
+        if (!advancedFromCache && !retryPending)
+          setAttemptPhase("feedbackPause");
         return;
       }
     }
@@ -812,26 +964,34 @@ export default function Home() {
     setAttemptPhase("feedbackPause");
     setFeedback("complete");
     const token = useTrainingStore.getState().attempt;
-    const outcome = useTrainingStore.getState().isAttemptFailed ? "again" : "correct";
+    const outcome = useTrainingStore.getState().isAttemptFailed
+      ? "again"
+      : "correct";
     let reviewRecordedAtCompletion = false;
-    if (databaseQueue && card.backendId && card.queueEntryId) {
+    if (databaseQueue && !offlineQueue && card.backendId && card.queueEntryId) {
       try {
         enqueuePendingReview({
           backendId: card.backendId,
           queueEntryId: card.queueEntryId,
           outcome,
-          guided: useTrainingStore.getState().isAttemptFailed || useTrainingStore.getState().assistedThisAttempt,
+          guided:
+            useTrainingStore.getState().isAttemptFailed ||
+            useTrainingStore.getState().assistedThisAttempt,
         });
         reviewRecordedAtCompletion = true;
       } catch (error) {
         setReviewPersistenceState("saveFailed");
-        setReviewSaveError(`The completed result could not be stored locally. ${String(error)}`);
+        setReviewSaveError(
+          `The completed result could not be stored locally. ${String(error)}`,
+        );
       }
     }
     clearTimeout(completionTimer.current);
     completionTimer.current = setTimeout(() => {
       if (isCurrentAttempt(useTrainingStore.getState().attempt, token))
-        void rateCard(outcome, { recordedAtCompletion: reviewRecordedAtCompletion });
+        void rateCard(outcome, {
+          recordedAtCompletion: reviewRecordedAtCompletion,
+        });
     }, 750);
   }
 
@@ -844,7 +1004,9 @@ export default function Home() {
   );
 
   function markMoveSeen(moveStep: number) {
-    const key = asTeachingMoveKey(`${card.backendId ?? card.id}:${card.revision ?? 1}:${moveStep}`);
+    const key = asTeachingMoveKey(
+      `${card.backendId ?? card.id}:${card.revision ?? 1}:${moveStep}`,
+    );
     setSeenMoves((current) => {
       const next = new Set(current).add(key);
       localStorage.setItem(
@@ -855,8 +1017,12 @@ export default function Home() {
     });
   }
 
-  const currentMoveKey = asTeachingMoveKey(`${card.backendId ?? card.id}:${card.revision ?? 1}:${step}`);
-  const teachingCardKey = asTeachingCardKey(`${card.backendId ?? card.id}:${card.revision ?? 1}`);
+  const currentMoveKey = asTeachingMoveKey(
+    `${card.backendId ?? card.id}:${card.revision ?? 1}:${step}`,
+  );
+  const teachingCardKey = asTeachingCardKey(
+    `${card.backendId ?? card.id}:${card.revision ?? 1}`,
+  );
   useEffect(() => {
     let active = true;
     if (!card.backendId || card.kind !== "opening") {
@@ -880,9 +1046,10 @@ export default function Home() {
               [...current]
                 .filter((key) => !key.startsWith(`${card.backendId}:`))
                 .concat(
-                  states.map(
-                    (state) =>
-                      asTeachingMoveKey(`${card.backendId}:${state.revision}:${state.ply}`),
+                  states.map((state) =>
+                    asTeachingMoveKey(
+                      `${card.backendId}:${state.revision}:${state.ply}`,
+                    ),
                   ),
                 ),
             ),
@@ -999,21 +1166,26 @@ export default function Home() {
       setAttemptFailed(true);
       setQueueNotice("Again recorded · finish with guidance");
     }
+    setFeedback("wrong");
     setShowHint(true);
     setFailureFen(currentFenString);
+    persistExplicitAttemptFailure();
   }
 
   function resetCardAttempt() {
     resetLine();
     setAttemptFailed(true);
+    setFeedback("wrong");
     setShowHint(true);
     setFailureFen(card.startingFen);
     setQueueNotice("Again recorded · restarted in guided mode");
+    persistExplicitAttemptFailure();
   }
 
   function openReviewPosition(target: "analysis" | "builder" | "games") {
     if (target === "games") {
       setGamesFenFilter(canonicalFenKey(currentFenString));
+      setGamesRepertoireFilter("");
       changeWorkspace("games");
       return;
     }
@@ -1039,19 +1211,31 @@ export default function Home() {
     changeWorkspace("builder");
   }
 
-  function openDiscoveryInBuilder(discovery: DiscoveryItem, selectedMove: string | null) {
+  function openDiscoveryInBuilder(
+    discovery: DiscoveryItem,
+    selectedMove: string | null,
+  ) {
     const positionFen = discovery.decision_fen ?? discovery.fen;
     const routeStartFen = discovery.decision_start_fen ?? positionFen;
     const routeBoard = new Chess(routeStartFen);
     const routeHistory: BuilderSession["history"] = [];
     try {
       for (const moveUci of discovery.decision_route_uci ?? []) {
-        const played = routeBoard.move({ from: moveUci.slice(0, 2), to: moveUci.slice(2, 4),
-          promotion: moveUci[4] });
-        routeHistory.push({ san: asSanMove(played.san), uci: asUciMove(moveUci),
-          fen: asFenString(routeBoard.fen()) });
+        const played = routeBoard.move({
+          from: moveUci.slice(0, 2),
+          to: moveUci.slice(2, 4),
+          promotion: moveUci[4],
+        });
+        routeHistory.push({
+          san: asSanMove(played.san),
+          uci: asUciMove(moveUci),
+          fen: asFenString(routeBoard.fen()),
+        });
       }
-      if (canonicalFenKey(routeBoard.fen()) !== canonicalFenKey(new Chess(positionFen).fen()))
+      if (
+        canonicalFenKey(routeBoard.fen()) !==
+        canonicalFenKey(new Chess(positionFen).fen())
+      )
         throw new Error("Route does not reach the decision");
     } catch {
       routeHistory.length = 0;
@@ -1062,8 +1246,12 @@ export default function Home() {
       activeRepertoireByColor: { [discovery.trained_color]: repertoireId },
       activeRepertoireId: repertoireId,
       orientation: discovery.trained_color,
-      startingFen: asFenString(routeHistory.length ? routeStartFen : positionFen),
-      history: routeHistory, cursor: routeHistory.length, branchStart: routeHistory.length,
+      startingFen: asFenString(
+        routeHistory.length ? routeStartFen : positionFen,
+      ),
+      history: routeHistory,
+      cursor: routeHistory.length,
+      branchStart: routeHistory.length,
       selectedMoveUci: selectedMove ? asUciMove(selectedMove) : undefined,
     };
     localStorage.setItem("tempo-builder-session", JSON.stringify(session));
@@ -1083,31 +1271,100 @@ export default function Home() {
           <SoundToggleButton soundOn={soundOn} changeSound={changeSound} />
           <SavedLocallyButton setShowImport={setShowImport} />
           <ServiceStatusPanel />
-          <DiscoveriesTray safeToOpen={!(["train", "tactics", "endgames", "builder"] as View[]).includes(currentView)}
-            interactionBlocked={Boolean(editorCard || showImport || pasteContext || repairRepertoireId)}
-            safeBreakCounter={safeBreakCounter} onOpenRepertoire={() => changeWorkspace("repertoire")}
-            onOpenBuilder={openDiscoveryInBuilder} boardTheme={boardTheme} pieceSet={pieceSet}
-            openRequest={discoveryOpenRequest} onQueueChanged={() => refreshDatabaseQueue()} />
+          <DiscoveriesTray
+            safeToOpen={
+              !(["train", "tactics", "endgames", "builder"] as View[]).includes(
+                currentView,
+              )
+            }
+            interactionBlocked={Boolean(
+              editorCard || showImport || pasteContext || repairRepertoireId,
+            )}
+            safeBreakCounter={safeBreakCounter}
+            onOpenRepertoire={() => changeWorkspace("repertoire")}
+            onOpenBuilder={openDiscoveryInBuilder}
+            boardTheme={boardTheme}
+            pieceSet={pieceSet}
+            openRequest={discoveryOpenRequest}
+            onQueueChanged={() => refreshDatabaseQueue()}
+          />
         </div>
       </header>
       {!usesLocalApi() && <DemoBanner />}
+      {offlineUpdateReady && (
+        <div className="ui-notice" role="status">
+          Tempo update ready. Finish this attempt, then close and reopen Tempo while connected.
+          Reviews saved on this phone will remain available to sync.
+        </div>
+      )}
       <WorkspaceRefreshStatus />
-      {currentView === "builder" && discoveryReturn && <div className="discovery-builder-return" role="status">
-        <span>Investigating a discovery in Builder.</span>
-        <Button onClick={() => {
-          changeWorkspace(discoveryReturn.view);
-          setDiscoveryOpenRequest((previous) => ({ id: discoveryReturn.id, token: (previous?.token ?? 0) + 1 }));
-          setDiscoveryReturn(undefined);
-        }}>Return to discovery</Button>
-        <Button onClick={() => { changeWorkspace(discoveryReturn.view); setDiscoveryReturn(undefined); }}>Back to work</Button>
-      </div>}
-      <DebugErrorPanel />
+      {currentView === "builder" && discoveryReturn && (
+        <div className="discovery-builder-return" role="status">
+          <span>Investigating a discovery in Builder.</span>
+          <Button
+            onClick={() => {
+              changeWorkspace(discoveryReturn.view);
+              setDiscoveryOpenRequest((previous) => ({
+                id: discoveryReturn.id,
+                token: (previous?.token ?? 0) + 1,
+              }));
+              setDiscoveryReturn(undefined);
+            }}
+          >
+            Return to discovery
+          </Button>
+          <Button
+            onClick={() => {
+              changeWorkspace(discoveryReturn.view);
+              setDiscoveryReturn(undefined);
+            }}
+          >
+            Back to work
+          </Button>
+        </div>
+      )}
+      {!(offlineQueue && currentView === "train") && <DebugErrorPanel />}
 
       <BoardWorkspaceContainer enabled={boardWorkspace} view={currentView}>
-      {currentView === "train" && (
-        <>
-            {branchIndexLoadError && <div className="ui-notice error" role="alert"><span>Repertoire lines unavailable: {branchIndexLoadError}</span><Button onClick={() => { setBranchIndexLoadError(""); setBranchIndexRetry((attempt) => attempt + 1); }}>Retry loading lines</Button></div>}
-            {pausedIntegrity && <div className="integrity-train-notice" role="status"><strong>{pausedIntegrity.blockedDue} opening card{pausedIntegrity.blockedDue === 1 ? "" : "s"} paused by repertoire repair.</strong><span>Unaffected openings and tactics remain available · {pausedIntegrity.issueCount} issue{pausedIntegrity.issueCount === 1 ? "" : "s"} remaining.</span><Button onClick={() => { deferredRepairIds.current.delete(pausedIntegrity.id); setRepairRepertoireId(pausedIntegrity.id); }}>Resume repair</Button></div>}
+        {currentView === "train" && (
+          <>
+            {branchIndexLoadError && (
+              <div className="ui-notice error" role="alert">
+                <span>
+                  Repertoire lines unavailable: {branchIndexLoadError}
+                </span>
+                <Button
+                  onClick={() => {
+                    setBranchIndexLoadError("");
+                    setBranchIndexRetry((attempt) => attempt + 1);
+                  }}
+                >
+                  Retry loading lines
+                </Button>
+              </div>
+            )}
+            {pausedIntegrity && (
+              <div className="integrity-train-notice" role="status">
+                <strong>
+                  {pausedIntegrity.blockedDue} opening card
+                  {pausedIntegrity.blockedDue === 1 ? "" : "s"} paused by
+                  repertoire repair.
+                </strong>
+                <span>
+                  Unaffected openings and tactics remain available ·{" "}
+                  {pausedIntegrity.issueCount} issue
+                  {pausedIntegrity.issueCount === 1 ? "" : "s"} remaining.
+                </span>
+                <Button
+                  onClick={() => {
+                    deferredRepairIds.current.delete(pausedIntegrity.id);
+                    setRepairRepertoireId(pausedIntegrity.id);
+                  }}
+                >
+                  Resume repair
+                </Button>
+              </div>
+            )}
             <TrainingView
               dateLabel={new Date().toLocaleDateString()}
               serviceError={serviceError}
@@ -1125,7 +1382,9 @@ export default function Home() {
               }}
               reviewPersistenceState={reviewPersistenceState}
               reviewSaveError={reviewSaveError}
-              retryReviewSave={() => void rateCard("correct", { retryPending: true })}
+              retryReviewSave={() =>
+                void rateCard("correct", { retryPending: true })
+              }
               retryQueueAfterReview={() => {
                 setReviewPersistenceState("refreshingQueue");
                 void refreshDatabaseQueue(true)
@@ -1135,96 +1394,158 @@ export default function Home() {
               handleAttemptFailure={handleAttemptFailure}
               resetCardAttempt={resetCardAttempt}
               setEditorCard={setEditorCard}
+              onAcceptPrefixSplit={async (prefixCard) => {
+                if (!prefixCard.backendId)
+                  throw new Error("The card is missing its local database ID. Refresh the queue.");
+                if (pendingReviews().length) await flushPendingReviews();
+                const response = await fetch(
+                  `${API_URL}/api/cards/${prefixCard.backendId}/prefix-split`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ expected_revision: prefixCard.revision ?? 1 }),
+                  },
+                );
+                await readJsonResponse(response, prefixSplitResponseSchema, "accepted prefix split");
+                invalidateTrainingQueueCache();
+                setSuggestShorter(false);
+                activeQueueEntry.current = undefined;
+                setSafeBreakCounter((count) => count + 1);
+                if (useTrainingStore.getState().advanceCachedQueue()) {
+                  void refreshDatabaseQueue().catch(() => {
+                    useTrainingStore.getState().setServiceError(
+                      "Prefix split saved. Queue refresh failed; retry loading the queue.",
+                    );
+                  });
+                } else {
+                  try {
+                    await refreshDatabaseQueue(true);
+                  } catch {
+                    useTrainingStore.getState().setServiceError(
+                      "Prefix split saved. The next card could not be loaded. Retry loading the queue.",
+                    );
+                  }
+                }
+              }}
+              onRejectPrefixSplit={async (prefixCard) => {
+                if (!prefixCard.backendId)
+                  throw new Error("The card is missing its local database ID. Refresh the queue.");
+                const response = await fetch(
+                  `${API_URL}/api/cards/${prefixCard.backendId}/prefix-split/reject`,
+                  {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ expected_revision: prefixCard.revision ?? 1 }),
+                  },
+                );
+                if (!response.ok) {
+                  const body = await response.json().catch(() => ({})) as { detail?: string };
+                  throw new Error(body.detail ?? `HTTP ${response.status}`);
+                }
+                invalidateTrainingQueueCache();
+                void fetchAndInitializeQueue().catch(() => undefined);
+              }}
               onMove={tryMove}
               onOpenPosition={openReviewPosition}
               useSharedBoard
             />
-        </>
-      )}
-      {currentView === "tactics" && (
-        <>
+          </>
+        )}
+        {currentView === "tactics" && (
+          <>
             <TacticsView
               theme={boardTheme}
               pieceSet={pieceSet}
               onQueueChanged={() => void refreshDatabaseQueue()}
               useSharedBoard
             />
-        </>
-      )}
-      {currentView === "endgames" && (
-        <>
+          </>
+        )}
+        {currentView === "endgames" && (
+          <>
             <EndgamesView
               theme={boardTheme}
               pieceSet={pieceSet}
               onQueueChanged={() => void refreshDatabaseQueue()}
               useSharedBoard
             />
-        </>
-      )}
-      {currentView === "repertoire" && (
-        <RepertoireView
-          imported={importedRepertoires}
-          refreshRevision={pasteRevision}
-          onImport={() => setShowImport(true)}
-          onPaste={() => setPasteContext({})}
-          onPasteGap={(_repertoireId, gap) => setPasteContext({
-            startingFen: gap.fen,
-            sourceGapId: gap.gap_id,
-          })}
-          onBrowse={(id) => {
-            const existing = JSON.parse(
-              localStorage.getItem("tempo-builder-session") ?? "null",
-            );
-            if (existing)
+          </>
+        )}
+        {currentView === "repertoire" && (
+          <RepertoireView
+            theme={boardTheme}
+            pieceSet={pieceSet}
+            imported={importedRepertoires}
+            refreshRevision={pasteRevision}
+            onImport={() => setShowImport(true)}
+            onPaste={() => setPasteContext({})}
+            onPasteGap={(_repertoireId, gap) =>
+              setPasteContext({
+                startingFen: gap.fen,
+                sourceGapId: gap.gap_id,
+              })
+            }
+            onBrowse={(id) => {
+              const existing = JSON.parse(
+                localStorage.getItem("tempo-builder-session") ?? "null",
+              );
+              if (existing)
+                localStorage.setItem(
+                  "tempo-builder-session",
+                  JSON.stringify({ ...existing, activeRepertoireId: id }),
+                );
+              else localStorage.setItem("tempo-active-repertoire-white", id);
+              setCurrentView("builder");
+            }}
+            onRepair={(id) => {
+              deferredRepairIds.current.delete(id);
+              setRepairRepertoireId(id);
+            }}
+            onResolveGap={(repertoireId, gap) => {
+              const position = new Chess(gap.fen);
+              const played = position.move({
+                from: gap.move_uci.slice(0, 2) as Square,
+                to: gap.move_uci.slice(2, 4) as Square,
+                promotion: gap.move_uci[4],
+              });
+              const session: BuilderSession = {
+                version: 1,
+                activeRepertoireByColor: {
+                  [gap.trained_color]: asRepertoireId(repertoireId),
+                },
+                activeRepertoireId: asRepertoireId(repertoireId),
+                orientation: gap.trained_color,
+                startingFen: asFenString(gap.fen),
+                history: [
+                  {
+                    san: asSanMove(played.san),
+                    uci: asUciMove(gap.move_uci),
+                    fen: asFenString(position.fen()),
+                  },
+                ],
+                cursor: 1,
+                branchStart: 0,
+                sourceGapId: gap.gap_id,
+              };
               localStorage.setItem(
                 "tempo-builder-session",
-                JSON.stringify({ ...existing, activeRepertoireId: id }),
+                JSON.stringify(session),
               );
-            else localStorage.setItem("tempo-active-repertoire-white", id);
-            setCurrentView("builder");
-          }}
-          onRepair={(id) => {
-            deferredRepairIds.current.delete(id);
-            setRepairRepertoireId(id);
-          }}
-          onResolveGap={(repertoireId, gap) => {
-            const position = new Chess(gap.fen);
-            const played = position.move({
-              from: gap.move_uci.slice(0, 2) as Square,
-              to: gap.move_uci.slice(2, 4) as Square,
-              promotion: gap.move_uci[4],
-            });
-            const session: BuilderSession = {
-              version: 1,
-              activeRepertoireByColor: {
-                [gap.trained_color]: asRepertoireId(repertoireId),
-              },
-              activeRepertoireId: asRepertoireId(repertoireId),
-              orientation: gap.trained_color,
-              startingFen: asFenString(gap.fen),
-              history: [
-                {
-                  san: asSanMove(played.san),
-                  uci: asUciMove(gap.move_uci),
-                  fen: asFenString(position.fen()),
-                },
-              ],
-              cursor: 1,
-              branchStart: 0,
-              sourceGapId: gap.gap_id,
-            };
-            localStorage.setItem("tempo-builder-session", JSON.stringify(session));
-            setCurrentView("builder");
-          }}
-          onDeleteLocal={deleteLocalRepertoire}
-          onShowGamesAtPosition={(fen) => { setGamesFenFilter(fen); setCurrentView("games"); }}
-          onRenameLocal={renameLocalRepertoire}
-          onQueueChanged={refreshDatabaseQueue}
-          onTrain={() => setCurrentView("train")}
-        />
-      )}
-      {currentView === "builder" && (
-        <>
+              setCurrentView("builder");
+            }}
+            onDeleteLocal={deleteLocalRepertoire}
+            onShowGamesAtPosition={(fen, repertoireId) => {
+              setGamesFenFilter(fen);
+              setGamesRepertoireFilter(repertoireId ?? "");
+              setCurrentView("games");
+            }}
+            onRenameLocal={renameLocalRepertoire}
+            onQueueChanged={refreshDatabaseQueue}
+            onTrain={() => setCurrentView("train")}
+          />
+        )}
+        {currentView === "builder" && (
+          <>
             <BuilderView
               theme={boardTheme}
               pieceSet={pieceSet}
@@ -1233,13 +1554,17 @@ export default function Home() {
               onPasteAnalysis={setPasteContext}
               useSharedBoard
             />
-        </>
-      )}
-      {currentView === "games" && (
-        <>
+          </>
+        )}
+        {currentView === "games" && (
+          <>
             <GamesView
               initialFenFilter={gamesFenFilter}
-              onClearFenFilter={() => setGamesFenFilter("")}
+              initialRepertoireFilter={gamesRepertoireFilter}
+              onClearFenFilter={() => {
+                setGamesFenFilter("");
+                setGamesRepertoireFilter("");
+              }}
               syncState={gameSync.state}
               onSync={() => void gameSync.sync(true)}
               onRepair={() => void gameSync.sync(true, true)}
@@ -1274,50 +1599,63 @@ export default function Home() {
               pieceSet={pieceSet}
               useSharedBoard
             />
-        </>
-      )}
-      {currentView === "insights" && (
+          </>
+        )}
+        {currentView === "insights" && (
           <InsightsView
-          initialTab={insightsTab}
-          onTabChange={setInsightsTab}
-          reviewed={reviewed}
-          cardsLeft={cardsLeft}
-          totalCards={practiceCards.length}
-        />
-      )}
-      {currentView === "settings" && (
-        <SettingsView
-          theme={boardTheme}
-          pieceSet={pieceSet}
-          sound={soundOn}
-          onTheme={changeBoardTheme}
-          onPieces={changePieceSet}
-          onSound={changeSound}
-        />
-      )}
+            initialTab={insightsTab}
+            onTabChange={setInsightsTab}
+            reviewed={reviewed}
+            cardsLeft={cardsLeft}
+            totalCards={practiceCards.length}
+          />
+        )}
+        {currentView === "settings" && (
+          <SettingsView
+            theme={boardTheme}
+            pieceSet={pieceSet}
+            sound={soundOn}
+            onTheme={changeBoardTheme}
+            onPieces={changePieceSet}
+            onSound={changeSound}
+          />
+        )}
       </BoardWorkspaceContainer>
       {showImport && (
         <ImportDialogBox
-          onClose={() => { setShowImport(false); setSafeBreakCounter((count) => count + 1); }}
+          onClose={() => {
+            setShowImport(false);
+            setSafeBreakCounter((count) => count + 1);
+          }}
           onImported={addImportedRepertoire}
           onDatabaseUpdated={refreshQueueOnly}
           onViewRepertoire={() => setCurrentView("repertoire")}
         />
       )}
-      {pasteContext && <AnalysisPasteDialog
-        context={pasteContext}
-        onClose={() => { setPasteContext(null); setSafeBreakCounter((count) => count + 1); }}
-        onSaved={(affectedRepertoireIds, conflictingRepertoireIds) => {
-          invalidateWorkspaceData();
-          setPasteRevision((revision) => revision + 1);
-          void refreshQueueOnly();
-          setPasteContext(null);
-          if (conflictingRepertoireIds.length) setRepairRepertoireId(conflictingRepertoireIds[0]);
-          for (const repertoireId of affectedRepertoireIds) {
-            window.dispatchEvent(new CustomEvent("tempo:integrity", { detail: { repertoireId } }));
-          }
-        }}
-      />}
+      {pasteContext && (
+        <AnalysisPasteDialog
+          context={pasteContext}
+          onClose={() => {
+            setPasteContext(null);
+            setSafeBreakCounter((count) => count + 1);
+          }}
+          onSaved={(affectedRepertoireIds, conflictingRepertoireIds) => {
+            invalidateWorkspaceData();
+            setPasteRevision((revision) => revision + 1);
+            void refreshQueueOnly();
+            setPasteContext(null);
+            if (conflictingRepertoireIds.length)
+              setRepairRepertoireId(conflictingRepertoireIds[0]);
+            for (const repertoireId of affectedRepertoireIds) {
+              window.dispatchEvent(
+                new CustomEvent("tempo:integrity", {
+                  detail: { repertoireId },
+                }),
+              );
+            }
+          }}
+        />
+      )}
       {showTree && (
         <TreeBrowser
           onClose={() => setShowTree(false)}
@@ -1330,7 +1668,10 @@ export default function Home() {
           practiceCard={editorCard}
           boardTheme={boardTheme}
           pieceSet={pieceSet}
-          onClose={() => { setEditorCard(null); setSafeBreakCounter((count) => count + 1); }}
+          onClose={() => {
+            setEditorCard(null);
+            setSafeBreakCounter((count) => count + 1);
+          }}
           onOpenBuilderForLineRemoval={(sessionFromEditor: BuilderSession) => {
             const existingSession = JSON.parse(
               localStorage.getItem("tempo-builder-session") ?? "null",
@@ -1348,9 +1689,8 @@ export default function Home() {
                 "tempo-active-repertoire-white",
               );
               if (savedWhiteRepertoire)
-                mergedSession.activeRepertoireId = asRepertoireId(
-                  savedWhiteRepertoire,
-                );
+                mergedSession.activeRepertoireId =
+                  asRepertoireId(savedWhiteRepertoire);
             }
             localStorage.setItem(
               "tempo-builder-session",
@@ -1369,7 +1709,11 @@ export default function Home() {
             if (usesLocalApi()) {
               void refreshDatabaseQueue().catch(() => undefined);
               if (updated.repertoireId)
-                window.dispatchEvent(new CustomEvent("tempo:integrity", { detail: { repertoireId: updated.repertoireId } }));
+                window.dispatchEvent(
+                  new CustomEvent("tempo:integrity", {
+                    detail: { repertoireId: updated.repertoireId },
+                  }),
+                );
             }
           }}
         />
@@ -1397,6 +1741,18 @@ export default function Home() {
   );
 }
 
-function BoardWorkspaceContainer({ enabled, view, children }: { enabled: boolean; view: string; children: React.ReactNode }) {
-  return <BoardWorkspace view={view} enabled={enabled}>{children}</BoardWorkspace>;
+function BoardWorkspaceContainer({
+  enabled,
+  view,
+  children,
+}: {
+  enabled: boolean;
+  view: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <BoardWorkspace view={view} enabled={enabled}>
+      {children}
+    </BoardWorkspace>
+  );
 }

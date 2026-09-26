@@ -83,6 +83,16 @@ it("backend game response and strict frontend schema remain in parity", () => {
   ).toEqual(summaryEnvelope([summaryGame]));
 });
 
+it("game summary accepts the matched position ply sent by the API", () => {
+  const summaryWithMatchedPosition = {
+    ...summaryGame,
+    matched_position_ply: 2,
+  };
+  expect(validateWorkspacePayload(summaryUrl, summaryEnvelope([summaryWithMatchedPosition]))).toEqual(
+    summaryEnvelope([summaryWithMatchedPosition]),
+  );
+});
+
 it("game contract drift fails once instead of silently emptying the library", () => {
   expect(() =>
     validateWorkspacePayload(summaryUrl, {

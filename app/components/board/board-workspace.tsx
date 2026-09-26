@@ -14,7 +14,9 @@ import { useBoardShellStore } from "../../state/board-shell-store";
 import { ResetBoardSizeButton } from "./ResetBoardSizeButton";
 import { FlipBoardButton } from "./FlipBoardButton";
 
+export const DEFAULT_BOARD_SPLIT = 46;
 const BoardToolbarTarget = createContext<HTMLDivElement | null>(null);
+
 export function BoardTools({ children }: { children: ReactNode }) {
   const toolbarTarget = useContext(BoardToolbarTarget);
   return toolbarTarget ? (
@@ -23,7 +25,7 @@ export function BoardTools({ children }: { children: ReactNode }) {
     <div className="board-tools">{children}</div>
   );
 }
-export const DEFAULT_BOARD_SPLIT = 46;
+
 export function readBoardSplit(raw: string | null): number {
   try {
     const value = JSON.parse(raw ?? "null");
@@ -38,6 +40,7 @@ export function readBoardSplit(raw: string | null): number {
     return DEFAULT_BOARD_SPLIT;
   }
 }
+
 export function BoardWorkspace({
   children,
   view,
@@ -142,18 +145,12 @@ export function BoardWorkspace({
         <PersistentBoardShell />
         <div className="shared-board-toolbar" ref={toolbarRef}>
           <div className="board-tools" aria-label="Board controls">
-            {/* <Button
-              disabled={Boolean(board.unavailable)}
-              aria-label="Flip board"
-              title="Flip board (F)"
-              onClick={() => {
-                if (board.onFlip) board.onFlip();
-                else window.dispatchEvent(new Event("tempo:flip-board"));
+            <FlipBoardButton
+              board={{
+                unavailable: Boolean(board.unavailable),
+                onFlip: board.onFlip,
               }}
-            >
-              ⇅ <span>Flip</span>
-            </Button> */}
-            <FlipBoardButton board={{ unavailable: Boolean(board.unavailable), onFlip: board.onFlip }} />
+            />
             <div className="workspace-board-actions" ref={setToolbarTarget} />
           </div>
         </div>

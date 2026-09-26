@@ -1,5 +1,8 @@
 "use client";
-import { Button, TextInput, SelectInput, TabList } from "../components/ui";
+import { TabList } from "../components/ui";
+import { SelectInput } from "../components/inputs/SelectInput";
+import { TextInput } from "../components/inputs/TextInput";
+import { Button } from "../components/buttons/BaseButton";
 import { useRef, useState, useEffect, useCallback } from "react";
 import type { BoardTheme, PieceSet } from "../components/chessboard";
 import { API_URL } from "../const";
