@@ -69,6 +69,13 @@ handler has been ported and the release gates pass.
 - Foreground queue fail and bury operations now dispatch named Celery commands.
   A rehearsal queue entry was marked failed and buried; replaying the bury
   operation ID returned its original receipt and did not move the entry again.
+- Teaching-state writes now dispatch an idempotent foreground command. The
+  browser keeps an unsaved teaching state in a local outbox and retries with
+  the same command ID after a pending receipt or service failure. Its read
+  path retains those local states until PostgreSQL confirms them. The command
+  has focused route and replay regressions. A rolled-back rehearsal against
+  PostgreSQL confirmed the insert and duplicate replay return the same saved
+  timestamp.
 - Foreground reviews now dispatch a named Celery command and commit the queue
   attempt, scheduling result, follow-up job requests, and operation receipt
   together. Two concurrent rehearsal commands for one queue attempt produced
