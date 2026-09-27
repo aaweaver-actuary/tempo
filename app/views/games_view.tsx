@@ -476,7 +476,7 @@ export default function GamesView({
         );
       });
     return () => controller.abort();
-  }, [local, records, selectedId]);
+  }, [local, selectedId]);
   useEffect(() => {
     if (syncState.lastSuccess) invalidateWorkspaceData();
     queueMicrotask(() => void loadGames());

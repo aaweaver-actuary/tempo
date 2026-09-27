@@ -448,3 +448,4 @@ Append every new reported issue and its test names here. All listed tests belong
 - PostgreSQL rows silently yield column names when legacy callers unpack aggregate values: `backend/tests/test_postgres_cutover.py::test_postgres_cutover_row_supports_mapping_and_sqlite_value_iteration`.
 - Reusing a command ID for a different payload returns another save's receipt: `backend/tests/test_postgres_cutover.py::test_postgres_cutover_reused_key_cannot_return_another_commands_receipt`.
 - The activity read fails on a SQLite JSON-array function after migration: `backend/tests/test_postgres_cutover.py::test_postgres_cutover_schema_keeps_json_array_length_available`.
+- A Games summary refresh aborts the selected game's pending detail read and leaves the board loading: `tests/browser/games-board-context.spec.ts` (`Games shows loading until the selected game's full moves arrive`).
