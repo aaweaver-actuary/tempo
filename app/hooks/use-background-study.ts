@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { runStudyTask } from "../lib/background-study";
+import { runCoalescedStudyMatch, runStudyTask } from "../lib/background-study";
 import type { StudyTask } from "../lib/study-computation";
 
 export function useBackgroundStudy<T>(task: StudyTask | null, empty: T): T {
@@ -8,7 +8,10 @@ export function useBackgroundStudy<T>(task: StudyTask | null, empty: T): T {
     if (!task) return;
     let active = true;
     const controller = new AbortController();
-    void runStudyTask<T>(task, controller.signal).then(value => { if (active) setCompleted({ task, value }); })
+    const work = task.kind === "findPositionMatches"
+      ? runCoalescedStudyMatch<T>(task, controller.signal)
+      : runStudyTask<T>(task, controller.signal);
+    void work.then(value => { if (active) setCompleted({ task, value }); })
       .catch(error => { if (active) console.error("Study diagnostics:", error); });
     return () => { active = false; controller.abort(); };
   }, [task]);

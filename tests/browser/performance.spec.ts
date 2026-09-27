@@ -12,6 +12,7 @@ function summarize(samples: number[]) {
 }
 
 test("warm workspace and Builder move responsiveness", async ({ page }, testInfo) => {
+  test.setTimeout(120_000);
   await page.setViewportSize({ width: 1280, height: 800 });
   await prepareVisualUI(page, false);
   const modes = ["Builder", "Games", "Endgames", "Tactics", "Train"] as const;

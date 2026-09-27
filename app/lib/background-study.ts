@@ -127,3 +127,88 @@ export function runStudyTask<T>(
     worker!.postMessage({ id, task });
   });
 }
+
+type MatchTask = Extract<StudyTask, { kind: "findPositionMatches" }>;
+type CoalescedRequest = {
+  task: MatchTask;
+  enqueuedAt: number;
+  signal?: AbortSignal;
+  onAbort: () => void;
+  settled: boolean;
+  resolve: (value: unknown) => void;
+  reject: (error: Error) => void;
+};
+type MatchSlot = { active?: CoalescedRequest; queued?: CoalescedRequest };
+const matchSlots = new Map<string, MatchSlot>();
+
+// Keep one computation in flight per repertoire. A synchronous worker computation
+// cannot be interrupted, but requests waiting behind it can be replaced.
+export function runCoalescedStudyMatch<T>(task: MatchTask, signal?: AbortSignal): Promise<T> {
+  if (signal?.aborted) return Promise.reject(new DOMException("Cancelled", "AbortError"));
+  const key = task.repertoireId;
+  const slot = matchSlots.get(key) ?? {};
+  matchSlots.set(key, slot);
+  return new Promise<T>((resolve, reject) => {
+    const request: CoalescedRequest = {
+      task,
+      enqueuedAt: performance.now(),
+      signal,
+      settled: false,
+      resolve: (value) => resolve(value as T),
+      reject,
+      onAbort: () => {
+        if (slot.queued === request) slot.queued = undefined;
+        settleError(request, new DOMException("Cancelled", "AbortError"));
+        if (!slot.active && !slot.queued) matchSlots.delete(key);
+      },
+    };
+    signal?.addEventListener("abort", request.onAbort, { once: true });
+    if (slot.active) {
+      if (slot.queued) {
+        const superseded = slot.queued;
+        slot.queued = undefined;
+        settleError(superseded, new DOMException("Superseded", "AbortError"));
+      }
+      slot.queued = request;
+    } else {
+      startMatch(request, slot, key);
+    }
+  });
+}
+
+function settleError(request: CoalescedRequest, error: Error) {
+  if (request.settled) return;
+  request.settled = true;
+  request.signal?.removeEventListener("abort", request.onAbort);
+  request.reject(error);
+}
+
+function advanceMatchSlot(slot: MatchSlot, key: string) {
+  slot.active = undefined;
+  const next = slot.queued;
+  slot.queued = undefined;
+  if (next) startMatch(next, slot, key);
+  else matchSlots.delete(key);
+}
+
+function startMatch(request: CoalescedRequest, slot: MatchSlot, key: string) {
+  slot.active = request;
+  recordTempoDuration("study-match-coalesced-wait", performance.now() - request.enqueuedAt);
+  let work: Promise<unknown>;
+  try {
+    work = runStudyTask(request.task);
+  } catch (error) {
+    settleError(request, error instanceof Error ? error : new Error(String(error)));
+    advanceMatchSlot(slot, key);
+    return;
+  }
+  void work.then(
+    (value) => {
+      if (request.settled) return;
+      request.settled = true;
+      request.signal?.removeEventListener("abort", request.onAbort);
+      request.resolve(value);
+    },
+    (error) => settleError(request, error instanceof Error ? error : new Error(String(error))),
+  ).finally(() => advanceMatchSlot(slot, key));
+}

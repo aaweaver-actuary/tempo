@@ -53,3 +53,7 @@ The deterministic clone-only benchmark measured an old stress query of about 4.4
 ### Canonical index input
 
 The Builder index task now requires lines with validated canonical moves. `availableLines` already has that shape from the worker's `lines` task; index initialization traverses those moves without canonicalizing them again. On the deterministic fixture, median worker initialization fell from 78.5 to 30.6 ms at 250 lines, 470.6 to 233.4 ms at 2,000 lines, and 1,845.3 to 938.9 ms at 8,000 lines. The earlier canonicalization step still occurs once in the line-preparation pipeline.
+
+### Replaceable Builder queries
+
+The current-position similarity hook now keeps at most one active worker request and one replaceable queued request per repertoire. On rapid position changes, an obsolete queued request is rejected and never posted; the latest request runs after the active synchronous computation finishes. Aborting the active caller rejects its Promise, but cannot interrupt computation already running in the worker. Maia transposition searches continue to use their own sequential requests. `study-match-coalesced-wait` records time spent in the main-thread replacement slot before posting to the worker, separately from worker queue, compute, and roundtrip timings.
