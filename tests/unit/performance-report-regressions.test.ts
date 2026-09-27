@@ -170,3 +170,37 @@ it("performance summary separates Docker browser and durability timings", () => 
     rmSync(outputDirectory, { recursive: true, force: true });
   }
 });
+
+it("performance summary flags newly observed long tasks on the same browser fixture", () => {
+  const currentDirectory = mkdtempSync(join(tmpdir(), "tempo-perf-long-current-"));
+  const baselineDirectory = mkdtempSync(join(tmpdir(), "tempo-perf-long-baseline-"));
+  const writeFixture = (directory: string, commit: string, longTasks: number[]) => {
+    writeFileSync(join(directory, "test-stages-full.json"), JSON.stringify({
+      schema_version: 1, tier: "full", commit, timestamp: "2026-09-27T12:00:00Z",
+      environment: { platform: "linux", architecture: "arm64" }, stages: {},
+    }));
+    writeFileSync(join(directory, "browser-chromium.json"), JSON.stringify({
+      commit, timestamp: "2026-09-27T12:01:00Z", browser: "chromium",
+      fixture: { name: "interaction-v1" }, longTasks,
+    }));
+  };
+  try {
+    writeFixture(baselineDirectory, "baseline", []);
+    writeFixture(currentDirectory, "current", [52, 68]);
+    const report = spawnSync(process.execPath, [
+      "scripts/report-performance.mjs", "--directory", currentDirectory,
+      "--baseline", baselineDirectory,
+    ], { cwd: process.cwd(), encoding: "utf8" });
+    expect(report.status, report.stderr).toBe(0);
+    const summary = readFileSync(join(currentDirectory, "performance-summary.md"), "utf8");
+    expect(summary).toContain("Long tasks | 2.0 count");
+    expect(summary).toContain("new long tasks");
+    const structured = JSON.parse(readFileSync(join(currentDirectory, "performance-summary.json"), "utf8"));
+    expect(structured.regressions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ metric: "Long tasks", current: 2, baseline: 0 }),
+    ]));
+  } finally {
+    rmSync(currentDirectory, { recursive: true, force: true });
+    rmSync(baselineDirectory, { recursive: true, force: true });
+  }
+});

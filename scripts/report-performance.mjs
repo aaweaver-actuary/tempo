@@ -57,6 +57,9 @@ function collectMetrics(directory) {
   const browserArtifacts = [
     ["browser-chromium.json", (artifact) => {
       const fixtureKey = JSON.stringify([environment, artifact.browser, artifact.fixture]);
+      if (Array.isArray(artifact.longTasks))
+        metrics.push({ id: "browser.long-tasks", label: "Long tasks",
+          value: artifact.longTasks.length, unit: "count", comparisonKey: fixtureKey });
       for (const [view, summary] of Object.entries(artifact.viewSwitchSummary ?? {}))
         metrics.push({ id: `view.${view}.p95`, label: `${view} warm switch p95`,
           value: summary.p95, unit: "ms", comparisonKey: fixtureKey });
@@ -107,17 +110,25 @@ const baselineMetrics = new Map(baseline?.metrics.map((metric) => [metric.id, me
 const regressions = [];
 const metricRows = current.metrics.map((metric) => {
   const previous = baselineMetrics.get(metric.id);
-  const comparable = previous && previous.comparisonKey === metric.comparisonKey &&
-    previous.unit === metric.unit && previous.value > 0;
-  const percentage = comparable ? (metric.value / previous.value - 1) * 100 : null;
+  const sameFixture = previous && previous.comparisonKey === metric.comparisonKey &&
+    previous.unit === metric.unit;
+  const percentage = sameFixture && previous.value > 0
+    ? (metric.value / previous.value - 1) * 100 : null;
+  const newLongTasks = metric.id === "browser.long-tasks" && sameFixture &&
+    previous.value === 0 && metric.value > 0;
   if (percentage !== null && percentage > 25)
     regressions.push({ metric: metric.label, percentage, current: metric.value,
       baseline: previous.value, unit: metric.unit });
-  const change = percentage === null ? (baseline ? "not comparable" : "—") :
-    `${Math.abs(percentage).toFixed(1)}% ${percentage >= 0 ? "slower" : "faster"}`;
+  if (newLongTasks)
+    regressions.push({ metric: metric.label, percentage: null, current: metric.value,
+      baseline: 0, unit: metric.unit });
+  const change = newLongTasks ? "new long tasks" :
+    metric.id === "browser.long-tasks" && sameFixture && metric.value === 0 && previous.value === 0
+      ? "no change" : percentage === null ? (baseline ? "not comparable" : "—") :
+        `${Math.abs(percentage).toFixed(1)}% ${percentage >= 0 ? "slower" : "faster"}`;
   return `| ${metric.label} | ${metric.value.toFixed(metric.unit === "s" ? 2 : 1)} ${metric.unit} | ` +
     `${metric.exitCode === undefined ? "—" : metric.exitCode === 0 ? "passed" : `failed (${metric.exitCode})`} | ` +
-    `${previous && comparable ? `${previous.value.toFixed(metric.unit === "s" ? 2 : 1)} ${metric.unit}` : "—"} | ${change} |`;
+    `${sameFixture ? `${previous.value.toFixed(metric.unit === "s" ? 2 : 1)} ${metric.unit}` : "—"} | ${change} |`;
 });
 
 const lines = [
@@ -132,8 +143,8 @@ const lines = [
 ];
 if (!baseline) lines.push("No baseline supplied; no regression verdict.", "");
 else if (regressions.length)
-  lines.push(`**${regressions.length} metric(s) exceeded 25% degradation.** Review raw samples and runner variance before setting a blocking budget.`, "");
-else lines.push("No comparable metric exceeded 25% degradation.", "");
+  lines.push(`**${regressions.length} performance signal(s) warrant review.** A comparable metric exceeded 25% degradation or new long tasks appeared. Check raw samples and runner variance before setting a blocking budget.`, "");
+else lines.push("No comparable metric exceeded 25% degradation and no new long tasks appeared.", "");
 if (current.staleArtifacts.length)
   lines.push(`Stale performance artifacts excluded: ${current.staleArtifacts.join(", ")}.`, "");
 if (current.slowestUnitFiles.length) {
