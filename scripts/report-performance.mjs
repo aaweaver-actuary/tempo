@@ -76,10 +76,14 @@ function collectMetrics(directory) {
           comparisonKey: JSON.stringify([environment, artifact.fixture]) });
     }],
     ["builder-similarity-chromium.json", (artifact) => {
+      const comparisonKey = JSON.stringify([environment, artifact.fixture]);
       if (typeof artifact.roundtripSummary?.p95 === "number")
         metrics.push({ id: "builder-query.p95", label: "Builder worker query p95",
           value: artifact.roundtripSummary.p95, unit: "ms",
-          comparisonKey: JSON.stringify([environment, artifact.fixture]) });
+          comparisonKey });
+      if (typeof artifact.paintSummary?.p95 === "number")
+        metrics.push({ id: "builder-query-paint.p95", label: "Builder query to paint p95",
+          value: artifact.paintSummary.p95, unit: "ms", comparisonKey });
     }],
   ];
   for (const [filename, addMetrics] of browserArtifacts) {

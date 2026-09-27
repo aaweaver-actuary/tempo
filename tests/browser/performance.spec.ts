@@ -254,8 +254,8 @@ test("Builder similarity worker messages keep the position index in the worker",
   }));
   await page.addInitScript(() => {
     type ObservedMessage = {
-      kind: string; bytes: number; hasPositions: boolean; startedAt: number;
-      queueMs?: number; computeMs?: number; roundtripMs?: number;
+      kind: string; bytes: number; hasPositions: boolean; startedAt: number; fen?: string;
+      queueMs?: number; computeMs?: number; roundtripMs?: number; paintMs?: number;
     };
     const observed: ObservedMessage[] = [];
     Object.assign(window, { tempoStudyMessages: observed });
@@ -283,6 +283,18 @@ test("Builder similarity worker messages keep the position index in the worker",
                 }
                 request.computeMs = reply.computeMs;
                 request.roundtripMs = performance.now() - request.startedAt;
+                if (request.kind === "findPositionMatches") {
+                  const waitForPaint = () => {
+                    if (document.querySelector(".similarity-panel")?.getAttribute("data-result-fen") === request.fen) {
+                      requestAnimationFrame(() => {
+                        request.paintMs = performance.now() - request.startedAt;
+                      });
+                    } else if (performance.now() - request.startedAt < 5_000) {
+                      requestAnimationFrame(waitForPaint);
+                    }
+                  };
+                  requestAnimationFrame(waitForPaint);
+                }
                 pending?.delete(reply.id!);
               });
             }
@@ -291,6 +303,7 @@ test("Builder similarity worker messages keep the position index in the worker",
               bytes: JSON.stringify(message).length,
               hasPositions: Reflect.has(task, "positions"),
               startedAt: performance.now(),
+              fen: kind === "findPositionMatches" ? Reflect.get(task, "fen") : undefined,
             };
             observed.push(request);
             const requestId = typeof message === "object" && message !== null
@@ -314,6 +327,12 @@ test("Builder similarity worker messages keep the position index in the worker",
       (message) => message.kind === "findPositionMatches" && message.roundtripMs !== undefined,
     ).length,
   );
+  const paintedQueries = () => page.evaluate(() =>
+    (Reflect.get(window, "tempoStudyMessages") as Array<{ kind: string; paintMs?: number }>).filter(
+      (message) => message.kind === "findPositionMatches" && message.paintMs !== undefined,
+    ).length,
+  );
+  await expect.poll(paintedQueries).toBeGreaterThan(0);
   const boardFrame = page.locator(".board-frame");
   for (let repetition = 0; repetition < 3; repetition++) {
     const previousQueryCount = await completedQueries();
@@ -326,21 +345,23 @@ test("Builder similarity worker messages keep the position index in the worker",
     }
     await expect(boardFrame).toHaveAttribute("data-fen", /4P3/);
     await expect.poll(completedQueries).toBeGreaterThan(previousQueryCount);
+    await expect.poll(paintedQueries).toBeGreaterThan(previousQueryCount);
     const afterMoveQueryCount = await completedQueries();
     await page.locator(".shared-board-toolbar .board-tools")
       .getByRole("button", { name: /Back/ }).click();
     await expect(boardFrame).not.toHaveAttribute("data-fen", /4P3/);
     await expect.poll(completedQueries).toBeGreaterThan(afterMoveQueryCount);
+    await expect.poll(paintedQueries).toBeGreaterThan(afterMoveQueryCount);
   }
   const messages = await page.evaluate(() => Reflect.get(window, "tempoStudyMessages") as Array<{
     kind: string; bytes: number; hasPositions: boolean;
-    queueMs?: number; computeMs?: number; roundtripMs?: number;
+    queueMs?: number; computeMs?: number; roundtripMs?: number; paintMs?: number;
   }>);
   const querySamples = messages.filter((message) =>
     message.kind === "findPositionMatches" && message.roundtripMs !== undefined,
-  ).map(({ bytes, queueMs, computeMs, roundtripMs }) => ({
+  ).map(({ bytes, queueMs, computeMs, roundtripMs, paintMs }) => ({
     bytes, queueMs: queueMs ?? null, computeMs: computeMs ?? null,
-    roundtripMs: roundtripMs!,
+    roundtripMs: roundtripMs!, paintMs: paintMs ?? null,
   }));
   const indexSamples = messages.filter((message) =>
     message.kind === "initializePositionIndex" && message.roundtripMs !== undefined,
@@ -357,6 +378,9 @@ test("Builder similarity worker messages keep the position index in the worker",
     indexSamples,
     querySamples,
     roundtripSummary: summarize(querySamples.map((sample) => sample.roundtripMs)),
+    paintSummary: summarize(querySamples.map((sample) => sample.paintMs).filter(
+      (duration): duration is number => duration !== null,
+    )),
   };
   const reportBody = JSON.stringify(report, null, 2);
   mkdirSync("test-results/performance", { recursive: true });
@@ -372,4 +396,5 @@ test("Builder similarity worker messages keep the position index in the worker",
     expect(message.bytes).toBeLessThan(512);
   }
   expect(querySamples.length).toBeGreaterThanOrEqual(7);
+  expect(querySamples.every((sample) => sample.paintMs !== null)).toBe(true);
 });

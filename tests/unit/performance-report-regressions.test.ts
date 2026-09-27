@@ -22,6 +22,12 @@ it("performance summary flags measured regressions without repeating test stages
       moveToPaintSummary: { p50: 15, p95: moveP95 },
       viewSwitchSummary: { Builder: { p50: 20, p95: 30 } },
     }));
+    writeFileSync(join(directory, "builder-similarity-chromium.json"), JSON.stringify({
+      schemaVersion: 1, commit, timestamp: "2026-09-27T12:02:00Z",
+      fixture: { name: "legal-two-ply-opening-pairs-v1", lines: 250 },
+      roundtripSummary: { p50: 10, p95: 20 },
+      paintSummary: { p50: 30, p95: 40 },
+    }));
   };
   try {
     writeFixture(baselineDirectory, "baseline", 40, 20);
@@ -34,6 +40,7 @@ it("performance summary flags measured regressions without repeating test stages
     const summary = readFileSync(join(currentDirectory, "performance-summary.md"), "utf8");
     expect(summary).toContain("unit");
     expect(summary).toContain("Builder move to paint p95");
+    expect(summary).toContain("Builder query to paint p95");
     expect(summary).toContain("30.0% slower");
     const structured = JSON.parse(readFileSync(join(currentDirectory, "performance-summary.json"), "utf8"));
     expect(structured.regressions.map((regression: { metric: string }) => regression.metric))

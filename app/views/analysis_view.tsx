@@ -1710,6 +1710,7 @@ export default function BuilderView({
             <section
               className="analysis-panel similarity-panel"
               data-task="Repertoire"
+              data-result-fen={similarPositions === emptySimilar ? undefined : fen}
             >
               <div className="panel-heading">
                 <div>
