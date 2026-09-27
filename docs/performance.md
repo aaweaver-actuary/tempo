@@ -1,5 +1,21 @@
 # Performance measurement
 
+## Audit summary and decision
+
+The starting local unit run took 151.72 seconds with 54 jsdom environments and one failing study test. The measured full gate at `57cdc99` took 23.63 seconds for 261 frontend units, 49.05 seconds for 403 backend tests, 166.30 seconds for Docker browser and durability checks, and 45.70 seconds for pinned visual/performance checks. These runs used different checkout states and host load, so the figures describe the feedback loop rather than a controlled before/after speedup. `make fast` runs frontend units alone; `make full` retains every required family once.
+
+| Finding | Evidence and action |
+| --- | --- |
+| Repeated browser requests | A Games trace showed 1,231 summary requests and about 1,230 requests to each related endpoint after a summary read triggered its own refresh listener. The listener was removed; the named browser regression checks the visible error and bounded request count. |
+| Worker transfer | An old stress similarity query cloned about 4.49 MB; a worker-owned index makes the warm query about 156 bytes. The pinned browser case measures worker reply and query-to-paint separately. |
+| Backend repeated work | PGN traversal used unnecessary move-stack copies; motif detection replayed each candidate six times; graph construction rebuilt decision positions. The focused benchmarks below record before/after distributions and parity tests protect behavior. |
+| Database reads | A 32-parent statistics fixture traced 64 point queries before batching and two after. Writer phase logs distinguish queue, gate, lock, operation, and commit time. |
+| Test setup | Node-only unit files opt out of jsdom, and timer-driven study cases use virtual time where their asynchronous setup permits it. Docker runs regular browser specs once; pinned visual/performance specs are disjoint. |
+
+The current evidence does not justify a Rust/WASM position index or a native Rust backend bridge. The measured worker bottleneck was repeated transfer, and the Python improvements removed repeated work without changing language boundaries. Keep Rust for its existing deterministic helpers and parity fixtures. Reconsider a batch Rust index only after an equivalent optimized TypeScript comparison includes initialization, transfer, query, and visible paint on representative repertoires. Hard latency budgets also remain premature: the pinned scenarios retain raw samples and generous sanity checks, but repeated comparable runner distributions are still needed.
+
+The single-pass green gate applies to `57cdc99`. Later concurrent commits in the shared checkout require their own final gate before release.
+
 Use `make plan` to inspect the ordered full gate and `make full` to run it once on the final checkout. [The test scopes](testing.md) include `make fast` for frontend units, `make python` or `make backend` for server work, `make rust`, `make ui`, and exact file or view filters. The npm aliases remain available. The full gate runs regular browser specs through Docker once and runs the disjoint pinned visual/performance specs once.
 
 The tier runner writes `test-results/performance/test-stages-<tier>.json` after each stage, including a failing stage. The Docker runner writes `docker-stages.json` with separate container startup, regular browser matrix, durability, and teardown durations. Browser-free durability recovery writes `docker-stages-recovery.json` so it cannot replace the full-run browser measurement. The pinned browser run writes `test-results/performance/browser-chromium.json` on success and on metric assertion failures. Set `TEMPO_TEST_TIMING_DIR` to choose another artifact directory. Records contain the commit, timestamp, environment, stage duration, and exit status where applicable. Compare timings on the same machine and environment. Repeated runs are necessary before treating a small difference as a regression. CI retains `test-results/` as an artifact for successful and failed quality runs.
