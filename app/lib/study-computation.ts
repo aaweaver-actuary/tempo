@@ -9,8 +9,8 @@ import { mapPackagedPuzzleToPracticeCard } from "../domain/adapters/practice-car
 import { queueCardsFromPayload } from "../domain/adapters/practice-card-adapters";
 import { canonicalizeLine } from "../utils/canonical-line";
 import {
-  chessPositionDistance,
   indexRepertoirePositions,
+  prepareChessPositionDistance,
   type IndexedPosition,
 } from "./position-similarity";
 
@@ -66,11 +66,12 @@ export function computeStudyTask(task: StudyTask) {
     case "index":
       return indexRepertoirePositions(task.lines.map(canonicalizeLine));
     case "matches":
-    case "similarity":
+    case "similarity": {
+      const distanceToQuery = prepareChessPositionDistance(task.fen);
       return task.positions
         .map((position) => ({
           ...position,
-          distance: chessPositionDistance(task.fen, position.fen),
+          distance: distanceToQuery(position.fen),
         }))
         .filter(
           (position): position is IndexedPosition & { distance: number } =>
@@ -91,5 +92,6 @@ export function computeStudyTask(task: StudyTask) {
             ) === index,
         )
         .slice(0, 8);
+    }
   }
 }

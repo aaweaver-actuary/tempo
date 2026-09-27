@@ -26,7 +26,8 @@
     "test:fast": "node scripts/test-all.mjs fast",
     "test:integration": "node scripts/test-all.mjs integration",
     "test:full": "node scripts/test-all.mjs full",
-    "test:perf": "node scripts/test-visual.mjs --performance-only"
+    "test:perf": "node scripts/test-visual.mjs --performance-only",
+    "bench:positions": "node scripts/benchmark-study-position.mjs"
   },
   "dependencies": {
     "@lichess-org/chessground": "^10.1.1",

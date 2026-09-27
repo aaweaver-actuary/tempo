@@ -29,33 +29,41 @@ function pieceSquares(board: Chess): Map<string, Set<string>> {
   return groups;
 }
 
-export function chessPositionDistance(leftFen: string, rightFen: string): number | undefined {
+export function prepareChessPositionDistance(leftFen: string): (rightFen: string) => number | undefined {
   const leftState = stateParts(leftFen);
-  const rightState = stateParts(rightFen);
-  if (
-    leftState.turn !== rightState.turn ||
-    leftState.castling !== rightState.castling ||
-    leftState.enPassant !== rightState.enPassant
-  ) return undefined;
-  let left: Chess;
-  let right: Chess;
+  let leftPieces: Map<string, Set<string>>;
   try {
-    left = new Chess(leftFen);
-    right = new Chess(rightFen);
+    leftPieces = pieceSquares(new Chess(leftFen));
   } catch {
-    return undefined;
+    return () => undefined;
   }
-  const leftPieces = pieceSquares(left);
-  const rightPieces = pieceSquares(right);
-  if ([...new Set([...leftPieces.keys(), ...rightPieces.keys()])].some(
-    (key) => (leftPieces.get(key)?.size ?? 0) !== (rightPieces.get(key)?.size ?? 0),
-  )) return undefined;
-  let relocations = 0;
-  for (const [key, squares] of leftPieces) {
-    const other = rightPieces.get(key)!;
-    relocations += [...squares].filter((square) => !other.has(square)).length;
-  }
-  return relocations;
+  return (rightFen) => {
+    const rightState = stateParts(rightFen);
+    if (
+      leftState.turn !== rightState.turn ||
+      leftState.castling !== rightState.castling ||
+      leftState.enPassant !== rightState.enPassant
+    ) return undefined;
+    let rightPieces: Map<string, Set<string>>;
+    try {
+      rightPieces = pieceSquares(new Chess(rightFen));
+    } catch {
+      return undefined;
+    }
+    if ([...new Set([...leftPieces.keys(), ...rightPieces.keys()])].some(
+      (key) => (leftPieces.get(key)?.size ?? 0) !== (rightPieces.get(key)?.size ?? 0),
+    )) return undefined;
+    let relocations = 0;
+    for (const [key, squares] of leftPieces) {
+      const other = rightPieces.get(key)!;
+      relocations += [...squares].filter((square) => !other.has(square)).length;
+    }
+    return relocations;
+  };
+}
+
+export function chessPositionDistance(leftFen: string, rightFen: string): number | undefined {
+  return prepareChessPositionDistance(leftFen)(rightFen);
 }
 
 export function indexRepertoirePositions(lines: AnalysisLine[]): IndexedPosition[] {

@@ -27,3 +27,9 @@ The first pinned browser sample recorded warm-switch p95 values of 51.6 ms (Buil
 ## Builder persistence observation (2026-09-27)
 
 A focused rerender of Builder with one loaded repertoire made two unnecessary localStorage writes before the change: repertoire selection and the serialized Builder session. The named regression now measures zero writes for the same rerender. Repertoire summaries are memoized from `availableLines`, and persistence effects use selected ID and side values. This measures eliminated work; it does not claim a browser-visible latency improvement on its own.
+
+## Study position benchmark (2026-09-27)
+
+Run `npm run bench:positions` to write `test-results/performance/study-position-benchmark.json`. The deterministic fixture cycles through legal two-ply opening pairs, with 25, 250, 2,000, and 8,000 lines. It records line, ply, indexed-position, and distinct-FEN counts plus raw index and match timings. This is an in-process compute benchmark: it omits worker startup, structured cloning, messaging, React, and storage. It has more repeated starting positions than a diverse personal repertoire, so it should not be treated as an end-to-end usage budget.
+
+Before query preparation, median match times were 3.5, 44.2, 202.4, and 1,045.6 ms for small, typical, large, and stress. Preparing the query position once produced 1.6, 16.0, 115.4, and 644.0 ms on the same machine. The index stage was unchanged and its timings varied between runs. Repeat the benchmark and compare distributions before attributing smaller changes.
