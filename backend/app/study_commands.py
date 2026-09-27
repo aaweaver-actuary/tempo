@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 import json
 import uuid
 from typing import Any
@@ -11,6 +11,7 @@ from fastapi import HTTPException
 
 from .command_gateway import register_command
 from .postgres_store import PostgresConnection
+from .queue_commands import request_queue_refresh_in_transaction
 from .study_contracts import ChapterCreate, StudyCreate, StudyLinkCreate
 
 
@@ -52,6 +53,38 @@ def update_study(database: PostgresConnection, payload: dict[str, Any]) -> dict[
         ),
     )
     return {"id": study_id}
+
+
+def archive_study(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    study_id = str(payload["study_id"])
+    if database.execute(
+        "SELECT id FROM studies WHERE id=? FOR UPDATE", (study_id,),
+    ).fetchone() is None:
+        raise HTTPException(404, "Study not found")
+    database.execute(
+        "UPDATE studies SET archived=1,updated_at=? WHERE id=?",
+        (datetime.now(timezone.utc).isoformat(), study_id),
+    )
+    database.execute(
+        """UPDATE cards SET archived=1
+           WHERE study_exercise_id IN (SELECT id FROM study_exercises WHERE study_id=?)""",
+        (study_id,),
+    )
+    request_queue_refresh_in_transaction(database, date.today().isoformat())
+    return {"id": study_id, "archived": True}
+
+
+def unarchive_study(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    study_id = str(payload["study_id"])
+    if database.execute(
+        "SELECT id FROM studies WHERE id=? FOR UPDATE", (study_id,),
+    ).fetchone() is None:
+        raise HTTPException(404, "Study not found")
+    database.execute(
+        "UPDATE studies SET archived=0,updated_at=? WHERE id=?",
+        (datetime.now(timezone.utc).isoformat(), study_id),
+    )
+    return {"id": study_id, "archived": False}
 
 
 def create_chapter(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
@@ -142,6 +175,8 @@ def create_link(database: PostgresConnection, payload: dict[str, Any]) -> dict[s
 
 register_command("studies.create", create_study)
 register_command("studies.update", update_study)
+register_command("studies.archive", archive_study)
+register_command("studies.unarchive", unarchive_study)
 register_command("studies.chapters.create", create_chapter)
 register_command("studies.chapters.reorder", reorder_chapters)
 register_command("studies.chapters.rename", rename_chapter)

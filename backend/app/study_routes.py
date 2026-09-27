@@ -140,7 +140,11 @@ def update_study(study_id: str, request: StudyCreate, idempotency_key: str | Non
 
 
 @router.post("/{study_id}/archive")
-def archive_study(study_id: str):
+def archive_study(study_id: str,
+                  idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.archive", {"study_id": study_id},
+                                idempotency_key=idempotency_key)
     with connection() as database:
         _require(database, "studies", study_id)
         database.execute("UPDATE studies SET archived=1,updated_at=? WHERE id=?", (_now(), study_id))
@@ -150,7 +154,11 @@ def archive_study(study_id: str):
 
 
 @router.post("/{study_id}/unarchive")
-def unarchive_study(study_id: str):
+def unarchive_study(study_id: str,
+                    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.unarchive", {"study_id": study_id},
+                                idempotency_key=idempotency_key)
     with connection() as database:
         _require(database, "studies", study_id)
         database.execute("UPDATE studies SET archived=0,updated_at=? WHERE id=?", (_now(), study_id))

@@ -88,6 +88,14 @@ def ensure_current_queue(database: PostgresConnection, payload: dict[str, Any]) 
         )
         return {"queue_date": queue_date, "refresh_pending": True,
                 "task_id": active_task["id"]}
+    task = request_queue_refresh_in_transaction(database, queue_date)
+    return {"queue_date": queue_date, "refresh_pending": True, "task_id": task["id"]}
+
+
+def request_queue_refresh_in_transaction(database: PostgresConnection,
+                                         queue_date: str) -> dict[str, Any]:
+    """Checkpoint a foreground mutation and its follow-up queue refresh together."""
+
     task = enqueue_task_in_transaction(
         database, "daily_queue", "current", {"queue_date": queue_date}, priority=10,
     )
@@ -97,7 +105,7 @@ def ensure_current_queue(database: PostgresConnection, payload: dict[str, Any]) 
            state='refreshing',refresh_pending=1,last_error=NULL""",
         (queue_date,),
     )
-    return {"queue_date": queue_date, "refresh_pending": True, "task_id": task["id"]}
+    return task
 
 
 register_command("queue.attempt_failed", mark_attempt_failed)

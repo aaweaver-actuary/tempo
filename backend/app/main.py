@@ -366,6 +366,9 @@ async def prioritize_foreground_requests(request: Request, call_next):
         study_root = path_parts[:2] == ["api", "studies"]
         study_create = study_root and len(path_parts) == 2 and request.method == "POST"
         study_update = study_root and len(path_parts) == 3 and request.method == "PATCH"
+        study_archive = (study_root and len(path_parts) == 4
+                         and path_parts[3] in {"archive", "unarchive"}
+                         and request.method == "POST")
         chapter_create = (study_root and len(path_parts) == 4
                           and path_parts[3] == "chapters" and request.method == "POST")
         chapter_reorder = (study_root and len(path_parts) == 5
@@ -384,7 +387,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
         main_repertoire_command = (len(path_parts) == 4
                                    and path_parts[:2] == ["api", "repertoires"]
                                    and path_parts[3] == "main" and request.method == "PUT")
-        if not any((study_create, study_update, chapter_create, chapter_reorder,
+        if not any((study_create, study_update, study_archive, chapter_create, chapter_reorder,
                     chapter_rename, link_create, queue_entry_command, card_review_command,
                     card_teaching_command, main_repertoire_command)):
             return JSONResponse(

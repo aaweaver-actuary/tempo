@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+from datetime import date
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 import json
@@ -675,6 +676,69 @@ def test_postgres_cutover_study_chapter_routes_dispatch_named_commands(monkeypat
         assert response.json() == {"accepted": command_name}
     assert [name for name, _, _ in dispatched] == [item[3] for item in requests]
     assert all(key == "study-command-1" for _, _, key in dispatched)
+
+
+def test_postgres_study_archive_routes_dispatch_idempotent_commands(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main, study_routes
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(study_routes, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or {"accepted": name})
+    client = TestClient(main.app)
+    for action in ("archive", "unarchive"):
+        response = client.post(
+            f"/api/studies/study-1/{action}",
+            headers={"Idempotency-Key": f"study-1-{action}"},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == {"accepted": f"studies.{action}"}
+    assert dispatched == [
+        ("studies.archive", {"study_id": "study-1"}, "study-1-archive"),
+        ("studies.unarchive", {"study_id": "study-1"}, "study-1-unarchive"),
+    ]
+
+
+def test_postgres_study_archive_queues_refresh_with_mutation(monkeypatch, tmp_path):
+    from app import study_commands
+
+    database_path = tmp_path / "archive-command.db"
+    with sqlite3.connect(database_path) as database:
+        database.executescript("""
+            CREATE TABLE studies(id TEXT PRIMARY KEY,archived INTEGER,updated_at TEXT);
+            CREATE TABLE study_exercises(id TEXT PRIMARY KEY,study_id TEXT);
+            CREATE TABLE cards(id TEXT PRIMARY KEY,study_exercise_id TEXT,archived INTEGER);
+            INSERT INTO studies VALUES('study',0,NULL);
+            INSERT INTO study_exercises VALUES('exercise','study');
+            INSERT INTO cards VALUES('card','exercise',0);
+        """)
+
+    class NativeSqlite:
+        def __init__(self, database):
+            self.database = database
+
+        def execute(self, statement, parameters=()):
+            return self.database.execute(statement.replace("FOR UPDATE", ""), parameters)
+
+    refreshed = []
+    monkeypatch.setattr(study_commands, "request_queue_refresh_in_transaction",
+                        lambda database, queue_date: refreshed.append(queue_date))
+    with sqlite3.connect(database_path) as database:
+        database.row_factory = sqlite3.Row
+        adapter = NativeSqlite(database)
+        assert study_commands.archive_study(adapter, {"study_id": "study"}) == {
+            "id": "study", "archived": True,
+        }
+        assert database.execute("SELECT archived FROM cards WHERE id='card'").fetchone()[0] == 1
+        assert refreshed == [date.today().isoformat()]
+        assert study_commands.unarchive_study(adapter, {"study_id": "study"}) == {
+            "id": "study", "archived": False,
+        }
+        assert database.execute("SELECT archived FROM cards WHERE id='card'").fetchone()[0] == 1
+    assert refreshed == [date.today().isoformat()]
 
 
 def test_postgres_cutover_queue_fail_and_bury_dispatch_foreground_commands(monkeypatch):

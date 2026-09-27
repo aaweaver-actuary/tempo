@@ -150,6 +150,9 @@ handler has been ported and the release gates pass.
   named Celery commands. Against the isolated PostgreSQL rehearsal, four
   simultaneous chapter creates received distinct positions 0 through 3, and
   a source-to-target teaching link persisted with the restricted writer role.
+- Study archive and unarchive now use named Celery commands. Archive updates
+  study cards and enqueues the daily queue refresh in one transaction; a
+  rolled-back restricted-writer rehearsal confirmed the SQL and task state.
 - Foreground queue fail and bury operations now dispatch named Celery commands.
   A rehearsal queue entry was marked failed and buried; replaying the bury
   operation ID returned its original receipt and did not move the entry again.
