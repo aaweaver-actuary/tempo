@@ -165,12 +165,14 @@ pub fn prefix_native(
     let mut position = position_from_fen(fen)?;
     let mut prefix = Vec::new();
     let mut count = 0;
+    let mut ended_on_trained_move = false;
     for uci in validated.moves {
         let played = UciMove::from_str(&uci)
             .map_err(|e| e.to_string())?
             .to_move(&position)
             .map_err(|e| e.to_string())?;
-        if position.turn() == target {
+        ended_on_trained_move = position.turn() == target;
+        if ended_on_trained_move {
             count += 1;
         }
         position = position.play(played).map_err(|e| e.to_string())?;
@@ -179,7 +181,11 @@ pub fn prefix_native(
             break;
         }
     }
-    Ok(prefix)
+    if ended_on_trained_move {
+        Ok(prefix)
+    } else {
+        Ok(Vec::new())
+    }
 }
 
 #[wasm_bindgen]
@@ -274,7 +280,7 @@ mod tests {
     }
 
     #[test]
-    fn prefixes_match_shared_python_golden_fixtures() {
+    fn prefixes_match_python_including_incomplete_trained_turns() {
         let fixtures: serde_json::Value =
             serde_json::from_str(include_str!("../../tests/fixtures/core-parity.json")).unwrap();
         for fixture in fixtures.as_array().unwrap() {

@@ -37,7 +37,7 @@ def test_legacy_timestamp_introduced_at_is_repaired_to_a_study_date(
         ).fetchone()[0] == "2026-09-19"
 
 
-def test_prefixes_match_shared_rust_golden_fixtures():
+def test_prefixes_match_rust_including_incomplete_trained_turns():
     from pathlib import Path
     from app.services.pgn import prefix_through_user_moves
 
