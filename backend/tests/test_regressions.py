@@ -3,6 +3,7 @@ import json
 import time
 
 import httpx
+import pytest
 from fastapi.testclient import TestClient
 
 from app import database
@@ -45,6 +46,12 @@ def test_prefixes_match_rust_including_incomplete_trained_turns():
         (Path(__file__).parents[2] / "tests/fixtures/core-parity.json").read_text()
     )
     for fixture in fixtures:
+        if fixture.get("error") == "invalid_fen":
+            with pytest.raises(ValueError):
+                prefix_through_user_moves(
+                    fixture["fen"], fixture["moves"], fixture["color"], fixture["depth"]
+                )
+            continue
         assert (
             prefix_through_user_moves(
                 fixture["fen"], fixture["moves"], fixture["color"], fixture["depth"]

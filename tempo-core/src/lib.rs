@@ -328,6 +328,16 @@ mod tests {
             serde_json::from_str(include_str!("../../tests/fixtures/core-parity.json")).unwrap();
         for fixture in fixtures.as_array().unwrap() {
             let moves: Vec<String> = serde_json::from_value(fixture["moves"].clone()).unwrap();
+            if fixture["error"].as_str() == Some("invalid_fen") {
+                assert!(prefix_native(
+                    fixture["fen"].as_str().unwrap(),
+                    &moves,
+                    fixture["color"].as_str().unwrap(),
+                    fixture["depth"].as_u64().unwrap() as usize
+                )
+                .is_err());
+                continue;
+            }
             let expected: Vec<String> = serde_json::from_value(fixture["prefix"].clone()).unwrap();
             assert_eq!(
                 prefix_native(
