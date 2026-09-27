@@ -655,6 +655,7 @@ export default function Home() {
   }
 
   async function buryCurrentCard() {
+    if (serviceError && !offlineQueue) throw new Error("Refresh the live queue before burying this card.");
     if (offlineQueue) throw new Error("Burying needs the computer. Continue reviewing or reconnect.");
     if (databaseQueue) {
       if (!card.queueEntryId)
@@ -690,6 +691,7 @@ export default function Home() {
   }
 
   function tryMove(from: Square, to: Square) {
+    if (serviceError && !offlineQueue) return;
     const currentTurn =
       new Chess(currentFenString).turn() === "b" ? "black" : "white";
     if (
@@ -834,6 +836,7 @@ export default function Home() {
     outcome: "again" | "correct",
     options: { recordedAtCompletion?: boolean; retryPending?: boolean } = {},
   ) {
+    if (serviceError && !offlineQueue) return;
     const entryKey = String(card.queueEntryId ?? card.id);
     if (reviewPendingEntries.current.has(entryKey) || cardsLeft === 0) return;
     const pendingBeforeReview = databaseQueue && !offlineQueue ? pendingReviews() : [];
@@ -1184,6 +1187,7 @@ export default function Home() {
   ].includes(currentView);
 
   function handleAttemptFailure() {
+    if (serviceError && !offlineQueue) return;
     if (!attemptFailed) {
       setAttemptFailed(true);
       setQueueNotice("Again recorded · finish with guidance");
@@ -1195,6 +1199,7 @@ export default function Home() {
   }
 
   function resetCardAttempt() {
+    if (serviceError && !offlineQueue) return;
     resetLine();
     setAttemptFailed(true);
     setFeedback("wrong");

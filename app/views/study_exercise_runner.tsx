@@ -33,10 +33,11 @@ function responseError(status: number, detail?: string) {
 }
 
 export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTheme, pieceSet,
-  useSharedBoard = false, onAdvance }: {
+  useSharedBoard = false, onAdvance, blocked = false }: {
   studyId: string; exerciseId: string; card?: PracticeCard;
   boardTheme: BoardTheme; pieceSet: PieceSet; useSharedBoard?: boolean;
   onAdvance?: () => Promise<void>;
+  blocked?: boolean;
 }) {
   const [exercise, setExercise] = useState<PresentedStudyExercise | null>(null);
   const [loadError, setLoadError] = useState("");
@@ -107,21 +108,21 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
   }, [exercise, moveSequence, card?.startingFen]);
 
   const selectSquare = useCallback((square: Square) => {
-    if (!exercise || answerLocked) return;
+    if (!exercise || answerLocked || blocked) return;
     if (exercise.type === "square_set")
       setSelectedSquares((current) => current.includes(square) ? current.filter((item) => item !== square) : [...current, square]);
     if (exercise.type === "knight_path")
       setSelectedSquares((current) => [...current, square].slice(0, 4));
-  }, [exercise, answerLocked]);
+  }, [exercise, answerLocked, blocked]);
 
   const onMove = useCallback((from: Square, to: Square) => {
-    if (!exercise || exercise.type !== "move_line" || answerLocked) return;
+    if (!exercise || exercise.type !== "move_line" || answerLocked || blocked) return;
     try {
       const board = new Chess(currentFen);
       const move = board.move({ from, to, promotion: "q" });
       if (move) setMoveSequence((current) => [...current, `${move.from}${move.to}${move.promotion ?? ""}`]);
     } catch { setSaveError("Choose a legal move, or enter promotion coordinates below."); }
-  }, [exercise, answerLocked, currentFen]);
+  }, [exercise, answerLocked, blocked, currentFen]);
 
   const answerShapes = useMemo<DrawShape[]>(() => selectedSquares.map((square) => ({
     orig: square as Square, brush: "blue",
@@ -130,12 +131,12 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
   useEffect(() => {
     if (!useSharedBoard || !exercise) return;
     setShellBoardForOwner("train", {
-      fen: currentFen, orientation, interactionMode: reply ? "readonly" : selectionMode ? "select" : exercise.type === "move_line" ? "legal" : "readonly",
+      fen: currentFen, orientation, interactionMode: blocked || reply ? "readonly" : selectionMode ? "select" : exercise.type === "move_line" ? "legal" : "readonly",
       showHint: false, theme: boardTheme, pieceSet, shapes: answerShapes, drawnShapes: [],
       lastMove: undefined, onMove, onSquareSelect: selectSquare,
     });
     return () => releaseShellBoardForOwner("train");
-  }, [useSharedBoard, exercise, currentFen, orientation, reply, selectionMode, boardTheme, pieceSet,
+  }, [useSharedBoard, exercise, currentFen, orientation, reply, blocked, selectionMode, boardTheme, pieceSet,
     answerShapes, onMove, selectSquare, setShellBoardForOwner, releaseShellBoardForOwner]);
 
   const addCoordinates = () => {
@@ -173,7 +174,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
   };
 
   const submit = async () => {
-    if (!exercise || reply || busy) return;
+    if (!exercise || reply || busy || blocked) return;
     const generation = generationRef.current;
     if (card?.studySnapshot && card.queueEntryId) {
       try {
@@ -224,7 +225,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
   };
 
   const selfAssess = async (rating: "correct" | "again") => {
-    if (!reply || !exercise || busy) return;
+    if (!reply || !exercise || busy || blocked) return;
     const generation = generationRef.current;
     if (card?.studySnapshot && card.queueEntryId && offlineAnswerRef.current) {
       try {
@@ -267,7 +268,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     <p>{exercise.prompt}</p>
     {exercise.type === "square_set" && <p>{exercise.criterion}</p>}
     {exercise.type === "knight_path" && <p>Static, non-capturing knight route from {exercise.start_square} attacking {exercise.target_squares?.join(", ")}. {exercise.hop_rule === "exact" ? "Exactly" : "At most"} {exercise.maximum_hops} hops. Other pieces stay fixed.</p>}
-    {!useSharedBoard && <Chessboard fen={currentFen} locked={Boolean(reply) || !selectionMode && exercise.type !== "move_line"}
+    {!useSharedBoard && <Chessboard fen={currentFen} locked={blocked || Boolean(reply) || !selectionMode && exercise.type !== "move_line"}
       selectOnly={selectionMode && !reply} onMove={onMove} onSquareSelect={selectSquare}
       showHint={false} theme={boardTheme} pieceSet={pieceSet} shapes={answerShapes}
       orientation={orientation} onFlip={() => setOrientation((value) => value === "white" ? "black" : "white")} />}

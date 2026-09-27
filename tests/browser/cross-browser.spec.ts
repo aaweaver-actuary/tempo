@@ -2,6 +2,9 @@ import { test, expect } from "./observability";
 import { navigate, noPageOverflow } from "./ui-fixtures";
 import { prepareVisualUI } from "./visual-fixtures";
 
+// API route interception must remain deterministic after the app registers its shell worker.
+test.use({ serviceWorkers: "block" });
+
 test("critical navigation, board input, split and dialogs work across browser engines", async ({
   page,
 }) => {
@@ -57,4 +60,57 @@ test("tablet menu Escape restores the visible navigation trigger", async ({page}
   await page.keyboard.press("Escape");
   await expect(menu).toBeFocused();
   await expect(page.locator("#workspace-menu")).toHaveCount(0);
+});
+
+test("WebKit desktop prepared queue outage preserves the position and blocks grading until Retry", async ({ page }) => {
+  const startingFen = "rnbqkbnr/pppppppp/8/8/3P4/8/PPP1PPPP/RNBQKBNR b KQkq - 0 1";
+  const card = { id: "webkit-live", queue_entry_id: 8123, start_fen: startingFen,
+    moves: ["d7d5", "c2c4"], content_type: "opening", repertoire_name: "WebKit live card",
+    repertoire_source: "PGN", trained_color: "black" };
+  let liveRequestFails = false;
+  let preparedRequests = 0;
+  await page.route("**/api/queue/prepared", (route) => {
+    preparedRequests += 1;
+    return route.fulfill({ status: 500, body: "Desktop must not prepare a phone queue" });
+  });
+  let queueRequests = 0;
+  await page.route("**/api/queue/window**", (route) => {
+    queueRequests += 1;
+    return liveRequestFails
+    ? route.abort("failed")
+    : route.fulfill({ json: { cards: [card], count: 1 } });
+  });
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "WebKit live card" })).toBeVisible();
+  await page.evaluate(async (savedCard) => {
+    await new Promise<void>((resolve, reject) => {
+      const opened = indexedDB.open("tempo-offline-training", 1);
+      opened.onupgradeneeded = () => opened.result.createObjectStore("training");
+      opened.onerror = () => reject(opened.error);
+      opened.onsuccess = () => {
+        const transaction = opened.result.transaction("training", "readwrite");
+        transaction.objectStore("training").put({
+          localDate: new Date().toLocaleDateString("en-CA"), preparedAt: new Date().toISOString(),
+          cards: [savedCard], attempts: [], nextTemporaryId: -1,
+        }, "prepared-daily-queue");
+        transaction.oncomplete = () => { opened.result.close(); resolve(); };
+        transaction.onerror = () => reject(transaction.error);
+      };
+    });
+  }, card);
+  const originalFen = await page.locator(".board-frame").getAttribute("data-fen");
+  const requestsBeforeFailure = queueRequests;
+  await page.bringToFront();
+  liveRequestFails = true;
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect.poll(() => queueRequests).toBeGreaterThan(requestsBeforeFailure);
+  await expect(page.getByRole("button", { name: "Retry", exact: true })).toBeVisible();
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", originalFen!);
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-input-enabled", "false");
+  await expect(page.getByRole("button", { name: "Correct" })).toBeDisabled();
+  await expect(page.getByText("Offline queue", { exact: true })).toHaveCount(0);
+  liveRequestFails = false;
+  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-input-enabled", "true");
+  expect(preparedRequests).toBe(0);
 });

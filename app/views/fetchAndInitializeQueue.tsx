@@ -1,11 +1,11 @@
 import { API_URL } from "../const";
-import { localDayKey, usesLocalApi } from "../utils/local";
+import { isIPhoneHomeScreen, localDayKey, usesLocalApi } from "../utils/local";
 import { useTrainingStore } from "../state/training-store";
 import { runStudyTask } from "../lib/background-study";
 import type { PracticeCard } from "../domain/cards";
 import { reportDebugError } from "../lib/debug-reporting";
 import { flushPendingReviews, pendingReviews, ReviewReplayError } from "../lib/review-outbox";
-import { describeOfflineQueue, readPreparedTraining, replayOfflineAttempts, requiresConnectedGrading, savePreparedTraining } from "../lib/offline-training";
+import { describeOfflineQueue, OfflineReplayError, readPreparedTraining, replayOfflineAttempts, requiresConnectedGrading, savePreparedTraining } from "../lib/offline-training";
 import { waitForOfflineShell } from "../lib/offline-shell";
 import { flushTrainingFailures, pendingTrainingFailures } from "../lib/training-failure-outbox";
 
@@ -24,6 +24,8 @@ type QueuePayload = {
   local_date?: string;
   projection?: { state?: string; generation?: number; last_error?: string };
 };
+
+class QueueProcessingError extends Error {}
 
 async function fetchQueueWindow(signal: AbortSignal): Promise<Response> {
   const controller = new AbortController();
@@ -68,12 +70,17 @@ async function loadTodayQueueWithRetry(signal: AbortSignal): Promise<QueuePayloa
     const response = await fetchQueueWindow(signal);
     if (response.ok) {
       failedRequests = 0;
-      const payload = await response.json() as QueuePayload;
+      let payload: QueuePayload;
+      try {
+        payload = await response.json() as QueuePayload;
+      } catch (error) {
+        throw new QueueProcessingError(`The local queue returned invalid JSON. ${String(error)}`);
+      }
       if (payload.projection?.state === "failed")
-        throw new Error(payload.projection.last_error ?? "Daily queue refresh failed");
+        throw new QueueProcessingError(payload.projection.last_error ?? "Daily queue refresh failed");
       if (payload.projection?.state !== "refreshing" || payload.cards?.length)
         return payload;
-      if (attempt === 19) throw new Error("Daily queue is still preparing. Check the analysis worker and retry.");
+      if (attempt === 19) throw new QueueProcessingError("Daily queue is still preparing. Check the analysis worker and retry.");
       await waitForQueueRetry(250, signal);
       continue;
     }
@@ -106,10 +113,16 @@ export async function fetchAndInitializeQueue(
   activeQueueController?.abort();
   const controller = new AbortController();
   activeQueueController = controller;
+  let failedOperation = "process today queue";
+  let failedEndpoint: string | undefined;
+  let queueRequestFailed = false;
   try {
+    let pendingOfflineCardIds = new Set<string>();
     const withoutPendingReviews = (cards: PracticeCard[]) => {
       const pendingEntryIds = new Set(pendingReviews().map((review) => review.queueEntryId));
-      return cards.filter((card) => !card.queueEntryId || !pendingEntryIds.has(card.queueEntryId));
+      return cards.filter((card) =>
+        (!card.queueEntryId || !pendingEntryIds.has(card.queueEntryId)) &&
+        !pendingOfflineCardIds.has(String(card.backendId ?? card.id)));
     };
     const pendingFailureEntries = new Set(pendingTrainingFailures());
     let failureSaveError: string | null = null;
@@ -123,9 +136,9 @@ export async function fetchAndInitializeQueue(
     const retainPendingFailures = (cards: PracticeCard[]) => cards.map((card) =>
       card.queueEntryId && pendingFailureEntries.has(card.queueEntryId)
         ? { ...card, attemptFailed: true } : card);
-    const savedPhoneQueue = typeof indexedDB === "undefined" ? null : await readPreparedTraining().catch(() => null);
-    if (!useTrainingStore.getState().isDatabaseQueueActive && !pendingReviews().length &&
-        savedPhoneQueue?.localDate !== localDayKey()) {
+    const savedPreparedQueue = typeof indexedDB === "undefined" ? null : await readPreparedTraining().catch(() => null);
+    if (isIPhoneHomeScreen() && !useTrainingStore.getState().isDatabaseQueueActive && !pendingReviews().length &&
+        savedPreparedQueue?.localDate !== localDayKey()) {
       const stored = localStorage.getItem(queueCacheKey);
       if (stored) {
         try {
@@ -144,8 +157,22 @@ export async function fetchAndInitializeQueue(
         }
       }
     }
-    const replayed = typeof indexedDB === "undefined" ? null : await replayOfflineAttempts();
+    let replayed: Awaited<ReturnType<typeof replayOfflineAttempts>> | null = null;
     let pendingReviewError = "";
+    if (typeof indexedDB !== "undefined") {
+      try {
+        replayed = await replayOfflineAttempts();
+      } catch (error) {
+        pendingReviewError = error instanceof Error ? error.message : String(error);
+        if (generation === requestGeneration) reportDebugError(error, {
+          kind: "api", source: "training-offline-review-replay", operation: "replay saved offline reviews",
+          endpoint: error instanceof OfflineReplayError ? error.endpoint : undefined,
+        });
+      }
+    }
+    pendingOfflineCardIds = new Set((replayed ?? savedPreparedQueue)?.attempts
+      .filter((attempt) => !attempt.serverReviewId && !attempt.conflict)
+      .map((attempt) => attempt.cardId) ?? []);
     if (pendingReviews().length) {
       try {
         await flushPendingReviews();
@@ -160,7 +187,15 @@ export async function fetchAndInitializeQueue(
           });
       }
     }
-    const raw = await loadTodayQueueWithRetry(controller.signal);
+    let raw: QueuePayload;
+    try {
+      raw = await loadTodayQueueWithRetry(controller.signal);
+    } catch (error) {
+      queueRequestFailed = !(error instanceof QueueProcessingError);
+      failedOperation = queueRequestFailed ? "load today queue" : "process today queue response";
+      failedEndpoint = `${API_URL}/api/queue/window?limit=20`;
+      throw error;
+    }
     const cards = await runStudyTask<PracticeCard[]>({
       kind: "queue",
       payload: raw,
@@ -177,12 +212,12 @@ export async function fetchAndInitializeQueue(
     }
     if (replayed?.attempts.some((attempt) => attempt.conflict))
       useTrainingStore.getState().setQueueNotice(
-        `${replayed.attempts.filter((attempt) => attempt.conflict).length} phone review conflict(s) remain saved on this phone: ${replayed.attempts.filter((attempt) => attempt.conflict).map((attempt) => attempt.cardId).join(", ")}. The computer's saved results take priority.`,
+        `${replayed.attempts.filter((attempt) => attempt.conflict).length} ${isIPhoneHomeScreen() ? "phone review conflict(s) remain saved on this phone" : "offline review conflict(s) remain saved in this browser"}: ${replayed.attempts.filter((attempt) => attempt.conflict).map((attempt) => attempt.cardId).join(", ")}. The computer's saved results take priority.`,
       );
     else useTrainingStore.getState().setQueueNotice(failureSaveError ??
       (pendingTrainingFailures().length ? "Guided attempt save pending. Tempo will retry." : ""));
     const hasConflicts = Boolean(replayed?.attempts.some((attempt) => attempt.conflict));
-    if (typeof indexedDB !== "undefined" && options.preparePhoneQueue !== false) void fetch(`${API_URL}/api/queue/prepared`, { signal: controller.signal })
+    if (isIPhoneHomeScreen() && typeof indexedDB !== "undefined" && options.preparePhoneQueue !== false) void fetch(`${API_URL}/api/queue/prepared`, { signal: controller.signal })
       .then(async (response) => {
         if (response.status === 404)
           throw new Error("Tempo on the computer is an older version. Update it, then reopen Tempo on the phone.");
@@ -234,8 +269,22 @@ export async function fetchAndInitializeQueue(
       });
   } catch (error) {
     if (generation !== requestGeneration) return;
-    const prepared = await readPreparedTraining().catch(() => null);
+    reportDebugError(error, {
+      kind: "api", source: queueRequestFailed ? "training-queue" : "training-queue-processing",
+      operation: failedOperation, endpoint: failedEndpoint,
+    });
+    const prepared = queueRequestFailed && isIPhoneHomeScreen()
+      ? await readPreparedTraining().catch(() => null) : null;
     if (prepared?.localDate === localDayKey()) {
+      try {
+        await waitForOfflineShell();
+      } catch (shellError) {
+        // A saved queue is usable offline only with the current verified app shell.
+        useTrainingStore.getState().setServiceError(
+          `The local queue could not be loaded. Your active attempt is retained. ${String(error)} ${String(shellError)}`,
+        );
+        throw error;
+      }
       const pendingEntryIds = new Set(pendingReviews().map((review) => review.queueEntryId));
       const supportedCards = prepared.cards.filter((card) =>
         !requiresConnectedGrading(card) &&
@@ -246,15 +295,9 @@ export async function fetchAndInitializeQueue(
       if (generation !== requestGeneration) return;
       useTrainingStore.getState().hydrateLocalQueue(cards, advance, cards.length);
       useTrainingStore.getState().setOfflineQueue(true);
-      useTrainingStore.getState().setQueueNotice(describeOfflineQueue(prepared));
+      useTrainingStore.getState().setQueueNotice(`${describeOfflineQueue(prepared)} Live service: ${String(error)}. Retry sync when connected.`);
       return;
     }
-    reportDebugError(error, {
-      kind: "api",
-      source: "training-queue",
-      operation: "load today queue",
-      endpoint: `${API_URL}/api/queue/window?limit=20`,
-    });
     useTrainingStore
       .getState()
       .setServiceError(

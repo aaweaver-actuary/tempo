@@ -36,7 +36,7 @@ for (const viewport of [
         await expect(
           page.getByText("Spanish opening", { exact: true }).first(),
         ).toBeVisible();
-        await expect(page.getByText("Phone queue prepared for 2026-09-18.")).toBeVisible();
+        await expect(page.getByText("Phone queue prepared for 2026-09-18.")).toHaveCount(0);
       }
       if (workspace === "Tactics")
         await expect(page.getByText(/Puzzle \d+ of/)).toBeVisible();
@@ -98,7 +98,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 720 
     await page.reload();
     await page.getByRole("button", { name: /Analysis activity/ }).click();
     await expect(page.getByRole("progressbar", { name: "Spanish opening integrity progress" })).toBeVisible();
-    await expect(page.getByText("Phone queue prepared for 2026-09-18.")).toBeVisible();
+    await expect(page.getByText("Phone queue prepared for 2026-09-18.")).toHaveCount(0);
     await page.addStyleTag({ content: "#tempo-activity-content .tempo-activity-item:not(:first-of-type), #tempo-activity-content .tempo-activity-list h3:not(:first-child) { display: none; }" });
     await expect(page).toHaveScreenshot(`activity-tray-${viewport.width}.png`, { animations: "disabled", fullPage: true });
   });

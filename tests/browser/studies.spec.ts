@@ -1,7 +1,44 @@
 import { test, expect, api, nav } from "./product-fixtures";
+import type { Page } from "@playwright/test";
+
+test.use({ userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1" });
+test.beforeEach(async ({ context }) => {
+  await context.addInitScript(() => Object.defineProperty(navigator, "standalone", { value: true, configurable: true }));
+});
 
 const fen = "4k3/8/8/8/8/8/8/4K1N1 w - - 0 1";
 const originalPgn = `[Event "Original synthetic study"]\n[SetUp "1"]\n[FEN "${fen}"]\n\n*\n`;
+
+async function waitForPreparedPhoneShell(page: Page, localDate: string): Promise<void> {
+  await expect.poll(() => page.evaluate(async (expectedDate) => {
+    const controller = navigator.serviceWorker.controller;
+    if (!controller) return false;
+    const shellReady = await new Promise<boolean>((resolve) => {
+      const channel = new MessageChannel();
+      const timeout = window.setTimeout(() => resolve(false), 1_000);
+      channel.port1.onmessage = (event) => {
+        window.clearTimeout(timeout);
+        channel.port1.close();
+        resolve(event.data?.ready === true);
+      };
+      controller.postMessage({ type: "tempo:offline-shell-status" }, [channel.port2]);
+    });
+    if (!shellReady) return false;
+    const opened = indexedDB.open("tempo-offline-training", 1);
+    const database = await new Promise<IDBDatabase | null>((resolve) => {
+      opened.onsuccess = () => resolve(opened.result);
+      opened.onerror = () => resolve(null);
+    });
+    if (!database) return false;
+    const read = database.transaction("training").objectStore("training").get("prepared-daily-queue");
+    const prepared = await new Promise<{ localDate?: string; cards?: unknown[] } | null>((resolve) => {
+      read.onsuccess = () => resolve(read.result ?? null);
+      read.onerror = () => resolve(null);
+    });
+    database.close();
+    return prepared?.localDate === expectedDate && Boolean(prepared.cards?.length);
+  }, localDate)).toBe(true);
+}
 
 test("FEN-only study square exercise is authored enrolled and reviewed through the real workspace", async ({ page, request }) => {
   await page.goto("/");
@@ -66,6 +103,7 @@ test("prepared study response is graded offline and replayed with its actual squ
   } }));
   await page.goto("/");
   await expect(page.getByText("Mark the knight square")).toBeVisible();
+  await waitForPreparedPhoneShell(page, localDate);
   await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
   await page.reload();
   await expect(page.getByText("Mark the knight square")).toBeVisible();
@@ -162,6 +200,7 @@ test("stale study revisions retain the phone answer as a replay conflict", async
       updated_at: null, refresh_pending: 0, last_error: null, blocked_count: 0 } } }));
   await page.goto("/");
   await expect(page.getByText("Mark the knight square")).toBeVisible();
+  await waitForPreparedPhoneShell(page, localDate);
   await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
   await page.reload();
   await page.getByLabel("Coordinates or UCI move").fill("g1");
@@ -197,6 +236,7 @@ test("unknown prepared study grader versions are unavailable offline", async ({ 
     prepared_at: new Date().toISOString(), projection: { state: "ready", generation: 1,
       updated_at: null, refresh_pending: 0, last_error: null, blocked_count: 0 } } }));
   await page.goto("/");
+  await waitForPreparedPhoneShell(page, localDate);
   await expect.poll(async () => page.evaluate(async () => {
     const request = indexedDB.open("tempo-offline-training", 1);
     const database = await new Promise<IDBDatabase>((resolve) => { request.onsuccess = () => resolve(request.result); });
@@ -269,6 +309,7 @@ test("prepared explanation is self assessed offline and replayed through server 
       updated_at: null, refresh_pending: 0, last_error: null, blocked_count: 0 } } }));
   await page.goto("/");
   await expect(page.getByText("Explain the knight placement")).toBeVisible();
+  await waitForPreparedPhoneShell(page, localDate);
   await expect.poll(async () => page.evaluate(async () => {
     const request = indexedDB.open("tempo-offline-training", 1);
     const database = await new Promise<IDBDatabase>((resolve) => { request.onsuccess = () => resolve(request.result); });

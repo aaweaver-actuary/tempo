@@ -1,5 +1,10 @@
 import { test, expect, type Page } from "@playwright/test";
 
+test.use({ userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1" });
+test.beforeEach(async ({ context }) => {
+  await context.addInitScript(() => Object.defineProperty(navigator, "standalone", { value: true, configurable: true }));
+});
+
 async function playBoardSquare(page: Page, square: string) {
   const board = page.locator(".cg-wrap");
   const bounds = (await board.boundingBox())!;
@@ -45,6 +50,7 @@ test("prepared phone queue survives API outage reload and syncs its review", asy
   } }));
   await page.goto("/");
   await expect(page.getByText(`Phone queue prepared for ${localDate}.`)).toBeVisible();
+  expect(await page.evaluate(() => ({ userAgent: navigator.userAgent, standalone: (navigator as Navigator & { standalone?: boolean }).standalone }))).toMatchObject({ standalone: true });
   await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
   await expect.poll(() => page.evaluate(async () => {
     const cache = await caches.open("tempo-static-v6");
@@ -55,6 +61,7 @@ test("prepared phone queue survives API outage reload and syncs its review", asy
   await page.reload();
   await expect(page.getByText("First phone card")).toBeVisible();
   await expect(page.getByText(/Offline queue prepared/)).toBeVisible();
+  await expect(page.getByText(/Live service:.*Retry sync when connected/)).toBeVisible();
   await page.getByRole("button", { name: "Correct" }).click();
   await expect(page.getByText("Second phone card")).toBeVisible();
   await expect(page.getByText(/saved on phone/i)).toBeVisible();
@@ -137,7 +144,7 @@ test("phone 225-card offline queue reconciles to the desktop 241-card count and 
   }
 });
 
-test("pending phone review retains its offline queue until replay and a conflict remains recorded after reconciliation", async ({ page }) => {
+test("pending phone review remains saved while live training opens and a conflict remains recorded after reconciliation", async ({ page }) => {
   const replacement = { ...preparedCards[0], id: "replacement", queue_entry_id: 601,
     repertoire_name: "Replacement card" };
   let canonicalCards = preparedCards;
@@ -163,9 +170,9 @@ test("pending phone review retains its offline queue until replay and a conflict
     json: { detail: "Review service unavailable" } }));
   await page.unroute("**/api/**");
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
-  await expect(page.getByText("Offline queue", { exact: true })).toBeVisible();
-  await expect(page.getByText(/1 review saved on phone/)).toBeVisible();
-  await expect(page.locator(".session-count strong")).toHaveText("2");
+  await expect(page.getByText("Offline queue", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/Could not save a previous training review/)).toBeVisible();
+  await expect(page.locator(".session-count strong")).toHaveText("3");
 
   await page.unroute("**/api/cards/phone-first/review");
   await page.route("**/api/cards/phone-first/review", (route) => route.fulfill({ status: 409,

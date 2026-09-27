@@ -60,7 +60,7 @@ function continuationNotation(startingFen: string, movesUci: string[]): string {
 }
 
 export default function DefenseTrainingView({
-  card, boardTheme, pieceSet, useSharedBoard, onAdvance, onBury = async () => undefined,
+  card, boardTheme, pieceSet, useSharedBoard, onAdvance, onBury = async () => undefined, blocked = false,
 }: {
   card: PracticeCard;
   boardTheme: BoardTheme;
@@ -68,6 +68,7 @@ export default function DefenseTrainingView({
   useSharedBoard: boolean;
   onAdvance: () => Promise<void>;
   onBury?: () => Promise<void>;
+  blocked?: boolean;
 }) {
   const candidateId = card.defenseCandidateId;
   const queueEntryId = card.queueEntryId;
@@ -166,7 +167,7 @@ export default function DefenseTrainingView({
   }, [pending, grade?.status, submit]);
 
   const onMove = useCallback((from: Square, to: Square) => {
-    if (!exercise || (exercise.recognition_required && !defenseReady) || busy || pendingRef.current || grade?.status === "correct" || grade?.status === "incorrect") return;
+    if (blocked || !exercise || (exercise.recognition_required && !defenseReady) || busy || pendingRef.current || grade?.status === "correct" || grade?.status === "incorrect") return;
     try {
       const board = new Chess(card.startingFen);
       const move = board.move({ from, to, promotion: "q" });
@@ -182,19 +183,19 @@ export default function DefenseTrainingView({
     } catch {
       setSaveError("That move is not legal from this position.");
     }
-  }, [exercise, defenseReady, busy, grade?.status, card.startingFen, submit]);
+  }, [blocked, exercise, defenseReady, busy, grade?.status, card.startingFen, submit]);
 
   const selectSquare = useCallback((square: Square) => {
-    if (recognitionDone || assessmentDone || busy || activeSelection > 3) return;
+    if (blocked || recognitionDone || assessmentDone || busy || activeSelection > 3) return;
     setSelectedSquares((current) => [...current.slice(0, activeSelection), square]);
     setSquareInput("");
     if (activeSelection === 3) setAssessmentDone(true);
     else setActiveSelection((current) => current + 1);
     setNoConcreteThreat(false);
-  }, [recognitionDone, assessmentDone, busy, activeSelection]);
+  }, [blocked, recognitionDone, assessmentDone, busy, activeSelection]);
 
   const submitRecognition = async () => {
-    if (!candidateId || !queueEntryId || !exercise || busy) return;
+    if (blocked || !candidateId || !queueEntryId || !exercise || busy) return;
     setBusy(true);
     setSaveError("");
     const attemptId = recognitionAttemptId.current ?? crypto.randomUUID();
@@ -257,7 +258,7 @@ export default function DefenseTrainingView({
           return [{ orig: selectedSquares[0] as Key, dest: square as Key, brush: "blue" }];
         return [{ orig: square as Key, brush: "blue" }];
       }), [recognitionDone, showingPreview, shownFeedback, selectedSquares]);
-  const locked = !exercise || busy || Boolean(pending) || recognitionStage
+  const locked = blocked || !exercise || busy || Boolean(pending) || recognitionStage
     || (recognitionDone && !defenseReady) || grade?.status === "correct" || grade?.status === "incorrect";
   useEffect(() => {
     if (!useSharedBoard) return;
@@ -266,7 +267,7 @@ export default function DefenseTrainingView({
       fen: boardFen,
       expectedSan: undefined,
       lastMove: undefined,
-      interactionMode: recognitionStage && !assessmentDone ? "free" : locked ? "readonly" : "legal",
+      interactionMode: blocked ? "readonly" : recognitionStage && !assessmentDone ? "free" : locked ? "readonly" : "legal",
       showHint: false,
       theme: boardTheme,
       pieceSet,
@@ -275,21 +276,21 @@ export default function DefenseTrainingView({
       drawnShapes: [],
       positionRevision: card.revision ?? 1,
       onMove,
-      onSquareSelect: recognitionStage && !assessmentDone ? selectSquare : undefined,
-      onFreeMove: recognitionStage && !assessmentDone ? (from, to) => { selectSquare(from); selectSquare(to); } : undefined,
+      onSquareSelect: !blocked && recognitionStage && !assessmentDone ? selectSquare : undefined,
+      onFreeMove: !blocked && recognitionStage && !assessmentDone ? (from, to) => { selectSquare(from); selectSquare(to); } : undefined,
       onDrawnShapesChange: undefined,
       onFlip: undefined,
     });
     return () => releaseShellBoardForOwner("train");
   }, [useSharedBoard, setShellBoardForOwner, releaseShellBoardForOwner,
-      boardFen, card.orientation, card.revision, loadError, locked,
+      boardFen, card.orientation, card.revision, loadError, locked, blocked,
       boardTheme, pieceSet, onMove, recognitionStage, assessmentDone, selectSquare, recognitionShapes]);
 
   const definitive = grade?.status === "correct" || grade?.status === "incorrect";
   return (
     <section className={`training-grid${useSharedBoard ? " training-grid-shared" : ""}`} aria-label="Defensive decision exercise">
       <div className="board-column">
-        {!useSharedBoard && <Chessboard fen={boardFen} locked={Boolean(locked && (!recognitionStage || assessmentDone))} showHint={false}
+        {!useSharedBoard && <Chessboard fen={boardFen} locked={blocked || Boolean(locked && (!recognitionStage || assessmentDone))} showHint={false}
           theme={boardTheme} pieceSet={pieceSet} orientation={card.orientation} onMove={onMove} shapes={recognitionShapes}
           editMode={recognitionStage && !assessmentDone} onSquareSelect={recognitionStage && !assessmentDone ? selectSquare : undefined}
           onFreeMove={recognitionStage && !assessmentDone ? (from, to) => { selectSquare(from); selectSquare(to); } : undefined} />}

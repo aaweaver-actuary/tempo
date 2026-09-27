@@ -34,6 +34,12 @@ export type PreparedTraining = {
   nextTemporaryId: number;
 };
 
+export class OfflineReplayError extends Error {
+  constructor(message: string, readonly endpoint: string, options?: ErrorOptions) {
+    super(message, options);
+  }
+}
+
 export function describeOfflineQueue(prepared: PreparedTraining): string {
   const preparedTime = new Date(prepared.preparedAt);
   const preparedLabel = Number.isNaN(preparedTime.getTime())
@@ -252,10 +258,13 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
     const expectedReviewId = parent?.serverReviewId ?? attempt.expectedReviewId;
     const controller = new AbortController();
     const timeout = window.setTimeout(() => controller.abort(), 5_000);
+    const reviewEndpoint = attempt.studyId && attempt.exerciseId && attempt.answer && attempt.attemptId
+      ? `${API_URL}/api/studies/${encodeURIComponent(attempt.studyId)}/exercises/${encodeURIComponent(attempt.exerciseId)}/attempts`
+      : `${API_URL}/api/cards/${encodeURIComponent(attempt.cardId)}/review`;
     let response: Response;
     try {
       if (attempt.studyId && attempt.exerciseId && attempt.answer && attempt.attemptId) {
-        response = await fetch(`${API_URL}/api/studies/${encodeURIComponent(attempt.studyId)}/exercises/${encodeURIComponent(attempt.exerciseId)}/attempts`, {
+        response = await fetch(reviewEndpoint, {
           method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
           body: JSON.stringify({ attempt_id: attempt.attemptId, revision: attempt.expectedRevision,
             answer: attempt.answer, context: "review", card_id: attempt.cardId,
@@ -263,7 +272,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
             expected_review_id: expectedReviewId, hint_seen: attempt.guided }),
         });
       } else {
-        response = await fetch(`${API_URL}/api/cards/${encodeURIComponent(attempt.cardId)}/review`, {
+        response = await fetch(reviewEndpoint, {
           method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
           body: JSON.stringify({
             queue_entry_id: serverEntryId, outcome: attempt.outcome, guided: attempt.guided,
@@ -272,6 +281,8 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
           }),
         });
       }
+    } catch (error) {
+      throw new OfflineReplayError(`Could not sync saved review. ${String(error)}`, reviewEndpoint, { cause: error });
     } finally {
       window.clearTimeout(timeout);
     }
@@ -283,21 +294,27 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       }));
       continue;
     }
-    if (!response.ok) throw new Error(`Could not sync phone review (HTTP ${response.status})`);
+    if (!response.ok) throw new OfflineReplayError(`Could not sync phone review (HTTP ${response.status})`, reviewEndpoint);
     let result = await response.json() as { review_id: number; requeue_entry_id: number | null;
       pending_self_assessment?: boolean; review?: { review_id: number; requeue_entry_id: number | null } };
     if (result.pending_self_assessment && attempt.studyId && attempt.exerciseId && attempt.attemptId && attempt.selfRating) {
-      const assessed = await fetch(`${API_URL}/api/studies/${encodeURIComponent(attempt.studyId)}/exercises/${encodeURIComponent(attempt.exerciseId)}/attempts/${encodeURIComponent(attempt.attemptId)}/self-assess`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ rating: attempt.selfRating }),
-      });
+      const assessmentEndpoint = `${API_URL}/api/studies/${encodeURIComponent(attempt.studyId)}/exercises/${encodeURIComponent(attempt.exerciseId)}/attempts/${encodeURIComponent(attempt.attemptId)}/self-assess`;
+      let assessed: Response;
+      try {
+        assessed = await fetch(assessmentEndpoint, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ rating: attempt.selfRating }),
+        });
+      } catch (error) {
+        throw new OfflineReplayError(`Could not sync study self-assessment. ${String(error)}`, assessmentEndpoint, { cause: error });
+      }
       if (assessed.status === 409) {
         const detail = (await assessed.json().catch(() => ({}))) as { detail?: string };
         current = await updatePreparedTraining((saved) => ({ ...saved!, attempts: saved!.attempts.map((item) => item.localEntryId === attempt.localEntryId
           ? { ...item, conflict: detail.detail ?? "Study revision changed before sync" } : item) }));
         continue;
       }
-      if (!assessed.ok) throw new Error(`Could not sync study self-assessment (HTTP ${assessed.status})`);
+      if (!assessed.ok) throw new OfflineReplayError(`Could not sync study self-assessment (HTTP ${assessed.status})`, assessmentEndpoint);
       result = await assessed.json() as typeof result;
     }
     if (result.review) result = { ...result.review };

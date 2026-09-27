@@ -312,9 +312,12 @@ export function installGlobalDebugErrorHandlers() {
     });
   };
   const onUnhandledRejection = (event: PromiseRejectionEvent) => {
+    const rejectionMessage = event.reason instanceof Error ? event.reason.message : String(event.reason ?? "");
+    const isSafariExtensionFailure = rejectionMessage.includes("error in the background page") &&
+      rejectionMessage.includes("window.fixinatorInputs.has");
     reportDebugError(event.reason, {
       kind: "unhandled-rejection",
-      source: "window.unhandledrejection",
+      source: isSafariExtensionFailure ? "browser-extension" : "window.unhandledrejection",
     });
   };
   window.addEventListener("error", onError, true);

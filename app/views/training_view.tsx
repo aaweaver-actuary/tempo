@@ -110,6 +110,7 @@ function StandardTrainingView({
     teachingEncounterKey,
   } = useTrainingStore(useShallow(selectTrainingViewState));
   const reviewBlocked = reviewPersistenceState === "saveFailed";
+  const liveQueueBlocked = Boolean(serviceError && !offlineQueue);
   const isEndgame = card.kind === "endgame";
   const { setShellBoardForOwner, releaseShellBoardForOwner } =
     useBoardPublisher();
@@ -160,6 +161,7 @@ function StandardTrainingView({
       lastMove,
       interactionMode:
         isLocked ||
+        liveQueueBlocked ||
         reviewBlocked ||
         step >= card.moves.length ||
         cardsLeft === 0
@@ -189,6 +191,7 @@ function StandardTrainingView({
     currentFenString,
     isEndgame,
     isLocked,
+    liveQueueBlocked,
     reviewBlocked,
     lastMove,
     onMove,
@@ -203,7 +206,7 @@ function StandardTrainingView({
   ]);
 
   function handleAnalyzeOnLichessClick() {
-    if (!attemptFailed && !reviewBlocked) void rateCard("again");
+    if (!attemptFailed && !reviewBlocked && !liveQueueBlocked) void rateCard("again");
   }
 
   return (
@@ -296,6 +299,7 @@ function StandardTrainingView({
                 lastMove={lastMove}
                 locked={
                   isLocked ||
+                  liveQueueBlocked ||
                   reviewBlocked ||
                   step >= card.moves.length ||
                   cardsLeft === 0
@@ -319,6 +323,7 @@ function StandardTrainingView({
                 type="button"
                 disabled={
                   burying ||
+                  liveQueueBlocked ||
                   feedback === "complete" ||
                   reviewBlocked ||
                   reviewPersistenceState === "saving" ||
@@ -333,11 +338,11 @@ function StandardTrainingView({
                 isAttemptFailed={attemptFailed}
                 isFeedbackComplete={feedback === "complete"}
                 hasNoCardsLeft={cardsLeft === 0}
-                isReviewBlocked={reviewBlocked}
+                isReviewBlocked={reviewBlocked || liveQueueBlocked}
               />
               <RestartButton
                 handleRestart={resetCardAttempt}
-                disabled={reviewBlocked}
+                disabled={reviewBlocked || liveQueueBlocked}
               />
               <AnalyzeOnLichessButton
                 moves={card.moves.slice(0, step)}
@@ -431,7 +436,7 @@ function StandardTrainingView({
               )}
             <div className="ratings binary">
               <Button
-                disabled={isLocked || reviewBlocked}
+                disabled={isLocked || reviewBlocked || liveQueueBlocked}
                 onClick={handleAttemptFailure}
               >
                 <strong>Again</strong>
@@ -439,7 +444,7 @@ function StandardTrainingView({
               <Button
                 variant="primary"
                 className="primary"
-                disabled={attemptFailed || isLocked || reviewBlocked}
+                disabled={attemptFailed || isLocked || reviewBlocked || liveQueueBlocked}
                 onClick={() => void rateCard("correct")}
               >
                 <strong>
@@ -501,22 +506,24 @@ function StandardTrainingView({
 }
 
 export default function TrainingView(props: TrainingViewProps) {
+  const liveQueueBlocked = Boolean(props.serviceError && !props.offlineQueue);
   if (props.card.kind === "study" && props.card.studyId && props.card.studyExerciseId) {
-    return <StudyExerciseRunner
+    return <>{liveQueueBlocked && <div role="alert">{props.serviceError} <RetryButton onRetry={() => props.refreshDatabaseQueue()} /></div>}<div inert={liveQueueBlocked}><StudyExerciseRunner
       key={`${props.card.queueEntryId ?? props.card.id}:${props.card.revision ?? 1}`}
       studyId={props.card.studyId} exerciseId={props.card.studyExerciseId}
       card={props.card} boardTheme={props.boardTheme} pieceSet={props.pieceSet}
-      useSharedBoard={props.useSharedBoard ?? false}
-      onAdvance={async () => { props.refreshDatabaseQueue(); }} />;
+      useSharedBoard={props.useSharedBoard ?? false} blocked={liveQueueBlocked}
+      onAdvance={async () => { props.refreshDatabaseQueue(); }} /></div></>;
   }
   if (props.card.kind === "defense") {
     return (
-      <DefenseTrainingView
+      <>{liveQueueBlocked && <div role="alert">{props.serviceError} <RetryButton onRetry={() => props.refreshDatabaseQueue()} /></div>}<div inert={liveQueueBlocked}><DefenseTrainingView
         key={`${props.card.queueEntryId ?? props.card.id}:${props.card.revision ?? 1}`}
         card={props.card}
         boardTheme={props.boardTheme}
         pieceSet={props.pieceSet}
         useSharedBoard={props.useSharedBoard ?? false}
+        blocked={liveQueueBlocked}
         onAdvance={
           props.onDefenseGraded ??
           (async () => {
@@ -524,7 +531,7 @@ export default function TrainingView(props: TrainingViewProps) {
           })
         }
         onBury={props.onBury}
-      />
+      /></div></>
     );
   }
   return <StandardTrainingView {...props} />;

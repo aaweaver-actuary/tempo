@@ -19,7 +19,7 @@ export function DebugErrorPanel({
     debugErrors,
     debugErrors,
   );
-  const latest = errors[errors.length - 1];
+  const latest = errors.findLast((record) => record.context.source !== "browser-extension");
   const [dismissedId, setDismissedId] = useState<string>();
   const [copyRecordId, setCopyRecordId] = useState<string>();
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">(

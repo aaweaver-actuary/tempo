@@ -33,6 +33,7 @@ export function useGameSync() {
   const interval = useRef(180_000);
   const lastStarted = useRef(0);
   const statusFailureCount = useRef(0);
+  const lastReportedStatusFailure = useRef("");
   const recoverStatus = useRef<() => void>(() => undefined);
   const sync = useCallback(async (manual = false, repair = false) => {
     if (!usesLocalApi() || active.current || (!manual && document.visibilityState !== "visible")) return;
@@ -89,6 +90,7 @@ export function useGameSync() {
         const response = await backgroundFetch(`${API_URL}/api/games/sync/status`);
         const result = await readJsonResponse(response, syncStatusSchema, "game sync status");
         statusFailureCount.current = 0;
+        lastReportedStatusFailure.current = "";
         const latest = result.providers.map((provider) => provider.last_success_at ?? "").sort().at(-1) ?? "";
         const completedResult = result.active_job?.result;
         const providerResults = completedResult
@@ -111,12 +113,16 @@ export function useGameSync() {
           scheduleStatus(jobIsActive ? 2_000 : 15_000);
         }
       } catch (error) {
-        reportDebugError(error, {
-          kind: "api",
-          source: "game-sync-status",
-          operation: "refresh sync status",
-          endpoint: `${API_URL}/api/games/sync/status`,
-        });
+        const failureSignature = error instanceof Error ? `${error.name}: ${error.message}` : String(error);
+        if (failureSignature !== lastReportedStatusFailure.current) {
+          reportDebugError(error, {
+            kind: "api",
+            source: "game-sync-status",
+            operation: "refresh sync status",
+            endpoint: `${API_URL}/api/games/sync/status`,
+          });
+          lastReportedStatusFailure.current = failureSignature;
+        }
         const delays = [5_000, 10_000, 20_000, 60_000];
         const failureIndex = Math.min(statusFailureCount.current, delays.length - 1);
         statusFailureCount.current += 1;

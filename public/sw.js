@@ -50,7 +50,7 @@ self.addEventListener("message", (event) => {
     const cache = await caches.open(CACHE);
     const shellUrls = await requiredShellUrls(cache);
     const ready = shellUrls.length > SHELL_ASSETS.length &&
-      (await Promise.all(shellUrls.map((url) => cache.match(url)))).every(Boolean);
+      (await Promise.all(shellUrls.map((url) => cache.match(url, { ignoreVary: true })))).every(Boolean);
     event.ports[0].postMessage({ version: CACHE, ready });
   })());
 });

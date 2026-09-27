@@ -21,3 +21,10 @@ export function localDayKey(date = new Date()): string {
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 }
+
+export function isIPhoneHomeScreen(): boolean {
+  if (typeof navigator === "undefined") return false;
+  const installedOnHomeScreen = (navigator as Navigator & { standalone?: boolean }).standalone === true ||
+    (typeof window !== "undefined" && window.matchMedia?.("(display-mode: standalone)").matches);
+  return /iPhone/i.test(navigator.userAgent) && Boolean(installedOnHomeScreen);
+}

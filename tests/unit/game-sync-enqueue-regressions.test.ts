@@ -4,6 +4,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { syncResultSchema } from "../../app/domain/schemas";
 import { useGameSync } from "../../app/hooks/use-game-sync";
 import { clearDebugErrors, debugErrors } from "../../app/lib/debug-reporting";
+import { fetchAndInitializeQueue } from "../../app/views/fetchAndInitializeQueue";
+import { useTrainingStore } from "../../app/state/training-store";
 
 afterEach(() => {
   vi.useRealTimers();
@@ -116,6 +118,7 @@ describe("game sync enqueue provider contracts", () => {
     expect(statusAttempts).toBe(1);
     await act(async () => vi.advanceTimersByTimeAsync(1));
     expect(statusAttempts).toBe(2);
+    expect(debugErrors().filter((record) => record.context.source === "game-sync-status")).toHaveLength(1);
 
     await act(async () => vi.advanceTimersByTimeAsync(9_999));
     expect(statusAttempts).toBe(2);
@@ -126,6 +129,51 @@ describe("game sync enqueue provider contracts", () => {
     expect(statusAttempts).toBe(3);
     await act(async () => vi.advanceTimersByTimeAsync(1));
     expect(statusAttempts).toBe(4);
+    expect(debugErrors().filter((record) => record.context.source === "game-sync-status")).toHaveLength(1);
+    rendered.unmount();
+  });
+
+  it("game sync status reports a new failure after recovery", async () => {
+    vi.useFakeTimers();
+    let statusAttempts = 0;
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      if (String(input).endsWith("/api/games/sync/status")) {
+        statusAttempts += 1;
+        return Promise.resolve(statusAttempts === 3
+          ? Response.json({ providers: [] })
+          : Response.json({ detail: "Service unavailable" }, { status: 503 }));
+      }
+      return new Promise<Response>(() => undefined);
+    }));
+    function Probe() { useGameSync(); return null; }
+    const rendered = render(createElement(Probe));
+    await act(async () => undefined);
+    await act(async () => vi.advanceTimersByTimeAsync(5_000));
+    expect(debugErrors().filter((record) => record.context.source === "game-sync-status")).toHaveLength(1);
+    await act(async () => vi.advanceTimersByTimeAsync(10_000));
+    await act(async () => vi.advanceTimersByTimeAsync(15_000));
+    expect(debugErrors().filter((record) => record.context.source === "game-sync-status")).toHaveLength(2);
+    rendered.unmount();
+  });
+
+  it("game sync status failure does not block a successful live training queue", async () => {
+    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+      if (String(input).endsWith("/api/games/sync/status"))
+        return Promise.resolve(Response.json({ detail: "Service unavailable" }, { status: 503 }));
+      if (String(input).includes("/api/queue/window")) return Promise.resolve(Response.json({
+        count: 1, cards: [{ id: "training-still-live", queue_entry_id: 907,
+          start_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+          moves: ["e2e4"], content_type: "opening", repertoire_name: "Live training",
+          repertoire_source: "PGN" }],
+      }));
+      return new Promise<Response>(() => undefined);
+    }));
+    function Probe() { useGameSync(); return null; }
+    const rendered = render(createElement(Probe));
+    await waitFor(() => expect(debugErrors().some((record) => record.context.source === "game-sync-status")).toBe(true));
+    await fetchAndInitializeQueue();
+    expect(useTrainingStore.getState().getCard().title).toBe("Live training");
+    expect(useTrainingStore.getState().serviceError).toBe("");
     rendered.unmount();
   });
 });

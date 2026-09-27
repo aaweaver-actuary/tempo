@@ -1,44 +1,15 @@
-use serde::{Deserialize, Serialize};
+mod domain;
+mod structs;
+
 use sha2::{Digest, Sha256};
 use shakmaty::{fen::Fen, uci::UciMove, CastlingMode, Chess, EnPassantMode, Position};
 use std::{collections::BTreeMap, str::FromStr};
 use wasm_bindgen::prelude::*;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct LineDiagnostic {
-    pub ply: usize,
-    pub chess_move: String,
-    pub kind: String,
-    pub message: String,
-}
+use domain::*;
+use structs::{LineDiagnostic, ValidatedLine};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub struct ValidatedLine {
-    pub starting_fen: String,
-    pub moves: Vec<String>,
-    pub final_fen: String,
-    pub diagnostics: Vec<LineDiagnostic>,
-}
-
-fn position_from_fen(fen: &str) -> Result<Chess, String> {
-    Fen::from_ascii(fen.trim().as_bytes())
-        .map_err(|error| error.to_string())?
-        .into_position(CastlingMode::Standard)
-        .map_err(|error| error.to_string())
-}
-
-pub fn canonical_fen_key_native(fen: &str) -> Result<String, String> {
-    let position = position_from_fen(fen)?;
-    Ok(Fen::from_position(&position, EnPassantMode::Legal)
-        .to_string()
-        .split_whitespace()
-        .take(4)
-        .collect::<Vec<_>>()
-        .join(" "))
-}
-
+/// Validates a line of chess moves in UCI format starting from the given FEN.
 pub fn validate_uci_line_native(starting_fen: &str, input: &[String]) -> ValidatedLine {
     let mut diagnostics = Vec::new();
     let mut moves = Vec::new();

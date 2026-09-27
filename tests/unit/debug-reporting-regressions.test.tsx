@@ -82,6 +82,23 @@ describe("frontend debug reporting", () => {
     cleanup?.();
   });
 
+  it("Safari extension fixinator rejection stays in diagnostics without a Tempo error panel", async () => {
+    const cleanup = installGlobalDebugErrorHandlers();
+    const rejection = new Event("unhandledrejection") as PromiseRejectionEvent;
+    Object.defineProperty(rejection, "reason", { value: "Error: Looks like there is an error in the background page. undefined is not an object (evaluating 'window.fixinatorInputs.has')" });
+    window.dispatchEvent(rejection);
+    expect(debugErrors().at(-1)?.context.source).toBe("browser-extension");
+    render(<DebugErrorPanel />);
+    expect(screen.queryByText("Tempo encountered an error")).toBeNull();
+    expect(buildDebugBundle()).toContain("fixinatorInputs");
+    const ordinaryRejection = new Event("unhandledrejection") as PromiseRejectionEvent;
+    Object.defineProperty(ordinaryRejection, "reason", { value: new Error("ordinary promise failure") });
+    window.dispatchEvent(ordinaryRejection);
+    await waitFor(() => expect(screen.getByText("Tempo encountered an error")).toBeTruthy());
+    expect(debugErrors().at(-1)?.context.source).toBe("window.unhandledrejection");
+    cleanup?.();
+  });
+
   it("iPhone script error retains safe source coordinates without inventing a cause", () => {
     const cleanup = installGlobalDebugErrorHandlers();
     window.dispatchEvent(new ErrorEvent("error", {

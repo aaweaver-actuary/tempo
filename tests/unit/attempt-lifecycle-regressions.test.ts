@@ -8,6 +8,7 @@ import {
 } from "../../app/state/training-store";
 import { attemptEntryKey } from "../../app/domain/attempt";
 import { enqueuePendingReview, pendingReviews } from "../../app/lib/review-outbox";
+import { clearDebugErrors, debugErrors } from "../../app/lib/debug-reporting";
 import {
   asCardId,
   asFenString,
@@ -35,11 +36,25 @@ const card: PracticeCard = {
 
 beforeEach(() => {
   localStorage.clear();
+  clearDebugErrors();
   useTrainingStore.getState().setPendingReviewError("");
   useTrainingStore.getState().initializeCardState(card);
 });
 
 describe("review attempt reliability", () => {
+  it("desktop queue failure retains the active attempt and attributes the live request", async () => {
+    const store = useTrainingStore.getState();
+    store.hydrateLocalQueue([card], true, 1);
+    store.setStep(1);
+    const activeFen = useTrainingStore.getState().currentFenString;
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Load failed")));
+    await expect(fetchAndInitializeQueue()).rejects.toThrow("Load failed");
+    expect(useTrainingStore.getState().currentFenString).toBe(activeFen);
+    expect(useTrainingStore.getState().step).toBe(1);
+    expect(useTrainingStore.getState().isOfflineQueueActive).toBe(false);
+    expect(useTrainingStore.getState().serviceError).toContain("Load failed");
+    expect(debugErrors().at(-1)?.context).toMatchObject({ source: "training-queue", endpointPath: "/api/queue/window" });
+  });
   it("stale guided failure replay completes before today's training queue opens", async () => {
     enqueuePendingReview({ backendId: "persisted-card", queueEntryId: 42, outcome: "correct", guided: true });
     const requestedPaths: string[] = [];
