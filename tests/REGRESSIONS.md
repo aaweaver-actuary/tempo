@@ -456,6 +456,9 @@ Append every new reported issue and its test names here. All listed tests belong
 
 ## PostgreSQL and Celery cutover rehearsal
 
+- PostgreSQL prioritized opening refresh reorders gameplay misses, breadth, or shared cards while moving selection outside a transaction: `backend/tests/test_postgres_cutover.py::test_postgres_priority_opening_plan_preserves_gameplay_breadth_and_shared_cards`.
+- A restarted prioritized opening slice admits two cards or accepts an expired lease: `backend/tests/test_postgres_cutover.py::test_postgres_priority_opening_slice_checkpoints_one_item_and_rejects_stale_replay`.
+
 - SQLite syntax crosses the PostgreSQL adapter without an explicit translation or error: `backend/tests/test_postgres_cutover.py::test_postgres_cutover_translates_placeholders_and_rejects_runtime_pragma`.
 - Reordered JSON fields change a command's durable idempotency identity: `backend/tests/test_postgres_cutover.py::test_postgres_cutover_idempotency_digest_is_payload_order_independent`.
 - A command timeout is presented as a failed or successful save: `backend/tests/test_postgres_cutover.py::test_postgres_cutover_ambiguous_timeout_stays_pending`.

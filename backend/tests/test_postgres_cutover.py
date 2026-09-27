@@ -21,6 +21,73 @@ from app.postgres_store import TempoRow, postgres_sql
 from app.services import redis_admission_gate
 
 
+def test_postgres_priority_opening_plan_preserves_gameplay_breadth_and_shared_cards():
+    from app import main
+
+    def candidate(card_id, repertoire_id, *, reason=None, score=0, lines="[]"):
+        return {"id": card_id, "repertoire_id": repertoire_id, "moves_json": "[]",
+                "gameplay_priority_reason": reason, "priority_date": "2026-09-27",
+                "priority_score": score, "completed_line_ids_json": lines,
+                "frontier_decisions_json": "[]"}
+
+    candidates = [
+        candidate("a", "white", score=20, lines='["one"]'),
+        candidate("shared", "white", score=30, lines='["one"]'),
+        candidate("miss", "white", reason="miss", score=1),
+        candidate("shared", "black", score=30),
+        candidate("black", "black", score=10),
+    ]
+    plan = main._plan_prioritized_opening_admissions(
+        candidates, {"white": 0, "black": 0}, "2026-09-27", 2,
+    )
+    assert [(repertoire_id, row["id"]) for repertoire_id, row in plan] == [
+        ("white", "miss"), ("white", "shared"), ("black", "black"),
+    ]
+
+
+def test_postgres_priority_opening_slice_checkpoints_one_item_and_rejects_stale_replay(monkeypatch):
+    from app.services import postgres_queue_refresh
+
+    current_lease = "first"
+    saved_phase = None
+    saved_payload = None
+    admitted = []
+
+    @contextmanager
+    def section(*, background):
+        assert background
+        yield object()
+
+    def advance(database, task, *, next_phase, next_payload):
+        nonlocal current_lease, saved_phase, saved_payload
+        saved_phase, saved_payload = next_phase, next_payload
+        current_lease = "second"
+        return True
+
+    monkeypatch.setattr(postgres_queue_refresh.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres_queue_refresh.activity_gate, "wait_for_foreground", lambda: None)
+    monkeypatch.setattr(postgres_queue_refresh, "connection", section)
+    monkeypatch.setattr(postgres_queue_refresh, "lock_current_slice",
+                        lambda database, task: task["lease_token"] == current_lease)
+    monkeypatch.setattr(postgres_queue_refresh, "advance_task_slice_in_transaction", advance)
+    monkeypatch.setattr(postgres_queue_refresh, "_admit_one_prioritized_opening",
+                        lambda database, day, planned: admitted.append(planned["card_id"]))
+    plan = [{"card_id": "one", "repertoire_id": "white", "reason": None},
+            {"card_id": "two", "repertoire_id": "white", "reason": None}]
+    task = {"id": "queue-refresh", "generation": 4, "lease_token": "first",
+            "payload": {"queue_date": "2026-09-27", "_queue_phase": "prioritized_opening_item",
+                        "opening_plan": plan, "opening_index": 0}}
+    assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
+    assert saved_phase == "prioritized_opening_item"
+    assert saved_payload["opening_index"] == 1
+    assert not postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
+    assert admitted == ["one"]
+    resumed = {**task, "lease_token": "second", "payload": saved_payload}
+    assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(resumed)
+    assert admitted == ["one", "two"]
+    assert saved_phase == "admit_study"
+
+
 def test_postgres_cutover_schema_keeps_json_array_length_available(tmp_path):
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))

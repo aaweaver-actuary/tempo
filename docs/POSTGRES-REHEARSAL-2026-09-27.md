@@ -1,5 +1,16 @@
 # PostgreSQL rehearsal, September 27, 2026
 
+## Prioritized opening slice check
+
+The opening candidate read returned 326 rows in both the verified SQLite
+snapshot and isolated PostgreSQL rehearsal. PostgreSQL found 94 active missed
+cards. The worker now reads misses and candidates in separate bounded database
+sections, calculates gameplay and breadth order outside a transaction, and
+checkpoints one admission per slice. The rehearsal currently has no remaining
+opening quota for the test date, so this read-only probe did not publish an
+admission. Named tests cover planning order and stale-lease replay; a live
+PostgreSQL publication under foreground contention remains a release gate.
+
 This is a **rehearsal**, not a production cutover. Production `tempo-data`
 remains the rollback source and `docker-compose.yml` still runs SQLite. Do not
 start PostgreSQL-backed API traffic until every write route and background

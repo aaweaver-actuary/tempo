@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 import json
 from typing import Any
 
@@ -10,6 +10,7 @@ from psycopg.errors import TransactionTimeout
 
 from ..database import background_read_connection, connection
 from .. import postgres_store
+from ..postgres_store import postgres_sql
 from .cards import card_id
 from .activity_gate import activity_gate
 from .durable_tasks import advance_task_slice_in_transaction, lock_current_slice
@@ -263,6 +264,77 @@ def _admit_one_due_card(database, queue_date: str, card_id: str) -> bool:
     return True
 
 
+def _prepare_prioritized_openings(queue_date: str) -> list[dict[str, Any]]:
+    """Plan openings using separate bounded reads and no open write transaction."""
+
+    from .. import main
+
+    active_misses = [row[0] for row in _bounded_read(main._ACTIVE_OPENING_MISS_SQL)]
+    candidate_sql = (
+        "WITH active_miss AS (SELECT unnest(%s::text[]) AS card_id) "
+        + postgres_sql(main._PRIORITY_OPENING_CANDIDATE_BODY)
+    )
+    candidates = _bounded_read(
+        candidate_sql, (active_misses, main.MISS_REASON, queue_date,
+                        queue_date, queue_date, queue_date), native=True,
+    )
+    counts = _bounded_read(
+        """SELECT COALESCE(q.admission_repertoire_id,c.repertoire_id),COUNT(DISTINCT c.id)
+           FROM daily_queue q JOIN cards c ON c.id=q.card_id
+           WHERE q.queue_date=%s AND c.content_type='opening' AND c.introduced_at=%s
+             AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
+                            WHERE block.repertoire_id=c.repertoire_id AND block.card_id=c.id)
+           GROUP BY COALESCE(q.admission_repertoire_id,c.repertoire_id)""",
+        (queue_date, queue_date), native=True,
+    )
+    daily_limit = int(_bounded_read("SELECT new_cards_per_day FROM settings WHERE id=1")[0][0])
+    plan = main._plan_prioritized_opening_admissions(
+        candidates, dict(counts), queue_date, daily_limit,
+    )
+    return [{"repertoire_id": repertoire_id, "card_id": candidate["id"],
+             "reason": candidate["gameplay_priority_reason"]}
+            for repertoire_id, candidate in plan]
+
+
+def _admit_one_prioritized_opening(database, queue_date: str, planned: dict) -> None:
+    """Publish one still eligible card with the task checkpoint in one transaction."""
+
+    card_id = planned["card_id"]
+    card = database.execute_native(
+        "SELECT state,introduced_at,archived,pending_validation FROM cards WHERE id=%s FOR UPDATE",
+        (card_id,),
+    ).fetchone()
+    if (card is None or card[1] is not None or card[2] or card[3]
+            or card[0] not in ("new", "locked")):
+        return
+    queued = database.execute_native(
+        "SELECT 1 FROM daily_queue WHERE queue_date=%s AND card_id=%s",
+        (queue_date, card_id),
+    ).fetchone()
+    if queued is not None:
+        return
+    position = database.execute_native(
+        "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=%s",
+        (queue_date,),
+    ).fetchone()[0]
+    database.execute_native(
+        """INSERT INTO daily_queue(queue_date,card_id,position,gameplay_priority_reason,
+                                   admission_repertoire_id) VALUES(%s,%s,%s,%s,%s)""",
+        (queue_date, card_id, position, planned["reason"], planned["repertoire_id"]),
+    )
+    database.execute_native(
+        "UPDATE cards SET introduced_at=%s,state='learning' WHERE id=%s",
+        (queue_date, card_id),
+    )
+    now = datetime.now(timezone.utc).isoformat()
+    database.execute_native(
+        """UPDATE repertoire_opportunities SET status='resolved',resolved_at=%s,updated_at=%s
+           WHERE repertoire_id=%s AND card_id=%s AND kind='weak_known_decision'
+             AND json_extract(evidence_json,'$.analysis_based') IS NULL AND status='active'""",
+        (now, now, planned["repertoire_id"], card_id),
+    )
+
+
 def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     """Apply one eligibility phase; later queue phases remain explicitly gated."""
 
@@ -276,7 +348,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     phase = str(payload.get("_queue_phase") or _ELIGIBILITY_PHASES[0])
     if phase not in (*_ELIGIBILITY_PHASES, "tactical_introductions",
                      "reset_opening_new", "reset_opening_stale", "reconcile_unseen",
-                     "admit_due"):
+                     "admit_due", "prioritized_openings", "prioritized_opening_item"):
         raise RuntimeError(f"Queue refresh phase is not yet ported: {phase}")
     prepared_tactic = None
     if phase == "tactical_introductions":
@@ -296,6 +368,10 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     if phase == "admit_due":
         activity_gate.wait_for_foreground()
         due_card_id = _prepare_due_card(queue_date)
+    prioritized_plan = None
+    if phase == "prioritized_openings":
+        activity_gate.wait_for_foreground()
+        prioritized_plan = _prepare_prioritized_openings(queue_date)
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
         if not lock_current_slice(database, task):
@@ -349,6 +425,20 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                 _admit_one_due_card(database, queue_date, due_card_id)
                 next_phase = phase
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
+        elif phase == "prioritized_openings":
+            next_phase = "prioritized_opening_item" if prioritized_plan else "admit_study"
+            next_payload = {"queue_date": queue_date, "_queue_phase": next_phase,
+                            "opening_plan": prioritized_plan or [], "opening_index": 0}
+        elif phase == "prioritized_opening_item":
+            opening_plan = payload["opening_plan"]
+            opening_index = int(payload["opening_index"])
+            if opening_index < len(opening_plan):
+                _admit_one_prioritized_opening(database, queue_date,
+                                               opening_plan[opening_index])
+            opening_index += 1
+            next_phase = phase if opening_index < len(opening_plan) else "admit_study"
+            next_payload = {"queue_date": queue_date, "_queue_phase": next_phase,
+                            "opening_plan": opening_plan, "opening_index": opening_index}
         else:
             phase_handlers = {
                 "block_opening": main._block_ineligible_opening_queue_entries,

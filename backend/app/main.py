@@ -715,12 +715,7 @@ def _priority_frontier_depth(priority_row) -> int:
         return 0
 
 
-def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> int:
-    """Admit unseen opening cards by impact without changing the active queue."""
-
-    candidates = db.execute(
-        """WITH active_miss AS (
-               SELECT DISTINCT event.card_id
+_ACTIVE_OPENING_MISS_SQL = """SELECT DISTINCT event.card_id
                FROM repertoire_decision_events event
                JOIN imported_games game ON game.id=event.game_id
                WHERE event.outcome='miss' AND game.adaptive_excluded=0
@@ -728,9 +723,8 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
                      SELECT 1 FROM reviews review
                      WHERE review.card_id=event.card_id AND review.source_kind='study'
                        AND julianday(review.reviewed_at)>julianday(event.played_at)
-                 )
-           )
-           SELECT DISTINCT c.id,linked.id repertoire_id,c.moves_json,c.due_date,
+                 )"""
+_PRIORITY_OPENING_CANDIDATE_BODY = """SELECT DISTINCT c.id,linked.id repertoire_id,c.moves_json,c.due_date,
                   CASE WHEN c.state='locked' AND opportunity.id IS NOT NULL THEN
                     'Priority introduction · reached ' || json_extract(opportunity.evidence_json,'$.encounter_count') ||
                     ' times in games, missed ' || json_extract(opportunity.evidence_json,'$.miss_count') || ' times'
@@ -768,25 +762,22 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
                         WHERE (r_ok.id=c.repertoire_id OR EXISTS(SELECT 1 FROM repertoire_cards rc_ok WHERE rc_ok.card_id=c.id AND rc_ok.repertoire_id=r_ok.id))
                           AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
                                          WHERE block.repertoire_id=r_ok.id AND block.card_id=c.id))
-             AND c.id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?)""",
-        (MISS_REASON, day, day, day, day),
-    ).fetchall()
-    introduced_by_repertoire = dict(
-        db.execute(
-            """SELECT COALESCE(q.admission_repertoire_id,c.repertoire_id),COUNT(DISTINCT c.id)
-               FROM daily_queue q JOIN cards c ON c.id=q.card_id
-               WHERE q.queue_date=? AND c.content_type='opening' AND c.introduced_at=?
-                 AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
-                                WHERE block.repertoire_id=c.repertoire_id AND block.card_id=c.id)
-               GROUP BY COALESCE(q.admission_repertoire_id,c.repertoire_id)""",
-            (day, day),
-        ).fetchall()
-    )
+             AND c.id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?)"""
+_PRIORITY_OPENING_CANDIDATES_SQL = (
+    f"WITH active_miss AS ({_ACTIVE_OPENING_MISS_SQL}) "
+    + _PRIORITY_OPENING_CANDIDATE_BODY
+)
+
+
+def _plan_prioritized_opening_admissions(candidates, introduced_by_repertoire,
+                                         day: str, limit: int) -> list[tuple[str, dict]]:
+    """Preserve gameplay, breadth, and global-card ordering outside a transaction."""
+
     by_repertoire: dict[str, list] = {}
     for row in candidates:
         by_repertoire.setdefault(row["repertoire_id"], []).append(row)
-    next_position = maximum
     globally_selected_ids: set[str] = set()
+    planned: list[tuple[str, dict]] = []
     for repertoire_id, rows in by_repertoire.items():
         remaining = max(0, limit - introduced_by_repertoire.get(repertoire_id, 0))
         selected_ids: set[str] = set()
@@ -828,28 +819,54 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
                     breadth_line_ids.update(json.loads(choice["completed_line_ids_json"] or "[]"))
                 except json.JSONDecodeError:
                     pass
-            next_position += 1
-            db.execute(
-                """INSERT INTO daily_queue(
-                       queue_date,card_id,position,gameplay_priority_reason,admission_repertoire_id
-                   ) VALUES(?,?,?,?,?)""",
-                (day, choice["id"], next_position, choice["gameplay_priority_reason"], repertoire_id),
-            )
-            db.execute(
-                "UPDATE cards SET introduced_at=?,state='learning' WHERE id=?",
-                (day, choice["id"]),
-            )
-            db.execute(
-                """UPDATE repertoire_opportunities SET status='resolved',resolved_at=?,updated_at=?
-                   WHERE repertoire_id=? AND card_id=? AND kind='weak_known_decision'
-                     AND json_extract(evidence_json,'$.analysis_based') IS NULL
-                     AND status='active'""",
-                (datetime.now(timezone.utc).isoformat(), datetime.now(timezone.utc).isoformat(),
-                 repertoire_id, choice["id"]),
-            )
+            planned.append((repertoire_id, choice))
             selected_ids.add(choice["id"])
             globally_selected_ids.add(choice["id"])
             remaining -= 1
+    return planned
+
+
+def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> int:
+    """Admit unseen opening cards by impact without changing the active queue."""
+
+    candidates = db.execute(
+        _PRIORITY_OPENING_CANDIDATES_SQL,
+        (MISS_REASON, day, day, day, day),
+    ).fetchall()
+    introduced_by_repertoire = dict(
+        db.execute(
+            """SELECT COALESCE(q.admission_repertoire_id,c.repertoire_id),COUNT(DISTINCT c.id)
+               FROM daily_queue q JOIN cards c ON c.id=q.card_id
+               WHERE q.queue_date=? AND c.content_type='opening' AND c.introduced_at=?
+                 AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
+                                WHERE block.repertoire_id=c.repertoire_id AND block.card_id=c.id)
+               GROUP BY COALESCE(q.admission_repertoire_id,c.repertoire_id)""",
+            (day, day),
+        ).fetchall()
+    )
+    next_position = maximum
+    for repertoire_id, choice in _plan_prioritized_opening_admissions(
+        candidates, introduced_by_repertoire, day, limit,
+    ):
+        next_position += 1
+        db.execute(
+            """INSERT INTO daily_queue(
+                   queue_date,card_id,position,gameplay_priority_reason,admission_repertoire_id
+               ) VALUES(?,?,?,?,?)""",
+            (day, choice["id"], next_position, choice["gameplay_priority_reason"], repertoire_id),
+        )
+        db.execute(
+            "UPDATE cards SET introduced_at=?,state='learning' WHERE id=?",
+            (day, choice["id"]),
+        )
+        db.execute(
+            """UPDATE repertoire_opportunities SET status='resolved',resolved_at=?,updated_at=?
+               WHERE repertoire_id=? AND card_id=? AND kind='weak_known_decision'
+                 AND json_extract(evidence_json,'$.analysis_based') IS NULL
+                 AND status='active'""",
+            (datetime.now(timezone.utc).isoformat(), datetime.now(timezone.utc).isoformat(),
+             repertoire_id, choice["id"]),
+        )
     return next_position
 
 
