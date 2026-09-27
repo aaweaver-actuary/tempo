@@ -29,6 +29,7 @@ from . import annotation_commands  # noqa: F401 - registers foreground position 
 from . import endgame_commands  # noqa: F401 - registers foreground endgame templates
 from . import branch_commands  # noqa: F401 - registers foreground branch edits
 from . import pgn_import_commands  # noqa: F401 - registers foreground PGN imports
+from . import analysis_paste_commands  # noqa: F401 - registers foreground analysis paste
 from . import integrity_repair_commands  # noqa: F401 - registers guided integrity repairs
 from .services.activity_gate import activity_gate
 from .services.durable_tasks import claim_task, complete_task, defer_task_for_contention, fail_task

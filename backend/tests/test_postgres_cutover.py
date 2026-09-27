@@ -599,6 +599,86 @@ def test_postgres_analysis_paste_preview_uses_query_only_reader_without_write_wo
     assert observed == ["query_only_entered", ("1. e4", None, None)]
 
 
+def test_postgres_analysis_paste_commit_dispatches_foreground_command_after_read_only_preview(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import command_gateway, main
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(main, "read_connection", lambda: nullcontext(object()))
+    monkeypatch.setattr(main, "connection", lambda **_kwargs: (_ for _ in ()).throw(
+        AssertionError("API must not open a writer")))
+    monkeypatch.setattr(command_gateway, "read_operation", lambda *_args, **_kwargs: {"state": "pending"})
+    monkeypatch.setattr(
+        main, "build_paste_preview",
+        lambda *_args: {"preview_token": "token", "lines": [{"moves": ["e2e4"]}]},
+    )
+    monkeypatch.setattr(
+        command_dispatch, "dispatch_command",
+        lambda name, payload, *, idempotency_key:
+            dispatched.append((name, payload, idempotency_key)) or {"saved": []},
+    )
+    request = {
+        "text": "1. e4", "preview_token": "token",
+        "selections": [{"index": 0, "repertoire_id": "white"}],
+    }
+    response = TestClient(main.app).post(
+        "/api/repertoire/paste/commit", json=request,
+        headers={"Idempotency-Key": "paste-white-1"},
+    )
+    assert response.status_code == 200, response.text
+    assert dispatched == [(
+        "analysis.paste.commit",
+        {"request": {**request, "starting_fen": None, "source_gap_id": None,
+                     "selections": [{**request["selections"][0], "acknowledge_conflict": False}]},
+         "prepared_preview": {"preview_token": "token", "lines": [{"moves": ["e2e4"]}]}},
+        "paste-white-1",
+    )]
+
+
+def test_postgres_analysis_paste_replay_uses_stable_user_request_after_snapshot_changes():
+    from app.command_gateway import request_digest
+
+    request = {"text": "1. e4", "preview_token": "preview-1",
+               "selections": [{"index": 0, "repertoire_id": "white"}]}
+    original = request_digest("analysis.paste.commit", {
+        "request": request, "prepared_preview": {"lines": [], "snapshot": "before"},
+    })
+    after_save = request_digest("analysis.paste.commit", {
+        "request": request, "prepared_preview": {"lines": ["new line"], "snapshot": "after"},
+    })
+    changed_request = request_digest("analysis.paste.commit", {
+        "request": {**request, "text": "1. d4"},
+        "prepared_preview": {"lines": ["new line"], "snapshot": "after"},
+    })
+    assert original == after_save
+    assert original != changed_request
+
+
+def test_postgres_analysis_paste_completed_replay_returns_receipt_before_rebuilding_preview(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import command_gateway, main
+
+    completed = {"saved": [{"index": 0, "repertoire_id": "white",
+                            "duplicate": False, "conflict": False}],
+                 "affected_repertoire_ids": ["white"], "gap_resolved": False}
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(command_gateway, "read_operation",
+                        lambda *_args, **_kwargs: {"state": "complete", "response": completed})
+    monkeypatch.setattr(main, "build_paste_preview",
+                        lambda *_args: (_ for _ in ()).throw(AssertionError("replay rebuilt preview")))
+    response = TestClient(main.app).post(
+        "/api/repertoire/paste/commit",
+        json={"text": "1. e4", "preview_token": "old",
+              "selections": [{"index": 0, "repertoire_id": "white"}]},
+        headers={"Idempotency-Key": "completed-paste"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == completed
+
+
 def test_postgres_annotation_route_dispatches_idempotent_foreground_command(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main

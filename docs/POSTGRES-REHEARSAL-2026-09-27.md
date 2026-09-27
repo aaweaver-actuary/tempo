@@ -529,3 +529,22 @@ The first invocation used the isolated checkout's system Python and failed its
 Pydantic parity test because that interpreter lacks the project dependencies;
 the configured rerun passed. These Docker tests exercise the existing SQLite
 stack, so they do not replace a PostgreSQL end-to-end cutover gate.
+
+The analysis paste save now dispatches an explicit foreground Celery command.
+The API prepares the preview with the reader role; the worker checks its
+snapshot token, saves selected lines, invalidates integrity, and queues a graph
+rebuild with the write transaction. The browser keeps one operation ID across
+pending retries and blocks a changed selection until the first receipt is
+known. A real-schema rehearsal rejected an unacknowledged trained-move
+conflict with a durable 422 receipt; an acknowledged retry saved one line,
+completed its receipt, and replayed without inserting a second line. This
+changed only the mutable rehearsal database. Coverage refresh remains on the
+unported background-handler list.
+
+An HTTP-to-Celery rehearsal initially exposed a replay defect: after the first
+save changed the repertoire snapshot, repeating its operation ID hashed a new
+derived preview and returned 409. The command receipt now hashes the stable
+user request, and a completed replay returns its receipt before rebuilding the
+preview. A second real HTTP-to-Celery save returned HTTP 200, produced a
+complete receipt, and replayed with HTTP 200 in 5.4 ms after the line changed
+the snapshot. The temporary worker was stopped after verification.

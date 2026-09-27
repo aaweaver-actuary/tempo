@@ -458,6 +458,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                               and request.method == "POST")
         pgn_import_command = (path_parts == ["api", "imports", "pgn"]
                               and request.method == "POST")
+        analysis_paste_command = (path_parts == ["api", "repertoire", "paste", "commit"]
+                                  and request.method == "POST")
         integrity_resolution_command = (
             len(path_parts) == 7 and path_parts[:2] == ["api", "repertoires"]
             and path_parts[3:5] == ["integrity", "issues"]
@@ -477,6 +479,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     settings_command,
                     endgame_probe, endgame_template_command,
                     endgame_attempt_command, branch_add_command, pgn_import_command,
+                    analysis_paste_command,
                     integrity_resolution_command,
                     card_validation)):
             return JSONResponse(
@@ -2655,7 +2658,39 @@ def preview_analysis_paste(request: AnalysisPastePreviewRequest):
 
 
 @app.post("/api/repertoire/paste/commit")
-def commit_analysis_paste(request: AnalysisPasteCommitRequest):
+def commit_analysis_paste(request: AnalysisPasteCommitRequest,
+                          idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        if idempotency_key:
+            from .command_gateway import CommandConflict, read_operation, request_digest
+            try:
+                prior_receipt = read_operation(
+                    idempotency_key, command_name="analysis.paste.commit",
+                    request_hash=request_digest(
+                        "analysis.paste.commit", {"request": request.model_dump(mode="json")},
+                    ),
+                )
+            except CommandConflict as error:
+                raise HTTPException(409, str(error)) from error
+            if prior_receipt["state"] == "complete":
+                return prior_receipt["response"]
+            if prior_receipt["state"] == "failed":
+                error = prior_receipt["error"]
+                raise HTTPException(error.get("status_code", 500), error.get("message", "Save failed"))
+        try:
+            with read_connection() as database:
+                prepared_preview = build_paste_preview(
+                    database, request.text, request.starting_fen, request.source_gap_id,
+                )
+        except PasteInputError as error:
+            raise HTTPException(422, str(error)) from error
+        return dispatch_command(
+            "analysis.paste.commit",
+            {"request": request.model_dump(mode="json"),
+             "prepared_preview": prepared_preview},
+            idempotency_key=idempotency_key,
+        )
     try:
         parsed = parse_pasted_lines(request.text, request.starting_fen)
         with read_connection() as database:

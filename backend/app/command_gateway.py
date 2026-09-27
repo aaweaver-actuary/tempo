@@ -28,7 +28,11 @@ def register_command(name: str, handler: CommandHandler) -> None:
 
 
 def request_digest(command_name: str, payload: dict[str, Any]) -> str:
-    serialized = json.dumps([command_name, payload], sort_keys=True, separators=(",", ":"))
+    # A paste preview is derived from the current repertoire snapshot. After a
+    # successful save that snapshot changes, but replaying the same user save
+    # must still resolve to its original receipt.
+    identity_payload = payload["request"] if command_name == "analysis.paste.commit" else payload
+    serialized = json.dumps([command_name, identity_payload], sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(serialized.encode()).hexdigest()
 
 
