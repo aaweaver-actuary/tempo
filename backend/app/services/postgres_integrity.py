@@ -3,10 +3,14 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import json
 from typing import Any
 
 from ..database import background_read_connection
+from .. import postgres_store
 from ..postgres_store import PostgresConnection
+from .durable_tasks import advance_task_slice_in_transaction, lock_current_slice
+from .redis_admission_gate import background_lease
 from .repertoire_integrity import _scan_source
 
 
@@ -74,3 +78,71 @@ def invalidate_integrity_in_transaction(
         "scan_generation=NULL,scan_completed_sources=0,scan_total_sources=0,scan_error=NULL",
         (repertoire_id,),
     )
+
+
+def stage_integrity_source_in_transaction(
+    database: PostgresConnection,
+    task: dict[str, Any],
+    prepared_source: PreparedIntegritySource | None,
+) -> bool:
+    """Stage exactly one source and its cursor with the claimed task lease."""
+
+    if not lock_current_slice(database, task):
+        return False
+    payload = dict(task["payload"])
+    source_type = str(payload.get("source_type", "line"))
+    if prepared_source is None:
+        if source_type == "line":
+            return advance_task_slice_in_transaction(
+                database, task, next_phase="scan",
+                next_payload={**payload, "source_type": "card", "after_source_id": ""},
+            )
+        database.execute_native(
+            "UPDATE repertoire_integrity_state SET scan_total_sources=%s "
+            "WHERE repertoire_id=%s AND scan_generation=%s",
+            (int(payload.get("source_offset", 0)), payload["repertoire_id"],
+             f"{task['id']}:{task['generation']}"),
+        )
+        return advance_task_slice_in_transaction(
+            database, task, next_phase="aggregate",
+            next_payload={**payload, "source_type": "card", "after_source_id": "",
+                          "source_offset": 0, "position_offset": 0},
+        )
+    if prepared_source.source_type != source_type:
+        raise ValueError("Integrity source type does not match its durable cursor")
+    source_offset = int(payload.get("source_offset", 0))
+    if source_offset < 0:
+        raise ValueError("Integrity source offset cannot be negative")
+    run_id = f"{task['id']}:{task['generation']}"
+    database.execute_native(
+        "INSERT INTO repertoire_integrity_source_runs("
+        "run_id,source_offset,observations_json,invalid_json) "
+        "VALUES(%s,%s,%s,%s) ON CONFLICT(run_id,source_offset) DO UPDATE SET "
+        "observations_json=excluded.observations_json,"
+        "invalid_json=excluded.invalid_json",
+        (run_id, source_offset, json.dumps(prepared_source.positions),
+         json.dumps(prepared_source.invalid)),
+    )
+    database.execute_native(
+        "UPDATE repertoire_integrity_state SET status='unchecked',"
+        "scan_status='running',scan_generation=%s,"
+        "scan_completed_sources=%s,scan_error=NULL "
+        "WHERE repertoire_id=%s",
+        (run_id, source_offset + 1, payload["repertoire_id"]),
+    )
+    return advance_task_slice_in_transaction(
+        database, task, next_phase="scan",
+        next_payload={**payload, "after_source_id": prepared_source.source_id,
+                      "source_offset": source_offset + 1},
+    )
+
+
+def execute_integrity_source_slice(task: dict[str, Any]) -> bool:
+    payload = task["payload"]
+    prepared_source = prepare_next_integrity_source(
+        str(payload["repertoire_id"]), str(payload.get("source_type", "line")),
+        str(payload.get("after_source_id", "")),
+    )
+    with background_lease():
+        with postgres_store.connection(read_only=False, background=True) as database:
+            return stage_integrity_source_in_transaction(database, task, prepared_source)

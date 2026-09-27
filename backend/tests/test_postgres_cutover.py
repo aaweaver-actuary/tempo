@@ -117,6 +117,48 @@ def test_postgres_integrity_source_closes_read_transaction_before_chess_scan(mon
     assert not prepared.invalid
 
 
+def test_postgres_integrity_source_stages_one_restartable_slice(monkeypatch):
+    from app.services import postgres_integrity
+
+    statements = []
+    advances = []
+
+    class RecordingDatabase:
+        def execute_native(self, statement, parameters):
+            statements.append((statement, parameters))
+
+    task = {
+        "id": "integrity-task", "generation": 3, "lease_token": "lease",
+        "payload": {"repertoire_id": "opening-1", "source_type": "line",
+                    "after_source_id": "", "source_offset": 0},
+    }
+    prepared = postgres_integrity.PreparedIntegritySource(
+        "line", "line-1", ({"fen_key": "fen", "moves": ["e2e4"], "sources": []},), (),
+    )
+    monkeypatch.setattr(postgres_integrity, "lock_current_slice", lambda *_args: True)
+    monkeypatch.setattr(
+        postgres_integrity, "advance_task_slice_in_transaction",
+        lambda _database, _task, *, next_phase, next_payload:
+            advances.append((next_phase, next_payload)) or True,
+    )
+    assert postgres_integrity.stage_integrity_source_in_transaction(
+        RecordingDatabase(), task, prepared,
+    )
+    assert statements[0][1][:2] == ("integrity-task:3", 0)
+    assert json.loads(statements[0][1][2])[0]["fen_key"] == "fen"
+    assert advances == [("scan", {
+        "repertoire_id": "opening-1", "source_type": "line",
+        "after_source_id": "line-1", "source_offset": 1,
+    })]
+
+    statements.clear()
+    monkeypatch.setattr(postgres_integrity, "lock_current_slice", lambda *_args: False)
+    assert not postgres_integrity.stage_integrity_source_in_transaction(
+        RecordingDatabase(), task, prepared,
+    )
+    assert statements == []
+
+
 def test_postgres_startup_accepts_latest_checked_in_schema(monkeypatch):
     from app import database
     from app.schema_version import POSTGRES_SCHEMA_VERSION
