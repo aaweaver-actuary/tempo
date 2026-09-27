@@ -1,4 +1,5 @@
 import type { Page } from "@playwright/test";
+import type { ActivityResponse } from "../../app/lib/service-status";
 import { prepareUI } from "./ui-fixtures";
 const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const moves = ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"];
@@ -11,7 +12,7 @@ export type VisualRepertoireLine = {
   id: string; repertoire_id: string; repertoire_name: string; name: string;
   trained_color: "white"; start_fen: string; moves: string[];
 };
-export async function prepareVisualUI(page: Page, fixedClock = true, trainingCards?: VisualQueueCard[], repertoireLines?: VisualRepertoireLine[]) {
+export async function prepareVisualUI(page: Page, fixedClock = true, trainingCards?: VisualQueueCard[], repertoireLines?: VisualRepertoireLine[], activityResponse?: ActivityResponse) {
   let activeTrainingCards = trainingCards ?? [{
     id: "visual-card",
     queue_entry_id: 1,
@@ -236,7 +237,7 @@ export async function prepareVisualUI(page: Page, fixedClock = true, trainingCar
       "/api/tactics/progress": {},
       "/api/games/sync/status": { providers: [] },
       "/api/games/position-summary": { encounters: 0, analyzed_encounters: 0, moves: [] },
-      "/api/system/activity": { items: [], counts: { running: 0, queued: 0, paused: 0, failed: 0 }, total: 0, next_offset: null, writer: { healthy: true, foreground: 0, background: 0 } },
+      "/api/system/activity": activityResponse ?? { items: [], counts: { running: 0, queued: 0, paused: 0, failed: 0 }, total: 0, next_offset: null, writer: { healthy: true, foreground: 0, background: 0 } },
       "/api/games/analysis/claim": { job: null },
       "/api/game-findings": { findings: [] },
       "/api/discoveries": { discoveries: [], total: 0, next_offset: null, unread_count: 0 },
