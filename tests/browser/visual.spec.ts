@@ -81,7 +81,7 @@ test("service-unavailable", async ({ page }) => {
     }),
   );
   await navigate(page, "Progress");
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.getByRole("alert").filter({ hasText: "Review history unavailable" })).toBeVisible();
   await expect(page).toHaveScreenshot("service-unavailable.png");
 });
 
