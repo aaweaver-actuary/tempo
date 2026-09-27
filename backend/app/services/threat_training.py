@@ -31,6 +31,16 @@ DEFENSE_REPERTOIRE_ID = "__defense__"
 RECOGNITION_RUBRIC_VERSION = 3
 
 
+def _persist_audited_rubric_validation(database, candidate_id: str, result, eligible: bool) -> None:
+    database.execute(
+        """UPDATE threat_training_candidates SET validation_state=?,diagnostic=?,
+           validation_json=?,approved_at=CASE WHEN ? THEN approved_at ELSE NULL END,
+           exercise_revision=exercise_revision+1,updated_at=? WHERE id=?""",
+        (result.state, result.diagnostic, json.dumps(asdict(result)), eligible,
+         _now(), candidate_id),
+    )
+
+
 def execute_defense_rubric_audit_slice(task: dict) -> bool:
     """Recheck one saved candidate and its old reviews without holding SQLite during replay."""
     cursor = task["payload"].get("cursor", "")
@@ -107,13 +117,7 @@ def execute_defense_rubric_audit_slice(task: dict) -> bool:
         if (current and current["source_fingerprint"] == candidate["source_fingerprint"]
                 and current["exercise_revision"] == candidate["exercise_revision"]):
             eligible = result.state in {"engine_supported", "validated_control"}
-            database.execute(
-                """UPDATE threat_training_candidates SET validation_state=?,diagnostic=?,
-                   validation_json=?,approved_at=CASE WHEN ? THEN approved_at ELSE NULL END,
-                   exercise_revision=exercise_revision+1,updated_at=? WHERE id=?""",
-                (result.state, result.diagnostic, json.dumps(asdict(result)), int(eligible),
-                 _now(), candidate["id"]),
-            )
+            _persist_audited_rubric_validation(database, candidate["id"], result, eligible)
             if current["card_id"]:
                 database.execute(
                     "UPDATE cards SET pending_validation=?,revision=revision+1 WHERE id=?",

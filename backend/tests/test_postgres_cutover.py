@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import threading
 from contextlib import contextmanager, nullcontext
+from dataclasses import dataclass
 import sqlite3
 
 from pathlib import Path
@@ -390,6 +391,28 @@ def test_postgres_cutover_background_claim_orders_supported_kinds_by_priority(mo
             "repertoire_game_refresh", "defensive_threat_report_audit",
             "priority_retention", None,
         ]
+
+
+def test_postgres_cutover_rubric_audit_uses_boolean_case_parameter():
+    from app.services.threat_training import _persist_audited_rubric_validation
+
+    @dataclass
+    class Validation:
+        state: str = "engine_supported"
+        diagnostic: str = "verified"
+
+    saved_parameters: list[tuple] = []
+
+    class Database:
+        def execute(self, statement, parameters):
+            assert "approved_at=CASE WHEN ?" in statement
+            saved_parameters.append(parameters)
+
+    database = Database()
+    _persist_audited_rubric_validation(database, "candidate-1", Validation(), True)
+    _persist_audited_rubric_validation(database, "candidate-2", Validation(), False)
+    assert saved_parameters[0][3] is True
+    assert saved_parameters[1][3] is False
 
 
 def test_postgres_cutover_priority_retention_locks_bounded_primary_keys(monkeypatch):

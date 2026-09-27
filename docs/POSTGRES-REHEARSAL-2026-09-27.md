@@ -114,6 +114,12 @@ handler has been ported and the release gates pass.
   the durable task's numeric priority, rather than checking kinds in a fixed
   order. A rolled-back rehearsal claim selected a supported task and left
   unported kinds alone.
+- The defensive rubric audit hit a PostgreSQL type error because its
+  `CASE WHEN` placeholder received an SQLite-style integer. Passing a Python
+  boolean fixed the real rehearsal query; the first-candidate write section
+  measured 28.7–45.0 ms across three rolled-back runs. That margin is narrow,
+  so the handler is not yet enabled in Celery pending contention and replay
+  verification.
 - Preliminary in-process API read samples at 1, 4, and 16 clients are in
   `benchmarks/postgres-read-rehearsal-2026-09-27.csv`. They show a PostgreSQL
   queue-read regression under this first schema, so the cutover latency gate
