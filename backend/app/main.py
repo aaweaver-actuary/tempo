@@ -847,9 +847,24 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
     return next_position
 
 
-def seed_queue(db, day):
-    db.execute(
-        """UPDATE cards SET state='new'
+def _unlock_eligible_opening_cards(
+    db, day, *, after_card_id: str | None = None, batch_size: int | None = None,
+) -> str | None:
+    selected_card_ids: list[str] = []
+    has_more_candidates = False
+    if batch_size is not None:
+        if batch_size < 1:
+            raise ValueError("Queue unlock batch size must be positive")
+        candidates = db.execute(
+            """SELECT id FROM cards WHERE content_type='opening' AND state='locked'
+               AND archived=0 AND id>? ORDER BY id LIMIT ?""",
+            (after_card_id or "", batch_size + 1),
+        ).fetchall()
+        selected_card_ids = [row[0] for row in candidates[:batch_size]]
+        has_more_candidates = len(candidates) > batch_size
+        if not selected_card_ids:
+            return None
+    update_statement = """UPDATE cards SET state='new'
            WHERE content_type='opening' AND state='locked' AND archived=0
              AND EXISTS(
                  SELECT 1 FROM opening_graph_steps step
@@ -862,7 +877,13 @@ def seed_queue(db, day):
                        WHERE parent.id=step.parent_card_id AND parent.state='mature'
                    ))
              )"""
-    )
+    if selected_card_ids:
+        update_statement += " AND cards.id IN (" + ",".join("?" for _ in selected_card_ids) + ")"
+    db.execute(update_statement, selected_card_ids)
+    return selected_card_ids[-1] if has_more_candidates else None
+
+
+def _block_ineligible_opening_queue_entries(db, day):
     db.execute(
         """UPDATE daily_queue SET status='blocked'
            WHERE queue_date=? AND status='queued' AND card_id IN (
@@ -882,6 +903,9 @@ def seed_queue(db, day):
            )""",
         (day,),
     )
+
+
+def _block_unapproved_defense_queue_entries(db, day):
     db.execute(
         """UPDATE daily_queue SET status='blocked'
            WHERE queue_date=? AND status='queued' AND card_id IN (
@@ -893,6 +917,9 @@ def seed_queue(db, day):
            )""",
         (day,),
     )
+
+
+def _restore_eligible_due_queue_entries(db, day):
     db.execute(
         """UPDATE daily_queue SET status='queued'
            WHERE queue_date=? AND status='blocked' AND card_id IN (
@@ -917,6 +944,9 @@ def seed_queue(db, day):
            )""",
         (day, day),
     )
+
+
+def _restore_published_study_queue_entries(db, day):
     db.execute(
         """UPDATE daily_queue SET status='queued'
            WHERE queue_date=? AND status='blocked' AND card_id IN (
@@ -931,6 +961,20 @@ def seed_queue(db, day):
            )""",
         (day, day, day),
     )
+
+
+_QUEUE_ELIGIBILITY_PHASES = (
+    ("unlock_opening", _unlock_eligible_opening_cards),
+    ("block_opening", _block_ineligible_opening_queue_entries),
+    ("block_defense", _block_unapproved_defense_queue_entries),
+    ("restore_due", _restore_eligible_due_queue_entries),
+    ("restore_study", _restore_published_study_queue_entries),
+)
+
+
+def seed_queue(db, day):
+    for _, apply_phase in _QUEUE_ELIGIBILITY_PHASES:
+        apply_phase(db, day)
     seed_tactical_introductions(db, day)
     db.execute("""UPDATE cards SET state='new' WHERE content_type='opening' AND state='learning'
                   AND introduced_at IS NULL AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=cards.id)""")

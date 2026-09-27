@@ -83,6 +83,15 @@ handler has been ported and the release gates pass.
   background transaction budget as a whole; a durable phased slice handler
   is required before the Celery scheduler can process review-triggered queue
   refresh jobs.
+- The first five queue eligibility updates have been extracted as ordered
+  phases. The opening-card unlock phase needed a persisted cursor: its full
+  update took 55–159 ms in repeated rolled-back rehearsal probes, while
+  16-, 32-, and 64-card batches ran in roughly 5–19 ms after SQL translation
+  was warm. A rolled-back rehearsal comparison confirmed that 32-card batches
+  unlocked the same six cards as the full update. The slice replay regression
+  verifies that a repeated committed batch still reaches every eligible card.
+  The full daily-queue handler is
+  still unported, so Celery does not claim these refresh tasks yet.
 - A custom-format PostgreSQL backup was written outside the checkout at
   `/Users/andy/tempo-backups/tempo-postgres-rehearsal-2026-09-27.dump`.
   SHA-256 is `eaf7e37e5e0cd86189c0cf1a7abddb8b8893264f16e906e6f95b4948b0c4b326`.

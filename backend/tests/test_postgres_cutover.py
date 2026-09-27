@@ -398,3 +398,48 @@ def test_postgres_cutover_queue_repertoire_choices_scan_only_active_cards(monkey
     assert main._queue_payload()["cards"] == []
     queue_statement = next(statement for statement in statements if "ranked_repertoires" in statement)
     assert queue_statement.count("FROM active_queue queue_card JOIN cards c") == 2
+
+
+def test_postgres_cutover_queue_unlock_slice_replays_and_advances_without_skips():
+    from app.main import _unlock_eligible_opening_cards
+
+    def populated_database():
+        database = sqlite3.connect(":memory:")
+        database.row_factory = sqlite3.Row
+        database.executescript("""
+            CREATE TABLE cards(id TEXT PRIMARY KEY,content_type TEXT,state TEXT,archived INTEGER);
+            CREATE TABLE opening_graph_steps(card_id TEXT,parent_card_id TEXT,
+                                             repertoire_id TEXT,generation INTEGER);
+            CREATE TABLE opening_graph_publications(repertoire_id TEXT,generation INTEGER);
+            INSERT INTO opening_graph_publications VALUES('repertoire',1);
+        """)
+        for card_number in range(129):
+            card_id = f"card-{card_number:03}"
+            database.execute(
+                "INSERT INTO cards VALUES(?,'opening','locked',0)", (card_id,),
+            )
+            if card_number % 7 == 0:
+                database.execute(
+                    "INSERT INTO opening_graph_steps VALUES(?,NULL,'repertoire',1)",
+                    (card_id,),
+                )
+        return database
+
+    with populated_database() as complete_database, populated_database() as sliced_database:
+        _unlock_eligible_opening_cards(complete_database, "2026-09-27")
+        first_cursor = _unlock_eligible_opening_cards(
+            sliced_database, "2026-09-27", after_card_id="", batch_size=16,
+        )
+        assert first_cursor is not None
+        # Replaying a committed slice may select a few additional locked cards.
+        # The cursor must still advance without skipping any eligible card.
+        cursor = _unlock_eligible_opening_cards(
+            sliced_database, "2026-09-27", after_card_id="", batch_size=16,
+        )
+        while cursor is not None:
+            cursor = _unlock_eligible_opening_cards(
+                sliced_database, "2026-09-27", after_card_id=cursor, batch_size=16,
+            )
+        complete_states = list(complete_database.execute("SELECT id,state FROM cards ORDER BY id"))
+        sliced_states = list(sliced_database.execute("SELECT id,state FROM cards ORDER BY id"))
+        assert [tuple(row) for row in sliced_states] == [tuple(row) for row in complete_states]
