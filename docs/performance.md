@@ -139,6 +139,8 @@ Run `npm run bench:writer` to measure the local SQLite writer against a disposab
 
 ### PGN traversal benchmark
 
+The foreground PGN import endpoint also recalculated every line's decision segments while assembling its response. A four-line API fixture, including one repeated line, counted eight traversals before the change and four after it. The response still reports three unique lines and two merged duplicate segments. It now counts the segments already derived for persistence. This removes one traversal per line; the existing PGN benchmark measures parsing rather than full import latency, so no end-to-end speedup is claimed from this count alone.
+
 Run `npm run bench:pgn` to write `test-results/performance/pgn-parse-benchmark.json` with raw samples, fixture dimensions, and p50/p95 for 1, 10, 40, and 100 generated games. Each game has up to 32 mainline plies and a short annotated alternative every five plies. This deterministic tree stresses variation traversal, but it does not reflect the distribution of real imported PGNs. The initial local p50 values were 3.0, 31.0, 127.5, and 357.2 ms. Copying only board position state during traversal, without the move stack that parsing does not inspect, produced 1.9, 18.9, 88.1, and 207.3 ms on the same host. Keep the change only with exact variation and annotation regression coverage; compare repeated runs before treating these values as a release budget.
 
 ### Opening graph calculation benchmark

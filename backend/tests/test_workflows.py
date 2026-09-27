@@ -4,6 +4,7 @@ import json
 import time
 
 from app import database
+from app import main as main_module
 from app.main import app, enqueue_daily_queue_refresh
 from helpers import wait_for_daily_queue, wait_for_integrity
 
@@ -141,6 +142,34 @@ def test_import_becomes_main_and_survives_reload(tmp_path, monkeypatch):
         assert repeated.json()["repertoire_id"] == repertoire_id
         assert repeated.json()["cards_created"] == 0
         assert len(client.get("/api/repertoires").json()["repertoires"]) == 1
+
+
+def test_import_derives_decision_segments_once_per_parsed_line(tmp_path, monkeypatch):
+    """The response must reuse the segments already computed for import."""
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    original_decision_segments = main_module.decision_segments
+    segment_calls = 0
+
+    def count_decision_segments(*args, **kwargs):
+        nonlocal segment_calls
+        segment_calls += 1
+        return original_decision_segments(*args, **kwargs)
+
+    monkeypatch.setattr(main_module, "decision_segments", count_decision_segments)
+    repeated_first_line = (
+        b'\n[Event "Repeated king pawn"]\n[Result "*"]\n\n'
+        b'1. e4 e5 2. Nf3 Nc6 3. Bb5 *\n'
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/imports/pgn",
+            files={"file": ("four-lines.pgn", THREE_LINES + repeated_first_line, "application/x-chess-pgn")},
+            data={"trained_color": "white", "initial_depth": "2"},
+        )
+    assert response.status_code == 200
+    assert response.json()["unique_lines"] == 3
+    assert response.json()["duplicates_merged"] == 2
+    assert segment_calls == 4
 
 
 def test_reimport_can_shorten_initial_prefix_without_truncating_descendants(

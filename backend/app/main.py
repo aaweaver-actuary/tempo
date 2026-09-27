@@ -1679,10 +1679,7 @@ async def import_pgn(
         games_found=games,
         unique_lines=len(unique_line_keys),
         cards_created=created,
-        duplicates_merged=max(0, sum(
-            len(decision_segments(line.starting_fen, line.moves, trained_color, depth))
-            for line in lines
-        ) - len(segment_ids)),
+        duplicates_merged=max(0, len(imported_segments) - len(segment_ids)),
         cards_admitted_today=admitted,
         integrity=integrity,
         decision_cards_created=descendant_cards_created,
