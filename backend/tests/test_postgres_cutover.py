@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import asyncio
 from datetime import date
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
@@ -20,6 +21,26 @@ from app import command_dispatch
 from app.command_gateway import CommandConflict, request_digest
 from app.postgres_store import TempoRow, postgres_sql
 from app.services import redis_admission_gate
+
+
+def test_postgres_api_startup_requests_todays_queue_through_foreground_command(monkeypatch):
+    from app import main
+
+    calls = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.delenv("TEMPO_DATABASE_WRITE_URL", raising=False)
+    monkeypatch.setattr(main, "initialize", lambda: calls.append("initialize"))
+    monkeypatch.setattr(command_dispatch, "dispatch_command",
+                        lambda name, payload, *, idempotency_key: calls.append(
+                            (name, payload, idempotency_key)))
+
+    async def open_application():
+        async with main.lifespan(main.app):
+            assert calls == ["initialize", (
+                "queue.ensure_current", {"queue_date": date.today().isoformat()}, None,
+            )]
+
+    asyncio.run(open_application())
 
 
 def test_postgres_priority_opening_plan_preserves_gameplay_breadth_and_shared_cards():

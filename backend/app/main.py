@@ -177,6 +177,18 @@ async def lifespan(_: FastAPI):
         if os.getenv("TEMPO_DATABASE_WRITE_URL"):
             raise RuntimeError("The PostgreSQL API must use only TEMPO_DATABASE_READ_URL")
         initialize()
+        from .command_dispatch import dispatch_command
+
+        startup_queue_request = dispatch_command(
+            "queue.ensure_current",
+            {"queue_date": date.today().isoformat()},
+            idempotency_key=None,
+        )
+        if isinstance(startup_queue_request, JSONResponse) and startup_queue_request.status_code == 202:
+            logging.getLogger("tempo.api").info(
+                "Today's PostgreSQL queue refresh is pending: %s",
+                startup_queue_request.headers.get("Location"),
+            )
         yield
         return
     configured_workers = max(
