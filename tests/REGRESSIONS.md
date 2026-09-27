@@ -4,6 +4,7 @@
 
 | Issue | Required regression |
 | --- | --- |
+| TypeScript position matching rejects a noncapturable en passant square that Rust canonicalizes away | `TypeScript position distance matches the shared Rust parity fixture`; `rust_position_distance_matches_typescript_shared_fixture` |
 | Every motif detector replays and copies the same candidate line before inspecting it | `test_motif_candidates_replay_each_line_once_for_all_detectors`; `test_python_motif_parity_fixture` |
 | Training-card transition latency is not sampled from click through the next visible paint | `warm training cards advance to the next visible paint` |
 | Builder similarity only verifies compact worker messages and leaves index initialization or representative query queue/compute/roundtrip latency unmeasured | `Builder similarity worker messages keep the position index in the worker` (250 legal opening lines) |
@@ -169,6 +170,9 @@ Append every new reported issue and its test names here. All listed tests belong
 
 - Analysis activity count growth shifts desktop navigation — `analysis activity count growth keeps desktop navigation anchored`.
 - Saving status moves the training board and card layout — `saving result notification does not move the board or card`.
+- Long phone review conflicts move the training layout or disappear before they can be copied — `nine phone conflicts stay in the notification tray without moving training`; `a transient popup fades while its notification remains in the tray`; `severity JSON export includes safe details and excludes secrets`.
+- Notifications reorder incorrectly, lose save transitions or repeat conflicts, disappear on reload, or fail when storage is full — `new notifications and updates remain newest first with severity thresholds`; `saving status resolves in place and repeated unresolved conflicts do not duplicate`; `active work stays visible until resolved and history keeps the latest 500`; `history survives module reload and still works when storage writes fail`.
+- The notification tray is clipped on a narrow phone — `notifications tray remains inside a 320px phone viewport`.
 - Games displays an unrelated tactical position or mismatched arrows while reviewing a game — `Games selection and move navigation keep the board on the selected game`; `selecting another game changes piece placement and move highlights together`.
 - Games displays a placeholder position before full game moves load — `Games shows loading until the selected game's full moves arrive`.
 - Game sync records a SQLite lock after provider success — `test_sync_finalization_retries_transient_database_lock_without_refetching_providers`.
@@ -429,3 +433,14 @@ Append every new reported issue and its test names here. All listed tests belong
 - Study introductions consume the opening allowance or exceed their own allowance: `backend/tests/test_studies.py::test_study_new_exercise_allowance_is_independent_and_due_reviews_remain`.
 - Exercise types cannot be authored from the actual workspace: `tests/browser/studies.spec.ts` (`all five study exercise types can be authored from the workspace`).
 - A large mixed queue makes foreground workspace reads exceed one second while background work is backlogged: `backend/tests/test_durable_work_queue.py::test_workspace_reads_complete_under_one_second_during_full_background_backlog`.
+
+## PostgreSQL and Celery cutover rehearsal
+
+- SQLite syntax crosses the PostgreSQL adapter without an explicit translation or error: `backend/tests/test_postgres_cutover.py::test_postgres_cutover_translates_placeholders_and_rejects_runtime_pragma`.
+- Reordered JSON fields change a command's durable idempotency identity: `backend/tests/test_postgres_cutover.py::test_postgres_cutover_idempotency_digest_is_payload_order_independent`.
+- A command timeout is presented as a failed or successful save: `backend/tests/test_postgres_cutover.py::test_postgres_cutover_ambiguous_timeout_stays_pending`.
+- Broker failure gives the browser false success or no recovery action: `backend/tests/test_postgres_cutover.py::test_postgres_cutover_broker_failure_reports_actionable_error`.
+- A background database slice starts while another process holds foreground admission: `backend/tests/test_postgres_cutover.py::test_postgres_cutover_foreground_admission_blocks_background_slice`.
+- A Celery `202` response drops a phone or desktop review before PostgreSQL confirms it: `tests/unit/review-outbox-regressions.test.ts` (`keeps a Celery-accepted review until its operation receipt confirms the save`).
+- A stale persisted workspace projection appears as a successful live API read: `tests/unit/background-workspace-regressions.test.tsx` (`stale API cache waits for a live response before reporting success`); `tests/unit/game-contract-recovery-regressions.test.tsx` (`corrected live game data wins over an older persisted cache`).
+- Priority cleanup relies on SQLite rowids or deletes an unbounded PostgreSQL batch: `backend/tests/test_postgres_cutover.py::test_postgres_cutover_priority_retention_locks_bounded_primary_keys`.

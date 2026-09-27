@@ -275,6 +275,28 @@ mod tests {
     }
 
     #[test]
+    fn rust_position_distance_matches_typescript_shared_fixture() {
+        let fixtures: serde_json::Value = serde_json::from_str(include_str!(
+            "../../tests/fixtures/position-distance-parity.json"
+        ))
+        .unwrap();
+        for fixture in fixtures.as_array().unwrap() {
+            let expected = fixture["distance"]
+                .as_u64()
+                .map(|distance| distance as usize);
+            assert_eq!(
+                position_distance_native(
+                    fixture["left"].as_str().unwrap(),
+                    fixture["right"].as_str().unwrap()
+                ),
+                expected,
+                "{}",
+                fixture["name"].as_str().unwrap()
+            );
+        }
+    }
+
+    #[test]
     fn maintained_fsrs_is_linked() {
         assert!(fsrs_core_available());
     }

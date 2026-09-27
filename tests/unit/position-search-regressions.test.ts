@@ -1,8 +1,19 @@
 // @vitest-environment node
 import { Chess } from "chess.js";
+import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 import { computeStudyTask } from "../../app/lib/study-computation";
 import { chessPositionDistance } from "../../app/lib/position-similarity";
+
+it("TypeScript position distance matches the shared Rust parity fixture", () => {
+  const fixturePath = new URL("../fixtures/position-distance-parity.json", import.meta.url);
+  const cases = JSON.parse(readFileSync(fixturePath, "utf8")) as Array<{
+    name: string; left: string; right: string; distance: number | null;
+  }>;
+  for (const positionCase of cases)
+    expect(chessPositionDistance(positionCase.left, positionCase.right), positionCase.name)
+      .toBe(positionCase.distance ?? undefined);
+});
 
 it("position search retains distance ordering and first duplicate identity", () => {
   const startFen = new Chess().fen();

@@ -30,26 +30,33 @@ function pieceSquares(board: Chess): Map<string, Set<string>> {
 }
 
 export function prepareChessPositionDistance(leftFen: string): (rightFen: string) => number | undefined {
-  const leftState = stateParts(leftFen);
+  let leftState: ReturnType<typeof stateParts>;
   let leftPieces: Map<string, Set<string>>;
   try {
-    leftPieces = pieceSquares(new Chess(leftFen));
+    const leftBoard = new Chess(leftFen);
+    leftState = stateParts(leftBoard.fen());
+    leftPieces = pieceSquares(leftBoard);
   } catch {
     return () => undefined;
   }
   return (rightFen) => {
-    const rightState = stateParts(rightFen);
-    if (
-      leftState.turn !== rightState.turn ||
-      leftState.castling !== rightState.castling ||
-      leftState.enPassant !== rightState.enPassant
-    ) return undefined;
-    let rightPieces: Map<string, Set<string>>;
+    const rightInputState = stateParts(rightFen);
+    if (leftState.turn !== rightInputState.turn) return undefined;
+    const stateNeedsCanonicalization =
+      leftState.castling !== rightInputState.castling ||
+      leftState.enPassant !== rightInputState.enPassant;
+    let rightBoard: Chess;
     try {
-      rightPieces = pieceSquares(new Chess(rightFen));
+      rightBoard = new Chess(rightFen);
     } catch {
       return undefined;
     }
+    if (stateNeedsCanonicalization) {
+      const rightState = stateParts(rightBoard.fen());
+      if (leftState.castling !== rightState.castling ||
+          leftState.enPassant !== rightState.enPassant) return undefined;
+    }
+    const rightPieces = pieceSquares(rightBoard);
     if ([...new Set([...leftPieces.keys(), ...rightPieces.keys()])].some(
       (key) => (leftPieces.get(key)?.size ?? 0) !== (rightPieces.get(key)?.size ?? 0),
     )) return undefined;
