@@ -4,6 +4,7 @@ from pathlib import Path
 import chess
 import pytest
 
+from app.services import motif_detectors
 from app.services.motif_detectors import (
     MOTIF_PRECEDENCE,
     classify_candidate_lines,
@@ -94,3 +95,24 @@ def test_primary_motif_precedence_is_stable_and_keeps_secondary_results():
     )
     assert [item.motif for item in evidence] == ["pin", "fork"]
     assert select_primary_motif(evidence).motif == "pin"
+
+
+def test_motif_candidates_replay_each_line_once_for_all_detectors(monkeypatch):
+    fixture = next(
+        item for item in json.loads(FIXTURE_PATH.read_text())
+        if item["id"] == "pin-and-fork-are-both-preserved"
+    )
+    original_replay = motif_detectors._replay_line
+    replay_count = 0
+
+    def counted_replay(position, resulting_line):
+        nonlocal replay_count
+        replay_count += 1
+        return original_replay(position, resulting_line)
+
+    monkeypatch.setattr(motif_detectors, "_replay_line", counted_replay)
+    evidence = classify_candidate_lines(
+        chess.Board(fixture["fen"]), fixture["played_move"], fixture["candidates"] * 2
+    )
+    assert replay_count == 2
+    assert [item.motif for item in evidence] == ["pin", "fork"]

@@ -4,6 +4,7 @@
 
 | Issue | Required regression |
 | --- | --- |
+| Every motif detector replays and copies the same candidate line before inspecting it | `test_motif_candidates_replay_each_line_once_for_all_detectors`; `test_python_motif_parity_fixture` |
 | Training-card transition latency is not sampled from click through the next visible paint | `warm training cards advance to the next visible paint` |
 | Builder similarity only verifies compact worker messages and leaves real query queue/compute/roundtrip latency unmeasured | `Builder similarity worker messages keep the position index in the worker` |
 | Black training and tactic setup tests wait on deterministic UI timers after setup | `Black training mounts without selector loops and plays from the current position`; `tactic setup is applied and the final mate remains during feedback` |

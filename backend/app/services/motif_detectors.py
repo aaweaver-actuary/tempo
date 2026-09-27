@@ -347,10 +347,11 @@ def detect_pins(
     played_move: chess.Move | None,
     engine_candidates: Sequence[EngineCandidate],
     resulting_line: Sequence[str],
+    boards: Sequence[chess.Board],
+    moves: Sequence[chess.Move],
 ) -> list[MotifEvidence]:
     """Detect only pins that the candidate line concretely converts."""
 
-    boards, moves = _replay_line(position, resulting_line)
     if not moves:
         return []
     candidate_move = moves[0]
@@ -434,8 +435,9 @@ def detect_forks(
     played_move: chess.Move | None,
     engine_candidates: Sequence[EngineCandidate],
     resulting_line: Sequence[str],
+    boards: Sequence[chess.Board],
+    moves: Sequence[chess.Move],
 ) -> list[MotifEvidence]:
-    boards, moves = _replay_line(position, resulting_line)
     if not moves:
         return []
     candidate_move = moves[0]
@@ -524,8 +526,9 @@ def detect_skewers(
     played_move: chess.Move | None,
     engine_candidates: Sequence[EngineCandidate],
     resulting_line: Sequence[str],
+    boards: Sequence[chess.Board],
+    moves: Sequence[chess.Move],
 ) -> list[MotifEvidence]:
-    boards, moves = _replay_line(position, resulting_line)
     if not moves:
         return []
     candidate_move = moves[0]
@@ -584,8 +587,9 @@ def detect_discovered_attacks(
     played_move: chess.Move | None,
     engine_candidates: Sequence[EngineCandidate],
     resulting_line: Sequence[str],
+    boards: Sequence[chess.Board],
+    moves: Sequence[chess.Move],
 ) -> list[MotifEvidence]:
-    boards, moves = _replay_line(position, resulting_line)
     if not moves:
         return []
     candidate_move = moves[0]
@@ -647,8 +651,9 @@ def detect_hanging_pieces(
     played_move: chess.Move | None,
     engine_candidates: Sequence[EngineCandidate],
     resulting_line: Sequence[str],
+    boards: Sequence[chess.Board],
+    moves: Sequence[chess.Move],
 ) -> list[MotifEvidence]:
-    boards, moves = _replay_line(position, resulting_line)
     if not moves:
         return []
     candidate_move = moves[0]
@@ -698,8 +703,9 @@ def detect_mating_patterns(
     played_move: chess.Move | None,
     engine_candidates: Sequence[EngineCandidate],
     resulting_line: Sequence[str],
+    boards: Sequence[chess.Board],
+    moves: Sequence[chess.Move],
 ) -> list[MotifEvidence]:
-    boards, moves = _replay_line(position, resulting_line)
     if not moves:
         return []
     candidate_move = moves[0]
@@ -742,7 +748,8 @@ def detect_mating_patterns(
 
 
 MotifDetector = Callable[
-    [chess.Board, chess.Move | None, Sequence[EngineCandidate], Sequence[str]],
+    [chess.Board, chess.Move | None, Sequence[EngineCandidate], Sequence[str],
+     Sequence[chess.Board], Sequence[chess.Move]],
     list[MotifEvidence],
 ]
 
@@ -774,8 +781,9 @@ def classify_tactical_motifs(
             played_move = None
     evidence: list[MotifEvidence] = []
     seen: set[tuple[str, tuple[tuple[str, str], ...], tuple[str, ...]]] = set()
+    boards, moves = _replay_line(position, resulting_line)
     for detector in DETECTORS:
-        for item in detector(position.copy(), played_move, engine_candidates, resulting_line):
+        for item in detector(position.copy(), played_move, engine_candidates, resulting_line, boards, moves):
             key = (
                 item.motif,
                 tuple(sorted(item.involved_squares.items())),
