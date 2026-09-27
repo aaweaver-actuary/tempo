@@ -29,6 +29,12 @@ class PreparedIntegrityRun:
     invalid: tuple[dict[str, Any], ...]
 
 
+@dataclass(frozen=True)
+class PreparedIntegrityPosition:
+    fen_key: str
+    issue: dict[str, Any] | None
+
+
 def prepare_next_integrity_source(
     repertoire_id: str, source_type: str, after_source_id: str,
 ) -> PreparedIntegritySource | None:
@@ -245,3 +251,77 @@ def execute_integrity_aggregate_slice(task: dict[str, Any]) -> bool:
     with background_lease():
         with postgres_store.connection(read_only=False, background=True) as database:
             return aggregate_integrity_run_in_transaction(database, task, prepared_run)
+
+
+def prepare_next_integrity_position(
+    repertoire_id: str, run_id: str, after_fen_key: str,
+) -> PreparedIntegrityPosition | None:
+    """Read one accumulated position and derive any issue after closing PostgreSQL."""
+
+    with background_read_connection() as database:
+        row = database.execute_native(
+            "SELECT fen_key,fen,trained_color,moves_json,sources_json "
+            "FROM repertoire_integrity_position_accumulators "
+            "WHERE run_id=%s AND fen_key>%s ORDER BY fen_key LIMIT 1",
+            (run_id, after_fen_key),
+        ).fetchone()
+        position = dict(row) if row else None
+    if position is None:
+        return None
+    moves = json.loads(position["moves_json"])
+    distinct_moves = set(moves)
+    if len(distinct_moves) == 1:
+        return PreparedIntegrityPosition(position["fen_key"], None)
+    issue = {
+        "kind": "missing_response" if not distinct_moves else "multiple_responses",
+        "fen_key": position["fen_key"], "fen": position["fen"],
+        "trained_color": position["trained_color"],
+        "moves": moves, "sources": json.loads(position["sources_json"]),
+    }
+    issue["id"] = _issue_id(repertoire_id, issue["kind"], issue["fen_key"])
+    issue["signature"] = _signature(issue)
+    return PreparedIntegrityPosition(position["fen_key"], issue)
+
+
+def stage_integrity_issue_in_transaction(
+    database: PostgresConnection,
+    task: dict[str, Any],
+    prepared_position: PreparedIntegrityPosition | None,
+) -> bool:
+    """Stage at most one issue while advancing the evaluation cursor."""
+
+    if not lock_current_slice(database, task):
+        return False
+    payload = dict(task["payload"])
+    if prepared_position is None:
+        return advance_task_slice_in_transaction(
+            database, task, next_phase="publish", next_payload=payload,
+        )
+    issue = prepared_position.issue
+    if issue is not None:
+        database.execute_native(
+            "INSERT INTO repertoire_integrity_issue_candidates("
+            "run_id,id,repertoire_id,kind,fen_key,fen,trained_color,"
+            "signature,moves_json,sources_json) "
+            "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+            "ON CONFLICT(run_id,id) DO NOTHING",
+            (f"{task['id']}:{task['generation']}", issue["id"], payload["repertoire_id"],
+             issue["kind"], issue.get("fen_key"), issue.get("fen"),
+             issue.get("trained_color"), issue["signature"],
+             json.dumps(sorted(set(issue["moves"]))), json.dumps(issue["sources"])),
+        )
+    return advance_task_slice_in_transaction(
+        database, task, next_phase="evaluate",
+        next_payload={**payload, "after_fen_key": prepared_position.fen_key},
+    )
+
+
+def execute_integrity_evaluate_slice(task: dict[str, Any]) -> bool:
+    payload = task["payload"]
+    prepared_position = prepare_next_integrity_position(
+        str(payload["repertoire_id"]), f"{task['id']}:{task['generation']}",
+        str(payload.get("after_fen_key", "")),
+    )
+    with background_lease():
+        with postgres_store.connection(read_only=False, background=True) as database:
+            return stage_integrity_issue_in_transaction(database, task, prepared_position)

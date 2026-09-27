@@ -206,6 +206,58 @@ def test_postgres_integrity_aggregation_merges_two_positions_per_lease(monkeypat
     assert advances[-1][1]["position_offset"] == 0
 
 
+def test_postgres_integrity_evaluation_stages_only_conflicting_positions(monkeypatch):
+    from app.services import postgres_integrity
+
+    rows = iter([
+        {"fen_key": "fen-a", "fen": "fen-a", "trained_color": "white",
+         "moves_json": '["e2e4"]', "sources_json": "[]"},
+        {"fen_key": "fen-b", "fen": "fen-b", "trained_color": "white",
+         "moves_json": '["e2e4","d2d4"]', "sources_json": "[]"},
+    ])
+
+    class ReadDatabase:
+        def execute_native(self, *_args):
+            return SimpleNamespace(fetchone=lambda: next(rows))
+
+    monkeypatch.setattr(
+        postgres_integrity, "background_read_connection",
+        lambda: nullcontext(ReadDatabase()),
+    )
+    clean = postgres_integrity.prepare_next_integrity_position("rep", "run", "")
+    conflict = postgres_integrity.prepare_next_integrity_position("rep", "run", "fen-a")
+    assert clean is not None and clean.issue is None
+    assert conflict is not None and conflict.issue is not None
+    assert conflict.issue["kind"] == "multiple_responses"
+    assert conflict.issue["signature"]
+
+    statements = []
+    advances = []
+
+    class RecordingDatabase:
+        def execute_native(self, statement, parameters):
+            statements.append((statement, parameters))
+
+    task = {"id": "scan", "generation": 1, "lease_token": "lease",
+            "payload": {"repertoire_id": "rep", "after_fen_key": ""}}
+    monkeypatch.setattr(postgres_integrity, "lock_current_slice", lambda *_args: True)
+    monkeypatch.setattr(
+        postgres_integrity, "advance_task_slice_in_transaction",
+        lambda _database, _task, *, next_phase, next_payload:
+            advances.append((next_phase, next_payload)) or True,
+    )
+    assert postgres_integrity.stage_integrity_issue_in_transaction(
+        RecordingDatabase(), task, clean,
+    )
+    assert statements == []
+    assert advances[-1][1]["after_fen_key"] == "fen-a"
+    assert postgres_integrity.stage_integrity_issue_in_transaction(
+        RecordingDatabase(), task, conflict,
+    )
+    assert statements[0][1][4] == "fen-b"
+    assert advances[-1][1]["after_fen_key"] == "fen-b"
+
+
 def test_postgres_startup_accepts_latest_checked_in_schema(monkeypatch):
     from app import database
     from app.schema_version import POSTGRES_SCHEMA_VERSION
