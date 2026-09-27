@@ -1,14 +1,15 @@
 export type TempoTiming = {
   operation: "board-ready" | "move-to-paint" | "view-switch" |
     "study-worker-queue" | "study-worker-compute" | "study-worker-roundtrip" |
-    "study-match-coalesced-wait";
+    "study-match-coalesced-wait" | "api-response" | "workspace-data-ready";
   duration: number;
   recordedAt: number;
+  resource?: string;
 };
 const timings: TempoTiming[] = [];
 
-export function recordTempoDuration(operation: TempoTiming["operation"], duration: number) {
-  timings.push({ operation, duration, recordedAt: Date.now() });
+export function recordTempoDuration(operation: TempoTiming["operation"], duration: number, resource?: string) {
+  timings.push({ operation, duration, recordedAt: Date.now(), ...(resource ? { resource } : {}) });
   if (timings.length > 200) timings.shift();
 }
 

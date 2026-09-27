@@ -6,6 +6,7 @@ import * as z from "zod";
 import { tacticProgressSchema } from "../domain/schemas";
 import { clearDataDiagnosticsForSources, parseData } from "./validated-data";
 import { reportDebugError } from "./debug-reporting";
+import { recordTempoDuration } from "./performance";
 
 const requests = new Map<
   string,
@@ -105,6 +106,8 @@ export function readWorkspaceData(
     return value;
   }
   const persisted = readPersisted(url);
+  const requestStartedAt = performance.now();
+  const resource = new URL(url, "http://tempo.local").pathname;
   const requestController = new AbortController();
   const requestTimeout = setTimeout(
     () =>
@@ -123,9 +126,10 @@ export function readWorkspaceData(
   };
   const promise = fetch(url, { signal: requestController.signal })
     .then((response) => {
+      recordTempoDuration("api-response", performance.now() - requestStartedAt, resource);
       if (!response.ok)
         throw new Error(
-          `Could not load ${new URL(url, document.baseURI).pathname} (HTTP ${response.status}).`,
+          `Could not load ${resource} (HTTP ${response.status}).`,
         );
       return response
         .json()
@@ -141,6 +145,7 @@ export function readWorkspaceData(
       clearResolvedDiagnostics(url);
       persist(url, validated);
       notifyWorkspaceData("ready", url);
+      recordTempoDuration("workspace-data-ready", performance.now() - requestStartedAt, resource);
       return validated;
     })
     .catch((error) => {
