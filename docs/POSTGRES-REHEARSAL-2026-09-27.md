@@ -107,7 +107,9 @@ handler has been ported and the release gates pass.
   report through a foreground-admitted background read, validates outside its
   database section, then locks the claimed task lease for its publication.
   Its real PostgreSQL SQL completed in a rolled-back rehearsal transaction in
-  44 ms end to end. The threat-engine request worker remains a separate port.
+  44 ms end to end; a forced invalid-report repair path completed in 57 ms end
+  to end and was also rolled back. The threat-engine request worker remains a
+  separate port.
 - Preliminary in-process API read samples at 1, 4, and 16 clients are in
   `benchmarks/postgres-read-rehearsal-2026-09-27.csv`. They show a PostgreSQL
   queue-read regression under this first schema, so the cutover latency gate
