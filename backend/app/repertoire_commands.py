@@ -15,6 +15,10 @@ _SYSTEM_REPERTOIRES = ("__tactics__", "__endgames__", "__game_mistakes__")
 
 def select_main_repertoire(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
     repertoire_id = str(payload["repertoire_id"])
+    database.execute_native(
+        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+        ("tempo:main-repertoire",),
+    )
     # Every competing main-selection command locks the same eligible rows in
     # stable order before changing the single-main invariant.
     repertoire_ids = [row[0] for row in database.execute(

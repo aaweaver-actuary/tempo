@@ -25,6 +25,41 @@ from app.postgres_store import TempoRow, postgres_sql
 from app.services import redis_admission_gate
 
 
+def test_postgres_pgn_import_dispatches_parsed_payload_with_idempotency(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    observed = []
+
+    class SettingsDatabase:
+        def execute(self, *_args):
+            return SimpleNamespace(fetchone=lambda: (6,))
+
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(main, "read_connection", lambda: nullcontext(SettingsDatabase()))
+    from fastapi.responses import JSONResponse
+    monkeypatch.setattr(
+        command_dispatch, "dispatch_command",
+        lambda name, payload, *, idempotency_key: observed.append(
+            (name, payload, idempotency_key)
+        ) or JSONResponse(status_code=202, content={
+            "operation_id": idempotency_key, "state": "pending"}),
+    )
+    response = TestClient(main.app).post(
+        "/api/imports/pgn",
+        headers={"Idempotency-Key": "import-one"},
+        files={"file": ("opening.pgn", b"[Event \"Test\"]\n\n1. e4 e5 *", "application/x-chess-pgn")},
+        data={"trained_color": "white", "initial_depth": "4"},
+    )
+    assert response.status_code == 202, response.text
+    assert observed[0][0] == "imports.pgn.admit"
+    assert observed[0][1]["source_name"] == "opening.pgn"
+    assert observed[0][1]["depth"] == 4
+    assert observed[0][1]["lines"][0]["moves"] == ["e2e4", "e7e5"]
+    assert observed[0][2] == "import-one"
+
+
 def test_postgres_startup_accepts_latest_checked_in_schema(monkeypatch):
     from app import database
     from app.schema_version import POSTGRES_SCHEMA_VERSION
@@ -2362,6 +2397,10 @@ def test_postgres_cutover_main_repertoire_selection_uses_one_locked_command(monk
         def __init__(self):
             self.queries = []
 
+        def execute_native(self, statement, parameters):
+            self.queries.append((statement, parameters))
+            return QueryResult([])
+
         def execute(self, statement, parameters):
             self.queries.append((statement, parameters))
             return QueryResult([("opening-1",), ("opening-2",)])
@@ -2370,8 +2409,9 @@ def test_postgres_cutover_main_repertoire_selection_uses_one_locked_command(monk
     assert select_main_repertoire(database, {"repertoire_id": "opening-1"}) == {
         "id": "opening-1", "is_main": True,
     }
-    assert database.queries[0][0].endswith("ORDER BY id FOR UPDATE")
-    assert database.queries[1][0].startswith("UPDATE repertoires SET is_main=")
+    assert database.queries[0][0].startswith("SELECT pg_advisory_xact_lock")
+    assert database.queries[1][0].endswith("ORDER BY id FOR UPDATE")
+    assert database.queries[2][0].startswith("UPDATE repertoires SET is_main=")
 
 
 def test_postgres_cutover_background_slice_restarts_only_with_current_lease(monkeypatch):

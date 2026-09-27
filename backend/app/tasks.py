@@ -28,6 +28,7 @@ from . import game_sync_commands  # noqa: F401 - registers foreground sync admis
 from . import annotation_commands  # noqa: F401 - registers foreground position notes
 from . import endgame_commands  # noqa: F401 - registers foreground endgame templates
 from . import branch_commands  # noqa: F401 - registers foreground branch edits
+from . import pgn_import_commands  # noqa: F401 - registers foreground PGN imports
 from .services.activity_gate import activity_gate
 from .services.durable_tasks import claim_task, complete_task, defer_task_for_contention, fail_task
 from .services.priority_retention import execute_priority_retention_slice

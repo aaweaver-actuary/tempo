@@ -33,6 +33,8 @@
 | PGN import retraverses each line's decision segments just to count merged duplicates in its response | `test_import_derives_decision_segments_once_per_parsed_line` |
 | PGN import reports only request total time and cannot separate parsing, decision derivation, storage, and scheduling | `test_import_reports_parse_derive_and_storage_phase_timings` |
 | PGN import reports success when persisted lines cannot be scheduled for their background rebuild | `test_import_scheduler_failure_reports_saved_data_and_retry_action` |
+| PostgreSQL PGN import bypasses the worker or loses its idempotency key | `test_postgres_pgn_import_dispatches_parsed_payload_with_idempotency` |
+| Pending PGN import appears saved or receives a new operation ID on retry | `a pending PGN import reuses its operation ID and does not report a save` |
 | Opening-graph rebuild has only whole-task timing, hiding whether input reads, chess calculation, or publication dominates | `test_opening_graph_rebuild_reports_prepare_compute_publish_phase_timings` |
 | Every motif detector replays and copies the same candidate line before inspecting it | `test_motif_candidates_replay_each_line_once_for_all_detectors`; `test_python_motif_parity_fixture` |
 | Training-card transition latency is not sampled from click through the next visible paint | `warm training cards advance to the next visible paint` |

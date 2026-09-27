@@ -448,6 +448,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                                    and path_parts[4] == "attempt" and request.method == "POST")
         branch_add_command = (path_parts == ["api", "repertoire", "branches"]
                               and request.method == "POST")
+        pgn_import_command = (path_parts == ["api", "imports", "pgn"]
+                              and request.method == "POST")
         card_validation = (path_parts == ["api", "cards", "validate"]
                            and request.method == "POST")
         if not any((study_create, study_update, study_archive, exercise_create, exercise_revise,
@@ -461,7 +463,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     settings_command,
                     endgame_probe, endgame_template_command,
-                    endgame_attempt_command, branch_add_command, card_validation)):
+                    endgame_attempt_command, branch_add_command, pgn_import_command,
+                    card_validation)):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
@@ -1686,6 +1689,7 @@ async def import_pgn(
     file: UploadFile = File(...),
     trained_color: str = Form("white"),
     initial_depth: int | None = Form(None),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
     if not file.filename or not file.filename.lower().endswith(".pgn"):
         raise HTTPException(400, "Choose a .pgn file")
@@ -1703,6 +1707,14 @@ async def import_pgn(
     depth = max(
         2, min(20, initial_depth if initial_depth is not None else saved_depth)
     )
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        from .pgn_import_commands import prepare_import_payload
+        return dispatch_command(
+            "imports.pgn.admit",
+            prepare_import_payload(file.filename, trained_color, depth, games, lines),
+            idempotency_key=idempotency_key,
+        )
     imported_segments = [
         segment
         for line in lines
