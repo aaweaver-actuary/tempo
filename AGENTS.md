@@ -1,5 +1,11 @@
 # Tempo working rules
 
+## Preservation of existing work
+
+- Do not make any changes on the main branch directly.
+- Always create a new branch for any changes, and ensure it is based on the latest main branch.
+- Clone the latest main branch before starting any work. You have been given a dev location inside the top-level `.dev-copies` directory. Please clone the repository into that location, create a new branch for your work, and start making changes there. You always have the main branch as your reference point.
+
 ## Mandatory first-read naming rule
 
 Treat this naming rule as canonical for this project before starting substantial implementation or refactoring work.

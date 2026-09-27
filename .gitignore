@@ -54,3 +54,7 @@ tsconfig.tsbuildinfo
 **/*.pgn
 
 /.venv/
+
+.dev-copies/
+.dev-copies/*
+.dev-copies/**/*
