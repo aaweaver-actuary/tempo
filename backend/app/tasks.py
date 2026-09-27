@@ -1,0 +1,74 @@
+"""Celery entry points; task payloads carry named commands, never callables."""
+
+from __future__ import annotations
+
+import logging
+import time
+from typing import Any
+
+from kombu.exceptions import OperationalError as BrokerUnavailable
+
+from .celery_app import celery_app
+from .command_gateway import execute_command
+from . import study_commands  # noqa: F401 - registers explicit worker commands
+from .services.activity_gate import activity_gate
+from .services.durable_tasks import claim_task, complete_task, fail_task
+from .services.priority_retention import execute_priority_retention_slice
+
+
+_LOGGER = logging.getLogger("tempo.tasks")
+
+
+@celery_app.task(name="app.tasks.execute_foreground_command", bind=True)
+def execute_foreground_command(
+    self, operation_id: str, command_name: str, payload: dict[str, Any]
+) -> Any:
+    submitted_at = (self.request.headers or {}).get("submitted_at")
+    queue_wait = max(0.0, time.time() - float(submitted_at)) if submitted_at else None
+    started = time.perf_counter()
+    with activity_gate.foreground():
+        result = execute_command(operation_id, command_name, payload)
+    _LOGGER.info(
+        "foreground command=%s queue_wait_seconds=%s execution_seconds=%.3f",
+        command_name, f"{queue_wait:.3f}" if queue_wait is not None else "unknown",
+        time.perf_counter() - started,
+    )
+    return result
+
+
+@celery_app.task(name="app.tasks.poll_background_tasks")
+def poll_background_tasks() -> bool:
+    """Admit at most one durable slice per poll; failed dispatch reclaims later."""
+
+    claimed_task = claim_task("priority_retention")
+    if claimed_task is None:
+        return False
+    celery_app.send_task(
+        "app.tasks.execute_background_slice",
+        args=[claimed_task],
+        queue="background",
+    )
+    return True
+
+
+@celery_app.task(name="app.tasks.execute_background_slice", bind=True)
+def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
+    if claimed_task["kind"] != "priority_retention":
+        raise ValueError(f"Unported background handler: {claimed_task['kind']}")
+    with activity_gate.background_job(claimed_task["kind"], claimed_task["id"]):
+        try:
+            more_work = execute_priority_retention_slice(claimed_task)
+            complete_task(
+                claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"]
+            )
+        except Exception as error:
+            fail_task(
+                claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"], error
+            )
+            raise
+    if more_work:
+        try:
+            celery_app.send_task("app.tasks.poll_background_tasks", queue="background")
+        except BrokerUnavailable:
+            _LOGGER.exception("Could not wake priority retention; periodic polling will retry")
+    return more_work

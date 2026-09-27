@@ -6,6 +6,7 @@ import logging
 import sqlite3
 import os
 import random
+from redis import RedisError
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -20,6 +21,9 @@ from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
 from .database import connection, initialize, query_only_request, read_connection
+from . import postgres_store
+from .command_gateway import read_operation
+from .celery_app import celery_app
 from .study_routes import router as study_router
 from .models import TacticActivationRequest
 from .services.tactical_catalog import (
@@ -167,6 +171,12 @@ from .services.discovery_admission import (
 @asynccontextmanager
 async def lifespan(_: FastAPI):
     """Lifespan context manager for the FastAPI application. Initializes the database and starts the coordinator on startup, and stops the coordinator on shutdown."""
+    if postgres_store.configured():
+        if os.getenv("TEMPO_DATABASE_WRITE_URL"):
+            raise RuntimeError("The PostgreSQL API must use only TEMPO_DATABASE_READ_URL")
+        initialize()
+        yield
+        return
     configured_workers = max(
         int(os.getenv("WEB_CONCURRENCY", "1")),
         int(os.getenv("UVICORN_WORKERS", "1")),
@@ -202,6 +212,21 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Tempo local API", version="0.2.0", lifespan=lifespan)
 app.include_router(study_router)
+
+
+@app.get("/api/operations/{operation_id}")
+def operation_status(operation_id: str):
+    if not postgres_store.configured():
+        raise HTTPException(404, "Operations are available after PostgreSQL cutover")
+    receipt = read_operation(operation_id)
+    if receipt["state"] == "pending":
+        try:
+            worker_state = celery_app.AsyncResult(operation_id).state
+        except RedisError:
+            worker_state = "PENDING"
+        if worker_state in {"FAILURE", "REVOKED"}:
+            raise HTTPException(503, "Save worker could not complete the command; retry with the same Idempotency-Key")
+    return receipt
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
@@ -334,6 +359,16 @@ def _validated_analysis_evaluations(
 @app.middleware("http")
 async def prioritize_foreground_requests(request: Request, call_next):
     request.state.started_monotonic = time.monotonic()
+    if postgres_store.configured() and request.method not in {"GET", "HEAD", "OPTIONS"}:
+        study_create = request.method == "POST" and request.url.path == "/api/studies"
+        study_update = (request.method == "PATCH"
+                        and request.url.path.startswith("/api/studies/")
+                        and request.url.path.count("/") == 3)
+        if not (study_create or study_update):
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
+            )
     is_background = (
         request.headers.get("x-tempo-work-class", "").casefold() == "background"
     )
@@ -391,6 +426,8 @@ async def storage_unavailable(request: Request, error: sqlite3.OperationalError)
 def health():
     with read_connection() as db:
         db.execute("SELECT id FROM settings LIMIT 1").fetchone()
+    if postgres_store.configured():
+        raise HTTPException(503, "PostgreSQL cutover is staged; remaining write routes and background handlers are not yet migrated")
     if not database_writer.healthy:
         raise HTTPException(503, "Database writer is unavailable")
     return {
@@ -1297,6 +1334,40 @@ def _queue_payload(limit: int | None = None):
                                  WHERE block.repertoire_id=r.id AND block.card_id=c.id
                              ))
                            ORDER BY q.position,q.id"""
+        if postgres_store.configured():
+            # Resolve linked repertoires once as a set. The correlated SQLite
+            # lookup makes PostgreSQL scan repertoire_cards thousands of times
+            # before it joins today's queue.
+            original_lookup = queue_sql[
+                queue_sql.index("LEFT JOIN repertoires r ON"):
+                queue_sql.index("LEFT JOIN study_exercises exercise")
+            ]
+            repertoire_lookup = (
+                "LEFT JOIN ranked_repertoires choice "
+                "ON choice.card_id=c.id AND choice.rank=1 "
+                "LEFT JOIN repertoires r ON r.id=COALESCE(choice.repertoire_id,c.repertoire_id) "
+            )
+            queue_sql = (
+                "WITH active_queue AS MATERIALIZED "
+                "(SELECT * FROM daily_queue WHERE queue_date=? AND status='queued'), "
+                "candidate_repertoires AS MATERIALIZED ("
+                "SELECT c.id card_id,linked.id repertoire_id,linked.is_main,linked.created_at "
+                "FROM cards c JOIN repertoire_cards rc ON rc.card_id=c.id "
+                "JOIN repertoires linked ON linked.id=rc.repertoire_id "
+                "WHERE NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block "
+                "WHERE block.repertoire_id=linked.id AND block.card_id=c.id) "
+                "UNION SELECT c.id card_id,linked.id repertoire_id,linked.is_main,linked.created_at "
+                "FROM cards c JOIN repertoires linked ON linked.id=c.repertoire_id "
+                "WHERE EXISTS(SELECT 1 FROM repertoire_cards rc WHERE rc.repertoire_id=linked.id) "
+                "AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block "
+                "WHERE block.repertoire_id=linked.id AND block.card_id=c.id)), "
+                "ranked_repertoires AS MATERIALIZED (SELECT card_id,repertoire_id,"
+                "ROW_NUMBER() OVER (PARTITION BY card_id ORDER BY is_main DESC,created_at DESC) rank "
+                "FROM candidate_repertoires) "
+                + queue_sql.replace(original_lookup, repertoire_lookup)
+                .replace("FROM daily_queue q JOIN cards c", "FROM active_queue q JOIN cards c")
+                .replace("WHERE q.queue_date=? AND q.status='queued' AND c.archived=0", "WHERE c.archived=0")
+            )
         rows = db.execute(
             queue_sql + (" LIMIT ?" if limit is not None else ""),
             (day, limit) if limit is not None else (day,),
@@ -4074,15 +4145,16 @@ def refresh_game_defensive_threats(game_id: str):
 @app.get("/api/defensive-threats/candidates")
 def list_defensive_threat_candidates(game_id: str | None = None):
     with read_connection() as database:
+        game_filter = "AND c.game_id=?" if game_id is not None else ""
         rows = database.execute(
-            """SELECT c.*,r.name AS card_repertoire_name FROM threat_training_candidates c
+            f"""SELECT c.*,r.name AS card_repertoire_name FROM threat_training_candidates c
                JOIN imported_games g ON g.id=c.game_id
                LEFT JOIN cards card ON card.id=c.card_id
                LEFT JOIN repertoires r ON r.id=card.repertoire_id
                WHERE c.superseded_at IS NULL AND c.analysis_version=g.analysis_version
-                 AND (? IS NULL OR c.game_id=?)
+                 {game_filter}
                ORDER BY c.updated_at DESC,c.id LIMIT 100""",
-            (game_id, game_id),
+            (game_id,) if game_id is not None else (),
         ).fetchall()
         candidates = []
         for row in rows:
@@ -4577,10 +4649,14 @@ def summary(
             )
         except (ValueError, TypeError, json.JSONDecodeError):
             raise HTTPException(422, "Invalid games cursor")
-    clauses = [
-        "(? IS NULL OR EXISTS(SELECT 1 FROM game_position_occurrences p WHERE p.game_id=g.id AND p.fen_key=?))"
-    ]
-    parameters: list[object] = [position_key, position_key]
+    clauses: list[str] = []
+    parameters: list[object] = []
+    if position_key is not None:
+        clauses.append(
+            "EXISTS(SELECT 1 FROM game_position_occurrences p "
+            "WHERE p.game_id=g.id AND p.fen_key=?)"
+        )
+        parameters.append(position_key)
     if repertoire_id:
         clauses.append("m.repertoire_id=?")
         parameters.append(repertoire_id)
@@ -4607,7 +4683,7 @@ def summary(
     if cursor_played_at and cursor_id:
         clauses.append("(g.played_at<? OR (g.played_at=? AND g.id<?))")
         parameters.extend([cursor_played_at, cursor_played_at, cursor_id])
-    where = " AND ".join(clauses)
+    where = " AND ".join(clauses) if clauses else "1=1"
     with connection() as db:
         rows = db.execute(
             f"""SELECT {GAME_SUMMARY_SELECT}
@@ -4622,7 +4698,7 @@ def summary(
         total = db.execute(
             f"""SELECT COUNT(*) FROM imported_games g
                  LEFT JOIN game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
-                 WHERE {' AND '.join(count_clauses)}""",
+                 WHERE {' AND '.join(count_clauses) if count_clauses else '1=1'}""",
             count_parameters,
         ).fetchone()[0]
         position_plies = {

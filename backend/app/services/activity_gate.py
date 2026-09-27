@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from contextlib import nullcontext
 from contextvars import ContextVar
 import threading
 import time
@@ -10,6 +11,8 @@ import json
 import os
 from urllib.request import Request, urlopen
 from typing import Iterator
+
+from . import redis_admission_gate
 
 
 class BackgroundContractError(RuntimeError):
@@ -38,15 +41,22 @@ class ApplicationActivityGate:
     @contextmanager
     def foreground(self):
         token = _work_class.set("foreground")
-        with self._condition:
-            self._foreground_requests += 1
-            self._condition.notify_all()
+        shared_lease = (
+            redis_admission_gate.foreground_lease()
+            if redis_admission_gate.configured() else nullcontext()
+        )
         try:
-            yield
+            with shared_lease:
+                with self._condition:
+                    self._foreground_requests += 1
+                    self._condition.notify_all()
+                try:
+                    yield
+                finally:
+                    with self._condition:
+                        self._foreground_requests -= 1
+                        self._condition.notify_all()
         finally:
-            with self._condition:
-                self._foreground_requests -= 1
-                self._condition.notify_all()
             _work_class.reset(token)
 
     @contextmanager
@@ -60,6 +70,10 @@ class ApplicationActivityGate:
             _work_class.reset(token)
 
     def wait_for_foreground(self) -> None:
+        if redis_admission_gate.configured():
+            while redis_admission_gate.foreground_present():
+                time.sleep(0.01)
+            return
         activity_url = os.getenv("TEMPO_FOREGROUND_ACTIVITY_URL")
         if activity_url:
             while True:
@@ -90,20 +104,25 @@ class ApplicationActivityGate:
         section is bounded and the next background section will yield to it.
         """
 
-        self.wait_for_foreground()
-        with self._condition:
-            self._condition.wait_for(
-                lambda: self._foreground_requests == 0
-                and self._active_background_sections == 0
-            )
-            self._active_background_sections += 1
-            self._condition.notify_all()
-        try:
-            yield
-        finally:
+        shared_lease = (
+            redis_admission_gate.background_lease()
+            if redis_admission_gate.configured() else nullcontext()
+        )
+        with shared_lease:
+            self.wait_for_foreground()
             with self._condition:
-                self._active_background_sections -= 1
+                self._condition.wait_for(
+                    lambda: self._foreground_requests == 0
+                    and self._active_background_sections == 0
+                )
+                self._active_background_sections += 1
                 self._condition.notify_all()
+            try:
+                yield
+            finally:
+                with self._condition:
+                    self._active_background_sections -= 1
+                    self._condition.notify_all()
 
     @contextmanager
     def background_job(self, job_type: str, job_id: str):

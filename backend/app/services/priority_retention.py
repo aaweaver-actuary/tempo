@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from ..database import connection
+from .. import postgres_store
 from .activity_gate import activity_gate
 from .durable_tasks import enqueue_task_in_transaction
 
@@ -35,20 +36,36 @@ def execute_priority_retention_slice(task: dict) -> bool:
         ).fetchone()
         published_generation = int(publication["generation"])
         active_generation = int(priority_job["generation"]) if priority_job else published_generation
-        stale_row_ids = [
-            row["rowid"]
-            for row in database.execute(
-                """SELECT rowid FROM repertoire_card_priority_generations
-                   WHERE repertoire_id=? AND generation<>? AND generation<>?
-                   ORDER BY generation,card_id LIMIT ?""",
-                (repertoire_id, published_generation, active_generation, ROWS_PER_SLICE),
-            )
-        ]
-        if stale_row_ids:
+        if postgres_store.configured():
+            stale_keys = [
+                (row["generation"], row["card_id"])
+                for row in database.execute(
+                    """SELECT generation,card_id FROM repertoire_card_priority_generations
+                       WHERE repertoire_id=? AND generation<>? AND generation<>?
+                       ORDER BY generation,card_id LIMIT ? FOR UPDATE SKIP LOCKED""",
+                    (repertoire_id, published_generation, active_generation, ROWS_PER_SLICE),
+                )
+            ]
             database.executemany(
-                "DELETE FROM repertoire_card_priority_generations WHERE rowid=?",
-                [(row_id,) for row_id in stale_row_ids],
+                """DELETE FROM repertoire_card_priority_generations
+                   WHERE repertoire_id=? AND generation=? AND card_id=?""",
+                [(repertoire_id, generation, card_id) for generation, card_id in stale_keys],
             )
+        else:
+            stale_row_ids = [
+                row["rowid"]
+                for row in database.execute(
+                    """SELECT rowid FROM repertoire_card_priority_generations
+                       WHERE repertoire_id=? AND generation<>? AND generation<>?
+                       ORDER BY generation,card_id LIMIT ?""",
+                    (repertoire_id, published_generation, active_generation, ROWS_PER_SLICE),
+                )
+            ]
+            if stale_row_ids:
+                database.executemany(
+                    "DELETE FROM repertoire_card_priority_generations WHERE rowid=?",
+                    [(row_id,) for row_id in stale_row_ids],
+                )
         more_stale_rows = database.execute(
             """SELECT 1 FROM repertoire_card_priority_generations
                WHERE repertoire_id=? AND generation<>? AND generation<>? LIMIT 1""",

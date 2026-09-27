@@ -226,10 +226,16 @@ database_writer = DatabaseWriter()
 def submit_foreground_write(
     operation: WriteOperation[Result], *, label: str
 ) -> Result:
+    if database_module.postgres_store.configured():
+        with database_module.foreground_connection() as database:
+            return operation(database)
     return database_writer.submit_foreground_write(operation, label=label)
 
 
 def submit_background_write(
     operation: WriteOperation[Result], *, label: str
 ) -> Result:
+    if database_module.postgres_store.configured():
+        with database_module.background_connection() as database:
+            return operation(database)
     return database_writer.submit_background_write(operation, label=label)

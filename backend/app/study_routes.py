@@ -9,10 +9,12 @@ import uuid
 from datetime import date, datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Header, HTTPException
 from pydantic import TypeAdapter
 
 from .database import connection, read_connection
+from . import postgres_store
+from .command_dispatch import dispatch_command
 from .study_contracts import (
     ChapterCreate, ExerciseCreate, ExerciseRevisionRequest, ExerciseSpecification,
     StudyAttemptRequest, StudyCreate, StudyImportCommitRequest,
@@ -97,7 +99,12 @@ def list_studies():
 
 
 @router.post("")
-def create_study(request: StudyCreate):
+def create_study(request: StudyCreate, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command(
+            "studies.create", request.model_dump(mode="json"),
+            idempotency_key=idempotency_key,
+        )
     identifier = str(uuid.uuid4())
     now = _now()
     with connection() as database:
@@ -119,7 +126,12 @@ def get_study(study_id: str):
 
 
 @router.patch("/{study_id}")
-def update_study(study_id: str, request: StudyCreate):
+def update_study(study_id: str, request: StudyCreate, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command(
+            "studies.update", {"study_id": study_id, "study": request.model_dump(mode="json")},
+            idempotency_key=idempotency_key,
+        )
     with connection() as database:
         _require(database, "studies", study_id)
         database.execute("UPDATE studies SET title=?,description=?,source_json=?,updated_at=? WHERE id=?",

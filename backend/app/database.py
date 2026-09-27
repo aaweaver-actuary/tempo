@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Iterator
 
 from .services.activity_gate import activity_gate
+from . import postgres_store
 
 
 _LOGGER = logging.getLogger("tempo.background")
@@ -46,6 +47,26 @@ def connection(*, background: bool = False) -> Iterator[sqlite3.Connection]:
     if _query_only_request.get():
         with read_connection() as database:
             yield database
+        return
+    if postgres_store.configured():
+        activity_gate.assert_foreground_connection_allowed(background)
+        if background:
+            gate_started = time.perf_counter()
+            with activity_gate.background_database_section():
+                gate_wait_seconds = time.perf_counter() - gate_started
+                transaction_started = time.perf_counter()
+                try:
+                    with postgres_store.connection(read_only=False, background=True) as database:
+                        yield database
+                finally:
+                    transaction_seconds = time.perf_counter() - transaction_started
+                    _LOGGER.info(
+                        "postgres background section foreground_wait=%.3fs transaction=%.3fs",
+                        gate_wait_seconds, transaction_seconds,
+                    )
+        else:
+            with postgres_store.connection(read_only=False) as database:
+                yield database
         return
     activity_gate.assert_foreground_connection_allowed(background)
     if not background:
@@ -113,6 +134,10 @@ def background_connection() -> Iterator[sqlite3.Connection]:
 def read_connection() -> Iterator[sqlite3.Connection]:
     """Open a query-only connection suitable for request projections."""
 
+    if postgres_store.configured():
+        with postgres_store.connection(read_only=True) as database:
+            yield database
+        return
     database = None
     try:
         database = sqlite3.connect(f"file:{DB_PATH}?mode=ro", uri=True, timeout=1)
@@ -127,6 +152,14 @@ def read_connection() -> Iterator[sqlite3.Connection]:
 
 
 def initialize() -> None:
+    if postgres_store.configured():
+        with read_connection() as database:
+            version = database.execute(
+                "SELECT MAX(version) FROM tempo_schema_migrations"
+            ).fetchone()[0]
+        if version != 1:
+            raise RuntimeError(f"Unsupported PostgreSQL schema version: {version!r}")
+        return
     if DB_PATH.exists():
         with connection() as existing_database:
             tables = {
