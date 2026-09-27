@@ -22,6 +22,21 @@ selection; the command now uses a numeric `CASE` and the replayed probe passed.
 The browser retains the operation ID while deletion is pending and only removes
 the repertoire from its UI after a confirmed receipt.
 
+## Card revision foreground command rehearsal
+
+The normal editor save now carries the observed card revision and a durable
+operation ID to a PostgreSQL Celery command. In rolled-back rehearsal
+transactions, revising into an existing target card closed the old queued
+entry, while revising into a verified new card copied the card, moved its queue
+entry, archived the source, and queued an integrity scan. The first new-card
+probe exposed that a second edit of the archived source would pass a revision
+check because its revision does not change; the command now rejects archived
+and superseded source cards with 409. The real rehearsal then confirmed the
+copy, queue transfer, integrity intent, and stale-edit rejection. The editor
+waits for a confirmed command receipt before reporting a save. The result now
+includes the target card's revision, so resolving to an existing card does
+not leave the editor with the source card's revision.
+
 ## Prioritized opening slice check
 
 The opening candidate read returned 326 rows in both the verified SQLite

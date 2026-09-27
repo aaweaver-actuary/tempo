@@ -102,6 +102,7 @@ class CardRevisionRequest(BaseModel):
     history_mode: Literal["preserve", "reset"]
     title: str = "Corrected card"
     source_fen: str | None = None
+    expected_revision: int | None = Field(default=None, ge=1)
 
 
 class PrefixSplitRequest(BaseModel):

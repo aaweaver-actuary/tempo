@@ -783,6 +783,92 @@ def test_postgres_prefix_split_decisions_dispatch_foreground_commands_with_idemp
     ]
 
 
+def test_postgres_card_revision_dispatches_expected_revision_and_idempotency(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(command_dispatch, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or
+                        {"card_id": "edited", "replaced": True, "history_mode": "preserve"})
+    request = {"starting_fen": chess.STARTING_FEN, "moves": ["d2d4"],
+               "history_mode": "preserve", "expected_revision": 3}
+    response = TestClient(main.app).put(
+        "/api/cards/original", json=request,
+        headers={"Idempotency-Key": "edit-original-3"},
+    )
+    assert response.status_code == 200, response.text
+    assert dispatched == [("cards.revise", {"card_id": "original", "request": {
+        **request, "title": "Corrected card", "source_fen": None,
+    }}, "edit-original-3")]
+
+
+@pytest.mark.parametrize("stored_revision,archived,superseded_by", [
+    (4, 0, None), (3, 1, "replacement"),
+])
+def test_postgres_card_revision_rejects_stale_edit_before_mutating_cards(
+    stored_revision, archived, superseded_by,
+):
+    from app.card_commands import revise_card
+
+    statements = []
+
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            statements.append(statement)
+            if statement.startswith("SELECT * FROM cards WHERE id=%s FOR UPDATE"):
+                return SimpleNamespace(fetchone=lambda: {
+                    "revision": stored_revision, "archived": archived,
+                    "superseded_by": superseded_by,
+                })
+            return SimpleNamespace(fetchone=lambda: None)
+
+    with pytest.raises(HTTPException) as error:
+        revise_card(Database(), {"card_id": "original", "request": {
+            "starting_fen": chess.STARTING_FEN, "moves": ["d2d4"],
+            "history_mode": "preserve", "expected_revision": 3,
+        }})
+    assert error.value.status_code == 409
+    assert all(not statement.startswith(("INSERT", "UPDATE", "DELETE")) for statement in statements)
+
+
+def test_postgres_card_revision_reports_existing_target_revision():
+    from app.card_commands import revise_card
+
+    statements = []
+
+    class Cursor:
+        def __init__(self, row=None):
+            self.row = row
+
+        def fetchone(self):
+            return self.row
+
+        def __iter__(self):
+            return iter(())
+
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            statements.append(statement)
+            if statement.startswith("SELECT * FROM cards WHERE id=%s FOR UPDATE"):
+                return Cursor({"revision": 2, "archived": 0, "superseded_by": None,
+                               "start_fen": chess.STARTING_FEN, "moves_json": '["e2e4"]'})
+            if statement.startswith("SELECT id,revision FROM cards WHERE id=%s FOR UPDATE"):
+                return Cursor({"id": "existing", "revision": 7})
+            return Cursor()
+
+    result = revise_card(Database(), {"card_id": "source", "request": {
+        "starting_fen": chess.STARTING_FEN, "moves": ["d2d4"],
+        "history_mode": "preserve", "expected_revision": 2,
+    }})
+    assert result["replaced"] is True
+    assert result["revision"] == 7
+    assert any("UPDATE daily_queue SET status='complete'" in statement for statement in statements)
+
+
 def test_postgres_annotation_route_dispatches_idempotent_foreground_command(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main

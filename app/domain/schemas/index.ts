@@ -442,6 +442,7 @@ export const cardRevisionResultSchema = z.strictObject({
   card_id: cardIdSchema,
   replaced: z.boolean(),
   history_mode: z.enum(["preserve", "reset"]),
+  revision: z.number().int().positive().optional(),
 });
 const prefixSplitCardSchema = z.strictObject({
   card_id: cardIdSchema,

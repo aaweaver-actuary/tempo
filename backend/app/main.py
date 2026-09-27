@@ -421,6 +421,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                                and path_parts[4] in {"fail", "bury"} and request.method == "POST")
         card_review_command = (len(path_parts) == 4 and path_parts[:2] == ["api", "cards"]
                                and path_parts[3] == "review" and request.method == "POST")
+        card_revision_command = (len(path_parts) == 3 and path_parts[:2] == ["api", "cards"]
+                                 and request.method == "PUT")
         card_teaching_command = (len(path_parts) == 4 and path_parts[:2] == ["api", "cards"]
                                  and path_parts[3] == "teaching" and request.method == "POST")
         defense_answer_command = (len(path_parts) == 4
@@ -484,6 +486,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     exercise_availability_command,
                     chapter_create, chapter_reorder,
                     chapter_rename, link_create, queue_entry_command, card_review_command,
+                    card_revision_command,
                     card_teaching_command, defense_answer_command,
                     main_repertoire_command, annotation_command, repertoire_rename_command,
                     repertoire_delete_command,
@@ -3094,7 +3097,14 @@ def prefix_split_reject(identifier: str, request: PrefixSplitRequest,
 
 
 @app.put("/api/cards/{identifier}")
-def revise_card(identifier: str, request: CardRevisionRequest):
+def revise_card(identifier: str, request: CardRevisionRequest,
+                idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "cards.revise", {"card_id": identifier, "request": request.model_dump(mode="json")},
+            idempotency_key=idempotency_key,
+        )
     moves = validated_line(request.starting_fen, request.moves)
     replacement = card_id(request.starting_fen, moves)
     now = datetime.now(timezone.utc).isoformat()
@@ -3218,6 +3228,7 @@ def revise_card(identifier: str, request: CardRevisionRequest):
         "card_id": replacement,
         "replaced": replacement != identifier,
         "history_mode": request.history_mode,
+        "revision": int(existing["revision"]) if replacement != identifier and existing else revision,
     }
 
 
