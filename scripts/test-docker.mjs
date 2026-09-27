@@ -29,6 +29,11 @@ function verifyTempoDataVolumeIsExternal() {
   assert.equal(composeConfig.volumes?.["tempo-data"]?.external, true, "tempo-data is an external Docker volume");
   assert.equal(composeConfig.volumes["tempo-data"].name, "tempo-data", "tempo-data keeps its existing Docker volume name");
   console.log("PASS test_tempo_data_volume_is_external: Compose uses the existing tempo-data volume.");
+  assert(composeConfig.services.api.healthcheck?.test?.join(" ").includes("/api/health"),
+    "API healthcheck must wait for a usable API and database writer");
+  assert.equal(composeConfig.services.web.depends_on?.api?.condition, "service_healthy",
+    "Web proxy must wait for API health before serving requests");
+  console.log("PASS test_tempo_web_waits_for_api_health_before_proxying: cold startup cannot expose an unready API.");
 }
 let exitCode = 0;
 const base = `http://127.0.0.1:${testPort}/api`;
@@ -44,6 +49,11 @@ async function waitForHealth() {
   }
   throw new Error("Docker Tempo did not become healthy");
 }
+async function verifyForegroundReadsThroughProxy() {
+  await Promise.all([
+    "health", "settings", "repertoire/lines", "tactics/progress", "games/sync/status",
+  ].map((path) => json(path)));
+}
 async function waitForPublishedQueue() {
   for (let attempt = 0; attempt < 60; attempt++) {
     const queue = await json("queue/today");
@@ -58,6 +68,7 @@ async function waitForImportSettled(repertoireId) {
   for (let attempt = 0; attempt < 120; attempt++) {
     const system = await json("system/tasks");
     const integrity = await json(`repertoires/${repertoireId}/integrity`);
+    await verifyForegroundReadsThroughProxy();
     const graph = system.tasks.find(task => task.kind === "opening_graph_rebuild" && task.deduplication_key === repertoireId);
     const queueTask = system.tasks.find(task => task.kind === "daily_queue");
     if (graph?.state === "failed" || queueTask?.state === "failed") {
@@ -65,7 +76,10 @@ async function waitForImportSettled(repertoireId) {
     }
     if (graph?.state === "complete" && integrity.scan_status === "idle" && queueTask?.state === "complete") {
       settledSamples++;
-      if (settledSamples >= 3) return waitForPublishedQueue();
+      if (settledSamples >= 3) {
+        console.log("PASS test_foreground_api_reads_survive_integrity_work: health, settings, repertoire, tactics, and game-sync respond through the proxy.");
+        return waitForPublishedQueue();
+      }
     } else {
       settledSamples = 0;
     }

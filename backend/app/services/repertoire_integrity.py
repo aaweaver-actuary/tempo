@@ -514,11 +514,11 @@ def execute_integrity_slice(job: dict) -> None:
             next_offset = job["source_offset"] + 1
             status = "finalizing" if next_offset >= job["total_sources"] else "running"
             database.execute(
-                "UPDATE repertoire_integrity_jobs SET status=?,source_offset=?,updated_at=? WHERE repertoire_id=? AND run_id=?",
+                "UPDATE repertoire_integrity_jobs SET status=?,source_offset=?,attempts=0,last_error=NULL,updated_at=? WHERE repertoire_id=? AND run_id=?",
                 (status, next_offset, now, job["repertoire_id"], job["run_id"]),
             )
             database.execute(
-                "UPDATE repertoire_integrity_state SET scan_status='running',scan_completed_sources=?,scan_total_sources=? WHERE repertoire_id=?",
+                "UPDATE repertoire_integrity_state SET scan_status='running',scan_completed_sources=?,scan_total_sources=?,scan_error=NULL WHERE repertoire_id=?",
                 (next_offset, job["total_sources"], job["repertoire_id"]),
             )
         emit_progress("integrity", job["repertoire_id"], job["run_id"], "Scanning sources", next_offset, job["total_sources"])

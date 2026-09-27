@@ -1,4 +1,5 @@
 import json
+import sqlite3
 import time
 from contextlib import contextmanager
 
@@ -55,6 +56,30 @@ def _wait_for_repair(client, task_id: str, repertoire: str = "rep") -> dict:
             return integrity_payload
         time.sleep(0.01)
     raise AssertionError((task_payload, integrity_payload))
+
+
+def test_integrity_slice_recovers_from_a_transient_database_lock_without_stale_error(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as connection:
+        _line(connection, "one", "rep", ["e2e4"])
+    integrity_service.enqueue_integrity_scans("rep")
+    claimed = integrity_service.claim_integrity_slice()
+    assert claimed is not None
+    integrity_service.requeue_integrity_slice(claimed, sqlite3.OperationalError("database is locked"))
+    with database.read_connection() as connection:
+        assert connection.execute("SELECT last_error FROM repertoire_integrity_jobs WHERE repertoire_id='rep'").fetchone()[0] == "database is locked"
+    retried = integrity_service.claim_integrity_slice()
+    assert retried is not None
+    integrity_service.execute_integrity_slice(retried)
+    integrity_service.execute_integrity_slice(retried)
+    with database.read_connection() as connection:
+        job = connection.execute("SELECT source_offset,attempts,last_error FROM repertoire_integrity_jobs WHERE repertoire_id='rep'").fetchone()
+        state = connection.execute("SELECT scan_error FROM repertoire_integrity_state WHERE repertoire_id='rep'").fetchone()
+        staged = connection.execute("SELECT COUNT(*) FROM repertoire_integrity_source_runs WHERE run_id=?", (claimed["run_id"],)).fetchone()[0]
+    assert tuple(job) == (1, 0, None)
+    assert state[0] is None
+    assert staged == 1
 
 
 def test_repertoire_integrity_sweep_pauses_conflicting_transpositions_after_import(tmp_path, monkeypatch):
