@@ -5,7 +5,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { expect, it, vi } from "vitest";
+import { afterEach, expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
 import TacticsView from "../../app/views/tactics_view";
 import { playChessMoveSound } from "../../app/lib/move-sound";
@@ -67,10 +67,12 @@ const records = Array.from({ length: 26 }, (_, i) => ({
   Moves: "e8d7 a2e6 d7d8 f7f8",
   Rating: 900,
 }));
-const pause = async () =>
-  act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, 800));
-  });
+const advanceTacticTimer = async () => {
+  await act(async () => { await vi.advanceTimersByTimeAsync(800); });
+  vi.useRealTimers();
+};
+
+afterEach(() => vi.useRealTimers());
 
 it("legacy clean puzzle identities select the next unattempted deck position rather than the attempt counter", async () => {
   const cleanIds = records
@@ -115,8 +117,9 @@ it("tactic Show Move and Restart retain the guided attempt and classify the oppo
   );
   await waitFor(() => expect(screen.getByText("Puzzle 1 of 25")).toBeTruthy());
   const startingFen = screen.getByTestId("board").getAttribute("data-fen");
+  vi.useFakeTimers();
   fireEvent.click(screen.getByRole("button", { name: /Show move/ }));
-  await pause();
+  await advanceTacticTimer();
   expect(screen.getByText("Puzzle 1 of 25")).toBeTruthy();
   expect(screen.getByText("Follow the arrow")).toBeTruthy();
   fireEvent.click(screen.getByText("a2e6"));
@@ -130,8 +133,10 @@ it("tactic Show Move and Restart retain the guided attempt and classify the oppo
   );
   expect(screen.getByText("Follow the arrow")).toBeTruthy();
   fireEvent.click(screen.getByText("a2e6"));
+  vi.useFakeTimers();
   fireEvent.click(screen.getByText("f7f8"));
-  await waitFor(() => expect(submissions).toHaveLength(1));
+  await act(async () => { await Promise.resolve(); });
+  expect(submissions).toHaveLength(1);
   expect(submissions[0]).toMatchObject({
     correct: false,
     clean: false,
@@ -142,7 +147,7 @@ it("tactic Show Move and Restart retain the guided attempt and classify the oppo
       screen.getByTestId("board").getAttribute("data-fen")!,
     ).isCheckmate(),
   ).toBe(true);
-  await pause();
+  await advanceTacticTimer();
   await waitFor(() => expect(screen.getByText("Puzzle 2 of 25")).toBeTruthy());
   expect(screen.queryByText("Follow the arrow")).toBeNull();
   expect(screen.getByText("a2e6").hasAttribute("disabled")).toBe(false);

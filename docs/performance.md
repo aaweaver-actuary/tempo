@@ -18,6 +18,8 @@ A focused set of 13 pure-looking TypeScript files took 25.30 seconds with jsdom;
 
 With 12 Node-selected files and the current clean checkout, the full unit suite passed 54 files and 235 tests in 57.34 seconds (57.99 seconds external wall time). This is not directly comparable to the initial 151.72-second run because the initial checkout had unrelated uncommitted changes and used the verbose reporter. Vitest's aggregate environment label did not distinguish Node-selected files; the focused 12-file run confirmed Node selection by its absence of jsdom creation output.
 
+The tactics polish regression previously used two real 800 ms waits for UI timers. A focused run reported 61% of its 3.22-second duration in tests. Advancing those timers virtually reduced test execution to 14% of a 3.33-second run; one command's total wall time remained about four seconds because environment setup and transform dominate this small file. The remaining real sleeps in the larger study regression file need separate conversion because its asynchronous `waitFor` calls do not work while Vitest's fake clock is active.
+
 ## Measured test stages (2026-09-27)
 
 On this machine, the original three-stage fast run recorded 54.26 seconds for frontend units, 97.08 seconds for 384 backend tests, and 40.91 seconds for a cold Rust build and test. The revised fast tier runs units only; a verification run passed all 235 tests in 59.60 seconds. Backend and Rust checks remain in integration and full. These times are single samples and should not be used as regression thresholds.
