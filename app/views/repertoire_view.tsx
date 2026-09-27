@@ -12,6 +12,7 @@ import { API_URL } from "../const";
 import { renameRepertoireCommand } from "../lib/repertoire-rename-command";
 import { deleteRepertoireCommand } from "../lib/repertoire-delete-command";
 import { applyOpportunityCommand } from "../lib/opportunity-command";
+import { requestOpportunityRefresh } from "../lib/opportunity-refresh-command";
 import {
   readWorkspaceResponse,
   invalidateWorkspaceData,
@@ -333,14 +334,7 @@ export default function RepertoireView({
     onTrain();
   }
   async function refreshOpportunities(repertoireId: string) {
-    const response = await fetch(
-      `${API_URL}/api/repertoires/${repertoireId}/opportunities/refresh`,
-      { method: "POST" },
-    );
-    if (!response.ok)
-      throw new Error(
-        `Could not queue repertoire scouting (HTTP ${response.status}).`,
-      );
+    await requestOpportunityRefresh(repertoireId);
     setScoutingRepertoire(repertoireId);
   }
   const selectedStatisticsRepertoire = backendItems.find((item) => item.id === statisticsRepertoireId);

@@ -80,6 +80,13 @@ node, cleanup, and summary-cleanup slices completed in 46, 16, and 13 ms.
 The two imported repertoire refreshes contain large historical cursors, so
 total throughput and foreground-load benchmarks remain open.
 
+The manual and automatic discovery refresh callers now wait for a durable
+enqueue receipt. The PostgreSQL command checks the repertoire and checkpoints
+the background task in the same transaction. On the disposable database, a
+refresh for the tactics rehearsal repertoire completed and replayed under the
+same operation ID; its task generation stayed at 14 on replay. This verifies
+enqueue idempotency, not completion of the full discovery scan.
+
 ## Prioritized opening slice check
 
 The opening candidate read returned 326 rows in both the verified SQLite

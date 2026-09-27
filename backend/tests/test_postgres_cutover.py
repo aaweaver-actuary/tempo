@@ -4424,6 +4424,44 @@ def test_postgres_cutover_game_refresh_waits_for_foreground_and_discards_stale_r
     assert completed_tasks == ["refresh-task"]
 
 
+def test_postgres_opportunity_refresh_dispatches_idempotent_command(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main, opportunity_commands
+
+    dispatched = []
+    queued = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(
+        command_dispatch, "dispatch_command",
+        lambda name, payload, *, idempotency_key:
+            dispatched.append((name, payload, idempotency_key)) or {"queued": True},
+    )
+    response = TestClient(main.app).post(
+        "/api/repertoires/rep/opportunities/refresh",
+        headers={"Idempotency-Key": "refresh-one"},
+    )
+    assert response.status_code == 202, response.text
+    assert response.json() == {"queued": True}
+    assert dispatched == [("opportunities.refresh", {"repertoire_id": "rep"}, "refresh-one")]
+
+    class ExistingRepertoire:
+        def execute_native(self, statement, _parameters):
+            assert "FROM repertoires" in statement
+            return SimpleNamespace(fetchone=lambda: (1,))
+
+    monkeypatch.setattr(
+        opportunity_commands, "enqueue_task_in_transaction",
+        lambda _database, kind, key, payload, *, priority:
+            queued.append((kind, key, payload, priority)),
+    )
+    assert opportunity_commands.refresh_opportunities(
+        ExistingRepertoire(), {"repertoire_id": "rep"},
+    ) == {"queued": True}
+    assert queued == [("repertoire_opportunity", "rep",
+                       {"repertoire_id": "rep", "phase": "summaries", "cursor": ""}, 130)]
+
+
 def test_postgres_opportunity_refresh_yields_to_foreground_and_discards_restart_replay(monkeypatch):
     from app import tasks
     from app.services import repertoire_opportunities

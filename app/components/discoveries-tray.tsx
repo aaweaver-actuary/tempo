@@ -28,6 +28,7 @@ import { loadExplorer, type ExplorerResult } from "../lib/lichess-explorer";
 import { readLichessSessionToken } from "../lib/lichess-session";
 import { readJsonResponse } from "../lib/validated-data";
 import { applyOpportunityCommand } from "../lib/opportunity-command";
+import { requestOpportunityRefresh } from "../lib/opportunity-refresh-command";
 import { usesLocalApi } from "../utils/local";
 import { notifications, publishNotification, resolveNotification } from "../lib/notifications";
 
@@ -518,12 +519,8 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     }
     requestedEvidenceRefreshes.current.add(active.id);
     setEvidenceRefreshPendingId(active.id);
-    void fetch(`${API_URL}/api/repertoires/${active.repertoire_id}/opportunities/refresh`, { method: "POST" })
-      .then(async (response) => {
-        if (!response.ok) {
-          const body = await response.json().catch(() => ({})) as { detail?: string };
-          throw new Error(body.detail ?? `Could not refresh discovery evidence (HTTP ${response.status})`);
-        }
+    void requestOpportunityRefresh(active.repertoire_id)
+      .then(async () => {
         await refresh(true);
       })
       .catch((cause) => {

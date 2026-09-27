@@ -449,6 +449,11 @@ async def prioritize_foreground_requests(request: Request, call_next):
             and path_parts[5] in {"dismiss", "acknowledge", "snooze", "train"}
             and request.method == "POST"
         )
+        opportunity_refresh_command = (
+            len(path_parts) == 5 and path_parts[:2] == ["api", "repertoires"]
+            and path_parts[3:] == ["opportunities", "refresh"]
+            and request.method == "POST"
+        )
         browser_activity = (path_parts == ["api", "system", "browser-activity"]
                             and request.method == "POST")
         tactic_attempt_command = (path_parts == ["api", "tactics", "attempt"]
@@ -498,6 +503,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     card_teaching_command, defense_answer_command,
                     main_repertoire_command, annotation_command, repertoire_rename_command,
                     repertoire_delete_command, opportunity_state_command,
+                    opportunity_refresh_command,
                     browser_activity, tactic_attempt_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     settings_command,
@@ -3500,7 +3506,14 @@ def discovery_admission_status(intent_id: str):
 
 
 @app.post("/api/repertoires/{identifier}/opportunities/refresh", status_code=202)
-def refresh_repertoire_opportunities(identifier: str):
+def refresh_repertoire_opportunities(identifier: str,
+                                      idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "opportunities.refresh", {"repertoire_id": identifier},
+            idempotency_key=idempotency_key,
+        )
     with read_connection() as database:
         if not database.execute("SELECT 1 FROM repertoires WHERE id=?", (identifier,)).fetchone():
             raise HTTPException(404, "Repertoire not found")

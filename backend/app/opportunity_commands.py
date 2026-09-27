@@ -13,6 +13,7 @@ from .queue_position_lock import lock_queue_date_for_position
 from .services.postgres_integrity import invalidate_integrity_in_transaction
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
 from .services.repertoire_opportunities import admit_existing_decision
+from .services.durable_tasks import enqueue_task_in_transaction
 
 
 def dismiss_opportunity(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
@@ -98,7 +99,23 @@ def train_opportunity(database: PostgresConnection, payload: dict[str, Any]) -> 
     return result
 
 
+def refresh_opportunities(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
+    repertoire_id = str(payload["repertoire_id"])
+    exists = database.execute_native(
+        "SELECT 1 FROM repertoires WHERE id=%s", (repertoire_id,),
+    ).fetchone()
+    if exists is None:
+        raise HTTPException(404, "Repertoire not found")
+    enqueue_task_in_transaction(
+        database, "repertoire_opportunity", repertoire_id,
+        {"repertoire_id": repertoire_id, "phase": "summaries", "cursor": ""},
+        priority=130,
+    )
+    return {"queued": True}
+
+
 register_command("opportunities.dismiss", dismiss_opportunity)
 register_command("opportunities.acknowledge", acknowledge_opportunity)
 register_command("opportunities.snooze", snooze_opportunity)
 register_command("opportunities.train", train_opportunity)
+register_command("opportunities.refresh", refresh_opportunities)
