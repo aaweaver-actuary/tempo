@@ -13,6 +13,7 @@ from .command_gateway import execute_command
 from . import study_commands  # noqa: F401 - registers explicit worker commands
 from . import queue_commands  # noqa: F401 - registers foreground queue commands
 from . import review_commands  # noqa: F401 - registers foreground review command
+from . import teaching_commands  # noqa: F401 - registers foreground teaching command
 from .services.activity_gate import activity_gate
 from .services.durable_tasks import claim_task, complete_task, fail_task
 from .services.priority_retention import execute_priority_retention_slice

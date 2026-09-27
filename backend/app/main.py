@@ -379,8 +379,11 @@ async def prioritize_foreground_requests(request: Request, call_next):
                                and path_parts[4] in {"fail", "bury"} and request.method == "POST")
         card_review_command = (len(path_parts) == 4 and path_parts[:2] == ["api", "cards"]
                                and path_parts[3] == "review" and request.method == "POST")
+        card_teaching_command = (len(path_parts) == 4 and path_parts[:2] == ["api", "cards"]
+                                 and path_parts[3] == "teaching" and request.method == "POST")
         if not any((study_create, study_update, chapter_create, chapter_reorder,
-                    chapter_rename, link_create, queue_entry_command, card_review_command)):
+                    chapter_rename, link_create, queue_entry_command, card_review_command,
+                    card_teaching_command)):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
@@ -1991,7 +1994,15 @@ def list_teaching_states(identifier: str):
 
 
 @app.post("/api/cards/{identifier}/teaching")
-def mark_teaching_state(identifier: str, request: TeachingStateRequest):
+def mark_teaching_state(identifier: str, request: TeachingStateRequest,
+                        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "cards.teaching.record",
+            {"card_id": identifier, "teaching_state": request.model_dump(mode="json")},
+            idempotency_key=idempotency_key,
+        )
     taught_at = datetime.now(timezone.utc).isoformat()
     with connection() as db:
         if not db.execute(

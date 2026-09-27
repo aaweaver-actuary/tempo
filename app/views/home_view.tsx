@@ -13,6 +13,7 @@ import { DataDiagnosticsNotice } from "../components/data-diagnostics-notice";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { BoardTheme, PieceSet } from "../components/chessboard";
 import { API_URL } from "../const";
+import { enqueueTeachingState, flushTeachingStates, pendingTeachingStates } from "../lib/teaching-state-outbox";
 import {
   invalidateWorkspaceData,
   preloadView,
@@ -1076,6 +1077,7 @@ export default function Home() {
       queueMicrotask(() => setTeachingReadyCard(teachingCardKey));
       return;
     }
+    void flushTeachingStates().catch(() => undefined);
     void fetch(`${API_URL}/api/cards/${card.backendId}/teaching`)
       .then((response) => {
         if (!response.ok) throw new Error();
@@ -1098,6 +1100,11 @@ export default function Home() {
                       `${card.backendId}:${state.revision}:${state.ply}`,
                     ),
                   ),
+                  pendingTeachingStates()
+                    .filter((state) => state.cardId === card.backendId)
+                    .map((state) => asTeachingMoveKey(
+                      `${state.cardId}:${state.revision}:${state.ply}`,
+                    )),
                 ),
             ),
         );
@@ -1151,11 +1158,8 @@ export default function Home() {
         return next;
       });
       if (card.backendId) {
-        void fetch(`${API_URL}/api/cards/${card.backendId}/teaching`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ revision: card.revision ?? 1, ply: step }),
-        }).catch(() => undefined);
+        enqueueTeachingState({ cardId: card.backendId, revision: card.revision ?? 1, ply: step });
+        void flushTeachingStates().catch(() => undefined);
       }
     });
   }, [

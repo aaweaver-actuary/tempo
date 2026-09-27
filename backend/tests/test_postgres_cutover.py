@@ -118,6 +118,57 @@ def test_postgres_cutover_review_route_dispatches_idempotent_command(monkeypatch
     assert dispatched[0][2] == "review-card-1-42"
 
 
+def test_postgres_cutover_teaching_state_dispatches_and_replays_saved_timestamp(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+    from app.teaching_commands import record_teaching_state
+
+    dispatched: list[tuple[str, dict, str | None]] = []
+
+    def record_command(name, payload, *, idempotency_key):
+        dispatched.append((name, payload, idempotency_key))
+        return {"cardId": payload["card_id"], "revision": 2, "ply": 3,
+                "taughtAt": "2026-09-27T12:00:00+00:00"}
+
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(command_dispatch, "dispatch_command", record_command)
+    response = TestClient(main.app).post(
+        "/api/cards/card-1/teaching",
+        json={"revision": 2, "ply": 3},
+        headers={"Idempotency-Key": "teaching-card-1-2-3"},
+    )
+    assert response.status_code == 200, response.text
+    assert dispatched == [("cards.teaching.record", {
+        "card_id": "card-1", "teaching_state": {"revision": 2, "ply": 3},
+    }, "teaching-card-1-2-3")]
+
+    class QueryResult:
+        def __init__(self, row):
+            self.row = row
+
+        def fetchone(self):
+            return self.row
+
+    class ExistingTeachingState:
+        def __init__(self):
+            self.queries = []
+
+        def execute(self, statement, parameters):
+            self.queries.append((statement, parameters))
+            if statement.startswith("SELECT 1 FROM cards"):
+                return QueryResult((1,))
+            if statement.startswith("INSERT INTO teaching_states"):
+                return QueryResult(None)
+            return QueryResult(("2026-09-26T10:00:00+00:00",))
+
+    existing_state = ExistingTeachingState()
+    result = record_teaching_state(existing_state, dispatched[0][1])
+    assert result == {"cardId": "card-1", "revision": 2, "ply": 3,
+                      "taughtAt": "2026-09-26T10:00:00+00:00"}
+    assert "ON CONFLICT(card_id,revision,ply) DO NOTHING" in existing_state.queries[1][0]
+
+
 def test_postgres_cutover_background_slice_restarts_only_with_current_lease(monkeypatch):
     from app.services import durable_tasks
 
