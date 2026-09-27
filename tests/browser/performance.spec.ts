@@ -44,6 +44,32 @@ test("warm workspace and Builder move responsiveness", async ({ page }, testInfo
     });
     observer.observe({ entryTypes: ["longtask"] });
     Object.assign(window, { tempoInteractionTasks: entries });
+    type EventSample = {
+      name: string; inputDelay: number; handlerDuration: number;
+      presentationDelay: number; duration: number;
+    };
+    const eventSamples: EventSample[] = [];
+    const collectEvents = (observedEntries: PerformanceEntryList) => {
+      for (const entry of observedEntries) {
+        const event = entry as PerformanceEntry & {
+          processingStart: number; processingEnd: number;
+        };
+        if (!["click", "keydown", "pointerup"].includes(event.name)) continue;
+        eventSamples.push({
+          name: event.name,
+          inputDelay: event.processingStart - event.startTime,
+          handlerDuration: event.processingEnd - event.processingStart,
+          presentationDelay: Math.max(0, event.duration - (event.processingEnd - event.startTime)),
+          duration: event.duration,
+        });
+      }
+    };
+    let eventObserver: PerformanceObserver | null = null;
+    if (PerformanceObserver.supportedEntryTypes.includes("event")) {
+      eventObserver = new PerformanceObserver((list) => collectEvents(list.getEntries()));
+      eventObserver.observe({ type: "event", durationThreshold: 16 } as PerformanceObserverInit);
+    }
+    Object.assign(window, { tempoEventTiming: { supported: eventObserver !== null, samples: eventSamples, observer: eventObserver, collectEvents } });
   });
   for (let index = 0; index < 6; index++)
     await page.keyboard.press(index % 2 ? "ArrowLeft" : "ArrowRight");
@@ -63,6 +89,19 @@ test("warm workspace and Builder move responsiveness", async ({ page }, testInfo
   const longTasks = await page.evaluate(() =>
     Reflect.get(window, "tempoInteractionTasks") as number[],
   );
+  const eventTiming = await page.evaluate(() => {
+    const captured = Reflect.get(window, "tempoEventTiming") as {
+      supported: boolean;
+      samples: Array<{ name: string; inputDelay: number; handlerDuration: number; presentationDelay: number; duration: number }>;
+      observer: PerformanceObserver | null;
+      collectEvents: (entries: PerformanceEntryList) => void;
+    };
+    if (captured.observer) {
+      captured.collectEvents(captured.observer.takeRecords());
+      captured.observer.disconnect();
+    }
+    return { supported: captured.supported, samples: captured.samples };
+  });
   const browserName = testInfo.project.use.browserName ?? "chromium";
   const report = {
     schemaVersion: 1,
@@ -76,6 +115,7 @@ test("warm workspace and Builder move responsiveness", async ({ page }, testInfo
     ),
     moveToPaintDuration,
     longTasks,
+    eventTiming,
   };
   const reportBody = JSON.stringify(report, null, 2);
   mkdirSync("test-results/performance", { recursive: true });
@@ -85,9 +125,18 @@ test("warm workspace and Builder move responsiveness", async ({ page }, testInfo
     contentType: "application/json",
   });
   expect(moveToPaintDuration).not.toBeNull();
+  if (browserName === "chromium") {
+    expect(eventTiming.supported).toBe(true);
+    expect(eventTiming.samples.length).toBeGreaterThan(0);
+  }
   for (const samples of Object.values(viewSwitchSamples))
     expect(summarize(samples).p95).toBeLessThanOrEqual(300);
   expect(longTasks.filter((duration) => duration > 100)).toEqual([]);
+  for (const sample of eventTiming.samples) {
+    expect(sample.inputDelay).toBeGreaterThanOrEqual(0);
+    expect(sample.handlerDuration).toBeGreaterThanOrEqual(0);
+    expect(sample.presentationDelay).toBeGreaterThanOrEqual(0);
+  }
 });
 
 test("Builder similarity worker messages keep the position index in the worker", async ({ page }) => {

@@ -4,6 +4,7 @@
 
 | Issue | Required regression |
 | --- | --- |
+| Browser responsiveness reports visible paint but lacks input-delay and handler-duration samples where Event Timing is supported | `warm workspace and Builder move responsiveness` |
 | Repeated repertoire FENs waste distance calculations during one query while distinct moves still need stable results | `repeated repertoire FENs retain match ordering and distinct next moves` |
 | Workspace fetch latency is opaque and cached reads could be mistaken for network requests | `workspace fetch records API response and ready latency once per network request` |
 | An HTTP workspace failure can lose its status while formatting the endpoint outside a browser | `failed workspace fetch preserves HTTP status and records response without false ready timing` |
