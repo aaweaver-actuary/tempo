@@ -115,6 +115,7 @@ def enqueue_task_in_transaction(
     priority: int = 100,
     max_attempts: int = 5,
     delay_seconds: float = 0,
+    minimum_generation: int = 0,
 ) -> dict:
     """Persist a task inside the caller's existing short publication transaction."""
 
@@ -124,7 +125,10 @@ def enqueue_task_in_transaction(
     ).fetchone()
     now = _now()
     task_id = existing["id"] if existing else str(uuid.uuid4())
-    generation = int(existing["generation"]) + 1 if existing else 1
+    generation = max(
+        int(existing["generation"]) + 1 if existing else 1,
+        minimum_generation + 1,
+    )
     next_attempt_at = _iso(now + timedelta(seconds=delay_seconds))
     created_at = existing["created_at"] if existing else _iso(now)
     database.execute(

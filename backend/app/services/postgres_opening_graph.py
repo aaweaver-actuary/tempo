@@ -11,7 +11,7 @@ from ..database import background_read_connection
 from .. import postgres_store
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
-    lock_current_slice,
+    enqueue_task_in_transaction, lock_current_slice,
 )
 from .opening_graph import GraphInput, GraphStep, build_graph
 from .redis_admission_gate import background_lease
@@ -19,6 +19,35 @@ from .redis_admission_gate import background_lease
 
 _STEP_BATCH_SIZE = 8
 _CLEANUP_BATCH_SIZE = 2
+
+
+def request_graph_rebuild_in_transaction(
+    database: postgres_store.PostgresConnection, repertoire_id: str, local_day: str,
+) -> dict[str, Any]:
+    """Enqueue a new graph generation after all imported and staged generations."""
+
+    database.execute_native(
+        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+        (f"tempo:opening-graph:{repertoire_id}",),
+    )
+    latest_staged = database.execute_native(
+        "SELECT generation FROM opening_graph_steps WHERE repertoire_id=%s "
+        "ORDER BY generation DESC LIMIT 1", (repertoire_id,),
+    ).fetchone()
+    latest_published = database.execute_native(
+        "SELECT generation FROM opening_graph_publications WHERE repertoire_id=%s",
+        (repertoire_id,),
+    ).fetchone()
+    minimum_generation = max(
+        int(latest_staged[0]) if latest_staged else 0,
+        int(latest_published[0]) if latest_published else 0,
+    )
+    return enqueue_task_in_transaction(
+        database, "opening_graph_rebuild", repertoire_id,
+        {"repertoire_id": repertoire_id, "local_day": local_day,
+         "after_line_id": "", "step_offset": 0, "after_card_id": ""},
+        priority=40, minimum_generation=minimum_generation,
+    )
 
 
 @dataclass(frozen=True)

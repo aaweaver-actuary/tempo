@@ -446,6 +446,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
         endgame_attempt_command = (len(path_parts) == 5
                                    and path_parts[:3] == ["api", "endgames", "templates"]
                                    and path_parts[4] == "attempt" and request.method == "POST")
+        branch_add_command = (path_parts == ["api", "repertoire", "branches"]
+                              and request.method == "POST")
         card_validation = (path_parts == ["api", "cards", "validate"]
                            and request.method == "POST")
         if not any((study_create, study_update, study_archive, exercise_create, exercise_revise,
@@ -459,7 +461,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     settings_command,
                     endgame_probe, endgame_template_command,
-                    endgame_attempt_command, card_validation)):
+                    endgame_attempt_command, branch_add_command, card_validation)):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
@@ -2636,7 +2638,12 @@ def commit_analysis_paste(request: AnalysisPasteCommitRequest):
 
 
 @app.post("/api/repertoire/branches")
-def branch(request: BranchRequest):
+def branch(request: BranchRequest,
+           idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command("repertoire.branch.add", request.model_dump(mode="json"),
+                                idempotency_key=idempotency_key)
     board = chess.Board(request.starting_fen)
     moves = []
     try:

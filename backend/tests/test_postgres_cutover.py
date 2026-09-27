@@ -9,6 +9,7 @@ from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 import json
 import sqlite3
+import chess
 from types import SimpleNamespace
 
 from pathlib import Path
@@ -185,6 +186,63 @@ def test_postgres_repertoire_rename_dispatches_idempotent_foreground_command(mon
     assert dispatched == [("repertoires.rename", {
         "repertoire_id": "rep", "name": "New name",
     }, "rename-1")]
+
+
+def test_postgres_branch_edit_dispatches_foreground_command_with_idempotency(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(command_dispatch, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or {
+                            "id": "line", "duplicate": False, "moves": ["e2e4"],
+                            "integrity": {"status": "unchecked", "issue_count": 0,
+                                          "first_issue_id": None, "checked_at": None,
+                                          "scan_status": "idle", "scan_generation": None,
+                                          "scan_progress": {"completed": 0, "total": 0},
+                                          "last_scan_error": None},
+                        })
+    response = TestClient(main.app).post(
+        "/api/repertoire/branches", headers={"Idempotency-Key": "branch-1"},
+        json={"repertoire_id": "rep", "starting_fen": chess.STARTING_FEN,
+              "moves": ["e2e4"], "trained_color": "white"},
+    )
+    assert response.status_code == 200, response.text
+    assert dispatched[0][0] == "repertoire.branch.add"
+    assert dispatched[0][1]["repertoire_id"] == "rep"
+    assert dispatched[0][2] == "branch-1"
+
+
+def test_postgres_branch_edit_checkpoints_graph_rebuild_with_line(monkeypatch):
+    from app import branch_commands
+
+    events = []
+
+    class Database:
+        def execute_native(self, statement, _parameters=()):
+            if "FROM repertoires" in statement:
+                return SimpleNamespace(fetchone=lambda: (1,))
+            if "INSERT INTO repertoire_lines" in statement:
+                events.append("line")
+                return SimpleNamespace(fetchone=lambda: ("line",))
+            if "FROM settings" in statement:
+                return SimpleNamespace(fetchone=lambda: (2,))
+            return SimpleNamespace(fetchone=lambda: None)
+
+    monkeypatch.setattr(branch_commands, "request_graph_rebuild_in_transaction",
+                        lambda *_args: events.append("graph"))
+    monkeypatch.setattr(branch_commands, "integrity_summary",
+                        lambda *_args: {"status": "unchecked"})
+    result = branch_commands.add_repertoire_branch(Database(), {
+        "repertoire_id": "rep", "starting_fen": chess.STARTING_FEN,
+        "moves": ["e2e4", "e7e5"], "trained_color": "white",
+    })
+    assert result["duplicate"] is False
+    assert result["moves"] == ["e2e4", "e7e5"]
+    assert events == ["line", "graph"]
 
 
 def test_postgres_endgame_template_admission_dispatches_foreground_command(monkeypatch):

@@ -385,3 +385,30 @@ def test_postgres_graph_worker_routes_each_restartable_phase(monkeypatch):
     for phase, _ in phase_handlers:
         assert postgres_opening_graph.execute_postgres_opening_graph_slice({"phase": phase})
     assert observed == [phase for phase, _ in phase_handlers]
+
+
+def test_postgres_graph_enqueue_advances_past_imported_generation_without_task_row(monkeypatch):
+    enqueued = []
+
+    class Database:
+        def execute_native(self, statement, _parameters=()):
+            if "FROM opening_graph_steps" in statement:
+                row = (31,)
+            elif "FROM opening_graph_publications" in statement:
+                row = (30,)
+            else:
+                row = None
+            return type("Cursor", (), {"fetchone": lambda _self: row})()
+
+    monkeypatch.setattr(
+        postgres_opening_graph, "enqueue_task_in_transaction",
+        lambda _database, kind, key, payload, **options:
+        enqueued.append((kind, key, payload, options)) or {"generation": 32},
+    )
+    result = postgres_opening_graph.request_graph_rebuild_in_transaction(
+        Database(), "rep", "2026-09-27",
+    )
+    assert result["generation"] == 32
+    assert enqueued[0][0:2] == ("opening_graph_rebuild", "rep")
+    assert enqueued[0][3]["minimum_generation"] == 31
+    assert enqueued[0][2]["after_line_id"] == ""
