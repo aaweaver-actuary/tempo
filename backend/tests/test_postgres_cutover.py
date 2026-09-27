@@ -88,6 +88,115 @@ def test_postgres_priority_opening_slice_checkpoints_one_item_and_rejects_stale_
     assert saved_phase == "admit_study"
 
 
+def test_postgres_study_admission_slices_respect_quota_burial_and_replay(monkeypatch, tmp_path):
+    from app.services import postgres_queue_refresh
+
+    database_path = tmp_path / "study-admission.db"
+    with sqlite3.connect(database_path) as database:
+        database.executescript("""
+            CREATE TABLE settings(id INTEGER PRIMARY KEY,study_new_per_day INTEGER);
+            CREATE TABLE cards(id TEXT PRIMARY KEY,study_exercise_id TEXT,content_type TEXT,
+                               state TEXT,archived INTEGER,pending_validation INTEGER,due_date TEXT);
+            CREATE TABLE studies(id TEXT PRIMARY KEY,archived INTEGER);
+            CREATE TABLE study_exercises(id TEXT PRIMARY KEY,study_id TEXT,status TEXT,created_at TEXT);
+            CREATE TABLE study_sibling_burials(exercise_id TEXT,study_day TEXT);
+            CREATE TABLE daily_queue(queue_date TEXT,card_id TEXT,position INTEGER,
+                                     status TEXT DEFAULT 'queued',card_bucket TEXT,admission_kind TEXT);
+            INSERT INTO settings VALUES(1,2);
+            INSERT INTO studies VALUES('study',0);
+            INSERT INTO study_exercises VALUES('first','study','published','2026-01-01');
+            INSERT INTO study_exercises VALUES('second','study','published','2026-01-02');
+            INSERT INTO study_exercises VALUES('buried','study','published','2026-01-03');
+            INSERT INTO cards VALUES('first-card','first','study_exercise','new',0,0,'2026-09-26');
+            INSERT INTO cards VALUES('second-card','second','study_exercise','new',0,0,'2026-09-26');
+            INSERT INTO cards VALUES('buried-card','buried','study_exercise','new',0,0,'2026-09-26');
+            INSERT INTO study_sibling_burials VALUES('buried','2026-09-27');
+        """)
+
+    class NativeSqlite:
+        def __init__(self, database):
+            self.database = database
+
+        def execute_native(self, statement, parameters=()):
+            return self.database.execute(
+                statement.replace("%s", "?").replace("FOR UPDATE", ""), parameters,
+            )
+
+        execute = execute_native
+
+    @contextmanager
+    def read_section():
+        with sqlite3.connect(database_path) as database:
+            database.row_factory = sqlite3.Row
+            yield NativeSqlite(database)
+
+    monkeypatch.setattr(postgres_queue_refresh, "background_read_connection", read_section)
+    admitted = []
+    while (card_id := postgres_queue_refresh._prepare_study_admission("2026-09-27")) is not None:
+        with sqlite3.connect(database_path) as database:
+            assert postgres_queue_refresh._admit_one_study_card(
+                NativeSqlite(database), "2026-09-27", card_id,
+            )
+            assert not postgres_queue_refresh._admit_one_study_card(
+                NativeSqlite(database), "2026-09-27", card_id,
+            )
+        admitted.append(card_id)
+    assert admitted == ["first-card", "second-card"]
+    with sqlite3.connect(database_path) as database:
+        assert list(database.execute(
+            "SELECT card_id,position,card_bucket,admission_kind FROM daily_queue ORDER BY position",
+        )) == [("first-card", 0, "study_exercise", "new"),
+               ("second-card", 1, "study_exercise", "new")]
+
+
+def test_postgres_study_admission_waits_for_foreground_and_checkpoints_restart(monkeypatch):
+    from app.services import postgres_queue_refresh
+
+    admitted = []
+    order = []
+    current_lease = "first"
+    saved_payload = None
+
+    @contextmanager
+    def section(*, background):
+        assert background
+        yield object()
+
+    def wait_for_foreground():
+        order.append("foreground-cleared")
+
+    def prepare(queue_date):
+        assert order[-1] == "foreground-cleared"
+        return "study-card" if not admitted else None
+
+    def advance(database, task, *, next_phase, next_payload):
+        nonlocal current_lease, saved_payload
+        saved_payload = next_payload
+        current_lease = "second"
+        return True
+
+    monkeypatch.setattr(postgres_queue_refresh.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres_queue_refresh.activity_gate, "wait_for_foreground",
+                        wait_for_foreground)
+    monkeypatch.setattr(postgres_queue_refresh, "connection", section)
+    monkeypatch.setattr(postgres_queue_refresh, "lock_current_slice",
+                        lambda database, task: task["lease_token"] == current_lease)
+    monkeypatch.setattr(postgres_queue_refresh, "_prepare_study_admission", prepare)
+    monkeypatch.setattr(postgres_queue_refresh, "_admit_one_study_card",
+                        lambda database, queue_date, card_id: admitted.append(card_id) or True)
+    monkeypatch.setattr(postgres_queue_refresh, "advance_task_slice_in_transaction", advance)
+    task = {"id": "study-refresh", "generation": 3, "lease_token": "first",
+            "payload": {"queue_date": "2026-09-27", "_queue_phase": "admit_study"}}
+    assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
+    assert admitted == ["study-card"]
+    assert saved_payload["_queue_phase"] == "admit_study"
+    assert not postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
+    assert admitted == ["study-card"]
+    resumed = {**task, "lease_token": "second", "payload": saved_payload}
+    assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(resumed)
+    assert saved_payload["_queue_phase"] == "randomize_queue"
+
+
 def test_postgres_cutover_schema_keeps_json_array_length_available(tmp_path):
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))

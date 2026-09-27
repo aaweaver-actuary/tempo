@@ -4796,8 +4796,44 @@
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_admit_one_study_card",
+      "line": 371,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_admit_one_study_card",
+      "line": 375,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_admit_one_study_card",
+      "line": 378,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_admit_one_study_card",
+      "line": 386,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_admit_one_study_card",
+      "line": 394,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_admit_one_study_card",
+      "line": 398,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "execute_postgres_queue_refresh_slice",
-      "line": 376,
+      "line": 449,
       "operation": "connection"
     },
     {

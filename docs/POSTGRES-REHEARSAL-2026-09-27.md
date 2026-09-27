@@ -11,6 +11,17 @@ opening quota for the test date, so this read-only probe did not publish an
 admission. Named tests cover planning order and stale-lease replay; a live
 PostgreSQL publication under foreground contention remains a release gate.
 
+## Study admission slice check
+
+The PostgreSQL worker now reads the study allowance and next eligible exercise
+in bounded sections, then locks and rechecks one card before insertion. The
+read-only rehearsal for September 27 returned no further study card. A
+rolled-back synthetic PostgreSQL insertion admitted one card; replay returned
+false and left exactly one queue entry. Named
+regressions cover allowance, oldest-first order, sibling burial, replay,
+foreground admission, and stale task leases. The later queue randomization
+and projection phases remain release gates.
+
 This is a **rehearsal**, not a production cutover. Production `tempo-data`
 remains the rollback source and `docker-compose.yml` still runs SQLite. Do not
 start PostgreSQL-backed API traffic until every write route and background

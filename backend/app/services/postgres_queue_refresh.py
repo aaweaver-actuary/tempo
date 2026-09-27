@@ -335,6 +335,74 @@ def _admit_one_prioritized_opening(database, queue_date: str, planned: dict) -> 
     )
 
 
+_STUDY_NEW_ELIGIBILITY = """c.content_type='study_exercise' AND c.state='new'
+    AND c.archived=0 AND COALESCE(c.pending_validation,0)=0 AND c.due_date<=%s
+    AND exercise.status='published' AND study.archived=0
+    AND NOT EXISTS(SELECT 1 FROM study_sibling_burials burial
+                   WHERE burial.exercise_id=exercise.id AND burial.study_day=%s)
+    AND NOT EXISTS(SELECT 1 FROM daily_queue queue
+                   WHERE queue.card_id=c.id AND queue.queue_date=%s)"""
+
+
+def _prepare_study_admission(queue_date: str) -> str | None:
+    """Read the allowance and oldest eligible exercise in bounded sections."""
+
+    allowance = int(_bounded_read("SELECT study_new_per_day FROM settings WHERE id=1")[0][0])
+    admitted = int(_bounded_read(
+        """SELECT COUNT(*) FROM daily_queue queue JOIN cards card ON card.id=queue.card_id
+           WHERE queue.queue_date=%s AND card.content_type='study_exercise'
+             AND card.state='new' AND queue.status IN ('queued','complete')""",
+        (queue_date,), native=True,
+    )[0][0])
+    if admitted >= allowance:
+        return None
+    rows = _bounded_read(
+        "SELECT c.id FROM cards c JOIN study_exercises exercise ON exercise.id=c.study_exercise_id "
+        "JOIN studies study ON study.id=exercise.study_id WHERE " + _STUDY_NEW_ELIGIBILITY +
+        " ORDER BY exercise.created_at,exercise.id LIMIT 1",
+        (queue_date, queue_date, queue_date), native=True,
+    )
+    return str(rows[0][0]) if rows else None
+
+
+def _admit_one_study_card(database, queue_date: str, study_card_id: str) -> bool:
+    """Recheck the quota and candidate while the task and card are locked."""
+
+    if database.execute_native(
+        "SELECT id FROM cards WHERE id=%s FOR UPDATE", (study_card_id,),
+    ).fetchone() is None:
+        return False
+    allowance = database.execute_native(
+        "SELECT study_new_per_day FROM settings WHERE id=1",
+    ).fetchone()[0]
+    admitted = database.execute_native(
+        """SELECT COUNT(*) FROM daily_queue queue JOIN cards card ON card.id=queue.card_id
+           WHERE queue.queue_date=%s AND card.content_type='study_exercise'
+             AND card.state='new' AND queue.status IN ('queued','complete')""",
+        (queue_date,),
+    ).fetchone()[0]
+    if admitted >= allowance:
+        return False
+    eligible = database.execute_native(
+        "SELECT 1 FROM cards c JOIN study_exercises exercise ON exercise.id=c.study_exercise_id "
+        "JOIN studies study ON study.id=exercise.study_id WHERE c.id=%s AND "
+        + _STUDY_NEW_ELIGIBILITY,
+        (study_card_id, queue_date, queue_date, queue_date),
+    ).fetchone()
+    if eligible is None:
+        return False
+    position = database.execute_native(
+        "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=%s",
+        (queue_date,),
+    ).fetchone()[0]
+    database.execute_native(
+        """INSERT INTO daily_queue(queue_date,card_id,position,card_bucket,admission_kind)
+           VALUES(%s,%s,%s,'study_exercise','new')""",
+        (queue_date, study_card_id, position),
+    )
+    return True
+
+
 def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     """Apply one eligibility phase; later queue phases remain explicitly gated."""
 
@@ -348,7 +416,8 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     phase = str(payload.get("_queue_phase") or _ELIGIBILITY_PHASES[0])
     if phase not in (*_ELIGIBILITY_PHASES, "tactical_introductions",
                      "reset_opening_new", "reset_opening_stale", "reconcile_unseen",
-                     "admit_due", "prioritized_openings", "prioritized_opening_item"):
+                     "admit_due", "prioritized_openings", "prioritized_opening_item",
+                     "admit_study"):
         raise RuntimeError(f"Queue refresh phase is not yet ported: {phase}")
     prepared_tactic = None
     if phase == "tactical_introductions":
@@ -372,6 +441,10 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     if phase == "prioritized_openings":
         activity_gate.wait_for_foreground()
         prioritized_plan = _prepare_prioritized_openings(queue_date)
+    study_card_id = None
+    if phase == "admit_study":
+        activity_gate.wait_for_foreground()
+        study_card_id = _prepare_study_admission(queue_date)
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
         if not lock_current_slice(database, task):
@@ -439,6 +512,13 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
             next_phase = phase if opening_index < len(opening_plan) else "admit_study"
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase,
                             "opening_plan": opening_plan, "opening_index": opening_index}
+        elif phase == "admit_study":
+            if study_card_id is None:
+                next_phase = "randomize_queue"
+            else:
+                _admit_one_study_card(database, queue_date, study_card_id)
+                next_phase = phase
+            next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
         else:
             phase_handlers = {
                 "block_opening": main._block_ineligible_opening_queue_entries,
