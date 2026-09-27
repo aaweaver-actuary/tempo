@@ -83,6 +83,36 @@ class PackagedContentTests(unittest.TestCase):
         self.assertEqual(annotation.arrows[0], {"from": "e2", "to": "e4", "color": "green"})
         self.assertEqual(annotation.squares[0], {"square": "e5", "color": "yellow"})
 
+    def test_pgn_variation_copy_without_history_preserves_nested_lines_and_annotations(self) -> None:
+        games, lines = parse_pgn(
+            '[Event "Branches"]\n\n'
+            '1. e4 {Main [%cal Ge2e4]} (1. d4 {Branch [%csl Yd4]} '
+            '1... d5 (1... Nf6 {Nested}) 2. c4) 1... e5 2. Nf3 *'
+        )
+        self.assertEqual(games, 1)
+        self.assertEqual(
+            {tuple(line.moves) for line in lines},
+            {
+                ("e2e4", "e7e5", "g1f3"),
+                ("d2d4", "d7d5", "c2c4"),
+                ("d2d4", "g8f6"),
+            },
+        )
+        annotations = {
+            annotation.comment: annotation
+            for line in lines for annotation in line.annotations
+        }
+        self.assertEqual(set(annotations), {"Main", "Branch", "Nested"})
+        for comment, moves in (
+            ("Main", ["e2e4"]),
+            ("Branch", ["d2d4"]),
+            ("Nested", ["d2d4", "g8f6"]),
+        ):
+            board = chess.Board()
+            for move in moves:
+                board.push_uci(move)
+            self.assertEqual(annotations[comment].fen_key, " ".join(board.fen().split()[:4]))
+
     def test_all_tactic_decks_have_the_requested_sizes_and_unique_ids(self) -> None:
         path = Path(__file__).parents[2] / "public" / "data" / "tactics-decks.json"
         decks = load_packaged_decks(path)

@@ -55,7 +55,7 @@ def _collect_lines(node: chess.pgn.GameNode, board: chess.Board, moves: list[str
         return [(moves, current_annotations)]
     lines: list[tuple[list[str], list[ParsedAnnotation]]] = []
     for variation in node.variations:
-        next_board = board.copy()
+        next_board = board.copy(stack=False)
         uci = variation.move.uci()
         next_board.push(variation.move)
         lines.extend(_collect_lines(variation, next_board, [*moves, uci], current_annotations))

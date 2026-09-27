@@ -4,6 +4,7 @@
 
 | Issue | Required regression |
 | --- | --- |
+| PGN variation traversal must retain nested branches and annotation positions when copying without move history | `test_pgn_variation_copy_without_history_preserves_nested_lines_and_annotations` |
 | Tactic UI timer tests spend real wall-clock time waiting for predictable 800 ms callbacks | `tactic Show Move and Restart retain the guided attempt and classify the opponent reply sound` |
 | Database writer logs merge queue, gate, lock, and transaction time into an opaque hold duration | `test_database_writer_logs_queue_gate_lock_and_transaction_phase_timings` |
 | Rapid Builder moves queue obsolete similarity searches behind an in-flight worker task | `rapid Builder positions coalesce queued matches to the latest FEN` |

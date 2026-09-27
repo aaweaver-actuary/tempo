@@ -63,3 +63,7 @@ The current-position similarity hook now keeps at most one active worker request
 ### SQLite writer timing
 
 `tempo.writer` logs one record per write with `queue_wait`, `gate_wait`, `compatibility_lock_wait`, `begin`, `operation`, `commit`, `hold`, and `total` in seconds. `hold` remains the transaction-boundary budget signal for background writes; foreground activity gate waits and the compatibility lock wait are outside it. A long `begin` can indicate SQLite writer-lock contention, while `operation` and `commit` separate callback work from durability cost. Timings of failed writes may contain zero for phases that did not complete.
+
+### PGN traversal benchmark
+
+Run `npm run bench:pgn` to write `test-results/performance/pgn-parse-benchmark.json` with raw samples, fixture dimensions, and p50/p95 for 1, 10, 40, and 100 generated games. Each game has up to 32 mainline plies and a short annotated alternative every five plies. This deterministic tree stresses variation traversal, but it does not reflect the distribution of real imported PGNs. The initial local p50 values were 3.0, 31.0, 127.5, and 357.2 ms. Copying only board position state during traversal, without the move stack that parsing does not inspect, produced 1.9, 18.9, 88.1, and 207.3 ms on the same host. Keep the change only with exact variation and annotation regression coverage; compare repeated runs before treating these values as a release budget.
