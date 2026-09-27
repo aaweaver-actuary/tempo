@@ -11,6 +11,13 @@ const storageKey = "tempo-pending-training-reviews-v1";
 const reviewRequestTimeoutMs = 15_000;
 let activeFlush: Promise<void> | undefined;
 
+export class ReviewReplayError extends Error {
+  constructor(message: string, readonly endpoint: string, options?: ErrorOptions) {
+    super(message, options);
+    this.name = "ReviewReplayError";
+  }
+}
+
 export function pendingReviews(): PendingReview[] {
   const stored = localStorage.getItem(storageKey);
   if (!stored) return [];
@@ -39,8 +46,8 @@ async function requestReviewSave(url: string, options: RequestInit): Promise<Res
     return await fetch(url, { ...options, signal: controller.signal });
   } catch (error) {
     if (controller.signal.aborted)
-      throw new Error("Review save timed out after 15 seconds. Retry save.", { cause: error });
-    throw error;
+      throw new ReviewReplayError("Review save timed out after 15 seconds. Retry save.", url, { cause: error });
+    throw new ReviewReplayError(error instanceof Error ? error.message : String(error), url, { cause: error });
   } finally {
     clearTimeout(timeout);
   }
@@ -50,10 +57,13 @@ async function savePendingReviews(): Promise<void> {
   while (pendingReviews().length) {
     const review = pendingReviews()[0];
     if (review.guided) {
-      const failureResponse = await requestReviewSave(`${API_URL}/api/queue/entries/${review.queueEntryId}/fail`, { method: "POST" });
-      if (!failureResponse.ok) throw new Error(await responseDetail(failureResponse));
+      const failureEndpoint = `${API_URL}/api/queue/entries/${review.queueEntryId}/fail`;
+      const failureResponse = await requestReviewSave(failureEndpoint, { method: "POST" });
+      if (!failureResponse.ok && failureResponse.status !== 409)
+        throw new ReviewReplayError(await responseDetail(failureResponse), failureEndpoint);
     }
-    const reviewResponse = await requestReviewSave(`${API_URL}/api/cards/${review.backendId}/review`, {
+    const reviewEndpoint = `${API_URL}/api/cards/${review.backendId}/review`;
+    const reviewResponse = await requestReviewSave(reviewEndpoint, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -62,7 +72,8 @@ async function savePendingReviews(): Promise<void> {
         queue_entry_id: review.queueEntryId,
       }),
     });
-    if (!reviewResponse.ok) throw new Error(await responseDetail(reviewResponse));
+    if (!reviewResponse.ok)
+      throw new ReviewReplayError(await responseDetail(reviewResponse), reviewEndpoint);
     const remaining = pendingReviews();
     localStorage.setItem(storageKey, JSON.stringify(
       remaining.filter((item) => item.queueEntryId !== review.queueEntryId),

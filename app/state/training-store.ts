@@ -34,6 +34,7 @@ export type TrainingStoreState = {
   opponentLastMove: MoveSquares | undefined;
   attempt: AttemptToken;
   reviewSaveError: string;
+  pendingReviewError: string;
   boardAttempt: number;
   showHint: boolean;
   cardsLeft: number;
@@ -87,6 +88,7 @@ export type TrainingStoreState = {
   ) => void;
   setAttemptPhase: (phase: AttemptPhase, expected?: AttemptToken) => void;
   setReviewSaveError: (error: string) => void;
+  setPendingReviewError: (error: string) => void;
   hydrateLocalQueue: (cards: PracticeCard[], advance?: boolean, totalCount?: number) => void;
   advanceCachedQueue: () => boolean;
   setBoardAttempt: (value: number | ((value: number) => number)) => void;
@@ -171,6 +173,7 @@ const defaultState = {
   opponentLastMove: undefined,
   attempt: { entryKey: "", generation: 0, phase: "complete" as AttemptPhase },
   reviewSaveError: "",
+  pendingReviewError: "",
   boardAttempt: 0,
   showHint: false,
   cardsLeft: 0,
@@ -208,6 +211,7 @@ export const selectTrainingViewState = (state: TrainingStoreState) => ({
   isLocked: !isAttemptPlayable(state.attempt),
   attempt: state.attempt,
   reviewSaveError: state.reviewSaveError,
+  pendingReviewError: state.pendingReviewError,
   step: state.step,
   feedback: state.feedback,
   showHint: state.showHint,
@@ -255,6 +259,7 @@ export function selectHomeViewState(state: TrainingStoreState) {
     offlineQueue: state.isOfflineQueueActive,
     serviceError: state.serviceError,
     reviewSaveError: state.reviewSaveError,
+    pendingReviewError: state.pendingReviewError,
   };
 }
 
@@ -269,6 +274,7 @@ export const selectTrainingActions = (state: TrainingStoreState) => ({
   setOpponentLastMove: state.setOpponentLastMove,
   setAttemptPhase: state.setAttemptPhase,
   setReviewSaveError: state.setReviewSaveError,
+  setPendingReviewError: state.setPendingReviewError,
   hydrateLocalQueue: state.hydrateLocalQueue,
   setBoardAttempt: state.setBoardAttempt,
   setShowHint: state.setShowHint,
@@ -345,6 +351,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
         : { attempt: { ...state.attempt, phase } },
     ),
   setReviewSaveError: (reviewSaveError) => set({ reviewSaveError }),
+  setPendingReviewError: (pendingReviewError) => set({ pendingReviewError }),
   setBoardAttempt: (value) =>
     set((state) => ({
       boardAttempt:

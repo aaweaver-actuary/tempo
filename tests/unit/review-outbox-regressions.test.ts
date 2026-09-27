@@ -34,6 +34,34 @@ describe("optimistic training review outbox", () => {
     expect(pendingReviews()).toEqual([]);
   });
 
+  it("stale guided failure marking still saves the guided review once", async () => {
+    enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, outcome: "correct", guided: true });
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(Response.json({ detail: "This queue attempt is no longer active" }, { status: 409 }))
+      .mockResolvedValueOnce(Response.json({ persisted: true }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await flushPendingReviews();
+
+    expect(fetchMock.mock.calls.map(([url]) => String(url))).toEqual([
+      expect.stringContaining("/api/queue/entries/17/fail"),
+      expect.stringContaining("/api/cards/card-a/review"),
+    ]);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({ guided: true, queue_entry_id: 17 });
+    expect(pendingReviews()).toEqual([]);
+  });
+
+  it("unresolved guided review remains saved when the review endpoint rejects it", async () => {
+    const review = { backendId: "card-a", queueEntryId: 17, outcome: "correct" as const, guided: true };
+    enqueuePendingReview(review);
+    vi.stubGlobal("fetch", vi.fn()
+      .mockResolvedValueOnce(Response.json({ detail: "This queue attempt is no longer active" }, { status: 409 }))
+      .mockResolvedValueOnce(Response.json({ detail: "This queue attempt is no longer available" }, { status: 409 })));
+
+    await expect(flushPendingReviews()).rejects.toThrow("no longer available");
+    expect(pendingReviews()).toEqual([review]);
+  });
+
   it("drains a review appended while an earlier review request is still in flight", async () => {
     enqueuePendingReview({ backendId: "card-a", queueEntryId: 17, outcome: "correct", guided: false });
     let finishFirst: ((response: Response) => void) | undefined;

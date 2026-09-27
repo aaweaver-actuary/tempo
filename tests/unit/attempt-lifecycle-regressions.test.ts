@@ -7,6 +7,7 @@ import {
   selectTrainingViewState,
 } from "../../app/state/training-store";
 import { attemptEntryKey } from "../../app/domain/attempt";
+import { enqueuePendingReview, pendingReviews } from "../../app/lib/review-outbox";
 import {
   asCardId,
   asFenString,
@@ -32,9 +33,66 @@ const card: PracticeCard = {
   firstCleanPassAt: "2026-09-15T12:00:00Z",
 };
 
-beforeEach(() => useTrainingStore.getState().initializeCardState(card));
+beforeEach(() => {
+  localStorage.clear();
+  useTrainingStore.getState().setPendingReviewError("");
+  useTrainingStore.getState().initializeCardState(card);
+});
 
 describe("review attempt reliability", () => {
+  it("stale guided failure replay completes before today's training queue opens", async () => {
+    enqueuePendingReview({ backendId: "persisted-card", queueEntryId: 42, outcome: "correct", guided: true });
+    const requestedPaths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      requestedPaths.push(url);
+      if (url.endsWith("/fail"))
+        return Response.json({ detail: "This queue attempt is no longer active" }, { status: 409 });
+      if (url.endsWith("/review")) return Response.json({ persisted: true });
+      return Response.json({ cards: [{
+        id: "other-card", queue_entry_id: 43, start_fen: card.startingFen,
+        moves: ["d2d4"], content_type: "opening", repertoire_name: "Available", repertoire_source: "PGN",
+      }], count: 1 });
+    }));
+
+    await fetchAndInitializeQueue();
+
+    expect(requestedPaths.map((url) => new URL(url).pathname)).toEqual([
+      "/api/queue/entries/42/fail", "/api/cards/persisted-card/review", "/api/queue/window",
+    ]);
+    expect(pendingReviews()).toEqual([]);
+    expect(useTrainingStore.getState().practiceCards[0].queueEntryId).toBe(43);
+    expect(useTrainingStore.getState().pendingReviewError).toBe("");
+    expect(useTrainingStore.getState().serviceError).toBe("");
+  });
+
+  it("unresolved review replay opens other training cards and pauses the pending card", async () => {
+    localStorage.clear();
+    enqueuePendingReview({ backendId: "persisted-card", queueEntryId: 42, outcome: "correct", guided: true });
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/fail"))
+        return Response.json({ detail: "This queue attempt is no longer active" }, { status: 409 });
+      if (url.endsWith("/review"))
+        return Response.json({ detail: "This queue attempt is no longer available" }, { status: 409 });
+      return Response.json({ cards: [
+        { id: "persisted-card", queue_entry_id: 42, start_fen: card.startingFen,
+          moves: ["e2e4"], content_type: "opening", repertoire_name: "Pending", repertoire_source: "PGN" },
+        { id: "other-card", queue_entry_id: 43, start_fen: card.startingFen,
+          moves: ["d2d4"], content_type: "opening", repertoire_name: "Available", repertoire_source: "PGN" },
+      ], count: 2 });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    await fetchAndInitializeQueue();
+
+    expect(useTrainingStore.getState().practiceCards.map((queuedCard) => queuedCard.queueEntryId)).toEqual([43]);
+    expect(useTrainingStore.getState().cardsLeft).toBe(1);
+    expect(useTrainingStore.getState().serviceError).toBe("");
+    expect(useTrainingStore.getState().pendingReviewError).toContain("no longer available");
+    expect(pendingReviews()).toHaveLength(1);
+    expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/queue/window"))).toBe(true);
+  });
   it("advances to a prefetched card before review persistence and retains the total queue count", () => {
     const nextCard = { ...card, id: asCardId("next-card"), queueEntryId: asQueueEntryId(43) };
     const store = useTrainingStore.getState();

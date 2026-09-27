@@ -73,6 +73,39 @@ test("intentional training failure is saved once and reload resumes it without a
   expect(failureRequests).toBe(1);
 });
 
+test("unresolved guided review keeps its card paused while other training opens", async ({ page }) => {
+  await prepareVisualUI(page);
+  await page.route("**/api/queue/entries/1974/fail", (route) => route.fulfill({
+    status: 409, json: { detail: "This queue attempt is no longer active" },
+  }));
+  await page.route("**/api/cards/pending-card/review", (route) => route.fulfill({
+    status: 409, json: { detail: "This queue attempt is no longer available" },
+  }));
+  await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: {
+    count: 2, cards: [
+      { id: "pending-card", queue_entry_id: 1974, start_fen: startFen,
+        moves: ["e2e4"], content_type: "opening", repertoire_name: "Pending review",
+        repertoire_source: "PGN", trained_color: "white" },
+      { id: "available-card", queue_entry_id: 1975, start_fen: startFen,
+        moves: ["d2d4"], content_type: "opening", repertoire_name: "Available review",
+        repertoire_source: "PGN", trained_color: "white" },
+    ],
+  } }));
+  await page.evaluate(() => {
+    localStorage.clear();
+    localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([
+      { backendId: "pending-card", queueEntryId: 1974, outcome: "correct", guided: true },
+    ]));
+  });
+  await page.reload();
+
+  await expect(page.getByRole("heading", { name: "Available review" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Pending review" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Retry saving review" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Correct" })).toBeEnabled();
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]"))).toHaveLength(1);
+});
+
 test("legacy discovery timeout reopens as an unconfirmed save and retries the same choice", async ({ page }) => {
   await prepareVisualUI(page);
   let finishAccept: (() => void) | undefined;

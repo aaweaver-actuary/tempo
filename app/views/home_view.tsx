@@ -202,6 +202,7 @@ export default function Home() {
     queueNotice,
     serviceError,
     reviewSaveError,
+    pendingReviewError,
   } = useTrainingStore(useShallow(selectHomeViewState));
   const {
     setPracticeCards,
@@ -235,6 +236,7 @@ export default function Home() {
     setPieceSet,
     setSoundOn,
     setReviewSaveError,
+    setPendingReviewError,
     setServiceError,
     initializeCardState,
     resetTrainingLine,
@@ -835,6 +837,11 @@ export default function Home() {
     const entryKey = String(card.queueEntryId ?? card.id);
     if (reviewPendingEntries.current.has(entryKey) || cardsLeft === 0) return;
     const pendingBeforeReview = databaseQueue && !offlineQueue ? pendingReviews() : [];
+    if (!options.retryPending && !options.recordedAtCompletion &&
+        pendingBeforeReview.some((review) => review.queueEntryId === card.queueEntryId)) {
+      setPendingReviewError("This card has a review waiting to save. Retry saving the review before grading it again.");
+      return;
+    }
     reviewPendingEntries.current.add(entryKey);
     const transitionGeneration = ++reviewTransitionGeneration.current;
     const { recordedAtCompletion = false, retryPending = false } = options;
@@ -1349,6 +1356,14 @@ export default function Home() {
                 <span>{queueNotice}</span>
                 <Button onClick={() => void refreshDatabaseQueue().catch(() => undefined)}>
                   Retry sync
+                </Button>
+              </div>
+            )}
+            {pendingReviewError && !offlineQueue && (
+              <div className="ui-notice error" role="alert">
+                <span>Could not save a previous training review. Its card is paused until the save is resolved. {pendingReviewError}</span>
+                <Button onClick={() => void refreshDatabaseQueue().catch(() => undefined)}>
+                  Retry saving review
                 </Button>
               </div>
             )}

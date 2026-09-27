@@ -503,6 +503,39 @@ def test_stale_failed_attempt_request_cannot_mark_a_later_queue_entry(
             ).fetchone()[0] == 0
 
 
+def test_guided_review_after_stale_failure_marking_is_saved_once(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        imported = client.post(
+            "/api/imports/pgn",
+            files={"file": ("one.pgn", PGN)},
+            data={"initial_depth": 2},
+        )
+        wait_for_integrity(client, imported.json()["repertoire_id"])
+        first = client.get("/api/queue/today").json()["cards"][0]
+        with database.connection() as db:
+            later_entry_id = db.execute(
+                """INSERT INTO daily_queue(queue_date,card_id,cycle,position)
+                   VALUES(?,?,?,?) RETURNING id""",
+                (date.today().isoformat(), first["id"], 99, 999),
+            ).fetchone()[0]
+        assert client.post(f"/api/queue/entries/{later_entry_id}/fail").status_code == 409
+        request = {"outcome": "correct", "guided": True, "queue_entry_id": later_entry_id}
+        saved = client.post(f"/api/cards/{first['id']}/review", json=request)
+        repeated = client.post(f"/api/cards/{first['id']}/review", json=request)
+        assert saved.status_code == 200
+        assert saved.json()["persisted"] is True
+        assert repeated.status_code == 200
+        assert repeated.json()["idempotent"] is True
+        with database.read_connection() as db:
+            reviews = db.execute(
+                "SELECT rating,guided FROM reviews WHERE card_id=?", (first["id"],)
+            ).fetchall()
+            assert [tuple(review) for review in reviews] == [("again", 1)]
+
+
 def test_unfinished_unreviewed_cards_do_not_bypass_tomorrows_new_card_limit(
     tmp_path, monkeypatch
 ):

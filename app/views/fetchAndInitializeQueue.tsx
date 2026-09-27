@@ -4,7 +4,7 @@ import { useTrainingStore } from "../state/training-store";
 import { runStudyTask } from "../lib/background-study";
 import type { PracticeCard } from "../domain/cards";
 import { reportDebugError } from "../lib/debug-reporting";
-import { flushPendingReviews, pendingReviews } from "../lib/review-outbox";
+import { flushPendingReviews, pendingReviews, ReviewReplayError } from "../lib/review-outbox";
 import { describeOfflineQueue, readPreparedTraining, replayOfflineAttempts, requiresConnectedGrading, savePreparedTraining } from "../lib/offline-training";
 import { waitForOfflineShell } from "../lib/offline-shell";
 import { flushTrainingFailures, pendingTrainingFailures } from "../lib/training-failure-outbox";
@@ -107,6 +107,10 @@ export async function fetchAndInitializeQueue(
   const controller = new AbortController();
   activeQueueController = controller;
   try {
+    const withoutPendingReviews = (cards: PracticeCard[]) => {
+      const pendingEntryIds = new Set(pendingReviews().map((review) => review.queueEntryId));
+      return cards.filter((card) => !card.queueEntryId || !pendingEntryIds.has(card.queueEntryId));
+    };
     const pendingFailureEntries = new Set(pendingTrainingFailures());
     let failureSaveError: string | null = null;
     if (pendingFailureEntries.size)
@@ -128,8 +132,12 @@ export async function fetchAndInitializeQueue(
           const cached = JSON.parse(stored) as QueuePayload;
           if (cached.local_date === localDayKey() && cached.cards?.length) {
             const cachedCards = await runStudyTask<PracticeCard[]>({ kind: "queue", payload: cached });
-            if (generation === requestGeneration)
-              useTrainingStore.getState().hydrateLocalQueue(retainPendingFailures(cachedCards), false, cached.count);
+            if (generation === requestGeneration) {
+              const availableCards = withoutPendingReviews(retainPendingFailures(cachedCards));
+              useTrainingStore.getState().hydrateLocalQueue(
+                availableCards, false, Math.max(0, (cached.count ?? cachedCards.length) - (cachedCards.length - availableCards.length)),
+              );
+            }
           }
         } catch {
           localStorage.removeItem(queueCacheKey);
@@ -137,14 +145,32 @@ export async function fetchAndInitializeQueue(
       }
     }
     const replayed = typeof indexedDB === "undefined" ? null : await replayOfflineAttempts();
-    if (pendingReviews().length) await flushPendingReviews();
+    let pendingReviewError = "";
+    if (pendingReviews().length) {
+      try {
+        await flushPendingReviews();
+      } catch (error) {
+        pendingReviewError = error instanceof Error ? error.message : String(error);
+        if (generation === requestGeneration)
+          reportDebugError(error, {
+            kind: "api",
+            source: "training-review-replay",
+            operation: "save pending review",
+            endpoint: error instanceof ReviewReplayError ? error.endpoint : `${API_URL}/api/cards/review`,
+          });
+      }
+    }
     const raw = await loadTodayQueueWithRetry(controller.signal);
     const cards = await runStudyTask<PracticeCard[]>({
       kind: "queue",
       payload: raw,
     });
     if (generation !== requestGeneration) return;
-    useTrainingStore.getState().hydrateLocalQueue(retainPendingFailures(cards), advance, raw.count);
+    const availableCards = withoutPendingReviews(retainPendingFailures(cards));
+    useTrainingStore.getState().hydrateLocalQueue(
+      availableCards, advance, Math.max(0, (raw.count ?? cards.length) - (cards.length - availableCards.length)),
+    );
+    useTrainingStore.getState().setPendingReviewError(pendingReviewError);
     useTrainingStore.getState().setOfflineQueue(false);
     try { localStorage.setItem(queueCacheKey, JSON.stringify(raw)); } catch {
       // A full browser storage quota must not turn a successful queue read into a failure.
@@ -181,7 +207,10 @@ export async function fetchAndInitializeQueue(
             projection: payload.projection,
           } });
           if (generation !== requestGeneration) return null;
-          useTrainingStore.getState().hydrateLocalQueue(retainPendingFailures(completeCards), false, prepared.cards.length);
+          const availableCards = withoutPendingReviews(retainPendingFailures(completeCards));
+          useTrainingStore.getState().hydrateLocalQueue(
+            availableCards, false, Math.max(0, prepared.cards.length - (completeCards.length - availableCards.length)),
+          );
         }
         return prepared;
       })
@@ -207,7 +236,10 @@ export async function fetchAndInitializeQueue(
     if (generation !== requestGeneration) return;
     const prepared = await readPreparedTraining().catch(() => null);
     if (prepared?.localDate === localDayKey()) {
-      const supportedCards = prepared.cards.filter((card) => !requiresConnectedGrading(card));
+      const pendingEntryIds = new Set(pendingReviews().map((review) => review.queueEntryId));
+      const supportedCards = prepared.cards.filter((card) =>
+        !requiresConnectedGrading(card) &&
+        (!card.queue_entry_id || !pendingEntryIds.has(card.queue_entry_id)));
       const cards = await runStudyTask<PracticeCard[]>({
         kind: "queue", payload: { cards: supportedCards, count: supportedCards.length, local_date: prepared.localDate },
       });
