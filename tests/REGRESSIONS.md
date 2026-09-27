@@ -6,6 +6,7 @@
 | --- | --- |
 | PostgreSQL API startup leaves today's queue refreshing forever because it never requests the durable queue task | `test_postgres_api_startup_requests_todays_queue_through_foreground_command` |
 | Browser activity is blocked by the PostgreSQL write guard, allowing background slices to begin during active study | `test_postgres_browser_activity_extends_cross_process_foreground_admission` |
+| An API left running across midnight never creates the next day's PostgreSQL queue | `test_postgres_daily_queue_rollover_requests_refresh_until_ready` |
 | A queued defense card cannot save recognition or grading after PostgreSQL cutover, or the two submissions reuse one receipt ID | `test_postgres_defense_answers_dispatch_atomic_foreground_commands` |
 | PostgreSQL teaching-state saves bypass the command queue or replay changes their timestamp | `test_postgres_cutover_teaching_state_dispatches_and_replays_saved_timestamp` |
 | A teaching save is lost when the command response is pending or the service fails | `teaching save survives an ambiguous response and replays with the same command ID`; `failed teaching save remains queued for a later retry` |

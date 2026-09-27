@@ -20,6 +20,7 @@ celery_app.conf.update(
     task_default_queue="foreground",
     task_routes={
         "app.tasks.execute_foreground_command": {"queue": "foreground"},
+        "app.tasks.ensure_daily_queue": {"queue": "foreground"},
         "app.tasks.execute_background_slice": {"queue": "background"},
         "app.tasks.poll_background_tasks": {"queue": "background"},
     },
@@ -27,6 +28,10 @@ celery_app.conf.update(
         "poll-durable-background-tasks": {
             "task": "app.tasks.poll_background_tasks",
             "schedule": 1.0,
+        },
+        "ensure-current-daily-queue": {
+            "task": "app.tasks.ensure_daily_queue",
+            "schedule": 60.0,
         },
     },
     broker_connection_retry_on_startup=True,

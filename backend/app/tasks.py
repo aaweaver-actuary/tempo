@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import logging
 import time
+import uuid
+from datetime import date
 from typing import Any
 
 from kombu.exceptions import OperationalError as BrokerUnavailable
@@ -11,6 +13,7 @@ from psycopg.errors import LockNotAvailable, TransactionTimeout
 
 from .celery_app import celery_app
 from .command_gateway import execute_command
+from .database import read_connection
 from . import study_commands  # noqa: F401 - registers explicit worker commands
 from . import study_attempt_commands  # noqa: F401 - registers Study attempt commands
 from . import defense_commands  # noqa: F401 - registers defensive exercise commands
@@ -35,6 +38,27 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "defensive_threat_report_audit",
     "priority_retention",
 )
+
+
+@celery_app.task(name="app.tasks.ensure_daily_queue")
+def ensure_daily_queue() -> bool:
+    """Start the new day's queue even when the API stays up past midnight."""
+
+    queue_date = date.today().isoformat()
+    with activity_gate.foreground():
+        with read_connection() as database:
+            projection = database.execute(
+                "SELECT state,refresh_pending FROM queue_projections WHERE queue_date=?",
+                (queue_date,),
+            ).fetchone()
+        if projection and projection["state"] == "ready" and not projection["refresh_pending"]:
+            return False
+        result = execute_command(
+            uuid.uuid4().hex, "queue.ensure_current", {"queue_date": queue_date},
+        )
+        if result is None:
+            raise RuntimeError("Could not request today's queue refresh")
+        return bool(result["refresh_pending"])
 
 
 @celery_app.task(name="app.tasks.execute_foreground_command", bind=True)

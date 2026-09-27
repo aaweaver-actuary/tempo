@@ -62,6 +62,34 @@ def test_postgres_browser_activity_extends_cross_process_foreground_admission(mo
     assert observed == [(1, "tempo:admission:foreground", "browser-activity", 3000)]
 
 
+def test_postgres_daily_queue_rollover_requests_refresh_until_ready(monkeypatch):
+    from app import tasks
+
+    projection = None
+    submitted = []
+    class QueueDatabase:
+        def execute(self, statement, parameters):
+            assert parameters == (date.today().isoformat(),)
+            return self
+        def fetchone(self):
+            return projection
+
+    @contextmanager
+    def queue_connection():
+        yield QueueDatabase()
+
+    monkeypatch.setattr(tasks, "read_connection", queue_connection)
+    monkeypatch.setattr(tasks.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(tasks, "execute_command",
+                        lambda operation_id, name, payload:
+                        submitted.append((name, payload)) or {"refresh_pending": True})
+    assert tasks.ensure_daily_queue.run()
+    assert submitted == [("queue.ensure_current", {"queue_date": date.today().isoformat()})]
+    projection = {"state": "ready", "refresh_pending": 0}
+    assert not tasks.ensure_daily_queue.run()
+    assert len(submitted) == 1
+
+
 def test_postgres_priority_opening_plan_preserves_gameplay_breadth_and_shared_cards():
     from app import main
 
