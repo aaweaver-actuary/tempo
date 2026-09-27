@@ -1,11 +1,14 @@
 from datetime import date, timedelta
 import json
+import logging
 import time
+from types import SimpleNamespace
 
 import chess
 from fastapi.testclient import TestClient
 
 from app import database
+from app.services import opening_graph as opening_graph_module
 from app.main import app
 from app.services.durable_tasks import claim_task, complete_task
 from app.services.opening_graph import (
@@ -21,6 +24,42 @@ from app.services.scheduler import schedule_review
 
 
 STARTING_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+
+
+def test_opening_graph_rebuild_reports_prepare_compute_publish_phase_timings(
+    monkeypatch, caplog,
+):
+    phases = []
+    prepared_input = object()
+    calculated_artifacts = SimpleNamespace(graph_steps=(object(), object()))
+
+    def prepare(task):
+        phases.append("prepare")
+        return prepared_input
+
+    def calculate(rebuild_input):
+        assert rebuild_input is prepared_input
+        phases.append("compute")
+        return calculated_artifacts
+
+    def publish(task, artifacts):
+        assert artifacts is calculated_artifacts
+        phases.append("publish")
+
+    monkeypatch.setattr(opening_graph_module, "prepare_opening_graph_rebuild", prepare)
+    monkeypatch.setattr(opening_graph_module, "calculate_opening_graph_artifacts", calculate)
+    monkeypatch.setattr(opening_graph_module, "publish_opening_graph_rebuild", publish)
+    with caplog.at_level(logging.INFO, logger="tempo.opening_graph"):
+        execute_opening_graph_rebuild({"payload": {"repertoire_id": "timed-repertoire"}, "generation": 3})
+
+    assert phases == ["prepare", "compute", "publish"]
+    timing_records = [record for record in caplog.records if record.name == "tempo.opening_graph"]
+    assert len(timing_records) == 1
+    message = timing_records[0].getMessage()
+    assert "repertoire_id=timed-repertoire" in message
+    assert "graph_steps=2" in message
+    for phase in ("prepare_ms=", "compute_ms=", "publish_ms=", "total_ms="):
+        assert phase in message
 
 
 def _publish_graph(repertoire_id: str) -> None:

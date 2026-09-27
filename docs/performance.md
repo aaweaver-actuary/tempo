@@ -147,6 +147,8 @@ Run `npm run bench:pgn` to write `test-results/performance/pgn-parse-benchmark.j
 
 ### Opening graph calculation benchmark
 
+The registered durable graph rebuild handler now emits one `tempo.opening_graph` record with repertoire ID, generation, graph-step count, and `prepare_ms`, `compute_ms`, `publish_ms`, and `total_ms`. Preparation reads immutable inputs through short connections, computation traverses chess positions outside SQLite, and publication stages bounded writes. This log distinguishes a slow input read or writer phase from CPU-heavy graph construction during a real rebuild; the synthetic benchmark below isolates only calculation.
+
 Run `npm run bench:graph` for seven raw samples of graph construction at 10, 100, 500, and 2,000 deterministic lines. Each line has up to 16 legal plies, alternates trained color across lines, and creates a three-decision prefix plus descendants. The generated lines are more uniform than personal repertoires. Baseline local p50 values were 20.2, 201.9, 1,027.8, and 4,362.1 ms. Reusing the already computed last decision FEN key for each segment and building the prefix-override lookup once per graph gave 15.3, 142.9, 895.1, and 3,985.3 ms in one run; a repeat gave 13.6, 144.6, 722.4, and 2,900.6 ms. Stress variance remains large, so use distributions and the same host for comparisons. The graph still validates and traverses each line; this change removes only the extra segment-level board construction and replay.
 
 ### Repertoire statistics forecast reads

@@ -5,7 +5,9 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from datetime import date, datetime, time, timedelta, timezone
 import json
+import logging
 import sqlite3
+from time import perf_counter
 
 import chess
 from fsrs import Card, State
@@ -877,8 +879,21 @@ def publish_opening_graph_rebuild(
 
 
 def execute_opening_graph_rebuild(task: dict) -> None:
-    """Synchronous compatibility path used by focused tests and maintenance."""
+    """Run the registered durable rebuild handler across short read and write phases."""
 
+    started_at = perf_counter()
     rebuild_input = prepare_opening_graph_rebuild(task)
+    prepared_at = perf_counter()
     artifacts = calculate_opening_graph_artifacts(rebuild_input)
+    calculated_at = perf_counter()
     publish_opening_graph_rebuild(task, artifacts)
+    published_at = perf_counter()
+    logging.getLogger("tempo.opening_graph").info(
+        "graph rebuild repertoire_id=%s generation=%s graph_steps=%d "
+        "prepare_ms=%.3f compute_ms=%.3f publish_ms=%.3f total_ms=%.3f",
+        task["payload"]["repertoire_id"], task["generation"], len(artifacts.graph_steps),
+        (prepared_at - started_at) * 1000,
+        (calculated_at - prepared_at) * 1000,
+        (published_at - calculated_at) * 1000,
+        (published_at - started_at) * 1000,
+    )
