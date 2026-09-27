@@ -288,6 +288,14 @@ microbenchmark, not the final container/backlog gate.
 
 ## Outstanding cutover gates
 
+Study exercise revision now uses an explicit foreground command. A notes-only
+revision keeps the active card and advances its revision; a material revision
+with schedule reset archives the old card, blocks its queued entry, creates a
+new card, and requests a durable queue refresh in one worker transaction. A
+rolled-back PostgreSQL rehearsal exercised both paths after create/enroll.
+The command locks the parent Study before the exercise so a concurrent Study
+archive cannot leave an active replacement card.
+
 Study exercise “train now” now uses a foreground command and queues one explicit
 entry in the same transaction as its durable refresh request. A rolled-back
 PostgreSQL rehearsal executed create, enroll, train-now, and replay; replay
@@ -304,13 +312,16 @@ Each updates card and queued-entry state and requests a durable queue refresh in
 one worker transaction. Focused route and state regressions passed; these
 commands were exercised with create and enroll against the imported PostgreSQL
 rehearsal in one rolled-back transaction. The exercise was created from an
-existing study position after temporarily replacing its `startpos` FEN with a
-valid starting FEN inside that transaction. Enrollment replay returned the
+scratch rehearsal position after temporarily replacing its `startpos` FEN with
+a valid starting FEN inside that transaction. Enrollment replay returned the
 original card; there was exactly one card after replay, then suspend, resume,
-and archive completed. The imported source has two positions flagged valid
-with the `startpos` sentinel, which `python-chess` rejects for authored
-exercises. This pre-existing data-quality issue needs an explicit compatibility
-decision before live cutover.
+and archive completed. A subsequent comparison with the verified SQLite source
+showed **zero** Study rows in `studies`, `study_chapters`, `study_sources`, and
+`study_positions`; the scratch rehearsal now has 5, 6, 1, and 2 respectively.
+Those `startpos` rows were created by rehearsal work after the original row
+parity check and are not imported user data. Treat this PostgreSQL instance as
+a mutable development fixture; restore a clean clone of the backup for final
+same-data parity and benchmarks.
 
 An opt-in `docker-compose.postgres.yml` now defines the intended product
 topology: PostgreSQL 18 and Redis on external volumes, a read-only API role,

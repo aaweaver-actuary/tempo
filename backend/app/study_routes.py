@@ -423,7 +423,13 @@ def present_exercise(study_id: str, exercise_id: str):
 
 
 @router.put("/{study_id}/exercises/{exercise_id}")
-def revise_exercise(study_id: str, exercise_id: str, request: ExerciseRevisionRequest):
+def revise_exercise(study_id: str, exercise_id: str, request: ExerciseRevisionRequest,
+                    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.exercises.revise",
+                                {"study_id": study_id, "exercise_id": exercise_id,
+                                 "revision": request.model_dump(mode="json", exclude_unset=True)},
+                                idempotency_key=idempotency_key)
     with connection() as database:
         exercise = _require(database, "study_exercises", exercise_id)
         if exercise["study_id"] != study_id or exercise["current_revision"] != request.expected_revision:

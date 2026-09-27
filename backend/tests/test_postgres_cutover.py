@@ -920,6 +920,116 @@ def test_postgres_exercise_train_now_dispatches_foreground_command(monkeypatch):
     ]
 
 
+def test_postgres_exercise_revision_dispatch_preserves_optional_field_presence(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main, study_routes
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(study_routes, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or {"accepted": name})
+    response = TestClient(main.app).put(
+        "/api/studies/study-1/exercises/exercise-1",
+        json={"expected_revision": 1, "specification": {
+            "type": "explanation", "prompt": "Explain the idea", "rubric": "Mention the threat",
+        }, "source": {}},
+        headers={"Idempotency-Key": "revision-1"},
+    )
+    assert response.status_code == 200, response.text
+    assert dispatched == [
+        ("studies.exercises.revise", {"study_id": "study-1", "exercise_id": "exercise-1",
+                                      "revision": {"expected_revision": 1, "specification": {
+                                          "type": "explanation", "prompt": "Explain the idea",
+                                          "rubric": "Mention the threat",
+                                      }, "source": {}}}, "revision-1"),
+    ]
+
+
+def test_postgres_exercise_revision_keeps_metadata_schedule_and_resets_material_card(monkeypatch, tmp_path):
+    import chess
+    from app import study_commands
+
+    database_path = tmp_path / "exercise-revision.db"
+    with sqlite3.connect(database_path) as database:
+        database.executescript("""
+            CREATE TABLE studies(id TEXT PRIMARY KEY);
+            CREATE TABLE study_exercises(id TEXT PRIMARY KEY,study_id TEXT,position_id TEXT,
+                current_revision INTEGER,updated_at TEXT,source_json TEXT,sibling_group TEXT,
+                point_value REAL);
+            CREATE TABLE study_positions(id TEXT PRIMARY KEY,fen TEXT);
+            CREATE TABLE study_exercise_revisions(exercise_id TEXT,revision INTEGER,
+                specification_json TEXT,digest TEXT,created_at TEXT);
+            CREATE TABLE cards(id TEXT PRIMARY KEY,repertoire_id TEXT,kind TEXT,start_fen TEXT,
+                moves_json TEXT,state TEXT,due_date TEXT,content_type TEXT,study_exercise_id TEXT,
+                revision INTEGER,archived INTEGER DEFAULT 0);
+            CREATE TABLE daily_queue(card_id TEXT,status TEXT);
+            INSERT INTO studies VALUES('study');
+            INSERT INTO study_exercises VALUES('exercise','study','position',1,NULL,
+                '{"tag":"kept"}',NULL,NULL);
+        """)
+        database.execute("INSERT INTO study_positions VALUES('position',?)", (chess.STARTING_FEN,))
+        previous = {"type": "explanation", "prompt": "Original", "rubric": "Identify the idea",
+                    "hint": "", "explanation": "Old notes", "further_analysis": ""}
+        database.execute("INSERT INTO study_exercise_revisions VALUES('exercise',1,?,'digest',NULL)",
+                         (json.dumps(previous),))
+        database.execute("""INSERT INTO cards(id,kind,start_fen,moves_json,state,due_date,
+                            content_type,study_exercise_id,revision)
+                            VALUES('card','exercise',?,'[]','learning','2026-09-27',
+                            'study_exercise','exercise',1)""", (chess.STARTING_FEN,))
+        database.execute("INSERT INTO daily_queue VALUES('card','queued')")
+
+    class NativeSqlite:
+        def __init__(self, database):
+            self.database = database
+            self.statements = []
+
+        def execute(self, statement, parameters=()):
+            self.statements.append(statement)
+            return self.database.execute(statement.replace("FOR UPDATE", ""), parameters)
+
+    refreshed = []
+    monkeypatch.setattr(study_commands, "request_queue_refresh_in_transaction",
+                        lambda _database, queue_date: refreshed.append(queue_date))
+    with sqlite3.connect(database_path) as database:
+        database.row_factory = sqlite3.Row
+        adapter = NativeSqlite(database)
+        metadata_result = study_commands.revise_exercise(adapter, {
+            "study_id": "study", "exercise_id": "exercise", "revision": {
+                "expected_revision": 1,
+                "specification": {"type": "explanation", "prompt": "Original",
+                                  "rubric": "Identify the idea", "explanation": "New notes"},
+                "source": {},
+            },
+        })
+        assert metadata_result == {"id": "exercise", "revision": 2,
+                                   "material": False, "schedule_reset": False}
+        assert adapter.statements[:2] == [
+            "SELECT id FROM studies WHERE id=? FOR UPDATE",
+            "SELECT * FROM study_exercises WHERE id=? FOR UPDATE",
+        ]
+        assert tuple(database.execute(
+            "SELECT revision,archived FROM cards WHERE id='card'",
+        ).fetchone()) == (2, 0)
+        assert database.execute("SELECT source_json FROM study_exercises").fetchone()[0] == "{}"
+        assert refreshed == []
+        material_result = study_commands.revise_exercise(adapter, {
+            "study_id": "study", "exercise_id": "exercise", "revision": {
+                "expected_revision": 2,
+                "specification": {"type": "explanation", "prompt": "Updated prompt",
+                                  "rubric": "Identify the idea", "explanation": "New notes"},
+            },
+        })
+        assert material_result == {"id": "exercise", "revision": 3,
+                                   "material": True, "schedule_reset": True}
+        assert database.execute("SELECT archived FROM cards WHERE id='card'").fetchone()[0] == 1
+        assert database.execute("SELECT status FROM daily_queue").fetchone()[0] == "blocked"
+        assert database.execute("SELECT COUNT(*) FROM cards WHERE archived=0 AND revision=3").fetchone()[0] == 1
+        assert database.execute("SELECT source_json FROM study_exercises").fetchone()[0] == "{}"
+    assert refreshed == [date.today().isoformat()]
+
+
 def test_postgres_exercise_train_now_replay_keeps_one_explicit_queue_entry(monkeypatch, tmp_path):
     from app import study_commands
 

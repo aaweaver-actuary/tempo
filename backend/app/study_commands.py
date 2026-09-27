@@ -15,7 +15,7 @@ from .postgres_store import PostgresConnection
 from .queue_commands import request_queue_refresh_in_transaction
 from .queue_position_lock import lock_queue_date_for_position
 from .study_contracts import ChapterCreate, StudyCreate, StudyLinkCreate
-from .study_contracts import ExerciseCreate, ExerciseSpecification
+from .study_contracts import ExerciseCreate, ExerciseRevisionRequest, ExerciseSpecification
 from .services.study_grading import validate_exercise
 from pydantic import TypeAdapter
 
@@ -263,6 +263,106 @@ def train_exercise_now(database: PostgresConnection, payload: dict[str, Any]) ->
     return {"queue_entry_id": queue_entry_id, "idempotent": False}
 
 
+def revise_exercise(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    request = ExerciseRevisionRequest.model_validate(payload["revision"])
+    exercise_id = str(payload["exercise_id"])
+    study_id = str(payload["study_id"])
+    if database.execute(
+        "SELECT id FROM studies WHERE id=? FOR UPDATE", (study_id,),
+    ).fetchone() is None:
+        raise HTTPException(404, "Study not found")
+    exercise = database.execute(
+        "SELECT * FROM study_exercises WHERE id=? FOR UPDATE", (exercise_id,),
+    ).fetchone()
+    if exercise is None:
+        raise HTTPException(404, "Study Exercises not found")
+    if (exercise["study_id"] != study_id
+            or exercise["current_revision"] != request.expected_revision):
+        raise HTTPException(409, "Exercise changed since it was opened")
+    position = _require_record(database, "study_positions", exercise["position_id"])
+    try:
+        validate_exercise(request.specification, position["fen"])
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    previous_revision = database.execute(
+        "SELECT specification_json FROM study_exercise_revisions WHERE exercise_id=? AND revision=?",
+        (exercise_id, exercise["current_revision"]),
+    ).fetchone()
+    if previous_revision is None:
+        raise HTTPException(409, "Exercise revision is unavailable")
+    previous = json.loads(previous_revision["specification_json"])
+    revised = request.specification.model_dump(mode="json")
+    material = (
+        {key: value for key, value in revised.items()
+         if key not in {"explanation", "further_analysis"}}
+        != {key: value for key, value in previous.items()
+            if key not in {"explanation", "further_analysis"}}
+    )
+    next_revision = int(exercise["current_revision"]) + 1
+    now = datetime.now(timezone.utc).isoformat()
+    revised_json = json.dumps(revised, sort_keys=True, separators=(",", ":"))
+    database.execute(
+        "INSERT INTO study_exercise_revisions VALUES(?,?,?,?,?)",
+        (exercise_id, next_revision, revised_json, hashlib.sha256(revised_json.encode()).hexdigest(), now),
+    )
+    database.execute(
+        "UPDATE study_exercises SET current_revision=?,updated_at=? WHERE id=?",
+        (next_revision, now, exercise_id),
+    )
+    if "source" in request.model_fields_set:
+        database.execute(
+            "UPDATE study_exercises SET source_json=? WHERE id=?",
+            (json.dumps(request.source or {}, sort_keys=True, separators=(",", ":")), exercise_id),
+        )
+    if "sibling_group" in request.model_fields_set:
+        database.execute(
+            "UPDATE study_exercises SET sibling_group=? WHERE id=?",
+            (request.sibling_group, exercise_id),
+        )
+    if "point_value" in request.model_fields_set:
+        database.execute(
+            "UPDATE study_exercises SET point_value=? WHERE id=?",
+            (request.point_value, exercise_id),
+        )
+    if material and request.schedule_decision == "reset":
+        old_card = database.execute(
+            "SELECT * FROM cards WHERE study_exercise_id=? AND archived=0 FOR UPDATE",
+            (exercise_id,),
+        ).fetchone()
+        if old_card:
+            database.execute("UPDATE cards SET archived=1 WHERE id=?", (old_card["id"],))
+            database.execute(
+                "UPDATE daily_queue SET status='blocked' WHERE card_id=? AND status='queued'",
+                (old_card["id"],),
+            )
+            database.execute(
+                """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+                   content_type,study_exercise_id,revision)
+                   VALUES(?,NULL,'exercise',?,'[]','new',?,'study_exercise',?,?)""",
+                (str(uuid.uuid4()), position["fen"], date.today().isoformat(),
+                 exercise_id, next_revision),
+            )
+    elif material:
+        database.execute(
+            "UPDATE cards SET revision=? WHERE study_exercise_id=? AND archived=0",
+            (next_revision, exercise_id),
+        )
+        database.execute(
+            """UPDATE daily_queue SET status='blocked' WHERE card_id IN
+               (SELECT id FROM cards WHERE study_exercise_id=?) AND status='queued'""",
+            (exercise_id,),
+        )
+    else:
+        database.execute(
+            "UPDATE cards SET revision=? WHERE study_exercise_id=? AND archived=0",
+            (next_revision, exercise_id),
+        )
+    if material:
+        request_queue_refresh_in_transaction(database, date.today().isoformat())
+    return {"id": exercise_id, "revision": next_revision, "material": material,
+            "schedule_reset": material and request.schedule_decision == "reset"}
+
+
 def create_chapter(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
     request = ChapterCreate.model_validate(payload["chapter"])
     study_id = str(payload["study_id"])
@@ -359,6 +459,7 @@ register_command("studies.exercises.archive", archive_exercise)
 register_command("studies.exercises.create", create_exercise)
 register_command("studies.exercises.enroll", enroll_exercise)
 register_command("studies.exercises.train_now", train_exercise_now)
+register_command("studies.exercises.revise", revise_exercise)
 register_command("studies.chapters.create", create_chapter)
 register_command("studies.chapters.reorder", reorder_chapters)
 register_command("studies.chapters.rename", rename_chapter)
