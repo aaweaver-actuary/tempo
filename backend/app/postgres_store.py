@@ -92,6 +92,16 @@ def postgres_sql(sqlite_statement: str) -> str | None:
     if len(statements) != 1:
         raise ValueError(f"Expected one SQL statement: {stripped[:100]}")
     translated = re.sub(r"\bLIMIT -1\b", "LIMIT ALL", statements[0], flags=re.IGNORECASE)
+    # SQLGlot adds NULLS FIRST to conflict-target columns as though they were
+    # ORDER BY expressions. PostgreSQL rejects null ordering in ON CONFLICT.
+    translated = re.sub(
+        r"\bON\s+CONFLICT\s*\(([^()]*)\)",
+        lambda match: "ON CONFLICT(" + re.sub(
+            r"\s+NULLS\s+(?:FIRST|LAST)\b", "", match.group(1), flags=re.IGNORECASE,
+        ) + ")",
+        translated,
+        flags=re.IGNORECASE,
+    )
     if ignore_insert and not re.search(r"\bON\s+CONFLICT\b", translated, re.IGNORECASE):
         translated += " ON CONFLICT DO NOTHING"
     return translated

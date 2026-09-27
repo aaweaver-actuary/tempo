@@ -100,6 +100,15 @@ def test_postgres_cutover_translates_placeholders_and_rejects_runtime_pragma():
         postgres_sql("PRAGMA foreign_keys = ON")
 
 
+def test_postgres_cutover_conflict_target_does_not_include_null_ordering():
+    statement = postgres_sql(
+        "INSERT INTO queue_projections(queue_date,state) VALUES(?,'refreshing') "
+        "ON CONFLICT(queue_date) DO UPDATE SET state=excluded.state"
+    )
+    assert "ON CONFLICT(queue_date) DO UPDATE" in statement
+    assert "NULLS FIRST" not in statement
+
+
 def test_postgres_cutover_row_supports_mapping_and_sqlite_value_iteration():
     row = TempoRow(("total", "unread_count"), (3, 2))
     assert dict(row) == {"total": 3, "unread_count": 2}
