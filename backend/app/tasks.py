@@ -45,6 +45,7 @@ from .services.postgres_game_sync import execute_game_sync_record_slice
 from .services.postgres_game_sync_windows import execute_game_sync_window_slice
 from .services.postgres_opening_graph import execute_postgres_opening_graph_slice
 from .services.postgres_integrity import execute_postgres_integrity_slice
+from .services.repertoire_opportunities import execute_opportunity_slice
 
 
 _LOGGER = logging.getLogger("tempo.tasks")
@@ -58,6 +59,7 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "game_sync_window",
     "opening_graph_rebuild",
     "integrity_scan",
+    "repertoire_opportunity",
 )
 
 
@@ -126,6 +128,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
         "game_sync_window": execute_game_sync_window_slice,
         "opening_graph_rebuild": execute_postgres_opening_graph_slice,
         "integrity_scan": execute_postgres_integrity_slice,
+        "repertoire_opportunity": execute_opportunity_slice,
     }
     handler = background_handlers.get(claimed_task["kind"])
     if handler is None:

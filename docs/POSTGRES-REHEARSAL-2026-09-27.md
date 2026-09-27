@@ -66,6 +66,20 @@ with explicit admission in 189 ms. A real prefix card split, queued its
 continuation at position zero, and queued its graph rebuild in 252 ms. These
 are local transaction samples; full foreground-load benchmarks remain open.
 
+## Discovery refresh background slices
+
+The `repertoire_opportunity` worker now uses the shared foreground admission
+gate for each PostgreSQL read, locks its task lease before publishing, and is
+admitted by the Celery background worker. On the disposable restored database,
+eight summary slices and a real card slice completed. The card slice exposed
+SQLite modulo syntax and JSON boolean comparison that PostgreSQL rejected;
+both queries were ported. A finding cursor read exceeded the 50 ms transaction
+limit on 45,000 findings. Migration 004 adds a partial `(repertoire_id,id)`
+index for repertoire gaps; a replayed finding slice completed in 31 ms. Real
+node, cleanup, and summary-cleanup slices completed in 46, 16, and 13 ms.
+The two imported repertoire refreshes contain large historical cursors, so
+total throughput and foreground-load benchmarks remain open.
+
 ## Prioritized opening slice check
 
 The opening candidate read returned 326 rows in both the verified SQLite

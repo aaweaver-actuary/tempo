@@ -4424,6 +4424,90 @@ def test_postgres_cutover_game_refresh_waits_for_foreground_and_discards_stale_r
     assert completed_tasks == ["refresh-task"]
 
 
+def test_postgres_opportunity_refresh_yields_to_foreground_and_discards_restart_replay(monkeypatch):
+    from app import tasks
+    from app.services import repertoire_opportunities
+
+    foreground_finished = threading.Event()
+    read_opened = threading.Event()
+    published_phases: list[str] = []
+    current_lease = {"token": "first-lease"}
+    claimed_task = {
+        "kind": "repertoire_opportunity", "id": "opportunity-refresh",
+        "generation": 3, "lease_token": "first-lease",
+        "payload": {"repertoire_id": "rep", "phase": "summaries", "cursor": ""},
+    }
+
+    class EmptyCursor:
+        def fetchone(self):
+            return None
+
+    class EmptyDatabase:
+        def execute(self, statement, _parameters):
+            assert "repertoire_decision_events" in statement
+            return EmptyCursor()
+
+    @contextmanager
+    def bounded_read():
+        read_opened.set()
+        yield EmptyDatabase()
+
+    @contextmanager
+    def bounded_write(*, background):
+        assert background
+        yield object()
+
+    monkeypatch.setattr(repertoire_opportunities.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(repertoire_opportunities.activity_gate, "wait_for_foreground", foreground_finished.wait)
+    monkeypatch.setattr(repertoire_opportunities, "background_read_connection", bounded_read)
+    monkeypatch.setattr(repertoire_opportunities, "connection", bounded_write)
+    monkeypatch.setattr(
+        repertoire_opportunities, "lock_current_slice",
+        lambda _database, task: task["lease_token"] == current_lease["token"],
+    )
+    monkeypatch.setattr(
+        repertoire_opportunities, "_advance_slice",
+        lambda _database, _task, phase, _cursor: published_phases.append(phase),
+    )
+
+    result: list[bool] = []
+    worker = threading.Thread(target=lambda: result.append(
+        repertoire_opportunities.execute_opportunity_slice(claimed_task)
+    ))
+    worker.start()
+    assert not read_opened.wait(0.05)
+    foreground_finished.set()
+    worker.join(timeout=2)
+    assert not worker.is_alive()
+    assert result == [True]
+    assert published_phases == ["cards"]
+    current_lease["token"] = "replacement-lease"
+    assert repertoire_opportunities.execute_opportunity_slice(claimed_task) is True
+    assert published_phases == ["cards"]
+    assert "repertoire_opportunity" in tasks._SUPPORTED_BACKGROUND_KINDS
+
+
+def test_postgres_opportunity_recurring_query_uses_native_modulo(monkeypatch):
+    from app.services import repertoire_opportunities
+
+    statements: list[str] = []
+
+    class EmptyCursor:
+        def __iter__(self):
+            return iter(())
+
+    class RecordingDatabase:
+        def execute_native(self, statement, _parameters):
+            statements.append(statement)
+            return EmptyCursor()
+
+    monkeypatch.setattr(repertoire_opportunities.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(repertoire_opportunities, "_window_days", lambda _database: 90)
+    assert repertoire_opportunities._load_recurring_decisions(RecordingDatabase(), "rep", "card") == []
+    assert "MOD(event.ply-earlier.ply,2)=0" in statements[0]
+    assert "event.repertoire_id=%s" in statements[0]
+
+
 def test_postgres_cutover_threat_report_audit_yields_and_replays_once(monkeypatch):
     from app import tasks
     from app.services import threat_pipeline
