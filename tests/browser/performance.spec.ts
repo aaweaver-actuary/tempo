@@ -75,17 +75,30 @@ test("warm workspace and Builder move responsiveness", async ({ page }, testInfo
   for (let index = 0; index < 6; index++)
     await page.keyboard.press(index % 2 ? "ArrowLeft" : "ArrowRight");
   const boardBounds = (await page.locator(".cg-wrap").boundingBox())!;
-  for (const rank of [6, 4])
-    await page.mouse.click(
-      boardBounds.x + (4.5 * boardBounds.width) / 8,
-      boardBounds.y + ((rank + 0.5) * boardBounds.height) / 8,
+  const moveToPaintSamples: number[] = [];
+  for (let repetition = 0; repetition < 5; repetition++) {
+    for (const rank of [6, 4])
+      await page.mouse.click(
+        boardBounds.x + (4.5 * boardBounds.width) / 8,
+        boardBounds.y + ((rank + 0.5) * boardBounds.height) / 8,
+      );
+    await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", /4P3/);
+    await page.evaluate(() => new Promise<void>((resolve) =>
+      requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+    ));
+    const moveDuration = await page.evaluate(() =>
+      performance.getEntriesByName("tempo:move-to-paint").at(-1)?.duration ?? null,
     );
-  await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", /4P3/);
-  await page.evaluate(() => new Promise<void>((resolve) =>
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
-  ));
-  const moveToPaintDuration = await page.evaluate(() =>
-    performance.getEntriesByName("tempo:move-to-paint").at(-1)?.duration ?? null,
+    expect(moveDuration).not.toBeNull();
+    moveToPaintSamples.push(moveDuration!);
+    if (repetition < 4) {
+      await page.locator(".shared-board-toolbar .board-tools")
+        .getByRole("button", { name: /Back/ }).click();
+      await expect(page.locator(".board-frame")).not.toHaveAttribute("data-fen", /4P3/);
+    }
+  }
+  const boardReadySamples = await page.evaluate(() =>
+    performance.getEntriesByName("tempo:board-ready").map((entry) => entry.duration),
   );
   const longTasks = await page.evaluate(() =>
     Reflect.get(window, "tempoInteractionTasks") as number[],
@@ -114,7 +127,10 @@ test("warm workspace and Builder move responsiveness", async ({ page }, testInfo
     viewSwitchSummary: Object.fromEntries(
       Object.entries(viewSwitchSamples).map(([mode, samples]) => [mode, summarize(samples)]),
     ),
-    moveToPaintDuration,
+    boardReadySamples,
+    boardReadySummary: summarize(boardReadySamples),
+    moveToPaintSamples,
+    moveToPaintSummary: summarize(moveToPaintSamples),
     longTasks,
     eventTiming,
   };
@@ -125,7 +141,8 @@ test("warm workspace and Builder move responsiveness", async ({ page }, testInfo
     body: reportBody,
     contentType: "application/json",
   });
-  expect(moveToPaintDuration).not.toBeNull();
+  expect(boardReadySamples.length).toBeGreaterThan(0);
+  expect(moveToPaintSamples).toHaveLength(5);
   if (browserName === "chromium") {
     expect(eventTiming.supported).toBe(true);
     expect(eventTiming.samples.length).toBeGreaterThan(0);
