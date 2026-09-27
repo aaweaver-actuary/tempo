@@ -340,6 +340,28 @@ def test_graph_rebuild_holds_no_sqlite_connection_during_chess_traversal(
     assert len(graph) == 1
 
 
+def test_graph_steps_reuse_exact_last_decision_fen_for_white_and_black_routes():
+    moves = ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5", "a7a6", "b5a4", "g8f6"]
+    graph = build_graph(GraphInput(
+        "fen-reuse",
+        tuple({
+            "id": f"{color}-line",
+            "start_fen": STARTING_FEN,
+            "moves_json": json.dumps(moves),
+            "trained_color": color,
+            "learner_decision_count": 2,
+        } for color in ("white", "black")),
+        2,
+    ))
+    assert len(graph) > 2
+    for step in graph:
+        board = chess.Board(step.starting_fen)
+        for setup_move in step.moves[:-1]:
+            board.push_uci(setup_move)
+        assert step.decision_fen_key == " ".join(board.fen().split()[:4])
+        assert step.decision_fen_key == step.decision_fen_keys[-1]
+
+
 def test_production_scale_opening_graph_calculation_is_bounded():
     route_json = json.dumps(
         [

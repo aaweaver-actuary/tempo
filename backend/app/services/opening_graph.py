@@ -70,6 +70,10 @@ class GraphRebuildArtifacts:
 
 def build_graph(graph_input: GraphInput) -> tuple[GraphStep, ...]:
     steps: list[GraphStep] = []
+    override_by_source = {
+        override["source_card_id"]: override
+        for override in graph_input.prefix_overrides
+    }
     for line in graph_input.lines:
         maximum_decisions = int(line.get("learner_decision_count") or graph_input.default_depth)
         segments = decision_segments(
@@ -80,10 +84,6 @@ def build_graph(graph_input: GraphInput) -> tuple[GraphStep, ...]:
         )
         expanded_segments: list[DecisionSegment] = []
         parent_card_id: str | None = None
-        override_by_source = {
-            override["source_card_id"]: override
-            for override in graph_input.prefix_overrides
-        }
         for segment in segments:
             for expanded_segment in _expanded_segment(segment, override_by_source):
                 expanded_segment = replace(
@@ -94,9 +94,6 @@ def build_graph(graph_input: GraphInput) -> tuple[GraphStep, ...]:
                 expanded_segments.append(expanded_segment)
                 parent_card_id = expanded_segment.card_id
         for segment in expanded_segments:
-            decision_board = chess.Board(segment.starting_fen)
-            for setup_move in segment.moves[:-1]:
-                decision_board.push_uci(setup_move)
             steps.append(GraphStep(
                 repertoire_id=graph_input.repertoire_id,
                 line_id=line["id"],
@@ -107,7 +104,7 @@ def build_graph(graph_input: GraphInput) -> tuple[GraphStep, ...]:
                 decision_fen_keys=segment.decision_fen_keys,
                 card_id=segment.card_id,
                 parent_card_id=segment.parent_card_id,
-                decision_fen_key=" ".join(decision_board.fen().split()[:4]),
+                decision_fen_key=segment.decision_fen_keys[-1],
                 starting_fen=segment.starting_fen,
                 moves=segment.moves,
                 trained_color=segment.trained_color,
