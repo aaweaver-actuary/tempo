@@ -261,6 +261,66 @@ def test_postgres_game_sync_publishes_one_game_and_followup_intents_atomically()
     assert any("DELETE FROM daily_chess_snapshots" in statement for statement, _ in statements)
 
 
+def test_postgres_game_sync_record_waits_for_foreground_and_discards_stale_replay(monkeypatch):
+    from contextlib import contextmanager
+    from app.services import postgres_game_sync
+
+    foreground_finished = threading.Event()
+    connection_opened = threading.Event()
+    publications = []
+    active_lease = {"token": "lease-1"}
+    claimed_task = {
+        "id": "sync-record", "generation": 1, "lease_token": "lease-1",
+        "payload": {"job_id": "sync-job", "record": {
+            "provider": "lichess", "username": "alice", "provider_game_id": "game-1",
+            "played_at": "2026-09-27T12:00:00+00:00", "speed": "rapid",
+            "rated": True, "color": "white", "result": "1-0",
+            "start_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "uci_moves": ["e2e4"],
+        }},
+    }
+
+    class Database:
+        def execute(self, statement, parameters=()):
+            if "FROM game_sync_jobs" in statement:
+                return SimpleNamespace(fetchone=lambda: {"status": "queued", "result_json": None})
+            return SimpleNamespace(rowcount=1)
+
+    @contextmanager
+    def wait_for_foreground():
+        foreground_finished.wait()
+        yield
+
+    @contextmanager
+    def test_connection(*, read_only, background):
+        assert not read_only and background
+        connection_opened.set()
+        yield Database()
+
+    monkeypatch.setattr(postgres_game_sync, "background_lease", wait_for_foreground)
+    monkeypatch.setattr(postgres_game_sync, "connection", test_connection)
+    monkeypatch.setattr(postgres_game_sync, "lock_current_slice",
+                        lambda database, task: task["lease_token"] == active_lease["token"])
+    monkeypatch.setattr(postgres_game_sync, "persist_game_record_in_transaction",
+                        lambda database, record: publications.append(record.provider_game_id)
+                        or ("inserted", "lichess:game-1"))
+    monkeypatch.setattr(postgres_game_sync, "complete_task_slice_in_transaction",
+                        lambda database, task: active_lease.update(token="complete") or True)
+    result = []
+    worker = threading.Thread(
+        target=lambda: result.append(postgres_game_sync.execute_game_sync_record_slice(claimed_task)),
+    )
+    worker.start()
+    assert not connection_opened.wait(0.05)
+    foreground_finished.set()
+    worker.join(timeout=2)
+    assert not worker.is_alive()
+    assert result == [True]
+    assert publications == ["game-1"]
+    assert postgres_game_sync.execute_game_sync_record_slice(claimed_task) is False
+    assert publications == ["game-1"]
+
+
 def test_postgres_api_startup_requests_todays_queue_through_foreground_command(monkeypatch):
     from app import main
 

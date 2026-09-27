@@ -4,9 +4,12 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import json
+from typing import Any
 
-from ..postgres_store import PostgresConnection
+from ..postgres_store import PostgresConnection, connection
+from .durable_tasks import complete_task_slice_in_transaction, lock_current_slice
 from .game_record import GameRecord
+from .redis_admission_gate import background_lease
 
 
 _GAME_COLUMNS = (
@@ -90,3 +93,40 @@ def persist_game_record_in_transaction(
             (record.played_at[:10],),
         )
     return outcome, game_id
+
+
+def execute_game_sync_record_slice(claimed_task: dict[str, Any]) -> bool:
+    """Commit one fetched game only if its durable task lease remains current."""
+
+    record = GameRecord(**claimed_task["payload"]["record"])
+    job_id = str(claimed_task["payload"]["job_id"])
+    with background_lease():
+        with connection(read_only=False, background=True) as database:
+            if not lock_current_slice(database, claimed_task):
+                return False
+            job = database.execute(
+                "SELECT status,result_json FROM game_sync_jobs WHERE id=? FOR UPDATE",
+                (job_id,),
+            ).fetchone()
+            if job is None or job["status"] not in {"queued", "running"}:
+                complete_task_slice_in_transaction(database, claimed_task)
+                return False
+            outcome, _ = persist_game_record_in_transaction(database, record)
+            result = json.loads(job["result_json"]) if job["result_json"] else {}
+            counts = result.setdefault("providers", {}).setdefault(record.provider, {
+                "inserted": 0, "updated": 0, "duplicates": 0,
+            })
+            count_name = "duplicates" if outcome == "duplicate" else outcome
+            counts[count_name] = int(counts.get(count_name, 0)) + 1
+            result["imported"] = sum(
+                int(provider_counts.get("inserted", 0))
+                for provider_counts in result["providers"].values()
+            )
+            database.execute(
+                "UPDATE game_sync_jobs SET status='running',result_json=?,updated_at=? WHERE id=?",
+                (json.dumps(result, separators=(",", ":")),
+                 datetime.now(timezone.utc).isoformat(), job_id),
+            )
+            if not complete_task_slice_in_transaction(database, claimed_task):
+                raise RuntimeError("Game sync lease changed before publication")
+    return True

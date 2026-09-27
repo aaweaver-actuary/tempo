@@ -32,6 +32,7 @@ from .services.postgres_queue_refresh import execute_postgres_queue_refresh_slic
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
 from .services.threat_pipeline import execute_threat_report_audit
 from .services.threat_training import execute_defense_rubric_audit_slice
+from .services.postgres_game_sync import execute_game_sync_record_slice
 
 
 _LOGGER = logging.getLogger("tempo.tasks")
@@ -41,6 +42,7 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "repertoire_game_refresh",
     "defensive_threat_report_audit",
     "priority_retention",
+    "game_sync_record",
 )
 
 
@@ -105,6 +107,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
         "repertoire_game_refresh": execute_repertoire_game_refresh_slice,
         "defensive_threat_report_audit": execute_threat_report_audit,
         "priority_retention": execute_priority_retention_slice,
+        "game_sync_record": execute_game_sync_record_slice,
     }
     handler = background_handlers.get(claimed_task["kind"])
     if handler is None:
@@ -112,7 +115,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
     with activity_gate.background_job(claimed_task["kind"], claimed_task["id"]):
         try:
             more_work = handler(claimed_task)
-            if claimed_task["kind"] != "daily_queue":
+            if claimed_task["kind"] not in {"daily_queue", "game_sync_record"}:
                 complete_task(
                     claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"]
                 )
