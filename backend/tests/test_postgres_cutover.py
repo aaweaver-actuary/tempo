@@ -159,6 +159,53 @@ def test_postgres_integrity_source_stages_one_restartable_slice(monkeypatch):
     assert statements == []
 
 
+def test_postgres_integrity_aggregation_merges_two_positions_per_lease(monkeypatch):
+    from app.services import postgres_integrity
+
+    batches = []
+    advances = []
+
+    class RecordingCursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def executemany(self, statement, rows):
+            batches.append((statement, rows))
+
+    class RecordingDatabase:
+        raw = SimpleNamespace(cursor=RecordingCursor)
+
+    monkeypatch.setattr(postgres_integrity, "lock_current_slice", lambda *_args: True)
+    monkeypatch.setattr(
+        postgres_integrity, "advance_task_slice_in_transaction",
+        lambda _database, _task, *, next_phase, next_payload:
+            advances.append((next_phase, next_payload)) or True,
+    )
+    task = {
+        "id": "integrity-task", "generation": 3, "lease_token": "lease",
+        "payload": {"repertoire_id": "opening-1", "source_offset": 0,
+                    "position_offset": 0},
+    }
+    positions = tuple({"fen_key": f"fen-{index}", "fen": f"fen-{index}",
+                       "moves": ["e2e4"], "sources": []} for index in range(3))
+    prepared = postgres_integrity.PreparedIntegrityRun(0, positions, ())
+    assert postgres_integrity.aggregate_integrity_run_in_transaction(
+        RecordingDatabase(), task, prepared,
+    )
+    assert len(batches[1][1]) == 2
+    assert advances[0][1]["position_offset"] == 2
+    task["payload"]["position_offset"] = 2
+    assert postgres_integrity.aggregate_integrity_run_in_transaction(
+        RecordingDatabase(), task, prepared,
+    )
+    assert len(batches[-1][1]) == 1
+    assert advances[-1][1]["source_offset"] == 1
+    assert advances[-1][1]["position_offset"] == 0
+
+
 def test_postgres_startup_accepts_latest_checked_in_schema(monkeypatch):
     from app import database
     from app.schema_version import POSTGRES_SCHEMA_VERSION

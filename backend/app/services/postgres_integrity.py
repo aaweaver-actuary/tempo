@@ -11,13 +11,20 @@ from .. import postgres_store
 from ..postgres_store import PostgresConnection
 from .durable_tasks import advance_task_slice_in_transaction, lock_current_slice
 from .redis_admission_gate import background_lease
-from .repertoire_integrity import _scan_source
+from .repertoire_integrity import _issue_id, _scan_source, _signature
 
 
 @dataclass(frozen=True)
 class PreparedIntegritySource:
     source_type: str
     source_id: str
+    positions: tuple[dict[str, Any], ...]
+    invalid: tuple[dict[str, Any], ...]
+
+
+@dataclass(frozen=True)
+class PreparedIntegrityRun:
+    source_offset: int
     positions: tuple[dict[str, Any], ...]
     invalid: tuple[dict[str, Any], ...]
 
@@ -146,3 +153,95 @@ def execute_integrity_source_slice(task: dict[str, Any]) -> bool:
     with background_lease():
         with postgres_store.connection(read_only=False, background=True) as database:
             return stage_integrity_source_in_transaction(database, task, prepared_source)
+
+
+def prepare_next_integrity_run(
+    repertoire_id: str, run_id: str, source_offset: int,
+) -> PreparedIntegrityRun | None:
+    """Read one staged source, then parse observations outside PostgreSQL."""
+
+    with background_read_connection() as database:
+        source_run = database.execute_native(
+            "SELECT observations_json,invalid_json "
+            "FROM repertoire_integrity_source_runs "
+            "WHERE run_id=%s AND source_offset=%s",
+            (run_id, source_offset),
+        ).fetchone()
+        staged = tuple(source_run) if source_run else None
+    if staged is None:
+        return None
+    positions = json.loads(staged[0])
+    invalid = json.loads(staged[1])
+    for issue in invalid:
+        issue["id"] = _issue_id(repertoire_id, issue["kind"], None, issue.get("sources"))
+        issue["signature"] = _signature(issue)
+    return PreparedIntegrityRun(source_offset, tuple(positions), tuple(invalid))
+
+
+def aggregate_integrity_run_in_transaction(
+    database: PostgresConnection,
+    task: dict[str, Any],
+    prepared_run: PreparedIntegrityRun | None,
+) -> bool:
+    """Merge at most two position observations and checkpoint the cursor."""
+
+    if not lock_current_slice(database, task):
+        return False
+    payload = dict(task["payload"])
+    if prepared_run is None:
+        return advance_task_slice_in_transaction(
+            database, task, next_phase="evaluate",
+            next_payload={**payload, "after_fen_key": ""},
+        )
+    source_offset = int(payload.get("source_offset", 0))
+    position_offset = int(payload.get("position_offset", 0))
+    if prepared_run.source_offset != source_offset or not 0 <= position_offset <= len(prepared_run.positions):
+        raise ValueError("Integrity aggregation cursor does not match staged source")
+    run_id = f"{task['id']}:{task['generation']}"
+    if position_offset == 0:
+        with database.raw.cursor() as cursor:
+            cursor.executemany(
+                "INSERT INTO repertoire_integrity_issue_candidates("
+                "run_id,id,repertoire_id,kind,fen_key,fen,trained_color,"
+                "signature,moves_json,sources_json) "
+                "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                "ON CONFLICT(run_id,id) DO NOTHING",
+                [(run_id, issue["id"], payload["repertoire_id"], issue["kind"],
+                  issue.get("fen_key"), issue.get("fen"), issue.get("trained_color"),
+                  issue["signature"], json.dumps(issue.get("moves", [])),
+                  json.dumps(issue.get("sources", [])))
+                 for issue in prepared_run.invalid],
+            )
+    positions = prepared_run.positions[position_offset:position_offset + 2]
+    with database.raw.cursor() as cursor:
+        cursor.executemany(
+            "INSERT INTO repertoire_integrity_position_accumulators("
+            "run_id,fen_key,fen,trained_color,moves_json,sources_json) "
+            "VALUES(%s,%s,%s,%s,%s,%s) ON CONFLICT(run_id,fen_key) DO UPDATE SET "
+            "moves_json=(repertoire_integrity_position_accumulators.moves_json::jsonb "
+            "|| excluded.moves_json::jsonb)::text,"
+            "sources_json=(repertoire_integrity_position_accumulators.sources_json::jsonb "
+            "|| excluded.sources_json::jsonb)::text",
+            [(run_id, position["fen_key"], position["fen"],
+              position.get("trained_color"), json.dumps(position.get("moves", [])),
+              json.dumps(position.get("sources", []))) for position in positions],
+        )
+    next_position_offset = position_offset + len(positions)
+    if next_position_offset == len(prepared_run.positions):
+        next_payload = {**payload, "source_offset": source_offset + 1, "position_offset": 0}
+    else:
+        next_payload = {**payload, "position_offset": next_position_offset}
+    return advance_task_slice_in_transaction(
+        database, task, next_phase="aggregate", next_payload=next_payload,
+    )
+
+
+def execute_integrity_aggregate_slice(task: dict[str, Any]) -> bool:
+    payload = task["payload"]
+    run_id = f"{task['id']}:{task['generation']}"
+    prepared_run = prepare_next_integrity_run(
+        str(payload["repertoire_id"]), run_id, int(payload.get("source_offset", 0)),
+    )
+    with background_lease():
+        with postgres_store.connection(read_only=False, background=True) as database:
+            return aggregate_integrity_run_in_transaction(database, task, prepared_run)
