@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime, timezone
+import hashlib
 import json
 import uuid
 from typing import Any
@@ -13,6 +14,12 @@ from .command_gateway import register_command
 from .postgres_store import PostgresConnection
 from .queue_commands import request_queue_refresh_in_transaction
 from .study_contracts import ChapterCreate, StudyCreate, StudyLinkCreate
+from .study_contracts import ExerciseCreate, ExerciseSpecification
+from .services.study_grading import validate_exercise
+from pydantic import TypeAdapter
+
+
+_SPECIFICATION_ADAPTER = TypeAdapter(ExerciseSpecification)
 
 
 def _require_record(database: PostgresConnection, table_name: str, identifier: str):
@@ -137,6 +144,85 @@ def archive_exercise(database: PostgresConnection, payload: dict[str, Any]) -> d
     return {"archived": True}
 
 
+def create_exercise(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    request = ExerciseCreate.model_validate(payload["exercise"])
+    study_id = str(payload["study_id"])
+    study = database.execute("SELECT * FROM studies WHERE id=? FOR UPDATE", (study_id,)).fetchone()
+    if study is None:
+        raise HTTPException(404, "Studies not found")
+    position = _require_record(database, "study_positions", request.position_id)
+    source = database.execute(
+        "SELECT chapter_id,valid FROM study_sources WHERE id=?", (position["source_id"],),
+    ).fetchone()
+    if source is None:
+        raise HTTPException(404, "Study source not found")
+    chapter = _require_record(database, "study_chapters", source["chapter_id"])
+    if study["archived"] or chapter["study_id"] != study_id:
+        raise HTTPException(409, "Position is not in an active study")
+    if not source["valid"] or not position["valid"]:
+        raise HTTPException(422, "This PGN position has unresolved parser diagnostics")
+    try:
+        validate_exercise(request.specification, position["fen"])
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    exercise_id = str(uuid.uuid4())
+    created_at = datetime.now(timezone.utc).isoformat()
+    specification_json = json.dumps(request.specification.model_dump(mode="json"),
+                                    sort_keys=True, separators=(",", ":"))
+    specification_digest = hashlib.sha256(specification_json.encode()).hexdigest()
+    database.execute(
+        """INSERT INTO study_exercises(id,study_id,position_id,sibling_group,source_json,
+           point_value,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)""",
+        (exercise_id, study_id, request.position_id, request.sibling_group,
+         json.dumps(request.source, sort_keys=True, separators=(",", ":")),
+         request.point_value, created_at, created_at),
+    )
+    database.execute(
+        "INSERT INTO study_exercise_revisions VALUES(?,?,?,?,?)",
+        (exercise_id, 1, specification_json, specification_digest, created_at),
+    )
+    return {"id": exercise_id, "revision": 1, "status": "draft"}
+
+
+def enroll_exercise(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    study_id = str(payload["study_id"])
+    exercise_id = str(payload["exercise_id"])
+    study = database.execute("SELECT * FROM studies WHERE id=? FOR UPDATE", (study_id,)).fetchone()
+    if study is None:
+        raise HTTPException(404, "Studies not found")
+    exercise = _lock_exercise_in_study(database, payload)
+    if study["archived"] or exercise["status"] == "archived":
+        raise HTTPException(409, "Exercise cannot be enrolled")
+    position = _require_record(database, "study_positions", exercise["position_id"])
+    if not position["valid"]:
+        raise HTTPException(422, "Source position is invalid")
+    revision = database.execute(
+        "SELECT specification_json FROM study_exercise_revisions WHERE exercise_id=? AND revision=?",
+        (exercise_id, exercise["current_revision"]),
+    ).fetchone()
+    if revision is None:
+        raise HTTPException(409, "Exercise revision is unavailable")
+    specification = _SPECIFICATION_ADAPTER.validate_python(json.loads(revision["specification_json"]))
+    try:
+        validate_exercise(specification, position["fen"])
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    existing = database.execute(
+        "SELECT id FROM cards WHERE study_exercise_id=? AND archived=0", (exercise_id,),
+    ).fetchone()
+    if existing:
+        return {"card_id": existing[0], "idempotent": True}
+    card_id = str(uuid.uuid4())
+    database.execute(
+        """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+           content_type,study_exercise_id) VALUES(?,NULL,'exercise',?,'[]','new',?,'study_exercise',?)""",
+        (card_id, position["fen"], date.today().isoformat(), exercise_id),
+    )
+    database.execute("UPDATE study_exercises SET status='published' WHERE id=?", (exercise_id,))
+    request_queue_refresh_in_transaction(database, date.today().isoformat())
+    return {"card_id": card_id, "idempotent": False}
+
+
 def create_chapter(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
     request = ChapterCreate.model_validate(payload["chapter"])
     study_id = str(payload["study_id"])
@@ -230,6 +316,8 @@ register_command("studies.unarchive", unarchive_study)
 register_command("studies.exercises.suspend", suspend_exercise)
 register_command("studies.exercises.resume", resume_exercise)
 register_command("studies.exercises.archive", archive_exercise)
+register_command("studies.exercises.create", create_exercise)
+register_command("studies.exercises.enroll", enroll_exercise)
 register_command("studies.chapters.create", create_chapter)
 register_command("studies.chapters.reorder", reorder_chapters)
 register_command("studies.chapters.rename", rename_chapter)

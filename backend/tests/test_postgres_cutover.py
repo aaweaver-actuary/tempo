@@ -806,6 +806,94 @@ def test_postgres_exercise_availability_mutates_cards_and_queue_in_one_command(m
     assert refreshed == [date.today().isoformat()] * 3
 
 
+def test_postgres_exercise_create_and_enroll_routes_dispatch_idempotent_commands(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main, study_routes
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(study_routes, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or {"accepted": name})
+    client = TestClient(main.app)
+    exercise = {"position_id": "position-1", "specification": {
+        "type": "explanation", "prompt": "Explain the idea", "rubric": "Mention the threat",
+    }}
+    created = client.post("/api/studies/study-1/exercises", json=exercise,
+                          headers={"Idempotency-Key": "create-1"})
+    enrolled = client.post("/api/studies/study-1/exercises/exercise-1/enroll",
+                           headers={"Idempotency-Key": "enroll-1"})
+    assert created.status_code == 200, created.text
+    assert enrolled.status_code == 200, enrolled.text
+    assert dispatched == [
+        ("studies.exercises.create", {"study_id": "study-1", "exercise": {
+            "position_id": "position-1", "specification": {
+                "type": "explanation", "prompt": "Explain the idea", "rubric": "Mention the threat",
+                "hint": "", "explanation": "", "further_analysis": "",
+            }, "source": {}, "sibling_group": None, "point_value": None,
+        }}, "create-1"),
+        ("studies.exercises.enroll", {"study_id": "study-1", "exercise_id": "exercise-1"}, "enroll-1"),
+    ]
+
+
+def test_postgres_exercise_enrollment_replay_creates_one_card_and_queues_once(monkeypatch, tmp_path):
+    import chess
+    from app import study_commands
+
+    database_path = tmp_path / "exercise-enrollment.db"
+    with sqlite3.connect(database_path) as database:
+        database.executescript("""
+            CREATE TABLE studies(id TEXT PRIMARY KEY,archived INTEGER);
+            CREATE TABLE study_chapters(id TEXT PRIMARY KEY,study_id TEXT);
+            CREATE TABLE study_sources(id TEXT PRIMARY KEY,chapter_id TEXT,valid INTEGER);
+            CREATE TABLE study_positions(id TEXT PRIMARY KEY,source_id TEXT,fen TEXT,valid INTEGER);
+            CREATE TABLE study_exercises(id TEXT PRIMARY KEY,study_id TEXT,position_id TEXT,
+                sibling_group TEXT,source_json TEXT,point_value REAL,created_at TEXT,updated_at TEXT,
+                status TEXT DEFAULT 'draft',current_revision INTEGER DEFAULT 1);
+            CREATE TABLE study_exercise_revisions(exercise_id TEXT,revision INTEGER,
+                specification_json TEXT,digest TEXT,created_at TEXT);
+            CREATE TABLE cards(id TEXT PRIMARY KEY,repertoire_id TEXT,kind TEXT,start_fen TEXT,
+                moves_json TEXT,state TEXT,due_date TEXT,content_type TEXT,study_exercise_id TEXT,
+                archived INTEGER DEFAULT 0);
+            INSERT INTO studies VALUES('study',0);
+            INSERT INTO study_chapters VALUES('chapter','study');
+            INSERT INTO study_sources VALUES('source','chapter',1);
+        """)
+        database.execute("INSERT INTO study_positions VALUES('position','source',?,1)",
+                         (chess.STARTING_FEN,))
+
+    class NativeSqlite:
+        def __init__(self, database):
+            self.database = database
+
+        def execute(self, statement, parameters=()):
+            return self.database.execute(statement.replace("FOR UPDATE", ""), parameters)
+
+    refreshed = []
+    monkeypatch.setattr(study_commands, "request_queue_refresh_in_transaction",
+                        lambda database, queue_date: refreshed.append(queue_date))
+    with sqlite3.connect(database_path) as database:
+        database.row_factory = sqlite3.Row
+        adapter = NativeSqlite(database)
+        created = study_commands.create_exercise(adapter, {
+            "study_id": "study", "exercise": {"position_id": "position", "specification": {
+                "type": "explanation", "prompt": "Explain the position", "rubric": "Identify the idea",
+            }},
+        })
+        assert created["revision"] == 1 and created["status"] == "draft"
+        payload = {"study_id": "study", "exercise_id": created["id"]}
+        first = study_commands.enroll_exercise(adapter, payload)
+        replay = study_commands.enroll_exercise(adapter, payload)
+        assert first["idempotent"] is False
+        assert replay == {"card_id": first["card_id"], "idempotent": True}
+        assert database.execute("SELECT COUNT(*) FROM cards WHERE study_exercise_id=?",
+                                (created["id"],)).fetchone()[0] == 1
+        assert database.execute("SELECT status FROM study_exercises WHERE id=?",
+                                (created["id"],)).fetchone()[0] == "published"
+    assert refreshed == [date.today().isoformat()]
+
+
 def test_postgres_cutover_queue_fail_and_bury_dispatch_foreground_commands(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main

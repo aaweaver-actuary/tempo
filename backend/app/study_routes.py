@@ -368,7 +368,12 @@ def commit_study_import(study_id: str, request: StudyImportCommitRequest):
 
 
 @router.post("/{study_id}/exercises")
-def create_exercise(study_id: str, request: ExerciseCreate):
+def create_exercise(study_id: str, request: ExerciseCreate,
+                    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.exercises.create",
+                                {"study_id": study_id, "exercise": request.model_dump(mode="json")},
+                                idempotency_key=idempotency_key)
     identifier = str(uuid.uuid4())
     specification = request.specification
     with connection() as database:
@@ -470,7 +475,12 @@ def revise_exercise(study_id: str, exercise_id: str, request: ExerciseRevisionRe
 
 
 @router.post("/{study_id}/exercises/{exercise_id}/enroll")
-def enroll_exercise(study_id: str, exercise_id: str):
+def enroll_exercise(study_id: str, exercise_id: str,
+                    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.exercises.enroll",
+                                {"study_id": study_id, "exercise_id": exercise_id},
+                                idempotency_key=idempotency_key)
     with connection() as database:
         exercise = _require(database, "study_exercises", exercise_id)
         study = _require(database, "studies", study_id)

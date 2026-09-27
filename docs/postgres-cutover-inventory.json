@@ -399,61 +399,55 @@
     {
       "file": "backend/app/main.py",
       "function": "health",
-      "line": 458,
+      "line": 464,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "health",
-      "line": 459,
+      "line": 465,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "system_tasks",
-      "line": 494,
+      "line": 500,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "system_tasks",
-      "line": 497,
+      "line": 503,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "get_settings",
-      "line": 580,
+      "line": 586,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "get_settings",
-      "line": 581,
+      "line": 587,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "put_settings.persist_settings",
-      "line": 597,
+      "line": 603,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "put_settings.persist_settings",
-      "line": 600,
+      "line": 606,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "put_settings.persist_settings",
-      "line": 630,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "put_settings.persist_settings",
-      "line": 635,
+      "line": 636,
       "operation": "execute"
     },
     {
@@ -464,26 +458,26 @@
     },
     {
       "file": "backend/app/main.py",
+      "function": "put_settings.persist_settings",
+      "line": 647,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
       "function": "put_settings",
-      "line": 652,
+      "line": 658,
       "operation": "submit_foreground_write"
     },
     {
       "file": "backend/app/main.py",
       "function": "reconcile_unseen_queue",
-      "line": 677,
+      "line": 683,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "reconcile_unseen_queue",
-      "line": 690,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "reconcile_unseen_queue",
-      "line": 704,
+      "line": 696,
       "operation": "execute"
     },
     {
@@ -495,25 +489,25 @@
     {
       "file": "backend/app/main.py",
       "function": "reconcile_unseen_queue",
-      "line": 711,
+      "line": 716,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "reconcile_unseen_queue",
+      "line": 717,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "admit_prioritized_opening_cards",
-      "line": 841,
+      "line": 847,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "admit_prioritized_opening_cards",
-      "line": 846,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "admit_prioritized_opening_cards",
-      "line": 861,
+      "line": 852,
       "operation": "execute"
     },
     {
@@ -525,79 +519,79 @@
     {
       "file": "backend/app/main.py",
       "function": "admit_prioritized_opening_cards",
-      "line": 871,
+      "line": 873,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "admit_prioritized_opening_cards",
+      "line": 877,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_unlock_eligible_opening_cards",
-      "line": 890,
+      "line": 896,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_unlock_eligible_opening_cards",
-      "line": 914,
+      "line": 920,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_block_ineligible_opening_queue_entries",
-      "line": 919,
+      "line": 925,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_block_unapproved_defense_queue_entries",
-      "line": 941,
+      "line": 947,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_restore_eligible_due_queue_entries",
-      "line": 955,
+      "line": 961,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_restore_published_study_queue_entries",
-      "line": 982,
+      "line": 988,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_reset_unintroduced_opening_cards",
-      "line": 1008,
+      "line": 1014,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_reset_stale_opening_introductions",
-      "line": 1016,
+      "line": 1022,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "seed_queue",
-      "line": 1032,
+      "line": 1038,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "seed_queue",
-      "line": 1036,
+      "line": 1042,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "seed_queue",
-      "line": 1039,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "seed_queue",
-      "line": 1054,
+      "line": 1045,
       "operation": "execute"
     },
     {
@@ -609,104 +603,104 @@
     {
       "file": "backend/app/main.py",
       "function": "seed_queue",
-      "line": 1061,
+      "line": 1066,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "seed_queue",
-      "line": 1068,
+      "line": 1067,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "seed_queue",
-      "line": 1069,
+      "line": 1074,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "seed_queue",
-      "line": 1081,
+      "line": 1075,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "seed_queue",
+      "line": 1087,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "randomize_daily_queue",
-      "line": 1157,
+      "line": 1163,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "randomize_daily_queue",
-      "line": 1160,
+      "line": 1166,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "randomize_daily_queue",
-      "line": 1168,
+      "line": 1174,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "randomize_daily_queue",
-      "line": 1177,
+      "line": 1183,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_quarantine_malformed_opening_cards",
-      "line": 1186,
+      "line": 1192,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_quarantine_malformed_opening_cards",
-      "line": 1213,
+      "line": 1219,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_quarantine_malformed_opening_cards",
-      "line": 1214,
+      "line": 1220,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "materialize_daily_queue",
-      "line": 1230,
+      "line": 1236,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "materialize_daily_queue",
-      "line": 1240,
+      "line": 1246,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "materialize_daily_queue",
-      "line": 1243,
+      "line": 1249,
       "operation": "executemany"
     },
     {
       "file": "backend/app/main.py",
       "function": "materialize_daily_queue",
-      "line": 1251,
+      "line": 1257,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "materialize_daily_queue",
-      "line": 1271,
+      "line": 1277,
       "operation": "execute"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "_execute_daily_queue_task",
-      "line": 1282,
-      "operation": "submit_background_write"
     },
     {
       "file": "backend/app/main.py",
@@ -717,139 +711,139 @@
     {
       "file": "backend/app/main.py",
       "function": "_execute_daily_queue_task",
-      "line": 1289,
+      "line": 1294,
+      "operation": "submit_background_write"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "_execute_daily_queue_task",
+      "line": 1295,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_ensure_current_daily_queue",
-      "line": 1320,
+      "line": 1326,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "_ensure_current_daily_queue",
-      "line": 1321,
+      "line": 1327,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_ensure_daily_defense_admission",
-      "line": 1333,
+      "line": 1339,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "_ensure_daily_defense_admission",
-      "line": 1334,
+      "line": 1340,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_ensure_daily_defense_admission",
-      "line": 1338,
+      "line": 1344,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_ensure_discovery_admissions",
-      "line": 1353,
+      "line": 1359,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "_ensure_discovery_admissions",
-      "line": 1354,
+      "line": 1360,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "enqueue_daily_queue_refresh",
-      "line": 1379,
+      "line": 1385,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_queue_payload",
-      "line": 1394,
+      "line": 1400,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "_queue_payload",
-      "line": 1395,
+      "line": 1401,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_queue_payload",
-      "line": 1398,
+      "line": 1404,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_queue_payload",
-      "line": 1490,
+      "line": 1496,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_queue_payload",
-      "line": 1502,
+      "line": 1508,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_queue_payload",
-      "line": 1530,
+      "line": 1536,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "prepared_queue",
-      "line": 1583,
+      "line": 1589,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "prepared_queue",
-      "line": 1585,
+      "line": 1591,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "import_pgn",
-      "line": 1625,
+      "line": 1631,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "import_pgn",
-      "line": 1626,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "import_pgn",
-      "line": 1651,
-      "operation": "connection"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "import_pgn",
-      "line": 1652,
+      "line": 1632,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "import_pgn",
       "line": 1657,
+      "operation": "connection"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "import_pgn",
+      "line": 1658,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "import_pgn",
-      "line": 1660,
+      "line": 1663,
       "operation": "execute"
     },
     {
@@ -861,349 +855,349 @@
     {
       "file": "backend/app/main.py",
       "function": "import_pgn",
-      "line": 1677,
+      "line": 1672,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "import_pgn",
-      "line": 1689,
+      "line": 1683,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "import_pgn",
-      "line": 1697,
+      "line": 1695,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "import_pgn",
-      "line": 1714,
+      "line": 1703,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "import_pgn",
+      "line": 1720,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "list_repertoires",
-      "line": 1790,
+      "line": 1796,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "list_repertoires",
-      "line": 1791,
+      "line": 1797,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "repertoire_lines",
-      "line": 1887,
+      "line": 1893,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "repertoire_lines",
-      "line": 1888,
+      "line": 1894,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "repertoire_conflicts",
-      "line": 1899,
+      "line": 1905,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "repertoire_integrity",
-      "line": 1905,
+      "line": 1911,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "resolve_repertoire_integrity",
-      "line": 1918,
+      "line": 1924,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "resolve_repertoire_integrity",
-      "line": 1919,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "list_annotations",
-      "line": 1960,
-      "operation": "connection"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "list_annotations",
-      "line": 1961,
+      "line": 1925,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "list_annotations",
       "line": 1966,
+      "operation": "connection"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "list_annotations",
+      "line": 1967,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "list_annotations",
-      "line": 1971,
+      "line": 1972,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
-      "function": "save_annotation",
-      "line": 1996,
-      "operation": "connection"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "save_annotation",
-      "line": 1997,
+      "function": "list_annotations",
+      "line": 1977,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "save_annotation",
       "line": 2002,
+      "operation": "connection"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "save_annotation",
+      "line": 2003,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "save_annotation",
-      "line": 2007,
+      "line": 2008,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "save_annotation",
+      "line": 2013,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "list_teaching_states",
-      "line": 2032,
+      "line": 2038,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "list_teaching_states",
-      "line": 2033,
+      "line": 2039,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "mark_teaching_state",
-      "line": 2061,
+      "line": 2067,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "mark_teaching_state",
-      "line": 2062,
+      "line": 2068,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "mark_teaching_state",
-      "line": 2066,
+      "line": 2072,
       "operation": "execute"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "migration_snapshot",
-      "line": 2125,
-      "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "migration_snapshot",
       "line": 2131,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "migration_snapshot",
-      "line": 2138,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "migration_snapshot",
-      "line": 2143,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "make_main_repertoire",
-      "line": 2177,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
-      "function": "make_main_repertoire",
-      "line": 2178,
+      "function": "migration_snapshot",
+      "line": 2137,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "migration_snapshot",
+      "line": 2144,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "migration_snapshot",
+      "line": 2149,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "make_main_repertoire",
       "line": 2183,
+      "operation": "connection"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "make_main_repertoire",
+      "line": 2184,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "make_main_repertoire",
+      "line": 2189,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "delete_repertoire",
-      "line": 2194,
+      "line": 2200,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "delete_repertoire",
-      "line": 2195,
+      "line": 2201,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "delete_repertoire",
-      "line": 2199,
+      "line": 2205,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "delete_repertoire",
-      "line": 2207,
+      "line": 2213,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "delete_repertoire",
-      "line": 2211,
+      "line": 2217,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "delete_repertoire",
-      "line": 2212,
+      "line": 2218,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "delete_repertoire",
-      "line": 2216,
+      "line": 2222,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "requeue",
-      "line": 2226,
+      "line": 2232,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "requeue",
-      "line": 2231,
+      "line": 2237,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "requeue",
-      "line": 2236,
+      "line": 2242,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "requeue",
-      "line": 2246,
+      "line": 2252,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "requeue",
-      "line": 2251,
+      "line": 2257,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "requeue",
-      "line": 2255,
+      "line": 2261,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "requeue",
-      "line": 2260,
+      "line": 2266,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "mark_attempt_failed",
-      "line": 2278,
+      "line": 2284,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "mark_attempt_failed",
-      "line": 2279,
+      "line": 2285,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "mark_attempt_failed",
-      "line": 2288,
+      "line": 2294,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "bury_queue_entry",
-      "line": 2306,
+      "line": 2312,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "bury_queue_entry",
-      "line": 2307,
+      "line": 2313,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "bury_queue_entry",
-      "line": 2325,
+      "line": 2331,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "bury_queue_entry",
-      "line": 2330,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "_apply_review",
-      "line": 2361,
-      "operation": "connection"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "_apply_review",
-      "line": 2362,
+      "line": 2336,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_apply_review",
       "line": 2367,
+      "operation": "connection"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "_apply_review",
+      "line": 2368,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_apply_review",
-      "line": 2372,
+      "line": 2373,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_apply_review",
-      "line": 2386,
+      "line": 2378,
       "operation": "execute"
     },
     {
@@ -1215,181 +1209,181 @@
     {
       "file": "backend/app/main.py",
       "function": "_apply_review",
-      "line": 2417,
+      "line": 2398,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_apply_review",
-      "line": 2420,
+      "line": 2423,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_apply_review",
-      "line": 2451,
+      "line": 2426,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_apply_review",
-      "line": 2460,
+      "line": 2457,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_apply_review",
-      "line": 2469,
+      "line": 2466,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_apply_review",
-      "line": 2486,
+      "line": 2475,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_apply_review",
-      "line": 2490,
+      "line": 2492,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_apply_review",
-      "line": 2500,
+      "line": 2496,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "_apply_review",
+      "line": 2506,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "preview_analysis_paste",
-      "line": 2522,
+      "line": 2528,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "commit_analysis_paste",
-      "line": 2534,
+      "line": 2540,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "commit_analysis_paste",
-      "line": 2538,
+      "line": 2544,
       "operation": "connection"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "branch",
-      "line": 2575,
-      "operation": "connection"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "branch",
-      "line": 2576,
-      "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "branch",
       "line": 2581,
+      "operation": "connection"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "branch",
+      "line": 2582,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "branch",
-      "line": 2584,
+      "line": 2587,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "branch",
-      "line": 2596,
+      "line": 2590,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "branch",
-      "line": 2599,
+      "line": 2602,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "branch",
-      "line": 2611,
+      "line": 2605,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "branch",
-      "line": 2625,
+      "line": 2617,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "branch",
-      "line": 2639,
+      "line": 2631,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "branch",
+      "line": 2645,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "remove_branch",
-      "line": 2656,
+      "line": 2662,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "remove_branch",
-      "line": 2657,
+      "line": 2663,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "remove_branch",
-      "line": 2661,
+      "line": 2667,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "remove_branch",
-      "line": 2686,
+      "line": 2692,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "remove_branch",
-      "line": 2698,
+      "line": 2704,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "progress_summary",
-      "line": 2711,
+      "line": 2717,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "progress_summary",
-      "line": 2714,
+      "line": 2720,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "progress_summary",
-      "line": 2721,
+      "line": 2727,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "progress_summary",
-      "line": 2732,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "progress_summary",
-      "line": 2735,
+      "line": 2738,
       "operation": "execute"
     },
     {
@@ -1400,27 +1394,27 @@
     },
     {
       "file": "backend/app/main.py",
+      "function": "progress_summary",
+      "line": 2747,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
       "function": "prefix_split_preview",
-      "line": 2783,
+      "line": 2789,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "prefix_split_preview",
-      "line": 2786,
+      "line": 2792,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "prefix_split_accept",
-      "line": 2809,
+      "line": 2815,
       "operation": "connection"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "prefix_split_accept",
-      "line": 2814,
-      "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
@@ -1431,20 +1425,20 @@
     {
       "file": "backend/app/main.py",
       "function": "prefix_split_accept",
-      "line": 2824,
+      "line": 2826,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "prefix_split_accept",
+      "line": 2830,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "prefix_split_reject",
-      "line": 2863,
+      "line": 2869,
       "operation": "connection"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "prefix_split_reject",
-      "line": 2868,
-      "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
@@ -1454,147 +1448,147 @@
     },
     {
       "file": "backend/app/main.py",
+      "function": "prefix_split_reject",
+      "line": 2880,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
       "function": "revise_card",
-      "line": 2890,
+      "line": 2896,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "revise_card",
-      "line": 2891,
+      "line": 2897,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "revise_card",
-      "line": 2894,
+      "line": 2900,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "revise_card",
-      "line": 2898,
+      "line": 2904,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "revise_card",
-      "line": 2910,
+      "line": 2916,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "revise_card",
-      "line": 2922,
+      "line": 2928,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "revise_card",
-      "line": 2926,
+      "line": 2932,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "revise_card",
-      "line": 2930,
+      "line": 2936,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "revise_card",
-      "line": 2966,
+      "line": 2972,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "revise_card",
-      "line": 2971,
+      "line": 2977,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "revise_card",
-      "line": 2975,
+      "line": 2981,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "revise_card",
-      "line": 2979,
+      "line": 2985,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "revise_card",
-      "line": 2984,
+      "line": 2990,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "revise_card",
-      "line": 2988,
+      "line": 2994,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "revise_card",
-      "line": 2991,
+      "line": 2997,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "revise_card",
-      "line": 2996,
+      "line": 3002,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "archive_card",
-      "line": 3015,
+      "line": 3021,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "archive_card",
-      "line": 3018,
+      "line": 3024,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "archive_card",
-      "line": 3022,
+      "line": 3028,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "archive_card",
-      "line": 3026,
+      "line": 3032,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "rename_repertoire",
-      "line": 3045,
+      "line": 3051,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "rename_repertoire",
-      "line": 3046,
+      "line": 3052,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "export_repertoires",
-      "line": 3055,
+      "line": 3061,
       "operation": "connection"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "export_repertoires",
-      "line": 3057,
-      "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
@@ -1604,159 +1598,159 @@
     },
     {
       "file": "backend/app/main.py",
+      "function": "export_repertoires",
+      "line": 3069,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
       "function": "repertoire_opportunities",
-      "line": 3177,
+      "line": 3183,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "repertoire_opportunities",
-      "line": 3178,
+      "line": 3184,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "discoveries_feed",
-      "line": 3187,
+      "line": 3193,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "discoveries_feed",
-      "line": 3188,
+      "line": 3194,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "discoveries_feed",
-      "line": 3198,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "discovery_admission_status",
-      "line": 3241,
-      "operation": "read_connection"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "discovery_admission_status",
-      "line": 3242,
+      "line": 3204,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "discovery_admission_status",
       "line": 3247,
+      "operation": "read_connection"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "discovery_admission_status",
+      "line": 3248,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "discovery_admission_status",
+      "line": 3253,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "refresh_repertoire_opportunities",
-      "line": 3261,
+      "line": 3267,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "refresh_repertoire_opportunities",
-      "line": 3262,
+      "line": 3268,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "dismiss_repertoire_opportunity",
-      "line": 3271,
+      "line": 3277,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "acknowledge_repertoire_opportunity",
-      "line": 3279,
+      "line": 3285,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "snooze_repertoire_opportunity",
-      "line": 3287,
+      "line": 3293,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "train_repertoire_opportunity",
-      "line": 3295,
+      "line": 3301,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "coverage_maia_heartbeat",
-      "line": 3337,
+      "line": 3343,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "coverage_maia_heartbeat",
-      "line": 3338,
+      "line": 3344,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "coverage_maia_release",
-      "line": 3355,
+      "line": 3361,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "coverage_maia_release",
-      "line": 3356,
+      "line": 3362,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "coverage_maia_failure",
-      "line": 3372,
+      "line": 3378,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "coverage_maia_failure",
-      "line": 3373,
+      "line": 3379,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "coverage_maia_failure",
-      "line": 3381,
+      "line": 3387,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "coverage_maia_failure",
-      "line": 3386,
+      "line": 3392,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "tactics_catalog",
-      "line": 3444,
+      "line": 3450,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "tactics_activation",
-      "line": 3457,
+      "line": 3463,
       "operation": "submit_foreground_write"
     },
     {
       "file": "backend/app/main.py",
       "function": "tactic_attempt",
-      "line": 3482,
+      "line": 3488,
       "operation": "connection"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "tactic_attempt",
-      "line": 3484,
-      "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
@@ -1767,19 +1761,19 @@
     {
       "file": "backend/app/main.py",
       "function": "tactic_attempt",
-      "line": 3495,
+      "line": 3496,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "tactic_attempt",
-      "line": 3506,
+      "line": 3501,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "tactic_attempt",
-      "line": 3524,
+      "line": 3512,
       "operation": "execute"
     },
     {
@@ -1797,170 +1791,164 @@
     {
       "file": "backend/app/main.py",
       "function": "tactic_attempt",
-      "line": 3539,
+      "line": 3542,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "tactic_attempt",
-      "line": 3544,
+      "line": 3545,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "tactic_attempt",
+      "line": 3550,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "tactic_progress",
-      "line": 3559,
+      "line": 3565,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "tactic_progress",
-      "line": 3560,
+      "line": 3566,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "tablebase",
-      "line": 3597,
+      "line": 3603,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "tablebase",
-      "line": 3598,
+      "line": 3604,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "tablebase",
-      "line": 3614,
+      "line": 3620,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "tablebase",
-      "line": 3615,
+      "line": 3621,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "list_endgames",
-      "line": 3629,
+      "line": 3635,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "list_endgames",
-      "line": 3630,
+      "line": 3636,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "create_endgame",
-      "line": 3649,
+      "line": 3655,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "create_endgame",
-      "line": 3650,
+      "line": 3656,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "create_endgame",
-      "line": 3654,
+      "line": 3660,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "create_endgame",
-      "line": 3666,
+      "line": 3672,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "create_endgame",
-      "line": 3670,
+      "line": 3676,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "create_endgame",
-      "line": 3684,
+      "line": 3690,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "create_endgame_attempt",
-      "line": 3699,
+      "line": 3705,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "create_endgame_attempt",
-      "line": 3700,
+      "line": 3706,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "create_endgame_attempt",
-      "line": 3721,
+      "line": 3727,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "create_endgame_attempt",
-      "line": 3722,
+      "line": 3728,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "sync",
-      "line": 3753,
+      "line": 3759,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "sync",
-      "line": 3754,
+      "line": 3760,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "sync_status",
-      "line": 3767,
+      "line": 3773,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "sync_status",
-      "line": 3768,
+      "line": 3774,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "sync_status",
-      "line": 3769,
+      "line": 3775,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_claim_game_analysis",
-      "line": 3806,
+      "line": 3812,
       "operation": "connection"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "_claim_game_analysis",
-      "line": 3807,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "_claim_game_analysis",
-      "line": 3808,
-      "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
@@ -1971,176 +1959,182 @@
     {
       "file": "backend/app/main.py",
       "function": "_claim_game_analysis",
-      "line": 3826,
+      "line": 3814,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "_claim_game_analysis",
-      "line": 3833,
+      "line": 3819,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "_claim_game_analysis",
+      "line": 3832,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "_claim_game_analysis",
+      "line": 3839,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "finalize_game_analysis_position",
-      "line": 3897,
+      "line": 3903,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "finalize_game_analysis_position",
-      "line": 3898,
+      "line": 3904,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "repair_one_stockfish_timeout",
-      "line": 3927,
+      "line": 3933,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "repair_one_stockfish_timeout",
-      "line": 3928,
+      "line": 3934,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "repair_one_stockfish_timeout",
-      "line": 3935,
+      "line": 3941,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "repair_one_stockfish_timeout",
-      "line": 3940,
+      "line": 3946,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "repair_one_stockfish_timeout",
-      "line": 3945,
+      "line": 3951,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "repair_one_legacy_network_identity",
-      "line": 3955,
+      "line": 3961,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "repair_one_legacy_network_identity",
-      "line": 3956,
+      "line": 3962,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "repair_one_legacy_network_identity",
-      "line": 3968,
+      "line": 3974,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "repair_one_legacy_network_identity",
-      "line": 3975,
+      "line": 3981,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "repair_one_legacy_network_identity",
-      "line": 3977,
+      "line": 3983,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "fail_game_analysis",
-      "line": 3987,
+      "line": 3993,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "fail_game_analysis",
-      "line": 3988,
+      "line": 3994,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "fail_game_analysis",
-      "line": 3995,
+      "line": 4001,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "fail_game_analysis",
-      "line": 3999,
+      "line": 4005,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "heartbeat_game_analysis",
-      "line": 4008,
+      "line": 4014,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "heartbeat_game_analysis",
-      "line": 4009,
+      "line": 4015,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "release_game_analysis",
-      "line": 4026,
+      "line": 4032,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "release_game_analysis",
-      "line": 4027,
+      "line": 4033,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "release_game_analysis",
-      "line": 4038,
+      "line": 4044,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "retry_game_analysis",
-      "line": 4047,
+      "line": 4053,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "retry_game_analysis",
-      "line": 4048,
+      "line": 4054,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "retry_game_analysis",
-      "line": 4055,
+      "line": 4061,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "retry_game_analysis",
-      "line": 4058,
+      "line": 4064,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "save_game_analysis",
-      "line": 4070,
+      "line": 4076,
       "operation": "connection"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "save_game_analysis",
-      "line": 4071,
-      "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
@@ -2151,79 +2145,79 @@
     {
       "file": "backend/app/main.py",
       "function": "save_game_analysis",
-      "line": 4084,
+      "line": 4083,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "save_game_analysis",
-      "line": 4088,
+      "line": 4090,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "save_game_analysis",
-      "line": 4099,
+      "line": 4094,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "save_game_analysis",
-      "line": 4156,
+      "line": 4105,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "save_game_analysis",
+      "line": 4162,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "save_game_analysis",
-      "line": 4157,
+      "line": 4163,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "save_game_analysis",
-      "line": 4158,
+      "line": 4164,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "save_game_analysis",
-      "line": 4168,
+      "line": 4174,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "save_game_analysis",
-      "line": 4169,
+      "line": 4175,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "save_game_analysis",
-      "line": 4170,
+      "line": 4176,
       "operation": "executemany"
     },
     {
       "file": "backend/app/main.py",
       "function": "save_game_analysis",
-      "line": 4178,
+      "line": 4184,
       "operation": "executemany"
     },
     {
       "file": "backend/app/main.py",
       "function": "save_game_analysis",
-      "line": 4185,
+      "line": 4191,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "save_game_analysis",
-      "line": 4195,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "save_game_analysis",
-      "line": 4202,
+      "line": 4201,
       "operation": "execute"
     },
     {
@@ -2235,128 +2229,128 @@
     {
       "file": "backend/app/main.py",
       "function": "save_game_analysis",
-      "line": 4223,
-      "operation": "read_connection"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "save_game_analysis",
-      "line": 4224,
+      "line": 4214,
       "operation": "execute"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "save_game_analysis",
-      "line": 4228,
-      "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "save_game_analysis",
       "line": 4229,
+      "operation": "read_connection"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "save_game_analysis",
+      "line": 4230,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "save_game_analysis",
+      "line": 4234,
+      "operation": "read_connection"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "save_game_analysis",
+      "line": 4235,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "fail_defensive_threat_analysis",
-      "line": 4280,
+      "line": 4286,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "fail_defensive_threat_analysis",
-      "line": 4281,
+      "line": 4287,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "fail_defensive_threat_analysis",
-      "line": 4291,
+      "line": 4297,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "fail_defensive_threat_analysis",
-      "line": 4292,
+      "line": 4298,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "release_defensive_threat_analysis",
-      "line": 4300,
+      "line": 4306,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "release_defensive_threat_analysis",
-      "line": 4301,
+      "line": 4307,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "retry_defensive_threat_analysis",
-      "line": 4312,
+      "line": 4318,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "retry_defensive_threat_analysis",
-      "line": 4313,
+      "line": 4319,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "refresh_game_defensive_threats",
-      "line": 4325,
+      "line": 4331,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "refresh_game_defensive_threats",
-      "line": 4326,
+      "line": 4332,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "list_defensive_threat_candidates",
-      "line": 4339,
+      "line": 4345,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "list_defensive_threat_candidates",
-      "line": 4341,
+      "line": 4347,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "list_defensive_threat_candidates",
-      "line": 4353,
+      "line": 4359,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "list_game_findings",
-      "line": 4479,
+      "line": 4485,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "list_game_findings",
-      "line": 4480,
+      "line": 4486,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "next_tactical_finding",
-      "line": 4504,
+      "line": 4510,
       "operation": "connection"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "next_tactical_finding",
-      "line": 4505,
-      "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
@@ -2366,129 +2360,123 @@
     },
     {
       "file": "backend/app/main.py",
-      "function": "curate_tactical_finding",
-      "line": 4535,
-      "operation": "connection"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "curate_tactical_finding",
-      "line": 4536,
+      "function": "next_tactical_finding",
+      "line": 4517,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "curate_tactical_finding",
-      "line": 4546,
+      "line": 4541,
+      "operation": "connection"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "curate_tactical_finding",
+      "line": 4542,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "curate_tactical_finding",
-      "line": 4548,
+      "line": 4552,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "curate_tactical_finding",
+      "line": 4554,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "decide_game_finding",
-      "line": 4575,
+      "line": 4581,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "decide_game_finding",
-      "line": 4576,
+      "line": 4582,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "decide_game_finding",
-      "line": 4591,
+      "line": 4597,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "decide_game_finding",
-      "line": 4599,
+      "line": 4605,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "create_card_from_game_finding",
-      "line": 4613,
+      "line": 4619,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "create_card_from_game_finding",
-      "line": 4614,
+      "line": 4620,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "create_card_from_game_finding",
-      "line": 4669,
+      "line": 4675,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "create_card_from_game_finding",
-      "line": 4685,
+      "line": 4691,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "create_card_from_game_finding",
-      "line": 4694,
+      "line": 4700,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "create_card_from_game_finding",
-      "line": 4712,
+      "line": 4718,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "create_card_from_game_finding",
-      "line": 4717,
+      "line": 4723,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "exclude_game_from_adaptation",
-      "line": 4731,
+      "line": 4737,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "exclude_game_from_adaptation",
-      "line": 4732,
+      "line": 4738,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "exclude_game_from_adaptation",
-      "line": 4736,
+      "line": 4742,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "exclude_game_from_adaptation",
-      "line": 4741,
+      "line": 4747,
       "operation": "execute"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "exclude_game_from_adaptation",
-      "line": 4746,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/main.py",
-      "function": "exclude_game_from_adaptation",
-      "line": 4751,
-      "operation": "read_connection"
     },
     {
       "file": "backend/app/main.py",
@@ -2498,62 +2486,74 @@
     },
     {
       "file": "backend/app/main.py",
+      "function": "exclude_game_from_adaptation",
+      "line": 4757,
+      "operation": "read_connection"
+    },
+    {
+      "file": "backend/app/main.py",
+      "function": "exclude_game_from_adaptation",
+      "line": 4758,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/main.py",
       "function": "summary",
-      "line": 4879,
+      "line": 4885,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "summary",
-      "line": 4880,
+      "line": 4886,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "summary",
-      "line": 4890,
+      "line": 4896,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "summary",
-      "line": 4897,
+      "line": 4903,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "game_position_summary",
-      "line": 4939,
+      "line": 4945,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "game_position_summary",
-      "line": 4940,
+      "line": 4946,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "game_detail",
-      "line": 5010,
+      "line": 5016,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "game_detail",
-      "line": 5011,
+      "line": 5017,
       "operation": "execute"
     },
     {
       "file": "backend/app/main.py",
       "function": "chess_statistics_insights",
-      "line": 5054,
+      "line": 5060,
       "operation": "connection"
     },
     {
       "file": "backend/app/main.py",
       "function": "chess_statistics_insights",
-      "line": 5055,
+      "line": 5061,
       "operation": "execute"
     },
     {
@@ -7791,157 +7791,211 @@
     {
       "file": "backend/app/study_commands.py",
       "function": "_require_record",
-      "line": 21,
+      "line": 28,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "create_study",
-      "line": 31,
+      "line": 38,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "update_study",
-      "line": 43,
+      "line": 50,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "update_study",
-      "line": 45,
+      "line": 52,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "archive_study",
-      "line": 60,
+      "line": 67,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "archive_study",
-      "line": 64,
+      "line": 71,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "archive_study",
-      "line": 68,
+      "line": 75,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "unarchive_study",
-      "line": 79,
+      "line": 86,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "unarchive_study",
-      "line": 83,
+      "line": 90,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "_lock_exercise_in_study",
-      "line": 92,
+      "line": 99,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "suspend_exercise",
-      "line": 102,
+      "line": 109,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "suspend_exercise",
-      "line": 106,
+      "line": 113,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "resume_exercise",
-      "line": 119,
+      "line": 126,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "archive_exercise",
-      "line": 129,
+      "line": 136,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "archive_exercise",
-      "line": 130,
+      "line": 137,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "archive_exercise",
-      "line": 131,
+      "line": 138,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
-      "function": "create_chapter",
-      "line": 143,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/study_commands.py",
-      "function": "create_chapter",
+      "function": "create_exercise",
       "line": 150,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
+      "function": "create_exercise",
+      "line": 154,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_commands.py",
+      "function": "create_exercise",
+      "line": 173,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_commands.py",
+      "function": "create_exercise",
+      "line": 180,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_commands.py",
+      "function": "enroll_exercise",
+      "line": 190,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_commands.py",
+      "function": "enroll_exercise",
+      "line": 199,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_commands.py",
+      "function": "enroll_exercise",
+      "line": 210,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_commands.py",
+      "function": "enroll_exercise",
+      "line": 216,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_commands.py",
+      "function": "enroll_exercise",
+      "line": 221,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_commands.py",
       "function": "create_chapter",
-      "line": 155,
+      "line": 229,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_commands.py",
+      "function": "create_chapter",
+      "line": 236,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_commands.py",
+      "function": "create_chapter",
+      "line": 241,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "reorder_chapters",
-      "line": 167,
+      "line": 253,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "reorder_chapters",
-      "line": 168,
+      "line": 254,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "reorder_chapters",
-      "line": 174,
+      "line": 260,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "reorder_chapters",
-      "line": 176,
+      "line": 262,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "rename_chapter",
-      "line": 187,
+      "line": 273,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "create_link.position_study_id",
-      "line": 203,
+      "line": 289,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "create_link",
-      "line": 218,
+      "line": 304,
       "operation": "execute"
     },
     {
@@ -8307,56 +8361,44 @@
     {
       "file": "backend/app/study_routes.py",
       "function": "create_exercise",
-      "line": 374,
+      "line": 379,
       "operation": "connection"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "create_exercise",
-      "line": 377,
+      "line": 382,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "create_exercise",
-      "line": 389,
+      "line": 394,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "create_exercise",
-      "line": 395,
+      "line": 400,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "get_exercise",
-      "line": 404,
+      "line": 409,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "present_exercise",
-      "line": 413,
+      "line": 418,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "revise_exercise",
-      "line": 422,
+      "line": 427,
       "operation": "connection"
-    },
-    {
-      "file": "backend/app/study_routes.py",
-      "function": "revise_exercise",
-      "line": 437,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/study_routes.py",
-      "function": "revise_exercise",
-      "line": 439,
-      "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
@@ -8367,19 +8409,19 @@
     {
       "file": "backend/app/study_routes.py",
       "function": "revise_exercise",
-      "line": 445,
+      "line": 444,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "revise_exercise",
-      "line": 448,
+      "line": 447,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "revise_exercise",
-      "line": 451,
+      "line": 450,
       "operation": "execute"
     },
     {
@@ -8391,104 +8433,92 @@
     {
       "file": "backend/app/study_routes.py",
       "function": "revise_exercise",
-      "line": 454,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/study_routes.py",
-      "function": "revise_exercise",
       "line": 456,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "revise_exercise",
-      "line": 462,
+      "line": 458,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "revise_exercise",
-      "line": 463,
+      "line": 459,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "revise_exercise",
-      "line": 465,
+      "line": 461,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_routes.py",
+      "function": "revise_exercise",
+      "line": 467,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_routes.py",
+      "function": "revise_exercise",
+      "line": 468,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_routes.py",
+      "function": "revise_exercise",
+      "line": 470,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "enroll_exercise",
-      "line": 474,
+      "line": 484,
       "operation": "connection"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "enroll_exercise",
-      "line": 487,
+      "line": 497,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "enroll_exercise",
-      "line": 491,
+      "line": 501,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "enroll_exercise",
-      "line": 496,
+      "line": 506,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "suspend_exercise",
-      "line": 508,
+      "line": 518,
       "operation": "connection"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "suspend_exercise",
-      "line": 512,
+      "line": 522,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "suspend_exercise",
-      "line": 513,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/study_routes.py",
-      "function": "train_exercise_now",
-      "line": 521,
-      "operation": "connection"
-    },
-    {
-      "file": "backend/app/study_routes.py",
-      "function": "train_exercise_now",
-      "line": 524,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/study_routes.py",
-      "function": "train_exercise_now",
-      "line": 527,
+      "line": 523,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "train_exercise_now",
       "line": 531,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/study_routes.py",
-      "function": "train_exercise_now",
-      "line": 533,
-      "operation": "execute"
+      "operation": "connection"
     },
     {
       "file": "backend/app/study_routes.py",
@@ -8498,56 +8528,74 @@
     },
     {
       "file": "backend/app/study_routes.py",
+      "function": "train_exercise_now",
+      "line": 537,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_routes.py",
+      "function": "train_exercise_now",
+      "line": 541,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_routes.py",
+      "function": "train_exercise_now",
+      "line": 543,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_routes.py",
+      "function": "train_exercise_now",
+      "line": 544,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_routes.py",
       "function": "resume_exercise",
-      "line": 548,
+      "line": 558,
       "operation": "connection"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "resume_exercise",
-      "line": 552,
+      "line": 562,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "archive_exercise",
-      "line": 564,
+      "line": 574,
       "operation": "connection"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "archive_exercise",
-      "line": 568,
+      "line": 578,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "archive_exercise",
-      "line": 569,
+      "line": 579,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "archive_exercise",
-      "line": 570,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/study_routes.py",
-      "function": "_finish_attempt",
       "line": 580,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "_finish_attempt",
-      "line": 582,
+      "line": 590,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "_finish_attempt",
-      "line": 589,
+      "line": 592,
       "operation": "execute"
     },
     {
@@ -8559,145 +8607,151 @@
     {
       "file": "backend/app/study_routes.py",
       "function": "_finish_attempt",
-      "line": 602,
+      "line": 609,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "_finish_attempt",
-      "line": 605,
+      "line": 612,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "_finish_attempt",
-      "line": 608,
+      "line": 615,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "_finish_attempt",
-      "line": 611,
+      "line": 618,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "_finish_attempt",
-      "line": 617,
+      "line": 621,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "_finish_attempt",
-      "line": 619,
+      "line": 627,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_routes.py",
+      "function": "_finish_attempt",
+      "line": 629,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "submit_attempt",
-      "line": 630,
+      "line": 640,
       "operation": "connection"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "submit_attempt",
-      "line": 631,
+      "line": 641,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "submit_attempt",
-      "line": 646,
+      "line": 656,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "submit_attempt",
-      "line": 648,
+      "line": 658,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "submit_attempt",
-      "line": 653,
+      "line": 663,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "submit_attempt",
-      "line": 659,
+      "line": 669,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "submit_attempt",
-      "line": 673,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/study_routes.py",
-      "function": "self_assess",
-      "line": 681,
-      "operation": "connection"
-    },
-    {
-      "file": "backend/app/study_routes.py",
-      "function": "self_assess",
       "line": 683,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
+      "function": "self_assess",
+      "line": 691,
+      "operation": "connection"
+    },
+    {
+      "file": "backend/app/study_routes.py",
+      "function": "self_assess",
+      "line": 693,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_routes.py",
       "function": "attempt_feedback",
-      "line": 703,
+      "line": 713,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "attempt_feedback",
-      "line": 705,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/study_routes.py",
-      "function": "attempt_feedback",
-      "line": 708,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/study_routes.py",
-      "function": "study_summary",
       "line": 715,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_routes.py",
+      "function": "attempt_feedback",
+      "line": 718,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_routes.py",
+      "function": "study_summary",
+      "line": 725,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "study_summary",
-      "line": 717,
+      "line": 727,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "export_study_content",
-      "line": 733,
+      "line": 743,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "export_study_pgn",
-      "line": 742,
+      "line": 752,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "export_study_pgn",
-      "line": 744,
+      "line": 754,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "import_study_content",
-      "line": 759,
+      "line": 769,
       "operation": "connection"
     },
     {
@@ -8770,882 +8824,882 @@
     {
       "file": "backend/app/main.py",
       "function": "health",
-      "line": 457,
+      "line": 463,
       "method": "GET",
       "path": "/api/health"
     },
     {
       "file": "backend/app/main.py",
       "function": "foreground_active",
-      "line": 473,
+      "line": 479,
       "method": "GET",
       "path": "/api/system/foreground-active"
     },
     {
       "file": "backend/app/main.py",
       "function": "foreground_requests_active",
-      "line": 479,
+      "line": 485,
       "method": "GET",
       "path": "/api/system/foreground-requests-active"
     },
     {
       "file": "backend/app/main.py",
       "function": "record_browser_activity",
-      "line": 485,
+      "line": 491,
       "method": "POST",
       "path": "/api/system/browser-activity"
     },
     {
       "file": "backend/app/main.py",
       "function": "system_tasks",
-      "line": 491,
+      "line": 497,
       "method": "GET",
       "path": "/api/system/tasks"
     },
     {
       "file": "backend/app/main.py",
       "function": "system_activity",
-      "line": 522,
+      "line": 528,
       "method": "GET",
       "path": "/api/system/activity"
     },
     {
       "file": "backend/app/main.py",
       "function": "control_system_activity",
-      "line": 529,
+      "line": 535,
       "method": "POST",
       "path": "/api/system/activity/control"
     },
     {
       "file": "backend/app/main.py",
       "function": "report_system_activity_progress",
-      "line": 542,
+      "line": 548,
       "method": "POST",
       "path": "/api/system/activity/progress"
     },
     {
       "file": "backend/app/main.py",
       "function": "retry_system_task",
-      "line": 564,
+      "line": 570,
       "method": "POST",
       "path": "/api/system/tasks/{task_id}/retry"
     },
     {
       "file": "backend/app/main.py",
       "function": "capabilities",
-      "line": 574,
+      "line": 580,
       "method": "GET",
       "path": "/api/analysis/capabilities"
     },
     {
       "file": "backend/app/main.py",
       "function": "get_settings",
-      "line": 579,
+      "line": 585,
       "method": "GET",
       "path": "/api/settings"
     },
     {
       "file": "backend/app/main.py",
       "function": "put_settings",
-      "line": 588,
+      "line": 594,
       "method": "PUT",
       "path": "/api/settings"
     },
     {
       "file": "backend/app/main.py",
       "function": "queue_today",
-      "line": 1574,
+      "line": 1580,
       "method": "GET",
       "path": "/api/queue/today"
     },
     {
       "file": "backend/app/main.py",
       "function": "prepared_queue",
-      "line": 1579,
+      "line": 1585,
       "method": "GET",
       "path": "/api/queue/prepared"
     },
     {
       "file": "backend/app/main.py",
       "function": "queue_window",
-      "line": 1604,
+      "line": 1610,
       "method": "GET",
       "path": "/api/queue/window"
     },
     {
       "file": "backend/app/main.py",
       "function": "import_pgn",
-      "line": 1611,
+      "line": 1617,
       "method": "POST",
       "path": "/api/imports/pgn"
     },
     {
       "file": "backend/app/main.py",
       "function": "list_repertoires",
-      "line": 1789,
+      "line": 1795,
       "method": "GET",
       "path": "/api/repertoires"
     },
     {
       "file": "backend/app/main.py",
       "function": "repertoire_lines",
-      "line": 1886,
+      "line": 1892,
       "method": "GET",
       "path": "/api/repertoire/lines"
     },
     {
       "file": "backend/app/main.py",
       "function": "repertoire_conflicts",
-      "line": 1898,
+      "line": 1904,
       "method": "GET",
       "path": "/api/repertoire/conflicts"
     },
     {
       "file": "backend/app/main.py",
       "function": "repertoire_integrity",
-      "line": 1904,
+      "line": 1910,
       "method": "GET",
       "path": "/api/repertoires/{identifier}/integrity"
     },
     {
       "file": "backend/app/main.py",
       "function": "resolve_repertoire_integrity",
-      "line": 1915,
+      "line": 1921,
       "method": "POST",
       "path": "/api/repertoires/{identifier}/integrity/issues/{issue_id}/resolve"
     },
     {
       "file": "backend/app/main.py",
       "function": "list_annotations",
-      "line": 1959,
+      "line": 1965,
       "method": "GET",
       "path": "/api/repertoires/{identifier}/annotations"
     },
     {
       "file": "backend/app/main.py",
       "function": "save_annotation",
-      "line": 1991,
+      "line": 1997,
       "method": "PUT",
       "path": "/api/repertoires/{identifier}/annotations"
     },
     {
       "file": "backend/app/main.py",
       "function": "list_teaching_states",
-      "line": 2031,
+      "line": 2037,
       "method": "GET",
       "path": "/api/cards/{identifier}/teaching"
     },
     {
       "file": "backend/app/main.py",
       "function": "mark_teaching_state",
-      "line": 2051,
+      "line": 2057,
       "method": "POST",
       "path": "/api/cards/{identifier}/teaching"
     },
     {
       "file": "backend/app/main.py",
       "function": "migration_snapshot",
-      "line": 2079,
+      "line": 2085,
       "method": "GET",
       "path": "/api/migration/snapshot"
     },
     {
       "file": "backend/app/main.py",
       "function": "make_main_repertoire",
-      "line": 2169,
+      "line": 2175,
       "method": "PUT",
       "path": "/api/repertoires/{identifier}/main"
     },
     {
       "file": "backend/app/main.py",
       "function": "delete_repertoire",
-      "line": 2191,
+      "line": 2197,
       "method": "DELETE",
       "path": "/api/repertoires/{identifier}"
     },
     {
       "file": "backend/app/main.py",
       "function": "mark_attempt_failed",
-      "line": 2272,
+      "line": 2278,
       "method": "POST",
       "path": "/api/queue/entries/{entry_id}/fail"
     },
     {
       "file": "backend/app/main.py",
       "function": "bury_queue_entry",
-      "line": 2299,
+      "line": 2305,
       "method": "POST",
       "path": "/api/queue/entries/{entry_id}/bury"
     },
     {
       "file": "backend/app/main.py",
       "function": "review",
-      "line": 2338,
+      "line": 2344,
       "method": "POST",
       "path": "/api/cards/{identifier}/review"
     },
     {
       "file": "backend/app/main.py",
       "function": "preview_analysis_paste",
-      "line": 2520,
+      "line": 2526,
       "method": "POST",
       "path": "/api/repertoire/paste/preview"
     },
     {
       "file": "backend/app/main.py",
       "function": "commit_analysis_paste",
-      "line": 2531,
+      "line": 2537,
       "method": "POST",
       "path": "/api/repertoire/paste/commit"
     },
     {
       "file": "backend/app/main.py",
       "function": "branch",
-      "line": 2559,
+      "line": 2565,
       "method": "POST",
       "path": "/api/repertoire/branches"
     },
     {
       "file": "backend/app/main.py",
       "function": "remove_branch",
-      "line": 2645,
+      "line": 2651,
       "method": "POST",
       "path": "/api/repertoire/branches/remove"
     },
     {
       "file": "backend/app/main.py",
       "function": "progress_summary",
-      "line": 2709,
+      "line": 2715,
       "method": "GET",
       "path": "/api/progress"
     },
     {
       "file": "backend/app/main.py",
       "function": "validate_card",
-      "line": 2772,
+      "line": 2778,
       "method": "POST",
       "path": "/api/cards/validate"
     },
     {
       "file": "backend/app/main.py",
       "function": "prefix_split_preview",
-      "line": 2782,
+      "line": 2788,
       "method": "GET",
       "path": "/api/cards/{identifier}/prefix-split"
     },
     {
       "file": "backend/app/main.py",
       "function": "prefix_split_accept",
-      "line": 2808,
+      "line": 2814,
       "method": "POST",
       "path": "/api/cards/{identifier}/prefix-split"
     },
     {
       "file": "backend/app/main.py",
       "function": "prefix_split_reject",
-      "line": 2862,
+      "line": 2868,
       "method": "POST",
       "path": "/api/cards/{identifier}/prefix-split/reject"
     },
     {
       "file": "backend/app/main.py",
       "function": "revise_card",
-      "line": 2886,
+      "line": 2892,
       "method": "PUT",
       "path": "/api/cards/{identifier}"
     },
     {
       "file": "backend/app/main.py",
       "function": "archive_card",
-      "line": 3014,
+      "line": 3020,
       "method": "DELETE",
       "path": "/api/cards/{identifier}"
     },
     {
       "file": "backend/app/main.py",
       "function": "rename_repertoire",
-      "line": 3044,
+      "line": 3050,
       "method": "PATCH",
       "path": "/api/repertoires/{identifier}"
     },
     {
       "file": "backend/app/main.py",
       "function": "export_one",
-      "line": 3125,
+      "line": 3131,
       "method": "GET",
       "path": "/api/repertoires/{identifier}/export.pgn"
     },
     {
       "file": "backend/app/main.py",
       "function": "export_all",
-      "line": 3130,
+      "line": 3136,
       "method": "GET",
       "path": "/api/repertoires/export.pgn"
     },
     {
       "file": "backend/app/main.py",
       "function": "refresh_repertoire_coverage",
-      "line": 3135,
+      "line": 3141,
       "method": "POST",
       "path": "/api/repertoires/{identifier}/coverage/refresh"
     },
     {
       "file": "backend/app/main.py",
       "function": "repertoire_statistics_summary",
-      "line": 3145,
+      "line": 3151,
       "method": "GET",
       "path": "/api/repertoires/{identifier}/statistics"
     },
     {
       "file": "backend/app/main.py",
       "function": "repertoire_statistics_positions",
-      "line": 3155,
+      "line": 3161,
       "method": "GET",
       "path": "/api/repertoires/{identifier}/statistics/positions"
     },
     {
       "file": "backend/app/main.py",
       "function": "repertoire_coverage",
-      "line": 3166,
+      "line": 3172,
       "method": "GET",
       "path": "/api/repertoires/{identifier}/coverage"
     },
     {
       "file": "backend/app/main.py",
       "function": "repertoire_coverage_gaps",
-      "line": 3171,
+      "line": 3177,
       "method": "GET",
       "path": "/api/repertoires/{identifier}/coverage/gaps"
     },
     {
       "file": "backend/app/main.py",
       "function": "repertoire_opportunities",
-      "line": 3176,
+      "line": 3182,
       "method": "GET",
       "path": "/api/repertoires/{identifier}/opportunities"
     },
     {
       "file": "backend/app/main.py",
       "function": "discoveries_feed",
-      "line": 3184,
+      "line": 3190,
       "method": "GET",
       "path": "/api/discoveries"
     },
     {
       "file": "backend/app/main.py",
       "function": "discovery_recommendations",
-      "line": 3217,
+      "line": 3223,
       "method": "GET",
       "path": "/api/discoveries/{opportunity_id}/recommendations"
     },
     {
       "file": "backend/app/main.py",
       "function": "accept_discovery_continuation",
-      "line": 3227,
+      "line": 3233,
       "method": "POST",
       "path": "/api/discoveries/{opportunity_id}/accept"
     },
     {
       "file": "backend/app/main.py",
       "function": "discovery_admission_status",
-      "line": 3240,
+      "line": 3246,
       "method": "GET",
       "path": "/api/discovery-admissions/{intent_id}"
     },
     {
       "file": "backend/app/main.py",
       "function": "refresh_repertoire_opportunities",
-      "line": 3260,
+      "line": 3266,
       "method": "POST",
       "path": "/api/repertoires/{identifier}/opportunities/refresh"
     },
     {
       "file": "backend/app/main.py",
       "function": "dismiss_repertoire_opportunity",
-      "line": 3270,
+      "line": 3276,
       "method": "POST",
       "path": "/api/repertoires/{identifier}/opportunities/{opportunity_id}/dismiss"
     },
     {
       "file": "backend/app/main.py",
       "function": "acknowledge_repertoire_opportunity",
-      "line": 3278,
+      "line": 3284,
       "method": "POST",
       "path": "/api/repertoires/{identifier}/opportunities/{opportunity_id}/acknowledge"
     },
     {
       "file": "backend/app/main.py",
       "function": "snooze_repertoire_opportunity",
-      "line": 3286,
+      "line": 3292,
       "method": "POST",
       "path": "/api/repertoires/{identifier}/opportunities/{opportunity_id}/snooze"
     },
     {
       "file": "backend/app/main.py",
       "function": "train_repertoire_opportunity",
-      "line": 3294,
+      "line": 3300,
       "method": "POST",
       "path": "/api/repertoires/{identifier}/opportunities/{opportunity_id}/train"
     },
     {
       "file": "backend/app/main.py",
       "function": "coverage_maia_claim",
-      "line": 3305,
+      "line": 3311,
       "method": "POST",
       "path": "/api/repertoire-coverage/maia/claim"
     },
     {
       "file": "backend/app/main.py",
       "function": "coverage_explorer_session",
-      "line": 3310,
+      "line": 3316,
       "method": "POST",
       "path": "/api/repertoire-coverage/explorer-session"
     },
     {
       "file": "backend/app/main.py",
       "function": "coverage_maia_submit",
-      "line": 3319,
+      "line": 3325,
       "method": "POST",
       "path": "/api/repertoire-coverage/maia/submit"
     },
     {
       "file": "backend/app/main.py",
       "function": "coverage_maia_heartbeat",
-      "line": 3332,
+      "line": 3338,
       "method": "POST",
       "path": "/api/repertoire-coverage/maia/heartbeat"
     },
     {
       "file": "backend/app/main.py",
       "function": "coverage_maia_release",
-      "line": 3350,
+      "line": 3356,
       "method": "POST",
       "path": "/api/repertoire-coverage/maia/release"
     },
     {
       "file": "backend/app/main.py",
       "function": "coverage_maia_failure",
-      "line": 3366,
+      "line": 3372,
       "method": "POST",
       "path": "/api/repertoire-coverage/maia/failure"
     },
     {
       "file": "backend/app/main.py",
       "function": "explorer",
-      "line": 3394,
+      "line": 3400,
       "method": "GET",
       "path": "/api/explorer/{database_name}"
     },
     {
       "file": "backend/app/main.py",
       "function": "tactics_catalog",
-      "line": 3443,
+      "line": 3449,
       "method": "GET",
       "path": "/api/tactics/catalog"
     },
     {
       "file": "backend/app/main.py",
       "function": "tactics_activation",
-      "line": 3449,
+      "line": 3455,
       "method": "PUT",
       "path": "/api/tactics/activation"
     },
     {
       "file": "backend/app/main.py",
       "function": "tactic_attempt",
-      "line": 3463,
+      "line": 3469,
       "method": "POST",
       "path": "/api/tactics/attempt"
     },
     {
       "file": "backend/app/main.py",
       "function": "tactic_progress",
-      "line": 3558,
+      "line": 3564,
       "method": "GET",
       "path": "/api/tactics/progress"
     },
     {
       "file": "backend/app/main.py",
       "function": "probe_endgame",
-      "line": 3623,
+      "line": 3629,
       "method": "POST",
       "path": "/api/endgames/probe"
     },
     {
       "file": "backend/app/main.py",
       "function": "list_endgames",
-      "line": 3628,
+      "line": 3634,
       "method": "GET",
       "path": "/api/endgames/templates"
     },
     {
       "file": "backend/app/main.py",
       "function": "create_endgame",
-      "line": 3637,
+      "line": 3643,
       "method": "POST",
       "path": "/api/endgames/templates"
     },
     {
       "file": "backend/app/main.py",
       "function": "create_endgame_attempt",
-      "line": 3698,
+      "line": 3704,
       "method": "POST",
       "path": "/api/endgames/templates/{identifier}/attempt"
     },
     {
       "file": "backend/app/main.py",
       "function": "accounts",
-      "line": 3730,
+      "line": 3736,
       "method": "PUT",
       "path": "/api/games/accounts"
     },
     {
       "file": "backend/app/main.py",
       "function": "sync",
-      "line": 3737,
+      "line": 3743,
       "method": "POST",
       "path": "/api/games/sync"
     },
     {
       "file": "backend/app/main.py",
       "function": "sync_status",
-      "line": 3766,
+      "line": 3772,
       "method": "GET",
       "path": "/api/games/sync/status"
     },
     {
       "file": "backend/app/main.py",
       "function": "claim_game_analysis",
-      "line": 3792,
+      "line": 3798,
       "method": "POST",
       "path": "/api/games/analysis/claim"
     },
     {
       "file": "backend/app/main.py",
       "function": "claim_game_analysis_position",
-      "line": 3853,
+      "line": 3859,
       "method": "POST",
       "path": "/api/games/analysis/position/claim"
     },
     {
       "file": "backend/app/main.py",
       "function": "submit_game_analysis_position",
-      "line": 3862,
+      "line": 3868,
       "method": "POST",
       "path": "/api/games/analysis/position/{report_id}/report"
     },
     {
       "file": "backend/app/main.py",
       "function": "release_game_analysis_position",
-      "line": 3874,
+      "line": 3880,
       "method": "POST",
       "path": "/api/games/analysis/position/{report_id}/release"
     },
     {
       "file": "backend/app/main.py",
       "function": "fail_game_analysis_position",
-      "line": 3883,
+      "line": 3889,
       "method": "POST",
       "path": "/api/games/analysis/position/{report_id}/failure"
     },
     {
       "file": "backend/app/main.py",
       "function": "finalize_game_analysis_position",
-      "line": 3892,
+      "line": 3898,
       "method": "POST",
       "path": "/api/games/analysis/position/finalize"
     },
     {
       "file": "backend/app/main.py",
       "function": "repair_one_stockfish_timeout",
-      "line": 3923,
+      "line": 3929,
       "method": "POST",
       "path": "/api/games/analysis/repair-timeout"
     },
     {
       "file": "backend/app/main.py",
       "function": "repair_one_legacy_network_identity",
-      "line": 3951,
+      "line": 3957,
       "method": "POST",
       "path": "/api/games/analysis/repair-provenance"
     },
     {
       "file": "backend/app/main.py",
       "function": "fail_game_analysis",
-      "line": 3986,
+      "line": 3992,
       "method": "POST",
       "path": "/api/games/analysis/{game_id:path}/failure"
     },
     {
       "file": "backend/app/main.py",
       "function": "heartbeat_game_analysis",
-      "line": 4006,
+      "line": 4012,
       "method": "POST",
       "path": "/api/games/analysis/{game_id:path}/heartbeat"
     },
     {
       "file": "backend/app/main.py",
       "function": "release_game_analysis",
-      "line": 4025,
+      "line": 4031,
       "method": "POST",
       "path": "/api/games/analysis/{game_id:path}/release"
     },
     {
       "file": "backend/app/main.py",
       "function": "retry_game_analysis",
-      "line": 4046,
+      "line": 4052,
       "method": "POST",
       "path": "/api/games/analysis/{game_id:path}/retry"
     },
     {
       "file": "backend/app/main.py",
       "function": "save_game_analysis",
-      "line": 4068,
+      "line": 4074,
       "method": "POST",
       "path": "/api/games/{game_id:path}/analysis"
     },
     {
       "file": "backend/app/main.py",
       "function": "claim_defensive_threat_analysis",
-      "line": 4239,
+      "line": 4245,
       "method": "POST",
       "path": "/api/defensive-threats/analysis/claim"
     },
     {
       "file": "backend/app/main.py",
       "function": "audit_defensive_threat_reports",
-      "line": 4248,
+      "line": 4254,
       "method": "POST",
       "path": "/api/defensive-threats/analysis/audit"
     },
     {
       "file": "backend/app/main.py",
       "function": "backfill_defensive_threats",
-      "line": 4257,
+      "line": 4263,
       "method": "POST",
       "path": "/api/defensive-threats/backfill"
     },
     {
       "file": "backend/app/main.py",
       "function": "submit_defensive_threat_analysis",
-      "line": 4264,
+      "line": 4270,
       "method": "POST",
       "path": "/api/defensive-threats/analysis/{request_id}/report"
     },
     {
       "file": "backend/app/main.py",
       "function": "fail_defensive_threat_analysis",
-      "line": 4279,
+      "line": 4285,
       "method": "POST",
       "path": "/api/defensive-threats/analysis/{request_id}/failure"
     },
     {
       "file": "backend/app/main.py",
       "function": "release_defensive_threat_analysis",
-      "line": 4299,
+      "line": 4305,
       "method": "POST",
       "path": "/api/defensive-threats/analysis/{request_id}/release"
     },
     {
       "file": "backend/app/main.py",
       "function": "retry_defensive_threat_analysis",
-      "line": 4311,
+      "line": 4317,
       "method": "POST",
       "path": "/api/defensive-threats/analysis/{request_id}/retry"
     },
     {
       "file": "backend/app/main.py",
       "function": "refresh_game_defensive_threats",
-      "line": 4324,
+      "line": 4330,
       "method": "POST",
       "path": "/api/games/{game_id:path}/defensive-threats/refresh"
     },
     {
       "file": "backend/app/main.py",
       "function": "list_defensive_threat_candidates",
-      "line": 4338,
+      "line": 4344,
       "method": "GET",
       "path": "/api/defensive-threats/candidates"
     },
     {
       "file": "backend/app/main.py",
       "function": "dismiss_defensive_threat_candidate",
-      "line": 4369,
+      "line": 4375,
       "method": "POST",
       "path": "/api/defensive-threats/candidates/{candidate_id}/dismiss"
     },
     {
       "file": "backend/app/main.py",
       "function": "approve_defensive_threat_candidate",
-      "line": 4380,
+      "line": 4386,
       "method": "POST",
       "path": "/api/defensive-threats/candidates/{candidate_id}/approve"
     },
     {
       "file": "backend/app/main.py",
       "function": "train_defensive_threat_candidate_now",
-      "line": 4392,
+      "line": 4398,
       "method": "POST",
       "path": "/api/defensive-threats/candidates/{candidate_id}/train-now"
     },
     {
       "file": "backend/app/main.py",
       "function": "pause_defensive_threat_candidate",
-      "line": 4403,
+      "line": 4409,
       "method": "POST",
       "path": "/api/defensive-threats/candidates/{candidate_id}/pause"
     },
     {
       "file": "backend/app/main.py",
       "function": "resume_defensive_threat_candidate",
-      "line": 4414,
+      "line": 4420,
       "method": "POST",
       "path": "/api/defensive-threats/candidates/{candidate_id}/resume"
     },
     {
       "file": "backend/app/main.py",
       "function": "get_defense_exercise",
-      "line": 4427,
+      "line": 4433,
       "method": "GET",
       "path": "/api/defense-exercises/{candidate_id}"
     },
     {
       "file": "backend/app/main.py",
       "function": "attempt_defense_exercise",
-      "line": 4437,
+      "line": 4443,
       "method": "POST",
       "path": "/api/defense-exercises/{candidate_id}/attempt"
     },
     {
       "file": "backend/app/main.py",
       "function": "recognize_defense_exercise",
-      "line": 4457,
+      "line": 4463,
       "method": "POST",
       "path": "/api/defense-exercises/{candidate_id}/recognition"
     },
     {
       "file": "backend/app/main.py",
       "function": "list_game_findings",
-      "line": 4467,
+      "line": 4473,
       "method": "GET",
       "path": "/api/game-findings"
     },
     {
       "file": "backend/app/main.py",
       "function": "next_tactical_finding",
-      "line": 4494,
+      "line": 4500,
       "method": "GET",
       "path": "/api/game-findings/tactical-queue"
     },
     {
       "file": "backend/app/main.py",
       "function": "curate_tactical_finding",
-      "line": 4533,
+      "line": 4539,
       "method": "POST",
       "path": "/api/game-findings/{finding_id}/curation"
     },
     {
       "file": "backend/app/main.py",
       "function": "game_tactical_statistics",
-      "line": 4553,
+      "line": 4559,
       "method": "GET",
       "path": "/api/game-insights/tactical"
     },
     {
       "file": "backend/app/main.py",
       "function": "decide_game_finding",
-      "line": 4574,
+      "line": 4580,
       "method": "POST",
       "path": "/api/game-findings/{finding_id}/decision"
     },
     {
       "file": "backend/app/main.py",
       "function": "create_card_from_game_finding",
-      "line": 4612,
+      "line": 4618,
       "method": "POST",
       "path": "/api/game-findings/{finding_id}/card"
     },
     {
       "file": "backend/app/main.py",
       "function": "exclude_game_from_adaptation",
-      "line": 4730,
+      "line": 4736,
       "method": "POST",
       "path": "/api/games/{game_id:path}/exclusion"
     },
     {
       "file": "backend/app/main.py",
       "function": "game_motif_insights",
-      "line": 4762,
+      "line": 4768,
       "method": "GET",
       "path": "/api/game-insights/motifs"
     },
     {
       "file": "backend/app/main.py",
       "function": "summary",
-      "line": 4821,
+      "line": 4827,
       "method": "GET",
       "path": "/api/games/summary"
     },
     {
       "file": "backend/app/main.py",
       "function": "game_position_summary",
-      "line": 4937,
+      "line": 4943,
       "method": "GET",
       "path": "/api/games/position-summary"
     },
     {
       "file": "backend/app/main.py",
       "function": "game_detail",
-      "line": 5009,
+      "line": 5015,
       "method": "GET",
       "path": "/api/games/{game_id:path}"
     },
     {
       "file": "backend/app/main.py",
       "function": "chess_statistics_overview",
-      "line": 5023,
+      "line": 5029,
       "method": "GET",
       "path": "/api/statistics/overview"
     },
     {
       "file": "backend/app/main.py",
       "function": "chess_statistics_breakdown",
-      "line": 5030,
+      "line": 5036,
       "method": "GET",
       "path": "/api/statistics/breakdown"
     },
     {
       "file": "backend/app/main.py",
       "function": "refresh_chess_statistics_day",
-      "line": 5040,
+      "line": 5046,
       "method": "POST",
       "path": "/api/statistics/daily/{local_day}/refresh"
     },
     {
       "file": "backend/app/main.py",
       "function": "chess_statistics_insights",
-      "line": 5051,
+      "line": 5057,
       "method": "GET",
       "path": "/api/statistics/insights"
     },
     {
       "file": "backend/app/main.py",
       "function": "start_guided_game_review",
-      "line": 5063,
+      "line": 5069,
       "method": "POST",
       "path": "/api/games/{game_id:path}/guided-review"
     },
     {
       "file": "backend/app/main.py",
       "function": "guided_game_review",
-      "line": 5071,
+      "line": 5077,
       "method": "GET",
       "path": "/api/guided-reviews/{session_id}"
     },
     {
       "file": "backend/app/main.py",
       "function": "attempt_guided_game_review",
-      "line": 5079,
+      "line": 5085,
       "method": "POST",
       "path": "/api/guided-reviews/{session_id}/attempt"
     },
@@ -9750,105 +9804,105 @@
     {
       "file": "backend/app/study_routes.py",
       "function": "get_exercise",
-      "line": 403,
+      "line": 408,
       "method": "GET",
       "path": "/{study_id}/exercises/{exercise_id}"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "present_exercise",
-      "line": 412,
+      "line": 417,
       "method": "GET",
       "path": "/{study_id}/exercises/{exercise_id}/present"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "revise_exercise",
-      "line": 421,
+      "line": 426,
       "method": "PUT",
       "path": "/{study_id}/exercises/{exercise_id}"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "enroll_exercise",
-      "line": 473,
+      "line": 478,
       "method": "POST",
       "path": "/{study_id}/exercises/{exercise_id}/enroll"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "suspend_exercise",
-      "line": 502,
+      "line": 512,
       "method": "POST",
       "path": "/{study_id}/exercises/{exercise_id}/suspend"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "train_exercise_now",
-      "line": 519,
+      "line": 529,
       "method": "POST",
       "path": "/{study_id}/exercises/{exercise_id}/train-now"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "resume_exercise",
-      "line": 542,
+      "line": 552,
       "method": "POST",
       "path": "/{study_id}/exercises/{exercise_id}/resume"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "archive_exercise",
-      "line": 558,
+      "line": 568,
       "method": "POST",
       "path": "/{study_id}/exercises/{exercise_id}/archive"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "submit_attempt",
-      "line": 625,
+      "line": 635,
       "method": "POST",
       "path": "/{study_id}/exercises/{exercise_id}/attempts"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "self_assess",
-      "line": 680,
+      "line": 690,
       "method": "POST",
       "path": "/{study_id}/exercises/{exercise_id}/attempts/{attempt_id}/self-assess"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "attempt_feedback",
-      "line": 702,
+      "line": 712,
       "method": "GET",
       "path": "/{study_id}/exercises/{exercise_id}/attempts/{attempt_id}/feedback"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "study_summary",
-      "line": 714,
+      "line": 724,
       "method": "GET",
       "path": "/{study_id}/summary"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "export_study_content",
-      "line": 732,
+      "line": 742,
       "method": "GET",
       "path": "/{study_id}/export"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "export_study_pgn",
-      "line": 741,
+      "line": 751,
       "method": "GET",
       "path": "/{study_id}/export.pgn"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "import_study_content",
-      "line": 758,
+      "line": 768,
       "method": "POST",
       "path": "/import-bundle"
     }
@@ -10143,182 +10197,182 @@
     },
     {
       "file": "backend/app/main.py",
-      "line": 429,
+      "line": 435,
       "tokens": [
         "sqlite3"
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 430,
+      "line": 436,
       "tokens": [
         "sqlite3"
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 666,
+      "line": 672,
       "tokens": [
         "sqlite3"
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 738,
+      "line": 744,
       "tokens": [
         "json_extract("
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 739,
+      "line": 745,
       "tokens": [
         "json_extract("
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 758,
+      "line": 764,
       "tokens": [
         "json_extract("
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 874,
+      "line": 880,
       "tokens": [
         "json_extract("
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 1678,
+      "line": 1684,
       "tokens": [
         "INSERT OR IGNORE"
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 1736,
+      "line": 1742,
       "tokens": [
         "sqlite3"
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 2067,
+      "line": 2073,
       "tokens": [
         "INSERT OR IGNORE"
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 2585,
+      "line": 2591,
       "tokens": [
         "INSERT OR IGNORE"
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 2637,
+      "line": 2643,
       "tokens": [
         "sqlite3"
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 2696,
+      "line": 2702,
       "tokens": [
         "sqlite3"
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 2855,
+      "line": 2861,
       "tokens": [
         "sqlite3"
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 2899,
+      "line": 2905,
       "tokens": [
         "INSERT OR IGNORE"
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 2985,
+      "line": 2991,
       "tokens": [
         "INSERT OR IGNORE"
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 3003,
+      "line": 3009,
       "tokens": [
         "sqlite3"
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 3037,
+      "line": 3043,
       "tokens": [
         "sqlite3"
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 3491,
+      "line": 3497,
       "tokens": [
         "INSERT OR IGNORE"
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 3507,
+      "line": 3513,
       "tokens": [
         "INSERT OR IGNORE"
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 3616,
+      "line": 3622,
       "tokens": [
         "INSERT OR REPLACE"
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 3651,
+      "line": 3657,
       "tokens": [
         "INSERT OR IGNORE"
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 3807,
+      "line": 3813,
       "tokens": [
         "BEGIN IMMEDIATE"
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 4157,
+      "line": 4163,
       "tokens": [
         "BEGIN IMMEDIATE"
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 4686,
+      "line": 4692,
       "tokens": [
         "INSERT OR IGNORE"
       ]
     },
     {
       "file": "backend/app/main.py",
-      "line": 4766,
+      "line": 4772,
       "tokens": [
         "sqlite3"
       ]
@@ -11585,21 +11639,21 @@
     },
     {
       "file": "backend/app/study_routes.py",
-      "line": 617,
+      "line": 627,
       "tokens": [
         "INSERT OR IGNORE"
       ]
     },
     {
       "file": "backend/app/study_routes.py",
-      "line": 720,
+      "line": 730,
       "tokens": [
         "json_extract("
       ]
     },
     {
       "file": "backend/app/study_routes.py",
-      "line": 762,
+      "line": 772,
       "tokens": [
         "sqlite3"
       ]

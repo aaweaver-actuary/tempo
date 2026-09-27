@@ -291,7 +291,15 @@ microbenchmark, not the final container/backlog gate.
 Study exercise suspend, resume, and archive now have named foreground commands.
 Each updates card and queued-entry state and requests a durable queue refresh in
 one worker transaction. Focused route and state regressions passed; these
-commands have not yet been exercised against the imported PostgreSQL rehearsal.
+commands were exercised with create and enroll against the imported PostgreSQL
+rehearsal in one rolled-back transaction. The exercise was created from an
+existing study position after temporarily replacing its `startpos` FEN with a
+valid starting FEN inside that transaction. Enrollment replay returned the
+original card; there was exactly one card after replay, then suspend, resume,
+and archive completed. The imported source has two positions flagged valid
+with the `startpos` sentinel, which `python-chess` rejects for authored
+exercises. This pre-existing data-quality issue needs an explicit compatibility
+decision before live cutover.
 
 An opt-in `docker-compose.postgres.yml` now defines the intended product
 topology: PostgreSQL 18 and Redis on external volumes, a read-only API role,
