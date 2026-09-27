@@ -1,5 +1,6 @@
 // @vitest-environment node
 import { Chess } from "chess.js";
+import { readFileSync } from "node:fs";
 import { expect, it } from "vitest";
 import { createStudyPositionStore } from "../../app/lib/study-position-store";
 import { computeStudyTask } from "../../app/lib/study-computation";
@@ -42,4 +43,24 @@ it("worker index protocol accepts canonical lines and rejects raw lines", () => 
   });
   expect(studyRequestSchema.safeParse(request([rawLine])).success).toBe(false);
   expect(studyRequestSchema.safeParse(request([canonicalizeLine(rawLine)])).success).toBe(true);
+});
+
+it("worker compatibility buckets preserve matching across canonical FEN state", () => {
+  const fixturePath = new URL("../fixtures/position-distance-parity.json", import.meta.url);
+  const distanceCases = JSON.parse(readFileSync(fixturePath, "utf8")) as Array<{
+    left: string; right: string;
+  }>;
+  const validFens = [...new Set(distanceCases.flatMap(({ left, right }) => [left, right]))]
+    .filter((fen) => fen !== "invalid");
+  const lines = validFens.map((startingFen, index) => ({
+    id: `state-${index}`, repertoireId: "state-parity", repertoireName: "State parity",
+    title: `State ${index}`, side: "white", startingFen, moves: [] as string[],
+  }) as AnalysisLine);
+  const positions = computeStudyTask({ kind: "index", lines }) as IndexedPosition[];
+  const run = createStudyPositionStore();
+  run({ kind: "initializePositionIndex", repertoireId: "state-parity", revision: 1,
+    lines: lines.map(canonicalizeLine) });
+  for (const fen of [...validFens, "invalid"])
+    expect(run({ kind: "findPositionMatches", repertoireId: "state-parity", revision: 1, fen }))
+      .toEqual(computeStudyTask({ kind: "matches", fen, positions }));
 });

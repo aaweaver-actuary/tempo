@@ -29,6 +29,7 @@
 | Browser responsiveness reports visible paint but lacks input-delay and handler-duration samples where Event Timing is supported | `warm workspace and Builder move responsiveness` |
 | Repeated repertoire FENs waste distance calculations during one query while distinct moves still need stable results | `repeated repertoire FENs retain match ordering and distinct next moves` |
 | Shared opening prefixes replay identical chess moves during every worker index build | `shared repertoire prefixes are traversed once without changing indexed line identity` |
+| Worker position queries compare candidates with incompatible side, castling, en passant, or material state | `worker compatibility buckets preserve matching across canonical FEN state` |
 | Workspace fetch latency is opaque and cached reads could be mistaken for network requests | `workspace fetch records API response and ready latency once per network request` |
 | An HTTP workspace failure can lose its status while formatting the endpoint outside a browser | `failed workspace fetch preserves HTTP status and records response without false ready timing` |
 | Completed-tactic tests waste real time on deterministic move and feedback timers | `completed tactic advances while the previous review save is still pending`; `failed earlier save blocks grading after a completed tactic until ordered retry succeeds`; `failed tactic review save keeps the next card visible but blocks grading until retry`; `failed next-card read leaves a completed tactic on its final board for retry` |
