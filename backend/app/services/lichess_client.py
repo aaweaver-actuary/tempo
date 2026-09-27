@@ -25,16 +25,42 @@ async def fetch_lichess_games(
     rated_only: bool,
     client: httpx.AsyncClient,
 ) -> tuple[list[GameRecord], dict[str, int]]:
+    return await fetch_lichess_games_window(
+        username, since_ms, None, speeds, rated_only, client, max_games=None,
+    )
+
+
+async def fetch_lichess_games_window(
+    username: str,
+    since_ms: int,
+    until_ms: int | None,
+    speeds: list[str],
+    rated_only: bool,
+    client: httpx.AsyncClient,
+    *,
+    max_games: int | None,
+) -> tuple[list[GameRecord], dict[str, int]]:
+    """Fetch one bounded time window for a restartable sync slice."""
+
+    if until_ms is not None and until_ms <= since_ms:
+        raise ValueError("Lichess sync window must end after it starts")
+    if max_games is not None and not 1 <= max_games <= 1000:
+        raise ValueError("Lichess sync page size must be between 1 and 1000")
+    parameters = {
+        "since": since_ms,
+        "moves": "true",
+        "opening": "true",
+        "perfType": ",".join(speeds),
+        "rated": str(rated_only).lower(),
+        "sort": "dateAsc",
+    }
+    if until_ms is not None:
+        parameters["until"] = until_ms
+    if max_games is not None:
+        parameters["max"] = max_games
     response = await client.get(
         f"https://lichess.org/api/games/user/{username}",
-        params={
-            "since": since_ms,
-            "moves": "true",
-            "opening": "true",
-            "perfType": ",".join(speeds),
-            "rated": str(rated_only).lower(),
-            "sort": "dateAsc",
-        },
+        params=parameters,
         headers={"Accept": "application/x-chess-pgn"},
     )
     if response.status_code == 404:

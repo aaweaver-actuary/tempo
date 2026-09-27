@@ -1,6 +1,7 @@
 from datetime import datetime, timezone
 import time
 from datetime import date
+import asyncio
 import json
 import sqlite3
 
@@ -13,6 +14,78 @@ from app.models import GameSyncRequest
 from app.main import app
 import app.main as main_module
 import app.services.game_sync_coordinator as game_sync_coordinator
+from app.services.lichess_client import fetch_lichess_games_window
+from app.services.chesscom_client import (
+    fetch_chesscom_archive_urls, fetch_chesscom_archive_month,
+)
+
+
+def test_lichess_sync_window_bounds_provider_request_before_persistence():
+    requested_urls = []
+
+    def handler(request: httpx.Request):
+        requested_urls.append(request.url)
+        return httpx.Response(200, text="", headers={"content-type": "application/x-chess-pgn"})
+
+    async def fetch_window():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as provider:
+            return await fetch_lichess_games_window(
+                "TempoPlayer", 1000, 2000, ["rapid"], True, provider, max_games=100,
+            )
+
+    records, counts = asyncio.run(fetch_window())
+    assert records == []
+    assert counts == {"fetched": 0, "filtered": 0, "rejected": 0}
+    assert len(requested_urls) == 1
+    assert requested_urls[0].params["since"] == "1000"
+    assert requested_urls[0].params["until"] == "2000"
+    assert requested_urls[0].params["max"] == "100"
+
+
+def test_lichess_sync_window_rejects_unbounded_page_size():
+    async def fetch_window():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+            lambda request: pytest.fail("Invalid window reached the provider")
+        )) as provider:
+            await fetch_lichess_games_window(
+                "TempoPlayer", 1000, 2000, ["rapid"], True, provider, max_games=1001,
+            )
+
+    with pytest.raises(ValueError, match="page size"):
+        asyncio.run(fetch_window())
+
+
+def test_chesscom_sync_fetches_one_archive_per_restartable_window():
+    requested_paths = []
+
+    def handler(request: httpx.Request):
+        requested_paths.append(request.url.path)
+        if request.url.path.endswith("/archives"):
+            return httpx.Response(200, json={"archives": [
+                "https://api.chess.com/pub/player/tempoplayer/games/2026/08",
+                "https://api.chess.com/pub/player/tempoplayer/games/2026/09",
+            ]})
+        return httpx.Response(200, json={"games": [chesscom_game("one-month")]})
+
+    async def fetch_month():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as provider:
+            archive_urls, invalid_urls = await fetch_chesscom_archive_urls(
+                "TempoPlayer", datetime(2026, 9, 1, tzinfo=timezone.utc), provider,
+            )
+            assert invalid_urls == 0
+            assert len(archive_urls) == 1
+            return await fetch_chesscom_archive_month(
+                "TempoPlayer", archive_urls[0],
+                datetime(2026, 9, 1, tzinfo=timezone.utc), ["rapid"], True, provider,
+            )
+
+    records, counts = asyncio.run(fetch_month())
+    assert len(records) == 1
+    assert counts["fetched"] == 1
+    assert requested_paths == [
+        "/pub/player/tempoplayer/games/archives",
+        "/pub/player/tempoplayer/games/2026/09",
+    ]
 
 
 def pgn(game_url: str, white: str = "TempoPlayer", result: str = "1-0") -> str:
