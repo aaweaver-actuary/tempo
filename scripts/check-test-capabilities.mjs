@@ -34,5 +34,9 @@ if (failures.length > 0) {
   console.error("In Codex, launch the entire requested Make target with sandbox_permissions: require_escalated from the start.");
   process.exitCode = 1;
 } else {
-  console.log("Test capability preflight passed: required Docker and loopback access is available.");
+  const availableCapabilities = [
+    checkDocker ? "Docker daemon" : null,
+    checkLoopback ? "127.0.0.1 loopback bind" : null,
+  ].filter(Boolean);
+  console.log(`Test capability preflight passed: ${availableCapabilities.join(" and ")} available.`);
 }
