@@ -7,6 +7,8 @@ import io
 import json
 import re
 import sqlite3
+import threading
+from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
@@ -22,6 +24,8 @@ MAX_PASTE_BYTES = 65_536
 MAX_PASTE_LINES = 50
 MAX_LINE_PLIES = 256
 STANDARD_FEN_KEY = canonical_fen(chess.STARTING_FEN)
+_PARSED_EXISTING_CACHE: OrderedDict[str, dict[str, list[tuple[str, list[tuple[str, str]], str]]]] = OrderedDict()
+_PARSED_EXISTING_CACHE_LOCK = threading.Lock()
 
 
 class PasteInputError(ValueError):
@@ -135,6 +139,36 @@ def _snapshot(database: sqlite3.Connection) -> tuple[list[dict], list[dict], str
     return repertoires, lines, signature
 
 
+def _parsed_existing_lines(
+    stored_lines: list[dict], signature: str,
+) -> dict[str, list[tuple[str, list[tuple[str, str]], str]]]:
+    with _PARSED_EXISTING_CACHE_LOCK:
+        cached = _PARSED_EXISTING_CACHE.get(signature)
+        if cached is not None:
+            _PARSED_EXISTING_CACHE.move_to_end(signature)
+            return cached
+    parsed_existing: dict[str, list[tuple[str, list[tuple[str, str]], str]]] = {}
+    for stored in stored_lines:
+        try:
+            moves = tuple(json.loads(stored["moves_json"]))
+            board = chess.Board(stored["start_fen"])
+            edges = []
+            for move_uci in moves:
+                edges.append((canonical_fen(board.fen()), move_uci))
+                board.push_uci(move_uci)
+            parsed_existing.setdefault(stored["repertoire_id"], []).append(
+                (stored["trained_color"], edges, canonical_fen(board.fen()))
+            )
+        except (ValueError, TypeError, json.JSONDecodeError):
+            continue
+    with _PARSED_EXISTING_CACHE_LOCK:
+        _PARSED_EXISTING_CACHE[signature] = parsed_existing
+        _PARSED_EXISTING_CACHE.move_to_end(signature)
+        while len(_PARSED_EXISTING_CACHE) > 2:
+            _PARSED_EXISTING_CACHE.popitem(last=False)
+    return parsed_existing
+
+
 def _destination_options(pasted: PastedLine, repertoires: list[dict], stored_lines: list[dict], parsed_existing: dict[str, list[tuple[str, list[tuple[str, str]], str]]]) -> list[dict]:
     pasted_edges = _position_moves(pasted)
     options: list[dict] = []
@@ -191,18 +225,7 @@ def build_paste_preview(
     token = hashlib.sha256(json.dumps(
         [raw_text, starting_fen, source_gap_id, signature], sort_keys=True
     ).encode()).hexdigest()
-    parsed_existing: dict[str, list[tuple[str, list[tuple[str, str]], str]]] = {}
-    for stored in stored_lines:
-        try:
-            existing = PastedLine(stored["start_fen"], tuple(json.loads(stored["moves_json"])), "")
-            terminal_board = chess.Board(existing.starting_fen)
-            for move_uci in existing.moves:
-                terminal_board.push_uci(move_uci)
-            parsed_existing.setdefault(stored["repertoire_id"], []).append(
-                (stored["trained_color"], _position_moves(existing), canonical_fen(terminal_board.fen()))
-            )
-        except (ValueError, TypeError, json.JSONDecodeError):
-            continue
+    parsed_existing = _parsed_existing_lines(stored_lines, signature)
     lines = []
     for index, pasted in enumerate(parsed):
         options = _destination_options(pasted, repertoires, stored_lines, parsed_existing)

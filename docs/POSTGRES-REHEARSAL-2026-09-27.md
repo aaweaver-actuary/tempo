@@ -513,3 +513,10 @@ stored repertoire line. The save endpoint is still unported; optimize the
 preview traversal and migrate its commit before treating builder paste as
 ready for cutover. The named route regression and the 527-test backend suite
 passed after this change.
+
+Profiling attributed about 6.4 seconds of that cold request to rebuilding the
+position map, compared with 37 ms to read the 2,023 lines. A two-snapshot
+process cache keyed by the full snapshot signature now reuses the deterministic
+map and invalidates it after line changes. On the restored data, the cold
+request remained 6.3 seconds; the next two requests were 194 and 190 ms.
+The cold path still needs optimization or startup warming before full cutover.
