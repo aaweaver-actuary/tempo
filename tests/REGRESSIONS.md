@@ -4,6 +4,7 @@
 
 | Issue | Required regression |
 | --- | --- |
+| The full unit stage reports only suite wall time, leaving slow files unidentifiable without repeating the tests | `test plan records per-file Vitest timings without a second unit run` |
 | Rust returns a partial card prefix ending before the trained side can play, while Python rejects it | `prefixes_match_python_including_incomplete_trained_turns`; `test_prefixes_match_rust_including_incomplete_trained_turns` |
 | A failed Docker browser case prevents later durability checks and recovery reruns the entire browser matrix | `Docker durability recovery excludes only the already-run browser matrix` |
 | The full validation path repeats regular Playwright tests locally and through Docker, and combined scopes can repeat suites | `full verification owns every test family once without repeating regular browser specs`; `Makefile runs one full plan and rejects combined verification scopes`; `regular and pinned Playwright plans partition every browser spec without overlap` |

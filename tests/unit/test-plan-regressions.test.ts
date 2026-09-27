@@ -1,6 +1,8 @@
 // @vitest-environment node
 import { spawnSync } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { expect, it } from "vitest";
 
 type PlannedStage = { name: string; command: string; args: string[] };
@@ -81,4 +83,32 @@ it("Docker durability recovery excludes only the already-run browser matrix", ()
   expect(listedStages(["--skip-browser"])).toEqual([
     "compose_config", "container_start", "durability", "container_stop",
   ]);
+});
+
+it("test plan records per-file Vitest timings without a second unit run", () => {
+  const full = plannedStages("full");
+  expect(full.filter((stage) => stage.name === "unit")).toHaveLength(1);
+  expect(full.find((stage) => stage.name === "unit")?.args).toEqual([
+    "run", "test:unit", "--", "--reporter=default", "--reporter=json",
+    "--outputFile.json=test-results/performance/unit-files-full.json",
+  ]);
+  const temporaryDirectory = mkdtempSync(join(tmpdir(), "tempo-unit-profile-"));
+  try {
+    writeFileSync(join(temporaryDirectory, "unit-files-probe.json"), JSON.stringify({
+      testResults: [
+        { name: join(process.cwd(), "tests/unit/fast.test.ts"), startTime: 10, endTime: 20, status: "passed" },
+        { name: join(process.cwd(), "tests/unit/slow.test.ts"), startTime: 30, endTime: 140, status: "failed" },
+      ],
+    }));
+    const report = spawnSync(process.execPath, ["scripts/report-slow-unit-files.mjs", "probe", "1"], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      env: { ...process.env, TEMPO_TEST_TIMING_DIR: temporaryDirectory },
+    });
+    expect(report.status, report.stderr).toBe(0);
+    expect(report.stdout).toContain("0.11s  failed  tests/unit/slow.test.ts");
+    expect(report.stdout).not.toContain("fast.test.ts");
+  } finally {
+    rmSync(temporaryDirectory, { recursive: true, force: true });
+  }
 });

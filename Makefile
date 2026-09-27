@@ -14,7 +14,7 @@
 
 .DEFAULT_GOAL := help
 .NOTPARALLEL:
-.PHONY: help plan fast python backend rust integration ui browser visual perf full docker-durability unit-file python-file ui-file view rust-case
+.PHONY: help plan slow-tests fast python backend rust integration ui browser visual perf full docker-durability unit-file python-file ui-file view rust-case
 
 VERIFY_TARGETS := fast python backend rust integration ui browser visual perf full docker-durability unit-file python-file ui-file view rust-case
 SELECTED_VERIFY_TARGETS := $(filter $(VERIFY_TARGETS),$(MAKECMDGOALS))
@@ -25,10 +25,12 @@ endif
 endif
 
 TIER ?= full
+COUNT ?= 10
 PYTHON ?= $(shell node --input-type=module -e 'import { resolvePython } from "./scripts/resolve-python.mjs"; console.log(resolvePython())')
 
 help:
 	@printf '%s\n' 'Inspect: make plan [TIER=full|fast|python|backend|rust|integration|ui]'
+	@printf '%s\n' '         make slow-tests [TIER=full|fast] [COUNT=10] (reads last unit profile)'
 	@printf '%s\n' 'Release/CI-equivalent: make full (run this one target, not fast + integration + full)'
 	@printf '%s\n' 'Focused scopes: make fast | python | backend | rust | integration | ui | browser | visual | perf'
 	@printf '%s\n' 'Docker recovery: make docker-durability (after the browser matrix already ran)'
@@ -40,6 +42,9 @@ help:
 
 plan:
 	node scripts/test-all.mjs --list "$(TIER)"
+
+slow-tests:
+	node scripts/report-slow-unit-files.mjs "$(TIER)" "$(COUNT)"
 
 fast:
 	node scripts/test-all.mjs fast

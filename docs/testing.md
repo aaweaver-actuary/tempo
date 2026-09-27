@@ -26,6 +26,8 @@ The full runner stops at the first failure and writes per-stage timing and exit 
 11. Docker integration, including the regular Playwright browser matrix against the full proxy and the container durability checks.
 12. Pinned Linux visual and performance Playwright specs.
 
+The unit stage also writes one Vitest JSON report to `test-results/performance/unit-files-full.json` during that same test run. `make slow-tests` lists the slowest unit files from it. Use `make slow-tests TIER=fast` after `make fast`; `COUNT=20` shows more files. File wall times include setup and may overlap across workers, so their sum is not the suite wall time.
+
 The regular Playwright specs run **once** in stage 11. The standalone local `browser` stage is excluded from full because it selects the same specs. The visual config selects `visual.spec.ts` and `performance.spec.ts`; the regular browser config excludes those files. `make perf` runs only the performance subset of `make visual`, so it is a focused diagnostic command, not an extra full-gate stage.
 
 ## Focused work

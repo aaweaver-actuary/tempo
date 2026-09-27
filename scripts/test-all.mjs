@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { platform, release, arch } from "node:os";
 import { performance } from "node:perf_hooks";
@@ -22,9 +22,13 @@ function version(command, args) {
 
 protectRegressionSuite("tests");
 protectRegressionSuite("backend/tests");
+const listOnly = process.argv[2] === "--list";
+const tier = (listOnly ? process.argv[3] : process.argv[2]) ?? "full";
+const outputDirectory = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";
+const unitProfilePath = join(outputDirectory, `unit-files-${tier}.json`);
 const python = resolvePython();
 const stages = [
-  ["unit", "npm", ["run", "test:unit"]],
+  ["unit", "npm", ["run", "test:unit", "--", "--reporter=default", "--reporter=json", `--outputFile.json=${unitProfilePath}`]],
   ["defense_engine", "node", ["scripts/test-defense-engine.mjs"]],
   ["backend", python, ["-m", "pytest", "backend/tests", "-q", "-o", "cache_dir=.pytest_cache", "--rootdir=."]],
   ["rust_format", "cargo", ["fmt", "--all", "--", "--check"]],
@@ -39,8 +43,6 @@ const stages = [
   ["docker", "npm", ["run", "test:docker"]],
   ["visual", "npm", ["run", "test:visual"]],
 ];
-const listOnly = process.argv[2] === "--list";
-const tier = (listOnly ? process.argv[3] : process.argv[2]) ?? "full";
 const stagesByTier = {
   fast: ["unit"],
   python: ["backend"],
@@ -68,7 +70,6 @@ const report = {
   environment: { platform: platform(), release: release(), architecture: arch(), node: process.version, python: version(python, ["--version"]), rust: version("rustc", ["--version"]) },
   stages: {},
 };
-const outputDirectory = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";
 function saveReport() {
   mkdirSync(outputDirectory, { recursive: true });
   const outputPath = join(outputDirectory, `test-stages-${tier}.json`);
@@ -77,6 +78,10 @@ function saveReport() {
 }
 for (const [name, command, args] of selectedStages) {
   console.log(`\nRunning ${name}: ${command} ${args.join(" ")}`);
+  if (name === "unit") {
+    mkdirSync(outputDirectory, { recursive: true });
+    rmSync(unitProfilePath, { force: true });
+  }
   const start = performance.now();
   const result = spawnSync(command, args, { stdio: "inherit", env: { ...process.env, PYTHONPATH: "backend" } });
   report.stages[name] = { duration_seconds: Math.round((performance.now() - start) / 10) / 100, exit_code: result.status, error: result.error?.message ?? null };
