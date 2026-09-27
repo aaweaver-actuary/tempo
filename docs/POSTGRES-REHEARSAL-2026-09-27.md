@@ -548,3 +548,9 @@ user request, and a completed replay returns its receipt before rebuilding the
 preview. A second real HTTP-to-Celery save returned HTTP 200, produced a
 complete receipt, and replayed with HTTP 200 in 5.4 ms after the line changed
 the snapshot. The temporary worker was stopped after verification.
+
+After the analysis-paste command change, `make full` passed again with the
+shared Python environment: 291 frontend unit tests, 531 backend tests, 124
+regular browser tests, 48 pinned visual/performance tests, and all remaining
+build and Rust stages. Its Docker portion still tests the SQLite production
+stack; the PostgreSQL HTTP-to-Celery rehearsal above covers this new command.
