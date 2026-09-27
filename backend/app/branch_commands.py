@@ -15,6 +15,7 @@ from .models import BranchRequest
 from .postgres_store import PostgresConnection
 from .services.cards import card_id
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
+from .services.postgres_integrity import invalidate_integrity_in_transaction
 from .services.repertoire_integrity import integrity_summary
 
 
@@ -76,6 +77,7 @@ def add_repertoire_branch(database: PostgresConnection, payload: dict[str, Any])
             "WHERE node_id=%s AND move_uci=%s",
             (gap_node_id, gap_move_uci),
         )
+    invalidate_integrity_in_transaction(database, repertoire_id)
     request_graph_rebuild_in_transaction(database, repertoire_id, date.today().isoformat())
     return {"id": line_id, "duplicate": inserted is None, "moves": moves,
             "integrity": integrity_summary(database, repertoire_id)}

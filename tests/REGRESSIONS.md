@@ -35,6 +35,8 @@
 | PGN import reports success when persisted lines cannot be scheduled for their background rebuild | `test_import_scheduler_failure_reports_saved_data_and_retry_action` |
 | PostgreSQL PGN import bypasses the worker or loses its idempotency key | `test_postgres_pgn_import_dispatches_parsed_payload_with_idempotency` |
 | Pending PGN import appears saved or receives a new operation ID on retry | `a pending PGN import reuses its operation ID and does not report a save` |
+| PostgreSQL repertoire edit leaves a previous clean integrity result visible | `test_postgres_repertoire_edit_invalidates_old_clean_integrity_in_same_transaction` |
+| PostgreSQL integrity traversal holds a read transaction during chess computation | `test_postgres_integrity_source_closes_read_transaction_before_chess_scan` |
 | Opening-graph rebuild has only whole-task timing, hiding whether input reads, chess calculation, or publication dominates | `test_opening_graph_rebuild_reports_prepare_compute_publish_phase_timings` |
 | Every motif detector replays and copies the same candidate line before inspecting it | `test_motif_candidates_replay_each_line_once_for_all_detectors`; `test_python_motif_parity_fixture` |
 | Training-card transition latency is not sampled from click through the next visible paint | `warm training cards advance to the next visible paint` |

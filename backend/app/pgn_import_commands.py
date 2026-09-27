@@ -17,6 +17,7 @@ from .services.cards import card_id
 from .services.opening_graph import decision_segments
 from .services.pgn import ParsedLine
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
+from .services.postgres_integrity import invalidate_integrity_in_transaction
 from .services.repertoire_integrity import integrity_summary
 
 
@@ -157,6 +158,7 @@ def admit_pgn_import(database: PostgresConnection, raw_payload: dict[str, Any]) 
     } if segment_ids else set()
     prefix_created = len(prefix_ids - existing_card_ids)
     descendant_created = len((segment_ids - prefix_ids) - existing_card_ids)
+    invalidate_integrity_in_transaction(database, repertoire_id)
     request_graph_rebuild_in_transaction(database, repertoire_id, date.today().isoformat())
     return {
         "repertoire_id": repertoire_id, "source_name": source_name,

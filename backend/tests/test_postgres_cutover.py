@@ -60,6 +60,63 @@ def test_postgres_pgn_import_dispatches_parsed_payload_with_idempotency(monkeypa
     assert observed[0][2] == "import-one"
 
 
+def test_postgres_repertoire_edit_invalidates_old_clean_integrity_in_same_transaction():
+    from app.services.postgres_integrity import invalidate_integrity_in_transaction
+
+    statements = []
+
+    class RecordingDatabase:
+        def execute_native(self, statement, parameters):
+            statements.append((statement, parameters))
+
+    invalidate_integrity_in_transaction(RecordingDatabase(), "opening-1")
+    assert len(statements) == 1
+    assert "status='unchecked'" in statements[0][0]
+    assert "scan_status='idle'" in statements[0][0]
+    assert "checked_at=NULL" in statements[0][0]
+    assert statements[0][1] == ("opening-1",)
+
+
+def test_postgres_integrity_source_closes_read_transaction_before_chess_scan(monkeypatch):
+    from app.services import postgres_integrity
+
+    connection_open = False
+
+    class ReadDatabase:
+        def execute_native(self, statement, _parameters):
+            if "SELECT trained_color FROM repertoire_lines" in statement:
+                return SimpleNamespace(fetchone=lambda: ("white",))
+            return SimpleNamespace(fetchone=lambda: {
+                "id": "line-1", "repertoire_id": "opening-1", "name": "line",
+                "trained_color": "white",
+                "start_fen": chess.STARTING_FEN,
+                "moves_json": '["e2e4","e7e5"]', "created_at": "2026-09-27",
+            })
+
+    @contextmanager
+    def read_source():
+        nonlocal connection_open
+        connection_open = True
+        try:
+            yield ReadDatabase()
+        finally:
+            connection_open = False
+
+    original_scan = postgres_integrity._scan_source
+
+    def scan_after_close(source, color):
+        assert not connection_open
+        return original_scan(source, color)
+
+    monkeypatch.setattr(postgres_integrity, "background_read_connection", read_source)
+    monkeypatch.setattr(postgres_integrity, "_scan_source", scan_after_close)
+    prepared = postgres_integrity.prepare_next_integrity_source("opening-1", "line", "")
+    assert prepared is not None
+    assert prepared.source_id == "line-1"
+    assert prepared.positions
+    assert not prepared.invalid
+
+
 def test_postgres_startup_accepts_latest_checked_in_schema(monkeypatch):
     from app import database
     from app.schema_version import POSTGRES_SCHEMA_VERSION
