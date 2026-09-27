@@ -184,6 +184,14 @@ handler has been ported and the release gates pass.
   in queue insertion paths were replaced with `INSERT ... RETURNING id` after
   the concurrent rehearsal exposed that the compatibility function was absent
   from the already-running database.
+
+- A disposable PostgreSQL/Redis game-sync record task was claimed and published
+  through the real background admission gate. The task completed in 20.5 ms
+  end to end, left one imported game and a running sync-job count, then its
+  rehearsal rows were removed. Its lease, game, analysis intent, derivation
+  intent, count update, and completion were committed as one bounded slice.
+  Provider fetch orchestration and whole-job completion remain unported, so
+  `/api/games/sync` remains gated in PostgreSQL mode.
 - The existing daily-queue materializer completed in 116 ms on a warm
   rolled-back PostgreSQL rehearsal transaction (247 ms on an earlier cold
   probe). Its largest statements took 26 ms to unlock eligible opening cards
