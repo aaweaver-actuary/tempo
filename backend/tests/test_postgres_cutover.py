@@ -1055,6 +1055,70 @@ def test_postgres_queue_reconcile_checkpoint_discards_stale_replay(monkeypatch):
     assert reconciled_ids == [42]
 
 
+def test_postgres_due_queue_slices_admit_only_eligible_cards_in_order(monkeypatch, tmp_path):
+    from app.services import postgres_queue_refresh
+
+    database_path = tmp_path / "due-slices.db"
+    with sqlite3.connect(database_path) as database:
+        database.executescript("""
+            CREATE TABLE cards(id TEXT PRIMARY KEY,due_date TEXT,state TEXT,archived INTEGER,
+                               pending_validation INTEGER,content_type TEXT,repertoire_id TEXT,
+                               study_exercise_id TEXT);
+            CREATE TABLE repertoires(id TEXT PRIMARY KEY);
+            CREATE TABLE repertoire_cards(card_id TEXT,repertoire_id TEXT);
+            CREATE TABLE repertoire_integrity_card_blocks(card_id TEXT,repertoire_id TEXT);
+            CREATE TABLE study_exercises(id TEXT PRIMARY KEY,study_id TEXT,status TEXT);
+            CREATE TABLE studies(id TEXT PRIMARY KEY,archived INTEGER);
+            CREATE TABLE study_sibling_burials(exercise_id TEXT,study_day TEXT);
+            CREATE TABLE daily_queue(queue_date TEXT,card_id TEXT,position INTEGER);
+            INSERT INTO repertoires VALUES('r1');
+            INSERT INTO studies VALUES('study',0);
+            INSERT INTO study_exercises VALUES('published','study','published');
+            INSERT INTO study_exercises VALUES('draft','study','draft');
+            INSERT INTO cards VALUES('opening','2026-09-26','learning',0,0,'opening','r1',NULL);
+            INSERT INTO cards VALUES('study','2026-09-26','mature',0,0,'study_exercise','r1','published');
+            INSERT INTO cards VALUES('blocked','2026-09-26','learning',0,0,'opening','r1',NULL);
+            INSERT INTO cards VALUES('draft','2026-09-26','learning',0,0,'study_exercise','r1','draft');
+            INSERT INTO cards VALUES('future','2026-09-28','learning',0,0,'opening','r1',NULL);
+            INSERT INTO cards VALUES('archived','2026-09-26','learning',1,0,'opening','r1',NULL);
+            INSERT INTO cards VALUES('already','2026-09-26','learning',0,0,'opening','r1',NULL);
+            INSERT INTO repertoire_integrity_card_blocks VALUES('blocked','r1');
+            INSERT INTO daily_queue VALUES('2026-09-27','already',0);
+        """)
+
+    class NativeSqlite:
+        def __init__(self, database):
+            self.database = database
+
+        def execute_native(self, statement, parameters=()):
+            return self.database.execute(
+                statement.replace("%s", "?").replace("FOR UPDATE", ""), parameters,
+            )
+
+    @contextmanager
+    def read_section():
+        with sqlite3.connect(database_path) as database:
+            database.row_factory = sqlite3.Row
+            yield NativeSqlite(database)
+
+    monkeypatch.setattr(postgres_queue_refresh, "background_read_connection", read_section)
+    admitted_ids = []
+    while True:
+        card_id = postgres_queue_refresh._prepare_due_card("2026-09-27")
+        if card_id is None:
+            break
+        with sqlite3.connect(database_path) as database:
+            assert postgres_queue_refresh._admit_one_due_card(
+                NativeSqlite(database), "2026-09-27", card_id,
+            )
+        admitted_ids.append(card_id)
+    assert admitted_ids == ["opening", "study"]
+    with sqlite3.connect(database_path) as database:
+        assert list(database.execute(
+            "SELECT card_id,position FROM daily_queue ORDER BY position",
+        )) == [("already", 0), ("opening", 1), ("study", 2)]
+
+
 def test_postgres_tactical_queue_prepares_outside_database_and_retries_timed_out_read(monkeypatch):
     from psycopg.errors import TransactionTimeout
     from app.services import postgres_queue_refresh

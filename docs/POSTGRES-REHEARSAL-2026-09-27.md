@@ -132,7 +132,14 @@ handler has been ported and the release gates pass.
   materializer's resulting cards and queue, then reorders an entry between
   slices; another checks stale replay and restart. A rolled-back PostgreSQL
   rehearsal of one real entry, lease, and checkpoint took 21.6 ms under the
-  50 ms limit. Due/new admissions and final queue publication remain unported.
+  50 ms limit. New-card admissions and final queue publication remain unported.
+- Due-card admission now reads one eligible card outside the write transaction,
+  locks and rechecks that card, and appends at most one queue entry per slice.
+  A fixture regression covers archived, blocked, unpublished, future, and
+  already queued cards. A rolled-back PostgreSQL rehearsal on a future date
+  took 25.1 ms for the write, lease, and checkpoint under the 50 ms limit.
+  Prioritized new openings, study admissions, ordering, and publication remain
+  unported.
 - A custom-format PostgreSQL backup was written outside the checkout at
   `/Users/andy/tempo-backups/tempo-postgres-rehearsal-2026-09-27.dump`.
   SHA-256 is `eaf7e37e5e0cd86189c0cf1a7abddb8b8893264f16e906e6f95b4948b0c4b326`.

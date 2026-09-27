@@ -212,6 +212,57 @@ def _reconcile_one_unseen_entry(database, queue_date: str, candidate: dict,
     return False
 
 
+_DUE_CARD_ELIGIBILITY = """c.due_date<=%s AND c.state IN ('learning','mature')
+    AND c.archived=0 AND COALESCE(c.pending_validation,0)=0
+    AND (c.content_type!='opening' OR EXISTS(
+        SELECT 1 FROM repertoires repertoire
+        WHERE (repertoire.id=c.repertoire_id OR EXISTS(
+            SELECT 1 FROM repertoire_cards link
+            WHERE link.card_id=c.id AND link.repertoire_id=repertoire.id))
+          AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
+                         WHERE block.repertoire_id=repertoire.id AND block.card_id=c.id)))
+    AND (c.content_type!='study_exercise' OR (
+        EXISTS(SELECT 1 FROM study_exercises exercise JOIN studies study
+               ON study.id=exercise.study_id
+               WHERE exercise.id=c.study_exercise_id AND exercise.status='published'
+                 AND study.archived=0)
+        AND NOT EXISTS(SELECT 1 FROM study_sibling_burials burial
+                       WHERE burial.exercise_id=c.study_exercise_id AND burial.study_day=%s)))
+    AND NOT EXISTS(SELECT 1 FROM daily_queue queue
+                   WHERE queue.card_id=c.id AND queue.queue_date=%s)"""
+
+
+def _prepare_due_card(queue_date: str) -> str | None:
+    rows = _bounded_read(
+        "SELECT c.id FROM cards c WHERE " + _DUE_CARD_ELIGIBILITY +
+        " ORDER BY c.due_date,c.id LIMIT 1",
+        (queue_date, queue_date, queue_date), native=True,
+    )
+    return str(rows[0][0]) if rows else None
+
+
+def _admit_one_due_card(database, queue_date: str, card_id: str) -> bool:
+    if database.execute_native(
+        "SELECT id FROM cards WHERE id=%s FOR UPDATE", (card_id,),
+    ).fetchone() is None:
+        return False
+    eligible = database.execute_native(
+        "SELECT 1 FROM cards c WHERE c.id=%s AND " + _DUE_CARD_ELIGIBILITY,
+        (card_id, queue_date, queue_date, queue_date),
+    ).fetchone()
+    if eligible is None:
+        return False
+    next_position = database.execute_native(
+        "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=%s",
+        (queue_date,),
+    ).fetchone()[0]
+    database.execute_native(
+        "INSERT INTO daily_queue(queue_date,card_id,position) VALUES(%s,%s,%s)",
+        (queue_date, card_id, next_position),
+    )
+    return True
+
+
 def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     """Apply one eligibility phase; later queue phases remain explicitly gated."""
 
@@ -224,7 +275,8 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     queue_date = str(payload.get("queue_date") or date.today().isoformat())
     phase = str(payload.get("_queue_phase") or _ELIGIBILITY_PHASES[0])
     if phase not in (*_ELIGIBILITY_PHASES, "tactical_introductions",
-                     "reset_opening_new", "reset_opening_stale", "reconcile_unseen"):
+                     "reset_opening_new", "reset_opening_stale", "reconcile_unseen",
+                     "admit_due"):
         raise RuntimeError(f"Queue refresh phase is not yet ported: {phase}")
     prepared_tactic = None
     if phase == "tactical_introductions":
@@ -240,6 +292,10 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
         reconciliation_candidate, starting_count = _prepare_unseen_reconciliation(
             queue_date, processed_ids, introduced_counts,
         )
+    due_card_id = None
+    if phase == "admit_due":
+        activity_gate.wait_for_foreground()
+        due_card_id = _prepare_due_card(queue_date)
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
         if not lock_current_slice(database, task):
@@ -286,6 +342,13 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                 next_payload = {"queue_date": queue_date, "_queue_phase": phase,
                                 "processed_ids": processed_ids,
                                 "introduced_counts": introduced_counts}
+        elif phase == "admit_due":
+            if due_card_id is None:
+                next_phase = "prioritized_openings"
+            else:
+                _admit_one_due_card(database, queue_date, due_card_id)
+                next_phase = phase
+            next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
         else:
             phase_handlers = {
                 "block_opening": main._block_ineligible_opening_queue_entries,
