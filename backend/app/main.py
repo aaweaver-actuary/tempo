@@ -1690,6 +1690,12 @@ async def import_pgn(
         (enqueued_at - import_started_at) * 1000,
         enqueue_status,
     )
+    if enqueue_status == "failed":
+        raise HTTPException(
+            503,
+            "The repertoire was saved, but its background work could not be scheduled. "
+            "Check the local service and retry the import.",
+        )
     return ImportResult(
         repertoire_id=rid,
         source_name=file.filename,

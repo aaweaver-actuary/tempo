@@ -2,6 +2,7 @@ from fastapi.testclient import TestClient
 import hashlib
 import json
 import logging
+import sqlite3
 import time
 
 from app import database
@@ -188,6 +189,41 @@ def test_import_reports_parse_derive_and_storage_phase_timings(tmp_path, monkeyp
     import_timing = import_timings[0].getMessage()
     for phase in ("parse_ms=", "derive_ms=", "store_ms=", "total_ms="):
         assert phase in import_timing
+
+
+def test_import_scheduler_failure_reports_saved_data_and_retry_action(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    schedule_rebuild = main_module.enqueue_opening_graph_rebuild
+
+    def fail_schedule(*args, **kwargs):
+        raise sqlite3.OperationalError("scheduler unavailable")
+
+    monkeypatch.setattr(main_module, "enqueue_opening_graph_rebuild", fail_schedule)
+    with TestClient(app) as client:
+        failed = client.post(
+            "/api/imports/pgn",
+            files={"file": ("retryable.pgn", PGN, "application/x-chess-pgn")},
+            data={"trained_color": "white", "initial_depth": "2"},
+        )
+        assert failed.status_code == 503
+        assert "saved" in failed.json()["detail"].lower()
+        assert "retry" in failed.json()["detail"].lower()
+        with database.read_connection() as connection:
+            assert connection.execute(
+                "SELECT COUNT(*) FROM repertoires WHERE source_name='retryable.pgn'"
+            ).fetchone()[0] == 1
+
+        monkeypatch.setattr(main_module, "enqueue_opening_graph_rebuild", schedule_rebuild)
+        retried = client.post(
+            "/api/imports/pgn",
+            files={"file": ("retryable.pgn", PGN, "application/x-chess-pgn")},
+            data={"trained_color": "white", "initial_depth": "2"},
+        )
+        assert retried.status_code == 200
+        with database.read_connection() as connection:
+            assert connection.execute(
+                "SELECT COUNT(*) FROM repertoires WHERE source_name='retryable.pgn'"
+            ).fetchone()[0] == 1
 
 
 def test_reimport_can_shorten_initial_prefix_without_truncating_descendants(
