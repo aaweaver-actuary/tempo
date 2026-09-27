@@ -10,6 +10,14 @@ from app.services.database_executor import submit_foreground_write
 START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 
 
+def test_database_initialize_migrates_study_tables_for_direct_queue_users(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.read_connection() as db:
+        assert db.execute("SELECT name FROM sqlite_master WHERE name='study_exercises'").fetchone()
+        assert "study_exercise_id" in {row["name"] for row in db.execute("PRAGMA table_info(cards)")}
+
+
 def _seed_cards() -> None:
     today = date.today().isoformat()
     with database.connection() as db:
@@ -71,6 +79,39 @@ def test_training_queue_window_limits_cards_and_preserves_order(tmp_path, monkey
         ]
         assert window["count"] == complete["count"]
         assert len(window["cards"]) == 3
+
+
+def test_study_queue_window_count_matches_published_prepared_cards(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    today = date.today().isoformat()
+    with TestClient(app) as client:
+        with database.connection() as db:
+            db.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('regular','Regular','regular.pgn',?)", (today,))
+            db.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type) VALUES('regular-card','regular','prefix',?,'[\"e2e4\"]','learning',?,'opening')", (START_FEN, today))
+            db.execute("INSERT INTO studies(id,title,created_at,updated_at) VALUES('study-1','Study',?,?)", (today, today))
+            db.execute("INSERT INTO study_chapters(id,study_id,title,position) VALUES('chapter-1','study-1','Chapter',0)")
+            db.execute("""INSERT INTO study_sources(id,chapter_id,source_group_id,version,raw_pgn,sha256,filename,record_index,headers_json,diagnostics_json,valid,created_at)
+                          VALUES('source-1','chapter-1','group-1',1,'','hash','study.pgn',0,'{}','[]',1,?)""", (today,))
+            db.execute("INSERT INTO study_positions(id,source_id,child_index,fen,history_json,node_path) VALUES('position-1','source-1',0,?,'[]','0')", (START_FEN,))
+            db.execute("INSERT INTO study_exercises(id,study_id,position_id,status,created_at,updated_at) VALUES('exercise-1','study-1','position-1','published',?,?)", (today, today))
+            db.execute("""INSERT INTO study_exercise_revisions(exercise_id,revision,specification_json,specification_hash,created_at)
+                          VALUES('exercise-1',1,'{"type":"choice","prompt":"Choose","hint":"","explanation":"","options":[{"id":"a","text":"A"}],"correct_option_ids":["a"]}','hash',?)""", (today,))
+            db.execute("""INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type,study_exercise_id)
+                          VALUES('study-card',NULL,'exercise',?,'[]','learning',?,'study_exercise','exercise-1')""", (START_FEN, today))
+            db.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,'regular-card',0)", (today,))
+            db.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,'study-card',1)", (today,))
+        window_response = client.get("/api/queue/window?limit=1")
+        prepared_response = client.get("/api/queue/prepared")
+        assert window_response.status_code == 200, window_response.text
+        assert prepared_response.status_code == 200, prepared_response.text
+        window = window_response.json()
+        prepared = prepared_response.json()
+        assert window["count"] == prepared["count"] == 2
+        assert [card["id"] for card in prepared["cards"]] == ["regular-card", "study-card"]
+        assert prepared["cards"][1]["study_id"] == "study-1"
+        assert prepared["cards"][1]["study_exercise_id"] == "exercise-1"
+        assert prepared["cards"][1]["repertoire_id"] is None
+        assert prepared["cards"][1]["study_snapshot"]["exercise_id"] == "exercise-1"
 
 
 def test_daily_queue_uses_a_different_seed_for_the_next_day(tmp_path, monkeypatch):

@@ -21,7 +21,7 @@
     "verify:static": "node scripts/verify-static-build.mjs",
     "verify:phone-deployment": "node scripts/verify-phone-deployment.mjs",
     "start": "vinext start",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern pages-dist --ignore-pattern local-dist --ignore-pattern public/tempo-core --ignore-pattern test-results --ignore-pattern playwright-report",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern pages-dist --ignore-pattern local-dist --ignore-pattern public/tempo-core --ignore-pattern test-results --ignore-pattern static/test-results --ignore-pattern playwright-report",
     "test:visual": "node scripts/test-visual.mjs"
   },
   "dependencies": {
@@ -51,6 +51,7 @@
     "@vitejs/plugin-rsc": "0.5.26",
     "eslint": "9.39.4",
     "eslint-config-next": "16.2.6",
+    "esbuild": "0.27.3",
     "jsdom": "^30.0.1",
     "react-server-dom-webpack": "19.2.6",
     "tailwindcss": "4.2.1",

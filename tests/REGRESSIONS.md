@@ -41,6 +41,12 @@
 | Frontend errors do not expose safe, copyable debugging state | `frontend errors show a redacted copyable debug bundle`; `frontend render failures retain a copyable fallback` |
 | Retryable SQLite queue contention aborts refresh immediately with an opaque 503 | `retryable queue contention retries before reporting a failure and retains the active attempt` |
 | Persisted queue validation metadata is rejected by the strict frontend adapter | `queue cards accept persisted pending-validation state without a diagnostic` |
+| Study migration metadata rejects existing queue cards and prevents phone preparation | `queue cards accept study migration metadata from existing opening and tactic records`; `prepared phone queue validates study metadata beyond the live window and keeps offline exercises` |
+| Published study exercises have nullable repertoire IDs, a distinct kind, and a prepared snapshot | `published study exercise queue cards retain their nullable repertoire and study identity`; `test_study_queue_window_count_matches_published_prepared_cards` |
+| Direct SQLite initialization omits study tables and breaks foreground queue paths | `test_database_initialize_migrates_study_tables_for_direct_queue_users` |
+| Web proxy serves HTTP 502 while the API is still starting | `test_tempo_web_waits_for_api_health_before_proxying` |
+| Foreground API reads fail through the proxy during repertoire integrity work | `test_foreground_api_reads_survive_integrity_work` |
+| A recovered integrity lock remains visible and counts toward permanent failure | `test_integrity_slice_recovers_from_a_transient_database_lock_without_stale_error` |
 | Games responses expose SQLite-only sync fields | `test_game_summaries_never_expose_persistence_only_sync_fields`; `backend game response and strict frontend schema remain in parity` |
 | First-party Games contract drift silently empties and caches the library | `game contract drift fails once instead of silently emptying the library`; `invalid game responses are never cached as empty success` |
 | Corrected Games data requires navigation and old diagnostics flood the UI | `corrected game data replaces stale cache without navigation`; `repeated diagnostics are grouped and clear after successful validation` |
