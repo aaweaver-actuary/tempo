@@ -1561,6 +1561,23 @@ def test_postgres_tactic_attempt_dispatches_validated_foreground_command(monkeyp
     assert dispatched[0][1]["pack_id"] == "deck-1"
     assert dispatched[0][1]["solution"] == ["e7e5"]
     assert dispatched[0][2] == "tactic-attempt:tactic-1"
+    anonymous_request = {
+        "puzzle_id": "puzzle-2", "deck_id": "deck-1", "correct": False,
+        "clean": False, "source_fen": chess.STARTING_FEN,
+        "moves": ["e2e4", "e7e5"],
+    }
+    assert TestClient(main.app).post("/api/tactics/attempt", json=anonymous_request).status_code == 422
+    first = TestClient(main.app).post(
+        "/api/tactics/attempt", json=anonymous_request,
+        headers={"Idempotency-Key": "provider-tactic-2"},
+    )
+    second = TestClient(main.app).post(
+        "/api/tactics/attempt", json=anonymous_request,
+        headers={"Idempotency-Key": "provider-tactic-2"},
+    )
+    assert first.status_code == second.status_code == 200
+    assert dispatched[-1][1]["request"]["attempt_id"] == dispatched[-2][1]["request"]["attempt_id"]
+    assert dispatched[-1][2] == dispatched[-2][2] == "provider-tactic-2"
 
 
 def test_postgres_cutover_teaching_state_dispatches_and_replays_saved_timestamp(monkeypatch):

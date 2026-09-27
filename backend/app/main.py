@@ -3513,6 +3513,12 @@ def tactic_attempt(request: TacticAttemptRequest,
         record = {"FEN": request.source_fen, "Moves": " ".join(request.moves)}
     training_fen, solution = validate_puzzle_record(record)  # ty: ignore[invalid-argument-type]
     if postgres_store.configured():
+        if not request.attempt_id and not idempotency_key:
+            raise HTTPException(422, "Send attempt_id or Idempotency-Key so an uncertain save can be retried")
+        if not request.attempt_id:
+            request = request.model_copy(update={
+                "attempt_id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"tempo:tactic:{idempotency_key}")),
+            })
         from .command_dispatch import dispatch_command
         return dispatch_command(
             "tactics.attempt.submit",

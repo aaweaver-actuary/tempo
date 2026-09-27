@@ -9,7 +9,7 @@
 | An API left running across midnight never creates the next day's PostgreSQL queue | `test_postgres_daily_queue_rollover_requests_refresh_until_ready` |
 | A queued defense card cannot save recognition or grading after PostgreSQL cutover, or the two submissions reuse one receipt ID | `test_postgres_defense_answers_dispatch_atomic_foreground_commands` |
 | A stale defensive answer becomes an HTTP 500 after moving through a Celery receipt instead of retaining its actionable conflict | `test_postgres_defense_stale_answer_preserves_conflict_status` |
-| A dedicated tactic attempt finishes in the browser without a PostgreSQL command receipt | `test_postgres_tactic_attempt_dispatches_validated_foreground_command` |
+| A dedicated tactic attempt finishes in the browser without a PostgreSQL command receipt, or accepts an ambiguous save without a stable attempt key | `test_postgres_tactic_attempt_dispatches_validated_foreground_command` |
 | PostgreSQL teaching-state saves bypass the command queue or replay changes their timestamp | `test_postgres_cutover_teaching_state_dispatches_and_replays_saved_timestamp` |
 | A teaching save is lost when the command response is pending or the service fails | `teaching save survives an ambiguous response and replays with the same command ID`; `failed teaching save remains queued for a later retry` |
 | The service-outage visual check becomes ambiguous when the notification tray also exposes an alert | `service-unavailable` in `tests/browser/visual.spec.ts` targets the review-history alert explicitly |
