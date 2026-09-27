@@ -11,4 +11,5 @@ target
 pages-dist
 local-dist
 test-results
+static/test-results
 playwright-report

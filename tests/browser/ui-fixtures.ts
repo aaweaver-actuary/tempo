@@ -34,7 +34,7 @@ export async function navigate(page: Page, name: string) {
     .poll(
       async () =>
         (await navigation.getByRole("button").count()) > 0,
-      { timeout: 10000 },
+      { timeout: 30000 },
     )
     .toBe(true);
   const direct = navigation

@@ -65,6 +65,8 @@ test("intentional training failure is saved once and reload resumes it without a
   await expect(page.getByRole("heading", { name: "Intentional" })).toBeVisible();
   await page.getByRole("button", { name: /Show move/ }).click();
   await expect.poll(() => failureRequests).toBe(1);
+  await expect.poll(() => page.evaluate(() =>
+    localStorage.getItem("tempo-pending-training-failures-v1"))).toBe("[]");
   await page.reload();
   await expect(page.getByText("Guided attempt resumed")).toBeVisible();
   await expect(page.locator(".outcome-flash.wrong")).toHaveCount(0);

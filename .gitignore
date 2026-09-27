@@ -47,6 +47,7 @@ __pycache__/
 /pages-dist/
 /local-dist/
 /test-results/
+/static/test-results/
 /playwright-report/
 tsconfig.tsbuildinfo
 .pytest_cache/
