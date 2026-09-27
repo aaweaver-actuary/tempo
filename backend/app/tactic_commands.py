@@ -7,12 +7,16 @@ import json
 import uuid
 from typing import Any
 
+from fastapi import HTTPException
+
 from .command_gateway import register_command
 from .models import TacticAttemptRequest
 from .postgres_store import PostgresConnection
 from .queue_position_lock import lock_queue_date_for_position
+from .queue_commands import request_queue_refresh_in_transaction
 from .services.cards import card_id
 from .services.review_service import ensure_card_queued_after
+from .services.tactical_catalog import activate
 
 
 def submit_tactic_attempt(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
@@ -94,3 +98,15 @@ def submit_tactic_attempt(database: PostgresConnection, payload: dict[str, Any])
 
 
 register_command("tactics.attempt.submit", submit_tactic_attempt)
+
+
+def set_tactic_activation(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
+    try:
+        activate(database, [str(pack_id) for pack_id in payload["pack_ids"]], bool(payload["active"]))
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    request_queue_refresh_in_transaction(database, date.today().isoformat())
+    return {"updated": True}
+
+
+register_command("tactics.activation.set", set_tactic_activation)

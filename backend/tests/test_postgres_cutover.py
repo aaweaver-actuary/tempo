@@ -1580,6 +1580,27 @@ def test_postgres_tactic_attempt_dispatches_validated_foreground_command(monkeyp
     assert dispatched[-1][2] == dispatched[-2][2] == "provider-tactic-2"
 
 
+def test_postgres_tactic_activation_dispatches_and_reads_committed_catalog(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(command_dispatch, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or {"updated": True})
+    monkeypatch.setattr(main, "tactics_catalog", lambda: {"packs": [{"id": "pack-1", "active": True}]})
+    response = TestClient(main.app).put(
+        "/api/tactics/activation", json={"pack_ids": ["pack-1"], "active": True},
+        headers={"Idempotency-Key": "activate-pack-1"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["packs"][0]["active"]
+    assert dispatched == [("tactics.activation.set",
+                           {"pack_ids": ["pack-1"], "active": True}, "activate-pack-1")]
+
+
 def test_postgres_cutover_teaching_state_dispatches_and_replays_saved_timestamp(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main

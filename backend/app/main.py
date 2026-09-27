@@ -425,13 +425,16 @@ async def prioritize_foreground_requests(request: Request, call_next):
                             and request.method == "POST")
         tactic_attempt_command = (path_parts == ["api", "tactics", "attempt"]
                                   and request.method == "POST")
+        tactic_activation_command = (path_parts == ["api", "tactics", "activation"]
+                                     and request.method == "PUT")
         if not any((study_create, study_update, study_archive, exercise_create, exercise_revise,
                     exercise_enroll, exercise_attempt, exercise_self_assess,
                     exercise_availability_command,
                     chapter_create, chapter_reorder,
                     chapter_rename, link_create, queue_entry_command, card_review_command,
                     card_teaching_command, defense_answer_command,
-                    main_repertoire_command, browser_activity, tactic_attempt_command)):
+                    main_repertoire_command, browser_activity, tactic_attempt_command,
+                    tactic_activation_command)):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
@@ -3482,7 +3485,16 @@ def tactics_catalog():
 
 
 @app.put("/api/tactics/activation")
-def tactics_activation(request: TacticActivationRequest):
+def tactics_activation(request: TacticActivationRequest,
+                       idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        response = dispatch_command(
+            "tactics.activation.set",
+            {"pack_ids": request.pack_ids, "active": request.active},
+            idempotency_key=idempotency_key,
+        )
+        return response if isinstance(response, JSONResponse) else tactics_catalog()
     def persist_activation(db):
         try:
             activate(db, request.pack_ids, request.active)
