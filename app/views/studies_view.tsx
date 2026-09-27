@@ -22,20 +22,64 @@ type Preview = { digest: string; records: Array<{ index: number; headers: Record
   diagnostics: string[]; valid: boolean }> ; existing_versions: Array<{ source_group_id: string; version: number }> };
 type ExerciseType = "square_set" | "move_line" | "knight_path" | "choice" | "explanation";
 
+function commandFingerprint(payload: string): string {
+  let digest = BigInt("0xcbf29ce484222325");
+  for (let index = 0; index < payload.length; index++) {
+    digest ^= BigInt(payload.charCodeAt(index));
+    digest = (digest * BigInt("0x100000001b3")) & BigInt("0xffffffffffffffff");
+  }
+  return digest.toString(16);
+}
+
 async function api<T>(path: string, method = "GET", body?: unknown): Promise<T> {
+  const commandStorageKey = method === "GET" ? "" :
+    `tempo-pending-study-command:${method}:${path}:${commandFingerprint(JSON.stringify(body) ?? "")}`;
+  let idempotencyKey = "";
+  if (commandStorageKey) {
+    try { idempotencyKey = sessionStorage.getItem(commandStorageKey) ?? ""; } catch { /* Session storage may be disabled. */ }
+    if (!idempotencyKey) idempotencyKey = crypto.randomUUID();
+    try { sessionStorage.setItem(commandStorageKey, idempotencyKey); } catch { /* The key still protects this request. */ }
+  }
+  const clearCommandKey = () => {
+    if (commandStorageKey) try { sessionStorage.removeItem(commandStorageKey); } catch { /* Ignore disabled storage. */ }
+  };
   let response: Response;
   try {
     response = await fetch(`${API_URL}${path}`, {
-      method, headers: body === undefined ? undefined : { "Content-Type": "application/json" },
+      method, headers: {
+        ...(body === undefined ? {} : { "Content-Type": "application/json" }),
+        ...(idempotencyKey ? { "Idempotency-Key": idempotencyKey } : {}),
+      },
       body: body === undefined ? undefined : JSON.stringify(body),
     });
   } catch {
     throw new Error("Study service unavailable. Start local Docker Tempo and retry.");
   }
-  let data: T & { detail?: string };
+  let data: T & { detail?: string; operation_id?: string; state?: string; response?: T; error?: { message?: string } };
   try { data = await response.json() as T & { detail?: string }; }
   catch { throw new Error("Study service returned unreadable data. Restart local Docker Tempo and retry."); }
+  if (response.status === 202 && data.operation_id) {
+    const operationId = data.operation_id;
+    for (let attempt = 0; attempt < 20; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 500));
+      let status: Response;
+      try { status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(operationId)}`); }
+      catch { break; }
+      if (!status.ok) break;
+      const receipt = await status.json() as { state: string; response?: T; error?: { message?: string } };
+      if (receipt.state === "complete" && receipt.response !== undefined) {
+        clearCommandKey();
+        return receipt.response;
+      }
+      if (receipt.state === "failed") {
+        clearCommandKey();
+        throw new Error(receipt.error?.message ?? "Study save failed. Retry after checking the service.");
+      }
+    }
+    throw new Error(`Study save is still pending (operation ${operationId}). Retry to check its result.`);
+  }
   if (!response.ok) throw new Error(data.detail ?? `Study service returned HTTP ${response.status}`);
+  clearCommandKey();
   return data;
 }
 

@@ -1,4 +1,5 @@
 import { API_URL } from "../const";
+import { confirmOperationResponse } from "./operation-status";
 
 export type PendingDiscoveryAdmission = {
   opportunityId: string;
@@ -117,6 +118,7 @@ function retryLater(admission: PendingDiscoveryAdmission, cause: unknown) {
 }
 
 async function checkedResponse(response: Response): Promise<Response> {
+  response = await confirmOperationResponse(response);
   if (!response.ok) {
     const message = await responseError(response);
     if (response.status < 500 && response.status !== 408 && response.status !== 429)
@@ -130,7 +132,8 @@ async function processAdmission(admission: PendingDiscoveryAdmission) {
   try {
     if (!admission.intentId) {
       const response = await checkedResponse(await requestWithTimeout(`${API_URL}/api/discoveries/${admission.opportunityId}/accept`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
+        method: "POST", headers: { "Content-Type": "application/json",
+          "Idempotency-Key": `discovery:${admission.opportunityId}:${admission.evidenceFingerprint}` },
         body: JSON.stringify({ selected_move_uci: admission.selectedMoveUci,
           evidence_fingerprint: admission.evidenceFingerprint }),
       }));

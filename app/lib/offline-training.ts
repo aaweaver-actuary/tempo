@@ -1,4 +1,5 @@
 import { API_URL } from "../const";
+import { confirmOperationResponse } from "./operation-status";
 import { queueCardSchema, queueEnvelopeSchema } from "../domain/schemas";
 import type { BackendQueueCard } from "../domain/transport";
 import { evaluateStudyAnswer, studyAnswerSchema, studySnapshotSchema, type StudyAnswer, type StudyAssessment } from "../domain/study-exercises";
@@ -265,7 +266,8 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
     try {
       if (attempt.studyId && attempt.exerciseId && attempt.answer && attempt.attemptId) {
         response = await fetch(reviewEndpoint, {
-          method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
+          method: "POST", headers: { "Content-Type": "application/json",
+            "Idempotency-Key": `phone-study:${attempt.attemptId}` }, signal: controller.signal,
           body: JSON.stringify({ attempt_id: attempt.attemptId, revision: attempt.expectedRevision,
             answer: attempt.answer, context: "review", card_id: attempt.cardId,
             queue_entry_id: serverEntryId, queue_cycle: attempt.queueCycle ?? 0,
@@ -273,7 +275,8 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
         });
       } else {
         response = await fetch(reviewEndpoint, {
-          method: "POST", headers: { "Content-Type": "application/json" }, signal: controller.signal,
+          method: "POST", headers: { "Content-Type": "application/json",
+            "Idempotency-Key": `phone-review:${attempt.localEntryId}:${attempt.completedAt}` }, signal: controller.signal,
           body: JSON.stringify({
             queue_entry_id: serverEntryId, outcome: attempt.outcome, guided: attempt.guided,
             recorded_at: attempt.completedAt, expected_review_id: expectedReviewId,
@@ -281,6 +284,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
           }),
         });
       }
+      response = await confirmOperationResponse(response);
     } catch (error) {
       throw new OfflineReplayError(`Could not sync saved review. ${String(error)}`, reviewEndpoint, { cause: error });
     } finally {
@@ -302,9 +306,11 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
       let assessed: Response;
       try {
         assessed = await fetch(assessmentEndpoint, {
-          method: "POST", headers: { "Content-Type": "application/json" },
+          method: "POST", headers: { "Content-Type": "application/json",
+            "Idempotency-Key": `phone-assessment:${attempt.attemptId}` },
           body: JSON.stringify({ rating: attempt.selfRating }),
         });
+        assessed = await confirmOperationResponse(assessed);
       } catch (error) {
         throw new OfflineReplayError(`Could not sync study self-assessment. ${String(error)}`, assessmentEndpoint, { cause: error });
       }

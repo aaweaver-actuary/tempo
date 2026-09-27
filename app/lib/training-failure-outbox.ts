@@ -1,4 +1,5 @@
 import { API_URL } from "../const";
+import { confirmOperationResponse } from "./operation-status";
 
 const storageKey = "tempo-pending-training-failures-v1";
 const requestTimeoutMs = 15_000;
@@ -37,7 +38,9 @@ async function saveTrainingFailures(): Promise<void> {
     try {
       response = await fetch(`${API_URL}/api/queue/entries/${queueEntryId}/fail`, {
         method: "POST", signal: controller.signal,
+        headers: { "Idempotency-Key": `queue-fail:${queueEntryId}` },
       });
+      response = await confirmOperationResponse(response);
     } catch (cause) {
       if (controller.signal.aborted)
         throw new Error("Saving the guided attempt timed out. Tempo will retry.", { cause });

@@ -3,7 +3,7 @@ import { expect, it, vi } from "vitest";
 import { readWorkspaceData } from "../../app/lib/workspace-data";
 import { tempoPerformanceTimings } from "../../app/lib/performance";
 
-it("workspace fetch records API response and ready latency once per network request", async () => {
+it("workspace fetch records each live API read without reusing a stale success", async () => {
   const resource = "/api/performance-fixture";
   const url = `http://localhost${resource}`;
   const fetcher = vi.fn(async () => Response.json({ count: 1 }));
@@ -13,11 +13,11 @@ it("workspace fetch records API response and ready latency once per network requ
   await expect(readWorkspaceData(url)).resolves.toEqual({ count: 1 });
   await expect(readWorkspaceData(url)).resolves.toEqual({ count: 1 });
 
-  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(fetcher).toHaveBeenCalledTimes(2);
   const timings = tempoPerformanceTimings().slice(timingCountBefore)
     .filter((timing) => timing.resource === resource);
   expect(timings.map((timing) => timing.operation)).toEqual([
-    "api-response", "workspace-data-ready",
+    "api-response", "workspace-data-ready", "api-response", "workspace-data-ready",
   ]);
   expect(timings[0].duration).toBeGreaterThanOrEqual(0);
   expect(timings[1].duration).toBeGreaterThanOrEqual(timings[0].duration);

@@ -98,4 +98,22 @@ describe("optimistic training review outbox", () => {
       vi.useRealTimers();
     }
   });
+
+  it("keeps a Celery-accepted review until its operation receipt confirms the save", async () => {
+    const review = { backendId: "card-pending", queueEntryId: 81, outcome: "correct" as const, guided: false };
+    enqueuePendingReview(review);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(Response.json({ operation_id: "review:81", state: "pending" }, { status: 202 }))
+      .mockResolvedValueOnce(Response.json({ operation_id: "review:81", state: "pending" }))
+      .mockResolvedValueOnce(Response.json({ operation_id: "review:81", state: "pending" }, { status: 202 }))
+      .mockResolvedValueOnce(Response.json({ operation_id: "review:81", state: "complete", response: { persisted: true } }));
+    vi.stubGlobal("fetch", fetchMock);
+
+    await expect(flushPendingReviews()).rejects.toThrow("still pending");
+    expect(pendingReviews()).toEqual([review]);
+    await flushPendingReviews();
+    expect(pendingReviews()).toEqual([]);
+    expect(fetchMock.mock.calls[0][1].headers["Idempotency-Key"]).toBe("review:81");
+    expect(fetchMock.mock.calls[2][1].headers["Idempotency-Key"]).toBe("review:81");
+  });
 });

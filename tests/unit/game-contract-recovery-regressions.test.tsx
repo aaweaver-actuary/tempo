@@ -124,7 +124,7 @@ it("invalid game responses are never cached as empty success", async () => {
   ).toEqual([]);
 });
 
-it("corrected game data replaces stale cache without navigation", async () => {
+it("corrected live game data wins over an older persisted cache", async () => {
   const staleGame = { ...summaryGame, id: "chess.com:stale" };
   localStorage.setItem(
     `tempo-workspace-cache-v2:${summaryUrl}`,
@@ -138,25 +138,10 @@ it("corrected game data replaces stale cache without navigation", async () => {
     "fetch",
     vi.fn(async () => Response.json(summaryEnvelope([summaryGame]))),
   );
-  const ready = new Promise<void>((resolve) => {
-    window.addEventListener(
-      "tempo-workspace-data",
-      (event) => {
-        const detail = (event as CustomEvent<{ state: string }>).detail;
-        if (detail.state === "ready") resolve();
-      },
-      { once: false },
-    );
-  });
   const immediate = (await readWorkspaceData(summaryUrl)) as {
     games: Array<{ id: string }>;
   };
-  expect(immediate.games[0].id).toBe("chess.com:stale");
-  await ready;
-  const persisted = JSON.parse(
-    localStorage.getItem(`tempo-workspace-cache-v2:${summaryUrl}`) ?? "{}",
-  );
-  expect(persisted.data.games[0].id).toBe(summaryGame.id);
+  expect(immediate.games[0].id).toBe(summaryGame.id);
 });
 
 it("repeated diagnostics are grouped and clear after successful validation", async () => {

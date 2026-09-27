@@ -60,7 +60,7 @@ it("preloaded local records are invalidated after mutations rather than hiding n
   expect(await readWorkspaceData("http://localhost/api/cache-fixture")).toEqual({ count: 2 });
 });
 
-it("cached route data renders before background refresh and reconciles afterward", async () => {
+it("stale API cache waits for a live response before reporting success", async () => {
   invalidateWorkspaceData();
   const url = "http://localhost/api/persistent-cache-fixture";
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ count: 1 })));
@@ -68,10 +68,12 @@ it("cached route data renders before background refresh and reconciles afterward
   resetWorkspaceCache();
   let finishRefresh!: (response: Response) => void;
   vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((resolve) => { finishRefresh = resolve; })));
-  const cached = await readWorkspaceData(url);
-  expect(cached).toEqual({ count: 1 });
+  let resolved = false;
+  const liveRead = readWorkspaceData(url).then((value) => { resolved = true; return value; });
+  await Promise.resolve();
+  expect(resolved).toBe(false);
   finishRefresh(Response.json({ count: 2 }));
-  await waitFor(async () => expect(await readWorkspaceData(url)).toEqual({ count: 2 }));
+  expect(await liveRead).toEqual({ count: 2 });
   invalidateWorkspaceData();
 });
 

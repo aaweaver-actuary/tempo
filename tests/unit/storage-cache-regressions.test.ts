@@ -3,16 +3,16 @@ import { runInNewContext } from "node:vm";
 import { expect, it, vi } from "vitest";
 import { readWorkspaceData } from "../../app/lib/workspace-data";
 
-it("workspace persistence rejects oversized API responses and bounds total bytes", async () => {
+it("workspace persistence excludes live API responses and bounds static data", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ payload: "x".repeat(150_000) })));
   await readWorkspaceData("/api/storage-large");
-  expect(localStorage.getItem("tempo-workspace-cache-v2:/api/storage-large")).toBeNull();
+  expect(localStorage.getItem("tempo-workspace-cache-v3:/api/storage-large")).toBeNull();
 
   vi.mocked(fetch).mockImplementation(async () => Response.json({ payload: "x".repeat(100_000) }));
   for (let index = 0; index < 15; index++)
-    await readWorkspaceData(`/api/storage-${index}`);
+    await readWorkspaceData(`/data/storage-${index}.json`);
   const cacheKeys = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index))
-    .filter((key): key is string => Boolean(key?.startsWith("tempo-workspace-cache-v2:")));
+    .filter((key): key is string => Boolean(key?.startsWith("tempo-workspace-cache-v3:")));
   const estimatedBytes = cacheKeys.reduce(
     (total, key) => total + 2 * (key.length + (localStorage.getItem(key)?.length ?? 0)),
     0,

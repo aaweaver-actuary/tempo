@@ -12,7 +12,7 @@ const requests = new Map<
   string,
   { createdAt: number; promise: Promise<unknown>; staleValue?: unknown }
 >();
-const WORKSPACE_CACHE_VERSION = 2;
+const WORKSPACE_CACHE_VERSION = 3;
 const WORKSPACE_CACHE_PREFIX = `tempo-workspace-cache-v${WORKSPACE_CACHE_VERSION}:`;
 const WORKSPACE_CACHE_LIMIT = 40;
 const WORKSPACE_CACHE_ENTRY_BYTES = 256 * 1024;
@@ -25,7 +25,9 @@ type StoredWorkspaceValue = {
 };
 
 function canPersist(url: string) {
-  return typeof localStorage !== "undefined" && url.includes("/api/");
+  // Live API reads must resolve from the service. A persisted projection can
+  // still be shown by an explicit offline UI, but never as a successful read.
+  return typeof localStorage !== "undefined" && !url.includes("/api/");
 }
 
 function readPersisted(url: string): StoredWorkspaceValue | undefined {
@@ -142,6 +144,7 @@ export function readWorkspaceData(
     .then((raw) => {
       const validated = schema ? parseData(schema, raw, url) : raw;
       entry.staleValue = undefined;
+      if (url.includes("/api/")) requests.delete(url);
       clearResolvedDiagnostics(url);
       persist(url, validated);
       notifyWorkspaceData("ready", url);

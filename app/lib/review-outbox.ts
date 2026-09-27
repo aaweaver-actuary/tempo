@@ -1,4 +1,5 @@
 import { API_URL } from "../const";
+import { confirmOperationResponse } from "./operation-status";
 
 export type PendingReview = {
   backendId: string;
@@ -58,20 +59,22 @@ async function savePendingReviews(): Promise<void> {
     const review = pendingReviews()[0];
     if (review.guided) {
       const failureEndpoint = `${API_URL}/api/queue/entries/${review.queueEntryId}/fail`;
-      const failureResponse = await requestReviewSave(failureEndpoint, { method: "POST" });
+      const failureResponse = await confirmOperationResponse(await requestReviewSave(failureEndpoint, {
+        method: "POST", headers: { "Idempotency-Key": `queue-fail:${review.queueEntryId}` },
+      }));
       if (!failureResponse.ok && failureResponse.status !== 409)
         throw new ReviewReplayError(await responseDetail(failureResponse), failureEndpoint);
     }
     const reviewEndpoint = `${API_URL}/api/cards/${review.backendId}/review`;
-    const reviewResponse = await requestReviewSave(reviewEndpoint, {
+    const reviewResponse = await confirmOperationResponse(await requestReviewSave(reviewEndpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Idempotency-Key": `review:${review.queueEntryId}` },
       body: JSON.stringify({
         outcome: review.outcome,
         guided: review.guided,
         queue_entry_id: review.queueEntryId,
       }),
-    });
+    }));
     if (!reviewResponse.ok)
       throw new ReviewReplayError(await responseDetail(reviewResponse), reviewEndpoint);
     const remaining = pendingReviews();
