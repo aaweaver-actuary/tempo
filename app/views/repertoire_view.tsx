@@ -9,6 +9,7 @@ import {
 } from "../types";
 import { usesLocalApi } from "../utils/local";
 import { API_URL } from "../const";
+import { renameRepertoireCommand } from "../lib/repertoire-rename-command";
 import {
   readWorkspaceResponse,
   invalidateWorkspaceData,
@@ -193,14 +194,12 @@ export default function RepertoireView({
     const value = window.prompt("Repertoire nickname", item.title)?.trim();
     if (!value) return;
     if (item.backend) {
-      const response = await fetch(`${API_URL}/api/repertoires/${item.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: value }),
-      });
-      if (response.ok) {
+      try {
+        await renameRepertoireCommand(item.id, value);
         invalidateWorkspaceData();
         await loadBackend();
+      } catch (renameError) {
+        setError(renameError instanceof Error ? renameError.message : "Could not rename this repertoire");
       }
     } else onRenameLocal(item.id, value);
   }
