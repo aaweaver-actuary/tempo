@@ -17,6 +17,8 @@ import {
 } from "../lib/encrypted-backup";
 import { migrateSqliteToBrowser } from "../lib/sqlite-migration";
 import { reportDebugError } from "../lib/debug-reporting";
+import { saveLocalSettings } from "../lib/settings-save";
+import { PendingOperationError } from "../lib/operation-status";
 import { publishNotification, resolveNotification } from "../lib/notifications";
 
 import { Notice } from "../components/task-tabs";
@@ -243,17 +245,15 @@ export default function SettingsView({
         coverage_maia_elo: values.coverage_maia_elo,
       };
       try {
-        const response = await fetch(`${API_URL}/api/settings`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(backend),
-        });
-        if (!response.ok) throw new Error();
+        await saveLocalSettings(backend);
         invalidateWorkspaceData();
         setStatus("Saved.");
         setDirty(false);
-      } catch {
-        setStatus("The local service could not save these settings. Retry when it is available.");
+      } catch (error) {
+        setStatus(error instanceof PendingOperationError
+          ? "Settings save is pending. Retry with the same changes to check it."
+          : error instanceof Error ? error.message
+          : "The local service could not save these settings. Retry when it is available.");
       }
     } else {
       setStatus("Saved in this browser.");

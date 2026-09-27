@@ -23,6 +23,7 @@ from . import review_commands  # noqa: F401 - registers foreground review comman
 from . import teaching_commands  # noqa: F401 - registers foreground teaching command
 from . import repertoire_commands  # noqa: F401 - registers foreground repertoire command
 from . import account_commands  # noqa: F401 - registers foreground account command
+from . import settings_commands  # noqa: F401 - registers foreground settings command
 from .services.activity_gate import activity_gate
 from .services.durable_tasks import claim_task, complete_task, defer_task_for_contention, fail_task
 from .services.priority_retention import execute_priority_retention_slice

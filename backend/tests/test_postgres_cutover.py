@@ -89,6 +89,84 @@ def test_postgres_endgame_probe_uses_read_only_tablebase_path(monkeypatch):
     assert response.json() == {"category": "draw", "moves": []}
 
 
+def test_postgres_settings_update_dispatches_foreground_command(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    observed = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(
+        command_dispatch, "dispatch_command",
+        lambda name, payload, *, idempotency_key: observed.append(
+            (name, payload, idempotency_key)
+        ) or payload["settings"],
+    )
+    response = TestClient(main.app).put(
+        "/api/settings", headers={"Idempotency-Key": "settings-1"},
+        json={"new_cards_per_day": 12},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["new_cards_per_day"] == 12
+    assert observed[0][0] == "settings.update"
+    assert observed[0][1]["supplied_fields"] == ["new_cards_per_day"]
+    assert observed[0][2] == "settings-1"
+
+
+def test_postgres_settings_update_refreshes_queue_and_preserves_omitted_defense_flag(monkeypatch):
+    from app.models import Settings
+    from app import settings_commands
+
+    settings = Settings(new_cards_per_day=12)
+    existing = settings.model_dump(mode="json")
+    existing["include_defensive_cards_in_daily_stack"] = 0
+    statements = []
+    refresh_dates = []
+
+    class RecordingDatabase:
+        def execute(self, statement, parameters=()):
+            statements.append((statement, parameters))
+            if statement.startswith("SELECT * FROM settings"):
+                return SimpleNamespace(fetchone=lambda: existing)
+            return SimpleNamespace(rowcount=1)
+
+    monkeypatch.setattr(settings_commands, "request_queue_refresh_in_transaction",
+                        lambda database, queue_date: refresh_dates.append(queue_date))
+    response = settings_commands.update_settings(
+        RecordingDatabase(),
+        {"settings": settings.model_dump(mode="json"), "supplied_fields": ["new_cards_per_day"]},
+    )
+    assert response["include_defensive_cards_in_daily_stack"] is False
+    update_statement, update_parameters = statements[1]
+    assert "include_defensive_cards_in_daily_stack=?" in update_statement
+    assert update_parameters[list(settings_commands._SETTINGS_COLUMNS).index(
+        "include_defensive_cards_in_daily_stack"
+    )] == 0
+    assert refresh_dates == [date.today().isoformat()]
+
+
+def test_postgres_settings_update_rejects_unsupported_coverage_refresh(monkeypatch):
+    from app.models import Settings
+    from app import settings_commands
+
+    existing = Settings().model_dump(mode="json")
+    existing["coverage_maia_elo"] = 1100
+    statements = []
+
+    class RecordingDatabase:
+        def execute(self, statement, parameters=()):
+            statements.append(statement)
+            return SimpleNamespace(fetchone=lambda: existing)
+
+    with pytest.raises(HTTPException) as error:
+        settings_commands.update_settings(
+            RecordingDatabase(),
+            {"settings": Settings().model_dump(mode="json"), "supplied_fields": ["coverage_maia_elo"]},
+        )
+    assert error.value.status_code == 503
+    assert statements == ["SELECT * FROM settings WHERE id=1 FOR UPDATE"]
+
+
 def test_postgres_api_startup_requests_todays_queue_through_foreground_command(monkeypatch):
     from app import main
 
