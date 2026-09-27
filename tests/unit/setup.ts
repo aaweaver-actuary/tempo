@@ -10,9 +10,11 @@ beforeEach(() => {
   useBoardShellStore.setState(useBoardShellStore.getInitialState(), true);
   useTrainingStore.setState(useTrainingStore.getInitialState(), true);
   clearDataDiagnostics();
-  localStorage.clear();
-  sessionStorage.clear();
-  Object.defineProperty(window, "scrollTo", { value: vi.fn(), configurable: true });
+  if (typeof window !== "undefined") {
+    localStorage.clear();
+    sessionStorage.clear();
+    Object.defineProperty(window, "scrollTo", { value: vi.fn(), configurable: true });
+  }
 });
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.useRealTimers(); });
 // jsdom has no layout engine; real sizing and observation are covered in browsers.

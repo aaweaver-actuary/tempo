@@ -1,8 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { platform, release, arch } from "node:os";
 import { performance } from "node:perf_hooks";
+import { resolvePython } from "./resolve-python.mjs";
 
 function protectRegressionSuite(directory) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
@@ -21,7 +22,7 @@ function version(command, args) {
 
 protectRegressionSuite("tests");
 protectRegressionSuite("backend/tests");
-const python = existsSync(".venv/bin/python") ? ".venv/bin/python" : "python3";
+const python = resolvePython();
 const stages = [
   ["unit", "npm", ["run", "test:unit"]],
   ["defense_engine", "node", ["scripts/test-defense-engine.mjs"]],

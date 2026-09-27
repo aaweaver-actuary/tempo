@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { describeOfflineQueue, offlineRepeatPosition } from "../../app/lib/offline-training";
 import type { BackendQueueCard } from "../../app/domain/transport";

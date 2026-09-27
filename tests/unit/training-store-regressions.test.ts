@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { useTrainingStore } from "../../app/state/training-store";
 import { buryQueuedCard } from "../../app/domain/training-session";

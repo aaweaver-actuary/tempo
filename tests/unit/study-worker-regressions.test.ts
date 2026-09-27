@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { afterEach, expect, it, vi } from "vitest";
 import { runStudyTask } from "../../app/lib/background-study";
 import { clearDebugErrors, debugErrors } from "../../app/lib/debug-reporting";

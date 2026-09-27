@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { readFileSync } from "node:fs";
 import { evaluateStudyAnswer, studyAnswerSchema, studySpecificationSchema } from "../../app/domain/study-exercises";

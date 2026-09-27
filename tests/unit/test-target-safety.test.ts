@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { expect, it } from "vitest";
 import { assertDisposableTarget } from "../browser/disposable-target";
 it("destructive browser fixtures refuse production and unmarked services", () => {

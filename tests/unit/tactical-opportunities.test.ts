@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { expect, it } from "vitest";
 import { formatConversionRate, tacticalQueueBoardOrientation } from "../../app/lib/tactical-opportunities";
 

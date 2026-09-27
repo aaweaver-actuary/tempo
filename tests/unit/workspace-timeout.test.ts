@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { expect, it, vi } from "vitest";
 import { readWorkspaceData } from "../../app/lib/workspace-data";
 it("workspace timeout is actionable and a retry can recover", async () => {

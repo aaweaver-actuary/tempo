@@ -1,3 +1,4 @@
+// @vitest-environment node
 import { describe, expect, it } from "vitest";
 import { fitBoardSurface } from "../../app/hooks/use-board-viewport";
 
