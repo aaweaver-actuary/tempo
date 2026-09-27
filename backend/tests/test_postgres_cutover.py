@@ -1524,6 +1524,21 @@ def test_postgres_defense_answers_dispatch_atomic_foreground_commands(monkeypatc
     assert dispatched[1][2] == "defense-attempt:answer-1"
 
 
+def test_postgres_defense_stale_answer_preserves_conflict_status(monkeypatch):
+    from app import defense_commands
+
+    monkeypatch.setattr(defense_commands, "submit_defense_attempt",
+                        lambda *args, **kwargs: (_ for _ in ()).throw(
+                            ValueError("Exercise revision changed")))
+    with pytest.raises(HTTPException) as error:
+        defense_commands.submit_attempt(None, {
+            "candidate_id": "candidate-1", "light_first_interval_days": 7,
+            "request": {"attempt_id": "answer-1", "exercise_revision": 2,
+                        "queue_entry_id": 42, "move_uci": "e2e4"},
+        })
+    assert error.value.status_code == 409
+
+
 def test_postgres_tactic_attempt_dispatches_validated_foreground_command(monkeypatch):
     from fastapi.testclient import TestClient
     import chess
