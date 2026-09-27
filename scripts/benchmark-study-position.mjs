@@ -94,6 +94,15 @@ for (const workload of workloads) {
       revision: 1, lines: canonicalLines,
     });
   }, workload.samples);
+  const indexedStore = createStudyPositionStore();
+  indexedStore({
+    kind: "initializePositionIndex", repertoireId: "benchmark-repertoire",
+    revision: 1, lines: canonicalLines,
+  });
+  const workerMatchTiming = measure(() => indexedStore({
+    kind: "findPositionMatches", repertoireId: "benchmark-repertoire",
+    revision: 1, fen: startFen, limit: 8,
+  }), workload.samples);
   const positions = computeStudyTask({ kind: "index", lines });
   const searchTask = { kind: "matches", fen: startFen, positions };
   const searchTiming = measure(() => computeStudyTask(searchTask), workload.samples);
@@ -115,6 +124,7 @@ for (const workload of workloads) {
     compact_query_bytes_json: Buffer.byteLength(JSON.stringify(compactQueryTask)),
     index: indexTiming,
     worker_index_initialize: workerInitializeTiming,
+    worker_indexed_matches: workerMatchTiming,
     matches: searchTiming,
     query_clone: queryCloneTiming,
     compact_query_clone: compactQueryCloneTiming,
