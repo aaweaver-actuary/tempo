@@ -1524,6 +1524,30 @@ def test_postgres_defense_answers_dispatch_atomic_foreground_commands(monkeypatc
     assert dispatched[1][2] == "defense-attempt:answer-1"
 
 
+def test_postgres_tactic_attempt_dispatches_validated_foreground_command(monkeypatch):
+    from fastapi.testclient import TestClient
+    import chess
+    from app import main
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(main, "puzzle_membership", lambda: {})
+    monkeypatch.setattr(command_dispatch, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or {"mode": "light"})
+    response = TestClient(main.app).post("/api/tactics/attempt", json={
+        "attempt_id": "tactic-1", "puzzle_id": "puzzle-1", "deck_id": "deck-1",
+        "correct": True, "clean": True, "source_fen": chess.STARTING_FEN,
+        "moves": ["e2e4", "e7e5"],
+    })
+    assert response.status_code == 200, response.text
+    assert dispatched[0][0] == "tactics.attempt.submit"
+    assert dispatched[0][1]["pack_id"] == "deck-1"
+    assert dispatched[0][1]["solution"] == ["e7e5"]
+    assert dispatched[0][2] == "tactic-attempt:tactic-1"
+
+
 def test_postgres_cutover_teaching_state_dispatches_and_replays_saved_timestamp(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main

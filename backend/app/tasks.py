@@ -17,6 +17,7 @@ from .database import read_connection
 from . import study_commands  # noqa: F401 - registers explicit worker commands
 from . import study_attempt_commands  # noqa: F401 - registers Study attempt commands
 from . import defense_commands  # noqa: F401 - registers defensive exercise commands
+from . import tactic_commands  # noqa: F401 - registers tactic attempt commands
 from . import queue_commands  # noqa: F401 - registers foreground queue commands
 from . import review_commands  # noqa: F401 - registers foreground review command
 from . import teaching_commands  # noqa: F401 - registers foreground teaching command

@@ -13,6 +13,7 @@ import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
 import { API_URL, STANDARD_FEN } from "../const";
 import { playChessMoveSound } from "../lib/move-sound";
+import { confirmOperationResponse } from "../lib/operation-status";
 import {
   readTacticProgress,
   advanceTacticProgress,
@@ -374,7 +375,8 @@ export default function TacticsView({
               rating: packagedRecord.Rating,
             }),
           });
-          if (!response.ok) throw new Error();
+          const confirmedResponse = await confirmOperationResponse(response);
+          if (!confirmedResponse.ok) throw new Error();
           invalidateWorkspaceData();
           onQueueChanged();
         } catch {

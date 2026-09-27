@@ -423,13 +423,15 @@ async def prioritize_foreground_requests(request: Request, call_next):
                                    and path_parts[3] == "main" and request.method == "PUT")
         browser_activity = (path_parts == ["api", "system", "browser-activity"]
                             and request.method == "POST")
+        tactic_attempt_command = (path_parts == ["api", "tactics", "attempt"]
+                                  and request.method == "POST")
         if not any((study_create, study_update, study_archive, exercise_create, exercise_revise,
                     exercise_enroll, exercise_attempt, exercise_self_assess,
                     exercise_availability_command,
                     chapter_create, chapter_reorder,
                     chapter_rename, link_create, queue_entry_command, card_review_command,
                     card_teaching_command, defense_answer_command,
-                    main_repertoire_command, browser_activity)):
+                    main_repertoire_command, browser_activity, tactic_attempt_command)):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
@@ -3494,7 +3496,8 @@ def tactics_activation(request: TacticActivationRequest):
 
 
 @app.post("/api/tactics/attempt")
-def tactic_attempt(request: TacticAttemptRequest):
+def tactic_attempt(request: TacticAttemptRequest,
+                   idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     membership = puzzle_membership().get(request.puzzle_id)
     if membership:
         pack_id, record = membership
@@ -3509,6 +3512,16 @@ def tactic_attempt(request: TacticAttemptRequest):
         pack_id = request.deck_id
         record = {"FEN": request.source_fen, "Moves": " ".join(request.moves)}
     training_fen, solution = validate_puzzle_record(record)  # ty: ignore[invalid-argument-type]
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "tactics.attempt.submit",
+            {"request": request.model_dump(mode="json"), "pack_id": pack_id,
+             "training_fen": training_fen, "solution": solution},
+            idempotency_key=idempotency_key or (
+                f"tactic-attempt:{request.attempt_id}" if request.attempt_id else None
+            ),
+        )
     now = datetime.now(timezone.utc)
     cid = card_id(training_fen, solution)
     light_days = get_settings().light_first_interval_days
