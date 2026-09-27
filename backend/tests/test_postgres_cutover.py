@@ -169,6 +169,50 @@ def test_postgres_cutover_teaching_state_dispatches_and_replays_saved_timestamp(
     assert "ON CONFLICT(card_id,revision,ply) DO NOTHING" in existing_state.queries[1][0]
 
 
+def test_postgres_cutover_main_repertoire_selection_uses_one_locked_command(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+    from app.repertoire_commands import select_main_repertoire
+
+    dispatched = []
+
+    def record_command(name, payload, *, idempotency_key):
+        dispatched.append((name, payload, idempotency_key))
+        return {"id": payload["repertoire_id"], "is_main": True}
+
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(command_dispatch, "dispatch_command", record_command)
+    response = TestClient(main.app).put(
+        "/api/repertoires/opening-1/main",
+        headers={"Idempotency-Key": "main-opening-1"},
+    )
+    assert response.status_code == 200, response.text
+    assert dispatched == [("repertoires.main.select", {"repertoire_id": "opening-1"}, "main-opening-1")]
+
+    class QueryResult:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def __iter__(self):
+            return iter(self.rows)
+
+    class LockedRepertoires:
+        def __init__(self):
+            self.queries = []
+
+        def execute(self, statement, parameters):
+            self.queries.append((statement, parameters))
+            return QueryResult([("opening-1",), ("opening-2",)])
+
+    database = LockedRepertoires()
+    assert select_main_repertoire(database, {"repertoire_id": "opening-1"}) == {
+        "id": "opening-1", "is_main": True,
+    }
+    assert database.queries[0][0].endswith("ORDER BY id FOR UPDATE")
+    assert database.queries[1][0].startswith("UPDATE repertoires SET is_main=")
+
+
 def test_postgres_cutover_background_slice_restarts_only_with_current_lease(monkeypatch):
     from app.services import durable_tasks
 

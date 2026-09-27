@@ -6,6 +6,7 @@
 | --- | --- |
 | PostgreSQL teaching-state saves bypass the command queue or replay changes their timestamp | `test_postgres_cutover_teaching_state_dispatches_and_replays_saved_timestamp` |
 | A teaching save is lost when the command response is pending or the service fails | `teaching save survives an ambiguous response and replays with the same command ID`; `failed teaching save remains queued for a later retry` |
+| Concurrent main-repertoire changes bypass the command queue and leave an ambiguous selection | `test_postgres_cutover_main_repertoire_selection_uses_one_locked_command` |
 | Full validation or a focused browser scope runs tests and builds before discovering that Docker or localhost binding is sandbox denied | `full verification checks Docker and loopback access before any test family`; `focused browser and Docker Make targets preflight before launching tests` |
 | Docker daemon access succeeds but the pinned visual container cannot see the checkout, causing a late failure after other test families | `pinned browser preflight detects an inaccessible checkout mount before tests` |
 | Standalone Stockfish smoke preempts itself when a slower search reaches the foreground API poll without an API server | `standalone defense engine smoke does not poll an unavailable API` |

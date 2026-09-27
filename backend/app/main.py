@@ -381,9 +381,12 @@ async def prioritize_foreground_requests(request: Request, call_next):
                                and path_parts[3] == "review" and request.method == "POST")
         card_teaching_command = (len(path_parts) == 4 and path_parts[:2] == ["api", "cards"]
                                  and path_parts[3] == "teaching" and request.method == "POST")
+        main_repertoire_command = (len(path_parts) == 4
+                                   and path_parts[:2] == ["api", "repertoires"]
+                                   and path_parts[3] == "main" and request.method == "PUT")
         if not any((study_create, study_update, chapter_create, chapter_reorder,
                     chapter_rename, link_create, queue_entry_command, card_review_command,
-                    card_teaching_command)):
+                    card_teaching_command, main_repertoire_command)):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
@@ -2112,7 +2115,14 @@ def migration_snapshot():
 
 
 @app.put("/api/repertoires/{identifier}/main")
-def make_main_repertoire(identifier: str):
+def make_main_repertoire(identifier: str,
+                         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "repertoires.main.select", {"repertoire_id": identifier},
+            idempotency_key=idempotency_key,
+        )
     with connection() as db:
         if not db.execute(
             "SELECT 1 FROM repertoires WHERE id=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__')",

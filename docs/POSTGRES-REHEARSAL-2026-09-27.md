@@ -76,6 +76,9 @@ handler has been ported and the release gates pass.
   has focused route and replay regressions. A rolled-back rehearsal against
   PostgreSQL confirmed the insert and duplicate replay return the same saved
   timestamp.
+- Main-repertoire selection now dispatches one foreground command that locks
+  eligible repertoire rows in stable order before changing the selection. A
+  rolled-back PostgreSQL rehearsal confirmed the resulting single-main state.
 - Foreground reviews now dispatch a named Celery command and commit the queue
   attempt, scheduling result, follow-up job requests, and operation receipt
   together. Two concurrent rehearsal commands for one queue attempt produced
