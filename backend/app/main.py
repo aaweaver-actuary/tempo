@@ -424,6 +424,9 @@ async def prioritize_foreground_requests(request: Request, call_next):
         annotation_command = (len(path_parts) == 4
                               and path_parts[:2] == ["api", "repertoires"]
                               and path_parts[3] == "annotations" and request.method == "PUT")
+        repertoire_rename_command = (len(path_parts) == 3
+                                     and path_parts[:2] == ["api", "repertoires"]
+                                     and request.method == "PATCH")
         browser_activity = (path_parts == ["api", "system", "browser-activity"]
                             and request.method == "POST")
         tactic_attempt_command = (path_parts == ["api", "tactics", "attempt"]
@@ -445,7 +448,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     chapter_create, chapter_reorder,
                     chapter_rename, link_create, queue_entry_command, card_review_command,
                     card_teaching_command, defense_answer_command,
-                    main_repertoire_command, annotation_command,
+                    main_repertoire_command, annotation_command, repertoire_rename_command,
                     browser_activity, tactic_attempt_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     settings_command,
@@ -3111,7 +3114,14 @@ def archive_card(identifier: str):
 
 
 @app.patch("/api/repertoires/{identifier}")
-def rename_repertoire(identifier: str, request: RepertoireRenameRequest):
+def rename_repertoire(identifier: str, request: RepertoireRenameRequest,
+                      idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "repertoires.rename", {"repertoire_id": identifier, "name": request.name},
+            idempotency_key=idempotency_key,
+        )
     with connection() as db:
         if not db.execute(
             "UPDATE repertoires SET name=? WHERE id=?",

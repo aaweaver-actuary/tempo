@@ -31,4 +31,15 @@ def select_main_repertoire(database: PostgresConnection, payload: dict[str, Any]
     return {"id": repertoire_id, "is_main": True}
 
 
+def rename_repertoire(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    repertoire_id = str(payload["repertoire_id"])
+    name = str(payload["name"]).strip()
+    if not database.execute(
+        "UPDATE repertoires SET name=? WHERE id=?", (name, repertoire_id),
+    ).rowcount:
+        raise HTTPException(404, "Repertoire not found")
+    return {"id": repertoire_id, "name": name}
+
+
 register_command("repertoires.main.select", select_main_repertoire)
+register_command("repertoires.rename", rename_repertoire)

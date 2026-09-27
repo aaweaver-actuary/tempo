@@ -148,6 +148,28 @@ def test_postgres_annotation_command_clears_empty_position_note():
     assert statements[1][0].startswith("DELETE FROM position_annotations")
 
 
+def test_postgres_repertoire_rename_dispatches_idempotent_foreground_command(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(command_dispatch, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or {
+                            "id": "rep", "name": "New name",
+                        })
+    response = TestClient(main.app).patch(
+        "/api/repertoires/rep", headers={"Idempotency-Key": "rename-1"},
+        json={"name": "New name"},
+    )
+    assert response.status_code == 200, response.text
+    assert dispatched == [("repertoires.rename", {
+        "repertoire_id": "rep", "name": "New name",
+    }, "rename-1")]
+
+
 def test_postgres_settings_update_dispatches_foreground_command(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main
