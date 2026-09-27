@@ -569,6 +569,36 @@ def test_postgres_card_validation_remains_available_without_a_write_worker(monke
     assert response.json()["moves"] == ["e2e4"]
 
 
+def test_postgres_analysis_paste_preview_uses_query_only_reader_without_write_worker(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    observed = []
+
+    @contextmanager
+    def query_only_scope():
+        observed.append("query_only_entered")
+        yield
+
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(main, "query_only_request", query_only_scope)
+    monkeypatch.setattr(main, "read_connection", lambda: nullcontext(object()))
+    monkeypatch.setattr(main, "connection", lambda **_kwargs: (_ for _ in ()).throw(
+        AssertionError("preview must not open a writer")))
+    monkeypatch.setattr(
+        main, "build_paste_preview",
+        lambda database, text, starting_fen, source_gap_id:
+            observed.append((text, starting_fen, source_gap_id)) or {"lines": []},
+    )
+    response = TestClient(main.app).post(
+        "/api/repertoire/paste/preview", json={"text": "1. e4"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"lines": []}
+    assert observed == ["query_only_entered", ("1. e4", None, None)]
+
+
 def test_postgres_annotation_route_dispatches_idempotent_foreground_command(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main

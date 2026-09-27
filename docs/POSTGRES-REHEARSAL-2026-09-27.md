@@ -504,3 +504,12 @@ tactic card, applied a `correct` review, and returned review ID 1631, next due
 operation ID returned the same review ID and response. This checked the
 SQLite-shaped review SQL against PostgreSQL and the receipt path on restored
 data; it was not a cross-container concurrency or API latency benchmark.
+
+The analysis paste preview HTTP POST now uses the PostgreSQL read-only path.
+A real-schema preview for `1. e4 e5 2. Nf3` returned HTTP 200 with a token and
+line options using the reader role. It took 6.6 seconds in this cold
+rehearsal request because the current preview builds a position map from every
+stored repertoire line. The save endpoint is still unported; optimize the
+preview traversal and migrate its commit before treating builder paste as
+ready for cutover. The named route regression and the 527-test backend suite
+passed after this change.

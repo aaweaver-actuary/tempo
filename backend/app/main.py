@@ -374,6 +374,14 @@ def _validated_analysis_evaluations(
 @app.middleware("http")
 async def prioritize_foreground_requests(request: Request, call_next):
     request.state.started_monotonic = time.monotonic()
+    read_only_post = (
+        request.method == "POST"
+        and request.url.path in {
+            "/api/repertoire/paste/preview",
+            "/api/endgames/probe",
+            "/api/cards/validate",
+        }
+    )
     if postgres_store.configured() and request.method not in {"GET", "HEAD", "OPTIONS"}:
         path_parts = request.url.path.strip("/").split("/")
         study_root = path_parts[:2] == ["api", "studies"]
@@ -457,7 +465,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
         )
         card_validation = (path_parts == ["api", "cards", "validate"]
                            and request.method == "POST")
-        if not any((study_create, study_update, study_archive, exercise_create, exercise_revise,
+        if not read_only_post and not any((study_create, study_update, study_archive, exercise_create, exercise_revise,
                     exercise_enroll, exercise_attempt, exercise_self_assess,
                     exercise_availability_command,
                     chapter_create, chapter_reorder,
@@ -478,7 +486,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
     is_background = (
         request.headers.get("x-tempo-work-class", "").casefold() == "background"
     )
-    request_scope = query_only_request() if request.method == "GET" else None
+    request_scope = query_only_request() if request.method == "GET" or read_only_post else None
     if request_scope is not None:
         request_scope.__enter__()
     try:
