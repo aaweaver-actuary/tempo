@@ -109,6 +109,23 @@ def test_postgres_cutover_conflict_target_does_not_include_null_ordering():
     assert "NULLS FIRST" not in statement
 
 
+def test_postgres_cutover_card_copy_uses_backend_column_catalog(monkeypatch):
+    from app import database as database_module
+
+    with sqlite3.connect(":memory:") as sqlite_database:
+        sqlite_database.execute("CREATE TABLE cards(id TEXT PRIMARY KEY, due_date TEXT)")
+        assert database_module.card_columns(sqlite_database) == ["id", "due_date"]
+
+    class PgDatabase:
+        def execute(self, statement, parameters):
+            assert "information_schema.columns" in statement
+            assert parameters == ("cards",)
+            return [("id",), ("due_date",)]
+
+    monkeypatch.setattr(database_module.postgres_store, "configured", lambda: True)
+    assert database_module.card_columns(PgDatabase()) == ["id", "due_date"]
+
+
 def test_postgres_cutover_row_supports_mapping_and_sqlite_value_iteration():
     row = TempoRow(("total", "unread_count"), (3, 2))
     assert dict(row) == {"total": 3, "unread_count": 2}

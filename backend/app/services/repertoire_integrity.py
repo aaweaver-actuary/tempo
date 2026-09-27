@@ -12,7 +12,7 @@ import uuid
 
 import chess
 
-from ..database import read_connection
+from ..database import card_columns, read_connection
 from .database_executor import submit_background_write
 
 from .cards import card_id
@@ -677,7 +677,7 @@ def _rewrite_card(database: sqlite3.Connection, repertoire_id: str, row: sqlite3
         return False
     existing = database.execute("SELECT 1 FROM cards WHERE id=?", (new_id,)).fetchone()
     if not existing:
-        columns = [item[1] for item in database.execute("PRAGMA table_info(cards)")]
+        columns = card_columns(database)
         values = dict(row)
         values.update({"id": new_id, "moves_json": json.dumps(moves), "state": "new", "due_date": datetime.now(timezone.utc).date().isoformat(), "interval_days": 0, "repetitions": 0, "lapses": 0, "introduced_at": None, "archived": 0, "superseded_by": None})
         database.execute(

@@ -20,7 +20,7 @@ from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadF
 from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from .database import connection, initialize, query_only_request, read_connection
+from .database import card_columns, connection, initialize, query_only_request, read_connection
 from . import postgres_store
 from .command_gateway import read_operation
 from .celery_app import celery_app
@@ -2792,7 +2792,7 @@ def revise_card(identifier: str, request: CardRevisionRequest):
                         "recent_attempts_json": "[]",
                     }
                 )
-            columns = [row[1] for row in db.execute("PRAGMA table_info(cards)")]
+            columns = card_columns(db)
             db.execute(
                 f"INSERT INTO cards({','.join(columns)}) VALUES({','.join('?' for _ in columns)})",
                 tuple(fields.get(column) for column in columns),

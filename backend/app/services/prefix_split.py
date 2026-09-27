@@ -8,6 +8,7 @@ import sqlite3
 
 import chess
 
+from ..database import card_columns
 from .cards import card_id
 from .review_service import preserve_daily_queue_order
 
@@ -113,7 +114,7 @@ def _copy_card(
     source_card: sqlite3.Row,
     values: dict,
 ) -> None:
-    columns = [row[1] for row in database.execute("PRAGMA table_info(cards)")]
+    columns = card_columns(database)
     source_values = dict(source_card)
     source_values.update(values)
     database.execute(

@@ -151,6 +151,18 @@ def read_connection() -> Iterator[sqlite3.Connection]:
             database.close()
 
 
+def card_columns(database: sqlite3.Connection) -> list[str]:
+    """Return cards columns in storage order for identity-preserving copies."""
+
+    if postgres_store.configured():
+        return [row[0] for row in database.execute(
+            "SELECT column_name FROM information_schema.columns "
+            "WHERE table_schema='public' AND table_name=? ORDER BY ordinal_position",
+            ("cards",),
+        )]
+    return [row[1] for row in database.execute("PRAGMA table_info(cards)")]
+
+
 def initialize() -> None:
     if postgres_store.configured():
         with read_connection() as database:
