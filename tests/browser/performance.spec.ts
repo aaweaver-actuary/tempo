@@ -16,6 +16,17 @@ test("warm workspace and Builder move responsiveness", async ({ page }, testInfo
   test.setTimeout(120_000);
   await page.setViewportSize({ width: 1280, height: 800 });
   await prepareVisualUI(page, false);
+  const boardReadySamples: number[] = [];
+  for (let reload = 0; reload < 5; reload++) {
+    if (reload > 0) await page.reload();
+    await navigate(page, "Builder");
+    await expect.poll(() => page.evaluate(() =>
+      performance.getEntriesByName("tempo:board-ready").at(-1)?.duration ?? null,
+    )).not.toBeNull();
+    boardReadySamples.push(await page.evaluate(() =>
+      performance.getEntriesByName("tempo:board-ready").at(-1)!.duration,
+    ));
+  }
   const modes = ["Builder", "Games", "Endgames", "Tactics", "Train"] as const;
   for (const mode of modes) await navigate(page, mode);
   const viewSwitchSamples: Record<string, number[]> = Object.fromEntries(
@@ -97,9 +108,6 @@ test("warm workspace and Builder move responsiveness", async ({ page }, testInfo
       await expect(page.locator(".board-frame")).not.toHaveAttribute("data-fen", /4P3/);
     }
   }
-  const boardReadySamples = await page.evaluate(() =>
-    performance.getEntriesByName("tempo:board-ready").map((entry) => entry.duration),
-  );
   const longTasks = await page.evaluate(() =>
     Reflect.get(window, "tempoInteractionTasks") as number[],
   );
@@ -121,7 +129,7 @@ test("warm workspace and Builder move responsiveness", async ({ page }, testInfo
     schemaVersion: 1,
     timestamp: new Date().toISOString(),
     commit: process.env.TEMPO_COMMIT ?? process.env.GITHUB_SHA ?? null,
-    fixture: "prepareVisualUI-default",
+    fixture: { name: "prepareVisualUI-default", boardReloads: 5, warmMoves: 5 },
     browser: browserName,
     viewSwitchSamples,
     viewSwitchSummary: Object.fromEntries(
@@ -141,7 +149,7 @@ test("warm workspace and Builder move responsiveness", async ({ page }, testInfo
     body: reportBody,
     contentType: "application/json",
   });
-  expect(boardReadySamples.length).toBeGreaterThan(0);
+  expect(boardReadySamples).toHaveLength(5);
   expect(moveToPaintSamples).toHaveLength(5);
   if (browserName === "chromium") {
     expect(eventTiming.supported).toBe(true);
