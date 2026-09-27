@@ -11,6 +11,7 @@ import { usesLocalApi } from "../utils/local";
 import { API_URL } from "../const";
 import { renameRepertoireCommand } from "../lib/repertoire-rename-command";
 import { deleteRepertoireCommand } from "../lib/repertoire-delete-command";
+import { applyOpportunityCommand } from "../lib/opportunity-command";
 import {
   readWorkspaceResponse,
   invalidateWorkspaceData,
@@ -322,14 +323,7 @@ export default function RepertoireView({
     repertoireId: string,
     opportunityId: string,
   ) {
-    const response = await fetch(
-      `${API_URL}/api/repertoires/${repertoireId}/opportunities/${opportunityId}/dismiss`,
-      { method: "POST" },
-    );
-    if (!response.ok)
-      throw new Error(
-        `Could not dismiss opportunity (HTTP ${response.status}).`,
-      );
+    await applyOpportunityCommand(repertoireId, opportunityId, "dismiss");
     await loadOpportunities(repertoireId);
   }
   async function trainOpportunity(repertoireId: string, opportunityId: string) {

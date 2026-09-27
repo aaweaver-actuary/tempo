@@ -926,6 +926,29 @@ def test_postgres_card_archive_returns_unchecked_integrity_after_scan_intent(mon
     assert any("UPDATE daily_queue SET status='complete'" in statement for statement in statements)
 
 
+@pytest.mark.parametrize("action", ["dismiss", "acknowledge", "snooze"])
+def test_postgres_opportunity_state_actions_dispatch_idempotent_commands(monkeypatch, action):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(command_dispatch, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or {
+                            {"dismiss": "dismissed", "acknowledge": "acknowledged", "snooze": "snoozed"}[action]: True,
+                        })
+    response = TestClient(main.app).post(
+        f"/api/repertoires/white/opportunities/discovery-1/{action}",
+        headers={"Idempotency-Key": f"discovery-1-{action}"},
+    )
+    assert response.status_code == 200, response.text
+    assert dispatched == [(f"opportunities.{action}", {
+        "repertoire_id": "white", "opportunity_id": "discovery-1",
+    }, f"discovery-1-{action}")]
+
+
 def test_postgres_annotation_route_dispatches_idempotent_foreground_command(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main

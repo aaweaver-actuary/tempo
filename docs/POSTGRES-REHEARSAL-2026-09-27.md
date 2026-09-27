@@ -46,6 +46,15 @@ showed the response could carry the previously clean integrity summary even
 though the archive invalidated it. The command now reads the summary after
 the scan intent, and the rehearsal returned `unchecked` and `queued`.
 
+## Discovery state command rehearsal
+
+Dismiss, acknowledge, and snooze now use named foreground Celery commands.
+The repertoire view and discoveries tray retain an operation ID until its
+receipt confirms the action. Rolled-back PostgreSQL rehearsal rows confirmed
+that dismiss copies the saved evidence, acknowledge records a seen timestamp,
+and snooze records a seven-day deadline. The three routes and pending browser
+behavior have named regressions.
+
 ## Prioritized opening slice check
 
 The opening candidate read returned 326 rows in both the verified SQLite

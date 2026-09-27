@@ -443,6 +443,12 @@ async def prioritize_foreground_requests(request: Request, call_next):
         repertoire_delete_command = (len(path_parts) == 3
                                      and path_parts[:2] == ["api", "repertoires"]
                                      and request.method == "DELETE")
+        opportunity_state_command = (
+            len(path_parts) == 6 and path_parts[:2] == ["api", "repertoires"]
+            and path_parts[3] == "opportunities"
+            and path_parts[5] in {"dismiss", "acknowledge", "snooze"}
+            and request.method == "POST"
+        )
         browser_activity = (path_parts == ["api", "system", "browser-activity"]
                             and request.method == "POST")
         tactic_attempt_command = (path_parts == ["api", "tactics", "attempt"]
@@ -491,7 +497,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     card_revision_command, card_archive_command,
                     card_teaching_command, defense_answer_command,
                     main_repertoire_command, annotation_command, repertoire_rename_command,
-                    repertoire_delete_command,
+                    repertoire_delete_command, opportunity_state_command,
                     browser_activity, tactic_attempt_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     settings_command,
@@ -3504,7 +3510,14 @@ def refresh_repertoire_opportunities(identifier: str):
 
 
 @app.post("/api/repertoires/{identifier}/opportunities/{opportunity_id}/dismiss")
-def dismiss_repertoire_opportunity(identifier: str, opportunity_id: str):
+def dismiss_repertoire_opportunity(identifier: str, opportunity_id: str,
+                                   idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "opportunities.dismiss", {"repertoire_id": identifier, "opportunity_id": opportunity_id},
+            idempotency_key=idempotency_key,
+        )
     with connection() as database:
         if not dismiss_opportunity(database, identifier, opportunity_id):
             raise HTTPException(404, "Active opportunity not found")
@@ -3512,7 +3525,14 @@ def dismiss_repertoire_opportunity(identifier: str, opportunity_id: str):
 
 
 @app.post("/api/repertoires/{identifier}/opportunities/{opportunity_id}/acknowledge")
-def acknowledge_repertoire_opportunity(identifier: str, opportunity_id: str):
+def acknowledge_repertoire_opportunity(identifier: str, opportunity_id: str,
+                                       idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "opportunities.acknowledge", {"repertoire_id": identifier, "opportunity_id": opportunity_id},
+            idempotency_key=idempotency_key,
+        )
     with connection() as database:
         if not acknowledge_opportunity(database, identifier, opportunity_id):
             raise HTTPException(404, "Active discovery not found")
@@ -3520,7 +3540,14 @@ def acknowledge_repertoire_opportunity(identifier: str, opportunity_id: str):
 
 
 @app.post("/api/repertoires/{identifier}/opportunities/{opportunity_id}/snooze")
-def snooze_repertoire_opportunity(identifier: str, opportunity_id: str):
+def snooze_repertoire_opportunity(identifier: str, opportunity_id: str,
+                                  idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "opportunities.snooze", {"repertoire_id": identifier, "opportunity_id": opportunity_id},
+            idempotency_key=idempotency_key,
+        )
     with connection() as database:
         if not snooze_opportunity(database, identifier, opportunity_id):
             raise HTTPException(404, "Active discovery not found")
