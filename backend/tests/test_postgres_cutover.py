@@ -182,6 +182,55 @@ def test_postgres_settings_update_rejects_unsupported_coverage_refresh(monkeypat
     assert statements == ["SELECT * FROM settings WHERE id=1 FOR UPDATE"]
 
 
+def test_postgres_game_sync_admission_serializes_and_checkpoints_job(monkeypatch):
+    from app import game_sync_commands
+
+    statements = []
+    tasks = []
+
+    class RecordingConnection:
+        def execute(self, statement, parameters=()):
+            statements.append((statement, parameters))
+            return SimpleNamespace(fetchone=lambda: None)
+
+    database = RecordingConnection()
+    database.raw = database
+    monkeypatch.setattr(game_sync_commands, "enqueue_task_in_transaction",
+                        lambda connection, kind, key, payload, **options:
+                        tasks.append((kind, key, payload, options)))
+    result = game_sync_commands.enqueue_game_sync(
+        database, {"lichess_username": " alice ", "chesscom_username": ""},
+    )
+    assert result["status"] == "queued"
+    assert statements[0][0].startswith("SELECT pg_advisory_xact_lock")
+    assert "FOR UPDATE" in statements[1][0]
+    saved_request = json.loads(statements[2][1][1])
+    assert saved_request["lichess_username"] == "alice"
+    assert tasks == [("game_sync", result["job_id"], {"job_id": result["job_id"]},
+                      {"priority": 80})]
+
+
+def test_postgres_game_sync_admission_coalesces_existing_active_job(monkeypatch):
+    from app import game_sync_commands
+
+    class ExistingJobConnection:
+        def execute(self, statement, parameters=()):
+            if "FROM game_sync_jobs" in statement:
+                return SimpleNamespace(fetchone=lambda: {"id": "active-sync", "status": "running"})
+            if statement.startswith("INSERT INTO game_sync_jobs"):
+                pytest.fail("Existing sync was duplicated")
+            return SimpleNamespace()
+
+    database = ExistingJobConnection()
+    database.raw = database
+    monkeypatch.setattr(game_sync_commands, "enqueue_task_in_transaction",
+                        lambda *args, **kwargs: pytest.fail("Existing sync was requeued"))
+    result = game_sync_commands.enqueue_game_sync(
+        database, {"lichess_username": "alice"},
+    )
+    assert result == {"imported": 0, "job_id": "active-sync", "status": "running", "providers": {}}
+
+
 def test_postgres_api_startup_requests_todays_queue_through_foreground_command(monkeypatch):
     from app import main
 
