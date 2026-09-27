@@ -443,3 +443,87 @@ def test_postgres_cutover_queue_unlock_slice_replays_and_advances_without_skips(
         complete_states = list(complete_database.execute("SELECT id,state FROM cards ORDER BY id"))
         sliced_states = list(sliced_database.execute("SELECT id,state FROM cards ORDER BY id"))
         assert [tuple(row) for row in sliced_states] == [tuple(row) for row in complete_states]
+
+
+def test_postgres_cutover_game_refresh_waits_for_foreground_and_discards_stale_replay(monkeypatch):
+    from app import tasks
+    from app.services import repertoire_game_refresh
+
+    foreground_finished = threading.Event()
+    connection_opened = threading.Event()
+    queued_games: list[str] = []
+    persisted_cursors: list[str] = []
+    current_lease = {"token": "active"}
+    claimed_task = {
+        "kind": "repertoire_game_refresh", "id": "refresh-task", "generation": 2,
+        "lease_token": "active", "payload": {"after_game_id": ""},
+    }
+
+    class Cursor:
+        def __init__(self, row=None):
+            self.row = row
+
+        def fetchone(self):
+            return self.row
+
+    class Database:
+        def execute(self, statement, parameters):
+            if "FROM imported_games" in statement:
+                return Cursor({"id": "game-1"})
+            if "INSERT INTO game_derivation_jobs" in statement:
+                queued_games.append(parameters[0])
+            return Cursor()
+
+    @contextmanager
+    def test_connection(*, background):
+        assert background
+        connection_opened.set()
+        yield Database()
+
+    def enqueue_next_slice(_database, _kind, _key, payload, **_options):
+        persisted_cursors.append(payload["after_game_id"])
+        current_lease["token"] = "next-generation"
+
+    monkeypatch.setattr(repertoire_game_refresh.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(repertoire_game_refresh.activity_gate, "wait_for_foreground", foreground_finished.wait)
+    monkeypatch.setattr(repertoire_game_refresh, "connection", test_connection)
+    monkeypatch.setattr(
+        repertoire_game_refresh, "lock_current_slice",
+        lambda _database, task: task["lease_token"] == current_lease["token"],
+    )
+    monkeypatch.setattr(repertoire_game_refresh, "enqueue_task_in_transaction", enqueue_next_slice)
+
+    result: list[bool] = []
+    worker = threading.Thread(
+        target=lambda: result.append(repertoire_game_refresh.execute_repertoire_game_refresh_slice(claimed_task)),
+    )
+    worker.start()
+    assert not connection_opened.wait(0.05)
+    foreground_finished.set()
+    worker.join(timeout=2)
+    assert not worker.is_alive()
+    assert result == [True]
+    assert queued_games == ["game-1"]
+    assert persisted_cursors == ["game-1"]
+    assert repertoire_game_refresh.execute_repertoire_game_refresh_slice(claimed_task) is False
+    assert queued_games == ["game-1"]
+
+    claimed_kinds: list[str] = []
+    sent_tasks: list[str] = []
+    monkeypatch.setattr(
+        tasks, "claim_task",
+        lambda kind: claimed_kinds.append(kind) or (claimed_task if kind == "repertoire_game_refresh" else None),
+    )
+    monkeypatch.setattr(tasks.celery_app, "send_task", lambda task_name, **_arguments: sent_tasks.append(task_name))
+    assert tasks.poll_background_tasks.run() is True
+    assert claimed_kinds == ["repertoire_game_refresh"]
+    assert sent_tasks == ["app.tasks.execute_background_slice"]
+    completed_tasks: list[str] = []
+    monkeypatch.setattr(tasks, "execute_repertoire_game_refresh_slice", lambda _task: False)
+    monkeypatch.setattr(
+        tasks, "complete_task",
+        lambda task_id, _generation, _lease: completed_tasks.append(task_id),
+    )
+    monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_arguments: nullcontext())
+    assert tasks.execute_background_slice.run(claimed_task) is False
+    assert completed_tasks == ["refresh-task"]

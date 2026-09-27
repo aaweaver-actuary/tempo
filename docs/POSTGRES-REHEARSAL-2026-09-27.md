@@ -98,6 +98,11 @@ handler has been ported and the release gates pass.
   `pg_restore -l` passed, then the archive restored into a disposable database.
   `scripts/verify_postgres_restore.py` compared every row of all 91 migrated
   tables between the source and restored databases and passed.
+- Repertoire game refresh now uses the Celery background queue. Its one-game
+  slice locks the claimed PostgreSQL lease before queuing a derivation and
+  advancing its cursor. Five rolled-back rehearsal executions of the real SQL
+  took 5.5–11.5 ms; downstream game derivation remains
+  a separate unported handler.
 - Preliminary in-process API read samples at 1, 4, and 16 clients are in
   `benchmarks/postgres-read-rehearsal-2026-09-27.csv`. They show a PostgreSQL
   queue-read regression under this first schema, so the cutover latency gate

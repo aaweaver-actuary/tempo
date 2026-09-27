@@ -16,6 +16,7 @@ from . import review_commands  # noqa: F401 - registers foreground review comman
 from .services.activity_gate import activity_gate
 from .services.durable_tasks import claim_task, complete_task, fail_task
 from .services.priority_retention import execute_priority_retention_slice
+from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
 
 
 _LOGGER = logging.getLogger("tempo.tasks")
@@ -42,7 +43,11 @@ def execute_foreground_command(
 def poll_background_tasks() -> bool:
     """Admit at most one durable slice per poll; failed dispatch reclaims later."""
 
-    claimed_task = claim_task("priority_retention")
+    claimed_task = None
+    for task_kind in ("repertoire_game_refresh", "priority_retention"):
+        claimed_task = claim_task(task_kind)
+        if claimed_task is not None:
+            break
     if claimed_task is None:
         return False
     celery_app.send_task(
@@ -55,11 +60,16 @@ def poll_background_tasks() -> bool:
 
 @celery_app.task(name="app.tasks.execute_background_slice", bind=True)
 def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
-    if claimed_task["kind"] != "priority_retention":
+    background_handlers = {
+        "repertoire_game_refresh": execute_repertoire_game_refresh_slice,
+        "priority_retention": execute_priority_retention_slice,
+    }
+    handler = background_handlers.get(claimed_task["kind"])
+    if handler is None:
         raise ValueError(f"Unported background handler: {claimed_task['kind']}")
     with activity_gate.background_job(claimed_task["kind"], claimed_task["id"]):
         try:
-            more_work = execute_priority_retention_slice(claimed_task)
+            more_work = handler(claimed_task)
             complete_task(
                 claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"]
             )
@@ -72,5 +82,5 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
         try:
             celery_app.send_task("app.tasks.poll_background_tasks", queue="background")
         except BrokerUnavailable:
-            _LOGGER.exception("Could not wake priority retention; periodic polling will retry")
+            _LOGGER.exception("Could not wake background work; periodic polling will retry")
     return more_work
