@@ -22,7 +22,11 @@
     "verify:phone-deployment": "node scripts/verify-phone-deployment.mjs",
     "start": "vinext start",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern pages-dist --ignore-pattern local-dist --ignore-pattern public/tempo-core --ignore-pattern test-results --ignore-pattern static/test-results --ignore-pattern playwright-report",
-    "test:visual": "node scripts/test-visual.mjs"
+    "test:visual": "node scripts/test-visual.mjs",
+    "test:fast": "node scripts/test-all.mjs fast",
+    "test:integration": "node scripts/test-all.mjs integration",
+    "test:full": "node scripts/test-all.mjs full",
+    "test:perf": "npm run test:visual"
   },
   "dependencies": {
     "@lichess-org/chessground": "^10.1.1",
