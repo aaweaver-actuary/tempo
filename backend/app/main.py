@@ -450,6 +450,11 @@ async def prioritize_foreground_requests(request: Request, call_next):
                               and request.method == "POST")
         pgn_import_command = (path_parts == ["api", "imports", "pgn"]
                               and request.method == "POST")
+        integrity_resolution_command = (
+            len(path_parts) == 7 and path_parts[:2] == ["api", "repertoires"]
+            and path_parts[3:5] == ["integrity", "issues"]
+            and path_parts[6] == "resolve" and request.method == "POST"
+        )
         card_validation = (path_parts == ["api", "cards", "validate"]
                            and request.method == "POST")
         if not any((study_create, study_update, study_archive, exercise_create, exercise_revise,
@@ -464,6 +469,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     settings_command,
                     endgame_probe, endgame_template_command,
                     endgame_attempt_command, branch_add_command, pgn_import_command,
+                    integrity_resolution_command,
                     card_validation)):
             return JSONResponse(
                 status_code=503,
@@ -2000,8 +2006,26 @@ def repertoire_integrity(identifier: str):
 
 @app.post("/api/repertoires/{identifier}/integrity/issues/{issue_id}/resolve")
 def resolve_repertoire_integrity(
-    identifier: str, issue_id: str, request: IntegrityResolutionRequest
+    identifier: str, issue_id: str, request: IntegrityResolutionRequest,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        from .services.repertoire_integrity import prepare_issue_resolution
+
+        try:
+            prepared = prepare_issue_resolution(
+                identifier, issue_id, request.signature, request.selected_move_uci,
+            )
+        except KeyError as error:
+            raise HTTPException(404, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+        return dispatch_command(
+            "integrity.issue.resolve", prepared, idempotency_key=idempotency_key,
+        )
     with read_connection() as database:
         issue = database.execute(
             "SELECT signature FROM repertoire_integrity_issues WHERE id=? AND repertoire_id=?",

@@ -454,3 +454,27 @@ integrity error and remain unchecked. Remove this size limit with versioned
 publication before calling the growing-workload cutover complete. The
 isolated smoke database contains only synthetic records; no live SQLite data
 was changed.
+
+## Guided integrity repair command
+
+The guided-repair API now prepares its chess transformation from the read-only
+PostgreSQL role and dispatches an idempotent foreground Celery command. The
+worker rechecks the issue signature and source moves under row locks, carries
+line training depth to a replacement line, rewrites or detaches affected
+cards, invalidates the old integrity result, and queues a graph rebuild in
+the same transaction. The browser retains the operation ID across an
+ambiguous HTTP 202; the existing SQLite response remains accepted.
+
+An isolated `tempo_integrity_repair_smoke` database exercised a missing-response
+line repair from `e4 e5` to `e4 e5 Nf3`: the old line was replaced, its custom
+depth of 9 survived, the graph task was queued, and the same command ID replayed
+without a second write. A second scenario repaired a contradictory `d4`
+card to `e4`: the old card was archived, its replacement linked, and the
+graph generation advanced. This synthetic database is disposable and separate
+from the restored source and live SQLite database.
+
+A read-only FastAPI smoke against the restored PostgreSQL data returned HTTP
+200 for settings, repertoires, queue window, prepared queue, progress, games
+summary, tactics catalog, endgame templates, and task status. These requests
+used the reader role and did not start the API lifespan or a browser; they
+show the core read projections work, not that the product stack is ready.

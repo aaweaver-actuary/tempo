@@ -60,6 +60,86 @@ def test_postgres_pgn_import_dispatches_parsed_payload_with_idempotency(monkeypa
     assert observed[0][2] == "import-one"
 
 
+def test_postgres_integrity_repair_dispatches_prepared_plan_with_idempotency(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+    from app.services import repertoire_integrity
+
+    observed = []
+    prepared = {
+        "repertoire_id": "rep", "issue_id": "issue", "signature": "signature",
+        "changed_lines": {}, "changed_cards": {}, "expected_line_moves": {},
+        "expected_card_moves": {}, "unsupported_card_ids": [],
+    }
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(repertoire_integrity, "prepare_issue_resolution",
+                        lambda *_args: prepared)
+    monkeypatch.setattr(
+        command_dispatch, "dispatch_command",
+        lambda name, payload, *, idempotency_key:
+            observed.append((name, payload, idempotency_key)) or {
+                "task_id": "graph", "repertoire_id": "rep",
+                "issue_id": "issue", "state": "queued",
+            },
+    )
+    response = TestClient(main.app).post(
+        "/api/repertoires/rep/integrity/issues/issue/resolve",
+        headers={"Idempotency-Key": "repair-one"},
+        json={"signature": "signature", "selected_move_uci": "e2e4"},
+    )
+    assert response.status_code == 200, response.text
+    assert observed == [("integrity.issue.resolve", prepared, "repair-one")]
+
+
+def test_postgres_integrity_repair_rejects_stale_issue_signature(monkeypatch):
+    from app import integrity_repair_commands
+
+    observed = []
+    monkeypatch.setattr(
+        integrity_repair_commands, "request_graph_rebuild_in_transaction",
+        lambda *_args: observed.append("graph-task") or {"id": "graph", "state": "queued"},
+    )
+
+    class IssueChanged:
+        def execute_native(self, statement, *_args):
+            observed.append(statement)
+            if "FROM repertoires" in statement:
+                return SimpleNamespace(fetchone=lambda: (1,))
+            if "FROM repertoire_integrity_issues" in statement:
+                return SimpleNamespace(fetchone=lambda: ("new-signature",))
+            raise AssertionError("A stale repair must not write source rows")
+
+    with pytest.raises(HTTPException) as error:
+        integrity_repair_commands.resolve_integrity_issue(IssueChanged(), {
+            "repertoire_id": "rep", "issue_id": "issue",
+            "signature": "old-signature", "changed_lines": {},
+            "changed_cards": {}, "expected_line_moves": {},
+            "expected_card_moves": {}, "unsupported_card_ids": [],
+        })
+    assert error.value.status_code == 409
+    assert observed[0] == "graph-task"
+    assert "FROM repertoires" in observed[1]
+
+
+def test_postgres_integrity_repair_copies_line_training_depth_before_delete():
+    from app.integrity_repair_commands import _replace_repertoire_line
+
+    statements = []
+    class RecordingDatabase:
+        def execute_native(self, statement, parameters):
+            statements.append((statement, parameters))
+
+    assert _replace_repertoire_line(RecordingDatabase(), {
+        "id": "old", "repertoire_id": "rep", "name": "Opening",
+        "trained_color": "white", "start_fen": chess.STARTING_FEN,
+        "created_at": "2026-09-27",
+    }, ["e2e4", "e7e5", "g1f3"])
+    assert "INSERT INTO repertoire_line_training_depths" in statements[1][0]
+    assert "GREATEST" in statements[1][0]
+    assert statements[2] == ("DELETE FROM repertoire_lines WHERE id=%s", ("old",))
+
+
 def test_postgres_repertoire_edit_invalidates_old_clean_integrity_in_same_transaction():
     from app.services.postgres_integrity import invalidate_integrity_in_transaction
 

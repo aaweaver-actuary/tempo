@@ -10,10 +10,10 @@ import { readLichessSessionToken } from "../lib/lichess-session";
 import { adaptExplorerMoves } from "../domain/adapters/analysis-adapters";
 import type { CandidateMove } from "../domain";
 import {
-  integrityRepairSubmissionSchema,
   repertoireIntegritySchema,
 } from "../domain/schemas";
 import { readJsonResponse } from "../lib/validated-data";
+import { saveIntegrityRepairCommand } from "../lib/integrity-repair-command";
 import { asFenString, asUciMove } from "../types";
 import { MoveComparisonTable } from "./move-comparison-table";
 import { reportDebugError } from "../lib/debug-reporting";
@@ -142,21 +142,8 @@ export function RepertoireIntegrityDialog({
     setTaskState(undefined);
     setError("");
     try {
-      const response = await fetch(
-        `${API_URL}/api/repertoires/${repertoireId}/integrity/issues/${issue.id}/resolve`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            signature: issue.signature,
-            selected_move_uci: selected,
-          }),
-        },
-      );
-      const submission = await readJsonResponse(
-        response,
-        integrityRepairSubmissionSchema,
-        "integrity repair",
+      const submission = await saveIntegrityRepairCommand(
+        repertoireId, issue.id, issue.signature, selected,
       );
       setTaskState(
         submission.state === "leased" ? "running" : submission.state,
@@ -187,6 +174,8 @@ export function RepertoireIntegrityDialog({
         const next = repertoireIntegritySchema.parse(
           await integrityResponse.json(),
         );
+        if (next.scan_status === "failed")
+          throw new Error(next.last_scan_error || "The integrity scan failed. Check Activity and retry the task.");
         if (
           !next.issues.some(
             (candidate) => candidate.id === submission.issue_id,

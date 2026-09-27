@@ -35,6 +35,11 @@
 | PGN import reports success when persisted lines cannot be scheduled for their background rebuild | `test_import_scheduler_failure_reports_saved_data_and_retry_action` |
 | PostgreSQL PGN import bypasses the worker or loses its idempotency key | `test_postgres_pgn_import_dispatches_parsed_payload_with_idempotency` |
 | Pending PGN import appears saved or receives a new operation ID on retry | `a pending PGN import reuses its operation ID and does not report a save` |
+| PostgreSQL guided integrity repair bypasses Celery or loses its idempotency key | `test_postgres_integrity_repair_dispatches_prepared_plan_with_idempotency` |
+| Guided repair applies a stale issue signature or locks cards before the graph task, risking a deadlock | `test_postgres_integrity_repair_rejects_stale_issue_signature` |
+| Guided PostgreSQL repair deletes a line's custom training depth | `test_postgres_integrity_repair_copies_line_training_depth_before_delete` |
+| Pending guided repair appears saved or receives a new command ID on retry | `a pending integrity repair retains its command ID until its receipt completes` |
+| Guided repair retry breaks the current SQLite product's signature-deduplicated job | `SQLite integrity repair retries through its signature-deduplicated endpoint` |
 | PostgreSQL repertoire edit leaves a previous clean integrity result visible | `test_postgres_repertoire_edit_invalidates_old_clean_integrity_in_same_transaction` |
 | PostgreSQL integrity traversal holds a read transaction during chess computation | `test_postgres_integrity_source_closes_read_transaction_before_chess_scan` |
 | PostgreSQL integrity source staging loses its cursor or publishes after its lease expires | `test_postgres_integrity_source_stages_one_restartable_slice` |
