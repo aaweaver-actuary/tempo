@@ -42,6 +42,10 @@ Four further study cases now advance feedback timers virtually: reload during fe
 
 ## Measured test stages (2026-09-27)
 
+The final committed-code gate at `57cdc99` passed in one `make full` run on an isolated checkout: 261 frontend unit tests, 403 backend tests, 8 Rust tests, 122 regular Docker browser tests, Docker durability, and 47 pinned visual/performance cases. The machine-readable report recorded 23.63 seconds for units, 49.05 for backend, 8.60 for lint, 5.17 for typecheck, 166.30 for Docker (134.99 browser and 15.82 durability), and 45.70 for pinned visual/performance. Rust and WASM stages used warm build caches in this run. This is a single local observation, not a performance budget.
+
+The gate also exposed a Games request loop. A failed canonical-miss decision left no visible error because Games reloaded its summary on the `ready` event emitted by that same read. The retained browser trace counted 1,231 summary requests and roughly 1,230 requests each to findings, tactical queue, tactical statistics, and defensive candidates in one case. Removing the self-triggering listener restored the error and bounded summary traffic; the named browser regression now checks both outcomes. The isolated full gate passed after that fix.
+
 On this machine, the original three-stage fast run recorded 54.26 seconds for frontend units, 97.08 seconds for 384 backend tests, and 40.91 seconds for a cold Rust build and test. The revised fast tier runs units only; a verification run passed all 235 tests in 59.60 seconds. Backend and Rust checks remain in integration and full. These times are single samples and should not be used as regression thresholds.
 
 The first pinned browser sample recorded warm-switch p95 values of 51.6 ms (Builder), 63.7 ms (Games), 76.7 ms (Endgames), 36.9 ms (Tactics), and 95.4 ms (Train). One Builder move-to-paint sample was 23.6 ms, with no observed long tasks. These are five samples per view and one move; they show the artifact shape, not a stable budget.
