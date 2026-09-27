@@ -499,7 +499,12 @@ def enroll_exercise(study_id: str, exercise_id: str):
 
 
 @router.post("/{study_id}/exercises/{exercise_id}/suspend")
-def suspend_exercise(study_id: str, exercise_id: str):
+def suspend_exercise(study_id: str, exercise_id: str,
+                     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.exercises.suspend",
+                                {"study_id": study_id, "exercise_id": exercise_id},
+                                idempotency_key=idempotency_key)
     with connection() as database:
         exercise = _require(database, "study_exercises", exercise_id)
         if exercise["study_id"] != study_id:
@@ -534,7 +539,12 @@ def train_exercise_now(study_id: str, exercise_id: str):
 
 
 @router.post("/{study_id}/exercises/{exercise_id}/resume")
-def resume_exercise(study_id: str, exercise_id: str):
+def resume_exercise(study_id: str, exercise_id: str,
+                    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.exercises.resume",
+                                {"study_id": study_id, "exercise_id": exercise_id},
+                                idempotency_key=idempotency_key)
     with connection() as database:
         exercise = _require(database, "study_exercises", exercise_id)
         if exercise["study_id"] != study_id or exercise["status"] == "archived":
@@ -545,7 +555,12 @@ def resume_exercise(study_id: str, exercise_id: str):
 
 
 @router.post("/{study_id}/exercises/{exercise_id}/archive")
-def archive_exercise(study_id: str, exercise_id: str):
+def archive_exercise(study_id: str, exercise_id: str,
+                     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.exercises.archive",
+                                {"study_id": study_id, "exercise_id": exercise_id},
+                                idempotency_key=idempotency_key)
     with connection() as database:
         exercise = _require(database, "study_exercises", exercise_id)
         if exercise["study_id"] != study_id:

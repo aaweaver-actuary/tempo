@@ -741,6 +741,71 @@ def test_postgres_study_archive_queues_refresh_with_mutation(monkeypatch, tmp_pa
     assert refreshed == [date.today().isoformat()]
 
 
+def test_postgres_exercise_availability_routes_dispatch_idempotent_commands(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main, study_routes
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(study_routes, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or {"accepted": name})
+    client = TestClient(main.app)
+    for action in ("suspend", "resume", "archive"):
+        response = client.post(
+            f"/api/studies/study-1/exercises/exercise-1/{action}",
+            headers={"Idempotency-Key": f"exercise-1-{action}"},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == {"accepted": f"studies.exercises.{action}"}
+    assert dispatched == [
+        (f"studies.exercises.{action}",
+         {"study_id": "study-1", "exercise_id": "exercise-1"}, f"exercise-1-{action}")
+        for action in ("suspend", "resume", "archive")
+    ]
+
+
+def test_postgres_exercise_availability_mutates_cards_and_queue_in_one_command(monkeypatch, tmp_path):
+    from app import study_commands
+
+    database_path = tmp_path / "exercise-availability.db"
+    with sqlite3.connect(database_path) as database:
+        database.executescript("""
+            CREATE TABLE study_exercises(id TEXT PRIMARY KEY,study_id TEXT,status TEXT);
+            CREATE TABLE cards(id TEXT PRIMARY KEY,study_exercise_id TEXT,
+                               archived INTEGER,pending_validation INTEGER);
+            CREATE TABLE daily_queue(id INTEGER PRIMARY KEY,card_id TEXT,status TEXT);
+            INSERT INTO study_exercises VALUES('exercise','study','published');
+            INSERT INTO cards VALUES('card','exercise',0,0);
+            INSERT INTO daily_queue VALUES(1,'card','queued');
+        """)
+
+    class NativeSqlite:
+        def __init__(self, database):
+            self.database = database
+
+        def execute(self, statement, parameters=()):
+            return self.database.execute(statement.replace("FOR UPDATE", ""), parameters)
+
+    refreshed = []
+    monkeypatch.setattr(study_commands, "request_queue_refresh_in_transaction",
+                        lambda database, queue_date: refreshed.append(queue_date))
+    with sqlite3.connect(database_path) as database:
+        database.row_factory = sqlite3.Row
+        adapter = NativeSqlite(database)
+        payload = {"study_id": "study", "exercise_id": "exercise"}
+        assert study_commands.suspend_exercise(adapter, payload) == {"suspended": True}
+        assert database.execute("SELECT pending_validation FROM cards").fetchone()[0] == 1
+        assert database.execute("SELECT status FROM daily_queue").fetchone()[0] == "blocked"
+        assert study_commands.resume_exercise(adapter, payload) == {"suspended": False}
+        assert database.execute("SELECT pending_validation FROM cards").fetchone()[0] == 0
+        assert study_commands.archive_exercise(adapter, payload) == {"archived": True}
+        assert database.execute("SELECT status FROM study_exercises").fetchone()[0] == "archived"
+        assert database.execute("SELECT archived FROM cards").fetchone()[0] == 1
+    assert refreshed == [date.today().isoformat()] * 3
+
+
 def test_postgres_cutover_queue_fail_and_bury_dispatch_foreground_commands(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main

@@ -87,6 +87,56 @@ def unarchive_study(database: PostgresConnection, payload: dict[str, Any]) -> di
     return {"id": study_id, "archived": False}
 
 
+def _lock_exercise_in_study(database: PostgresConnection, payload: dict[str, Any]):
+    exercise_id = str(payload["exercise_id"])
+    exercise = database.execute(
+        "SELECT * FROM study_exercises WHERE id=? FOR UPDATE", (exercise_id,),
+    ).fetchone()
+    if exercise is None or exercise["study_id"] != str(payload["study_id"]):
+        raise HTTPException(404, "Exercise not in this study")
+    return exercise
+
+
+def suspend_exercise(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
+    exercise = _lock_exercise_in_study(database, payload)
+    database.execute(
+        "UPDATE cards SET pending_validation=1 WHERE study_exercise_id=? AND archived=0",
+        (exercise["id"],),
+    )
+    database.execute(
+        """UPDATE daily_queue SET status='blocked' WHERE card_id IN
+           (SELECT id FROM cards WHERE study_exercise_id=?) AND status='queued'""",
+        (exercise["id"],),
+    )
+    request_queue_refresh_in_transaction(database, date.today().isoformat())
+    return {"suspended": True}
+
+
+def resume_exercise(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
+    exercise = _lock_exercise_in_study(database, payload)
+    if exercise["status"] == "archived":
+        raise HTTPException(409, "Exercise unavailable")
+    database.execute(
+        "UPDATE cards SET pending_validation=0 WHERE study_exercise_id=? AND archived=0",
+        (exercise["id"],),
+    )
+    request_queue_refresh_in_transaction(database, date.today().isoformat())
+    return {"suspended": False}
+
+
+def archive_exercise(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
+    exercise = _lock_exercise_in_study(database, payload)
+    database.execute("UPDATE study_exercises SET status='archived' WHERE id=?", (exercise["id"],))
+    database.execute("UPDATE cards SET archived=1 WHERE study_exercise_id=?", (exercise["id"],))
+    database.execute(
+        """UPDATE daily_queue SET status='blocked' WHERE card_id IN
+           (SELECT id FROM cards WHERE study_exercise_id=?) AND status='queued'""",
+        (exercise["id"],),
+    )
+    request_queue_refresh_in_transaction(database, date.today().isoformat())
+    return {"archived": True}
+
+
 def create_chapter(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
     request = ChapterCreate.model_validate(payload["chapter"])
     study_id = str(payload["study_id"])
@@ -177,6 +227,9 @@ register_command("studies.create", create_study)
 register_command("studies.update", update_study)
 register_command("studies.archive", archive_study)
 register_command("studies.unarchive", unarchive_study)
+register_command("studies.exercises.suspend", suspend_exercise)
+register_command("studies.exercises.resume", resume_exercise)
+register_command("studies.exercises.archive", archive_exercise)
 register_command("studies.chapters.create", create_chapter)
 register_command("studies.chapters.reorder", reorder_chapters)
 register_command("studies.chapters.rename", rename_chapter)

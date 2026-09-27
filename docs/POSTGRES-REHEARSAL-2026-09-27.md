@@ -288,6 +288,11 @@ microbenchmark, not the final container/backlog gate.
 
 ## Outstanding cutover gates
 
+Study exercise suspend, resume, and archive now have named foreground commands.
+Each updates card and queued-entry state and requests a durable queue refresh in
+one worker transaction. Focused route and state regressions passed; these
+commands have not yet been exercised against the imported PostgreSQL rehearsal.
+
 An opt-in `docker-compose.postgres.yml` now defines the intended product
 topology: PostgreSQL 18 and Redis on external volumes, a read-only API role,
 separate foreground and background Celery workers, Beat, backup, web, and
