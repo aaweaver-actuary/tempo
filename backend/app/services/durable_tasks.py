@@ -237,6 +237,22 @@ def advance_task_slice_in_transaction(
     return bool(changed)
 
 
+def complete_task_slice_in_transaction(database, task: dict) -> bool:
+    """Complete a PostgreSQL task in the same transaction as its final publication."""
+
+    now = _iso()
+    changed = database.execute(
+        """UPDATE background_tasks SET state='complete',phase='published',
+               lease_token=NULL,lease_expires_at=NULL,last_error=NULL,
+               completed_at=?,updated_at=?
+           WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
+        (now, now, task["id"], task["generation"], task["lease_token"]),
+    ).rowcount
+    if changed:
+        _record_event(database, task["id"], task["generation"], "published", "published")
+    return bool(changed)
+
+
 def fail_task(task_id: str, generation: int, lease_token: str, error: Exception) -> dict:
     sanitized_error = str(error)[:500]
 

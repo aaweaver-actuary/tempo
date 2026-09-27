@@ -440,6 +440,66 @@ def test_postgres_opening_quarantine_yields_to_foreground_and_resumes_cursor(mon
     assert observed.count("diagnostics-reset") == 1
 
 
+def test_postgres_queue_projection_and_task_completion_commit_together(monkeypatch, tmp_path):
+    from app.services import postgres_queue_refresh
+
+    database_path = tmp_path / "queue-projection.db"
+    with sqlite3.connect(database_path) as database:
+        database.executescript("""
+            CREATE TABLE background_tasks(id TEXT PRIMARY KEY,generation INTEGER,
+                lease_token TEXT,state TEXT,phase TEXT,lease_expires_at TEXT,
+                last_error TEXT,completed_at TEXT,updated_at TEXT);
+            CREATE TABLE background_task_events(id INTEGER PRIMARY KEY,task_id TEXT,
+                generation INTEGER,event TEXT,phase TEXT,detail TEXT,created_at TEXT);
+            CREATE TABLE queue_projections(queue_date TEXT PRIMARY KEY,state TEXT,
+                generation INTEGER,refresh_pending INTEGER,last_error TEXT,
+                blocked_count INTEGER,updated_at TEXT);
+            INSERT INTO background_tasks(id,generation,lease_token,state,phase)
+                VALUES('queue-job',3,'current','leased','publish_projection');
+            INSERT INTO queue_projections(queue_date,state,generation,refresh_pending)
+                VALUES('2026-09-27','refreshing',5,1);
+        """)
+
+    class NativeSqlite:
+        def __init__(self, database):
+            self.database = database
+
+        def execute(self, statement, parameters=()):
+            return self.database.execute(statement.replace("FOR UPDATE", ""), parameters)
+
+        def execute_native(self, statement, parameters=()):
+            return self.database.execute(statement.replace("%s", "?"), parameters)
+
+    @contextmanager
+    def section(*, background):
+        assert background
+        with sqlite3.connect(database_path) as database:
+            database.row_factory = sqlite3.Row
+            yield NativeSqlite(database)
+
+    monkeypatch.setattr(postgres_queue_refresh.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres_queue_refresh.activity_gate, "wait_for_foreground", lambda: None)
+    monkeypatch.setattr(postgres_queue_refresh, "connection", section)
+    monkeypatch.setattr(postgres_queue_refresh, "_prepare_projection_blocked_count",
+                        lambda queue_date: 3)
+    task = {"id": "queue-job", "generation": 3, "lease_token": "current",
+            "payload": {"queue_date": "2026-09-27", "_queue_phase": "publish_projection"}}
+    assert not postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
+    with sqlite3.connect(database_path) as database:
+        assert database.execute(
+            "SELECT state,generation,refresh_pending,blocked_count FROM queue_projections",
+        ).fetchone() == ("ready", 6, 0, 3)
+        assert database.execute(
+            "SELECT state,phase,lease_token FROM background_tasks",
+        ).fetchone() == ("complete", "published", None)
+    assert not postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
+    with sqlite3.connect(database_path) as database:
+        assert database.execute("SELECT generation FROM queue_projections").fetchone()[0] == 6
+        assert database.execute(
+            "SELECT COUNT(*) FROM background_task_events WHERE event='published'",
+        ).fetchone()[0] == 1
+
+
 def test_postgres_cutover_schema_keeps_json_array_length_available(tmp_path):
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))

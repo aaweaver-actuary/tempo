@@ -3278,80 +3278,86 @@
     },
     {
       "file": "backend/app/services/durable_tasks.py",
-      "function": "fail_task.operation",
+      "function": "complete_task_slice_in_transaction",
       "line": 244,
       "operation": "execute"
     },
     {
       "file": "backend/app/services/durable_tasks.py",
       "function": "fail_task.operation",
-      "line": 254,
+      "line": 260,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/services/durable_tasks.py",
+      "function": "fail_task.operation",
+      "line": 270,
       "operation": "execute"
     },
     {
       "file": "backend/app/services/durable_tasks.py",
       "function": "fail_task",
-      "line": 272,
+      "line": 288,
       "operation": "submit_background_write"
     },
     {
       "file": "backend/app/services/durable_tasks.py",
       "function": "retry_task.operation",
-      "line": 277,
+      "line": 293,
       "operation": "execute"
     },
     {
       "file": "backend/app/services/durable_tasks.py",
       "function": "retry_task.operation",
-      "line": 283,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/services/durable_tasks.py",
-      "function": "retry_task.operation",
-      "line": 289,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/services/durable_tasks.py",
-      "function": "retry_task.operation",
-      "line": 296,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/services/durable_tasks.py",
-      "function": "retry_task",
       "line": 299,
-      "operation": "submit_foreground_write"
+      "operation": "execute"
     },
     {
       "file": "backend/app/services/durable_tasks.py",
-      "function": "requeue_interrupted_tasks.operation",
+      "function": "retry_task.operation",
       "line": 305,
       "operation": "execute"
     },
     {
       "file": "backend/app/services/durable_tasks.py",
+      "function": "retry_task.operation",
+      "line": 312,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/services/durable_tasks.py",
+      "function": "retry_task",
+      "line": 315,
+      "operation": "submit_foreground_write"
+    },
+    {
+      "file": "backend/app/services/durable_tasks.py",
       "function": "requeue_interrupted_tasks.operation",
-      "line": 308,
+      "line": 321,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/services/durable_tasks.py",
+      "function": "requeue_interrupted_tasks.operation",
+      "line": 324,
       "operation": "execute"
     },
     {
       "file": "backend/app/services/durable_tasks.py",
       "function": "requeue_interrupted_tasks",
-      "line": 316,
+      "line": 332,
       "operation": "submit_foreground_write"
     },
     {
       "file": "backend/app/services/durable_tasks.py",
       "function": "list_tasks",
-      "line": 346,
+      "line": 362,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/services/durable_tasks.py",
       "function": "list_tasks",
-      "line": 347,
+      "line": 363,
       "operation": "execute"
     },
     {
@@ -4623,25 +4629,19 @@
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_bounded_read",
-      "line": 40,
+      "line": 43,
       "operation": "execute"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 92,
+      "line": 95,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 93,
-      "operation": "execute_native"
-    },
-    {
-      "file": "backend/app/services/postgres_queue_refresh.py",
-      "function": "_publish_tactical_introduction",
-      "line": 98,
+      "line": 96,
       "operation": "execute_native"
     },
     {
@@ -4653,157 +4653,157 @@
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 107,
+      "line": 104,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 113,
+      "line": 110,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 119,
+      "line": 116,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 127,
+      "line": 122,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 133,
+      "line": 130,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 137,
+      "line": 136,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 142,
+      "line": 140,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 146,
+      "line": 145,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 150,
+      "line": 149,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_publish_tactical_introduction",
+      "line": 153,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_reconcile_one_unseen_entry",
-      "line": 192,
+      "line": 195,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_reconcile_one_unseen_entry",
-      "line": 203,
+      "line": 206,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_reconcile_one_unseen_entry",
-      "line": 205,
+      "line": 208,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_reconcile_one_unseen_entry",
-      "line": 210,
+      "line": 213,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_reconcile_one_unseen_entry",
-      "line": 211,
+      "line": 214,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_due_card",
-      "line": 248,
+      "line": 251,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_due_card",
-      "line": 252,
+      "line": 255,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_due_card",
-      "line": 258,
+      "line": 261,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_due_card",
-      "line": 262,
+      "line": 265,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_prioritized_opening",
-      "line": 305,
+      "line": 308,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_prioritized_opening",
-      "line": 312,
+      "line": 315,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_prioritized_opening",
-      "line": 318,
+      "line": 321,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_prioritized_opening",
-      "line": 322,
+      "line": 325,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_prioritized_opening",
-      "line": 327,
+      "line": 330,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_prioritized_opening",
-      "line": 332,
+      "line": 335,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_study_card",
-      "line": 373,
-      "operation": "execute_native"
-    },
-    {
-      "file": "backend/app/services/postgres_queue_refresh.py",
-      "function": "_admit_one_study_card",
-      "line": 377,
+      "line": 376,
       "operation": "execute_native"
     },
     {
@@ -4815,55 +4815,55 @@
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_study_card",
-      "line": 388,
+      "line": 383,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_study_card",
-      "line": 396,
+      "line": 391,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_study_card",
-      "line": 400,
+      "line": 399,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_admit_one_study_card",
+      "line": 403,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_queue_randomization",
-      "line": 458,
+      "line": 461,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_queue_randomization",
-      "line": 466,
+      "line": 469,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_queue_randomization",
-      "line": 473,
+      "line": 476,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_queue_randomization",
-      "line": 486,
+      "line": 489,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_quarantine_one_opening",
-      "line": 544,
-      "operation": "execute_native"
-    },
-    {
-      "file": "backend/app/services/postgres_queue_refresh.py",
-      "function": "_quarantine_one_opening",
-      "line": 559,
+      "line": 547,
       "operation": "execute_native"
     },
     {
@@ -4875,19 +4875,31 @@
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_quarantine_one_opening",
-      "line": 566,
+      "line": 565,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_quarantine_one_opening",
+      "line": 569,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "execute_postgres_queue_refresh_slice",
-      "line": 629,
+      "line": 659,
       "operation": "connection"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "execute_postgres_queue_refresh_slice",
-      "line": 710,
+      "line": 663,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "execute_postgres_queue_refresh_slice",
+      "line": 756,
       "operation": "execute_native"
     },
     {
@@ -10448,21 +10460,14 @@
     },
     {
       "file": "backend/app/services/durable_tasks.py",
-      "line": 243,
+      "line": 259,
       "tokens": [
         "sqlite3"
       ]
     },
     {
       "file": "backend/app/services/durable_tasks.py",
-      "line": 276,
-      "tokens": [
-        "sqlite3"
-      ]
-    },
-    {
-      "file": "backend/app/services/durable_tasks.py",
-      "line": 303,
+      "line": 292,
       "tokens": [
         "sqlite3"
       ]
@@ -10470,6 +10475,13 @@
     {
       "file": "backend/app/services/durable_tasks.py",
       "line": 319,
+      "tokens": [
+        "sqlite3"
+      ]
+    },
+    {
+      "file": "backend/app/services/durable_tasks.py",
+      "line": 335,
       "tokens": [
         "sqlite3"
       ]
@@ -10742,7 +10754,7 @@
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
-      "line": 335,
+      "line": 338,
       "tokens": [
         "json_extract("
       ]

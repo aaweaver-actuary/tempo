@@ -13,7 +13,10 @@ from .. import postgres_store
 from ..postgres_store import postgres_sql
 from .cards import card_id
 from .activity_gate import activity_gate
-from .durable_tasks import advance_task_slice_in_transaction, lock_current_slice
+from .durable_tasks import (
+    advance_task_slice_in_transaction, complete_task_slice_in_transaction,
+    lock_current_slice,
+)
 from .pgn import ends_on_trained_move
 from .puzzles import validate_puzzle_record
 from .tactical_catalog import pack_records
@@ -573,6 +576,28 @@ def _quarantine_one_opening(database, queue_date: str, candidate: dict) -> bool:
     return True
 
 
+_PROJECTION_BLOCKED_COUNT_SQL = """SELECT COUNT(*) FROM (
+    SELECT queue.card_id FROM daily_queue queue
+    WHERE queue.queue_date=%s AND queue.status='blocked'
+    UNION
+    SELECT card.id FROM cards card
+    WHERE card.content_type='opening' AND card.archived=0
+      AND card.state IN ('learning','mature') AND card.due_date<=%s
+      AND EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
+                 WHERE block.card_id=card.id
+                   AND (block.repertoire_id=card.repertoire_id OR EXISTS(
+                       SELECT 1 FROM repertoire_cards link
+                       WHERE link.card_id=card.id
+                         AND link.repertoire_id=block.repertoire_id)))
+) blocked"""
+
+
+def _prepare_projection_blocked_count(queue_date: str) -> int:
+    return int(_bounded_read(
+        _PROJECTION_BLOCKED_COUNT_SQL, (queue_date, queue_date), native=True,
+    )[0][0])
+
+
 def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     """Apply one eligibility phase; later queue phases remain explicitly gated."""
 
@@ -587,7 +612,8 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     if phase not in (*_ELIGIBILITY_PHASES, "tactical_introductions",
                      "reset_opening_new", "reset_opening_stale", "reconcile_unseen",
                      "admit_due", "prioritized_openings", "prioritized_opening_item",
-                     "admit_study", "randomize_queue", "quarantine"):
+                     "admit_study", "randomize_queue", "quarantine",
+                     "publish_projection"):
         raise RuntimeError(f"Queue refresh phase is not yet ported: {phase}")
     prepared_tactic = None
     if phase == "tactical_introductions":
@@ -625,9 +651,29 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
         quarantine_batch = _prepare_opening_quarantine(
             queue_date, int(payload.get("after_entry_id") or 0),
         )
+    blocked_count = None
+    if phase == "publish_projection":
+        activity_gate.wait_for_foreground()
+        blocked_count = _prepare_projection_blocked_count(queue_date)
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
         if not lock_current_slice(database, task):
+            return False
+        if phase == "publish_projection":
+            database.execute_native(
+                """INSERT INTO queue_projections(queue_date,state,generation,
+                                                   refresh_pending,last_error,
+                                                   blocked_count,updated_at)
+                   VALUES(%s,'ready',1,0,NULL,%s,%s)
+                   ON CONFLICT(queue_date) DO UPDATE SET state='ready',
+                   generation=queue_projections.generation+1,
+                   refresh_pending=0,last_error=NULL,
+                   blocked_count=excluded.blocked_count,
+                   updated_at=excluded.updated_at""",
+                (queue_date, blocked_count, datetime.now(timezone.utc).isoformat()),
+            )
+            if not complete_task_slice_in_transaction(database, task):
+                raise RuntimeError("Queue projection publication lost its task lease")
             return False
         if phase == "unlock_opening":
             next_cursor = main._unlock_eligible_opening_cards(

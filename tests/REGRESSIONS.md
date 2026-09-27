@@ -465,6 +465,7 @@ Append every new reported issue and its test names here. All listed tests belong
 - Queue mixing uses a correlated review lookup that exceeds the 50 ms PostgreSQL background-read bound: `backend/tests/test_postgres_cutover.py::test_postgres_queue_randomization_splits_review_lookup_into_bounded_reads`.
 - PostgreSQL opening quarantine holds a database transaction while validating cards, skips a valid card, or repeats a prior diagnostic: `backend/tests/test_postgres_cutover.py::test_postgres_opening_quarantine_validates_outside_database_and_replays_once`.
 - Quarantine runs ahead of foreground work or loses its cursor and clears diagnostics again after restart: `backend/tests/test_postgres_cutover.py::test_postgres_opening_quarantine_yields_to_foreground_and_resumes_cursor`.
+- A queue refresh reports a ready generation while its durable task remains leased, or advances generation again on stale replay: `backend/tests/test_postgres_cutover.py::test_postgres_queue_projection_and_task_completion_commit_together`.
 
 - SQLite syntax crosses the PostgreSQL adapter without an explicit translation or error: `backend/tests/test_postgres_cutover.py::test_postgres_cutover_translates_placeholders_and_rejects_runtime_pragma`.
 - Reordered JSON fields change a command's durable idempotency identity: `backend/tests/test_postgres_cutover.py::test_postgres_cutover_idempotency_digest_is_payload_order_independent`.

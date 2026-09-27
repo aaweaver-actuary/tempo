@@ -41,8 +41,18 @@ opening queue; none was malformed. A rolled-back synthetic malformed card was
 locked and skipped in 6.3 ms; replay returned false and left one diagnostic.
 Validation ran after closing the read connection, and the task checkpoints its
 cursor with each write. Named regressions cover valid cards, foreground
-admission, restart, and idempotent replay. Queue projection publication remains
-unported.
+admission, restart, and idempotent replay.
+
+## Queue projection publication check
+
+The final PostgreSQL phase computes the blocked count in a bounded read and
+commits `queue_projections.state='ready'`, the next generation, and durable
+task completion in one transaction. A rolled-back rehearsal with a leased
+queue task produced a ready projection and completed task in 18.2 ms after
+module warmup. The first probe included about 450 ms of lazy Python import
+before the transaction; this is excluded from the database-section budget.
+The queue-refresh task is not yet enabled in Celery because its enqueue paths
+and remaining write-route cutover still need integration.
 
 This is a **rehearsal**, not a production cutover. Production `tempo-data`
 remains the rollback source and `docker-compose.yml` still runs SQLite. Do not
