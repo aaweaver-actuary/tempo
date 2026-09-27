@@ -978,18 +978,31 @@ _QUEUE_ELIGIBILITY_PHASES = (
 )
 
 
+def _reset_unintroduced_opening_cards(database, queue_date: str) -> None:
+    database.execute(
+        """UPDATE cards SET state='new' WHERE content_type='opening' AND state='learning'
+           AND introduced_at IS NULL AND NOT EXISTS(
+               SELECT 1 FROM reviews review WHERE review.card_id=cards.id)"""
+    )
+
+
+def _reset_stale_opening_introductions(database, queue_date: str) -> None:
+    database.execute(
+        """UPDATE cards SET state='new',introduced_at=NULL
+           WHERE content_type='opening' AND state='learning' AND introduced_at<?
+             AND NOT EXISTS(SELECT 1 FROM reviews review WHERE review.card_id=cards.id)
+             AND NOT EXISTS(SELECT 1 FROM daily_queue queue
+                            WHERE queue.card_id=cards.id AND queue.queue_date=?)""",
+        (queue_date, queue_date),
+    )
+
+
 def seed_queue(db, day):
     for _, apply_phase in _QUEUE_ELIGIBILITY_PHASES:
         apply_phase(db, day)
     seed_tactical_introductions(db, day)
-    db.execute("""UPDATE cards SET state='new' WHERE content_type='opening' AND state='learning'
-                  AND introduced_at IS NULL AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=cards.id)""")
-    db.execute(
-        """UPDATE cards SET state='new',introduced_at=NULL WHERE content_type='opening' AND state='learning'
-                  AND introduced_at<? AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=cards.id)
-                  AND NOT EXISTS(SELECT 1 FROM daily_queue q WHERE q.card_id=cards.id AND q.queue_date=?)""",
-        (day, day),
-    )
+    _reset_unintroduced_opening_cards(db, day)
+    _reset_stale_opening_introductions(db, day)
     limit = db.execute("SELECT new_cards_per_day FROM settings WHERE id=1").fetchone()[
         0
     ]

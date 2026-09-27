@@ -885,6 +885,34 @@ def test_postgres_queue_refresh_foreground_request_blocks_new_database_slice(mon
     assert opened_database.is_set()
 
 
+def test_postgres_queue_opening_reset_phases_are_idempotent_and_preserve_active_cards():
+    from app.main import _reset_unintroduced_opening_cards, _reset_stale_opening_introductions
+
+    with sqlite3.connect(":memory:") as database:
+        database.executescript("""
+            CREATE TABLE cards(id TEXT PRIMARY KEY,content_type TEXT,state TEXT,introduced_at TEXT);
+            CREATE TABLE reviews(card_id TEXT);
+            CREATE TABLE daily_queue(card_id TEXT,queue_date TEXT);
+            INSERT INTO cards VALUES('never','opening','learning',NULL);
+            INSERT INTO cards VALUES('stale','opening','learning','2026-09-26');
+            INSERT INTO cards VALUES('reviewed','opening','learning','2026-09-26');
+            INSERT INTO cards VALUES('queued','opening','learning','2026-09-26');
+            INSERT INTO reviews VALUES('reviewed');
+            INSERT INTO daily_queue VALUES('queued','2026-09-27');
+        """)
+        for _ in range(2):
+            _reset_unintroduced_opening_cards(database, "2026-09-27")
+            _reset_stale_opening_introductions(database, "2026-09-27")
+        assert list(database.execute(
+            "SELECT id,state,introduced_at FROM cards ORDER BY id",
+        )) == [
+            ("never", "new", None),
+            ("queued", "learning", "2026-09-26"),
+            ("reviewed", "learning", "2026-09-26"),
+            ("stale", "new", None),
+        ]
+
+
 def test_postgres_tactical_queue_prepares_outside_database_and_retries_timed_out_read(monkeypatch):
     from psycopg.errors import TransactionTimeout
     from app.services import postgres_queue_refresh

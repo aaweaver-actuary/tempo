@@ -120,6 +120,11 @@ handler has been ported and the release gates pass.
   SQLite-dialect translation overhead was removed. Named regressions cover
   foreground contention, restart replay, and file work outside the database
   section. Later queue phases remain unported.
+- The two following opening-card reset phases are extracted from the SQLite
+  materializer and included in the PostgreSQL slice runner. Rolled-back
+  rehearsal statements took 15.3 ms and 6.4 ms under the 50 ms transaction
+  limit. A named regression verifies replay leaves reviewed and currently
+  queued opening cards unchanged.
 - A custom-format PostgreSQL backup was written outside the checkout at
   `/Users/andy/tempo-backups/tempo-postgres-rehearsal-2026-09-27.dump`.
   SHA-256 is `eaf7e37e5e0cd86189c0cf1a7abddb8b8893264f16e906e6f95b4948b0c4b326`.

@@ -160,7 +160,8 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     payload = task["payload"]
     queue_date = str(payload.get("queue_date") or date.today().isoformat())
     phase = str(payload.get("_queue_phase") or _ELIGIBILITY_PHASES[0])
-    if phase not in (*_ELIGIBILITY_PHASES, "tactical_introductions"):
+    if phase not in (*_ELIGIBILITY_PHASES, "tactical_introductions",
+                     "reset_opening_new", "reset_opening_stale"):
         raise RuntimeError(f"Queue refresh phase is not yet ported: {phase}")
     prepared_tactic = None
     if phase == "tactical_introductions":
@@ -188,6 +189,14 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
                 database, queue_date, prepared_tactic,
             )
             next_phase = phase if more_tactics else "reset_opening_new"
+            next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
+        elif phase == "reset_opening_new":
+            main._reset_unintroduced_opening_cards(database, queue_date)
+            next_phase = "reset_opening_stale"
+            next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
+        elif phase == "reset_opening_stale":
+            main._reset_stale_opening_introductions(database, queue_date)
+            next_phase = "reconcile_unseen"
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
         else:
             phase_handlers = {
