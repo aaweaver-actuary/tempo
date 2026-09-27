@@ -90,6 +90,8 @@ export function ImportDialogBox({
           (candidate) => candidate.id === repertoireId,
         );
         if (repertoire?.graph_state === "failed") throw new Error("Repertoire graph failed after import. Retry the failed task in Settings → Service status.");
+        if (repertoire?.integrity_scan_status === "failed")
+          throw new Error(`Repertoire integrity scan failed after import: ${repertoire.integrity_scan_error ?? "Check Activity and retry the failed task."}`);
         if (repertoire?.integrity_status === "clean" && repertoire.graph_state === "ready" && repertoire.graph_updated_at) {
           const queueResponse = await fetch(`${API_URL}/api/queue/window?limit=1`);
           if (queueResponse.ok) {

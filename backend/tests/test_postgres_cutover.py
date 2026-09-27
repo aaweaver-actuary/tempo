@@ -258,6 +258,140 @@ def test_postgres_integrity_evaluation_stages_only_conflicting_positions(monkeyp
     assert advances[-1][1]["after_fen_key"] == "fen-b"
 
 
+def test_postgres_graph_finalization_requests_integrity_before_queue_refresh(monkeypatch):
+    from app.services import postgres_opening_graph, postgres_integrity
+
+    requested = []
+    monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: True)
+    monkeypatch.setattr(
+        postgres_opening_graph, "complete_task_slice_in_transaction",
+        lambda *_args: True,
+    )
+    monkeypatch.setattr(
+        postgres_integrity, "request_integrity_scan_in_transaction",
+        lambda _database, repertoire_id, generation, local_day:
+            requested.append((repertoire_id, generation, local_day)),
+    )
+    task = {"generation": 7, "payload": {
+        "repertoire_id": "opening-1", "local_day": "2026-09-27",
+    }}
+    assert not postgres_opening_graph.finalize_graph_in_transaction(object(), task)
+    assert requested == [("opening-1", 7, "2026-09-27")]
+
+
+def test_postgres_integrity_publication_discards_stale_graph_generation(monkeypatch):
+    from app.services import postgres_integrity
+
+    completed = []
+    monkeypatch.setattr(postgres_integrity, "lock_current_slice", lambda *_args: True)
+    monkeypatch.setattr(
+        postgres_integrity, "_graph_generation_is_current", lambda *_args: False,
+    )
+    monkeypatch.setattr(
+        postgres_integrity, "complete_task_slice_in_transaction",
+        lambda _database, task: completed.append(task["id"]) or True,
+    )
+    class NoWrites:
+        def execute_native(self, *_args):
+            raise AssertionError("A stale integrity scan cannot publish issues")
+
+    task = {"id": "scan", "generation": 1, "lease_token": "lease",
+            "payload": {"repertoire_id": "opening-1", "graph_generation": 4}}
+    assert postgres_integrity.publish_integrity_issues_in_transaction(NoWrites(), task)
+    assert completed == ["scan"]
+
+
+def test_postgres_integrity_failure_updates_visible_scan_state(monkeypatch):
+    from app.services import durable_tasks
+
+    database = sqlite3.connect(":memory:")
+    database.row_factory = sqlite3.Row
+    database.executescript("""
+        CREATE TABLE background_tasks(
+            id TEXT PRIMARY KEY,generation INTEGER,state TEXT,phase TEXT,
+            attempt_count INTEGER,max_attempts INTEGER,next_attempt_at TEXT,
+            lease_token TEXT,lease_expires_at TEXT,last_error TEXT,
+            completed_at TEXT,updated_at TEXT,kind TEXT,payload_json TEXT
+        );
+        CREATE TABLE background_task_events(
+            id INTEGER PRIMARY KEY,task_id TEXT,generation INTEGER,event TEXT,
+            phase TEXT,detail TEXT,created_at TEXT
+        );
+        CREATE TABLE repertoire_integrity_state(
+            repertoire_id TEXT PRIMARY KEY,scan_generation TEXT,
+            scan_status TEXT,scan_error TEXT
+        );
+        INSERT INTO background_tasks VALUES(
+            'scan',3,'leased','publish',5,5,NULL,'lease',NULL,NULL,NULL,NULL,
+            'integrity_scan','{"repertoire_id":"opening-1"}'
+        );
+        INSERT INTO repertoire_integrity_state VALUES(
+            'opening-1','scan:3','running',NULL
+        );
+    """)
+    monkeypatch.setattr(
+        durable_tasks, "submit_background_write",
+        lambda operation, *, label: operation(database),
+    )
+    assert durable_tasks.fail_task("scan", 3, "lease", RuntimeError("too many issues"))["state"] == "failed"
+    assert tuple(database.execute(
+        "SELECT scan_status,scan_error FROM repertoire_integrity_state"
+    ).fetchone()) == ("failed", "too many issues")
+    database.close()
+
+
+def test_postgres_integrity_foreground_contention_restart_and_stale_replay(monkeypatch):
+    from app.services import postgres_integrity
+
+    actual_stage = postgres_integrity.stage_integrity_source_in_transaction
+    foreground_released = threading.Event()
+    background_started = threading.Event()
+    writes = []
+    prepared = postgres_integrity.PreparedIntegritySource("line", "line-1", (), ())
+
+    @contextmanager
+    def wait_for_foreground():
+        background_started.set()
+        if not foreground_released.wait(timeout=2):
+            raise TimeoutError("Foreground admission did not release")
+        yield
+
+    monkeypatch.setattr(postgres_integrity, "prepare_next_integrity_source",
+                        lambda *_args: prepared)
+    monkeypatch.setattr(postgres_integrity, "background_lease", wait_for_foreground)
+    monkeypatch.setattr(postgres_integrity.postgres_store, "connection",
+                        lambda **_kwargs: nullcontext(object()))
+    monkeypatch.setattr(
+        postgres_integrity, "stage_integrity_source_in_transaction",
+        lambda _database, task, _source: writes.append(task["lease_token"]) or True,
+    )
+    task = {"id": "scan", "generation": 2, "lease_token": "current",
+            "payload": {"repertoire_id": "opening-1", "source_type": "line"}}
+    result = []
+    worker = threading.Thread(
+        target=lambda: result.append(postgres_integrity.execute_integrity_source_slice(task)),
+    )
+    worker.start()
+    assert background_started.wait(timeout=1)
+    assert writes == []
+    foreground_released.set()
+    worker.join(timeout=2)
+    assert not worker.is_alive()
+    assert result == [True]
+    assert writes == ["current"]
+
+    statements = []
+    class RecordingDatabase:
+        def execute_native(self, statement, _parameters):
+            statements.append(statement)
+
+    monkeypatch.setattr(postgres_integrity, "lock_current_slice", lambda *_args: False)
+    assert not actual_stage(
+        RecordingDatabase(), task, prepared,
+    )
+    assert statements == []
+
+
 def test_postgres_startup_accepts_latest_checked_in_schema(monkeypatch):
     from app import database
     from app.schema_version import POSTGRES_SCHEMA_VERSION

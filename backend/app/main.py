@@ -1920,6 +1920,7 @@ def list_repertoires():
                 GROUP BY repertoire_id
             )
             SELECT r.id,r.name,r.source_name,r.created_at,r.is_main,COALESCE(rs.status,'unchecked') integrity_status,
+                   COALESCE(rs.scan_status,'idle') integrity_scan_status,rs.scan_error integrity_scan_error,
                    (SELECT ii.id FROM repertoire_integrity_issues ii WHERE ii.repertoire_id=r.id ORDER BY ii.updated_at,ii.id LIMIT 1) integrity_first_issue_id,
                    COALESCE(lc.line_count,0) AS line_count,
                    COALESCE(cc.card_count,0) AS card_count,

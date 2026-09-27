@@ -326,6 +326,14 @@ def fail_task(task_id: str, generation: int, lease_token: str, error: Exception)
                     "UPDATE game_sync_state SET status='error',last_error=? WHERE provider=?",
                     (sanitized_error, provider),
                 )
+        if row["kind"] == "integrity_scan":
+            integrity_payload = json.loads(row["payload_json"])
+            database.execute(
+                "UPDATE repertoire_integrity_state SET scan_status=?,scan_error=? "
+                "WHERE repertoire_id=? AND scan_generation=?",
+                ("failed" if terminal else "retrying", sanitized_error,
+                 integrity_payload["repertoire_id"], f"{task_id}:{generation}"),
+            )
         _record_event(database, task_id, generation, state, state, sanitized_error)
         return {"state": state, "next_attempt_at": _iso(now + timedelta(seconds=delay))}
 

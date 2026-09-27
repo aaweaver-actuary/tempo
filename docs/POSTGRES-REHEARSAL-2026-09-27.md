@@ -424,3 +424,33 @@ production Compose stack remains SQLite. Each write must be changed to an
 explicit Celery command with one transaction and receipt, and each background
 handler must use a bounded Celery slice. Frontend outboxes need operation-ID
 handling. Run the full suite and API/Celery benchmarks before moving traffic.
+
+## Integrity worker continuation
+
+Migration 003 adds per-generation position accumulators and issue candidates.
+The PostgreSQL integrity worker now scans one source, merges at most two
+positions, evaluates one position, atomically publishes a bounded issue and
+card-block set, validates at most two cards per slice, then marks the scan
+complete and requests a queue refresh. Graph finalization enqueues the scan
+instead of refreshing an unvalidated queue. The worker checks the graph
+generation before publication and completion, so a superseded scan cannot
+declare an older graph clean.
+
+An isolated `tempo_integrity_smoke` database exercised all phases with one
+line. An incomplete line yielded one `missing_response` issue. Extending the
+line yielded `clean` and removed the issue. Adding a contradictory card
+yielded one `multiple_responses` issue, a card block, and
+`pending_validation=1`; correcting the card yielded `clean`, zero issues,
+zero blocks, and `pending_validation=0`. The first scan took 11 worker slices.
+Measured warm phase wall times were roughly 7–11 ms; a cold first slice took
+53 ms including connection setup, and completion took 185 ms including SQL
+translation outside its 50 ms database transaction. A source-stage database
+section measured 21.84 ms and an aggregation section 17.55 ms in rollback-only
+rehearsal probes.
+
+Publication currently caps one generation at 32 issues and 64 card-source
+references to retain a short atomic swap. Larger scans fail with an explicit
+integrity error and remain unchecked. Remove this size limit with versioned
+publication before calling the growing-workload cutover complete. The
+isolated smoke database contains only synthetic records; no live SQLite data
+was changed.

@@ -263,14 +263,15 @@ def test_postgres_graph_cleanup_removes_only_obsolete_links_in_bounded_slices(mo
     assert transitions[-1][0] == "finalize"
 
 
-def test_postgres_graph_finalization_checkpoints_queue_refresh_and_completion(monkeypatch):
-    from app import queue_commands
+def test_postgres_graph_finalization_checkpoints_integrity_scan_and_completion(monkeypatch):
+    from app.services import postgres_integrity
 
     events = []
     monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: True)
     monkeypatch.setattr(
-        queue_commands, "request_queue_refresh_in_transaction",
-        lambda _database, queue_date: events.append(("queue", queue_date)),
+        postgres_integrity, "request_integrity_scan_in_transaction",
+        lambda _database, repertoire_id, generation, local_day:
+            events.append(("integrity", repertoire_id, generation, local_day)),
     )
     monkeypatch.setattr(
         postgres_opening_graph, "complete_task_slice_in_transaction",
@@ -278,11 +279,11 @@ def test_postgres_graph_finalization_checkpoints_queue_refresh_and_completion(mo
     )
     task = {"generation": 9, "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"}}
     assert postgres_opening_graph.finalize_graph_in_transaction(object(), task) is False
-    assert events == [("queue", "2026-09-27"), ("complete", None)]
+    assert events == [("integrity", "rep", 9, "2026-09-27"), ("complete", None)]
 
 
 def test_postgres_graph_finalization_warms_sql_before_bounded_transaction(monkeypatch):
-    from app import queue_commands
+    from app.services import durable_tasks
 
     events = []
 
@@ -295,7 +296,7 @@ def test_postgres_graph_finalization_warms_sql_before_bounded_transaction(monkey
     def lease():
         yield
 
-    monkeypatch.setattr(queue_commands, "warm_queue_refresh_sql", lambda: events.append("warm"))
+    monkeypatch.setattr(durable_tasks, "warm_completion_sql", lambda: events.append("warm"))
     monkeypatch.setattr(postgres_opening_graph, "background_lease", lease)
     monkeypatch.setattr(postgres_opening_graph.postgres_store, "connection", database_connection)
     monkeypatch.setattr(postgres_opening_graph, "finalize_graph_in_transaction",

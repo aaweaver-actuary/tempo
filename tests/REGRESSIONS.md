@@ -40,6 +40,10 @@
 | PostgreSQL integrity source staging loses its cursor or publishes after its lease expires | `test_postgres_integrity_source_stages_one_restartable_slice` |
 | PostgreSQL integrity aggregation reads every source in one transaction or loses its position cursor | `test_postgres_integrity_aggregation_merges_two_positions_per_lease` |
 | PostgreSQL integrity evaluation stages ordinary single-response positions as conflicts | `test_postgres_integrity_evaluation_stages_only_conflicting_positions` |
+| PostgreSQL graph completes before its integrity scan is durable and refreshes an unvalidated queue | `test_postgres_graph_finalization_requests_integrity_before_queue_refresh` |
+| PostgreSQL integrity scan publishes results after a newer graph generation supersedes it | `test_postgres_integrity_publication_discards_stale_graph_generation` |
+| PostgreSQL integrity task failure leaves the browser waiting without an actionable scan error | `test_postgres_integrity_failure_updates_visible_scan_state` |
+| PostgreSQL integrity slice writes during foreground activity or replays after its lease changes | `test_postgres_integrity_foreground_contention_restart_and_stale_replay` |
 | Opening-graph rebuild has only whole-task timing, hiding whether input reads, chess calculation, or publication dominates | `test_opening_graph_rebuild_reports_prepare_compute_publish_phase_timings` |
 | Every motif detector replays and copies the same candidate line before inspecting it | `test_motif_candidates_replay_each_line_once_for_all_detectors`; `test_python_motif_parity_fixture` |
 | Training-card transition latency is not sampled from click through the next visible paint | `warm training cards advance to the next visible paint` |
@@ -564,7 +568,7 @@ Append every new reported issue and its test names here. All listed tests belong
 - Graph card state updates run as an unbounded publication transaction or precede the generation switch: `backend/tests/test_postgres_opening_graph.py::test_postgres_graph_classifies_eight_cards_after_publication`.
 - PostgreSQL graph publication leaves stale integrity blocks or updates too many cards in one section: `backend/tests/test_postgres_opening_graph.py::test_postgres_graph_integrity_refreshes_two_cards_before_cleanup`.
 - PostgreSQL graph cleanup removes a card still present in the new generation or sweeps all obsolete links in one transaction: `backend/tests/test_postgres_opening_graph.py::test_postgres_graph_cleanup_removes_only_obsolete_links_in_bounded_slices`.
-- PostgreSQL graph marks a rebuild complete before its queue refresh intent is durable: `backend/tests/test_postgres_opening_graph.py::test_postgres_graph_finalization_checkpoints_queue_refresh_and_completion`.
+- PostgreSQL graph marks a rebuild complete before its integrity scan intent is durable: `backend/tests/test_postgres_opening_graph.py::test_postgres_graph_finalization_checkpoints_integrity_scan_and_completion`.
 - Cold SQL translation consumes the 50 ms graph-finalization transaction budget: `backend/tests/test_postgres_opening_graph.py::test_postgres_graph_finalization_warms_sql_before_bounded_transaction`.
 - An opening-graph slice starts while foreground work is active or replays after its lease is replaced: `backend/tests/test_postgres_opening_graph.py::test_postgres_graph_stage_yields_to_foreground_and_discards_restart_replay`.
 - PostgreSQL graph tasks remain unsupported by the Celery worker or skip a restartable phase: `backend/tests/test_postgres_opening_graph.py::test_postgres_graph_worker_routes_each_restartable_phase`.

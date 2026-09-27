@@ -471,18 +471,21 @@ def finalize_graph_in_transaction(
 
     if not lock_current_slice(database, task):
         return False
-    from ..queue_commands import request_queue_refresh_in_transaction
+    from .postgres_integrity import request_integrity_scan_in_transaction
 
-    request_queue_refresh_in_transaction(database, str(task["payload"]["local_day"]))
+    request_integrity_scan_in_transaction(
+        database, str(task["payload"]["repertoire_id"]),
+        int(task["generation"]), str(task["payload"]["local_day"]),
+    )
     if not complete_task_slice_in_transaction(database, task):
         raise RuntimeError("Opening graph lease changed before finalization")
     return False
 
 
 def execute_graph_finalize_slice(task: dict[str, Any]) -> bool:
-    from ..queue_commands import warm_queue_refresh_sql
+    from .durable_tasks import warm_completion_sql
 
-    warm_queue_refresh_sql()
+    warm_completion_sql()
     with background_lease():
         with postgres_store.connection(read_only=False, background=True) as database:
             return finalize_graph_in_transaction(database, task)
