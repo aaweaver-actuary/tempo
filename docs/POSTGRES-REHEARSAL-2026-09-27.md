@@ -101,8 +101,19 @@ handler has been ported and the release gates pass.
   `876111c40ab7e555cfbef29f7664d389ab01a0782c3b7f4c36fd5167b909543f`.
   The extracted copy matched. SQLite reported `integrity_check=ok`, zero
   foreign-key violations, 91 application tables, and 2,802,445 rows.
-- The queue-order fingerprint is
+- **Backup consistency blocker discovered during the clean restore:** the
+  archived `tempo.db` has queue-order fingerprint
+  `235e31db0977...`, while its logical manifest records
   `7d5f94d700b2f4d025bd5288bafc10e62ad2de4fcc84206b3ea9a924c8bd4d4f`.
+  The archive contains only `tempo.db`, with no WAL file. Its database SHA-256
+  matches the manifest, but its queue contents do not. This archive must not
+  be used for live cutover; the cause of the difference has not been proven.
+  `scripts/create_sqlite_cutover_snapshot.py` now captures committed WAL pages
+  through SQLite's backup API and verifies a self-consistent manifest.
+- A separate clean PostgreSQL 18.6 restore from the extracted archive imported
+  all 91 tables, reseeded sequences, and passed every source-vs-PostgreSQL row
+  digest. Its 2,381 queue rows match the extracted SQLite file in exact order.
+  That parity does not resolve the archived-file versus manifest mismatch.
 
 ## Import and checks
 

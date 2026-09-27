@@ -8,10 +8,10 @@ pass on the final checkout.
 
 ## External data and secrets
 
-Keep the stopped SQLite source and all secrets outside the checkout. The
-maintenance runner mounts a verified SQLite database file read-only at
+Keep the stopped SQLite source, snapshot, and all secrets outside the checkout.
+The maintenance runner mounts a verified SQLite snapshot read-only at
 `/source/tempo.db`; it does not accept the compressed volume archive directly.
-Set `TEMPO_SQLITE_SNAPSHOT` to the extracted, checksummed database file.
+Set `TEMPO_SQLITE_SNAPSHOT` to the backup-API snapshot file.
 
 Create the external Docker volumes before starting the stack:
 
@@ -33,10 +33,13 @@ in Compose variables, command arguments, or the repository.
 
 ## Rehearsal before the live window
 
-1. Restore a verified SQLite volume backup into a disposable path outside the
-   checkout. Check its SHA-256 against the manifest, run `PRAGMA
-   integrity_check` and `PRAGMA foreign_key_check`, and compare the manifest's
-   row counts and queue-order fingerprint.
+1. Stop all SQLite writers and create a fresh snapshot with
+   `python scripts/create_sqlite_cutover_snapshot.py create /path/to/tempo.db /external/backups/tempo-rehearsal.db`.
+   Keep the snapshot outside the source volume and checkout. Run
+   `python scripts/create_sqlite_cutover_snapshot.py verify /external/backups/tempo-rehearsal.db /external/backups/tempo-rehearsal.db.manifest.json`.
+   This captures committed WAL pages and verifies integrity, foreign keys,
+   table counts, the file checksum, and queue order. Do not use a volume archive
+   whose database file disagrees with its logical manifest.
 2. Use distinct disposable volume names and a disposable database. Apply
    migration 001, stream the SQLite data, run `--verify-only`, reseed sequences,
    then restore a PostgreSQL custom-format backup into another disposable
@@ -47,11 +50,10 @@ in Compose variables, command arguments, or the repository.
 ## Live stopped-writer window
 
 1. Stop the existing `api`, `analysis-worker`, and other writers. Take a **new**
-   full SQLite volume backup outside the checkout. Verify its archive, database
-   checksum, integrity, foreign keys, per-table counts, and queue-order
-   fingerprint. Retain `tempo-data` unchanged until before PostgreSQL traffic
-   resumes.
-2. Point `TEMPO_SQLITE_SNAPSHOT` to the verified extracted database and set the
+   WAL-aware snapshot outside the checkout with the `create` command above and
+   run its `verify` command. Retain `tempo-data` unchanged until before
+   PostgreSQL traffic resumes. Stop the cutover if any verification differs.
+2. Point `TEMPO_SQLITE_SNAPSHOT` to the verified snapshot and set the
    external secret paths above. Start only PostgreSQL and Redis:
 
    ```sh
