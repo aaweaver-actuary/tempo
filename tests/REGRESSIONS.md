@@ -26,6 +26,7 @@
 | A failed Docker browser case prevents later durability checks and recovery reruns the entire browser matrix | `Docker durability recovery excludes only the already-run browser matrix` |
 | The full validation path repeats regular Playwright tests locally and through Docker, and combined scopes can repeat suites | `full verification owns every test family once without repeating regular browser specs`; `Makefile runs one full plan and rejects combined verification scopes`; `regular and pinned Playwright plans partition every browser spec without overlap` |
 | Pinned visual runs repeatedly download npm packages even though each run still installs a fresh dependency tree | `pinned visual runner caches npm downloads while reinstalling locked dependencies` |
+| A focused pinned performance repeat ignores the selected timing directory and overwrites full-run raw samples | `pinned performance reruns retain raw artifacts in a chosen checkout directory` |
 | Browser responsiveness reports visible paint but lacks input-delay and handler-duration samples where Event Timing is supported | `warm workspace and Builder move responsiveness` |
 | Repeated repertoire FENs waste distance calculations during one query while distinct moves still need stable results | `repeated repertoire FENs retain match ordering and distinct next moves` |
 | Shared opening prefixes replay identical chess moves during every worker index build | `shared repertoire prefixes are traversed once without changing indexed line identity` |

@@ -85,6 +85,37 @@ it("pinned browser preflight detects an inaccessible checkout mount before tests
   }
 });
 
+it("pinned performance reruns retain raw artifacts in a chosen checkout directory", () => {
+  const fakeCommandDirectory = mkdtempSync(join(tmpdir(), "tempo-visual-output-"));
+  try {
+    const fakeDockerPath = join(fakeCommandDirectory, "docker");
+    const capturedArgumentsPath = join(fakeCommandDirectory, "docker-arguments.txt");
+    writeFileSync(fakeDockerPath, "#!/bin/sh\nprintf '%s\\n' \"$@\" > \"$TEMPO_TEST_DOCKER_CAPTURE\"\n");
+    chmodSync(fakeDockerPath, 0o755);
+    const run = spawnSync(process.execPath, ["scripts/test-visual.mjs", "--performance-only"], {
+      cwd: process.cwd(), encoding: "utf8",
+      env: { ...process.env, PATH: `${fakeCommandDirectory}:${process.env.PATH ?? ""}`,
+        TEMPO_TEST_DOCKER_CAPTURE: capturedArgumentsPath,
+        TEMPO_TEST_TIMING_DIR: "test-results/performance/repeat-fixture" },
+    });
+    expect(run.status, run.stderr).toBe(0);
+    expect(readFileSync(capturedArgumentsPath, "utf8"))
+      .toContain("TEMPO_TEST_TIMING_DIR=/workspace/test-results/performance/repeat-fixture");
+    expect(readFileSync("tests/browser/performance.spec.ts", "utf8"))
+      .toContain("process.env.TEMPO_TEST_TIMING_DIR");
+    const outsideCheckout = spawnSync(process.execPath, ["scripts/test-visual.mjs", "--performance-only"], {
+      cwd: process.cwd(), encoding: "utf8",
+      env: { ...process.env, PATH: `${fakeCommandDirectory}:${process.env.PATH ?? ""}`,
+        TEMPO_TEST_DOCKER_CAPTURE: capturedArgumentsPath,
+        TEMPO_TEST_TIMING_DIR: join(tmpdir(), "tempo-outside-checkout") },
+    });
+    expect(outsideCheckout.status).not.toBe(0);
+    expect(outsideCheckout.stderr).toContain("inside the checkout");
+  } finally {
+    rmSync(fakeCommandDirectory, { recursive: true, force: true });
+  }
+});
+
 it("Makefile runs one full plan and rejects combined verification scopes", () => {
   const full = spawnSync("make", ["-n", "full"], { cwd: process.cwd(), encoding: "utf8" });
   expect(full.status).toBe(0);
