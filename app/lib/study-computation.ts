@@ -68,6 +68,7 @@ export function computeStudyTask(task: StudyTask) {
     case "matches":
     case "similarity": {
       const distanceToQuery = prepareChessPositionDistance(task.fen);
+      const seenMovesByFen = new Map<string, Set<string | undefined>>();
       return task.positions
         .map((position) => ({
           ...position,
@@ -83,14 +84,13 @@ export function computeStudyTask(task: StudyTask) {
           (left, right) =>
             left.distance - right.distance || left.ply - right.ply,
         )
-        .filter(
-          (position, index, all) =>
-            all.findIndex(
-              (other) =>
-                other.fen === position.fen &&
-                other.nextUci === position.nextUci,
-            ) === index,
-        )
+        .filter((position) => {
+          const seenMoves = seenMovesByFen.get(position.fen);
+          if (seenMoves?.has(position.nextUci)) return false;
+          if (seenMoves) seenMoves.add(position.nextUci);
+          else seenMovesByFen.set(position.fen, new Set([position.nextUci]));
+          return true;
+        })
         .slice(0, 8);
     }
   }
