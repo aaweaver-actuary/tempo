@@ -6,6 +6,7 @@
 | --- | --- |
 | Full validation or a focused browser scope runs tests and builds before discovering that Docker or localhost binding is sandbox denied | `full verification checks Docker and loopback access before any test family`; `focused browser and Docker Make targets preflight before launching tests` |
 | Docker daemon access succeeds but the pinned visual container cannot see the checkout, causing a late failure after other test families | `pinned browser preflight detects an inaccessible checkout mount before tests` |
+| Standalone Stockfish smoke preempts itself when a slower search reaches the foreground API poll without an API server | `standalone defense engine smoke does not poll an unavailable API` |
 | TypeScript position matching rejects a noncapturable en passant square that Rust canonicalizes away | `TypeScript position distance matches the shared Rust parity fixture`; `rust_position_distance_matches_typescript_shared_fixture` |
 | Rust card IDs canonicalize noncapturable en passant while persisted Python card IDs retain the supplied FEN field | `card_ids_match_python_shared_fixture`; `test_python_card_ids_match_shared_rust_parity_fixture` |
 | Repertoire statistics issues two forecast-input reads for every distinct parent card | `test_repertoire_statistics_batches_forecast_parent_reads` |

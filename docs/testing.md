@@ -18,6 +18,8 @@ The full runner stops at the first failure and writes per-stage timing and exit 
 0. Docker daemon, `127.0.0.1` bind, and checkout bind-mount preflight; no tests have run if this fails.
 1. Frontend Vitest unit suite (`test:unit`).
 2. Defense engine smoke check.
+
+The standalone engine smoke verifies a restricted Stockfish search without connecting to the API. Production engine jobs still poll foreground activity and preempt their background search when needed. The unit regression forces an immediate polling opportunity and checks that smoke mode remains independent of the API.
 3. Python backend pytest suite (`backend/tests`).
 4. Rust format check.
 5. Rust Clippy check.

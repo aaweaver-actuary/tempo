@@ -50,7 +50,7 @@ function evaluate(job) {
       stopReason = "Engine timed out before requested depth";
       stopSearch();
     }, 55_000);
-    const foregroundPoll = setInterval(async () => {
+    const foregroundPoll = process.env.TEMPO_ENGINE_SMOKE === "1" ? undefined : setInterval(async () => {
       if (finished || preempted) return;
       try {
         const { active } = await request("/api/system/foreground-active");
