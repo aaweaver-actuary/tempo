@@ -520,3 +520,12 @@ process cache keyed by the full snapshot signature now reuses the deterministic
 map and invalidates it after line changes. On the restored data, the cold
 request remained 6.3 seconds; the next two requests were 194 and 190 ms.
 The cold path still needs optimization or startup warming before full cutover.
+
+The repository's `make full` release gate passed with
+`TEMPO_PYTHON=/Users/andy/tempo/.venv/bin/python`: 290 frontend unit tests,
+528 backend tests, 124 regular Docker browser tests, 48 pinned visual and
+performance tests, plus Rust, lint, typecheck, WASM, and local build stages.
+The first invocation used the isolated checkout's system Python and failed its
+Pydantic parity test because that interpreter lacks the project dependencies;
+the configured rerun passed. These Docker tests exercise the existing SQLite
+stack, so they do not replace a PostgreSQL end-to-end cutover gate.
