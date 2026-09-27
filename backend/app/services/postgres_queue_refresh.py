@@ -403,6 +403,94 @@ def _admit_one_study_card(database, queue_date: str, study_card_id: str) -> bool
     return True
 
 
+def _prepare_queue_randomization(queue_date: str) -> dict[str, Any]:
+    """Plan a stable queue order without retaining a database transaction."""
+
+    from .. import main
+
+    queue_rows = _bounded_read(
+        """SELECT q.id,q.card_id,c.content_type,q.admission_kind,q.gameplay_priority_reason
+           FROM daily_queue q JOIN cards c ON c.id=q.card_id
+           WHERE q.queue_date=%s AND q.status='queued' ORDER BY q.id""",
+        (queue_date,), native=True,
+    )
+    if not queue_rows:
+        return {"membership_hash": main._queue_membership_hash([]), "entries": None}
+    reviewed_card_ids = {row[0] for row in _bounded_read(
+        """SELECT DISTINCT card_id FROM reviews
+           WHERE card_id=ANY(%s::text[]) AND invalidated_at IS NULL""",
+        ([row["card_id"] for row in queue_rows],), native=True,
+    )}
+    rows = [
+        {**dict(row), "admission_kind": (
+            "explicit" if row["admission_kind"] == "explicit"
+            else "review" if row["card_id"] in reviewed_card_ids else "new"
+        )}
+        for row in queue_rows
+    ]
+    saved_rows = _bounded_read(
+        "SELECT seed,membership_hash FROM daily_queue_days WHERE queue_date=?",
+        (queue_date,),
+    )
+    saved = saved_rows[0] if saved_rows else None
+    membership_hash = main._queue_membership_hash(rows)
+    if saved and saved["membership_hash"] == membership_hash:
+        return {"membership_hash": membership_hash, "entries": None}
+    seed, membership_hash, ordered = main._plan_daily_queue_order(rows, queue_date, saved)
+    return {
+        "seed": seed,
+        "membership_hash": membership_hash,
+        "entries": [
+            {"id": row["id"], "position": position,
+             "bucket": row["content_type"] or "opening", "kind": row["admission_kind"]}
+            for position, row in enumerate(ordered)
+        ],
+    }
+
+
+def _publish_queue_randomization(database, queue_date: str, plan: dict) -> bool:
+    """Atomically reorder the current membership, or request a new plan."""
+
+    from .. import main
+
+    current_membership = database.execute_native(
+        "SELECT id,card_id FROM daily_queue WHERE queue_date=%s AND status='queued' ORDER BY id",
+        (queue_date,),
+    ).fetchall()
+    if main._queue_membership_hash(current_membership) != plan["membership_hash"]:
+        return False
+    if plan["entries"] is None:
+        return True
+    saved = database.execute_native(
+        "SELECT membership_hash FROM daily_queue_days WHERE queue_date=%s FOR UPDATE",
+        (queue_date,),
+    ).fetchone()
+    if saved and saved[0] == plan["membership_hash"]:
+        return True
+    entries = plan["entries"]
+    updated_count = database.execute_native(
+        """UPDATE daily_queue AS queue
+           SET position=planned.position,card_bucket=planned.bucket,
+               admission_kind=planned.kind
+           FROM unnest(%s::bigint[],%s::bigint[],%s::text[],%s::text[])
+                AS planned(id,position,bucket,kind)
+           WHERE queue.id=planned.id AND queue.queue_date=%s AND queue.status='queued'""",
+        ([entry["id"] for entry in entries], [entry["position"] for entry in entries],
+         [entry["bucket"] for entry in entries], [entry["kind"] for entry in entries],
+         queue_date),
+    ).rowcount
+    if updated_count != len(entries):
+        raise RuntimeError("Queue membership changed during atomic randomization")
+    database.execute_native(
+        """INSERT INTO daily_queue_days(queue_date,seed,membership_hash,generated_at)
+           VALUES(%s,%s,%s,%s) ON CONFLICT(queue_date) DO UPDATE SET
+           membership_hash=excluded.membership_hash,generated_at=excluded.generated_at""",
+        (queue_date, plan["seed"], plan["membership_hash"],
+         datetime.now(timezone.utc).isoformat()),
+    )
+    return True
+
+
 def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     """Apply one eligibility phase; later queue phases remain explicitly gated."""
 
@@ -417,7 +505,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     if phase not in (*_ELIGIBILITY_PHASES, "tactical_introductions",
                      "reset_opening_new", "reset_opening_stale", "reconcile_unseen",
                      "admit_due", "prioritized_openings", "prioritized_opening_item",
-                     "admit_study"):
+                     "admit_study", "randomize_queue"):
         raise RuntimeError(f"Queue refresh phase is not yet ported: {phase}")
     prepared_tactic = None
     if phase == "tactical_introductions":
@@ -445,6 +533,10 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     if phase == "admit_study":
         activity_gate.wait_for_foreground()
         study_card_id = _prepare_study_admission(queue_date)
+    randomization_plan = None
+    if phase == "randomize_queue":
+        activity_gate.wait_for_foreground()
+        randomization_plan = _prepare_queue_randomization(queue_date)
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
         if not lock_current_slice(database, task):
@@ -518,6 +610,12 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
             else:
                 _admit_one_study_card(database, queue_date, study_card_id)
                 next_phase = phase
+            next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
+        elif phase == "randomize_queue":
+            published = _publish_queue_randomization(
+                database, queue_date, randomization_plan,
+            )
+            next_phase = "quarantine" if published else phase
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
         else:
             phase_handlers = {

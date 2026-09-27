@@ -1073,31 +1073,28 @@ def seed_queue(db, day):
                        (day, study_row["id"], next_position + offset))
 
 
-def randomize_daily_queue(db, day: str) -> None:
-    """Create a stable mixed queue whenever that day's membership changes."""
-    rows = db.execute(
-        """SELECT q.id,q.card_id,c.content_type,
+_QUEUE_RANDOMIZATION_ROWS_SQL = """SELECT q.id,q.card_id,c.content_type,
                   CASE WHEN q.admission_kind='explicit' THEN 'explicit'
                        WHEN EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id AND r.invalidated_at IS NULL) THEN 'review'
                        ELSE 'new' END admission_kind,
                   q.gameplay_priority_reason
            FROM daily_queue q JOIN cards c ON c.id=q.card_id
            WHERE q.queue_date=? AND q.status='queued'
-           ORDER BY q.id""",
-        (day,),
-    ).fetchall()
-    if not rows:
-        return
-    membership_hash = hashlib.sha256(
+           ORDER BY q.id"""
+
+
+def _queue_membership_hash(rows) -> str:
+    return hashlib.sha256(
         ("queue-mix-v2\0" + "\0".join(
             f"{row['id']}:{row['card_id']}" for row in rows
         )).encode()
     ).hexdigest()
-    saved = db.execute(
-        "SELECT seed,membership_hash FROM daily_queue_days WHERE queue_date=?", (day,)
-    ).fetchone()
-    if saved and saved["membership_hash"] == membership_hash:
-        return
+
+
+def _plan_daily_queue_order(rows, day: str, saved) -> tuple[int, str, list]:
+    """Compute the stable queue mix after its database read has closed."""
+
+    membership_hash = _queue_membership_hash(rows)
     seed = (
         saved["seed"]
         if saved
@@ -1143,6 +1140,21 @@ def randomize_daily_queue(db, day: str) -> None:
     if prioritized_misses:
         ordinary_cards = [row for row in ordered if row["gameplay_priority_reason"] != MISS_REASON]
         ordered = ordinary_cards[:4] + prioritized_misses + ordinary_cards[4:]
+    return seed, membership_hash, ordered
+
+
+def randomize_daily_queue(db, day: str) -> None:
+    """Create a stable mixed queue whenever that day's membership changes."""
+    rows = db.execute(_QUEUE_RANDOMIZATION_ROWS_SQL, (day,)).fetchall()
+    if not rows:
+        return
+    saved = db.execute(
+        "SELECT seed,membership_hash FROM daily_queue_days WHERE queue_date=?", (day,)
+    ).fetchone()
+    membership_hash = _queue_membership_hash(rows)
+    if saved and saved["membership_hash"] == membership_hash:
+        return
+    seed, membership_hash, ordered = _plan_daily_queue_order(rows, day, saved)
     for position, row in enumerate(ordered):
         db.execute(
             """UPDATE daily_queue SET position=?,card_bucket=?,admission_kind=? WHERE id=?""",

@@ -22,6 +22,18 @@ regressions cover allowance, oldest-first order, sibling burial, replay,
 foreground admission, and stale task leases. The later queue randomization
 and projection phases remain release gates.
 
+## Atomic queue randomization rehearsal
+
+The original 309-card PostgreSQL queue-mix read timed out in all three 50 ms
+background-read attempts because it correlated a review lookup for each card.
+Separate queue and indexed review reads returned the same inputs in about
+10 ms and 9 ms, respectively, and the bounded worker read completed. A
+rolled-back atomic publication applied all 309 planned positions and verified
+all 309 positions under PostgreSQL's 50 ms transaction timeout in 38.3 ms.
+Other cold-cache samples were slower, so foreground-load and retry behavior
+still require the full benchmark gate. A membership hash is rechecked before
+publication, including when the saved queue order appears unchanged.
+
 This is a **rehearsal**, not a production cutover. Production `tempo-data`
 remains the rollback source and `docker-compose.yml` still runs SQLite. Do not
 start PostgreSQL-backed API traffic until every write route and background

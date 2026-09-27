@@ -13,7 +13,7 @@ require the integration suite.
 | Boundary | Inventory | Cutover owner |
 | --- | ---: | --- |
 | FastAPI endpoints in `main.py` and `study_routes.py` | 156 routes | GET projections use the read-only PostgreSQL role; mutating routes dispatch typed commands |
-| Backend data access in `database.py`, `main.py`, `study_routes.py`, and service modules | 1,426 call sites | Port SQL dialect, transaction boundaries, and row behavior |
+| Backend data access in `database.py`, `main.py`, `study_routes.py`, and service modules | 1,430 call sites | Port SQL dialect, transaction boundaries, and row behavior |
 | SQLite-only source constructs | 250 line occurrences | Replace or explicitly translate before disabling the SQLite runtime |
 | Browser API callers across views, hooks, utilities, and outboxes | 38 files | Keep HTTP contracts, add pending-operation handling and cache policy |
 | Live application tables | 91, plus SQLite internal tables | Versioned PostgreSQL schema and row-by-row parity checks |
