@@ -6,6 +6,11 @@
 - Always create a new branch for any changes, and ensure it is based on the latest main branch.
 - Clone the latest main branch before starting any work. You have been given a dev location inside the top-level `.dev-copies` directory. Please clone the repository into that location, create a new branch for your work, and start making changes there. You always have the main branch as your reference point.
 
+## Tempo is actively used for study
+
+- Always ensure that your work does not interfere with ongoing study activities.
+- Users are actively engaged in study activities and their work should not be disrupted by ongoing development or changes. We use separate branches and isolated development environments to minimize interference.
+
 ## Mandatory first-read naming rule
 
 Treat this naming rule as canonical for this project before starting substantial implementation or refactoring work.
