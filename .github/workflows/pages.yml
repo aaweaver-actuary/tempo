@@ -8,6 +8,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
   pages: write
   id-token: write
 
@@ -36,9 +37,24 @@ jobs:
       - run: pip install -r backend/requirements.txt pytest
       - run: npx playwright install --with-deps chromium firefox webkit
       - run: npm test
+      - name: Download latest successful main performance artifacts
+        if: always() && github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          baseline_run_id=$(gh run list --workflow pages.yml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId' || true)
+          if [ -n "$baseline_run_id" ]; then
+            gh run download "$baseline_run_id" --name tempo-test-results --dir "$RUNNER_TEMP/tempo-performance-baseline" || true
+          fi
       - name: Summarize performance artifacts
         if: always()
-        run: node scripts/report-performance.mjs
+        run: |
+          baseline_dir="$RUNNER_TEMP/tempo-performance-baseline/performance"
+          if [ -f "$baseline_dir/test-stages-full.json" ]; then
+            node scripts/report-performance.mjs --baseline "$baseline_dir"
+          else
+            node scripts/report-performance.mjs
+          fi
       - uses: actions/upload-artifact@v4
         if: always()
         with:
