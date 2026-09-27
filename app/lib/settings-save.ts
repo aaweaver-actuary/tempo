@@ -18,20 +18,25 @@ function pendingSave(): PendingSettingsSave | null {
 export async function saveLocalSettings(settings: Record<string, unknown>): Promise<void> {
   const body = JSON.stringify(settings);
   let pending = pendingSave();
-  if (pending && pending.body !== body) {
+  if (pending) {
     const response = await fetch(
       `${API_URL}/api/operations/${encodeURIComponent(pending.operationId)}`,
     );
     if (!response.ok) throw new PendingOperationError(pending.operationId);
     const receipt = await response.json() as { state?: string; error?: { message?: string } };
-    if (receipt.state === "pending") throw new PendingOperationError(pending.operationId);
+    if (receipt.state === "pending" && pending.body !== body)
+      throw new PendingOperationError(pending.operationId);
     if (receipt.state === "failed") {
       localStorage.removeItem(pendingKey);
       throw new Error(receipt.error?.message ?? "The earlier settings save failed.");
     }
-    if (receipt.state !== "complete") throw new PendingOperationError(pending.operationId);
-    localStorage.removeItem(pendingKey);
-    pending = null;
+    if (receipt.state === "complete") {
+      localStorage.removeItem(pendingKey);
+      if (pending.body === body) return;
+      pending = null;
+    } else if (receipt.state !== "pending") {
+      throw new PendingOperationError(pending.operationId);
+    }
   }
   if (!pending) {
     pending = { operationId: crypto.randomUUID(), body };

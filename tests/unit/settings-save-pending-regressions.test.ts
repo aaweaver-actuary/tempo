@@ -19,7 +19,7 @@ it("settings retries a pending Celery save with its durable operation ID", async
     }
     if (url.includes("/api/operations/")) {
       statusReads += 1;
-      return Response.json(statusReads === 1
+      return Response.json(statusReads <= 2
         ? { state: "pending" }
         : { state: "complete", response: { new_cards_per_day: 12 } });
     }
