@@ -1,7 +1,8 @@
 import { test, expect } from "./observability";
+import { Chess } from "chess.js";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { navigate } from "./ui-fixtures";
-import { prepareVisualUI } from "./visual-fixtures";
+import { prepareVisualUI, type VisualRepertoireLine } from "./visual-fixtures";
 
 function summarize(samples: number[]) {
   const sorted = samples.toSorted((left, right) => left - right);
@@ -208,6 +209,24 @@ test("warm training cards advance to the next visible paint", async ({ page }, t
 });
 
 test("Builder similarity worker messages keep the position index in the worker", async ({ page }, testInfo) => {
+  const startingFen = new Chess().fen();
+  const openingPairs = new Chess().moves({ verbose: true }).flatMap((firstMove) => {
+    const board = new Chess();
+    board.move(firstMove);
+    return board.moves({ verbose: true }).map((reply) => [
+      `${firstMove.from}${firstMove.to}${firstMove.promotion ?? ""}`,
+      `${reply.from}${reply.to}${reply.promotion ?? ""}`,
+    ]);
+  });
+  const repertoireLines: VisualRepertoireLine[] = Array.from({ length: 250 }, (_, index) => ({
+    id: `performance-line-${index}`,
+    repertoire_id: "visual-repertoire",
+    repertoire_name: "Spanish opening",
+    name: `Opening pair ${index}`,
+    trained_color: "white",
+    start_fen: startingFen,
+    moves: openingPairs[index % openingPairs.length],
+  }));
   await page.addInitScript(() => {
     type ObservedMessage = {
       kind: string; bytes: number; hasPositions: boolean; startedAt: number;
@@ -258,7 +277,7 @@ test("Builder similarity worker messages keep the position index in the worker",
       },
     });
   });
-  await prepareVisualUI(page, false);
+  await prepareVisualUI(page, false, undefined, repertoireLines);
   await navigate(page, "Builder");
   await expect.poll(async () => page.evaluate(() =>
     (Reflect.get(window, "tempoStudyMessages") as Array<{ kind: string; roundtripMs?: number }>).filter(
@@ -298,11 +317,19 @@ test("Builder similarity worker messages keep the position index in the worker",
     bytes, queueMs: queueMs ?? null, computeMs: computeMs ?? null,
     roundtripMs: roundtripMs!,
   }));
+  const indexSamples = messages.filter((message) =>
+    message.kind === "initializePositionIndex" && message.roundtripMs !== undefined,
+  ).map(({ bytes, queueMs, computeMs, roundtripMs }) => ({
+    bytes, queueMs: queueMs ?? null, computeMs: computeMs ?? null,
+    roundtripMs: roundtripMs!,
+  }));
   const report = {
     schemaVersion: 1,
     timestamp: new Date().toISOString(),
     commit: process.env.TEMPO_COMMIT ?? process.env.GITHUB_SHA ?? null,
-    fixture: { name: "prepareVisualUI-default", lines: 1, warmPositionChanges: 6 },
+    fixture: { name: "legal-two-ply-opening-pairs-v1", lines: repertoireLines.length,
+      plies: repertoireLines.length * 2, warmPositionChanges: 6 },
+    indexSamples,
     querySamples,
     roundtripSummary: summarize(querySamples.map((sample) => sample.roundtripMs)),
   };
@@ -314,6 +341,7 @@ test("Builder similarity worker messages keep the position index in the worker",
     contentType: "application/json",
   });
   expect(messages.some((message) => message.kind === "initializePositionIndex")).toBe(true);
+  expect(indexSamples.length).toBeGreaterThan(0);
   for (const message of messages.filter((item) => item.kind === "findPositionMatches")) {
     expect(message.hasPositions).toBe(false);
     expect(message.bytes).toBeLessThan(512);

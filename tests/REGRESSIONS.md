@@ -6,7 +6,7 @@
 | --- | --- |
 | Every motif detector replays and copies the same candidate line before inspecting it | `test_motif_candidates_replay_each_line_once_for_all_detectors`; `test_python_motif_parity_fixture` |
 | Training-card transition latency is not sampled from click through the next visible paint | `warm training cards advance to the next visible paint` |
-| Builder similarity only verifies compact worker messages and leaves real query queue/compute/roundtrip latency unmeasured | `Builder similarity worker messages keep the position index in the worker` |
+| Builder similarity only verifies compact worker messages and leaves index initialization or representative query queue/compute/roundtrip latency unmeasured | `Builder similarity worker messages keep the position index in the worker` (250 legal opening lines) |
 | Black training and tactic setup tests wait on deterministic UI timers after setup | `Black training mounts without selector loops and plays from the current position`; `tactic setup is applied and the final mate remains during feedback` |
 | The full unit stage reports only suite wall time, leaving slow files unidentifiable without repeating the tests | `test plan records per-file Vitest timings without a second unit run` |
 | Rust returns a partial card prefix ending before the trained side can play, while Python rejects it | `prefixes_match_python_including_incomplete_trained_turns`; `test_prefixes_match_rust_including_incomplete_trained_turns` |

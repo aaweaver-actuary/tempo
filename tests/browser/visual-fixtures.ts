@@ -7,7 +7,11 @@ type VisualQueueCard = {
   content_type: "opening"; repertoire_name: string; repertoire_source: string;
   first_correct_at: string; trained_color: "white";
 };
-export async function prepareVisualUI(page: Page, fixedClock = true, trainingCards?: VisualQueueCard[]) {
+export type VisualRepertoireLine = {
+  id: string; repertoire_id: string; repertoire_name: string; name: string;
+  trained_color: "white"; start_fen: string; moves: string[];
+};
+export async function prepareVisualUI(page: Page, fixedClock = true, trainingCards?: VisualQueueCard[], repertoireLines?: VisualRepertoireLine[]) {
   let activeTrainingCards = trainingCards ?? [{
     id: "visual-card",
     queue_entry_id: 1,
@@ -74,7 +78,7 @@ export async function prepareVisualUI(page: Page, fixedClock = true, trainingCar
             id: "visual-repertoire",
             name: "Spanish opening — tournament preparation",
             source_name: "Spanish.pgn",
-            line_count: 3,
+            line_count: repertoireLines?.length ?? 3,
             card_count: 8,
             active_prefix_count: 2,
             graph_updated_at: "2026-09-18T12:00:00Z",
@@ -99,7 +103,7 @@ export async function prepareVisualUI(page: Page, fixedClock = true, trainingCar
         total: 1, next_cursor: null,
       },
       "/api/repertoire/lines": {
-        lines: [
+        lines: repertoireLines ?? [
           {
             id: "visual-line",
             repertoire_id: "visual-repertoire",
