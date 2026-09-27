@@ -65,3 +65,20 @@ it("regular and pinned Playwright plans partition every browser spec without ove
   expect([...regularFiles].filter((file) => visualFiles.has(file))).toEqual([]);
   expect([...regularFiles, ...visualFiles].sort()).toEqual(everyBrowserSpec);
 });
+
+it("Docker durability recovery excludes only the already-run browser matrix", () => {
+  const listedStages = (argumentsToPass: string[]) => {
+    const run = spawnSync(process.execPath, ["scripts/test-docker.mjs", "--list", ...argumentsToPass], {
+      cwd: process.cwd(),
+      encoding: "utf8",
+    });
+    expect(run.status, run.stderr).toBe(0);
+    return (JSON.parse(run.stdout) as { stages: string[] }).stages;
+  };
+  expect(listedStages([])).toEqual([
+    "compose_config", "container_start", "browser", "durability", "container_stop",
+  ]);
+  expect(listedStages(["--skip-browser"])).toEqual([
+    "compose_config", "container_start", "durability", "container_stop",
+  ]);
+});

@@ -46,5 +46,8 @@ The regular Playwright specs run **once** in stage 11. The standalone local `bro
 | View title filter | `make view VIEW=Builder` | Browser tests whose titles match the pattern; focused subset only |
 | Visual and performance | `make visual` | Pinned visual and performance specs |
 | Performance only | `make perf` | Pinned performance specs; subset of `visual` |
+| Docker durability recovery | `make docker-durability` | Compose and container recreation checks after a completed browser matrix; skips only the regular browser specs |
 
 `make plan TIER=fast`, `TIER=python`, `TIER=backend`, `TIER=rust`, `TIER=integration`, or `TIER=ui` prints that scope's exact stages. A view title filter is convenient during development but is not a claim of complete coverage for that view; use `make ui` or `make full` for the broader gate. Make rejects multiple verification targets in one invocation so a combined command cannot accidentally repeat a suite.
+
+If Docker browser tests finish but a failure prevents the later container recreation checks, `make docker-durability` completes only those later checks. `node scripts/test-docker.mjs --list --skip-browser` prints its exact recovery plan. A normal `make full` always includes the browser matrix.

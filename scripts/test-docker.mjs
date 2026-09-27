@@ -4,6 +4,18 @@ import { join } from "node:path";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import assert from "node:assert/strict";
+const supportedArguments = new Set(["--list", "--skip-browser"]);
+for (const argument of process.argv.slice(2)) {
+  if (!supportedArguments.has(argument)) throw new Error(`Unknown Docker test option: ${argument}`);
+}
+const skipBrowser = process.argv.includes("--skip-browser");
+if (process.argv.includes("--list")) {
+  console.log(JSON.stringify({ stages: [
+    "compose_config", "container_start", ...(skipBrowser ? [] : ["browser"]),
+    "durability", "container_stop",
+  ] }, null, 2));
+  process.exit(0);
+}
 const directory = mkdtempSync(join(tmpdir(), "tempo-docker-tests-"));
 const testPort = await new Promise((resolve, reject) => {
   const server = createServer();
@@ -130,10 +142,12 @@ try {
   run("docker", ["info", "--format", "{{.ServerVersion}}"]);
   run("docker", [...composeArgs, "up", "--build", "-d"]);
   await waitForHealth();
-  run("npx", ["playwright", "test"], {
-    TEMPO_DOCKER_URL: `http://127.0.0.1:${testPort}`,
-    TEMPO_TEST_OUTPUT_DIR: join(process.cwd(), "test-results", `browser-docker-${process.pid}`),
-  });
+  if (!skipBrowser) {
+    run("npx", ["playwright", "test"], {
+      TEMPO_DOCKER_URL: `http://127.0.0.1:${testPort}`,
+      TEMPO_TEST_OUTPUT_DIR: join(process.cwd(), "test-results", `browser-docker-${process.pid}`),
+    });
+  }
   await verifyStudySurvivesContainerRecreation();
 } catch (error) { console.error(error.message); exitCode = 1; }
 finally {

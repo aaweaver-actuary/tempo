@@ -14,9 +14,9 @@
 
 .DEFAULT_GOAL := help
 .NOTPARALLEL:
-.PHONY: help plan fast python backend rust integration ui browser visual perf full unit-file python-file ui-file view rust-case
+.PHONY: help plan fast python backend rust integration ui browser visual perf full docker-durability unit-file python-file ui-file view rust-case
 
-VERIFY_TARGETS := fast python backend rust integration ui browser visual perf full unit-file python-file ui-file view rust-case
+VERIFY_TARGETS := fast python backend rust integration ui browser visual perf full docker-durability unit-file python-file ui-file view rust-case
 SELECTED_VERIFY_TARGETS := $(filter $(VERIFY_TARGETS),$(MAKECMDGOALS))
 ifneq ($(words $(SELECTED_VERIFY_TARGETS)),0)
 ifneq ($(words $(SELECTED_VERIFY_TARGETS)),1)
@@ -31,6 +31,7 @@ help:
 	@printf '%s\n' 'Inspect: make plan [TIER=full|fast|python|backend|rust|integration|ui]'
 	@printf '%s\n' 'Release/CI-equivalent: make full (run this one target, not fast + integration + full)'
 	@printf '%s\n' 'Focused scopes: make fast | python | backend | rust | integration | ui | browser | visual | perf'
+	@printf '%s\n' 'Docker recovery: make docker-durability (after the browser matrix already ran)'
 	@printf '%s\n' 'Focused files: make unit-file FILE=tests/unit/example.test.ts'
 	@printf '%s\n' '               make python-file FILE=backend/tests/test_services.py'
 	@printf '%s\n' '               make ui-file FILE=games-board-context.spec.ts'
@@ -69,6 +70,9 @@ perf:
 
 full:
 	node scripts/test-all.mjs full
+
+docker-durability:
+	node scripts/test-docker.mjs --skip-browser
 
 unit-file:
 	@test -n "$(FILE)" || { echo 'Set FILE=tests/unit/<name>.test.ts'; exit 2; }
