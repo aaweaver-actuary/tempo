@@ -1,5 +1,16 @@
 # PostgreSQL rehearsal, September 27, 2026
 
+## Prefix split foreground command rehearsal
+
+The accept and reject routes now dispatch named Celery commands, and both
+browser call sites retain an idempotency key while a `202` operation is pending.
+On the disposable PostgreSQL rehearsal, an accept command completed and replay
+returned its original receipt. A read-only follow-up confirmed the source card
+was archived, the `prefix_splits` row references both new cards, both new cards
+have repertoire links and queue rows, and an opening graph rebuild is queued.
+The corresponding named backend and browser regressions pass. This is not a
+live cutover or a full product verification.
+
 ## Prioritized opening slice check
 
 The opening candidate read returned 326 rows in both the verified SQLite

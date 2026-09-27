@@ -28,6 +28,7 @@ import {
 } from "../domain/schemas";
 import { readJsonResponse, validRecords } from "../lib/validated-data";
 import { movesToSanFormat } from "../utils/chess";
+import { acceptPrefixSplitCommand } from "../lib/prefix-split-command";
 import type { z } from "zod";
 
 type PrefixSplitPreview = z.infer<typeof prefixSplitResponseSchema>;
@@ -201,19 +202,7 @@ export default function CardEditor({
       if (card.editingIntent === "shorten-prefix" && usesLocalApi()) {
         if (!card.backendId || !prefixSplitPreview)
           throw new Error("The shorter prefix preview is not ready.");
-        const response = await fetch(
-          `${API_URL}/api/cards/${card.backendId}/prefix-split`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ expected_revision: card.revision ?? 1 }),
-          },
-        );
-        const result = await readJsonResponse(
-          response,
-          prefixSplitResponseSchema,
-          "accepted prefix split",
-        );
+        const result = await acceptPrefixSplitCommand(card.backendId, card.revision ?? 1);
         onSave({
           ...card,
           backendId: result.parent.card_id,

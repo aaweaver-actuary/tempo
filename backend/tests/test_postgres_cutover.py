@@ -753,6 +753,36 @@ def test_postgres_branch_removal_matches_only_position_and_move_prefix_and_queue
     assert all(scheduled_database is database for _, scheduled_database, _ in scheduled)
 
 
+def test_postgres_prefix_split_decisions_dispatch_foreground_commands_with_idempotency(monkeypatch):
+    from fastapi.testclient import TestClient
+    from fastapi.responses import JSONResponse
+    from app import main
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(command_dispatch, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                            dispatched.append((name, payload, idempotency_key)) or
+                            JSONResponse(status_code=202, content={"operation_id": idempotency_key}))
+    client = TestClient(main.app)
+    for action, command in (("", "cards.prefix_split.accept"),
+                            ("/reject", "cards.prefix_split.reject")):
+        response = client.post(
+            f"/api/cards/prefix-card/prefix-split{action}",
+            json={"expected_revision": 3},
+            headers={"Idempotency-Key": f"prefix-card-3-{command}"},
+        )
+        assert response.status_code == 202, response.text
+        assert response.json() == {"operation_id": f"prefix-card-3-{command}"}
+    assert dispatched == [
+        ("cards.prefix_split.accept", {"card_id": "prefix-card", "request": {"expected_revision": 3}},
+         "prefix-card-3-cards.prefix_split.accept"),
+        ("cards.prefix_split.reject", {"card_id": "prefix-card", "request": {"expected_revision": 3}},
+         "prefix-card-3-cards.prefix_split.reject"),
+    ]
+
+
 def test_postgres_annotation_route_dispatches_idempotent_foreground_command(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main

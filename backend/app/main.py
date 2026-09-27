@@ -469,6 +469,13 @@ async def prioritize_foreground_requests(request: Request, call_next):
         )
         card_validation = (path_parts == ["api", "cards", "validate"]
                            and request.method == "POST")
+        prefix_split_command = (
+            len(path_parts) in {4, 5}
+            and path_parts[:2] == ["api", "cards"]
+            and path_parts[3] == "prefix-split"
+            and (len(path_parts) == 4 or path_parts[4] == "reject")
+            and request.method == "POST"
+        )
         if not read_only_post and not any((study_create, study_update, study_archive, exercise_create, exercise_revise,
                     exercise_enroll, exercise_attempt, exercise_self_assess,
                     exercise_availability_command,
@@ -484,7 +491,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     pgn_import_command,
                     analysis_paste_command,
                     integrity_resolution_command,
-                    card_validation)):
+                    card_validation, prefix_split_command)):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
@@ -2982,7 +2989,15 @@ def prefix_split_preview(identifier: str):
 
 
 @app.post("/api/cards/{identifier}/prefix-split", response_model=PrefixSplitResponse)
-def prefix_split_accept(identifier: str, request: PrefixSplitRequest):
+def prefix_split_accept(identifier: str, request: PrefixSplitRequest,
+                        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "cards.prefix_split.accept",
+            {"card_id": identifier, "request": request.model_dump(mode="json")},
+            idempotency_key=idempotency_key,
+        )
     with connection() as database:
         try:
             result = apply_prefix_split(database, identifier, request.expected_revision)
@@ -3036,7 +3051,15 @@ def prefix_split_accept(identifier: str, request: PrefixSplitRequest):
 
 
 @app.post("/api/cards/{identifier}/prefix-split/reject")
-def prefix_split_reject(identifier: str, request: PrefixSplitRequest):
+def prefix_split_reject(identifier: str, request: PrefixSplitRequest,
+                        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "cards.prefix_split.reject",
+            {"card_id": identifier, "request": request.model_dump(mode="json")},
+            idempotency_key=idempotency_key,
+        )
     with connection() as database:
         try:
             preview = preview_prefix_split(database, identifier)
