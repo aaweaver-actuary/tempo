@@ -26,6 +26,7 @@ from .services.threat_training import execute_defense_rubric_audit_slice
 
 _LOGGER = logging.getLogger("tempo.tasks")
 _SUPPORTED_BACKGROUND_KINDS = (
+    "daily_queue",
     "defensive_rubric_audit",
     "repertoire_game_refresh",
     "defensive_threat_report_audit",

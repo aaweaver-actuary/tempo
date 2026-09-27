@@ -51,14 +51,38 @@ task completion in one transaction. A rolled-back rehearsal with a leased
 queue task produced a ready projection and completed task in 18.2 ms after
 module warmup. The first probe included about 450 ms of lazy Python import
 before the transaction; this is excluded from the database-section budget.
-The queue-refresh task is not yet enabled in Celery because its enqueue paths
-and remaining write-route cutover still need integration.
-Celery now knows the queue slice handler and preserves its in-transaction task
-receipt, while the polling allowlist deliberately remains closed.
+The queue-refresh task now has an explicit Celery slice handler that preserves
+its in-transaction task receipt. Its polling allowlist was enabled after the
+disposable end-to-end task/database rehearsal; broker transport and remaining
+write-route cutover still need integration.
 An explicit foreground `queue.ensure_current` command now coalesces an active
 refresh and marks its projection as refreshing. Two invocations in a rolled-back
 PostgreSQL rehearsal returned the same durable task ID. API startup dispatch
-and the polling allowlist remain release integration work.
+remains release integration work.
+
+## Disposable end-to-end queue fixture
+
+A separate PostgreSQL 18 container and external named volume held a migrated
+schema with one due opening card. Redis database 1 isolated its admission gate
+from the main rehearsal. The explicit foreground command created one durable
+queue task; the real PostgreSQL claimer and slice handler then ran every phase.
+The first run exposed a native SQL call that passed SQLite `json_extract` to
+PostgreSQL during prioritized opening publication. That transaction rolled
+back with no queue entry, and the same leased task resumed after correction.
+Fifteen intermediate slice checkpoints and one final publication completed.
+The final task is `complete`; the queue projection is `ready` at generation 1,
+with the opening queued at position 0 and no diagnostics. A second ensure
+command returned `refresh_pending=false` without creating another task.
+This exercised the task and database code through a direct fixture driver.
+After enabling `daily_queue` in the Celery polling allowlist, separate local
+foreground and background Celery workers connected to the disposable PostgreSQL
+database and Redis database 1. An explicit command for September 28 went
+through the foreground worker; the background poll claimed and ran its slices.
+The task completed and projection became ready in 0.84 seconds, with the due
+opening at position 0. Both workers and the disposable PostgreSQL container
+were stopped afterward; its external named volume remains available for
+follow-up tests. The browser flow and production Compose cutover remain
+unverified.
 
 This is a **rehearsal**, not a production cutover. Production `tempo-data`
 remains the rollback source and `docker-compose.yml` still runs SQLite. Do not

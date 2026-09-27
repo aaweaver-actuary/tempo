@@ -332,9 +332,9 @@ def _admit_one_prioritized_opening(database, queue_date: str, planned: dict) -> 
         (queue_date, card_id),
     )
     now = datetime.now(timezone.utc).isoformat()
-    database.execute_native(
-        """UPDATE repertoire_opportunities SET status='resolved',resolved_at=%s,updated_at=%s
-           WHERE repertoire_id=%s AND card_id=%s AND kind='weak_known_decision'
+    database.execute(
+        """UPDATE repertoire_opportunities SET status='resolved',resolved_at=?,updated_at=?
+           WHERE repertoire_id=? AND card_id=? AND kind='weak_known_decision'
              AND json_extract(evidence_json,'$.analysis_based') IS NULL AND status='active'""",
         (now, now, planned["repertoire_id"], card_id),
     )

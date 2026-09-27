@@ -4822,7 +4822,7 @@
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_prioritized_opening",
       "line": 335,
-      "operation": "execute_native"
+      "operation": "execute"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",

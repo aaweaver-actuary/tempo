@@ -88,6 +88,54 @@ def test_postgres_priority_opening_slice_checkpoints_one_item_and_rejects_stale_
     assert saved_phase == "admit_study"
 
 
+def test_postgres_priority_opening_publication_translates_opportunity_json(tmp_path):
+    from app.services import postgres_queue_refresh
+
+    database_path = tmp_path / "priority-opening-publication.db"
+    with sqlite3.connect(database_path) as database:
+        database.executescript("""
+            CREATE TABLE cards(id TEXT PRIMARY KEY,state TEXT,introduced_at TEXT,
+                               archived INTEGER,pending_validation INTEGER);
+            CREATE TABLE daily_queue(queue_date TEXT,card_id TEXT,position INTEGER,
+                                     gameplay_priority_reason TEXT,admission_repertoire_id TEXT);
+            CREATE TABLE repertoire_opportunities(repertoire_id TEXT,card_id TEXT,
+                kind TEXT,evidence_json TEXT,status TEXT,resolved_at TEXT,updated_at TEXT);
+            INSERT INTO cards VALUES('opening','new',NULL,0,0);
+            INSERT INTO repertoire_opportunities(repertoire_id,card_id,kind,evidence_json,status)
+                VALUES('rep','opening','weak_known_decision','{}','active');
+        """)
+
+    class NativeSqlite:
+        def __init__(self, database):
+            self.database = database
+
+        def execute_native(self, statement, parameters=()):
+            assert "json_extract" not in statement
+            return self.database.execute(
+                statement.replace("%s", "?").replace("FOR UPDATE", ""), parameters,
+            )
+
+        def execute(self, statement, parameters=()):
+            return self.database.execute(statement, parameters)
+
+    with sqlite3.connect(database_path) as database:
+        database.row_factory = sqlite3.Row
+        postgres_queue_refresh._admit_one_prioritized_opening(
+            NativeSqlite(database), "2026-09-27",
+            {"card_id": "opening", "repertoire_id": "rep", "reason": "gameplay"},
+        )
+    with sqlite3.connect(database_path) as database:
+        assert database.execute(
+            "SELECT card_id,position,gameplay_priority_reason FROM daily_queue",
+        ).fetchone() == ("opening", 0, "gameplay")
+        assert database.execute(
+            "SELECT state,introduced_at FROM cards WHERE id='opening'",
+        ).fetchone() == ("learning", "2026-09-27")
+        assert database.execute(
+            "SELECT status FROM repertoire_opportunities",
+        ).fetchone()[0] == "resolved"
+
+
 def test_postgres_study_admission_slices_respect_quota_burial_and_replay(monkeypatch, tmp_path):
     from app.services import postgres_queue_refresh
 
@@ -520,7 +568,7 @@ def test_postgres_queue_celery_dispatch_keeps_atomic_slice_receipt(monkeypatch):
                         lambda task_name, **_kwargs: sent.append(task_name))
     assert tasks.execute_background_slice.run(claimed) is True
     assert sent == ["app.tasks.poll_background_tasks"]
-    assert "daily_queue" not in tasks._SUPPORTED_BACKGROUND_KINDS
+    assert "daily_queue" in tasks._SUPPORTED_BACKGROUND_KINDS
 
 
 def test_postgres_queue_ensure_command_coalesces_active_refresh(monkeypatch):
