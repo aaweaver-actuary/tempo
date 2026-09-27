@@ -478,3 +478,22 @@ A read-only FastAPI smoke against the restored PostgreSQL data returned HTTP
 summary, tactics catalog, endgame templates, and task status. These requests
 used the reader role and did not start the API lifespan or a browser; they
 show the core read projections work, not that the product stack is ready.
+
+## Disposable browser and foreground worker preview
+
+A separate API on `127.0.0.1:18000`, Vite frontend on `127.0.0.1:13000`,
+foreground Celery worker, and Redis database 1 exercised the restored
+PostgreSQL rehearsal data without starting the production Compose stack. The
+API used the read-only role; the worker used the writer role. Browser training,
+repertoire, studies, and tactics pages loaded actual data. Tactics catalog and
+progress each returned HTTP 200 after setting `TEMPO_CATALOG_ROOT` to the
+checkout's `public` directory. An initial preview configuration pointed that
+variable at the checkout root, causing asset 500s; the correction was local
+to this preview. No browser console errors remained in the checked pages.
+
+The foreground worker completed a main-repertoire command in 26 ms; replay
+with the same idempotency key returned the existing receipt in 6 ms, and
+`GET /api/operations/{id}` reported completion. This changed only the mutable
+rehearsal database. Browser page loads also issued game-sync commands, so this
+instance remains a development fixture. The browser preview did not exercise
+all routes or background workers and does not establish cutover readiness.
