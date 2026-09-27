@@ -5,7 +5,7 @@ from __future__ import annotations
 from ..database import connection
 from .. import postgres_store
 from .activity_gate import activity_gate
-from .durable_tasks import enqueue_task_in_transaction
+from .durable_tasks import enqueue_task_in_transaction, lock_current_slice
 
 
 ROWS_PER_SLICE = 16
@@ -17,13 +17,17 @@ def execute_priority_retention_slice(task: dict) -> bool:
     repertoire_id = task["payload"]["repertoire_id"]
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        current_task = database.execute(
-            """SELECT 1 FROM background_tasks
-               WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
-            (task["id"], task["generation"], task["lease_token"]),
-        ).fetchone()
-        if current_task is None:
-            return False
+        if postgres_store.configured():
+            if not lock_current_slice(database, task):
+                return False
+        else:
+            current_task = database.execute(
+                """SELECT 1 FROM background_tasks
+                   WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
+                (task["id"], task["generation"], task["lease_token"]),
+            ).fetchone()
+            if current_task is None:
+                return False
         publication = database.execute(
             "SELECT generation FROM repertoire_priority_publications WHERE repertoire_id=?",
             (repertoire_id,),

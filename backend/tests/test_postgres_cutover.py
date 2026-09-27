@@ -336,7 +336,7 @@ def test_postgres_cutover_priority_retention_locks_bounded_primary_keys(monkeypa
         def execute(self, statement, _parameters=()):
             statements.append(statement)
             if "FROM background_tasks" in statement:
-                return Cursor(row={"exists": 1})
+                return Cursor(row={"generation": 1, "lease_token": "lease", "state": "leased"})
             if "FROM repertoire_priority_publications" in statement:
                 return Cursor(row={"generation": 3})
             if "FROM repertoire_priority_jobs" in statement:
@@ -361,6 +361,12 @@ def test_postgres_cutover_priority_retention_locks_bounded_primary_keys(monkeypa
         "id": "task", "generation": 1, "lease_token": "lease",
         "payload": {"repertoire_id": "repertoire"},
     }) is False
+    assert "FOR UPDATE" in statements[0]
     assert any("FOR UPDATE SKIP LOCKED" in statement for statement in statements)
     assert all("rowid" not in statement for statement in statements)
+    assert deleted == [("repertoire", 2, "stale-card")]
+    assert priority_retention.execute_priority_retention_slice({
+        "id": "task", "generation": 1, "lease_token": "expired-lease",
+        "payload": {"repertoire_id": "repertoire"},
+    }) is False
     assert deleted == [("repertoire", 2, "stale-card")]
