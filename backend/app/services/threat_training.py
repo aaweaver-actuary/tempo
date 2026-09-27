@@ -9,9 +9,10 @@ import json
 
 import chess
 
-from ..database import connection, read_connection
+from ..database import background_read_connection, connection, read_connection
+from .. import postgres_store
 from .activity_gate import activity_gate
-from .durable_tasks import enqueue_task
+from .durable_tasks import enqueue_task, lock_current_slice
 from .review_service import (
     apply_scheduling_review, ensure_card_queued_after, preserve_daily_queue_order,
     rebuild_defense_schedule,
@@ -45,7 +46,7 @@ def execute_defense_rubric_audit_slice(task: dict) -> bool:
     """Recheck one saved candidate and its old reviews without holding SQLite during replay."""
     cursor = task["payload"].get("cursor", "")
     activity_gate.wait_for_foreground()
-    with read_connection() as database:
+    with background_read_connection() as database:
         row = database.execute(
             """SELECT candidate.* FROM threat_training_candidates candidate
                JOIN imported_games game ON game.id=candidate.game_id
@@ -104,16 +105,20 @@ def execute_defense_rubric_audit_slice(task: dict) -> bool:
     )
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        lease = database.execute(
-            "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
-        ).fetchone()
+        if postgres_store.configured():
+            if not lock_current_slice(database, task):
+                return True
+        else:
+            lease = database.execute(
+                "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
+            ).fetchone()
+            if (not lease or lease["generation"] != task["generation"]
+                    or lease["lease_token"] != task["lease_token"]):
+                return True
         current = database.execute(
             "SELECT source_fingerprint,exercise_revision,card_id FROM threat_training_candidates WHERE id=?",
             (candidate["id"],),
         ).fetchone()
-        if (not lease or lease["generation"] != task["generation"]
-                or lease["lease_token"] != task["lease_token"]):
-            return True
         if (current and current["source_fingerprint"] == candidate["source_fingerprint"]
                 and current["exercise_revision"] == candidate["exercise_revision"]):
             eligible = result.state in {"engine_supported", "validated_control"}

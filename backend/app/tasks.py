@@ -18,10 +18,12 @@ from .services.durable_tasks import claim_task, complete_task, fail_task
 from .services.priority_retention import execute_priority_retention_slice
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
 from .services.threat_pipeline import execute_threat_report_audit
+from .services.threat_training import execute_defense_rubric_audit_slice
 
 
 _LOGGER = logging.getLogger("tempo.tasks")
 _SUPPORTED_BACKGROUND_KINDS = (
+    "defensive_rubric_audit",
     "repertoire_game_refresh",
     "defensive_threat_report_audit",
     "priority_retention",
@@ -63,6 +65,7 @@ def poll_background_tasks() -> bool:
 @celery_app.task(name="app.tasks.execute_background_slice", bind=True)
 def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
     background_handlers = {
+        "defensive_rubric_audit": execute_defense_rubric_audit_slice,
         "repertoire_game_refresh": execute_repertoire_game_refresh_slice,
         "defensive_threat_report_audit": execute_threat_report_audit,
         "priority_retention": execute_priority_retention_slice,

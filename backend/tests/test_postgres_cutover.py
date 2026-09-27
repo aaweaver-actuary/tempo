@@ -415,6 +415,115 @@ def test_postgres_cutover_rubric_audit_uses_boolean_case_parameter():
     assert saved_parameters[1][3] is False
 
 
+def test_postgres_cutover_rubric_audit_yields_and_discards_stale_replay(monkeypatch):
+    from types import SimpleNamespace
+    from app import tasks
+    from app.services import threat_training
+
+    foreground_finished = threading.Event()
+    read_opened = threading.Event()
+    published_candidates: list[str] = []
+    advanced_cursors: list[str] = []
+    current_lease = {"token": "active"}
+    claimed_task = {
+        "kind": "defensive_rubric_audit", "id": "rubric-task",
+        "generation": 3, "lease_token": "active", "payload": {"cursor": ""},
+    }
+    candidate = {
+        "id": "candidate-1", "evidence_json": '{"anchor":{},"seed":{}}',
+        "policy_json": "{}", "source_fingerprint": "source-1",
+        "exercise_revision": 2, "card_id": None,
+    }
+
+    class Cursor:
+        def __init__(self, row=None):
+            self.row = row
+
+        def fetchone(self):
+            return self.row
+
+        def __iter__(self):
+            return iter(())
+
+    class ReadDatabase:
+        def execute(self, statement, _parameters):
+            return Cursor(candidate if "SELECT candidate.*" in statement else None)
+
+    class WriteDatabase:
+        def execute(self, statement, parameters=()):
+            if "SELECT source_fingerprint" in statement:
+                return Cursor(candidate)
+            if "UPDATE threat_training_candidates SET validation_state" in statement:
+                assert parameters[3] is True
+                published_candidates.append(parameters[-1])
+            if statement.startswith("UPDATE background_tasks"):
+                advanced_cursors.append(parameters[0])
+                current_lease["token"] = "next-generation"
+            return Cursor()
+
+    @contextmanager
+    def test_read_connection():
+        read_opened.set()
+        yield ReadDatabase()
+
+    @contextmanager
+    def test_write_connection(*, background):
+        assert background
+        yield WriteDatabase()
+
+    anchor = SimpleNamespace(position=SimpleNamespace(
+        start_fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        prefix_uci=(), learner_color="white",
+    ))
+    seed = SimpleNamespace(geometry=SimpleNamespace(
+        major=SimpleNamespace(square="a1", piece="rook"),
+    ))
+
+    @dataclass
+    class Validation:
+        state: str = "engine_supported"
+        diagnostic: str = "verified"
+
+    monkeypatch.setattr(threat_training.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(threat_training.activity_gate, "wait_for_foreground", foreground_finished.wait)
+    monkeypatch.setattr(threat_training, "background_read_connection", test_read_connection)
+    monkeypatch.setattr(threat_training, "connection", test_write_connection)
+    monkeypatch.setattr(threat_training, "_anchor_from_json", lambda _raw: anchor)
+    monkeypatch.setattr(threat_training, "_seed_from_json", lambda _raw: seed)
+    monkeypatch.setattr(threat_training, "ThreatPolicy", lambda **_arguments: object())
+    monkeypatch.setattr(threat_training, "make_validation_plan", lambda *_args, **_kwargs: object())
+    monkeypatch.setattr(threat_training, "validate_threat_anchor", lambda *_args: Validation())
+    monkeypatch.setattr(threat_training, "enqueue_defense_admission", lambda *, background: None)
+    monkeypatch.setattr(
+        threat_training, "lock_current_slice",
+        lambda _database, task: task["lease_token"] == current_lease["token"],
+    )
+
+    results: list[bool] = []
+    worker = threading.Thread(
+        target=lambda: results.append(threat_training.execute_defense_rubric_audit_slice(claimed_task)),
+    )
+    worker.start()
+    assert not read_opened.wait(0.05)
+    foreground_finished.set()
+    worker.join(timeout=2)
+    assert not worker.is_alive()
+    assert results == [True]
+    assert published_candidates == ["candidate-1"]
+    assert advanced_cursors == ['{"cursor": "candidate-1"}']
+    assert threat_training.execute_defense_rubric_audit_slice(claimed_task) is True
+    assert published_candidates == ["candidate-1"]
+
+    claimed_filters: list[tuple[str, ...]] = []
+    monkeypatch.setattr(
+        tasks, "claim_task",
+        lambda *, allowed_kinds: claimed_filters.append(allowed_kinds) or claimed_task,
+    )
+    monkeypatch.setattr(tasks.celery_app, "send_task", lambda *_args, **_kwargs: None)
+    assert tasks.poll_background_tasks.run() is True
+    assert "defensive_rubric_audit" in claimed_filters[0]
+
+
 def test_postgres_cutover_priority_retention_locks_bounded_primary_keys(monkeypatch):
     from app.services import priority_retention
 

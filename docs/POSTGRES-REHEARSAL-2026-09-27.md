@@ -118,8 +118,10 @@ handler has been ported and the release gates pass.
   `CASE WHEN` placeholder received an SQLite-style integer. Passing a Python
   boolean fixed the real rehearsal query; the first-candidate write section
   measured 28.7–45.0 ms across three rolled-back runs. That margin is narrow,
-  so the handler is not yet enabled in Celery pending contention and replay
-  verification.
+  and is now routed through Celery after foreground-admitted reads and a
+  PostgreSQL lease lock were added. A rolled-back rehearsal of that path
+  completed in 53.9 ms end to end; its write section remains subject to the
+  50 ms transaction limit and will need backlog benchmarking.
 - Preliminary in-process API read samples at 1, 4, and 16 clients are in
   `benchmarks/postgres-read-rehearsal-2026-09-27.csv`. They show a PostgreSQL
   queue-read regression under this first schema, so the cutover latency gate
