@@ -1,6 +1,6 @@
 # Performance measurement
 
-Run `npm run test:fast` for the active development loop. It checks the frontend unit suite without browser builds or Docker. Run `npm run test:integration` for backend integration, defense engine, and Rust checks. `npm run test:browser` runs browser workflows. `npm run test:perf` runs the pinned browser performance scenario; `npm run test:visual` runs it alongside visual snapshots. Run `npm test` or `npm run test:full` before release; these still run every check in the established order.
+Use `make plan` to inspect the ordered full gate and `make full` to run it once on the final checkout. [The test scopes](testing.md) include `make fast` for frontend units, `make python` or `make backend` for server work, `make rust`, `make ui`, and exact file or view filters. The npm aliases remain available. The full gate runs regular browser specs through Docker once and runs the disjoint pinned visual/performance specs once.
 
 The tier runner writes `test-results/performance/test-stages-<tier>.json` after each stage, including a failing stage. The pinned browser run writes `test-results/performance/browser-chromium.json` on success and on metric assertion failures. Set `TEMPO_TEST_TIMING_DIR` to choose another artifact directory. Records contain the commit, timestamp, tool versions, platform, stage duration, and exit status. Compare timings on the same machine and environment. Repeated runs are necessary before treating a small difference as a regression. CI retains `test-results/` as an artifact for successful and failed quality runs.
 

@@ -26,6 +26,8 @@ const result = spawnSync(
     `${process.cwd()}:/workspace`,
     "-v",
     "/workspace/node_modules",
+    "--mount",
+    "type=volume,source=tempo-playwright-npm-cache,target=/root/.npm",
     "-w",
     "/workspace",
     image,

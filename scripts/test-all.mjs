@@ -35,12 +35,30 @@ const stages = [
   ["wasm_build", "npm", ["run", "build:wasm"]],
   ["local_build", "npm", ["run", "build:local"]],
   ["browser", "npm", ["run", "test:browser"]],
+  // Docker runs the regular Playwright suite against the full proxy once.
   ["docker", "npm", ["run", "test:docker"]],
   ["visual", "npm", ["run", "test:visual"]],
 ];
-const tier = process.argv[2] ?? "full";
-const selectedStages = tier === "fast" ? stages.filter(([name]) => name === "unit") : tier === "integration" ? stages.filter(([name]) => ["defense_engine", "backend", "rust_format", "rust_lint", "rust_test"].includes(name)) : tier === "full" ? stages : null;
+const listOnly = process.argv[2] === "--list";
+const tier = (listOnly ? process.argv[3] : process.argv[2]) ?? "full";
+const stagesByTier = {
+  fast: ["unit"],
+  python: ["backend"],
+  backend: ["defense_engine", "backend"],
+  rust: ["rust_format", "rust_lint", "rust_test"],
+  integration: ["defense_engine", "backend", "rust_format", "rust_lint", "rust_test"],
+  ui: ["browser", "visual"],
+  full: stages.map(([name]) => name).filter((name) => name !== "browser"),
+};
+const stageNames = stagesByTier[tier];
+const selectedStages = stageNames
+  ? stages.filter(([name]) => stageNames.includes(name))
+  : null;
 if (!selectedStages) throw new Error(`Unknown test tier: ${tier}`);
+if (listOnly) {
+  console.log(JSON.stringify({ tier, stages: selectedStages.map(([name, command, args]) => ({ name, command, args })) }, null, 2));
+  process.exit(0);
+}
 const commit = version("git", ["rev-parse", "HEAD"]);
 const report = {
   schema_version: 1,
