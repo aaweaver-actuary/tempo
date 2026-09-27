@@ -4,6 +4,8 @@
 
 | Issue | Required regression |
 | --- | --- |
+| Training-card transition latency is not sampled from click through the next visible paint | `warm training cards advance to the next visible paint` |
+| Builder similarity only verifies compact worker messages and leaves real query queue/compute/roundtrip latency unmeasured | `Builder similarity worker messages keep the position index in the worker` |
 | Black training and tactic setup tests wait on deterministic UI timers after setup | `Black training mounts without selector loops and plays from the current position`; `tactic setup is applied and the final mate remains during feedback` |
 | The full unit stage reports only suite wall time, leaving slow files unidentifiable without repeating the tests | `test plan records per-file Vitest timings without a second unit run` |
 | Rust returns a partial card prefix ending before the trained side can play, while Python rejects it | `prefixes_match_python_including_incomplete_trained_turns`; `test_prefixes_match_rust_including_incomplete_trained_turns` |

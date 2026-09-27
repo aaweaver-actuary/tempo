@@ -2,7 +2,23 @@ import type { Page } from "@playwright/test";
 import { prepareUI } from "./ui-fixtures";
 const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 const moves = ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"];
-export async function prepareVisualUI(page: Page, fixedClock = true) {
+type VisualQueueCard = {
+  id: string; queue_entry_id: number; start_fen: string; moves: string[];
+  content_type: "opening"; repertoire_name: string; repertoire_source: string;
+  first_correct_at: string; trained_color: "white";
+};
+export async function prepareVisualUI(page: Page, fixedClock = true, trainingCards?: VisualQueueCard[]) {
+  let activeTrainingCards = trainingCards ?? [{
+    id: "visual-card",
+    queue_entry_id: 1,
+    start_fen: startFen,
+    moves,
+    content_type: "opening" as const,
+    repertoire_name: "Spanish opening",
+    repertoire_source: "PGN",
+    first_correct_at: "2026-09-17T12:00:00Z",
+    trained_color: "white" as const,
+  }];
   if (fixedClock)
     await page.clock.setFixedTime(new Date("2026-09-18T16:00:00Z"));
   await page.addInitScript(() => {
@@ -15,6 +31,12 @@ export async function prepareVisualUI(page: Page, fixedClock = true) {
   });
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
+    if (trainingCards && route.request().method() === "POST" && /^\/api\/cards\/[^/]+\/review$/.test(path)) {
+      const reviewedCardId = path.split("/")[3];
+      activeTrainingCards = activeTrainingCards.filter((card) => card.id !== reviewedCardId);
+      await route.fulfill({ json: { persisted: true } });
+      return;
+    }
     const settings = {
       initial_depth: 6,
       timezone: "America/New_York",
@@ -35,32 +57,16 @@ export async function prepareVisualUI(page: Page, fixedClock = true) {
       },
       "/api/settings": settings,
       "/api/queue/window": {
-        cards: [
-          {
-            id: "visual-card",
-            queue_entry_id: 1,
-            start_fen: startFen,
-            moves,
-            content_type: "opening",
-            repertoire_name: "Spanish opening",
-            repertoire_source: "PGN",
-            first_correct_at: "2026-09-17T12:00:00Z",
-            trained_color: "white",
-          },
-        ],
+        cards: activeTrainingCards,
+        count: activeTrainingCards.length,
       },
       "/api/queue/prepared": {
         prepared_at: "2026-09-18T16:00:00Z",
         local_date: "2026-09-18",
-        count: 1,
+        count: activeTrainingCards.length,
         projection: { state: "ready", generation: 1, updated_at: "2026-09-18T16:00:00Z",
           refresh_pending: 0, last_error: null, blocked_count: 0 },
-        cards: [{
-          id: "visual-card", queue_entry_id: 1, latest_review_id: 0,
-          start_fen: startFen, moves, content_type: "opening",
-          repertoire_name: "Spanish opening", repertoire_source: "PGN",
-          first_correct_at: "2026-09-17T12:00:00Z", trained_color: "white",
-        }],
+        cards: activeTrainingCards.map((card) => ({ ...card, latest_review_id: 0 })),
       },
       "/api/repertoires": {
         repertoires: [

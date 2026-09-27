@@ -139,11 +139,84 @@ test("warm workspace and Builder move responsiveness", async ({ page }, testInfo
   }
 });
 
-test("Builder similarity worker messages keep the position index in the worker", async ({ page }) => {
+test("warm training cards advance to the next visible paint", async ({ page }, testInfo) => {
+  const trainingCards = ["e2e4", "d2d4", "g1f3", "c2c4", "b1c3", "f2f4"]
+    .map((move, index) => ({
+      id: `performance-card-${index + 1}`,
+      queue_entry_id: index + 1,
+      start_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      moves: [move],
+      content_type: "opening" as const,
+      repertoire_name: `Transition card ${index + 1}`,
+      repertoire_source: "PGN",
+      first_correct_at: "2026-09-17T12:00:00Z",
+      trained_color: "white" as const,
+    }));
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await prepareVisualUI(page, false, trainingCards);
+  await navigate(page, "Train");
+  await expect(page.locator(".opening-title h2")).toHaveText("Transition card 1");
+  await page.evaluate(() => {
+    const samples: Array<{ from: string; to: string; clickToPaintMs: number }> = [];
+    Object.assign(window, { tempoTrainingCardSamples: samples });
+    document.addEventListener("click", (event) => {
+      const clickedButton = (event.target as Element).closest("button");
+      if (!clickedButton?.textContent?.includes("Correct")) return;
+      const expectedTitle = Reflect.get(window, "tempoExpectedNextCard") as string | undefined;
+      const previousTitle = document.querySelector(".opening-title h2")?.textContent?.trim();
+      if (!expectedTitle || !previousTitle) return;
+      const clickedAt = performance.now();
+      const observer = new MutationObserver(() => {
+        if (document.querySelector(".opening-title h2")?.textContent?.trim() !== expectedTitle) return;
+        observer.disconnect();
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          samples.push({ from: previousTitle, to: expectedTitle, clickToPaintMs: performance.now() - clickedAt });
+        }));
+      });
+      observer.observe(document.body, { subtree: true, childList: true, characterData: true });
+    }, true);
+  });
+  for (let index = 1; index < trainingCards.length; index++) {
+    const nextTitle = trainingCards[index].repertoire_name;
+    await page.evaluate((title) => Object.assign(window, { tempoExpectedNextCard: title }), nextTitle);
+    await page.getByRole("button", { name: "Correct", exact: true }).click();
+    await expect(page.locator(".opening-title h2")).toHaveText(nextTitle);
+    await expect.poll(() => page.evaluate(() =>
+      (Reflect.get(window, "tempoTrainingCardSamples") as unknown[]).length,
+    )).toBe(index);
+  }
+  const samples = await page.evaluate(() => Reflect.get(window, "tempoTrainingCardSamples") as Array<{
+    from: string; to: string; clickToPaintMs: number;
+  }>);
+  const report = {
+    schemaVersion: 1,
+    timestamp: new Date().toISOString(),
+    commit: process.env.TEMPO_COMMIT ?? process.env.GITHUB_SHA ?? null,
+    fixture: { name: "six prepared single-move opening cards", cards: trainingCards.length },
+    samples,
+    summary: summarize(samples.map((sample) => sample.clickToPaintMs)),
+  };
+  const reportBody = JSON.stringify(report, null, 2);
+  mkdirSync("test-results/performance", { recursive: true });
+  writeFileSync("test-results/performance/training-card-chromium.json", `${reportBody}\n`);
+  await testInfo.attach("training-card-performance", {
+    body: reportBody,
+    contentType: "application/json",
+  });
+  expect(samples).toHaveLength(5);
+  expect(report.summary.p95).toBeLessThanOrEqual(500);
+});
+
+test("Builder similarity worker messages keep the position index in the worker", async ({ page }, testInfo) => {
   await page.addInitScript(() => {
-    const observed: Array<{ kind: string; bytes: number; hasPositions: boolean }> = [];
+    type ObservedMessage = {
+      kind: string; bytes: number; hasPositions: boolean; startedAt: number;
+      queueMs?: number; computeMs?: number; roundtripMs?: number;
+    };
+    const observed: ObservedMessage[] = [];
     Object.assign(window, { tempoStudyMessages: observed });
     const originalPostMessage = Worker.prototype.postMessage;
+    const observedWorkers = new WeakMap<Worker, Map<number, ObservedMessage>>();
     Object.defineProperty(Worker.prototype, "postMessage", {
       configurable: true,
       value: function(this: Worker, message: unknown, ...options: unknown[]) {
@@ -151,12 +224,35 @@ test("Builder similarity worker messages keep the position index in the worker",
           ? Reflect.get(message, "task") : undefined;
         if (task && typeof task === "object") {
           const kind = Reflect.get(task, "kind");
-          if (kind === "initializePositionIndex" || kind === "findPositionMatches")
-            observed.push({
+          if (kind === "initializePositionIndex" || kind === "findPositionMatches") {
+            let pending = observedWorkers.get(this);
+            if (!pending) {
+              pending = new Map();
+              observedWorkers.set(this, pending);
+              this.addEventListener("message", (event: MessageEvent) => {
+                const reply = event.data as { id?: number; state?: string; computeMs?: number };
+                const request = reply.id === undefined ? undefined : pending?.get(reply.id);
+                if (!request) return;
+                if (reply.state === "running") {
+                  request.queueMs = performance.now() - request.startedAt;
+                  return;
+                }
+                request.computeMs = reply.computeMs;
+                request.roundtripMs = performance.now() - request.startedAt;
+                pending?.delete(reply.id!);
+              });
+            }
+            const request = {
               kind,
               bytes: JSON.stringify(message).length,
               hasPositions: Reflect.has(task, "positions"),
-            });
+              startedAt: performance.now(),
+            };
+            observed.push(request);
+            const requestId = typeof message === "object" && message !== null
+              ? Reflect.get(message, "id") : undefined;
+            if (typeof requestId === "number") pending.set(requestId, request);
+          }
         }
         return Reflect.apply(originalPostMessage, this, [message, ...options]);
       },
@@ -165,16 +261,62 @@ test("Builder similarity worker messages keep the position index in the worker",
   await prepareVisualUI(page, false);
   await navigate(page, "Builder");
   await expect.poll(async () => page.evaluate(() =>
-    (Reflect.get(window, "tempoStudyMessages") as Array<{ kind: string }>).filter(
-      (message) => message.kind === "findPositionMatches",
+    (Reflect.get(window, "tempoStudyMessages") as Array<{ kind: string; roundtripMs?: number }>).filter(
+      (message) => message.kind === "findPositionMatches" && message.roundtripMs !== undefined,
     ).length,
   )).toBeGreaterThan(0);
+  const completedQueries = () => page.evaluate(() =>
+    (Reflect.get(window, "tempoStudyMessages") as Array<{ kind: string; roundtripMs?: number }>).filter(
+      (message) => message.kind === "findPositionMatches" && message.roundtripMs !== undefined,
+    ).length,
+  );
+  const boardFrame = page.locator(".board-frame");
+  for (let repetition = 0; repetition < 3; repetition++) {
+    const previousQueryCount = await completedQueries();
+    const boardBounds = (await page.locator(".cg-wrap").boundingBox())!;
+    for (const rank of [6, 4]) {
+      await page.mouse.click(
+        boardBounds.x + (4.5 * boardBounds.width) / 8,
+        boardBounds.y + ((rank + 0.5) * boardBounds.height) / 8,
+      );
+    }
+    await expect(boardFrame).toHaveAttribute("data-fen", /4P3/);
+    await expect.poll(completedQueries).toBeGreaterThan(previousQueryCount);
+    const afterMoveQueryCount = await completedQueries();
+    await page.locator(".shared-board-toolbar .board-tools")
+      .getByRole("button", { name: /Back/ }).click();
+    await expect(boardFrame).not.toHaveAttribute("data-fen", /4P3/);
+    await expect.poll(completedQueries).toBeGreaterThan(afterMoveQueryCount);
+  }
   const messages = await page.evaluate(() => Reflect.get(window, "tempoStudyMessages") as Array<{
     kind: string; bytes: number; hasPositions: boolean;
+    queueMs?: number; computeMs?: number; roundtripMs?: number;
   }>);
+  const querySamples = messages.filter((message) =>
+    message.kind === "findPositionMatches" && message.roundtripMs !== undefined,
+  ).map(({ bytes, queueMs, computeMs, roundtripMs }) => ({
+    bytes, queueMs: queueMs ?? null, computeMs: computeMs ?? null,
+    roundtripMs: roundtripMs!,
+  }));
+  const report = {
+    schemaVersion: 1,
+    timestamp: new Date().toISOString(),
+    commit: process.env.TEMPO_COMMIT ?? process.env.GITHUB_SHA ?? null,
+    fixture: { name: "prepareVisualUI-default", lines: 1, warmPositionChanges: 6 },
+    querySamples,
+    roundtripSummary: summarize(querySamples.map((sample) => sample.roundtripMs)),
+  };
+  const reportBody = JSON.stringify(report, null, 2);
+  mkdirSync("test-results/performance", { recursive: true });
+  writeFileSync("test-results/performance/builder-similarity-chromium.json", `${reportBody}\n`);
+  await testInfo.attach("builder-similarity-performance", {
+    body: reportBody,
+    contentType: "application/json",
+  });
   expect(messages.some((message) => message.kind === "initializePositionIndex")).toBe(true);
   for (const message of messages.filter((item) => item.kind === "findPositionMatches")) {
     expect(message.hasPositions).toBe(false);
     expect(message.bytes).toBeLessThan(512);
   }
+  expect(querySamples.length).toBeGreaterThanOrEqual(7);
 });
