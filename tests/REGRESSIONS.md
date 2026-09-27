@@ -4,6 +4,7 @@
 
 | Issue | Required regression |
 | --- | --- |
+| Completed-tactic tests waste real time on deterministic move and feedback timers | `completed tactic advances while the previous review save is still pending`; `failed earlier save blocks grading after a completed tactic until ordered retry succeeds`; `failed tactic review save keeps the next card visible but blocks grading until retry`; `failed next-card read leaves a completed tactic on its final board for retry` |
 | Opening graph step FEN keys must remain exact when reused from segment traversal for white and black routes | `test_graph_steps_reuse_exact_last_decision_fen_for_white_and_black_routes` |
 | PGN variation traversal must retain nested branches and annotation positions when copying without move history | `test_pgn_variation_copy_without_history_preserves_nested_lines_and_annotations` |
 | Tactic UI timer tests spend real wall-clock time waiting for predictable 800 ms callbacks | `tactic Show Move and Restart retain the guided attempt and classify the opponent reply sound` |

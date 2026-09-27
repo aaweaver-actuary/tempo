@@ -20,6 +20,8 @@ With 12 Node-selected files and the current clean checkout, the full unit suite 
 
 The tactics polish regression previously used two real 800 ms waits for UI timers. A focused run reported 61% of its 3.22-second duration in tests. Advancing those timers virtually reduced test execution to 14% of a 3.33-second run; one command's total wall time remained about four seconds because environment setup and transform dominate this small file. The remaining real sleeps in the larger study regression file need separate conversion because its asynchronous `waitFor` calls do not work while Vitest's fake clock is active.
 
+Four completed-tactic cases in the study regression file now advance only their move and feedback timers virtually, then restore real time before asynchronous `waitFor` assertions. The full file passed 21 tests in 21.58 seconds versus a 32.49-second baseline on this host. The queue-reconciliation case retains real timers because its queue refresh awaits work that does not finish under Vitest's fake clock. The remaining real waits are candidates for separate, case-specific conversion.
+
 ## Measured test stages (2026-09-27)
 
 On this machine, the original three-stage fast run recorded 54.26 seconds for frontend units, 97.08 seconds for 384 backend tests, and 40.91 seconds for a cold Rust build and test. The revised fast tier runs units only; a verification run passed all 235 tests in 59.60 seconds. Backend and Rust checks remain in integration and full. These times are single samples and should not be used as regression thresholds.

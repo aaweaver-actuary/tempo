@@ -5,7 +5,7 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
 import TacticsView from "../../app/views/tactics_view";
 import Home from "../../app/views/home_view";
@@ -158,9 +158,12 @@ async function readyTactics() {
 }
 async function pause(ms = 751) {
   await act(async () => {
-    await new Promise((resolve) => setTimeout(resolve, ms));
+    if (vi.isFakeTimers()) await vi.advanceTimersByTimeAsync(ms);
+    else await new Promise((resolve) => setTimeout(resolve, ms));
   });
 }
+
+afterEach(() => vi.useRealTimers());
 
 describe("reported study regressions", () => {
   it("completed tactic advances while the previous review save is still pending", async () => {
@@ -198,11 +201,13 @@ describe("reported study regressions", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Correct" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "Correct" }));
     await waitFor(() => expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(startingFen));
+    vi.useFakeTimers();
     fireEvent.click(screen.getByText("a2e6"));
     await pause(430);
     fireEvent.click(screen.getByText("f7f8"));
     expect(pendingReviews().map((review) => review.queueEntryId)).toEqual([901, 902]);
     await pause(751);
+    vi.useRealTimers();
     expect(useTrainingStore.getState().getCard().queueEntryId).toBe(903);
     finishFirstReview?.(Response.json({ persisted: true }));
     await waitFor(() => expect(pendingReviews()).toHaveLength(0));
@@ -243,10 +248,12 @@ describe("reported study regressions", () => {
     await waitFor(() => expect(screen.getByRole("button", { name: "Correct" })).toBeTruthy());
     fireEvent.click(screen.getByRole("button", { name: "Correct" }));
     await waitFor(() => expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(startingFen));
+    vi.useFakeTimers();
     fireEvent.click(screen.getByText("a2e6"));
     await pause(430);
     fireEvent.click(screen.getByText("f7f8"));
     await pause(751);
+    vi.useRealTimers();
     expect(useTrainingStore.getState().getCard().queueEntryId).toBe(913);
     finishFirstReview?.(Response.json({ detail: "Database busy" }, { status: 503 }));
     await waitFor(() => expect(screen.getByRole("button", { name: "Retry save" })).toBeTruthy());
@@ -354,10 +361,12 @@ describe("reported study regressions", () => {
     }));
     render(<Home />);
     await waitFor(() => expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(startingFen));
+    vi.useFakeTimers();
     fireEvent.click(screen.getByText("a2e6"));
     await pause(430);
     fireEvent.click(screen.getByText("f7f8"));
     await pause(751);
+    vi.useRealTimers();
     await waitFor(() => expect(screen.getByRole("button", { name: "Retry save" })).toBeTruthy());
     expect(useTrainingStore.getState().getCard().queueEntryId).toBe(832);
     expect(screen.getByText("e2e4").closest("button")?.disabled).toBe(true);
@@ -388,11 +397,13 @@ describe("reported study regressions", () => {
     }));
     render(<Home />);
     await waitFor(() => expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(startingFen));
+    vi.useFakeTimers();
     fireEvent.click(screen.getByText("a2e6"));
     await pause(430);
     fireEvent.click(screen.getByText("f7f8"));
     const finalFen = screen.getByTestId("board").getAttribute("data-fen");
     await pause(751);
+    vi.useRealTimers();
     await waitFor(() => expect(screen.getByRole("button", { name: "Retry loading the queue" })).toBeTruthy());
     expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(finalFen);
     expect(pendingReviews()).toHaveLength(0);
