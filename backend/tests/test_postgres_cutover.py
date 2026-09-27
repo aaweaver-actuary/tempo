@@ -231,6 +231,36 @@ def test_postgres_game_sync_admission_coalesces_existing_active_job(monkeypatch)
     assert result == {"imported": 0, "job_id": "active-sync", "status": "running", "providers": {}}
 
 
+def test_postgres_game_sync_publishes_one_game_and_followup_intents_atomically():
+    from app.services.game_record import GameRecord
+    from app.services.postgres_game_sync import persist_game_record_in_transaction
+
+    statements = []
+
+    class RecordingConnection:
+        def execute(self, statement, parameters=()):
+            statements.append((statement, parameters))
+            return SimpleNamespace(fetchone=lambda: None)
+
+    database = RecordingConnection()
+    database.raw = database
+    record = GameRecord(
+        provider="lichess", username="alice", provider_game_id="game-1",
+        played_at="2026-09-27T12:00:00+00:00", speed="rapid", rated=True,
+        color="white", result="1-0",
+        start_fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        uci_moves=["e2e4"], content_hash="hash-1",
+    )
+    assert persist_game_record_in_transaction(database, record) == (
+        "inserted", "lichess:game-1",
+    )
+    assert statements[0][0].startswith("SELECT pg_advisory_xact_lock")
+    assert any("INSERT INTO imported_games" in statement for statement, _ in statements)
+    assert any("INSERT INTO game_analysis_jobs" in statement for statement, _ in statements)
+    assert any("INSERT INTO game_derivation_jobs" in statement for statement, _ in statements)
+    assert any("DELETE FROM daily_chess_snapshots" in statement for statement, _ in statements)
+
+
 def test_postgres_api_startup_requests_todays_queue_through_foreground_command(monkeypatch):
     from app import main
 
