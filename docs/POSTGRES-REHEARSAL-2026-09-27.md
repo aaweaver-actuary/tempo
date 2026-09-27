@@ -76,6 +76,13 @@ handler has been ported and the release gates pass.
   in queue insertion paths were replaced with `INSERT ... RETURNING id` after
   the concurrent rehearsal exposed that the compatibility function was absent
   from the already-running database.
+- The existing daily-queue materializer completed in 116 ms on a warm
+  rolled-back PostgreSQL rehearsal transaction (247 ms on an earlier cold
+  probe). Its largest statements took 26 ms to unlock eligible opening cards
+  and 19 ms to select prioritized introductions. It exceeds the 50 ms
+  background transaction budget as a whole; a durable phased slice handler
+  is required before the Celery scheduler can process review-triggered queue
+  refresh jobs.
 - A custom-format PostgreSQL backup was written outside the checkout at
   `/Users/andy/tempo-backups/tempo-postgres-rehearsal-2026-09-27.dump`.
   SHA-256 is `eaf7e37e5e0cd86189c0cf1a7abddb8b8893264f16e906e6f95b4948b0c4b326`.
