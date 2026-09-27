@@ -34,6 +34,8 @@ class ApplicationActivityGate:
         self._browser_active_until = 0.0
 
     def record_browser_activity(self, seconds: float = 3.0) -> None:
+        if redis_admission_gate.configured():
+            redis_admission_gate.record_browser_activity(seconds)
         with self._condition:
             self._browser_active_until = max(self._browser_active_until, time.monotonic() + seconds)
             self._condition.notify_all()

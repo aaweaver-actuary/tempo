@@ -44,6 +44,24 @@ def test_postgres_api_startup_requests_todays_queue_through_foreground_command(m
     asyncio.run(open_application())
 
 
+def test_postgres_browser_activity_extends_cross_process_foreground_admission(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    observed = []
+    class RecordingRedis:
+        def eval(self, script, key_count, key, timestamp, token, duration):
+            observed.append((key_count, key, token, duration))
+
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(redis_admission_gate, "configured", lambda: True)
+    monkeypatch.setattr(redis_admission_gate, "client", lambda: RecordingRedis())
+    response = TestClient(main.app).post("/api/system/browser-activity")
+    assert response.status_code == 200, response.text
+    assert observed == [(1, "tempo:admission:foreground", "browser-activity", 3000)]
+
+
 def test_postgres_priority_opening_plan_preserves_gameplay_breadth_and_shared_cards():
     from app import main
 

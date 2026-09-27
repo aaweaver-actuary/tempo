@@ -421,13 +421,15 @@ async def prioritize_foreground_requests(request: Request, call_next):
         main_repertoire_command = (len(path_parts) == 4
                                    and path_parts[:2] == ["api", "repertoires"]
                                    and path_parts[3] == "main" and request.method == "PUT")
+        browser_activity = (path_parts == ["api", "system", "browser-activity"]
+                            and request.method == "POST")
         if not any((study_create, study_update, study_archive, exercise_create, exercise_revise,
                     exercise_enroll, exercise_attempt, exercise_self_assess,
                     exercise_availability_command,
                     chapter_create, chapter_reorder,
                     chapter_rename, link_create, queue_entry_command, card_review_command,
                     card_teaching_command, defense_answer_command,
-                    main_repertoire_command)):
+                    main_repertoire_command, browser_activity)):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
