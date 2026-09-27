@@ -745,6 +745,7 @@ describe("reported study regressions", () => {
         board.fen(),
       ),
     );
+    vi.useFakeTimers();
     fireEvent.click(screen.getByText("g8f6"));
     board.move("Nf6");
     board.move("c4");
@@ -761,6 +762,7 @@ describe("reported study regressions", () => {
     expect(reviews).toHaveLength(0);
     await pause();
     expect(reviews).toHaveLength(1);
+    vi.useRealTimers();
   });
   it("tactic failure remains interactive until the full guided solution is complete", async () => {
     const attempts = mockTactics();
@@ -791,6 +793,7 @@ describe("reported study regressions", () => {
   it("tactic setup is applied and the final mate remains during feedback", async () => {
     mockTactics();
     await readyTactics();
+    vi.useFakeTimers();
     expect(screen.getByTestId("board").getAttribute("data-hint")).toBe("false");
     fireEvent.click(screen.getByText("a2e6"));
     fireEvent.click(screen.getByText("f7f8"));
@@ -806,6 +809,7 @@ describe("reported study regressions", () => {
       ).isCheckmate(),
     ).toBe(true);
     await pause();
+    vi.useRealTimers();
     await waitFor(() =>
       expect(screen.getByText("Puzzle 2 of 25")).toBeTruthy(),
     );

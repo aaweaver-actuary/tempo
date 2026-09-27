@@ -4,6 +4,7 @@
 
 | Issue | Required regression |
 | --- | --- |
+| Black training and tactic setup tests wait on deterministic UI timers after setup | `Black training mounts without selector loops and plays from the current position`; `tactic setup is applied and the final mate remains during feedback` |
 | The full unit stage reports only suite wall time, leaving slow files unidentifiable without repeating the tests | `test plan records per-file Vitest timings without a second unit run` |
 | Rust returns a partial card prefix ending before the trained side can play, while Python rejects it | `prefixes_match_python_including_incomplete_trained_turns`; `test_prefixes_match_rust_including_incomplete_trained_turns` |
 | A failed Docker browser case prevents later durability checks and recovery reruns the entire browser matrix | `Docker durability recovery excludes only the already-run browser matrix` |
