@@ -30,7 +30,8 @@
     "bench:positions": "node scripts/benchmark-study-position.mjs",
     "bench:pgn": "node scripts/benchmark-pgn.mjs",
     "bench:graph": "node scripts/benchmark-graph.mjs",
-    "bench:motifs": "node scripts/benchmark-motifs.mjs"
+    "bench:motifs": "node scripts/benchmark-motifs.mjs",
+    "bench:writer": "node scripts/benchmark-writer.mjs"
   },
   "dependencies": {
     "@lichess-org/chessground": "^10.1.1",
