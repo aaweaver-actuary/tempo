@@ -133,6 +133,25 @@ def test_postgres_cutover_ambiguous_timeout_stays_pending(monkeypatch):
     assert b'"state":"pending"' in response.body
 
 
+def test_postgres_cutover_result_store_outage_checks_receipt_before_reporting_pending(monkeypatch):
+    class ResultStoreUnavailableTask:
+        state = "PENDING"
+
+        def get(self, **_):
+            from redis import ConnectionError as RedisConnectionError
+            raise RedisConnectionError("result store stopped")
+
+    monkeypatch.setattr(command_dispatch.celery_app, "send_task",
+                        lambda *_, **__: ResultStoreUnavailableTask())
+    monkeypatch.setattr(command_dispatch, "read_operation",
+                        lambda operation_id, **_: {"operation_id": operation_id, "state": "pending"})
+    response = command_dispatch.dispatch_command(
+        "review.submit", {"card_id": "a"}, idempotency_key="review-result-store-outage",
+    )
+    assert response.status_code == 202
+    assert b'review-result-store-outage' in response.body
+
+
 def test_postgres_cutover_broker_failure_reports_actionable_error(monkeypatch):
     def unavailable(*_, **__):
         raise BrokerUnavailable("broker stopped")

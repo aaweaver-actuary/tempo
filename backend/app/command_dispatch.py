@@ -38,7 +38,9 @@ def dispatch_command(
         raise HTTPException(503, "Save queue unavailable; retry with the same Idempotency-Key") from error
     try:
         task.get(timeout=wait_seconds, propagate=False)
-    except CeleryTimeout:
+    except (CeleryTimeout, RedisError, BrokerUnavailable):
+        # Publishing may have succeeded even when the result backend is down.
+        # The durable PostgreSQL receipt remains the source of truth.
         pass
     try:
         receipt = read_operation(
