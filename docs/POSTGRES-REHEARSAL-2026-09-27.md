@@ -317,6 +317,9 @@ the frontend unit suite passed 276 tests at that point in the branch. Later
 focused tests passed for the new queue rollover, browser admission, defensive
 conflict, and tactic routes. The full suite and `make full` must run again after
 the remaining route and worker ports.
+After the tactic activation port, the complete regular backend suite passed
+466 tests and the complete frontend unit suite passed 277 tests. This is not
+the `make full` browser, Docker, and performance gate.
 
 Study attempt submission and self-assessment now dispatch explicit foreground
 commands. The worker serializes attempt IDs, locks the selected card and queue
