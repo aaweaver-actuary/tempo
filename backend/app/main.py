@@ -3702,7 +3702,7 @@ def tactic_progress():
 
 async def tablebase(fen: str):
     key = " ".join(fen.split()[:4])
-    with connection() as db:
+    with read_connection() as db:
         row = db.execute(
             "SELECT response_json FROM tablebase_cache WHERE fen_key=?", (key,)
         ).fetchone()
@@ -3719,11 +3719,12 @@ async def tablebase(fen: str):
             response.status_code, "Position is outside complete tablebase coverage"
         )
     data = response.json()
-    with connection() as db:
-        db.execute(
-            "INSERT OR REPLACE INTO tablebase_cache VALUES(?,?,?)",
-            (key, json.dumps(data), datetime.now(timezone.utc).isoformat()),
-        )
+    if not postgres_store.configured():
+        with connection() as db:
+            db.execute(
+                "INSERT OR REPLACE INTO tablebase_cache VALUES(?,?,?)",
+                (key, json.dumps(data), datetime.now(timezone.utc).isoformat()),
+            )
     return data
 
 

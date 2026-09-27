@@ -194,6 +194,41 @@ def test_postgres_endgame_template_admission_dispatches_foreground_command(monke
     assert dispatched[0][2] == "endgame-1"
 
 
+def test_postgres_tablebase_probe_never_writes_from_read_only_api(monkeypatch):
+    import asyncio
+    from app import main
+
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main, "connection", lambda: (_ for _ in ()).throw(
+        AssertionError("API must not open a writable database connection")))
+
+    class CacheRead:
+        def execute(self, *_args):
+            return SimpleNamespace(fetchone=lambda: None)
+
+    monkeypatch.setattr(main, "read_connection", lambda: nullcontext(CacheRead()))
+
+    class Response:
+        status_code = 200
+        is_success = True
+
+        def json(self):
+            return {"category": "win", "moves": []}
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, *_args, **_kwargs):
+            return Response()
+
+    monkeypatch.setattr(main.httpx, "AsyncClient", lambda **_kwargs: Client())
+    assert asyncio.run(main.tablebase("8/8/8/8/8/8/4k3/4K3 w - - 0 1"))["category"] == "win"
+
+
 def test_postgres_settings_update_dispatches_foreground_command(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main
