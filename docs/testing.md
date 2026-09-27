@@ -2,6 +2,8 @@
 
 Use one Make target for the question you are answering. `make plan` prints the exact commands in the full plan without running them. `make full` is the release and CI-equivalent gate; `npm test` and `npm run test:full` use the same runner. Run the full gate once on the final checkout. Do not chain `fast`, `integration`, `ui`, and `full` in one invocation: the smaller scopes are subsets of full.
 
+**Codex execution:** Launch `make full` with `sandbox_permissions: "require_escalated"` on the initial command, with Docker-socket and localhost-bind access. Do the same for `make ui`, `make browser`, `make visual`, `make perf`, and `make docker-durability`. The default sandbox can deny `127.0.0.1` binding or Docker access. `make full` and `make ui` run a capability preflight first and fail before the unit suite if either is unavailable. `make preflight` runs that check alone when diagnosing the environment. This preflight is a capability check, not another test family.
+
 ## Full gate
 
 From the repository root, after installing the project prerequisites, run:
@@ -13,6 +15,7 @@ make full
 
 The full runner stops at the first failure and writes per-stage timing and exit status to `test-results/performance/test-stages-full.json`. Its ordered stages are:
 
+0. Docker daemon and `127.0.0.1` bind preflight; no tests have run if this fails.
 1. Frontend Vitest unit suite (`test:unit`).
 2. Defense engine smoke check.
 3. Python backend pytest suite (`backend/tests`).

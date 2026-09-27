@@ -2,7 +2,8 @@
 # running a smaller scope first is useful during development but repeats that
 # scope when the required final full gate runs.
 #
-# Full order, with each test family owned once:
+# Full order, with permissions checked before any test family:
+#  0 Docker + loopback preflight
 #  1 unit                         7 lint
 #  2 defense-engine smoke         8 typecheck
 #  3 Python backend tests         9 WASM build
@@ -14,9 +15,9 @@
 
 .DEFAULT_GOAL := help
 .NOTPARALLEL:
-.PHONY: help plan slow-tests fast python backend rust integration ui browser visual perf full docker-durability unit-file python-file ui-file view rust-case
+.PHONY: help plan preflight slow-tests fast python backend rust integration ui browser visual perf full docker-durability unit-file python-file ui-file view rust-case
 
-VERIFY_TARGETS := fast python backend rust integration ui browser visual perf full docker-durability unit-file python-file ui-file view rust-case
+VERIFY_TARGETS := preflight fast python backend rust integration ui browser visual perf full docker-durability unit-file python-file ui-file view rust-case
 SELECTED_VERIFY_TARGETS := $(filter $(VERIFY_TARGETS),$(MAKECMDGOALS))
 ifneq ($(words $(SELECTED_VERIFY_TARGETS)),0)
 ifneq ($(words $(SELECTED_VERIFY_TARGETS)),1)
@@ -32,6 +33,7 @@ help:
 	@printf '%s\n' 'Inspect: make plan [TIER=full|fast|python|backend|rust|integration|ui]'
 	@printf '%s\n' '         make slow-tests [TIER=full|fast] [COUNT=10] (reads last unit profile)'
 	@printf '%s\n' 'Release/CI-equivalent: make full (run this one target, not fast + integration + full)'
+	@printf '%s\n' 'Capability check: make preflight (full and ui run it first automatically)'
 	@printf '%s\n' 'Focused scopes: make fast | python | backend | rust | integration | ui | browser | visual | perf'
 	@printf '%s\n' 'Docker recovery: make docker-durability (after the browser matrix already ran)'
 	@printf '%s\n' 'Focused files: make unit-file FILE=tests/unit/example.test.ts'
@@ -42,6 +44,9 @@ help:
 
 plan:
 	node scripts/test-all.mjs --list "$(TIER)"
+
+preflight:
+	node scripts/check-test-capabilities.mjs --docker --loopback
 
 slow-tests:
 	node scripts/report-slow-unit-files.mjs "$(TIER)" "$(COUNT)"

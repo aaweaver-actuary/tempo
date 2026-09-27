@@ -28,6 +28,7 @@ const outputDirectory = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/perfo
 const unitProfilePath = join(outputDirectory, `unit-files-${tier}.json`);
 const python = resolvePython();
 const stages = [
+  ["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--loopback"]],
   ["unit", "npm", ["run", "test:unit", "--", "--reporter=default", "--reporter=json", `--outputFile.json=${unitProfilePath}`]],
   ["defense_engine", "node", ["scripts/test-defense-engine.mjs"]],
   ["backend", python, ["-m", "pytest", "backend/tests", "-q", "-o", "cache_dir=.pytest_cache", "--rootdir=."]],
@@ -49,7 +50,7 @@ const stagesByTier = {
   backend: ["defense_engine", "backend"],
   rust: ["rust_format", "rust_lint", "rust_test"],
   integration: ["defense_engine", "backend", "rust_format", "rust_lint", "rust_test"],
-  ui: ["browser", "visual"],
+  ui: ["capabilities", "browser", "visual"],
   full: stages.map(([name]) => name).filter((name) => name !== "browser"),
 };
 const stageNames = stagesByTier[tier];

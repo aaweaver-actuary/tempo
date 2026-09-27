@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
@@ -20,7 +20,7 @@ it("full verification owns every test family once without repeating regular brow
   const full = plannedStages("full");
   const names = full.map((stage) => stage.name);
   expect(names).toEqual([
-    "unit", "defense_engine", "backend", "rust_format", "rust_lint",
+    "capabilities", "unit", "defense_engine", "backend", "rust_format", "rust_lint",
     "rust_test", "lint", "typecheck", "wasm_build", "local_build",
     "docker", "visual",
   ]);
@@ -28,11 +28,35 @@ it("full verification owns every test family once without repeating regular brow
   expect(full.find((stage) => stage.name === "docker")?.args).toEqual(["run", "test:docker"]);
   expect(full.find((stage) => stage.name === "visual")?.args).toEqual(["run", "test:visual"]);
   expect(names).not.toContain("browser");
-  expect(plannedStages("ui").map((stage) => stage.name)).toEqual(["browser", "visual"]);
+  expect(plannedStages("ui").map((stage) => stage.name)).toEqual(["capabilities", "browser", "visual"]);
   expect(plannedStages("python").map((stage) => stage.name)).toEqual(["backend"]);
   expect(plannedStages("rust").map((stage) => stage.name)).toEqual([
     "rust_format", "rust_lint", "rust_test",
   ]);
+});
+
+it("full verification checks Docker and loopback access before any test family", () => {
+  const [firstStage] = plannedStages("full");
+  expect(firstStage).toEqual({
+    name: "capabilities", command: "node",
+    args: ["scripts/check-test-capabilities.mjs", "--docker", "--loopback"],
+  });
+  const fakeCommandDirectory = mkdtempSync(join(tmpdir(), "tempo-denied-docker-"));
+  try {
+    const fakeDockerPath = join(fakeCommandDirectory, "docker");
+    writeFileSync(fakeDockerPath, "#!/bin/sh\necho 'permission denied' >&2\nexit 1\n");
+    chmodSync(fakeDockerPath, 0o755);
+    const preflight = spawnSync(process.execPath, firstStage.args, {
+      cwd: process.cwd(), encoding: "utf8",
+      env: { ...process.env, PATH: `${fakeCommandDirectory}:${process.env.PATH ?? ""}` },
+    });
+    expect(preflight.status).not.toBe(0);
+    expect(preflight.stderr).toContain("before any tests ran");
+    expect(preflight.stderr).toContain("Docker");
+    expect(preflight.stderr).toContain("require_escalated");
+  } finally {
+    rmSync(fakeCommandDirectory, { recursive: true, force: true });
+  }
 });
 
 it("Makefile runs one full plan and rejects combined verification scopes", () => {

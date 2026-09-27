@@ -8,6 +8,8 @@ All background analysis is foreground-preemptible. Treat ordinary API requests a
 
 `make plan` prints the exact ordered test plan, and `make full` runs the same complete gate as `npm test` and CI. It runs frontend regressions, backend integration tests, Rust checks, lint, the production build, Docker browser workflows, and pinned visual/performance checks. The regular Playwright specs run once through Docker; the standalone local browser scope is for focused development. CI does not silently skip unavailable prerequisites. Use the focused targets in [docs/testing.md](docs/testing.md) during development; run the complete suite on the final checkout before a release.
 
+The full and UI gates check Docker access and a loopback bind before running tests. From Codex, start the complete `make full` command with `sandbox_permissions: "require_escalated"`; the same applies to Docker and browser focused targets. Do not run the first stages in the default sandbox and discover a permissions failure at the Docker stage.
+
 Keep each coherent fix in a separate commit. Preserve existing user data and uncommitted work. A failing provider request must report its actual error and must never substitute demonstration data or report false success in local Tempo.
 
 The responsive UI contract is in `docs/UI-CONTRACT.md`. The regular pipeline now also

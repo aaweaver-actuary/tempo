@@ -20,6 +20,10 @@ Training, tactics, editing, and reads for the active workspace are foreground wo
 
 Keep coherent fixes in separate commits and preserve existing uncommitted work. Migrate deterministic logic toward Rust/WASM only after Python/Rust parity fixtures pass. Do not remove the Python compatibility path before parity.
 
+### Full test execution permissions
+
+Run `make plan` to inspect coverage. When using Codex tools for `make full`, request `sandbox_permissions: "require_escalated"` on the **initial** `exec_command` call for the whole command. The full gate needs Docker daemon access and a `127.0.0.1` bind; starting it in the default sandbox can waste the unit, backend, Rust, lint, and build stages before Docker fails. Use the same elevated execution path for `make ui`, `make browser`, `make visual`, `make perf`, and `make docker-durability`. `make full` and `make ui` run the capability preflight before any tests, so an inaccessible Docker socket or loopback bind fails immediately with a repair message. Run the full gate once on the final checkout; focused targets remain available during development.
+
 ## YAGNI principle
 - Apply YAGNI to speculative requirements and premature abstraction, not to correctness, security, testing, maintainability, or explicitly requested product quality.
 
