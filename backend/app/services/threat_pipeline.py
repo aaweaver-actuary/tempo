@@ -9,10 +9,11 @@ import json
 import uuid
 import chess
 
-from ..database import connection, read_connection
+from ..database import background_read_connection, connection, read_connection
+from .. import postgres_store
 from .activity_gate import activity_gate
 from .background_activity import claimable, control_order
-from .durable_tasks import enqueue_task, enqueue_task_in_transaction
+from .durable_tasks import enqueue_task, enqueue_task_in_transaction, lock_current_slice
 from .threat_detection import (
     find_defensive_knight_forks, propose_exercise_anchors, trace_knight_route,
 )
@@ -86,7 +87,7 @@ def execute_threat_report_audit(task: dict) -> bool:
     """Audit one saved report and retain invalid evidence before requesting replacement."""
     cursor = task["payload"].get("cursor", "")
     activity_gate.wait_for_foreground()
-    with read_connection() as database:
+    with background_read_connection() as database:
         row = database.execute(
             """SELECT id,request_json,report_json FROM threat_analysis_requests
                WHERE id>? AND state='complete' ORDER BY id LIMIT 1""", (cursor,),
@@ -104,11 +105,15 @@ def execute_threat_report_audit(task: dict) -> bool:
         rejection_reason = str(error)
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        lease = database.execute(
-            "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
-        ).fetchone()
-        if not lease or lease["generation"] != task["generation"] or lease["lease_token"] != task["lease_token"]:
-            return True
+        if postgres_store.configured():
+            if not lock_current_slice(database, task):
+                return True
+        else:
+            lease = database.execute(
+                "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
+            ).fetchone()
+            if not lease or lease["generation"] != task["generation"] or lease["lease_token"] != task["lease_token"]:
+                return True
         saved = database.execute(
             "SELECT report_json,state FROM threat_analysis_requests WHERE id=?", (item["id"],),
         ).fetchone()

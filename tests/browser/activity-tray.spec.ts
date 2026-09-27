@@ -53,6 +53,16 @@ test("analysis activity count growth keeps desktop navigation anchored", async (
   await noPageOverflow(page);
 });
 
+test("notifications tray remains inside a 320px phone viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await prepareUI(page);
+  await page.getByRole("button", { name: "Notifications" }).click();
+  const tray = (await page.locator(".notification-tray").boundingBox())!;
+  expect(tray.x).toBeGreaterThanOrEqual(0);
+  expect(tray.x + tray.width).toBeLessThanOrEqual(320);
+  await expect(page.getByRole("button", { name: "Copy JSON" })).toBeVisible();
+});
+
 for (const width of [390, 1280]) {
   test(`analysis activity count fits header controls at ${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 });

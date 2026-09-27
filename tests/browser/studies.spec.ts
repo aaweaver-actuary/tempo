@@ -246,7 +246,7 @@ test("unknown prepared study grader versions are unavailable offline", async ({ 
   await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
   await page.reload();
   await expect(page.getByText("Unavailable future question")).toHaveCount(0);
-  await expect(page.getByText(/1 exercise requires the computer/)).toBeVisible();
+  await expect(page.getByRole("main").getByText(/1 exercise requires the computer/)).toBeVisible();
 });
 
 test("saved study attempt can retry feedback without a duplicate review", async ({ page, request }) => {
@@ -289,7 +289,7 @@ test("Study workspace reports an actionable local service outage", async ({ page
   await page.route("**/api/studies", (route) => route.abort("failed"));
   await page.goto("/");
   await nav(page, "Studies");
-  await expect(page.getByRole("alert")).toContainText("Start local Docker Tempo and retry");
+  await expect(page.getByRole("main").getByRole("alert")).toContainText("Start local Docker Tempo and retry");
 });
 
 test("prepared explanation is self assessed offline and replayed through server validation", async ({ page }) => {

@@ -315,6 +315,36 @@ def test_postgres_cutover_foreground_admission_blocks_background_slice(monkeypat
     assert not worker.is_alive()
 
 
+def test_postgres_cutover_background_reads_respect_foreground_admission(monkeypatch):
+    from app import database
+
+    connection_opened = threading.Event()
+    read_finished = threading.Event()
+
+    @contextmanager
+    def test_postgres_connection(*, read_only, background):
+        assert read_only and background
+        connection_opened.set()
+        yield object()
+
+    monkeypatch.setattr(database.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(database.postgres_store, "connection", test_postgres_connection)
+    monkeypatch.setattr(database.activity_gate, "wait_for_foreground", lambda: None)
+    monkeypatch.setattr(redis_admission_gate, "configured", lambda: False)
+
+    def read_in_background():
+        with database.background_read_connection():
+            read_finished.set()
+
+    with database.activity_gate.foreground():
+        worker = threading.Thread(target=read_in_background)
+        worker.start()
+        assert not connection_opened.wait(0.05)
+    assert read_finished.wait(1)
+    worker.join(timeout=1)
+    assert not worker.is_alive()
+
+
 def test_postgres_cutover_priority_retention_locks_bounded_primary_keys(monkeypatch):
     from app.services import priority_retention
 
@@ -527,3 +557,84 @@ def test_postgres_cutover_game_refresh_waits_for_foreground_and_discards_stale_r
     monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_arguments: nullcontext())
     assert tasks.execute_background_slice.run(claimed_task) is False
     assert completed_tasks == ["refresh-task"]
+
+
+def test_postgres_cutover_threat_report_audit_yields_and_replays_once(monkeypatch):
+    from app import tasks
+    from app.services import threat_pipeline
+
+    foreground_finished = threading.Event()
+    read_opened = threading.Event()
+    advanced_cursors: list[str] = []
+    current_lease = {"token": "active"}
+    claimed_task = {
+        "kind": "defensive_threat_report_audit", "id": "audit-task",
+        "generation": 4, "lease_token": "active", "payload": {"cursor": ""},
+    }
+
+    class Cursor:
+        def __init__(self, row=None):
+            self.row = row
+
+        def fetchone(self):
+            return self.row
+
+    class ReadDatabase:
+        def execute(self, statement, _parameters):
+            if "FROM threat_analysis_requests" in statement:
+                return Cursor({"id": "report-1", "request_json": "{}", "report_json": "{}"})
+            return Cursor()
+
+    class WriteDatabase:
+        def execute(self, statement, parameters):
+            if statement.startswith("UPDATE background_tasks"):
+                advanced_cursors.append(parameters[0])
+            return Cursor()
+
+    @contextmanager
+    def test_read_connection():
+        read_opened.set()
+        yield ReadDatabase()
+
+    @contextmanager
+    def test_write_connection(*, background):
+        assert background
+        yield WriteDatabase()
+
+    monkeypatch.setattr(threat_pipeline.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(threat_pipeline.activity_gate, "wait_for_foreground", foreground_finished.wait)
+    monkeypatch.setattr(threat_pipeline, "background_read_connection", test_read_connection)
+    monkeypatch.setattr(threat_pipeline, "connection", test_write_connection)
+    monkeypatch.setattr(threat_pipeline, "_request_from_json", lambda _raw: object())
+    monkeypatch.setattr(threat_pipeline, "report_from_json", lambda _raw: object())
+    monkeypatch.setattr(threat_pipeline, "validate_analysis_report", lambda *_arguments: None)
+    monkeypatch.setattr(
+        threat_pipeline, "lock_current_slice",
+        lambda _database, task: task["lease_token"] == current_lease["token"],
+    )
+
+    result: list[bool] = []
+    worker = threading.Thread(
+        target=lambda: result.append(threat_pipeline.execute_threat_report_audit(claimed_task)),
+    )
+    worker.start()
+    assert not read_opened.wait(0.05)
+    foreground_finished.set()
+    worker.join(timeout=2)
+    assert not worker.is_alive()
+    assert result == [True]
+    assert advanced_cursors == ['{"cursor": "report-1"}']
+    current_lease["token"] = "next-generation"
+    assert threat_pipeline.execute_threat_report_audit(claimed_task) is True
+    assert advanced_cursors == ['{"cursor": "report-1"}']
+
+    polled_kinds: list[str] = []
+    sent_tasks: list[str] = []
+    monkeypatch.setattr(
+        tasks, "claim_task",
+        lambda kind: polled_kinds.append(kind) or (claimed_task if kind == "defensive_threat_report_audit" else None),
+    )
+    monkeypatch.setattr(tasks.celery_app, "send_task", lambda task_name, **_arguments: sent_tasks.append(task_name))
+    assert tasks.poll_background_tasks.run() is True
+    assert polled_kinds == ["repertoire_game_refresh", "defensive_threat_report_audit"]
+    assert sent_tasks == ["app.tasks.execute_background_slice"]

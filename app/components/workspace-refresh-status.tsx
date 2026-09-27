@@ -1,20 +1,22 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
+import { notifications, publishNotification, resolveNotification } from "../lib/notifications";
 
 export function WorkspaceRefreshStatus() {
-  const [refreshing, setRefreshing] = useState<Set<string>>(new Set());
   useEffect(() => {
+    const refreshing = new Set<string>();
     const update = (event: Event) => {
       const detail = (event as CustomEvent<{ state: string; url: string }>).detail;
-      setRefreshing((current) => {
-        const next = new Set(current);
-        if (detail.state === "refreshing") next.add(detail.url);
-        else next.delete(detail.url);
-        return next;
-      });
+      if (detail.state === "refreshing") refreshing.add(detail.url);
+      else refreshing.delete(detail.url);
+      if (refreshing.size) publishNotification({ severity: "info", source: "workspace data",
+        key: "workspace-refresh", message: "Showing saved data · refreshing…", active: true });
+      else {
+        const active = notifications().find((record) => record.key === "workspace-refresh" && !record.resolvedAt);
+        if (active) resolveNotification(active.id, { severity: "success", message: "Workspace data refreshed." });
+      }
     };
     window.addEventListener("tempo-workspace-data", update);
     return () => window.removeEventListener("tempo-workspace-data", update);
   }, []);
-  if (!refreshing.size) return null;
-  return <div className="workspace-refresh-status" role="status">Showing saved data · refreshing…</div>;
+  return null;
 }

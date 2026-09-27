@@ -18,7 +18,8 @@ import FailureNote from "../components/FailureNote";
 import FeedbackIcon from "../components/feedback/FeedbackIcon";
 import FeedbackText from "../components/feedback/FeedbackText";
 import OpeningTitle from "../components/OpeningTitle";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { publishNotification, resolveNotification } from "../lib/notifications";
 import { usesLocalApi } from "../utils/local";
 import { Square } from "chess.js";
 import { getFeedbackCopy } from "./getFeedbackCopy";
@@ -93,6 +94,7 @@ function StandardTrainingView({
   const [prefixSplitPendingAction, setPrefixSplitPendingAction] = useState<"accept" | "reject" | null>(null);
   const [rejectedPrefixOfferKey, setRejectedPrefixOfferKey] = useState("");
   const [prefixSplitError, setPrefixSplitError] = useState<{ key: string; message: string }>();
+  const reviewNotificationId = useRef<string | undefined>(undefined);
   const prefixOfferKey = `${card.backendId ?? card.id}:${card.revision ?? 1}:${card.prefixSplitLatestFailureId ?? 0}`;
   const {
     boardAttempt,
@@ -110,6 +112,31 @@ function StandardTrainingView({
     teachingEncounterKey,
   } = useTrainingStore(useShallow(selectTrainingViewState));
   const reviewBlocked = reviewPersistenceState === "saveFailed";
+
+  useEffect(() => {
+    const source = "training review";
+    if (reviewPersistenceState === "saving") {
+      reviewNotificationId.current = publishNotification({ severity: "info", source,
+        key: `review-save:${card.queueEntryId ?? card.id}`, message: "Saving result…", active: true });
+    } else if (reviewPersistenceState === "saveFailed") {
+      if (reviewNotificationId.current) resolveNotification(reviewNotificationId.current, { severity: "error", message: reviewSaveError });
+      else publishNotification({ severity: "error", source, message: reviewSaveError });
+      reviewNotificationId.current = undefined;
+    } else if (reviewPersistenceState === "saved") {
+      if (reviewNotificationId.current) resolveNotification(reviewNotificationId.current, { severity: "success", message: "Result saved." });
+      reviewNotificationId.current = undefined;
+    } else if (reviewPersistenceState === "refreshingQueue") {
+      reviewNotificationId.current = publishNotification({ severity: "info", source,
+        key: `review-queue:${card.queueEntryId ?? card.id}`, message: "Result saved. Loading the next card…", active: true });
+    } else if (reviewPersistenceState === "queueFailed") {
+      if (reviewNotificationId.current) resolveNotification(reviewNotificationId.current, { severity: "warning", message: "Result saved; the next card could not be loaded." });
+      else publishNotification({ severity: "warning", source, message: "Result saved; the next card could not be loaded." });
+      reviewNotificationId.current = undefined;
+    } else if (reviewNotificationId.current) {
+      resolveNotification(reviewNotificationId.current, { severity: "success", message: "Result saved. Next card loaded." });
+      reviewNotificationId.current = undefined;
+    }
+  }, [card.id, card.queueEntryId, reviewPersistenceState, reviewSaveError]);
   const liveQueueBlocked = Boolean(serviceError && !offlineQueue);
   const isEndgame = card.kind === "endgame";
   const { setShellBoardForOwner, releaseShellBoardForOwner } =
@@ -223,15 +250,6 @@ function StandardTrainingView({
           <RetryButton onRetry={() => void refreshDatabaseQueue(serviceError.includes("no longer in today's queue"))} />
         </div>
       )}
-      {reviewPersistenceState === "saving" && (
-        <p
-          className="review-save-status"
-          role="status"
-          aria-label="Saving result"
-        >
-          Saving result…
-        </p>
-      )}
       {reviewPersistenceState === "saveFailed" && (
         <div role="alert">
           {reviewSaveError}{" "}
@@ -245,11 +263,6 @@ function StandardTrainingView({
             Retry save
           </Button>
         </div>
-      )}
-      {reviewPersistenceState === "refreshingQueue" && (
-        <p className="review-save-status" role="status">
-          Result saved. Loading the next card…
-        </p>
       )}
       {reviewPersistenceState === "queueFailed" && (
         <div role="alert">
@@ -379,7 +392,7 @@ function StandardTrainingView({
                   {badge}
                 </span>
               ))}
-              {!offlineQueue && queueNotice && <em>{queueNotice}</em>}
+              {!offlineQueue && /^(Again|Valid repertoire move|Cannot verify)/.test(queueNotice) && <em>{queueNotice}</em>}
             </div>
             <OpeningTitle card={card} />
             <div

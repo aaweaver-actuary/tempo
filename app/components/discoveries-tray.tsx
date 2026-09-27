@@ -28,6 +28,7 @@ import { loadExplorer, type ExplorerResult } from "../lib/lichess-explorer";
 import { readLichessSessionToken } from "../lib/lichess-session";
 import { readJsonResponse } from "../lib/validated-data";
 import { usesLocalApi } from "../utils/local";
+import { notifications, publishNotification, resolveNotification } from "../lib/notifications";
 
 export type DiscoveryItem = z.infer<typeof discoveriesFeedSchema>["discoveries"][number];
 type Recommendation = z.infer<typeof discoveryRecommendationSchema>;
@@ -607,6 +608,18 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   const activeAdmission = active
     ? pendingAdmissions.find((admission) => admission.opportunityId === active.id)
     : undefined;
+  useEffect(() => {
+    for (const admission of pendingAdmissions) if (admission.error) publishNotification({
+      severity: admission.state === "failed" ? "error" : "warning",
+      source: "discovery save", key: `discovery-save:${admission.opportunityId}`,
+      message: admission.state === "failed"
+        ? `Discovery save failed: ${admission.error}`
+        : `Discovery save unconfirmed; Tempo will retry. ${admission.error}`,
+    });
+    for (const record of notifications()) if (record.key?.startsWith("discovery-save:") && !record.resolvedAt &&
+      !pendingAdmissions.some((admission) => `discovery-save:${admission.opportunityId}` === record.key && admission.error))
+      resolveNotification(record.id, { severity: "success", message: "Discovery save confirmed." });
+  }, [pendingAdmissions]);
   const boardHistory = useMemo(
     () =>
       active
@@ -754,7 +767,8 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
           else openViewer(visibleDiscoveries[0]?.id ?? null);
         }}
       >
-        Discoveries
+        <span className="tempo-discoveries-label-desktop">Discoveries</span>
+        <span className="tempo-discoveries-label-mobile" aria-hidden="true">✦</span>
         {unreadCount > 0 && (
           <span
             className="tempo-discoveries-badge"
@@ -765,24 +779,6 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
           </span>
         )}
       </Button>
-      {pendingAdmissions.some((admission) => admission.error) && (
-        <div className="tempo-discovery-save-alert"
-          role={pendingAdmissions.some((admission) => admission.state === "failed") ? "alert" : "status"}>
-          {pendingAdmissions
-            .filter((admission) => admission.error)
-            .map((admission) => (
-              <p key={admission.opportunityId}>
-                {admission.state === "failed"
-                  ? `Discovery save failed: ${admission.error}`
-                  : `Discovery save unconfirmed; Tempo will retry. ${admission.error}`}
-                {admission.state === "failed" && <Button type="button"
-                  onClick={() => void retryPendingDiscoveryAdmission(admission.opportunityId)}>
-                  Retry save
-                </Button>}
-              </p>
-            ))}
-        </div>
-      )}
       {open && (
         <div className="tempo-discovery-backdrop">
           <section
@@ -792,6 +788,10 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
             aria-modal="true"
             aria-label="Discoveries"
           >
+            {pendingAdmissions.filter((admission) => admission.state === "failed" && admission.error).map((admission) =>
+              <p key={admission.opportunityId} role="alert">Discovery save failed: {admission.error}{" "}
+                <Button type="button" onClick={() => void retryPendingDiscoveryAdmission(admission.opportunityId)}>Retry save</Button>
+              </p>)}
             <header className="tempo-discovery-header">
               <div>
                 <span className="pill">Discoveries</span>

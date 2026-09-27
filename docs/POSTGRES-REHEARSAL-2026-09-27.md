@@ -103,6 +103,11 @@ handler has been ported and the release gates pass.
   advancing its cursor. Five rolled-back rehearsal executions of the real SQL
   took 5.5–11.5 ms; downstream game derivation remains
   a separate unported handler.
+- The saved threat-report audit is another bounded Celery handler. It reads one
+  report through a foreground-admitted background read, validates outside its
+  database section, then locks the claimed task lease for its publication.
+  Its real PostgreSQL SQL completed in a rolled-back rehearsal transaction in
+  44 ms end to end. The threat-engine request worker remains a separate port.
 - Preliminary in-process API read samples at 1, 4, and 16 clients are in
   `benchmarks/postgres-read-rehearsal-2026-09-27.csv`. They show a PostgreSQL
   queue-read regression under this first schema, so the cutover latency gate

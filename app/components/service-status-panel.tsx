@@ -7,6 +7,7 @@ import { backgroundFetch } from "../lib/background-fetch";
 import { browserActivitySnapshot, subscribeBrowserActivity } from "../lib/browser-activity";
 import { setLatestServiceStatus, type ActivityItem, type ActivityResponse } from "../lib/service-status";
 import { usesLocalApi } from "../utils/local";
+import { notifications, publishNotification, resolveNotification } from "../lib/notifications";
 
 const emptyBrowserActivity: ReturnType<typeof browserActivitySnapshot> = [];
 
@@ -57,6 +58,23 @@ export function ServiceStatusPanel() {
   const [offset, setOffset] = useState(0);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
   const browserItems = useSyncExternalStore(subscribeBrowserActivity, browserActivitySnapshot, () => emptyBrowserActivity);
+  useEffect(() => {
+    const key = "analysis-activity-error";
+    if (error) publishNotification({ severity: "error", source: "analysis activity", key, message: error });
+    else {
+      const previous = notifications().find((record) => record.key === key && !record.resolvedAt);
+      if (previous) resolveNotification(previous.id, { severity: "success", message: "Analysis activity is available again." });
+    }
+  }, [error]);
+  useEffect(() => {
+    const key = "database-writer-health";
+    if (status?.writer?.healthy === false) publishNotification({ severity: "error", source: "database writer", key,
+      message: "The database writer is unavailable. Restart Tempo before making changes." });
+    else if (status?.writer?.healthy) {
+      const previous = notifications().find((record) => record.key === key && !record.resolvedAt);
+      if (previous) resolveNotification(previous.id, { severity: "success", message: "The database writer is available again." });
+    }
+  }, [status?.writer?.healthy]);
 
   const refresh = useCallback(async () => {
     if (!usesLocalApi()) return null;
@@ -134,7 +152,7 @@ export function ServiceStatusPanel() {
     <Button type="button" className="tempo-activity-trigger" aria-label="Analysis activity" aria-expanded={open} aria-controls="tempo-activity-content"
       onClick={() => setOpen(value => !value)}>
       <span className="tempo-activity-trigger-desktop">Analysis activity</span>
-      <span className="tempo-activity-trigger-mobile">Activity</span>
+      <span className="tempo-activity-trigger-mobile">Jobs</span>
       {activeCount > 0 && <span> · {activeCount}</span>}
       {((status?.counts.failed ?? 0) > 0 || status?.writer?.healthy === false || error) && <span className="tempo-activity-attention" aria-label="needs attention"> !</span>}
     </Button>

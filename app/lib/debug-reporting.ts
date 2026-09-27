@@ -4,6 +4,7 @@ import { dataDiagnostics } from "./validated-data";
 import { usesLocalApi } from "../utils/local";
 import { serviceStatusSnapshot } from "./service-status";
 import { offlineShellVersion } from "./offline-shell";
+import { publishNotification } from "./notifications";
 
 export type DebugErrorKind =
   | "uncaught-exception"
@@ -166,6 +167,19 @@ export function reportDebugError(
   };
   records = [...records.slice(-(MAX_ERROR_RECORDS - 1)), record];
   notify();
+  if (normalizedContext.source !== "browser-extension") publishNotification({
+    severity: "error", source: normalizedContext.source,
+    message: record.message, key: `debug:${record.id}`,
+    details: {
+      debugRecordId: record.id,
+      kind: record.kind,
+      ...(normalizedContext.operation ? { operation: normalizedContext.operation } : {}),
+      ...(normalizedContext.endpointPath ? { endpointPath: normalizedContext.endpointPath } : {}),
+      ...(normalizedContext.method ? { method: normalizedContext.method } : {}),
+      ...(normalizedContext.status ? { status: normalizedContext.status } : {}),
+      ...(record.stack ? { stack: record.stack } : {}),
+    },
+  });
   return record;
 }
 

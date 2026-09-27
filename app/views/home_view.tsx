@@ -89,7 +89,8 @@ import { useShallow } from "zustand/react/shallow";
 import { WorkspaceRefreshStatus } from "../components/workspace-refresh-status";
 import { RepertoireIntegrityDialog } from "../components/repertoire-integrity-dialog";
 import { repertoiresResponseSchema } from "../domain/schemas";
-import { DebugErrorPanel } from "../components/debug-error-panel";
+import { NotificationCenter } from "../components/notification-center";
+import { notifications, publishNotification, resolveNotification } from "../lib/notifications";
 import { ServiceStatusPanel } from "../components/service-status-panel";
 import {
   DiscoveriesTray,
@@ -152,9 +153,11 @@ export default function Home() {
     | "refreshingQueue"
     | "queueFailed"
   >("idle");
-  const [offlineUpdateReady, setOfflineUpdateReady] = useState(false);
   useEffect(() => {
-    const showUpdate = () => setOfflineUpdateReady(true);
+    const showUpdate = () => publishNotification({
+      severity: "warning", source: "phone update", key: "phone-update-ready",
+      message: "Tempo update ready. Finish this attempt, then close and reopen Tempo while connected. Reviews saved on this phone remain available to sync.",
+    });
     window.addEventListener("tempo:update-ready", showUpdate);
     return () => window.removeEventListener("tempo:update-ready", showUpdate);
   }, []);
@@ -241,6 +244,26 @@ export default function Home() {
     initializeCardState,
     resetTrainingLine,
   } = useTrainingStore(useShallow(selectTrainingActions));
+  function showTrainingNotice(message: string, severity: "info" | "success" | "warning" | "error") {
+    setQueueNotice(message);
+    publishNotification({ severity, source: "training", message });
+  }
+  useEffect(() => {
+    if (pendingReviewError) publishNotification({ severity: "error", source: "training review",
+      key: "pending-review-error", message: `Could not save a previous training review. ${pendingReviewError}` });
+    else {
+      const previous = notifications().find((record) => record.key === "pending-review-error" && !record.resolvedAt);
+      if (previous) resolveNotification(previous.id, { severity: "success", message: "Previous training review saved." });
+    }
+  }, [pendingReviewError]);
+  useEffect(() => {
+    if (serviceError) publishNotification({ severity: "error", source: "training service",
+      key: "training-service-error", message: serviceError });
+    else {
+      const previous = notifications().find((record) => record.key === "training-service-error" && !record.resolvedAt);
+      if (previous) resolveNotification(previous.id, { severity: "success", message: "Training service is available again." });
+    }
+  }, [serviceError]);
   const reviewPendingEntries = useRef(new Set<string>());
   const reviewTransitionGeneration = useRef(0);
   const replyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
@@ -641,16 +664,16 @@ export default function Home() {
     if (!usesLocalApi() || card.kind === "defense" || !card.queueEntryId) return;
     if (offlineQueue) {
       void markOfflineAttemptFailed(card.queueEntryId)
-        .then(() => setQueueNotice("Guided attempt saved on phone."))
-        .catch((error) => setQueueNotice(`The phone could not save the guided attempt. ${String(error)}`));
+        .then(() => showTrainingNotice("Guided attempt saved on phone.", "success"))
+        .catch((error) => showTrainingNotice(`The phone could not save the guided attempt. ${String(error)}`, "error"));
       return;
     }
     try {
       enqueueTrainingFailure(card.queueEntryId);
       void flushTrainingFailures().catch((error) =>
-        setQueueNotice(`Could not save guided-attempt state. Tempo will retry. ${String(error)}`));
+        showTrainingNotice(`Could not save guided-attempt state. Tempo will retry. ${String(error)}`, "warning"));
     } catch (error) {
-      setQueueNotice(`Could not save guided-attempt state in this browser. Keep this page open. ${String(error)}`);
+      showTrainingNotice(`Could not save guided-attempt state in this browser. Keep this page open. ${String(error)}`, "error");
     }
   }
 
@@ -870,7 +893,7 @@ export default function Home() {
         useTrainingStore.getState().hydrateLocalQueue(nextCards, true, nextCards.length);
         setReviewed((count) => count + 1);
         setReviewPersistenceState("idle");
-        setQueueNotice(describeOfflineQueue(saved));
+        showTrainingNotice(describeOfflineQueue(saved), "success");
         setSafeBreakCounter((count) => count + 1);
       } catch (error) {
         setReviewPersistenceState("saveFailed");
@@ -923,7 +946,7 @@ export default function Home() {
           .catch(() => {
             if (transitionGeneration === reviewTransitionGeneration.current)
               setReviewPersistenceState("queueFailed");
-            setQueueNotice("Result saved. The queue could not be refreshed.");
+            showTrainingNotice("Result saved. The queue could not be refreshed.", "warning");
           });
         return;
       } catch (error) {
@@ -1297,6 +1320,7 @@ export default function Home() {
         <div className="top-actions">
           <SoundToggleButton soundOn={soundOn} changeSound={changeSound} />
           <SavedLocallyButton setShowImport={setShowImport} />
+          <NotificationCenter />
           <ServiceStatusPanel />
           <DiscoveriesTray
             safeToOpen={
@@ -1318,12 +1342,6 @@ export default function Home() {
         </div>
       </header>
       {!usesLocalApi() && <DemoBanner />}
-      {offlineUpdateReady && (
-        <div className="ui-notice" role="status">
-          Tempo update ready. Finish this attempt, then close and reopen Tempo while connected.
-          Reviews saved on this phone will remain available to sync.
-        </div>
-      )}
       <WorkspaceRefreshStatus />
       {currentView === "builder" && discoveryReturn && (
         <div className="discovery-builder-return" role="status">
@@ -1350,7 +1368,6 @@ export default function Home() {
           </Button>
         </div>
       )}
-      {!(offlineQueue && currentView === "train") && <DebugErrorPanel />}
 
       <BoardWorkspaceContainer enabled={boardWorkspace} view={currentView}>
         {currentView === "train" && (

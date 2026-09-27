@@ -13,7 +13,7 @@ test("defensive daily stack setting persists across navigation and reload", asyn
     await expect(toggle).toBeChecked();
     await toggle.uncheck();
     await saveButton.click();
-    await expect(page.locator(".settings-status")).toHaveText("Saved.");
+    await expect(page.locator(".notification-viewport")).toContainText("Saved.");
     await expect.poll(async () =>
       (await (await request.get(`${api}/settings`)).json()).include_defensive_cards_in_daily_stack,
     ).toBe(false);

@@ -24,7 +24,7 @@ export default function TrainingViewHeader({
               ? "You're done for today"
               : "Daily training"}
         </h1>
-        {cardsLeft === 0 && queueNotice && <p role="status">{queueNotice}</p>}
+        {preparedExerciseUnavailable && <p role="status">Prepared exercises require the computer. Reconnect to continue.</p>}
       </div>
       <div className="session-count">
         <span>Today · {dateLabel}</span>

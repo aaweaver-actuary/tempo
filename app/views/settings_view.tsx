@@ -17,6 +17,7 @@ import {
 } from "../lib/encrypted-backup";
 import { migrateSqliteToBrowser } from "../lib/sqlite-migration";
 import { reportDebugError } from "../lib/debug-reporting";
+import { publishNotification, resolveNotification } from "../lib/notifications";
 
 import { Notice } from "../components/task-tabs";
 
@@ -100,7 +101,18 @@ export default function SettingsView({
     explorer_ratings: "1600,1800,2000,2200,2500",
     arrow_metric: "stockfish",
   });
-  const [status, setStatus] = useState("");
+  const statusNotificationId = useRef<string | undefined>(undefined);
+  function setStatus(message: string) {
+    const severity = /could not|damaged|incorrect|unavailable/i.test(message) ? "error"
+      : /open Docker|retry/i.test(message) ? "warning" : "success";
+    if (message.startsWith("Copying and verifying")) {
+      statusNotificationId.current = publishNotification({ severity: "info", source: "settings",
+        key: "settings-data-transfer", message, active: true });
+    } else if (statusNotificationId.current) {
+      resolveNotification(statusNotificationId.current, { severity, message });
+      statusNotificationId.current = undefined;
+    } else publishNotification({ severity, source: "settings", message });
+  }
   const [dirty, setDirty] = useState(false);
   const [activeSection, setActiveSection] = useState("training");
   const [settingsLoaded, setSettingsLoaded] = useState(!usesLocalApi());
@@ -343,7 +355,6 @@ export default function SettingsView({
         </Notice>
       )}
       {!settingsLoaded && !loadError && <Notice>Loading settings…</Notice>}
-      {status && <Notice>{status}</Notice>}
       <TabList as="nav" className="settings-section-nav" label="Settings sections">
         {["training", "board", "builder", "games", "data"].map((section) => (
           <Button
@@ -739,11 +750,6 @@ export default function SettingsView({
           </div>
         </section>
       </div>
-      {status && (
-        <p className="settings-status" role="status">
-          {status}
-        </p>
-      )}
     </section>
   );
 }

@@ -392,6 +392,7 @@ test("frontend errors show a redacted copyable debug bundle", async ({ page }) =
   });
   await navigate(page, "Progress");
   await expect(page.getByRole("alert").first()).toBeVisible();
+  await page.getByRole("button", { name: "Notifications" }).click();
   await expect(page.getByRole("button", { name: "Copy debug info" })).toBeVisible();
   await page.getByRole("button", { name: "Copy debug info" }).click();
   await expect(page.getByRole("button", { name: "Copied debug info" })).toBeVisible();

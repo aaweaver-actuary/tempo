@@ -35,7 +35,7 @@ test("automatic game sync has a visible spinner and reports provider failure", a
     page.getByRole("button", { name: "Syncing games" }),
   ).toBeDisabled();
   await expect(page.locator(".sync-button i")).toBeVisible();
-  await expect(page.getByRole("alert")).toContainText(
+  await expect(page.getByRole("main").getByRole("alert")).toContainText(
     "Lichess username not found",
   );
 });

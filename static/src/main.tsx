@@ -10,6 +10,7 @@ import Home from "../../app/views/home_view";
 import { TempoErrorBoundary } from "../../app/components/error-boundary";
 import { installGlobalDebugErrorHandlers, reportDebugError } from "../../app/lib/debug-reporting";
 import { prepareMoveSounds } from "../../app/lib/move-sound";
+import { NotificationViewport } from "../../app/components/notification-center";
 
 installGlobalDebugErrorHandlers();
 prepareMoveSounds();
@@ -17,6 +18,7 @@ prepareMoveSounds();
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
     <TempoErrorBoundary><Home /></TempoErrorBoundary>
+    <NotificationViewport />
   </React.StrictMode>,
 );
 

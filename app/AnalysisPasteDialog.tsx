@@ -2,7 +2,7 @@ import { TextArea } from "./components/ui";
 import { SelectInput } from "./components/inputs/SelectInput";
 import { TextInput } from "./components/inputs/TextInput";
 import { Button } from "./components/buttons/BaseButton";
-import { useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Chess } from "chess.js";
 import type { z } from "zod";
 import { API_URL } from "./const";
@@ -14,6 +14,7 @@ import { useDialogFocus } from "./hooks/use-dialog-focus";
 import { readJsonResponse } from "./lib/validated-data";
 import { usesLocalApi } from "./utils/local";
 import CloseButton from "./components/buttons/CloseButton";
+import { publishNotification } from "./lib/notifications";
 
 type PastePreview = z.infer<typeof analysisPastePreviewSchema>;
 export type AnalysisPasteContext = {
@@ -43,7 +44,9 @@ export function AnalysisPasteDialog({
   const [confirmed, setConfirmed] = useState<Record<number, boolean>>({});
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
-  const [savedMessage, setSavedMessage] = useState("");
+  useEffect(() => {
+    if (error) publishNotification({ severity: "error", source: "paste analysis", key: "paste-analysis-error", message: error });
+  }, [error]);
   const batchConflictIndices = useMemo(() => {
     const conflicts = new Set<number>();
     const responses = new Map<string, { move: string; index: number }>();
@@ -77,7 +80,6 @@ export function AnalysisPasteDialog({
     setText(value);
     setPreview(undefined);
     setError("");
-    setSavedMessage("");
   }
 
   async function showPreview() {
@@ -199,9 +201,8 @@ export function AnalysisPasteDialog({
             .map((line) => line.repertoire_id),
         ),
       ];
-      setSavedMessage(
-        `Saved ${result.saved.filter((line) => !line.duplicate).length} line(s)${result.gap_resolved ? " and resolved the coverage gap" : ""}.`,
-      );
+      publishNotification({ severity: "success", source: "paste analysis",
+        message: `Saved ${result.saved.filter((line) => !line.duplicate).length} line(s)${result.gap_resolved ? " and resolved the coverage gap" : ""}.` });
       onSaved(result.affected_repertoire_ids, conflictingRepertoireIds);
     } catch (failure) {
       if (failure instanceof Error && failure.message.includes("Preview again"))
@@ -271,7 +272,6 @@ export function AnalysisPasteDialog({
             {error}
           </p>
         )}
-        {savedMessage && <p role="status">{savedMessage}</p>}
         {preview && (
           <div
             className="analysis-paste-preview"

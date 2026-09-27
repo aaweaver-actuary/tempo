@@ -17,6 +17,7 @@ from .services.activity_gate import activity_gate
 from .services.durable_tasks import claim_task, complete_task, fail_task
 from .services.priority_retention import execute_priority_retention_slice
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
+from .services.threat_pipeline import execute_threat_report_audit
 
 
 _LOGGER = logging.getLogger("tempo.tasks")
@@ -44,7 +45,9 @@ def poll_background_tasks() -> bool:
     """Admit at most one durable slice per poll; failed dispatch reclaims later."""
 
     claimed_task = None
-    for task_kind in ("repertoire_game_refresh", "priority_retention"):
+    for task_kind in (
+        "repertoire_game_refresh", "defensive_threat_report_audit", "priority_retention",
+    ):
         claimed_task = claim_task(task_kind)
         if claimed_task is not None:
             break
@@ -62,6 +65,7 @@ def poll_background_tasks() -> bool:
 def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
     background_handlers = {
         "repertoire_game_refresh": execute_repertoire_game_refresh_slice,
+        "defensive_threat_report_audit": execute_threat_report_audit,
         "priority_retention": execute_priority_retention_slice,
     }
     handler = background_handlers.get(claimed_task["kind"])

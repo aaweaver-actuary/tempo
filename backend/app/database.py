@@ -151,6 +151,20 @@ def read_connection() -> Iterator[sqlite3.Connection]:
             database.close()
 
 
+@contextmanager
+def background_read_connection() -> Iterator[sqlite3.Connection]:
+    """Admit a bounded background read only while foreground work is idle."""
+
+    if postgres_store.configured():
+        with activity_gate.background_database_section():
+            with postgres_store.connection(read_only=True, background=True) as database:
+                yield database
+        return
+    with activity_gate.background_database_section():
+        with read_connection() as database:
+            yield database
+
+
 def card_columns(database: sqlite3.Connection) -> list[str]:
     """Return cards columns in storage order for identity-preserving copies."""
 

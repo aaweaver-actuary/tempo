@@ -7,6 +7,7 @@ import { API_URL } from "../const";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
 import type { BoardTheme, PieceSet } from "../components/chessboard";
 import StudyExerciseRunner from "./study_exercise_runner";
+import { publishNotification } from "../lib/notifications";
 
 type Study = { id: string; title: string; description: string; archived: number };
 type Chapter = { id: string; study_id: string; title: string; description: string; position: number };
@@ -132,7 +133,13 @@ export default function StudiesView({ boardTheme, pieceSet }: { boardTheme: Boar
   const [linkTarget, setLinkTarget] = useState("");
   const [linkRelation, setLinkRelation] = useState<"illustrates" | "contrasts" | "follow_up">("illustrates");
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const setNotice = (message: string) => publishNotification({
+    severity: /warning|without review history|no exercises enrolled/i.test(message) ? "warning" : "success",
+    source: "studies", message,
+  });
+  useEffect(() => {
+    if (error) publishNotification({ severity: "error", source: "studies", key: "studies-error", message: error });
+  }, [error]);
   const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
 
   const loadStudies = useCallback(async () => {
@@ -310,7 +317,7 @@ export default function StudiesView({ boardTheme, pieceSet }: { boardTheme: Boar
 
   return <div className="studies-workspace">
     <header><h1>Studies</h1><p>Read and practice authored material. Only enrolled exercises enter daily training.</p></header>
-    {error && <p role="alert">{error}</p>}{notice && <p role="status">{notice}</p>}
+    {error && <p role="alert">{error}</p>}
     <section><h2>Collections</h2>
       <label>Import Tempo study bundle<input type="file" accept=".json,.tempo-study.json,application/json"
         onChange={(event) => { const file = event.target.files?.[0]; if (file) void importBundleFile(file); }} /></label>
