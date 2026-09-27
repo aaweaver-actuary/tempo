@@ -16,7 +16,7 @@ it("performance summary flags measured regressions without repeating test stages
         unit: { duration_seconds: unitSeconds, exit_code: 0 } },
     }));
     writeFileSync(join(directory, "browser-chromium.json"), JSON.stringify({
-      schemaVersion: 1, commit, browser: "chromium",
+      schemaVersion: 1, commit, timestamp: "2026-09-27T12:01:00Z", browser: "chromium",
       fixture: { name: "prepareVisualUI-default", boardReloads: 5, warmMoves: 5 },
       boardReadySummary: { p50: 20, p95: 25 },
       moveToPaintSummary: { p50: 15, p95: moveP95 },
@@ -67,15 +67,27 @@ it("performance summary excludes stale browser artifacts from another commit", (
       environment: { platform: "linux", architecture: "arm64" }, stages: {},
     }));
     writeFileSync(join(outputDirectory, "browser-chromium.json"), JSON.stringify({
-      commit: "older", browser: "chromium", moveToPaintSummary: { p95: 999 },
+      commit: "older", timestamp: "2026-09-27T12:01:00Z", browser: "chromium",
+      moveToPaintSummary: { p95: 999 },
     }));
     const report = spawnSync(process.execPath, [
       "scripts/report-performance.mjs", "--directory", outputDirectory,
     ], { cwd: process.cwd(), encoding: "utf8" });
     expect(report.status, report.stderr).toBe(0);
     const summary = readFileSync(join(outputDirectory, "performance-summary.md"), "utf8");
-    expect(summary).toContain("Stale browser artifacts excluded");
+    expect(summary).toContain("Stale performance artifacts excluded");
     expect(summary).not.toContain("999");
+
+    writeFileSync(join(outputDirectory, "browser-chromium.json"), JSON.stringify({
+      commit: "current", timestamp: "2026-09-27T11:59:00Z", browser: "chromium",
+      moveToPaintSummary: { p95: 999 },
+    }));
+    const earlierRun = spawnSync(process.execPath, [
+      "scripts/report-performance.mjs", "--directory", outputDirectory,
+    ], { cwd: process.cwd(), encoding: "utf8" });
+    expect(earlierRun.status, earlierRun.stderr).toBe(0);
+    expect(readFileSync(join(outputDirectory, "performance-summary.md"), "utf8"))
+      .not.toContain("999");
   } finally {
     rmSync(outputDirectory, { recursive: true, force: true });
   }
@@ -117,6 +129,43 @@ it("performance summary names failed stages and slow unit files from the same ru
     expect(staleReport.status, staleReport.stderr).toBe(0);
     expect(readFileSync(join(outputDirectory, "performance-summary.md"), "utf8"))
       .not.toContain("Slowest unit files");
+  } finally {
+    rmSync(outputDirectory, { recursive: true, force: true });
+  }
+});
+
+it("performance summary separates Docker browser and durability timings", () => {
+  const outputDirectory = mkdtempSync(join(tmpdir(), "tempo-perf-docker-"));
+  try {
+    writeFileSync(join(outputDirectory, "test-stages-full.json"), JSON.stringify({
+      schema_version: 1, tier: "full", commit: "current", timestamp: "2026-09-27T12:00:00Z",
+      environment: { platform: "linux", architecture: "arm64" },
+      stages: { docker: { duration_seconds: 120, exit_code: 0 } },
+    }));
+    writeFileSync(join(outputDirectory, "docker-stages.json"), JSON.stringify({
+      schema_version: 1, commit: "current", timestamp: "2026-09-27T12:01:00Z", stages: {
+        browser: { duration_seconds: 80, exit_code: 0 },
+        durability: { duration_seconds: 30, exit_code: 0 },
+      },
+    }));
+    const report = spawnSync(process.execPath, [
+      "scripts/report-performance.mjs", "--directory", outputDirectory,
+    ], { cwd: process.cwd(), encoding: "utf8" });
+    expect(report.status, report.stderr).toBe(0);
+    const summary = readFileSync(join(outputDirectory, "performance-summary.md"), "utf8");
+    expect(summary).toContain("Docker browser matrix | 80.00 s");
+    expect(summary).toContain("Docker durability | 30.00 s");
+
+    const staleDockerPath = join(outputDirectory, "docker-stages.json");
+    const staleDockerReport = JSON.parse(readFileSync(staleDockerPath, "utf8"));
+    staleDockerReport.commit = "previous";
+    writeFileSync(staleDockerPath, JSON.stringify(staleDockerReport));
+    const staleReport = spawnSync(process.execPath, [
+      "scripts/report-performance.mjs", "--directory", outputDirectory,
+    ], { cwd: process.cwd(), encoding: "utf8" });
+    expect(staleReport.status, staleReport.stderr).toBe(0);
+    expect(readFileSync(join(outputDirectory, "performance-summary.md"), "utf8"))
+      .not.toContain("Docker browser matrix");
   } finally {
     rmSync(outputDirectory, { recursive: true, force: true });
   }

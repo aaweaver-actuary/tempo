@@ -1,8 +1,9 @@
 import { spawnSync } from "node:child_process";
-import { mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
+import { performance } from "node:perf_hooks";
 import assert from "node:assert/strict";
 const supportedArguments = new Set(["--list", "--skip-browser"]);
 for (const argument of process.argv.slice(2)) {
@@ -16,6 +17,36 @@ if (process.argv.includes("--list")) {
   ] }, null, 2));
   process.exit(0);
 }
+const commitResult = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
+const timingDirectory = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";
+const timingFilename = skipBrowser ? "docker-stages-recovery.json" : "docker-stages.json";
+const timingReport = {
+  schema_version: 1,
+  commit: commitResult.status === 0 ? commitResult.stdout.trim() : null,
+  timestamp: new Date().toISOString(),
+  stages: {},
+};
+function saveTimingReport() {
+  mkdirSync(timingDirectory, { recursive: true });
+  writeFileSync(join(timingDirectory, timingFilename), `${JSON.stringify(timingReport, null, 2)}\n`);
+}
+async function timeStage(stageName, operation) {
+  const startedAt = performance.now();
+  let exitCode = 0;
+  try {
+    return await operation();
+  } catch (error) {
+    exitCode = 1;
+    throw error;
+  } finally {
+    timingReport.stages[stageName] = {
+      duration_seconds: Math.round((performance.now() - startedAt) / 10) / 100,
+      exit_code: exitCode,
+    };
+    saveTimingReport();
+  }
+}
+saveTimingReport();
 const directory = mkdtempSync(join(tmpdir(), "tempo-docker-tests-"));
 const testPort = await new Promise((resolve, reject) => {
   const server = createServer();
@@ -138,20 +169,25 @@ async function verifyStudySurvivesContainerRecreation() {
   console.log("PASS Docker study data survives container recreation: every store checksum, queue order, reviews, FSRS, teaching, notes and guided attempts.");
 }
 try {
-  verifyTempoDataVolumeIsExternal();
-  run("docker", ["info", "--format", "{{.ServerVersion}}"]);
-  run("docker", [...composeArgs, "up", "--build", "-d"]);
-  await waitForHealth();
+  await timeStage("compose_config", verifyTempoDataVolumeIsExternal);
+  await timeStage("container_start", async () => {
+    run("docker", ["info", "--format", "{{.ServerVersion}}"]);
+    run("docker", [...composeArgs, "up", "--build", "-d"]);
+    await waitForHealth();
+  });
   if (!skipBrowser) {
-    run("npx", ["playwright", "test"], {
+    await timeStage("browser", () => run("npx", ["playwright", "test"], {
       TEMPO_DOCKER_URL: `http://127.0.0.1:${testPort}`,
       TEMPO_TEST_OUTPUT_DIR: join(process.cwd(), "test-results", `browser-docker-${process.pid}`),
-    });
+    }));
   }
-  await verifyStudySurvivesContainerRecreation();
+  await timeStage("durability", verifyStudySurvivesContainerRecreation);
 } catch (error) { console.error(error.message); exitCode = 1; }
 finally {
-  spawnSync("docker", [...composeArgs, "down"], { stdio: "inherit", env });
+  await timeStage("container_stop", () => {
+    const result = spawnSync("docker", [...composeArgs, "down"], { stdio: "inherit", env });
+    if (result.error || result.status !== 0) throw new Error("Docker test containers could not stop");
+  }).catch((error) => { console.error(error.message); exitCode = 1; });
   rmSync(directory, { recursive: true });
 }
 process.exit(exitCode);

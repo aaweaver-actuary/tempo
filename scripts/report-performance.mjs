@@ -29,12 +29,30 @@ function collectMetrics(directory) {
   const unitProfile = readArtifact(directory, "unit-files-full.json");
   const commit = stageReport?.commit ?? null;
   const environment = stageReport?.environment ?? null;
+  const runStartedAt = Date.parse(stageReport?.timestamp ?? "");
+  const belongsToRun = (artifact) => Boolean(commit && artifact?.commit === commit &&
+    Number.isFinite(runStartedAt) && Date.parse(artifact.timestamp ?? "") >= runStartedAt);
   const metrics = [];
   const staleArtifacts = [];
   for (const [name, stage] of Object.entries(stageReport?.stages ?? {})) {
     if (typeof stage.duration_seconds !== "number") continue;
     metrics.push({ id: `stage.${name}`, label: name, value: stage.duration_seconds,
       unit: "s", comparisonKey: JSON.stringify(environment), exitCode: stage.exit_code });
+  }
+  const dockerArtifact = readArtifact(directory, "docker-stages.json");
+  if (dockerArtifact) {
+    if (!belongsToRun(dockerArtifact)) staleArtifacts.push("docker-stages.json");
+    else for (const [stageName, label] of [
+      ["container_start", "Docker container start"],
+      ["browser", "Docker browser matrix"],
+      ["durability", "Docker durability"],
+      ["container_stop", "Docker container stop"],
+    ]) {
+      const stage = dockerArtifact.stages?.[stageName];
+      if (typeof stage?.duration_seconds !== "number") continue;
+      metrics.push({ id: `docker.${stageName}`, label, value: stage.duration_seconds,
+        unit: "s", comparisonKey: JSON.stringify(environment), exitCode: stage.exit_code });
+    }
   }
   const browserArtifacts = [
     ["browser-chromium.json", (artifact) => {
@@ -64,16 +82,15 @@ function collectMetrics(directory) {
   for (const [filename, addMetrics] of browserArtifacts) {
     const artifact = readArtifact(directory, filename);
     if (!artifact) continue;
-    if (!commit || artifact.commit !== commit) {
+    if (!belongsToRun(artifact)) {
       staleArtifacts.push(filename);
       continue;
     }
     addMetrics(artifact);
   }
-  const stageStart = Date.parse(stageReport?.timestamp ?? "");
   const slowestUnitFiles = stageReport?.stages?.unit &&
     Array.isArray(unitProfile?.testResults) &&
-    Number.isFinite(stageStart) && unitProfile.startTime >= stageStart
+    Number.isFinite(runStartedAt) && unitProfile.startTime >= runStartedAt
     ? unitProfile.testResults.map((result) => ({
       file: relative(process.cwd(), result.name),
       durationMilliseconds: Math.max(0, result.endTime - result.startTime),
@@ -118,7 +135,7 @@ else if (regressions.length)
   lines.push(`**${regressions.length} metric(s) exceeded 25% degradation.** Review raw samples and runner variance before setting a blocking budget.`, "");
 else lines.push("No comparable metric exceeded 25% degradation.", "");
 if (current.staleArtifacts.length)
-  lines.push(`Stale browser artifacts excluded: ${current.staleArtifacts.join(", ")}.`, "");
+  lines.push(`Stale performance artifacts excluded: ${current.staleArtifacts.join(", ")}.`, "");
 if (current.slowestUnitFiles.length) {
   lines.push("## Slowest unit files", "", "File wall times may overlap across workers.", "",
     "| File | Wall time | Status |", "| --- | ---: | --- |");
