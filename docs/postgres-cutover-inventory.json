@@ -2601,31 +2601,55 @@
     {
       "file": "backend/app/queue_commands.py",
       "function": "mark_attempt_failed",
-      "line": 24,
+      "line": 26,
       "operation": "execute"
     },
     {
       "file": "backend/app/queue_commands.py",
       "function": "mark_attempt_failed",
-      "line": 29,
+      "line": 31,
       "operation": "execute"
     },
     {
       "file": "backend/app/queue_commands.py",
       "function": "bury_queue_entry",
-      "line": 41,
+      "line": 43,
       "operation": "execute"
     },
     {
       "file": "backend/app/queue_commands.py",
       "function": "bury_queue_entry",
-      "line": 50,
+      "line": 52,
       "operation": "execute"
     },
     {
       "file": "backend/app/queue_commands.py",
       "function": "bury_queue_entry",
-      "line": 55,
+      "line": 57,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/queue_commands.py",
+      "function": "ensure_current_queue",
+      "line": 71,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/queue_commands.py",
+      "function": "ensure_current_queue",
+      "line": 77,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/queue_commands.py",
+      "function": "ensure_current_queue",
+      "line": 83,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/queue_commands.py",
+      "function": "ensure_current_queue",
+      "line": 94,
       "operation": "execute"
     },
     {

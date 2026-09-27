@@ -18,6 +18,7 @@ from . import repertoire_commands  # noqa: F401 - registers foreground repertoir
 from .services.activity_gate import activity_gate
 from .services.durable_tasks import claim_task, complete_task, fail_task
 from .services.priority_retention import execute_priority_retention_slice
+from .services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
 from .services.threat_pipeline import execute_threat_report_audit
 from .services.threat_training import execute_defense_rubric_audit_slice
@@ -67,6 +68,7 @@ def poll_background_tasks() -> bool:
 @celery_app.task(name="app.tasks.execute_background_slice", bind=True)
 def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
     background_handlers = {
+        "daily_queue": execute_postgres_queue_refresh_slice,
         "defensive_rubric_audit": execute_defense_rubric_audit_slice,
         "repertoire_game_refresh": execute_repertoire_game_refresh_slice,
         "defensive_threat_report_audit": execute_threat_report_audit,
@@ -78,9 +80,10 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
     with activity_gate.background_job(claimed_task["kind"], claimed_task["id"]):
         try:
             more_work = handler(claimed_task)
-            complete_task(
-                claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"]
-            )
+            if claimed_task["kind"] != "daily_queue":
+                complete_task(
+                    claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"]
+                )
         except Exception as error:
             fail_task(
                 claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"], error

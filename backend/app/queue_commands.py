@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
+import json
 import random
 from typing import Any
 
@@ -10,6 +11,7 @@ from fastapi import HTTPException
 
 from .command_gateway import register_command
 from .postgres_store import PostgresConnection
+from .services.durable_tasks import enqueue_task_in_transaction
 
 
 _ACTIVE_QUEUE_SQL = """SELECT q.id FROM daily_queue q JOIN cards c ON c.id=q.card_id
@@ -59,5 +61,45 @@ def bury_queue_entry(database: PostgresConnection, payload: dict[str, Any]) -> d
     return {"buried": True, "queue_entry_id": entry_id}
 
 
+def ensure_current_queue(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    """Request one durable queue refresh from the foreground Celery worker."""
+
+    try:
+        queue_date = date.fromisoformat(str(payload["queue_date"])).isoformat()
+    except (KeyError, TypeError, ValueError) as error:
+        raise HTTPException(422, "A valid queue_date is required") from error
+    projection = database.execute(
+        "SELECT state,refresh_pending FROM queue_projections WHERE queue_date=? FOR UPDATE",
+        (queue_date,),
+    ).fetchone()
+    if projection and projection["state"] == "ready" and not projection["refresh_pending"]:
+        return {"queue_date": queue_date, "refresh_pending": False}
+    active_task = database.execute(
+        """SELECT id,state,payload_json FROM background_tasks
+           WHERE kind='daily_queue' AND deduplication_key='current' FOR UPDATE""",
+    ).fetchone()
+    if (active_task and active_task["state"] in {"queued", "leased", "retrying"}
+            and json.loads(active_task["payload_json"]).get("queue_date") == queue_date):
+        database.execute(
+            """INSERT INTO queue_projections(queue_date,state,generation,refresh_pending)
+               VALUES(?,'refreshing',0,1) ON CONFLICT(queue_date) DO UPDATE SET
+               state='refreshing',refresh_pending=1,last_error=NULL""",
+            (queue_date,),
+        )
+        return {"queue_date": queue_date, "refresh_pending": True,
+                "task_id": active_task["id"]}
+    task = enqueue_task_in_transaction(
+        database, "daily_queue", "current", {"queue_date": queue_date}, priority=10,
+    )
+    database.execute(
+        """INSERT INTO queue_projections(queue_date,state,generation,refresh_pending)
+           VALUES(?,'refreshing',0,1) ON CONFLICT(queue_date) DO UPDATE SET
+           state='refreshing',refresh_pending=1,last_error=NULL""",
+        (queue_date,),
+    )
+    return {"queue_date": queue_date, "refresh_pending": True, "task_id": task["id"]}
+
+
 register_command("queue.attempt_failed", mark_attempt_failed)
 register_command("queue.bury", bury_queue_entry)
+register_command("queue.ensure_current", ensure_current_queue)

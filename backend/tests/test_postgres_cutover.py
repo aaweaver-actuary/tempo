@@ -500,6 +500,80 @@ def test_postgres_queue_projection_and_task_completion_commit_together(monkeypat
         ).fetchone()[0] == 1
 
 
+def test_postgres_queue_celery_dispatch_keeps_atomic_slice_receipt(monkeypatch):
+    from app import tasks
+
+    claimed = {"kind": "daily_queue", "id": "queue-job", "generation": 3,
+               "lease_token": "current", "payload": {"queue_date": "2026-09-27"}}
+    handled = []
+    monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_args: nullcontext())
+    monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice",
+                        lambda task: handled.append(task["id"]) or False)
+    monkeypatch.setattr(tasks, "complete_task",
+                        lambda *_args: pytest.fail("Queue handler completed its own task atomically"))
+    assert tasks.execute_background_slice.run(claimed) is False
+    assert handled == ["queue-job"]
+    sent = []
+    monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice",
+                        lambda task: handled.append(task["id"]) or True)
+    monkeypatch.setattr(tasks.celery_app, "send_task",
+                        lambda task_name, **_kwargs: sent.append(task_name))
+    assert tasks.execute_background_slice.run(claimed) is True
+    assert sent == ["app.tasks.poll_background_tasks"]
+    assert "daily_queue" not in tasks._SUPPORTED_BACKGROUND_KINDS
+
+
+def test_postgres_queue_ensure_command_coalesces_active_refresh(monkeypatch):
+    from app import queue_commands
+
+    enqueued = []
+
+    class Cursor:
+        def __init__(self, row):
+            self.row = row
+
+        def fetchone(self):
+            return self.row
+
+    class Database:
+        def __init__(self):
+            self.projection = None
+            self.task = None
+            self.writes = []
+
+        def execute(self, statement, parameters=()):
+            if "FROM queue_projections" in statement:
+                return Cursor(self.projection)
+            if "FROM background_tasks" in statement:
+                return Cursor(self.task)
+            self.writes.append((statement, parameters))
+            return Cursor(None)
+
+    monkeypatch.setattr(queue_commands, "enqueue_task_in_transaction",
+                        lambda database, kind, key, payload, *, priority:
+                        enqueued.append((kind, key, payload, priority)) or {"id": "new-task"})
+    database = Database()
+    first = queue_commands.ensure_current_queue(
+        database, {"queue_date": "2026-09-27"},
+    )
+    assert first == {"queue_date": "2026-09-27", "refresh_pending": True,
+                     "task_id": "new-task"}
+    assert enqueued == [("daily_queue", "current", {"queue_date": "2026-09-27"}, 10)]
+    assert len(database.writes) == 1
+    database.task = {"id": "new-task", "state": "leased",
+                     "payload_json": '{"queue_date":"2026-09-27"}'}
+    second = queue_commands.ensure_current_queue(
+        database, {"queue_date": "2026-09-27"},
+    )
+    assert second == first
+    assert len(enqueued) == 1
+    database.projection = {"state": "ready", "refresh_pending": 0}
+    assert queue_commands.ensure_current_queue(
+        database, {"queue_date": "2026-09-27"},
+    ) == {"queue_date": "2026-09-27", "refresh_pending": False}
+    assert len(enqueued) == 1
+
+
 def test_postgres_cutover_schema_keeps_json_array_length_available(tmp_path):
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))

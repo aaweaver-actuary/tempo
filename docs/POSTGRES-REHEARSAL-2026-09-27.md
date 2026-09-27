@@ -53,6 +53,12 @@ module warmup. The first probe included about 450 ms of lazy Python import
 before the transaction; this is excluded from the database-section budget.
 The queue-refresh task is not yet enabled in Celery because its enqueue paths
 and remaining write-route cutover still need integration.
+Celery now knows the queue slice handler and preserves its in-transaction task
+receipt, while the polling allowlist deliberately remains closed.
+An explicit foreground `queue.ensure_current` command now coalesces an active
+refresh and marks its projection as refreshing. Two invocations in a rolled-back
+PostgreSQL rehearsal returned the same durable task ID. API startup dispatch
+and the polling allowlist remain release integration work.
 
 This is a **rehearsal**, not a production cutover. Production `tempo-data`
 remains the rollback source and `docker-compose.yml` still runs SQLite. Do not
