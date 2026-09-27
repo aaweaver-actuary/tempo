@@ -5,6 +5,7 @@ from __future__ import annotations
 import threading
 from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
+import json
 import sqlite3
 
 from pathlib import Path
@@ -747,6 +748,141 @@ def test_postgres_cutover_queue_unlock_slice_replays_and_advances_without_skips(
         complete_states = list(complete_database.execute("SELECT id,state FROM cards ORDER BY id"))
         sliced_states = list(sliced_database.execute("SELECT id,state FROM cards ORDER BY id"))
         assert [tuple(row) for row in sliced_states] == [tuple(row) for row in complete_states]
+
+
+def test_postgres_queue_refresh_eligibility_slices_yield_and_restart_without_replay(monkeypatch, tmp_path):
+    from app import main
+    from app.services import postgres_queue_refresh
+
+    database_path = tmp_path / "queue-slices.sqlite"
+    with sqlite3.connect(database_path) as database:
+        database.executescript("""
+            CREATE TABLE cards(id TEXT PRIMARY KEY,content_type TEXT,state TEXT,archived INTEGER);
+            CREATE TABLE opening_graph_steps(card_id TEXT,parent_card_id TEXT,
+                                             repertoire_id TEXT,generation INTEGER);
+            CREATE TABLE opening_graph_publications(repertoire_id TEXT,generation INTEGER);
+            CREATE TABLE background_tasks(id TEXT PRIMARY KEY,generation INTEGER,
+                                          lease_token TEXT,state TEXT,phase TEXT,payload_json TEXT);
+            INSERT INTO opening_graph_publications VALUES('repertoire',1);
+            INSERT INTO background_tasks VALUES('queue-job',1,'lease-first','leased','claimed',
+                                                 '{"queue_date":"2026-09-27"}');
+        """)
+        for card_number in range(65):
+            card_id = f"card-{card_number:03}"
+            database.execute("INSERT INTO cards VALUES(?,'opening','locked',0)", (card_id,))
+            if card_number % 8 == 0:
+                database.execute(
+                    "INSERT INTO opening_graph_steps VALUES(?,NULL,'repertoire',1)", (card_id,),
+                )
+
+    events = []
+
+    def wait_for_foreground():
+        events.append("wait")
+
+    @contextmanager
+    def section(*, background):
+        assert background and events[-1] == "wait"
+        events.append("database")
+        database = sqlite3.connect(database_path)
+        database.row_factory = sqlite3.Row
+        try:
+            yield database
+            database.commit()
+        finally:
+            database.close()
+
+    def lock_current_slice(database, task):
+        row = database.execute(
+            "SELECT generation,lease_token,state FROM background_tasks WHERE id=?", (task["id"],),
+        ).fetchone()
+        return (row["generation"] == task["generation"] and
+                row["lease_token"] == task["lease_token"] and row["state"] == "leased")
+
+    def advance_slice(database, task, *, next_phase, next_payload):
+        return bool(database.execute(
+            "UPDATE background_tasks SET state='queued',phase=?,payload_json=?,lease_token=NULL "
+            "WHERE id=? AND generation=? AND lease_token=? AND state='leased'",
+            (next_phase, json.dumps(next_payload), task["id"], task["generation"], task["lease_token"]),
+        ).rowcount)
+
+    completed_phases = []
+    monkeypatch.setattr(postgres_queue_refresh.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres_queue_refresh.activity_gate, "wait_for_foreground", wait_for_foreground)
+    monkeypatch.setattr(postgres_queue_refresh, "connection", section)
+    monkeypatch.setattr(postgres_queue_refresh, "lock_current_slice", lock_current_slice)
+    monkeypatch.setattr(postgres_queue_refresh, "advance_task_slice_in_transaction", advance_slice)
+    for phase_name, handler in main._QUEUE_ELIGIBILITY_PHASES[1:]:
+        monkeypatch.setattr(main, handler.__name__,
+                            lambda database, queue_date, name=phase_name: completed_phases.append(name))
+
+    lease_number = 1
+    first_task = {"id": "queue-job", "generation": 1, "lease_token": "lease-first",
+                  "payload": {"queue_date": "2026-09-27"}}
+    assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(first_task)
+    assert not postgres_queue_refresh.execute_postgres_queue_refresh_slice(first_task)
+    while True:
+        with sqlite3.connect(database_path) as database:
+            phase, payload_json = database.execute(
+                "SELECT phase,payload_json FROM background_tasks WHERE id='queue-job'",
+            ).fetchone()
+            if phase == "tactical_introductions":
+                break
+            lease_number += 1
+            lease_token = f"lease-{lease_number}"
+            database.execute(
+                "UPDATE background_tasks SET state='leased',lease_token=? WHERE id='queue-job'",
+                (lease_token,),
+            )
+        next_task = {"id": "queue-job", "generation": 1, "lease_token": lease_token,
+                     "payload": json.loads(payload_json)}
+        assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(next_task)
+    with sqlite3.connect(database_path) as database:
+        unlocked = [row[0] for row in database.execute(
+            "SELECT id FROM cards WHERE state='new' ORDER BY id",
+        )]
+    assert unlocked == [f"card-{number:03}" for number in range(0, 65, 8)]
+    assert completed_phases == ["block_opening", "block_defense", "restore_due", "restore_study"]
+    assert events[::2] == ["wait"] * (len(events) // 2)
+    assert events[1::2] == ["database"] * (len(events) // 2)
+
+
+def test_postgres_queue_refresh_foreground_request_blocks_new_database_slice(monkeypatch):
+    from app import main
+    from app.services import postgres_queue_refresh
+
+    opened_database = threading.Event()
+    finished = threading.Event()
+
+    @contextmanager
+    def section(*, background):
+        assert background
+        opened_database.set()
+        yield object()
+
+    monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
+    monkeypatch.setattr(postgres_queue_refresh.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres_queue_refresh, "connection", section)
+    monkeypatch.setattr(postgres_queue_refresh, "lock_current_slice", lambda database, task: True)
+    monkeypatch.setattr(main, "_unlock_eligible_opening_cards", lambda *args, **kwargs: None)
+    monkeypatch.setattr(postgres_queue_refresh, "advance_task_slice_in_transaction",
+                        lambda *args, **kwargs: True)
+    task = {"id": "queue-job", "generation": 1, "lease_token": "lease",
+            "payload": {"queue_date": "2026-09-27"}}
+
+    def run_slice():
+        try:
+            assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
+        finally:
+            finished.set()
+
+    with postgres_queue_refresh.activity_gate.foreground():
+        worker = threading.Thread(target=run_slice)
+        worker.start()
+        assert not opened_database.wait(0.05)
+    assert finished.wait(2)
+    worker.join(timeout=2)
+    assert opened_database.is_set()
 
 
 def test_postgres_cutover_game_refresh_waits_for_foreground_and_discards_stale_replay(monkeypatch):

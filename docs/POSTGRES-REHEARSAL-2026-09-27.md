@@ -102,6 +102,15 @@ handler has been ported and the release gates pass.
   verifies that a repeated committed batch still reaches every eligible card.
   The full daily-queue handler is
   still unported, so Celery does not claim these refresh tasks yet.
+- The first five eligibility phases now have a PostgreSQL slice runner that
+  locks the current task lease, persists the next phase and opening-card cursor
+  with the slice effects, and yields before the next claim. A named regression
+  covers foreground admission, restart, and stale replay. Rolled-back
+  PostgreSQL probes found that a 32-card unlock plus lease and event writes
+  exceeded the 50 ms transaction limit; 16 cards took 48.3 ms and eight took
+  41.4 ms. The runner therefore uses eight-card unlock slices. The remaining
+  queue phases and end-to-end publication are not ported, so this kind remains
+  excluded from the Celery poll.
 - A custom-format PostgreSQL backup was written outside the checkout at
   `/Users/andy/tempo-backups/tempo-postgres-rehearsal-2026-09-27.dump`.
   SHA-256 is `eaf7e37e5e0cd86189c0cf1a7abddb8b8893264f16e906e6f95b4948b0c4b326`.
