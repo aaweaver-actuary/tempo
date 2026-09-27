@@ -34,6 +34,16 @@ def test_postgres_cutover_schema_keeps_json_array_length_available(tmp_path):
     assert "jsonb_array_length(document::jsonb)" in schema
 
 
+def test_postgres_cutover_inventory_includes_native_postgres_queries():
+    import sys
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+    from audit_storage_cutover import inspect_python_file
+
+    source = Path(__file__).resolve().parents[1] / "app" / "services" / "postgres_queue_refresh.py"
+    report = inspect_python_file(source)
+    assert any(site["operation"] == "execute_native" for site in report["access_sites"])
+
+
 def test_postgres_cutover_study_chapter_routes_dispatch_named_commands(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main, study_routes

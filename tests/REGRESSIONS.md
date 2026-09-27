@@ -13,6 +13,7 @@
 | Sliced opening reset changes reviewed or currently queued cards, or replays with different results | `test_postgres_queue_opening_reset_phases_are_idempotent_and_preserve_active_cards` |
 | Queue reconciliation drops or skips unseen cards when split into restartable PostgreSQL slices | `test_postgres_queue_unseen_reconciliation_matches_sqlite_and_survives_reordering`; `test_postgres_queue_reconcile_checkpoint_discards_stale_replay` |
 | Due-card queue slices admit blocked, unpublished, archived, future, or already queued cards | `test_postgres_due_queue_slices_admit_only_eligible_cards_in_order` |
+| Cutover inventory omits PostgreSQL-native SQL calls and leaves migration sites unclassified | `test_postgres_cutover_inventory_includes_native_postgres_queries` |
 | Full validation or a focused browser scope runs tests and builds before discovering that Docker or localhost binding is sandbox denied | `full verification checks Docker and loopback access before any test family`; `focused browser and Docker Make targets preflight before launching tests` |
 | Docker daemon access succeeds but the pinned visual container cannot see the checkout, causing a late failure after other test families | `pinned browser preflight detects an inaccessible checkout mount before tests` |
 | Standalone Stockfish smoke preempts itself when a slower search reaches the foreground API poll without an API server | `standalone defense engine smoke does not poll an unavailable API` |
