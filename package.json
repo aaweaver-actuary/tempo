@@ -21,7 +21,7 @@
     "verify:static": "node scripts/verify-static-build.mjs",
     "verify:phone-deployment": "node scripts/verify-phone-deployment.mjs",
     "start": "vinext start",
-    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern pages-dist --ignore-pattern local-dist --ignore-pattern public/tempo-core --ignore-pattern test-results --ignore-pattern static/test-results --ignore-pattern playwright-report",
+    "lint": "eslint . --ignore-pattern dist --ignore-pattern .next --ignore-pattern pages-dist --ignore-pattern local-dist --ignore-pattern public/tempo-core --ignore-pattern test-results --ignore-pattern static/test-results --ignore-pattern playwright-report --ignore-pattern .dev-copies/**",
     "test:visual": "node scripts/test-visual.mjs",
     "test:fast": "node scripts/test-all.mjs fast",
     "test:integration": "node scripts/test-all.mjs integration",

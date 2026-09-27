@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { expect, it } from "vitest";
@@ -94,6 +94,13 @@ it("Makefile runs one full plan and rejects combined verification scopes", () =>
   });
   expect(duplicate.status).not.toBe(0);
   expect(duplicate.stderr).toContain("Choose one verification target");
+});
+
+it("lint scope excludes ignored local checkout copies", () => {
+  const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
+    scripts: { lint: string };
+  };
+  expect(packageJson.scripts.lint).toContain("--ignore-pattern .dev-copies");
 });
 
 it("focused browser and Docker Make targets preflight before launching tests", () => {
