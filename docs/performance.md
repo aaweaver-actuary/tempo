@@ -76,6 +76,8 @@ A focused rerender of Builder with one loaded repertoire made two unnecessary lo
 
 ## Study position benchmark (2026-09-27)
 
+A fresh `bench:positions` run at `170a8fd` measured median warm match computation of 0.5 ms for 25 lines, 3.8 ms for 250 lines, 6.8 ms for 2,000 lines, and 8.9 ms for 8,000 lines. Median index construction was 3.8, 33.1, 263.5, and 1,109.3 ms respectively. This benchmark reuses legal two-ply opening pairs; the stress workload repeats many FENs and is intentionally unlike a diverse personal repertoire. It excludes worker scheduling and painting. The current full sort and scan remain simple, and these warm-query times do not justify a bounded top-N implementation or a Rust rewrite. A future report of slow initialization on a real large repertoire should be measured end to end before changing the index representation.
+
 Run `npm run bench:positions` to write `test-results/performance/study-position-benchmark.json`. The deterministic fixture cycles through legal two-ply opening pairs, with 25, 250, 2,000, and 8,000 lines. It records line, ply, indexed-position, and distinct-FEN counts plus raw index and match timings. This is an in-process compute benchmark: it omits worker startup, structured cloning, messaging, React, and storage. It has more repeated starting positions than a diverse personal repertoire, so it should not be treated as an end-to-end usage budget.
 
 Before query preparation, median match times were 3.5, 44.2, 202.4, and 1,045.6 ms for small, typical, large, and stress. Preparing the query position once produced 1.6, 16.0, 115.4, and 644.0 ms on the same machine. The index stage was unchanged and its timings varied between runs. Repeat the benchmark and compare distributions before attributing smaller changes.
