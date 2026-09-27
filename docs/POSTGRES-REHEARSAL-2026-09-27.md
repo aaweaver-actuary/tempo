@@ -497,3 +497,10 @@ with the same idempotency key returned the existing receipt in 6 ms, and
 rehearsal database. Browser page loads also issued game-sync commands, so this
 instance remains a development fixture. The browser preview did not exercise
 all routes or background workers and does not establish cutover readiness.
+
+A subsequent real-schema foreground review on this fixture selected one queued
+tactic card, applied a `correct` review, and returned review ID 1631, next due
+2026-10-04, and a completed PostgreSQL operation receipt. Replaying the same
+operation ID returned the same review ID and response. This checked the
+SQLite-shaped review SQL against PostgreSQL and the receipt path on restored
+data; it was not a cross-container concurrency or API latency benchmark.
