@@ -288,6 +288,36 @@ microbenchmark, not the final container/backlog gate.
 
 ## Outstanding cutover gates
 
+An isolated localhost rehearsal now started the PostgreSQL API, separate
+foreground and background Celery workers, and Beat against the mutable scratch
+database. The API startup command requested today's queue, which reached
+`state='ready'` with `refresh_pending=0`. A headless browser opened the daily
+training board and received 20 cards from `/api/queue/window`; the scratch
+database reported 308 queued cards. This number is **not** a source-data parity
+claim because the scratch database contains post-import test changes. The same
+browser session exposed an automatic `/api/games/sync` POST returning 503 from
+the explicit unported-route guard. `/api/health` also remains 503, so Compose
+cannot yet start the web container as a healthy product. The browser rehearsal
+therefore proves queue rendering only, not readiness for cutover.
+
+The rehearsal used Celery's solo pool locally because the macOS prefork worker
+failed before reaching Tempo task code. Production Compose still uses Linux
+prefork workers. The background worker progressed an imported
+`priority_retention` task through many small generations but repeatedly logged
+discarded connections around PostgreSQL's 50 ms transaction budget. A
+rolled-back native delete probe took 48.7 ms cold for 16 rows and 2.8 ms warm
+for 64 rows. Retention throughput and its foreground impact remain benchmark
+gates. A scheduled foreground command now requests the new day's queue when
+the API remains up across midnight. Defensive exercise recognition and grading,
+and dedicated tactic attempts, now have explicit PostgreSQL/Celery commands;
+rolled-back rehearsal transactions completed their SQL paths.
+
+After merging upstream PR #15, the regular backend suite passed 461 tests and
+the frontend unit suite passed 276 tests at that point in the branch. Later
+focused tests passed for the new queue rollover, browser admission, defensive
+conflict, and tactic routes. The full suite and `make full` must run again after
+the remaining route and worker ports.
+
 Study attempt submission and self-assessment now dispatch explicit foreground
 commands. The worker serializes attempt IDs, locks the selected card and queue
 entry for review, and reuses the Study finalization service for scheduling,
