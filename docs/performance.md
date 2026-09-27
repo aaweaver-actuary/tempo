@@ -26,6 +26,23 @@ Current architecture puts rendering and interaction handling on the React main t
 
 Performance policy: optimize measured bottlenecks. Prefer reducing work and improving algorithms before moving code between languages. Browser measurements in `tests/browser/performance.spec.ts` retain five raw warm-switch samples per view, five Builder move-to-paint samples, five board-ready samples across page reloads, per-scenario p50/p95, and long-task durations as a Playwright attachment. Add representative small, typical, large, and stress workloads before setting hard latency budgets. No numerical budget is asserted here until repeatable distributions are collected on the pinned runner.
 
+### Provisional interaction targets
+
+These are review targets for a comparable pinned runner, not merge-blocking budgets. The three saved browser samples at `57cdc99` and `457df86` include a focused repeat on the latter commit; each p95 is based on only five to seven interactions. They omit a live network and full personal data set where routed fixtures are used.
+
+| Operation | Observed p95 range | Provisional review target | Scope |
+| --- | ---: | ---: | --- |
+| Warm workspace switch | 29–81 ms across Builder, Games, Endgames, Tactics, and Train | 150 ms | Instrumented view switch through paint; existing sanity assertion is 300 ms. |
+| Board move to visible response | 16–31 ms | 100 ms | Builder board move through paint. |
+| Training card advance | 30–49 ms | 150 ms | Routed prepared cards, click through next visible paint; existing sanity assertion is 500 ms. |
+| Builder similarity worker reply | 14–32 ms | 100 ms | Compact warm query, including worker queue and transfer. |
+| Builder similarity query to paint | 45–116 ms | 200 ms | Warm query through visible result paint. |
+| Board initialization | 26–270 ms | 300 ms | Component mount through paint after navigation or reload; excludes preceding page load. |
+| Foreground workspace API reads during background backlog | Under 1 second in the named integration test | 1 second | Test fixture with 1,600 repertoire lines; measure actual populated profiles separately. |
+| SQLite background transaction hold | 50 ms warning threshold in the writer | 50 ms | Transaction boundary only; queue and foreground gate waits are logged separately. |
+
+A review target prompts inspection of raw samples, fixture version, host load, and comparable baseline. Tighten it only after repeated runs show a stable distribution. The browser suite currently enforces only its generous sanity limits, and the backend contention test and writer warning enforce their stated scopes.
+
 Rust/WASM remains limited to existing deterministic helpers. The worker-owned TypeScript position index removed repeated megabyte-scale query transfers, and there is no comparable end-to-end Rust index benchmark yet to justify another implementation. Shared Python/Rust prefix fixtures cover white and black training, incomplete trained-side lines, promotion, castling, legal en passant, illegal moves, null moves, and invalid FEN rejection. A card prefix must end with a trained move, or both runtimes return no prefix. A Rust batch search should be considered only after equivalent parity fixtures and measured total worker-to-paint latency show a material gain over this indexed TypeScript path.
 
 Shared Python/Rust card-ID fixtures now cover clocks, castling, promotion moves, invalid FEN text, whitespace, and noncapturable en passant. Python's persisted card identity hashes the first four supplied FEN fields, including an en-passant field that position search would canonicalize away. Rust now follows the persisted Python rule so a future caller cannot assign a different ID to an existing card. This parity change does not migrate stored IDs or make Rust the owner of persistence.
