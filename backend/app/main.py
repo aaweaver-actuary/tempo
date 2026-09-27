@@ -1560,7 +1560,9 @@ async def import_pgn(
         raise HTTPException(400, "Choose a .pgn file")
     if trained_color not in {"white", "black"}:
         raise HTTPException(400, "trained_color must be white or black")
+    import_started_at = time.perf_counter()
     games, lines = parse_pgn((await file.read()).decode("utf-8-sig"))
+    parsed_at = time.perf_counter()
     if not lines:
         raise HTTPException(422, "No playable lines were found")
     with read_connection() as settings_database:
@@ -1587,6 +1589,7 @@ async def import_pgn(
     unique_line_keys = {
         (" ".join(line.starting_fen.split()[:4]), tuple(line.moves)) for line in lines
     }
+    derived_at = time.perf_counter()
     now = datetime.now(timezone.utc).isoformat()
     with connection() as db:
         existing_repertoire = db.execute(
@@ -1666,13 +1669,27 @@ async def import_pgn(
         )
         integrity = integrity_summary(db, rid)
         admitted = 0
+    stored_at = time.perf_counter()
+    enqueue_status = "scheduled"
     try:
         enqueue_opening_graph_rebuild(rid, local_day=date.today().isoformat())
         enqueue_integrity_scans(rid)
         enqueue_coverage_refresh(rid, automatic=True)
         coordinator.wake()
     except (KeyError, sqlite3.OperationalError):
-        pass
+        enqueue_status = "failed"
+    enqueued_at = time.perf_counter()
+    logging.getLogger("tempo.import").info(
+        "pgn import games=%d lines=%d segments=%d parse_ms=%.3f "
+        "derive_ms=%.3f store_ms=%.3f enqueue_ms=%.3f total_ms=%.3f enqueue_status=%s",
+        games, len(lines), len(imported_segments),
+        (parsed_at - import_started_at) * 1000,
+        (derived_at - parsed_at) * 1000,
+        (stored_at - derived_at) * 1000,
+        (enqueued_at - stored_at) * 1000,
+        (enqueued_at - import_started_at) * 1000,
+        enqueue_status,
+    )
     return ImportResult(
         repertoire_id=rid,
         source_name=file.filename,

@@ -10,6 +10,7 @@
 | Rust card IDs canonicalize noncapturable en passant while persisted Python card IDs retain the supplied FEN field | `card_ids_match_python_shared_fixture`; `test_python_card_ids_match_shared_rust_parity_fixture` |
 | Repertoire statistics issues two forecast-input reads for every distinct parent card | `test_repertoire_statistics_batches_forecast_parent_reads` |
 | PGN import retraverses each line's decision segments just to count merged duplicates in its response | `test_import_derives_decision_segments_once_per_parsed_line` |
+| PGN import reports only request total time and cannot separate parsing, decision derivation, storage, and scheduling | `test_import_reports_parse_derive_and_storage_phase_timings` |
 | Every motif detector replays and copies the same candidate line before inspecting it | `test_motif_candidates_replay_each_line_once_for_all_detectors`; `test_python_motif_parity_fixture` |
 | Training-card transition latency is not sampled from click through the next visible paint | `warm training cards advance to the next visible paint` |
 | Builder similarity only verifies compact worker messages and leaves index initialization or representative query queue/compute/roundtrip latency unmeasured | `Builder similarity worker messages keep the position index in the worker` (250 legal opening lines) |

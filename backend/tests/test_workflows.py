@@ -1,6 +1,7 @@
 from fastapi.testclient import TestClient
 import hashlib
 import json
+import logging
 import time
 
 from app import database
@@ -170,6 +171,23 @@ def test_import_derives_decision_segments_once_per_parsed_line(tmp_path, monkeyp
     assert response.json()["unique_lines"] == 3
     assert response.json()["duplicates_merged"] == 2
     assert segment_calls == 4
+
+
+def test_import_reports_parse_derive_and_storage_phase_timings(tmp_path, monkeypatch, caplog):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with caplog.at_level(logging.INFO, logger="tempo.import"):
+        with TestClient(app) as client:
+            response = client.post(
+                "/api/imports/pgn",
+                files={"file": ("timed-import.pgn", PGN, "application/x-chess-pgn")},
+                data={"trained_color": "white", "initial_depth": "2"},
+            )
+    assert response.status_code == 200
+    import_timings = [record for record in caplog.records if record.name == "tempo.import"]
+    assert len(import_timings) == 1
+    import_timing = import_timings[0].getMessage()
+    for phase in ("parse_ms=", "derive_ms=", "store_ms=", "total_ms="):
+        assert phase in import_timing
 
 
 def test_reimport_can_shorten_initial_prefix_without_truncating_descendants(
