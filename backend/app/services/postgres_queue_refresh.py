@@ -259,17 +259,12 @@ def _admit_one_due_card(database, queue_date: str, card_id: str) -> bool:
         "SELECT id FROM cards WHERE id=%s FOR UPDATE", (card_id,),
     ).fetchone() is None:
         return False
+    lock_queue_date_for_position(database, queue_date)
     eligible = database.execute_native(
         "SELECT 1 FROM cards c WHERE c.id=%s AND " + _DUE_CARD_ELIGIBILITY,
         (card_id, queue_date, queue_date, queue_date),
     ).fetchone()
     if eligible is None:
-        return False
-    lock_queue_date_for_position(database, queue_date)
-    if database.execute_native(
-        "SELECT 1 FROM daily_queue WHERE queue_date=%s AND card_id=%s",
-        (queue_date, card_id),
-    ).fetchone():
         return False
     next_position = database.execute_native(
         "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=%s",
@@ -396,6 +391,7 @@ def _admit_one_study_card(database, queue_date: str, study_card_id: str) -> bool
         "SELECT id FROM cards WHERE id=%s FOR UPDATE", (study_card_id,),
     ).fetchone() is None:
         return False
+    lock_queue_date_for_position(database, queue_date)
     allowance = database.execute_native(
         "SELECT study_new_per_day FROM settings WHERE id=1",
     ).fetchone()[0]
@@ -414,12 +410,6 @@ def _admit_one_study_card(database, queue_date: str, study_card_id: str) -> bool
         (study_card_id, queue_date, queue_date, queue_date),
     ).fetchone()
     if eligible is None:
-        return False
-    lock_queue_date_for_position(database, queue_date)
-    if database.execute_native(
-        "SELECT 1 FROM daily_queue WHERE queue_date=%s AND card_id=%s",
-        (queue_date, study_card_id),
-    ).fetchone():
         return False
     position = database.execute_native(
         "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=%s",

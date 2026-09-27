@@ -10,6 +10,7 @@ import type { PracticeCard } from "../domain/cards";
 import { API_URL } from "../const";
 import { availableKnightRoutes, evaluateStudyAnswer, studySpecificationSchema, type StudyAnswer } from "../domain/study-exercises";
 import { recordOfflineStudyAttempt } from "../lib/offline-training";
+import { confirmOperationResponse } from "../lib/operation-status";
 
 type PresentedStudyExercise = {
   id: string; revision: number; type: "move_line" | "square_set" | "knight_path" | "choice" | "explanation";
@@ -213,10 +214,15 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     setBusy(true); setSaveError("");
     try {
       const response = await fetch(`${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(pending.payload),
+        method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": pending.id },
+        body: JSON.stringify(pending.payload),
       });
-      const body = await response.json() as AttemptReply & { detail?: string };
-      if (!response.ok) throw new Error(responseError(response.status, body.detail));
+      const confirmed = await confirmOperationResponse(response);
+      const body = await confirmed.json() as AttemptReply & { detail?: string };
+      if (!confirmed.ok) {
+        if (confirmed.status >= 400 && confirmed.status < 500) pendingRef.current = null;
+        throw new Error(responseError(confirmed.status, body.detail));
+      }
       if (generation !== generationRef.current) return;
       setReply(body); pendingRef.current = null;
       await revealFeedback(pending.id, generation);
@@ -238,10 +244,12 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     setBusy(true); setSaveError("");
     try {
       const response = await fetch(`${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/attempts/${reply.attempt_id}/self-assess`, {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ rating }),
+        method: "POST", headers: { "Content-Type": "application/json",
+          "Idempotency-Key": `${reply.attempt_id}:self-assess` }, body: JSON.stringify({ rating }),
       });
-      const body = await response.json() as AttemptReply & { detail?: string };
-      if (!response.ok) throw new Error(responseError(response.status, body.detail));
+      const confirmed = await confirmOperationResponse(response);
+      const body = await confirmed.json() as AttemptReply & { detail?: string };
+      if (!confirmed.ok) throw new Error(responseError(confirmed.status, body.detail));
       if (generation === generationRef.current) setReply(body);
     } catch (error) { if (generation === generationRef.current) setSaveError(error instanceof Error ? error.message : "Could not save self-assessment. Retry."); }
     finally { if (generation === generationRef.current) setBusy(false); }

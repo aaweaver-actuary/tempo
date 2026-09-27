@@ -288,6 +288,21 @@ microbenchmark, not the final container/backlog gate.
 
 ## Outstanding cutover gates
 
+Study attempt submission and self-assessment now dispatch explicit foreground
+commands. The worker serializes attempt IDs, locks the selected card and queue
+entry for review, and reuses the Study finalization service for scheduling,
+review receipts, sibling burial, and queue refresh. Rolled-back PostgreSQL
+checks passed practice submit/replay/self-assessment, automatic review
+publication/replay, and pending review duplicate rejection/self-assessment.
+The browser runner now sends stable command IDs and checks operation receipts
+for HTTP 202 within its mounted session; a named unit regression covers both
+attempt and self-assessment retries. Persistence of an ambiguous online Study
+attempt across browser reload remains a cutover gate.
+Study-card background admission now takes the shared queue-date lock before
+checking sibling burial, queue membership, and the new-card quota. A named
+regression inserts a burial and then an alternate admission at that lock
+boundary and verifies the stale candidate does not enter the queue.
+
 Study exercise revision now uses an explicit foreground command. A notes-only
 revision keeps the active card and advances its revision; a material revision
 with schedule reset archives the old card, blocks its queued entry, creates a

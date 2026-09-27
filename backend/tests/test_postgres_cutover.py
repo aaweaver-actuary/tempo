@@ -202,6 +202,65 @@ def test_postgres_study_admission_slices_respect_quota_burial_and_replay(monkeyp
                ("second-card", 1, "study_exercise", "new")]
 
 
+def test_postgres_study_admission_rechecks_burial_and_quota_after_foreground_lock(monkeypatch, tmp_path):
+    from app.services import postgres_queue_refresh
+
+    database_path = tmp_path / "study-admission-race.db"
+    with sqlite3.connect(database_path) as database:
+        database.executescript("""
+            CREATE TABLE settings(id INTEGER PRIMARY KEY,study_new_per_day INTEGER);
+            CREATE TABLE cards(id TEXT PRIMARY KEY,study_exercise_id TEXT,content_type TEXT,
+                state TEXT,archived INTEGER,pending_validation INTEGER,due_date TEXT);
+            CREATE TABLE studies(id TEXT PRIMARY KEY,archived INTEGER);
+            CREATE TABLE study_exercises(id TEXT PRIMARY KEY,study_id TEXT,status TEXT);
+            CREATE TABLE study_sibling_burials(exercise_id TEXT,study_day TEXT);
+            CREATE TABLE daily_queue(queue_date TEXT,card_id TEXT,position INTEGER,
+                status TEXT DEFAULT 'queued',card_bucket TEXT,admission_kind TEXT);
+            INSERT INTO settings VALUES(1,1);
+            INSERT INTO studies VALUES('study',0);
+            INSERT INTO study_exercises VALUES('candidate','study','published');
+            INSERT INTO study_exercises VALUES('other','study','published');
+            INSERT INTO cards VALUES('candidate-card','candidate','study_exercise','new',0,0,'2026-09-26');
+            INSERT INTO cards VALUES('other-card','other','study_exercise','new',0,0,'2026-09-26');
+        """)
+
+    class NativeSqlite:
+        def __init__(self, database):
+            self.database = database
+
+        def execute_native(self, statement, parameters=()):
+            return self.database.execute(
+                statement.replace("%s", "?").replace("FOR UPDATE", ""), parameters,
+            )
+
+    with sqlite3.connect(database_path) as database:
+        adapter = NativeSqlite(database)
+        monkeypatch.setattr(postgres_queue_refresh, "lock_queue_date_for_position",
+                            lambda _database, day: database.execute(
+                                "INSERT INTO study_sibling_burials VALUES('candidate',?)", (day,),
+                            ))
+        assert not postgres_queue_refresh._admit_one_study_card(
+            adapter, "2026-09-27", "candidate-card",
+        )
+        assert database.execute("SELECT COUNT(*) FROM daily_queue").fetchone()[0] == 0
+        database.execute("DELETE FROM study_sibling_burials")
+        monkeypatch.setattr(postgres_queue_refresh, "lock_queue_date_for_position",
+                            lambda _database, day: database.execute(
+                                "INSERT INTO daily_queue(queue_date,card_id,position) VALUES(?,'other-card',0)",
+                                (day,),
+                            ))
+        assert not postgres_queue_refresh._admit_one_study_card(
+            adapter, "2026-09-27", "candidate-card",
+        )
+        assert database.execute("SELECT COUNT(*) FROM daily_queue").fetchone()[0] == 1
+        database.execute("DELETE FROM daily_queue")
+        monkeypatch.setattr(postgres_queue_refresh, "lock_queue_date_for_position",
+                            lambda _database, _day: None)
+        assert postgres_queue_refresh._admit_one_study_card(
+            adapter, "2026-09-27", "candidate-card",
+        )
+
+
 def test_postgres_study_admission_waits_for_foreground_and_checkpoints_restart(monkeypatch):
     from app.services import postgres_queue_refresh
 
@@ -1028,6 +1087,173 @@ def test_postgres_exercise_revision_keeps_metadata_schedule_and_resets_material_
         assert database.execute("SELECT COUNT(*) FROM cards WHERE archived=0 AND revision=3").fetchone()[0] == 1
         assert database.execute("SELECT source_json FROM study_exercises").fetchone()[0] == "{}"
     assert refreshed == [date.today().isoformat()]
+
+
+def test_postgres_study_attempt_routes_dispatch_idempotent_foreground_commands(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main, study_routes
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(study_routes, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or {"accepted": name})
+    client = TestClient(main.app)
+    submitted = client.post(
+        "/api/studies/study-1/exercises/exercise-1/attempts",
+        json={"attempt_id": "attempt-1", "revision": 1,
+              "answer": {"type": "explanation", "text": "My idea"}, "context": "practice"},
+    )
+    assessed = client.post(
+        "/api/studies/study-1/exercises/exercise-1/attempts/attempt-1/self-assess",
+        json={"rating": "correct"},
+    )
+    assert submitted.status_code == 200, submitted.text
+    assert assessed.status_code == 200, assessed.text
+    assert dispatched[0][0] == "studies.attempts.submit"
+    assert dispatched[0][1]["attempt"]["attempt_id"] == "attempt-1"
+    assert dispatched[0][2] == "attempt-1"
+    assert dispatched[1] == (
+        "studies.attempts.self_assess",
+        {"study_id": "study-1", "exercise_id": "exercise-1", "attempt_id": "attempt-1",
+         "assessment": {"rating": "correct"}},
+        "attempt-1:self-assess",
+    )
+
+
+def test_postgres_study_practice_attempt_replays_and_self_assesses_once(monkeypatch, tmp_path):
+    import chess
+    from app import study_attempt_commands
+
+    database_path = tmp_path / "study-practice-attempt.db"
+    with sqlite3.connect(database_path) as database:
+        database.executescript("""
+            CREATE TABLE study_exercises(id TEXT PRIMARY KEY,study_id TEXT,status TEXT,
+                current_revision INTEGER,position_id TEXT);
+            CREATE TABLE study_positions(id TEXT PRIMARY KEY,fen TEXT);
+            CREATE TABLE study_exercise_revisions(exercise_id TEXT,revision INTEGER,
+                specification_json TEXT);
+            CREATE TABLE study_attempts(id TEXT PRIMARY KEY,exercise_id TEXT,revision INTEGER,
+                card_id TEXT,queue_entry_id INTEGER,cycle INTEGER,context TEXT,
+                answer_json TEXT,answer_hash TEXT,assessment_json TEXT,assessment_method TEXT,
+                grader_version INTEGER,hint_seen INTEGER,solution_seen_before_answer INTEGER,
+                started_at TEXT,committed_at TEXT,finalized_at TEXT,result_json TEXT);
+            INSERT INTO study_exercises VALUES('exercise','study','published',1,'position');
+        """)
+        database.execute("INSERT INTO study_positions VALUES('position',?)", (chess.STARTING_FEN,))
+        specification = {"type": "explanation", "prompt": "Explain the plan",
+                         "rubric": "Mention development"}
+        database.execute("INSERT INTO study_exercise_revisions VALUES('exercise',1,?)",
+                         (json.dumps(specification),))
+
+    class NativeSqlite:
+        def __init__(self, database):
+            self.database = database
+
+        def execute(self, statement, parameters=()):
+            return self.database.execute(statement.replace("FOR UPDATE", ""), parameters)
+
+        def execute_native(self, statement, parameters=()):
+            assert statement.startswith("SELECT pg_advisory_xact_lock")
+            return self.database.execute("SELECT 1")
+
+    refreshed = []
+    monkeypatch.setattr(study_attempt_commands, "request_queue_refresh_in_transaction",
+                        lambda _database, queue_date: refreshed.append(queue_date))
+    with sqlite3.connect(database_path) as database:
+        database.row_factory = sqlite3.Row
+        adapter = NativeSqlite(database)
+        payload = {"study_id": "study", "exercise_id": "exercise", "attempt": {
+            "attempt_id": "attempt", "revision": 1,
+            "answer": {"type": "explanation", "text": "Develop pieces"}, "context": "practice",
+        }}
+        pending = study_attempt_commands.submit_study_attempt(adapter, payload)
+        assert pending["pending_self_assessment"] is True
+        assert study_attempt_commands.submit_study_attempt(adapter, payload) == pending
+        assessment_payload = {"study_id": "study", "exercise_id": "exercise",
+                              "attempt_id": "attempt", "assessment": {"rating": "correct"}}
+        result = study_attempt_commands.self_assess_study_attempt(adapter, assessment_payload)
+        assert result["rating"] == "correct" and result["persisted"] is True
+        assert study_attempt_commands.self_assess_study_attempt(adapter, assessment_payload) == result
+        assert study_attempt_commands.submit_study_attempt(adapter, payload) == result
+        assert database.execute("SELECT COUNT(*) FROM study_attempts").fetchone()[0] == 1
+        with pytest.raises(HTTPException) as reused_id:
+            study_attempt_commands.submit_study_attempt(
+                adapter, {**payload, "exercise_id": "another-exercise"},
+            )
+        assert reused_id.value.status_code == 409
+        with pytest.raises(HTTPException) as wrong_study:
+            study_attempt_commands.submit_study_attempt(
+                adapter, {**payload, "study_id": "another-study"},
+            )
+        assert wrong_study.value.status_code == 409
+        with pytest.raises(HTTPException) as conflict:
+            study_attempt_commands.self_assess_study_attempt(adapter, {
+                **assessment_payload, "assessment": {"rating": "again"},
+            })
+        assert conflict.value.status_code == 409
+    assert refreshed == [date.today().isoformat()]
+
+
+def test_postgres_study_review_attempt_rejects_second_answer_for_one_queue_entry(tmp_path):
+    import chess
+    from app import study_attempt_commands
+
+    database_path = tmp_path / "study-review-attempt.db"
+    with sqlite3.connect(database_path) as database:
+        database.executescript("""
+            CREATE TABLE study_exercises(id TEXT PRIMARY KEY,study_id TEXT,status TEXT,
+                current_revision INTEGER,position_id TEXT);
+            CREATE TABLE study_positions(id TEXT PRIMARY KEY,fen TEXT);
+            CREATE TABLE study_exercise_revisions(exercise_id TEXT,revision INTEGER,
+                specification_json TEXT);
+            CREATE TABLE cards(id TEXT PRIMARY KEY,study_exercise_id TEXT,archived INTEGER,
+                pending_validation INTEGER,revision INTEGER);
+            CREATE TABLE daily_queue(id INTEGER PRIMARY KEY,card_id TEXT,cycle INTEGER,
+                status TEXT,queue_date TEXT);
+            CREATE TABLE study_attempts(id TEXT PRIMARY KEY,exercise_id TEXT,revision INTEGER,
+                card_id TEXT,queue_entry_id INTEGER UNIQUE,cycle INTEGER,context TEXT,
+                answer_json TEXT,answer_hash TEXT,assessment_json TEXT,assessment_method TEXT,
+                grader_version INTEGER,hint_seen INTEGER,solution_seen_before_answer INTEGER,
+                started_at TEXT,committed_at TEXT,finalized_at TEXT,result_json TEXT);
+            INSERT INTO study_exercises VALUES('exercise','study','published',1,'position');
+            INSERT INTO cards VALUES('card','exercise',0,0,1);
+            INSERT INTO daily_queue VALUES(7,'card',0,'queued','2026-09-27');
+        """)
+        database.execute("INSERT INTO study_positions VALUES('position',?)", (chess.STARTING_FEN,))
+        database.execute("INSERT INTO study_exercise_revisions VALUES('exercise',1,?)",
+                         (json.dumps({"type": "explanation", "prompt": "Explain",
+                                      "rubric": "Development"}),))
+
+    class NativeSqlite:
+        def __init__(self, database):
+            self.database = database
+
+        def execute(self, statement, parameters=()):
+            return self.database.execute(statement.replace("FOR UPDATE", ""), parameters)
+
+        def execute_native(self, statement, parameters=()):
+            assert statement.startswith("SELECT pg_advisory_xact_lock")
+            return self.database.execute("SELECT 1")
+
+    with sqlite3.connect(database_path) as database:
+        database.row_factory = sqlite3.Row
+        adapter = NativeSqlite(database)
+        answer = {"revision": 1, "answer": {"type": "explanation", "text": "Develop"},
+                  "context": "review", "card_id": "card", "queue_entry_id": 7, "queue_cycle": 0}
+        first = study_attempt_commands.submit_study_attempt(adapter, {
+            "study_id": "study", "exercise_id": "exercise",
+            "attempt": {"attempt_id": "first", **answer},
+        })
+        assert first["pending_self_assessment"] is True
+        with pytest.raises(HTTPException) as conflict:
+            study_attempt_commands.submit_study_attempt(adapter, {
+                "study_id": "study", "exercise_id": "exercise",
+                "attempt": {"attempt_id": "second", **answer},
+            })
+        assert conflict.value.status_code == 409
+        assert database.execute("SELECT COUNT(*) FROM study_attempts").fetchone()[0] == 1
 
 
 def test_postgres_exercise_train_now_replay_keeps_one_explicit_queue_entry(monkeypatch, tmp_path):

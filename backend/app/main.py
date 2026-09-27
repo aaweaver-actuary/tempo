@@ -376,6 +376,12 @@ async def prioritize_foreground_requests(request: Request, call_next):
         exercise_enroll = (study_root and len(path_parts) == 6
                            and path_parts[3] == "exercises" and path_parts[5] == "enroll"
                            and request.method == "POST")
+        exercise_attempt = (study_root and len(path_parts) == 6
+                            and path_parts[3] == "exercises" and path_parts[5] == "attempts"
+                            and request.method == "POST")
+        exercise_self_assess = (study_root and len(path_parts) == 8
+                                and path_parts[3] == "exercises" and path_parts[5] == "attempts"
+                                and path_parts[7] == "self-assess" and request.method == "POST")
         exercise_availability_command = (
             study_root and len(path_parts) == 6 and path_parts[3] == "exercises"
             and path_parts[5] in {"suspend", "resume", "archive", "train-now"}
@@ -400,7 +406,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                                    and path_parts[:2] == ["api", "repertoires"]
                                    and path_parts[3] == "main" and request.method == "PUT")
         if not any((study_create, study_update, study_archive, exercise_create, exercise_revise,
-                    exercise_enroll, exercise_availability_command,
+                    exercise_enroll, exercise_attempt, exercise_self_assess,
+                    exercise_availability_command,
                     chapter_create, chapter_reorder,
                     chapter_rename, link_create, queue_entry_command, card_review_command,
                     card_teaching_command, main_repertoire_command)):
