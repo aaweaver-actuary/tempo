@@ -1,8 +1,15 @@
 import { test, expect } from "./observability";
 import { Chess } from "chess.js";
 import { mkdirSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { navigate } from "./ui-fixtures";
 import { prepareVisualUI, type VisualRepertoireLine } from "./visual-fixtures";
+
+const performanceOutputDirectory = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";
+function writePerformanceReport(fileName: string, reportBody: string) {
+  mkdirSync(performanceOutputDirectory, { recursive: true });
+  writeFileSync(join(performanceOutputDirectory, fileName), `${reportBody}\n`);
+}
 
 function summarize(samples: number[]) {
   const sorted = samples.toSorted((left, right) => left - right);
@@ -143,8 +150,7 @@ test("warm workspace and Builder move responsiveness", async ({ page }, testInfo
     eventTiming,
   };
   const reportBody = JSON.stringify(report, null, 2);
-  mkdirSync("test-results/performance", { recursive: true });
-  writeFileSync(`test-results/performance/browser-${browserName}.json`, `${reportBody}\n`);
+  writePerformanceReport(`browser-${browserName}.json`, reportBody);
   await testInfo.attach("interaction-performance", {
     body: reportBody,
     contentType: "application/json",
@@ -223,8 +229,7 @@ test("warm training cards advance to the next visible paint", async ({ page }, t
     summary: summarize(samples.map((sample) => sample.clickToPaintMs)),
   };
   const reportBody = JSON.stringify(report, null, 2);
-  mkdirSync("test-results/performance", { recursive: true });
-  writeFileSync("test-results/performance/training-card-chromium.json", `${reportBody}\n`);
+  writePerformanceReport("training-card-chromium.json", reportBody);
   await testInfo.attach("training-card-performance", {
     body: reportBody,
     contentType: "application/json",
@@ -383,8 +388,7 @@ test("Builder similarity worker messages keep the position index in the worker",
     )),
   };
   const reportBody = JSON.stringify(report, null, 2);
-  mkdirSync("test-results/performance", { recursive: true });
-  writeFileSync("test-results/performance/builder-similarity-chromium.json", `${reportBody}\n`);
+  writePerformanceReport("builder-similarity-chromium.json", reportBody);
   await testInfo.attach("builder-similarity-performance", {
     body: reportBody,
     contentType: "application/json",

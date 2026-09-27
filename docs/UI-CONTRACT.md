@@ -19,6 +19,9 @@ The board and its toolbar retain their bounds across workspaces. The desktop too
 reserves two rows so mode-specific actions cannot move or resize the board. A separator
 supports pointer dragging, Left/Right (2 percentage points), Home, and a reset button.
 The page never scrolls horizontally. Only identified data tables may scroll horizontally.
+At laptop widths where status and notification controls need the header space,
+their visible labels compress while full desktop navigation stays available.
+The controls must not overlap.
 
 ## Controls and state
 
@@ -90,6 +93,11 @@ The checked-in candidates are inspectable here. Phone screenshots include the fi
 | Settings | [390px](../tests/browser/visual-baselines/settings-390.png) | [768px](../tests/browser/visual-baselines/settings-768.png) | [1280px](../tests/browser/visual-baselines/settings-1280.png) | [1920px](../tests/browser/visual-baselines/settings-1920.png) |
 
 Update candidates deliberately with `npm run test:visual -- --update`, inspect the changed images, then run `npm run test:visual` without update. Missing baselines and changed pixels fail the ordinary pipeline. Screenshot, trace, console and geometry artifacts are retained under `test-results/` on failure.
+
+The notification-center header and toast states were reviewed at phone, tablet,
+laptop, and wide widths in the pinned runner. Compact laptop action labels
+prevent the added controls from crowding navigation; the service-failure
+baseline retains its inline retry message alongside the notification toast.
 
 Additional states: [board unavailable](../tests/browser/visual-baselines/board-unavailable.png),
 [incorrect training move](../tests/browser/visual-baselines/training-feedback-phone.png),

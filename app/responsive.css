@@ -73,9 +73,6 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
   .topbar { grid-template-columns: auto minmax(0, 1fr) 426px; }
   .desktop-navigation { justify-content: center; }
 }
-@media (min-width: 1100px) and (max-width: 1439px) and (min-height: 600px) {
-  .nav { padding-inline-start: 10px; }
-}
 .nav button {
   padding: 8px 10px;
   border: 0;
@@ -622,6 +619,15 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
 @media (max-width: 1100px) {
   .tempo-activity-trigger-desktop { display: none; }
   .tempo-activity-trigger-mobile { display: inline; }
+  .tempo-activity-trigger { padding: 0.5rem; }
+}
+@media (min-width: 1100px) and (max-width: 1439px) and (min-height: 600px) {
+  .top-actions { gap: 0.5rem; }
+  .notification-trigger-label,
+  .tempo-activity-trigger-desktop,
+  .tempo-discoveries-label-desktop { display: none; }
+  .tempo-activity-trigger-mobile,
+  .tempo-discoveries-label-mobile { display: inline; }
   .tempo-activity-trigger { padding: 0.5rem; }
 }
 @media (max-width: 767px) {

@@ -37,6 +37,8 @@ The unit stage also writes one Vitest JSON report to `test-results/performance/u
 
 The regular Playwright specs run **once** in stage 11. The standalone local `browser` stage is excluded from full because it selects the same specs. The visual config selects `visual.spec.ts` and `performance.spec.ts`; the regular browser config excludes those files. `make perf` runs only the performance subset of `make visual`, so it is a focused diagnostic command, not an extra full-gate stage.
 
+For an independent pinned performance repeat, use `TEMPO_TEST_TIMING_DIR=test-results/performance/repeat-<label> make perf`. The directory must be inside the checkout so the Docker runner can write the raw samples there. The ordinary full-run artifacts then remain available for comparison.
+
 ## Focused work
 
 | Change area | Command | Coverage |

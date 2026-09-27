@@ -74,15 +74,33 @@ export function chessPositionDistance(leftFen: string, rightFen: string): number
 }
 
 export function indexRepertoirePositions(lines: AnalysisLine[]): IndexedPosition[] {
+  type PositionPrefix = { fen: string; continuations: Map<string, PositionPrefix> };
   const indexed: IndexedPosition[] = [];
+  const rootsByStartingFen = new Map<string, PositionPrefix>();
   for (const line of lines) {
     try {
-      const board = new Chess(line.startingFen);
-      indexed.push({ lineId: line.id, repertoireId: line.repertoireId, repertoireName: line.repertoireName, fen: board.fen(), ply: 0, nextUci: line.moves[0] });
-      line.moves.forEach((uci, index) => {
-        board.move({ from: uci.slice(0, 2) as Square, to: uci.slice(2, 4) as Square, promotion: uci[4] || undefined });
-        indexed.push({ lineId: line.id, repertoireId: line.repertoireId, repertoireName: line.repertoireName, fen: board.fen(), ply: index + 1, nextUci: line.moves[index + 1] });
-      });
+      let board: Chess | undefined;
+      let prefix: PositionPrefix;
+      const existingRoot = rootsByStartingFen.get(line.startingFen);
+      if (existingRoot) prefix = existingRoot;
+      else {
+        board = new Chess(line.startingFen);
+        prefix = { fen: board.fen(), continuations: new Map() };
+        rootsByStartingFen.set(line.startingFen, prefix);
+      }
+      indexed.push({ lineId: line.id, repertoireId: line.repertoireId, repertoireName: line.repertoireName, fen: prefix.fen, ply: 0, nextUci: line.moves[0] });
+      for (const [moveIndex, uci] of line.moves.entries()) {
+        let nextPrefix: PositionPrefix | undefined = prefix.continuations.get(uci);
+        if (nextPrefix) board = undefined;
+        else {
+          board ??= new Chess(prefix.fen);
+          board.move({ from: uci.slice(0, 2) as Square, to: uci.slice(2, 4) as Square, promotion: uci[4] || undefined });
+          nextPrefix = { fen: board.fen(), continuations: new Map() };
+          prefix.continuations.set(uci, nextPrefix);
+        }
+        prefix = nextPrefix;
+        indexed.push({ lineId: line.id, repertoireId: line.repertoireId, repertoireName: line.repertoireName, fen: prefix.fen, ply: moveIndex + 1, nextUci: line.moves[moveIndex + 1] });
+      }
     } catch {
       // Canonical validation owns diagnostics; unusable tails do not enter the index.
     }

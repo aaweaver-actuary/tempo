@@ -1,9 +1,10 @@
 // @vitest-environment node
 import { Chess } from "chess.js";
 import { readFileSync } from "node:fs";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
+import type { AnalysisLine } from "../../app/types";
 import { computeStudyTask } from "../../app/lib/study-computation";
-import { chessPositionDistance } from "../../app/lib/position-similarity";
+import { chessPositionDistance, indexRepertoirePositions } from "../../app/lib/position-similarity";
 
 it("TypeScript position distance matches the shared Rust parity fixture", () => {
   const fixturePath = new URL("../fixtures/position-distance-parity.json", import.meta.url);
@@ -60,4 +61,35 @@ it("repeated repertoire FENs retain match ordering and distinct next moves", () 
     ["shared-0", "e2e4", 0],
     ["shared-99", "d2d4", 0],
   ]);
+});
+
+it("shared repertoire prefixes are traversed once without changing indexed line identity", () => {
+  const startingFen = new Chess().fen();
+  const sharedMoves = ["e2e4", "e7e5"];
+  const lines = ["g1f3", "f1c4"].map((lastMove, index) => ({
+    id: `line-${index}`, repertoireId: "white", repertoireName: "White",
+    title: `Line ${index}`, side: "white" as const, startingFen,
+    moves: [...sharedMoves, lastMove],
+  }) as AnalysisLine);
+  const expectedFirstBoard = new Chess(startingFen);
+  for (const uci of lines[0].moves) expectedFirstBoard.move(uci);
+  const expectedSecondBoard = new Chess(startingFen);
+  for (const uci of lines[1].moves) expectedSecondBoard.move(uci);
+  const moveSpy = vi.spyOn(Chess.prototype, "move");
+  try {
+    const positions = indexRepertoirePositions(lines);
+    expect(positions.map(({ lineId, ply, nextUci }) => [lineId, ply, nextUci])).toEqual([
+      ["line-0", 0, "e2e4"], ["line-0", 1, "e7e5"],
+      ["line-0", 2, "g1f3"], ["line-0", 3, undefined],
+      ["line-1", 0, "e2e4"], ["line-1", 1, "e7e5"],
+      ["line-1", 2, "f1c4"], ["line-1", 3, undefined],
+    ]);
+    expect(positions[1].fen).toBe(positions[5].fen);
+    expect(positions[2].fen).toBe(positions[6].fen);
+    expect(positions[3].fen).toBe(expectedFirstBoard.fen());
+    expect(positions[7].fen).toBe(expectedSecondBoard.fen());
+    expect(moveSpy).toHaveBeenCalledTimes(4);
+  } finally {
+    moveSpy.mockRestore();
+  }
 });

@@ -35,6 +35,14 @@ const movePairs = new Chess().moves({ verbose: true }).flatMap((firstMove) => {
     `${reply.from}${reply.to}${reply.promotion ?? ""}`,
   ]);
 });
+const uniqueOpeningRoutes = movePairs.flatMap((pair) => {
+  const board = new Chess();
+  for (const uci of pair)
+    board.move({ from: uci.slice(0, 2), to: uci.slice(2, 4), promotion: uci[4] || undefined });
+  return board.moves({ verbose: true }).map((thirdMove) => [
+    ...pair, `${thirdMove.from}${thirdMove.to}${thirdMove.promotion ?? ""}`,
+  ]);
+});
 const workloads = [
   { name: "small", lines: 25, samples: 5 },
   { name: "typical", lines: 250, samples: 5 },
@@ -61,7 +69,7 @@ const report = {
   commit: commitResult.status === 0 ? commitResult.stdout.trim() : null,
   timestamp: new Date().toISOString(),
   environment: { platform: process.platform, architecture: process.arch, node: process.version },
-  fixture: "legal-two-ply-opening-pairs-v1",
+  fixture: "unique-legal-three-ply-opening-routes-v2",
   method: "In-process study computation; excludes worker transfer, UI, and persistence",
   workloads: {},
 };
@@ -73,8 +81,10 @@ for (const workload of workloads) {
     title: `Line ${index}`,
     side: "white",
     startingFen: startFen,
-    moves: movePairs[index % movePairs.length],
+    moves: uniqueOpeningRoutes[index],
   }));
+  if (lines.some((line) => !line.moves))
+    throw new Error(`The ${workload.name} position workload exceeds the unique legal route fixture.`);
   const indexTiming = measure(() => computeStudyTask({ kind: "index", lines }), workload.samples);
   const canonicalLines = lines.map(canonicalizeLine);
   const workerInitializeTiming = measure(() => {
@@ -84,6 +94,15 @@ for (const workload of workloads) {
       revision: 1, lines: canonicalLines,
     });
   }, workload.samples);
+  const indexedStore = createStudyPositionStore();
+  indexedStore({
+    kind: "initializePositionIndex", repertoireId: "benchmark-repertoire",
+    revision: 1, lines: canonicalLines,
+  });
+  const workerMatchTiming = measure(() => indexedStore({
+    kind: "findPositionMatches", repertoireId: "benchmark-repertoire",
+    revision: 1, fen: startFen, limit: 8,
+  }), workload.samples);
   const positions = computeStudyTask({ kind: "index", lines });
   const searchTask = { kind: "matches", fen: startFen, positions };
   const searchTiming = measure(() => computeStudyTask(searchTask), workload.samples);
@@ -97,7 +116,7 @@ for (const workload of workloads) {
   const matches = computeStudyTask(searchTask);
   report.workloads[workload.name] = {
     lines: lines.length,
-    plies: lines.length * 2,
+    plies: lines.length * 3,
     indexed_positions: positions.length,
     distinct_fens: new Set(positions.map((position) => position.fen)).size,
     result_count: matches.length,
@@ -105,6 +124,7 @@ for (const workload of workloads) {
     compact_query_bytes_json: Buffer.byteLength(JSON.stringify(compactQueryTask)),
     index: indexTiming,
     worker_index_initialize: workerInitializeTiming,
+    worker_indexed_matches: workerMatchTiming,
     matches: searchTiming,
     query_clone: queryCloneTiming,
     compact_query_clone: compactQueryCloneTiming,
