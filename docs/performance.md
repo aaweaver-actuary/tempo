@@ -34,6 +34,8 @@ Four completed-tactic cases in the study regression file now advance only their 
 
 The single-pass unit profile later identified the same study file at 21.20 seconds. Two more cases (Black training and tactic setup) now use virtual time only after their asynchronous fixture setup is ready. Their test work took about 0.33 seconds in a focused run, compared with about 2.6 seconds combined in the earlier full profile. The complete 21-test file passed in 19.24 seconds. This is a small, focused improvement; broader suite wall time also depends on worker scheduling and host load.
 
+Four further study cases now advance feedback timers virtually: reload during feedback, guided tactic failure, stale motif completion, and an unseen tactic followed by reinforcement. The focused file passed all 21 tests. In paired single-file JSON profiles, these four cases summed to 7.27 seconds before and 2.41 seconds after. Whole-file wall time was 14.88 versus 14.60 seconds because setup and other tests dominate and host load varies. The queue-reconciliation case still uses real time: switching clocks across its asynchronous refresh lost the live feedback timer in a trial run, so that conversion was reverted.
+
 ## Measured test stages (2026-09-27)
 
 On this machine, the original three-stage fast run recorded 54.26 seconds for frontend units, 97.08 seconds for 384 backend tests, and 40.91 seconds for a cold Rust build and test. The revised fast tier runs units only; a verification run passed all 235 tests in 59.60 seconds. Backend and Rust checks remain in integration and full. These times are single samples and should not be used as regression thresholds.

@@ -324,15 +324,19 @@ describe("reported study regressions", () => {
     }));
     const mounted = render(<Home />);
     await waitFor(() => expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(startingFen));
+    vi.useFakeTimers();
     fireEvent.click(screen.getByText("a2e6"));
     await pause(430);
     fireEvent.click(screen.getByText("f7f8"));
     expect(pendingReviews()).toHaveLength(1);
     mounted.unmount();
+    vi.useRealTimers();
     render(<Home />);
     await waitFor(() => expect(reviewCount).toBe(1));
     expect(pendingReviews()).toHaveLength(0);
+    vi.useFakeTimers();
     await pause(751);
+    vi.useRealTimers();
     expect(reviewCount).toBe(1);
   });
 
@@ -773,7 +777,9 @@ describe("reported study regressions", () => {
       startingFen,
     );
     expect(screen.getByTestId("board").getAttribute("data-hint")).toBe("true");
+    vi.useFakeTimers();
     await pause();
+    vi.useRealTimers();
     expect(screen.getByText("Puzzle 1 of 25")).toBeTruthy();
     expect(attempts).toHaveLength(0);
     fireEvent.click(screen.getByText("a2e6"));
@@ -785,7 +791,9 @@ describe("reported study regressions", () => {
         screen.getByTestId("board").getAttribute("data-fen")!,
       ).isCheckmate(),
     ).toBe(true);
+    vi.useFakeTimers();
     await pause();
+    vi.useRealTimers();
     await waitFor(() =>
       expect(screen.getByText("Puzzle 2 of 25")).toBeTruthy(),
     );
@@ -827,7 +835,9 @@ describe("reported study regressions", () => {
     await waitFor(() =>
       expect(screen.getAllByText("black to play").length).toBeGreaterThan(0),
     );
+    vi.useFakeTimers();
     await pause();
+    vi.useRealTimers();
     expect(screen.getByText("Puzzle 1 of 25")).toBeTruthy();
     fireEvent.click(screen.getByText("e7e5"));
     await waitFor(() =>
@@ -905,6 +915,7 @@ describe("reported study regressions", () => {
       ),
     );
     expect(screen.getByTestId("board").getAttribute("data-hint")).toBe("false");
+    vi.useFakeTimers();
     fireEvent.click(screen.getByText("a2e6"));
     await pause(430);
     fireEvent.click(screen.getByText("f7f8"));
@@ -917,15 +928,18 @@ describe("reported study regressions", () => {
     expect(reviews).toHaveLength(0);
     await pause();
     expect(reviews).toHaveLength(1);
+    vi.useRealTimers();
     await waitFor(() =>
       expect(useTrainingStore.getState().attempt.phase).toBe("playerTurn"),
     );
     expect(screen.getByTestId("board").getAttribute("data-hint")).toBe("false");
+    vi.useFakeTimers();
     fireEvent.click(screen.getByText("a2e6"));
     await pause(430);
     fireEvent.click(screen.getByText("f7f8"));
     await pause();
     expect(reviews).toHaveLength(2);
+    vi.useRealTimers();
     await waitFor(() =>
       expect(screen.getByText(/You['’]re done for today/)).toBeTruthy(),
     );
