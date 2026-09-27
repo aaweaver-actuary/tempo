@@ -67,6 +67,8 @@ for (const workload of workloads) {
   const positions = computeStudyTask({ kind: "index", lines });
   const searchTask = { kind: "matches", fen: startFen, positions };
   const searchTiming = measure(() => computeStudyTask(searchTask), workload.samples);
+  const queryCloneTiming = measure(() => structuredClone(searchTask), workload.samples);
+  const resultCloneTiming = measure(() => structuredClone(positions), workload.samples);
   const matches = computeStudyTask(searchTask);
   report.workloads[workload.name] = {
     lines: lines.length,
@@ -74,8 +76,11 @@ for (const workload of workloads) {
     indexed_positions: positions.length,
     distinct_fens: new Set(positions.map((position) => position.fen)).size,
     result_count: matches.length,
+    query_bytes_json: Buffer.byteLength(JSON.stringify(searchTask)),
     index: indexTiming,
     matches: searchTiming,
+    query_clone: queryCloneTiming,
+    index_result_clone: resultCloneTiming,
   };
 }
 const outputDirectory = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";
@@ -84,4 +89,4 @@ const outputPath = `${outputDirectory}/study-position-benchmark.json`;
 writeFileSync(outputPath, `${JSON.stringify(report, null, 2)}\n`);
 console.log(outputPath);
 for (const [name, workload] of Object.entries(report.workloads))
-  console.log(`${name}: ${workload.index.p50.toFixed(1)} ms index, ${workload.matches.p50.toFixed(1)} ms matches`);
+  console.log(`${name}: ${workload.index.p50.toFixed(1)} ms index, ${workload.matches.p50.toFixed(1)} ms matches, ${workload.query_clone.p50.toFixed(1)} ms query clone`);

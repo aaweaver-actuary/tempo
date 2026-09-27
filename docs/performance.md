@@ -39,3 +39,7 @@ The result deduplication now uses a map of seen FEN and next-move pairs after th
 ## Study worker timing
 
 `tempoPerformanceTimings()` now retains `study-worker-queue`, `study-worker-compute`, and `study-worker-roundtrip` durations. Queue measures main-thread post to the worker's running acknowledgement, including message transfer and worker backlog. Compute is measured inside the worker around `computeStudyTask`; it excludes result cloning and delivery. Roundtrip measures post to completion on the main thread and therefore includes transfer, queue, computation, and result delivery. The ring retains the most recent 200 timings without production logging.
+
+### Worker transfer baseline
+
+The same fixture now measures `structuredClone` of the old full-position query and index result. At 250 lines, a query serializes about 139 KB and clones in 0.7 ms median; at 2,000 lines, about 1.12 MB and 5.8 ms; at 8,000 lines, about 4.49 MB and 40.8 ms. This is a clone-only approximation, not a measured worker roundtrip. The old Builder path also returns the full index from the worker once, then sends it back on every position query.
