@@ -89,6 +89,21 @@ def test_postgres_endgame_probe_uses_read_only_tablebase_path(monkeypatch):
     assert response.json() == {"category": "draw", "moves": []}
 
 
+def test_postgres_card_validation_remains_available_without_a_write_worker(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    response = TestClient(main.app).post(
+        "/api/cards/validate",
+        json={"starting_fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "moves": ["e2e4"], "history_mode": "preserve"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["moves"] == ["e2e4"]
+
+
 def test_postgres_settings_update_dispatches_foreground_command(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main

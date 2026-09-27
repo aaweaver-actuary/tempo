@@ -432,6 +432,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
         settings_command = (path_parts == ["api", "settings"] and request.method == "PUT")
         endgame_probe = (path_parts == ["api", "endgames", "probe"]
                          and request.method == "POST")
+        card_validation = (path_parts == ["api", "cards", "validate"]
+                           and request.method == "POST")
         if not any((study_create, study_update, study_archive, exercise_create, exercise_revise,
                     exercise_enroll, exercise_attempt, exercise_self_assess,
                     exercise_availability_command,
@@ -440,7 +442,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     card_teaching_command, defense_answer_command,
                     main_repertoire_command, browser_activity, tactic_attempt_command,
                     tactic_activation_command, game_accounts_command, settings_command,
-                    endgame_probe)):
+                    endgame_probe, card_validation)):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
