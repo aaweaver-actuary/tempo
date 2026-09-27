@@ -456,6 +456,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                                    and path_parts[4] == "attempt" and request.method == "POST")
         branch_add_command = (path_parts == ["api", "repertoire", "branches"]
                               and request.method == "POST")
+        branch_remove_command = (path_parts == ["api", "repertoire", "branches", "remove"]
+                                 and request.method == "POST")
         pgn_import_command = (path_parts == ["api", "imports", "pgn"]
                               and request.method == "POST")
         analysis_paste_command = (path_parts == ["api", "repertoire", "paste", "commit"]
@@ -478,7 +480,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     settings_command,
                     endgame_probe, endgame_template_command,
-                    endgame_attempt_command, branch_add_command, pgn_import_command,
+                    endgame_attempt_command, branch_add_command, branch_remove_command,
+                    pgn_import_command,
                     analysis_paste_command,
                     integrity_resolution_command,
                     card_validation)):
@@ -2809,7 +2812,14 @@ def branch(request: BranchRequest,
 
 
 @app.post("/api/repertoire/branches/remove")
-def remove_branch(request: RemoveBranchRequest):
+def remove_branch(request: RemoveBranchRequest,
+                  idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "repertoire.branch.remove", request.model_dump(mode="json"),
+            idempotency_key=idempotency_key,
+        )
     if not request.moves:
         raise HTTPException(422, "Choose a nonempty branch to remove")
     try:

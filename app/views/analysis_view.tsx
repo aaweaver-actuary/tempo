@@ -6,10 +6,10 @@ import { BoardTools } from "../components/board/board-workspace";
 import {
   explorerResponseSchema,
   builderSessionSchema,
-  removeBranchResultSchema,
 } from "../domain/schemas";
 import { readJsonResponse } from "../lib/validated-data";
 import { saveBranchCommand } from "../lib/branch-command";
+import { removeBranchCommand } from "../lib/branch-removal-command";
 import { readStoredValue, reportDataDiagnostic } from "../lib/validated-data";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
@@ -1023,23 +1023,11 @@ export default function BuilderView({
     )
       return;
     try {
-      const response = await fetch(
-        `${API_URL}/api/repertoire/branches/remove`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            repertoire_id: selectedRepertoire.id,
-            starting_fen: startingFen,
-            moves,
-          }),
-        },
-      );
-      const result = await readJsonResponse(
-        response,
-        removeBranchResultSchema,
-        "remove repertoire branch",
-      );
+      const result = await removeBranchCommand({
+        repertoire_id: selectedRepertoire.id,
+        starting_fen: startingFen,
+        moves,
+      });
       invalidateWorkspaceData();
       if (result.integrity?.status === "needs_repair") {
         window.dispatchEvent(

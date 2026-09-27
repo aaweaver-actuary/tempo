@@ -679,6 +679,80 @@ def test_postgres_analysis_paste_completed_replay_returns_receipt_before_rebuild
     assert response.json() == completed
 
 
+def test_postgres_branch_removal_dispatches_foreground_command_with_idempotency(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(command_dispatch, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                            dispatched.append((name, payload, idempotency_key)) or {"deleted_line_count": 1})
+    request = {"repertoire_id": "white", "starting_fen": chess.STARTING_FEN,
+               "moves": ["e2e4"]}
+    response = TestClient(main.app).post(
+        "/api/repertoire/branches/remove", json=request,
+        headers={"Idempotency-Key": "remove-white-e4"},
+    )
+    assert response.status_code == 200, response.text
+    assert dispatched == [("repertoire.branch.remove", request, "remove-white-e4")]
+
+
+def test_postgres_branch_removal_matches_only_position_and_move_prefix_and_queues_graph(monkeypatch):
+    from app import branch_commands
+
+    class QueryResult:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+
+        def fetchall(self):
+            return self.rows
+
+    class RecordingDatabase:
+        def __init__(self):
+            self.deleted = []
+
+        def execute_native(self, statement, parameters=()):
+            if statement.startswith("SELECT id FROM repertoires"):
+                return QueryResult([("white",)])
+            if statement.startswith("SELECT id,start_fen,moves_json"):
+                return QueryResult([
+                    {"id": "match", "start_fen": chess.STARTING_FEN,
+                     "moves_json": '["e2e4", "e7e5"]'},
+                    {"id": "other", "start_fen": chess.STARTING_FEN,
+                     "moves_json": '["d2d4", "d7d5"]'},
+                    {"id": "other-position", "start_fen": "8/8/8/8/8/8/4K3/7k w - - 0 1",
+                     "moves_json": '["e2e4"]'},
+                ])
+            if statement.startswith("DELETE FROM repertoire_lines"):
+                self.deleted.extend(parameters[0])
+                return QueryResult([])
+            raise AssertionError(statement)
+
+    database = RecordingDatabase()
+    scheduled = []
+    monkeypatch.setattr(branch_commands, "invalidate_integrity_in_transaction",
+                        lambda db, repertoire_id: scheduled.append(("integrity", db, repertoire_id)))
+    monkeypatch.setattr(branch_commands, "request_graph_rebuild_in_transaction",
+                        lambda db, repertoire_id, day: scheduled.append(("graph", db, repertoire_id)))
+    monkeypatch.setattr(branch_commands, "integrity_summary",
+                        lambda db, repertoire_id: {"status": "unchecked"})
+    result = branch_commands.remove_repertoire_branch(database, {
+        "repertoire_id": "white", "starting_fen": chess.STARTING_FEN,
+        "moves": ["e2e4"],
+    })
+    assert database.deleted == ["match"]
+    assert result == {"deleted_line_count": 1, "deleted_card_count": 0,
+                      "retained_line_count": 2, "integrity": {"status": "unchecked"}}
+    assert [(kind, repertoire_id) for kind, _, repertoire_id in scheduled] == [
+        ("integrity", "white"), ("graph", "white")]
+    assert all(scheduled_database is database for _, scheduled_database, _ in scheduled)
+
+
 def test_postgres_annotation_route_dispatches_idempotent_foreground_command(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main

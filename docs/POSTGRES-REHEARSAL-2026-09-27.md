@@ -554,3 +554,16 @@ shared Python environment: 291 frontend unit tests, 531 backend tests, 124
 regular browser tests, 48 pinned visual/performance tests, and all remaining
 build and Rust stages. Its Docker portion still tests the SQLite production
 stack; the PostgreSQL HTTP-to-Celery rehearsal above covers this new command.
+
+Builder branch removal now dispatches a named foreground Celery command. It
+locks the repertoire, removes only lines matching the chosen starting position
+and move prefix, invalidates integrity, and queues the next graph generation
+in the same transaction. The browser keeps the operation ID while pending and
+updates the board only after a confirmed receipt. On the disposable restored
+database, one rehearsal line was removed, the graph task advanced to generation
+5, and replay returned the original completed receipt with no second delete.
+The full release gate passed after this change: 292 frontend unit tests, 533
+backend tests, 124 regular browser tests, 48 pinned visual/performance tests,
+and the build, Rust, lint, and typecheck stages. Its Docker tests continue to
+exercise the SQLite stack; the PostgreSQL deletion was checked against the
+disposable restored database.

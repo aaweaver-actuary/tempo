@@ -11,7 +11,7 @@ import chess
 from fastapi import HTTPException
 
 from .command_gateway import register_command
-from .models import BranchRequest
+from .models import BranchRequest, RemoveBranchRequest
 from .postgres_store import PostgresConnection
 from .services.cards import card_id
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
@@ -84,3 +84,51 @@ def add_repertoire_branch(database: PostgresConnection, payload: dict[str, Any])
 
 
 register_command("repertoire.branch.add", add_repertoire_branch)
+
+
+def remove_repertoire_branch(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    request = RemoveBranchRequest.model_validate(payload)
+    if not request.moves:
+        raise HTTPException(422, "Choose a nonempty branch to remove")
+    try:
+        board = chess.Board(request.starting_fen)
+        moves = [move.lower() for move in request.moves]
+        for move in moves:
+            board.push_uci(move)
+    except ValueError as error:
+        raise HTTPException(422, "Branch contains an illegal move") from error
+    repertoire_id = request.repertoire_id
+    if database.execute_native(
+        "SELECT id FROM repertoires WHERE id=%s FOR UPDATE", (repertoire_id,),
+    ).fetchone() is None:
+        raise HTTPException(404, "Repertoire not found")
+    position_key = " ".join(request.starting_fen.split()[:4])
+    stored_lines = database.execute_native(
+        "SELECT id,start_fen,moves_json FROM repertoire_lines "
+        "WHERE repertoire_id=%s ORDER BY id", (repertoire_id,),
+    ).fetchall()
+    matching_line_ids = []
+    for stored_line in stored_lines:
+        if " ".join(str(stored_line["start_fen"]).split()[:4]) != position_key:
+            continue
+        try:
+            if json.loads(stored_line["moves_json"])[:len(moves)] == moves:
+                matching_line_ids.append(str(stored_line["id"]))
+        except (TypeError, ValueError, json.JSONDecodeError):
+            continue
+    if matching_line_ids:
+        database.execute_native(
+            "DELETE FROM repertoire_lines WHERE id=ANY(%s::text[])",
+            (matching_line_ids,),
+        )
+        invalidate_integrity_in_transaction(database, repertoire_id)
+        request_graph_rebuild_in_transaction(database, repertoire_id, date.today().isoformat())
+    return {
+        "deleted_line_count": len(matching_line_ids),
+        "deleted_card_count": 0,
+        "retained_line_count": len(stored_lines) - len(matching_line_ids),
+        "integrity": integrity_summary(database, repertoire_id),
+    }
+
+
+register_command("repertoire.branch.remove", remove_repertoire_branch)
