@@ -427,6 +427,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                                   and request.method == "POST")
         tactic_activation_command = (path_parts == ["api", "tactics", "activation"]
                                      and request.method == "PUT")
+        game_accounts_command = (path_parts == ["api", "games", "accounts"]
+                                 and request.method == "PUT")
         if not any((study_create, study_update, study_archive, exercise_create, exercise_revise,
                     exercise_enroll, exercise_attempt, exercise_self_assess,
                     exercise_availability_command,
@@ -434,7 +436,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     chapter_rename, link_create, queue_entry_command, card_review_command,
                     card_teaching_command, defense_answer_command,
                     main_repertoire_command, browser_activity, tactic_attempt_command,
-                    tactic_activation_command)):
+                    tactic_activation_command, game_accounts_command)):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
@@ -3792,7 +3794,14 @@ async def create_endgame_attempt(identifier: str):
 
 
 @app.put("/api/games/accounts")
-def accounts(a: AccountSettings):
+def accounts(a: AccountSettings,
+             idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.accounts.update", a.model_dump(mode="json"),
+            idempotency_key=idempotency_key,
+        )
     s = get_settings().model_copy(update=a.model_dump())
     put_settings(s)
     return a

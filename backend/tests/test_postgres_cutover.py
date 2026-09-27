@@ -24,6 +24,52 @@ from app.postgres_store import TempoRow, postgres_sql
 from app.services import redis_admission_gate
 
 
+def test_postgres_game_accounts_update_dispatches_foreground_command(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    observed = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(
+        command_dispatch, "dispatch_command",
+        lambda name, payload, *, idempotency_key: observed.append(
+            (name, payload, idempotency_key)
+        ) or payload,
+    )
+    response = TestClient(main.app).put(
+        "/api/games/accounts",
+        headers={"Idempotency-Key": "accounts-1"},
+        json={"lichess_username": "alice", "chesscom_username": "bob"},
+    )
+    assert response.status_code == 200, response.text
+    assert observed == [(
+        "games.accounts.update",
+        {"lichess_username": "alice", "chesscom_username": "bob"},
+        "accounts-1",
+    )]
+
+
+def test_postgres_game_accounts_update_reconciles_provider_rows():
+    from app.account_commands import update_game_accounts
+
+    statements = []
+
+    class RecordingDatabase:
+        def execute(self, statement, parameters):
+            statements.append((statement, parameters))
+            return SimpleNamespace(rowcount=1)
+
+    response = update_game_accounts(
+        RecordingDatabase(),
+        {"lichess_username": " alice ", "chesscom_username": ""},
+    )
+    assert response == {"lichess_username": "alice", "chesscom_username": ""}
+    assert statements[0][1] == ("alice", "")
+    assert statements[1][1] == ("lichess", "alice")
+    assert statements[2][1] == ("chess.com",)
+
+
 def test_postgres_api_startup_requests_todays_queue_through_foreground_command(monkeypatch):
     from app import main
 
