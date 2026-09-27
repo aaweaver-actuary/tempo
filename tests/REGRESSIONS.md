@@ -9,7 +9,7 @@
 | Standalone Stockfish smoke preempts itself when a slower search reaches the foreground API poll without an API server | `standalone defense engine smoke does not poll an unavailable API` |
 | Lint walks Git-ignored local checkout copies and fails on their bundled third-party engine files after unit and backend stages pass | `lint scope excludes ignored local checkout copies` |
 | A new notification toast gives a service failure two alerts, making the pinned `service-unavailable` visual test ambiguous | `service-unavailable` checks the actionable inline database error specifically |
-| Extra header controls crowd or overlap laptop navigation at 1280px | `laptop header navigation and actions remain separate` |
+| Extra header controls crowd or overlap laptop navigation at 1280px, or a compact-menu fix hides existing desktop destinations | `laptop header navigation and actions remain separate`; `analysis activity count fits header controls at 1280`; `defensive daily stack setting persists across navigation and reload`; `Edit card opens Builder line-removal context and deletes the selected branch` |
 | TypeScript position matching rejects a noncapturable en passant square that Rust canonicalizes away | `TypeScript position distance matches the shared Rust parity fixture`; `rust_position_distance_matches_typescript_shared_fixture` |
 | Rust card IDs canonicalize noncapturable en passant while persisted Python card IDs retain the supplied FEN field | `card_ids_match_python_shared_fixture`; `test_python_card_ids_match_shared_rust_parity_fixture` |
 | Repertoire statistics issues two forecast-input reads for every distinct parent card | `test_repertoire_statistics_batches_forecast_parent_reads` |

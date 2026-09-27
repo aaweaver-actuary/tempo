@@ -20,7 +20,8 @@ reserves two rows so mode-specific actions cannot move or resize the board. A se
 supports pointer dragging, Left/Right (2 percentage points), Home, and a reset button.
 The page never scrolls horizontally. Only identified data tables may scroll horizontally.
 At laptop widths where status and notification controls need the header space,
-primary navigation uses the existing section menu. The controls must not overlap.
+their visible labels compress while full desktop navigation stays available.
+The controls must not overlap.
 
 ## Controls and state
 
@@ -94,8 +95,8 @@ The checked-in candidates are inspectable here. Phone screenshots include the fi
 Update candidates deliberately with `npm run test:visual -- --update`, inspect the changed images, then run `npm run test:visual` without update. Missing baselines and changed pixels fail the ordinary pipeline. Screenshot, trace, console and geometry artifacts are retained under `test-results/` on failure.
 
 The notification-center header and toast states were reviewed at phone, tablet,
-laptop, and wide widths in the pinned runner. The laptop menu prevents the
-added header controls from crowding the primary navigation; the service-failure
+laptop, and wide widths in the pinned runner. Compact laptop action labels
+prevent the added controls from crowding navigation; the service-failure
 baseline retains its inline retry message alongside the notification toast.
 
 Additional states: [board unavailable](../tests/browser/visual-baselines/board-unavailable.png),

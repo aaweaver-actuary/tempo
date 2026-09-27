@@ -91,10 +91,6 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
 .phone-navigation {
   display: none;
 }
-@media (min-width: 1100px) and (max-width: 1439px) and (min-height: 600px) {
-  .desktop-navigation { display: none; }
-  .tablet-navigation { display: inline-block; }
-}
 .workspace-menu {
   position: fixed;
   z-index: 60;
@@ -623,6 +619,15 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
 @media (max-width: 1100px) {
   .tempo-activity-trigger-desktop { display: none; }
   .tempo-activity-trigger-mobile { display: inline; }
+  .tempo-activity-trigger { padding: 0.5rem; }
+}
+@media (min-width: 1100px) and (max-width: 1439px) and (min-height: 600px) {
+  .top-actions { gap: 0.5rem; }
+  .notification-trigger-label,
+  .tempo-activity-trigger-desktop,
+  .tempo-discoveries-label-desktop { display: none; }
+  .tempo-activity-trigger-mobile,
+  .tempo-discoveries-label-mobile { display: inline; }
   .tempo-activity-trigger { padding: 0.5rem; }
 }
 @media (max-width: 767px) {
