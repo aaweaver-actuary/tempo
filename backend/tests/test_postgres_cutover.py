@@ -117,6 +117,45 @@ def test_postgres_cutover_review_route_dispatches_idempotent_command(monkeypatch
     assert dispatched[0][2] == "review-card-1-42"
 
 
+def test_postgres_cutover_background_slice_restarts_only_with_current_lease(monkeypatch):
+    from app.services import durable_tasks
+
+    active_task = {"id": "task-1", "generation": 3, "lease_token": "lease-current"}
+    events: list[tuple] = []
+
+    class Cursor:
+        def __init__(self, *, row=None, rowcount=0):
+            self.row = row
+            self.rowcount = rowcount
+
+        def fetchone(self):
+            return self.row
+
+    class Database:
+        def __init__(self):
+            self.statements: list[str] = []
+
+        def execute(self, statement, parameters):
+            self.statements.append(statement)
+            if statement.startswith("SELECT generation"):
+                return Cursor(row={"generation": 3, "lease_token": "lease-current", "state": "leased"})
+            return Cursor(rowcount=int(parameters[-2:] == (3, "lease-current")))
+
+    monkeypatch.setattr(durable_tasks, "_record_event", lambda *arguments: events.append(arguments))
+    database = Database()
+    assert durable_tasks.lock_current_slice(database, active_task)
+    assert not durable_tasks.lock_current_slice(database, {**active_task, "generation": 2})
+    assert durable_tasks.advance_task_slice_in_transaction(
+        database, active_task, next_phase="seed", next_payload={"_queue_phase": "seed"},
+    )
+    assert not durable_tasks.advance_task_slice_in_transaction(
+        database, {**active_task, "lease_token": "stale"},
+        next_phase="seed", next_payload={"_queue_phase": "seed"},
+    )
+    assert "attempt_count=0" in database.statements[-1]
+    assert len(events) == 1
+
+
 def test_postgres_cutover_translates_placeholders_and_rejects_runtime_pragma():
     assert postgres_sql("SELECT id FROM cards WHERE id=?") == "SELECT id FROM cards WHERE id = %s"
     assert postgres_sql("INSERT OR IGNORE INTO settings(id) VALUES(?)").endswith(

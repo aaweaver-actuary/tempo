@@ -191,6 +191,38 @@ def complete_task(task_id: str, generation: int, lease_token: str) -> bool:
     return submit_background_write(operation, label=f"complete:{task_id}")
 
 
+def lock_current_slice(database, task: dict) -> bool:
+    """Lock a claimed PostgreSQL task before publishing a slice's effects."""
+
+    row = database.execute(
+        "SELECT generation,lease_token,state FROM background_tasks WHERE id=? FOR UPDATE",
+        (task["id"],),
+    ).fetchone()
+    return bool(
+        row and row["generation"] == task["generation"]
+        and row["lease_token"] == task["lease_token"] and row["state"] == "leased"
+    )
+
+
+def advance_task_slice_in_transaction(
+    database, task: dict, *, next_phase: str, next_payload: dict,
+) -> bool:
+    """Commit slice effects and restart state together in the caller's transaction."""
+
+    now = _iso()
+    changed = database.execute(
+        """UPDATE background_tasks SET state='queued',phase=?,payload_json=?,
+               attempt_count=0,next_attempt_at=?,lease_token=NULL,lease_expires_at=NULL,
+               last_error=NULL,updated_at=?
+           WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
+        (next_phase, json.dumps(next_payload, separators=(",", ":")), now, now,
+         task["id"], task["generation"], task["lease_token"]),
+    ).rowcount
+    if changed:
+        _record_event(database, task["id"], task["generation"], "slice_complete", next_phase)
+    return bool(changed)
+
+
 def fail_task(task_id: str, generation: int, lease_token: str, error: Exception) -> dict:
     sanitized_error = str(error)[:500]
 
