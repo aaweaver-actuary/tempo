@@ -134,8 +134,15 @@ microbenchmark, not the final container/backlog gate.
 
 ## Outstanding cutover gates
 
-The current application still has 155 routes and 1,339 backend data-access
-sites to classify and port. The new PostgreSQL adapter and command boundary
+An opt-in `docker-compose.postgres.yml` now defines the intended product
+topology: PostgreSQL 18 and Redis on external volumes, a read-only API role,
+separate foreground and background Celery workers, Beat, backup, web, and
+engine containers. `docker compose config -q` passed. It has not been started
+as the product stack; the PostgreSQL API health guard intentionally remains
+unhealthy until every required command and background handler is migrated.
+
+The inventory records 156 routes and 1,365 backend data-access sites, many
+still to classify and port. The new PostgreSQL adapter and command boundary
 are staging code; write routes still call SQLite-shaped services and the
 production Compose stack remains SQLite. Each write must be changed to an
 explicit Celery command with one transaction and receipt, and each background

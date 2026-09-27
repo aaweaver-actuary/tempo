@@ -1,0 +1,193 @@
+# PostgreSQL/Celery product stack. Migrate and verify data before starting it.
+# Keep the SQLite production stack stopped; do not run both against live traffic.
+services:
+  postgres:
+    image: postgres:18.6-trixie
+    environment:
+      POSTGRES_DB: tempo
+      POSTGRES_USER: tempo
+      POSTGRES_PASSWORD_FILE: /run/secrets/postgres_admin_password
+    secrets:
+      - postgres_admin_password
+    volumes:
+      - tempo-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U tempo -d tempo"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec"]
+    volumes:
+      - tempo-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 30
+    restart: unless-stopped
+
+  api:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    environment:
+      TEMPO_DATABASE_READ_URL: postgresql://tempo_reader@postgres:5432/tempo
+      TEMPO_REDIS_URL: redis://redis:6379/0
+      TEMPO_COORDINATOR_MODE: external
+      PGPASSFILE: /run/secrets/reader_pgpass
+      TZ: ${TZ:-America/New_York}
+    secrets:
+      - source: reader_pgpass
+        target: reader_pgpass
+        mode: 0400
+    ports:
+      - "127.0.0.1:8000:8000"
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health', timeout=2).close()"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+      start_period: 10s
+    restart: unless-stopped
+
+  foreground-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["celery", "-A", "app.celery_app:celery_app", "worker", "--queues=foreground", "--concurrency=2", "--prefetch-multiplier=1", "--loglevel=INFO"]
+    environment:
+      TEMPO_DATABASE_WRITE_URL: postgresql://tempo_writer@postgres:5432/tempo
+      TEMPO_DATABASE_READ_URL: postgresql://tempo_writer@postgres:5432/tempo
+      TEMPO_REDIS_URL: redis://redis:6379/0
+      PGPASSFILE: /run/secrets/writer_pgpass
+      TZ: ${TZ:-America/New_York}
+    secrets:
+      - source: writer_pgpass
+        target: writer_pgpass
+        mode: 0400
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    restart: unless-stopped
+
+  background-worker:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["celery", "-A", "app.celery_app:celery_app", "worker", "--queues=background", "--concurrency=1", "--prefetch-multiplier=1", "--loglevel=INFO"]
+    environment:
+      TEMPO_DATABASE_WRITE_URL: postgresql://tempo_writer@postgres:5432/tempo
+      TEMPO_DATABASE_READ_URL: postgresql://tempo_writer@postgres:5432/tempo
+      TEMPO_REDIS_URL: redis://redis:6379/0
+      PGPASSFILE: /run/secrets/writer_pgpass
+      TZ: ${TZ:-America/New_York}
+    secrets:
+      - source: writer_pgpass
+        target: writer_pgpass
+        mode: 0400
+    depends_on:
+      postgres: {condition: service_healthy}
+      redis: {condition: service_healthy}
+    cpus: 1
+    restart: unless-stopped
+
+  background-scheduler:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    command: ["celery", "-A", "app.celery_app:celery_app", "beat", "--loglevel=INFO"]
+    environment:
+      TEMPO_REDIS_URL: redis://redis:6379/0
+    depends_on:
+      redis: {condition: service_healthy}
+    restart: unless-stopped
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile.web
+    ports:
+      - "127.0.0.1:3000:80"
+    depends_on:
+      api: {condition: service_healthy}
+    restart: unless-stopped
+
+  defense-engine:
+    build:
+      context: .
+      dockerfile: Dockerfile.engine
+    environment:
+      TEMPO_API_URL: http://api:8000
+    depends_on:
+      api: {condition: service_healthy}
+    mem_limit: 512m
+    cpus: 1
+    restart: unless-stopped
+
+  maia-worker:
+    build:
+      context: .
+      dockerfile: Dockerfile.maia
+    environment:
+      TEMPO_API_URL: http://api:8000
+    depends_on:
+      api: {condition: service_healthy}
+    mem_limit: 768m
+    cpus: 1
+    restart: unless-stopped
+
+  postgres-backup:
+    image: postgres:18.6-trixie
+    entrypoint: ["sh", "-ec"]
+    command: >-
+      while :; do
+        stamp=$$(date -u +%Y%m%dT%H%M%SZ);
+        partial=/backups/tempo-$${stamp}.dump.partial;
+        finished=/backups/tempo-$${stamp}.dump;
+        pg_dump -h postgres -U tempo -d tempo -Fc -f "$${partial}";
+        pg_restore -l "$${partial}" >/dev/null;
+        mv "$${partial}" "$${finished}";
+        sha256sum "$${finished}" > "$${finished}.sha256";
+        find /backups -name 'tempo-*.dump' -mtime +30 -delete;
+        find /backups -name 'tempo-*.dump.sha256' -mtime +30 -delete;
+        sleep 86400;
+      done
+    environment:
+      PGPASSFILE: /run/secrets/admin_pgpass
+    secrets:
+      - source: admin_pgpass
+        target: admin_pgpass
+        mode: 0400
+    volumes:
+      - tempo-postgres-backups:/backups
+    depends_on:
+      postgres: {condition: service_healthy}
+    restart: unless-stopped
+
+volumes:
+  tempo-postgres-data:
+    external: true
+    name: tempo-postgres-data
+  tempo-redis-data:
+    external: true
+    name: tempo-redis-data
+  tempo-postgres-backups:
+    external: true
+    name: tempo-postgres-backups
+
+secrets:
+  postgres_admin_password:
+    file: ${TEMPO_POSTGRES_ADMIN_PASSWORD_FILE:?Set a password file outside the checkout}
+  reader_pgpass:
+    file: ${TEMPO_POSTGRES_READER_PGPASS_FILE:?Set a libpq passfile outside the checkout}
+  writer_pgpass:
+    file: ${TEMPO_POSTGRES_WRITER_PGPASS_FILE:?Set a libpq passfile outside the checkout}
+  admin_pgpass:
+    file: ${TEMPO_POSTGRES_ADMIN_PGPASS_FILE:?Set a libpq passfile outside the checkout}
