@@ -869,6 +869,63 @@ def test_postgres_card_revision_reports_existing_target_revision():
     assert any("UPDATE daily_queue SET status='complete'" in statement for statement in statements)
 
 
+def test_postgres_card_archive_dispatches_idempotent_foreground_command(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(command_dispatch, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or
+                        {"archived": True, "integrity": {}})
+    response = TestClient(main.app).delete(
+        "/api/cards/card-1", headers={"Idempotency-Key": "archive-card-1"},
+    )
+    assert response.status_code == 200, response.text
+    assert dispatched == [("cards.archive", {"card_id": "card-1"}, "archive-card-1")]
+
+
+def test_postgres_card_archive_returns_unchecked_integrity_after_scan_intent(monkeypatch):
+    from app import card_commands
+
+    statements = []
+    scan_requests = []
+
+    class Cursor:
+        def __init__(self, row=None, rows=()):
+            self.row = row
+            self.rows = rows
+
+        def fetchone(self):
+            return self.row
+
+        def __iter__(self):
+            return iter(self.rows)
+
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            statements.append(statement)
+            if statement.startswith("SELECT id FROM cards WHERE id=%s FOR UPDATE"):
+                return Cursor(("card-1",))
+            if statement.startswith("SELECT repertoire_id FROM repertoire_cards"):
+                return Cursor(rows=[("rep",)])
+            return Cursor()
+
+    monkeypatch.setattr(card_commands, "_request_current_integrity_scan",
+                        lambda database, repertoire_id, local_day:
+                        scan_requests.append(repertoire_id))
+    monkeypatch.setattr(card_commands, "integrity_summary",
+                        lambda database, repertoire_id: {
+                            "status": "unchecked" if scan_requests else "clean",
+                        })
+    result = card_commands.archive_card(Database(), {"card_id": "card-1"})
+    assert result == {"archived": True, "integrity": {"rep": {"status": "unchecked"}}}
+    assert scan_requests == ["rep"]
+    assert any("UPDATE daily_queue SET status='complete'" in statement for statement in statements)
+
+
 def test_postgres_annotation_route_dispatches_idempotent_foreground_command(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main

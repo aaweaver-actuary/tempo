@@ -37,6 +37,15 @@ waits for a confirmed command receipt before reporting a save. The result now
 includes the target card's revision, so resolving to an existing card does
 not leave the editor with the source card's revision.
 
+## Card archive foreground command rehearsal
+
+The card DELETE route now dispatches an idempotent Celery command. In a
+rolled-back PostgreSQL rehearsal, the command archived a linked card, marked
+its queued entry complete, and queued a fresh integrity scan. The first probe
+showed the response could carry the previously clean integrity summary even
+though the archive invalidated it. The command now reads the summary after
+the scan intent, and the rehearsal returned `unchecked` and `queued`.
+
 ## Prioritized opening slice check
 
 The opening candidate read returned 326 rows in both the verified SQLite

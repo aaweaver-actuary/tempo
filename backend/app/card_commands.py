@@ -18,6 +18,7 @@ from .services.postgres_integrity import (
     invalidate_integrity_in_transaction, request_integrity_scan_in_transaction,
 )
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
+from .services.repertoire_integrity import integrity_summary
 
 
 def _validated_moves(starting_fen: str, supplied_moves: list[str]) -> list[str]:
@@ -178,4 +179,36 @@ def revise_card(database: PostgresConnection, payload: dict[str, Any]) -> dict[s
     }
 
 
+def archive_card(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    identifier = str(payload["card_id"])
+    database.execute_native(
+        "SELECT pg_advisory_xact_lock(hashtextextended(%s,0))",
+        (f"tempo:card-edit:{identifier}",),
+    )
+    card = database.execute_native(
+        "SELECT id FROM cards WHERE id=%s FOR UPDATE", (identifier,),
+    ).fetchone()
+    if card is None:
+        raise HTTPException(404, "Card not found")
+    repertoire_ids = [str(row[0]) for row in database.execute_native(
+        "SELECT repertoire_id FROM repertoire_cards WHERE card_id=%s ORDER BY repertoire_id",
+        (identifier,),
+    )]
+    database.execute_native(
+        "UPDATE cards SET archived=1 WHERE id=%s", (identifier,),
+    )
+    database.execute_native(
+        "UPDATE daily_queue SET status='complete' WHERE card_id=%s AND status='queued'",
+        (identifier,),
+    )
+    for repertoire_id in repertoire_ids:
+        _request_current_integrity_scan(database, repertoire_id, date.today().isoformat())
+    integrity = {
+        repertoire_id: integrity_summary(database, repertoire_id)
+        for repertoire_id in repertoire_ids
+    }
+    return {"archived": True, "integrity": integrity}
+
+
 register_command("cards.revise", revise_card)
+register_command("cards.archive", archive_card)
