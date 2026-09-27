@@ -87,6 +87,14 @@ refresh for the tactics rehearsal repertoire completed and replayed under the
 same operation ID; its task generation stayed at 14 on replay. This verifies
 enqueue idempotency, not completion of the full discovery scan.
 
+The discovery recommendation handler now admits each PostgreSQL read through
+the cross-process gate, closes its snapshot before traversing coverage routes,
+and locks the task lease before publishing an engine request. A leased
+game-backed recommendation slice completed in 25 ms and a coverage-backed
+slice in 26 ms on the disposable restored database. The resulting engine
+analysis and later discovery admission still depend on separate unported
+background handlers.
+
 ## Prioritized opening slice check
 
 The opening candidate read returned 326 rows in both the verified SQLite

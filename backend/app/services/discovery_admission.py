@@ -9,10 +9,11 @@ import json
 
 import chess
 
-from ..database import connection, read_connection
+from ..database import background_read_connection, connection, read_connection
+from .. import postgres_store
 from .activity_gate import activity_gate
 from .cards import card_id
-from .durable_tasks import enqueue_task, enqueue_task_in_transaction
+from .durable_tasks import enqueue_task, enqueue_task_in_transaction, lock_current_slice
 from .review_service import ensure_card_queued_after
 from .threat_pipeline import ENGINE_VERSION, NETWORK_VERSION, report_from_json, validate_analysis_report
 from .threat_validation import AnalysisRequest
@@ -97,28 +98,68 @@ def _source_game(database, opportunity) -> dict | None:
             "SELECT start_fen,moves_json,trained_color FROM repertoire_lines WHERE repertoire_id=? ORDER BY id",
             (opportunity["repertoire_id"],),
         ).fetchall()
-        for route in sorted(routes, key=lambda moves: (len(moves), moves)):
-            for line in lines:
-                if json.loads(line["moves_json"])[:len(route)] != route:
-                    continue
-                board = chess.Board(line["start_fen"])
-                try:
-                    for move_uci in route:
-                        board.push_uci(move_uci)
-                    if _key(board) != node["fen_key"]:
-                        continue
-                    board.push_uci(opportunity["opponent_move_uci"])
-                except ValueError:
-                    continue
-                if board.turn != (line["trained_color"] == "white"):
-                    continue
-                decision_route = [*route, opportunity["opponent_move_uci"]]
-                return {"id": f"coverage:{node_id}", "source_kind": "coverage",
-                        "coverage_node_id": node_id, "start_fen": line["start_fen"],
-                        "moves_json": json.dumps(decision_route),
-                        "color": line["trained_color"], "analysis_version": 0,
-                        "ply": len(decision_route)}
+        return _coverage_source_game(opportunity, node_id, node, lines, routes)
     return None
+
+
+def _coverage_source_game(opportunity, node_id: str, node, lines, routes: list) -> dict | None:
+    """Resolve a coverage route from its supplied source snapshot."""
+    for route in sorted(routes, key=lambda moves: (len(moves), moves)):
+        for line in lines:
+            if json.loads(line["moves_json"])[:len(route)] != route:
+                continue
+            board = chess.Board(line["start_fen"])
+            try:
+                for move_uci in route:
+                    board.push_uci(move_uci)
+                if _key(board) != node["fen_key"]:
+                    continue
+                board.push_uci(opportunity["opponent_move_uci"])
+            except ValueError:
+                continue
+            if board.turn != (line["trained_color"] == "white"):
+                continue
+            decision_route = [*route, opportunity["opponent_move_uci"]]
+            return {"id": f"coverage:{node_id}", "source_kind": "coverage",
+                    "coverage_node_id": node_id, "start_fen": line["start_fen"],
+                    "moves_json": json.dumps(decision_route),
+                    "color": line["trained_color"], "analysis_version": 0,
+                    "ply": len(decision_route)}
+    return None
+
+
+def _background_source_game(opportunity) -> dict | None:
+    """Read bounded source snapshots, then traverse coverage routes outside PostgreSQL."""
+    evidence = json.loads(opportunity["evidence_json"])
+    for support in evidence.get("findings", []):
+        game_id = support.get("game_id")
+        mistake_ply = support.get("mistake_ply")
+        if game_id is None or mistake_ply is None:
+            continue
+        with background_read_connection() as database:
+            game = database.execute(
+                """SELECT id,start_fen,moves_json,color,analysis_version FROM imported_games
+                   WHERE id=? AND adaptive_excluded=0 AND analysis_state='ready'""",
+                (game_id,),
+            ).fetchone()
+        if game:
+            return {**dict(game), "ply": int(mistake_ply)}
+    if opportunity["kind"] != "missing_response" or not opportunity["opponent_move_uci"]:
+        return None
+    node_id = evidence.get("coverage_node_id")
+    with background_read_connection() as database:
+        node = database.execute(
+            "SELECT fen_key,routes_json FROM repertoire_coverage_nodes WHERE id=? AND repertoire_id=?",
+            (node_id, opportunity["repertoire_id"]),
+        ).fetchone()
+    if node is None:
+        return None
+    with background_read_connection() as database:
+        lines = database.execute(
+            "SELECT start_fen,moves_json,trained_color FROM repertoire_lines WHERE repertoire_id=? ORDER BY id",
+            (opportunity["repertoire_id"],),
+        ).fetchall()
+    return _coverage_source_game(opportunity, node_id, node, lines, json.loads(node["routes_json"]))
 
 
 def _full_history_request(game: dict) -> tuple[chess.Board, AnalysisRequest]:
@@ -139,15 +180,18 @@ def _full_history_request(game: dict) -> tuple[chess.Board, AnalysisRequest]:
 
 
 def execute_recommendation_request_slice(task: dict) -> None:
-    """Persist one full-history Docker engine request outside long SQLite work."""
+    """Persist one full-history engine request in a bounded database slice."""
     activity_gate.wait_for_foreground()
-    with read_connection() as database:
+    read_section = background_read_connection if postgres_store.configured() else read_connection
+    with read_section() as database:
         opportunity = database.execute(
             """SELECT * FROM repertoire_opportunities WHERE id=? AND status='active'
                AND kind IN ('post_gap_weakness','missing_response') AND card_id IS NULL""",
             (task["payload"]["opportunity_id"],),
         ).fetchone()
-        game = _source_game(database, opportunity) if opportunity else None
+        game = _source_game(database, opportunity) if opportunity and not postgres_store.configured() else None
+    if opportunity and postgres_store.configured():
+        game = _background_source_game(opportunity)
     if not game:
         return
     try:
@@ -157,12 +201,16 @@ def execute_recommendation_request_slice(task: dict) -> None:
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
         if "id" in task:
-            lease = database.execute(
-                "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
-            ).fetchone()
-            if (not lease or lease["generation"] != task["generation"]
-                    or lease["lease_token"] != task["lease_token"]):
-                return
+            if postgres_store.configured():
+                if not lock_current_slice(database, task):
+                    return
+            else:
+                lease = database.execute(
+                    "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
+                ).fetchone()
+                if (not lease or lease["generation"] != task["generation"]
+                        or lease["lease_token"] != task["lease_token"]):
+                    return
         current = database.execute(
             "SELECT status,card_id FROM repertoire_opportunities WHERE id=?",
             (task["payload"]["opportunity_id"],),

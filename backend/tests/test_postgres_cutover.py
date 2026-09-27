@@ -4625,3 +4625,86 @@ def test_postgres_cutover_threat_report_audit_yields_and_replays_once(monkeypatc
     assert tasks.poll_background_tasks.run() is True
     assert polled_filters == [tasks._SUPPORTED_BACKGROUND_KINDS]
     assert sent_tasks == ["app.tasks.execute_background_slice"]
+
+
+def test_postgres_discovery_recommendation_yields_to_foreground_and_discards_restart_replay(monkeypatch):
+    from app import tasks
+    from app.services import discovery_admission
+
+    foreground_finished = threading.Event()
+    preparation_finished = threading.Event()
+    release_preparation = threading.Event()
+    first_read_opened = threading.Event()
+    writer_opened = threading.Event()
+    published_requests: list[str] = []
+    current_lease = {"token": "first-lease"}
+    task = {
+        "kind": "discovery_recommendation", "id": "recommendation-task",
+        "generation": 2, "lease_token": "first-lease",
+        "payload": {"opportunity_id": "opportunity-1"},
+    }
+
+    class Cursor:
+        def __init__(self, row=None):
+            self.row = row
+
+        def fetchone(self):
+            return self.row
+
+    class ReadDatabase:
+        def execute(self, statement, _parameters):
+            assert "FROM repertoire_opportunities" in statement
+            return Cursor({"id": "opportunity-1"})
+
+    class WriteDatabase:
+        def execute(self, statement, _parameters):
+            if "FROM repertoire_opportunities" in statement:
+                return Cursor({"status": "active", "card_id": None})
+            if statement.startswith("INSERT"):
+                published_requests.append(statement)
+            return Cursor()
+
+    @contextmanager
+    def bounded_read():
+        first_read_opened.set()
+        yield ReadDatabase()
+
+    @contextmanager
+    def bounded_write(*, background):
+        assert background
+        writer_opened.set()
+        yield WriteDatabase()
+
+    @dataclass(frozen=True)
+    class PreparedRequest:
+        request_id: str = "request-1"
+
+    def prepare_source(_opportunity):
+        preparation_finished.set()
+        assert release_preparation.wait(2)
+        return {"id": "game-1", "ply": 2}
+
+    monkeypatch.setattr(discovery_admission.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(discovery_admission.activity_gate, "wait_for_foreground", foreground_finished.wait)
+    monkeypatch.setattr(discovery_admission, "background_read_connection", bounded_read)
+    monkeypatch.setattr(discovery_admission, "connection", bounded_write)
+    monkeypatch.setattr(discovery_admission, "_background_source_game", prepare_source)
+    monkeypatch.setattr(discovery_admission, "_full_history_request", lambda _game: (None, PreparedRequest()))
+    monkeypatch.setattr(
+        discovery_admission, "lock_current_slice",
+        lambda _database, claimed: claimed["lease_token"] == current_lease["token"],
+    )
+    worker = threading.Thread(target=discovery_admission.execute_recommendation_request_slice, args=(task,))
+    worker.start()
+    assert not first_read_opened.wait(0.05)
+    foreground_finished.set()
+    assert preparation_finished.wait(2)
+    assert not writer_opened.is_set()
+    release_preparation.set()
+    worker.join(timeout=2)
+    assert not worker.is_alive()
+    assert len(published_requests) == 2
+    current_lease["token"] = "replacement-lease"
+    discovery_admission.execute_recommendation_request_slice(task)
+    assert len(published_requests) == 2
+    assert "discovery_recommendation" in tasks._SUPPORTED_BACKGROUND_KINDS
