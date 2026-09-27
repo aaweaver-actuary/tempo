@@ -345,6 +345,53 @@ def test_postgres_cutover_background_reads_respect_foreground_admission(monkeypa
     assert not worker.is_alive()
 
 
+def test_postgres_cutover_background_claim_orders_supported_kinds_by_priority(monkeypatch):
+    from app.services import durable_tasks
+
+    with sqlite3.connect(":memory:") as database:
+        database.row_factory = sqlite3.Row
+        database.executescript("""
+            CREATE TABLE background_tasks(
+                id TEXT PRIMARY KEY,kind TEXT,deduplication_key TEXT,
+                generation INTEGER,priority INTEGER,state TEXT,phase TEXT,
+                payload_version INTEGER,payload_json TEXT,attempt_count INTEGER,
+                max_attempts INTEGER,next_attempt_at TEXT,lease_token TEXT,
+                lease_expires_at TEXT,last_error TEXT,created_at TEXT,
+                started_at TEXT,completed_at TEXT,updated_at TEXT,
+                UNIQUE(kind,deduplication_key)
+            );
+            CREATE TABLE background_task_events(
+                id INTEGER PRIMARY KEY,task_id TEXT,generation INTEGER,event TEXT,
+                phase TEXT,detail TEXT,created_at TEXT
+            );
+            CREATE TABLE background_activity(
+                source TEXT,work_id TEXT,paused INTEGER DEFAULT 0,
+                promoted INTEGER DEFAULT 0
+            );
+        """)
+        priorities = (
+            ("unported_analysis", 1), ("priority_retention", 200),
+            ("repertoire_game_refresh", 90), ("defensive_threat_report_audit", 135),
+        )
+        for task_kind, priority in priorities:
+            durable_tasks.enqueue_task_in_transaction(
+                database, task_kind, task_kind, {}, priority=priority,
+            )
+        monkeypatch.setattr(
+            durable_tasks, "submit_background_write",
+            lambda operation, *, label: operation(database),
+        )
+        allowed_kinds = (
+            "priority_retention", "repertoire_game_refresh",
+            "defensive_threat_report_audit",
+        )
+        claimed = [durable_tasks.claim_task(allowed_kinds=allowed_kinds) for _ in range(4)]
+        assert [task["kind"] if task else None for task in claimed] == [
+            "repertoire_game_refresh", "defensive_threat_report_audit",
+            "priority_retention", None,
+        ]
+
+
 def test_postgres_cutover_priority_retention_locks_bounded_primary_keys(monkeypatch):
     from app.services import priority_retention
 
@@ -538,15 +585,15 @@ def test_postgres_cutover_game_refresh_waits_for_foreground_and_discards_stale_r
     assert repertoire_game_refresh.execute_repertoire_game_refresh_slice(claimed_task) is False
     assert queued_games == ["game-1"]
 
-    claimed_kinds: list[str] = []
+    claimed_filters: list[tuple[str, ...]] = []
     sent_tasks: list[str] = []
     monkeypatch.setattr(
         tasks, "claim_task",
-        lambda kind: claimed_kinds.append(kind) or (claimed_task if kind == "repertoire_game_refresh" else None),
+        lambda *, allowed_kinds: claimed_filters.append(allowed_kinds) or claimed_task,
     )
     monkeypatch.setattr(tasks.celery_app, "send_task", lambda task_name, **_arguments: sent_tasks.append(task_name))
     assert tasks.poll_background_tasks.run() is True
-    assert claimed_kinds == ["repertoire_game_refresh"]
+    assert claimed_filters == [tasks._SUPPORTED_BACKGROUND_KINDS]
     assert sent_tasks == ["app.tasks.execute_background_slice"]
     completed_tasks: list[str] = []
     monkeypatch.setattr(tasks, "execute_repertoire_game_refresh_slice", lambda _task: False)
@@ -628,13 +675,13 @@ def test_postgres_cutover_threat_report_audit_yields_and_replays_once(monkeypatc
     assert threat_pipeline.execute_threat_report_audit(claimed_task) is True
     assert advanced_cursors == ['{"cursor": "report-1"}']
 
-    polled_kinds: list[str] = []
+    polled_filters: list[tuple[str, ...]] = []
     sent_tasks: list[str] = []
     monkeypatch.setattr(
         tasks, "claim_task",
-        lambda kind: polled_kinds.append(kind) or (claimed_task if kind == "defensive_threat_report_audit" else None),
+        lambda *, allowed_kinds: polled_filters.append(allowed_kinds) or claimed_task,
     )
     monkeypatch.setattr(tasks.celery_app, "send_task", lambda task_name, **_arguments: sent_tasks.append(task_name))
     assert tasks.poll_background_tasks.run() is True
-    assert polled_kinds == ["repertoire_game_refresh", "defensive_threat_report_audit"]
+    assert polled_filters == [tasks._SUPPORTED_BACKGROUND_KINDS]
     assert sent_tasks == ["app.tasks.execute_background_slice"]

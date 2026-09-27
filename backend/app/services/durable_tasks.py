@@ -126,7 +126,15 @@ def enqueue_task_in_transaction(
     )
 
 
-def claim_task(kind: str | None = None, *, lease_seconds: int = 60) -> dict | None:
+def claim_task(
+    kind: str | None = None, *, allowed_kinds: tuple[str, ...] | None = None,
+    lease_seconds: int = 60,
+) -> dict | None:
+    if kind is not None and allowed_kinds is not None:
+        raise ValueError("Use one durable-task kind filter")
+    if allowed_kinds is not None and not allowed_kinds:
+        raise ValueError("Allowed durable-task kinds cannot be empty")
+
     def operation(database: sqlite3.Connection) -> dict | None:
         now = _iso()
         database.execute(
@@ -141,6 +149,9 @@ def claim_task(kind: str | None = None, *, lease_seconds: int = 60) -> dict | No
         if kind is not None:
             kind_clause = " AND kind=?"
             parameters.append(kind)
+        elif allowed_kinds is not None:
+            kind_clause = " AND kind IN (" + ",".join("?" for _ in allowed_kinds) + ")"
+            parameters.extend(allowed_kinds)
         row = database.execute(
             f"""SELECT * FROM background_tasks
                 WHERE state IN ('queued','retrying') AND next_attempt_at<=?{kind_clause}
@@ -166,7 +177,10 @@ def claim_task(kind: str | None = None, *, lease_seconds: int = 60) -> dict | No
         claimed["payload"] = json.loads(claimed.pop("payload_json"))
         return claimed
 
-    return submit_background_write(operation, label=f"claim:{kind or 'any'}")
+    return submit_background_write(
+        operation,
+        label=f"claim:{kind or (','.join(allowed_kinds) if allowed_kinds else 'any')}",
+    )
 
 
 def complete_task(task_id: str, generation: int, lease_token: str) -> bool:

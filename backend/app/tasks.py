@@ -21,6 +21,11 @@ from .services.threat_pipeline import execute_threat_report_audit
 
 
 _LOGGER = logging.getLogger("tempo.tasks")
+_SUPPORTED_BACKGROUND_KINDS = (
+    "repertoire_game_refresh",
+    "defensive_threat_report_audit",
+    "priority_retention",
+)
 
 
 @celery_app.task(name="app.tasks.execute_foreground_command", bind=True)
@@ -44,13 +49,7 @@ def execute_foreground_command(
 def poll_background_tasks() -> bool:
     """Admit at most one durable slice per poll; failed dispatch reclaims later."""
 
-    claimed_task = None
-    for task_kind in (
-        "repertoire_game_refresh", "defensive_threat_report_audit", "priority_retention",
-    ):
-        claimed_task = claim_task(task_kind)
-        if claimed_task is not None:
-            break
+    claimed_task = claim_task(allowed_kinds=_SUPPORTED_BACKGROUND_KINDS)
     if claimed_task is None:
         return False
     celery_app.send_task(

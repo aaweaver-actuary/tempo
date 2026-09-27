@@ -110,6 +110,10 @@ handler has been ported and the release gates pass.
   44 ms end to end; a forced invalid-report repair path completed in 57 ms end
   to end and was also rolled back. The threat-engine request worker remains a
   separate port.
+- The Celery poll now claims one task from the supported background kinds by
+  the durable task's numeric priority, rather than checking kinds in a fixed
+  order. A rolled-back rehearsal claim selected a supported task and left
+  unported kinds alone.
 - Preliminary in-process API read samples at 1, 4, and 16 clients are in
   `benchmarks/postgres-read-rehearsal-2026-09-27.csv`. They show a PostgreSQL
   queue-read regression under this first schema, so the cutover latency gate
