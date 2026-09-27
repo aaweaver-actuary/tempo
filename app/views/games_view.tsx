@@ -482,20 +482,6 @@ export default function GamesView({
     queueMicrotask(() => void loadGames());
   }, [loadGames, syncState.lastSuccess]);
   useEffect(() => {
-    const applySuccessfulRefresh = (event: Event) => {
-      const detail = (event as CustomEvent<{ state: string; url: string }>)
-        .detail;
-      if (detail?.state === "ready" && detail.url === summaryUrl)
-        void loadGames();
-    };
-    window.addEventListener("tempo-workspace-data", applySuccessfulRefresh);
-    return () =>
-      window.removeEventListener(
-        "tempo-workspace-data",
-        applySuccessfulRefresh,
-      );
-  }, [loadGames, summaryUrl]);
-  useEffect(() => {
     if (!local) return;
     void readWorkspaceResponse(`${API_URL}/api/repertoire/lines`)
       .then(async (response) => {

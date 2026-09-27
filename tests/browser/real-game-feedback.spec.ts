@@ -50,8 +50,12 @@ test("previously studied game-miss priority card starts without a teaching arrow
   await expect(page.locator(".cg-wrap svg.cg-shapes > g > g[cgHash]")).toHaveCount(0);
 });
 
-test("Games shows the reanalysis instruction when a canonical miss is missing", async ({ page }) => {
+test("Games shows reanalysis without repeatedly fetching its own summary", async ({ page }) => {
   await prepareVisualUI(page);
+  let summaryRequests = 0;
+  page.on("request", (request) => {
+    if (new URL(request.url()).pathname === "/api/games/summary") summaryRequests++;
+  });
   await page.route("**/api/game-findings?**", route => route.fulfill({ json: { findings: [finding] } }));
   await page.route("**/api/game-findings/visual-miss/decision", route => route.fulfill({
     status: 409, json: { detail: "Canonical game decision is unavailable. Reanalyze this game and try again." },
@@ -60,4 +64,6 @@ test("Games shows the reanalysis instruction when a canonical miss is missing", 
   await page.getByRole("tab", { name: "Findings" }).click();
   await page.getByRole("button", { name: "Prioritize review" }).click();
   await expect(page.getByRole("alert")).toContainText("Reanalyze this game");
+  await page.waitForTimeout(200);
+  expect(summaryRequests).toBeLessThanOrEqual(2);
 });
