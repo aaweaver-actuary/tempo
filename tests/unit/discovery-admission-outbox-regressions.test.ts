@@ -24,6 +24,19 @@ it("discovery save outbox survives reload and waits for queued confirmation", as
   expect(fetcher.mock.calls.filter(([url]) => String(url).includes("/accept"))).toHaveLength(1);
 });
 
+it("legacy discovery admission 202 keeps its intent receipt without a Celery operation ID", async () => {
+  enqueuePendingDiscoveryAdmission(admission);
+  const fetcher = vi.fn().mockResolvedValueOnce(Response.json(
+    { status: "preparing", intent_id: "legacy-intent" }, { status: 202 },
+  ));
+  vi.stubGlobal("fetch", fetcher);
+  await flushPendingDiscoveryAdmissions();
+  expect(pendingDiscoveryAdmissions()[0]).toMatchObject({
+    state: "accepted", intentId: "legacy-intent",
+  });
+  expect(pendingDiscoveryAdmissions()[0].error).toBeUndefined();
+});
+
 it("timed out discovery save remains unconfirmed and replays the same choice after reload", async () => {
   vi.useFakeTimers();
   try {

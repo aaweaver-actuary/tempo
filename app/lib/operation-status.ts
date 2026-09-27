@@ -9,9 +9,10 @@ export class PendingOperationError extends Error {
 
 export async function confirmOperationResponse(response: Response): Promise<Response> {
   if (response.status !== 202) return response;
-  const pending = await response.json() as { operation_id?: string };
-  if (!pending.operation_id)
-    throw new Error("The service accepted a save without an operation ID. Retry with the same idempotency key.");
+  const pending = await response.clone().json() as { operation_id?: string };
+  // Existing discovery admissions also return 202, with an intent ID that
+  // their own status endpoint confirms. Preserve that response for its caller.
+  if (!pending.operation_id) return response;
   const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(pending.operation_id)}`);
   if (!status.ok)
     throw new PendingOperationError(pending.operation_id);
