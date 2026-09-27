@@ -93,8 +93,10 @@ test("hover feedback covers controls outside the chessboard without changing the
     const control = page.locator(selector).first();
     await expect(control).toBeVisible();
     await expect(control).toHaveCSS("background-image", "none");
-    await control.hover();
-    await expect(control).toHaveCSS("background-image", /linear-gradient/);
+    await expect.poll(async () => {
+      await control.hover();
+      return control.evaluate((element) => getComputedStyle(element).backgroundImage);
+    }).toMatch(/linear-gradient/);
   };
 
   const board = page.locator(".persistent-board-shell .cg-wrap");
