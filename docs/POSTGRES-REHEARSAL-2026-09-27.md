@@ -34,6 +34,16 @@ Other cold-cache samples were slower, so foreground-load and retry behavior
 still require the full benchmark gate. A membership hash is rechecked before
 publication, including when the saved queue order appears unchanged.
 
+## Opening quarantine slice check
+
+Seven bounded read-only PostgreSQL slices inspected the rehearsal's current
+opening queue; none was malformed. A rolled-back synthetic malformed card was
+locked and skipped in 6.3 ms; replay returned false and left one diagnostic.
+Validation ran after closing the read connection, and the task checkpoints its
+cursor with each write. Named regressions cover valid cards, foreground
+admission, restart, and idempotent replay. Queue projection publication remains
+unported.
+
 This is a **rehearsal**, not a production cutover. Production `tempo-data`
 remains the rollback source and `docker-compose.yml` still runs SQLite. Do not
 start PostgreSQL-backed API traffic until every write route and background

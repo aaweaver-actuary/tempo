@@ -14,6 +14,7 @@ from ..postgres_store import postgres_sql
 from .cards import card_id
 from .activity_gate import activity_gate
 from .durable_tasks import advance_task_slice_in_transaction, lock_current_slice
+from .pgn import ends_on_trained_move
 from .puzzles import validate_puzzle_record
 from .tactical_catalog import pack_records
 
@@ -26,6 +27,7 @@ _ELIGIBILITY_PHASES = (
     "restore_study",
 )
 _UNLOCK_BATCH_SIZE = 8
+_QUARANTINE_READ_BATCH_SIZE = 32
 
 
 def _bounded_read(statement: str, parameters: tuple = (), *, native: bool = False) -> list:
@@ -491,6 +493,86 @@ def _publish_queue_randomization(database, queue_date: str, plan: dict) -> bool:
     return True
 
 
+_QUARANTINE_OPENING_ELIGIBILITY = """q.queue_date=%s AND q.status='queued'
+    AND c.archived=0 AND c.content_type='opening'
+    AND EXISTS(SELECT 1 FROM repertoires repertoire
+               WHERE (repertoire.id=c.repertoire_id OR EXISTS(
+                   SELECT 1 FROM repertoire_cards link
+                   WHERE link.card_id=c.id AND link.repertoire_id=repertoire.id))
+                 AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
+                                WHERE block.repertoire_id=repertoire.id AND block.card_id=c.id))"""
+
+
+def _prepare_opening_quarantine(queue_date: str, after_entry_id: int) -> dict[str, Any]:
+    """Validate a bounded set of opening cards with no database connection open."""
+
+    rows = _bounded_read(
+        """SELECT q.id queue_entry_id,c.id card_id,c.start_fen,c.moves_json,
+                  COALESCE(c.trained_color,(SELECT line.trained_color FROM repertoire_lines line
+                           WHERE line.repertoire_id=c.repertoire_id
+                           ORDER BY line.created_at LIMIT 1)) trained_color
+           FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE """
+        + _QUARANTINE_OPENING_ELIGIBILITY +
+        " AND q.id>%s ORDER BY q.id LIMIT %s",
+        (queue_date, after_entry_id, _QUARANTINE_READ_BATCH_SIZE + 1), native=True,
+    )
+    inspected = rows[:_QUARANTINE_READ_BATCH_SIZE]
+    for candidate_index, candidate in enumerate(inspected):
+        if candidate["trained_color"] not in {"white", "black"}:
+            continue
+        try:
+            moves = json.loads(candidate["moves_json"])
+        except json.JSONDecodeError:
+            moves = []
+        if not ends_on_trained_move(candidate["start_fen"], moves,
+                                    candidate["trained_color"]):
+            return {
+                "after_entry_id": int(candidate["queue_entry_id"]),
+                "has_more": candidate_index < len(rows) - 1,
+                "invalid": dict(candidate),
+            }
+    return {
+        "after_entry_id": int(inspected[-1]["queue_entry_id"]) if inspected else after_entry_id,
+        "has_more": len(rows) > _QUARANTINE_READ_BATCH_SIZE,
+        "invalid": None,
+    }
+
+
+def _quarantine_one_opening(database, queue_date: str, candidate: dict) -> bool:
+    """Recheck the prepared card under row locks before skipping it."""
+
+    current = database.execute_native(
+        """SELECT c.start_fen,c.moves_json,
+                  COALESCE(c.trained_color,(SELECT line.trained_color FROM repertoire_lines line
+                           WHERE line.repertoire_id=c.repertoire_id
+                           ORDER BY line.created_at LIMIT 1)) trained_color
+           FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE """
+        + _QUARANTINE_OPENING_ELIGIBILITY +
+        " AND q.id=%s AND c.id=%s FOR UPDATE OF q,c",
+        (queue_date, candidate["queue_entry_id"], candidate["card_id"]),
+    ).fetchone()
+    if current is None or any(
+        current[column] != candidate[column]
+        for column in ("start_fen", "moves_json", "trained_color")
+    ):
+        return False
+    database.execute_native(
+        "UPDATE cards SET state='locked' WHERE id=%s", (candidate["card_id"],),
+    )
+    database.execute_native(
+        "UPDATE daily_queue SET status='skipped' WHERE id=%s",
+        (candidate["queue_entry_id"],),
+    )
+    database.execute_native(
+        """INSERT INTO queue_projection_diagnostics(queue_date,card_id,message)
+           VALUES(%s,%s,%s) ON CONFLICT(queue_date,card_id) DO UPDATE SET
+           message=excluded.message""",
+        (queue_date, candidate["card_id"],
+         "Skipped an incomplete opening card. Edit or re-import its line to study it."),
+    )
+    return True
+
+
 def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     """Apply one eligibility phase; later queue phases remain explicitly gated."""
 
@@ -505,7 +587,7 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     if phase not in (*_ELIGIBILITY_PHASES, "tactical_introductions",
                      "reset_opening_new", "reset_opening_stale", "reconcile_unseen",
                      "admit_due", "prioritized_openings", "prioritized_opening_item",
-                     "admit_study", "randomize_queue"):
+                     "admit_study", "randomize_queue", "quarantine"):
         raise RuntimeError(f"Queue refresh phase is not yet ported: {phase}")
     prepared_tactic = None
     if phase == "tactical_introductions":
@@ -537,6 +619,12 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     if phase == "randomize_queue":
         activity_gate.wait_for_foreground()
         randomization_plan = _prepare_queue_randomization(queue_date)
+    quarantine_batch = None
+    if phase == "quarantine":
+        activity_gate.wait_for_foreground()
+        quarantine_batch = _prepare_opening_quarantine(
+            queue_date, int(payload.get("after_entry_id") or 0),
+        )
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
         if not lock_current_slice(database, task):
@@ -617,6 +705,20 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
             )
             next_phase = "quarantine" if published else phase
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
+        elif phase == "quarantine":
+            if not payload.get("quarantine_started"):
+                database.execute_native(
+                    "DELETE FROM queue_projection_diagnostics WHERE queue_date=%s",
+                    (queue_date,),
+                )
+            if quarantine_batch["invalid"] is not None:
+                _quarantine_one_opening(
+                    database, queue_date, quarantine_batch["invalid"],
+                )
+            next_phase = phase if quarantine_batch["has_more"] else "publish_projection"
+            next_payload = {"queue_date": queue_date, "_queue_phase": next_phase,
+                            "quarantine_started": True,
+                            "after_entry_id": quarantine_batch["after_entry_id"]}
         else:
             phase_handlers = {
                 "block_opening": main._block_ineligible_opening_queue_entries,

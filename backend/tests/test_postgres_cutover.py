@@ -312,6 +312,134 @@ def test_postgres_queue_randomization_splits_review_lookup_into_bounded_reads(mo
     assert all("EXISTS(SELECT 1 FROM reviews" not in query for query, _ in observed_queries)
 
 
+def test_postgres_opening_quarantine_validates_outside_database_and_replays_once(monkeypatch, tmp_path):
+    from app.services import postgres_queue_refresh
+
+    database_path = tmp_path / "opening-quarantine.db"
+    fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    with sqlite3.connect(database_path) as database:
+        database.executescript("""
+            CREATE TABLE repertoires(id TEXT PRIMARY KEY);
+            CREATE TABLE repertoire_cards(card_id TEXT,repertoire_id TEXT);
+            CREATE TABLE repertoire_integrity_card_blocks(card_id TEXT,repertoire_id TEXT);
+            CREATE TABLE repertoire_lines(repertoire_id TEXT,trained_color TEXT,created_at TEXT);
+            CREATE TABLE cards(id TEXT PRIMARY KEY,repertoire_id TEXT,start_fen TEXT,
+                               moves_json TEXT,trained_color TEXT,archived INTEGER,
+                               content_type TEXT,state TEXT);
+            CREATE TABLE daily_queue(id INTEGER PRIMARY KEY,queue_date TEXT,card_id TEXT,status TEXT);
+            CREATE TABLE queue_projection_diagnostics(queue_date TEXT,card_id TEXT,
+                                                       message TEXT,PRIMARY KEY(queue_date,card_id));
+            INSERT INTO repertoires VALUES('rep');
+        """)
+        database.executemany(
+            "INSERT INTO cards VALUES(?,?,?,?,?,0,'opening','learning')",
+            [("valid", "rep", fen, '["e2e4"]', "white"),
+             ("invalid", "rep", fen, '["e2e4","e7e5"]', "white"),
+             ("later", "rep", fen, '["d2d4"]', "white")],
+        )
+        database.executemany(
+            "INSERT INTO daily_queue VALUES(?,'2026-09-27',?,'queued')",
+            [(1, "valid"), (2, "invalid"), (3, "later")],
+        )
+
+    class NativeSqlite:
+        def __init__(self, database):
+            self.database = database
+
+        def execute_native(self, statement, parameters=()):
+            return self.database.execute(
+                statement.replace("%s", "?").replace("FOR UPDATE OF q,c", ""),
+                parameters,
+            )
+
+    @contextmanager
+    def read_section():
+        with sqlite3.connect(database_path) as database:
+            database.row_factory = sqlite3.Row
+            yield NativeSqlite(database)
+
+    monkeypatch.setattr(postgres_queue_refresh, "background_read_connection", read_section)
+    first = postgres_queue_refresh._prepare_opening_quarantine("2026-09-27", 0)
+    assert first["after_entry_id"] == 2
+    assert first["has_more"]
+    with sqlite3.connect(database_path) as database:
+        database.row_factory = sqlite3.Row
+        assert postgres_queue_refresh._quarantine_one_opening(
+            NativeSqlite(database), "2026-09-27", first["invalid"],
+        )
+        assert not postgres_queue_refresh._quarantine_one_opening(
+            NativeSqlite(database), "2026-09-27", first["invalid"],
+        )
+    second = postgres_queue_refresh._prepare_opening_quarantine(
+        "2026-09-27", first["after_entry_id"],
+    )
+    assert second == {"after_entry_id": 3, "has_more": False, "invalid": None}
+    with sqlite3.connect(database_path) as database:
+        assert list(database.execute("SELECT card_id,status FROM daily_queue ORDER BY id")) == [
+            ("valid", "queued"), ("invalid", "skipped"), ("later", "queued"),
+        ]
+        assert database.execute(
+            "SELECT COUNT(*) FROM queue_projection_diagnostics",
+        ).fetchone()[0] == 1
+
+
+def test_postgres_opening_quarantine_yields_to_foreground_and_resumes_cursor(monkeypatch):
+    from app.services import postgres_queue_refresh
+
+    current_lease = "first"
+    saved_payload = None
+    observed = []
+
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            assert "DELETE FROM queue_projection_diagnostics" in statement
+            observed.append("diagnostics-reset")
+
+    @contextmanager
+    def section(*, background):
+        assert background
+        yield Database()
+
+    def wait_for_foreground():
+        observed.append("foreground-cleared")
+
+    def prepare(queue_date, after_entry_id):
+        assert observed[-1] == "foreground-cleared"
+        if after_entry_id == 0:
+            return {"after_entry_id": 12, "has_more": True,
+                    "invalid": {"card_id": "bad"}}
+        return {"after_entry_id": 19, "has_more": False, "invalid": None}
+
+    def advance(database, task, *, next_phase, next_payload):
+        nonlocal current_lease, saved_payload
+        saved_payload = next_payload
+        current_lease = "second"
+        return True
+
+    monkeypatch.setattr(postgres_queue_refresh.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres_queue_refresh.activity_gate, "wait_for_foreground",
+                        wait_for_foreground)
+    monkeypatch.setattr(postgres_queue_refresh, "connection", section)
+    monkeypatch.setattr(postgres_queue_refresh, "lock_current_slice",
+                        lambda database, task: task["lease_token"] == current_lease)
+    monkeypatch.setattr(postgres_queue_refresh, "_prepare_opening_quarantine", prepare)
+    monkeypatch.setattr(postgres_queue_refresh, "_quarantine_one_opening",
+                        lambda database, day, candidate: observed.append(candidate["card_id"]))
+    monkeypatch.setattr(postgres_queue_refresh, "advance_task_slice_in_transaction", advance)
+    task = {"id": "queue-refresh", "generation": 5, "lease_token": "first",
+            "payload": {"queue_date": "2026-09-27", "_queue_phase": "quarantine"}}
+    assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
+    assert saved_payload["after_entry_id"] == 12
+    assert saved_payload["_queue_phase"] == "quarantine"
+    assert not postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
+    assert observed.count("bad") == 1
+    resumed = {**task, "lease_token": "second", "payload": saved_payload}
+    assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(resumed)
+    assert saved_payload["after_entry_id"] == 19
+    assert saved_payload["_queue_phase"] == "publish_projection"
+    assert observed.count("diagnostics-reset") == 1
+
+
 def test_postgres_cutover_schema_keeps_json_array_length_available(tmp_path):
     import sys
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))

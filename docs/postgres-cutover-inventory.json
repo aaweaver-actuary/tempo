@@ -4623,97 +4623,91 @@
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_bounded_read",
-      "line": 38,
+      "line": 40,
       "operation": "execute"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 90,
+      "line": 92,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 91,
+      "line": 93,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 96,
+      "line": 98,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 99,
+      "line": 101,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 105,
+      "line": 107,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 111,
+      "line": 113,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 117,
+      "line": 119,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 125,
+      "line": 127,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 131,
+      "line": 133,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 135,
+      "line": 137,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 140,
+      "line": 142,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 144,
+      "line": 146,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 148,
+      "line": 150,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_reconcile_one_unseen_entry",
-      "line": 190,
-      "operation": "execute_native"
-    },
-    {
-      "file": "backend/app/services/postgres_queue_refresh.py",
-      "function": "_reconcile_one_unseen_entry",
-      "line": 201,
+      "line": 192,
       "operation": "execute_native"
     },
     {
@@ -4725,140 +4719,176 @@
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_reconcile_one_unseen_entry",
-      "line": 208,
+      "line": 205,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_reconcile_one_unseen_entry",
-      "line": 209,
+      "line": 210,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_reconcile_one_unseen_entry",
+      "line": 211,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_due_card",
-      "line": 246,
+      "line": 248,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_due_card",
-      "line": 250,
+      "line": 252,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_due_card",
-      "line": 256,
+      "line": 258,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_due_card",
-      "line": 260,
+      "line": 262,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_prioritized_opening",
-      "line": 303,
+      "line": 305,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_prioritized_opening",
-      "line": 310,
+      "line": 312,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_prioritized_opening",
-      "line": 316,
+      "line": 318,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_prioritized_opening",
-      "line": 320,
+      "line": 322,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_prioritized_opening",
-      "line": 325,
+      "line": 327,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_prioritized_opening",
-      "line": 330,
+      "line": 332,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_study_card",
-      "line": 371,
+      "line": 373,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_study_card",
-      "line": 375,
+      "line": 377,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_study_card",
-      "line": 378,
+      "line": 380,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_study_card",
-      "line": 386,
+      "line": 388,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_study_card",
-      "line": 394,
+      "line": 396,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_study_card",
-      "line": 398,
+      "line": 400,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_queue_randomization",
-      "line": 456,
+      "line": 458,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_queue_randomization",
-      "line": 464,
+      "line": 466,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_queue_randomization",
-      "line": 471,
+      "line": 473,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_queue_randomization",
-      "line": 484,
+      "line": 486,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_quarantine_one_opening",
+      "line": 544,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_quarantine_one_opening",
+      "line": 559,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_quarantine_one_opening",
+      "line": 562,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_quarantine_one_opening",
+      "line": 566,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "execute_postgres_queue_refresh_slice",
-      "line": 541,
+      "line": 629,
       "operation": "connection"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "execute_postgres_queue_refresh_slice",
+      "line": 710,
+      "operation": "execute_native"
     },
     {
       "file": "backend/app/services/prefix_split.py",
@@ -10712,7 +10742,7 @@
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
-      "line": 333,
+      "line": 335,
       "tokens": [
         "json_extract("
       ]
