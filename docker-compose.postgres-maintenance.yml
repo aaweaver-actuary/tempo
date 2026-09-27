@@ -1,0 +1,33 @@
+# Use with docker-compose.postgres.yml during a stopped-writer maintenance window.
+# TEMPO_SQLITE_SNAPSHOT must be a verified SQLite backup outside the checkout.
+services:
+  migration:
+    profiles: ["maintenance"]
+    build:
+      context: .
+      dockerfile: Dockerfile.postgres-maintenance
+    environment:
+      TEMPO_POSTGRES_ADMIN_URL: postgresql://tempo@postgres:5432/tempo
+      TEMPO_MIGRATION_DATABASE_URL: postgresql://tempo@postgres:5432/tempo
+      PGPASSFILE: /run/secrets/admin_pgpass
+    secrets:
+      - source: admin_pgpass
+        target: admin_pgpass
+        mode: 0400
+      - source: reader_password
+        target: reader_password
+        mode: 0400
+      - source: writer_password
+        target: writer_password
+        mode: 0400
+    volumes:
+      - ${TEMPO_SQLITE_SNAPSHOT:?Set the verified SQLite backup path outside the checkout}:/source/tempo.db:ro
+    depends_on:
+      postgres: {condition: service_healthy}
+    command: ["scripts/apply_postgres_migrations.py"]
+
+secrets:
+  reader_password:
+    file: ${TEMPO_POSTGRES_READER_PASSWORD_FILE:?Set a password file outside the checkout}
+  writer_password:
+    file: ${TEMPO_POSTGRES_WRITER_PASSWORD_FILE:?Set a password file outside the checkout}
