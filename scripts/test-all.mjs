@@ -39,7 +39,7 @@ const stages = [
   ["visual", "npm", ["run", "test:visual"]],
 ];
 const tier = process.argv[2] ?? "full";
-const selectedStages = tier === "fast" ? stages.filter(([name]) => ["unit", "backend", "rust_test"].includes(name)) : tier === "integration" ? stages.filter(([name]) => ["defense_engine", "backend", "rust_format", "rust_lint", "rust_test"].includes(name)) : tier === "full" ? stages : null;
+const selectedStages = tier === "fast" ? stages.filter(([name]) => name === "unit") : tier === "integration" ? stages.filter(([name]) => ["defense_engine", "backend", "rust_format", "rust_lint", "rust_test"].includes(name)) : tier === "full" ? stages : null;
 if (!selectedStages) throw new Error(`Unknown test tier: ${tier}`);
 const commit = version("git", ["rev-parse", "HEAD"]);
 const report = {
