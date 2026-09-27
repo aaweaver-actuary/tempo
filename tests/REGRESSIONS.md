@@ -4,6 +4,7 @@
 
 | Issue | Required regression |
 | --- | --- |
+| Study worker backlog and computation duration are not distinguishable | `study worker reports queue compute and roundtrip durations` |
 | Position similarity search must keep exact and near results in stable order while deduplicating by FEN and next move | `position search retains distance ordering and first duplicate identity` |
 | Unrelated Builder rerenders rewrite repertoire selection and serialized session | `Builder unrelated rerender does not rewrite repertoire selection or session` |
 | A recurring refresh starves a retried discovery admission behind lower priority derived work | `test_discovery_admission_replay_promotes_stalled_save_ahead_of_recurring_refresh` |

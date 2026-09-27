@@ -551,6 +551,7 @@ export const studyReplySchema = z.strictObject({
   state: z.literal("running").optional(),
   result: z.unknown().optional(),
   error: z.string().optional(),
+  computeMs: z.number().nonnegative().optional(),
   diagnostics: z.array(dataDiagnosticSchema).optional(),
 });
 const lineValidationSchema = z.strictObject({

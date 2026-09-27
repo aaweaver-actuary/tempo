@@ -3,12 +3,13 @@ import { studyReplySchema } from "../domain/schemas";
 import { parseData, reportDataDiagnostic } from "./validated-data";
 import { updateBrowserActivity } from "./browser-activity";
 import { reportDebugError } from "./debug-reporting";
+import { recordTempoDuration } from "./performance";
 
 let worker: Worker | undefined;
 let nextId = 0;
 const pending = new Map<
   number,
-  { title: string; resolve: (value: unknown) => void; reject: (error: Error) => void }
+  { title: string; queuedAt: number; startedAt?: number; resolve: (value: unknown) => void; reject: (error: Error) => void }
 >();
 
 export function runStudyTask<T>(
@@ -62,6 +63,8 @@ export function runStudyTask<T>(
     const request = pending.get(data.id);
     if (!request) return;
     if (data.state === "running") {
+      request.startedAt = performance.now();
+      recordTempoDuration("study-worker-queue", request.startedAt - request.queuedAt);
       updateBrowserActivity(`study:${data.id}`, request.title, "running", "Computing");
       return;
     }
@@ -73,6 +76,9 @@ export function runStudyTask<T>(
         issue.recordId,
       );
     pending.delete(data.id);
+    if (data.computeMs !== undefined)
+      recordTempoDuration("study-worker-compute", data.computeMs);
+    recordTempoDuration("study-worker-roundtrip", performance.now() - request.queuedAt);
     if (data.error) {
       updateBrowserActivity(`study:${data.id}`, request.title, "failed", "Failed", data.error);
       request.reject(new Error(data.error));
@@ -106,6 +112,7 @@ export function runStudyTask<T>(
     signal?.addEventListener("abort", cancel, { once: true });
     pending.set(id, {
       title,
+      queuedAt: performance.now(),
       resolve: (value) => {
         signal?.removeEventListener("abort", cancel);
         resolve(value as T);

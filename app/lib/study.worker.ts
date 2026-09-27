@@ -9,17 +9,21 @@ import {
 self.onmessage = ({ data: raw }: MessageEvent<unknown>) => {
   const data = parseData(studyRequestSchema, raw, "study worker request");
   clearDataDiagnostics();
+  self.postMessage({ id: data.id, state: "running" });
+  const computeStartedAt = performance.now();
   try {
-    self.postMessage({ id: data.id, state: "running" });
+    const result = computeStudyTask(data.task);
     self.postMessage({
       id: data.id,
-      result: computeStudyTask(data.task),
+      result,
+      computeMs: performance.now() - computeStartedAt,
       diagnostics: dataDiagnostics(),
     });
   } catch (error) {
     self.postMessage({
       id: data.id,
       error: error instanceof Error ? error.message : String(error),
+      computeMs: performance.now() - computeStartedAt,
       diagnostics: dataDiagnostics(),
     });
   }
