@@ -24,6 +24,23 @@ from app.postgres_store import TempoRow, postgres_sql
 from app.services import redis_admission_gate
 
 
+def test_postgres_startup_accepts_latest_checked_in_schema(monkeypatch):
+    from app import database
+    from app.schema_version import POSTGRES_SCHEMA_VERSION
+
+    migration_directory = Path(__file__).resolve().parents[1] / "migrations"
+    newest_migration = max(int(path.name[:3]) for path in migration_directory.glob("[0-9][0-9][0-9]_*.sql"))
+    assert POSTGRES_SCHEMA_VERSION == newest_migration
+
+    class ReadDatabase:
+        def execute(self, *_args):
+            return SimpleNamespace(fetchone=lambda: (newest_migration,))
+
+    monkeypatch.setattr(database.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(database, "read_connection", lambda: nullcontext(ReadDatabase()))
+    database.initialize()
+
+
 def test_postgres_game_accounts_update_dispatches_foreground_command(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main

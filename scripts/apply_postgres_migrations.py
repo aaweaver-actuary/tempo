@@ -6,17 +6,26 @@ import argparse
 import os
 from pathlib import Path
 import re
+import sys
 
 import psycopg
 
 
 MIGRATIONS = Path(__file__).resolve().parents[1] / "backend" / "migrations"
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from backend.app.schema_version import POSTGRES_SCHEMA_VERSION
 
 
 def apply_migrations(database_url: str) -> None:
     files = sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql"))
     if not files:
         raise RuntimeError("No PostgreSQL migrations found")
+    latest_file_version = int(files[-1].name[:3])
+    if latest_file_version != POSTGRES_SCHEMA_VERSION:
+        raise RuntimeError(
+            f"Latest PostgreSQL migration is {latest_file_version}; "
+            f"API expects {POSTGRES_SCHEMA_VERSION}"
+        )
     with psycopg.connect(database_url) as database:
         exists = database.execute(
             "SELECT to_regclass('public.tempo_schema_migrations') IS NOT NULL"
