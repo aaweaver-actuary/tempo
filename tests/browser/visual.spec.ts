@@ -81,8 +81,24 @@ test("service-unavailable", async ({ page }) => {
     }),
   );
   await navigate(page, "Progress");
-  await expect(page.getByRole("alert")).toBeVisible();
+  await expect(page.locator(".ui-notice.error")).toContainText(
+    "Review history unavailable: Could not load /api/progress (HTTP 503)",
+  );
   await expect(page).toHaveScreenshot("service-unavailable.png");
+});
+
+test("laptop header navigation and actions remain separate", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await prepareVisualUI(page);
+  await navigate(page, "Train");
+  const navigationControl = await page.locator(".desktop-navigation").isVisible()
+    ? page.locator(".desktop-navigation button").last()
+    : page.locator(".tablet-navigation");
+  const navigationBounds = await navigationControl.boundingBox();
+  const actionBounds = await page.locator(".top-actions").boundingBox();
+  expect(navigationBounds).not.toBeNull();
+  expect(actionBounds).not.toBeNull();
+  expect(navigationBounds!.x + navigationBounds!.width).toBeLessThanOrEqual(actionBounds!.x);
 });
 
 for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 720 }]) {
