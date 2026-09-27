@@ -145,13 +145,12 @@ def _queue_split_followups(
                 "SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue WHERE queue_date=? AND card_id=?",
                 (today, card_id),
             ).fetchone()[0]
-            database.execute(
+            queued_entry = database.execute(
                 """INSERT INTO daily_queue(
                        queue_date,card_id,cycle,position,attempt_state,card_bucket,admission_kind
-                   ) VALUES(?,?,?,?,?,'opening','review')""",
+                   ) VALUES(?,?,?,?,?,'opening','review') RETURNING id""",
                 (today, card_id, cycle, 2_000_000_000, attempt_state),
-            )
-            queued_entry = database.execute("SELECT last_insert_rowid() AS id").fetchone()
+            ).fetchone()
         followup_ids.append(queued_entry["id"])
     queued_entries = database.execute(
         "SELECT id,position FROM daily_queue WHERE queue_date=? AND status='queued' ORDER BY position,id",

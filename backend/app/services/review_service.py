@@ -210,11 +210,10 @@ def ensure_card_queued_after(
             "SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue WHERE queue_date=? AND card_id=?",
             (day, card_id),
         ).fetchone()[0]
-        database.execute(
-            "INSERT INTO daily_queue(queue_date,card_id,cycle,position,attempt_state,gameplay_priority_reason) VALUES(?,?,?,?,?,?)",
+        entry = database.execute(
+            "INSERT INTO daily_queue(queue_date,card_id,cycle,position,attempt_state,gameplay_priority_reason) VALUES(?,?,?,?,?,?) RETURNING id",
             (day, card_id, cycle, 2_000_000_000, attempt_state, priority_reason),
-        )
-        entry = database.execute("SELECT last_insert_rowid() AS id").fetchone()
+        ).fetchone()
     elif priority_reason:
         database.execute(
             "UPDATE daily_queue SET gameplay_priority_reason=? WHERE id=?",

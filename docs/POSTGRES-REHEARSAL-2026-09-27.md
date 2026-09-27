@@ -69,6 +69,13 @@ handler has been ported and the release gates pass.
 - Foreground queue fail and bury operations now dispatch named Celery commands.
   A rehearsal queue entry was marked failed and buried; replaying the bury
   operation ID returned its original receipt and did not move the entry again.
+- Foreground reviews now dispatch a named Celery command and commit the queue
+  attempt, scheduling result, follow-up job requests, and operation receipt
+  together. Two concurrent rehearsal commands for one queue attempt produced
+  one new review and two complete receipts. SQLite `last_insert_rowid()` calls
+  in queue insertion paths were replaced with `INSERT ... RETURNING id` after
+  the concurrent rehearsal exposed that the compatibility function was absent
+  from the already-running database.
 - A custom-format PostgreSQL backup was written outside the checkout at
   `/Users/andy/tempo-backups/tempo-postgres-rehearsal-2026-09-27.dump`.
   SHA-256 is `eaf7e37e5e0cd86189c0cf1a7abddb8b8893264f16e906e6f95b4948b0c4b326`.

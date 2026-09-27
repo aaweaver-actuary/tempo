@@ -91,6 +91,32 @@ def test_postgres_cutover_queue_fail_and_bury_dispatch_foreground_commands(monke
     ]
 
 
+def test_postgres_cutover_review_route_dispatches_idempotent_command(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    dispatched: list[tuple[str, dict, str | None]] = []
+
+    def record_command(name, payload, *, idempotency_key):
+        dispatched.append((name, payload, idempotency_key))
+        return {"review_id": 19, "persisted": True}
+
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(command_dispatch, "dispatch_command", record_command)
+    response = TestClient(main.app).post(
+        "/api/cards/card-1/review",
+        json={"outcome": "correct", "queue_entry_id": 42},
+        headers={"Idempotency-Key": "review-card-1-42"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"review_id": 19, "persisted": True}
+    assert dispatched[0][0] == "cards.review"
+    assert dispatched[0][1]["card_id"] == "card-1"
+    assert dispatched[0][1]["review"]["queue_entry_id"] == 42
+    assert dispatched[0][2] == "review-card-1-42"
+
+
 def test_postgres_cutover_translates_placeholders_and_rejects_runtime_pragma():
     assert postgres_sql("SELECT id FROM cards WHERE id=?") == "SELECT id FROM cards WHERE id = %s"
     assert postgres_sql("INSERT OR IGNORE INTO settings(id) VALUES(?)").endswith(

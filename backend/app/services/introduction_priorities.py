@@ -705,25 +705,33 @@ def enqueue_priority_refresh(
 ) -> int:
     from ..database import connection
 
+    with connection(background=background) as database:
+        return enqueue_priority_refresh_in_transaction(
+            database, repertoire_id, quiet_seconds=quiet_seconds,
+        )
+
+
+def enqueue_priority_refresh_in_transaction(
+    database, repertoire_id: str, *, quiet_seconds: int = 5,
+) -> int:
+    """Advance a priority generation with the caller's existing receipt transaction."""
+
     now = datetime.now(timezone.utc)
     next_attempt_at = (now + timedelta(seconds=quiet_seconds)).isoformat()
-    with connection(background=background) as database:
-        database.execute(
-            """INSERT INTO repertoire_priority_jobs(
-                   repertoire_id,generation,status,attempts,next_attempt_at,last_error,updated_at
-               ) VALUES(?,1,'queued',0,?,NULL,?)
-               ON CONFLICT(repertoire_id) DO UPDATE SET
-                   generation=repertoire_priority_jobs.generation+1,
-                   status='queued',attempts=0,next_attempt_at=excluded.next_attempt_at,
-                   last_error=NULL,updated_at=excluded.updated_at""",
-            (repertoire_id, next_attempt_at, now.isoformat()),
-        )
-        return int(
-            database.execute(
-                "SELECT generation FROM repertoire_priority_jobs WHERE repertoire_id=?",
-                (repertoire_id,),
-            ).fetchone()[0]
-        )
+    database.execute(
+        """INSERT INTO repertoire_priority_jobs(
+               repertoire_id,generation,status,attempts,next_attempt_at,last_error,updated_at
+           ) VALUES(?,1,'queued',0,?,NULL,?)
+           ON CONFLICT(repertoire_id) DO UPDATE SET
+               generation=repertoire_priority_jobs.generation+1,
+               status='queued',attempts=0,next_attempt_at=excluded.next_attempt_at,
+               last_error=NULL,updated_at=excluded.updated_at""",
+        (repertoire_id, next_attempt_at, now.isoformat()),
+    )
+    return int(database.execute(
+        "SELECT generation FROM repertoire_priority_jobs WHERE repertoire_id=?",
+        (repertoire_id,),
+    ).fetchone()[0])
 
 
 def enqueue_priority_refreshes_for_game(

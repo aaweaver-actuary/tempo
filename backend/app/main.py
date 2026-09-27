@@ -10,6 +10,7 @@ from redis import RedisError
 import time
 import uuid
 from contextlib import asynccontextmanager
+from contextlib import nullcontext
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -148,6 +149,7 @@ from .services.repertoire_coverage import (
 )
 from .services.introduction_priorities import (
     enqueue_priority_refresh,
+    enqueue_priority_refresh_in_transaction,
     priority_status,
 )
 from .services.priority_retention import execute_priority_retention_slice
@@ -375,8 +377,10 @@ async def prioritize_foreground_requests(request: Request, call_next):
                        and path_parts[3] == "links" and request.method == "POST")
         queue_entry_command = (len(path_parts) == 5 and path_parts[:3] == ["api", "queue", "entries"]
                                and path_parts[4] in {"fail", "bury"} and request.method == "POST")
+        card_review_command = (len(path_parts) == 4 and path_parts[:2] == ["api", "cards"]
+                               and path_parts[3] == "review" and request.method == "POST")
         if not any((study_create, study_update, chapter_create, chapter_reorder,
-                    chapter_rename, link_create, queue_entry_command)):
+                    chapter_rename, link_create, queue_entry_command, card_review_command)):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
@@ -2110,21 +2114,20 @@ def requeue(db, day, cid, after, attempt):
             "UPDATE daily_queue SET position=position+1 WHERE queue_date=? AND status='queued' AND position>=?",
             (day, position),
         )
-    db.execute(
-        "INSERT INTO daily_queue(queue_date,card_id,cycle,position,attempt_state) VALUES(?,?,?,?,?)",
+    inserted_entry_id = db.execute(
+        "INSERT INTO daily_queue(queue_date,card_id,cycle,position,attempt_state) "
+        "VALUES(?,?,?,?,?) RETURNING id",
         (day, cid, cycle, position, attempt),
-    )
+    ).fetchone()[0]
     db.execute(
         """UPDATE daily_queue SET
                card_bucket=(SELECT content_type FROM cards WHERE id=card_id),
                admission_kind='review'
-           WHERE id=last_insert_rowid()"""
+           WHERE id=?""",
+        (inserted_entry_id,),
     )
     preserve_daily_queue_order(db, day)
-    return db.execute(
-        "SELECT id FROM daily_queue WHERE queue_date=? AND card_id=? AND cycle=?",
-        (day, cid, cycle),
-    ).fetchone()[0]
+    return inserted_entry_id
 
 
 @app.post("/api/queue/entries/{entry_id}/fail")
@@ -2194,7 +2197,18 @@ def bury_queue_entry(entry_id: int,
 
 
 @app.post("/api/cards/{identifier}/review")
-def review(identifier: str, request: ReviewRequest):
+def review(identifier: str, request: ReviewRequest,
+           idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "cards.review", {"card_id": identifier, "review": request.model_dump(mode="json")},
+            idempotency_key=idempotency_key,
+        )
+    return _apply_review(identifier, request)
+
+
+def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
     original_request = {"outcome": request.outcome, "guided": request.guided}
     now = datetime.now(timezone.utc)
     if request.recorded_at:
@@ -2206,7 +2220,7 @@ def review(identifier: str, request: ReviewRequest):
             raise HTTPException(422, "Review timestamp must include a timezone and cannot be in the future")
         now = recorded_at.astimezone(timezone.utc)
     day = date.today().isoformat()
-    with connection() as db:
+    with (nullcontext(database) if database is not None else connection()) as db:
         content_row = db.execute("SELECT content_type FROM cards WHERE id=?", (identifier,)).fetchone()
         if content_row and content_row["content_type"] == "defense":
             raise HTTPException(409, "Defensive exercises must be graded through their move rubric")
@@ -2232,12 +2246,14 @@ def review(identifier: str, request: ReviewRequest):
             raise HTTPException(409, "This card belongs only to a repertoire awaiting integrity repair")
         entry = (
             db.execute(
-                "SELECT * FROM daily_queue WHERE id=? AND card_id=?",
+                "SELECT * FROM daily_queue WHERE id=? AND card_id=?" +
+                (" FOR UPDATE" if postgres_store.configured() else ""),
                 (request.queue_entry_id, identifier),
             ).fetchone()
             if request.queue_entry_id
             else db.execute(
-                "SELECT * FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued' ORDER BY position,id LIMIT 1",
+                "SELECT * FROM daily_queue WHERE queue_date=? AND card_id=? AND status='queued' ORDER BY position,id LIMIT 1" +
+                (" FOR UPDATE" if postgres_store.configured() else ""),
                 (day, identifier),
             ).fetchone()
         )
@@ -2338,11 +2354,27 @@ def review(identifier: str, request: ReviewRequest):
             (json.dumps({**persisted_result, "_request": original_request,
                          "_recorded_at": now.isoformat() if request.recorded_at else None}), entry["id"]),
         )
-    if persisted_result["state"] == "mature":
-        enqueue_daily_queue_refresh()
-    if entry["gameplay_priority_reason"] == MISS_REASON:
-        for repertoire_id in owner_ids:
-            enqueue_priority_refresh(repertoire_id)
+        if postgres_store.configured():
+            if persisted_result["state"] == "mature":
+                enqueue_task_in_transaction(
+                    db, "daily_queue", "current", {"queue_date": day}, priority=10,
+                )
+                db.execute(
+                    """INSERT INTO queue_projections(queue_date,state,generation,refresh_pending)
+                       VALUES(?,'refreshing',0,1)
+                       ON CONFLICT(queue_date) DO UPDATE SET state='refreshing',
+                           refresh_pending=1,last_error=NULL""",
+                    (day,),
+                )
+            if entry["gameplay_priority_reason"] == MISS_REASON:
+                for repertoire_id in owner_ids:
+                    enqueue_priority_refresh_in_transaction(db, repertoire_id)
+    if not postgres_store.configured():
+        if persisted_result["state"] == "mature":
+            enqueue_daily_queue_refresh()
+        if entry["gameplay_priority_reason"] == MISS_REASON:
+            for repertoire_id in owner_ids:
+                enqueue_priority_refresh(repertoire_id)
     return persisted_result
 
 

@@ -518,10 +518,9 @@ def train_exercise_now(study_id: str, exercise_id: str):
         cycle = database.execute("SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue WHERE card_id=? AND queue_date=?",
                                  (card["id"], today)).fetchone()[0]
         position = database.execute("SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=?", (today,)).fetchone()[0]
-        database.execute("""INSERT INTO daily_queue(queue_date,card_id,cycle,position,admission_kind,card_bucket)
-                            VALUES(?,?,?,?,'explicit','study_exercise')""",
-                         (today, card["id"], cycle, position))
-        entry_id = database.execute("SELECT last_insert_rowid()").fetchone()[0]
+        entry_id = database.execute("""INSERT INTO daily_queue(queue_date,card_id,cycle,position,admission_kind,card_bucket)
+                            VALUES(?,?,?,?,'explicit','study_exercise') RETURNING id""",
+                         (today, card["id"], cycle, position)).fetchone()[0]
     _queue_refresh()
     return {"queue_entry_id": entry_id, "idempotent": False}
 
