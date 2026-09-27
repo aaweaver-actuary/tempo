@@ -7,6 +7,7 @@ import sqlite3
 import os
 import random
 from redis import RedisError
+from redis.asyncio import Redis as AsyncRedis
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -3706,6 +3707,21 @@ def tactic_progress():
 
 async def tablebase(fen: str):
     key = " ".join(fen.split()[:4])
+    redis_cache_key = "tempo:tablebase:" + hashlib.sha256(key.encode()).hexdigest()
+    redis_url = os.getenv("TEMPO_REDIS_URL") if postgres_store.configured() else None
+    if redis_url:
+        redis_cache = AsyncRedis.from_url(redis_url)
+        try:
+            cached_response = await redis_cache.get(redis_cache_key)
+            if cached_response is not None:
+                try:
+                    return json.loads(cached_response)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    pass
+        except RedisError:
+            pass
+        finally:
+            await redis_cache.aclose()
     with read_connection() as db:
         row = db.execute(
             "SELECT response_json FROM tablebase_cache WHERE fen_key=?", (key,)
@@ -3723,7 +3739,15 @@ async def tablebase(fen: str):
             response.status_code, "Position is outside complete tablebase coverage"
         )
     data = response.json()
-    if not postgres_store.configured():
+    if redis_url:
+        redis_cache = AsyncRedis.from_url(redis_url)
+        try:
+            await redis_cache.setex(redis_cache_key, 30 * 24 * 60 * 60, json.dumps(data))
+        except RedisError:
+            pass
+        finally:
+            await redis_cache.aclose()
+    elif not postgres_store.configured():
         with connection() as db:
             db.execute(
                 "INSERT OR REPLACE INTO tablebase_cache VALUES(?,?,?)",

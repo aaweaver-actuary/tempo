@@ -229,6 +229,59 @@ def test_postgres_tablebase_probe_never_writes_from_read_only_api(monkeypatch):
     assert asyncio.run(main.tablebase("8/8/8/8/8/8/4k3/4K3 w - - 0 1"))["category"] == "win"
 
 
+def test_postgres_tablebase_redis_cache_hit_and_failure_fallback(monkeypatch):
+    import asyncio
+    from redis import RedisError
+    from app import main
+
+    cached = []
+    fetches = []
+
+    class Cache:
+        async def get(self, _key):
+            if cached:
+                return cached[0]
+            raise RedisError("cache unavailable")
+
+        async def setex(self, _key, _ttl, value):
+            cached.append(value)
+
+        async def aclose(self):
+            return None
+
+    class Database:
+        def execute(self, *_args):
+            return SimpleNamespace(fetchone=lambda: None)
+
+    class Response:
+        status_code = 200
+        is_success = True
+
+        def json(self):
+            return {"category": "draw", "moves": []}
+
+    class Client:
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *_args):
+            return None
+
+        async def get(self, *_args, **_kwargs):
+            fetches.append(True)
+            return Response()
+
+    monkeypatch.setenv("TEMPO_REDIS_URL", "redis://rehearsal")
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.AsyncRedis, "from_url", lambda _url: Cache())
+    monkeypatch.setattr(main, "read_connection", lambda: nullcontext(Database()))
+    monkeypatch.setattr(main.httpx, "AsyncClient", lambda **_kwargs: Client())
+    fen = "8/8/8/8/8/8/4k3/4K3 w - - 0 1"
+    assert asyncio.run(main.tablebase(fen))["category"] == "draw"
+    assert asyncio.run(main.tablebase(fen))["category"] == "draw"
+    assert len(fetches) == 1
+
+
 def test_postgres_endgame_attempt_prepares_outside_worker_and_dispatches_idempotently(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main
