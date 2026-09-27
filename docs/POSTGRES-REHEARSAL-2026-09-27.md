@@ -111,6 +111,15 @@ handler has been ported and the release gates pass.
   41.4 ms. The runner therefore uses eight-card unlock slices. The remaining
   queue phases and end-to-end publication are not ported, so this kind remains
   excluded from the Celery poll.
+- Tactical introductions now prepare one packaged puzzle after several bounded
+  read sections have closed, then publish at most one reservation through
+  native PostgreSQL SQL. The read sections retry transaction timeouts; the
+  write rechecks the rotation cursor, activation, quota, and existing progress
+  under the task lease. A rolled-back rehearsal of a fresh date's full tactical
+  write and phase advance took 38.9 ms under the 50 ms limit after the initial
+  SQLite-dialect translation overhead was removed. Named regressions cover
+  foreground contention, restart replay, and file work outside the database
+  section. Later queue phases remain unported.
 - A custom-format PostgreSQL backup was written outside the checkout at
   `/Users/andy/tempo-backups/tempo-postgres-rehearsal-2026-09-27.dump`.
   SHA-256 is `eaf7e37e5e0cd86189c0cf1a7abddb8b8893264f16e906e6f95b4948b0c4b326`.

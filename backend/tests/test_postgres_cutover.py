@@ -885,6 +885,126 @@ def test_postgres_queue_refresh_foreground_request_blocks_new_database_slice(mon
     assert opened_database.is_set()
 
 
+def test_postgres_tactical_queue_prepares_outside_database_and_retries_timed_out_read(monkeypatch):
+    from psycopg.errors import TransactionTimeout
+    from app.services import postgres_queue_refresh
+
+    database_open = False
+    settings_attempts = 0
+
+    class QueryResult:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def fetchall(self):
+            return self.rows
+
+    class ReadDatabase:
+        def execute(self, statement, parameters):
+            nonlocal settings_attempts
+            if "tactics_new_per_day" in statement:
+                settings_attempts += 1
+                if settings_attempts == 1:
+                    raise TransactionTimeout("read exceeded its budget")
+                return QueryResult([(1,)])
+            if "tactic_introductions" in statement:
+                return QueryResult([(0,)])
+            if "tactic_pack_activation" in statement:
+                return QueryResult([("pack-a",)])
+            if "tactic_rotation" in statement:
+                return QueryResult([("",)])
+            if "tactic_progress" in statement:
+                return QueryResult([])
+            raise AssertionError(statement)
+
+    @contextmanager
+    def read_section():
+        nonlocal database_open
+        assert not database_open
+        database_open = True
+        try:
+            yield ReadDatabase()
+        finally:
+            database_open = False
+
+    def records(pack_id):
+        assert not database_open and pack_id == "pack-a"
+        return [{"PuzzleId": "puzzle-a", "FEN": "source-fen"}]
+
+    monkeypatch.setattr(postgres_queue_refresh, "background_read_connection", read_section)
+    monkeypatch.setattr(postgres_queue_refresh, "pack_records", records)
+    monkeypatch.setattr(postgres_queue_refresh, "validate_puzzle_record",
+                        lambda record: ("training-fen", ["e2e4"]))
+    monkeypatch.setattr(postgres_queue_refresh, "card_id", lambda fen, moves: "card-a")
+    prepared = postgres_queue_refresh._prepare_tactical_introduction("2026-09-28")
+    assert prepared == {
+        "pack_id": "pack-a", "puzzle_id": "puzzle-a", "card_id": "card-a",
+        "training_fen": "training-fen", "solution_json": '["e2e4"]',
+        "source_fen": "source-fen", "rotation_cursor": "",
+    }
+    assert settings_attempts == 2
+    assert not database_open
+
+
+def test_postgres_tactical_queue_foreground_contention_and_stale_replay(monkeypatch):
+    from app.services import postgres_queue_refresh
+
+    preparation_started = threading.Event()
+    finished = threading.Event()
+    current_lease = True
+    publications = []
+    failures = []
+
+    @contextmanager
+    def section(*, background):
+        assert background
+        yield object()
+
+    def prepare(queue_date):
+        preparation_started.set()
+        return {"puzzle_id": "one"}
+
+    def publish(database, queue_date, prepared):
+        publications.append(prepared["puzzle_id"])
+        return True
+
+    def advance(database, task, *, next_phase, next_payload):
+        nonlocal current_lease
+        current_lease = False
+        assert next_phase == "tactical_introductions"
+        return True
+
+    monkeypatch.delenv("TEMPO_REDIS_URL", raising=False)
+    monkeypatch.setattr(postgres_queue_refresh.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres_queue_refresh, "connection", section)
+    monkeypatch.setattr(postgres_queue_refresh, "_prepare_tactical_introduction", prepare)
+    monkeypatch.setattr(postgres_queue_refresh, "_publish_tactical_introduction", publish)
+    monkeypatch.setattr(postgres_queue_refresh, "lock_current_slice",
+                        lambda database, task: current_lease)
+    monkeypatch.setattr(postgres_queue_refresh, "advance_task_slice_in_transaction", advance)
+    task = {"id": "queue-job", "generation": 1, "lease_token": "lease",
+            "payload": {"queue_date": "2026-09-28", "_queue_phase": "tactical_introductions"}}
+
+    def run_slice():
+        try:
+            assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
+        except Exception as error:
+            failures.append(error)
+        finally:
+            finished.set()
+
+    with postgres_queue_refresh.activity_gate.foreground():
+        worker = threading.Thread(target=run_slice)
+        worker.start()
+        assert not preparation_started.wait(0.05)
+    assert finished.wait(2)
+    worker.join(timeout=2)
+    assert not failures
+    assert publications == ["one"]
+    assert not postgres_queue_refresh.execute_postgres_queue_refresh_slice(task)
+    assert publications == ["one"]
+
+
 def test_postgres_cutover_game_refresh_waits_for_foreground_and_discards_stale_replay(monkeypatch):
     from app import tasks
     from app.services import repertoire_game_refresh
