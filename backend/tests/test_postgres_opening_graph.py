@@ -115,3 +115,36 @@ def test_postgres_graph_stage_checkpoints_eight_steps_and_replays_by_cursor(monk
     assert [len(batch) for batch in batches] == [8, 8, 2, 2]
     assert next_payloads[-1]["step_offset"] == 0
     assert next_payloads[-1]["after_line_id"] == "line"
+
+
+def test_postgres_graph_links_eight_cards_before_publication(monkeypatch):
+    observed_batches = []
+    transitions = []
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def executemany(self, _statement, values):
+            observed_batches.append(values)
+
+    class Database:
+        raw = type("Raw", (), {"cursor": lambda self: Cursor()})()
+
+    monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: True)
+    monkeypatch.setattr(
+        postgres_opening_graph, "advance_task_slice_in_transaction",
+        lambda _database, _task, *, next_phase, next_payload:
+        transitions.append((next_phase, next_payload)) or True,
+    )
+    task = {"generation": 4, "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"}}
+    cards = tuple(f"card-{index}" for index in range(8))
+    assert postgres_opening_graph.link_graph_cards_in_transaction(Database(), task, cards)
+    assert len(observed_batches[0]) == 8
+    assert transitions[-1][0] == "link"
+    assert transitions[-1][1]["after_card_id"] == "card-7"
+    assert postgres_opening_graph.link_graph_cards_in_transaction(Database(), task, ())
+    assert transitions[-1][0] == "publish"

@@ -128,3 +128,61 @@ def execute_graph_stage_slice(task: dict[str, Any]) -> bool:
     with background_lease():
         with postgres_store.connection(read_only=False, background=True) as database:
             return stage_graph_line_in_transaction(database, task, prepared)
+
+
+def prepare_next_graph_cards(
+    repertoire_id: str, generation: int, after_card_id: str,
+) -> tuple[str, ...]:
+    """Read at most eight distinct staged cards under the admission gate."""
+
+    with background_read_connection() as database:
+        cards = database.execute_native(
+            "SELECT card_id FROM opening_graph_steps WHERE repertoire_id=%s "
+            "AND generation=%s AND card_id>%s GROUP BY card_id ORDER BY card_id LIMIT 8",
+            (repertoire_id, generation, after_card_id),
+        ).fetchall()
+    return tuple(str(card[0]) for card in cards)
+
+
+def link_graph_cards_in_transaction(
+    database: postgres_store.PostgresConnection,
+    task: dict[str, Any],
+    card_ids: tuple[str, ...],
+) -> bool:
+    """Link at most eight staged cards, then checkpoint the sorted cursor."""
+
+    if not lock_current_slice(database, task):
+        return False
+    payload = dict(task["payload"])
+    if not card_ids:
+        return advance_task_slice_in_transaction(
+            database, task, next_phase="publish", next_payload=payload,
+        )
+    repertoire_id = str(payload["repertoire_id"])
+    generation = int(task["generation"])
+    with database.raw.cursor() as cursor:
+        cursor.executemany(
+            "INSERT INTO repertoire_cards(repertoire_id,card_id) "
+            "SELECT %s,%s WHERE EXISTS(SELECT 1 FROM opening_graph_steps "
+            "WHERE repertoire_id=%s AND generation=%s AND card_id=%s) "
+            "ON CONFLICT(repertoire_id,card_id) DO NOTHING",
+            [(repertoire_id, card_id, repertoire_id, generation, card_id)
+             for card_id in card_ids],
+        )
+    return advance_task_slice_in_transaction(
+        database, task, next_phase="link",
+        next_payload={**payload, "after_card_id": card_ids[-1]},
+    )
+
+
+def execute_graph_link_slice(task: dict[str, Any]) -> bool:
+    """Link eight staged cards without delaying foreground transactions."""
+
+    payload = task["payload"]
+    card_ids = prepare_next_graph_cards(
+        str(payload["repertoire_id"]), int(task["generation"]),
+        str(payload.get("after_card_id", "")),
+    )
+    with background_lease():
+        with postgres_store.connection(read_only=False, background=True) as database:
+            return link_graph_cards_in_transaction(database, task, card_ids)
