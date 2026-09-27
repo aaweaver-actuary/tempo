@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import threading
-from contextlib import contextmanager
+from contextlib import contextmanager, nullcontext
 import sqlite3
 
 from pathlib import Path
@@ -30,6 +30,38 @@ def test_postgres_cutover_schema_keeps_json_array_length_available(tmp_path):
     schema = generate_schema(source)
     assert "CREATE FUNCTION json_array_length(document TEXT)" in schema
     assert "jsonb_array_length(document::jsonb)" in schema
+
+
+def test_postgres_cutover_study_chapter_routes_dispatch_named_commands(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main, study_routes
+
+    dispatched: list[tuple[str, dict, str | None]] = []
+
+    def record_command(name, payload, *, idempotency_key):
+        dispatched.append((name, payload, idempotency_key))
+        return {"accepted": name}
+
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(study_routes, "dispatch_command", record_command)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    client = TestClient(main.app)
+    headers = {"Idempotency-Key": "study-command-1"}
+    requests = (
+        ("post", "/api/studies/study-1/chapters", {"title": "Chapter"}, "studies.chapters.create"),
+        ("put", "/api/studies/study-1/chapters/order", ["chapter-1"], "studies.chapters.reorder"),
+        ("patch", "/api/studies/study-1/chapters/chapter-1", {"title": "Renamed"}, "studies.chapters.rename"),
+        ("post", "/api/studies/study-1/links", {
+            "source_position_id": "position-1", "target_position_id": "position-2",
+            "relation": "illustrates",
+        }, "studies.links.create"),
+    )
+    for method, path, body, command_name in requests:
+        response = getattr(client, method)(path, json=body, headers=headers)
+        assert response.status_code == 200, response.text
+        assert response.json() == {"accepted": command_name}
+    assert [name for name, _, _ in dispatched] == [item[3] for item in requests]
+    assert all(key == "study-command-1" for _, _, key in dispatched)
 
 
 def test_postgres_cutover_translates_placeholders_and_rejects_runtime_pragma():

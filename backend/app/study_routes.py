@@ -158,7 +158,12 @@ def unarchive_study(study_id: str):
 
 
 @router.post("/{study_id}/chapters")
-def create_chapter(study_id: str, request: ChapterCreate):
+def create_chapter(study_id: str, request: ChapterCreate,
+                   idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.chapters.create",
+                                {"study_id": study_id, "chapter": request.model_dump(mode="json")},
+                                idempotency_key=idempotency_key)
     identifier = str(uuid.uuid4())
     with connection() as database:
         study = _require(database, "studies", study_id)
@@ -171,7 +176,12 @@ def create_chapter(study_id: str, request: ChapterCreate):
 
 
 @router.put("/{study_id}/chapters/order")
-def reorder_chapters(study_id: str, chapter_ids: list[str]):
+def reorder_chapters(study_id: str, chapter_ids: list[str],
+                     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.chapters.reorder",
+                                {"study_id": study_id, "chapter_ids": chapter_ids},
+                                idempotency_key=idempotency_key)
     with connection() as database:
         current = [row[0] for row in database.execute("SELECT id FROM study_chapters WHERE study_id=?", (study_id,))]
         if set(current) != set(chapter_ids) or len(current) != len(chapter_ids):
@@ -207,7 +217,13 @@ def get_chapter(study_id: str, chapter_id: str):
 
 
 @router.patch("/{study_id}/chapters/{chapter_id}")
-def rename_chapter(study_id: str, chapter_id: str, request: ChapterCreate):
+def rename_chapter(study_id: str, chapter_id: str, request: ChapterCreate,
+                   idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.chapters.rename",
+                                {"study_id": study_id, "chapter_id": chapter_id,
+                                 "chapter": request.model_dump(mode="json")},
+                                idempotency_key=idempotency_key)
     with connection() as database:
         chapter = _require(database, "study_chapters", chapter_id)
         if chapter["study_id"] != study_id:
@@ -218,7 +234,12 @@ def rename_chapter(study_id: str, chapter_id: str, request: ChapterCreate):
 
 
 @router.post("/{study_id}/links")
-def create_link(study_id: str, request: StudyLinkCreate):
+def create_link(study_id: str, request: StudyLinkCreate,
+                idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.links.create",
+                                {"study_id": study_id, "link": request.model_dump(mode="json")},
+                                idempotency_key=idempotency_key)
     if bool(request.target_position_id) == bool(request.target_exercise_id):
         raise HTTPException(422, "A teaching link needs one position or exercise target")
     identifier = str(uuid.uuid4())

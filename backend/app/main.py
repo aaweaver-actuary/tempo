@@ -360,11 +360,21 @@ def _validated_analysis_evaluations(
 async def prioritize_foreground_requests(request: Request, call_next):
     request.state.started_monotonic = time.monotonic()
     if postgres_store.configured() and request.method not in {"GET", "HEAD", "OPTIONS"}:
-        study_create = request.method == "POST" and request.url.path == "/api/studies"
-        study_update = (request.method == "PATCH"
-                        and request.url.path.startswith("/api/studies/")
-                        and request.url.path.count("/") == 3)
-        if not (study_create or study_update):
+        path_parts = request.url.path.strip("/").split("/")
+        study_root = path_parts[:2] == ["api", "studies"]
+        study_create = study_root and len(path_parts) == 2 and request.method == "POST"
+        study_update = study_root and len(path_parts) == 3 and request.method == "PATCH"
+        chapter_create = (study_root and len(path_parts) == 4
+                          and path_parts[3] == "chapters" and request.method == "POST")
+        chapter_reorder = (study_root and len(path_parts) == 5
+                           and path_parts[3:] == ["chapters", "order"]
+                           and request.method == "PUT")
+        chapter_rename = (study_root and len(path_parts) == 5
+                          and path_parts[3] == "chapters" and request.method == "PATCH")
+        link_create = (study_root and len(path_parts) == 4
+                       and path_parts[3] == "links" and request.method == "POST")
+        if not any((study_create, study_update, chapter_create, chapter_reorder,
+                    chapter_rename, link_create)):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
