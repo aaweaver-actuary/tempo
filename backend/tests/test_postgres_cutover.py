@@ -170,6 +170,30 @@ def test_postgres_repertoire_rename_dispatches_idempotent_foreground_command(mon
     }, "rename-1")]
 
 
+def test_postgres_endgame_template_admission_dispatches_foreground_command(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(command_dispatch, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or {
+                            "id": "template", "card_id": "card", "sample_fen": "fen",
+                            "already_exists": False,
+                        })
+    response = TestClient(main.app).post(
+        "/api/endgames/templates", headers={"Idempotency-Key": "endgame-1"},
+        json={"name": "King and rook", "white_material": "KR",
+              "black_material": "K", "trained_color": "white"},
+    )
+    assert response.status_code == 200, response.text
+    assert dispatched[0][0] == "endgames.template.create"
+    assert dispatched[0][1]["name"] == "King and rook"
+    assert dispatched[0][2] == "endgame-1"
+
+
 def test_postgres_settings_update_dispatches_foreground_command(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main

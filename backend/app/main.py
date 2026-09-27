@@ -440,6 +440,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
         settings_command = (path_parts == ["api", "settings"] and request.method == "PUT")
         endgame_probe = (path_parts == ["api", "endgames", "probe"]
                          and request.method == "POST")
+        endgame_template_command = (path_parts == ["api", "endgames", "templates"]
+                                    and request.method == "POST")
         card_validation = (path_parts == ["api", "cards", "validate"]
                            and request.method == "POST")
         if not any((study_create, study_update, study_archive, exercise_create, exercise_revise,
@@ -452,7 +454,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     browser_activity, tactic_attempt_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     settings_command,
-                    endgame_probe, card_validation)):
+                    endgame_probe, endgame_template_command, card_validation)):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
@@ -3740,7 +3742,12 @@ def list_endgames():
 
 
 @app.post("/api/endgames/templates")
-def create_endgame(request: EndgameTemplateRequest):
+def create_endgame(request: EndgameTemplateRequest,
+                   idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command("endgames.template.create", request.model_dump(mode="json"),
+                                idempotency_key=idempotency_key)
     try:
         white = normalized_material(request.white_material)
         black = normalized_material(request.black_material)
