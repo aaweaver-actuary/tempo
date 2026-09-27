@@ -80,3 +80,44 @@ it("performance summary excludes stale browser artifacts from another commit", (
     rmSync(outputDirectory, { recursive: true, force: true });
   }
 });
+
+it("performance summary names failed stages and slow unit files from the same run", () => {
+  const outputDirectory = mkdtempSync(join(tmpdir(), "tempo-perf-unit-profile-"));
+  try {
+    const runStartedAt = Date.parse("2026-09-27T12:00:00Z");
+    writeFileSync(join(outputDirectory, "test-stages-full.json"), JSON.stringify({
+      schema_version: 1, tier: "full", commit: "current", timestamp: "2026-09-27T12:00:00Z",
+      environment: { platform: "linux" },
+      stages: { unit: { duration_seconds: 12, exit_code: 0 },
+        backend: { duration_seconds: 4, exit_code: 1 } },
+    }));
+    writeFileSync(join(outputDirectory, "unit-files-full.json"), JSON.stringify({
+      startTime: runStartedAt + 1000,
+      testResults: [
+        { name: join(process.cwd(), "tests/unit/fast.test.ts"), startTime: 10, endTime: 110, status: "passed" },
+        { name: join(process.cwd(), "tests/unit/slow.test.ts"), startTime: 10, endTime: 1010, status: "passed" },
+      ],
+    }));
+    const report = spawnSync(process.execPath, [
+      "scripts/report-performance.mjs", "--directory", outputDirectory,
+    ], { cwd: process.cwd(), encoding: "utf8" });
+    expect(report.status, report.stderr).toBe(0);
+    const summary = readFileSync(join(outputDirectory, "performance-summary.md"), "utf8");
+    expect(summary).toContain("backend | 4.00 s | failed (1)");
+    expect(summary).toContain("Slowest unit files");
+    expect(summary.indexOf("slow.test.ts")).toBeLessThan(summary.indexOf("fast.test.ts"));
+
+    const unitProfilePath = join(outputDirectory, "unit-files-full.json");
+    const staleUnitProfile = JSON.parse(readFileSync(unitProfilePath, "utf8"));
+    staleUnitProfile.startTime = runStartedAt - 1000;
+    writeFileSync(unitProfilePath, JSON.stringify(staleUnitProfile));
+    const staleReport = spawnSync(process.execPath, [
+      "scripts/report-performance.mjs", "--directory", outputDirectory,
+    ], { cwd: process.cwd(), encoding: "utf8" });
+    expect(staleReport.status, staleReport.stderr).toBe(0);
+    expect(readFileSync(join(outputDirectory, "performance-summary.md"), "utf8"))
+      .not.toContain("Slowest unit files");
+  } finally {
+    rmSync(outputDirectory, { recursive: true, force: true });
+  }
+});

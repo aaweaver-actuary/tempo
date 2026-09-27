@@ -1,5 +1,5 @@
 import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 
 const argumentsToParse = process.argv.slice(2);
 const optionValue = (name) => {
@@ -26,6 +26,7 @@ function readArtifact(directory, filename) {
 
 function collectMetrics(directory) {
   const stageReport = readArtifact(directory, "test-stages-full.json");
+  const unitProfile = readArtifact(directory, "unit-files-full.json");
   const commit = stageReport?.commit ?? null;
   const environment = stageReport?.environment ?? null;
   const metrics = [];
@@ -69,8 +70,18 @@ function collectMetrics(directory) {
     }
     addMetrics(artifact);
   }
+  const stageStart = Date.parse(stageReport?.timestamp ?? "");
+  const slowestUnitFiles = stageReport?.stages?.unit &&
+    Array.isArray(unitProfile?.testResults) &&
+    Number.isFinite(stageStart) && unitProfile.startTime >= stageStart
+    ? unitProfile.testResults.map((result) => ({
+      file: relative(process.cwd(), result.name),
+      durationMilliseconds: Math.max(0, result.endTime - result.startTime),
+      status: result.status,
+    })).sort((left, right) => right.durationMilliseconds - left.durationMilliseconds).slice(0, 10)
+    : [];
   return { commit, timestamp: stageReport?.timestamp ?? null, environment,
-    metrics, staleArtifacts };
+    metrics, staleArtifacts, slowestUnitFiles };
 }
 
 const current = collectMetrics(outputDirectory);
@@ -88,6 +99,7 @@ const metricRows = current.metrics.map((metric) => {
   const change = percentage === null ? (baseline ? "not comparable" : "—") :
     `${Math.abs(percentage).toFixed(1)}% ${percentage >= 0 ? "slower" : "faster"}`;
   return `| ${metric.label} | ${metric.value.toFixed(metric.unit === "s" ? 2 : 1)} ${metric.unit} | ` +
+    `${metric.exitCode === undefined ? "—" : metric.exitCode === 0 ? "passed" : `failed (${metric.exitCode})`} | ` +
     `${previous && comparable ? `${previous.value.toFixed(metric.unit === "s" ? 2 : 1)} ${metric.unit}` : "—"} | ${change} |`;
 });
 
@@ -96,8 +108,8 @@ const lines = [
   "",
   `Commit: \`${current.commit ?? "unavailable"}\` · Run: ${current.timestamp ?? "unavailable"}`,
   "",
-  "| Metric | Current | Baseline | Change |",
-  "| --- | ---: | ---: | --- |",
+  "| Metric | Current | Status | Baseline | Change |",
+  "| --- | ---: | --- | ---: | --- |",
   ...metricRows,
   "",
 ];
@@ -107,6 +119,13 @@ else if (regressions.length)
 else lines.push("No comparable metric exceeded 25% degradation.", "");
 if (current.staleArtifacts.length)
   lines.push(`Stale browser artifacts excluded: ${current.staleArtifacts.join(", ")}.`, "");
+if (current.slowestUnitFiles.length) {
+  lines.push("## Slowest unit files", "", "File wall times may overlap across workers.", "",
+    "| File | Wall time | Status |", "| --- | ---: | --- |");
+  for (const result of current.slowestUnitFiles)
+    lines.push(`| \`${result.file}\` | ${(result.durationMilliseconds / 1000).toFixed(2)} s | ${result.status} |`);
+  lines.push("");
+}
 const markdown = `${lines.join("\n")}\n`;
 mkdirSync(outputDirectory, { recursive: true });
 writeFileSync(join(outputDirectory, "performance-summary.md"), markdown);
