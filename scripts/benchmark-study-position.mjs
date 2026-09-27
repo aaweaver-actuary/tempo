@@ -14,6 +14,18 @@ const bundle = await build({
 });
 const moduleUrl = `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString("base64")}`;
 const { computeStudyTask } = await import(moduleUrl);
+const storeBundle = await build({
+  entryPoints: ["app/lib/study-position-store.ts"], bundle: true, format: "esm",
+  platform: "node", write: false, logLevel: "silent",
+});
+const storeModuleUrl = `data:text/javascript;base64,${Buffer.from(storeBundle.outputFiles[0].text).toString("base64")}`;
+const { createStudyPositionStore } = await import(storeModuleUrl);
+const canonicalBundle = await build({
+  entryPoints: ["app/utils/canonical-line.ts"], bundle: true, format: "esm",
+  platform: "node", write: false, logLevel: "silent",
+});
+const canonicalModuleUrl = `data:text/javascript;base64,${Buffer.from(canonicalBundle.outputFiles[0].text).toString("base64")}`;
+const { canonicalizeLine } = await import(canonicalModuleUrl);
 const startFen = new Chess().fen();
 const movePairs = new Chess().moves({ verbose: true }).flatMap((firstMove) => {
   const board = new Chess();
@@ -64,6 +76,14 @@ for (const workload of workloads) {
     moves: movePairs[index % movePairs.length],
   }));
   const indexTiming = measure(() => computeStudyTask({ kind: "index", lines }), workload.samples);
+  const canonicalLines = lines.map(canonicalizeLine);
+  const workerInitializeTiming = measure(() => {
+    const run = createStudyPositionStore();
+    run({
+      kind: "initializePositionIndex", repertoireId: "benchmark-repertoire",
+      revision: 1, lines: canonicalLines,
+    });
+  }, workload.samples);
   const positions = computeStudyTask({ kind: "index", lines });
   const searchTask = { kind: "matches", fen: startFen, positions };
   const searchTiming = measure(() => computeStudyTask(searchTask), workload.samples);
@@ -84,6 +104,7 @@ for (const workload of workloads) {
     query_bytes_json: Buffer.byteLength(JSON.stringify(searchTask)),
     compact_query_bytes_json: Buffer.byteLength(JSON.stringify(compactQueryTask)),
     index: indexTiming,
+    worker_index_initialize: workerInitializeTiming,
     matches: searchTiming,
     query_clone: queryCloneTiming,
     compact_query_clone: compactQueryCloneTiming,

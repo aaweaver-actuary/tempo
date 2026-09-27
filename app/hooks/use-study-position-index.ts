@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { runStudyTask } from "../lib/background-study";
-import type { AnalysisLine } from "../types";
+import type { CanonicalLine } from "../types";
 
 let nextIndexRevision = 0;
 
@@ -8,11 +8,11 @@ type ReadyPositionIndex = { repertoireId: string; revision: number };
 
 export function useStudyPositionIndex(
   repertoireId: string | undefined,
-  lines: AnalysisLine[],
+  lines: CanonicalLine[],
 ): ReadyPositionIndex | undefined {
   const [completed, setCompleted] = useState<{
     repertoireId: string;
-    lines: AnalysisLine[];
+    lines: CanonicalLine[];
     revision: number;
   }>();
   useEffect(() => {

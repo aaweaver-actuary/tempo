@@ -1,4 +1,4 @@
-import type { AnalysisLine } from "../types";
+import type { AnalysisLine, CanonicalLine } from "../types";
 import { packagedPuzzleSchema } from "../domain/schemas";
 import { validRecords } from "./validated-data";
 import {
@@ -29,7 +29,7 @@ export type PureStudyTask =
     };
 
 export type StudyPositionTask =
-  | { kind: "initializePositionIndex"; repertoireId: string; revision: number; lines: AnalysisLine[] }
+  | { kind: "initializePositionIndex"; repertoireId: string; revision: number; lines: CanonicalLine[] }
   | { kind: "findPositionMatches"; repertoireId: string; revision: number; fen: string; limit?: number }
   | { kind: "releasePositionIndex"; repertoireId: string; revision: number };
 

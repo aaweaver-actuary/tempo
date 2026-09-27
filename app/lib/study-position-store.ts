@@ -1,5 +1,5 @@
 import { computeStudyTask, type StudyTask } from "./study-computation";
-import type { IndexedPosition } from "./position-similarity";
+import { indexRepertoirePositions, type IndexedPosition } from "./position-similarity";
 
 export function createStudyPositionStore() {
   const indexes = new Map<string, { revision: number; positions: IndexedPosition[] }>();
@@ -11,7 +11,7 @@ export function createStudyPositionStore() {
           throw new Error("A newer repertoire position index is already active.");
         if (current?.revision === task.revision)
           return { revision: current.revision, indexedPositions: current.positions.length };
-        const positions = computeStudyTask({ kind: "index", lines: task.lines }) as IndexedPosition[];
+        const positions = indexRepertoirePositions(task.lines);
         indexes.set(task.repertoireId, { revision: task.revision, positions });
         return { revision: task.revision, indexedPositions: positions.length };
       }

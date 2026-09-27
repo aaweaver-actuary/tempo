@@ -576,6 +576,10 @@ export const analysisLineSchema = z.strictObject({
   moves: z.array(z.union([uciMoveSchema, sanMoveSchema])),
   validation: lineValidationSchema.optional(),
 });
+const canonicalLineSchema = analysisLineSchema.extend({
+  moves: z.array(uciMoveSchema),
+  validation: lineValidationSchema,
+});
 export const indexedPositionSchema = z.strictObject({
   lineId: identifierSchema,
   repertoireId: identifierSchema,
@@ -616,7 +620,7 @@ export const studyTaskSchema = z.discriminatedUnion("kind", [
     kind: z.literal("initializePositionIndex"),
     repertoireId: identifierSchema,
     revision: z.number().int().positive(),
-    lines: z.array(analysisLineSchema),
+    lines: z.array(canonicalLineSchema),
   }),
   z.strictObject({
     kind: z.literal("findPositionMatches"),

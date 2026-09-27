@@ -49,3 +49,7 @@ The same fixture now measures `structuredClone` of the old full-position query a
 Builder now initializes a repertoire position index once per selected repertoire revision and releases that revision when the selection or source lines change. Ordinary similarity requests carry the repertoire ID, revision, FEN, and optional limit; only compact match results return to the UI. Maia transposition matching uses the same indexed query. The legacy array-based task remains available for other callers while they migrate.
 
 The deterministic clone-only benchmark measured an old stress query of about 4.49 MB with a 24.9 ms median clone; the compact query is 156 JSON bytes with a roughly 0.002 ms median clone. This comparison excludes worker scheduling, computation, and painting. The pinned browser regression confirms actual Builder worker messages contain no position array. Index construction remains a one-time cost, and its status is returned as a count rather than the full array.
+
+### Canonical index input
+
+The Builder index task now requires lines with validated canonical moves. `availableLines` already has that shape from the worker's `lines` task; index initialization traverses those moves without canonicalizing them again. On the deterministic fixture, median worker initialization fell from 78.5 to 30.6 ms at 250 lines, 470.6 to 233.4 ms at 2,000 lines, and 1,845.3 to 938.9 ms at 8,000 lines. The earlier canonicalization step still occurs once in the line-preparation pipeline.

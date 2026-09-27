@@ -4,7 +4,7 @@
 
 | Issue | Required regression |
 | --- | --- |
-| Builder repeatedly clones the full repertoire position index for similarity queries | `worker position index retains parity and rejects stale revisions`; `Builder position index replaces and releases revisions without leaking stale matches`; `Builder similarity worker messages keep the position index in the worker` |
+| Builder repeatedly clones the full repertoire position index for similarity queries | `worker position index retains parity and rejects stale revisions`; `worker index protocol accepts canonical lines and rejects raw lines`; `Builder position index replaces and releases revisions without leaking stale matches`; `Builder similarity worker messages keep the position index in the worker` |
 | Study worker backlog and computation duration are not distinguishable | `study worker reports queue compute and roundtrip durations` |
 | Position similarity search must keep exact and near results in stable order while deduplicating by FEN and next move | `position search retains distance ordering and first duplicate identity` |
 | Unrelated Builder rerenders rewrite repertoire selection and serialized session | `Builder unrelated rerender does not rewrite repertoire selection or session` |
