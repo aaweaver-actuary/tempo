@@ -16,7 +16,7 @@ require the integration suite.
 | Backend data access in `database.py`, `main.py`, `study_routes.py`, and service modules | 1,509 call sites | Port SQL dialect, transaction boundaries, and row behavior |
 | SQLite-only source constructs | 250 line occurrences | Replace or explicitly translate before disabling the SQLite runtime |
 | Browser API callers across views, hooks, utilities, and outboxes | 38 files | Keep HTTP contracts, add pending-operation handling and cache policy |
-| Live application tables | 91, plus SQLite internal tables | Versioned PostgreSQL schema and row-by-row parity checks |
+| Live application tables | 91, plus SQLite internal tables | Versioned PostgreSQL schema and row-by-row parity checks; migration 002 adds a PostgreSQL-only game-sync checkpoint table |
 
 ## Concurrency findings to verify
 

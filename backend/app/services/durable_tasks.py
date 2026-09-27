@@ -258,7 +258,7 @@ def fail_task(task_id: str, generation: int, lease_token: str, error: Exception)
 
     def operation(database: sqlite3.Connection) -> dict:
         row = database.execute(
-            "SELECT attempt_count,max_attempts FROM background_tasks WHERE id=? AND generation=? AND lease_token=?",
+            "SELECT attempt_count,max_attempts,kind,payload_json FROM background_tasks WHERE id=? AND generation=? AND lease_token=?",
             (task_id, generation, lease_token),
         ).fetchone()
         if not row:
@@ -282,6 +282,27 @@ def fail_task(task_id: str, generation: int, lease_token: str, error: Exception)
                 generation,
             ),
         )
+        if terminal and row["kind"] in {"game_sync_window", "game_sync_record"}:
+            sync_payload = json.loads(row["payload_json"])
+            job_id = sync_payload["job_id"]
+            database.execute(
+                """UPDATE game_sync_jobs SET status='failed',error=?,completed_at=?,updated_at=?
+                   WHERE id=? AND status IN ('queued','running','paused','retrying')""",
+                (sanitized_error, _iso(now), _iso(now), job_id),
+            )
+            if row["kind"] == "game_sync_window":
+                provider_row = database.execute(
+                    "SELECT provider FROM game_sync_windows WHERE id=?",
+                    (sync_payload["window_id"],),
+                ).fetchone()
+                provider = provider_row["provider"] if provider_row else None
+            else:
+                provider = sync_payload["record"]["provider"]
+            if provider:
+                database.execute(
+                    "UPDATE game_sync_state SET status='error',last_error=? WHERE provider=?",
+                    (sanitized_error, provider),
+                )
         _record_event(database, task_id, generation, state, state, sanitized_error)
         return {"state": state, "next_attempt_at": _iso(now + timedelta(seconds=delay))}
 

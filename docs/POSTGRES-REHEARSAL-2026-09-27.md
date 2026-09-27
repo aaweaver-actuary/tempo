@@ -190,8 +190,17 @@ handler has been ported and the release gates pass.
   end to end, left one imported game and a running sync-job count, then its
   rehearsal rows were removed. Its lease, game, analysis intent, derivation
   intent, count update, and completion were committed as one bounded slice.
-  Provider fetch orchestration and whole-job completion remain unported, so
-  `/api/games/sync` remains gated in PostgreSQL mode.
+  Provider fetch orchestration and whole-job completion were ported in the
+  subsequent checkpoint work described below.
+- Migration 002 added durable provider-window checkpoints and was applied twice
+  on the disposable database to verify idempotence. The restricted reader role
+  can query the new table. Foreground sync admission created one window and
+  task for each configured provider in a rolled-back transaction. A staged
+  Lichess window then dispatched one record task; publication completed the
+  whole job only after both task receipts were complete. The rehearsal rows
+  were removed. Staging 99 synthetic games took 10.5 ms inside a PostgreSQL
+  background transaction with the 50 ms timeout enforced. These timings are
+  local samples, not the required full concurrent benchmark.
 - The existing daily-queue materializer completed in 116 ms on a warm
   rolled-back PostgreSQL rehearsal transaction (247 ms on an earlier cold
   probe). Its largest statements took 26 ms to unlock eligible opening cards

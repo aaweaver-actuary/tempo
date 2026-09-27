@@ -88,6 +88,8 @@ async def fetch_chesscom_archive_month(
     speeds: list[str],
     rated_only: bool,
     client: httpx.AsyncClient,
+    *,
+    until: datetime | None = None,
 ) -> tuple[list[GameRecord], dict[str, int]]:
     """Fetch and normalize exactly one provider archive."""
 
@@ -103,8 +105,10 @@ async def fetch_chesscom_archive_month(
     records: list[GameRecord] = []
     fetched = filtered = rejected = 0
     for raw_game in _validate_json(response, "Chess.com monthly archive").get("games", []):
-        fetched += 1
         played_at = datetime.fromtimestamp(raw_game.get("end_time", 0), timezone.utc)
+        if until is not None and not since <= played_at < until:
+            continue
+        fetched += 1
         speed = "classical" if raw_game.get("time_class") == "daily" else str(raw_game.get("time_class", "unknown")).lower()
         if (
             played_at < since

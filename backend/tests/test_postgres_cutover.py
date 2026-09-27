@@ -191,7 +191,7 @@ def test_postgres_game_sync_admission_serializes_and_checkpoints_job(monkeypatch
     class RecordingConnection:
         def execute(self, statement, parameters=()):
             statements.append((statement, parameters))
-            return SimpleNamespace(fetchone=lambda: None)
+            return SimpleNamespace(fetchone=lambda: (None,) if "MAX(played_at)" in statement else None)
 
     database = RecordingConnection()
     database.raw = database
@@ -206,8 +206,12 @@ def test_postgres_game_sync_admission_serializes_and_checkpoints_job(monkeypatch
     assert "FOR UPDATE" in statements[1][0]
     saved_request = json.loads(statements[2][1][1])
     assert saved_request["lichess_username"] == "alice"
-    assert tasks == [("game_sync", result["job_id"], {"job_id": result["job_id"]},
-                      {"priority": 80})]
+    assert len(tasks) == 1
+    assert tasks[0][0] == "game_sync_window"
+    assert tasks[0][2]["job_id"] == result["job_id"]
+    assert tasks[0][2]["window_id"] in tasks[0][1]
+    assert tasks[0][3] == {"priority": 80}
+    assert any("INSERT INTO game_sync_windows" in statement for statement, _ in statements)
 
 
 def test_postgres_game_sync_admission_coalesces_existing_active_job(monkeypatch):
@@ -217,6 +221,8 @@ def test_postgres_game_sync_admission_coalesces_existing_active_job(monkeypatch)
         def execute(self, statement, parameters=()):
             if "FROM game_sync_jobs" in statement:
                 return SimpleNamespace(fetchone=lambda: {"id": "active-sync", "status": "running"})
+            if "FROM game_sync_windows" in statement:
+                return SimpleNamespace(fetchone=lambda: (1,))
             if statement.startswith("INSERT INTO game_sync_jobs"):
                 pytest.fail("Existing sync was duplicated")
             return SimpleNamespace()
@@ -229,6 +235,83 @@ def test_postgres_game_sync_admission_coalesces_existing_active_job(monkeypatch)
         database, {"lichess_username": "alice"},
     )
     assert result == {"imported": 0, "job_id": "active-sync", "status": "running", "providers": {}}
+
+
+def test_postgres_game_sync_admission_recovers_imported_active_job_without_windows(monkeypatch):
+    from app import game_sync_commands
+
+    planned = []
+    statements = []
+
+    class ImportedJobConnection:
+        def execute(self, statement, parameters=()):
+            statements.append(statement)
+            if "FROM game_sync_jobs" in statement:
+                return SimpleNamespace(fetchone=lambda: {
+                    "id": "imported-sync", "status": "running",
+                    "request_json": json.dumps({"lichess_username": "alice"}),
+                    "created_at": "2026-09-27T00:00:00+00:00",
+                })
+            if "FROM game_sync_windows" in statement:
+                return SimpleNamespace(fetchone=lambda: None)
+            return SimpleNamespace()
+
+    database = ImportedJobConnection()
+    database.raw = database
+    monkeypatch.setattr(game_sync_commands, "_plan_job_windows",
+                        lambda connection, job_id, request, created_at:
+                        planned.append((job_id, request.lichess_username)))
+    result = game_sync_commands.enqueue_game_sync(database, {"lichess_username": "alice"})
+    assert result["job_id"] == "imported-sync"
+    assert result["status"] == "queued"
+    assert planned == [("imported-sync", "alice")]
+    assert any("UPDATE game_sync_jobs SET status='queued'" in statement for statement in statements)
+
+
+def test_postgres_game_sync_route_dispatches_celery_command(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(command_dispatch, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or {
+                            "imported": 0, "job_id": "sync-job", "status": "queued",
+                            "providers": {},
+                        })
+    response = TestClient(main.app).post(
+        "/api/games/sync", headers={"Idempotency-Key": "sync-command-1"},
+        json={"lichess_username": " alice ", "chesscom_username": ""},
+    )
+    assert response.status_code == 202, response.text
+    assert response.json()["job_id"] == "sync-job"
+    assert dispatched[0][0] == "games.sync.enqueue"
+    assert dispatched[0][1]["lichess_username"] == "alice"
+    assert dispatched[0][2] == "sync-command-1"
+
+
+def test_postgres_game_sync_admission_preserves_provider_rate_limit(monkeypatch):
+    from app import game_sync_commands
+
+    class RateLimitedDatabase:
+        def execute(self, statement, parameters=()):
+            if "FROM game_sync_jobs" in statement:
+                return SimpleNamespace(fetchone=lambda: None)
+            if "FROM game_sync_state" in statement:
+                return SimpleNamespace(fetchone=lambda: {
+                    "username": "alice", "retry_after": "2099-01-01T00:00:00+00:00",
+                })
+            return SimpleNamespace(fetchone=lambda: None)
+
+    database = RateLimitedDatabase()
+    database.raw = database
+    monkeypatch.setattr(game_sync_commands, "enqueue_task_in_transaction",
+                        lambda *args, **kwargs: pytest.fail("Rate-limited sync was queued"))
+    with pytest.raises(HTTPException) as error:
+        game_sync_commands.enqueue_game_sync(database, {"lichess_username": "alice"})
+    assert error.value.status_code == 429
 
 
 def test_postgres_game_sync_publishes_one_game_and_followup_intents_atomically():
@@ -306,6 +389,8 @@ def test_postgres_game_sync_record_waits_for_foreground_and_discards_stale_repla
                         or ("inserted", "lichess:game-1"))
     monkeypatch.setattr(postgres_game_sync, "complete_task_slice_in_transaction",
                         lambda database, task: active_lease.update(token="complete") or True)
+    monkeypatch.setattr(postgres_game_sync, "finish_game_sync_if_complete",
+                        lambda database, job_id: False)
     result = []
     worker = threading.Thread(
         target=lambda: result.append(postgres_game_sync.execute_game_sync_record_slice(claimed_task)),

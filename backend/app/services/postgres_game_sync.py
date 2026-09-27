@@ -9,6 +9,7 @@ from typing import Any
 from ..postgres_store import PostgresConnection, connection
 from .durable_tasks import complete_task_slice_in_transaction, lock_current_slice
 from .game_record import GameRecord
+from .postgres_game_sync_completion import finish_game_sync_if_complete
 from .redis_admission_gate import background_lease
 
 
@@ -129,4 +130,5 @@ def execute_game_sync_record_slice(claimed_task: dict[str, Any]) -> bool:
             )
             if not complete_task_slice_in_transaction(database, claimed_task):
                 raise RuntimeError("Game sync lease changed before publication")
+            finish_game_sync_if_complete(database, job_id)
     return True

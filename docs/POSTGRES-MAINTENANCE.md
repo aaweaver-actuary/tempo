@@ -40,8 +40,8 @@ in Compose variables, command arguments, or the repository.
    This captures committed WAL pages and verifies integrity, foreign keys,
    table counts, the file checksum, and queue order. Do not use a volume archive
    whose database file disagrees with its logical manifest.
-2. Use distinct disposable volume names and a disposable database. Apply
-   migration 001, stream the SQLite data, run `--verify-only`, reseed sequences,
+2. Use distinct disposable volume names and a disposable database. Apply all
+   versioned PostgreSQL migrations, stream the SQLite data, run `--verify-only`, reseed sequences,
    then restore a PostgreSQL custom-format backup into another disposable
    database and compare all tables with `scripts/verify_postgres_restore.py`.
 3. Run the API, Celery, browser, and load tests against that disposable stack.

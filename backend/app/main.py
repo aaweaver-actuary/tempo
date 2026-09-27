@@ -429,6 +429,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                                      and request.method == "PUT")
         game_accounts_command = (path_parts == ["api", "games", "accounts"]
                                  and request.method == "PUT")
+        game_sync_command = (path_parts == ["api", "games", "sync"]
+                             and request.method == "POST")
         settings_command = (path_parts == ["api", "settings"] and request.method == "PUT")
         endgame_probe = (path_parts == ["api", "endgames", "probe"]
                          and request.method == "POST")
@@ -441,7 +443,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     chapter_rename, link_create, queue_entry_command, card_review_command,
                     card_teaching_command, defense_answer_command,
                     main_repertoire_command, browser_activity, tactic_attempt_command,
-                    tactic_activation_command, game_accounts_command, settings_command,
+                    tactic_activation_command, game_accounts_command, game_sync_command,
+                    settings_command,
                     endgame_probe, card_validation)):
             return JSONResponse(
                 status_code=503,
@@ -3822,7 +3825,8 @@ def accounts(a: AccountSettings,
 
 
 @app.post("/api/games/sync", response_model=GameSyncEnqueueResponse, status_code=202)
-def sync(request: GameSyncRequest):
+def sync(request: GameSyncRequest,
+         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     users = (
         ("lichess", request.lichess_username.strip()),
         ("chess.com", request.chesscom_username.strip()),
@@ -3835,6 +3839,12 @@ def sync(request: GameSyncRequest):
             "chesscom_username": users[1][1],
         }
     )
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.sync.enqueue", normalized_request.model_dump(mode="json"),
+            idempotency_key=idempotency_key,
+        )
     background = activity_gate.in_background
     job_id = enqueue_sync(normalized_request, background=background)
     coordinator.wake()

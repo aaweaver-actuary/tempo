@@ -88,6 +88,26 @@ def test_chesscom_sync_fetches_one_archive_per_restartable_window():
     ]
 
 
+def test_chesscom_split_month_counts_only_games_inside_its_time_window():
+    def handler(request: httpx.Request):
+        return httpx.Response(200, json={"games": [
+            chesscom_game("early", end_time=int(datetime(2026, 9, 5, tzinfo=timezone.utc).timestamp())),
+            chesscom_game("late", end_time=int(datetime(2026, 9, 20, tzinfo=timezone.utc).timestamp())),
+        ]})
+
+    async def fetch_half():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as provider:
+            return await fetch_chesscom_archive_month(
+                "TempoPlayer", "https://api.chess.com/pub/player/tempoplayer/games/2026/09",
+                datetime(2026, 9, 1, tzinfo=timezone.utc), ["rapid"], True, provider,
+                until=datetime(2026, 9, 10, tzinfo=timezone.utc),
+            )
+
+    records, counts = asyncio.run(fetch_half())
+    assert [record.provider_game_id for record in records] == ["early"]
+    assert counts == {"fetched": 1, "filtered": 0, "rejected": 0}
+
+
 def pgn(game_url: str, white: str = "TempoPlayer", result: str = "1-0") -> str:
     return f'''[Event "Live Chess - chess"]
 [Site "Chess.com"]
