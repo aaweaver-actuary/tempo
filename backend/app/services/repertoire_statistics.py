@@ -12,6 +12,7 @@ from .scheduler import schedule_review, unlock_ready
 
 
 WINDOWS = {"30d": 30, "90d": 90, "all": None}
+FORECAST_PARENT_BATCH_SIZE = 900
 
 
 def _cutoff(window: str, configured_timezone: str) -> int | None:
@@ -142,13 +143,27 @@ def repertoire_statistics(repertoire_id: str, window: str) -> dict:
                JOIN repertoire_lines line ON line.id=child.line_id
                WHERE child.repertoire_id=? AND parent.state!='locked'""", (repertoire_id,),
         )]
-        parent_ids = {row["parent_card_id"] for row in frontier}
-        parent_reviews = {parent_id: [dict(row) for row in database.execute(
-            "SELECT rating,reviewed_at FROM reviews WHERE card_id=? AND invalidated_at IS NULL ORDER BY reviewed_at,id", (parent_id,),
-        )] for parent_id in parent_ids}
-        seeds = {parent_id: (dict(seed) if (seed := database.execute(
-            "SELECT baseline_successful_days,baseline_recent_clean FROM opening_card_schedule_seeds WHERE card_id=?", (parent_id,),
-        ).fetchone()) else None) for parent_id in parent_ids}
+        parent_ids = sorted({row["parent_card_id"] for row in frontier})
+        parent_reviews: dict[str, list[dict]] = {parent_id: [] for parent_id in parent_ids}
+        seeds: dict[str, dict | None] = {parent_id: None for parent_id in parent_ids}
+        for batch_start in range(0, len(parent_ids), FORECAST_PARENT_BATCH_SIZE):
+            batch_ids = parent_ids[batch_start:batch_start + FORECAST_PARENT_BATCH_SIZE]
+            placeholders = ",".join("?" for _ in batch_ids)
+            for review in database.execute(
+                f"SELECT card_id,rating,reviewed_at FROM reviews WHERE card_id IN ({placeholders}) AND invalidated_at IS NULL ORDER BY card_id,reviewed_at,id",
+                batch_ids,
+            ):
+                parent_reviews[review["card_id"]].append({
+                    "rating": review["rating"], "reviewed_at": review["reviewed_at"],
+                })
+            for seed in database.execute(
+                f"SELECT card_id,baseline_successful_days,baseline_recent_clean FROM opening_card_schedule_seeds WHERE card_id IN ({placeholders})",
+                batch_ids,
+            ):
+                seeds[seed["card_id"]] = {
+                    "baseline_successful_days": seed["baseline_successful_days"],
+                    "baseline_recent_clean": seed["baseline_recent_clean"],
+                }
 
     valid_study_reviews = [row for row in review_rows if row["source_kind"] == "study" and row["card_id"] in card_ids]
     studied_ids = {row["card_id"] for row in valid_study_reviews}

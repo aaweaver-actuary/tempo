@@ -3,6 +3,7 @@
 import json
 import threading
 import time
+from contextlib import contextmanager
 from datetime import date, datetime, timezone
 
 from fastapi.testclient import TestClient
@@ -13,6 +14,7 @@ from app.services.activity_gate import activity_gate
 from app.services.database_executor import database_writer
 from app.services.durable_tasks import claim_task, enqueue_task, requeue_interrupted_tasks
 from app.services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
+from app.services import repertoire_statistics as statistics_service
 
 
 START = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
@@ -109,6 +111,50 @@ def test_repertoire_statistics_unlock_forecast_and_paused_parent(tmp_path, monke
         forecast = client.get("/api/repertoires/first/statistics").json()["unlocks"][0]
         assert forecast["status"] == "forecast"
         assert forecast["earliest_unlock_date"] >= date.today().isoformat()
+
+
+def test_repertoire_statistics_batches_forecast_parent_reads(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app):
+        with database.connection() as db:
+            _seed_repertoire(db, "first", "original-parent")
+            for parent_index in range(32):
+                parent_id = f"forecast-parent-{parent_index}"
+                child_id = f"forecast-child-{parent_index}"
+                db.execute(
+                    "INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(?,'first','prefix',?,'[\"e2e4\"]','mature',?)",
+                    (parent_id, START, date.today().isoformat()),
+                )
+                db.execute(
+                    "INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES(?,'first','response',?,'[\"e2e4\"]','locked',?)",
+                    (child_id, START, date.today().isoformat()),
+                )
+                db.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('first',?)", (parent_id,))
+                db.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('first',?)", (child_id,))
+                db.execute(
+                    """INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,segment_kind,
+                         decision_fen_keys_json,card_id,parent_card_id,decision_fen_key,starting_fen,moves_json,trained_color)
+                         VALUES('first',1,'line-first',?,'decision',?,?,?, ?,?,'[\"e2e4\"]','white')""",
+                    (parent_index + 1, json.dumps([FEN_KEY]), child_id, parent_id, FEN_KEY, START),
+                )
+        statements: list[str] = []
+        original_read_connection = statistics_service.read_connection
+
+        @contextmanager
+        def traced_read_connection():
+            with original_read_connection() as db:
+                db.set_trace_callback(statements.append)
+                yield db
+
+        monkeypatch.setattr(statistics_service, "read_connection", traced_read_connection)
+        result = statistics_service.repertoire_statistics("first", "all")
+        assert result["cards"]["locked"] == 32
+        assert len(result["unlocks"]) == 3
+        assert all(item["earliest_unlock_date"] == date.today().isoformat() for item in result["unlocks"])
+        parent_review_queries = [statement for statement in statements if "FROM reviews WHERE card_id" in statement]
+        parent_seed_queries = [statement for statement in statements if "FROM opening_card_schedule_seeds WHERE card_id" in statement]
+        assert len(parent_review_queries) == 1
+        assert len(parent_seed_queries) == 1
 
 
 def test_repertoire_game_refresh_yields_to_foreground_and_replays_once_after_restart(tmp_path, monkeypatch):
