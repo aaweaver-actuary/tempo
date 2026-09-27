@@ -70,6 +70,25 @@ def test_postgres_game_accounts_update_reconciles_provider_rows():
     assert statements[2][1] == ("chess.com",)
 
 
+def test_postgres_endgame_probe_uses_read_only_tablebase_path(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+
+    async def fake_tablebase(fen):
+        assert fen == "8/8/8/8/8/8/4K3/7k w - - 0 1"
+        return {"category": "draw", "moves": []}
+
+    monkeypatch.setattr(main, "tablebase", fake_tablebase)
+    response = TestClient(main.app).post(
+        "/api/endgames/probe", json={"fen": "8/8/8/8/8/8/4K3/7k w - - 0 1"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"category": "draw", "moves": []}
+
+
 def test_postgres_api_startup_requests_todays_queue_through_foreground_command(monkeypatch):
     from app import main
 
