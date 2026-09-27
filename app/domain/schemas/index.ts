@@ -610,6 +610,25 @@ export const studyTaskSchema = z.discriminatedUnion("kind", [
     kind: z.enum(["similarity", "matches"]),
     fen: fenStringSchema,
     positions: z.array(indexedPositionSchema),
+    limit: z.number().int().positive().optional(),
+  }),
+  z.strictObject({
+    kind: z.literal("initializePositionIndex"),
+    repertoireId: identifierSchema,
+    revision: z.number().int().positive(),
+    lines: z.array(analysisLineSchema),
+  }),
+  z.strictObject({
+    kind: z.literal("findPositionMatches"),
+    repertoireId: identifierSchema,
+    revision: z.number().int().positive(),
+    fen: fenStringSchema,
+    limit: z.number().int().positive().optional(),
+  }),
+  z.strictObject({
+    kind: z.literal("releasePositionIndex"),
+    repertoireId: identifierSchema,
+    revision: z.number().int().positive(),
   }),
 ]);
 export const studyRequestSchema = z.strictObject({

@@ -14,7 +14,7 @@ import {
   type IndexedPosition,
 } from "./position-similarity";
 
-export type StudyTask =
+export type PureStudyTask =
   | { kind: "workspace"; url: string; payload: unknown }
   | { kind: "transportLines"; payload: unknown }
   | { kind: "queue"; payload: unknown }
@@ -25,10 +25,18 @@ export type StudyTask =
       kind: "similarity" | "matches";
       fen: string;
       positions: IndexedPosition[];
+      limit?: number;
     };
 
+export type StudyPositionTask =
+  | { kind: "initializePositionIndex"; repertoireId: string; revision: number; lines: AnalysisLine[] }
+  | { kind: "findPositionMatches"; repertoireId: string; revision: number; fen: string; limit?: number }
+  | { kind: "releasePositionIndex"; repertoireId: string; revision: number };
+
+export type StudyTask = PureStudyTask | StudyPositionTask;
+
 // Runs in the study worker in browsers, never during a React render.
-export function computeStudyTask(task: StudyTask) {
+export function computeStudyTask(task: PureStudyTask) {
   switch (task.kind) {
     case "workspace":
       return validateWorkspacePayload(task.url, task.payload);
@@ -91,7 +99,7 @@ export function computeStudyTask(task: StudyTask) {
           else seenMovesByFen.set(position.fen, new Set([position.nextUci]));
           return true;
         })
-        .slice(0, 8);
+        .slice(0, task.limit ?? 8);
     }
   }
 }

@@ -68,6 +68,11 @@ for (const workload of workloads) {
   const searchTask = { kind: "matches", fen: startFen, positions };
   const searchTiming = measure(() => computeStudyTask(searchTask), workload.samples);
   const queryCloneTiming = measure(() => structuredClone(searchTask), workload.samples);
+  const compactQueryTask = {
+    kind: "findPositionMatches", repertoireId: "benchmark-repertoire",
+    revision: 1, fen: startFen, limit: 8,
+  };
+  const compactQueryCloneTiming = measure(() => structuredClone(compactQueryTask), workload.samples);
   const resultCloneTiming = measure(() => structuredClone(positions), workload.samples);
   const matches = computeStudyTask(searchTask);
   report.workloads[workload.name] = {
@@ -77,9 +82,11 @@ for (const workload of workloads) {
     distinct_fens: new Set(positions.map((position) => position.fen)).size,
     result_count: matches.length,
     query_bytes_json: Buffer.byteLength(JSON.stringify(searchTask)),
+    compact_query_bytes_json: Buffer.byteLength(JSON.stringify(compactQueryTask)),
     index: indexTiming,
     matches: searchTiming,
     query_clone: queryCloneTiming,
+    compact_query_clone: compactQueryCloneTiming,
     index_result_clone: resultCloneTiming,
   };
 }

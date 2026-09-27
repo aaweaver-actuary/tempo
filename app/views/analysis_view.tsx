@@ -34,6 +34,7 @@ import {
   invalidateWorkspaceData,
 } from "../lib/workspace-data";
 import { useBackgroundStudy } from "../hooks/use-background-study";
+import { useStudyPositionIndex } from "../hooks/use-study-position-index";
 import { runStudyTask } from "../lib/background-study";
 import type { StudyTask } from "../lib/study-computation";
 import { requestInteractiveMaia } from "../lib/maia-broker";
@@ -90,7 +91,6 @@ import CloseButton from "../components/buttons/CloseButton";
 
 type AnalysisMetric = "stockfish" | "lichess" | "masters";
 const emptyLines: CanonicalLine[] = [];
-const emptyPositions: IndexedPosition[] = [];
 const emptySimilar: Array<IndexedPosition & { distance: number }> = [];
 
 function explorerStatusLabel(status: ExplorerSourceResult): string {
@@ -398,19 +398,18 @@ export default function BuilderView({
       ),
     [lineMatches, cursor],
   );
-  const indexTask = useMemo<StudyTask>(
-    () => ({
-      kind: "index",
-      lines: availableLines.filter(
-        (line) =>
-          !selectedRepertoireId || line.repertoireId === selectedRepertoireId,
-      ),
-    }),
+  const selectedLines = useMemo(
+    () => availableLines.filter((line) => line.repertoireId === selectedRepertoireId),
     [availableLines, selectedRepertoireId],
   );
-  const positionIndex = useBackgroundStudy(indexTask, emptyPositions);
-  const similarityTask = useMemo<StudyTask>(
-    () => ({ kind: "matches", fen, positions: positionIndex }),
+  const positionIndex = useStudyPositionIndex(selectedRepertoireId, selectedLines);
+  const similarityTask = useMemo<StudyTask | null>(
+    () => positionIndex ? {
+      kind: "findPositionMatches",
+      repertoireId: positionIndex.repertoireId,
+      revision: positionIndex.revision,
+      fen,
+    } : null,
     [fen, positionIndex],
   );
   const similarPositions = useBackgroundStudy(similarityTask, emptySimilar);
@@ -565,13 +564,15 @@ export default function BuilderView({
       );
       const results = await searchMaiaTranspositions({
         startFen: fen,
-        targets: positionIndex,
-        matchPositions: (fen, positions) =>
-          runStudyTask<Array<IndexedPosition & { distance: number }>>({
-            kind: "matches",
-            fen,
-            positions,
-          }),
+        targets: [],
+        matchPositions: (fen) => positionIndex
+          ? runStudyTask<Array<IndexedPosition & { distance: number }>>({
+              kind: "findPositionMatches",
+              repertoireId: positionIndex.repertoireId,
+              revision: positionIndex.revision,
+              fen,
+            }, controller.signal)
+          : Promise.resolve([]),
         horizon,
         analyze: (positionFen) =>
           requestInteractiveMaia(positionFen, Number(maiaElo)),

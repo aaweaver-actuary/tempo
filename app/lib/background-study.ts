@@ -1,10 +1,12 @@
-import { computeStudyTask, type StudyTask } from "./study-computation";
+import type { StudyTask } from "./study-computation";
+import { createStudyPositionStore } from "./study-position-store";
 import { studyReplySchema } from "../domain/schemas";
 import { parseData, reportDataDiagnostic } from "./validated-data";
 import { updateBrowserActivity } from "./browser-activity";
 import { reportDebugError } from "./debug-reporting";
 import { recordTempoDuration } from "./performance";
 
+const runStudyTaskLocally = createStudyPositionStore();
 let worker: Worker | undefined;
 let nextId = 0;
 const pending = new Map<
@@ -35,7 +37,7 @@ export function runStudyTask<T>(
           return;
         }
         try {
-          resolve(computeStudyTask(task) as T);
+          resolve(runStudyTaskLocally(task) as T);
           updateBrowserActivity(activityId, title, "complete", "Finished");
         } catch (error) {
           updateBrowserActivity(activityId, title, "failed", "Failed", String(error));

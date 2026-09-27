@@ -88,3 +88,43 @@ test("warm workspace and Builder move responsiveness", async ({ page }, testInfo
     expect(summarize(samples).p95).toBeLessThanOrEqual(300);
   expect(longTasks.filter((duration) => duration > 100)).toEqual([]);
 });
+
+test("Builder similarity worker messages keep the position index in the worker", async ({ page }) => {
+  await page.addInitScript(() => {
+    const observed: Array<{ kind: string; bytes: number; hasPositions: boolean }> = [];
+    Object.assign(window, { tempoStudyMessages: observed });
+    const originalPostMessage = Worker.prototype.postMessage;
+    Object.defineProperty(Worker.prototype, "postMessage", {
+      configurable: true,
+      value: function(this: Worker, message: unknown, ...options: unknown[]) {
+        const task = typeof message === "object" && message !== null
+          ? Reflect.get(message, "task") : undefined;
+        if (task && typeof task === "object") {
+          const kind = Reflect.get(task, "kind");
+          if (kind === "initializePositionIndex" || kind === "findPositionMatches")
+            observed.push({
+              kind,
+              bytes: JSON.stringify(message).length,
+              hasPositions: Reflect.has(task, "positions"),
+            });
+        }
+        return Reflect.apply(originalPostMessage, this, [message, ...options]);
+      },
+    });
+  });
+  await prepareVisualUI(page, false);
+  await navigate(page, "Builder");
+  await expect.poll(async () => page.evaluate(() =>
+    (Reflect.get(window, "tempoStudyMessages") as Array<{ kind: string }>).filter(
+      (message) => message.kind === "findPositionMatches",
+    ).length,
+  )).toBeGreaterThan(0);
+  const messages = await page.evaluate(() => Reflect.get(window, "tempoStudyMessages") as Array<{
+    kind: string; bytes: number; hasPositions: boolean;
+  }>);
+  expect(messages.some((message) => message.kind === "initializePositionIndex")).toBe(true);
+  for (const message of messages.filter((item) => item.kind === "findPositionMatches")) {
+    expect(message.hasPositions).toBe(false);
+    expect(message.bytes).toBeLessThan(512);
+  }
+});

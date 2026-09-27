@@ -43,3 +43,9 @@ The result deduplication now uses a map of seen FEN and next-move pairs after th
 ### Worker transfer baseline
 
 The same fixture now measures `structuredClone` of the old full-position query and index result. At 250 lines, a query serializes about 139 KB and clones in 0.7 ms median; at 2,000 lines, about 1.12 MB and 5.8 ms; at 8,000 lines, about 4.49 MB and 40.8 ms. This is a clone-only approximation, not a measured worker roundtrip. The old Builder path also returns the full index from the worker once, then sends it back on every position query.
+
+## Worker-owned Builder index (2026-09-27)
+
+Builder now initializes a repertoire position index once per selected repertoire revision and releases that revision when the selection or source lines change. Ordinary similarity requests carry the repertoire ID, revision, FEN, and optional limit; only compact match results return to the UI. Maia transposition matching uses the same indexed query. The legacy array-based task remains available for other callers while they migrate.
+
+The deterministic clone-only benchmark measured an old stress query of about 4.49 MB with a 24.9 ms median clone; the compact query is 156 JSON bytes with a roughly 0.002 ms median clone. This comparison excludes worker scheduling, computation, and painting. The pinned browser regression confirms actual Builder worker messages contain no position array. Index construction remains a one-time cost, and its status is returned as a count rather than the full array.
