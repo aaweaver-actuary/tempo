@@ -913,6 +913,148 @@ def test_postgres_queue_opening_reset_phases_are_idempotent_and_preserve_active_
         ]
 
 
+def test_postgres_queue_unseen_reconciliation_matches_sqlite_and_survives_reordering(monkeypatch, tmp_path):
+    from app.main import reconcile_unseen_queue
+    from app.services import postgres_queue_refresh
+
+    schema = """
+        CREATE TABLE cards(id TEXT PRIMARY KEY,repertoire_id TEXT,content_type TEXT,
+                           state TEXT,introduced_at TEXT);
+        CREATE TABLE reviews(card_id TEXT);
+        CREATE TABLE daily_queue(id INTEGER PRIMARY KEY,queue_date TEXT,card_id TEXT,
+                                 status TEXT,admission_kind TEXT,admission_repertoire_id TEXT,
+                                 position INTEGER);
+        CREATE TABLE settings(id INTEGER PRIMARY KEY,new_cards_per_day INTEGER);
+        CREATE TABLE repertoire_integrity_card_blocks(repertoire_id TEXT,card_id TEXT);
+        INSERT INTO settings VALUES(1,2);
+        INSERT INTO cards VALUES('reviewed','r1','opening','learning','2026-09-27');
+        INSERT INTO reviews VALUES('reviewed');
+    """
+    for queue_id, repertoire_id, admission_kind in (
+        (1, "r1", "new"), (2, "r1", "new"), (3, "r1", "new"),
+        (4, "r2", "new"), (5, "r2", "new"), (6, "r1", "explicit"),
+    ):
+        schema += (
+            f"INSERT INTO cards VALUES('card-{queue_id}','{repertoire_id}','opening','new',NULL);"
+            f"INSERT INTO daily_queue VALUES({queue_id},'2026-09-27','card-{queue_id}',"
+            f"'queued','{admission_kind}',NULL,{queue_id});"
+        )
+    database_path = tmp_path / "sliced-reconciliation.db"
+    with sqlite3.connect(database_path) as database:
+        database.executescript(schema)
+    with sqlite3.connect(":memory:") as reference:
+        reference.row_factory = sqlite3.Row
+        reference.executescript(schema)
+        reconcile_unseen_queue(reference, "2026-09-27", 2)
+        expected_queue = list(reference.execute("SELECT id,card_id FROM daily_queue ORDER BY id"))
+        expected_cards = list(reference.execute(
+            "SELECT id,state,introduced_at FROM cards ORDER BY id",
+        ))
+
+    class NativeSqlite:
+        def __init__(self, database):
+            self.database = database
+
+        def execute_native(self, statement, parameters=()):
+            parameters = tuple(parameters)
+            exclusion = "q.id <> ALL(%s::bigint[])"
+            if exclusion in statement:
+                processed_ids = parameters[-1]
+                statement = statement.replace(
+                    exclusion,
+                    "q.id NOT IN (" + ",".join("?" for _ in processed_ids) + ")"
+                    if processed_ids else "1=1",
+                )
+                parameters = (*parameters[:-1], *processed_ids)
+            statement = statement.replace("%s", "?").replace("FOR UPDATE OF q,c", "")
+            return self.database.execute(statement, parameters)
+
+    @contextmanager
+    def read_section():
+        with sqlite3.connect(database_path) as database:
+            database.row_factory = sqlite3.Row
+            yield NativeSqlite(database)
+
+    monkeypatch.setattr(postgres_queue_refresh, "background_read_connection", read_section)
+    processed_ids: list[int] = []
+    introduced_counts: dict[str, int] = {}
+    while True:
+        candidate, count = postgres_queue_refresh._prepare_unseen_reconciliation(
+            "2026-09-27", processed_ids, introduced_counts,
+        )
+        if candidate is None:
+            break
+        with sqlite3.connect(database_path) as database:
+            database.row_factory = sqlite3.Row
+            kept = postgres_queue_refresh._reconcile_one_unseen_entry(
+                NativeSqlite(database), "2026-09-27", candidate, count,
+            )
+        processed_ids.append(candidate["id"])
+        introduced_counts[candidate["repertoire_id"]] = count + int(kept)
+        if len(processed_ids) == 1:
+            # A foreground bury/reorder can move an unprocessed row before the
+            # prior position; the durable ID set must still visit it.
+            with sqlite3.connect(database_path) as database:
+                database.execute("UPDATE daily_queue SET position=0 WHERE id=5")
+    with sqlite3.connect(database_path) as database:
+        assert list(database.execute("SELECT id,card_id FROM daily_queue ORDER BY id")) == [
+            tuple(row) for row in expected_queue
+        ]
+        assert list(database.execute(
+            "SELECT id,state,introduced_at FROM cards ORDER BY id",
+        )) == [tuple(row) for row in expected_cards]
+    assert sorted(processed_ids) == [1, 2, 3, 4, 5]
+    assert processed_ids[1] == 5
+
+
+def test_postgres_queue_reconcile_checkpoint_discards_stale_replay(monkeypatch):
+    from app.services import postgres_queue_refresh
+
+    current_token = "first"
+    saved_payload = None
+    saved_phase = None
+    reconciled_ids = []
+
+    @contextmanager
+    def section(*, background):
+        assert background
+        yield object()
+
+    def prepare(queue_date, processed_ids, introduced_counts):
+        if processed_ids:
+            return None, 0
+        return {"id": 42, "card_id": "opening", "repertoire_id": "repertoire"}, 1
+
+    def advance(database, task, *, next_phase, next_payload):
+        nonlocal current_token, saved_payload, saved_phase
+        saved_phase, saved_payload = next_phase, next_payload
+        current_token = None
+        return True
+
+    monkeypatch.setattr(postgres_queue_refresh.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres_queue_refresh.activity_gate, "wait_for_foreground", lambda: None)
+    monkeypatch.setattr(postgres_queue_refresh, "connection", section)
+    monkeypatch.setattr(postgres_queue_refresh, "lock_current_slice",
+                        lambda database, task: task["lease_token"] == current_token)
+    monkeypatch.setattr(postgres_queue_refresh, "_prepare_unseen_reconciliation", prepare)
+    monkeypatch.setattr(postgres_queue_refresh, "_reconcile_one_unseen_entry",
+                        lambda database, queue_date, candidate, count:
+                        reconciled_ids.append(candidate["id"]) or True)
+    monkeypatch.setattr(postgres_queue_refresh, "advance_task_slice_in_transaction", advance)
+    first = {"id": "queue-job", "generation": 3, "lease_token": "first",
+             "payload": {"queue_date": "2026-09-27", "_queue_phase": "reconcile_unseen"}}
+    assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(first)
+    assert saved_phase == "reconcile_unseen"
+    assert saved_payload["processed_ids"] == [42]
+    assert saved_payload["introduced_counts"] == {"repertoire": 2}
+    assert not postgres_queue_refresh.execute_postgres_queue_refresh_slice(first)
+    current_token = "second"
+    second = {**first, "lease_token": "second", "payload": saved_payload}
+    assert postgres_queue_refresh.execute_postgres_queue_refresh_slice(second)
+    assert saved_phase == "admit_due"
+    assert reconciled_ids == [42]
+
+
 def test_postgres_tactical_queue_prepares_outside_database_and_retries_timed_out_read(monkeypatch):
     from psycopg.errors import TransactionTimeout
     from app.services import postgres_queue_refresh

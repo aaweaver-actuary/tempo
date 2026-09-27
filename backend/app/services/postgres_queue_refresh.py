@@ -27,13 +27,14 @@ _ELIGIBILITY_PHASES = (
 _UNLOCK_BATCH_SIZE = 8
 
 
-def _bounded_read(statement: str, parameters: tuple = ()) -> list:
+def _bounded_read(statement: str, parameters: tuple = (), *, native: bool = False) -> list:
     """Retry a read-only section if PostgreSQL closes its 50 ms transaction."""
 
     for attempt in range(3):
         try:
             with background_read_connection() as database:
-                return database.execute(statement, parameters).fetchall()
+                execute = database.execute_native if native else database.execute
+                return execute(statement, parameters).fetchall()
         except TransactionTimeout:
             if attempt == 2:
                 raise
@@ -149,6 +150,68 @@ def _publish_tactical_introduction(database, queue_date: str,
     return True
 
 
+def _prepare_unseen_reconciliation(queue_date: str, processed_ids: list[int],
+                                   introduced_counts: dict[str, int]) -> tuple[dict | None, int]:
+    """Read one unprocessed queue entry and its repertoire's starting count."""
+
+    rows = _bounded_read(
+        """SELECT q.id,q.card_id,COALESCE(q.admission_repertoire_id,c.repertoire_id) repertoire_id
+           FROM daily_queue q JOIN cards c ON c.id=q.card_id
+           WHERE q.queue_date=%s AND q.status='queued' AND c.content_type='opening'
+             AND COALESCE(q.admission_kind,'')!='explicit'
+             AND (c.introduced_at IS NULL OR c.introduced_at=%s)
+             AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)
+             AND q.id <> ALL(%s::bigint[])
+           ORDER BY q.position,q.id LIMIT 1""",
+        (queue_date, queue_date, processed_ids), native=True,
+    )
+    if not rows:
+        return None, 0
+    candidate = dict(rows[0])
+    repertoire_id = candidate["repertoire_id"]
+    if repertoire_id in introduced_counts:
+        return candidate, introduced_counts[repertoire_id]
+    reviewed_count = _bounded_read(
+        """SELECT COUNT(*) FROM cards c
+           WHERE c.repertoire_id=%s AND c.content_type='opening' AND c.introduced_at=%s
+             AND EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)
+             AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
+                            WHERE block.repertoire_id=c.repertoire_id AND block.card_id=c.id)""",
+        (repertoire_id, queue_date), native=True,
+    )[0][0]
+    return candidate, int(reviewed_count)
+
+
+def _reconcile_one_unseen_entry(database, queue_date: str, candidate: dict,
+                                introduced_count: int) -> bool:
+    """Apply the original per-repertoire admission rule to one locked entry."""
+
+    current = database.execute_native(
+        """SELECT q.id FROM daily_queue q JOIN cards c ON c.id=q.card_id
+           WHERE q.id=%s AND q.queue_date=%s AND q.status='queued'
+             AND c.content_type='opening' AND COALESCE(q.admission_kind,'')!='explicit'
+             AND (c.introduced_at IS NULL OR c.introduced_at=%s)
+             AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)
+           FOR UPDATE OF q,c""",
+        (candidate["id"], queue_date, queue_date),
+    ).fetchone()
+    if current is None:
+        return False
+    limit = database.execute_native("SELECT new_cards_per_day FROM settings WHERE id=1").fetchone()[0]
+    if introduced_count < limit:
+        database.execute_native(
+            "UPDATE cards SET introduced_at=%s,state='learning' WHERE id=%s",
+            (queue_date, candidate["card_id"]),
+        )
+        return True
+    database.execute_native("DELETE FROM daily_queue WHERE id=%s", (candidate["id"],))
+    database.execute_native(
+        "UPDATE cards SET introduced_at=NULL,state='new' WHERE id=%s",
+        (candidate["card_id"],),
+    )
+    return False
+
+
 def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     """Apply one eligibility phase; later queue phases remain explicitly gated."""
 
@@ -161,12 +224,22 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
     queue_date = str(payload.get("queue_date") or date.today().isoformat())
     phase = str(payload.get("_queue_phase") or _ELIGIBILITY_PHASES[0])
     if phase not in (*_ELIGIBILITY_PHASES, "tactical_introductions",
-                     "reset_opening_new", "reset_opening_stale"):
+                     "reset_opening_new", "reset_opening_stale", "reconcile_unseen"):
         raise RuntimeError(f"Queue refresh phase is not yet ported: {phase}")
     prepared_tactic = None
     if phase == "tactical_introductions":
         activity_gate.wait_for_foreground()
         prepared_tactic = _prepare_tactical_introduction(queue_date)
+    processed_ids = [int(identifier) for identifier in payload.get("processed_ids", [])]
+    introduced_counts = {str(identifier): int(count) for identifier, count in
+                         payload.get("introduced_counts", {}).items()}
+    reconciliation_candidate = None
+    starting_count = 0
+    if phase == "reconcile_unseen":
+        activity_gate.wait_for_foreground()
+        reconciliation_candidate, starting_count = _prepare_unseen_reconciliation(
+            queue_date, processed_ids, introduced_counts,
+        )
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
         if not lock_current_slice(database, task):
@@ -198,6 +271,21 @@ def execute_postgres_queue_refresh_slice(task: dict[str, Any]) -> bool:
             main._reset_stale_opening_introductions(database, queue_date)
             next_phase = "reconcile_unseen"
             next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
+        elif phase == "reconcile_unseen":
+            if reconciliation_candidate is None:
+                next_phase = "admit_due"
+                next_payload = {"queue_date": queue_date, "_queue_phase": next_phase}
+            else:
+                kept = _reconcile_one_unseen_entry(
+                    database, queue_date, reconciliation_candidate, starting_count,
+                )
+                processed_ids.append(int(reconciliation_candidate["id"]))
+                repertoire_id = str(reconciliation_candidate["repertoire_id"])
+                introduced_counts[repertoire_id] = starting_count + int(kept)
+                next_phase = phase
+                next_payload = {"queue_date": queue_date, "_queue_phase": phase,
+                                "processed_ids": processed_ids,
+                                "introduced_counts": introduced_counts}
         else:
             phase_handlers = {
                 "block_opening": main._block_ineligible_opening_queue_entries,
