@@ -414,6 +414,10 @@ async def prioritize_foreground_requests(request: Request, call_next):
                                and path_parts[3] == "review" and request.method == "POST")
         card_teaching_command = (len(path_parts) == 4 and path_parts[:2] == ["api", "cards"]
                                  and path_parts[3] == "teaching" and request.method == "POST")
+        defense_answer_command = (len(path_parts) == 4
+                                  and path_parts[:2] == ["api", "defense-exercises"]
+                                  and path_parts[3] in {"attempt", "recognition"}
+                                  and request.method == "POST")
         main_repertoire_command = (len(path_parts) == 4
                                    and path_parts[:2] == ["api", "repertoires"]
                                    and path_parts[3] == "main" and request.method == "PUT")
@@ -422,7 +426,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     exercise_availability_command,
                     chapter_create, chapter_reorder,
                     chapter_rename, link_create, queue_entry_command, card_review_command,
-                    card_teaching_command, main_repertoire_command)):
+                    card_teaching_command, defense_answer_command,
+                    main_repertoire_command)):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
@@ -4461,7 +4466,16 @@ def get_defense_exercise(candidate_id: str):
 
 
 @app.post("/api/defense-exercises/{candidate_id}/attempt")
-def attempt_defense_exercise(candidate_id: str, request: DefenseAttemptRequest):
+def attempt_defense_exercise(candidate_id: str, request: DefenseAttemptRequest,
+                             idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "defense.attempt.submit",
+            {"candidate_id": candidate_id, "request": request.model_dump(mode="json"),
+             "light_first_interval_days": get_settings().light_first_interval_days},
+            idempotency_key=idempotency_key or f"defense-attempt:{request.attempt_id}",
+        )
     try:
         result = submit_defense_attempt(
             candidate_id, attempt_id=request.attempt_id,
@@ -4481,7 +4495,15 @@ def attempt_defense_exercise(candidate_id: str, request: DefenseAttemptRequest):
 
 
 @app.post("/api/defense-exercises/{candidate_id}/recognition")
-def recognize_defense_exercise(candidate_id: str, request: DefenseRecognitionRequest):
+def recognize_defense_exercise(candidate_id: str, request: DefenseRecognitionRequest,
+                               idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "defense.recognition.submit",
+            {"candidate_id": candidate_id, "request": request.model_dump(mode="json")},
+            idempotency_key=idempotency_key or f"defense-recognition:{request.attempt_id}",
+        )
     try:
         return submit_defense_recognition(candidate_id, request)
     except KeyError as error:

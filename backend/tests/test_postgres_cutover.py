@@ -9,6 +9,7 @@ from contextlib import contextmanager, nullcontext
 from dataclasses import dataclass
 import json
 import sqlite3
+from types import SimpleNamespace
 
 from pathlib import Path
 
@@ -1445,6 +1446,36 @@ def test_postgres_cutover_review_route_dispatches_idempotent_command(monkeypatch
     assert dispatched[0][1]["card_id"] == "card-1"
     assert dispatched[0][1]["review"]["queue_entry_id"] == 42
     assert dispatched[0][2] == "review-card-1-42"
+
+
+def test_postgres_defense_answers_dispatch_atomic_foreground_commands(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(main, "get_settings",
+                        lambda: SimpleNamespace(light_first_interval_days=2))
+    monkeypatch.setattr(command_dispatch, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or {"accepted": name})
+    client = TestClient(main.app)
+    recognition = client.post("/api/defense-exercises/candidate-1/recognition", json={
+        "attempt_id": "answer-1", "exercise_revision": 2, "rubric_version": 3,
+        "queue_entry_id": 42, "no_concrete_threat": True, "consequence": "none",
+    })
+    attempt = client.post("/api/defense-exercises/candidate-1/attempt", json={
+        "attempt_id": "answer-1", "exercise_revision": 2, "queue_entry_id": 42,
+        "move_uci": "e2e4", "recognition_attempt_id": "answer-1",
+    })
+    assert recognition.status_code == 200, recognition.text
+    assert attempt.status_code == 200, attempt.text
+    assert dispatched[0][0] == "defense.recognition.submit"
+    assert dispatched[0][2] == "defense-recognition:answer-1"
+    assert dispatched[1][0] == "defense.attempt.submit"
+    assert dispatched[1][1]["light_first_interval_days"] == 2
+    assert dispatched[1][2] == "defense-attempt:answer-1"
 
 
 def test_postgres_cutover_teaching_state_dispatches_and_replays_saved_timestamp(monkeypatch):

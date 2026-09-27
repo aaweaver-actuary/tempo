@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from contextlib import nullcontext
 from datetime import date, datetime, timedelta, timezone
 import hashlib
 import json
@@ -11,6 +12,7 @@ import chess
 
 from ..database import background_read_connection, connection, read_connection
 from .. import postgres_store
+from ..queue_position_lock import lock_queue_date_for_position
 from .activity_gate import activity_gate
 from .durable_tasks import enqueue_task, lock_current_slice
 from .review_service import (
@@ -516,6 +518,15 @@ def _complete_defense_in_transaction(
     light_first_interval_days: int,
 ) -> dict:
     """Record one real review and one completed queue attempt atomically."""
+    if postgres_store.configured():
+        database.execute("SELECT id FROM cards WHERE id=? FOR UPDATE", (candidate["card_id"],))
+        queue_day = database.execute(
+            "SELECT queue_date FROM daily_queue WHERE id=?", (queue_entry_id,),
+        ).fetchone()
+        if queue_day is None:
+            raise ValueError("This defensive exercise is no longer the active queue entry")
+        lock_queue_date_for_position(database, queue_day[0])
+        candidate = _candidate(database, candidate["id"])
     previous = database.execute(
         "SELECT * FROM defense_attempts WHERE attempt_id=?", (attempt_id,),
     ).fetchone()
@@ -579,13 +590,13 @@ def _complete_defense_in_transaction(
     return {**response, "idempotent": False}
 
 
-def submit_defense_recognition(candidate_id: str, request) -> dict:
+def submit_defense_recognition(candidate_id: str, request, *, write_database=None) -> dict:
     """Persist recognition, then reveal its explanation before the defense move."""
     answer = request.model_dump()
     serialized = json.dumps(answer, sort_keys=True)
     if request.rubric_version != RECOGNITION_RUBRIC_VERSION:
         raise ValueError("Recognition rubric changed; reload this card before answering")
-    with read_connection() as database:
+    with nullcontext(write_database) if write_database is not None else read_connection() as database:
         candidate = _candidate(database, candidate_id)
         _require_current(candidate)
         if (not candidate["approved_at"] or candidate["exercise_revision"] != request.exercise_revision
@@ -647,7 +658,15 @@ def submit_defense_recognition(candidate_id: str, request) -> dict:
         source_game = database.execute(
             "SELECT game_url FROM imported_games WHERE id=?", (candidate["game_id"],),
         ).fetchone()
-    with connection() as database:
+    with nullcontext(write_database) if write_database is not None else connection() as database:
+        if postgres_store.configured():
+            database.execute("SELECT id FROM cards WHERE id=? FOR UPDATE", (candidate["card_id"],))
+            queue_day = database.execute(
+                "SELECT queue_date FROM daily_queue WHERE id=?", (request.queue_entry_id,),
+            ).fetchone()
+            if queue_day is None:
+                raise ValueError("This defensive exercise is no longer active")
+            lock_queue_date_for_position(database, queue_day[0])
         prior = database.execute(
             """SELECT candidate_id,queue_entry_id,exercise_revision,answer_json
                FROM defense_recognition_submissions WHERE attempt_id=?""",
@@ -711,9 +730,9 @@ def submit_defense_recognition(candidate_id: str, request) -> dict:
 def submit_defense_attempt(
     candidate_id: str, *, attempt_id: str, exercise_revision: int,
     queue_entry_id: int, move_uci: str, light_first_interval_days: int,
-    recognition_attempt_id: str | None = None,
+    recognition_attempt_id: str | None = None, write_database=None,
 ) -> dict:
-    with read_connection() as database:
+    with nullcontext(write_database) if write_database is not None else read_connection() as database:
         candidate = _candidate(database, candidate_id)
         _require_current(candidate)
         if (not candidate["approved_at"] or candidate["exercise_revision"] != exercise_revision
@@ -749,7 +768,7 @@ def submit_defense_attempt(
     grade = grade_defense_move(exercise, move_uci)
     if grade.status == "needs_analysis" and grade.analysis_request:
         request = grade.analysis_request
-        with connection() as database:
+        with nullcontext(write_database) if write_database is not None else connection() as database:
             current = _candidate(database, candidate_id)
             _require_current(current)
             if current["exercise_revision"] != exercise_revision:
@@ -786,7 +805,7 @@ def submit_defense_attempt(
         "source_game_id": candidate["game_id"],
         "source_game_url": source_game["game_url"] if source_game else None,
     }
-    with connection() as database:
+    with nullcontext(write_database) if write_database is not None else connection() as database:
         current = _candidate(database, candidate_id)
         return _complete_defense_in_transaction(
             database, current, attempt_id=attempt_id,
