@@ -4,6 +4,7 @@
 
 | Issue | Required regression |
 | --- | --- |
+| Repeated repertoire FENs waste distance calculations during one query while distinct moves still need stable results | `repeated repertoire FENs retain match ordering and distinct next moves` |
 | Workspace fetch latency is opaque and cached reads could be mistaken for network requests | `workspace fetch records API response and ready latency once per network request` |
 | An HTTP workspace failure can lose its status while formatting the endpoint outside a browser | `failed workspace fetch preserves HTTP status and records response without false ready timing` |
 | Completed-tactic tests waste real time on deterministic move and feedback timers | `completed tactic advances while the previous review save is still pending`; `failed earlier save blocks grading after a completed tactic until ordered retry succeeds`; `failed tactic review save keeps the next card visible but blocks grading until retry`; `failed next-card read leaves a completed tactic on its final board for retry` |

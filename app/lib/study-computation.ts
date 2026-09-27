@@ -76,11 +76,18 @@ export function computeStudyTask(task: PureStudyTask) {
     case "matches":
     case "similarity": {
       const distanceToQuery = prepareChessPositionDistance(task.fen);
+      const distanceByFen = new Map<string, number | undefined>();
       const seenMovesByFen = new Map<string, Set<string | undefined>>();
+      const distanceForFen = (fen: string) => {
+        if (distanceByFen.has(fen)) return distanceByFen.get(fen);
+        const distance = distanceToQuery(fen);
+        distanceByFen.set(fen, distance);
+        return distance;
+      };
       return task.positions
         .map((position) => ({
           ...position,
-          distance: distanceToQuery(position.fen),
+          distance: distanceForFen(position.fen),
         }))
         .filter(
           (position): position is IndexedPosition & { distance: number } =>

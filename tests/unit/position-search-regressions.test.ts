@@ -31,3 +31,22 @@ it("position search retains distance ordering and first duplicate identity", () 
     ["near-second", 2],
   ]);
 });
+
+it("repeated repertoire FENs retain match ordering and distinct next moves", () => {
+  const exactFen = new Chess().fen();
+  const positions = Array.from({ length: 100 }, (_, index) => ({
+    lineId: `shared-${index}`,
+    repertoireId: "white",
+    repertoireName: "White",
+    fen: exactFen,
+    ply: index,
+    nextUci: index === 99 ? "d2d4" : "e2e4",
+  }));
+  const matches = computeStudyTask({ kind: "matches", fen: exactFen, positions }) as Array<{
+    lineId: string; nextUci: string; distance: number;
+  }>;
+  expect(matches.map(({ lineId, nextUci, distance }) => [lineId, nextUci, distance])).toEqual([
+    ["shared-0", "e2e4", 0],
+    ["shared-99", "d2d4", 0],
+  ]);
+});
