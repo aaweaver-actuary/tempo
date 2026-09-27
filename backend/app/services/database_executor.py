@@ -144,26 +144,56 @@ class DatabaseWriter:
                         if self._foreground
                         else self._background.popleft()
                     )
-                wait_seconds = time.perf_counter() - pending.submitted_at
-                transaction_started = time.perf_counter()
+                dequeued_at = time.perf_counter()
+                queue_wait_seconds = dequeued_at - pending.submitted_at
+                gate_wait_seconds = 0.0
+                compatibility_lock_wait_seconds = 0.0
+                begin_seconds = 0.0
+                operation_seconds = 0.0
+                commit_seconds = 0.0
+                transaction_started_at: float | None = None
                 try:
                     if pending.background and os.getenv("TEMPO_FOREGROUND_ACTIVITY_URL"):
+                        gate_started_at = time.perf_counter()
                         activity_gate.wait_for_foreground()
+                        gate_wait_seconds = time.perf_counter() - gate_started_at
+                    compatibility_lock_started_at = time.perf_counter()
                     with database_module.write_compatibility_lock:
+                        transaction_started_at = time.perf_counter()
+                        compatibility_lock_wait_seconds = (
+                            transaction_started_at - compatibility_lock_started_at
+                        )
                         database_connection.execute("BEGIN IMMEDIATE")
+                        begin_finished_at = time.perf_counter()
+                        begin_seconds = begin_finished_at - transaction_started_at
                         result = pending.operation(database_connection)
+                        operation_finished_at = time.perf_counter()
+                        operation_seconds = operation_finished_at - begin_finished_at
                         database_connection.commit()
+                        commit_seconds = time.perf_counter() - operation_finished_at
                     pending.future.set_result(result)
                 except BaseException as error:
                     database_connection.rollback()
                     pending.future.set_exception(error)
                 finally:
-                    hold_seconds = time.perf_counter() - transaction_started
+                    finished_at = time.perf_counter()
+                    hold_seconds = (
+                        finished_at - transaction_started_at
+                        if transaction_started_at is not None else 0.0
+                    )
                     self._logger.info(
-                        "database write label=%s wait=%.3fs hold=%.3fs",
+                        "database write label=%s queue_wait=%.3fs gate_wait=%.3fs "
+                        "compatibility_lock_wait=%.3fs begin=%.3fs operation=%.3fs "
+                        "commit=%.3fs hold=%.3fs total=%.3fs",
                         pending.label,
-                        wait_seconds,
+                        queue_wait_seconds,
+                        gate_wait_seconds,
+                        compatibility_lock_wait_seconds,
+                        begin_seconds,
+                        operation_seconds,
+                        commit_seconds,
                         hold_seconds,
+                        finished_at - pending.submitted_at,
                     )
                     if pending.background and hold_seconds > 0.05:
                         self._logger.warning(

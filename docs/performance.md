@@ -57,3 +57,7 @@ The Builder index task now requires lines with validated canonical moves. `avail
 ### Replaceable Builder queries
 
 The current-position similarity hook now keeps at most one active worker request and one replaceable queued request per repertoire. On rapid position changes, an obsolete queued request is rejected and never posted; the latest request runs after the active synchronous computation finishes. Aborting the active caller rejects its Promise, but cannot interrupt computation already running in the worker. Maia transposition searches continue to use their own sequential requests. `study-match-coalesced-wait` records time spent in the main-thread replacement slot before posting to the worker, separately from worker queue, compute, and roundtrip timings.
+
+### SQLite writer timing
+
+`tempo.writer` logs one record per write with `queue_wait`, `gate_wait`, `compatibility_lock_wait`, `begin`, `operation`, `commit`, `hold`, and `total` in seconds. `hold` remains the transaction-boundary budget signal for background writes; foreground activity gate waits and the compatibility lock wait are outside it. A long `begin` can indicate SQLite writer-lock contention, while `operation` and `commit` separate callback work from durability cost. Timings of failed writes may contain zero for phases that did not complete.

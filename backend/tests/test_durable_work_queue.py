@@ -353,6 +353,33 @@ def test_background_commit_budget_is_enforced_at_production_scale(
     assert "background commit exceeded 50ms budget" in caplog.text
 
 
+def test_database_writer_logs_queue_gate_lock_and_transaction_phase_timings(
+    tmp_path, monkeypatch, caplog
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    writer = DatabaseWriter()
+    writer.start()
+    try:
+        with caplog.at_level(logging.INFO, logger="tempo.writer"):
+            writer.submit_foreground_write(
+                lambda connection: connection.execute("SELECT 1").fetchone(),
+                label="timing-regression",
+            )
+    finally:
+        writer.stop()
+    write_logs = [
+        record.message for record in caplog.records
+        if record.name == "tempo.writer" and "label=timing-regression" in record.message
+    ]
+    assert len(write_logs) == 1
+    for phase in (
+        "queue_wait", "gate_wait", "compatibility_lock_wait", "begin",
+        "operation", "commit", "hold", "total",
+    ):
+        assert f"{phase}=" in write_logs[0]
+
+
 def test_last_published_queue_remains_playable_during_refresh(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
