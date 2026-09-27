@@ -104,6 +104,50 @@ def test_postgres_card_validation_remains_available_without_a_write_worker(monke
     assert response.json()["moves"] == ["e2e4"]
 
 
+def test_postgres_annotation_route_dispatches_idempotent_foreground_command(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(command_dispatch, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or {
+                            "repertoireId": "rep", "fenKey": "key", "comment": "Plan",
+                            "arrows": [], "squares": [], "updatedAt": "2026-09-27T00:00:00Z",
+                        })
+    response = TestClient(main.app).put(
+        "/api/repertoires/rep/annotations",
+        headers={"Idempotency-Key": "annotation-1"},
+        json={"fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+              "comment": "Plan", "arrows": [], "squares": []},
+    )
+    assert response.status_code == 200, response.text
+    assert dispatched[0][0] == "repertoires.annotation.save"
+    assert dispatched[0][1]["repertoire_id"] == "rep"
+    assert dispatched[0][2] == "annotation-1"
+
+
+def test_postgres_annotation_command_clears_empty_position_note():
+    from app.annotation_commands import save_position_annotation
+
+    statements = []
+
+    class Database:
+        def execute(self, statement, parameters=()):
+            statements.append((statement, parameters))
+            return SimpleNamespace(fetchone=lambda: (1,))
+
+    result = save_position_annotation(Database(), {
+        "repertoire_id": "rep",
+        "annotation": {"fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+                       "comment": "   ", "arrows": [], "squares": []},
+    })
+    assert result["comment"] == ""
+    assert statements[1][0].startswith("DELETE FROM position_annotations")
+
+
 def test_postgres_settings_update_dispatches_foreground_command(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main

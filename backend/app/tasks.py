@@ -25,6 +25,7 @@ from . import repertoire_commands  # noqa: F401 - registers foreground repertoir
 from . import account_commands  # noqa: F401 - registers foreground account command
 from . import settings_commands  # noqa: F401 - registers foreground settings command
 from . import game_sync_commands  # noqa: F401 - registers foreground sync admission
+from . import annotation_commands  # noqa: F401 - registers foreground position notes
 from .services.activity_gate import activity_gate
 from .services.durable_tasks import claim_task, complete_task, defer_task_for_contention, fail_task
 from .services.priority_retention import execute_priority_retention_slice

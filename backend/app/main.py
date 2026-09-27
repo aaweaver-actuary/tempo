@@ -421,6 +421,9 @@ async def prioritize_foreground_requests(request: Request, call_next):
         main_repertoire_command = (len(path_parts) == 4
                                    and path_parts[:2] == ["api", "repertoires"]
                                    and path_parts[3] == "main" and request.method == "PUT")
+        annotation_command = (len(path_parts) == 4
+                              and path_parts[:2] == ["api", "repertoires"]
+                              and path_parts[3] == "annotations" and request.method == "PUT")
         browser_activity = (path_parts == ["api", "system", "browser-activity"]
                             and request.method == "POST")
         tactic_attempt_command = (path_parts == ["api", "tactics", "attempt"]
@@ -442,7 +445,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     chapter_create, chapter_reorder,
                     chapter_rename, link_create, queue_entry_command, card_review_command,
                     card_teaching_command, defense_answer_command,
-                    main_repertoire_command, browser_activity, tactic_attempt_command,
+                    main_repertoire_command, annotation_command,
+                    browser_activity, tactic_attempt_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     settings_command,
                     endgame_probe, card_validation)):
@@ -2046,7 +2050,15 @@ def list_annotations(identifier: str, fen: str | None = None):
 
 
 @app.put("/api/repertoires/{identifier}/annotations")
-def save_annotation(identifier: str, request: PositionAnnotationRequest):
+def save_annotation(identifier: str, request: PositionAnnotationRequest,
+                    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "repertoires.annotation.save",
+            {"repertoire_id": identifier, "annotation": request.model_dump(mode="json", by_alias=True)},
+            idempotency_key=idempotency_key,
+        )
     key = fen_key(request.fen)
     now = datetime.now(timezone.utc).isoformat()
     arrows = [item.model_dump(by_alias=True) for item in request.arrows]
