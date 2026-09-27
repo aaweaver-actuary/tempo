@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 import json
+import threading
 
 import chess
 
@@ -148,3 +149,239 @@ def test_postgres_graph_links_eight_cards_before_publication(monkeypatch):
     assert transitions[-1][1]["after_card_id"] == "card-7"
     assert postgres_opening_graph.link_graph_cards_in_transaction(Database(), task, ())
     assert transitions[-1][0] == "publish"
+
+
+def test_postgres_graph_publication_rejects_missing_links_and_checks_generation(monkeypatch):
+    transitions = []
+    statements = []
+
+    class Database:
+        def __init__(self, missing):
+            self.missing = missing
+
+        def execute_native(self, statement, _parameters=()):
+            statements.append(statement)
+            return type("Cursor", (), {"fetchone": lambda _self: (1,) if self.missing else None})()
+
+    monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: True)
+    monkeypatch.setattr(
+        postgres_opening_graph, "advance_task_slice_in_transaction",
+        lambda _database, _task, *, next_phase, next_payload:
+        transitions.append((next_phase, next_payload)) or True,
+    )
+    task = {"generation": 5, "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"}}
+    try:
+        postgres_opening_graph.publish_graph_in_transaction(Database(True), task)
+    except RuntimeError as error:
+        assert "unlinked" in str(error)
+    else:
+        raise AssertionError("Graph with missing links was published")
+    assert len(statements) == 1
+    assert postgres_opening_graph.publish_graph_in_transaction(Database(False), task)
+    assert transitions[-1][0] == "classify"
+    assert transitions[-1][1]["after_card_id"] == ""
+
+
+def test_postgres_graph_classifies_eight_cards_after_publication(monkeypatch):
+    updates = []
+    transitions = []
+
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            if statement.startswith("SELECT BOOL_OR"):
+                return type("Cursor", (), {"fetchone": lambda _self: (True, True)})()
+            updates.append((statement, parameters))
+            return None
+
+    monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: True)
+    monkeypatch.setattr(
+        postgres_opening_graph, "advance_task_slice_in_transaction",
+        lambda _database, _task, *, next_phase, next_payload:
+        transitions.append((next_phase, next_payload)) or True,
+    )
+    task = {"generation": 6, "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"}}
+    cards = tuple(f"card-{index}" for index in range(8))
+    assert postgres_opening_graph.classify_graph_cards_in_transaction(Database(), task, cards)
+    assert len(updates) == 8
+    assert all(parameters[0:2] == ("prefix", "new") for _, parameters in updates)
+    assert transitions[-1][0] == "classify"
+    assert transitions[-1][1]["after_card_id"] == "card-7"
+    assert postgres_opening_graph.classify_graph_cards_in_transaction(Database(), task, ())
+    assert transitions[-1][0] == "integrity"
+
+
+def test_postgres_graph_integrity_refreshes_two_cards_before_cleanup(monkeypatch):
+    statements = []
+    transitions = []
+
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            statements.append((statement, parameters))
+
+    monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: True)
+    monkeypatch.setattr(
+        postgres_opening_graph, "advance_task_slice_in_transaction",
+        lambda _database, _task, *, next_phase, next_payload:
+        transitions.append((next_phase, next_payload)) or True,
+    )
+    task = {"generation": 8, "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"}}
+    assert postgres_opening_graph.refresh_graph_integrity_in_transaction(
+        Database(), task, ("card-a", "card-b"),
+    )
+    assert sum(statement.startswith("INSERT INTO repertoire_integrity_card_blocks")
+               for statement, _ in statements) == 2
+    assert transitions[-1][0] == "integrity"
+    assert transitions[-1][1]["after_card_id"] == "card-b"
+    assert postgres_opening_graph.refresh_graph_integrity_in_transaction(Database(), task, ())
+    assert transitions[-1][0] == "cleanup"
+
+
+def test_postgres_graph_cleanup_removes_only_obsolete_links_in_bounded_slices(monkeypatch):
+    statements = []
+    transitions = []
+
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            statements.append((statement, parameters))
+            current = parameters[-1] == "current" if parameters else False
+            return type("Cursor", (), {"fetchone": lambda _self: (1,) if current else None})()
+
+    monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: True)
+    monkeypatch.setattr(
+        postgres_opening_graph, "advance_task_slice_in_transaction",
+        lambda _database, _task, *, next_phase, next_payload:
+        transitions.append((next_phase, next_payload)) or True,
+    )
+    task = {"generation": 7, "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"}}
+    assert postgres_opening_graph.cleanup_graph_cards_in_transaction(
+        Database(), task, ("obsolete", "current"),
+    )
+    assert sum(statement.startswith("DELETE FROM repertoire_cards") for statement, _ in statements) == 1
+    assert transitions[-1][0] == "cleanup"
+    assert transitions[-1][1]["after_card_id"] == "current"
+    assert postgres_opening_graph.cleanup_graph_cards_in_transaction(Database(), task, ())
+    assert transitions[-1][0] == "finalize"
+
+
+def test_postgres_graph_finalization_checkpoints_queue_refresh_and_completion(monkeypatch):
+    from app import queue_commands
+
+    events = []
+    monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: True)
+    monkeypatch.setattr(
+        queue_commands, "request_queue_refresh_in_transaction",
+        lambda _database, queue_date: events.append(("queue", queue_date)),
+    )
+    monkeypatch.setattr(
+        postgres_opening_graph, "complete_task_slice_in_transaction",
+        lambda _database, _task: events.append(("complete", None)) or True,
+    )
+    task = {"generation": 9, "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"}}
+    assert postgres_opening_graph.finalize_graph_in_transaction(object(), task) is False
+    assert events == [("queue", "2026-09-27"), ("complete", None)]
+
+
+def test_postgres_graph_finalization_warms_sql_before_bounded_transaction(monkeypatch):
+    from app import queue_commands
+
+    events = []
+
+    @contextmanager
+    def database_connection(**_kwargs):
+        events.append("connection")
+        yield object()
+
+    @contextmanager
+    def lease():
+        yield
+
+    monkeypatch.setattr(queue_commands, "warm_queue_refresh_sql", lambda: events.append("warm"))
+    monkeypatch.setattr(postgres_opening_graph, "background_lease", lease)
+    monkeypatch.setattr(postgres_opening_graph.postgres_store, "connection", database_connection)
+    monkeypatch.setattr(postgres_opening_graph, "finalize_graph_in_transaction",
+                        lambda *_args: events.append("finalize") or False)
+    assert postgres_opening_graph.execute_graph_finalize_slice({"payload": {}}) is False
+    assert events == ["warm", "connection", "finalize"]
+
+
+def test_postgres_graph_stage_yields_to_foreground_and_discards_restart_replay(monkeypatch):
+    foreground_finished = threading.Event()
+    connection_opened = threading.Event()
+    writes = []
+    current_lease = {"token": "lease-1"}
+    step = GraphStep(
+        repertoire_id="rep", line_id="line", decision_index=0,
+        segment_kind="prefix", first_decision_index=0, last_decision_index=0,
+        decision_fen_keys=("fen",), card_id="card", parent_card_id=None,
+        decision_fen_key="fen", starting_fen=chess.STARTING_FEN,
+        moves=("e2e4",), trained_color="white",
+    )
+
+    class Cursor:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return None
+
+        def executemany(self, _statement, values):
+            writes.append(len(values))
+
+    class Database:
+        raw = type("Raw", (), {"cursor": lambda self: Cursor()})()
+
+    @contextmanager
+    def gated_lease():
+        foreground_finished.wait()
+        yield
+
+    @contextmanager
+    def database_connection(**_kwargs):
+        connection_opened.set()
+        yield Database()
+
+    monkeypatch.setattr(postgres_opening_graph, "prepare_next_graph_line",
+                        lambda *_args: postgres_opening_graph.PreparedGraphLine("line", (step,)))
+    monkeypatch.setattr(postgres_opening_graph, "background_lease", gated_lease)
+    monkeypatch.setattr(postgres_opening_graph.postgres_store, "connection", database_connection)
+    monkeypatch.setattr(postgres_opening_graph, "lock_current_slice",
+                        lambda _database, task: task["lease_token"] == current_lease["token"])
+    monkeypatch.setattr(postgres_opening_graph, "advance_task_slice_in_transaction",
+                        lambda *_args, **_kwargs: current_lease.update(token="complete") or True)
+    task = {"id": "graph", "generation": 1, "lease_token": "lease-1", "phase": "stage",
+            "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"}}
+    results = []
+    worker = threading.Thread(
+        target=lambda: results.append(postgres_opening_graph.execute_graph_stage_slice(task)),
+    )
+    worker.start()
+    assert not connection_opened.wait(0.05)
+    foreground_finished.set()
+    worker.join(timeout=2)
+    assert not worker.is_alive()
+    assert results == [True]
+    assert writes == [1, 1]
+    assert postgres_opening_graph.execute_graph_stage_slice(task) is False
+    assert writes == [1, 1]
+
+
+def test_postgres_graph_worker_routes_each_restartable_phase(monkeypatch):
+    from app import tasks
+
+    observed = []
+    assert "opening_graph_rebuild" in tasks._SUPPORTED_BACKGROUND_KINDS
+    phase_handlers = (
+        ("stage", "execute_graph_stage_slice"),
+        ("link", "execute_graph_link_slice"),
+        ("publish", "execute_graph_publish_slice"),
+        ("classify", "execute_graph_classify_slice"),
+        ("integrity", "execute_graph_integrity_slice"),
+        ("cleanup", "execute_graph_cleanup_slice"),
+        ("finalize", "execute_graph_finalize_slice"),
+    )
+    for phase, name in phase_handlers:
+        monkeypatch.setattr(postgres_opening_graph, name,
+                            lambda _task, phase=phase: observed.append(phase) or True)
+    for phase, _ in phase_handlers:
+        assert postgres_opening_graph.execute_postgres_opening_graph_slice({"phase": phase})
+    assert observed == [phase for phase, _ in phase_handlers]

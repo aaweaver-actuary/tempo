@@ -15,6 +15,47 @@ from .background_activity import claimable, control_order
 
 ACTIVE_STATES = ("queued", "leased", "retrying")
 
+_EVENT_INSERT_SQL = """INSERT INTO background_task_events(
+               task_id,generation,event,phase,detail,created_at
+           ) VALUES(?,?,?,?,?,?)"""
+_EVENT_PRUNE_SQL = """DELETE FROM background_task_events
+           WHERE id IN (
+               SELECT id FROM background_task_events WHERE task_id=?
+               ORDER BY id DESC LIMIT -1 OFFSET 100
+           )"""
+_TASK_BY_KIND_SQL = "SELECT * FROM background_tasks WHERE kind=? AND deduplication_key=?"
+_TASK_UPSERT_SQL = """INSERT INTO background_tasks(
+                   id,kind,deduplication_key,generation,priority,state,phase,
+                   payload_version,payload_json,attempt_count,max_attempts,
+                   next_attempt_at,lease_token,lease_expires_at,last_error,
+                   created_at,started_at,completed_at,updated_at
+               ) VALUES(?,?,?,?,?,'queued','queued',1,?,0,?,?,NULL,NULL,NULL,?,NULL,NULL,?)
+               ON CONFLICT(kind,deduplication_key) DO UPDATE SET
+                   generation=excluded.generation,
+                   priority=MIN(background_tasks.priority,excluded.priority),
+                   state='queued',phase='queued',payload_version=excluded.payload_version,
+                   payload_json=excluded.payload_json,attempt_count=0,
+                   max_attempts=excluded.max_attempts,next_attempt_at=excluded.next_attempt_at,
+                   lease_token=NULL,lease_expires_at=NULL,last_error=NULL,
+                   completed_at=NULL,updated_at=excluded.updated_at"""
+_TASK_BY_ID_SQL = "SELECT * FROM background_tasks WHERE id=?"
+_COMPLETE_SLICE_SQL = """UPDATE background_tasks SET state='complete',phase='published',
+               lease_token=NULL,lease_expires_at=NULL,last_error=NULL,
+               completed_at=?,updated_at=?
+           WHERE id=? AND generation=? AND lease_token=? AND state='leased'"""
+
+
+def warm_completion_sql() -> None:
+    """Translate durable-task completion SQL before a 50 ms PostgreSQL section."""
+
+    from ..postgres_store import postgres_sql
+
+    for statement in (
+        _TASK_BY_KIND_SQL, _TASK_UPSERT_SQL, _TASK_BY_ID_SQL,
+        _EVENT_INSERT_SQL, _EVENT_PRUNE_SQL, _COMPLETE_SLICE_SQL,
+    ):
+        postgres_sql(statement)
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -33,17 +74,11 @@ def _record_event(
     detail: str | None = None,
 ) -> None:
     database.execute(
-        """INSERT INTO background_task_events(
-               task_id,generation,event,phase,detail,created_at
-           ) VALUES(?,?,?,?,?,?)""",
+        _EVENT_INSERT_SQL,
         (task_id, generation, event, phase, detail, _iso()),
     )
     database.execute(
-        """DELETE FROM background_task_events
-           WHERE id IN (
-               SELECT id FROM background_task_events WHERE task_id=?
-               ORDER BY id DESC LIMIT -1 OFFSET 100
-           )""",
+        _EVENT_PRUNE_SQL,
         (task_id,),
     )
 
@@ -84,7 +119,7 @@ def enqueue_task_in_transaction(
     """Persist a task inside the caller's existing short publication transaction."""
 
     existing = database.execute(
-            "SELECT * FROM background_tasks WHERE kind=? AND deduplication_key=?",
+            _TASK_BY_KIND_SQL,
             (kind, deduplication_key),
     ).fetchone()
     now = _now()
@@ -93,20 +128,7 @@ def enqueue_task_in_transaction(
     next_attempt_at = _iso(now + timedelta(seconds=delay_seconds))
     created_at = existing["created_at"] if existing else _iso(now)
     database.execute(
-            """INSERT INTO background_tasks(
-                   id,kind,deduplication_key,generation,priority,state,phase,
-                   payload_version,payload_json,attempt_count,max_attempts,
-                   next_attempt_at,lease_token,lease_expires_at,last_error,
-                   created_at,started_at,completed_at,updated_at
-               ) VALUES(?,?,?,?,?,'queued','queued',1,?,0,?,?,NULL,NULL,NULL,?,NULL,NULL,?)
-               ON CONFLICT(kind,deduplication_key) DO UPDATE SET
-                   generation=excluded.generation,
-                   priority=MIN(background_tasks.priority,excluded.priority),
-                   state='queued',phase='queued',payload_version=excluded.payload_version,
-                   payload_json=excluded.payload_json,attempt_count=0,
-                   max_attempts=excluded.max_attempts,next_attempt_at=excluded.next_attempt_at,
-                   lease_token=NULL,lease_expires_at=NULL,last_error=NULL,
-                   completed_at=NULL,updated_at=excluded.updated_at""",
+            _TASK_UPSERT_SQL,
             (
                 task_id,
                 kind,
@@ -122,7 +144,7 @@ def enqueue_task_in_transaction(
     )
     _record_event(database, task_id, generation, "enqueued", "queued")
     return dict(
-        database.execute("SELECT * FROM background_tasks WHERE id=?", (task_id,)).fetchone()
+        database.execute(_TASK_BY_ID_SQL, (task_id,)).fetchone()
     )
 
 
@@ -242,10 +264,7 @@ def complete_task_slice_in_transaction(database, task: dict) -> bool:
 
     now = _iso()
     changed = database.execute(
-        """UPDATE background_tasks SET state='complete',phase='published',
-               lease_token=NULL,lease_expires_at=NULL,last_error=NULL,
-               completed_at=?,updated_at=?
-           WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
+        _COMPLETE_SLICE_SQL,
         (now, now, task["id"], task["generation"], task["lease_token"]),
     ).rowcount
     if changed:

@@ -15,6 +15,21 @@ from .queue_position_lock import lock_queue_date_for_position
 from .services.durable_tasks import enqueue_task_in_transaction
 
 
+_QUEUE_REFRESH_PROJECTION_SQL = """INSERT INTO queue_projections(queue_date,state,generation,refresh_pending)
+           VALUES(?,'refreshing',0,1) ON CONFLICT(queue_date) DO UPDATE SET
+           state='refreshing',refresh_pending=1,last_error=NULL"""
+
+
+def warm_queue_refresh_sql() -> None:
+    """Prepare the queue-refresh statement outside a bounded transaction."""
+
+    from .postgres_store import postgres_sql
+    from .services.durable_tasks import warm_completion_sql
+
+    warm_completion_sql()
+    postgres_sql(_QUEUE_REFRESH_PROJECTION_SQL)
+
+
 _ACTIVE_QUEUE_SQL = """SELECT q.id FROM daily_queue q JOIN cards c ON c.id=q.card_id
     WHERE q.queue_date=? AND q.status='queued'
       AND (c.content_type!='defense' OR
@@ -102,9 +117,7 @@ def request_queue_refresh_in_transaction(database: PostgresConnection,
         database, "daily_queue", "current", {"queue_date": queue_date}, priority=10,
     )
     database.execute(
-        """INSERT INTO queue_projections(queue_date,state,generation,refresh_pending)
-           VALUES(?,'refreshing',0,1) ON CONFLICT(queue_date) DO UPDATE SET
-           state='refreshing',refresh_pending=1,last_error=NULL""",
+        _QUEUE_REFRESH_PROJECTION_SQL,
         (queue_date,),
     )
     return task
