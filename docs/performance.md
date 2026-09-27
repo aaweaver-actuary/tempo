@@ -23,3 +23,7 @@ With 12 Node-selected files and the current clean checkout, the full unit suite 
 On this machine, the original three-stage fast run recorded 54.26 seconds for frontend units, 97.08 seconds for 384 backend tests, and 40.91 seconds for a cold Rust build and test. The revised fast tier runs units only; a verification run passed all 235 tests in 59.60 seconds. Backend and Rust checks remain in integration and full. These times are single samples and should not be used as regression thresholds.
 
 The first pinned browser sample recorded warm-switch p95 values of 51.6 ms (Builder), 63.7 ms (Games), 76.7 ms (Endgames), 36.9 ms (Tactics), and 95.4 ms (Train). One Builder move-to-paint sample was 23.6 ms, with no observed long tasks. These are five samples per view and one move; they show the artifact shape, not a stable budget.
+
+## Builder persistence observation (2026-09-27)
+
+A focused rerender of Builder with one loaded repertoire made two unnecessary localStorage writes before the change: repertoire selection and the serialized Builder session. The named regression now measures zero writes for the same rerender. Repertoire summaries are memoized from `availableLines`, and persistence effects use selected ID and side values. This measures eliminated work; it does not claim a browser-visible latency improvement on its own.

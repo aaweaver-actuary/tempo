@@ -4,6 +4,7 @@
 
 | Issue | Required regression |
 | --- | --- |
+| Unrelated Builder rerenders rewrite repertoire selection and serialized session | `Builder unrelated rerender does not rewrite repertoire selection or session` |
 | A recurring refresh starves a retried discovery admission behind lower priority derived work | `test_discovery_admission_replay_promotes_stalled_save_ahead_of_recurring_refresh` |
 | An accepted but unconfirmed discovery remains stalled after reopen because only status is polled | `accepted discovery save replays its same choice after reopen to unblock preparation` |
 | Live game summaries expose a matched position ply that the web rejects as unknown | `game summary accepts the matched position ply sent by the API` |

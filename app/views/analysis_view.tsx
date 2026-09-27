@@ -365,17 +365,18 @@ export default function BuilderView({
     return { kind: "lines", lines: source };
   }, [backendLines, imported]);
   const availableLines = useBackgroundStudy(lineTask, emptyLines);
-  const repertoires = [
+  const repertoires = useMemo(() => [
     ...new Map(
       availableLines.map((line) => [
         line.repertoireId,
         { id: line.repertoireId, name: line.repertoireName, side: line.side },
       ]),
     ).values(),
-  ];
+  ], [availableLines]);
   const selectedRepertoire =
     repertoires.find((item) => item.id === activeRepertoire) ?? repertoires[0];
   const selectedRepertoireId = selectedRepertoire?.id;
+  const selectedRepertoireSide = selectedRepertoire?.side;
   const lineMatches = useMemo(
     () =>
       availableLines.filter(
@@ -459,12 +460,12 @@ export default function BuilderView({
   }, []);
 
   useEffect(() => {
-    if (!selectedRepertoire) return;
+    if (!selectedRepertoireId || !selectedRepertoireSide) return;
     localStorage.setItem(
-      `tempo-active-repertoire-${selectedRepertoire.side}`,
-      selectedRepertoire.id,
+      `tempo-active-repertoire-${selectedRepertoireSide}`,
+      selectedRepertoireId,
     );
-  }, [orientation, selectedRepertoire]);
+  }, [selectedRepertoireId, selectedRepertoireSide]);
 
   useEffect(() => {
     const activeRepertoireByColor: BuilderSession["activeRepertoireByColor"] = {
@@ -474,14 +475,14 @@ export default function BuilderView({
       black: localStorage.getItem("tempo-active-repertoire-black")
         ? asRepertoireId(localStorage.getItem("tempo-active-repertoire-black")!)
         : undefined,
-      ...(selectedRepertoire
-        ? { [selectedRepertoire.side]: selectedRepertoire.id }
+      ...(selectedRepertoireId && selectedRepertoireSide
+        ? { [selectedRepertoireSide]: selectedRepertoireId }
         : {}),
     };
     const session: BuilderSession = {
       version: 1,
       activeRepertoireId:
-        selectedRepertoire?.id ??
+        selectedRepertoireId ??
         (activeRepertoire ? asRepertoireId(activeRepertoire) : undefined),
       activeRepertoireByColor,
       orientation,
@@ -501,7 +502,8 @@ export default function BuilderView({
     cursor,
     history,
     orientation,
-    selectedRepertoire,
+    selectedRepertoireId,
+    selectedRepertoireSide,
     startingFen,
     initialSession?.sourceGapId,
     initialSession?.selectedMoveUci,
