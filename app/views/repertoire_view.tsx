@@ -10,6 +10,7 @@ import {
 import { usesLocalApi } from "../utils/local";
 import { API_URL } from "../const";
 import { renameRepertoireCommand } from "../lib/repertoire-rename-command";
+import { deleteRepertoireCommand } from "../lib/repertoire-delete-command";
 import {
   readWorkspaceResponse,
   invalidateWorkspaceData,
@@ -212,13 +213,20 @@ export default function RepertoireView({
     )
       return;
     if (item.backend) {
-      const response = await fetch(`${API_URL}/api/repertoires/${item.id}`, {
-        method: "DELETE",
-      });
-      if (!response.ok) return;
+      try {
+        await deleteRepertoireCommand(item.id);
+      } catch (deleteError) {
+        setError(deleteError instanceof Error ? deleteError.message : "Could not delete this repertoire");
+        return;
+      }
+      invalidateWorkspaceData();
       onDeleteLocal(item.id);
-      await onQueueChanged();
-      await loadBackend();
+      try {
+        await onQueueChanged();
+        await loadBackend();
+      } catch {
+        setError("Repertoire deleted. Refresh failed; retry loading the workspace.");
+      }
     } else onDeleteLocal(item.id);
   }
 

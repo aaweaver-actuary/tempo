@@ -8,6 +8,7 @@ from fastapi import HTTPException
 
 from .command_gateway import register_command
 from .postgres_store import PostgresConnection
+from .services.durable_tasks import enqueue_task_in_transaction
 
 
 _SYSTEM_REPERTOIRES = ("__tactics__", "__endgames__", "__game_mistakes__")
@@ -45,5 +46,47 @@ def rename_repertoire(database: PostgresConnection, payload: dict[str, Any]) -> 
     return {"id": repertoire_id, "name": name}
 
 
+def delete_repertoire(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    repertoire_id = str(payload["repertoire_id"])
+    if repertoire_id in _SYSTEM_REPERTOIRES:
+        raise HTTPException(400, "This system repertoire cannot be deleted")
+    # Main selection and deletion must serialize across foreground workers.
+    database.execute_native(
+        "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
+        ("tempo:main-repertoire",),
+    )
+    repertoire = database.execute_native(
+        "SELECT id FROM repertoires WHERE id=%s FOR UPDATE", (repertoire_id,),
+    ).fetchone()
+    if repertoire is None:
+        raise HTTPException(404, "Repertoire not found")
+    database.execute_native(
+        "UPDATE cards AS card SET repertoire_id=shared.replacement "
+        "FROM (SELECT card.id,MIN(link.repertoire_id) AS replacement "
+        "FROM cards card JOIN repertoire_cards link ON link.card_id=card.id "
+        "WHERE card.repertoire_id=%s AND link.repertoire_id<>%s "
+        "GROUP BY card.id) shared "
+        "WHERE card.id=shared.id",
+        (repertoire_id, repertoire_id),
+    )
+    database.execute_native("DELETE FROM repertoires WHERE id=%s", (repertoire_id,))
+    replacement = database.execute_native(
+        "SELECT id FROM repertoires WHERE id<>ALL(%s::text[]) "
+        "ORDER BY created_at DESC LIMIT 1", (list(_SYSTEM_REPERTOIRES),),
+    ).fetchone()
+    if replacement:
+        database.execute_native(
+            "UPDATE repertoires SET is_main=CASE WHEN id=%s THEN 1 ELSE 0 END "
+            "WHERE id<>ALL(%s::text[])",
+            (replacement[0], list(_SYSTEM_REPERTOIRES)),
+        )
+    enqueue_task_in_transaction(
+        database, "repertoire_game_refresh", "all", {"after_game_id": ""},
+        priority=90,
+    )
+    return {"deleted": True, "id": repertoire_id}
+
+
 register_command("repertoires.main.select", select_main_repertoire)
 register_command("repertoires.rename", rename_repertoire)
+register_command("repertoires.delete", delete_repertoire)

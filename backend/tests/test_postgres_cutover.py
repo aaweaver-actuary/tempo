@@ -849,6 +849,56 @@ def test_postgres_repertoire_rename_dispatches_idempotent_foreground_command(mon
     }, "rename-1")]
 
 
+def test_postgres_repertoire_delete_dispatches_idempotent_foreground_command(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(command_dispatch, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or
+                        {"deleted": True, "id": "rep"})
+    response = TestClient(main.app).delete(
+        "/api/repertoires/rep", headers={"Idempotency-Key": "delete-rep-1"},
+    )
+    assert response.status_code == 200, response.text
+    assert dispatched == [("repertoires.delete", {"repertoire_id": "rep"}, "delete-rep-1")]
+
+
+def test_postgres_repertoire_delete_preserves_shared_cards_and_queues_game_refresh(monkeypatch):
+    from app import repertoire_commands
+
+    statements = []
+    queued = []
+
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            statements.append((statement, parameters))
+            if "SELECT id FROM repertoires WHERE id=%s FOR UPDATE" in statement:
+                return SimpleNamespace(fetchone=lambda: ("old",))
+            if "ORDER BY created_at DESC LIMIT 1" in statement:
+                return SimpleNamespace(fetchone=lambda: ("new",))
+            return SimpleNamespace(fetchone=lambda: None)
+
+    monkeypatch.setattr(repertoire_commands, "enqueue_task_in_transaction",
+                        lambda database, kind, key, payload, *, priority:
+                        queued.append((database, kind, key, payload, priority)))
+    database = Database()
+    assert repertoire_commands.delete_repertoire(database, {
+        "repertoire_id": "old",
+    }) == {"deleted": True, "id": "old"}
+    assert any("MIN(link.repertoire_id) AS replacement" in sql and
+               parameters == ("old", "old") for sql, parameters in statements)
+    assert any(sql == "DELETE FROM repertoires WHERE id=%s" and
+               parameters == ("old",) for sql, parameters in statements)
+    assert any("SET is_main=CASE WHEN id=%s THEN 1 ELSE 0 END" in sql
+               for sql, _ in statements)
+    assert queued == [(database, "repertoire_game_refresh", "all",
+                       {"after_game_id": ""}, 90)]
+
+
 def test_postgres_branch_edit_dispatches_foreground_command_with_idempotency(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main

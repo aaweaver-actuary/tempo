@@ -436,6 +436,9 @@ async def prioritize_foreground_requests(request: Request, call_next):
         repertoire_rename_command = (len(path_parts) == 3
                                      and path_parts[:2] == ["api", "repertoires"]
                                      and request.method == "PATCH")
+        repertoire_delete_command = (len(path_parts) == 3
+                                     and path_parts[:2] == ["api", "repertoires"]
+                                     and request.method == "DELETE")
         browser_activity = (path_parts == ["api", "system", "browser-activity"]
                             and request.method == "POST")
         tactic_attempt_command = (path_parts == ["api", "tactics", "attempt"]
@@ -483,6 +486,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     chapter_rename, link_create, queue_entry_command, card_review_command,
                     card_teaching_command, defense_answer_command,
                     main_repertoire_command, annotation_command, repertoire_rename_command,
+                    repertoire_delete_command,
                     browser_activity, tactic_attempt_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     settings_command,
@@ -2328,7 +2332,14 @@ def make_main_repertoire(identifier: str,
 
 
 @app.delete("/api/repertoires/{identifier}")
-def delete_repertoire(identifier: str):
+def delete_repertoire(identifier: str,
+                      idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "repertoires.delete", {"repertoire_id": identifier},
+            idempotency_key=idempotency_key,
+        )
     if identifier in {"__tactics__", "__endgames__"}:
         raise HTTPException(400, "This system repertoire cannot be deleted")
     with connection() as db:

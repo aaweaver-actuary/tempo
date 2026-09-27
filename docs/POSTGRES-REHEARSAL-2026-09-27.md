@@ -11,6 +11,17 @@ have repertoire links and queue rows, and an opening graph rebuild is queued.
 The corresponding named backend and browser regressions pass. This is not a
 live cutover or a full product verification.
 
+## Repertoire deletion foreground command rehearsal
+
+The PostgreSQL delete route now dispatches a named Celery command. In a
+rolled-back rehearsal transaction, deleting a synthetic repertoire preserved
+a card shared with another repertoire, transferred that card's owner, kept its
+remaining link, and queued the game-refresh intent with the delete. The first
+probe caught a PostgreSQL boolean-to-bigint cast error in main-repertoire
+selection; the command now uses a numeric `CASE` and the replayed probe passed.
+The browser retains the operation ID while deletion is pending and only removes
+the repertoire from its UI after a confirmed receipt.
+
 ## Prioritized opening slice check
 
 The opening candidate read returned 326 rows in both the verified SQLite
