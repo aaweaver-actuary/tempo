@@ -49,6 +49,7 @@ it("issue 4 opportunities explain promotion, degraded sources, and explicit acti
     source_games: [], routes: [] }));
   const fetcher = vi.fn(async (input: RequestInfo | URL) => {
     if (String(input).endsWith("/opportunities")) return Response.json({ opportunities });
+    if (String(input).endsWith("/train")) return Response.json({ card_id: "target", queued: true, idempotent: false });
     return Response.json({ dismissed: true });
   });
   vi.stubGlobal("fetch", fetcher);

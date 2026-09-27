@@ -4,12 +4,13 @@ import { confirmOperationResponse, PendingOperationError } from "./operation-sta
 import { readJsonResponse } from "./validated-data";
 
 const PENDING_PREFIX = "tempo-pending-opportunity-v1:";
-type Action = "dismiss" | "acknowledge" | "snooze";
+type Action = "dismiss" | "acknowledge" | "snooze" | "train";
 type PendingAction = { operationId: string; repertoireId: string; action: Action };
 const responseSchemas = {
   dismiss: z.strictObject({ dismissed: z.literal(true) }),
   acknowledge: z.strictObject({ acknowledged: z.literal(true) }),
   snooze: z.strictObject({ snoozed: z.literal(true) }),
+  train: z.strictObject({ card_id: z.string(), queued: z.literal(true), idempotent: z.boolean() }),
 };
 
 function readPending(key: string): PendingAction | null {
@@ -19,7 +20,7 @@ function readPending(key: string): PendingAction | null {
   if (typeof parsed !== "object" || parsed === null ||
       !("operationId" in parsed) || typeof parsed.operationId !== "string" ||
       !("repertoireId" in parsed) || typeof parsed.repertoireId !== "string" ||
-      !("action" in parsed) || !["dismiss", "acknowledge", "snooze"].includes(String(parsed.action)))
+      !("action" in parsed) || !["dismiss", "acknowledge", "snooze", "train"].includes(String(parsed.action)))
     throw new Error("The pending discovery action is invalid. Restore browser data before retrying.");
   return parsed as PendingAction;
 }

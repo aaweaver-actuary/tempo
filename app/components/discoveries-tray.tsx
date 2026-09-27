@@ -709,16 +709,8 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   const act = async (item: DiscoveryItem, action: "train" | "snooze" | "dismiss") => {
     setBusyId(item.id);
     try {
-      if (action === "train") {
-        const response = await fetch(`${API_URL}/api/repertoires/${item.repertoire_id}/opportunities/${item.id}/train`, { method: "POST" });
-        if (!response.ok) {
-          const body = await response.json().catch(() => ({})) as { detail?: string };
-          throw new Error(body.detail ?? `train failed (HTTP ${response.status})`);
-        }
-        await onQueueChanged();
-      } else {
-        await applyOpportunityCommand(item.repertoire_id, item.id, action);
-      }
+      await applyOpportunityCommand(item.repertoire_id, item.id, action);
+      if (action === "train") await onQueueChanged();
       await refresh(true);
       if (action !== "train") setActiveId(null);
     } catch (cause) { setError(cause instanceof Error ? cause.message : `Could not ${action} discovery`); }

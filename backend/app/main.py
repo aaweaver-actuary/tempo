@@ -446,7 +446,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
         opportunity_state_command = (
             len(path_parts) == 6 and path_parts[:2] == ["api", "repertoires"]
             and path_parts[3] == "opportunities"
-            and path_parts[5] in {"dismiss", "acknowledge", "snooze"}
+            and path_parts[5] in {"dismiss", "acknowledge", "snooze", "train"}
             and request.method == "POST"
         )
         browser_activity = (path_parts == ["api", "system", "browser-activity"]
@@ -3555,7 +3555,14 @@ def snooze_repertoire_opportunity(identifier: str, opportunity_id: str,
 
 
 @app.post("/api/repertoires/{identifier}/opportunities/{opportunity_id}/train")
-def train_repertoire_opportunity(identifier: str, opportunity_id: str):
+def train_repertoire_opportunity(identifier: str, opportunity_id: str,
+                                 idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "opportunities.train", {"repertoire_id": identifier, "opportunity_id": opportunity_id},
+            idempotency_key=idempotency_key,
+        )
     with connection() as database:
         try:
             return admit_existing_decision(database, identifier, opportunity_id)

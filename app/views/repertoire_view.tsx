@@ -327,18 +327,7 @@ export default function RepertoireView({
     await loadOpportunities(repertoireId);
   }
   async function trainOpportunity(repertoireId: string, opportunityId: string) {
-    const response = await fetch(
-      `${API_URL}/api/repertoires/${repertoireId}/opportunities/${opportunityId}/train`,
-      { method: "POST" },
-    );
-    if (!response.ok) {
-      const body = (await response.json().catch(() => ({}))) as {
-        detail?: string;
-      };
-      throw new Error(
-        body.detail ?? `Could not queue decision (HTTP ${response.status}).`,
-      );
-    }
+    await applyOpportunityCommand(repertoireId, opportunityId, "train");
     await onQueueChanged();
     await loadOpportunities(repertoireId);
     onTrain();

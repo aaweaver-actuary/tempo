@@ -55,6 +55,17 @@ that dismiss copies the saved evidence, acknowledge records a seen timestamp,
 and snooze records a seven-day deadline. The three routes and pending browser
 behavior have named regressions.
 
+## Saved discovery training command rehearsal
+
+The Train action now shares the durable operation receipt used by other
+discovery actions. The foreground command locks the opportunity and source
+card, serializes daily queue positioning, and checkpoints a prefix-split graph
+rebuild when the saved decision came from a prefix card. In rolled-back
+PostgreSQL rehearsals, a one-decision card entered the queue at position zero
+with explicit admission in 189 ms. A real prefix card split, queued its
+continuation at position zero, and queued its graph rebuild in 252 ms. These
+are local transaction samples; full foreground-load benchmarks remain open.
+
 ## Prioritized opening slice check
 
 The opening candidate read returned 326 rows in both the verified SQLite

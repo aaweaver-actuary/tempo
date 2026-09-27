@@ -926,7 +926,7 @@ def test_postgres_card_archive_returns_unchecked_integrity_after_scan_intent(mon
     assert any("UPDATE daily_queue SET status='complete'" in statement for statement in statements)
 
 
-@pytest.mark.parametrize("action", ["dismiss", "acknowledge", "snooze"])
+@pytest.mark.parametrize("action", ["dismiss", "acknowledge", "snooze", "train"])
 def test_postgres_opportunity_state_actions_dispatch_idempotent_commands(monkeypatch, action):
     from fastapi.testclient import TestClient
     from app import main
@@ -937,8 +937,11 @@ def test_postgres_opportunity_state_actions_dispatch_idempotent_commands(monkeyp
     monkeypatch.setattr(command_dispatch, "dispatch_command",
                         lambda name, payload, *, idempotency_key:
                         dispatched.append((name, payload, idempotency_key)) or {
-                            {"dismiss": "dismissed", "acknowledge": "acknowledged", "snooze": "snoozed"}[action]: True,
-                        })
+                            "train": {"card_id": "card", "queued": True, "idempotent": False},
+                            "dismiss": {"dismissed": True},
+                            "acknowledge": {"acknowledged": True},
+                            "snooze": {"snoozed": True},
+                        }[action])
     response = TestClient(main.app).post(
         f"/api/repertoires/white/opportunities/discovery-1/{action}",
         headers={"Idempotency-Key": f"discovery-1-{action}"},
@@ -947,6 +950,60 @@ def test_postgres_opportunity_state_actions_dispatch_idempotent_commands(monkeyp
     assert dispatched == [(f"opportunities.{action}", {
         "repertoire_id": "white", "opportunity_id": "discovery-1",
     }, f"discovery-1-{action}")]
+
+
+def test_postgres_discovery_training_checkpoints_prefix_graph_intent(monkeypatch):
+    from app import opportunity_commands
+
+    events = []
+
+    class Cursor:
+        def __init__(self, row=None, rows=()):
+            self.row = row
+            self.rows = rows
+
+        def fetchone(self):
+            return self.row
+
+        def __iter__(self):
+            return iter(self.rows)
+
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            if statement.startswith("SELECT card_id FROM repertoire_opportunities"):
+                return Cursor(("source",))
+            if statement.startswith("SELECT kind FROM cards"):
+                return Cursor(("prefix",))
+            if statement.startswith("SELECT shortened_card_id"):
+                return Cursor(("parent", "continuation"))
+            if statement.startswith("SELECT repertoire_id FROM repertoire_cards"):
+                return Cursor(rows=[("white",), ("black",)])
+            raise AssertionError(statement)
+
+    database = Database()
+    monkeypatch.setattr(opportunity_commands, "lock_queue_date_for_position",
+                        lambda db, day: events.append(("queue-lock", db, day)))
+    monkeypatch.setattr(opportunity_commands, "admit_existing_decision",
+                        lambda db, repertoire_id, opportunity_id:
+                        events.append(("admit", db, repertoire_id, opportunity_id)) or
+                        {"card_id": "continuation", "queued": True, "idempotent": False})
+    monkeypatch.setattr(opportunity_commands, "invalidate_integrity_in_transaction",
+                        lambda db, repertoire_id:
+                        events.append(("invalidate", db, repertoire_id)))
+    monkeypatch.setattr(opportunity_commands, "request_graph_rebuild_in_transaction",
+                        lambda db, repertoire_id, day:
+                        events.append(("graph", db, repertoire_id, day)))
+    result = opportunity_commands.train_opportunity(database, {
+        "repertoire_id": "white", "opportunity_id": "discovery-1",
+    })
+    assert result["card_id"] == "continuation"
+    assert events[0][0] == "queue-lock" and events[1] == (
+        "admit", database, "white", "discovery-1",
+    )
+    assert [(event[0], event[2]) for event in events[2:]] == [
+        ("invalidate", "black"), ("graph", "black"),
+        ("invalidate", "white"), ("graph", "white"),
+    ]
 
 
 def test_postgres_annotation_route_dispatches_idempotent_foreground_command(monkeypatch):
