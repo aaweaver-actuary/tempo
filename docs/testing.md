@@ -2,7 +2,7 @@
 
 Use one Make target for the question you are answering. `make plan` prints the exact commands in the full plan without running them. `make full` is the release and CI-equivalent gate; `npm test` and `npm run test:full` use the same runner. Run the full gate once on the final checkout. Do not chain `fast`, `integration`, `ui`, and `full` in one invocation: the smaller scopes are subsets of full.
 
-**Codex execution:** Launch `make full` with `sandbox_permissions: "require_escalated"` on the initial command, with Docker-socket and localhost-bind access. Do the same for `make ui`, `make browser`, `make visual`, `make perf`, and `make docker-durability`. The default sandbox can deny `127.0.0.1` binding or Docker access. `make full` and `make ui` run a capability preflight first and fail before the unit suite if either is unavailable. `make preflight` runs that check alone when diagnosing the environment. This preflight is a capability check, not another test family.
+**Codex execution:** Launch `make full` with `sandbox_permissions: "require_escalated"` on the initial command, with Docker-socket and localhost-bind access. Do the same for `make ui`, `make browser`, `make visual`, `make perf`, `make ui-file`, `make view`, and `make docker-durability`. The default sandbox can deny `127.0.0.1` binding or Docker access. These Make targets check their required capabilities before tests; `make full` and `make ui` check both before the unit or browser suite. `make preflight` checks both alone when diagnosing the environment. This preflight is a capability check, not another test family.
 
 ## Full gate
 

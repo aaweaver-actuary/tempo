@@ -4,7 +4,7 @@
 
 | Issue | Required regression |
 | --- | --- |
-| Full validation runs long unit and build stages before discovering that Docker or localhost binding is sandbox denied | `full verification checks Docker and loopback access before any test family` |
+| Full validation or a focused browser scope runs tests and builds before discovering that Docker or localhost binding is sandbox denied | `full verification checks Docker and loopback access before any test family`; `focused browser and Docker Make targets preflight before launching tests` |
 | TypeScript position matching rejects a noncapturable en passant square that Rust canonicalizes away | `TypeScript position distance matches the shared Rust parity fixture`; `rust_position_distance_matches_typescript_shared_fixture` |
 | Every motif detector replays and copies the same candidate line before inspecting it | `test_motif_candidates_replay_each_line_once_for_all_detectors`; `test_python_motif_parity_fixture` |
 | Training-card transition latency is not sampled from click through the next visible paint | `warm training cards advance to the next visible paint` |

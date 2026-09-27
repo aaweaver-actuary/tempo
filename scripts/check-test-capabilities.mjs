@@ -30,7 +30,8 @@ if (checkLoopback) {
 
 if (failures.length > 0) {
   console.error(`Test capability preflight failed before any tests ran:\n- ${failures.join("\n- ")}`);
-  console.error("Ensure Docker is running. In Codex, launch the entire make full command with sandbox_permissions: require_escalated from the start; use the same elevated path for Docker or browser scopes.");
+  if (checkDocker) console.error("Ensure the Docker daemon is running and accessible.");
+  console.error("In Codex, launch the entire requested Make target with sandbox_permissions: require_escalated from the start.");
   process.exitCode = 1;
 } else {
   console.log("Test capability preflight passed: required Docker and loopback access is available.");

@@ -70,6 +70,29 @@ it("Makefile runs one full plan and rejects combined verification scopes", () =>
   expect(duplicate.stderr).toContain("Choose one verification target");
 });
 
+it("focused browser and Docker Make targets preflight before launching tests", () => {
+  const expectedChecks: Record<string, string> = {
+    browser: "--loopback",
+    "ui-file": "--loopback",
+    view: "--loopback",
+    visual: "--docker",
+    perf: "--docker",
+    "docker-durability": "--docker --loopback",
+  };
+  for (const [target, checks] of Object.entries(expectedChecks)) {
+    const planned = spawnSync("make", ["-n", target, "FILE=fixture.spec.ts", "VIEW=Builder"], {
+      cwd: process.cwd(), encoding: "utf8",
+    });
+    expect(planned.status, `${target}: ${planned.stderr}`).toBe(0);
+    const commands = planned.stdout.trim().split("\n");
+    const capabilityCheckIndex = commands.indexOf(`node scripts/check-test-capabilities.mjs ${checks}`);
+    const browserLaunchIndex = commands.findIndex((command) =>
+      command.startsWith("npm run test:") || command.startsWith("node scripts/test-docker.mjs"));
+    expect(capabilityCheckIndex, target).toBeGreaterThanOrEqual(0);
+    expect(browserLaunchIndex, target).toBeGreaterThan(capabilityCheckIndex);
+  }
+});
+
 it("regular and pinned Playwright plans partition every browser spec without overlap", () => {
   const listedFiles = (configuration: string, pinned: boolean) => {
     const run = spawnSync("npx", [
