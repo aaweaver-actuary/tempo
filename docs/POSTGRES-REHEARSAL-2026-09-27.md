@@ -288,6 +288,17 @@ microbenchmark, not the final container/backlog gate.
 
 ## Outstanding cutover gates
 
+Study exercise “train now” now uses a foreground command and queues one explicit
+entry in the same transaction as its durable refresh request. A rolled-back
+PostgreSQL rehearsal executed create, enroll, train-now, and replay; replay
+returned the same entry and left one queue row. Queue position allocation in
+foreground train-now/review/bury and background admission/randomization now
+shares a date-scoped PostgreSQL advisory lock. Two sessions serialized on that
+lock (197.6 ms wait in a 200 ms hold). A pooled background transaction with
+the configured 25 ms lock timeout raised `LockNotAvailable`; the worker now
+defers this expected contention without spending a durable retry. The regular
+backend suite covers dispatch, replay, lock order, and lease-safe deferral.
+
 Study exercise suspend, resume, and archive now have named foreground commands.
 Each updates card and queued-entry state and requests a durable queue refresh in
 one worker transaction. Focused route and state regressions passed; these

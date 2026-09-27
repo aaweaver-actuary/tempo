@@ -2601,56 +2601,62 @@
     {
       "file": "backend/app/queue_commands.py",
       "function": "mark_attempt_failed",
-      "line": 26,
+      "line": 27,
       "operation": "execute"
     },
     {
       "file": "backend/app/queue_commands.py",
       "function": "mark_attempt_failed",
-      "line": 31,
+      "line": 32,
       "operation": "execute"
     },
     {
       "file": "backend/app/queue_commands.py",
       "function": "bury_queue_entry",
-      "line": 43,
+      "line": 45,
       "operation": "execute"
     },
     {
       "file": "backend/app/queue_commands.py",
       "function": "bury_queue_entry",
-      "line": 52,
+      "line": 54,
       "operation": "execute"
     },
     {
       "file": "backend/app/queue_commands.py",
       "function": "bury_queue_entry",
-      "line": 57,
+      "line": 59,
       "operation": "execute"
     },
     {
       "file": "backend/app/queue_commands.py",
       "function": "ensure_current_queue",
-      "line": 71,
+      "line": 73,
       "operation": "execute"
     },
     {
       "file": "backend/app/queue_commands.py",
       "function": "ensure_current_queue",
-      "line": 77,
+      "line": 79,
       "operation": "execute"
     },
     {
       "file": "backend/app/queue_commands.py",
       "function": "ensure_current_queue",
-      "line": 83,
+      "line": 85,
       "operation": "execute"
     },
     {
       "file": "backend/app/queue_commands.py",
       "function": "request_queue_refresh_in_transaction",
-      "line": 102,
+      "line": 104,
       "operation": "execute"
+    },
+    {
+      "file": "backend/app/queue_position_lock.py",
+      "function": "lock_queue_date_for_position",
+      "line": 9,
+      "operation": "execute_native"
     },
     {
       "file": "backend/app/repertoire_commands.py",
@@ -2662,6 +2668,12 @@
       "file": "backend/app/repertoire_commands.py",
       "function": "select_main_repertoire",
       "line": 26,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/review_commands.py",
+      "function": "submit_review",
+      "line": 20,
       "operation": "execute"
     },
     {
@@ -3326,62 +3338,74 @@
     },
     {
       "file": "backend/app/services/durable_tasks.py",
+      "function": "defer_task_for_contention.operation",
+      "line": 296,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/services/durable_tasks.py",
+      "function": "defer_task_for_contention",
+      "line": 308,
+      "operation": "submit_background_write"
+    },
+    {
+      "file": "backend/app/services/durable_tasks.py",
       "function": "retry_task.operation",
-      "line": 293,
+      "line": 313,
       "operation": "execute"
     },
     {
       "file": "backend/app/services/durable_tasks.py",
       "function": "retry_task.operation",
-      "line": 299,
+      "line": 319,
       "operation": "execute"
     },
     {
       "file": "backend/app/services/durable_tasks.py",
       "function": "retry_task.operation",
-      "line": 305,
+      "line": 325,
       "operation": "execute"
     },
     {
       "file": "backend/app/services/durable_tasks.py",
       "function": "retry_task.operation",
-      "line": 312,
+      "line": 332,
       "operation": "execute"
     },
     {
       "file": "backend/app/services/durable_tasks.py",
       "function": "retry_task",
-      "line": 315,
+      "line": 335,
       "operation": "submit_foreground_write"
     },
     {
       "file": "backend/app/services/durable_tasks.py",
       "function": "requeue_interrupted_tasks.operation",
-      "line": 321,
+      "line": 341,
       "operation": "execute"
     },
     {
       "file": "backend/app/services/durable_tasks.py",
       "function": "requeue_interrupted_tasks.operation",
-      "line": 324,
+      "line": 344,
       "operation": "execute"
     },
     {
       "file": "backend/app/services/durable_tasks.py",
       "function": "requeue_interrupted_tasks",
-      "line": 332,
+      "line": 352,
       "operation": "submit_foreground_write"
     },
     {
       "file": "backend/app/services/durable_tasks.py",
       "function": "list_tasks",
-      "line": 362,
+      "line": 382,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/services/durable_tasks.py",
       "function": "list_tasks",
-      "line": 363,
+      "line": 383,
       "operation": "execute"
     },
     {
@@ -4653,14 +4677,8 @@
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_bounded_read",
-      "line": 43,
+      "line": 44,
       "operation": "execute"
-    },
-    {
-      "file": "backend/app/services/postgres_queue_refresh.py",
-      "function": "_publish_tactical_introduction",
-      "line": 95,
-      "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
@@ -4671,85 +4689,85 @@
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 101,
+      "line": 97,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 104,
+      "line": 102,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 110,
+      "line": 105,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 116,
+      "line": 111,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 122,
+      "line": 117,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 130,
+      "line": 123,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 136,
+      "line": 131,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 140,
+      "line": 137,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 145,
+      "line": 141,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 149,
+      "line": 147,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_tactical_introduction",
-      "line": 153,
+      "line": 152,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_publish_tactical_introduction",
+      "line": 156,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_publish_tactical_introduction",
+      "line": 160,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_reconcile_one_unseen_entry",
-      "line": 195,
-      "operation": "execute_native"
-    },
-    {
-      "file": "backend/app/services/postgres_queue_refresh.py",
-      "function": "_reconcile_one_unseen_entry",
-      "line": 206,
-      "operation": "execute_native"
-    },
-    {
-      "file": "backend/app/services/postgres_queue_refresh.py",
-      "function": "_reconcile_one_unseen_entry",
-      "line": 208,
+      "line": 202,
       "operation": "execute_native"
     },
     {
@@ -4761,43 +4779,49 @@
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_reconcile_one_unseen_entry",
-      "line": 214,
+      "line": 215,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_reconcile_one_unseen_entry",
+      "line": 220,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_reconcile_one_unseen_entry",
+      "line": 221,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_due_card",
-      "line": 251,
+      "line": 258,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_due_card",
-      "line": 255,
+      "line": 262,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_due_card",
-      "line": 261,
+      "line": 269,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_due_card",
-      "line": 265,
+      "line": 274,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
-      "function": "_admit_one_prioritized_opening",
-      "line": 308,
-      "operation": "execute_native"
-    },
-    {
-      "file": "backend/app/services/postgres_queue_refresh.py",
-      "function": "_admit_one_prioritized_opening",
-      "line": 315,
+      "function": "_admit_one_due_card",
+      "line": 278,
       "operation": "execute_native"
     },
     {
@@ -4809,43 +4833,43 @@
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_prioritized_opening",
-      "line": 325,
-      "operation": "execute_native"
-    },
-    {
-      "file": "backend/app/services/postgres_queue_refresh.py",
-      "function": "_admit_one_prioritized_opening",
-      "line": 330,
+      "line": 328,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_prioritized_opening",
       "line": 335,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_admit_one_prioritized_opening",
+      "line": 340,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_admit_one_prioritized_opening",
+      "line": 344,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_admit_one_prioritized_opening",
+      "line": 349,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_admit_one_prioritized_opening",
+      "line": 354,
       "operation": "execute"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_study_card",
-      "line": 376,
-      "operation": "execute_native"
-    },
-    {
-      "file": "backend/app/services/postgres_queue_refresh.py",
-      "function": "_admit_one_study_card",
-      "line": 380,
-      "operation": "execute_native"
-    },
-    {
-      "file": "backend/app/services/postgres_queue_refresh.py",
-      "function": "_admit_one_study_card",
-      "line": 383,
-      "operation": "execute_native"
-    },
-    {
-      "file": "backend/app/services/postgres_queue_refresh.py",
-      "function": "_admit_one_study_card",
-      "line": 391,
+      "line": 395,
       "operation": "execute_native"
     },
     {
@@ -4857,73 +4881,97 @@
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_admit_one_study_card",
-      "line": 403,
+      "line": 402,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_admit_one_study_card",
+      "line": 410,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_admit_one_study_card",
+      "line": 419,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_admit_one_study_card",
+      "line": 424,
+      "operation": "execute_native"
+    },
+    {
+      "file": "backend/app/services/postgres_queue_refresh.py",
+      "function": "_admit_one_study_card",
+      "line": 428,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_queue_randomization",
-      "line": 461,
+      "line": 487,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_queue_randomization",
-      "line": 469,
+      "line": 495,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_queue_randomization",
-      "line": 476,
+      "line": 502,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_publish_queue_randomization",
-      "line": 489,
+      "line": 515,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_quarantine_one_opening",
-      "line": 547,
+      "line": 573,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_quarantine_one_opening",
-      "line": 562,
+      "line": 588,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_quarantine_one_opening",
-      "line": 565,
+      "line": 591,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "_quarantine_one_opening",
-      "line": 569,
+      "line": 595,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "execute_postgres_queue_refresh_slice",
-      "line": 659,
+      "line": 685,
       "operation": "connection"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "execute_postgres_queue_refresh_slice",
-      "line": 663,
+      "line": 689,
       "operation": "execute_native"
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
       "function": "execute_postgres_queue_refresh_slice",
-      "line": 756,
+      "line": 782,
       "operation": "execute_native"
     },
     {
@@ -7791,85 +7839,79 @@
     {
       "file": "backend/app/study_commands.py",
       "function": "_require_record",
-      "line": 28,
+      "line": 29,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "create_study",
-      "line": 38,
+      "line": 39,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "update_study",
-      "line": 50,
+      "line": 51,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "update_study",
-      "line": 52,
+      "line": 53,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "archive_study",
-      "line": 67,
+      "line": 68,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "archive_study",
-      "line": 71,
+      "line": 72,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "archive_study",
-      "line": 75,
+      "line": 76,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "unarchive_study",
-      "line": 86,
+      "line": 87,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "unarchive_study",
-      "line": 90,
+      "line": 91,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "_lock_exercise_in_study",
-      "line": 99,
+      "line": 100,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "suspend_exercise",
-      "line": 109,
+      "line": 110,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "suspend_exercise",
-      "line": 113,
+      "line": 114,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "resume_exercise",
-      "line": 126,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/study_commands.py",
-      "function": "archive_exercise",
-      "line": 136,
+      "line": 127,
       "operation": "execute"
     },
     {
@@ -7886,116 +7928,158 @@
     },
     {
       "file": "backend/app/study_commands.py",
-      "function": "create_exercise",
-      "line": 150,
+      "function": "archive_exercise",
+      "line": 139,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "create_exercise",
-      "line": 154,
+      "line": 151,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "create_exercise",
-      "line": 173,
+      "line": 155,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "create_exercise",
-      "line": 180,
+      "line": 174,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_commands.py",
+      "function": "create_exercise",
+      "line": 181,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "enroll_exercise",
-      "line": 190,
+      "line": 191,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "enroll_exercise",
-      "line": 199,
+      "line": 200,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "enroll_exercise",
-      "line": 210,
+      "line": 211,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "enroll_exercise",
-      "line": 216,
+      "line": 217,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "enroll_exercise",
-      "line": 221,
+      "line": 222,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
-      "function": "create_chapter",
-      "line": 229,
+      "function": "train_exercise_now",
+      "line": 231,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
-      "function": "create_chapter",
-      "line": 236,
+      "function": "train_exercise_now",
+      "line": 235,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
-      "function": "create_chapter",
-      "line": 241,
+      "function": "train_exercise_now",
+      "line": 242,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
-      "function": "reorder_chapters",
+      "function": "train_exercise_now",
+      "line": 249,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_commands.py",
+      "function": "train_exercise_now",
       "line": 253,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
-      "function": "reorder_chapters",
-      "line": 254,
+      "function": "train_exercise_now",
+      "line": 257,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_commands.py",
+      "function": "create_chapter",
+      "line": 269,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_commands.py",
+      "function": "create_chapter",
+      "line": 276,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_commands.py",
+      "function": "create_chapter",
+      "line": 281,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "reorder_chapters",
-      "line": 260,
+      "line": 293,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "reorder_chapters",
-      "line": 262,
+      "line": 294,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_commands.py",
+      "function": "reorder_chapters",
+      "line": 300,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_commands.py",
+      "function": "reorder_chapters",
+      "line": 302,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "rename_chapter",
-      "line": 273,
+      "line": 313,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "create_link.position_study_id",
-      "line": 289,
+      "line": 329,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_commands.py",
       "function": "create_link",
-      "line": 304,
+      "line": 344,
       "operation": "execute"
     },
     {
@@ -8517,157 +8601,151 @@
     {
       "file": "backend/app/study_routes.py",
       "function": "train_exercise_now",
-      "line": 531,
+      "line": 536,
       "operation": "connection"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "train_exercise_now",
-      "line": 534,
+      "line": 539,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "train_exercise_now",
-      "line": 537,
+      "line": 542,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "train_exercise_now",
-      "line": 541,
+      "line": 546,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "train_exercise_now",
-      "line": 543,
+      "line": 548,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "train_exercise_now",
-      "line": 544,
+      "line": 549,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "resume_exercise",
-      "line": 558,
+      "line": 563,
       "operation": "connection"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "resume_exercise",
-      "line": 562,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/study_routes.py",
-      "function": "archive_exercise",
-      "line": 574,
-      "operation": "connection"
-    },
-    {
-      "file": "backend/app/study_routes.py",
-      "function": "archive_exercise",
-      "line": 578,
+      "line": 567,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "archive_exercise",
       "line": 579,
+      "operation": "connection"
+    },
+    {
+      "file": "backend/app/study_routes.py",
+      "function": "archive_exercise",
+      "line": 583,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "archive_exercise",
-      "line": 580,
+      "line": 584,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_routes.py",
+      "function": "archive_exercise",
+      "line": 585,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "_finish_attempt",
-      "line": 590,
+      "line": 595,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "_finish_attempt",
-      "line": 592,
+      "line": 597,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "_finish_attempt",
-      "line": 599,
+      "line": 604,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "_finish_attempt",
-      "line": 609,
+      "line": 614,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "_finish_attempt",
-      "line": 612,
+      "line": 617,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "_finish_attempt",
-      "line": 615,
+      "line": 620,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "_finish_attempt",
-      "line": 618,
+      "line": 623,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "_finish_attempt",
-      "line": 621,
+      "line": 626,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "_finish_attempt",
-      "line": 627,
+      "line": 632,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "_finish_attempt",
-      "line": 629,
+      "line": 634,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "submit_attempt",
-      "line": 640,
+      "line": 645,
       "operation": "connection"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "submit_attempt",
-      "line": 641,
+      "line": 646,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "submit_attempt",
-      "line": 656,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/study_routes.py",
-      "function": "submit_attempt",
-      "line": 658,
+      "line": 661,
       "operation": "execute"
     },
     {
@@ -8679,79 +8757,85 @@
     {
       "file": "backend/app/study_routes.py",
       "function": "submit_attempt",
-      "line": 669,
+      "line": 668,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "submit_attempt",
-      "line": 683,
+      "line": 674,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_routes.py",
+      "function": "submit_attempt",
+      "line": 688,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "self_assess",
-      "line": 691,
+      "line": 696,
       "operation": "connection"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "self_assess",
-      "line": 693,
-      "operation": "execute"
-    },
-    {
-      "file": "backend/app/study_routes.py",
-      "function": "attempt_feedback",
-      "line": 713,
-      "operation": "read_connection"
-    },
-    {
-      "file": "backend/app/study_routes.py",
-      "function": "attempt_feedback",
-      "line": 715,
+      "line": 698,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "attempt_feedback",
       "line": 718,
+      "operation": "read_connection"
+    },
+    {
+      "file": "backend/app/study_routes.py",
+      "function": "attempt_feedback",
+      "line": 720,
+      "operation": "execute"
+    },
+    {
+      "file": "backend/app/study_routes.py",
+      "function": "attempt_feedback",
+      "line": 723,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "study_summary",
-      "line": 725,
+      "line": 730,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "study_summary",
-      "line": 727,
+      "line": 732,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "export_study_content",
-      "line": 743,
+      "line": 748,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "export_study_pgn",
-      "line": 752,
+      "line": 757,
       "operation": "read_connection"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "export_study_pgn",
-      "line": 754,
+      "line": 759,
       "operation": "execute"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "import_study_content",
-      "line": 769,
+      "line": 774,
       "operation": "connection"
     },
     {
@@ -9846,63 +9930,63 @@
     {
       "file": "backend/app/study_routes.py",
       "function": "resume_exercise",
-      "line": 552,
+      "line": 557,
       "method": "POST",
       "path": "/{study_id}/exercises/{exercise_id}/resume"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "archive_exercise",
-      "line": 568,
+      "line": 573,
       "method": "POST",
       "path": "/{study_id}/exercises/{exercise_id}/archive"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "submit_attempt",
-      "line": 635,
+      "line": 640,
       "method": "POST",
       "path": "/{study_id}/exercises/{exercise_id}/attempts"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "self_assess",
-      "line": 690,
+      "line": 695,
       "method": "POST",
       "path": "/{study_id}/exercises/{exercise_id}/attempts/{attempt_id}/self-assess"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "attempt_feedback",
-      "line": 712,
+      "line": 717,
       "method": "GET",
       "path": "/{study_id}/exercises/{exercise_id}/attempts/{attempt_id}/feedback"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "study_summary",
-      "line": 724,
+      "line": 729,
       "method": "GET",
       "path": "/{study_id}/summary"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "export_study_content",
-      "line": 742,
+      "line": 747,
       "method": "GET",
       "path": "/{study_id}/export"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "export_study_pgn",
-      "line": 751,
+      "line": 756,
       "method": "GET",
       "path": "/{study_id}/export.pgn"
     },
     {
       "file": "backend/app/study_routes.py",
       "function": "import_study_content",
-      "line": 768,
+      "line": 773,
       "method": "POST",
       "path": "/import-bundle"
     }
@@ -10617,21 +10701,28 @@
     },
     {
       "file": "backend/app/services/durable_tasks.py",
-      "line": 292,
+      "line": 294,
       "tokens": [
         "sqlite3"
       ]
     },
     {
       "file": "backend/app/services/durable_tasks.py",
-      "line": 319,
+      "line": 312,
       "tokens": [
         "sqlite3"
       ]
     },
     {
       "file": "backend/app/services/durable_tasks.py",
-      "line": 335,
+      "line": 339,
+      "tokens": [
+        "sqlite3"
+      ]
+    },
+    {
+      "file": "backend/app/services/durable_tasks.py",
+      "line": 355,
       "tokens": [
         "sqlite3"
       ]
@@ -10904,7 +10995,7 @@
     },
     {
       "file": "backend/app/services/postgres_queue_refresh.py",
-      "line": 338,
+      "line": 357,
       "tokens": [
         "json_extract("
       ]
@@ -11639,21 +11730,21 @@
     },
     {
       "file": "backend/app/study_routes.py",
-      "line": 627,
+      "line": 632,
       "tokens": [
         "INSERT OR IGNORE"
       ]
     },
     {
       "file": "backend/app/study_routes.py",
-      "line": 730,
+      "line": 735,
       "tokens": [
         "json_extract("
       ]
     },
     {
       "file": "backend/app/study_routes.py",
-      "line": 772,
+      "line": 777,
       "tokens": [
         "sqlite3"
       ]

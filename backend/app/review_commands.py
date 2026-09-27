@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from datetime import date
 from typing import Any
 
 from .command_gateway import register_command
 from .models import ReviewRequest
 from .postgres_store import PostgresConnection
+from .queue_position_lock import lock_queue_date_for_position
 
 
 def submit_review(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
@@ -14,7 +16,10 @@ def submit_review(database: PostgresConnection, payload: dict[str, Any]) -> dict
     from .main import _apply_review
 
     request = ReviewRequest.model_validate(payload["review"])
-    return _apply_review(str(payload["card_id"]), request, database=database)
+    card_id = str(payload["card_id"])
+    database.execute("SELECT id FROM cards WHERE id=? FOR UPDATE", (card_id,))
+    lock_queue_date_for_position(database, date.today().isoformat())
+    return _apply_review(card_id, request, database=database)
 
 
 register_command("cards.review", submit_review)

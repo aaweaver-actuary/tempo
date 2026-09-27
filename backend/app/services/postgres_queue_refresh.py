@@ -11,6 +11,7 @@ from psycopg.errors import TransactionTimeout
 from ..database import background_read_connection, connection
 from .. import postgres_store
 from ..postgres_store import postgres_sql
+from ..queue_position_lock import lock_queue_date_for_position
 from .cards import card_id
 from .activity_gate import activity_gate
 from .durable_tasks import (
@@ -142,14 +143,20 @@ def _publish_tactical_introduction(database, queue_date: str,
         (queue_date, prepared["card_id"]),
     ).fetchone()
     if queued is None:
-        next_position = database.execute_native(
-            "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=%s",
-            (queue_date,),
-        ).fetchone()[0]
-        database.execute_native(
-            "INSERT INTO daily_queue(queue_date,card_id,position) VALUES(%s,%s,%s)",
-            (queue_date, prepared["card_id"], next_position),
-        )
+        lock_queue_date_for_position(database, queue_date)
+        queued_after_lock = database.execute_native(
+            "SELECT 1 FROM daily_queue WHERE queue_date=%s AND card_id=%s",
+            (queue_date, prepared["card_id"]),
+        ).fetchone()
+        if queued_after_lock is None:
+            next_position = database.execute_native(
+                "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=%s",
+                (queue_date,),
+            ).fetchone()[0]
+            database.execute_native(
+                "INSERT INTO daily_queue(queue_date,card_id,position) VALUES(%s,%s,%s)",
+                (queue_date, prepared["card_id"], next_position),
+            )
     database.execute_native(
         "UPDATE tactic_rotation SET last_pack_id=%s WHERE id=1", (prepared["pack_id"],),
     )
@@ -258,6 +265,12 @@ def _admit_one_due_card(database, queue_date: str, card_id: str) -> bool:
     ).fetchone()
     if eligible is None:
         return False
+    lock_queue_date_for_position(database, queue_date)
+    if database.execute_native(
+        "SELECT 1 FROM daily_queue WHERE queue_date=%s AND card_id=%s",
+        (queue_date, card_id),
+    ).fetchone():
+        return False
     next_position = database.execute_native(
         "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=%s",
         (queue_date,),
@@ -317,6 +330,12 @@ def _admit_one_prioritized_opening(database, queue_date: str, planned: dict) -> 
         (queue_date, card_id),
     ).fetchone()
     if queued is not None:
+        return
+    lock_queue_date_for_position(database, queue_date)
+    if database.execute_native(
+        "SELECT 1 FROM daily_queue WHERE queue_date=%s AND card_id=%s",
+        (queue_date, card_id),
+    ).fetchone():
         return
     position = database.execute_native(
         "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=%s",
@@ -396,6 +415,12 @@ def _admit_one_study_card(database, queue_date: str, study_card_id: str) -> bool
     ).fetchone()
     if eligible is None:
         return False
+    lock_queue_date_for_position(database, queue_date)
+    if database.execute_native(
+        "SELECT 1 FROM daily_queue WHERE queue_date=%s AND card_id=%s",
+        (queue_date, study_card_id),
+    ).fetchone():
+        return False
     position = database.execute_native(
         "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=%s",
         (queue_date,),
@@ -458,6 +483,7 @@ def _publish_queue_randomization(database, queue_date: str, plan: dict) -> bool:
 
     from .. import main
 
+    lock_queue_date_for_position(database, queue_date)
     current_membership = database.execute_native(
         "SELECT id,card_id FROM daily_queue WHERE queue_date=%s AND status='queued' ORDER BY id",
         (queue_date,),

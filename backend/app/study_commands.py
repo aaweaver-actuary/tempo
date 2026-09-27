@@ -13,6 +13,7 @@ from fastapi import HTTPException
 from .command_gateway import register_command
 from .postgres_store import PostgresConnection
 from .queue_commands import request_queue_refresh_in_transaction
+from .queue_position_lock import lock_queue_date_for_position
 from .study_contracts import ChapterCreate, StudyCreate, StudyLinkCreate
 from .study_contracts import ExerciseCreate, ExerciseSpecification
 from .services.study_grading import validate_exercise
@@ -223,6 +224,45 @@ def enroll_exercise(database: PostgresConnection, payload: dict[str, Any]) -> di
     return {"card_id": card_id, "idempotent": False}
 
 
+def train_exercise_now(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    study_id = str(payload["study_id"])
+    exercise_id = str(payload["exercise_id"])
+    queue_date = date.today().isoformat()
+    study = database.execute("SELECT * FROM studies WHERE id=? FOR UPDATE", (study_id,)).fetchone()
+    if study is None:
+        raise HTTPException(404, "Studies not found")
+    exercise = _lock_exercise_in_study(database, payload)
+    card = database.execute(
+        "SELECT * FROM cards WHERE study_exercise_id=? AND archived=0 FOR UPDATE",
+        (exercise_id,),
+    ).fetchone()
+    if study["archived"] or exercise["status"] != "published" or not card or card["pending_validation"]:
+        raise HTTPException(409, "Enroll and resume this exercise before training it")
+    lock_queue_date_for_position(database, queue_date)
+    existing = database.execute(
+        """SELECT id FROM daily_queue WHERE card_id=? AND queue_date=? AND status='queued'
+           ORDER BY cycle DESC LIMIT 1""",
+        (card["id"], queue_date),
+    ).fetchone()
+    if existing:
+        return {"queue_entry_id": existing[0], "idempotent": True}
+    cycle = database.execute(
+        "SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue WHERE card_id=? AND queue_date=?",
+        (card["id"], queue_date),
+    ).fetchone()[0]
+    position = database.execute(
+        "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=?",
+        (queue_date,),
+    ).fetchone()[0]
+    queue_entry_id = database.execute(
+        """INSERT INTO daily_queue(queue_date,card_id,cycle,position,admission_kind,card_bucket)
+           VALUES(?,?,?,?,'explicit','study_exercise') RETURNING id""",
+        (queue_date, card["id"], cycle, position),
+    ).fetchone()[0]
+    request_queue_refresh_in_transaction(database, queue_date)
+    return {"queue_entry_id": queue_entry_id, "idempotent": False}
+
+
 def create_chapter(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
     request = ChapterCreate.model_validate(payload["chapter"])
     study_id = str(payload["study_id"])
@@ -318,6 +358,7 @@ register_command("studies.exercises.resume", resume_exercise)
 register_command("studies.exercises.archive", archive_exercise)
 register_command("studies.exercises.create", create_exercise)
 register_command("studies.exercises.enroll", enroll_exercise)
+register_command("studies.exercises.train_now", train_exercise_now)
 register_command("studies.chapters.create", create_chapter)
 register_command("studies.chapters.reorder", reorder_chapters)
 register_command("studies.chapters.rename", rename_chapter)

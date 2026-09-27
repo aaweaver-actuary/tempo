@@ -89,8 +89,10 @@ def test_postgres_priority_opening_slice_checkpoints_one_item_and_rejects_stale_
     assert saved_phase == "admit_study"
 
 
-def test_postgres_priority_opening_publication_translates_opportunity_json(tmp_path):
+def test_postgres_priority_opening_publication_translates_opportunity_json(tmp_path, monkeypatch):
     from app.services import postgres_queue_refresh
+    monkeypatch.setattr(postgres_queue_refresh, "lock_queue_date_for_position",
+                        lambda _database, _queue_date: None)
 
     database_path = tmp_path / "priority-opening-publication.db"
     with sqlite3.connect(database_path) as database:
@@ -139,6 +141,8 @@ def test_postgres_priority_opening_publication_translates_opportunity_json(tmp_p
 
 def test_postgres_study_admission_slices_respect_quota_burial_and_replay(monkeypatch, tmp_path):
     from app.services import postgres_queue_refresh
+    monkeypatch.setattr(postgres_queue_refresh, "lock_queue_date_for_position",
+                        lambda _database, _queue_date: None)
 
     database_path = tmp_path / "study-admission.db"
     with sqlite3.connect(database_path) as database:
@@ -312,7 +316,8 @@ def test_postgres_queue_randomization_noop_rechecks_foreground_membership():
 
     class ChangedQueue:
         def execute_native(self, statement, parameters):
-            assert "FROM daily_queue" in statement
+            assert ("FROM daily_queue" in statement
+                    or statement.startswith("SELECT pg_advisory_xact_lock"))
             return self
 
         def fetchall(self):
@@ -892,6 +897,144 @@ def test_postgres_exercise_enrollment_replay_creates_one_card_and_queues_once(mo
         assert database.execute("SELECT status FROM study_exercises WHERE id=?",
                                 (created["id"],)).fetchone()[0] == "published"
     assert refreshed == [date.today().isoformat()]
+
+
+def test_postgres_exercise_train_now_dispatches_foreground_command(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main, study_routes
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(study_routes, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or {"accepted": name})
+    response = TestClient(main.app).post(
+        "/api/studies/study-1/exercises/exercise-1/train-now",
+        headers={"Idempotency-Key": "train-now-1"},
+    )
+    assert response.status_code == 200, response.text
+    assert dispatched == [
+        ("studies.exercises.train_now",
+         {"study_id": "study-1", "exercise_id": "exercise-1"}, "train-now-1"),
+    ]
+
+
+def test_postgres_exercise_train_now_replay_keeps_one_explicit_queue_entry(monkeypatch, tmp_path):
+    from app import study_commands
+
+    database_path = tmp_path / "train-now.db"
+    with sqlite3.connect(database_path) as database:
+        database.executescript("""
+            CREATE TABLE studies(id TEXT PRIMARY KEY,archived INTEGER);
+            CREATE TABLE study_exercises(id TEXT PRIMARY KEY,study_id TEXT,status TEXT);
+            CREATE TABLE cards(id TEXT PRIMARY KEY,study_exercise_id TEXT,archived INTEGER,
+                               pending_validation INTEGER);
+            CREATE TABLE daily_queue(id INTEGER PRIMARY KEY,queue_date TEXT,card_id TEXT,
+                cycle INTEGER,position INTEGER,admission_kind TEXT,card_bucket TEXT,
+                status TEXT DEFAULT 'queued');
+            INSERT INTO studies VALUES('study',0);
+            INSERT INTO study_exercises VALUES('exercise','study','published');
+            INSERT INTO cards VALUES('card','exercise',0,0);
+        """)
+
+    class NativeSqlite:
+        def __init__(self, database):
+            self.database = database
+
+        def execute(self, statement, parameters=()):
+            return self.database.execute(statement.replace("FOR UPDATE", ""), parameters)
+
+        def execute_native(self, statement, parameters=()):
+            assert statement.startswith("SELECT pg_advisory_xact_lock")
+            return self.database.execute("SELECT 1")
+
+    refreshed = []
+    monkeypatch.setattr(study_commands, "request_queue_refresh_in_transaction",
+                        lambda database, queue_date: refreshed.append(queue_date))
+    with sqlite3.connect(database_path) as database:
+        database.row_factory = sqlite3.Row
+        adapter = NativeSqlite(database)
+        payload = {"study_id": "study", "exercise_id": "exercise"}
+        first = study_commands.train_exercise_now(adapter, payload)
+        replay = study_commands.train_exercise_now(adapter, payload)
+        assert first["idempotent"] is False
+        assert replay == {"queue_entry_id": first["queue_entry_id"], "idempotent": True}
+        queued = database.execute("SELECT card_id,cycle,position,admission_kind FROM daily_queue").fetchall()
+        assert [tuple(entry) for entry in queued] == [("card", 0, 0, "explicit")]
+    assert refreshed == [date.today().isoformat()]
+
+
+def test_postgres_queue_contention_yields_without_spending_retry_or_replaying_stale_lease(monkeypatch, tmp_path):
+    from psycopg.errors import LockNotAvailable, TransactionTimeout
+    from app import tasks
+    from app.services import durable_tasks
+
+    database_path = tmp_path / "queue-contention.db"
+    with sqlite3.connect(database_path) as database:
+        database.executescript("""
+            CREATE TABLE background_tasks(id TEXT PRIMARY KEY,generation INTEGER,state TEXT,
+                phase TEXT,attempt_count INTEGER,next_attempt_at TEXT,lease_token TEXT,
+                lease_expires_at TEXT,last_error TEXT,updated_at TEXT);
+            CREATE TABLE background_task_events(id INTEGER PRIMARY KEY,task_id TEXT,
+                generation INTEGER,event TEXT,phase TEXT,detail TEXT,created_at TEXT);
+            INSERT INTO background_tasks VALUES('queue-job',2,'leased','claimed',1,NULL,
+                'current',NULL,NULL,NULL);
+        """)
+
+    def write_background(operation, *, label):
+        with sqlite3.connect(database_path) as database:
+            database.row_factory = sqlite3.Row
+            return operation(database)
+
+    monkeypatch.setattr(durable_tasks, "submit_background_write", write_background)
+    claimed = {"kind": "daily_queue", "id": "queue-job", "generation": 2,
+               "lease_token": "current", "payload": {"queue_date": "2026-09-27"}}
+    monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_args: nullcontext())
+    monkeypatch.setattr(tasks, "fail_task",
+                        lambda *_args: pytest.fail("Expected contention must not spend a retry"))
+    monkeypatch.setattr(tasks, "defer_task_for_contention", durable_tasks.defer_task_for_contention)
+    monkeypatch.setattr(tasks.celery_app, "send_task", lambda *_args, **_kwargs: None)
+    for expected_contention in (LockNotAvailable, TransactionTimeout):
+        with sqlite3.connect(database_path) as database:
+            database.execute(
+                "UPDATE background_tasks SET state='leased',phase='claimed',"
+                "attempt_count=1,lease_token='current' WHERE id='queue-job'",
+            )
+        monkeypatch.setattr(tasks, "execute_postgres_queue_refresh_slice",
+                            lambda _task: (_ for _ in ()).throw(expected_contention("busy")))
+        assert tasks.execute_background_slice.run(claimed) is True
+    with sqlite3.connect(database_path) as database:
+        assert database.execute(
+            "SELECT state,phase,attempt_count,lease_token FROM background_tasks",
+        ).fetchone() == ("retrying", "yielded", 0, None)
+        assert database.execute(
+            "SELECT COUNT(*) FROM background_task_events WHERE event='yielded'",
+        ).fetchone()[0] == 2
+    assert not durable_tasks.defer_task_for_contention("queue-job", 2, "current")
+
+
+def test_postgres_review_reserves_card_then_queue_position_before_reordering(monkeypatch):
+    from app import main, review_commands
+
+    observed = []
+
+    class RecordingDatabase:
+        def execute(self, statement, parameters=()):
+            observed.append(("card_lock", statement, parameters))
+            return self
+
+    monkeypatch.setattr(review_commands, "lock_queue_date_for_position",
+                        lambda database, queue_date: observed.append(("queue_lock", queue_date)))
+    monkeypatch.setattr(main, "_apply_review",
+                        lambda card_id, request, *, database:
+                        observed.append(("review", card_id, request.outcome)) or {"persisted": True})
+    assert review_commands.submit_review(
+        RecordingDatabase(), {"card_id": "card-1", "review": {"outcome": "again"}},
+    ) == {"persisted": True}
+    assert observed[0] == ("card_lock", "SELECT id FROM cards WHERE id=? FOR UPDATE", ("card-1",))
+    assert observed[1] == ("queue_lock", date.today().isoformat())
+    assert observed[2] == ("review", "card-1", "again")
 
 
 def test_postgres_cutover_queue_fail_and_bury_dispatch_foreground_commands(monkeypatch):
@@ -1885,6 +2028,8 @@ def test_postgres_queue_reconcile_checkpoint_discards_stale_replay(monkeypatch):
 
 def test_postgres_due_queue_slices_admit_only_eligible_cards_in_order(monkeypatch, tmp_path):
     from app.services import postgres_queue_refresh
+    monkeypatch.setattr(postgres_queue_refresh, "lock_queue_date_for_position",
+                        lambda _database, _queue_date: None)
 
     database_path = tmp_path / "due-slices.db"
     with sqlite3.connect(database_path) as database:

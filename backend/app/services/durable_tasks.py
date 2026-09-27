@@ -288,6 +288,26 @@ def fail_task(task_id: str, generation: int, lease_token: str, error: Exception)
     return submit_background_write(operation, label=f"fail:{task_id}")
 
 
+def defer_task_for_contention(task_id: str, generation: int, lease_token: str) -> bool:
+    """Yield an expected PostgreSQL lock timeout without spending a retry."""
+
+    def operation(database: sqlite3.Connection) -> bool:
+        next_attempt_at = _iso(_now() + timedelta(milliseconds=250))
+        changed = database.execute(
+            """UPDATE background_tasks SET state='retrying',phase='yielded',
+               attempt_count=CASE WHEN attempt_count>0 THEN attempt_count-1 ELSE 0 END,
+               next_attempt_at=?,lease_token=NULL,lease_expires_at=NULL,
+               last_error=NULL,updated_at=?
+               WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
+            (next_attempt_at, _iso(), task_id, generation, lease_token),
+        ).rowcount
+        if changed:
+            _record_event(database, task_id, generation, "yielded", "yielded")
+        return bool(changed)
+
+    return submit_background_write(operation, label=f"yield:{task_id}")
+
+
 def retry_task(task_id: str) -> dict | None:
     def operation(database: sqlite3.Connection) -> dict | None:
         row = database.execute(

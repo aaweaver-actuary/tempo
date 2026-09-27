@@ -376,7 +376,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                            and request.method == "POST")
         exercise_availability_command = (
             study_root and len(path_parts) == 6 and path_parts[3] == "exercises"
-            and path_parts[5] in {"suspend", "resume", "archive"}
+            and path_parts[5] in {"suspend", "resume", "archive", "train-now"}
             and request.method == "POST"
         )
         chapter_create = (study_root and len(path_parts) == 4

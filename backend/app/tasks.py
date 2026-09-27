@@ -7,6 +7,7 @@ import time
 from typing import Any
 
 from kombu.exceptions import OperationalError as BrokerUnavailable
+from psycopg.errors import LockNotAvailable, TransactionTimeout
 
 from .celery_app import celery_app
 from .command_gateway import execute_command
@@ -16,7 +17,7 @@ from . import review_commands  # noqa: F401 - registers foreground review comman
 from . import teaching_commands  # noqa: F401 - registers foreground teaching command
 from . import repertoire_commands  # noqa: F401 - registers foreground repertoire command
 from .services.activity_gate import activity_gate
-from .services.durable_tasks import claim_task, complete_task, fail_task
+from .services.durable_tasks import claim_task, complete_task, defer_task_for_contention, fail_task
 from .services.priority_retention import execute_priority_retention_slice
 from .services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
@@ -85,6 +86,11 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
                 complete_task(
                     claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"]
                 )
+        except (LockNotAvailable, TransactionTimeout):
+            defer_task_for_contention(
+                claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"]
+            )
+            more_work = True
         except Exception as error:
             fail_task(
                 claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"], error

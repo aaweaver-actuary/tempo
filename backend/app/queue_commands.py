@@ -11,6 +11,7 @@ from fastapi import HTTPException
 
 from .command_gateway import register_command
 from .postgres_store import PostgresConnection
+from .queue_position_lock import lock_queue_date_for_position
 from .services.durable_tasks import enqueue_task_in_transaction
 
 
@@ -40,6 +41,7 @@ def mark_attempt_failed(database: PostgresConnection, payload: dict[str, Any]) -
 def bury_queue_entry(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
     entry_id = int(payload["entry_id"])
     queue_date = date.today().isoformat()
+    lock_queue_date_for_position(database, queue_date)
     entry_ids = [row["id"] for row in database.execute(
         f"{_ACTIVE_QUEUE_SQL} FOR UPDATE OF q", (queue_date,),
     )]

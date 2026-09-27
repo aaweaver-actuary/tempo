@@ -526,7 +526,12 @@ def suspend_exercise(study_id: str, exercise_id: str,
 
 
 @router.post("/{study_id}/exercises/{exercise_id}/train-now")
-def train_exercise_now(study_id: str, exercise_id: str):
+def train_exercise_now(study_id: str, exercise_id: str,
+                       idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.exercises.train_now",
+                                {"study_id": study_id, "exercise_id": exercise_id},
+                                idempotency_key=idempotency_key)
     today = date.today().isoformat()
     with connection() as database:
         exercise = _require(database, "study_exercises", exercise_id)
