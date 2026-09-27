@@ -3,7 +3,7 @@
 # scope when the required final full gate runs.
 #
 # Full order, with permissions checked before any test family:
-#  0 Docker + loopback preflight
+#  0 Docker + loopback + checkout bind-mount preflight
 #  1 unit                         7 lint
 #  2 defense-engine smoke         8 typecheck
 #  3 Python backend tests         9 WASM build
@@ -46,7 +46,7 @@ plan:
 	node scripts/test-all.mjs --list "$(TIER)"
 
 preflight:
-	node scripts/check-test-capabilities.mjs --docker --loopback
+	node scripts/check-test-capabilities.mjs --docker --loopback --workspace-mount
 
 slow-tests:
 	node scripts/report-slow-unit-files.mjs "$(TIER)" "$(COUNT)"
@@ -74,11 +74,11 @@ browser:
 	npm run test:browser
 
 visual:
-	node scripts/check-test-capabilities.mjs --docker
+	node scripts/check-test-capabilities.mjs --docker --workspace-mount
 	npm run test:visual
 
 perf:
-	node scripts/check-test-capabilities.mjs --docker
+	node scripts/check-test-capabilities.mjs --docker --workspace-mount
 	npm run test:perf
 
 full:

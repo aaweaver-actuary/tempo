@@ -28,7 +28,7 @@ const outputDirectory = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/perfo
 const unitProfilePath = join(outputDirectory, `unit-files-${tier}.json`);
 const python = resolvePython();
 const stages = [
-  ["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--loopback"]],
+  ["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--loopback", "--workspace-mount"]],
   ["unit", "npm", ["run", "test:unit", "--", "--reporter=default", "--reporter=json", `--outputFile.json=${unitProfilePath}`]],
   ["defense_engine", "node", ["scripts/test-defense-engine.mjs"]],
   ["backend", python, ["-m", "pytest", "backend/tests", "-q", "-o", "cache_dir=.pytest_cache", "--rootdir=."]],

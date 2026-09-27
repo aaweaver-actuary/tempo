@@ -39,7 +39,7 @@ it("full verification checks Docker and loopback access before any test family",
   const [firstStage] = plannedStages("full");
   expect(firstStage).toEqual({
     name: "capabilities", command: "node",
-    args: ["scripts/check-test-capabilities.mjs", "--docker", "--loopback"],
+    args: ["scripts/check-test-capabilities.mjs", "--docker", "--loopback", "--workspace-mount"],
   });
   const fakeCommandDirectory = mkdtempSync(join(tmpdir(), "tempo-denied-docker-"));
   try {
@@ -54,6 +54,32 @@ it("full verification checks Docker and loopback access before any test family",
     expect(preflight.stderr).toContain("before any tests ran");
     expect(preflight.stderr).toContain("Docker");
     expect(preflight.stderr).toContain("require_escalated");
+  } finally {
+    rmSync(fakeCommandDirectory, { recursive: true, force: true });
+  }
+});
+
+it("pinned browser preflight detects an inaccessible checkout mount before tests", () => {
+  const fakeCommandDirectory = mkdtempSync(join(tmpdir(), "tempo-missing-mount-"));
+  try {
+    const fakeDockerPath = join(fakeCommandDirectory, "docker");
+    writeFileSync(fakeDockerPath, [
+      "#!/bin/sh",
+      "if [ \"$1\" = info ]; then echo 28.0; exit 0; fi",
+      "if [ \"$1\" = run ]; then echo 'package-lock.json missing from bind mount' >&2; exit 1; fi",
+      "exit 1",
+      "",
+    ].join("\n"));
+    chmodSync(fakeDockerPath, 0o755);
+    const preflight = spawnSync(process.execPath, [
+      "scripts/check-test-capabilities.mjs", "--docker", "--workspace-mount",
+    ], {
+      cwd: process.cwd(), encoding: "utf8",
+      env: { ...process.env, PATH: `${fakeCommandDirectory}:${process.env.PATH ?? ""}` },
+    });
+    expect(preflight.status).not.toBe(0);
+    expect(preflight.stderr).toContain("package-lock.json missing from bind mount");
+    expect(preflight.stderr).toContain("before any tests ran");
   } finally {
     rmSync(fakeCommandDirectory, { recursive: true, force: true });
   }
@@ -75,8 +101,8 @@ it("focused browser and Docker Make targets preflight before launching tests", (
     browser: "--loopback",
     "ui-file": "--loopback",
     view: "--loopback",
-    visual: "--docker",
-    perf: "--docker",
+    visual: "--docker --workspace-mount",
+    perf: "--docker --workspace-mount",
     "docker-durability": "--docker --loopback",
   };
   for (const [target, checks] of Object.entries(expectedChecks)) {

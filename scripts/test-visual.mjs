@@ -1,4 +1,5 @@
 import { spawnSync } from "node:child_process";
+import { pinnedPlaywrightImage } from "./pinned-playwright-image.mjs";
 const update = process.argv.includes("--update");
 const performanceOnly = process.argv.includes("--performance-only");
 if (update && performanceOnly) throw new Error("Performance-only runs cannot update visual baselines.");
@@ -6,8 +7,6 @@ if (update && process.env.CI)
   throw new Error("Visual baselines cannot be updated in CI.");
 const commitResult = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
 const commit = process.env.GITHUB_SHA ?? (commitResult.status === 0 ? commitResult.stdout.trim() : "unknown");
-const image =
-  "mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27";
 const result = spawnSync(
   "docker",
   [
@@ -30,7 +29,7 @@ const result = spawnSync(
     "type=volume,source=tempo-playwright-npm-cache,target=/root/.npm",
     "-w",
     "/workspace",
-    image,
+    pinnedPlaywrightImage,
     "bash",
     "-lc",
     `npm ci --no-audit && npx playwright test --config playwright.visual.config.ts${performanceOnly ? " performance.spec.ts" : ""}${update ? " --update-snapshots" : ""}`,
