@@ -20,12 +20,12 @@ import { EndgameMaterial } from "../lib/endgame-generator";
 import { OutcomeFlash } from "../components/board/OutcomeFlash";
 import {
   endgameTemplatesSchema,
-  endgameAttemptSchema,
 } from "../domain/schemas";
 import { readJsonResponse } from "../lib/validated-data";
 import { useTaskTabs } from "../components/task-tabs";
 import { reportDebugError } from "../lib/debug-reporting";
 import { admitEndgameTemplate } from "../lib/endgame-template-command";
+import { startEndgameAttempt } from "../lib/endgame-attempt-command";
 
 const TEMPLATE_API_ENDPOINT = `${API_URL}/api/endgames/templates`;
 
@@ -177,15 +177,7 @@ export default function EndgamesView({
         const item = admitted[index];
         if (!item) return;
         try {
-          const response = await fetch(
-            `${TEMPLATE_API_ENDPOINT}/${item.templateId}/attempt`,
-            { method: "POST" },
-          );
-          const attempt = await readJsonResponse(
-            response,
-            endgameAttemptSchema,
-            "endgame attempt",
-          );
+          const attempt = await startEndgameAttempt(item.templateId);
           if (token !== generation.current) return;
           setFen(attempt.fen);
           setTarget(attempt.target);
