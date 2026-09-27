@@ -1,0 +1,50 @@
+[
+  {
+    "name": "starting position",
+    "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    "moves": ["e2e4", "e7e5"],
+    "cardId": "4f1415440718daa4b13b5cf818644caccae3f5968d6756159ff366a2a10bda09"
+  },
+  {
+    "name": "FEN clock changes preserve card ID",
+    "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 17 42",
+    "moves": ["e2e4", "e7e5"],
+    "cardId": "4f1415440718daa4b13b5cf818644caccae3f5968d6756159ff366a2a10bda09"
+  },
+  {
+    "name": "noncapturable en passant is retained for card identity",
+    "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+    "moves": ["e7e5"],
+    "cardId": "74985e89d5ca3a72444e4da693460560a2cec9f38aaec8cf2e54111e96b664d0"
+  },
+  {
+    "name": "same board without en passant has another card ID",
+    "fen": "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1",
+    "moves": ["e7e5"],
+    "cardId": "402b87c9280fcff1bad7671cf44436c5909b3ff6120bdb70db262e655ebd8171"
+  },
+  {
+    "name": "castling rights affect card ID",
+    "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQ - 0 1",
+    "moves": ["e2e4", "e7e5"],
+    "cardId": "8be5fdc0037cc7ab31af7a2d9231bc0cd2fca8973b06aa83f6cf77865b6f3998"
+  },
+  {
+    "name": "promotion move is part of card ID",
+    "fen": "4k3/P7/8/8/8/8/8/4K3 w - - 0 1",
+    "moves": ["a7a8q"],
+    "cardId": "35c0022a688904835c5865df4c8c5ae62d022a04c09b971eddd9879bc1ba2511"
+  },
+  {
+    "name": "invalid FEN hashes exactly as Python",
+    "fen": "invalid",
+    "moves": ["e2e4"],
+    "cardId": "b6c412f19fe3f1d354519fd8a9dcddd31c00fcd5364a971238599a4ad0747704"
+  },
+  {
+    "name": "extra whitespace is normalized",
+    "fen": "  rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR  w  KQkq - 0 1  ",
+    "moves": [" e2e4 ", "e7e5"],
+    "cardId": "4f1415440718daa4b13b5cf818644caccae3f5968d6756159ff366a2a10bda09"
+  }
+]

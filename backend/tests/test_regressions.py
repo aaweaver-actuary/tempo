@@ -53,6 +53,17 @@ def test_prefixes_match_rust_including_incomplete_trained_turns():
         )
 
 
+def test_python_card_ids_match_shared_rust_parity_fixture():
+    from pathlib import Path
+    from app.services.cards import card_id
+
+    fixtures = json.loads(
+        (Path(__file__).parents[2] / "tests/fixtures/card-id-parity.json").read_text()
+    )
+    for fixture in fixtures:
+        assert card_id(fixture["fen"], fixture["moves"]) == fixture["cardId"], fixture["name"]
+
+
 def test_legacy_introduced_but_unreviewed_queue_is_capped_without_losing_reviews(
     tmp_path, monkeypatch
 ):

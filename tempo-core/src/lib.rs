@@ -90,7 +90,13 @@ pub fn validate_uci_line_native(starting_fen: &str, input: &[String]) -> Validat
 }
 
 pub fn card_id_native(starting_fen: &str, moves: &[String]) -> Result<String, String> {
-    let fen = canonical_fen_key_native(starting_fen)?;
+    // Persisted Python card IDs hash the first four supplied fields verbatim.
+    // Position-search canonicalization has different en-passant semantics.
+    let fen = starting_fen
+        .split_whitespace()
+        .take(4)
+        .collect::<Vec<_>>()
+        .join(" ");
     let normalized_moves = moves
         .iter()
         .map(|value| value.trim())
@@ -264,6 +270,21 @@ mod tests {
             id,
             "4f1415440718daa4b13b5cf818644caccae3f5968d6756159ff366a2a10bda09"
         );
+    }
+
+    #[test]
+    fn card_ids_match_python_shared_fixture() {
+        let fixtures: serde_json::Value =
+            serde_json::from_str(include_str!("../../tests/fixtures/card-id-parity.json")).unwrap();
+        for fixture in fixtures.as_array().unwrap() {
+            let moves: Vec<String> = serde_json::from_value(fixture["moves"].clone()).unwrap();
+            assert_eq!(
+                card_id_native(fixture["fen"].as_str().unwrap(), &moves).unwrap(),
+                fixture["cardId"].as_str().unwrap(),
+                "{}",
+                fixture["name"].as_str().unwrap()
+            );
+        }
     }
 
     #[test]
