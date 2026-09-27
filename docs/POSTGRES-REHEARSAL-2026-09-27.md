@@ -300,6 +300,17 @@ the explicit unported-route guard. `/api/health` also remains 503, so Compose
 cannot yet start the web container as a healthy product. The browser rehearsal
 therefore proves queue rendering only, not readiness for cutover.
 
+A later isolated API/foreground-worker rehearsal used the real read-only API
+role and durable command receipts. One HTTP card review returned 200, replayed
+with exactly the same response, and advanced the queue from 308 to 307 cards.
+The queued defense card's HTTP exercise read, recognition save, grading save,
+and grading replay all returned 200; the recognition was ready for a move and
+the graded defense was correct. A dedicated Tactics attempt and its replay
+also returned the same successful response. These writes changed only the
+mutable scratch PostgreSQL database. They establish the core save path through
+HTTP, Celery, and PostgreSQL, but do not establish final source-data parity or
+the still-blocked product routes.
+
 The rehearsal used Celery's solo pool locally because the macOS prefork worker
 failed before reaching Tempo task code. Production Compose still uses Linux
 prefork workers. The background worker progressed an imported
