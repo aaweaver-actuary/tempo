@@ -11,6 +11,7 @@ from kombu.exceptions import OperationalError as BrokerUnavailable
 from .celery_app import celery_app
 from .command_gateway import execute_command
 from . import study_commands  # noqa: F401 - registers explicit worker commands
+from . import queue_commands  # noqa: F401 - registers foreground queue commands
 from .services.activity_gate import activity_gate
 from .services.durable_tasks import claim_task, complete_task, fail_task
 from .services.priority_retention import execute_priority_retention_slice

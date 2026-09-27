@@ -66,6 +66,9 @@ handler has been ported and the release gates pass.
   named Celery commands. Against the isolated PostgreSQL rehearsal, four
   simultaneous chapter creates received distinct positions 0 through 3, and
   a source-to-target teaching link persisted with the restricted writer role.
+- Foreground queue fail and bury operations now dispatch named Celery commands.
+  A rehearsal queue entry was marked failed and buried; replaying the bury
+  operation ID returned its original receipt and did not move the entry again.
 - A custom-format PostgreSQL backup was written outside the checkout at
   `/Users/andy/tempo-backups/tempo-postgres-rehearsal-2026-09-27.dump`.
   SHA-256 is `eaf7e37e5e0cd86189c0cf1a7abddb8b8893264f16e906e6f95b4948b0c4b326`.

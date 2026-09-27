@@ -64,6 +64,33 @@ def test_postgres_cutover_study_chapter_routes_dispatch_named_commands(monkeypat
     assert all(key == "study-command-1" for _, _, key in dispatched)
 
 
+def test_postgres_cutover_queue_fail_and_bury_dispatch_foreground_commands(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    dispatched: list[tuple[str, dict, str | None]] = []
+
+    def record_command(name, payload, *, idempotency_key):
+        dispatched.append((name, payload, idempotency_key))
+        return {"accepted": name}
+
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(command_dispatch, "dispatch_command", record_command)
+    client = TestClient(main.app)
+    for action, command_name in (("fail", "queue.attempt_failed"), ("bury", "queue.bury")):
+        response = client.post(
+            f"/api/queue/entries/42/{action}",
+            headers={"Idempotency-Key": f"queue-42-{action}"},
+        )
+        assert response.status_code == 200, response.text
+        assert response.json() == {"accepted": command_name}
+    assert dispatched == [
+        ("queue.attempt_failed", {"entry_id": 42}, "queue-42-fail"),
+        ("queue.bury", {"entry_id": 42}, "queue-42-bury"),
+    ]
+
+
 def test_postgres_cutover_translates_placeholders_and_rejects_runtime_pragma():
     assert postgres_sql("SELECT id FROM cards WHERE id=?") == "SELECT id FROM cards WHERE id = %s"
     assert postgres_sql("INSERT OR IGNORE INTO settings(id) VALUES(?)").endswith(

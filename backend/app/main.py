@@ -373,8 +373,10 @@ async def prioritize_foreground_requests(request: Request, call_next):
                           and path_parts[3] == "chapters" and request.method == "PATCH")
         link_create = (study_root and len(path_parts) == 4
                        and path_parts[3] == "links" and request.method == "POST")
+        queue_entry_command = (len(path_parts) == 5 and path_parts[:3] == ["api", "queue", "entries"]
+                               and path_parts[4] in {"fail", "bury"} and request.method == "POST")
         if not any((study_create, study_update, chapter_create, chapter_reorder,
-                    chapter_rename, link_create)):
+                    chapter_rename, link_create, queue_entry_command)):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
@@ -2126,7 +2128,12 @@ def requeue(db, day, cid, after, attempt):
 
 
 @app.post("/api/queue/entries/{entry_id}/fail")
-def mark_attempt_failed(entry_id: int):
+def mark_attempt_failed(entry_id: int,
+                        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command("queue.attempt_failed", {"entry_id": entry_id},
+                                idempotency_key=idempotency_key)
     with connection() as db:
         active_entry = db.execute(
             """SELECT id FROM daily_queue WHERE queue_date=? AND status='queued'
@@ -2148,7 +2155,12 @@ def mark_attempt_failed(entry_id: int):
 
 
 @app.post("/api/queue/entries/{entry_id}/bury")
-def bury_queue_entry(entry_id: int):
+def bury_queue_entry(entry_id: int,
+                     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command("queue.bury", {"entry_id": entry_id},
+                                idempotency_key=idempotency_key)
     day = date.today().isoformat()
     with connection() as db:
         rows = db.execute(
