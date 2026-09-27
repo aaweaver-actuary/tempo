@@ -442,6 +442,9 @@ async def prioritize_foreground_requests(request: Request, call_next):
                          and request.method == "POST")
         endgame_template_command = (path_parts == ["api", "endgames", "templates"]
                                     and request.method == "POST")
+        endgame_attempt_command = (len(path_parts) == 5
+                                   and path_parts[:3] == ["api", "endgames", "templates"]
+                                   and path_parts[4] == "attempt" and request.method == "POST")
         card_validation = (path_parts == ["api", "cards", "validate"]
                            and request.method == "POST")
         if not any((study_create, study_update, study_archive, exercise_create, exercise_revise,
@@ -454,7 +457,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     browser_activity, tactic_attempt_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     settings_command,
-                    endgame_probe, endgame_template_command, card_validation)):
+                    endgame_probe, endgame_template_command,
+                    endgame_attempt_command, card_validation)):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
@@ -3809,7 +3813,59 @@ def create_endgame(request: EndgameTemplateRequest,
 
 
 @app.post("/api/endgames/templates/{identifier}/attempt")
-async def create_endgame_attempt(identifier: str):
+async def create_endgame_attempt(
+    identifier: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        from .command_gateway import CommandConflict
+
+        operation_id = idempotency_key or uuid.uuid4().hex
+        try:
+            receipt = read_operation(operation_id, command_name="endgames.attempt.create")
+        except CommandConflict as error:
+            raise HTTPException(409, str(error)) from error
+        if receipt["state"] == "complete":
+            with read_connection() as db:
+                saved_attempt = db.execute(
+                    "SELECT template_id FROM endgame_attempts WHERE id=?",
+                    (receipt["response"]["id"],),
+                ).fetchone()
+            if saved_attempt is None or saved_attempt["template_id"] != identifier:
+                raise HTTPException(409, "Operation ID was already used for another template")
+            return receipt["response"]
+        if receipt["state"] == "failed":
+            failure = receipt["error"]
+            raise HTTPException(failure.get("status_code", 500), failure.get("message", "Save failed"))
+        with read_connection() as db:
+            template = db.execute(
+                "SELECT * FROM endgame_templates WHERE id=? AND enabled=1", (identifier,),
+            ).fetchone()
+        if not template:
+            raise HTTPException(404, "Endgame template not found")
+        for candidate_index in range(80):
+            candidate_seed = int.from_bytes(hashlib.sha256(
+                f"{operation_id}:{candidate_index}".encode(),
+            ).digest()[:8], "big")
+            fen = generate_position(
+                template["white_material"], template["black_material"],
+                template["trained_color"], seed=candidate_seed,
+            )
+            data = await tablebase(fen)
+            target = category_for_player(data.get("category", "unknown"))
+            if target != "loss" and (
+                template["goal_mix"] == "both" or target == template["goal_mix"]
+            ):
+                break
+        else:
+            raise HTTPException(422, "Could not find a supported win/draw position")
+        return dispatch_command(
+            "endgames.attempt.create",
+            {"template_id": identifier, "fen": fen, "target": target,
+             "moves": data.get("moves", [])},
+            idempotency_key=operation_id,
+        )
     with connection() as db:
         template = db.execute(
             "SELECT * FROM endgame_templates WHERE id=? AND enabled=1", (identifier,)

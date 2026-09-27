@@ -229,6 +229,49 @@ def test_postgres_tablebase_probe_never_writes_from_read_only_api(monkeypatch):
     assert asyncio.run(main.tablebase("8/8/8/8/8/8/4k3/4K3 w - - 0 1"))["category"] == "win"
 
 
+def test_postgres_endgame_attempt_prepares_outside_worker_and_dispatches_idempotently(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    dispatched = []
+    seeds = []
+
+    class TemplateRead:
+        def execute(self, *_args):
+            return SimpleNamespace(fetchone=lambda: {
+                "white_material": "KR", "black_material": "K",
+                "trained_color": "white", "goal_mix": "both",
+            })
+
+    async def tablebase(_fen):
+        return {"category": "win", "moves": []}
+
+    def position(*_args, seed):
+        seeds.append(seed)
+        return "8/8/8/8/8/8/4k3/4K3 w - - 0 1"
+
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(main, "read_operation", lambda *_args, **_kwargs: {"state": "pending"})
+    monkeypatch.setattr(main, "read_connection", lambda: nullcontext(TemplateRead()))
+    monkeypatch.setattr(main, "tablebase", tablebase)
+    monkeypatch.setattr(main, "generate_position", position)
+    monkeypatch.setattr(command_dispatch, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or {
+                            "id": "attempt", "fen": payload["fen"],
+                            "target": payload["target"], "moves": payload["moves"],
+                        })
+    client = TestClient(main.app)
+    for _ in range(2):
+        response = client.post("/api/endgames/templates/template/attempt",
+                               headers={"Idempotency-Key": "attempt-1"})
+        assert response.status_code == 200, response.text
+    assert len(set(seeds)) == 1
+    assert [item[0] for item in dispatched] == ["endgames.attempt.create"] * 2
+    assert [item[2] for item in dispatched] == ["attempt-1"] * 2
+
+
 def test_postgres_settings_update_dispatches_foreground_command(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main
