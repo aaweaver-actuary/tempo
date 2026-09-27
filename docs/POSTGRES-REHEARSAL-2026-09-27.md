@@ -110,6 +110,14 @@ The queue still needs tuning and full container benchmarks with a complete
 analysis backlog. These in-process samples cannot establish the existing
 sub-second workspace-read or two-second browser-refresh gates under load.
 
+The queue's repertoire-choice CTE was then restricted to cards in the active
+daily queue. Both versions returned an identical full response on the same
+rehearsal PostgreSQL database. Same-data, sequential 64-request samples are in
+`benchmarks/postgres-queue-active-filter-2026-09-27.csv`; PostgreSQL queue p95
+fell from 91.3 to 36.0 ms at one client, 149.0 to 92.5 ms at four clients,
+and 508.9 to 380.4 ms at 16 clients, with no errors. This remains an in-process
+microbenchmark, not the final container/backlog gate.
+
 ## Outstanding cutover gates
 
 The current application still has 155 routes and 1,339 backend data-access

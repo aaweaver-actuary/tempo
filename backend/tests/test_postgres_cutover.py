@@ -370,3 +370,31 @@ def test_postgres_cutover_priority_retention_locks_bounded_primary_keys(monkeypa
         "payload": {"repertoire_id": "repertoire"},
     }) is False
     assert deleted == [("repertoire", 2, "stale-card")]
+
+
+def test_postgres_cutover_queue_repertoire_choices_scan_only_active_cards(monkeypatch):
+    from app import main
+
+    statements: list[str] = []
+
+    class EmptyCursor:
+        def fetchone(self):
+            return None
+
+        def fetchall(self):
+            return []
+
+    class EmptyDatabase:
+        def execute(self, statement, _parameters=()):
+            statements.append(statement)
+            return EmptyCursor()
+
+    @contextmanager
+    def test_read_connection():
+        yield EmptyDatabase()
+
+    monkeypatch.setattr(main, "read_connection", test_read_connection)
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    assert main._queue_payload()["cards"] == []
+    queue_statement = next(statement for statement in statements if "ranked_repertoires" in statement)
+    assert queue_statement.count("FROM active_queue queue_card JOIN cards c") == 2
