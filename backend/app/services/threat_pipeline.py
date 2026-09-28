@@ -39,6 +39,30 @@ ENGINE_VERSION = "Stockfish 19 WASM"
 NETWORK_VERSION = "nn-61e7af4bb97d.nnue"
 POLICY = ThreatPolicy()
 
+THREAT_CANDIDATE_UPSERT_SQL = """INSERT INTO threat_training_candidates(
+       id,finding_id,game_id,analysis_version,incident_id,player_ply,
+       evidence_json,source_fingerprint,detector_version,policy_json,
+       created_at,updated_at)
+   VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
+   ON CONFLICT(id) DO UPDATE SET
+       analysis_version=excluded.analysis_version,
+       evidence_json=excluded.evidence_json,
+       source_fingerprint=excluded.source_fingerprint,
+       superseded_at=NULL,
+       validation_state=CASE WHEN threat_training_candidates.source_fingerprint!=excluded.source_fingerprint
+           THEN 'needs_analysis' ELSE threat_training_candidates.validation_state END,
+       validation_json=CASE WHEN threat_training_candidates.source_fingerprint!=excluded.source_fingerprint
+           THEN '{}' ELSE threat_training_candidates.validation_json END,
+       dismissed_at=CASE WHEN threat_training_candidates.source_fingerprint!=excluded.source_fingerprint
+           THEN NULL ELSE threat_training_candidates.dismissed_at END,
+       dismissed_evidence_fingerprint=CASE WHEN threat_training_candidates.source_fingerprint!=excluded.source_fingerprint
+           THEN NULL ELSE threat_training_candidates.dismissed_evidence_fingerprint END,
+       approved_at=CASE WHEN threat_training_candidates.source_fingerprint!=excluded.source_fingerprint
+           THEN NULL ELSE threat_training_candidates.approved_at END,
+       exercise_revision=threat_training_candidates.exercise_revision+CASE WHEN threat_training_candidates.source_fingerprint!=excluded.source_fingerprint
+           THEN 1 ELSE 0 END,
+       updated_at=excluded.updated_at"""
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -352,29 +376,7 @@ def _upsert_seed(database, game: GameSnapshot, seed: ThreatSeed, *, prepared=Non
         ).fetchone()
         plan = plans[anchor.player_ply]
         database.execute(
-            """INSERT INTO threat_training_candidates(
-                   id,finding_id,game_id,analysis_version,incident_id,player_ply,
-                   evidence_json,source_fingerprint,detector_version,policy_json,
-                   created_at,updated_at)
-               VALUES(?,?,?,?,?,?,?,?,?,?,?,?)
-               ON CONFLICT(id) DO UPDATE SET
-                   analysis_version=excluded.analysis_version,
-                   evidence_json=excluded.evidence_json,
-                   source_fingerprint=excluded.source_fingerprint,
-                   superseded_at=NULL,
-                   validation_state=CASE WHEN source_fingerprint!=excluded.source_fingerprint
-                       THEN 'needs_analysis' ELSE validation_state END,
-                   validation_json=CASE WHEN source_fingerprint!=excluded.source_fingerprint
-                       THEN '{}' ELSE validation_json END,
-                   dismissed_at=CASE WHEN source_fingerprint!=excluded.source_fingerprint
-                       THEN NULL ELSE dismissed_at END,
-                   dismissed_evidence_fingerprint=CASE WHEN source_fingerprint!=excluded.source_fingerprint
-                       THEN NULL ELSE dismissed_evidence_fingerprint END,
-                   approved_at=CASE WHEN source_fingerprint!=excluded.source_fingerprint
-                       THEN NULL ELSE approved_at END,
-                   exercise_revision=exercise_revision+CASE WHEN source_fingerprint!=excluded.source_fingerprint
-                       THEN 1 ELSE 0 END,
-                   updated_at=excluded.updated_at""",
+            THREAT_CANDIDATE_UPSERT_SQL,
             (candidate_id, finding_id, game.game_id, game.analysis_version,
              incident_id, anchor.player_ply, json.dumps(evidence), fingerprint,
              DETECTOR_VERSION, json.dumps(asdict(POLICY)), now, now),
