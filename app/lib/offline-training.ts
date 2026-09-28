@@ -88,6 +88,14 @@ export async function readPreparedTraining(): Promise<PreparedTraining | null> {
   });
 }
 
+export async function discardOfflineConflict(localEntryId: number): Promise<PreparedTraining> {
+  return updatePreparedTraining((current) => {
+    if (!current?.attempts.some((attempt) => attempt.localEntryId === localEntryId && attempt.conflict))
+      throw new Error("This saved conflict is no longer available. Reopen Review conflicts to refresh the list.");
+    return { ...current, attempts: current.attempts.filter((attempt) => attempt.localEntryId !== localEntryId) };
+  });
+}
+
 async function updatePreparedTraining(
   update: (current: PreparedTraining | null) => PreparedTraining,
 ): Promise<PreparedTraining> {
