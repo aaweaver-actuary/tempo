@@ -28,3 +28,26 @@ def test_postgres_backup_comparison_rejects_missing_table_and_changed_rows(monke
     )
     with pytest.raises(RuntimeError, match="Restore row mismatch in operation_receipts"):
         backup_verification.compare_backup(source, restored)
+
+
+def test_postgres_backup_comparison_projects_postgres_only_columns(monkeypatch):
+    source = object()
+    restored = object()
+    columns = (("operation_id", "text", True), ("response_json", "text", False))
+    monkeypatch.setattr(
+        backup_verification, "table_layout",
+        lambda _database: {"operation_receipts": (("operation_id",), columns)},
+    )
+    compared = []
+    monkeypatch.setattr(
+        backup_verification, "destination_fingerprint",
+        lambda database, table, names, primary_key, text_primary_key:
+        compared.append((database, table, names, primary_key, text_primary_key)) or (1, "same"),
+    )
+
+    backup_verification.compare_backup(source, restored)
+
+    assert compared == [
+        (source, "operation_receipts", ["operation_id", "response_json"], ["operation_id"], set()),
+        (restored, "operation_receipts", ["operation_id", "response_json"], ["operation_id"], set()),
+    ]

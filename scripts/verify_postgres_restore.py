@@ -22,12 +22,14 @@ def main() -> None:
         with psycopg.connect(arguments.source_dsn, autocommit=True) as source:
             with psycopg.connect(arguments.restored_dsn, autocommit=True) as restored:
                 for table_name, _ in sorted_tables(schema):
-                    _, primary_key_columns, text_primary_key_columns = table_columns(schema, table_name)
+                    column_names, primary_key_columns, text_primary_key_columns = table_columns(schema, table_name)
                     expected = destination_fingerprint(
-                        source, table_name, primary_key_columns, text_primary_key_columns
+                        source, table_name, column_names, primary_key_columns,
+                        text_primary_key_columns
                     )
                     actual = destination_fingerprint(
-                        restored, table_name, primary_key_columns, text_primary_key_columns
+                        restored, table_name, column_names, primary_key_columns,
+                        text_primary_key_columns
                     )
                     if expected != actual:
                         raise RuntimeError(f"Restore mismatch for {table_name}: {expected} != {actual}")
