@@ -43,6 +43,5 @@ def test_postgres_route_contract_tracks_remaining_blocked_product_routes():
                         if row["state"] == "blocked"}
 
     assert blocked_handlers == {
-        "accept_discovery_continuation", "repair_one_stockfish_timeout",
-        "repair_one_legacy_network_identity", "save_game_analysis",
+        "accept_discovery_continuation", "save_game_analysis",
     }

@@ -809,14 +809,14 @@
     "path": "/api/games/analysis/repair-timeout",
     "handler": "repair_one_stockfish_timeout",
     "treatment": "background_callback",
-    "state": "blocked"
+    "state": "staged"
   },
   {
     "method": "POST",
     "path": "/api/games/analysis/repair-provenance",
     "handler": "repair_one_legacy_network_identity",
     "treatment": "background_callback",
-    "state": "blocked"
+    "state": "staged"
   },
   {
     "method": "POST",

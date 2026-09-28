@@ -4610,8 +4610,15 @@ def finalize_game_analysis_position(
 @app.post("/api/games/analysis/repair-timeout")
 def repair_one_stockfish_timeout(
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     _require_docker_engine(engine_worker)
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.analysis.repair_timeout", {}, idempotency_key=idempotency_key,
+            background=True,
+        )
     with connection(background=activity_gate.in_background) as database:
         row = database.execute(
             """SELECT game_id,last_error FROM game_analysis_jobs
@@ -4638,8 +4645,15 @@ def repair_one_stockfish_timeout(
 @app.post("/api/games/analysis/repair-provenance")
 def repair_one_legacy_network_identity(
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     _require_docker_engine(engine_worker)
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.analysis.repair_provenance", {}, idempotency_key=idempotency_key,
+            background=True,
+        )
     with connection(background=activity_gate.in_background) as database:
         row = database.execute(
             """SELECT j.game_id,j.analysis_version,g.analysis_version AS published_version

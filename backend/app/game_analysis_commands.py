@@ -390,3 +390,71 @@ register_command("games.analysis.failure", fail_parent_analysis)
 register_command("games.analysis.heartbeat", heartbeat_parent_analysis)
 register_command("games.analysis.release", release_parent_analysis)
 register_command("games.analysis.retry", retry_parent_analysis)
+
+
+def repair_one_stockfish_timeout(
+    database: PostgresConnection, _payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Requeue one legacy timeout while fencing concurrent repair workers."""
+    row = database.execute_native(
+        "SELECT game_id,last_error FROM game_analysis_jobs "
+        "WHERE status='failed' AND last_error='Stockfish took too long' "
+        "ORDER BY updated_at,game_id LIMIT 1 FOR UPDATE SKIP LOCKED"
+    ).fetchone()
+    if row is None:
+        return {"requeued": False}
+    now = datetime.now(timezone.utc).isoformat()
+    database.execute_native(
+        "INSERT INTO game_analysis_position_errors(report_id,game_id,error,recorded_at) "
+        "VALUES(%s,%s,%s,%s)",
+        (f"legacy:{row['game_id']}", row["game_id"], row["last_error"], now),
+    )
+    database.execute_native(
+        "UPDATE game_analysis_jobs SET status='queued',last_error=NULL,lease_id=NULL,"
+        "lease_expires_at=NULL,updated_at=%s WHERE game_id=%s",
+        (now, row["game_id"]),
+    )
+    database.execute_native(
+        "UPDATE imported_games SET analysis_state='pending' WHERE id=%s",
+        (row["game_id"],),
+    )
+    return {"requeued": True, "game_id": row["game_id"]}
+
+
+def repair_one_legacy_network_identity(
+    database: PostgresConnection, _payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Queue one completed game with invalid historical NNUE provenance."""
+    row = database.execute_native(
+        "SELECT j.game_id,j.analysis_version,g.analysis_version AS published_version "
+        "FROM game_analysis_jobs j JOIN imported_games g ON g.id=j.game_id "
+        "WHERE j.status='complete' AND j.analysis_evidence_version<3 "
+        "AND EXISTS(SELECT 1 FROM game_move_analysis move WHERE move.game_id=j.game_id "
+        "AND move.network_version='nn-1c0000000000.nnue') "
+        "ORDER BY j.updated_at,j.game_id LIMIT 1 FOR UPDATE OF j SKIP LOCKED"
+    ).fetchone()
+    if row is None:
+        return {"requeued": False}
+    now = datetime.now(timezone.utc).isoformat()
+    database.execute_native(
+        "UPDATE game_analysis_jobs SET status='queued',analysis_version=%s,"
+        "analysis_evidence_version=3,lease_id=NULL,lease_expires_at=NULL,"
+        "last_error=NULL,updated_at=%s WHERE game_id=%s AND status='complete'",
+        (max(row["analysis_version"] + 1, row["published_version"] + 1),
+         now, row["game_id"]),
+    )
+    database.execute_native(
+        "UPDATE imported_games SET analysis_state='pending' WHERE id=%s",
+        (row["game_id"],),
+    )
+    database.execute_native(
+        "INSERT INTO game_analysis_position_errors(report_id,game_id,error,recorded_at) "
+        "VALUES(%s,%s,%s,%s)",
+        (f"legacy-network:{row['game_id']}", row["game_id"],
+         "Stored network identity differs from the browser's loaded NNUE; queued for verified Docker reanalysis", now),
+    )
+    return {"requeued": True, "game_id": row["game_id"]}
+
+
+register_command("games.analysis.repair_timeout", repair_one_stockfish_timeout)
+register_command("games.analysis.repair_provenance", repair_one_legacy_network_identity)
