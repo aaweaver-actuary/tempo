@@ -22,7 +22,8 @@ from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadF
 from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from .database import card_columns, connection, initialize, query_only_request, read_connection
+from .database import (background_read_connection, card_columns, connection, initialize,
+                       query_only_request, read_connection)
 from . import postgres_store
 from .command_gateway import read_operation
 from .celery_app import celery_app
@@ -230,10 +231,13 @@ app.include_router(study_router)
 
 
 @app.get("/api/operations/{operation_id}")
-def operation_status(operation_id: str):
+def operation_status(operation_id: str, request: Request):
     if not postgres_store.configured():
         raise HTTPException(404, "Operations are available after PostgreSQL cutover")
-    receipt = read_operation(operation_id)
+    receipt = read_operation(
+        operation_id,
+        background=request.headers.get("x-tempo-work-class", "").casefold() == "background",
+    )
     if receipt["state"] == "pending":
         try:
             worker_state = celery_app.AsyncResult(operation_id).state
@@ -459,6 +463,11 @@ async def prioritize_foreground_requests(request: Request, call_next):
             and path_parts[3:] == ["coverage", "refresh"]
             and request.method == "POST"
         )
+        coverage_maia_command = (
+            len(path_parts) == 4 and path_parts[:3] == ["api", "repertoire-coverage", "maia"]
+            and path_parts[3] in {"claim", "submit", "heartbeat", "release", "failure"}
+            and request.method == "POST"
+        )
         browser_activity = (path_parts == ["api", "system", "browser-activity"]
                             and request.method == "POST")
         activity_control_command = (path_parts == ["api", "system", "activity", "control"]
@@ -511,6 +520,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     main_repertoire_command, annotation_command, repertoire_rename_command,
                     repertoire_delete_command, opportunity_state_command,
                     opportunity_refresh_command, coverage_refresh_command,
+                    coverage_maia_command,
                     browser_activity, activity_control_command, tactic_attempt_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     settings_command,
@@ -3607,8 +3617,30 @@ def train_repertoire_opportunity(identifier: str, opportunity_id: str,
             raise HTTPException(409, str(error)) from error
 
 
+@app.get("/api/repertoire-coverage/maia/available")
+def coverage_maia_available():
+    if not postgres_store.configured():
+        return {"available": True}
+    with background_read_connection() as database:
+        row = database.execute_native(
+            "SELECT EXISTS(SELECT 1 FROM repertoire_coverage_nodes n "
+            "JOIN repertoire_coverage_runs r ON r.id=n.run_id "
+            "LEFT JOIN background_activity control ON control.source='coverage' "
+            "AND control.work_id=n.run_id "
+            "WHERE n.explorer_status='complete' AND r.status IN ('queued','running','complete') "
+            "AND (n.maia_status='queued' OR (n.maia_status='leased' AND n.lease_expires_at<%s)) "
+            "AND COALESCE(control.paused,0)=0)",
+            (datetime.now(timezone.utc).isoformat(),),
+        ).fetchone()
+    return {"available": bool(row[0])}
+
+
 @app.post("/api/repertoire-coverage/maia/claim")
-def coverage_maia_claim():
+def coverage_maia_claim(idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command("coverage.maia.claim", {}, idempotency_key=idempotency_key,
+                                background=True)
     return {"job": claim_maia_coverage_node()}
 
 
@@ -3622,7 +3654,12 @@ def coverage_explorer_session(authorization: str | None = Header(None)):
 
 
 @app.post("/api/repertoire-coverage/maia/submit")
-def coverage_maia_submit(request: CoverageMaiaSubmission):
+def coverage_maia_submit(request: CoverageMaiaSubmission,
+                         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command("coverage.maia.submit", request.model_dump(mode="json"),
+                                idempotency_key=idempotency_key, background=True)
     try:
         submit_maia_coverage(
             request.node_id,
@@ -3635,7 +3672,12 @@ def coverage_maia_submit(request: CoverageMaiaSubmission):
 
 
 @app.post("/api/repertoire-coverage/maia/heartbeat")
-def coverage_maia_heartbeat(request: dict):
+def coverage_maia_heartbeat(request: dict,
+                            idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command("coverage.maia.heartbeat", request,
+                                idempotency_key=idempotency_key, background=True)
     node_id = request.get("node_id")
     lease_id = request.get("lease_id")
     if not isinstance(node_id, str) or not isinstance(lease_id, str):
@@ -3653,7 +3695,12 @@ def coverage_maia_heartbeat(request: dict):
 
 
 @app.post("/api/repertoire-coverage/maia/release")
-def coverage_maia_release(request: dict):
+def coverage_maia_release(request: dict,
+                          idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command("coverage.maia.release", request,
+                                idempotency_key=idempotency_key, background=True)
     node_id = request.get("node_id")
     lease_id = request.get("lease_id")
     if not isinstance(node_id, str) or not isinstance(lease_id, str):
@@ -3669,7 +3716,12 @@ def coverage_maia_release(request: dict):
 
 
 @app.post("/api/repertoire-coverage/maia/failure")
-def coverage_maia_failure(request: dict):
+def coverage_maia_failure(request: dict,
+                          idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command("coverage.maia.failure", request,
+                                idempotency_key=idempotency_key, background=True)
     node_id = request.get("node_id")
     lease_id = request.get("lease_id")
     error = request.get("error")

@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { Chess } from "chess.js";
 import * as ort from "onnxruntime-web/wasm";
+import { PendingMaiaCommandError, requestMaiaApi } from "./maia-coverage-client.mjs";
 
 const apiUrl = process.env.TEMPO_API_URL ?? "http://api:8000";
 const assetDirectory = resolve(import.meta.dirname, "../public/maia3/parts");
@@ -78,12 +79,7 @@ export async function analyzeMaiaPosition(fen, elo) {
 }
 
 async function request(path, options = {}) {
-  const response = await fetch(`${apiUrl}${path}`, {
-    ...options,
-    headers: { "X-Tempo-Work-Class": "background", "Content-Type": "application/json" },
-  });
-  if (!response.ok) throw new Error(`${path}: HTTP ${response.status} ${await response.text()}`);
-  return response.json();
+  return requestMaiaApi(apiUrl, path, options);
 }
 
 if (process.env.TEMPO_MAIA_SMOKE === "1") {
@@ -99,6 +95,9 @@ while (true) {
   let job;
   try {
     if ((await request("/api/system/foreground-active")).active) { await sleep(1_000); continue; }
+    if (!(await request("/api/repertoire-coverage/maia/available")).available) {
+      await sleep(5_000); continue;
+    }
     job = (await request("/api/repertoire-coverage/maia/claim", { method: "POST" })).job;
     if (!job) { await sleep(2_000); continue; }
     const heartbeat = setInterval(() => {
@@ -115,7 +114,7 @@ while (true) {
     } finally { clearInterval(heartbeat); }
   } catch (error) {
     console.error("Maia coverage failed:", error);
-    if (job) {
+    if (job && !(error instanceof PendingMaiaCommandError)) {
       try {
         await request("/api/repertoire-coverage/maia/failure", {
           method: "POST",

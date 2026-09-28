@@ -9,7 +9,7 @@ from datetime import date
 from typing import Any
 
 from kombu.exceptions import OperationalError as BrokerUnavailable
-from psycopg.errors import LockNotAvailable, TransactionTimeout
+from psycopg.errors import DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout
 
 from .celery_app import celery_app
 from .command_gateway import execute_command
@@ -35,6 +35,7 @@ from . import card_commands  # noqa: F401 - registers foreground card revisions
 from . import opportunity_commands  # noqa: F401 - registers foreground discovery state changes
 from . import activity_commands  # noqa: F401 - registers foreground activity controls
 from . import coverage_commands  # noqa: F401 - registers foreground coverage admission
+from . import coverage_maia_commands  # noqa: F401 - registers background Maia callbacks
 from . import integrity_repair_commands  # noqa: F401 - registers guided integrity repairs
 from .services.activity_gate import activity_gate
 from .services.durable_tasks import claim_task, complete_task, defer_task_for_contention, fail_task
@@ -105,6 +106,19 @@ def execute_foreground_command(
         time.perf_counter() - started,
     )
     return result
+
+
+@celery_app.task(name="app.tasks.execute_background_command", bind=True, max_retries=10)
+def execute_background_command(
+    self, operation_id: str, command_name: str, payload: dict[str, Any]
+) -> Any:
+    """Execute an external worker callback in a bounded background section."""
+
+    with activity_gate.background_job(command_name, operation_id):
+        try:
+            return execute_command(operation_id, command_name, payload, background=True)
+        except (DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout) as error:
+            raise self.retry(exc=error, countdown=min(1.0, 0.1 * (self.request.retries + 1)))
 
 
 @celery_app.task(name="app.tasks.poll_background_tasks")

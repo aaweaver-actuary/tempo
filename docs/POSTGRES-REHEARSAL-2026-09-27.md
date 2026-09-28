@@ -110,7 +110,32 @@ PostgreSQL branch additions and removals now checkpoint an automatic coverage
 seed in the same foreground transaction as the line edit. A changed line
 supersedes an active coverage run and advances its durable task generation,
 so a worker holding the prior lease cannot publish that stale generation.
-The Explorer and Maia node execution paths remain to be ported.
+The Explorer node fetch and publication path remains to be ported.
+
+The external Maia worker callback path now uses named background Celery
+commands with operation receipts. It polls a read-only availability endpoint
+while idle, claims a PostgreSQL row lease, follows pending receipts, and
+publishes candidates with set-based SQL. Migration 006 indexes queued and
+expired Maia leases. A rollback-only rehearsal against the restored database
+measured a 3.4 ms claim, a 6.8 ms candidate publication before downstream
+enqueue, and an 18.5 ms publication including priority scheduling. Adding
+progress publication initially exceeded PostgreSQL's 50 ms background
+transaction timeout on the clone. Combining priority scheduling into one
+native UPSERT brought that same rollback-only publication to 15.0 ms with
+progress included. The final Maia node initially timed out when it used the
+generic five-query durable enqueue for discovery. A single PostgreSQL CTE
+now updates the durable task and records its event atomically; the last-node
+rollback-only slice completed in 9.8 ms. The Explorer node fetch/publication
+path is still unported; Maia will have no new nodes to claim until that work
+is complete.
+Rollback-only candidate-count probes completed 40 moves in 7.9 ms and 200
+moves in 12.0 ms on one restored node; these are local samples, not a
+foreground-load benchmark.
+An API-to-Redis-to-Celery-to-PostgreSQL rehearsal returned HTTP 200 and
+`{"status":"stale"}` for an invalid lease release, then removed its test
+receipt. The temporary macOS Python 3.14 Celery prefork pool failed before
+task execution; the solo pool completed the check. Product Docker workers use
+their container Python runtime and still need a full Compose rehearsal.
 
 A read-only API survey against the restored PostgreSQL clone returned 200 for
 the static study, queue, progress, repertoire, games, discovery, and settings

@@ -20,6 +20,7 @@ celery_app.conf.update(
     task_default_queue="foreground",
     task_routes={
         "app.tasks.execute_foreground_command": {"queue": "foreground"},
+        "app.tasks.execute_background_command": {"queue": "background"},
         "app.tasks.ensure_daily_queue": {"queue": "foreground"},
         "app.tasks.execute_background_slice": {"queue": "background"},
         "app.tasks.poll_background_tasks": {"queue": "background"},
