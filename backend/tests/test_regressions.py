@@ -521,6 +521,44 @@ def test_stale_failed_attempt_request_cannot_mark_a_later_queue_entry(
             ).fetchone()[0] == 0
 
 
+def test_queue_entry_state_distinguishes_head_future_and_completed_attempts(
+    tmp_path, monkeypatch
+):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        imported = client.post(
+            "/api/imports/pgn",
+            files={"file": ("one.pgn", PGN)},
+            data={"initial_depth": 2},
+        )
+        wait_for_integrity(client, imported.json()["repertoire_id"])
+        first = client.get("/api/queue/today").json()["cards"][0]
+        first_entry_id = first["queue_entry_id"]
+        with database.connection() as db:
+            later_entry_id = db.execute(
+                """INSERT INTO daily_queue(queue_date,card_id,cycle,position)
+                   VALUES(?,?,?,?) RETURNING id""",
+                (date.today().isoformat(), first["id"], 99, 999),
+            ).fetchone()[0]
+        assert client.get(f"/api/queue/entries/{first_entry_id}/state").json() == {
+            "state": "head", "attempt_failed": False,
+        }
+        assert client.get(f"/api/queue/entries/{later_entry_id}/state").json() == {
+            "state": "queued", "attempt_failed": False,
+        }
+        with database.connection() as db:
+            db.execute("UPDATE daily_queue SET status='complete' WHERE id=?", (first_entry_id,))
+        assert client.get(f"/api/queue/entries/{first_entry_id}/state").json() == {
+            "state": "completed", "attempt_failed": False,
+        }
+        assert client.get(f"/api/queue/entries/{later_entry_id}/state").json() == {
+            "state": "head", "attempt_failed": False,
+        }
+        assert client.get("/api/queue/entries/999999999/state").json() == {
+            "state": "unavailable", "attempt_failed": False,
+        }
+
+
 def test_guided_review_after_stale_failure_marking_is_saved_once(
     tmp_path, monkeypatch
 ):

@@ -2602,6 +2602,31 @@ def requeue(db, day, cid, after, attempt):
     return inserted_entry_id
 
 
+@app.get("/api/queue/entries/{entry_id}/state")
+def queue_entry_state(entry_id: int):
+    """Read one queue attempt without changing its position or review state."""
+    with read_connection() as database:
+        entry = database.execute(
+            "SELECT queue_date,status,attempt_failed FROM daily_queue WHERE id=?",
+            (entry_id,),
+        ).fetchone()
+        if not entry or str(entry["queue_date"]) != date.today().isoformat():
+            return {"state": "unavailable", "attempt_failed": False}
+        if entry["status"] != "queued":
+            return {"state": "completed" if entry["status"] == "complete" else "unavailable",
+                    "attempt_failed": bool(entry["attempt_failed"])}
+        active_entry = database.execute(
+            """SELECT queue.id FROM daily_queue queue JOIN cards card ON card.id=queue.card_id
+               WHERE queue.queue_date=? AND queue.status='queued'
+                 AND (card.content_type!='defense' OR
+                      (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
+               ORDER BY queue.position,queue.id LIMIT 1""",
+            (date.today().isoformat(),),
+        ).fetchone()
+    return {"state": "head" if active_entry and active_entry["id"] == entry_id else "queued",
+            "attempt_failed": bool(entry["attempt_failed"])}
+
+
 @app.post("/api/queue/entries/{entry_id}/fail")
 def mark_attempt_failed(entry_id: int,
                         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):

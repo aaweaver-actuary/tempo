@@ -8,6 +8,7 @@ import {
 } from "../../app/state/training-store";
 import { attemptEntryKey } from "../../app/domain/attempt";
 import { enqueuePendingReview, pendingReviews } from "../../app/lib/review-outbox";
+import { enqueueTrainingFailure, pendingTrainingFailures } from "../../app/lib/training-failure-outbox";
 import { clearDebugErrors, debugErrors } from "../../app/lib/debug-reporting";
 import {
   asCardId,
@@ -42,6 +43,31 @@ beforeEach(() => {
 });
 
 describe("review attempt reliability", () => {
+  it("reload drains an earlier review before marking the next guided card", async () => {
+    enqueuePendingReview({ backendId: "persisted-card", queueEntryId: 42,
+      outcome: "correct", guided: false });
+    enqueueTrainingFailure(43);
+    const requestedPaths: string[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      const path = new URL(String(input)).pathname;
+      requestedPaths.push(path);
+      if (path.endsWith("/review")) return Response.json({ persisted: true });
+      if (path.endsWith("/fail")) return Response.json({ attempt_failed: true });
+      return Response.json({ cards: [{
+        id: "next-card", queue_entry_id: 43, start_fen: card.startingFen,
+        moves: ["d2d4"], content_type: "opening", repertoire_name: "Next guided card",
+        repertoire_source: "PGN",
+      }], count: 1 });
+    }));
+    await fetchAndInitializeQueue();
+    expect(requestedPaths.slice(0, 3)).toEqual([
+      "/api/cards/persisted-card/review", "/api/queue/entries/43/fail", "/api/queue/window",
+    ]);
+    expect(pendingReviews()).toEqual([]);
+    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(43);
+    expect(useTrainingStore.getState().isAttemptFailed).toBe(true);
+    await vi.waitFor(() => expect(pendingTrainingFailures()).toEqual([]));
+  });
   it("desktop queue failure retains the active attempt and attributes the live request", async () => {
     const store = useTrainingStore.getState();
     store.hydrateLocalQueue([card], true, 1);

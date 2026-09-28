@@ -1,6 +1,7 @@
 import { API_URL } from "../const";
 import { confirmOperationResponse } from "./operation-status";
 import { publishNotification } from "./notifications";
+import { clearTrainingFailureAfterReview } from "./training-failure-outbox";
 
 export type PendingReview = {
   backendId: string;
@@ -96,6 +97,7 @@ async function savePendingReviews(): Promise<void> {
     localStorage.setItem(storageKey, JSON.stringify(
       remaining.filter((item) => item.queueEntryId !== review.queueEntryId),
     ));
+    clearTrainingFailureAfterReview(review.queueEntryId);
     if (result.warning) {
       publishNotification({ severity: "warning", source: "training review", key: `review-reconciliation:${attemptId}`,
         message: `${result.warning} Saved result: ${review.outcome} at ${review.completedAt ?? "unknown"}. ` +

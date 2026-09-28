@@ -156,6 +156,45 @@ test("legacy long discovery save key recovers and queues the saved choice", asyn
     JSON.parse(localStorage.getItem("tempo-pending-discovery-admissions-v1") ?? "[]").length)).toBe(0);
 });
 
+test("reloaded prefetched guided card waits for the earlier review before marking failure", async ({ page }) => {
+  await prepareVisualUI(page);
+  let finishEarlierReview: (() => void) | undefined;
+  let earlierReviewRequests = 0;
+  let guidedFailureRequests = 0;
+  let guidedFailureSaved = false;
+  await page.route("**/api/cards/earlier-card/review", async (route) => {
+    earlierReviewRequests += 1;
+    await new Promise<void>((resolve) => { finishEarlierReview = resolve; });
+    await route.fulfill({ json: { persisted: true } });
+  });
+  await page.route("**/api/queue/entries/43/fail", async (route) => {
+    guidedFailureRequests += 1;
+    guidedFailureSaved = true;
+    await route.fulfill({ json: { attempt_failed: true } });
+  });
+  await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: {
+    count: 1, cards: [{ id: "next-card", queue_entry_id: 43, start_fen: startFen,
+      moves: ["e2e4"], content_type: "opening", repertoire_name: "Next guided card",
+      repertoire_source: "PGN", trained_color: "white", attempt_failed: guidedFailureSaved }],
+  } }));
+  await page.evaluate(() => {
+    localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([{
+      backendId: "earlier-card", queueEntryId: 42, outcome: "correct", guided: false,
+    }]));
+    localStorage.setItem("tempo-pending-training-failures-v1", JSON.stringify([43]));
+  });
+  await page.reload();
+  await expect.poll(() => earlierReviewRequests).toBe(1);
+  expect(guidedFailureRequests).toBe(0);
+  finishEarlierReview?.();
+  await expect.poll(() => guidedFailureRequests).toBe(1);
+  await expect(page.getByText("Guided attempt resumed")).toBeVisible();
+  await page.reload();
+  await expect(page.getByText("Guided attempt resumed")).toBeVisible();
+  expect(earlierReviewRequests).toBe(1);
+  expect(guidedFailureRequests).toBe(1);
+});
+
 test("unavailable repertoire lines do not falsely grade another legal move", async ({ page }) => {
   await prepareVisualUI(page);
   // Initial service worker activation can reload the page; finish it before injecting the failure.
