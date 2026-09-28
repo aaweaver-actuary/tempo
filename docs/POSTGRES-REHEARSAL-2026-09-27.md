@@ -106,6 +106,12 @@ was changed.
 
 ## Coverage seed pipeline
 
+PostgreSQL branch additions and removals now checkpoint an automatic coverage
+seed in the same foreground transaction as the line edit. A changed line
+supersedes an active coverage run and advances its durable task generation,
+so a worker holding the prior lease cannot publish that stale generation.
+The Explorer and Maia node execution paths remain to be ported.
+
 Migration 005 adds a `building` coverage-run state and indexes for line and
 node cursors. The foreground command records one source fingerprint and a
 durable `coverage_seed` task. Each background slice reads one line, closes the

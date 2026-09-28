@@ -16,6 +16,7 @@ from .postgres_store import PostgresConnection
 from .services.cards import card_id
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
 from .services.postgres_integrity import invalidate_integrity_in_transaction
+from .services.postgres_coverage_seed import request_coverage_seed_in_transaction
 from .services.repertoire_integrity import integrity_summary
 
 
@@ -79,6 +80,10 @@ def add_repertoire_branch(database: PostgresConnection, payload: dict[str, Any])
         )
     invalidate_integrity_in_transaction(database, repertoire_id)
     request_graph_rebuild_in_transaction(database, repertoire_id, date.today().isoformat())
+    if inserted is not None:
+        request_coverage_seed_in_transaction(
+            database, repertoire_id, automatic=True, supersede_active=True,
+        )
     return {"id": line_id, "duplicate": inserted is None, "moves": moves,
             "integrity": integrity_summary(database, repertoire_id)}
 
@@ -123,6 +128,9 @@ def remove_repertoire_branch(database: PostgresConnection, payload: dict[str, An
         )
         invalidate_integrity_in_transaction(database, repertoire_id)
         request_graph_rebuild_in_transaction(database, repertoire_id, date.today().isoformat())
+        request_coverage_seed_in_transaction(
+            database, repertoire_id, automatic=True, supersede_active=True,
+        )
     return {
         "deleted_line_count": len(matching_line_ids),
         "deleted_card_count": 0,

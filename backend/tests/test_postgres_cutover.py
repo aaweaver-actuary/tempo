@@ -699,7 +699,7 @@ def test_postgres_branch_removal_dispatches_foreground_command_with_idempotency(
     assert dispatched == [("repertoire.branch.remove", request, "remove-white-e4")]
 
 
-def test_postgres_branch_removal_matches_only_position_and_move_prefix_and_queues_graph(monkeypatch):
+def test_postgres_branch_removal_queues_coverage_with_changed_lines(monkeypatch):
     from app import branch_commands
 
     class QueryResult:
@@ -739,6 +739,9 @@ def test_postgres_branch_removal_matches_only_position_and_move_prefix_and_queue
                         lambda db, repertoire_id: scheduled.append(("integrity", db, repertoire_id)))
     monkeypatch.setattr(branch_commands, "request_graph_rebuild_in_transaction",
                         lambda db, repertoire_id, day: scheduled.append(("graph", db, repertoire_id)))
+    monkeypatch.setattr(branch_commands, "request_coverage_seed_in_transaction",
+                        lambda db, repertoire_id, *, automatic, supersede_active: scheduled.append(
+                            ("coverage", db, repertoire_id, automatic, supersede_active)))
     monkeypatch.setattr(branch_commands, "integrity_summary",
                         lambda db, repertoire_id: {"status": "unchecked"})
     result = branch_commands.remove_repertoire_branch(database, {
@@ -748,9 +751,9 @@ def test_postgres_branch_removal_matches_only_position_and_move_prefix_and_queue
     assert database.deleted == ["match"]
     assert result == {"deleted_line_count": 1, "deleted_card_count": 0,
                       "retained_line_count": 2, "integrity": {"status": "unchecked"}}
-    assert [(kind, repertoire_id) for kind, _, repertoire_id in scheduled] == [
-        ("integrity", "white"), ("graph", "white")]
-    assert all(scheduled_database is database for _, scheduled_database, _ in scheduled)
+    assert [event[0] for event in scheduled] == ["integrity", "graph", "coverage"]
+    assert all(event[1] is database for event in scheduled)
+    assert scheduled[-1][2:] == ("white", True, True)
 
 
 def test_postgres_prefix_split_decisions_dispatch_foreground_commands_with_idempotency(monkeypatch):
@@ -1150,7 +1153,7 @@ def test_postgres_branch_edit_dispatches_foreground_command_with_idempotency(mon
     assert dispatched[0][2] == "branch-1"
 
 
-def test_postgres_branch_edit_checkpoints_graph_rebuild_with_line(monkeypatch):
+def test_postgres_branch_edit_checkpoints_graph_and_coverage_with_line(monkeypatch):
     from app import branch_commands
 
     events = []
@@ -1168,6 +1171,8 @@ def test_postgres_branch_edit_checkpoints_graph_rebuild_with_line(monkeypatch):
 
     monkeypatch.setattr(branch_commands, "request_graph_rebuild_in_transaction",
                         lambda *_args: events.append("graph"))
+    monkeypatch.setattr(branch_commands, "request_coverage_seed_in_transaction",
+                        lambda *_args, **_kwargs: events.append("coverage"))
     monkeypatch.setattr(branch_commands, "integrity_summary",
                         lambda *_args: {"status": "unchecked"})
     result = branch_commands.add_repertoire_branch(Database(), {
@@ -1176,7 +1181,7 @@ def test_postgres_branch_edit_checkpoints_graph_rebuild_with_line(monkeypatch):
     })
     assert result["duplicate"] is False
     assert result["moves"] == ["e2e4", "e7e5"]
-    assert events == ["line", "graph"]
+    assert events == ["line", "graph", "coverage"]
 
 
 def test_postgres_endgame_template_admission_dispatches_foreground_command(monkeypatch):
@@ -4776,6 +4781,46 @@ def test_postgres_coverage_refresh_dispatches_durable_seed(monkeypatch):
         "repertoire_id": "rep",
     }) == {"run_id": "run-one", "status": "queued"}
     assert requested == [(database, "rep", False)]
+
+
+def test_postgres_coverage_seed_supersedes_active_generation_after_branch_edit(monkeypatch):
+    from app.services import postgres_coverage_seed
+
+    statements = []
+
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            statements.append((statement, parameters))
+            if "SELECT 1 FROM repertoires" in statement:
+                return SimpleNamespace(fetchone=lambda: (1,))
+            if "SELECT id FROM repertoire_coverage_runs" in statement:
+                return SimpleNamespace(fetchone=lambda: ("old-run",))
+            if "SELECT * FROM settings" in statement:
+                return SimpleNamespace(fetchone=lambda: {
+                    "coverage_maia_elo": 1500, "coverage_reply_denominator": 2,
+                    "coverage_cumulative_target": 80, "coverage_horizon_fullmoves": 4,
+                    "coverage_path_floor": 0.01,
+                })
+            return SimpleNamespace(fetchone=lambda: None)
+
+    monkeypatch.setattr(postgres_coverage_seed, "recent_player_cohort", lambda *_args: {
+        "maia_elo": 1500, "explorer_rating": 1600, "recent_median_rating": 1500,
+        "speed_weights": {"rapid": 1}, "games": 1,
+    })
+    monkeypatch.setattr(postgres_coverage_seed, "_source_fingerprint",
+                        lambda *_args: "new-fingerprint")
+    enqueued = []
+    monkeypatch.setattr(postgres_coverage_seed, "enqueue_task_in_transaction",
+                        lambda database, kind, key, payload, **kwargs:
+                            enqueued.append((kind, key, payload)))
+    result = postgres_coverage_seed.request_coverage_seed_in_transaction(
+        Database(), "rep", automatic=True, supersede_active=True,
+    )
+    assert result["run_id"] != "old-run"
+    assert any("UPDATE repertoire_coverage_runs SET status='failed'" in sql
+               and parameters[-1] == "old-run" for sql, parameters in statements)
+    assert enqueued[0][2]["run_id"] == result["run_id"]
+    assert enqueued[0][2]["source_fingerprint"] == "new-fingerprint"
 
 
 def test_postgres_coverage_seed_yields_to_foreground_and_discards_restart_replay(monkeypatch):

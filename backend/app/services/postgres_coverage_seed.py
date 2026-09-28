@@ -40,6 +40,7 @@ def _source_fingerprint(database: PostgresConnection, repertoire_id: str) -> str
 
 def request_coverage_seed_in_transaction(
     database: PostgresConnection, repertoire_id: str, *, automatic: bool = False,
+    supersede_active: bool = False,
 ) -> dict[str, str]:
     """Admit one coverage build and its durable task without traversing lines."""
 
@@ -57,8 +58,14 @@ def request_coverage_seed_in_transaction(
         "AND status IN ('building','queued','running') ORDER BY created_at DESC LIMIT 1",
         (repertoire_id,),
     ).fetchone()
-    if active:
+    if active and not supersede_active:
         return {"run_id": str(active[0]), "status": "queued"}
+    if active:
+        database.execute_native(
+            "UPDATE repertoire_coverage_runs SET status='failed',last_error=%s,updated_at=%s "
+            "WHERE id=%s",
+            ("Repertoire lines changed; a new coverage run was queued", _now(), active[0]),
+        )
     settings = dict(database.execute_native("SELECT * FROM settings WHERE id=1").fetchone())
     cohort = recent_player_cohort(database, int(settings["coverage_maia_elo"]))
     settings_payload = {
