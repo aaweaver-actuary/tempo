@@ -4,6 +4,7 @@ from fastapi.testclient import TestClient
 
 from app import database
 from app.main import app
+from app.services.repertoire_conflicts import _conflicts_from_snapshot
 from helpers import wait_for_integrity
 
 
@@ -52,6 +53,29 @@ def test_conflict_snapshot_cache_invalidates_after_line_edit(tmp_path, monkeypat
         with database.connection() as db:
             db.execute("UPDATE repertoire_lines SET moves_json=? WHERE id='two'", ('["e2e4"]',))
         assert client.get("/api/repertoire/conflicts").json()["conflicts"] == []
+
+
+def test_conflict_fast_position_key_preserves_en_passant_distinction():
+    with_en_passant = "rnbqkbnr/1pp1pppp/p7/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3"
+    without_en_passant = with_en_passant.replace(" d6 ", " - ")
+    moves = (
+        (with_en_passant, "e5d6"), (with_en_passant, "g1f3"),
+        (without_en_passant, "g1f3"), (without_en_passant, "f1e2"),
+    )
+    snapshot = tuple(
+        (f"line-{index}", "repertoire", f"Line {index}", "white", fen,
+         json.dumps([move]))
+        for index, (fen, move) in enumerate(moves)
+    )
+    conflicts = _conflicts_from_snapshot(snapshot)
+    assert len(conflicts) == 2
+    assert {conflict["fen"] for conflict in conflicts} == {
+        " ".join(with_en_passant.split()[:4]),
+        " ".join(without_en_passant.split()[:4]),
+    }
+    assert {tuple(move["uci"] for move in conflict["moves"]) for conflict in conflicts} == {
+        ("e5d6", "g1f3"), ("f1e2", "g1f3"),
+    }
 
 
 def test_new_conflicting_branch_enters_integrity_repair(tmp_path, monkeypatch):

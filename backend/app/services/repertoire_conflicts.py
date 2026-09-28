@@ -24,8 +24,10 @@ def _line_snapshot(database, repertoire_id: str | None) -> tuple[tuple[str, ...]
     )) for row in rows)
 
 
-def _trained_move_index_from_snapshot(lines: tuple[tuple[str, ...], ...]) -> dict:
-    index: dict[tuple[str, str], dict[str, set[str]]] = defaultdict(
+def _trained_move_index_from_snapshot(
+    lines: tuple[tuple[str, ...], ...], *, conflict_fens: dict | None = None,
+) -> dict:
+    index: dict[tuple, dict[str, set[str]]] = defaultdict(
         lambda: defaultdict(set)
     )
     for line_id, repertoire_id, _name, trained_color, start_fen, moves_json in lines:
@@ -37,9 +39,17 @@ def _trained_move_index_from_snapshot(lines: tuple[tuple[str, ...], ...]) -> dic
                 if move not in board.legal_moves:
                     break
                 if board.turn == trained_turn:
-                    index[(repertoire_id, board.epd())][
-                        move_uci
-                    ].add(line_id)
+                    # Conflict discovery only needs an EPD when two different
+                    # moves reach the same position. The transposition key
+                    # keeps the legal en-passant and castling distinctions.
+                    position = (repertoire_id, board.epd() if conflict_fens is None
+                                else board._transposition_key())
+                    moves_at_position = index[position]
+                    if (conflict_fens is not None and moves_at_position
+                            and move_uci not in moves_at_position
+                            and position not in conflict_fens):
+                        conflict_fens[position] = board.epd()
+                    moves_at_position[move_uci].add(line_id)
                 board.push(move)
         except (ValueError, TypeError, json.JSONDecodeError):
             continue
@@ -53,13 +63,17 @@ def trained_move_index(database, repertoire_id: str | None = None) -> dict:
 @lru_cache(maxsize=4)
 def _conflicts_from_snapshot(lines: tuple[tuple[str, ...], ...]) -> tuple[dict, ...]:
     conflicts = []
-    for (current_repertoire_id, fen), moves in _trained_move_index_from_snapshot(lines).items():
+    conflict_fens: dict = {}
+    for position, moves in _trained_move_index_from_snapshot(
+        lines, conflict_fens=conflict_fens,
+    ).items():
         if len(moves) < 2:
             continue
+        current_repertoire_id = position[0]
         conflicts.append(
             {
                 "repertoire_id": current_repertoire_id,
-                "fen": fen,
+                "fen": conflict_fens[position],
                 "moves": [
                     {"uci": move, "line_ids": sorted(line_ids)}
                     for move, line_ids in sorted(moves.items())

@@ -34,19 +34,28 @@ def _key(board: chess.Board) -> str:
     return " ".join(board.fen().split()[:4])
 
 
-def _pawn_signature(board: chess.Board) -> tuple[tuple[bool, int], ...]:
-    return tuple(sorted((piece.color, square) for square, piece in board.piece_map().items()
-                        if piece.piece_type == chess.PAWN))
+def _position_key(board: chess.Board) -> tuple:
+    # python-chess is pinned; this avoids serializing every repertoire position
+    # and retains the same castling and legal en-passant distinctions as EPD.
+    return board._transposition_key()
 
 
-def _piece_signature(board: chess.Board) -> set[tuple[bool, int, int]]:
-    return {(piece.color, piece.piece_type, square) for square, piece in board.piece_map().items()
-            if piece.piece_type != chess.PAWN}
+def _pawn_signature(board: chess.Board) -> tuple[int, int]:
+    return tuple(board.pawns & board.occupied_co[color] for color in (chess.BLACK, chess.WHITE))
 
 
-def _learner_pawns(board: chess.Board, learner_is_white: bool) -> set[int]:
-    return {square for square, piece in board.piece_map().items()
-            if piece.color == learner_is_white and piece.piece_type == chess.PAWN}
+def _piece_signature(board: chess.Board) -> tuple[int, ...]:
+    non_pawn_boards = (board.knights, board.bishops, board.rooks, board.queens, board.kings)
+    return tuple(pieces & board.occupied_co[color]
+                 for color in (chess.BLACK, chess.WHITE) for pieces in non_pawn_boards)
+
+
+def _overlapping_pieces(first: tuple[int, ...], second: tuple[int, ...]) -> int:
+    return sum((left & right).bit_count() for left, right in zip(first, second))
+
+
+def _learner_pawns(board: chess.Board, learner_is_white: bool) -> int:
+    return board.pawns & board.occupied_co[learner_is_white]
 
 
 def _rank_candidates(candidates: list[dict]) -> list[dict]:
@@ -69,7 +78,7 @@ def _comparable_move_examples(examples: list[dict], board: chess.Board,
     return [example for example in examples
             if example["learner_turn"] and example["next_move"] == move_uci
             and example["learner_pawns"] == learner_pawns
-            and len(example["pieces"] & piece_positions) >= 8]
+            and _overlapping_pieces(example["pieces"], piece_positions) >= 8]
 
 
 def _comparable_move_example(examples: list[dict], board: chess.Board,
@@ -264,13 +273,13 @@ def _repertoire_positions(lines: list[dict], learner_color: str) -> tuple[list[d
             move = chess.Move.from_uci(move_uci)
             if move not in board.legal_moves:
                 break
-            examples.append({"fen_key": _key(board), "pawn": _pawn_signature(board),
+            examples.append({"position_key": _position_key(board), "pawn": _pawn_signature(board),
                              "learner_pawns": _learner_pawns(board, learner_color == "white"),
                              "pieces": _piece_signature(board), "line_id": line["id"],
                              "line_name": line["name"], "next_move": move_uci,
                              "learner_turn": board.turn == (learner_color == "white")})
             board.push(move)
-        examples.append({"fen_key": _key(board), "pawn": _pawn_signature(board),
+        examples.append({"position_key": _position_key(board), "pawn": _pawn_signature(board),
                          "learner_pawns": _learner_pawns(board, learner_color == "white"),
                          "pieces": _piece_signature(board), "line_id": line["id"],
                          "line_name": line["name"], "next_move": None,
@@ -347,15 +356,15 @@ def recommend_missing_continuations(opportunity_id: str) -> dict:
         return {"state": "unavailable", "opportunity_id": opportunity_id,
                 "reason": "Saved engine evidence is invalid; repair analysis and retry this discovery",
                 "candidates": []}
-    target_key = _key(board)
+    target_key = _position_key(board)
     best = report.lines[0]
     fields = ("id", "name", "start_fen", "moves_json", "trained_color")
     line_snapshot = tuple(tuple(line[field] for field in fields) for line in lines)
     examples, _ = _cached_repertoire_positions(line_snapshot, game["color"])
     accepted = sorted({example["next_move"] for example in examples
-                       if example["fen_key"] == target_key and example["learner_turn"]
+                       if example["position_key"] == target_key and example["learner_turn"]
                        and example["next_move"]})
-    example_positions = {example["fen_key"] for example in examples}
+    example_positions = {example["position_key"] for example in examples}
     sound_candidates = []
     learner_sign = 1 if game["color"] == "white" else -1
     for line in report.lines[:5]:
@@ -387,27 +396,27 @@ def recommend_missing_continuations(opportunity_id: str) -> dict:
                 learner_decisions += 1
             preview_moves.append(move_uci)
             continuation.push(move)
-            if (_key(continuation) in example_positions and preview_moves
+            if (_position_key(continuation) in example_positions and preview_moves
                     or learner_decisions >= 4):
                 break
         if not legal or not preview_moves or preview_moves[0] != line.root_move_uci:
             continue
         after_first = board.copy(stack=False)
         after_first.push_uci(line.root_move_uci)
-        after_key = _key(after_first)
+        after_key = _position_key(after_first)
         pawn_signature = _pawn_signature(after_first)
         piece_signature = _piece_signature(after_first)
         ranked_examples = sorted(examples, key=lambda example: (
-            example["fen_key"] != after_key,
+            example["position_key"] != after_key,
             example["pawn"] != pawn_signature,
-            -len(example["pieces"] & piece_signature),
+            -_overlapping_pieces(example["pieces"], piece_signature),
             example["line_id"],
         ))
         nearest = ranked_examples[0] if ranked_examples else None
         comparable_examples = _comparable_move_examples(
             examples, board, game["color"], line.root_move_uci)
         same_move_example = comparable_examples[0] if comparable_examples else None
-        transposition = nearest if nearest and nearest["fen_key"] == after_key else None
+        transposition = nearest if nearest and nearest["position_key"] == after_key else None
         familiar_example = transposition or same_move_example
         similarity = ("exact transposition" if transposition else
                       "same move in a comparable repertoire position" if same_move_example else

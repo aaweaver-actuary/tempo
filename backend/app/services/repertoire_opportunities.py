@@ -840,7 +840,7 @@ def execute_opportunity_slice(task: dict) -> bool:
 def _accepted_moves_by_line_snapshot(
     lines: tuple[tuple[str, str, str], ...],
 ) -> dict[str, set[str]]:
-    accepted_by_position: dict[str, set[str]] = {}
+    accepted_by_position: dict[tuple, set[str]] = {}
     for start_fen, moves_json, trained_color in lines:
         board = chess.Board(start_fen)
         learner_turn = trained_color == "white"
@@ -850,7 +850,7 @@ def _accepted_moves_by_line_snapshot(
                 if move not in board.legal_moves:
                     break
                 if board.turn == learner_turn:
-                    accepted_by_position.setdefault(board.epd(), set()).add(move_uci)
+                    accepted_by_position.setdefault(board._transposition_key(), set()).add(move_uci)
                 board.push(move)
             except ValueError:
                 break
@@ -987,6 +987,10 @@ def list_opportunities(database: sqlite3.Connection, repertoire_id: str,
                     decision_route_uci = route_uci
                     decision_fen = route_board.fen()
                     break
+        try:
+            accepted_position = chess.Board(decision_fen)._transposition_key()
+        except ValueError:
+            accepted_position = None
         result.append({
             "id": row["id"], "repertoire_id": repertoire_id,
             "kind": row["kind"], "status": row["status"],
@@ -996,8 +1000,7 @@ def list_opportunities(database: sqlite3.Connection, repertoire_id: str,
             "decision_fen": decision_fen,
             "decision_start_fen": decision_start_fen,
             "decision_route_uci": decision_route_uci,
-            "accepted_moves_uci": sorted(accepted_by_position.get(
-                " ".join(decision_fen.split()[:4]), set())),
+            "accepted_moves_uci": sorted(accepted_by_position.get(accepted_position, set())),
             "score": row["score"], "evidence": evidence,
             "evidence_fingerprint": row["evidence_fingerprint"],
             "seen_at": row["seen_at"], "snoozed_until": row["snoozed_until"],
