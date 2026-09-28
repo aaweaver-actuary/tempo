@@ -39,6 +39,7 @@ from . import card_commands  # noqa: F401 - registers foreground card revisions
 from . import opportunity_commands  # noqa: F401 - registers foreground discovery state changes
 from . import activity_commands  # noqa: F401 - registers foreground activity controls
 from . import statistics_commands  # noqa: F401 - registers foreground statistics refresh
+from . import defensive_admin_commands  # noqa: F401 - registers defensive admin tasks
 from . import coverage_commands  # noqa: F401 - registers foreground coverage admission
 from . import coverage_maia_commands  # noqa: F401 - registers background Maia callbacks
 from . import game_analysis_commands  # noqa: F401 - registers background game analysis claims

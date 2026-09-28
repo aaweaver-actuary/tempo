@@ -45,8 +45,7 @@ def test_postgres_route_contract_tracks_remaining_blocked_product_routes():
     assert blocked_handlers == {
         "accept_discovery_continuation", "repair_one_stockfish_timeout",
         "repair_one_legacy_network_identity", "save_game_analysis",
-        "claim_defensive_threat_analysis", "audit_defensive_threat_reports",
-        "backfill_defensive_threats", "submit_defensive_threat_analysis",
+        "claim_defensive_threat_analysis", "submit_defensive_threat_analysis",
         "fail_defensive_threat_analysis", "release_defensive_threat_analysis",
         "retry_defensive_threat_analysis", "dismiss_defensive_threat_candidate",
         "approve_defensive_threat_candidate", "train_defensive_threat_candidate_now",

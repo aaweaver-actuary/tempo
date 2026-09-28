@@ -503,6 +503,12 @@ async def prioritize_foreground_requests(request: Request, call_next):
             len(path_parts) == 5 and path_parts[:3] == ["api", "statistics", "daily"]
             and path_parts[4] == "refresh" and request.method == "POST"
         )
+        defensive_admin_command = (
+            request.method == "POST" and path_parts in (
+                ["api", "defensive-threats", "analysis", "audit"],
+                ["api", "defensive-threats", "backfill"],
+            )
+        )
         tactic_attempt_command = (path_parts == ["api", "tactics", "attempt"]
                                   and request.method == "POST")
         tactic_activation_command = (path_parts == ["api", "tactics", "activation"]
@@ -597,6 +603,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     browser_activity, activity_control_command, activity_progress_command,
                     task_retry_command, tactic_attempt_command,
                     statistics_refresh_command,
+                    defensive_admin_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     game_exclusion_command, game_threat_refresh_command,
                     guided_review_start_command, guided_review_attempt_command,
@@ -4939,7 +4946,15 @@ def claim_defensive_threat_analysis(
 
 
 @app.post("/api/defensive-threats/analysis/audit")
-def audit_defensive_threat_reports():
+def audit_defensive_threat_reports(
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command(
+            "defensive.audit", {}, idempotency_key=idempotency_key,
+        )
     task = enqueue_task(
         "defensive_threat_report_audit", "saved-reports", {"cursor": ""}, priority=135,
     )
@@ -4948,7 +4963,15 @@ def audit_defensive_threat_reports():
 
 
 @app.post("/api/defensive-threats/backfill")
-def backfill_defensive_threats():
+def backfill_defensive_threats(
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command(
+            "defensive.backfill", {}, idempotency_key=idempotency_key,
+        )
     task = enqueue_threat_backfill()
     coordinator.wake()
     return {"status": "queued", "task_id": task["id"]}
