@@ -116,6 +116,10 @@ def verify_snapshot(snapshot_path: Path, manifest_path: Path) -> dict:
     expected = json.loads(manifest_path.read_text(encoding="utf-8"))
     actual = _snapshot_manifest(snapshot_path.resolve(strict=True))
     for field, value in actual.items():
+        if field == "snapshot_path":
+            # Docker and the host mount the same verified bytes at different
+            # paths. The digest, counts, and queue fingerprint bind identity.
+            continue
         if expected.get(field) != value:
             raise RuntimeError(f"Snapshot manifest mismatch for {field}")
     return actual

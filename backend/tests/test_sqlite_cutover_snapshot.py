@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import shutil
 import sqlite3
 import sys
 
@@ -38,6 +39,11 @@ def test_cutover_snapshot_includes_committed_uncheckpointed_wal_and_verifies_man
         assert manifest["table_counts"] == {"daily_queue": 1}
         with sqlite3.connect(snapshot_path) as restored:
             assert restored.execute("SELECT card_id FROM daily_queue").fetchone() == ("card-1",)
+
+        remounted_path = tmp_path / "remounted" / "tempo.db"
+        remounted_path.parent.mkdir()
+        shutil.copy2(snapshot_path, remounted_path)
+        assert verify_snapshot(remounted_path, manifest_path)["snapshot_sha256"] == manifest["snapshot_sha256"]
 
         altered_manifest = json.loads(manifest_path.read_text())
         altered_manifest["queue_order_sha256"] = "0" * 64
