@@ -42,6 +42,18 @@ def test_opponent_branches_and_cross_repertoire_moves_are_not_conflicts(tmp_path
         assert client.get("/api/repertoire/conflicts").json()["conflicts"] == []
 
 
+def test_conflict_snapshot_cache_invalidates_after_line_edit(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        with database.connection() as db:
+            _line(db, "one", "cache-rep", "white", ["e2e4"])
+            _line(db, "two", "cache-rep", "white", ["d2d4"])
+        assert len(client.get("/api/repertoire/conflicts").json()["conflicts"]) == 1
+        with database.connection() as db:
+            db.execute("UPDATE repertoire_lines SET moves_json=? WHERE id='two'", ('["e2e4"]',))
+        assert client.get("/api/repertoire/conflicts").json()["conflicts"] == []
+
+
 def test_new_conflicting_branch_enters_integrity_repair(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:

@@ -50,6 +50,26 @@ def test_tactical_statistics_has_explicit_zero_safe_conversion_and_pin_breakdown
     assert body["motifs"][0]["pin_breakdown"]["created"]["opportunities"] == 1
 
 
+def test_game_findings_pages_preserve_order_and_total(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        with database.connection() as db:
+            seed_opportunity(db)
+            for index in (1, 2):
+                db.execute(
+                    """INSERT INTO game_findings(
+                       id,game_id,analysis_version,ply,kind,confidence,evidence_json,created_at,updated_at
+                       ) VALUES(?,?,?,?,?,?,?,?,?)""",
+                    (f"extra-{index}", "tactical-game", 1, index, "tactical miss", .8,
+                     "{}", "2026-09-28T00:00:00+00:00", "2026-09-28T00:00:00+00:00"),
+                )
+        first = client.get("/api/game-findings?limit=2").json()
+        second = client.get(f"/api/game-findings?limit=2&offset={first['next_offset']}").json()
+    assert first["total"] == second["total"] == 3
+    assert first["next_offset"] == 2 and second["next_offset"] is None
+    assert [item["ply"] for item in first["findings"] + second["findings"]] == [0, 1, 2]
+
+
 def test_tactical_queue_skip_keeps_finding_pending_and_ignore_removes_it(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:

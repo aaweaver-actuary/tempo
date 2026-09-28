@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+from functools import lru_cache
 import math
 import sqlite3
 
@@ -835,28 +836,40 @@ def execute_opportunity_slice(task: dict) -> bool:
     return True
 
 
-def list_opportunities(database: sqlite3.Connection, repertoire_id: str,
-                       opportunity_ids: list[str] | None = None) -> list[dict]:
-    result = []
-    if opportunity_ids is not None and not opportunity_ids:
-        return result
+@lru_cache(maxsize=8)
+def _accepted_moves_by_line_snapshot(
+    lines: tuple[tuple[str, str, str], ...],
+) -> dict[str, set[str]]:
     accepted_by_position: dict[str, set[str]] = {}
-    for line in database.execute(
-        "SELECT start_fen,moves_json,trained_color FROM repertoire_lines WHERE repertoire_id=?",
-        (repertoire_id,),
-    ):
-        board = chess.Board(line["start_fen"])
-        learner_turn = line["trained_color"] == "white"
-        for move_uci in json.loads(line["moves_json"]):
+    for start_fen, moves_json, trained_color in lines:
+        board = chess.Board(start_fen)
+        learner_turn = trained_color == "white"
+        for move_uci in json.loads(moves_json):
             try:
                 move = chess.Move.from_uci(move_uci)
                 if move not in board.legal_moves:
                     break
                 if board.turn == learner_turn:
-                    accepted_by_position.setdefault(" ".join(board.fen().split()[:4]), set()).add(move_uci)
+                    accepted_by_position.setdefault(board.epd(), set()).add(move_uci)
                 board.push(move)
             except ValueError:
                 break
+    return accepted_by_position
+
+
+def list_opportunities(database: sqlite3.Connection, repertoire_id: str,
+                       opportunity_ids: list[str] | None = None) -> list[dict]:
+    result = []
+    if opportunity_ids is not None and not opportunity_ids:
+        return result
+    line_snapshot = tuple(
+        (line["start_fen"], line["moves_json"], line["trained_color"])
+        for line in database.execute(
+            "SELECT start_fen,moves_json,trained_color FROM repertoire_lines "
+            "WHERE repertoire_id=? ORDER BY id", (repertoire_id,),
+        )
+    )
+    accepted_by_position = _accepted_moves_by_line_snapshot(line_snapshot)
     identifier_clause = (
         f" AND opportunity.id IN ({','.join('?' for _ in opportunity_ids)})"
         if opportunity_ids is not None else ""

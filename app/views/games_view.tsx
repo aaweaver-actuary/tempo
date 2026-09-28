@@ -515,15 +515,22 @@ export default function GamesView({
       setFindings([]);
       return;
     }
-    const findingResponse = await fetch(
-      `${API_URL}/api/game-findings?status=pending&game_id=${encodeURIComponent(selectedIdRef.current)}`,
-    );
-    if (findingResponse.ok) {
+    const gameId = selectedIdRef.current;
+    const collectedFindings: typeof findings = [];
+    let nextOffset: number | null = 0;
+    while (nextOffset !== null) {
+      const findingResponse = await fetch(
+        `${API_URL}/api/game-findings?status=pending&game_id=${encodeURIComponent(gameId)}&limit=500&offset=${nextOffset}`,
+      );
+      if (!findingResponse.ok) return;
       const payload = (await findingResponse.json()) as {
         findings?: typeof findings;
+        next_offset?: number | null;
       };
-      setFindings(payload.findings ?? []);
+      collectedFindings.push(...(payload.findings ?? []));
+      nextOffset = payload.next_offset ?? null;
     }
+    if (selectedIdRef.current === gameId) setFindings(collectedFindings);
   }, [local]);
   const loadDefenseCandidates = useCallback(async () => {
     if (!local || !selected?.id) {

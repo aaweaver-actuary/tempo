@@ -554,6 +554,19 @@ async def prioritize_foreground_requests(request: Request, call_next):
                                        and request.method == "POST")
         game_analysis_claim_command = (path_parts == ["api", "games", "analysis", "claim"]
                                        and request.method == "POST")
+        game_analysis_repair_command = (
+            path_parts in (["api", "games", "analysis", "repair-timeout"],
+                           ["api", "games", "analysis", "repair-provenance"])
+            and request.method == "POST"
+        )
+        game_manual_analysis_command = (
+            len(path_parts) >= 4 and path_parts[:2] == ["api", "games"]
+            and path_parts[-1] == "analysis" and request.method == "POST"
+        )
+        discovery_accept_command = (
+            len(path_parts) == 4 and path_parts[:2] == ["api", "discoveries"]
+            and path_parts[-1] == "accept" and request.method == "POST"
+        )
         game_position_claim_command = (path_parts == ["api", "games", "analysis", "position", "claim"]
                                        and request.method == "POST")
         game_position_callback_command = (
@@ -623,7 +636,9 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     game_exclusion_command, game_threat_refresh_command,
                     guided_review_start_command, guided_review_attempt_command,
                     game_finding_decision_command, game_finding_card_command,
-                    game_analysis_claim_command, game_position_claim_command,
+                    game_analysis_claim_command, game_analysis_repair_command,
+                    game_manual_analysis_command, discovery_accept_command,
+                    game_position_claim_command,
                     game_position_callback_command, game_position_finalize_command,
                     game_parent_callback_command,
                     settings_command,
@@ -692,10 +707,13 @@ async def storage_unavailable(request: Request, error: sqlite3.OperationalError)
 
 @app.get("/api/health")
 def health():
+    if postgres_store.configured():
+        from .postgres_readiness import postgres_health
+        response = postgres_health()
+        response["test_instance"] = os.getenv("TEMPO_TEST_INSTANCE") == "disposable"
+        return response
     with read_connection() as db:
         db.execute("SELECT id FROM settings LIMIT 1").fetchone()
-    if postgres_store.configured():
-        raise HTTPException(503, "PostgreSQL cutover is staged; remaining write routes and background handlers are not yet migrated")
     if not database_writer.healthy:
         raise HTTPException(503, "Database writer is unavailable")
     return {
@@ -3760,7 +3778,8 @@ def train_repertoire_opportunity(identifier: str, opportunity_id: str,
 def coverage_maia_available():
     if not postgres_store.configured():
         return {"available": True}
-    with background_read_connection() as database:
+    read_section = background_read_connection if activity_gate.in_background else read_connection
+    with read_section() as database:
         row = database.execute_native(
             "SELECT EXISTS(SELECT 1 FROM repertoire_coverage_nodes n "
             "JOIN repertoire_coverage_runs r ON r.id=n.run_id "
@@ -5384,9 +5403,15 @@ def recognize_defense_exercise(candidate_id: str, request: DefenseRecognitionReq
 
 
 @app.get("/api/game-findings")
-def list_game_findings(status: str | None = None, game_id: str | None = None):
+def list_game_findings(
+    status: str | None = None, game_id: str | None = None,
+    offset: int = 0, limit: int | None = None,
+):
+    page_limit = limit if limit is not None else (500 if game_id else 100)
+    if offset < 0 or not 1 <= page_limit <= 1000:
+        raise HTTPException(422, "Use a nonnegative offset and a limit from 1 to 1000")
     clauses = []
-    parameters: list[str] = []
+    parameters: list[object] = []
     if status:
         if status not in {"pending", "accepted", "ignored", "excluded"}:
             raise HTTPException(422, "Unknown finding status")
@@ -5397,16 +5422,23 @@ def list_game_findings(status: str | None = None, game_id: str | None = None):
         parameters.append(game_id)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     with connection() as db:
+        total = db.execute(
+            f"SELECT COUNT(*) FROM game_findings f JOIN imported_games g ON g.id=f.game_id {where}",
+            parameters,
+        ).fetchone()[0]
         rows = db.execute(
             f"""SELECT f.*,g.played_at,g.provider,g.opening_name,g.adaptive_excluded
                  FROM game_findings f JOIN imported_games g ON g.id=f.game_id
-                 {where} ORDER BY g.played_at DESC,f.ply,f.kind""",
-            parameters,
+                 {where} ORDER BY g.played_at DESC,f.ply,f.kind,f.id
+                 LIMIT ? OFFSET ?""",
+            [*parameters, page_limit, offset],
         ).fetchall()
     return {
         "findings": [
             {**dict(row), "evidence": json.loads(row["evidence_json"])} for row in rows
-        ]
+        ],
+        "total": total,
+        "next_offset": offset + len(rows) if offset + len(rows) < total else None,
     }
 
 
@@ -5893,15 +5925,22 @@ def summary(
 @app.get("/api/games/position-summary")
 def game_position_summary(fen: str, repertoire_id: str | None = None):
     position_key = fen_key(fen)
+    postgres_mode = postgres_store.configured()
     with connection() as db:
-        occurrences = db.execute(
-            """SELECT p.game_id,p.ply,p.move_uci,g.result,g.color,
+        repertoire_filter = (
+            "(%s::text IS NULL OR match.repertoire_id=%s)" if postgres_mode
+            else "(? IS NULL OR match.repertoire_id=?)"
+        )
+        execute = db.execute_native if postgres_mode else db.execute
+        occurrences = execute(
+            f"""SELECT p.game_id,p.ply,p.move_uci,g.result,g.color,
                       a.loss_cp,a.label
                FROM game_position_occurrences p
                JOIN imported_games g ON g.id=p.game_id
                LEFT JOIN game_repertoire_matches match ON match.game_id=g.id AND match.is_primary=1
                LEFT JOIN game_move_analysis a ON a.game_id=p.game_id AND a.ply=p.ply
-               WHERE p.fen_key=? AND (? IS NULL OR match.repertoire_id=?)
+               WHERE p.fen_key={'%s' if postgres_mode else '?'}
+                 AND {repertoire_filter}
                ORDER BY g.played_at DESC""",
             (position_key, repertoire_id, repertoire_id),
         ).fetchall()

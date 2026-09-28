@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 from dataclasses import asdict
+from functools import lru_cache
 import hashlib
 import json
 
@@ -277,6 +278,16 @@ def _repertoire_positions(lines: list[dict], learner_color: str) -> tuple[list[d
     return examples, accepted_moves
 
 
+@lru_cache(maxsize=8)
+def _cached_repertoire_positions(
+    line_snapshot: tuple[tuple[str, str, str, str, str], ...], learner_color: str,
+) -> tuple[list[dict], set[str]]:
+    fields = ("id", "name", "start_fen", "moves_json", "trained_color")
+    return _repertoire_positions(
+        [dict(zip(fields, values)) for values in line_snapshot], learner_color,
+    )
+
+
 def recommend_missing_continuations(opportunity_id: str) -> dict:
     with read_connection() as database:
         opportunity = database.execute(
@@ -338,7 +349,9 @@ def recommend_missing_continuations(opportunity_id: str) -> dict:
                 "candidates": []}
     target_key = _key(board)
     best = report.lines[0]
-    examples, _ = _repertoire_positions(lines, game["color"])
+    fields = ("id", "name", "start_fen", "moves_json", "trained_color")
+    line_snapshot = tuple(tuple(line[field] for field in fields) for line in lines)
+    examples, _ = _cached_repertoire_positions(line_snapshot, game["color"])
     accepted = sorted({example["next_move"] for example in examples
                        if example["fen_key"] == target_key and example["learner_turn"]
                        and example["next_move"]})
