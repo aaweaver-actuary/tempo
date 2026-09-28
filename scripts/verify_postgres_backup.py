@@ -53,9 +53,14 @@ def compare_backup(source: psycopg.Connection, restored: psycopg.Connection) -> 
         changed = sorted(table for table in source_layout.keys() & restored_layout.keys()
                          if source_layout[table] != restored_layout[table])
         raise RuntimeError(f"Restore schema mismatch: missing={missing}, extra={extra}, changed={changed}")
-    for table_name, (primary_key, _) in source_layout.items():
-        expected = destination_fingerprint(source, table_name, list(primary_key), set())
-        actual = destination_fingerprint(restored, table_name, list(primary_key), set())
+    for table_name, (primary_key, columns) in source_layout.items():
+        column_names = [column[0] for column in columns]
+        expected = destination_fingerprint(
+            source, table_name, column_names, list(primary_key), set()
+        )
+        actual = destination_fingerprint(
+            restored, table_name, column_names, list(primary_key), set()
+        )
         if expected != actual:
             raise RuntimeError(f"Restore row mismatch in {table_name}: {expected} != {actual}")
         print(f"RESTORED {table_name}: {actual[0]} rows", flush=True)
