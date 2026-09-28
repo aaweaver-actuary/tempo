@@ -4812,7 +4812,41 @@ def retry_game_analysis(game_id: str,
 
 
 @app.post("/api/games/{game_id:path}/analysis")
-def save_game_analysis(game_id: str, request: GameAnalysisRequest):
+def save_game_analysis(
+    game_id: str, request: GameAnalysisRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        with read_connection() as database:
+            game_row = database.execute(
+                "SELECT color,start_fen,moves_json FROM imported_games WHERE id=?",
+                (game_id,),
+            ).fetchone()
+            if game_row is None:
+                raise HTTPException(404, "Game not found")
+            threshold_row = database.execute(
+                "SELECT major_mistake_cp FROM settings WHERE id=1"
+            ).fetchone()
+        if threshold_row is None:
+            raise HTTPException(503, "Analysis settings are unavailable")
+        game = dict(game_row)
+        evaluations = _validated_analysis_evaluations(request, game)
+        result = classify_swings(
+            evaluations, game["color"], int(threshold_row[0]),
+            "white" if chess.Board(game["start_fen"]).turn else "black",
+        )
+        from .command_dispatch import dispatch_command
+        response = dispatch_command(
+            "games.analysis.manual.admit",
+            {"game_id": game_id, "prepared": {
+                "game": game, "request": request.model_dump(mode="json"),
+                "evaluations": evaluations,
+            }, "result": result},
+            idempotency_key=idempotency_key or request.idempotency_key,
+        )
+        return response if isinstance(response, JSONResponse) else JSONResponse(
+            status_code=200 if response.get("idempotent") else 202, content=response,
+        )
     background = activity_gate.in_background
     with connection(background=background) as db:
         game_row = db.execute(

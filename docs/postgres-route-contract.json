@@ -851,7 +851,7 @@
     "path": "/api/games/{game_id:path}/analysis",
     "handler": "save_game_analysis",
     "treatment": "foreground_command",
-    "state": "blocked"
+    "state": "staged"
   },
   {
     "method": "POST",

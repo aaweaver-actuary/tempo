@@ -42,6 +42,4 @@ def test_postgres_route_contract_tracks_remaining_blocked_product_routes():
     blocked_handlers = {row["handler"] for row in declared_routes
                         if row["state"] == "blocked"}
 
-    assert blocked_handlers == {
-        "save_game_analysis",
-    }
+    assert blocked_handlers == set()

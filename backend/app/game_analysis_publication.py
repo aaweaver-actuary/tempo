@@ -41,6 +41,15 @@ def admit_game_analysis_publication(
             or job["analysis_evidence_version"] != int(payload["expected_evidence_version"])
             or job["status"] != "leased" or job["lease_id"] != lease_id):
         raise HTTPException(409, "Analysis lease is no longer active")
+    return _queue_game_analysis_publication(database, payload, now)
+
+
+def _queue_game_analysis_publication(
+    database: PostgresConnection, payload: dict[str, Any], now: str,
+) -> dict[str, Any]:
+    game_id = str(payload["game_id"])
+    version = int(payload["analysis_version"])
+    evidence_version = int(payload["analysis_evidence_version"])
     database.execute_native(
         "INSERT INTO game_analysis_publications("
         "game_id,analysis_version,analysis_evidence_version,prepared_json,next_ply,"
@@ -72,6 +81,68 @@ def admit_game_analysis_publication(
 
 
 register_command("games.analysis.finalize.admit", admit_game_analysis_publication)
+
+
+def admit_manual_game_analysis(
+    database: PostgresConnection, payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Fence a manual save, then hand its large publication to durable slices."""
+    game_id = str(payload["game_id"])
+    job = database.execute_native(
+        "SELECT status,lease_id,analysis_version,idempotency_key "
+        "FROM game_analysis_jobs WHERE game_id=%s FOR UPDATE", (game_id,),
+    ).fetchone()
+    game = database.execute_native(
+        "SELECT color,start_fen,moves_json,analysis_version FROM imported_games "
+        "WHERE id=%s FOR UPDATE", (game_id,),
+    ).fetchone()
+    if game is None:
+        raise HTTPException(404, "Game not found")
+    prepared_game = payload["prepared"]["game"]
+    if (game["color"] != prepared_game["color"]
+            or game["start_fen"] != prepared_game["start_fen"]
+            or game["moves_json"] != prepared_game["moves_json"]):
+        raise HTTPException(409, "The game changed during analysis; refresh and retry")
+    request = payload["prepared"]["request"]
+    request_key = request.get("idempotency_key")
+    if request_key and job is not None and job["status"] == "complete":
+        if job["idempotency_key"] != request_key:
+            raise HTTPException(409, "A different analysis was already submitted")
+        published = database.execute_native(
+            "SELECT result_json FROM game_analysis_publications WHERE game_id=%s",
+            (game_id,),
+        ).fetchone()
+        if published is not None:
+            return {**json.loads(published["result_json"]), "idempotent": True}
+    lease_id = request.get("lease_id")
+    if lease_id and (job is None or job["status"] != "leased"
+                     or job["lease_id"] != lease_id):
+        raise HTTPException(409, "Analysis lease is no longer active")
+    version = max(int(game["analysis_version"]) + 1,
+                  int(job["analysis_version"]) + 1 if job is not None else 1,
+                  int(request["analysis_version"]))
+    now = datetime.now(timezone.utc).isoformat()
+    if job is None:
+        database.execute_native(
+            "INSERT INTO game_analysis_jobs(game_id,analysis_version,"
+            "analysis_evidence_version,status,updated_at) "
+            "VALUES(%s,%s,%s,'publishing',%s)",
+            (game_id, version, request["analysis_evidence_version"], now),
+        )
+    else:
+        database.execute_native(
+            "UPDATE game_analysis_jobs SET status='publishing',analysis_version=%s,"
+            "analysis_evidence_version=%s,lease_id=NULL,lease_expires_at=NULL,"
+            "last_error=NULL,updated_at=%s WHERE game_id=%s",
+            (version, request["analysis_evidence_version"], now, game_id),
+        )
+    return _queue_game_analysis_publication(database, {
+        **payload, "analysis_version": version,
+        "analysis_evidence_version": request["analysis_evidence_version"],
+    }, now)
+
+
+register_command("games.analysis.manual.admit", admit_manual_game_analysis)
 
 
 PUBLICATION_SLICE_PLIES = 8
