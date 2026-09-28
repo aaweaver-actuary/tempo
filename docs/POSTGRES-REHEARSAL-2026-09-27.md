@@ -856,3 +856,17 @@ Migration 011 preserved all 128,593 restored position rows through the view.
 Five warm indexed FEN reads through that view took 1.18, 0.92, 0.85, 0.80,
 and 0.77 ms in PostgreSQL `EXPLAIN ANALYZE` (the direct legacy table took
 3.53, 0.65, 0.59, 0.57, and 0.58 ms in the same sequence).
+
+Migration 012 stages game-repertoire matches, decision events, and comparison
+summaries behind one published version. Its three views retained all 1,876
+restored match rows, 4,791 event rows, and 1,876 comparison rows. The
+background loader initially exceeded PostgreSQL's 50 ms transaction limit;
+it now reads lines and cards in 64-row pages and checks compact source
+fingerprints. A cold process took 12.15 seconds to build its chess index with
+database connections closed between pages; cached calls took 41.21 and
+25.30 ms. A synthetic game kept its old comparison visible until six slices
+finished, then atomically published two matches. When a synthetic repertoire
+line changed during that work, the worker advanced to derivation version 3,
+kept the old result visible, and published only after restarting. Fixtures
+were removed. The later findings, feedback, events, features, and priority
+phases remain cutover work.

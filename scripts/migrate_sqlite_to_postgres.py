@@ -29,6 +29,9 @@ COPY_TARGETS = {
     "game_move_analysis": "game_move_analysis_legacy",
     "game_move_analysis_candidates": "game_move_analysis_candidates_legacy",
     "game_position_occurrences": "game_position_occurrences_legacy",
+    "game_repertoire_matches": "game_repertoire_matches_legacy",
+    "repertoire_decision_events": "repertoire_decision_events_legacy",
+    "repertoire_comparisons": "repertoire_comparisons_legacy",
 }
 
 

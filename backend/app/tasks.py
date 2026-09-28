@@ -52,6 +52,7 @@ from .services.threat_pipeline import execute_threat_report_audit, execute_threa
 from .services.threat_training import execute_defense_rubric_audit_slice
 from .services.postgres_game_sync import execute_game_sync_record_slice
 from .services.postgres_game_derivation import execute_game_position_index_slice
+from .services.postgres_game_repertoire import execute_game_repertoire_comparison_slice
 from .services.postgres_game_sync_windows import execute_game_sync_window_slice
 from .services.postgres_opening_graph import execute_postgres_opening_graph_slice
 from .services.postgres_integrity import execute_postgres_integrity_slice
@@ -72,6 +73,7 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "priority_retention",
     "game_sync_record",
     "game_derivation_positions",
+    "game_derivation_compare",
     "game_sync_window",
     "opening_graph_rebuild",
     "integrity_scan",
@@ -167,6 +169,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
         "priority_retention": execute_priority_retention_slice,
         "game_sync_record": execute_game_sync_record_slice,
         "game_derivation_positions": execute_game_position_index_slice,
+        "game_derivation_compare": execute_game_repertoire_comparison_slice,
         "game_sync_window": execute_game_sync_window_slice,
         "opening_graph_rebuild": execute_postgres_opening_graph_slice,
         "integrity_scan": execute_postgres_integrity_slice,
@@ -185,6 +188,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
             more_work = handler(claimed_task)
             if claimed_task["kind"] not in {
                 "daily_queue", "game_sync_record", "game_sync_window", "game_derivation_positions",
+                "game_derivation_compare",
                 "opening_graph_rebuild",
                 "integrity_scan",
                 "coverage_seed",

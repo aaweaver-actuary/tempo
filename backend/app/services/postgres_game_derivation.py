@@ -11,7 +11,7 @@ import chess
 from ..database import background_read_connection, connection
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
-    lock_current_slice,
+    enqueue_compact_postgres_task_in_transaction, lock_current_slice,
 )
 
 
@@ -101,6 +101,12 @@ def execute_game_position_index_slice(task: dict[str, Any]) -> bool:
                 "phase='comparing_repertoire',published_position_version=? "
                 "WHERE game_id=? AND derivation_version=?",
                 (derivation_version, game_id, derivation_version),
+            )
+            enqueue_compact_postgres_task_in_transaction(
+                database, "game_derivation_compare", game_id,
+                {"game_id": game_id, "derivation_version": derivation_version,
+                 "phase": "matches", "cursor": 0},
+                priority=127,
             )
             return complete_task_slice_in_transaction(database, task)
         return advance_task_slice_in_transaction(
