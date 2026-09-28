@@ -700,7 +700,6 @@ def record_browser_activity():
 @app.get("/api/system/tasks")
 def system_tasks():
     tasks = list_tasks()
-    queued_counts = database_writer.queued_counts
     with read_connection() as database:
         projections = [
             dict(row)
@@ -708,7 +707,7 @@ def system_tasks():
                 "SELECT * FROM queue_projections ORDER BY queue_date DESC LIMIT 7"
             )
         ]
-    return {
+    status = {
         "tasks": tasks,
         "counts": {
             "queued": sum(task["state"] in {"queued", "retrying"} for task in tasks),
@@ -723,15 +722,20 @@ def system_tasks():
                 default=0,
             ),
         },
-        "writer": {"healthy": database_writer.healthy, **queued_counts},
         "queue_projections": projections,
     }
+    if not postgres_store.configured():
+        status["writer"] = {"healthy": database_writer.healthy,
+                            **database_writer.queued_counts}
+    return status
 
 
 @app.get("/api/system/activity")
 def system_activity(offset: int = 0, limit: int = 50):
     activity = list_activity(offset=offset, limit=limit)
-    activity["writer"] = {"healthy": database_writer.healthy, **database_writer.queued_counts}
+    if not postgres_store.configured():
+        activity["writer"] = {"healthy": database_writer.healthy,
+                              **database_writer.queued_counts}
     return activity
 
 
