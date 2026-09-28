@@ -1,12 +1,14 @@
 """Phone queue replay keeps the desktop SQLite database authoritative."""
 
 from datetime import date, datetime, timedelta, timezone
+import json
 from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
 
 from app import database
 from app.main import app
+from app.services.scheduler import schedule_review
 from helpers import wait_for_integrity
 
 
@@ -104,6 +106,15 @@ def test_phone_review_after_computer_review_is_credited_once_in_completion_order
     with TestClient(app) as client:
         card = _prepared_card(client)
         path = f"/api/cards/{card['id']}/review"
+        with database.connection() as connection:
+            initial = dict(connection.execute(
+                "SELECT interval_days,fsrs_card_json,first_correct_at,reinforcement_pending,"
+                "scheduling_mode,hard_correct_streak,recent_attempts_json FROM cards WHERE id=?",
+                (card["id"],),
+            ).fetchone())
+            light_first_interval_days = connection.execute(
+                "SELECT light_first_interval_days FROM settings WHERE id=1",
+            ).fetchone()[0]
         phone_time = (datetime.now(timezone.utc) - timedelta(minutes=3)).isoformat()
         computer_time = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
         computer = client.post(path, json={
@@ -133,6 +144,39 @@ def test_phone_review_after_computer_review_is_credited_once_in_completion_order
             assert connection.execute(
                 "SELECT COUNT(*) FROM review_attempt_receipts WHERE card_id=?", (card["id"],),
             ).fetchone()[0] == 2
+            expected_phone = schedule_review(
+                "correct", interval_days=initial["interval_days"],
+                fsrs_card_json=initial["fsrs_card_json"],
+                first_correct_at=initial["first_correct_at"],
+                reinforcement_pending=bool(initial["reinforcement_pending"]),
+                scheduling_mode=initial["scheduling_mode"],
+                hard_correct_streak=initial["hard_correct_streak"],
+                recent_attempts=json.loads(initial["recent_attempts_json"]),
+                light_first_interval_days=light_first_interval_days,
+                reviewed_at=datetime.fromisoformat(phone_time),
+                review_day=date.today(),
+            )
+            expected_computer = schedule_review(
+                "again", interval_days=expected_phone.interval_days,
+                fsrs_card_json=expected_phone.fsrs_card_json,
+                first_correct_at=expected_phone.first_correct_at,
+                reinforcement_pending=expected_phone.reinforcement_pending,
+                scheduling_mode=expected_phone.scheduling_mode,
+                hard_correct_streak=expected_phone.hard_correct_streak,
+                recent_attempts=list(expected_phone.recent_attempts),
+                light_first_interval_days=light_first_interval_days,
+                reviewed_at=datetime.fromisoformat(computer_time),
+                review_day=date.today(),
+            )
+            final = connection.execute(
+                "SELECT due_date,fsrs_card_json FROM cards WHERE id=?", (card["id"],),
+            ).fetchone()
+            assert final["due_date"] == expected_computer.due_date.isoformat()
+            actual_fsrs = json.loads(final["fsrs_card_json"])
+            expected_fsrs = json.loads(expected_computer.fsrs_card_json)
+            actual_fsrs.pop("card_id")
+            expected_fsrs.pop("card_id")
+            assert actual_fsrs == expected_fsrs
 
 
 def test_older_phone_conflict_keeps_computer_schedule_and_warns_when_snapshot_missing(tmp_path, monkeypatch):
