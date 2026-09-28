@@ -42,3 +42,43 @@ def test_postgres_game_findings_prepare_does_not_open_writer_or_publish(monkeypa
     )
     assert statements
     assert all(statement.lstrip().upper().startswith("SELECT") for statement in statements)
+
+
+def test_postgres_game_findings_unseen_cards_use_short_paged_reads(monkeypatch):
+    opened = 0
+    card_cursors: list[str] = []
+
+    class Cursor:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def fetchall(self):
+            return self.rows
+
+        def fetchone(self):
+            return self.rows[0]
+
+    class Database:
+        def execute(self, statement, parameters=()):
+            if "FROM settings" in statement:
+                return Cursor([{"major_mistake_cp": 100, "engine_line_window_cp": 20}])
+            if "FROM cards c" in statement:
+                card_cursors.append(parameters[0])
+                if not parameters[0]:
+                    return Cursor([{"id": f"card-{index:03}", "start_fen": "", "moves_json": "[]"}
+                                   for index in range(64)])
+                return Cursor([{"id": "card-064", "start_fen": "", "moves_json": "[]"}])
+            return Cursor([])
+
+    @contextmanager
+    def read_database():
+        nonlocal opened
+        opened += 1
+        yield Database()
+
+    monkeypatch.setattr(game_findings, "background_read_connection", read_database)
+    assert game_findings.refresh_game_findings("missing", background=True, prepare_only=True) == (
+        [], [], {}, [],
+    )
+    assert opened == 3
+    assert card_cursors == ["", "card-063"]

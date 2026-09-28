@@ -166,7 +166,7 @@ def refresh_game_findings(
             ]
             for game in games
         }
-        unseen_cards = [
+        unseen_cards = [] if prepare_only else [
             dict(row)
             for row in database.execute(
                 """SELECT c.id,c.start_fen,c.moves_json FROM cards c
@@ -174,6 +174,23 @@ def refresh_game_findings(
                      AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)"""
             ).fetchall()
         ]
+
+    if prepare_only:
+        last_card_id = ""
+        while True:
+            with background_read_connection() as database:
+                card_page = [dict(row) for row in database.execute(
+                    """SELECT c.id,c.start_fen,c.moves_json FROM cards c
+                       WHERE c.id>? AND c.content_type='opening' AND c.archived=0
+                         AND c.introduced_at IS NULL
+                         AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)
+                       ORDER BY c.id LIMIT 64""",
+                    (last_card_id,),
+                ).fetchall()]
+            unseen_cards.extend(card_page)
+            if len(card_page) < 64:
+                break
+            last_card_id = card_page[-1]["id"]
 
     threshold = int(settings["major_mistake_cp"])
     acceptable_tolerance_cp = int(settings["engine_line_window_cp"])
