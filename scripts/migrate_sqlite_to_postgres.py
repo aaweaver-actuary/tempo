@@ -92,6 +92,7 @@ def source_fingerprint(source: sqlite3.Connection, table_name: str, primary_key_
 def destination_fingerprint(
     destination: psycopg.Connection,
     table_name: str,
+    column_names: list[str],
     primary_key_columns: list[str],
     text_primary_key_columns: set[str],
 ) -> tuple[int, str]:
@@ -100,7 +101,10 @@ def destination_fingerprint(
         if column in text_primary_key_columns else sql.Identifier(column)
         for column in primary_key_columns
     )
-    statement = sql.SQL("SELECT * FROM {} ORDER BY {}").format(sql.Identifier(table_name), order)
+    projection = sql.SQL(", ").join(map(sql.Identifier, column_names))
+    statement = sql.SQL("SELECT {} FROM {} ORDER BY {}").format(
+        projection, sql.Identifier(table_name), order
+    )
     digest = hashlib.sha256()
     count = 0
     with destination.transaction():
@@ -182,7 +186,8 @@ def migrate(source_path: Path, destination_dsn: str, verify_only: bool) -> None:
                     raise RuntimeError(f"{table_name} has not been copied")
                 source_count, source_hash = source_fingerprint(source, table_name, primary_key_columns)
                 target_count, target_hash = destination_fingerprint(
-                    destination, table_name, primary_key_columns, text_primary_key_columns
+                    destination, table_name, column_names, primary_key_columns,
+                    text_primary_key_columns
                 )
                 if (source_count, source_hash) != (target_count, target_hash) or progress != (source_count, source_hash):
                     raise RuntimeError(
