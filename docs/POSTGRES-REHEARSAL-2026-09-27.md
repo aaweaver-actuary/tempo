@@ -95,6 +95,15 @@ slice in 26 ms on the disposable restored database. The resulting engine
 analysis and later discovery admission still depend on separate unported
 background handlers.
 
+Activity pause, resume, prioritize, and normal commands now dispatch through
+the foreground Celery queue. The worker checks a typed source/action against
+the existing activity controls, locks the selected PostgreSQL work row, and
+records the control within one transaction. The browser holds an operation ID
+while the control is pending and blocks a conflicting later action.
+On a disposable `repertoire_opportunity` task, pause wrote `paused=1`, replay
+returned the same receipt, and resume restored `paused=0`. No live queue state
+was changed.
+
 ## Prioritized opening slice check
 
 The opening candidate read returned 326 rows in both the verified SQLite

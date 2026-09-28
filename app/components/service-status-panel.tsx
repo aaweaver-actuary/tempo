@@ -4,6 +4,7 @@ import { Button } from "./buttons/BaseButton";
 import { Fragment, useCallback, useEffect, useState, useSyncExternalStore } from "react";
 import { API_URL } from "../const";
 import { backgroundFetch } from "../lib/background-fetch";
+import { requestActivityControl } from "../lib/activity-control-command";
 import { browserActivitySnapshot, subscribeBrowserActivity } from "../lib/browser-activity";
 import { setLatestServiceStatus, type ActivityItem, type ActivityResponse } from "../lib/service-status";
 import { usesLocalApi } from "../utils/local";
@@ -111,11 +112,7 @@ export function ServiceStatusPanel() {
     const key = `${item.source}:${item.id}`;
     setBusyKey(key);
     try {
-      const response = await fetch(`${API_URL}/api/system/activity/control`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ source: item.source, id: item.id, action }),
-      });
-      if (!response.ok) throw new Error(`Could not ${action} ${item.title}: HTTP ${response.status}`);
+      await requestActivityControl(item.source, item.id, action);
       window.dispatchEvent(new CustomEvent("tempo:background-control", { detail: { source: item.source, id: item.id, action } }));
       await refresh();
     } catch (cause) {

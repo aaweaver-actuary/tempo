@@ -4708,3 +4708,37 @@ def test_postgres_discovery_recommendation_yields_to_foreground_and_discards_res
     discovery_admission.execute_recommendation_request_slice(task)
     assert len(published_requests) == 2
     assert "discovery_recommendation" in tasks._SUPPORTED_BACKGROUND_KINDS
+
+
+def test_postgres_activity_control_dispatches_idempotent_command(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import activity_commands, main
+
+    dispatched = []
+    controlled = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(
+        command_dispatch, "dispatch_command",
+        lambda name, payload, *, idempotency_key:
+            dispatched.append((name, payload, idempotency_key)) or {"ok": True},
+    )
+    response = TestClient(main.app).post(
+        "/api/system/activity/control", headers={"Idempotency-Key": "control-one"},
+        json={"source": "durable", "id": "task-one", "action": "prioritize"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"ok": True}
+    assert dispatched == [("activity.control", {
+        "source": "durable", "id": "task-one", "action": "prioritize",
+    }, "control-one")]
+    monkeypatch.setattr(
+        activity_commands, "set_control_in_transaction",
+        lambda database, source, work_id, action:
+            controlled.append((database, source, work_id, action)) or True,
+    )
+    database = object()
+    assert activity_commands.control_activity(database, {
+        "source": "durable", "id": "task-one", "action": "prioritize",
+    }) == {"ok": True}
+    assert controlled == [(database, "durable", "task-one", "prioritize")]

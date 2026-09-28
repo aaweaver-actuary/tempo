@@ -33,6 +33,7 @@ from . import analysis_paste_commands  # noqa: F401 - registers foreground analy
 from . import prefix_split_commands  # noqa: F401 - registers foreground prefix splits
 from . import card_commands  # noqa: F401 - registers foreground card revisions
 from . import opportunity_commands  # noqa: F401 - registers foreground discovery state changes
+from . import activity_commands  # noqa: F401 - registers foreground activity controls
 from . import integrity_repair_commands  # noqa: F401 - registers guided integrity repairs
 from .services.activity_gate import activity_gate
 from .services.durable_tasks import claim_task, complete_task, defer_task_for_contention, fail_task

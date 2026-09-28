@@ -456,6 +456,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
         )
         browser_activity = (path_parts == ["api", "system", "browser-activity"]
                             and request.method == "POST")
+        activity_control_command = (path_parts == ["api", "system", "activity", "control"]
+                                    and request.method == "POST")
         tactic_attempt_command = (path_parts == ["api", "tactics", "attempt"]
                                   and request.method == "POST")
         tactic_activation_command = (path_parts == ["api", "tactics", "activation"]
@@ -504,7 +506,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     main_repertoire_command, annotation_command, repertoire_rename_command,
                     repertoire_delete_command, opportunity_state_command,
                     opportunity_refresh_command,
-                    browser_activity, tactic_attempt_command,
+                    browser_activity, activity_control_command, tactic_attempt_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     settings_command,
                     endgame_probe, endgame_template_command,
@@ -643,12 +645,19 @@ def system_activity(offset: int = 0, limit: int = 50):
 
 
 @app.post("/api/system/activity/control")
-def control_system_activity(request: dict):
+def control_system_activity(request: dict,
+                            idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     source = request.get("source")
     work_id = request.get("id")
     action = request.get("action")
     if not isinstance(source, str) or not isinstance(work_id, str) or not isinstance(action, str):
         raise HTTPException(422, "Invalid activity control")
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "activity.control", {"source": source, "id": work_id, "action": action},
+            idempotency_key=idempotency_key,
+        )
     if not set_control(source, work_id, action):
         raise HTTPException(404, "Background activity not found")
     coordinator.wake()
