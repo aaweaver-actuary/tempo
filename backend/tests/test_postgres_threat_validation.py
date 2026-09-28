@@ -75,3 +75,62 @@ def test_postgres_threat_validation_commits_result_and_admission_with_lease(monk
     assert not threat_pipeline.execute_threat_validation(task)
     assert len(writes) == 1
     assert len(enqueued) == 1
+
+
+def test_postgres_threat_backfill_advances_one_game_and_completes_after_repertoires(monkeypatch):
+    assert "defensive_threat_backfill" in tasks._SUPPORTED_BACKGROUND_KINDS
+    game = {"id": "game-one", "analysis_version": 4}
+    queued = []
+    advanced = []
+    completed = []
+    lease_current = True
+
+    class Cursor:
+        def __init__(self, row):
+            self.row = row
+
+        def fetchone(self):
+            return self.row
+
+    class Database:
+        def execute(self, statement, _parameters=()):
+            if "FROM imported_games" in statement:
+                return Cursor(game if _parameters[0] == "" else None)
+            if "FROM repertoires" in statement:
+                return Cursor(None)
+            raise AssertionError(statement)
+
+    @contextmanager
+    def database_connection(*, background=True):
+        assert background
+        yield Database()
+
+    monkeypatch.setattr(threat_pipeline.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(threat_pipeline.activity_gate, "wait_for_foreground", lambda: None)
+    monkeypatch.setattr(threat_pipeline, "background_read_connection", database_connection)
+    monkeypatch.setattr(threat_pipeline, "connection", database_connection)
+    monkeypatch.setattr(threat_pipeline, "lock_current_slice", lambda *_args: lease_current)
+    monkeypatch.setattr(threat_pipeline, "enqueue_compact_postgres_task_in_transaction",
+                        lambda _database, kind, key, payload, *, priority:
+                        queued.append((kind, key, payload, priority)))
+    monkeypatch.setattr(threat_pipeline, "advance_task_slice_in_transaction",
+                        lambda _database, _task, *, next_phase, next_payload:
+                        advanced.append((next_phase, next_payload)) or True)
+    monkeypatch.setattr(threat_pipeline, "complete_task_slice_in_transaction",
+                        lambda _database, _task: completed.append(True) or True)
+
+    claimed = {"id": "backfill", "generation": 1, "lease_token": "live",
+               "payload": {"phase": "games", "cursor": ""}}
+    assert threat_pipeline.execute_threat_backfill_slice(claimed)
+    assert queued == [("defensive_threat_scan", "game-one",
+                       {"game_id": "game-one", "analysis_version": 4, "cursor": 0}, 145)]
+    assert advanced == [("games", {"phase": "games", "cursor": "game-one"})]
+
+    lease_current = False
+    assert not threat_pipeline.execute_threat_backfill_slice(claimed)
+    assert len(queued) == 1
+
+    lease_current = True
+    claimed["payload"] = {"phase": "repertoires", "cursor": ""}
+    assert threat_pipeline.execute_threat_backfill_slice(claimed)
+    assert completed == [True]

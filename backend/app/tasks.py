@@ -52,7 +52,8 @@ from .services.priority_retention import execute_priority_retention_slice
 from .services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
 from .services.threat_pipeline import (
-    execute_threat_report_audit, execute_threat_scan_slice, execute_threat_validation,
+    execute_threat_backfill_slice, execute_threat_report_audit,
+    execute_threat_scan_slice, execute_threat_validation,
 )
 from .services.threat_training import execute_defense_rubric_audit_slice
 from .services.postgres_game_sync import execute_game_sync_record_slice
@@ -76,6 +77,7 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "repertoire_game_refresh",
     "defensive_threat_report_audit",
     "defensive_threat_scan",
+    "defensive_threat_backfill",
     "defensive_threat_validate",
     "priority_retention",
     "game_sync_record",
@@ -174,6 +176,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
         "repertoire_game_refresh": execute_repertoire_game_refresh_slice,
         "defensive_threat_report_audit": execute_threat_report_audit,
         "defensive_threat_scan": execute_threat_scan_slice,
+        "defensive_threat_backfill": execute_threat_backfill_slice,
         "defensive_threat_validate": execute_threat_validation,
         "priority_retention": execute_priority_retention_slice,
         "game_sync_record": execute_game_sync_record_slice,
@@ -206,6 +209,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
                 "game_analysis_publish",
                 "game_analysis_followup",
                 "defensive_threat_validate",
+                "defensive_threat_backfill",
             }:
                 complete_task(
                     claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"]

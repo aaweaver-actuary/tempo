@@ -14,6 +14,7 @@ from .. import postgres_store
 from .activity_gate import activity_gate
 from .background_activity import claimable, control_order
 from .durable_tasks import (
+    advance_task_slice_in_transaction,
     complete_task_slice_in_transaction,
     enqueue_compact_postgres_task_in_transaction,
     enqueue_task,
@@ -205,7 +206,8 @@ def execute_threat_backfill_slice(task: dict) -> bool:
     phase = task["payload"].get("phase", "games")
     cursor = task["payload"].get("cursor", "")
     activity_gate.wait_for_foreground()
-    with read_connection() as database:
+    read_section = background_read_connection if postgres_store.configured() else read_connection
+    with read_section() as database:
         if phase == "games":
             row = database.execute(
                 """SELECT id,analysis_version FROM imported_games
@@ -219,30 +221,46 @@ def execute_threat_backfill_slice(task: dict) -> bool:
                 (cursor, "__defense__"),
             ).fetchone()
         item = dict(row) if row else None
-    if item is None and phase == "repertoires":
+    if item is None and phase == "repertoires" and not postgres_store.configured():
         return False
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        lease = database.execute(
-            "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
-        ).fetchone()
-        if not lease or lease["generation"] != task["generation"] or lease["lease_token"] != task["lease_token"]:
-            return True
+        if postgres_store.configured():
+            if not lock_current_slice(database, task):
+                return False
+            if item is None and phase == "repertoires":
+                return complete_task_slice_in_transaction(database, task)
+        else:
+            lease = database.execute(
+                "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
+            ).fetchone()
+            if (not lease or lease["generation"] != task["generation"]
+                    or lease["lease_token"] != task["lease_token"]):
+                return True
         if item is not None:
+            enqueue_in_transaction = (
+                enqueue_compact_postgres_task_in_transaction
+                if postgres_store.configured() else enqueue_task_in_transaction
+            )
             if phase == "games":
-                enqueue_task_in_transaction(
+                enqueue_in_transaction(
                     database, "defensive_threat_scan", item["id"],
                     {"game_id": item["id"], "analysis_version": item["analysis_version"], "cursor": 0},
                     priority=145,
                 )
             else:
-                enqueue_task_in_transaction(
+                enqueue_in_transaction(
                     database, "repertoire_opportunity", item["id"],
                     {"repertoire_id": item["id"], "phase": "summaries", "cursor": ""},
                     priority=130,
                 )
         next_phase = phase if item is not None else "repertoires"
         next_cursor = item["id"] if item is not None else ""
+        if postgres_store.configured():
+            return advance_task_slice_in_transaction(
+                database, task, next_phase=next_phase,
+                next_payload={"phase": next_phase, "cursor": next_cursor},
+            )
         database.execute(
             """UPDATE background_tasks SET generation=generation+1,state='queued',phase='queued',
                  payload_json=?,attempt_count=0,next_attempt_at=?,lease_token=NULL,
