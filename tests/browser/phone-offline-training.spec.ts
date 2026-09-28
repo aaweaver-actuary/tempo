@@ -180,7 +180,7 @@ test("pending phone review remains saved while live training opens and a conflic
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await expect(page.locator(".session-count strong")).toHaveText("3");
   await expect(page.getByText("Second phone card")).toBeVisible();
-  await expect(page.getByText(/1 phone review conflict/)).toBeVisible();
+  await expect(page.getByText(/1 phone review\(s\) remain saved/)).toBeVisible();
   const savedQueue = await page.evaluate(() => new Promise<{
     conflict?: string; cardIds: string[];
   }>((resolve, reject) => {
@@ -197,6 +197,43 @@ test("pending phone review remains saved while live training opens and a conflic
   }));
   expect(savedQueue.conflict).toContain("another device");
   expect(savedQueue.cardIds).toContain("replacement");
+});
+
+test("competing computer review credits the saved phone result and explains the schedule fallback", async ({ page }) => {
+  const payload = { local_date: localDate, count: preparedCards.length, cards: preparedCards,
+    projection: { state: "ready", generation: 1, updated_at: null,
+      refresh_pending: 0, last_error: null, blocked_count: 0 } };
+  await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: payload }));
+  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: {
+    ...payload, prepared_at: new Date().toISOString(),
+  } }));
+  await page.goto("/");
+  await expect(page.getByText(`Phone queue prepared for ${localDate}.`)).toBeVisible();
+  await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+  await page.reload();
+  await expect(page.getByText("Offline queue", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Correct" }).click();
+  await expect(page.getByRole("main").getByText(/1 review saved on phone/)).toBeVisible();
+  await page.route("**/api/cards/phone-first/review", (route) => route.fulfill({ json: {
+    persisted: true, review_id: 712, requeue_entry_id: null,
+    reconciliation: "computer_fallback",
+    warning: "Both results are credited; the computer schedule was kept with a near-term review.",
+    competing_review: { outcome: "again", completed_at: "2026-09-28T15:00:00Z" },
+  } }));
+  await page.unroute("**/api/**");
+  await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect(page.locator(".notification-toast").getByText(/computer schedule was kept/)).toBeVisible();
+  const savedAttempt = await page.evaluate(() => new Promise<{ serverReviewId?: number; syncWarning?: string }>((resolve, reject) => {
+    const opened = indexedDB.open("tempo-offline-training", 1);
+    opened.onerror = () => reject(opened.error);
+    opened.onsuccess = () => {
+      const request = opened.result.transaction("training").objectStore("training").get("prepared-daily-queue");
+      request.onerror = () => reject(request.error);
+      request.onsuccess = () => resolve(request.result.attempts[0]);
+    };
+  }));
+  expect(savedAttempt.serverReviewId).toBe(712);
+  expect(savedAttempt.syncWarning).toContain("computer schedule");
 });
 
 test("nine phone conflicts stay in the notification tray without moving training", async ({ page }) => {
@@ -240,7 +277,7 @@ test("nine phone conflicts stay in the notification tray without moving training
     database.close();
   }, cardIds);
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
-  await expect(page.locator(".notification-toast").getByText(/9 phone review conflict/)).toBeVisible();
+  await expect(page.locator(".notification-toast").getByText(/9 phone review\(s\) remain saved/)).toBeVisible();
   const after = (await board.boundingBox())!;
   expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
   expect(Math.abs(after.x - before.x)).toBeLessThanOrEqual(1);
@@ -248,7 +285,7 @@ test("nine phone conflicts stay in the notification tray without moving training
   await page.reload();
   await page.getByRole("button", { name: "Notifications" }).click();
   await page.getByRole("button", { name: "warning", exact: true }).click();
-  await expect(page.locator(".notification-list").getByText(/9 phone review conflict/)).toBeVisible();
+  await expect(page.locator(".notification-list").getByText(/9 phone review\(s\) remain saved/)).toBeVisible();
   await page.locator(".notification-details summary").first().click();
   await expect(page.locator(".notification-details").first()).toContainText(cardIds[0]);
   await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true,

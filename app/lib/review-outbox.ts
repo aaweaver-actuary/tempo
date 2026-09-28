@@ -1,11 +1,14 @@
 import { API_URL } from "../const";
 import { confirmOperationResponse } from "./operation-status";
+import { publishNotification } from "./notifications";
 
 export type PendingReview = {
   backendId: string;
   queueEntryId: number;
   outcome: "again" | "correct";
   guided: boolean;
+  attemptId?: string;
+  completedAt?: string;
 };
 
 const storageKey = "tempo-pending-training-reviews-v1";
@@ -28,7 +31,9 @@ export function pendingReviews(): PendingReview[] {
     typeof item.backendId !== "string" ||
     !Number.isInteger(item.queueEntryId) ||
     !["again", "correct"].includes(item.outcome) ||
-    typeof item.guided !== "boolean")) {
+    typeof item.guided !== "boolean" ||
+    (item.attemptId !== undefined && typeof item.attemptId !== "string") ||
+    (item.completedAt !== undefined && typeof item.completedAt !== "string"))) {
     throw new Error("The saved training review is invalid. Restore your data before continuing.");
   }
   return parsed as PendingReview[];
@@ -37,7 +42,10 @@ export function pendingReviews(): PendingReview[] {
 export function enqueuePendingReview(review: PendingReview): void {
   const pending = pendingReviews();
   if (pending.some((item) => item.queueEntryId === review.queueEntryId)) return;
-  localStorage.setItem(storageKey, JSON.stringify([...pending, review]));
+  localStorage.setItem(storageKey, JSON.stringify([...pending, {
+    ...review, attemptId: review.attemptId ?? crypto.randomUUID(),
+    completedAt: review.completedAt ?? new Date().toISOString(),
+  }]));
 }
 
 async function requestReviewSave(url: string, options: RequestInit): Promise<Response> {
@@ -66,21 +74,35 @@ async function savePendingReviews(): Promise<void> {
         throw new ReviewReplayError(await responseDetail(failureResponse), failureEndpoint);
     }
     const reviewEndpoint = `${API_URL}/api/cards/${review.backendId}/review`;
+    const attemptId = review.attemptId ?? `legacy-online:${review.queueEntryId}`;
     const reviewResponse = await confirmOperationResponse(await requestReviewSave(reviewEndpoint, {
       method: "POST",
-      headers: { "Content-Type": "application/json", "Idempotency-Key": `review:${review.queueEntryId}` },
+      headers: { "Content-Type": "application/json", "Idempotency-Key": `review-attempt:${attemptId}` },
       body: JSON.stringify({
         outcome: review.outcome,
         guided: review.guided,
         queue_entry_id: review.queueEntryId,
+        attempt_id: attemptId,
+        ...(review.completedAt ? { recorded_at: review.completedAt } : {}),
       }),
     }));
     if (!reviewResponse.ok)
       throw new ReviewReplayError(await responseDetail(reviewResponse), reviewEndpoint);
+    const result = await reviewResponse.clone().json() as { persisted?: boolean; warning?: string;
+      competing_review?: { outcome?: string | null; completed_at?: string | null } };
+    if (!result.persisted)
+      throw new ReviewReplayError("The computer did not confirm this review. Retry saving it.", reviewEndpoint);
     const remaining = pendingReviews();
     localStorage.setItem(storageKey, JSON.stringify(
       remaining.filter((item) => item.queueEntryId !== review.queueEntryId),
     ));
+    if (result.warning) {
+      publishNotification({ severity: "warning", source: "training review", key: `review-reconciliation:${attemptId}`,
+        message: `${result.warning} Saved result: ${review.outcome} at ${review.completedAt ?? "unknown"}. ` +
+          `Other saved result: ${result.competing_review?.outcome ?? "unknown"} at ${result.competing_review?.completed_at ?? "unknown"}.`,
+        details: { cardId: review.backendId, queueEntryId: review.queueEntryId,
+          outcome: review.outcome, completedAt: review.completedAt ?? "unknown" } });
+    }
   }
 }
 
