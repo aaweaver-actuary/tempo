@@ -754,3 +754,13 @@ before publication. Manual retry runs on the foreground queue, resets the
 failed task and pause control in one receipt transaction, and records its
 event. A rollback-only rehearsal against disposable PostgreSQL caught and
 fixed the case where a newly created activity row lacked its `Queued` phase.
+
+The legacy game-analysis claim endpoint now dispatches an explicit background
+Celery command in PostgreSQL mode. Idle polls use a bounded read and create no
+receipt. The worker locks one eligible analysis job with `SKIP LOCKED`, honors
+pause/promotion controls, and records the parent lease and analyzing state in
+one transaction. A rollback-only claim against the disposable restored
+database verified the PostgreSQL SQL and lease shape. The Docker Stockfish
+worker currently calls the position-claim endpoint; that second stage and its
+report/finalization callbacks remain cutover work, so the health gate remains
+closed.

@@ -488,6 +488,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                                  and request.method == "PUT")
         game_sync_command = (path_parts == ["api", "games", "sync"]
                              and request.method == "POST")
+        game_analysis_claim_command = (path_parts == ["api", "games", "analysis", "claim"]
+                                       and request.method == "POST")
         settings_command = (path_parts == ["api", "settings"] and request.method == "PUT")
         endgame_probe = (path_parts == ["api", "endgames", "probe"]
                          and request.method == "POST")
@@ -532,6 +534,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     browser_activity, activity_control_command, activity_progress_command,
                     task_retry_command, tactic_attempt_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
+                    game_analysis_claim_command,
                     settings_command,
                     endgame_probe, endgame_template_command,
                     endgame_attempt_command, branch_add_command, branch_remove_command,
@@ -4297,11 +4300,29 @@ def sync_status():
 @app.post("/api/games/analysis/claim")
 def claim_game_analysis(
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     # Tabs that loaded the former browser scanner before a Docker rollout keep
     # polling this endpoint. Preserve its response shape without leasing work.
     if engine_worker != "docker":
         return {"job": None}
+    if postgres_store.configured():
+        with background_read_connection() as database:
+            available = database.execute_native(
+                "SELECT 1 FROM game_analysis_jobs j JOIN imported_games g ON g.id=j.game_id "
+                "LEFT JOIN background_activity control ON control.source='game_analysis' "
+                "AND control.work_id=j.game_id "
+                "WHERE (j.status='queued' OR (j.status='leased' AND j.lease_expires_at<%s)) "
+                "AND g.rated=1 AND g.speed IN ('blitz','rapid','classical') "
+                "AND COALESCE(control.paused,0)=0 LIMIT 1",
+                (datetime.now(timezone.utc).isoformat(),),
+            ).fetchone()
+        if available is None:
+            return {"job": None}
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.analysis.claim", {}, idempotency_key=idempotency_key, background=True,
+        )
     return _claim_game_analysis()
 
 

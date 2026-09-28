@@ -36,6 +36,7 @@ from . import opportunity_commands  # noqa: F401 - registers foreground discover
 from . import activity_commands  # noqa: F401 - registers foreground activity controls
 from . import coverage_commands  # noqa: F401 - registers foreground coverage admission
 from . import coverage_maia_commands  # noqa: F401 - registers background Maia callbacks
+from . import game_analysis_commands  # noqa: F401 - registers background game analysis claims
 from . import integrity_repair_commands  # noqa: F401 - registers guided integrity repairs
 from .services.activity_gate import activity_gate
 from .services.durable_tasks import claim_task, complete_task, defer_task_for_contention, fail_task

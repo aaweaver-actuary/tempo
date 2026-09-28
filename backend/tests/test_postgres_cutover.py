@@ -25,6 +25,57 @@ from app.postgres_store import TempoRow, postgres_sql
 from app.services import redis_admission_gate
 
 
+def test_postgres_game_analysis_idle_claim_avoids_receipt_and_active_claim_uses_background_worker(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    available = [None, (1,)]
+    observed = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "background_request", lambda: nullcontext())
+    monkeypatch.setattr(main, "background_read_connection", lambda: nullcontext(
+        SimpleNamespace(execute_native=lambda *_args: SimpleNamespace(
+            fetchone=lambda: available.pop(0),
+        )),
+    ))
+    monkeypatch.setattr(command_dispatch, "dispatch_command", lambda name, payload, **options:
+                        observed.append((name, payload, options)) or {"job": {"game_id": "game"}})
+    client = TestClient(main.app)
+    headers = {"X-Tempo-Engine-Worker": "docker", "X-Tempo-Work-Class": "background",
+               "Idempotency-Key": "claim-one"}
+    assert client.post("/api/games/analysis/claim", headers=headers).json() == {"job": None}
+    assert not observed
+    assert client.post("/api/games/analysis/claim", headers=headers).json() == {"job": {"game_id": "game"}}
+    assert observed == [("games.analysis.claim", {},
+                         {"idempotency_key": "claim-one", "background": True})]
+
+
+def test_postgres_game_analysis_claim_uses_skip_locked_and_preserves_lease_shape():
+    from app.game_analysis_commands import claim_game_analysis
+
+    statements = []
+    job = {
+        "game_id": "game", "analysis_version": 2, "analysis_evidence_version": 3,
+        "provider": "lichess", "username": "example", "played_at": "2026-09-27",
+        "color": "white", "start_fen": chess.STARTING_FEN, "moves_json": '["e2e4"]',
+        "divergence_ply": None,
+    }
+
+    class ClaimDatabase:
+        def execute_native(self, statement, *_parameters):
+            statements.append(statement)
+            return SimpleNamespace(fetchone=lambda: job)
+
+    result = claim_game_analysis(ClaimDatabase(), {})["job"]
+    assert result["game_id"] == "game" and result["moves"] == ["e2e4"]
+    assert result["lease_id"] and result["lease_expires_at"]
+    assert "FOR UPDATE OF j SKIP LOCKED" in statements[0]
+    assert "COALESCE(control.paused,0)=0" in statements[0]
+    assert "COALESCE(control.promoted,0) DESC" in statements[0]
+    assert "UPDATE game_analysis_jobs" in statements[1]
+    assert "UPDATE imported_games" in statements[2]
+
+
 def test_postgres_analysis_progress_and_task_retry_dispatch_out_of_api(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main
