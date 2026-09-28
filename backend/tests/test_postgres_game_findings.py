@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 
-from app.services import game_findings
+from app import tasks
+from app.services import game_findings, postgres_game_findings
 
 
 def test_postgres_game_findings_prepare_does_not_open_writer_or_publish(monkeypatch):
@@ -82,3 +83,97 @@ def test_postgres_game_findings_unseen_cards_use_short_paged_reads(monkeypatch):
     )
     assert opened == 3
     assert card_cursors == ["", "card-063"]
+
+
+def test_postgres_game_findings_stage_one_item_and_replay_after_restart(monkeypatch):
+    assert "game_derivation_findings" in tasks._SUPPORTED_BACKGROUND_KINDS
+    items = [
+        ("finding", "one", {"id": "one"}),
+        ("opportunity", "two", {"id": "two"}),
+    ]
+    stored: dict[tuple[str, str], str] = {}
+    advances = []
+    published = []
+
+    class Cursor:
+        def __init__(self, row=None):
+            self.row = row
+
+        def fetchone(self):
+            return self.row
+
+    class Database:
+        def execute(self, statement, parameters=()):
+            if "FROM game_derivation_jobs" in statement:
+                return Cursor({"derivation_version": 3, "completed_phases": 2,
+                               "status": "running"})
+            if "INSERT INTO game_finding_publication_items" in statement:
+                stored[(parameters[2], parameters[3])] = parameters[4]
+            return Cursor()
+
+    @contextmanager
+    def open_database(*, background):
+        assert background
+        yield Database()
+
+    monkeypatch.setattr(postgres_game_findings, "connection", open_database)
+    monkeypatch.setattr(postgres_game_findings, "_prepared_items",
+                        lambda _game_id: ("source-one", items))
+    monkeypatch.setattr(postgres_game_findings, "lock_current_slice", lambda *_: True)
+    monkeypatch.setattr(postgres_game_findings, "advance_task_slice_in_transaction",
+                        lambda _database, _task, *, next_phase, next_payload:
+                        advances.append((next_phase, next_payload)) or True)
+    monkeypatch.setattr(postgres_game_findings, "_publish_items",
+                        lambda _database, _task, game_id, version, count:
+                        published.append((game_id, version, count)) or True)
+    task = {"id": "findings", "generation": 1, "lease_token": "live",
+            "payload": {"game_id": "game-one", "derivation_version": 3,
+                        "phase": "stage", "cursor": 0}}
+    for cursor in (0, 0, 1):
+        task["payload"] = {**task["payload"], "cursor": cursor}
+        assert postgres_game_findings.execute_game_findings_slice(task)
+    assert len(stored) == 2
+    assert advances[-1][1]["cursor"] == 2
+    task["payload"] = {**task["payload"], "cursor": 2}
+    assert postgres_game_findings.execute_game_findings_slice(task)
+    assert published == [("game-one", 3, 2)]
+
+
+def test_postgres_game_findings_source_change_restarts_without_publication(monkeypatch):
+    updates = []
+    enqueued = []
+
+    class Cursor:
+        def fetchone(self):
+            return {"derivation_version": 3, "completed_phases": 2,
+                    "status": "running"}
+
+    class Database:
+        def execute(self, statement, parameters=()):
+            updates.append((statement, parameters))
+            return Cursor()
+
+    @contextmanager
+    def open_database(*, background):
+        yield Database()
+
+    monkeypatch.setattr(postgres_game_findings, "connection", open_database)
+    monkeypatch.setattr(postgres_game_findings, "_prepared_items",
+                        lambda _game_id: ("changed-source", []))
+    monkeypatch.setattr(postgres_game_findings, "lock_current_slice", lambda *_: True)
+    monkeypatch.setattr(postgres_game_findings,
+                        "enqueue_compact_postgres_task_in_transaction",
+                        lambda _database, kind, key, payload, *, priority:
+                        enqueued.append((kind, key, payload, priority)))
+    task = {"id": "findings", "generation": 1, "lease_token": "live",
+            "payload": {"game_id": "game-one", "derivation_version": 3,
+                        "phase": "stage", "cursor": 1,
+                        "source_signature": "old-source"}}
+    assert postgres_game_findings.execute_game_findings_slice(task)
+    assert enqueued == [
+        ("game_derivation_findings", "game-one",
+         {"game_id": "game-one", "derivation_version": 4,
+          "phase": "stage", "cursor": 0}, 126),
+    ]
+    assert not any("INSERT INTO game_finding_publication_items" in statement
+                   for statement, _ in updates)

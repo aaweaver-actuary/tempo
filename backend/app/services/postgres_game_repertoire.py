@@ -140,6 +140,11 @@ def _publish_comparison(database, task: dict, game: dict, version: int,
         "WHERE game_id=? AND derivation_version=?",
         (version, game_id, version),
     )
+    enqueue_compact_postgres_task_in_transaction(
+        database, "game_derivation_findings", game_id,
+        {"game_id": game_id, "derivation_version": version,
+         "phase": "stage", "cursor": 0}, priority=126,
+    )
     return complete_task_slice_in_transaction(database, task)
 
 

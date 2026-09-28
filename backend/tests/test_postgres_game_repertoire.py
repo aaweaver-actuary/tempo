@@ -38,7 +38,8 @@ def test_postgres_game_repertoire_stages_one_item_and_switches_all_views_togethe
         {"repertoire_id": "rep-two", "classification": "covered",
          "deviation": None, "decision_events": []},
     ]
-    stored = {"matches": [], "events": [], "published": False, "lease_current": True}
+    stored = {"matches": [], "events": [], "published": False, "lease_current": True,
+              "followups": []}
     advances = []
     task = {"id": "compare", "generation": 2, "lease_token": "live",
             "payload": {"game_id": "game-one", "derivation_version": 3,
@@ -79,6 +80,10 @@ def test_postgres_game_repertoire_stages_one_item_and_switches_all_views_togethe
                         advances.append((next_phase, next_payload)) or True)
     monkeypatch.setattr(postgres_game_repertoire, "complete_task_slice_in_transaction",
                         lambda *_arguments: True)
+    monkeypatch.setattr(postgres_game_repertoire,
+                        "enqueue_compact_postgres_task_in_transaction",
+                        lambda _database, kind, key, payload, *, priority:
+                        stored["followups"].append((kind, key, payload, priority)))
     monkeypatch.setattr(postgres_game_repertoire, "_stage_match",
                         lambda _database, _game_id, _version, index, _match:
                         stored["matches"].append(index))
@@ -97,6 +102,11 @@ def test_postgres_game_repertoire_stages_one_item_and_switches_all_views_togethe
     task["payload"] = {**task["payload"], "phase": "publish"}
     assert postgres_game_repertoire.execute_game_repertoire_comparison_slice(task)
     assert stored["published"]
+    assert stored["followups"] == [
+        ("game_derivation_findings", "game-one",
+         {"game_id": "game-one", "derivation_version": 3,
+          "phase": "stage", "cursor": 0}, 126),
+    ]
     stored["lease_current"] = False
     assert not postgres_game_repertoire.execute_game_repertoire_comparison_slice(task)
 
