@@ -440,6 +440,11 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     const onQueued = (event: Event) => {
       const opportunityId = (event as CustomEvent<{ opportunityId: string }>)
         .detail.opportunityId;
+      const notificationKey = `discovery-save:${opportunityId}`;
+      const priorSaveNotice = notifications().find((record) =>
+        record.key === notificationKey && !record.resolvedAt);
+      if (priorSaveNotice) resolveNotification(priorSaveNotice.id,
+        { severity: "success", message: "Discovery save confirmed." });
       setCompletedAdmissions((current) => current.includes(opportunityId)
         ? current : [...current, opportunityId]);
       void onQueueChanged().catch((cause) =>
@@ -616,9 +621,6 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
         ? `Discovery save failed: ${admission.error}`
         : `Discovery save unconfirmed; Tempo will retry. ${admission.error}`,
     });
-    for (const record of notifications()) if (record.key?.startsWith("discovery-save:") && !record.resolvedAt &&
-      !pendingAdmissions.some((admission) => `discovery-save:${admission.opportunityId}` === record.key && admission.error))
-      resolveNotification(record.id, { severity: "success", message: "Discovery save confirmed." });
   }, [pendingAdmissions]);
   const boardHistory = useMemo(
     () =>
@@ -736,7 +738,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
         setHoveredMove(null);
         setActiveId(next.id);
       }
-      void flushPendingDiscoveryAdmissions().catch((cause) =>
+      void flushPendingDiscoveryAdmissions(item.id).catch((cause) =>
         setError(
           cause instanceof Error
             ? cause.message

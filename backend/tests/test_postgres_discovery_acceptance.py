@@ -75,6 +75,21 @@ def test_postgres_discovery_acceptance_replays_prior_without_duplicate_task(monk
                for statement, _parameters in database.statements)
 
 
+def test_postgres_discovery_terminal_readmission_requeues_existing_intent_once(monkeypatch):
+    queued = []
+    monkeypatch.setattr(discovery_commands,
+                        "enqueue_compact_postgres_task_in_transaction",
+                        lambda database, kind, key, payload, *, priority:
+                        queued.append((kind, key, payload)))
+    database = Database(prior={"id": "intent-one", "evidence_fingerprint": "revision-one",
+                              "state": "preparing"}, task={"state": "failed"})
+    result = discovery_commands.accept_discovery(database, prepared())
+    assert result == {"status": "preparing", "intent_id": "intent-one"}
+    assert queued == [("discovery_admission", "intent-one", {"intent_id": "intent-one"})]
+    assert all("INSERT INTO discovery_admission_intents" not in statement
+               for statement, _parameters in database.statements)
+
+
 def test_postgres_discovery_acceptance_rejects_stale_evidence_before_write():
     database = Database(opportunity={"id": "opening-one", "repertoire_id": "white-openings",
                                     "evidence_fingerprint": "revision-two", "card_id": None,

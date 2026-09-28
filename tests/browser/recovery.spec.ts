@@ -130,6 +130,32 @@ test("legacy discovery timeout reopens as an unconfirmed save and retries the sa
   await expect(page.getByText(/Discovery save unconfirmed; Tempo will retry/)).toHaveCount(0);
 });
 
+test("legacy long discovery save key recovers and queues the saved choice", async ({ page }) => {
+  await prepareVisualUI(page);
+  const opportunityId = "a".repeat(64);
+  const evidenceFingerprint = "b".repeat(64);
+  const requestKeys: string[] = [];
+  await page.route(`**/api/discoveries/${opportunityId}/accept`, (route) => {
+    const key = route.request().headers()["idempotency-key"] ?? "";
+    requestKeys.push(key);
+    if (key.length > 128) return route.fulfill({ status: 422,
+      json: { detail: "Idempotency-Key must be at most 128 characters" } });
+    return route.fulfill({ status: 202, json: { status: "preparing", intent_id: "recovered-intent" } });
+  });
+  await page.route("**/api/discovery-admissions/recovered-intent", (route) =>
+    route.fulfill({ json: { state: "queued", error: null } }));
+  await page.evaluate(({ opportunityId: id, evidenceFingerprint: fingerprint }) =>
+    localStorage.setItem("tempo-pending-discovery-admissions-v1", JSON.stringify([{
+      opportunityId: id, selectedMoveUci: "g1f3", evidenceFingerprint: fingerprint,
+      state: "failed", error: "Idempotency-Key must be at most 128 characters",
+    }])), { opportunityId, evidenceFingerprint });
+  await page.reload();
+  await expect.poll(() => requestKeys.length).toBe(1);
+  expect(requestKeys[0].length).toBeLessThanOrEqual(128);
+  await expect.poll(() => page.evaluate(() =>
+    JSON.parse(localStorage.getItem("tempo-pending-discovery-admissions-v1") ?? "[]").length)).toBe(0);
+});
+
 test("unavailable repertoire lines do not falsely grade another legal move", async ({ page }) => {
   await prepareVisualUI(page);
   // Initial service worker activation can reload the page; finish it before injecting the failure.

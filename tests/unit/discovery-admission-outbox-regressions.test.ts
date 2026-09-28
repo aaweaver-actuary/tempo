@@ -7,6 +7,108 @@ import { enqueuePendingDiscoveryAdmission, flushPendingDiscoveryAdmissions,
 beforeEach(() => { localStorage.clear(); vi.unstubAllGlobals(); });
 
 const admission = { opportunityId: "gap", selectedMoveUci: "f3e5", evidenceFingerprint: "revision" };
+const hashAdmission = { opportunityId: "a".repeat(64), selectedMoveUci: "g1f3",
+  evidenceFingerprint: "b".repeat(64) };
+
+it("legacy rejected discovery saves recover with a bounded key after reload", async () => {
+  localStorage.setItem("tempo-pending-discovery-admissions-v1", JSON.stringify([{
+    ...hashAdmission, state: "failed",
+    error: "Idempotency-Key must be at most 128 characters",
+  }]));
+  recoverUnacknowledgedDiscoveryAdmissions();
+  expect(pendingDiscoveryAdmissions()[0]).toMatchObject({
+    ...hashAdmission, state: "pending",
+  });
+  const fetcher = vi.fn().mockResolvedValue(Response.json({ status: "preparing", intent_id: "intent" }));
+  vi.stubGlobal("fetch", fetcher);
+  await flushPendingDiscoveryAdmissions();
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(new Headers(fetcher.mock.calls[0][1].headers).get("Idempotency-Key")?.length).toBeLessThanOrEqual(128);
+  expect(pendingDiscoveryAdmissions()[0]).toMatchObject({ state: "accepted", intentId: "intent" });
+});
+
+it("uncertain discovery retries retain one operation key and the same choice", async () => {
+  vi.useFakeTimers();
+  try {
+    enqueuePendingDiscoveryAdmission(hashAdmission);
+    const fetcher = vi.fn()
+      .mockResolvedValueOnce(Response.json({ detail: "temporary outage" }, { status: 503 }))
+      .mockResolvedValueOnce(Response.json({ status: "preparing", intent_id: "intent" }));
+    vi.stubGlobal("fetch", fetcher);
+    await flushPendingDiscoveryAdmissions();
+    await vi.advanceTimersByTimeAsync(3_000);
+    await flushPendingDiscoveryAdmissions();
+    const firstRequest = fetcher.mock.calls[0][1];
+    const retryRequest = fetcher.mock.calls[1][1];
+    expect(new Headers(firstRequest.headers).get("Idempotency-Key")).toBe(
+      new Headers(retryRequest.headers).get("Idempotency-Key"));
+    expect(firstRequest.body).toBe(retryRequest.body);
+    expect(new Headers(firstRequest.headers).get("Idempotency-Key")?.length).toBeLessThanOrEqual(128);
+  } finally { vi.useRealTimers(); }
+});
+
+it("accepted discovery readmission after reload uses a new operation key", async () => {
+  enqueuePendingDiscoveryAdmission(hashAdmission);
+  const fetcher = vi.fn()
+    .mockResolvedValueOnce(Response.json({ status: "preparing", intent_id: "intent" }))
+    .mockResolvedValueOnce(Response.json({ status: "preparing", intent_id: "intent" }));
+  vi.stubGlobal("fetch", fetcher);
+  await flushPendingDiscoveryAdmissions();
+  recoverUnacknowledgedDiscoveryAdmissions();
+  await flushPendingDiscoveryAdmissions();
+  expect(new Headers(fetcher.mock.calls[0][1].headers).get("Idempotency-Key")).not.toBe(
+    new Headers(fetcher.mock.calls[1][1].headers).get("Idempotency-Key"));
+  expect(fetcher.mock.calls[0][1].body).toBe(fetcher.mock.calls[1][1].body);
+});
+
+it("terminal discovery retry uses a new operation key for the same choice", async () => {
+  enqueuePendingDiscoveryAdmission(hashAdmission);
+  const fetcher = vi.fn()
+    .mockResolvedValueOnce(Response.json({ status: "preparing", intent_id: "intent" }))
+    .mockResolvedValueOnce(Response.json({ state: "failed", error: "publication stopped" }))
+    .mockResolvedValueOnce(Response.json({ status: "preparing", intent_id: "intent" }));
+  vi.stubGlobal("fetch", fetcher);
+  await flushPendingDiscoveryAdmissions();
+  await flushPendingDiscoveryAdmissions();
+  expect(pendingDiscoveryAdmissions()[0].state).toBe("failed");
+  await retryPendingDiscoveryAdmission(hashAdmission.opportunityId);
+  expect(new Headers(fetcher.mock.calls[0][1].headers).get("Idempotency-Key")).not.toBe(
+    new Headers(fetcher.mock.calls[2][1].headers).get("Idempotency-Key"));
+  expect(fetcher.mock.calls[0][1].body).toBe(fetcher.mock.calls[2][1].body);
+});
+
+it("failed discovery operation receipt requires a new key on explicit retry", async () => {
+  enqueuePendingDiscoveryAdmission(hashAdmission);
+  const fetcher = vi.fn()
+    .mockResolvedValueOnce(Response.json({ operation_id: "first", state: "pending" }, { status: 202 }))
+    .mockResolvedValueOnce(Response.json({ state: "failed", error: { message: "worker failed" } }))
+    .mockResolvedValueOnce(Response.json({ status: "preparing", intent_id: "intent" }));
+  vi.stubGlobal("fetch", fetcher);
+  await flushPendingDiscoveryAdmissions();
+  expect(pendingDiscoveryAdmissions()[0]).toMatchObject({ state: "failed", error: "worker failed" });
+  await retryPendingDiscoveryAdmission(hashAdmission.opportunityId);
+  expect(new Headers(fetcher.mock.calls[0][1].headers).get("Idempotency-Key")).not.toBe(
+    new Headers(fetcher.mock.calls[2][1].headers).get("Idempotency-Key"));
+});
+
+it("discovery replay sends at most two due admissions and prioritizes the new choice", async () => {
+  for (const opportunityId of ["old-one", "old-two", "new-choice"])
+    enqueuePendingDiscoveryAdmission({ ...admission, opportunityId });
+  const acceptedIds: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url.includes("/api/discoveries/") && url.endsWith("/accept")) {
+      const opportunityId = url.split("/discoveries/")[1].split("/")[0];
+      acceptedIds.push(opportunityId);
+      return Response.json({ status: "preparing", intent_id: `intent-${opportunityId}` });
+    }
+    return Response.json({ state: "preparing" });
+  }));
+  await flushPendingDiscoveryAdmissions("new-choice");
+  expect(acceptedIds).toHaveLength(2);
+  expect(acceptedIds[0]).toBe("new-choice");
+  await flushPendingDiscoveryAdmissions();
+  expect(acceptedIds).toHaveLength(3);
+});
 
 it("discovery save outbox survives reload and waits for queued confirmation", async () => {
   enqueuePendingDiscoveryAdmission(admission);
