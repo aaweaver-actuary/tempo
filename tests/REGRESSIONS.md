@@ -465,6 +465,7 @@ Append every new reported issue and its test names here. All listed tests belong
 - Encountered decision positions paginate without repeating rows: `test_repertoire_positions_paginate_without_repeating_decisions`.
 - Repertoire changes refresh games in durable slices without blocking foreground reads or duplicating a replayed slice: `test_repertoire_game_refresh_yields_to_foreground_and_replays_once_after_restart`.
 - PostgreSQL repertoire refresh admits a versioned position-index task for each affected game: `test_postgres_repertoire_refresh_admits_position_index_with_job_version`.
+- PostgreSQL defensive validation publishes its result and admission task only under the current lease, and stale redelivery has no effect: `test_postgres_threat_validation_commits_result_and_admission_with_lease`.
 - Per-repertoire statistics show distinct practice and game percentages and report service failure instead of false zeroes: `repertoire statistics separates study accuracy and game adherence and opens supporting games`; `repertoire statistics shows an actionable failure instead of zero values`.
 - Per-repertoire statistics GETs remain query-only and satisfy the foreground read budget: `test_repertoire_statistics_gets_are_query_only_and_within_foreground_read_budget`.
 - Per-repertoire game comparisons stay visibly stale while card counts remain available: `repertoire statistics labels stale game comparisons while retaining published card counts`.

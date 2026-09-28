@@ -13,7 +13,13 @@ from ..database import background_read_connection, connection, read_connection
 from .. import postgres_store
 from .activity_gate import activity_gate
 from .background_activity import claimable, control_order
-from .durable_tasks import enqueue_task, enqueue_task_in_transaction, lock_current_slice
+from .durable_tasks import (
+    complete_task_slice_in_transaction,
+    enqueue_compact_postgres_task_in_transaction,
+    enqueue_task,
+    enqueue_task_in_transaction,
+    lock_current_slice,
+)
 from .threat_detection import (
     find_defensive_knight_forks, propose_exercise_anchors, trace_knight_route,
 )
@@ -450,10 +456,11 @@ def execute_threat_scan_slice(task: dict) -> bool:
     return True
 
 
-def execute_threat_validation(task: dict) -> None:
+def execute_threat_validation(task: dict) -> bool | None:
     candidate_id = task["payload"]["candidate_id"]
     activity_gate.wait_for_foreground()
-    with read_connection() as database:
+    read_section = background_read_connection if postgres_store.configured() else read_connection
+    with read_section() as database:
         row = database.execute(
             """SELECT c.*,g.analysis_version current_version FROM threat_training_candidates c
                JOIN imported_games g ON g.id=c.game_id WHERE c.id=?""", (candidate_id,)
@@ -465,7 +472,11 @@ def execute_threat_validation(task: dict) -> None:
             (candidate_id,),
         )]
     if not row or row["superseded_at"] or row["analysis_version"] != row["current_version"]:
-        return
+        if postgres_store.configured():
+            with connection(background=True) as database:
+                if lock_current_slice(database, task):
+                    return complete_task_slice_in_transaction(database, task)
+        return False
     evidence = json.loads(row["evidence_json"])
     seed = _seed_from_json(evidence["seed"])
     anchor = _anchor_from_json(evidence["anchor"])
@@ -489,6 +500,22 @@ def execute_threat_validation(task: dict) -> None:
     )
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
+        if postgres_store.configured():
+            if not lock_current_slice(database, task):
+                return False
+            current = database.execute(
+                "SELECT candidate.source_fingerprint,candidate.analysis_version,"
+                "candidate.superseded_at,game.analysis_version current_version "
+                "FROM threat_training_candidates candidate "
+                "JOIN imported_games game ON game.id=candidate.game_id "
+                "WHERE candidate.id=? FOR UPDATE OF candidate",
+                (candidate_id,),
+            ).fetchone()
+            if (not current or current["source_fingerprint"] != row["source_fingerprint"]
+                    or current["analysis_version"] != row["analysis_version"]
+                    or current["analysis_version"] != current["current_version"]
+                    or current["superseded_at"]):
+                return complete_task_slice_in_transaction(database, task)
         database.execute(
             """UPDATE threat_training_candidates
                SET validation_state=?,diagnostic=?,validation_json=?,updated_at=?
@@ -496,9 +523,19 @@ def execute_threat_validation(task: dict) -> None:
             (result.state, result.diagnostic, json.dumps(asdict(result)),
              _now(), candidate_id, row["source_fingerprint"]),
         )
+        if postgres_store.configured():
+            if result.state in {"engine_supported", "validated_control"}:
+                today = datetime.now().date().isoformat()
+                enqueue_compact_postgres_task_in_transaction(
+                    database, "defensive_admission", today,
+                    {"queue_date": today, "phase": "threat", "cursor": "",
+                     "control_exhausted": False}, priority=150,
+                )
+            return complete_task_slice_in_transaction(database, task)
     if result.state in {"engine_supported", "validated_control"}:
         from .threat_training import enqueue_defense_admission
         enqueue_defense_admission(background=True)
+    return None
 
 
 def enqueue_candidate_validation(candidate_id: str, *, background: bool) -> None:
