@@ -304,7 +304,8 @@ test("nine phone conflicts can be inspected and discarded individually without c
   await expect(conflictDialog.locator(".offline-conflict-item")).toHaveCount(9);
   await expect(conflictDialog.locator(".offline-conflict-item").first()).toContainText(cardIds[0]);
   await expect(conflictDialog.locator(".offline-conflict-item").first()).toContainText("Correct");
-  await expect(conflictDialog.locator(".offline-conflict-item").first()).toContainText("This card was reviewed on another device");
+  const serverConflictReason = "This card belongs only to a repertoire awaiting integrity repair";
+  await expect(conflictDialog.locator(".offline-conflict-item").first()).toContainText(serverConflictReason);
   await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true,
     value: { writeText: () => Promise.reject(new Error("blocked")) } }));
   await conflictDialog.getByRole("button", { name: "Copy conflict data" }).click();
@@ -313,9 +314,11 @@ test("nine phone conflicts can be inspected and discarded individually without c
   };
   expect(conflictData.attempts).toHaveLength(9);
   expect(conflictData.attempts[0]).toMatchObject({ cardId: cardIds[0], outcome: "correct",
-    conflict: "This card was reviewed on another device" });
+    conflict: serverConflictReason });
   await conflictDialog.locator(".offline-conflict-item").first().getByRole("button", { name: "Discard phone attempt" }).click();
   await expect(conflictDialog.locator(".offline-conflict-item")).toHaveCount(8);
+  expect(reviewPosts).toBe(0);
+  await page.unroute("**/api/cards/*/review");
   await page.reload();
   await page.getByRole("button", { name: /Review conflicts/ }).click();
   await expect(page.getByRole("dialog", { name: "Review conflicts" }).locator(".offline-conflict-item")).toHaveCount(8);
@@ -326,7 +329,6 @@ test("nine phone conflicts can be inspected and discarded individually without c
       .toHaveCount(remaining - 1);
   }
   await expect(page.getByRole("button", { name: /Review conflicts/ })).toHaveCount(0);
-  expect(reviewPosts).toBe(0);
 });
 
 test("an older prepared response cannot replace a newer saved phone queue", async ({ page }) => {
