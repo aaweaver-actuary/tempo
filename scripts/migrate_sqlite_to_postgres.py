@@ -32,6 +32,7 @@ COPY_TARGETS = {
     "game_repertoire_matches": "game_repertoire_matches_legacy",
     "repertoire_decision_events": "repertoire_decision_events_legacy",
     "repertoire_comparisons": "repertoire_comparisons_legacy",
+    "gameplay_events": "gameplay_events_legacy",
 }
 
 

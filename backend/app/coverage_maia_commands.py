@@ -13,6 +13,7 @@ from .command_gateway import register_command
 from .postgres_store import PostgresConnection
 from .services.postgres_coverage_candidates import recalculate_coverage_node
 from .services.durable_tasks import enqueue_compact_postgres_task_in_transaction
+from .services.introduction_priorities import enqueue_priority_refresh_in_transaction
 
 
 def _now() -> str:
@@ -143,17 +144,7 @@ def submit_maia_node(database: PostgresConnection, payload: dict[str, Any]) -> d
         "updated_at=excluded.updated_at",
         (row["run_id"], row["run_id"], _now(), row["run_id"]),
     )
-    priority_now = datetime.now(timezone.utc)
-    database.execute_native(
-        "INSERT INTO repertoire_priority_jobs(repertoire_id,generation,status,attempts,"
-        "next_attempt_at,last_error,updated_at) "
-        "VALUES(%s,1,'queued',0,%s,NULL,%s) "
-        "ON CONFLICT(repertoire_id) DO UPDATE SET "
-        "generation=repertoire_priority_jobs.generation+1,status='queued',attempts=0,"
-        "next_attempt_at=excluded.next_attempt_at,last_error=NULL,updated_at=excluded.updated_at",
-        (row["repertoire_id"], (priority_now + timedelta(seconds=5)).isoformat(),
-         priority_now.isoformat()),
-    )
+    enqueue_priority_refresh_in_transaction(database, row["repertoire_id"])
     remaining = database.execute_native(
         "SELECT 1 FROM repertoire_coverage_nodes WHERE run_id=%s "
         "AND maia_status!='complete' LIMIT 1", (row["run_id"],),

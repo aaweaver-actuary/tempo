@@ -7,7 +7,7 @@ import hashlib
 import json
 from typing import Any
 
-from ..database import connection
+from ..database import background_read_connection, connection
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
     enqueue_compact_postgres_task_in_transaction, lock_current_slice,
@@ -122,6 +122,11 @@ def _publish_items(database, task: dict, game_id: str, version: int,
         "phase='applying_real_game_misses' "
         "WHERE game_id=? AND derivation_version=?", parameters,
     )
+    enqueue_compact_postgres_task_in_transaction(
+        database, "game_derivation_misses", game_id,
+        {"game_id": game_id, "derivation_version": version,
+         "after_ply": -1, "after_id": ""}, priority=126,
+    )
     return complete_task_slice_in_transaction(database, task)
 
 
@@ -130,7 +135,17 @@ def execute_game_findings_slice(task: dict[str, Any]) -> bool:
     game_id = str(payload["game_id"])
     version = int(payload["derivation_version"])
     cursor = int(payload.get("cursor", 0))
-    signature, items = _prepared_items(game_id)
+    with background_read_connection() as database:
+        preparation = database.execute_native(
+            "SELECT source_signature,item_count,items_json -> %s AS item "
+            "FROM game_finding_preparations "
+            "WHERE game_id=%s AND derivation_version=%s",
+            (cursor, game_id, version),
+        ).fetchone()
+    if preparation is None or cursor >= int(preparation["item_count"]):
+        signature, items = _prepared_items(game_id)
+    else:
+        signature, items = preparation["source_signature"], None
     with connection(background=True) as database:
         if not lock_current_slice(database, task):
             return False
@@ -142,8 +157,19 @@ def execute_game_findings_slice(task: dict[str, Any]) -> bool:
                 or int(job["completed_phases"]) != 2
                 or job["status"] not in {"queued", "running"}):
             return complete_task_slice_in_transaction(database, task)
-        expected_signature = payload.get("source_signature")
-        if expected_signature is not None and expected_signature != signature:
+        if preparation is None:
+            assert items is not None
+            database.execute_native(
+                "INSERT INTO game_finding_preparations("
+                "game_id,derivation_version,source_signature,item_count,items_json) "
+                "VALUES(%s,%s,%s,%s,%s::jsonb) ON CONFLICT DO NOTHING",
+                (game_id, version, signature, len(items), json.dumps(items)),
+            )
+            return advance_task_slice_in_transaction(
+                database, task, next_phase="stage",
+                next_payload={**payload, "phase": "stage", "cursor": 0},
+            )
+        if cursor >= int(preparation["item_count"]) and signature != preparation["source_signature"]:
             next_version = version + 1
             database.execute(
                 "UPDATE game_derivation_jobs SET derivation_version=? "
@@ -156,8 +182,8 @@ def execute_game_findings_slice(task: dict[str, Any]) -> bool:
                  "phase": "stage", "cursor": 0}, priority=126,
             )
             return True
-        if cursor < len(items):
-            kind, item_key, item_payload = items[cursor]
+        if cursor < int(preparation["item_count"]):
+            kind, item_key, item_payload = preparation["item"]
             database.execute(
                 """INSERT INTO game_finding_publication_items(
                      game_id,derivation_version,item_kind,item_key,payload_json)
@@ -168,7 +194,6 @@ def execute_game_findings_slice(task: dict[str, Any]) -> bool:
             )
             return advance_task_slice_in_transaction(
                 database, task, next_phase="stage",
-                next_payload={**payload, "source_signature": signature,
-                              "phase": "stage", "cursor": cursor + 1},
+                next_payload={**payload, "phase": "stage", "cursor": cursor + 1},
             )
-        return _publish_items(database, task, game_id, version, len(items))
+        return _publish_items(database, task, game_id, version, int(preparation["item_count"]))

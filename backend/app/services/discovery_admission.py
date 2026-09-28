@@ -13,7 +13,13 @@ from ..database import background_read_connection, connection, read_connection
 from .. import postgres_store
 from .activity_gate import activity_gate
 from .cards import card_id
-from .durable_tasks import enqueue_task, enqueue_task_in_transaction, lock_current_slice
+from .durable_tasks import (
+    complete_task_slice_in_transaction,
+    enqueue_compact_postgres_task_in_transaction,
+    enqueue_task,
+    enqueue_task_in_transaction,
+    lock_current_slice,
+)
 from .review_service import ensure_card_queued_after
 from .threat_pipeline import ENGINE_VERSION, NETWORK_VERSION, report_from_json, validate_analysis_report
 from .threat_validation import AnalysisRequest
@@ -511,7 +517,8 @@ def enqueue_admission_intent(intent_id: str) -> None:
 
 def _materialize_admission_branch(task: dict) -> None:
     """Write one selected branch and its rebuild request in a short transaction."""
-    with read_connection() as database:
+    read_section = background_read_connection if postgres_store.configured() else read_connection
+    with read_section() as database:
         intent = database.execute(
             "SELECT * FROM discovery_admission_intents WHERE id=?",
             (task["payload"]["intent_id"],),
@@ -529,12 +536,16 @@ def _materialize_admission_branch(task: dict) -> None:
         board.push_uci(move_uci)
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        lease = database.execute(
-            "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
-        ).fetchone()
-        if (not lease or lease["generation"] != task["generation"]
-                or lease["lease_token"] != task["lease_token"]):
-            return
+        if postgres_store.configured():
+            if not lock_current_slice(database, task):
+                return
+        else:
+            lease = database.execute(
+                "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
+            ).fetchone()
+            if (not lease or lease["generation"] != task["generation"]
+                    or lease["lease_token"] != task["lease_token"]):
+                return
         inserted = database.execute(
             """INSERT OR IGNORE INTO repertoire_lines(
                  id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
@@ -551,7 +562,9 @@ def _materialize_admission_branch(task: dict) -> None:
                      line_id,learner_decision_count) VALUES(?,?)""",
                 (intent["line_id"], depth),
             )
-            enqueue_task_in_transaction(
+            enqueue_in_transaction = (enqueue_compact_postgres_task_in_transaction
+                                      if postgres_store.configured() else enqueue_task_in_transaction)
+            enqueue_in_transaction(
                 database, "opening_graph_rebuild", intent["repertoire_id"],
                 {"repertoire_id": intent["repertoire_id"], "local_day": date.today().isoformat()},
                 priority=40,
@@ -560,7 +573,8 @@ def _materialize_admission_branch(task: dict) -> None:
 
 def _ensure_admission_coverage_refresh(task: dict) -> None:
     """Resume the existing coverage pipeline after branch materialization."""
-    with read_connection() as database:
+    read_section = background_read_connection if postgres_store.configured() else read_connection
+    with read_section() as database:
         intent = database.execute(
             "SELECT repertoire_id,line_id,state FROM discovery_admission_intents WHERE id=?",
             (task["payload"]["intent_id"],),
@@ -577,10 +591,22 @@ def _ensure_admission_coverage_refresh(task: dict) -> None:
                WHERE repertoire_id=? AND created_at>=? LIMIT 1""",
             (intent["repertoire_id"], line["created_at"]),
         ).fetchone()
-        lease = database.execute(
+        lease = None if postgres_store.configured() else database.execute(
             "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
         ).fetchone()
-    if run or not lease or lease["generation"] != task["generation"] or lease["lease_token"] != task["lease_token"]:
+    if run:
+        return
+    if postgres_store.configured():
+        from .postgres_coverage_seed import request_coverage_seed_in_transaction
+
+        activity_gate.wait_for_foreground()
+        with connection(background=True) as database:
+            if lock_current_slice(database, task):
+                request_coverage_seed_in_transaction(
+                    database, intent["repertoire_id"], automatic=True,
+                )
+        return
+    if not lease or lease["generation"] != task["generation"] or lease["lease_token"] != task["lease_token"]:
         return
     activity_gate.wait_for_foreground()
     from .repertoire_coverage import enqueue_coverage_refresh
@@ -594,7 +620,8 @@ def execute_admission_intent_slice(task: dict) -> bool:
     _materialize_admission_branch(task)
     _ensure_admission_coverage_refresh(task)
     activity_gate.wait_for_foreground()
-    with read_connection() as database:
+    read_section = background_read_connection if postgres_store.configured() else read_connection
+    with read_section() as database:
         intent = database.execute(
             "SELECT * FROM discovery_admission_intents WHERE id=?",
             (task["payload"]["intent_id"],),
@@ -621,11 +648,16 @@ def execute_admission_intent_slice(task: dict) -> bool:
                                    and integrity["checked_at"] >= intent["created_at"])
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        lease = database.execute(
-            "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
-        ).fetchone()
-        if not lease or lease["generation"] != task["generation"] or lease["lease_token"] != task["lease_token"]:
-            return True
+        if postgres_store.configured():
+            if not lock_current_slice(database, task):
+                return False
+        else:
+            lease = database.execute(
+                "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
+            ).fetchone()
+            if (not lease or lease["generation"] != task["generation"]
+                    or lease["lease_token"] != task["lease_token"]):
+                return True
         current = database.execute("SELECT * FROM discovery_admission_intents WHERE id=?",
                                    (task["payload"]["intent_id"],)).fetchone()
         if not current or current["state"] == "queued":
@@ -662,7 +694,16 @@ def execute_admission_intent_slice(task: dict) -> bool:
                          admitted_card_id=?,updated_at=? WHERE id=?""",
                     (card_id_value, _now(), current["opportunity_id"]),
                 )
+                if postgres_store.configured():
+                    complete_task_slice_in_transaction(database, task)
                 return False
+        if postgres_store.configured():
+            enqueue_compact_postgres_task_in_transaction(
+                database, "discovery_admission", task["payload"]["intent_id"],
+                task["payload"], priority=DISCOVERY_ADMISSION_PRIORITY,
+                delay_seconds=10,
+            )
+            return True
         retry_at = (datetime.now(timezone.utc) + timedelta(seconds=10)).isoformat()
         database.execute(
             """UPDATE background_tasks SET generation=generation+1,state='queued',phase='queued',

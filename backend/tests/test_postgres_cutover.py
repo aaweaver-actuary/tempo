@@ -5188,6 +5188,8 @@ def test_postgres_cutover_game_refresh_waits_for_foreground_and_discards_stale_r
                 return Cursor({"id": "game-1"})
             if "INSERT INTO game_derivation_jobs" in statement:
                 queued_games.append(parameters[0])
+            if "SELECT derivation_version FROM game_derivation_jobs" in statement:
+                return Cursor({"derivation_version": 3})
             return Cursor()
 
     @contextmanager
@@ -5196,7 +5198,10 @@ def test_postgres_cutover_game_refresh_waits_for_foreground_and_discards_stale_r
         connection_opened.set()
         yield Database()
 
-    def enqueue_next_slice(_database, _kind, _key, payload, **_options):
+    def enqueue_next_slice(_database, kind, _key, payload, **_options):
+        if kind == "game_derivation_positions":
+            assert payload == {"game_id": "game-1", "derivation_version": 3, "cursor": 0}
+            return
         persisted_cursors.append(payload["after_game_id"])
         current_lease["token"] = "next-generation"
 
@@ -5207,7 +5212,8 @@ def test_postgres_cutover_game_refresh_waits_for_foreground_and_discards_stale_r
         repertoire_game_refresh, "lock_current_slice",
         lambda _database, task: task["lease_token"] == current_lease["token"],
     )
-    monkeypatch.setattr(repertoire_game_refresh, "enqueue_task_in_transaction", enqueue_next_slice)
+    monkeypatch.setattr(repertoire_game_refresh,
+                        "enqueue_compact_postgres_task_in_transaction", enqueue_next_slice)
 
     result: list[bool] = []
     worker = threading.Thread(
@@ -5820,8 +5826,10 @@ def test_postgres_maia_claim_respects_pause_and_uses_row_lease(monkeypatch):
 
 
 @pytest.mark.parametrize("remaining_nodes", [True, False])
-def test_postgres_maia_submit_publishes_candidates_in_bounded_sets(remaining_nodes):
-    from app import coverage_maia_commands
+def test_postgres_maia_submit_publishes_candidates_in_bounded_sets(remaining_nodes, monkeypatch):
+    from app import coverage_maia_commands, postgres_store
+
+    monkeypatch.setattr(postgres_store, "configured", lambda: True)
 
     statements = []
     node = {"id": "node", "run_id": "run", "maia_status": "leased",
@@ -5846,6 +5854,12 @@ def test_postgres_maia_submit_publishes_candidates_in_bounded_sets(remaining_nod
                 return SimpleNamespace(fetchone=lambda: (1,) if remaining_nodes else None)
             return SimpleNamespace(fetchone=lambda: None)
 
+        def execute(self, statement, parameters=()):
+            statements.append((statement, parameters))
+            if statement.startswith("SELECT generation FROM repertoire_priority_jobs"):
+                return SimpleNamespace(fetchone=lambda: (3,))
+            return SimpleNamespace(fetchone=lambda: None)
+
     result = coverage_maia_commands.submit_maia_node(Database(), {
         "node_id": "node", "lease_id": "lease",
         "moves": [{"move_uci": "e2e4", "probability": 0.5},
@@ -5863,7 +5877,9 @@ def test_postgres_maia_submit_publishes_candidates_in_bounded_sets(remaining_nod
                            if statement.startswith("UPDATE repertoire_coverage_candidates")))[0]["source_state"] == "blended"
     assert any(statement.startswith("INSERT INTO repertoire_priority_jobs")
                and parameters[0] == "rep" for statement, parameters in statements)
-    assert any(statement.startswith("WITH queued AS") for statement, _ in statements) == (not remaining_nodes)
+    assert sum(statement.startswith("WITH queued AS") for statement, _ in statements) == (
+        1 + int(not remaining_nodes)
+    )
 
 
 def test_postgres_coverage_seed_supersedes_active_generation_after_branch_edit(monkeypatch):

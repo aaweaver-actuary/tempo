@@ -62,11 +62,18 @@ from .services.postgres_game_sync import execute_game_sync_record_slice
 from .services.postgres_game_derivation import execute_game_position_index_slice
 from .services.postgres_game_repertoire import execute_game_repertoire_comparison_slice
 from .services.postgres_game_findings import execute_game_findings_slice
+from .services.postgres_game_misses import execute_game_miss_slice
+from .services.postgres_game_events import execute_game_event_slice
+from .services.postgres_game_features import execute_game_feature_slice
+from .services.postgres_game_priorities import execute_game_priority_handoff_slice
+from .services.postgres_priority import execute_repertoire_priority_slice
 from .services.postgres_game_sync_windows import execute_game_sync_window_slice
 from .services.postgres_opening_graph import execute_postgres_opening_graph_slice
 from .services.postgres_integrity import execute_postgres_integrity_slice
 from .services.repertoire_opportunities import execute_opportunity_slice
-from .services.discovery_admission import execute_recommendation_request_slice
+from .services.discovery_admission import (
+    execute_admission_intent_slice, execute_recommendation_request_slice,
+)
 from .services.postgres_coverage_seed import execute_coverage_seed_slice
 from .services.postgres_coverage_explorer import execute_coverage_explorer_slice
 from .services.postgres_coverage_recovery import recover_one_explorer_run
@@ -87,11 +94,17 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "game_derivation_positions",
     "game_derivation_compare",
     "game_derivation_findings",
+    "game_derivation_misses",
+    "game_derivation_events",
+    "game_derivation_features",
+    "game_derivation_priorities",
+    "repertoire_priority",
     "game_sync_window",
     "opening_graph_rebuild",
     "integrity_scan",
     "repertoire_opportunity",
     "discovery_recommendation",
+    "discovery_admission",
     "coverage_seed",
     "coverage_explorer",
     "game_analysis_publish",
@@ -187,11 +200,17 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
         "game_derivation_positions": execute_game_position_index_slice,
         "game_derivation_compare": execute_game_repertoire_comparison_slice,
         "game_derivation_findings": execute_game_findings_slice,
+        "game_derivation_misses": execute_game_miss_slice,
+        "game_derivation_events": execute_game_event_slice,
+        "game_derivation_features": execute_game_feature_slice,
+        "game_derivation_priorities": execute_game_priority_handoff_slice,
+        "repertoire_priority": execute_repertoire_priority_slice,
         "game_sync_window": execute_game_sync_window_slice,
         "opening_graph_rebuild": execute_postgres_opening_graph_slice,
         "integrity_scan": execute_postgres_integrity_slice,
         "repertoire_opportunity": execute_opportunity_slice,
         "discovery_recommendation": execute_recommendation_request_slice,
+        "discovery_admission": execute_admission_intent_slice,
         "coverage_seed": execute_coverage_seed_slice,
         "coverage_explorer": execute_coverage_explorer_slice,
         "game_analysis_publish": execute_game_analysis_publication_slice,
@@ -206,6 +225,10 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
             if claimed_task["kind"] not in {
                 "daily_queue", "game_sync_record", "game_sync_window", "game_derivation_positions",
                 "game_derivation_compare", "game_derivation_findings",
+                "game_derivation_misses",
+                "game_derivation_events",
+                "game_derivation_features", "game_derivation_priorities",
+                "repertoire_priority",
                 "opening_graph_rebuild",
                 "integrity_scan",
                 "coverage_seed",

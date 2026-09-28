@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 import json
 from typing import Any
 
@@ -13,6 +13,7 @@ from .durable_tasks import (
     enqueue_compact_postgres_task_in_transaction, lock_current_slice,
 )
 from .postgres_coverage_candidates import recalculate_coverage_node
+from .introduction_priorities import enqueue_priority_refresh_in_transaction
 from .repertoire_coverage import (
     ExplorerAuthenticationError, _cached_explorer_payload, _fetch_explorer,
     get_explorer_session_token,
@@ -167,17 +168,7 @@ def _publish_node(
         (node["run_id"], node["run_id"], progress["completed_nodes"] + maia_done,
          progress["total_nodes"] * 2, _now()),
     )
-    priority_now = datetime.now(timezone.utc)
-    database.execute_native(
-        "INSERT INTO repertoire_priority_jobs(repertoire_id,generation,status,attempts,"
-        "next_attempt_at,last_error,updated_at) "
-        "VALUES(%s,1,'queued',0,%s,NULL,%s) "
-        "ON CONFLICT(repertoire_id) DO UPDATE SET "
-        "generation=repertoire_priority_jobs.generation+1,status='queued',attempts=0,"
-        "next_attempt_at=excluded.next_attempt_at,last_error=NULL,updated_at=excluded.updated_at",
-        (node["repertoire_id"], (priority_now + timedelta(seconds=5)).isoformat(),
-         priority_now.isoformat()),
-    )
+    enqueue_priority_refresh_in_transaction(database, node["repertoire_id"])
     if progress["status"] == "complete":
         enqueue_compact_postgres_task_in_transaction(
             database, "repertoire_opportunity", node["repertoire_id"],

@@ -8,7 +8,7 @@ import json
 
 import chess
 
-from ..database import connection
+from ..database import background_read_connection, connection
 from .activity_gate import activity_gate
 from .motif_detectors import classify_candidate_lines, select_primary_motif
 
@@ -30,16 +30,19 @@ def _position_before_ply(start_fen: str, moves: list[str], ply: int) -> chess.Bo
     return board
 
 
-def refresh_gameplay_events(game_id: str, *, background: bool = False) -> None:
+def refresh_gameplay_events(
+    game_id: str, *, background: bool = False, prepare_only: bool = False,
+) -> list[tuple] | None:
     """Compute outside a transaction and replace only this version in one short write."""
-    with connection(background=background) as database:
+    read_section = background_read_connection if prepare_only else lambda: connection(background=background)
+    with read_section() as database:
         game = database.execute(
             """SELECT id,color,start_fen,moves_json,analysis_version,analysis_evidence_version
                   FROM imported_games WHERE id=?""",
             (game_id,),
         ).fetchone()
         if not game:
-            return
+            return [] if prepare_only else None
         analysis_rows = database.execute(
             "SELECT * FROM game_move_analysis WHERE game_id=? ORDER BY ply",
             (game_id,),
@@ -243,6 +246,8 @@ def refresh_gameplay_events(game_id: str, *, background: bool = False) -> None:
                 )
             )
 
+    if prepare_only:
+        return computed_events
     if background:
         activity_gate.wait_for_foreground()
     with connection(background=background) as database:
