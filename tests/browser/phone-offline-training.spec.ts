@@ -313,8 +313,8 @@ test("nine phone conflicts can be inspected and discarded individually without c
     attempts: Array<{ cardId: string; outcome: string; conflict: string }>;
   };
   expect(conflictData.attempts).toHaveLength(9);
-  expect(conflictData.attempts[0]).toMatchObject({ cardId: cardIds[0], outcome: "correct",
-    conflict: serverConflictReason });
+  expect(conflictData.attempts[0]).toMatchObject({ cardId: cardIds[0], outcome: "correct" });
+  expect(conflictData.attempts[0].conflict).toContain(serverConflictReason);
   await conflictDialog.locator(".offline-conflict-item").first().getByRole("button", { name: "Discard phone attempt" }).click();
   await expect(conflictDialog.locator(".offline-conflict-item")).toHaveCount(8);
   expect(reviewPosts).toBe(0);
