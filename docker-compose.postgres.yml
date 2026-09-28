@@ -126,6 +126,9 @@ services:
       dockerfile: Dockerfile.engine
     environment:
       TEMPO_API_URL: http://api:8000
+      TEMPO_ENGINE_OUTBOX_PATH: /state/pending-command.json
+    volumes:
+      - tempo-engine-operations:/state
     depends_on:
       api: {condition: service_healthy}
     mem_limit: 512m
@@ -173,6 +176,9 @@ services:
     restart: unless-stopped
 
 volumes:
+  tempo-engine-operations:
+    external: true
+    name: tempo-engine-operations
   tempo-postgres-data:
     external: true
     name: tempo-postgres-data

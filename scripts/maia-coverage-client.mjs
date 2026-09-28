@@ -13,24 +13,29 @@ export class PendingMaiaCommandError extends Error {
 export async function requestMaiaApi(apiUrl, path, options = {}, transport = {}) {
   const fetchImpl = transport.fetchImpl ?? fetch;
   const wait = transport.pause ?? pause;
-  const operationId = options.method === "POST" ? randomUUID() : undefined;
+  const { operationId: suppliedOperationId, ...requestOptions } = options;
+  const operationId = options.method === "POST" ? (suppliedOperationId ?? randomUUID()) : undefined;
   const headers = {
     "X-Tempo-Work-Class": "background",
     "Content-Type": "application/json",
-    ...options.headers,
+    ...requestOptions.headers,
     ...(operationId ? { "Idempotency-Key": operationId } : {}),
   };
   let response;
   for (let attempt = 0; attempt < 3; attempt += 1) {
     try {
-      response = await fetchImpl(`${apiUrl}${path}`, { ...options, headers });
+      response = await fetchImpl(`${apiUrl}${path}`, { ...requestOptions, headers });
       if (response.status !== 503) break;
     } catch (error) {
       if (attempt === 2) throw error;
     }
     if (attempt < 2) await wait(250 * (attempt + 1));
   }
-  if (!response.ok) throw new Error(`${path}: HTTP ${response.status} ${await response.text()}`);
+  if (!response.ok) {
+    const error = new Error(`${path}: HTTP ${response.status} ${await response.text()}`);
+    error.terminal = response.status < 500 && response.status !== 408 && response.status !== 429;
+    throw error;
+  }
   if (response.status !== 202) return response.json();
 
   const pending = await response.json();
@@ -49,7 +54,9 @@ export async function requestMaiaApi(apiUrl, path, options = {}, transport = {})
     const receipt = await receiptResponse.json();
     if (receipt.state === "complete") return receipt.response;
     if (receipt.state === "failed") {
-      throw new Error(`${path}: ${receipt.error?.message ?? "database command failed"}`);
+      const error = new Error(`${path}: ${receipt.error?.message ?? "database command failed"}`);
+      error.terminal = true;
+      throw error;
     }
   }
   throw new PendingMaiaCommandError(path, receiptId);

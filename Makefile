@@ -8,8 +8,9 @@
 #  2 defense-engine smoke         8 typecheck
 #  3 Python backend tests         9 WASM build
 #  4 Rust format                 10 local frontend build
-#  5 Rust lint                   11 Docker integration + regular Playwright matrix
-#  6 Rust workspace tests        12 pinned visual + performance Playwright tests
+#  5 Rust lint                   11 SQLite Docker durability + browser matrix
+#  6 Rust workspace tests        12 PostgreSQL Docker durability + browser matrix
+#                                13 pinned visual + performance Playwright tests
 # The local browser target is deliberately absent from full: Docker already
 # runs the same regular Playwright specs. Visual/performance specs are disjoint.
 

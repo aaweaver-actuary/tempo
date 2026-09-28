@@ -42,6 +42,7 @@ const stages = [
   ["browser", "npm", ["run", "test:browser"]],
   // Docker runs the regular Playwright suite against the full proxy once.
   ["docker", "npm", ["run", "test:docker"]],
+  ["postgres_docker", "node", ["scripts/test-postgres-docker.mjs"]],
   ["visual", "npm", ["run", "test:visual"]],
 ];
 const stagesByTier = {
