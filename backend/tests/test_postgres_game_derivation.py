@@ -14,7 +14,55 @@ import chess
 from psycopg.errors import DeadlockDetected, SerializationFailure
 
 from app import tasks
-from app.services import postgres_game_derivation
+from app.services import postgres_game_derivation, repertoire_game_refresh
+
+
+def test_postgres_repertoire_refresh_admits_position_index_with_job_version(monkeypatch):
+    enqueued: list[tuple[str, str, dict, int]] = []
+    statements: list[str] = []
+
+    class Cursor:
+        def __init__(self, row=None):
+            self.row = row
+
+        def fetchone(self):
+            return self.row
+
+    class Database:
+        def execute(self, statement, _parameters=()):
+            statements.append(statement)
+            if "FROM imported_games" in statement:
+                return Cursor({"id": "game-one"})
+            if "SELECT derivation_version FROM game_derivation_jobs" in statement:
+                return Cursor({"derivation_version": 7})
+            return Cursor()
+
+    @contextmanager
+    def write_database(*, background):
+        assert background
+        yield Database()
+
+    monkeypatch.setattr(repertoire_game_refresh.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(repertoire_game_refresh.activity_gate, "wait_for_foreground", lambda: None)
+    monkeypatch.setattr(repertoire_game_refresh, "connection", write_database)
+    monkeypatch.setattr(repertoire_game_refresh, "lock_current_slice", lambda *_args: True)
+    monkeypatch.setattr(
+        repertoire_game_refresh, "enqueue_compact_postgres_task_in_transaction",
+        lambda _database, kind, key, payload, *, priority:
+        enqueued.append((kind, key, payload, priority)),
+        raising=False,
+    )
+
+    assert repertoire_game_refresh.execute_repertoire_game_refresh_slice({
+        "id": "refresh", "generation": 1, "lease_token": "live",
+        "payload": {"after_game_id": ""},
+    })
+    assert enqueued == [
+        ("game_derivation_positions", "game-one",
+         {"game_id": "game-one", "derivation_version": 7, "cursor": 0}, 125),
+        ("repertoire_game_refresh", "all", {"after_game_id": "game-one"}, 90),
+    ]
+    assert any("INSERT INTO game_derivation_jobs" in statement for statement in statements)
 
 
 def test_postgres_game_position_index_yields_to_foreground_and_replays_safely(monkeypatch):
