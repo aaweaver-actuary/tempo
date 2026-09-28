@@ -121,6 +121,12 @@ try {
   assert.equal(defaultStack.services.api.environment.TEMPO_DATABASE_WRITE_URL, undefined);
   assert.equal(defaultStack.services.api.environment.TEMPO_DB_PATH, undefined);
   assert(!JSON.stringify(defaultStack.services.api.volumes ?? []).includes("tempo-data"));
+  const backupCommand = defaultStack.services["postgres-backup"].command;
+  assert.equal(backupCommand.length, 1, "backup loop must be one shell argument");
+  const backupSyntax = spawnSync("sh", ["-n", "-c", backupCommand[0].replaceAll("$$", "$")],
+    { encoding: "utf8" });
+  assert.equal(backupSyntax.status, 0, backupSyntax.stderr);
+  console.log("PASS recurring PostgreSQL backup loop has valid shell syntax");
   console.log("PASS default Compose selects PostgreSQL and keeps SQLite isolated");
   run("docker", ["build", "-f", "Dockerfile.postgres-maintenance", "-t", maintenanceImage, "."]);
   for (const script of ["apply_postgres_migrations.py", "migrate_sqlite_to_postgres.py"]) {
