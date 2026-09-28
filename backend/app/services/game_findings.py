@@ -8,7 +8,7 @@ import json
 
 import chess
 
-from ..database import connection
+from ..database import background_read_connection, connection
 from .activity_gate import activity_gate
 from .motif_detectors import (
     MotifEvidence,
@@ -125,13 +125,16 @@ def _unseen_card_for_position(
 
 
 def refresh_game_findings(
-    game_id: str | None = None, *, background: bool = False
-) -> None:
+    game_id: str | None = None, *, background: bool = False,
+    prepare_only: bool = False,
+) -> tuple[list[dict], list[dict], dict[str, int], list[tuple]] | None:
+    """Prepare derived evidence without writes when a PostgreSQL slice requests it."""
     finding_writes: list[dict] = []
     opportunity_writes: list[dict] = []
     opportunity_games: dict[str, int] = {}
     priority_writes: list[tuple] = []
-    with connection(background=background) as database:
+    read_context = background_read_connection() if prepare_only else connection(background=background)
+    with read_context as database:
         where = "WHERE g.id=?" if game_id else ""
         games = [dict(row) for row in database.execute(
             f"""SELECT g.*,m.repertoire_id,m.first_player_deviation_ply,m.first_player_deviation_fen,
@@ -411,6 +414,8 @@ def refresh_game_findings(
                 finding_writes.append(dict(game_id=game["id"], analysis_version=version,
                                 ply=first_big_mistake["ply"], kind="first big mistake",
                                 confidence=1.0, evidence=evidence))
+    if prepare_only:
+        return finding_writes, opportunity_writes, opportunity_games, priority_writes
     if background:
         activity_gate.wait_for_foreground()
     with connection(background=background) as database:
