@@ -4742,3 +4742,192 @@ def test_postgres_activity_control_dispatches_idempotent_command(monkeypatch):
         "source": "durable", "id": "task-one", "action": "prioritize",
     }) == {"ok": True}
     assert controlled == [(database, "durable", "task-one", "prioritize")]
+
+
+def test_postgres_coverage_refresh_dispatches_durable_seed(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import coverage_commands, main
+
+    dispatched = []
+    requested = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(
+        command_dispatch, "dispatch_command",
+        lambda name, payload, *, idempotency_key:
+            dispatched.append((name, payload, idempotency_key)) or
+            {"run_id": "run-one", "status": "queued"},
+    )
+    response = TestClient(main.app).post(
+        "/api/repertoires/rep/coverage/refresh",
+        headers={"Idempotency-Key": "coverage-one"},
+    )
+    assert response.status_code == 202, response.text
+    assert response.json() == {"run_id": "run-one", "status": "queued"}
+    assert dispatched == [("coverage.refresh.request", {"repertoire_id": "rep"}, "coverage-one")]
+    monkeypatch.setattr(
+        coverage_commands, "request_coverage_seed_in_transaction",
+        lambda database, repertoire_id, *, automatic:
+            requested.append((database, repertoire_id, automatic)) or
+            {"run_id": "run-one", "status": "queued"},
+    )
+    database = object()
+    assert coverage_commands.request_coverage_refresh(database, {
+        "repertoire_id": "rep",
+    }) == {"run_id": "run-one", "status": "queued"}
+    assert requested == [(database, "rep", False)]
+
+
+def test_postgres_coverage_seed_yields_to_foreground_and_discards_restart_replay(monkeypatch):
+    from app import tasks
+    from app.services import postgres_coverage_seed
+
+    foreground_finished = threading.Event()
+    read_opened = threading.Event()
+    staged_positions: list[str] = []
+    current_lease = {"token": "first-lease"}
+    task = {
+        "kind": "coverage_seed", "id": "seed-task", "generation": 5,
+        "lease_token": "first-lease",
+        "payload": {"run_id": "run-one", "repertoire_id": "rep",
+                    "horizon_fullmoves": 4, "source_fingerprint": "fingerprint",
+                    "after_line_id": "", "position_index": 0},
+    }
+
+    class Cursor:
+        def fetchone(self):
+            return {"id": "line-one", "start_fen": chess.STARTING_FEN,
+                    "moves_json": '["e2e4","e7e5"]', "trained_color": "white"}
+
+    class ReadDatabase:
+        def execute_native(self, statement, _parameters):
+            assert "FROM repertoire_lines" in statement
+            return Cursor()
+
+    @contextmanager
+    def bounded_read():
+        assert foreground_finished.wait(2)
+        read_opened.set()
+        yield ReadDatabase()
+
+    @contextmanager
+    def bounded_write(*, background):
+        assert background
+        class BuildingRun:
+            def execute_native(self, statement, _parameters):
+                assert "FROM repertoire_coverage_runs" in statement
+                return SimpleNamespace(fetchone=lambda: ("building",))
+        yield BuildingRun()
+
+    monkeypatch.setattr(postgres_coverage_seed, "background_read_connection", bounded_read)
+    monkeypatch.setattr(postgres_coverage_seed, "connection", bounded_write)
+    monkeypatch.setattr(postgres_coverage_seed, "discover_opponent_positions",
+                        lambda _lines, _horizon: [{"fen_key": "position-one"}])
+    monkeypatch.setattr(postgres_coverage_seed, "lock_current_slice",
+                        lambda _database, claimed: claimed["lease_token"] == current_lease["token"])
+    monkeypatch.setattr(postgres_coverage_seed, "_stage_position",
+                        lambda _database, _task, position: staged_positions.append(position["fen_key"]))
+    monkeypatch.setattr(postgres_coverage_seed, "advance_task_slice_in_transaction",
+                        lambda *_args, **_kwargs: True)
+    result: list[bool] = []
+    worker = threading.Thread(target=lambda: result.append(postgres_coverage_seed.execute_coverage_seed_slice(task)))
+    worker.start()
+    assert not read_opened.wait(0.05)
+    foreground_finished.set()
+    worker.join(timeout=2)
+    assert not worker.is_alive()
+    assert result == [True]
+    assert staged_positions == ["position-one"]
+    current_lease["token"] = "replacement-lease"
+    assert postgres_coverage_seed.execute_coverage_seed_slice(task) is False
+    assert staged_positions == ["position-one"]
+    assert "coverage_seed" in tasks._SUPPORTED_BACKGROUND_KINDS
+
+
+def test_postgres_coverage_seed_rejects_source_change_before_activation(monkeypatch):
+    from app.services import postgres_coverage_seed
+
+    updates = []
+    task = {
+        "id": "seed-task", "generation": 4, "lease_token": "lease",
+        "payload": {"run_id": "run", "repertoire_id": "rep",
+                    "horizon_fullmoves": 4, "source_fingerprint": "original",
+                    "after_line_id": "last-line", "position_index": 0},
+    }
+
+    @contextmanager
+    def bounded_read():
+        yield object()
+
+    class WriteDatabase:
+        def execute_native(self, statement, parameters):
+            updates.append((statement, parameters))
+
+    @contextmanager
+    def bounded_write(*, background):
+        assert background
+        yield WriteDatabase()
+
+    monkeypatch.setattr(postgres_coverage_seed, "prepare_next_coverage_line", lambda *_args: None)
+    monkeypatch.setattr(postgres_coverage_seed, "background_read_connection", bounded_read)
+    monkeypatch.setattr(postgres_coverage_seed, "_source_fingerprint", lambda _database, _rep: "changed")
+    monkeypatch.setattr(postgres_coverage_seed, "connection", bounded_write)
+    monkeypatch.setattr(postgres_coverage_seed, "lock_current_slice", lambda *_args: True)
+    monkeypatch.setattr(postgres_coverage_seed, "complete_task_slice_in_transaction", lambda *_args: True)
+    assert postgres_coverage_seed.execute_coverage_seed_slice(task) is True
+    assert len(updates) == 1
+    assert "status='failed'" in updates[0][0]
+    assert updates[0][1][2] == "run"
+
+
+def test_postgres_coverage_seed_terminal_failure_marks_run_failed(monkeypatch):
+    from app.services import durable_tasks
+
+    statements = []
+
+    class RecordingDatabase:
+        def execute(self, statement, parameters=()):
+            statements.append((statement, parameters))
+            if statement.startswith("SELECT attempt_count,max_attempts"):
+                return SimpleNamespace(fetchone=lambda: {
+                    "attempt_count": 5, "max_attempts": 5,
+                    "kind": "coverage_seed", "payload_json": '{"run_id":"run-one"}',
+                })
+            return SimpleNamespace(rowcount=1)
+
+    monkeypatch.setattr(durable_tasks, "submit_background_write",
+                        lambda operation, *, label: operation(RecordingDatabase()))
+    monkeypatch.setattr(durable_tasks, "_record_event", lambda *_args: None)
+    assert durable_tasks.fail_task("task", 1, "lease", RuntimeError("bad position"))["state"] == "failed"
+    assert any("UPDATE repertoire_coverage_runs SET status='failed'" in statement
+               and parameters[2] == "run-one" for statement, parameters in statements)
+
+
+def test_postgres_coverage_building_summary_remains_queued(monkeypatch):
+    from app.services import repertoire_coverage
+
+    class Cursor:
+        def __init__(self, row):
+            self.row = row
+
+        def fetchone(self):
+            return self.row
+
+    class ReadDatabase:
+        def execute(self, statement, _parameters):
+            if "FROM repertoire_coverage_runs" in statement:
+                return Cursor({"id": "run-one", "status": "building",
+                               "settings_json": "{}", "last_error": None})
+            if "FROM repertoire_coverage_candidates" in statement:
+                return Cursor({"required_probability": 0, "covered_branches": 0,
+                               "required_branches": 0, "covered_probability": 0})
+            return Cursor((0,))
+
+    @contextmanager
+    def read_connection():
+        yield ReadDatabase()
+
+    monkeypatch.setattr(repertoire_coverage, "connection", read_connection)
+    summary = repertoire_coverage.coverage_summary("rep")
+    assert summary["status"] == "queued"
+    assert summary["is_complete"] is False

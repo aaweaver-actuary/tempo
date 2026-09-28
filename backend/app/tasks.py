@@ -34,6 +34,7 @@ from . import prefix_split_commands  # noqa: F401 - registers foreground prefix 
 from . import card_commands  # noqa: F401 - registers foreground card revisions
 from . import opportunity_commands  # noqa: F401 - registers foreground discovery state changes
 from . import activity_commands  # noqa: F401 - registers foreground activity controls
+from . import coverage_commands  # noqa: F401 - registers foreground coverage admission
 from . import integrity_repair_commands  # noqa: F401 - registers guided integrity repairs
 from .services.activity_gate import activity_gate
 from .services.durable_tasks import claim_task, complete_task, defer_task_for_contention, fail_task
@@ -48,6 +49,7 @@ from .services.postgres_opening_graph import execute_postgres_opening_graph_slic
 from .services.postgres_integrity import execute_postgres_integrity_slice
 from .services.repertoire_opportunities import execute_opportunity_slice
 from .services.discovery_admission import execute_recommendation_request_slice
+from .services.postgres_coverage_seed import execute_coverage_seed_slice
 
 
 _LOGGER = logging.getLogger("tempo.tasks")
@@ -63,6 +65,7 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "integrity_scan",
     "repertoire_opportunity",
     "discovery_recommendation",
+    "coverage_seed",
 )
 
 
@@ -133,6 +136,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
         "integrity_scan": execute_postgres_integrity_slice,
         "repertoire_opportunity": execute_opportunity_slice,
         "discovery_recommendation": execute_recommendation_request_slice,
+        "coverage_seed": execute_coverage_seed_slice,
     }
     handler = background_handlers.get(claimed_task["kind"])
     if handler is None:
@@ -143,6 +147,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
             if claimed_task["kind"] not in {
                 "daily_queue", "game_sync_record", "game_sync_window", "opening_graph_rebuild",
                 "integrity_scan",
+                "coverage_seed",
             }:
                 complete_task(
                     claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"]

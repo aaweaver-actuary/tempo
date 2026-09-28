@@ -104,6 +104,24 @@ On a disposable `repertoire_opportunity` task, pause wrote `paused=1`, replay
 returned the same receipt, and resume restored `paused=0`. No live queue state
 was changed.
 
+## Coverage seed pipeline
+
+Migration 005 adds a `building` coverage-run state and indexes for line and
+node cursors. The foreground command records one source fingerprint and a
+durable `coverage_seed` task. Each background slice reads one line, closes the
+database before chess traversal, merges one opponent node under a task lease,
+and checkpoints its cursor. Activation is also sliced. A changed source
+fingerprint or terminal task failure marks the run failed instead of exposing
+stale coverage as complete. The browser retains its command ID while enqueue
+is pending.
+
+On a three-line disposable repertoire, 15 slices built and activated five
+nodes. Their positions, route lists, covered replies, and total count matched
+the existing deterministic calculation exactly. Fingerprint reads on the two
+large restored repertoires took 7-39 ms in local samples. Explorer and Maia
+node execution are not yet ported, so this seed does not complete coverage or
+enable discovery admission by itself.
+
 ## Prioritized opening slice check
 
 The opening candidate read returned 326 rows in both the verified SQLite

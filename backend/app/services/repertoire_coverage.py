@@ -666,7 +666,7 @@ def coverage_summary(repertoire_id: str) -> dict:
         required_branches = int(totals["required_branches"] or 0)
         return {
             "run_id": run["id"],
-            "status": run["status"],
+            "status": "queued" if run["status"] == "building" else run["status"],
             "required_branches": required_branches,
             "covered_branches": covered_branches,
             "probability_coverage": (

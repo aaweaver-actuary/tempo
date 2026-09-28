@@ -334,6 +334,13 @@ def fail_task(task_id: str, generation: int, lease_token: str, error: Exception)
                 ("failed" if terminal else "retrying", sanitized_error,
                  integrity_payload["repertoire_id"], f"{task_id}:{generation}"),
             )
+        if terminal and row["kind"] == "coverage_seed":
+            coverage_payload = json.loads(row["payload_json"])
+            database.execute(
+                "UPDATE repertoire_coverage_runs SET status='failed',last_error=?,updated_at=? "
+                "WHERE id=? AND status='building'",
+                (sanitized_error, _iso(now), coverage_payload["run_id"]),
+            )
         _record_event(database, task_id, generation, state, state, sanitized_error)
         return {"state": state, "next_attempt_at": _iso(now + timedelta(seconds=delay))}
 

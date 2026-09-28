@@ -13,6 +13,7 @@ import { renameRepertoireCommand } from "../lib/repertoire-rename-command";
 import { deleteRepertoireCommand } from "../lib/repertoire-delete-command";
 import { applyOpportunityCommand } from "../lib/opportunity-command";
 import { requestOpportunityRefresh } from "../lib/opportunity-refresh-command";
+import { requestCoverageRefresh } from "../lib/coverage-refresh-command";
 import {
   readWorkspaceResponse,
   invalidateWorkspaceData,
@@ -297,11 +298,7 @@ export default function RepertoireView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshRevision, loadCoverage]);
   async function refreshCoverage(repertoireId: string) {
-    const response = await fetch(
-      `${API_URL}/api/repertoires/${repertoireId}/coverage/refresh`,
-      { method: "POST" },
-    );
-    if (!response.ok) throw new Error("Could not queue repertoire coverage.");
+    await requestCoverageRefresh(repertoireId);
     await loadCoverage(repertoireId);
   }
   async function loadOpportunities(repertoireId: string) {
