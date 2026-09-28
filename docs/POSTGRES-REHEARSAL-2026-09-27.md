@@ -782,3 +782,24 @@ manual retry uses foreground capacity. A retry clears the failed position's
 attempt count and pause control so it can actually resume. One synthetic game
 in disposable PostgreSQL passed retry, claim, heartbeat, release, and failure;
 the fixture was removed. Final publication is still pending.
+
+## Versioned game-analysis publication rehearsal
+
+The restored game set has 1,878 games, a 95th percentile of 134 moves, and a
+maximum of 229. A rollback-only 229-move, five-candidate-per-move publication
+exceeded PostgreSQL's 50 ms transaction limit. Migration 009 therefore keeps
+existing analysis in legacy tables and adds staged, generation-keyed tables.
+Read views show the legacy rows until `published_analysis_generation` switches
+to a completed staged generation in one short transaction. The importer now
+copies the two SQLite source tables into their legacy tables while verifying
+through the published views.
+
+Migration 009 was applied to the disposable restored database. Exact
+SQLite-to-PostgreSQL fingerprints still matched for all 126,356 move-analysis
+and 609,561 candidate rows. A synthetic game showed the view switching from
+legacy depth 8 to staged depth 14 when its published generation changed; the
+fixture was removed. Full 91-table verification against this long-running
+rehearsal now reports differences in `background_activity` because earlier
+rehearsals changed that scratch table. A fresh clone is required for the final
+all-table verification. The bounded staged writer and final switch command
+are the next implementation steps.

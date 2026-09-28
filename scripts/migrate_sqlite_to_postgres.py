@@ -25,6 +25,12 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.app.schema_version import POSTGRES_SCHEMA_VERSION
 
 
+COPY_TARGETS = {
+    "game_move_analysis": "game_move_analysis_legacy",
+    "game_move_analysis_candidates": "game_move_analysis_candidates_legacy",
+}
+
+
 def quote_sqlite_identifier(identifier: str) -> str:
     return '"' + identifier.replace('"', '""') + '"'
 
@@ -109,7 +115,7 @@ def copy_table(
     primary_key_columns: list[str],
 ) -> tuple[int, str]:
     statement = sql.SQL("COPY {} ({}) FROM STDIN").format(
-        sql.Identifier(table_name),
+        sql.Identifier(COPY_TARGETS.get(table_name, table_name)),
         sql.SQL(", ").join(map(sql.Identifier, column_names)),
     )
     digest = hashlib.sha256()
@@ -135,7 +141,8 @@ def reseed_identifiers(source: sqlite3.Connection, destination: psycopg.Connecti
         identity_columns = [column[1] for column in columns if column[5] and "INT" in column[2].upper()]
         for column_name in identity_columns:
             sequence = destination.execute(
-                "SELECT pg_get_serial_sequence(%s,%s)", (f"public.{table_name}", column_name)
+                "SELECT pg_get_serial_sequence(%s,%s)",
+                (f"public.{COPY_TARGETS.get(table_name, table_name)}", column_name)
             ).fetchone()[0]
             if not sequence:
                 continue

@@ -25,6 +25,25 @@ from app.postgres_store import TempoRow, postgres_sql
 from app.services import redis_admission_gate
 
 
+def test_postgres_versioned_game_analysis_import_targets_preserve_published_views():
+    import sys
+
+    scripts = Path(__file__).resolve().parents[2] / "scripts"
+    sys.path.insert(0, str(scripts))
+    try:
+        from migrate_sqlite_to_postgres import COPY_TARGETS
+    finally:
+        sys.path.pop(0)
+    migration = (Path(__file__).resolve().parents[1] / "migrations"
+                 / "009_versioned_game_analysis.sql").read_text()
+    assert COPY_TARGETS["game_move_analysis"] == "game_move_analysis_legacy"
+    assert COPY_TARGETS["game_move_analysis_candidates"] == "game_move_analysis_candidates_legacy"
+    assert "game.published_analysis_generation=0" in migration
+    assert "game.published_analysis_generation=staged.publication_generation" in migration
+    assert "CREATE VIEW game_move_analysis AS" in migration
+    assert "CREATE VIEW game_move_analysis_candidates AS" in migration
+
+
 def test_postgres_game_analysis_idle_claim_avoids_receipt_and_active_claim_uses_background_worker(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main
