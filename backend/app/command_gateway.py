@@ -32,7 +32,16 @@ def request_digest(command_name: str, payload: dict[str, Any]) -> str:
     # A paste preview is derived from the current repertoire snapshot. After a
     # successful save that snapshot changes, but replaying the same user save
     # must still resolve to its original receipt.
-    identity_payload = payload["request"] if command_name == "analysis.paste.commit" else payload
+    if command_name == "analysis.paste.commit":
+        identity_payload = payload["request"]
+    elif command_name == "discovery.accept":
+        # Recommendation preparation can change during a retry. The accepted
+        # choice and evidence revision identify the user's operation.
+        identity_payload = {key: payload[key] for key in (
+            "opportunity_id", "selected_move_uci", "evidence_fingerprint"
+        )}
+    else:
+        identity_payload = payload
     serialized = json.dumps([command_name, identity_payload], sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(serialized.encode()).hexdigest()
 

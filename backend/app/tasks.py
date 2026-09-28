@@ -45,6 +45,7 @@ from . import coverage_commands  # noqa: F401 - registers foreground coverage ad
 from . import coverage_maia_commands  # noqa: F401 - registers background Maia callbacks
 from . import game_analysis_commands  # noqa: F401 - registers background game analysis claims
 from . import game_analysis_publication  # noqa: F401 - registers analysis publication admission
+from . import discovery_commands  # noqa: F401 - registers discovery acceptance
 from .game_analysis_publication import (
     execute_game_analysis_followup_slice, execute_game_analysis_publication_slice,
 )

@@ -3627,7 +3627,24 @@ def discovery_recommendations(opportunity_id: str):
 
 
 @app.post("/api/discoveries/{opportunity_id}/accept", status_code=202)
-def accept_discovery_continuation(opportunity_id: str, request: DiscoveryAcceptanceRequest):
+def accept_discovery_continuation(
+    opportunity_id: str, request: DiscoveryAcceptanceRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        from .discovery_commands import prepare_discovery_acceptance
+        try:
+            prepared = prepare_discovery_acceptance(
+                opportunity_id, request.selected_move_uci, request.evidence_fingerprint,
+            )
+        except KeyError as error:
+            raise HTTPException(404, str(error)) from error
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from error
+        return dispatch_command(
+            "discovery.accept", prepared, idempotency_key=idempotency_key,
+        )
     try:
         intent = create_admission_intent(opportunity_id, request.selected_move_uci,
                                          request.evidence_fingerprint)

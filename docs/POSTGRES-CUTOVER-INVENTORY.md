@@ -13,7 +13,7 @@ require the integration suite.
 
 The [route contract](postgres-route-contract.json) declares the intended
 PostgreSQL treatment and current implementation state for every registered API
-method. A regression compares it with FastAPI's runtime route table. Two
+method. A regression compares it with FastAPI's runtime route table. One
 mutations remain explicitly blocked, and the health gate remains closed.
 
 | Boundary | Inventory | Cutover owner |

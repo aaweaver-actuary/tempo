@@ -585,7 +585,7 @@
     "path": "/api/discoveries/{opportunity_id}/accept",
     "handler": "accept_discovery_continuation",
     "treatment": "foreground_command",
-    "state": "blocked"
+    "state": "staged"
   },
   {
     "method": "GET",
