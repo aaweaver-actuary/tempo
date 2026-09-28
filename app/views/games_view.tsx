@@ -15,6 +15,7 @@ import {
 import { useBoardPublisher } from "../hooks/use-board-publisher";
 import { API_URL, STANDARD_FEN } from "../const";
 import { setGameExclusion } from "../lib/game-exclusion-command";
+import { requestGameThreatRefresh } from "../lib/game-threat-refresh-command";
 import {
   readWorkspaceResponse,
   invalidateWorkspaceData,
@@ -599,12 +600,7 @@ export default function GamesView({
     if (!selected || defenseBusy) return;
     setDefenseBusy(true);
     try {
-      const response = await fetch(
-        `${API_URL}/api/games/${encodeURIComponent(selected.id)}/defensive-threats/refresh`,
-        { method: "POST" },
-      );
-      if (!response.ok)
-        throw new Error("Could not queue defensive analysis for this game.");
+      await requestGameThreatRefresh(selected.id);
       await loadDefenseCandidates();
     } catch (reason) {
       setError(

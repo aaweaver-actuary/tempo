@@ -828,3 +828,9 @@ one PostgreSQL transaction. The Games browser view retains the command ID
 across a pending response. A disposable PostgreSQL rehearsal inserted one
 synthetic game, saved and replayed the same exclusion receipt, verified the
 queued derivation, and removed the fixture.
+
+Manual defensive-threat refresh now uses a foreground command to enqueue its
+bounded scan in the same transaction as the receipt. The Games view retains
+the operation ID while admission is pending. A disposable PostgreSQL rehearsal
+saved and replayed one synthetic refresh, confirmed one task generation and a
+completed receipt, and removed the fixture.

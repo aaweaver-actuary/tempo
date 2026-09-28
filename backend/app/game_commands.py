@@ -56,4 +56,24 @@ def set_game_exclusion(database: PostgresConnection, payload: dict[str, Any]) ->
     return {"game_id": game_id, "excluded": excluded}
 
 
+def request_defensive_threat_scan(
+    database: PostgresConnection, payload: dict[str, Any],
+) -> dict[str, Any]:
+    game_id = str(payload["game_id"])
+    game = database.execute(
+        "SELECT analysis_version FROM imported_games WHERE id=? AND analysis_state='ready'",
+        (game_id,),
+    ).fetchone()
+    if game is None:
+        raise HTTPException(404, "Analyzed game not found")
+    analysis_version = int(game["analysis_version"])
+    enqueue_task_in_transaction(
+        database, "defensive_threat_scan", game_id,
+        {"game_id": game_id, "analysis_version": analysis_version, "cursor": 0},
+        priority=145,
+    )
+    return {"status": "queued", "analysis_version": analysis_version}
+
+
 register_command("games.exclusion.set", set_game_exclusion)
+register_command("games.defensive_threats.refresh", request_defensive_threat_scan)

@@ -78,6 +78,46 @@ def test_postgres_game_exclusion_uses_foreground_receipt_and_atomic_followup(mon
                           {"repertoire_id": "repertoire-a", "phase": "summaries", "cursor": ""}, 130)]
 
 
+def test_postgres_manual_threat_refresh_admits_scan_through_foreground_receipt(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import command_dispatch, game_commands, main
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(command_dispatch, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or
+                        {"status": "queued", "analysis_version": 3})
+    response = TestClient(main.app).post(
+        "/api/games/provider:one/defensive-threats/refresh",
+        headers={"Idempotency-Key": "threat-refresh-one"},
+    )
+    assert response.status_code == 200, response.text
+    assert dispatched == [("games.defensive_threats.refresh",
+                           {"game_id": "provider:one"}, "threat-refresh-one")]
+
+    enqueued = []
+
+    class Cursor:
+        def fetchone(self):
+            return {"analysis_version": 3}
+
+    class Database:
+        def execute(self, statement, parameters):
+            assert "analysis_state='ready'" in statement
+            assert parameters == ("provider:one",)
+            return Cursor()
+
+    monkeypatch.setattr(game_commands, "enqueue_task_in_transaction",
+                        lambda _database, kind, key, payload, *, priority:
+                        enqueued.append((kind, key, payload, priority)))
+    assert game_commands.request_defensive_threat_scan(
+        Database(), {"game_id": "provider:one"},
+    ) == {"status": "queued", "analysis_version": 3}
+    assert enqueued == [("defensive_threat_scan", "provider:one",
+                         {"game_id": "provider:one", "analysis_version": 3, "cursor": 0}, 145)]
+
+
 def test_postgres_threat_scan_prepares_outside_transaction_and_rejects_stale_lease(monkeypatch):
     from app import tasks
     from app.services import threat_pipeline

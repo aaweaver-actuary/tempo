@@ -498,6 +498,10 @@ async def prioritize_foreground_requests(request: Request, call_next):
                              and request.method == "POST")
         game_exclusion_command = (len(path_parts) >= 4 and path_parts[:2] == ["api", "games"]
                                   and path_parts[-1] == "exclusion" and request.method == "POST")
+        game_threat_refresh_command = (len(path_parts) >= 5
+                                       and path_parts[:2] == ["api", "games"]
+                                       and path_parts[-2:] == ["defensive-threats", "refresh"]
+                                       and request.method == "POST")
         game_analysis_claim_command = (path_parts == ["api", "games", "analysis", "claim"]
                                        and request.method == "POST")
         game_position_claim_command = (path_parts == ["api", "games", "analysis", "position", "claim"]
@@ -560,7 +564,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     browser_activity, activity_control_command, activity_progress_command,
                     task_retry_command, tactic_attempt_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
-                    game_exclusion_command,
+                    game_exclusion_command, game_threat_refresh_command,
                     game_analysis_claim_command, game_position_claim_command,
                     game_position_callback_command, game_position_finalize_command,
                     game_parent_callback_command,
@@ -4971,7 +4975,15 @@ def retry_defensive_threat_analysis(request_id: str):
 
 
 @app.post("/api/games/{game_id:path}/defensive-threats/refresh")
-def refresh_game_defensive_threats(game_id: str):
+def refresh_game_defensive_threats(
+    game_id: str, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.defensive_threats.refresh", {"game_id": game_id},
+            idempotency_key=idempotency_key,
+        )
     with read_connection() as database:
         row = database.execute(
             "SELECT analysis_version FROM imported_games WHERE id=? AND analysis_state='ready'",
