@@ -98,6 +98,145 @@ def test_phone_prepared_queue_rejects_competing_computer_review(tmp_path, monkey
             ).fetchone()[0] == 1
 
 
+def test_phone_review_after_computer_review_is_credited_once_in_completion_order(tmp_path, monkeypatch):
+    """A phone review must survive a completed desktop queue attempt and retries."""
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        card = _prepared_card(client)
+        path = f"/api/cards/{card['id']}/review"
+        phone_time = (datetime.now(timezone.utc) - timedelta(minutes=3)).isoformat()
+        computer_time = (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat()
+        computer = client.post(path, json={
+            "outcome": "again", "queue_entry_id": card["queue_entry_id"],
+            "recorded_at": computer_time, "attempt_id": "computer-1",
+        })
+        assert computer.status_code == 200
+        phone_request = {
+            "outcome": "correct", "queue_entry_id": card["queue_entry_id"],
+            "recorded_at": phone_time, "attempt_id": "phone-1",
+            "expected_review_id": card["latest_review_id"],
+            "expected_revision": card["revision"],
+        }
+        phone = client.post(path, json=phone_request)
+        assert phone.status_code == 200
+        assert phone.json()["reconciliation"] == "chronological"
+        assert phone.json()["warning"] is None
+        assert client.post(path, json=phone_request).json() == phone.json()
+        with database.connection() as connection:
+            reviews = connection.execute(
+                "SELECT rating,reviewed_at FROM reviews WHERE card_id=? ORDER BY reviewed_at,id",
+                (card["id"],),
+            ).fetchall()
+            assert [(row["rating"], row["reviewed_at"]) for row in reviews] == [
+                ("correct", phone_time), ("again", computer_time),
+            ]
+            assert connection.execute(
+                "SELECT COUNT(*) FROM review_attempt_receipts WHERE card_id=?", (card["id"],),
+            ).fetchone()[0] == 2
+
+
+def test_older_phone_conflict_keeps_computer_schedule_and_warns_when_snapshot_missing(tmp_path, monkeypatch):
+    """Legacy phone results are credited even when historical state cannot be replayed."""
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        card = _prepared_card(client)
+        path = f"/api/cards/{card['id']}/review"
+        computer = client.post(path, json={
+            "outcome": "again", "queue_entry_id": card["queue_entry_id"],
+        })
+        assert computer.status_code == 200
+        with database.connection() as connection:
+            connection.execute("DELETE FROM review_schedule_snapshots")
+        phone = client.post(path, json={
+            "outcome": "correct", "queue_entry_id": card["queue_entry_id"],
+            "recorded_at": (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat(),
+            "attempt_id": "legacy-phone-1", "expected_revision": card["revision"],
+        })
+        assert phone.status_code == 200
+        assert phone.json()["reconciliation"] == "computer_fallback"
+        assert "computer schedule" in phone.json()["warning"]
+        with database.connection() as connection:
+            assert connection.execute(
+                "SELECT COUNT(*) FROM reviews WHERE card_id=?", (card["id"],),
+            ).fetchone()[0] == 2
+
+
+def test_legacy_phone_retry_after_uncertain_save_does_not_count_twice(tmp_path, monkeypatch):
+    """An old phone journal can adopt its already-saved result after upgrading."""
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        card = _prepared_card(client)
+        path = f"/api/cards/{card['id']}/review"
+        completed_at = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
+        original = {
+            "outcome": "correct", "queue_entry_id": card["queue_entry_id"],
+            "recorded_at": completed_at,
+        }
+        assert client.post(path, json=original).status_code == 200
+        replayed = client.post(path, json={**original, "attempt_id": "old-phone-retry"})
+        assert replayed.status_code == 200
+        assert replayed.json()["idempotent"]
+        with database.connection() as connection:
+            assert connection.execute(
+                "SELECT COUNT(*) FROM reviews WHERE card_id=?", (card["id"],),
+            ).fetchone()[0] == 1
+
+
+def test_phone_repeat_is_credited_when_computer_did_not_schedule_that_repeat(tmp_path, monkeypatch):
+    """A locally completed repeat remains a distinct review of the original attempt."""
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        card = _prepared_card(client)
+        path = f"/api/cards/{card['id']}/review"
+        first_time = (datetime.now(timezone.utc) - timedelta(minutes=4)).isoformat()
+        repeat_time = (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat()
+        with database.connection() as connection:
+            connection.execute("UPDATE cards SET first_correct_at=? WHERE id=?", (first_time, card["id"]))
+        assert client.post(path, json={
+            "outcome": "correct", "queue_entry_id": card["queue_entry_id"],
+            "recorded_at": (datetime.now(timezone.utc) - timedelta(minutes=1)).isoformat(),
+            "attempt_id": "computer-no-repeat",
+        }).status_code == 200
+        for attempt_id, completed_at in (("phone-first", first_time), ("phone-repeat", repeat_time)):
+            response = client.post(path, json={
+                "outcome": "correct", "queue_entry_id": card["queue_entry_id"],
+                "recorded_at": completed_at, "attempt_id": attempt_id,
+                "expected_revision": card["revision"],
+            })
+            assert response.status_code == 200
+            assert response.json()["reconciliation"] == "chronological"
+        with database.connection() as connection:
+            assert connection.execute(
+                "SELECT COUNT(*) FROM reviews WHERE card_id=?", (card["id"],),
+            ).fetchone()[0] == 3
+
+
+def test_phone_review_of_changed_card_is_preserved_with_actionable_warning(tmp_path, monkeypatch):
+    """A changed card keeps the phone evidence without applying an obsolete grade."""
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        card = _prepared_card(client)
+        path = f"/api/cards/{card['id']}/review"
+        assert client.post(path, json={
+            "outcome": "again", "queue_entry_id": card["queue_entry_id"],
+            "attempt_id": "computer-edited",
+        }).status_code == 200
+        with database.connection() as connection:
+            connection.execute("UPDATE cards SET revision=revision+1 WHERE id=?", (card["id"],))
+        phone = client.post(path, json={
+            "outcome": "correct", "queue_entry_id": card["queue_entry_id"],
+            "attempt_id": "phone-before-edit", "expected_revision": card["revision"],
+            "recorded_at": (datetime.now(timezone.utc) - timedelta(minutes=2)).isoformat(),
+        })
+        assert phone.status_code == 200
+        assert phone.json()["reconciliation"] == "history_only"
+        assert "changed" in phone.json()["warning"]
+        with database.connection() as connection:
+            assert connection.execute(
+                "SELECT COUNT(*) FROM review_attempt_receipts WHERE card_id=?", (card["id"],),
+            ).fetchone()[0] == 2
+
+
 def test_phone_prepared_queue_rejects_a_card_edited_after_preparation(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
