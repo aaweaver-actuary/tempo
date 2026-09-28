@@ -511,6 +511,12 @@ receipts. The worker locks the game before choosing or creating a session and
 locks the session before advancing an attempt. A rolled-back rehearsal on the
 disposable PostgreSQL clone created an active five-finding session and saved a
 legal correction; the browser retains operation IDs across pending responses.
+Finding curation and accept/ignore decisions now also use foreground receipts.
+A rolled-back rehearsal skipped and ignored a tactical finding and accepted a
+canonical repertoire lapse. The last action had no eligible recent study
+review, so it did not move a queue card. A second rolled-back rehearsal added
+an earlier study review to an eligible linked lapse. Acceptance queued that
+card at position 0 with the canonical gameplay priority reason in 30.0 ms.
 
 An isolated localhost rehearsal now started the PostgreSQL API, separate
 foreground and background Celery workers, and Beat against the mutable scratch

@@ -17,6 +17,7 @@ import { API_URL, STANDARD_FEN } from "../const";
 import { setGameExclusion } from "../lib/game-exclusion-command";
 import { requestGameThreatRefresh } from "../lib/game-threat-refresh-command";
 import { startGuidedReviewCommand, submitGuidedReviewCommand } from "../lib/guided-review-command";
+import { curateGameFinding, decideGameFinding } from "../lib/game-finding-command";
 import {
   readWorkspaceResponse,
   invalidateWorkspaceData,
@@ -655,26 +656,8 @@ export default function GamesView({
     findingId: string,
     decision: "accepted" | "ignored",
   ) {
-    const response = await fetch(
-      `${API_URL}/api/game-findings/${findingId}/decision`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision }),
-      },
-    );
-    if (!response.ok) {
-      const payload: unknown = await response.json().catch(() => null);
-      const detail =
-        payload && typeof payload === "object" && "detail" in payload
-          ? (payload as { detail: unknown }).detail
-          : null;
-      setError(
-        typeof detail === "string"
-          ? detail
-          : "Could not save that gameplay decision.",
-      );
-    } else {
+    try {
+      await decideGameFinding(findingId, decision);
       await loadFindings();
       if (decision === "accepted") {
         try {
@@ -685,7 +668,7 @@ export default function GamesView({
           );
         }
       }
-    }
+    } catch (reason) { setError(String(reason)); }
   }
   async function excludeSelectedGame() {
     if (!selected) return;
@@ -742,22 +725,11 @@ export default function GamesView({
   async function tacticalCurationAction(action: "skip" | "ignore") {
     if (!tacticalQueue.item || tacticalBusy) return;
     setTacticalBusy(true);
-    const response = await fetch(
-      `${API_URL}/api/game-findings/${tacticalQueue.item.id}/curation`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
-      },
-    );
-    setTacticalBusy(false);
-    if (!response.ok) {
-      setError(
-        "Could not save that curation decision. The current candidate is still visible.",
-      );
-      return;
-    }
-    await loadTacticalQueue();
+    try {
+      await curateGameFinding(tacticalQueue.item.id, action);
+      await loadTacticalQueue();
+    } catch (reason) { setError(String(reason)); }
+    finally { setTacticalBusy(false); }
   }
   async function previewTacticalCard(save: boolean) {
     if (!tacticalQueue.item || tacticalBusy) return;

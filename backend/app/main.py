@@ -517,6 +517,10 @@ async def prioritize_foreground_requests(request: Request, call_next):
             len(path_parts) == 4 and path_parts[:2] == ["api", "guided-reviews"]
             and path_parts[-1] == "attempt" and request.method == "POST"
         )
+        game_finding_decision_command = (
+            len(path_parts) == 4 and path_parts[:2] == ["api", "game-findings"]
+            and path_parts[-1] in {"curation", "decision"} and request.method == "POST"
+        )
         game_threat_refresh_command = (len(path_parts) >= 5
                                        and path_parts[:2] == ["api", "games"]
                                        and path_parts[-2:] == ["defensive-threats", "refresh"]
@@ -587,6 +591,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     game_exclusion_command, game_threat_refresh_command,
                     guided_review_start_command, guided_review_attempt_command,
+                    game_finding_decision_command,
                     game_analysis_claim_command, game_position_claim_command,
                     game_position_callback_command, game_position_finalize_command,
                     game_parent_callback_command,
@@ -5231,7 +5236,15 @@ def next_tactical_finding(motif: str | None = None):
 
 
 @app.post("/api/game-findings/{finding_id}/curation")
-def curate_tactical_finding(finding_id: str, request: GameFindingCurationRequest):
+def curate_tactical_finding(finding_id: str, request: GameFindingCurationRequest,
+                            idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "game_findings.curate",
+            {"finding_id": finding_id, "request": request.model_dump(mode="json")},
+            idempotency_key=idempotency_key,
+        )
     now = datetime.now(timezone.utc)
     with connection() as db:
         finding = db.execute(
@@ -5272,7 +5285,15 @@ def game_tactical_statistics(
 
 
 @app.post("/api/game-findings/{finding_id}/decision")
-def decide_game_finding(finding_id: str, request: GameFindingDecisionRequest):
+def decide_game_finding(finding_id: str, request: GameFindingDecisionRequest,
+                        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "game_findings.decide",
+            {"finding_id": finding_id, "request": request.model_dump(mode="json")},
+            idempotency_key=idempotency_key,
+        )
     with connection() as db:
         finding = db.execute(
             """SELECT f.*,g.adaptive_excluded FROM game_findings f
