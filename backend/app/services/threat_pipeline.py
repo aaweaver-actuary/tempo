@@ -248,8 +248,12 @@ def execute_threat_backfill_slice(task: dict) -> bool:
     return True
 
 
-def _advance_scan(database, task: dict, next_cursor: int) -> None:
+def _advance_scan(database, task: dict, next_cursor: int, *, seed_index: int = 0) -> None:
     payload = {**task["payload"], "cursor": next_cursor}
+    if seed_index:
+        payload["seed_index"] = seed_index
+    else:
+        payload.pop("seed_index", None)
     database.execute(
         """UPDATE background_tasks SET generation=generation+1,state='queued',phase='queued',
               payload_json=?,attempt_count=0,next_attempt_at=?,lease_token=NULL,
@@ -260,13 +264,13 @@ def _advance_scan(database, task: dict, next_cursor: int) -> None:
     )
 
 
-def _upsert_seed(database, game: GameSnapshot, seed: ThreatSeed) -> None:
+def _upsert_seed(database, game: GameSnapshot, seed: ThreatSeed, *, prepared=None) -> None:
     incident_id = _digest({
         "game": game.game_id,
         "fork_ply": seed.fork_ply, "geometry": asdict(seed.geometry),
     })
     finding_id = _digest({"kind": "defensive tactical threat", "incident": incident_id})
-    route = trace_knight_route(game, seed, max_hops=POLICY.max_knight_hops)
+    route, anchors, plans = prepared or _prepare_seed(game, seed)
     finding_evidence = {
         "subtype": "knightKingMajor", "incident_id": incident_id,
         "seed": asdict(seed), "knight_route": [asdict(hop) for hop in route],
@@ -289,7 +293,6 @@ def _upsert_seed(database, game: GameSnapshot, seed: ThreatSeed) -> None:
         )
         if previous_seed["analysis_version"] == game.analysis_version and incoming_rank <= previous_rank:
             return
-    anchors = propose_exercise_anchors(game, seed, POLICY)
     now = _now()
     database.execute(
         """INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,
@@ -323,10 +326,7 @@ def _upsert_seed(database, game: GameSnapshot, seed: ThreatSeed) -> None:
             "SELECT source_fingerprint,card_id FROM threat_training_candidates WHERE id=?",
             (candidate_id,),
         ).fetchone()
-        plan = make_validation_plan(
-            anchor, engine_version=ENGINE_VERSION,
-            network_version=NETWORK_VERSION, policy=POLICY,
-        )
+        plan = plans[anchor.player_ply]
         database.execute(
             """INSERT INTO threat_training_candidates(
                    id,finding_id,game_id,analysis_version,incident_id,player_ply,
@@ -375,6 +375,19 @@ def _upsert_seed(database, game: GameSnapshot, seed: ThreatSeed) -> None:
             )
 
 
+def _prepare_seed(game: GameSnapshot, seed: ThreatSeed):
+    """Keep chess traversal and validation planning outside the write transaction."""
+    route = trace_knight_route(game, seed, max_hops=POLICY.max_knight_hops)
+    anchors = propose_exercise_anchors(game, seed, POLICY)
+    plans = {
+        anchor.player_ply: make_validation_plan(
+            anchor, engine_version=ENGINE_VERSION,
+            network_version=NETWORK_VERSION, policy=POLICY,
+        ) for anchor in anchors
+    }
+    return route, anchors, plans
+
+
 def execute_threat_scan_slice(task: dict) -> bool:
     """Scan one actual game ply and its bounded saved candidate lines, then yield."""
 
@@ -382,7 +395,7 @@ def execute_threat_scan_slice(task: dict) -> bool:
     cursor = int(task["payload"]["cursor"])
     version = int(task["payload"]["analysis_version"])
     activity_gate.wait_for_foreground()
-    with read_connection() as database:
+    with background_read_connection() as database:
         row = database.execute(
             "SELECT id,analysis_version,start_fen,moves_json,color FROM imported_games WHERE id=?",
             (game_id,),
@@ -410,21 +423,30 @@ def execute_threat_scan_slice(task: dict) -> bool:
         except (ValueError, TypeError):
             # A malformed saved PV is never promoted into evidence.
             continue
+    postgres_scan = postgres_store.configured()
+    seed_index = int(task["payload"].get("seed_index", 0)) if postgres_scan else 0
+    selected_seeds = seeds[seed_index:seed_index + 1] if postgres_scan else seeds
+    prepared_seeds = [(seed, _prepare_seed(game, seed)) for seed in selected_seeds]
+    ply_complete = not postgres_scan or seed_index + len(selected_seeds) >= len(seeds)
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
+        if postgres_store.configured() and not lock_current_slice(database, task):
+            return True
         still_current = database.execute(
             "SELECT analysis_version FROM imported_games WHERE id=?", (game_id,)
         ).fetchone()
         if not still_current or still_current[0] != version:
             return False
-        for seed in seeds:
-            _upsert_seed(database, game, seed)
-        database.execute(
-            """UPDATE threat_training_candidates SET superseded_at=COALESCE(superseded_at,?)
-               WHERE game_id=? AND analysis_version!=? AND superseded_at IS NULL""",
-            (_now(), game_id, version),
-        )
-        _advance_scan(database, task, cursor + 1)
+        for seed, prepared in prepared_seeds:
+            _upsert_seed(database, game, seed, prepared=prepared)
+        if ply_complete:
+            database.execute(
+                """UPDATE threat_training_candidates SET superseded_at=COALESCE(superseded_at,?)
+                   WHERE game_id=? AND analysis_version!=? AND superseded_at IS NULL""",
+                (_now(), game_id, version),
+            )
+        _advance_scan(database, task, cursor + 1 if ply_complete else cursor,
+                      seed_index=0 if ply_complete else seed_index + 1)
     return True
 
 

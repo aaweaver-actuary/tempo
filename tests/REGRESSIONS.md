@@ -4,6 +4,8 @@
 
 | Issue | Required regression |
 | --- | --- |
+| PostgreSQL game follow-up enqueues a defensive scan that no Celery worker claims, or a stale scan writes after its lease changes | `test_postgres_threat_scan_prepares_outside_transaction_and_rejects_stale_lease` |
+| A defensive scan writes every detected seed in one PostgreSQL transaction and blocks foreground work | `test_postgres_threat_scan_publishes_one_seed_per_restartable_slice` |
 | PostgreSQL API startup leaves today's queue refreshing forever because it never requests the durable queue task | `test_postgres_api_startup_requests_todays_queue_through_foreground_command` |
 | Browser activity is blocked by the PostgreSQL write guard, allowing background slices to begin during active study | `test_postgres_browser_activity_extends_cross_process_foreground_admission` |
 | An API left running across midnight never creates the next day's PostgreSQL queue | `test_postgres_daily_queue_rollover_requests_refresh_until_ready` |

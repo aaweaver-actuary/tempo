@@ -25,6 +25,125 @@ from app.postgres_store import TempoRow, postgres_sql
 from app.services import redis_admission_gate
 
 
+def test_postgres_threat_scan_prepares_outside_transaction_and_rejects_stale_lease(monkeypatch):
+    from app import tasks
+    from app.services import threat_pipeline
+
+    assert "defensive_threat_scan" in tasks._SUPPORTED_BACKGROUND_KINDS
+    task = {"id": "scan", "generation": 2, "lease_token": "old", "payload": {
+        "game_id": "game", "analysis_version": 1, "cursor": 0,
+    }}
+    state = {"in_write": False, "prepared": False, "locked": False}
+
+    class Cursor:
+        def __init__(self, row=None, rows=()):
+            self.row, self.rows = row, rows
+
+        def fetchone(self):
+            return self.row
+
+        def __iter__(self):
+            return iter(self.rows)
+
+    class ReadDatabase:
+        def execute(self, statement, _parameters):
+            if "FROM imported_games" in statement:
+                return Cursor({"id": "game", "analysis_version": 1,
+                               "start_fen": chess.STARTING_FEN,
+                               "moves_json": '["e2e4"]', "color": "white"})
+            return Cursor(rows=())
+
+    @contextmanager
+    def read_database():
+        assert not state["in_write"]
+        yield ReadDatabase()
+
+    @contextmanager
+    def write_database(*, background):
+        assert background and state["prepared"]
+        state["in_write"] = True
+        try:
+            yield object()
+        finally:
+            state["in_write"] = False
+
+    def prepare_seed(_game, _seed):
+        assert not state["in_write"]
+        state["prepared"] = True
+        return (), (), {}
+
+    def stale_lease(_database, _task):
+        state["locked"] = True
+        return False
+
+    monkeypatch.setattr(threat_pipeline.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(threat_pipeline.activity_gate, "wait_for_foreground", lambda: None)
+    monkeypatch.setattr(threat_pipeline, "background_read_connection", read_database)
+    monkeypatch.setattr(threat_pipeline, "connection", write_database)
+    monkeypatch.setattr(threat_pipeline, "find_defensive_knight_forks",
+                        lambda _game, _source: [object()])
+    monkeypatch.setattr(threat_pipeline, "_prepare_seed", prepare_seed)
+    monkeypatch.setattr(threat_pipeline, "lock_current_slice", stale_lease)
+
+    assert threat_pipeline.execute_threat_scan_slice(task) is True
+    assert state == {"in_write": False, "prepared": True, "locked": True}
+
+
+def test_postgres_threat_scan_publishes_one_seed_per_restartable_slice(monkeypatch):
+    from app.services import threat_pipeline
+
+    published = []
+    advanced = []
+    seed_ids = ["seed-one", "seed-two", "seed-three"]
+    task = {"id": "scan", "generation": 2, "lease_token": "live", "payload": {
+        "game_id": "game", "analysis_version": 1, "cursor": 0,
+    }}
+
+    class Cursor:
+        def __init__(self, row=None, rows=()):
+            self.row, self.rows = row, rows
+
+        def fetchone(self):
+            return self.row
+
+        def __iter__(self):
+            return iter(self.rows)
+
+    class Database:
+        def execute(self, statement, _parameters):
+            if statement.startswith("SELECT analysis_version FROM imported_games"):
+                return Cursor((1,))
+            if "FROM imported_games" in statement:
+                return Cursor({"id": "game", "analysis_version": 1,
+                               "start_fen": chess.STARTING_FEN,
+                               "moves_json": '["e2e4"]', "color": "white"})
+            return Cursor(rows=())
+
+    @contextmanager
+    def open_database(*, background=True):
+        yield Database()
+
+    monkeypatch.setattr(threat_pipeline.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(threat_pipeline.activity_gate, "wait_for_foreground", lambda: None)
+    monkeypatch.setattr(threat_pipeline, "background_read_connection", open_database)
+    monkeypatch.setattr(threat_pipeline, "connection", open_database)
+    monkeypatch.setattr(threat_pipeline, "lock_current_slice", lambda *_arguments: True)
+    monkeypatch.setattr(threat_pipeline, "find_defensive_knight_forks",
+                        lambda _game, _source: seed_ids)
+    monkeypatch.setattr(threat_pipeline, "_prepare_seed", lambda *_arguments: ((), (), {}))
+    monkeypatch.setattr(threat_pipeline, "_upsert_seed",
+                        lambda _database, _game, seed, *, prepared: published.append(seed))
+    monkeypatch.setattr(threat_pipeline, "_advance_scan",
+                        lambda _database, _task, cursor, *, seed_index=0:
+                        advanced.append((cursor, seed_index)))
+
+    for expected_seed_index in range(3):
+        task["payload"]["seed_index"] = expected_seed_index
+        assert threat_pipeline.execute_threat_scan_slice(task)
+    assert published == seed_ids
+    assert advanced == [(0, 1), (0, 2), (1, 0)]
+
+
 def test_postgres_versioned_game_analysis_import_targets_preserve_published_views():
     import sys
 

@@ -47,7 +47,7 @@ from .services.durable_tasks import claim_task, complete_task, defer_task_for_co
 from .services.priority_retention import execute_priority_retention_slice
 from .services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
 from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
-from .services.threat_pipeline import execute_threat_report_audit
+from .services.threat_pipeline import execute_threat_report_audit, execute_threat_scan_slice
 from .services.threat_training import execute_defense_rubric_audit_slice
 from .services.postgres_game_sync import execute_game_sync_record_slice
 from .services.postgres_game_sync_windows import execute_game_sync_window_slice
@@ -66,6 +66,7 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "defensive_rubric_audit",
     "repertoire_game_refresh",
     "defensive_threat_report_audit",
+    "defensive_threat_scan",
     "priority_retention",
     "game_sync_record",
     "game_sync_window",
@@ -159,6 +160,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
         "defensive_rubric_audit": execute_defense_rubric_audit_slice,
         "repertoire_game_refresh": execute_repertoire_game_refresh_slice,
         "defensive_threat_report_audit": execute_threat_report_audit,
+        "defensive_threat_scan": execute_threat_scan_slice,
         "priority_retention": execute_priority_retention_slice,
         "game_sync_record": execute_game_sync_record_slice,
         "game_sync_window": execute_game_sync_window_slice,

@@ -816,4 +816,8 @@ follow-ups, and a 229-move/five-candidate synthetic game completed in 30
 slices under the 50 ms database transaction timeout. The large admission
 transaction took 29.6 ms; its slowest complete slice call, including read and
 admission overhead, took 52.5 ms. All fixtures were removed. The queued
-derivation and defensive-scan handlers remain separate cutover work.
+derivation remains separate cutover work. The defensive-scan task is now
+claimed by the PostgreSQL Celery worker. It prepares chess evidence outside
+the write transaction, locks its lease before publication, and publishes one
+detected seed per restartable slice. Its PostgreSQL transaction duration still
+needs a real-data rehearsal before the health gate can open.
