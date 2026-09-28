@@ -135,6 +135,8 @@ try {
   console.log("PASS PostgreSQL maintenance image starts migration and import commands");
   run("docker", [...compose, "up", "--build", "-d"]);
   await waitForReady();
+  run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+    "/source/scripts/check_postgres_threat_candidate_upsert.py"]);
   const runningContainers = spawnSync("docker", [...compose, "ps", "--format", "json"],
     { encoding: "utf8", env: environment });
   assert.equal(runningContainers.status, 0, runningContainers.stderr);

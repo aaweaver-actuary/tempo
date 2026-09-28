@@ -4,6 +4,7 @@
 
 | Issue | Required regression |
 | --- | --- |
+| PostgreSQL defensive threat scan exhausts retries because its candidate upsert refers ambiguously to the existing source fingerprint | `PostgreSQL defensive candidate upsert replays and resets changed evidence` in `scripts/check_postgres_threat_candidate_upsert.py`, run by `scripts/test-postgres-docker.mjs` |
 | The PostgreSQL maintenance image cannot start the schema migration or SQLite import because it omits the shared schema-version module | `PostgreSQL maintenance image starts migration and import commands` in `scripts/test-postgres-docker.mjs` |
 | Cutover verification hashes PostgreSQL-only publication columns and falsely reports a mismatch with the SQLite source | `test_postgres_cutover_digest_ignores_new_target_columns` |
 | Backup restore verification fails after source-column projection is introduced or omits PostgreSQL-only receipt columns | `test_postgres_backup_comparison_projects_postgres_only_columns` |
