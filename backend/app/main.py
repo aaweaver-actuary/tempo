@@ -476,6 +476,10 @@ async def prioritize_foreground_requests(request: Request, call_next):
                             and request.method == "POST")
         activity_control_command = (path_parts == ["api", "system", "activity", "control"]
                                     and request.method == "POST")
+        activity_progress_command = (path_parts == ["api", "system", "activity", "progress"]
+                                     and request.method == "POST")
+        task_retry_command = (len(path_parts) == 5 and path_parts[:3] == ["api", "system", "tasks"]
+                              and path_parts[4] == "retry" and request.method == "POST")
         tactic_attempt_command = (path_parts == ["api", "tactics", "attempt"]
                                   and request.method == "POST")
         tactic_activation_command = (path_parts == ["api", "tactics", "activation"]
@@ -525,7 +529,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     repertoire_delete_command, opportunity_state_command,
                     opportunity_refresh_command, coverage_refresh_command,
                     coverage_maia_command, coverage_explorer_session,
-                    browser_activity, activity_control_command, tactic_attempt_command,
+                    browser_activity, activity_control_command, activity_progress_command,
+                    task_retry_command, tactic_attempt_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     settings_command,
                     endgame_probe, endgame_template_command,
@@ -684,7 +689,8 @@ def control_system_activity(request: dict,
 
 
 @app.post("/api/system/activity/progress")
-def report_system_activity_progress(request: dict):
+def report_system_activity_progress(request: dict,
+                                    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     source = request.get("source")
     work_id = request.get("id")
     generation = request.get("generation")
@@ -696,6 +702,14 @@ def report_system_activity_progress(request: dict):
         raise HTTPException(422, "Invalid analysis progress")
     if isinstance(completed, bool) or not isinstance(completed, int) or isinstance(total, bool) or not isinstance(total, int):
         raise HTTPException(422, "Invalid analysis progress count")
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "activity.progress", {"source": source, "id": work_id, "generation": generation,
+                                  "phase": phase, "completed": completed, "total": total,
+                                  "lease_id": lease_id},
+            idempotency_key=idempotency_key, background=True,
+        )
     try:
         reported = report_progress(source, work_id, generation, phase, completed, total, background=True, lease_id=lease_id)
     except ValueError as error:
@@ -706,7 +720,13 @@ def report_system_activity_progress(request: dict):
 
 
 @app.post("/api/system/tasks/{task_id}/retry")
-def retry_system_task(task_id: str):
+def retry_system_task(task_id: str,
+                      idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "activity.task.retry", {"task_id": task_id}, idempotency_key=idempotency_key,
+        )
     retried = retry_task(task_id)
     if retried is None:
         raise HTTPException(404, "Terminal task not found")

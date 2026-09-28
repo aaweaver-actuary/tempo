@@ -25,6 +25,85 @@ from app.postgres_store import TempoRow, postgres_sql
 from app.services import redis_admission_gate
 
 
+def test_postgres_analysis_progress_and_task_retry_dispatch_out_of_api(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    observed = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(
+        command_dispatch, "dispatch_command",
+        lambda name, payload, **options:
+            observed.append((name, payload, options)) or {"ok": True},
+    )
+    client = TestClient(main.app)
+    progress = client.post(
+        "/api/system/activity/progress", headers={"Idempotency-Key": "progress-one"},
+        json={"source": "game_analysis", "id": "game", "generation": "2:2",
+              "phase": "search", "completed": 1, "total": 3, "lease_id": "lease"},
+    )
+    retry = client.post(
+        "/api/system/tasks/task-one/retry", headers={"Idempotency-Key": "retry-one"},
+    )
+    assert progress.status_code == retry.status_code == 200
+    assert observed[0] == (
+        "activity.progress",
+        {"source": "game_analysis", "id": "game", "generation": "2:2",
+         "phase": "search", "completed": 1, "total": 3, "lease_id": "lease"},
+        {"idempotency_key": "progress-one", "background": True},
+    )
+    assert observed[1] == (
+        "activity.task.retry", {"task_id": "task-one"},
+        {"idempotency_key": "retry-one"},
+    )
+
+
+def test_postgres_analysis_progress_rejects_stale_lease_before_write():
+    from app.activity_commands import report_analysis_progress
+
+    class StaleLeaseDatabase:
+        def execute_native(self, statement, *_parameters):
+            assert statement.startswith("SELECT analysis_version")
+            return SimpleNamespace(fetchone=lambda: {
+                "analysis_version": 2, "analysis_evidence_version": 2,
+                "status": "leased", "lease_id": "new-lease",
+            })
+
+    with pytest.raises(HTTPException) as error:
+        report_analysis_progress(StaleLeaseDatabase(), {
+            "source": "game_analysis", "id": "game", "generation": "2:2",
+            "phase": "search", "completed": 1, "total": 3, "lease_id": "old-lease",
+        })
+    assert error.value.status_code == 409
+
+
+def test_postgres_manual_retry_requeues_and_unpauses_failed_task():
+    from app.activity_commands import retry_failed_task
+
+    statements = []
+    failed = {
+        "id": "task-one", "kind": "daily_queue", "deduplication_key": "today",
+        "generation": 3, "priority": 40, "state": "failed", "phase": "failed",
+        "attempt_count": 5, "max_attempts": 5, "next_attempt_at": None,
+        "created_at": "2026-09-27T00:00:00+00:00", "updated_at": "2026-09-27T00:00:00+00:00",
+        "last_error": "temporary failure",
+    }
+
+    class RetryDatabase:
+        def execute_native(self, statement, *_parameters):
+            statements.append(statement)
+            if statement.startswith("SELECT * FROM background_tasks"):
+                return SimpleNamespace(fetchone=lambda: failed)
+            return SimpleNamespace(fetchone=lambda: None)
+
+    assert retry_failed_task(RetryDatabase(), {"task_id": "task-one"})["id"] == "task-one"
+    assert any("state='queued'" in statement for statement in statements)
+    assert any("VALUES('durable',%s,0,'Queued',%s)" in statement
+               and "paused=0,phase='Queued'" in statement for statement in statements)
+    assert any("'manual_retry'" in statement for statement in statements)
+
+
 def test_postgres_pgn_import_dispatches_parsed_payload_with_idempotency(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main

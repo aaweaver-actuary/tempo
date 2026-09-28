@@ -746,3 +746,11 @@ backend tests, 124 regular browser tests, 48 pinned visual/performance tests,
 and the build, Rust, lint, and typecheck stages. Its Docker tests continue to
 exercise the SQLite stack; the PostgreSQL deletion was checked against the
 disposable restored database.
+
+Analysis progress callbacks and terminal durable-task retry now use explicit
+Celery commands in PostgreSQL mode. Progress is admitted on the background
+queue and rechecks the game analysis generation and lease under a row lock
+before publication. Manual retry runs on the foreground queue, resets the
+failed task and pause control in one receipt transaction, and records its
+event. A rollback-only rehearsal against disposable PostgreSQL caught and
+fixed the case where a newly created activity row lacked its `Queued` phase.
