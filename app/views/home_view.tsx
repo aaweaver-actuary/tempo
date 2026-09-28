@@ -1,5 +1,6 @@
 import { Button } from "../components/buttons/BaseButton";
-import { prefixSplitResponseSchema, teachingResponseSchema } from "../domain/schemas";
+import { teachingResponseSchema } from "../domain/schemas";
+import { acceptPrefixSplitCommand, rejectPrefixSplitCommand } from "../lib/prefix-split-command";
 import {
   readJsonResponse,
   readStoredValue,
@@ -13,6 +14,7 @@ import { DataDiagnosticsNotice } from "../components/data-diagnostics-notice";
 import { useState, useCallback, useEffect, useRef } from "react";
 import { BoardTheme, PieceSet } from "../components/chessboard";
 import { API_URL } from "../const";
+import { enqueueTeachingState, flushTeachingStates, pendingTeachingStates } from "../lib/teaching-state-outbox";
 import {
   invalidateWorkspaceData,
   preloadView,
@@ -1076,6 +1078,7 @@ export default function Home() {
       queueMicrotask(() => setTeachingReadyCard(teachingCardKey));
       return;
     }
+    void flushTeachingStates().catch(() => undefined);
     void fetch(`${API_URL}/api/cards/${card.backendId}/teaching`)
       .then((response) => {
         if (!response.ok) throw new Error();
@@ -1098,6 +1101,11 @@ export default function Home() {
                       `${card.backendId}:${state.revision}:${state.ply}`,
                     ),
                   ),
+                  pendingTeachingStates()
+                    .filter((state) => state.cardId === card.backendId)
+                    .map((state) => asTeachingMoveKey(
+                      `${state.cardId}:${state.revision}:${state.ply}`,
+                    )),
                 ),
             ),
         );
@@ -1151,11 +1159,8 @@ export default function Home() {
         return next;
       });
       if (card.backendId) {
-        void fetch(`${API_URL}/api/cards/${card.backendId}/teaching`, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ revision: card.revision ?? 1, ply: step }),
-        }).catch(() => undefined);
+        enqueueTeachingState({ cardId: card.backendId, revision: card.revision ?? 1, ply: step });
+        void flushTeachingStates().catch(() => undefined);
       }
     });
   }, [
@@ -1460,15 +1465,7 @@ export default function Home() {
                 if (!prefixCard.backendId)
                   throw new Error("The card is missing its local database ID. Refresh the queue.");
                 if (pendingReviews().length) await flushPendingReviews();
-                const response = await fetch(
-                  `${API_URL}/api/cards/${prefixCard.backendId}/prefix-split`,
-                  {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ expected_revision: prefixCard.revision ?? 1 }),
-                  },
-                );
-                await readJsonResponse(response, prefixSplitResponseSchema, "accepted prefix split");
+                await acceptPrefixSplitCommand(prefixCard.backendId, prefixCard.revision ?? 1);
                 invalidateTrainingQueueCache();
                 setSuggestShorter(false);
                 activeQueueEntry.current = undefined;
@@ -1492,18 +1489,7 @@ export default function Home() {
               onRejectPrefixSplit={async (prefixCard) => {
                 if (!prefixCard.backendId)
                   throw new Error("The card is missing its local database ID. Refresh the queue.");
-                const response = await fetch(
-                  `${API_URL}/api/cards/${prefixCard.backendId}/prefix-split/reject`,
-                  {
-                    method: "POST",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ expected_revision: prefixCard.revision ?? 1 }),
-                  },
-                );
-                if (!response.ok) {
-                  const body = await response.json().catch(() => ({})) as { detail?: string };
-                  throw new Error(body.detail ?? `HTTP ${response.status}`);
-                }
+                await rejectPrefixSplitCommand(prefixCard.backendId, prefixCard.revision ?? 1);
                 invalidateTrainingQueueCache();
                 void fetchAndInitializeQueue().catch(() => undefined);
               }}

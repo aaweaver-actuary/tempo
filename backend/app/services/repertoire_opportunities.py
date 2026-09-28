@@ -5,14 +5,16 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import hashlib
 import json
+from functools import lru_cache
 import math
 import sqlite3
 
 import chess
 
-from ..database import connection, read_connection
+from ..database import background_read_connection, connection, read_connection
+from .. import postgres_store
 from .activity_gate import activity_gate
-from .durable_tasks import enqueue_task, enqueue_task_in_transaction
+from .durable_tasks import enqueue_task, enqueue_task_in_transaction, lock_current_slice
 from .discovery_admission import _full_history_request, _source_game
 
 
@@ -278,19 +280,24 @@ def refresh_card_opportunity(database: sqlite3.Connection, repertoire_id: str, c
 def _load_recurring_decisions(database: sqlite3.Connection, repertoire_id: str,
                               card_id: str) -> list[dict]:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=_window_days(database))).isoformat()
-    return [dict(row) for row in database.execute(
-        """SELECT event.game_id,event.fen_key,event.expected_uci,event.ply,
+    postgres = postgres_store.configured()
+    execute = database.execute_native if postgres else database.execute
+    placeholder = "%s" if postgres else "?"
+    even_ply_gap = ("MOD(event.ply-earlier.ply,2)=0" if postgres
+                    else "(event.ply-earlier.ply)%2=0")
+    return [dict(row) for row in execute(
+        f"""SELECT event.game_id,event.fen_key,event.expected_uci,event.ply,
                   game.color,analysis.loss_cp,analysis.eval_after_cp,
                   analysis.mate_before,analysis.mate_after,
                   previous.eval_after_cp previous_eval_cp,previous.mate_after previous_mate,
                   following.eval_after_cp following_eval_cp,following.mate_after following_mate,
                   (SELECT COUNT(*) FROM game_move_analysis earlier
                    WHERE earlier.game_id=event.game_id AND earlier.ply<event.ply
-                     AND (event.ply-earlier.ply)%2=0 AND earlier.loss_cp IS NOT NULL)
+                     AND {even_ply_gap} AND earlier.loss_cp IS NOT NULL)
                      previous_analyzed_count,
                   (SELECT COUNT(*) FROM game_move_analysis earlier
                    WHERE earlier.game_id=event.game_id AND earlier.ply<event.ply
-                     AND (event.ply-earlier.ply)%2=0 AND earlier.loss_cp>30)
+                     AND {even_ply_gap} AND earlier.loss_cp>30)
                      previous_weak_count
            FROM repertoire_decision_events event
            JOIN imported_games game ON game.id=event.game_id
@@ -300,7 +307,8 @@ def _load_recurring_decisions(database: sqlite3.Connection, repertoire_id: str,
              ON previous.game_id=event.game_id AND previous.ply=event.ply-2
            LEFT JOIN game_move_analysis following
              ON following.game_id=event.game_id AND following.ply=event.ply+6
-           WHERE event.repertoire_id=? AND event.card_id=? AND event.played_at>=?
+           WHERE event.repertoire_id={placeholder} AND event.card_id={placeholder}
+             AND event.played_at>={placeholder}
              AND game.adaptive_excluded=0
            ORDER BY event.fen_key,event.game_id,event.ply""",
         (repertoire_id, card_id, cutoff),
@@ -382,7 +390,7 @@ def _apply_recurring_decisions(database: sqlite3.Connection, repertoire_id: str,
     for existing in database.execute(
         """SELECT id FROM repertoire_opportunities WHERE repertoire_id=?
            AND kind='weak_known_decision' AND card_id=? AND status='active'
-           AND json_extract(evidence_json,'$.analysis_based')=1""",
+           AND CAST(json_extract(evidence_json,'$.analysis_based') AS TEXT) IN ('1','true')""",
         (repertoire_id, card_id),
     ).fetchall():
         if existing["id"] not in active_ids:
@@ -711,7 +719,8 @@ def execute_opportunity_slice(task: dict) -> bool:
     phase = task["payload"].get("phase", "cards")
     cursor = task["payload"].get("cursor", "")
     activity_gate.wait_for_foreground()
-    with read_connection() as database:
+    read_section = background_read_connection if postgres_store.configured() else read_connection
+    with read_section() as database:
         if phase == "summaries":
             fen_cursor, _, move_cursor = cursor.partition("\0")
             item = database.execute(
@@ -764,10 +773,11 @@ def execute_opportunity_slice(task: dict) -> bool:
         if next_phase:
             activity_gate.wait_for_foreground()
             with connection(background=True) as database:
-                _advance_slice(database, task, next_phase, "")
+                if not postgres_store.configured() or lock_current_slice(database, task):
+                    _advance_slice(database, task, next_phase, "")
             return True
         return False
-    with read_connection() as database:
+    with read_section() as database:
         if phase == "summaries":
             fen_key, expected_uci = item_id.split("\0", 1)
             inputs = _load_decision_summary(database, repertoire_id, fen_key, expected_uci)
@@ -787,11 +797,16 @@ def execute_opportunity_slice(task: dict) -> bool:
     post_gap_decision = _calculate_post_gap_opportunity(inputs) if phase == "findings" and inputs else None
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        current = database.execute(
-            "SELECT generation,lease_token FROM background_tasks WHERE id=?",
-            (task["id"],),
-        ).fetchone()
-        if not current or current["generation"] != task["generation"] or current["lease_token"] != task["lease_token"]:
+        if postgres_store.configured():
+            current_slice = lock_current_slice(database, task)
+        else:
+            current = database.execute(
+                "SELECT generation,lease_token FROM background_tasks WHERE id=?",
+                (task["id"],),
+            ).fetchone()
+            current_slice = bool(current and current["generation"] == task["generation"]
+                                 and current["lease_token"] == task["lease_token"])
+        if not current_slice:
             return True
         if phase == "summaries" and inputs:
             _publish_decision_summary(database, repertoire_id, inputs)
@@ -821,28 +836,40 @@ def execute_opportunity_slice(task: dict) -> bool:
     return True
 
 
-def list_opportunities(database: sqlite3.Connection, repertoire_id: str,
-                       opportunity_ids: list[str] | None = None) -> list[dict]:
-    result = []
-    if opportunity_ids is not None and not opportunity_ids:
-        return result
-    accepted_by_position: dict[str, set[str]] = {}
-    for line in database.execute(
-        "SELECT start_fen,moves_json,trained_color FROM repertoire_lines WHERE repertoire_id=?",
-        (repertoire_id,),
-    ):
-        board = chess.Board(line["start_fen"])
-        learner_turn = line["trained_color"] == "white"
-        for move_uci in json.loads(line["moves_json"]):
+@lru_cache(maxsize=8)
+def _accepted_moves_by_line_snapshot(
+    lines: tuple[tuple[str, str, str], ...],
+) -> dict[str, set[str]]:
+    accepted_by_position: dict[tuple, set[str]] = {}
+    for start_fen, moves_json, trained_color in lines:
+        board = chess.Board(start_fen)
+        learner_turn = trained_color == "white"
+        for move_uci in json.loads(moves_json):
             try:
                 move = chess.Move.from_uci(move_uci)
                 if move not in board.legal_moves:
                     break
                 if board.turn == learner_turn:
-                    accepted_by_position.setdefault(" ".join(board.fen().split()[:4]), set()).add(move_uci)
+                    accepted_by_position.setdefault(board._transposition_key(), set()).add(move_uci)
                 board.push(move)
             except ValueError:
                 break
+    return accepted_by_position
+
+
+def list_opportunities(database: sqlite3.Connection, repertoire_id: str,
+                       opportunity_ids: list[str] | None = None) -> list[dict]:
+    result = []
+    if opportunity_ids is not None and not opportunity_ids:
+        return result
+    line_snapshot = tuple(
+        (line["start_fen"], line["moves_json"], line["trained_color"])
+        for line in database.execute(
+            "SELECT start_fen,moves_json,trained_color FROM repertoire_lines "
+            "WHERE repertoire_id=? ORDER BY id", (repertoire_id,),
+        )
+    )
+    accepted_by_position = _accepted_moves_by_line_snapshot(line_snapshot)
     identifier_clause = (
         f" AND opportunity.id IN ({','.join('?' for _ in opportunity_ids)})"
         if opportunity_ids is not None else ""
@@ -960,6 +987,10 @@ def list_opportunities(database: sqlite3.Connection, repertoire_id: str,
                     decision_route_uci = route_uci
                     decision_fen = route_board.fen()
                     break
+        try:
+            accepted_position = chess.Board(decision_fen)._transposition_key()
+        except ValueError:
+            accepted_position = None
         result.append({
             "id": row["id"], "repertoire_id": repertoire_id,
             "kind": row["kind"], "status": row["status"],
@@ -969,8 +1000,7 @@ def list_opportunities(database: sqlite3.Connection, repertoire_id: str,
             "decision_fen": decision_fen,
             "decision_start_fen": decision_start_fen,
             "decision_route_uci": decision_route_uci,
-            "accepted_moves_uci": sorted(accepted_by_position.get(
-                " ".join(decision_fen.split()[:4]), set())),
+            "accepted_moves_uci": sorted(accepted_by_position.get(accepted_position, set())),
             "score": row["score"], "evidence": evidence,
             "evidence_fingerprint": row["evidence_fingerprint"],
             "seen_at": row["seen_at"], "snoozed_until": row["snoozed_until"],

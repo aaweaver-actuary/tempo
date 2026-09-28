@@ -909,6 +909,12 @@ def prepare_issue_resolution(
         "signature": signature,
         "changed_lines": changed_lines,
         "changed_cards": changed_cards,
+        "expected_line_moves": {
+            source_id: line_rows[source_id]["moves_json"] for source_id in changed_lines
+        },
+        "expected_card_moves": {
+            source_id: card_rows[source_id]["moves_json"] for source_id in changed_cards
+        },
         "unsupported_card_ids": unsupported_card_ids,
     }
 

@@ -7,6 +7,7 @@ import logging
 import sqlite3
 
 from ..database import connection, read_connection
+from .. import postgres_store
 
 
 SOURCES = {
@@ -95,59 +96,65 @@ def emit_progress(
 def set_control(source: str, work_id: str, action: str) -> bool:
     if source not in SOURCES or action not in {"pause", "resume", "prioritize", "normal"}:
         return False
-    table, id_column = SOURCES[source]
     with connection() as database:
-        state_column = "state" if source in {"durable", "threat_analysis"} else "status"
-        work_row = database.execute(
-            f"SELECT {state_column} FROM {table} WHERE {id_column}=?", (work_id,)
-        ).fetchone()
-        if not work_row:
+        return set_control_in_transaction(database, source, work_id, action)
+
+
+def set_control_in_transaction(database, source: str, work_id: str, action: str) -> bool:
+    """Apply a validated activity control in the caller's short write transaction."""
+    if source not in SOURCES or action not in {"pause", "resume", "prioritize", "normal"}:
+        return False
+    table, id_column = SOURCES[source]
+    state_column = "state" if source in {"durable", "threat_analysis"} else "status"
+    row_lock = " FOR UPDATE" if postgres_store.configured() else ""
+    work_row = database.execute(
+        f"SELECT {state_column} FROM {table} WHERE {id_column}=?{row_lock}", (work_id,)
+    ).fetchone()
+    if not work_row or work_row[0] in {"failed", "superseded"}:
+        return False
+    if work_row[0] == "complete":
+        if source != "coverage" or not database.execute(
+            """SELECT 1 FROM repertoire_coverage_nodes WHERE run_id=?
+               AND (explorer_status!='complete' OR maia_status!='complete') LIMIT 1""",
+            (work_id,),
+        ).fetchone():
             return False
-        if work_row[0] in {"failed", "superseded"}:
-            return False
-        if work_row[0] == "complete":
-            if source != "coverage" or not database.execute(
-                """SELECT 1 FROM repertoire_coverage_nodes WHERE run_id=?
-                   AND (explorer_status!='complete' OR maia_status!='complete') LIMIT 1""",
-                (work_id,),
-            ).fetchone():
-                return False
-        now = _now()
+    now = _now()
+    database.execute(
+        """INSERT INTO background_activity(source,work_id,updated_at)
+           VALUES(?,?,?) ON CONFLICT(source,work_id) DO NOTHING""",
+        (source, work_id, now),
+    )
+    column = "paused" if action in {"pause", "resume"} else "promoted"
+    value = int(action in {"pause", "prioritize"})
+    database.execute(
+        f"UPDATE background_activity SET {column}=?,updated_at=? WHERE source=? AND work_id=?",
+        (value, now, source, work_id),
+    )
+    if source == "game_analysis" and action == "pause":
         database.execute(
-            """INSERT INTO background_activity(source,work_id,updated_at)
-               VALUES(?,?,?) ON CONFLICT(source,work_id) DO NOTHING""",
-            (source, work_id, now),
+            """UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,
+               lease_expires_at=NULL,updated_at=? WHERE game_id=? AND status='leased'""",
+            (now, work_id),
         )
-        column = "paused" if action in {"pause", "resume"} else "promoted"
-        value = int(action in {"pause", "prioritize"})
         database.execute(
-            f"UPDATE background_activity SET {column}=?,updated_at=? WHERE source=? AND work_id=?",
-            (value, now, source, work_id),
+            "UPDATE imported_games SET analysis_state='pending' WHERE id=?",
+            (work_id,),
         )
-        if source == "game_analysis" and action == "pause":
-            database.execute(
-                """UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,
-                   lease_expires_at=NULL,updated_at=? WHERE game_id=? AND status='leased'""",
-                (now, work_id),
-            )
-            database.execute(
-                "UPDATE imported_games SET analysis_state='pending' WHERE id=?",
-                (work_id,),
-            )
-        if source == "coverage" and action == "pause":
-            database.execute(
-                """UPDATE repertoire_coverage_nodes SET maia_status='queued',
-                   lease_id=NULL,lease_expires_at=NULL,updated_at=?
-                   WHERE run_id=? AND maia_status='leased'""",
-                (now, work_id),
-            )
-        if source == "threat_analysis" and action == "pause":
-            database.execute(
-                """UPDATE threat_analysis_requests SET state='queued',lease_id=NULL,
-                     lease_expires_at=NULL,updated_at=?
-                   WHERE id=? AND state='leased'""",
-                (now, work_id),
-            )
+    if source == "coverage" and action == "pause":
+        database.execute(
+            """UPDATE repertoire_coverage_nodes SET maia_status='queued',
+               lease_id=NULL,lease_expires_at=NULL,updated_at=?
+               WHERE run_id=? AND maia_status='leased'""",
+            (now, work_id),
+        )
+    if source == "threat_analysis" and action == "pause":
+        database.execute(
+            """UPDATE threat_analysis_requests SET state='queued',lease_id=NULL,
+                 lease_expires_at=NULL,updated_at=?
+               WHERE id=? AND state='leased'""",
+            (now, work_id),
+        )
     return True
 
 

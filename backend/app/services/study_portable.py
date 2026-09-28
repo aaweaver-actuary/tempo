@@ -8,6 +8,7 @@ import uuid
 import chess
 from pydantic import TypeAdapter
 
+from ..postgres_store import PostgresConnection
 from ..study_contracts import ExerciseSpecification
 from .study_grading import validate_exercise
 
@@ -126,7 +127,13 @@ def validate_bundle(bundle: object) -> dict[str, list[dict]]:
 def import_bundle(database, bundle: object, *, copy: bool = False) -> dict:
     tables = validate_bundle(bundle)
     for table_name in TABLES:
-        exported_columns = {column["name"] for column in database.execute(f"PRAGMA table_info({table_name})")}
+        if isinstance(database, PostgresConnection):
+            exported_columns = {column["column_name"] for column in database.execute_native(
+                "SELECT column_name FROM information_schema.columns "
+                "WHERE table_schema='public' AND table_name=%s", (table_name,),
+            )}
+        else:
+            exported_columns = {column["name"] for column in database.execute(f"PRAGMA table_info({table_name})")}
         if any(set(row) != exported_columns for row in tables[table_name]):
             raise ValueError(f"Invalid {table_name} columns in study bundle")
     rows = {name: [dict(row) for row in tables[name]] for name in TABLES}

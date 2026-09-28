@@ -21,10 +21,10 @@ from .study_contracts import (
     StudyImportPreviewRequest, StudySelfAssessmentRequest, StudyLinkCreate,
     StudyBundleImportRequest,
 )
-from .services.review_service import apply_scheduling_review
+from .services.study_attempts import finish_study_attempt as _finish_attempt
 from .services.study_grading import GRADER_VERSION, evaluate_answer, validate_exercise
 from .services.study_pgn import preview_pgn
-from .services.study_portable import export_bundle, import_bundle
+from .services.study_portable import export_bundle, import_bundle, validate_bundle
 
 
 router = APIRouter(prefix="/api/studies", tags=["studies"])
@@ -140,7 +140,11 @@ def update_study(study_id: str, request: StudyCreate, idempotency_key: str | Non
 
 
 @router.post("/{study_id}/archive")
-def archive_study(study_id: str):
+def archive_study(study_id: str,
+                  idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.archive", {"study_id": study_id},
+                                idempotency_key=idempotency_key)
     with connection() as database:
         _require(database, "studies", study_id)
         database.execute("UPDATE studies SET archived=1,updated_at=? WHERE id=?", (_now(), study_id))
@@ -150,7 +154,11 @@ def archive_study(study_id: str):
 
 
 @router.post("/{study_id}/unarchive")
-def unarchive_study(study_id: str):
+def unarchive_study(study_id: str,
+                    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.unarchive", {"study_id": study_id},
+                                idempotency_key=idempotency_key)
     with connection() as database:
         _require(database, "studies", study_id)
         database.execute("UPDATE studies SET archived=0,updated_at=? WHERE id=?", (_now(), study_id))
@@ -281,7 +289,8 @@ def preview_study_import(study_id: str, request: StudyImportPreviewRequest):
 
 
 @router.post("/{study_id}/import/commit")
-def commit_study_import(study_id: str, request: StudyImportCommitRequest):
+def commit_study_import(study_id: str, request: StudyImportCommitRequest,
+                        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     try:
         preview = preview_pgn(request.raw_pgn)
     except ValueError as error:
@@ -293,6 +302,13 @@ def commit_study_import(study_id: str, request: StudyImportCommitRequest):
         raise HTTPException(422, "Selected PGN records are invalid")
     if not selected:
         raise HTTPException(422, "Select at least one source record")
+    if postgres_store.configured():
+        return dispatch_command(
+            "studies.import.commit",
+            {"study_id": study_id, "request": request.model_dump(mode="json"),
+             "records": [preview["records"][index] for index in selected]},
+            idempotency_key=idempotency_key,
+        )
     created = []
     with connection() as database:
         chapter = _require(database, "study_chapters", request.chapter_id)
@@ -360,7 +376,12 @@ def commit_study_import(study_id: str, request: StudyImportCommitRequest):
 
 
 @router.post("/{study_id}/exercises")
-def create_exercise(study_id: str, request: ExerciseCreate):
+def create_exercise(study_id: str, request: ExerciseCreate,
+                    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.exercises.create",
+                                {"study_id": study_id, "exercise": request.model_dump(mode="json")},
+                                idempotency_key=idempotency_key)
     identifier = str(uuid.uuid4())
     specification = request.specification
     with connection() as database:
@@ -410,7 +431,13 @@ def present_exercise(study_id: str, exercise_id: str):
 
 
 @router.put("/{study_id}/exercises/{exercise_id}")
-def revise_exercise(study_id: str, exercise_id: str, request: ExerciseRevisionRequest):
+def revise_exercise(study_id: str, exercise_id: str, request: ExerciseRevisionRequest,
+                    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.exercises.revise",
+                                {"study_id": study_id, "exercise_id": exercise_id,
+                                 "revision": request.model_dump(mode="json", exclude_unset=True)},
+                                idempotency_key=idempotency_key)
     with connection() as database:
         exercise = _require(database, "study_exercises", exercise_id)
         if exercise["study_id"] != study_id or exercise["current_revision"] != request.expected_revision:
@@ -462,7 +489,12 @@ def revise_exercise(study_id: str, exercise_id: str, request: ExerciseRevisionRe
 
 
 @router.post("/{study_id}/exercises/{exercise_id}/enroll")
-def enroll_exercise(study_id: str, exercise_id: str):
+def enroll_exercise(study_id: str, exercise_id: str,
+                    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.exercises.enroll",
+                                {"study_id": study_id, "exercise_id": exercise_id},
+                                idempotency_key=idempotency_key)
     with connection() as database:
         exercise = _require(database, "study_exercises", exercise_id)
         study = _require(database, "studies", study_id)
@@ -491,7 +523,12 @@ def enroll_exercise(study_id: str, exercise_id: str):
 
 
 @router.post("/{study_id}/exercises/{exercise_id}/suspend")
-def suspend_exercise(study_id: str, exercise_id: str):
+def suspend_exercise(study_id: str, exercise_id: str,
+                     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.exercises.suspend",
+                                {"study_id": study_id, "exercise_id": exercise_id},
+                                idempotency_key=idempotency_key)
     with connection() as database:
         exercise = _require(database, "study_exercises", exercise_id)
         if exercise["study_id"] != study_id:
@@ -503,7 +540,12 @@ def suspend_exercise(study_id: str, exercise_id: str):
 
 
 @router.post("/{study_id}/exercises/{exercise_id}/train-now")
-def train_exercise_now(study_id: str, exercise_id: str):
+def train_exercise_now(study_id: str, exercise_id: str,
+                       idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.exercises.train_now",
+                                {"study_id": study_id, "exercise_id": exercise_id},
+                                idempotency_key=idempotency_key)
     today = date.today().isoformat()
     with connection() as database:
         exercise = _require(database, "study_exercises", exercise_id)
@@ -526,7 +568,12 @@ def train_exercise_now(study_id: str, exercise_id: str):
 
 
 @router.post("/{study_id}/exercises/{exercise_id}/resume")
-def resume_exercise(study_id: str, exercise_id: str):
+def resume_exercise(study_id: str, exercise_id: str,
+                    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.exercises.resume",
+                                {"study_id": study_id, "exercise_id": exercise_id},
+                                idempotency_key=idempotency_key)
     with connection() as database:
         exercise = _require(database, "study_exercises", exercise_id)
         if exercise["study_id"] != study_id or exercise["status"] == "archived":
@@ -537,7 +584,12 @@ def resume_exercise(study_id: str, exercise_id: str):
 
 
 @router.post("/{study_id}/exercises/{exercise_id}/archive")
-def archive_exercise(study_id: str, exercise_id: str):
+def archive_exercise(study_id: str, exercise_id: str,
+                     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.exercises.archive",
+                                {"study_id": study_id, "exercise_id": exercise_id},
+                                idempotency_key=idempotency_key)
     with connection() as database:
         exercise = _require(database, "study_exercises", exercise_id)
         if exercise["study_id"] != study_id:
@@ -549,59 +601,16 @@ def archive_exercise(study_id: str, exercise_id: str):
     return {"archived": True}
 
 
-def _finish_attempt(database, attempt, rating: str) -> dict:
-    now = _now()
-    requested_rating = rating
-    review_result = None
-    if attempt["context"] == "review":
-        card = database.execute("SELECT * FROM cards WHERE id=? AND study_exercise_id=? AND archived=0 AND pending_validation=0",
-                                (attempt["card_id"], attempt["exercise_id"])).fetchone()
-        queue = database.execute("SELECT * FROM daily_queue WHERE id=? AND card_id=? AND cycle=? AND status='queued'",
-                                 (attempt["queue_entry_id"], attempt["card_id"], attempt["cycle"])).fetchone()
-        if not card or not queue or card["revision"] != attempt["revision"]:
-            raise HTTPException(409, "Queue entry or card changed before completion")
-        guided = bool(queue["attempt_failed"] or attempt["hint_seen"] or attempt["solution_seen_before_answer"])
-        if guided:
-            rating = "again"
-        setting = database.execute("SELECT light_first_interval_days FROM settings WHERE id=1").fetchone()
-        review_result = apply_scheduling_review(
-            database, card["id"], rating, guided=guided,
-            source_kind="study_exercise", source_ref=attempt["id"],
-            light_first_interval_days=setting[0], reviewed_at=datetime.fromisoformat(now), review_day=date.today(),
-        )
-        from .main import requeue
-        repeated_entry = requeue(database, queue["queue_date"], card["id"],
-                                 review_result["requeue_after_cards"] or 0,
-                                 "guided" if rating == "again" else "reinforcement") if review_result["requeue_today"] else None
-        database.execute("UPDATE daily_queue SET status='complete',attempt_state=? WHERE id=?",
-                         ("guided" if guided else "clean", queue["id"]))
-        review_result = {**review_result, "requeue_entry_id": repeated_entry,
-                         "review_id": database.execute("SELECT MAX(id) FROM reviews WHERE card_id=?", (card["id"],)).fetchone()[0]}
-    result = {"attempt_id": attempt["id"], "rating": rating, "requested_rating": requested_rating, "review": review_result,
-              "assessment": json.loads(attempt["assessment_json"]), "persisted": True}
-    database.execute("UPDATE study_attempts SET finalized_at=?,result_json=? WHERE id=?",
-                     (now, _json(result), attempt["id"]))
-    if attempt["context"] == "review":
-        database.execute("UPDATE daily_queue SET review_result_json=? WHERE id=?",
-                         (_json(result), attempt["queue_entry_id"]))
-        exercise = _require(database, "study_exercises", attempt["exercise_id"])
-        siblings = database.execute(
-            """SELECT id FROM study_exercises WHERE study_id=? AND id!=?
-               AND (position_id=? OR (sibling_group IS NOT NULL AND sibling_group=?))""",
-            (exercise["study_id"], exercise["id"], exercise["position_id"], exercise["sibling_group"]),
-        )
-        for sibling in siblings:
-            database.execute("INSERT OR IGNORE INTO study_sibling_burials VALUES(?,?,?)",
-                             (sibling[0], date.today().isoformat(), "answer exposure"))
-            database.execute("UPDATE daily_queue SET status='blocked' WHERE queue_date=? AND status='queued' AND card_id IN (SELECT id FROM cards WHERE study_exercise_id=?)",
-                             (date.today().isoformat(), sibling[0]))
-    return result
-
-
 @router.post("/{study_id}/exercises/{exercise_id}/attempts")
-def submit_attempt(study_id: str, exercise_id: str, request: StudyAttemptRequest):
+def submit_attempt(study_id: str, exercise_id: str, request: StudyAttemptRequest,
+                   idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     if len(request.attempt_id) > 100:
         raise HTTPException(422, "Attempt ID is too long")
+    if postgres_store.configured():
+        return dispatch_command("studies.attempts.submit",
+                                {"study_id": study_id, "exercise_id": exercise_id,
+                                 "attempt": request.model_dump(mode="json")},
+                                idempotency_key=idempotency_key or request.attempt_id)
     answer_data = request.answer.model_dump(mode="json")
     answer_hash = _digest({"request": request.model_dump(mode="json")})
     with connection() as database:
@@ -654,7 +663,15 @@ def submit_attempt(study_id: str, exercise_id: str, request: StudyAttemptRequest
 
 
 @router.post("/{study_id}/exercises/{exercise_id}/attempts/{attempt_id}/self-assess")
-def self_assess(study_id: str, exercise_id: str, attempt_id: str, request: StudySelfAssessmentRequest):
+def self_assess(study_id: str, exercise_id: str, attempt_id: str,
+                request: StudySelfAssessmentRequest,
+                idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        return dispatch_command("studies.attempts.self_assess",
+                                {"study_id": study_id, "exercise_id": exercise_id,
+                                 "attempt_id": attempt_id,
+                                 "assessment": request.model_dump(mode="json")},
+                                idempotency_key=idempotency_key or f"{attempt_id}:self-assess")
     with connection() as database:
         exercise = _require(database, "study_exercises", exercise_id)
         attempt = database.execute("SELECT * FROM study_attempts WHERE id=? AND exercise_id=?", (attempt_id, exercise_id)).fetchone()
@@ -732,7 +749,17 @@ def export_study_pgn(study_id: str):
 
 
 @router.post("/import-bundle")
-def import_study_content(request: StudyBundleImportRequest):
+def import_study_content(request: StudyBundleImportRequest,
+                         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        try:
+            validate_bundle(request.bundle)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+        return dispatch_command(
+            "studies.bundle.import", request.model_dump(mode="json"),
+            idempotency_key=idempotency_key,
+        )
     with connection() as database:
         try:
             return import_bundle(database, request.bundle, copy=request.mode == "copy")

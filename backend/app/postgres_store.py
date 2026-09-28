@@ -117,6 +117,11 @@ class PostgresConnection:
 
         return self._database
 
+    def execute_native(self, statement: str, parameters: tuple | list = ()) -> psycopg.Cursor[TempoRow]:
+        """Run an internal PostgreSQL statement without SQLite dialect translation."""
+
+        return self._database.execute(statement, parameters)
+
     def execute(self, statement: str, parameters: tuple | list = ()) -> psycopg.Cursor[TempoRow]:
         translated = postgres_sql(statement)
         if translated is None:

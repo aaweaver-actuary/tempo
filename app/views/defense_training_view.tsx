@@ -12,6 +12,7 @@ import { Chessboard, type BoardTheme, type PieceSet } from "../components/chessb
 import { BoardTools } from "../components/board/board-workspace";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
 import { API_URL } from "../const";
+import { confirmOperationResponse } from "../lib/operation-status";
 import type { PracticeCard } from "../types";
 
 type DefenseExercisePayload = {
@@ -142,11 +143,12 @@ export default function DefenseTrainingView({
           recognition_attempt_id: recognitionAttemptId.current,
         }),
       });
-      if (!response.ok) {
-        const body = await response.json().catch(() => null) as { detail?: string } | null;
-        throw new Error(body?.detail ?? `Could not grade the move (${response.status})`);
+      const confirmedResponse = await confirmOperationResponse(response);
+      if (!confirmedResponse.ok) {
+        const body = await confirmedResponse.json().catch(() => null) as { detail?: string } | null;
+        throw new Error(body?.detail ?? `Could not grade the move (${confirmedResponse.status})`);
       }
-      const result = await response.json() as DefenseGradePayload;
+      const result = await confirmedResponse.json() as DefenseGradePayload;
       setGrade(result);
       if (result.status !== "needs_analysis") {
         pendingRef.current = null;
@@ -215,11 +217,12 @@ export default function DefenseTrainingView({
           hinted: hintRevealed,
         }),
       });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({})) as { detail?: string };
-        throw new Error(body.detail ?? `Could not save recognition answer (HTTP ${response.status})`);
+      const confirmedResponse = await confirmOperationResponse(response);
+      if (!confirmedResponse.ok) {
+        const body = await confirmedResponse.json().catch(() => ({})) as { detail?: string };
+        throw new Error(body.detail ?? `Could not save recognition answer (HTTP ${confirmedResponse.status})`);
       }
-      const result = await response.json() as DefenseGradePayload;
+      const result = await confirmedResponse.json() as DefenseGradePayload;
       setRecognitionDone(true);
       setRecognitionResult(result);
       if (result.status === "correct" || result.status === "incorrect") setGrade(result);

@@ -64,10 +64,10 @@ function run(command, args, extra = {}) {
   if (result.error || result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed`);
 }
 function verifyTempoDataVolumeIsExternal() {
-  const result = spawnSync("docker", ["compose", "-f", "docker-compose.yml", "config", "--format", "json"], {
+  const result = spawnSync("docker", ["compose", "-f", "docker-compose.sqlite.yml", "config", "--format", "json"], {
     encoding: "utf8", env,
   });
-  if (result.error || result.status !== 0) throw new Error("docker compose config could not resolve docker-compose.yml");
+  if (result.error || result.status !== 0) throw new Error("docker compose config could not resolve docker-compose.sqlite.yml");
   const composeConfig = JSON.parse(result.stdout);
   assert.equal(composeConfig.volumes?.["tempo-data"]?.external, true, "tempo-data is an external Docker volume");
   assert.equal(composeConfig.volumes["tempo-data"].name, "tempo-data", "tempo-data keeps its existing Docker volume name");

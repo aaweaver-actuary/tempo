@@ -7,9 +7,9 @@ import { Chess } from "chess.js";
 import type { z } from "zod";
 import { API_URL } from "./const";
 import {
-  analysisPasteCommitSchema,
   analysisPastePreviewSchema,
 } from "./domain/schemas";
+import { saveAnalysisPasteCommand } from "./lib/analysis-paste-command";
 import { useDialogFocus } from "./hooks/use-dialog-focus";
 import { readJsonResponse } from "./lib/validated-data";
 import { usesLocalApi } from "./utils/local";
@@ -178,22 +178,13 @@ export function AnalysisPasteDialog({
     setWorking(true);
     setError("");
     try {
-      const response = await fetch(`${API_URL}/api/repertoire/paste/commit`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          text,
-          starting_fen: startingFen || null,
-          source_gap_id: context.sourceGapId,
-          preview_token: preview.preview_token,
-          selections,
-        }),
+      const result = await saveAnalysisPasteCommand({
+        text,
+        starting_fen: startingFen || null,
+        source_gap_id: context.sourceGapId,
+        preview_token: preview.preview_token,
+        selections,
       });
-      const result = await readJsonResponse(
-        response,
-        analysisPasteCommitSchema,
-        "saved pasted analysis",
-      );
       const conflictingRepertoireIds = [
         ...new Set(
           result.saved

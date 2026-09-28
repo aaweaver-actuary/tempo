@@ -9,6 +9,11 @@ import {
 } from "../types";
 import { usesLocalApi } from "../utils/local";
 import { API_URL } from "../const";
+import { renameRepertoireCommand } from "../lib/repertoire-rename-command";
+import { deleteRepertoireCommand } from "../lib/repertoire-delete-command";
+import { applyOpportunityCommand } from "../lib/opportunity-command";
+import { requestOpportunityRefresh } from "../lib/opportunity-refresh-command";
+import { requestCoverageRefresh } from "../lib/coverage-refresh-command";
 import {
   readWorkspaceResponse,
   invalidateWorkspaceData,
@@ -193,14 +198,12 @@ export default function RepertoireView({
     const value = window.prompt("Repertoire nickname", item.title)?.trim();
     if (!value) return;
     if (item.backend) {
-      const response = await fetch(`${API_URL}/api/repertoires/${item.id}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: value }),
-      });
-      if (response.ok) {
+      try {
+        await renameRepertoireCommand(item.id, value);
         invalidateWorkspaceData();
         await loadBackend();
+      } catch (renameError) {
+        setError(renameError instanceof Error ? renameError.message : "Could not rename this repertoire");
       }
     } else onRenameLocal(item.id, value);
   }
@@ -213,13 +216,27 @@ export default function RepertoireView({
     )
       return;
     if (item.backend) {
-      const response = await fetch(`${API_URL}/api/repertoires/${item.id}`, {
-        method: "DELETE",
-      });
-      if (!response.ok) return;
+      try {
+        await deleteRepertoireCommand(item.id);
+      } catch (deleteError) {
+        setError(deleteError instanceof Error ? deleteError.message : "Could not delete this repertoire");
+        return;
+      }
+      invalidateWorkspaceData();
       onDeleteLocal(item.id);
-      await onQueueChanged();
-      await loadBackend();
+      let queueRefreshFailed = false;
+      try {
+        await onQueueChanged();
+      } catch {
+        queueRefreshFailed = true;
+      }
+      try {
+        await loadBackend();
+        if (queueRefreshFailed)
+          setError("Repertoire deleted. Training queue refresh failed; retry loading the workspace.");
+      } catch {
+        setError("Repertoire deleted. Refresh failed; retry loading the workspace.");
+      }
     } else onDeleteLocal(item.id);
   }
 
@@ -288,11 +305,7 @@ export default function RepertoireView({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [refreshRevision, loadCoverage]);
   async function refreshCoverage(repertoireId: string) {
-    const response = await fetch(
-      `${API_URL}/api/repertoires/${repertoireId}/coverage/refresh`,
-      { method: "POST" },
-    );
-    if (!response.ok) throw new Error("Could not queue repertoire coverage.");
+    await requestCoverageRefresh(repertoireId);
     await loadCoverage(repertoireId);
   }
   async function loadOpportunities(repertoireId: string) {
@@ -315,42 +328,17 @@ export default function RepertoireView({
     repertoireId: string,
     opportunityId: string,
   ) {
-    const response = await fetch(
-      `${API_URL}/api/repertoires/${repertoireId}/opportunities/${opportunityId}/dismiss`,
-      { method: "POST" },
-    );
-    if (!response.ok)
-      throw new Error(
-        `Could not dismiss opportunity (HTTP ${response.status}).`,
-      );
+    await applyOpportunityCommand(repertoireId, opportunityId, "dismiss");
     await loadOpportunities(repertoireId);
   }
   async function trainOpportunity(repertoireId: string, opportunityId: string) {
-    const response = await fetch(
-      `${API_URL}/api/repertoires/${repertoireId}/opportunities/${opportunityId}/train`,
-      { method: "POST" },
-    );
-    if (!response.ok) {
-      const body = (await response.json().catch(() => ({}))) as {
-        detail?: string;
-      };
-      throw new Error(
-        body.detail ?? `Could not queue decision (HTTP ${response.status}).`,
-      );
-    }
+    await applyOpportunityCommand(repertoireId, opportunityId, "train");
     await onQueueChanged();
     await loadOpportunities(repertoireId);
     onTrain();
   }
   async function refreshOpportunities(repertoireId: string) {
-    const response = await fetch(
-      `${API_URL}/api/repertoires/${repertoireId}/opportunities/refresh`,
-      { method: "POST" },
-    );
-    if (!response.ok)
-      throw new Error(
-        `Could not queue repertoire scouting (HTTP ${response.status}).`,
-      );
+    await requestOpportunityRefresh(repertoireId);
     setScoutingRepertoire(repertoireId);
   }
   const selectedStatisticsRepertoire = backendItems.find((item) => item.id === statisticsRepertoireId);

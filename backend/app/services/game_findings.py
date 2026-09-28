@@ -8,7 +8,7 @@ import json
 
 import chess
 
-from ..database import connection
+from ..database import background_read_connection, connection
 from .activity_gate import activity_gate
 from .motif_detectors import (
     MotifEvidence,
@@ -125,13 +125,16 @@ def _unseen_card_for_position(
 
 
 def refresh_game_findings(
-    game_id: str | None = None, *, background: bool = False
-) -> None:
+    game_id: str | None = None, *, background: bool = False,
+    prepare_only: bool = False,
+) -> tuple[list[dict], list[dict], dict[str, int], list[tuple]] | None:
+    """Prepare derived evidence without writes when a PostgreSQL slice requests it."""
     finding_writes: list[dict] = []
     opportunity_writes: list[dict] = []
     opportunity_games: dict[str, int] = {}
     priority_writes: list[tuple] = []
-    with connection(background=background) as database:
+    read_context = background_read_connection() if prepare_only else connection(background=background)
+    with read_context as database:
         where = "WHERE g.id=?" if game_id else ""
         games = [dict(row) for row in database.execute(
             f"""SELECT g.*,m.repertoire_id,m.first_player_deviation_ply,m.first_player_deviation_fen,
@@ -163,7 +166,7 @@ def refresh_game_findings(
             ]
             for game in games
         }
-        unseen_cards = [
+        unseen_cards = [] if prepare_only else [
             dict(row)
             for row in database.execute(
                 """SELECT c.id,c.start_fen,c.moves_json FROM cards c
@@ -171,6 +174,23 @@ def refresh_game_findings(
                      AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)"""
             ).fetchall()
         ]
+
+    if prepare_only:
+        last_card_id = ""
+        while True:
+            with background_read_connection() as database:
+                card_page = [dict(row) for row in database.execute(
+                    """SELECT c.id,c.start_fen,c.moves_json FROM cards c
+                       WHERE c.id>? AND c.content_type='opening' AND c.archived=0
+                         AND c.introduced_at IS NULL
+                         AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)
+                       ORDER BY c.id LIMIT 64""",
+                    (last_card_id,),
+                ).fetchall()]
+            unseen_cards.extend(card_page)
+            if len(card_page) < 64:
+                break
+            last_card_id = card_page[-1]["id"]
 
     threshold = int(settings["major_mistake_cp"])
     acceptable_tolerance_cp = int(settings["engine_line_window_cp"])
@@ -411,6 +431,8 @@ def refresh_game_findings(
                 finding_writes.append(dict(game_id=game["id"], analysis_version=version,
                                 ply=first_big_mistake["ply"], kind="first big mistake",
                                 confidence=1.0, evidence=evidence))
+    if prepare_only:
+        return finding_writes, opportunity_writes, opportunity_games, priority_writes
     if background:
         activity_gate.wait_for_foreground()
     with connection(background=background) as database:

@@ -22,12 +22,13 @@ import { convertPackagedPuzzleRecordIntoPracticeCard } from "../utils/cards";
 import { editFenSquare, fenAfterMoves, moveFenPiece } from "../utils/fen";
 import CloseButton from "../components/buttons/CloseButton";
 import {
-  cardRevisionResultSchema,
   packagedPuzzleSchema,
   prefixSplitResponseSchema,
 } from "../domain/schemas";
 import { readJsonResponse, validRecords } from "../lib/validated-data";
 import { movesToSanFormat } from "../utils/chess";
+import { acceptPrefixSplitCommand } from "../lib/prefix-split-command";
+import { reviseCardCommand } from "../lib/card-revision-command";
 import type { z } from "zod";
 
 type PrefixSplitPreview = z.infer<typeof prefixSplitResponseSchema>;
@@ -201,19 +202,7 @@ export default function CardEditor({
       if (card.editingIntent === "shorten-prefix" && usesLocalApi()) {
         if (!card.backendId || !prefixSplitPreview)
           throw new Error("The shorter prefix preview is not ready.");
-        const response = await fetch(
-          `${API_URL}/api/cards/${card.backendId}/prefix-split`,
-          {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ expected_revision: card.revision ?? 1 }),
-          },
-        );
-        const result = await readJsonResponse(
-          response,
-          prefixSplitResponseSchema,
-          "accepted prefix split",
-        );
+        const result = await acceptPrefixSplitCommand(card.backendId, card.revision ?? 1);
         onSave({
           ...card,
           backendId: result.parent.card_id,
@@ -235,29 +224,21 @@ export default function CardEditor({
       });
       if (!moves.length) throw new Error("Enter at least one solution move.");
       let backendId = card.backendId;
+      let savedRevision = (card.revision ?? 1) + 1;
       if (usesLocalApi()) {
         if (!backendId)
           throw new Error("This card is not in the local database.");
-        const response = await fetch(`${API_URL}/api/cards/${backendId}`, {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            starting_fen: currentFenString,
-            moves,
-            history_mode: historyMode,
-          }),
+        const result = await reviseCardCommand({
+          cardId: backendId, startingFen: currentFenString,
+          moves, historyMode, expectedRevision: card.revision ?? 1,
         });
-        const result = await readJsonResponse(
-          response,
-          cardRevisionResultSchema,
-          "card revision",
-        );
         backendId = result.card_id;
+        savedRevision = result.revision ?? savedRevision;
       }
       onSave({
         ...card,
         backendId,
-        revision: (card.revision ?? 1) + 1,
+        revision: savedRevision,
         startingFen: asFenString(currentFenString),
         moves: solutionSanMovesList,
       });

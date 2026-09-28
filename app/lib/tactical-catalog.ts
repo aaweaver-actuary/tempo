@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { API_URL, assetUrl } from "../const";
 import { readWorkspaceData } from "./workspace-data";
+import { confirmOperationResponse } from "./operation-status";
 import { usesLocalApi } from "../utils/local";
 import type { TacticProgress } from "./tactics-progress";
 export const tacticalCatalogSchema = z.object({
@@ -40,16 +41,30 @@ export function loadTacticalCatalog() {
 }
 export async function setPackActivation(packIds: string[], active: boolean) {
   if (usesLocalApi()) {
+    const pendingKey = `tempo-tactics-activation-pending-v1:${[...packIds].sort().join(",")}:${active}`;
+    let operationId: string;
+    try {
+      operationId = localStorage.getItem(pendingKey) ?? crypto.randomUUID();
+      localStorage.setItem(pendingKey, operationId);
+    } catch {
+      operationId = crypto.randomUUID();
+    }
     const response = await fetch(`${API_URL}/api/tactics/activation`, {
       method: "PUT",
-      headers: { "Content-Type": "application/json" },
+      headers: { "Content-Type": "application/json", "Idempotency-Key": operationId },
       body: JSON.stringify({ pack_ids: packIds, active }),
     });
-    if (!response.ok)
+    const wasPending = response.status === 202;
+    const confirmedResponse = await confirmOperationResponse(response);
+    if (!confirmedResponse.ok)
       throw new Error(
-        `Could not update activation (HTTP ${response.status}). Retry.`,
+        `Could not update activation (HTTP ${confirmedResponse.status}). Retry.`,
       );
-    return tacticalCatalogSchema.parse(await response.json());
+    const updatedCatalog = wasPending
+      ? await loadTacticalCatalog()
+      : tacticalCatalogSchema.parse(await confirmedResponse.json());
+    try { localStorage.removeItem(pendingKey); } catch { /* Storage is optional. */ }
+    return updatedCatalog;
   }
   const current: string[] = JSON.parse(
     localStorage.getItem("tempo-tactic-active-packs-v1") ?? "[]",

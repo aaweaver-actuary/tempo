@@ -1,8 +1,12 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import StockfishFactory from "../public/engines/sf_19_smallnet.js";
+import { createDurableEngineRequest } from "./durable-engine-request.mjs";
 
 const api = process.env.TEMPO_API_URL ?? "http://api:8000";
+const durableRequest = createDurableEngineRequest(
+  api, process.env.TEMPO_ENGINE_OUTBOX_PATH ?? "/tmp/tempo-engine-pending-command.json",
+);
 const assetDirectory = resolve(import.meta.dirname, "../public/engines");
 const engine = await StockfishFactory({
   locateFile: (name) => resolve(assetDirectory, name),
@@ -18,12 +22,9 @@ engine.uci("isready");
 const sleep = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds));
 
 async function request(path, options = {}) {
-  const response = await fetch(`${api}${path}`, {
-    ...options,
-    headers: { "X-Tempo-Work-Class": "background", "X-Tempo-Engine-Worker": "docker", "Content-Type": "application/json" },
+  return durableRequest.send(path, {
+    ...options, headers: { ...options.headers, "X-Tempo-Engine-Worker": "docker" },
   });
-  if (!response.ok) throw new Error(`${path}: HTTP ${response.status} ${await response.text()}`);
-  return response.json();
 }
 
 function evaluate(job) {
@@ -124,15 +125,25 @@ while (true) {
   let job;
   let jobKind;
   try {
-    const available = await request("/api/system/foreground-active");
-    if (available.active) { await sleep(2_000); continue; }
-    job = (await request("/api/defensive-threats/analysis/claim", { method: "POST" })).job;
-    if (job) jobKind = "defense";
-    else {
-      await request("/api/games/analysis/repair-timeout", { method: "POST" });
-      await request("/api/games/analysis/repair-provenance", { method: "POST" });
-      job = (await request("/api/games/analysis/position/claim", { method: "POST" })).job;
+    const recovered = await durableRequest.recover();
+    if (recovered?.path === "/api/defensive-threats/analysis/claim") {
+      job = recovered.result.job;
+      jobKind = "defense";
+    } else if (recovered?.path === "/api/games/analysis/position/claim") {
+      job = recovered.result.job;
       jobKind = "game";
+    }
+    if (!job) {
+      const available = await request("/api/system/foreground-active");
+      if (available.active) { await sleep(2_000); continue; }
+      job = (await request("/api/defensive-threats/analysis/claim", { method: "POST" })).job;
+      if (job) jobKind = "defense";
+      else {
+        await request("/api/games/analysis/repair-timeout", { method: "POST" });
+        await request("/api/games/analysis/repair-provenance", { method: "POST" });
+        job = (await request("/api/games/analysis/position/claim", { method: "POST" })).job;
+        jobKind = "game";
+      }
     }
     if (!job) { await sleep(2_000); continue; }
     if (job.kind === "finalize") {
@@ -149,6 +160,11 @@ while (true) {
       method: "POST", body: JSON.stringify({ lease_id: job.lease_id, report }),
     });
   } catch (error) {
+    if (error.operationId) {
+      console.error("Engine database command is still pending:", error.operationId);
+      await sleep(2_000);
+      continue;
+    }
     if (job) {
       const preempted = error.message === "preempted";
       try {

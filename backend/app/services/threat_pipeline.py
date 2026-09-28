@@ -13,7 +13,14 @@ from ..database import background_read_connection, connection, read_connection
 from .. import postgres_store
 from .activity_gate import activity_gate
 from .background_activity import claimable, control_order
-from .durable_tasks import enqueue_task, enqueue_task_in_transaction, lock_current_slice
+from .durable_tasks import (
+    advance_task_slice_in_transaction,
+    complete_task_slice_in_transaction,
+    enqueue_compact_postgres_task_in_transaction,
+    enqueue_task,
+    enqueue_task_in_transaction,
+    lock_current_slice,
+)
 from .threat_detection import (
     find_defensive_knight_forks, propose_exercise_anchors, trace_knight_route,
 )
@@ -199,7 +206,8 @@ def execute_threat_backfill_slice(task: dict) -> bool:
     phase = task["payload"].get("phase", "games")
     cursor = task["payload"].get("cursor", "")
     activity_gate.wait_for_foreground()
-    with read_connection() as database:
+    read_section = background_read_connection if postgres_store.configured() else read_connection
+    with read_section() as database:
         if phase == "games":
             row = database.execute(
                 """SELECT id,analysis_version FROM imported_games
@@ -213,30 +221,46 @@ def execute_threat_backfill_slice(task: dict) -> bool:
                 (cursor, "__defense__"),
             ).fetchone()
         item = dict(row) if row else None
-    if item is None and phase == "repertoires":
+    if item is None and phase == "repertoires" and not postgres_store.configured():
         return False
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        lease = database.execute(
-            "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
-        ).fetchone()
-        if not lease or lease["generation"] != task["generation"] or lease["lease_token"] != task["lease_token"]:
-            return True
+        if postgres_store.configured():
+            if not lock_current_slice(database, task):
+                return False
+            if item is None and phase == "repertoires":
+                return complete_task_slice_in_transaction(database, task)
+        else:
+            lease = database.execute(
+                "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
+            ).fetchone()
+            if (not lease or lease["generation"] != task["generation"]
+                    or lease["lease_token"] != task["lease_token"]):
+                return True
         if item is not None:
+            enqueue_in_transaction = (
+                enqueue_compact_postgres_task_in_transaction
+                if postgres_store.configured() else enqueue_task_in_transaction
+            )
             if phase == "games":
-                enqueue_task_in_transaction(
+                enqueue_in_transaction(
                     database, "defensive_threat_scan", item["id"],
                     {"game_id": item["id"], "analysis_version": item["analysis_version"], "cursor": 0},
                     priority=145,
                 )
             else:
-                enqueue_task_in_transaction(
+                enqueue_in_transaction(
                     database, "repertoire_opportunity", item["id"],
                     {"repertoire_id": item["id"], "phase": "summaries", "cursor": ""},
                     priority=130,
                 )
         next_phase = phase if item is not None else "repertoires"
         next_cursor = item["id"] if item is not None else ""
+        if postgres_store.configured():
+            return advance_task_slice_in_transaction(
+                database, task, next_phase=next_phase,
+                next_payload={"phase": next_phase, "cursor": next_cursor},
+            )
         database.execute(
             """UPDATE background_tasks SET generation=generation+1,state='queued',phase='queued',
                  payload_json=?,attempt_count=0,next_attempt_at=?,lease_token=NULL,
@@ -248,8 +272,12 @@ def execute_threat_backfill_slice(task: dict) -> bool:
     return True
 
 
-def _advance_scan(database, task: dict, next_cursor: int) -> None:
+def _advance_scan(database, task: dict, next_cursor: int, *, seed_index: int = 0) -> None:
     payload = {**task["payload"], "cursor": next_cursor}
+    if seed_index:
+        payload["seed_index"] = seed_index
+    else:
+        payload.pop("seed_index", None)
     database.execute(
         """UPDATE background_tasks SET generation=generation+1,state='queued',phase='queued',
               payload_json=?,attempt_count=0,next_attempt_at=?,lease_token=NULL,
@@ -260,13 +288,13 @@ def _advance_scan(database, task: dict, next_cursor: int) -> None:
     )
 
 
-def _upsert_seed(database, game: GameSnapshot, seed: ThreatSeed) -> None:
+def _upsert_seed(database, game: GameSnapshot, seed: ThreatSeed, *, prepared=None) -> None:
     incident_id = _digest({
         "game": game.game_id,
         "fork_ply": seed.fork_ply, "geometry": asdict(seed.geometry),
     })
     finding_id = _digest({"kind": "defensive tactical threat", "incident": incident_id})
-    route = trace_knight_route(game, seed, max_hops=POLICY.max_knight_hops)
+    route, anchors, plans = prepared or _prepare_seed(game, seed)
     finding_evidence = {
         "subtype": "knightKingMajor", "incident_id": incident_id,
         "seed": asdict(seed), "knight_route": [asdict(hop) for hop in route],
@@ -289,7 +317,6 @@ def _upsert_seed(database, game: GameSnapshot, seed: ThreatSeed) -> None:
         )
         if previous_seed["analysis_version"] == game.analysis_version and incoming_rank <= previous_rank:
             return
-    anchors = propose_exercise_anchors(game, seed, POLICY)
     now = _now()
     database.execute(
         """INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,
@@ -323,10 +350,7 @@ def _upsert_seed(database, game: GameSnapshot, seed: ThreatSeed) -> None:
             "SELECT source_fingerprint,card_id FROM threat_training_candidates WHERE id=?",
             (candidate_id,),
         ).fetchone()
-        plan = make_validation_plan(
-            anchor, engine_version=ENGINE_VERSION,
-            network_version=NETWORK_VERSION, policy=POLICY,
-        )
+        plan = plans[anchor.player_ply]
         database.execute(
             """INSERT INTO threat_training_candidates(
                    id,finding_id,game_id,analysis_version,incident_id,player_ply,
@@ -375,6 +399,19 @@ def _upsert_seed(database, game: GameSnapshot, seed: ThreatSeed) -> None:
             )
 
 
+def _prepare_seed(game: GameSnapshot, seed: ThreatSeed):
+    """Keep chess traversal and validation planning outside the write transaction."""
+    route = trace_knight_route(game, seed, max_hops=POLICY.max_knight_hops)
+    anchors = propose_exercise_anchors(game, seed, POLICY)
+    plans = {
+        anchor.player_ply: make_validation_plan(
+            anchor, engine_version=ENGINE_VERSION,
+            network_version=NETWORK_VERSION, policy=POLICY,
+        ) for anchor in anchors
+    }
+    return route, anchors, plans
+
+
 def execute_threat_scan_slice(task: dict) -> bool:
     """Scan one actual game ply and its bounded saved candidate lines, then yield."""
 
@@ -382,7 +419,7 @@ def execute_threat_scan_slice(task: dict) -> bool:
     cursor = int(task["payload"]["cursor"])
     version = int(task["payload"]["analysis_version"])
     activity_gate.wait_for_foreground()
-    with read_connection() as database:
+    with background_read_connection() as database:
         row = database.execute(
             "SELECT id,analysis_version,start_fen,moves_json,color FROM imported_games WHERE id=?",
             (game_id,),
@@ -410,28 +447,38 @@ def execute_threat_scan_slice(task: dict) -> bool:
         except (ValueError, TypeError):
             # A malformed saved PV is never promoted into evidence.
             continue
+    postgres_scan = postgres_store.configured()
+    seed_index = int(task["payload"].get("seed_index", 0)) if postgres_scan else 0
+    selected_seeds = seeds[seed_index:seed_index + 1] if postgres_scan else seeds
+    prepared_seeds = [(seed, _prepare_seed(game, seed)) for seed in selected_seeds]
+    ply_complete = not postgres_scan or seed_index + len(selected_seeds) >= len(seeds)
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
+        if postgres_store.configured() and not lock_current_slice(database, task):
+            return True
         still_current = database.execute(
             "SELECT analysis_version FROM imported_games WHERE id=?", (game_id,)
         ).fetchone()
         if not still_current or still_current[0] != version:
             return False
-        for seed in seeds:
-            _upsert_seed(database, game, seed)
-        database.execute(
-            """UPDATE threat_training_candidates SET superseded_at=COALESCE(superseded_at,?)
-               WHERE game_id=? AND analysis_version!=? AND superseded_at IS NULL""",
-            (_now(), game_id, version),
-        )
-        _advance_scan(database, task, cursor + 1)
+        for seed, prepared in prepared_seeds:
+            _upsert_seed(database, game, seed, prepared=prepared)
+        if ply_complete:
+            database.execute(
+                """UPDATE threat_training_candidates SET superseded_at=COALESCE(superseded_at,?)
+                   WHERE game_id=? AND analysis_version!=? AND superseded_at IS NULL""",
+                (_now(), game_id, version),
+            )
+        _advance_scan(database, task, cursor + 1 if ply_complete else cursor,
+                      seed_index=0 if ply_complete else seed_index + 1)
     return True
 
 
-def execute_threat_validation(task: dict) -> None:
+def execute_threat_validation(task: dict) -> bool | None:
     candidate_id = task["payload"]["candidate_id"]
     activity_gate.wait_for_foreground()
-    with read_connection() as database:
+    read_section = background_read_connection if postgres_store.configured() else read_connection
+    with read_section() as database:
         row = database.execute(
             """SELECT c.*,g.analysis_version current_version FROM threat_training_candidates c
                JOIN imported_games g ON g.id=c.game_id WHERE c.id=?""", (candidate_id,)
@@ -443,7 +490,11 @@ def execute_threat_validation(task: dict) -> None:
             (candidate_id,),
         )]
     if not row or row["superseded_at"] or row["analysis_version"] != row["current_version"]:
-        return
+        if postgres_store.configured():
+            with connection(background=True) as database:
+                if lock_current_slice(database, task):
+                    return complete_task_slice_in_transaction(database, task)
+        return False
     evidence = json.loads(row["evidence_json"])
     seed = _seed_from_json(evidence["seed"])
     anchor = _anchor_from_json(evidence["anchor"])
@@ -467,6 +518,22 @@ def execute_threat_validation(task: dict) -> None:
     )
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
+        if postgres_store.configured():
+            if not lock_current_slice(database, task):
+                return False
+            current = database.execute(
+                "SELECT candidate.source_fingerprint,candidate.analysis_version,"
+                "candidate.superseded_at,game.analysis_version current_version "
+                "FROM threat_training_candidates candidate "
+                "JOIN imported_games game ON game.id=candidate.game_id "
+                "WHERE candidate.id=? FOR UPDATE OF candidate",
+                (candidate_id,),
+            ).fetchone()
+            if (not current or current["source_fingerprint"] != row["source_fingerprint"]
+                    or current["analysis_version"] != row["analysis_version"]
+                    or current["analysis_version"] != current["current_version"]
+                    or current["superseded_at"]):
+                return complete_task_slice_in_transaction(database, task)
         database.execute(
             """UPDATE threat_training_candidates
                SET validation_state=?,diagnostic=?,validation_json=?,updated_at=?
@@ -474,9 +541,19 @@ def execute_threat_validation(task: dict) -> None:
             (result.state, result.diagnostic, json.dumps(asdict(result)),
              _now(), candidate_id, row["source_fingerprint"]),
         )
+        if postgres_store.configured():
+            if result.state in {"engine_supported", "validated_control"}:
+                today = datetime.now().date().isoformat()
+                enqueue_compact_postgres_task_in_transaction(
+                    database, "defensive_admission", today,
+                    {"queue_date": today, "phase": "threat", "cursor": "",
+                     "control_exhausted": False}, priority=150,
+                )
+            return complete_task_slice_in_transaction(database, task)
     if result.state in {"engine_supported", "validated_control"}:
         from .threat_training import enqueue_defense_admission
         enqueue_defense_admission(background=True)
+    return None
 
 
 def enqueue_candidate_validation(candidate_id: str, *, background: bool) -> None:

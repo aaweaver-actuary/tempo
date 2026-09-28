@@ -20,12 +20,12 @@ import { EndgameMaterial } from "../lib/endgame-generator";
 import { OutcomeFlash } from "../components/board/OutcomeFlash";
 import {
   endgameTemplatesSchema,
-  endgameCreatedSchema,
-  endgameAttemptSchema,
 } from "../domain/schemas";
 import { readJsonResponse } from "../lib/validated-data";
 import { useTaskTabs } from "../components/task-tabs";
 import { reportDebugError } from "../lib/debug-reporting";
+import { admitEndgameTemplate } from "../lib/endgame-template-command";
+import { startEndgameAttempt } from "../lib/endgame-attempt-command";
 
 const TEMPLATE_API_ENDPOINT = `${API_URL}/api/endgames/templates`;
 
@@ -129,33 +129,25 @@ export default function EndgamesView({
   async function admitTemplate() {
     if (!usesLocalApi()) return;
     const template = templates[selected];
-    const response = await fetch(`${API_URL}/api/endgames/templates`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
+    try {
+      const data = await admitEndgameTemplate({
         name: template.name,
         white_material: template.white,
         black_material: template.black,
         trained_color: template.side ?? "white",
         goal_mix: "both",
-      }),
-    });
-    if (!response.ok) {
-      setStatus("Could not add this material set to training.");
+      });
+      invalidateWorkspaceData();
+      setAdmitted((current) => ({
+        ...current,
+        [selected]: { templateId: data.id, cardId: data.card_id },
+      }));
+      setStatus("Added to your daily training.");
+      onQueueChanged();
+    } catch (error) {
+      setStatus(error instanceof Error ? error.message : "Could not add this material set to training.");
       return;
     }
-    const data = await readJsonResponse(
-      response,
-      endgameCreatedSchema,
-      "endgame admission",
-    );
-    invalidateWorkspaceData();
-    setAdmitted((current) => ({
-      ...current,
-      [selected]: { templateId: data.id, cardId: data.card_id },
-    }));
-    setStatus("Added to your daily training.");
-    onQueueChanged();
   }
 
   const recordEndgame = useCallback(
@@ -185,15 +177,7 @@ export default function EndgamesView({
         const item = admitted[index];
         if (!item) return;
         try {
-          const response = await fetch(
-            `${TEMPLATE_API_ENDPOINT}/${item.templateId}/attempt`,
-            { method: "POST" },
-          );
-          const attempt = await readJsonResponse(
-            response,
-            endgameAttemptSchema,
-            "endgame attempt",
-          );
+          const attempt = await startEndgameAttempt(item.templateId);
           if (token !== generation.current) return;
           setFen(attempt.fen);
           setTarget(attempt.target);

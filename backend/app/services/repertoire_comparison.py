@@ -10,7 +10,8 @@ import threading
 
 import chess
 
-from ..database import connection
+from ..database import background_read_connection, connection
+from .. import postgres_store
 from .activity_gate import activity_gate
 
 
@@ -20,6 +21,20 @@ _cached_repertoires: list[dict] = []
 _cached_graphs_by_repertoire: dict[str, tuple[dict[str, set[str]], set[str]]] = {}
 _cached_colors_by_repertoire: dict[str, set[str]] = {}
 _cached_card_positions: dict[tuple[str, str, str], str] = {}
+
+_REPERTOIRE_LINE_SIGNATURE_SQL = (
+    "SELECT md5(COALESCE(string_agg(md5(row_to_json(item)::text),'' "
+    "ORDER BY item.id),'')) FROM ("
+    "SELECT id,repertoire_id,trained_color,start_fen,moves_json "
+    "FROM repertoire_lines) item"
+)
+_CARD_SIGNATURE_SQL = (
+    "SELECT md5(COALESCE(string_agg(md5(row_to_json(item)::text),'' "
+    "ORDER BY item.repertoire_id,item.id),'')) FROM ("
+    "SELECT rc.repertoire_id,c.id,c.start_fen,c.moves_json FROM cards c "
+    "JOIN repertoire_cards rc ON rc.card_id=c.id "
+    "WHERE c.archived=0 AND c.content_type='opening') item"
+)
 
 
 def canonical_fen(fen: str) -> str:
@@ -62,28 +77,92 @@ def _card_position_index(rows: list[dict]) -> dict[tuple[str, str, str], str]:
     return positions
 
 
-def _load_repertoire_index(*, background: bool = False) -> tuple[list[dict], dict[str, tuple[dict[str, set[str]], set[str]]], dict[str, set[str]], dict[tuple[str, str, str], str]]:
+def _postgres_repertoire_source_signature(repertoires: list[dict]) -> str:
+    with background_read_connection() as database:
+        line_digest = database.execute_native(_REPERTOIRE_LINE_SIGNATURE_SQL).fetchone()[0]
+    with background_read_connection() as database:
+        card_digest = database.execute_native(_CARD_SIGNATURE_SQL).fetchone()[0]
+    return hashlib.sha256(
+        json.dumps([repertoires, line_digest, card_digest], sort_keys=True).encode()
+    ).hexdigest()
+
+
+def _postgres_repertoire_input_rows() -> tuple[list[dict], list[dict], list[dict]]:
+    with background_read_connection() as database:
+        repertoires = [dict(row) for row in database.execute(
+            "SELECT id,is_main FROM repertoires "
+            "WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__') ORDER BY id"
+        )]
+    line_rows: list[dict] = []
+    line_cursor = ""
+    while True:
+        with background_read_connection() as database:
+            page = [dict(row) for row in database.execute(
+                "SELECT id,repertoire_id,trained_color,start_fen,moves_json "
+                "FROM repertoire_lines WHERE id>? ORDER BY id LIMIT 64",
+                (line_cursor,),
+            )]
+        line_rows.extend(page)
+        if len(page) < 64:
+            break
+        line_cursor = page[-1]["id"]
+    card_rows: list[dict] = []
+    card_cursor = ("", "")
+    while True:
+        with background_read_connection() as database:
+            page = [dict(row) for row in database.execute_native(
+                "SELECT rc.repertoire_id,c.id,c.start_fen,c.moves_json FROM cards c "
+                "JOIN repertoire_cards rc ON rc.card_id=c.id "
+                "WHERE c.archived=0 AND c.content_type='opening' "
+                "AND (rc.repertoire_id,c.id)>(%s,%s) "
+                "ORDER BY rc.repertoire_id,c.id LIMIT 64",
+                card_cursor,
+            )]
+        card_rows.extend(page)
+        if len(page) < 64:
+            break
+        card_cursor = (page[-1]["repertoire_id"], page[-1]["id"])
+    return repertoires, line_rows, card_rows
+
+
+def _load_repertoire_index_snapshot(*, background: bool = False) -> tuple[str, list[dict], dict[str, tuple[dict[str, set[str]], set[str]]], dict[str, set[str]], dict[tuple[str, str, str], str]]:
     global _cached_signature, _cached_repertoires, _cached_graphs_by_repertoire
     global _cached_colors_by_repertoire, _cached_card_positions
-    with connection(background=background) as database:
-        repertoires = [dict(row) for row in database.execute(
-            "SELECT id,is_main FROM repertoires WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__') ORDER BY id"
-        )]
-        line_rows = [dict(row) for row in database.execute(
-            "SELECT id,repertoire_id,trained_color,start_fen,moves_json FROM repertoire_lines ORDER BY id"
-        )]
-        card_rows = [dict(row) for row in database.execute(
-            """SELECT rc.repertoire_id,c.id,c.start_fen,c.moves_json FROM cards c
-               JOIN repertoire_cards rc ON rc.card_id=c.id
-               WHERE c.archived=0 AND c.content_type='opening'
-               ORDER BY rc.repertoire_id,c.id"""
-        )]
-    signature = hashlib.sha256(
-        json.dumps([repertoires, line_rows, card_rows], sort_keys=True).encode()
-    ).hexdigest()
+    if background and postgres_store.configured():
+        with background_read_connection() as database:
+            repertoires = [dict(row) for row in database.execute(
+                "SELECT id,is_main FROM repertoires "
+                "WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__') ORDER BY id"
+            )]
+        signature = _postgres_repertoire_source_signature(repertoires)
+        with _index_lock:
+            if signature == _cached_signature:
+                return (signature, _cached_repertoires, _cached_graphs_by_repertoire,
+                        _cached_colors_by_repertoire, _cached_card_positions)
+        repertoires, line_rows, card_rows = _postgres_repertoire_input_rows()
+        if signature != _postgres_repertoire_source_signature(repertoires):
+            raise RuntimeError("Repertoire changed during index loading; retry the slice")
+    else:
+        with connection(background=background) as database:
+            repertoires = [dict(row) for row in database.execute(
+                "SELECT id,is_main FROM repertoires WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__') ORDER BY id"
+            )]
+            line_rows = [dict(row) for row in database.execute(
+                "SELECT id,repertoire_id,trained_color,start_fen,moves_json FROM repertoire_lines ORDER BY id"
+            )]
+            card_rows = [dict(row) for row in database.execute(
+                """SELECT rc.repertoire_id,c.id,c.start_fen,c.moves_json FROM cards c
+                   JOIN repertoire_cards rc ON rc.card_id=c.id
+                   WHERE c.archived=0 AND c.content_type='opening'
+                   ORDER BY rc.repertoire_id,c.id"""
+            )]
+        signature = hashlib.sha256(
+            json.dumps([repertoires, line_rows, card_rows], sort_keys=True).encode()
+        ).hexdigest()
     with _index_lock:
         if signature == _cached_signature:
             return (
+                signature,
                 _cached_repertoires,
                 _cached_graphs_by_repertoire,
                 _cached_colors_by_repertoire,
@@ -104,11 +183,19 @@ def _load_repertoire_index(*, background: bool = False) -> tuple[list[dict], dic
         _cached_colors_by_repertoire = dict(colors_by_repertoire)
         _cached_card_positions = _card_position_index(card_rows)
         return (
+            signature,
             _cached_repertoires,
             _cached_graphs_by_repertoire,
             _cached_colors_by_repertoire,
             _cached_card_positions,
         )
+
+
+def _load_repertoire_index(*, background: bool = False) -> tuple[list[dict], dict[str, tuple[dict[str, set[str]], set[str]]], dict[str, set[str]], dict[tuple[str, str, str], str]]:
+    _, repertoires, graphs, colors, card_positions = _load_repertoire_index_snapshot(
+        background=background,
+    )
+    return repertoires, graphs, colors, card_positions
 
 
 def _compare_game_to_repertoire(game: dict, repertoire: dict, graph: tuple[dict[str, set[str]], set[str]], card_positions: dict[tuple[str, str, str], str]) -> dict:

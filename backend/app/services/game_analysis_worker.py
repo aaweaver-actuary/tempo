@@ -9,7 +9,8 @@ from datetime import datetime, timedelta, timezone
 
 import chess
 
-from ..database import connection, read_connection
+from ..database import background_read_connection, connection, read_connection
+from .. import postgres_store
 from .activity_gate import activity_gate
 from .threat_pipeline import (ENGINE_VERSION, NETWORK_VERSION, report_from_json,
                               validate_analysis_report)
@@ -219,7 +220,8 @@ def release_position(report_id: str, lease_id: str, error: str | None = None) ->
 def build_game_evaluations(parent_job: dict) -> list[dict]:
     moves = parent_job["moves"]
     positions = _positions(parent_job["start_fen"], moves)
-    with read_connection() as database:
+    read_section = background_read_connection if postgres_store.configured() else read_connection
+    with read_section() as database:
         rows = database.execute(
             """SELECT scan_pass,position_index,report_json FROM game_analysis_position_reports
                WHERE game_id=? AND analysis_version=? AND state='complete'""",

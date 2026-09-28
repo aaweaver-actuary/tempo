@@ -20,6 +20,7 @@ import {
 } from "./domain/schemas";
 import { readJsonResponse } from "./lib/validated-data";
 import { reportDebugError } from "./lib/debug-reporting";
+import { savePgnImportCommand } from "./lib/pgn-import-command";
 
 export function ImportDialogBox({
   onClose,
@@ -89,6 +90,8 @@ export function ImportDialogBox({
           (candidate) => candidate.id === repertoireId,
         );
         if (repertoire?.graph_state === "failed") throw new Error("Repertoire graph failed after import. Retry the failed task in Settings → Service status.");
+        if (repertoire?.integrity_scan_status === "failed")
+          throw new Error(`Repertoire integrity scan failed after import: ${repertoire.integrity_scan_error ?? "Check Activity and retry the failed task."}`);
         if (repertoire?.integrity_status === "clean" && repertoire.graph_state === "ready" && repertoire.graph_updated_at) {
           const queueResponse = await fetch(`${API_URL}/api/queue/window?limit=1`);
           if (queueResponse.ok) {
@@ -133,15 +136,7 @@ export function ImportDialogBox({
       let sharedPrefixes = parsed.sharedPrefixes;
       let integrityRepertoireId: string | undefined;
       if (usesLocalApi()) {
-        const data = new FormData();
-        data.append("file", file);
-        data.append("trained_color", trainedColor);
-        data.append("initial_depth", String(initialDepth));
-        const response = await fetch(`${API_URL}/api/imports/pgn`, {
-          method: "POST",
-          body: data,
-        });
-        const result = await readJsonResponse(response, importResultSchema, "PGN import");
+        const result = await savePgnImportCommand(file, trainedColor, initialDepth);
         backend = true;
         if (backend) {
           admitted = result.cards_admitted_today ?? 0;

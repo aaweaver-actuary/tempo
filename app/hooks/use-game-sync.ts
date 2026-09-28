@@ -6,6 +6,8 @@ import { usesLocalApi } from "../utils/local";
 import type { GameProviderValue, GameSyncJobStatusValue } from "../types";
 import { backgroundFetch } from "../lib/background-fetch";
 import { reportDebugError } from "../lib/debug-reporting";
+import { enqueueGameSyncCommand, hasPendingGameSyncCommand } from "../lib/game-sync-command";
+import { PendingOperationError } from "../lib/operation-status";
 
 type ProviderSyncCounts = {
   provider: GameProviderValue;
@@ -59,11 +61,15 @@ export function useGameSync() {
       failedEndpoint = `${API_URL}/api/games/sync`;
       failedOperation = "sync games";
       failedMethod = "POST";
-      const response = await (manual ? fetch : backgroundFetch)(`${API_URL}/api/games/sync`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ lichess_username: settings.lichess_username, chesscom_username: settings.chesscom_username, days: 90, speeds: ["blitz", "rapid", "classical"], rated_only: true, repair }) });
+      const response = await enqueueGameSyncCommand({ lichess_username: settings.lichess_username, chesscom_username: settings.chesscom_username, days: 90, speeds: ["blitz", "rapid", "classical"], rated_only: true, repair }, manual ? fetch : backgroundFetch);
       const result = await readJsonResponse(response, syncResultSchema, "game sync");
       const providerResults = Object.values(result.providers);
       setState((current) => ({ ...current, syncing: result.status !== "complete" && result.status !== "failed", error: providerResults.filter((provider) => provider.error).map((provider) => `${provider.provider}: ${provider.error}`).join(" · "), imported: result.imported, providers: providerResults, jobStatus: result.status }));
     } catch (error) {
+      if (error instanceof PendingOperationError) {
+        setState((current) => ({ ...current, syncing: true, error: "" }));
+        return;
+      }
       reportDebugError(error, {
         kind: "api",
         source: "game-sync",
@@ -101,7 +107,7 @@ export function useGameSync() {
         const jobIsActive = jobStatus === "queued" || jobStatus === "running" || jobStatus === "paused" || jobStatus === "retrying";
         setState((current) => ({
           ...current,
-          syncing: jobStatus ? jobIsActive : active.current ? current.syncing : false,
+          syncing: jobStatus ? jobIsActive : active.current ? current.syncing : hasPendingGameSyncCommand(),
           jobStatus,
           lastSuccess: completedResult?.synced_at ?? (current.lastSuccess || latest),
           error: (result.active_job?.error ?? providerError) || (completedResult ? "" : current.error),

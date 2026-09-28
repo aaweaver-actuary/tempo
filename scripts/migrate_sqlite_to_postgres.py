@@ -1,6 +1,6 @@
 """Copy a stopped, verified Tempo SQLite snapshot into PostgreSQL.
 
-The destination must have migration 001 applied and no application rows.
+The destination must have all checked-in migrations applied and no application rows.
 Each table is copied in a separate transaction and recorded in
 tempo_migration_progress, so an interrupted import can resume safely. Run
 --verify-only afterward to compare every row in primary-key order.
@@ -20,6 +20,20 @@ import psycopg
 from psycopg import sql
 
 from generate_postgres_schema import sorted_tables
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from backend.app.schema_version import POSTGRES_SCHEMA_VERSION
+
+
+COPY_TARGETS = {
+    "game_move_analysis": "game_move_analysis_legacy",
+    "game_move_analysis_candidates": "game_move_analysis_candidates_legacy",
+    "game_position_occurrences": "game_position_occurrences_legacy",
+    "game_repertoire_matches": "game_repertoire_matches_legacy",
+    "repertoire_decision_events": "repertoire_decision_events_legacy",
+    "repertoire_comparisons": "repertoire_comparisons_legacy",
+    "gameplay_events": "gameplay_events_legacy",
+}
 
 
 def quote_sqlite_identifier(identifier: str) -> str:
@@ -106,7 +120,7 @@ def copy_table(
     primary_key_columns: list[str],
 ) -> tuple[int, str]:
     statement = sql.SQL("COPY {} ({}) FROM STDIN").format(
-        sql.Identifier(table_name),
+        sql.Identifier(COPY_TARGETS.get(table_name, table_name)),
         sql.SQL(", ").join(map(sql.Identifier, column_names)),
     )
     digest = hashlib.sha256()
@@ -132,7 +146,8 @@ def reseed_identifiers(source: sqlite3.Connection, destination: psycopg.Connecti
         identity_columns = [column[1] for column in columns if column[5] and "INT" in column[2].upper()]
         for column_name in identity_columns:
             sequence = destination.execute(
-                "SELECT pg_get_serial_sequence(%s,%s)", (f"public.{table_name}", column_name)
+                "SELECT pg_get_serial_sequence(%s,%s)",
+                (f"public.{COPY_TARGETS.get(table_name, table_name)}", column_name)
             ).fetchone()[0]
             if not sequence:
                 continue
@@ -149,8 +164,10 @@ def migrate(source_path: Path, destination_dsn: str, verify_only: bool) -> None:
     destination = psycopg.connect(destination_dsn, autocommit=True)
     try:
         version = destination.execute("SELECT MAX(version) FROM tempo_schema_migrations").fetchone()[0]
-        if version != 1:
-            raise RuntimeError(f"PostgreSQL schema version {version!r}; expected 1")
+        if version != POSTGRES_SCHEMA_VERSION:
+            raise RuntimeError(
+                f"PostgreSQL schema version {version!r}; expected {POSTGRES_SCHEMA_VERSION}"
+            )
         expected_tables = sorted_tables(source)
         print(f"Source has {len(expected_tables)} application tables", flush=True)
         for table_name, _ in expected_tables:

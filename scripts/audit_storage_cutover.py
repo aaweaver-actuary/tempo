@@ -18,7 +18,7 @@ import sqlite3
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND_ROOT = ROOT / "backend" / "app"
 FRONTEND_ROOTS = (ROOT / "app", ROOT / "static" / "src")
-SQL_METHODS = {"execute", "executemany", "executescript"}
+SQL_METHODS = {"execute", "execute_native", "executemany", "executescript"}
 DATABASE_ENTRYPOINTS = {
     "connection",
     "read_connection",

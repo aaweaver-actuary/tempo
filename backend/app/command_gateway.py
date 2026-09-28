@@ -8,6 +8,7 @@ import json
 from typing import Any
 
 import psycopg
+from psycopg.errors import DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout
 from fastapi import HTTPException
 
 from . import postgres_store
@@ -28,17 +29,37 @@ def register_command(name: str, handler: CommandHandler) -> None:
 
 
 def request_digest(command_name: str, payload: dict[str, Any]) -> str:
-    serialized = json.dumps([command_name, payload], sort_keys=True, separators=(",", ":"))
+    # A paste preview is derived from the current repertoire snapshot. After a
+    # successful save that snapshot changes, but replaying the same user save
+    # must still resolve to its original receipt.
+    if command_name == "analysis.paste.commit":
+        identity_payload = payload["request"]
+    elif command_name == "discovery.accept":
+        # Recommendation preparation can change during a retry. The accepted
+        # choice and evidence revision identify the user's operation.
+        identity_payload = {key: payload[key] for key in (
+            "opportunity_id", "selected_move_uci", "evidence_fingerprint"
+        )}
+    else:
+        identity_payload = payload
+    serialized = json.dumps([command_name, identity_payload], sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(serialized.encode()).hexdigest()
 
 
-def execute_command(operation_id: str, command_name: str, payload: dict[str, Any]) -> Any:
+def execute_command(
+    operation_id: str, command_name: str, payload: dict[str, Any], *, background: bool = False,
+) -> Any:
     if command_name not in _handlers:
         raise ValueError(f"Unknown command: {command_name}")
     if not operation_id or len(operation_id) > 128:
         raise ValueError("Operation ID must contain 1 to 128 characters")
     request_hash = request_digest(command_name, payload)
-    with postgres_store.connection(read_only=False) as database:
+    if background:
+        from .database import background_connection
+        command_connection = background_connection()
+    else:
+        command_connection = postgres_store.connection(read_only=False)
+    with command_connection as database:
         raw = database.raw
         # Serialize two deliveries of one command across worker processes.
         raw.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (operation_id,))
@@ -61,7 +82,8 @@ def execute_command(operation_id: str, command_name: str, payload: dict[str, Any
         raw.execute("SAVEPOINT command_handler")
         try:
             result = _handlers[command_name](database, payload)
-        except (psycopg.OperationalError, psycopg.InterfaceError):
+        except (psycopg.OperationalError, psycopg.InterfaceError,
+                DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout):
             # The broker will redeliver; an uncertain commit must not be
             # converted into a permanent failed receipt.
             raise
@@ -88,9 +110,15 @@ def execute_command(operation_id: str, command_name: str, payload: dict[str, Any
 
 
 def read_operation(
-    operation_id: str, *, command_name: str | None = None, request_hash: str | None = None
+    operation_id: str, *, command_name: str | None = None, request_hash: str | None = None,
+    background: bool = False,
 ) -> dict[str, Any]:
-    with postgres_store.connection(read_only=True) as database:
+    if background:
+        from .database import background_read_connection
+        receipt_connection = background_read_connection()
+    else:
+        receipt_connection = postgres_store.connection(read_only=True)
+    with receipt_connection as database:
         receipt = database.raw.execute(
             "SELECT command_name,request_hash,state,response_json,error_json "
             "FROM operation_receipts WHERE operation_id=%s",

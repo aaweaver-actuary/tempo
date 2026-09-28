@@ -60,6 +60,16 @@ def foreground_present() -> bool:
     return bool(pipeline.execute()[1])
 
 
+def record_browser_activity(seconds: float) -> None:
+    """Keep the active workspace ahead of new background database slices."""
+
+    lease_milliseconds = max(1, int(seconds * 1000))
+    client().eval(
+        _REGISTER_FOREGROUND, 1, _FOREGROUND_KEY,
+        int(time.time() * 1000), "browser-activity", lease_milliseconds,
+    )
+
+
 @contextmanager
 def foreground_lease() -> Iterator[None]:
     token = uuid.uuid4().hex

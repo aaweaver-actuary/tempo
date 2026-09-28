@@ -3,15 +3,23 @@
 from __future__ import annotations
 
 from dataclasses import asdict
+from contextlib import nullcontext
 from datetime import date, datetime, timedelta, timezone
 import hashlib
 import json
 
 import chess
 
-from ..database import connection, read_connection
+from ..database import background_read_connection, connection, read_connection
+from .. import postgres_store
+from ..queue_position_lock import lock_queue_date_for_position
 from .activity_gate import activity_gate
-from .durable_tasks import enqueue_task
+from .durable_tasks import (
+    advance_task_slice_in_transaction,
+    enqueue_compact_postgres_task_in_transaction,
+    enqueue_task,
+    lock_current_slice,
+)
 from .review_service import (
     apply_scheduling_review, ensure_card_queued_after, preserve_daily_queue_order,
     rebuild_defense_schedule,
@@ -31,11 +39,21 @@ DEFENSE_REPERTOIRE_ID = "__defense__"
 RECOGNITION_RUBRIC_VERSION = 3
 
 
+def _persist_audited_rubric_validation(database, candidate_id: str, result, eligible: bool) -> None:
+    database.execute(
+        """UPDATE threat_training_candidates SET validation_state=?,diagnostic=?,
+           validation_json=?,approved_at=CASE WHEN ? THEN approved_at ELSE NULL END,
+           exercise_revision=exercise_revision+1,updated_at=? WHERE id=?""",
+        (result.state, result.diagnostic, json.dumps(asdict(result)), eligible,
+         _now(), candidate_id),
+    )
+
+
 def execute_defense_rubric_audit_slice(task: dict) -> bool:
     """Recheck one saved candidate and its old reviews without holding SQLite during replay."""
     cursor = task["payload"].get("cursor", "")
     activity_gate.wait_for_foreground()
-    with read_connection() as database:
+    with background_read_connection() as database:
         row = database.execute(
             """SELECT candidate.* FROM threat_training_candidates candidate
                JOIN imported_games game ON game.id=candidate.game_id
@@ -94,26 +112,24 @@ def execute_defense_rubric_audit_slice(task: dict) -> bool:
     )
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        lease = database.execute(
-            "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
-        ).fetchone()
+        if postgres_store.configured():
+            if not lock_current_slice(database, task):
+                return True
+        else:
+            lease = database.execute(
+                "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
+            ).fetchone()
+            if (not lease or lease["generation"] != task["generation"]
+                    or lease["lease_token"] != task["lease_token"]):
+                return True
         current = database.execute(
             "SELECT source_fingerprint,exercise_revision,card_id FROM threat_training_candidates WHERE id=?",
             (candidate["id"],),
         ).fetchone()
-        if (not lease or lease["generation"] != task["generation"]
-                or lease["lease_token"] != task["lease_token"]):
-            return True
         if (current and current["source_fingerprint"] == candidate["source_fingerprint"]
                 and current["exercise_revision"] == candidate["exercise_revision"]):
             eligible = result.state in {"engine_supported", "validated_control"}
-            database.execute(
-                """UPDATE threat_training_candidates SET validation_state=?,diagnostic=?,
-                   validation_json=?,approved_at=CASE WHEN ? THEN approved_at ELSE NULL END,
-                   exercise_revision=exercise_revision+1,updated_at=? WHERE id=?""",
-                (result.state, result.diagnostic, json.dumps(asdict(result)), int(eligible),
-                 _now(), candidate["id"]),
-            )
+            _persist_audited_rubric_validation(database, candidate["id"], result, eligible)
             if current["card_id"]:
                 database.execute(
                     "UPDATE cards SET pending_validation=?,revision=revision+1 WHERE id=?",
@@ -180,8 +196,8 @@ def _require_current(candidate) -> None:
         raise ValueError("Defensive candidate belongs to an older game analysis")
 
 
-def dismiss_defense_candidate(candidate_id: str) -> None:
-    with connection() as database:
+def dismiss_defense_candidate(candidate_id: str, *, write_database=None) -> None:
+    with (nullcontext(write_database) if write_database is not None else connection()) as database:
         candidate = _candidate(database, candidate_id)
         _require_current(candidate)
         if candidate["approved_at"]:
@@ -252,13 +268,13 @@ def _approve_in_transaction(database, candidate, *, reports_verified: bool = Fal
     return card_id
 
 
-def approve_defense_candidate(candidate_id: str) -> str:
-    with connection() as database:
+def approve_defense_candidate(candidate_id: str, *, write_database=None) -> str:
+    with (nullcontext(write_database) if write_database is not None else connection()) as database:
         return _approve_in_transaction(database, _candidate(database, candidate_id))
 
 
-def pause_defense_candidate(candidate_id: str, paused: bool) -> None:
-    with connection() as database:
+def pause_defense_candidate(candidate_id: str, paused: bool, *, write_database=None) -> None:
+    with (nullcontext(write_database) if write_database is not None else connection()) as database:
         candidate = _candidate(database, candidate_id)
         _require_current(candidate)
         if candidate["approved_at"]:
@@ -269,11 +285,13 @@ def pause_defense_candidate(candidate_id: str, paused: bool) -> None:
         )
 
 
-def train_defense_candidate_now(candidate_id: str) -> str:
-    with connection() as database:
+def train_defense_candidate_now(candidate_id: str, *, write_database=None) -> str:
+    with (nullcontext(write_database) if write_database is not None else connection()) as database:
         candidate = _candidate(database, candidate_id)
         _require_current(candidate)
         card_id = _approve_in_transaction(database, candidate, admission_mode="explicit")
+        if postgres_store.configured():
+            lock_queue_date_for_position(database, date.today().isoformat())
         ensure_card_queued_after(database, card_id, after_cards=0,
                                  attempt_state="guided", priority_reason="Discovery · defensive recognition")
         database.execute(
@@ -303,7 +321,8 @@ def execute_defense_admission_slice(task: dict) -> bool:
     cursor = int(task["payload"].get("cursor", 0)) if str(task["payload"].get("cursor", 0)).isdigit() else 0
     control_exhausted = bool(task["payload"].get("control_exhausted", False))
     activity_gate.wait_for_foreground()
-    with read_connection() as database:
+    read_section = background_read_connection if postgres_store.configured() else read_connection
+    with read_section() as database:
         limit = database.execute(
             "SELECT defense_new_cards_per_day FROM settings WHERE id=1",
         ).fetchone()[0]
@@ -391,11 +410,16 @@ def execute_defense_admission_slice(task: dict) -> bool:
     introduced = False
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        lease = database.execute(
-            "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
-        ).fetchone()
-        if not lease or lease["generation"] != task["generation"] or lease["lease_token"] != task["lease_token"]:
-            return True
+        if postgres_store.configured():
+            if not lock_current_slice(database, task):
+                return False
+        else:
+            lease = database.execute(
+                "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
+            ).fetchone()
+            if (not lease or lease["generation"] != task["generation"]
+                    or lease["lease_token"] != task["lease_token"]):
+                return True
         limit = database.execute(
             "SELECT defense_new_cards_per_day FROM settings WHERE id=1"
         ).fetchone()[0]
@@ -426,15 +450,27 @@ def execute_defense_admission_slice(task: dict) -> bool:
                                     prepared_position_fen=board.fen(),
                                     admission_mode="automatic")
             introduced = True
+        next_payload = {
+            "queue_date": day,
+            "phase": "threat" if introduced and phase == "control" else phase,
+            "cursor": 0 if introduced else cursor + 1,
+            "control_exhausted": control_exhausted,
+        }
+        if postgres_store.configured():
+            if introduced:
+                enqueue_compact_postgres_task_in_transaction(
+                    database, "daily_queue", "current", {"queue_date": day}, priority=10,
+                )
+            return advance_task_slice_in_transaction(
+                database, task, next_phase=next_payload["phase"],
+                next_payload=next_payload,
+            )
         database.execute(
             """UPDATE background_tasks SET generation=generation+1,state='queued',phase='queued',
                  payload_json=?,attempt_count=0,next_attempt_at=?,lease_token=NULL,
                  lease_expires_at=NULL,updated_at=?
                WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
-            (json.dumps({"queue_date": day,
-                         "phase": "threat" if introduced and phase == "control" else phase,
-                         "cursor": 0 if introduced else cursor + 1,
-                         "control_exhausted": control_exhausted}),
+            (json.dumps(next_payload),
              _now(), _now(),
              task["id"], task["generation"], task["lease_token"]),
         )
@@ -507,6 +543,15 @@ def _complete_defense_in_transaction(
     light_first_interval_days: int,
 ) -> dict:
     """Record one real review and one completed queue attempt atomically."""
+    if postgres_store.configured():
+        database.execute("SELECT id FROM cards WHERE id=? FOR UPDATE", (candidate["card_id"],))
+        queue_day = database.execute(
+            "SELECT queue_date FROM daily_queue WHERE id=?", (queue_entry_id,),
+        ).fetchone()
+        if queue_day is None:
+            raise ValueError("This defensive exercise is no longer the active queue entry")
+        lock_queue_date_for_position(database, queue_day[0])
+        candidate = _candidate(database, candidate["id"])
     previous = database.execute(
         "SELECT * FROM defense_attempts WHERE attempt_id=?", (attempt_id,),
     ).fetchone()
@@ -570,13 +615,13 @@ def _complete_defense_in_transaction(
     return {**response, "idempotent": False}
 
 
-def submit_defense_recognition(candidate_id: str, request) -> dict:
+def submit_defense_recognition(candidate_id: str, request, *, write_database=None) -> dict:
     """Persist recognition, then reveal its explanation before the defense move."""
     answer = request.model_dump()
     serialized = json.dumps(answer, sort_keys=True)
     if request.rubric_version != RECOGNITION_RUBRIC_VERSION:
         raise ValueError("Recognition rubric changed; reload this card before answering")
-    with read_connection() as database:
+    with nullcontext(write_database) if write_database is not None else read_connection() as database:
         candidate = _candidate(database, candidate_id)
         _require_current(candidate)
         if (not candidate["approved_at"] or candidate["exercise_revision"] != request.exercise_revision
@@ -638,7 +683,15 @@ def submit_defense_recognition(candidate_id: str, request) -> dict:
         source_game = database.execute(
             "SELECT game_url FROM imported_games WHERE id=?", (candidate["game_id"],),
         ).fetchone()
-    with connection() as database:
+    with nullcontext(write_database) if write_database is not None else connection() as database:
+        if postgres_store.configured():
+            database.execute("SELECT id FROM cards WHERE id=? FOR UPDATE", (candidate["card_id"],))
+            queue_day = database.execute(
+                "SELECT queue_date FROM daily_queue WHERE id=?", (request.queue_entry_id,),
+            ).fetchone()
+            if queue_day is None:
+                raise ValueError("This defensive exercise is no longer active")
+            lock_queue_date_for_position(database, queue_day[0])
         prior = database.execute(
             """SELECT candidate_id,queue_entry_id,exercise_revision,answer_json
                FROM defense_recognition_submissions WHERE attempt_id=?""",
@@ -702,9 +755,9 @@ def submit_defense_recognition(candidate_id: str, request) -> dict:
 def submit_defense_attempt(
     candidate_id: str, *, attempt_id: str, exercise_revision: int,
     queue_entry_id: int, move_uci: str, light_first_interval_days: int,
-    recognition_attempt_id: str | None = None,
+    recognition_attempt_id: str | None = None, write_database=None,
 ) -> dict:
-    with read_connection() as database:
+    with nullcontext(write_database) if write_database is not None else read_connection() as database:
         candidate = _candidate(database, candidate_id)
         _require_current(candidate)
         if (not candidate["approved_at"] or candidate["exercise_revision"] != exercise_revision
@@ -740,7 +793,7 @@ def submit_defense_attempt(
     grade = grade_defense_move(exercise, move_uci)
     if grade.status == "needs_analysis" and grade.analysis_request:
         request = grade.analysis_request
-        with connection() as database:
+        with nullcontext(write_database) if write_database is not None else connection() as database:
             current = _candidate(database, candidate_id)
             _require_current(current)
             if current["exercise_revision"] != exercise_revision:
@@ -777,7 +830,7 @@ def submit_defense_attempt(
         "source_game_id": candidate["game_id"],
         "source_game_url": source_game["game_url"] if source_game else None,
     }
-    with connection() as database:
+    with nullcontext(write_database) if write_database is not None else connection() as database:
         current = _candidate(database, candidate_id)
         return _complete_defense_in_transaction(
             database, current, attempt_id=attempt_id,

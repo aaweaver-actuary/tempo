@@ -31,6 +31,35 @@ from app.services.discovery_admission import (
 from app.services.threat_pipeline import _request_from_json
 from app.services.threat_validation import AnalysisLine, AnalysisReport, EngineScore
 from app.services.game_findings import refresh_game_findings
+from app.services.repertoire_opportunities import _accepted_moves_by_line_snapshot
+from app.services.discovery_admission import _cached_repertoire_positions
+
+
+def test_discovery_read_cache_rebuilds_after_repertoire_line_change():
+    start_key = chess.Board()._transposition_key()
+    first = ((chess.STARTING_FEN, '["e2e4"]', "white"),)
+    changed = ((chess.STARTING_FEN, '["d2d4"]', "white"),)
+    assert _accepted_moves_by_line_snapshot(first)[start_key] == {"e2e4"}
+    assert _accepted_moves_by_line_snapshot(changed)[start_key] == {"d2d4"}
+
+
+def test_discovery_accepted_moves_keep_en_passant_positions_separate():
+    with_en_passant = "rnbqkbnr/1pp1pppp/p7/3pP3/8/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 3"
+    without_en_passant = with_en_passant.replace(" d6 ", " - ")
+    snapshot = ((with_en_passant, '["e5d6"]', "white"),
+                (without_en_passant, '["g1f3"]', "white"))
+    accepted = _accepted_moves_by_line_snapshot(snapshot)
+    assert accepted[chess.Board(with_en_passant)._transposition_key()] == {"e5d6"}
+    assert accepted[chess.Board(without_en_passant)._transposition_key()] == {"g1f3"}
+
+
+def test_discovery_recommendation_cache_rebuilds_after_line_change():
+    source = ("one", "Line", chess.STARTING_FEN, '["e2e4"]', "white")
+    changed = ("one", "Line", chess.STARTING_FEN, '["d2d4"]', "white")
+    first_positions, _ = _cached_repertoire_positions((source,), "white")
+    changed_positions, _ = _cached_repertoire_positions((changed,), "white")
+    assert first_positions[0]["next_move"] == "e2e4"
+    assert changed_positions[0]["next_move"] == "d2d4"
 
 
 def _seed_decision_route(db):

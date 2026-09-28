@@ -12,6 +12,7 @@ from typing import Iterator
 
 from .services.activity_gate import activity_gate
 from . import postgres_store
+from .schema_version import POSTGRES_SCHEMA_VERSION
 
 
 _LOGGER = logging.getLogger("tempo.background")
@@ -183,8 +184,11 @@ def initialize() -> None:
             version = database.execute(
                 "SELECT MAX(version) FROM tempo_schema_migrations"
             ).fetchone()[0]
-        if version != 1:
-            raise RuntimeError(f"Unsupported PostgreSQL schema version: {version!r}")
+        if version != POSTGRES_SCHEMA_VERSION:
+            raise RuntimeError(
+                f"Unsupported PostgreSQL schema version: {version!r}; "
+                f"expected {POSTGRES_SCHEMA_VERSION}"
+            )
         return
     if DB_PATH.exists():
         with connection() as existing_database:

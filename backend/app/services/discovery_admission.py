@@ -4,15 +4,23 @@ from __future__ import annotations
 
 from datetime import date, datetime, timedelta, timezone
 from dataclasses import asdict
+from functools import lru_cache
 import hashlib
 import json
 
 import chess
 
-from ..database import connection, read_connection
+from ..database import background_read_connection, connection, read_connection
+from .. import postgres_store
 from .activity_gate import activity_gate
 from .cards import card_id
-from .durable_tasks import enqueue_task, enqueue_task_in_transaction
+from .durable_tasks import (
+    complete_task_slice_in_transaction,
+    enqueue_compact_postgres_task_in_transaction,
+    enqueue_task,
+    enqueue_task_in_transaction,
+    lock_current_slice,
+)
 from .review_service import ensure_card_queued_after
 from .threat_pipeline import ENGINE_VERSION, NETWORK_VERSION, report_from_json, validate_analysis_report
 from .threat_validation import AnalysisRequest
@@ -26,19 +34,28 @@ def _key(board: chess.Board) -> str:
     return " ".join(board.fen().split()[:4])
 
 
-def _pawn_signature(board: chess.Board) -> tuple[tuple[bool, int], ...]:
-    return tuple(sorted((piece.color, square) for square, piece in board.piece_map().items()
-                        if piece.piece_type == chess.PAWN))
+def _position_key(board: chess.Board) -> tuple:
+    # python-chess is pinned; this avoids serializing every repertoire position
+    # and retains the same castling and legal en-passant distinctions as EPD.
+    return board._transposition_key()
 
 
-def _piece_signature(board: chess.Board) -> set[tuple[bool, int, int]]:
-    return {(piece.color, piece.piece_type, square) for square, piece in board.piece_map().items()
-            if piece.piece_type != chess.PAWN}
+def _pawn_signature(board: chess.Board) -> tuple[int, int]:
+    return tuple(board.pawns & board.occupied_co[color] for color in (chess.BLACK, chess.WHITE))
 
 
-def _learner_pawns(board: chess.Board, learner_is_white: bool) -> set[int]:
-    return {square for square, piece in board.piece_map().items()
-            if piece.color == learner_is_white and piece.piece_type == chess.PAWN}
+def _piece_signature(board: chess.Board) -> tuple[int, ...]:
+    non_pawn_boards = (board.knights, board.bishops, board.rooks, board.queens, board.kings)
+    return tuple(pieces & board.occupied_co[color]
+                 for color in (chess.BLACK, chess.WHITE) for pieces in non_pawn_boards)
+
+
+def _overlapping_pieces(first: tuple[int, ...], second: tuple[int, ...]) -> int:
+    return sum((left & right).bit_count() for left, right in zip(first, second))
+
+
+def _learner_pawns(board: chess.Board, learner_is_white: bool) -> int:
+    return board.pawns & board.occupied_co[learner_is_white]
 
 
 def _rank_candidates(candidates: list[dict]) -> list[dict]:
@@ -61,7 +78,7 @@ def _comparable_move_examples(examples: list[dict], board: chess.Board,
     return [example for example in examples
             if example["learner_turn"] and example["next_move"] == move_uci
             and example["learner_pawns"] == learner_pawns
-            and len(example["pieces"] & piece_positions) >= 8]
+            and _overlapping_pieces(example["pieces"], piece_positions) >= 8]
 
 
 def _comparable_move_example(examples: list[dict], board: chess.Board,
@@ -97,28 +114,68 @@ def _source_game(database, opportunity) -> dict | None:
             "SELECT start_fen,moves_json,trained_color FROM repertoire_lines WHERE repertoire_id=? ORDER BY id",
             (opportunity["repertoire_id"],),
         ).fetchall()
-        for route in sorted(routes, key=lambda moves: (len(moves), moves)):
-            for line in lines:
-                if json.loads(line["moves_json"])[:len(route)] != route:
-                    continue
-                board = chess.Board(line["start_fen"])
-                try:
-                    for move_uci in route:
-                        board.push_uci(move_uci)
-                    if _key(board) != node["fen_key"]:
-                        continue
-                    board.push_uci(opportunity["opponent_move_uci"])
-                except ValueError:
-                    continue
-                if board.turn != (line["trained_color"] == "white"):
-                    continue
-                decision_route = [*route, opportunity["opponent_move_uci"]]
-                return {"id": f"coverage:{node_id}", "source_kind": "coverage",
-                        "coverage_node_id": node_id, "start_fen": line["start_fen"],
-                        "moves_json": json.dumps(decision_route),
-                        "color": line["trained_color"], "analysis_version": 0,
-                        "ply": len(decision_route)}
+        return _coverage_source_game(opportunity, node_id, node, lines, routes)
     return None
+
+
+def _coverage_source_game(opportunity, node_id: str, node, lines, routes: list) -> dict | None:
+    """Resolve a coverage route from its supplied source snapshot."""
+    for route in sorted(routes, key=lambda moves: (len(moves), moves)):
+        for line in lines:
+            if json.loads(line["moves_json"])[:len(route)] != route:
+                continue
+            board = chess.Board(line["start_fen"])
+            try:
+                for move_uci in route:
+                    board.push_uci(move_uci)
+                if _key(board) != node["fen_key"]:
+                    continue
+                board.push_uci(opportunity["opponent_move_uci"])
+            except ValueError:
+                continue
+            if board.turn != (line["trained_color"] == "white"):
+                continue
+            decision_route = [*route, opportunity["opponent_move_uci"]]
+            return {"id": f"coverage:{node_id}", "source_kind": "coverage",
+                    "coverage_node_id": node_id, "start_fen": line["start_fen"],
+                    "moves_json": json.dumps(decision_route),
+                    "color": line["trained_color"], "analysis_version": 0,
+                    "ply": len(decision_route)}
+    return None
+
+
+def _background_source_game(opportunity) -> dict | None:
+    """Read bounded source snapshots, then traverse coverage routes outside PostgreSQL."""
+    evidence = json.loads(opportunity["evidence_json"])
+    for support in evidence.get("findings", []):
+        game_id = support.get("game_id")
+        mistake_ply = support.get("mistake_ply")
+        if game_id is None or mistake_ply is None:
+            continue
+        with background_read_connection() as database:
+            game = database.execute(
+                """SELECT id,start_fen,moves_json,color,analysis_version FROM imported_games
+                   WHERE id=? AND adaptive_excluded=0 AND analysis_state='ready'""",
+                (game_id,),
+            ).fetchone()
+        if game:
+            return {**dict(game), "ply": int(mistake_ply)}
+    if opportunity["kind"] != "missing_response" or not opportunity["opponent_move_uci"]:
+        return None
+    node_id = evidence.get("coverage_node_id")
+    with background_read_connection() as database:
+        node = database.execute(
+            "SELECT fen_key,routes_json FROM repertoire_coverage_nodes WHERE id=? AND repertoire_id=?",
+            (node_id, opportunity["repertoire_id"]),
+        ).fetchone()
+    if node is None:
+        return None
+    with background_read_connection() as database:
+        lines = database.execute(
+            "SELECT start_fen,moves_json,trained_color FROM repertoire_lines WHERE repertoire_id=? ORDER BY id",
+            (opportunity["repertoire_id"],),
+        ).fetchall()
+    return _coverage_source_game(opportunity, node_id, node, lines, json.loads(node["routes_json"]))
 
 
 def _full_history_request(game: dict) -> tuple[chess.Board, AnalysisRequest]:
@@ -139,15 +196,18 @@ def _full_history_request(game: dict) -> tuple[chess.Board, AnalysisRequest]:
 
 
 def execute_recommendation_request_slice(task: dict) -> None:
-    """Persist one full-history Docker engine request outside long SQLite work."""
+    """Persist one full-history engine request in a bounded database slice."""
     activity_gate.wait_for_foreground()
-    with read_connection() as database:
+    read_section = background_read_connection if postgres_store.configured() else read_connection
+    with read_section() as database:
         opportunity = database.execute(
             """SELECT * FROM repertoire_opportunities WHERE id=? AND status='active'
                AND kind IN ('post_gap_weakness','missing_response') AND card_id IS NULL""",
             (task["payload"]["opportunity_id"],),
         ).fetchone()
-        game = _source_game(database, opportunity) if opportunity else None
+        game = _source_game(database, opportunity) if opportunity and not postgres_store.configured() else None
+    if opportunity and postgres_store.configured():
+        game = _background_source_game(opportunity)
     if not game:
         return
     try:
@@ -157,12 +217,16 @@ def execute_recommendation_request_slice(task: dict) -> None:
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
         if "id" in task:
-            lease = database.execute(
-                "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
-            ).fetchone()
-            if (not lease or lease["generation"] != task["generation"]
-                    or lease["lease_token"] != task["lease_token"]):
-                return
+            if postgres_store.configured():
+                if not lock_current_slice(database, task):
+                    return
+            else:
+                lease = database.execute(
+                    "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
+                ).fetchone()
+                if (not lease or lease["generation"] != task["generation"]
+                        or lease["lease_token"] != task["lease_token"]):
+                    return
         current = database.execute(
             "SELECT status,card_id FROM repertoire_opportunities WHERE id=?",
             (task["payload"]["opportunity_id"],),
@@ -209,18 +273,28 @@ def _repertoire_positions(lines: list[dict], learner_color: str) -> tuple[list[d
             move = chess.Move.from_uci(move_uci)
             if move not in board.legal_moves:
                 break
-            examples.append({"fen_key": _key(board), "pawn": _pawn_signature(board),
+            examples.append({"position_key": _position_key(board), "pawn": _pawn_signature(board),
                              "learner_pawns": _learner_pawns(board, learner_color == "white"),
                              "pieces": _piece_signature(board), "line_id": line["id"],
                              "line_name": line["name"], "next_move": move_uci,
                              "learner_turn": board.turn == (learner_color == "white")})
             board.push(move)
-        examples.append({"fen_key": _key(board), "pawn": _pawn_signature(board),
+        examples.append({"position_key": _position_key(board), "pawn": _pawn_signature(board),
                          "learner_pawns": _learner_pawns(board, learner_color == "white"),
                          "pieces": _piece_signature(board), "line_id": line["id"],
                          "line_name": line["name"], "next_move": None,
                          "learner_turn": board.turn == (learner_color == "white")})
     return examples, accepted_moves
+
+
+@lru_cache(maxsize=8)
+def _cached_repertoire_positions(
+    line_snapshot: tuple[tuple[str, str, str, str, str], ...], learner_color: str,
+) -> tuple[list[dict], set[str]]:
+    fields = ("id", "name", "start_fen", "moves_json", "trained_color")
+    return _repertoire_positions(
+        [dict(zip(fields, values)) for values in line_snapshot], learner_color,
+    )
 
 
 def recommend_missing_continuations(opportunity_id: str) -> dict:
@@ -282,13 +356,15 @@ def recommend_missing_continuations(opportunity_id: str) -> dict:
         return {"state": "unavailable", "opportunity_id": opportunity_id,
                 "reason": "Saved engine evidence is invalid; repair analysis and retry this discovery",
                 "candidates": []}
-    target_key = _key(board)
+    target_key = _position_key(board)
     best = report.lines[0]
-    examples, _ = _repertoire_positions(lines, game["color"])
+    fields = ("id", "name", "start_fen", "moves_json", "trained_color")
+    line_snapshot = tuple(tuple(line[field] for field in fields) for line in lines)
+    examples, _ = _cached_repertoire_positions(line_snapshot, game["color"])
     accepted = sorted({example["next_move"] for example in examples
-                       if example["fen_key"] == target_key and example["learner_turn"]
+                       if example["position_key"] == target_key and example["learner_turn"]
                        and example["next_move"]})
-    example_positions = {example["fen_key"] for example in examples}
+    example_positions = {example["position_key"] for example in examples}
     sound_candidates = []
     learner_sign = 1 if game["color"] == "white" else -1
     for line in report.lines[:5]:
@@ -320,27 +396,27 @@ def recommend_missing_continuations(opportunity_id: str) -> dict:
                 learner_decisions += 1
             preview_moves.append(move_uci)
             continuation.push(move)
-            if (_key(continuation) in example_positions and preview_moves
+            if (_position_key(continuation) in example_positions and preview_moves
                     or learner_decisions >= 4):
                 break
         if not legal or not preview_moves or preview_moves[0] != line.root_move_uci:
             continue
         after_first = board.copy(stack=False)
         after_first.push_uci(line.root_move_uci)
-        after_key = _key(after_first)
+        after_key = _position_key(after_first)
         pawn_signature = _pawn_signature(after_first)
         piece_signature = _piece_signature(after_first)
         ranked_examples = sorted(examples, key=lambda example: (
-            example["fen_key"] != after_key,
+            example["position_key"] != after_key,
             example["pawn"] != pawn_signature,
-            -len(example["pieces"] & piece_signature),
+            -_overlapping_pieces(example["pieces"], piece_signature),
             example["line_id"],
         ))
         nearest = ranked_examples[0] if ranked_examples else None
         comparable_examples = _comparable_move_examples(
             examples, board, game["color"], line.root_move_uci)
         same_move_example = comparable_examples[0] if comparable_examples else None
-        transposition = nearest if nearest and nearest["fen_key"] == after_key else None
+        transposition = nearest if nearest and nearest["position_key"] == after_key else None
         familiar_example = transposition or same_move_example
         similarity = ("exact transposition" if transposition else
                       "same move in a comparable repertoire position" if same_move_example else
@@ -463,7 +539,8 @@ def enqueue_admission_intent(intent_id: str) -> None:
 
 def _materialize_admission_branch(task: dict) -> None:
     """Write one selected branch and its rebuild request in a short transaction."""
-    with read_connection() as database:
+    read_section = background_read_connection if postgres_store.configured() else read_connection
+    with read_section() as database:
         intent = database.execute(
             "SELECT * FROM discovery_admission_intents WHERE id=?",
             (task["payload"]["intent_id"],),
@@ -481,12 +558,16 @@ def _materialize_admission_branch(task: dict) -> None:
         board.push_uci(move_uci)
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        lease = database.execute(
-            "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
-        ).fetchone()
-        if (not lease or lease["generation"] != task["generation"]
-                or lease["lease_token"] != task["lease_token"]):
-            return
+        if postgres_store.configured():
+            if not lock_current_slice(database, task):
+                return
+        else:
+            lease = database.execute(
+                "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
+            ).fetchone()
+            if (not lease or lease["generation"] != task["generation"]
+                    or lease["lease_token"] != task["lease_token"]):
+                return
         inserted = database.execute(
             """INSERT OR IGNORE INTO repertoire_lines(
                  id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
@@ -503,7 +584,9 @@ def _materialize_admission_branch(task: dict) -> None:
                      line_id,learner_decision_count) VALUES(?,?)""",
                 (intent["line_id"], depth),
             )
-            enqueue_task_in_transaction(
+            enqueue_in_transaction = (enqueue_compact_postgres_task_in_transaction
+                                      if postgres_store.configured() else enqueue_task_in_transaction)
+            enqueue_in_transaction(
                 database, "opening_graph_rebuild", intent["repertoire_id"],
                 {"repertoire_id": intent["repertoire_id"], "local_day": date.today().isoformat()},
                 priority=40,
@@ -512,7 +595,8 @@ def _materialize_admission_branch(task: dict) -> None:
 
 def _ensure_admission_coverage_refresh(task: dict) -> None:
     """Resume the existing coverage pipeline after branch materialization."""
-    with read_connection() as database:
+    read_section = background_read_connection if postgres_store.configured() else read_connection
+    with read_section() as database:
         intent = database.execute(
             "SELECT repertoire_id,line_id,state FROM discovery_admission_intents WHERE id=?",
             (task["payload"]["intent_id"],),
@@ -529,10 +613,22 @@ def _ensure_admission_coverage_refresh(task: dict) -> None:
                WHERE repertoire_id=? AND created_at>=? LIMIT 1""",
             (intent["repertoire_id"], line["created_at"]),
         ).fetchone()
-        lease = database.execute(
+        lease = None if postgres_store.configured() else database.execute(
             "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
         ).fetchone()
-    if run or not lease or lease["generation"] != task["generation"] or lease["lease_token"] != task["lease_token"]:
+    if run:
+        return
+    if postgres_store.configured():
+        from .postgres_coverage_seed import request_coverage_seed_in_transaction
+
+        activity_gate.wait_for_foreground()
+        with connection(background=True) as database:
+            if lock_current_slice(database, task):
+                request_coverage_seed_in_transaction(
+                    database, intent["repertoire_id"], automatic=True,
+                )
+        return
+    if not lease or lease["generation"] != task["generation"] or lease["lease_token"] != task["lease_token"]:
         return
     activity_gate.wait_for_foreground()
     from .repertoire_coverage import enqueue_coverage_refresh
@@ -546,7 +642,8 @@ def execute_admission_intent_slice(task: dict) -> bool:
     _materialize_admission_branch(task)
     _ensure_admission_coverage_refresh(task)
     activity_gate.wait_for_foreground()
-    with read_connection() as database:
+    read_section = background_read_connection if postgres_store.configured() else read_connection
+    with read_section() as database:
         intent = database.execute(
             "SELECT * FROM discovery_admission_intents WHERE id=?",
             (task["payload"]["intent_id"],),
@@ -573,11 +670,16 @@ def execute_admission_intent_slice(task: dict) -> bool:
                                    and integrity["checked_at"] >= intent["created_at"])
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        lease = database.execute(
-            "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
-        ).fetchone()
-        if not lease or lease["generation"] != task["generation"] or lease["lease_token"] != task["lease_token"]:
-            return True
+        if postgres_store.configured():
+            if not lock_current_slice(database, task):
+                return False
+        else:
+            lease = database.execute(
+                "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
+            ).fetchone()
+            if (not lease or lease["generation"] != task["generation"]
+                    or lease["lease_token"] != task["lease_token"]):
+                return True
         current = database.execute("SELECT * FROM discovery_admission_intents WHERE id=?",
                                    (task["payload"]["intent_id"],)).fetchone()
         if not current or current["state"] == "queued":
@@ -614,7 +716,16 @@ def execute_admission_intent_slice(task: dict) -> bool:
                          admitted_card_id=?,updated_at=? WHERE id=?""",
                     (card_id_value, _now(), current["opportunity_id"]),
                 )
+                if postgres_store.configured():
+                    complete_task_slice_in_transaction(database, task)
                 return False
+        if postgres_store.configured():
+            enqueue_compact_postgres_task_in_transaction(
+                database, "discovery_admission", task["payload"]["intent_id"],
+                task["payload"], priority=DISCOVERY_ADMISSION_PRIORITY,
+                delay_seconds=10,
+            )
+            return True
         retry_at = (datetime.now(timezone.utc) + timedelta(seconds=10)).isoformat()
         database.execute(
             """UPDATE background_tasks SET generation=generation+1,state='queued',phase='queued',

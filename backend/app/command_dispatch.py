@@ -22,16 +22,18 @@ def dispatch_command(
     *,
     idempotency_key: str | None,
     wait_seconds: float = 2.0,
+    background: bool = False,
 ) -> Any | JSONResponse:
     operation_id = idempotency_key or uuid.uuid4().hex
     if len(operation_id) > 128:
         raise HTTPException(422, "Idempotency-Key must be at most 128 characters")
     try:
         task = celery_app.send_task(
+            "app.tasks.execute_background_command" if background else
             "app.tasks.execute_foreground_command",
             args=[operation_id, command_name, payload],
             task_id=operation_id,
-            queue="foreground",
+            queue="background" if background else "foreground",
             headers={"submitted_at": time.time()},
         )
     except BrokerUnavailable as error:
@@ -47,6 +49,7 @@ def dispatch_command(
             operation_id,
             command_name=command_name,
             request_hash=request_digest(command_name, payload),
+            background=background,
         )
     except CommandConflict as error:
         raise HTTPException(409, str(error)) from error

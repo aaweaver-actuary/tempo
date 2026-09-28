@@ -264,6 +264,8 @@ export const repertoiresResponseSchema = z.strictObject({
       blocked_card_count: integer.optional(),
       conflict_count: integer.optional(),
       integrity_status: z.enum(["unchecked", "clean", "needs_repair"]).optional(),
+      integrity_scan_status: z.enum(["idle", "queued", "running", "retrying", "failed"]).optional(),
+      integrity_scan_error: z.string().nullable().optional(),
       integrity_issue_count: integer.optional(),
       integrity_first_issue_id: z.string().nullable().optional(),
       trained_color: colorSchema.nullable().optional(),
@@ -440,6 +442,7 @@ export const cardRevisionResultSchema = z.strictObject({
   card_id: cardIdSchema,
   replaced: z.boolean(),
   history_mode: z.enum(["preserve", "reset"]),
+  revision: z.number().int().positive().optional(),
 });
 const prefixSplitCardSchema = z.strictObject({
   card_id: cardIdSchema,

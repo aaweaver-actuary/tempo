@@ -22,10 +22,12 @@ it("full verification owns every test family once without repeating regular brow
   expect(names).toEqual([
     "capabilities", "unit", "defense_engine", "backend", "rust_format", "rust_lint",
     "rust_test", "lint", "typecheck", "wasm_build", "local_build",
-    "docker", "visual",
+    "docker", "postgres_docker", "visual",
   ]);
   expect(new Set(names).size).toBe(names.length);
   expect(full.find((stage) => stage.name === "docker")?.args).toEqual(["run", "test:docker"]);
+  expect(full.find((stage) => stage.name === "postgres_docker")?.args)
+    .toEqual(["scripts/test-postgres-docker.mjs"]);
   expect(full.find((stage) => stage.name === "visual")?.args).toEqual(["run", "test:visual"]);
   expect(names).not.toContain("browser");
   expect(plannedStages("ui").map((stage) => stage.name)).toEqual(["capabilities", "browser", "visual"]);

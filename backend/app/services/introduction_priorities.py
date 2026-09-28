@@ -563,9 +563,12 @@ def calculate_priority_records(
 def _load_priority_calculation_input(
     repertoire_id: str, *, background: bool
 ) -> PriorityCalculationInput:
-    from ..database import connection
+    from ..database import background_read_connection, connection
+    from .. import postgres_store
 
-    with connection(background=background) as database:
+    read_section = (background_read_connection if background and postgres_store.configured()
+                    else lambda: connection(background=background))
+    with read_section() as database:
         line_rows = [
             dict(row)
             for row in database.execute(
@@ -595,7 +598,7 @@ def _load_priority_calculation_input(
     if lines and reply_moves:
         fen_keys = sorted(reply_moves)
         placeholders = ",".join("?" for _ in fen_keys)
-        with connection(background=background) as database:
+        with read_section() as database:
             personal_rows = [
                 dict(row)
                 for row in database.execute(
@@ -716,6 +719,8 @@ def enqueue_priority_refresh_in_transaction(
 ) -> int:
     """Advance a priority generation with the caller's existing receipt transaction."""
 
+    from .. import postgres_store
+
     now = datetime.now(timezone.utc)
     next_attempt_at = (now + timedelta(seconds=quiet_seconds)).isoformat()
     database.execute(
@@ -728,10 +733,19 @@ def enqueue_priority_refresh_in_transaction(
                last_error=NULL,updated_at=excluded.updated_at""",
         (repertoire_id, next_attempt_at, now.isoformat()),
     )
-    return int(database.execute(
+    generation = int(database.execute(
         "SELECT generation FROM repertoire_priority_jobs WHERE repertoire_id=?",
         (repertoire_id,),
     ).fetchone()[0])
+    if postgres_store.configured():
+        from .durable_tasks import enqueue_compact_postgres_task_in_transaction
+
+        enqueue_compact_postgres_task_in_transaction(
+            database, "repertoire_priority", repertoire_id,
+            {"repertoire_id": repertoire_id, "generation": generation, "cursor": 0},
+            priority=131, delay_seconds=quiet_seconds,
+        )
+    return generation
 
 
 def enqueue_priority_refreshes_for_game(

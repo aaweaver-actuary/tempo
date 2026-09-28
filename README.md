@@ -4,7 +4,7 @@ Tempo is a functional local-first chess-opening spaced-repetition trainer. The i
 
 ## Local product
 
-Docker Tempo is the full product. Python/SQLite is authoritative for repertoires, daily queues, reviews, accounts, and games. The public GitHub Pages build is a limited practice demo: it does not sync personal games or promise Docker persistence. Use **Start Tempo.command** for the full application.
+Docker Tempo is the full product. After the [PostgreSQL maintenance cutover](docs/POSTGRES-MAINTENANCE.md), PostgreSQL is authoritative for repertoires, daily queues, reviews, accounts, and games. The former SQLite volume remains a read-only historical recovery source. The public GitHub Pages build is a limited practice demo: it does not sync personal games or promise Docker persistence. Use **Start Tempo.command** for the full application.
 
 For prepared daily training on an iPhone while the computer is unavailable, see [phone training](docs/PHONE-TRAINING.md).
 
@@ -18,7 +18,7 @@ Every reported defect must have a named regression test before closure. Run `npm
 - Train, Repertoire, Builder, Games, Progress, PGN import, wrong-answer, guided-review, and completed-card states.
 - Binary Correct/Again grading with automatic clean solves, first-pass reinforcement at the end of the day, Again placement after four cards, and persisted queue ordering.
 - Production Docker Compose with a compiled React + TypeScript application, Nginx, and a FastAPI backend.
-- Local SQLite schema for settings, repertoires, cards, locked child cards, and review history.
+- Local PostgreSQL storage for settings, repertoires, cards, locked child cards, and review history, with Redis and Celery for durable commands and background work.
 - PGN variation parsing and stable SHA-256 card IDs derived from canonical starting FEN plus normalized UCI moves.
 - FSRS 6 scheduling at 92% desired retention, capped lateness benefit, 2.5× interval growth, and a 365-day maximum.
 - A stability-based descendant gate requiring three successful review days and no recent lapse.
@@ -26,40 +26,38 @@ Every reported defect must have a named regression test before closure. Run `npm
 - A playable analysis board with live repertoire filtering, authenticated Lichess and Masters Explorer results, real local Stockfish 19 and Maia 3 analysis, branch editing, 80/90/95% coverage targets, persistent preferences, source-aware arrows, and keyboard history navigation.
 - Incremental Lichess and Chess.com game ingestion, locally cached normalized PGNs, divergence classification, comparison summaries, and a Games workspace for sending gaps to Builder.
 - A browser-first Rust core for canonical FEN/UCI validation, stable card identity, and chess-aware position distance, compiled to WebAssembly behind a typed adapter.
-- Versioned IndexedDB stores plus verified one-time SQLite transfer and passphrase-encrypted portable backups. SQLite remains an untouched recovery source during migration.
+- Versioned IndexedDB stores plus verified one-time SQLite transfer and passphrase-encrypted portable backups. The stopped SQLite volume remains historical evidence after cutover.
 
 ## Run locally
 
 ### Easiest on a Mac
 
-Double-click **Start Tempo.command** in this folder. Tempo starts its private local database and opens [http://localhost:3000](http://localhost:3000) automatically. Keep the Terminal window open while using Tempo; press Control-C there when you want to stop it.
+Complete the [PostgreSQL maintenance procedure](docs/POSTGRES-MAINTENANCE.md) once, then double-click **Start Tempo.command** in this folder. Tempo starts the Docker product and opens [http://localhost:3000](http://localhost:3000) automatically. Keep the Terminal window open while using Tempo; press Control-C there when you want to stop it.
 
-If macOS blocks the launcher the first time, right-click **Start Tempo.command**, choose **Open**, and confirm once. The launcher uses Docker Desktop when it is running and otherwise starts the included web and Python projects directly.
+If macOS blocks the launcher the first time, right-click **Start Tempo.command**, choose **Open**, and confirm once. Docker Desktop is required. The launcher checks Docker and the PostgreSQL Compose configuration before starting.
 
 ### Docker Compose
 
-```bash
-docker compose up --build
-```
+After the maintenance import and restore drill, run `docker compose up --build`.
 
 To keep Lichess Explorer coverage running while the browser is closed, set
 `TEMPO_LICHESS_EXPLORER_TOKEN` in your Docker Compose environment before starting
 Tempo. A missing or rejected token appears as an actionable coverage job error;
-replace the token and restart `analysis-worker` to retry. This credential is
-passed to the worker environment, not saved in SQLite. The `analysis-worker`
-and `maia-worker` services continue durable analysis with the tab closed.
+replace the token and restart `background-worker` to retry. This credential is
+passed to the worker environment, not saved in PostgreSQL. The Celery workers
+and `maia-worker` continue durable analysis with the tab closed.
 
-Open `http://localhost:3000`. The local API is available at `http://localhost:8000`, and all durable data is stored in the named Docker volume `tempo-data`, independent of the checkout location. See [storage operations](docs/STORAGE.md) for backups and restore.
+Open `http://localhost:3000`. The local API is available at `http://localhost:8000`. PostgreSQL data, Redis state, engine operation IDs, and database backups use distinct external Docker volumes. See the [maintenance guide](docs/POSTGRES-MAINTENANCE.md) for backup and restore.
 
-You can study in Docker Tempo now. Reviews, FSRS state, daily queue order, reinforcement, guided attempts, tactic discovery progress, repertoire notes, and teaching history are saved automatically in SQLite. Rebuilding or recreating the containers retains the host `data` directory; deleting that directory deletes your study data, so keep a backup. The mandatory Docker test recreates containers and verifies every SQLite store checksum and the exact queue order.
+Reviews, FSRS state, daily queue order, reinforcement, guided attempts, tactic discovery progress, repertoire notes, and teaching history are saved in PostgreSQL. Recreating the containers retains the external volumes. The disposable PostgreSQL gate recreates containers, replays a command receipt, checks queue order, and restores a backup into a second database before browser tests.
 
-To bring Lichess analysis back into Tempo, choose **Paste analysis** in Repertoire or Builder. Paste SAN lines separated by blank lines or PGN with variations; a PGN FEN tag or the current Builder/coverage-gap position supplies the start for a partial line. Review each line’s destination and any trained-move conflict before saving. This SQLite-backed flow is available in local Docker Tempo.
+To bring Lichess analysis back into Tempo, choose **Paste analysis** in Repertoire or Builder. Paste SAN lines separated by blank lines or PGN with variations; a PGN FEN tag or the current Builder/coverage-gap position supplies the start for a partial line. Review each line’s destination and any trained-move conflict before saving.
 
 New cards get one unassisted reinforcement later today and a review tomorrow before normal FSRS intervals. Later reviews do not automatically reveal teaching arrows; a mistake or Show move still provides guidance. Clean tactic discovery uses the configured light first interval; failed discoveries and subsequent lapses join normal review scheduling.
 
 Tempo preloads tab data and the first unfinished Hanging Pieces stage in the background. Puzzle validation, repertoire diagnostics/indexing, similarity, and transposition matching run in a study worker. Builder opens with a source-comparison table, including covered moves, rather than burying those details below editing tools. Move and capture audio use the official Lichess standard chess recordings.
 
-The hosted private Site uses local browser storage and representative game data. Docker Compose runs the full local FastAPI + SQLite path, including provider sync and durable review state.
+The hosted private Site uses local browser storage and representative game data. Docker Compose runs the full local FastAPI + PostgreSQL path, including provider sync and durable review state.
 
 ### Static browser-only preview
 
@@ -74,12 +72,13 @@ app/                       React + TypeScript application
 app/domain/                Shared chess/product models and transport adapters
 app/state/                 Training state and focused selectors/actions
 backend/app/main.py        FastAPI routes
-backend/app/database.py    Local SQLite schema and connection
+backend/app/database.py    SQLite compatibility path and PostgreSQL connection routing
 backend/app/services/      PGN, identity, and scheduling logic
 tempo-core/                Rust/WASM deterministic chess and scheduling core
 app/lib/tempo-db.ts        Versioned browser persistence and SQLite transfer
 static/                    GitHub Pages entry point (base path /tempo/)
-docker-compose.yml         Local API, web, and analysis workers
+docker-compose.yml         PostgreSQL API, web, and Celery workers
+docker-compose.sqlite.yml  Explicit legacy SQLite stack for regression tests
 ```
 
 The [code organization audit](docs/CODE-ORGANIZATION-AUDIT.md) explains the

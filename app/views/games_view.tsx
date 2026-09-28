@@ -14,6 +14,11 @@ import {
 } from "../components/chessboard";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
 import { API_URL, STANDARD_FEN } from "../const";
+import { setGameExclusion } from "../lib/game-exclusion-command";
+import { requestGameThreatRefresh } from "../lib/game-threat-refresh-command";
+import { startGuidedReviewCommand, submitGuidedReviewCommand } from "../lib/guided-review-command";
+import { curateGameFinding, decideGameFinding } from "../lib/game-finding-command";
+import { prepareFindingCard } from "../lib/finding-card-command";
 import {
   readWorkspaceResponse,
   invalidateWorkspaceData,
@@ -510,15 +515,22 @@ export default function GamesView({
       setFindings([]);
       return;
     }
-    const findingResponse = await fetch(
-      `${API_URL}/api/game-findings?status=pending&game_id=${encodeURIComponent(selectedIdRef.current)}`,
-    );
-    if (findingResponse.ok) {
+    const gameId = selectedIdRef.current;
+    const collectedFindings: typeof findings = [];
+    let nextOffset: number | null = 0;
+    while (nextOffset !== null) {
+      const findingResponse = await fetch(
+        `${API_URL}/api/game-findings?status=pending&game_id=${encodeURIComponent(gameId)}&limit=500&offset=${nextOffset}`,
+      );
+      if (!findingResponse.ok) return;
       const payload = (await findingResponse.json()) as {
         findings?: typeof findings;
+        next_offset?: number | null;
       };
-      setFindings(payload.findings ?? []);
+      collectedFindings.push(...(payload.findings ?? []));
+      nextOffset = payload.next_offset ?? null;
     }
+    if (selectedIdRef.current === gameId) setFindings(collectedFindings);
   }, [local]);
   const loadDefenseCandidates = useCallback(async () => {
     if (!local || !selected?.id) {
@@ -598,12 +610,7 @@ export default function GamesView({
     if (!selected || defenseBusy) return;
     setDefenseBusy(true);
     try {
-      const response = await fetch(
-        `${API_URL}/api/games/${encodeURIComponent(selected.id)}/defensive-threats/refresh`,
-        { method: "POST" },
-      );
-      if (!response.ok)
-        throw new Error("Could not queue defensive analysis for this game.");
+      await requestGameThreatRefresh(selected.id);
       await loadDefenseCandidates();
     } catch (reason) {
       setError(
@@ -657,26 +664,8 @@ export default function GamesView({
     findingId: string,
     decision: "accepted" | "ignored",
   ) {
-    const response = await fetch(
-      `${API_URL}/api/game-findings/${findingId}/decision`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ decision }),
-      },
-    );
-    if (!response.ok) {
-      const payload: unknown = await response.json().catch(() => null);
-      const detail =
-        payload && typeof payload === "object" && "detail" in payload
-          ? (payload as { detail: unknown }).detail
-          : null;
-      setError(
-        typeof detail === "string"
-          ? detail
-          : "Could not save that gameplay decision.",
-      );
-    } else {
+    try {
+      await decideGameFinding(findingId, decision);
       await loadFindings();
       if (decision === "accepted") {
         try {
@@ -687,48 +676,23 @@ export default function GamesView({
           );
         }
       }
-    }
+    } catch (reason) { setError(String(reason)); }
   }
   async function excludeSelectedGame() {
     if (!selected) return;
-    const response = await fetch(
-      `${API_URL}/api/games/${encodeURIComponent(selected.id)}/exclusion`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ excluded: true }),
-      },
-    );
-    if (!response.ok) setError("Could not exclude this game from adaptation.");
-    else await loadFindings();
+    try {
+      await setGameExclusion(selected.id, true);
+      await loadFindings();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not exclude this game from adaptation.");
+    }
   }
   async function createFindingCard(findingId: string, save: boolean) {
-    const response = await fetch(
-      `${API_URL}/api/game-findings/${findingId}/card`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ save }),
-      },
-    );
-    if (!response.ok) {
-      setError("Could not prepare that game position as a study card.");
-      return;
-    }
-    const payload = (await response.json()) as {
-      preview: {
-        starting_fen: string;
-        moves: string[];
-        best_move: string;
-        existing_card_id?: string | null;
-      };
-      saved: boolean;
-    };
-    setCardPreviews((current) => ({
-      ...current,
-      [findingId]: payload.preview,
-    }));
-    if (payload.saved) await loadFindings();
+    try {
+      const result = await prepareFindingCard(findingId, { save });
+      setCardPreviews((current) => ({ ...current, [findingId]: result.preview }));
+      if (result.saved) await loadFindings();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
   }
   const attemptTacticalMove = useCallback(
     (from: Square, to: Square) => {
@@ -748,61 +712,30 @@ export default function GamesView({
   async function tacticalCurationAction(action: "skip" | "ignore") {
     if (!tacticalQueue.item || tacticalBusy) return;
     setTacticalBusy(true);
-    const response = await fetch(
-      `${API_URL}/api/game-findings/${tacticalQueue.item.id}/curation`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action }),
-      },
-    );
-    setTacticalBusy(false);
-    if (!response.ok) {
-      setError(
-        "Could not save that curation decision. The current candidate is still visible.",
-      );
-      return;
-    }
-    await loadTacticalQueue();
+    try {
+      await curateGameFinding(tacticalQueue.item.id, action);
+      await loadTacticalQueue();
+    } catch (reason) { setError(String(reason)); }
+    finally { setTacticalBusy(false); }
   }
   async function previewTacticalCard(save: boolean) {
     if (!tacticalQueue.item || tacticalBusy) return;
     setTacticalBusy(true);
-    const response = await fetch(
-      `${API_URL}/api/game-findings/${tacticalQueue.item.id}/card`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ save }),
-      },
-    );
-    setTacticalBusy(false);
-    if (!response.ok) {
-      setError(
-        "Could not prepare this tactical position. The candidate remains available.",
-      );
-      return;
-    }
-    const payload = (await response.json()) as {
-      preview: typeof tacticalPreview;
-      saved: boolean;
-    };
-    setTacticalPreview(payload.preview);
-    if (payload.saved) await loadTacticalQueue();
+    try {
+      const result = await prepareFindingCard(tacticalQueue.item.id, { save });
+      setTacticalPreview(result.preview);
+      if (result.saved) await loadTacticalQueue();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    finally { setTacticalBusy(false); }
   }
   async function startGuidedReview() {
     if (!selected) return;
-    const response = await fetch(
-      `${API_URL}/api/games/${encodeURIComponent(selected.id)}/guided-review`,
-      { method: "POST" },
-    );
-    if (!response.ok) {
-      setError("Could not start this guided review.");
-      return;
-    }
-    setGuidedReview((await response.json()) as GuidedReviewSession);
-    setGuidedReveal(null);
-    setBoardMode("guided");
+    try {
+      const session = await startGuidedReviewCommand(selected.id);
+      setGuidedReview(session as GuidedReviewSession);
+      setGuidedReveal(null);
+      setBoardMode("guided");
+    } catch (reason) { setError(String(reason)); }
   }
   const attemptGuidedMove = useCallback(
     async (from: Square, to: Square) => {
@@ -811,19 +744,12 @@ export default function GamesView({
       const legalMove = board.move({ from, to, promotion: "q" });
       if (!legalMove) return;
       const moveUci = `${legalMove.from}${legalMove.to}${legalMove.promotion ?? ""}`;
-      const response = await fetch(
-        `${API_URL}/api/guided-reviews/${guidedReview.id}/attempt`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ move_uci: moveUci }),
-        },
-      );
-      if (!response.ok) {
-        setError("Could not save that correction attempt.");
-        return;
-      }
-      setGuidedReveal((await response.json()) as GuidedReviewAttempt);
+      try {
+        const result = await submitGuidedReviewCommand(
+          guidedReview.id, guidedReview.current_index, moveUci,
+        );
+        setGuidedReveal(result as GuidedReviewAttempt);
+      } catch (reason) { setError(String(reason)); }
     },
     [guidedReview, guidedReveal],
   );

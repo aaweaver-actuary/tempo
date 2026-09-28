@@ -5,9 +5,25 @@ from fastapi.testclient import TestClient
 
 from app import database
 from app.main import app
+from app.services import analysis_paste
 
 
 START = chess.STARTING_FEN
+
+
+def test_paste_position_map_cache_reuses_snapshot_and_invalidates_after_line_change():
+    analysis_paste._PARSED_EXISTING_CACHE.clear()
+    original = [{"repertoire_id": "white", "trained_color": "white",
+                 "start_fen": START, "moves_json": json.dumps(["e2e4"])}]
+    cached = analysis_paste._parsed_existing_lines(original, "snapshot-original")
+    assert cached["white"][0][1][0][1] == "e2e4"
+    assert analysis_paste._parsed_existing_lines(original, "snapshot-original") is cached
+
+    revised = [{**original[0], "moves_json": json.dumps(["d2d4"])}]
+    refreshed = analysis_paste._parsed_existing_lines(revised, "snapshot-revised")
+    assert refreshed is not cached
+    assert refreshed["white"][0][1][0][1] == "d2d4"
+    analysis_paste._PARSED_EXISTING_CACHE.clear()
 
 
 def seed_line(db, identifier, repertoire_id, color, moves, starting_fen=START):

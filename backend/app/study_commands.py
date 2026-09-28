@@ -2,16 +2,30 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
+import hashlib
 import json
 import uuid
 from typing import Any
 
 from fastapi import HTTPException
+import psycopg
 
 from .command_gateway import register_command
 from .postgres_store import PostgresConnection
-from .study_contracts import ChapterCreate, StudyCreate, StudyLinkCreate
+from .queue_commands import request_queue_refresh_in_transaction
+from .queue_position_lock import lock_queue_date_for_position
+from .study_contracts import (
+    ChapterCreate, StudyBundleImportRequest, StudyCreate, StudyImportCommitRequest,
+    StudyLinkCreate,
+)
+from .study_contracts import ExerciseCreate, ExerciseRevisionRequest, ExerciseSpecification
+from .services.study_grading import validate_exercise
+from .services.study_portable import import_bundle
+from pydantic import TypeAdapter
+
+
+_SPECIFICATION_ADAPTER = TypeAdapter(ExerciseSpecification)
 
 
 def _require_record(database: PostgresConnection, table_name: str, identifier: str):
@@ -52,6 +66,306 @@ def update_study(database: PostgresConnection, payload: dict[str, Any]) -> dict[
         ),
     )
     return {"id": study_id}
+
+
+def archive_study(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    study_id = str(payload["study_id"])
+    if database.execute(
+        "SELECT id FROM studies WHERE id=? FOR UPDATE", (study_id,),
+    ).fetchone() is None:
+        raise HTTPException(404, "Study not found")
+    database.execute(
+        "UPDATE studies SET archived=1,updated_at=? WHERE id=?",
+        (datetime.now(timezone.utc).isoformat(), study_id),
+    )
+    database.execute(
+        """UPDATE cards SET archived=1
+           WHERE study_exercise_id IN (SELECT id FROM study_exercises WHERE study_id=?)""",
+        (study_id,),
+    )
+    request_queue_refresh_in_transaction(database, date.today().isoformat())
+    return {"id": study_id, "archived": True}
+
+
+def unarchive_study(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    study_id = str(payload["study_id"])
+    if database.execute(
+        "SELECT id FROM studies WHERE id=? FOR UPDATE", (study_id,),
+    ).fetchone() is None:
+        raise HTTPException(404, "Study not found")
+    database.execute(
+        "UPDATE studies SET archived=0,updated_at=? WHERE id=?",
+        (datetime.now(timezone.utc).isoformat(), study_id),
+    )
+    return {"id": study_id, "archived": False}
+
+
+def _lock_exercise_in_study(database: PostgresConnection, payload: dict[str, Any]):
+    exercise_id = str(payload["exercise_id"])
+    exercise = database.execute(
+        "SELECT * FROM study_exercises WHERE id=? FOR UPDATE", (exercise_id,),
+    ).fetchone()
+    if exercise is None or exercise["study_id"] != str(payload["study_id"]):
+        raise HTTPException(404, "Exercise not in this study")
+    return exercise
+
+
+def suspend_exercise(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
+    exercise = _lock_exercise_in_study(database, payload)
+    database.execute(
+        "UPDATE cards SET pending_validation=1 WHERE study_exercise_id=? AND archived=0",
+        (exercise["id"],),
+    )
+    database.execute(
+        """UPDATE daily_queue SET status='blocked' WHERE card_id IN
+           (SELECT id FROM cards WHERE study_exercise_id=?) AND status='queued'""",
+        (exercise["id"],),
+    )
+    request_queue_refresh_in_transaction(database, date.today().isoformat())
+    return {"suspended": True}
+
+
+def resume_exercise(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
+    exercise = _lock_exercise_in_study(database, payload)
+    if exercise["status"] == "archived":
+        raise HTTPException(409, "Exercise unavailable")
+    database.execute(
+        "UPDATE cards SET pending_validation=0 WHERE study_exercise_id=? AND archived=0",
+        (exercise["id"],),
+    )
+    request_queue_refresh_in_transaction(database, date.today().isoformat())
+    return {"suspended": False}
+
+
+def archive_exercise(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
+    exercise = _lock_exercise_in_study(database, payload)
+    database.execute("UPDATE study_exercises SET status='archived' WHERE id=?", (exercise["id"],))
+    database.execute("UPDATE cards SET archived=1 WHERE study_exercise_id=?", (exercise["id"],))
+    database.execute(
+        """UPDATE daily_queue SET status='blocked' WHERE card_id IN
+           (SELECT id FROM cards WHERE study_exercise_id=?) AND status='queued'""",
+        (exercise["id"],),
+    )
+    request_queue_refresh_in_transaction(database, date.today().isoformat())
+    return {"archived": True}
+
+
+def create_exercise(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    request = ExerciseCreate.model_validate(payload["exercise"])
+    study_id = str(payload["study_id"])
+    study = database.execute("SELECT * FROM studies WHERE id=? FOR UPDATE", (study_id,)).fetchone()
+    if study is None:
+        raise HTTPException(404, "Studies not found")
+    position = _require_record(database, "study_positions", request.position_id)
+    source = database.execute(
+        "SELECT chapter_id,valid FROM study_sources WHERE id=?", (position["source_id"],),
+    ).fetchone()
+    if source is None:
+        raise HTTPException(404, "Study source not found")
+    chapter = _require_record(database, "study_chapters", source["chapter_id"])
+    if study["archived"] or chapter["study_id"] != study_id:
+        raise HTTPException(409, "Position is not in an active study")
+    if not source["valid"] or not position["valid"]:
+        raise HTTPException(422, "This PGN position has unresolved parser diagnostics")
+    try:
+        validate_exercise(request.specification, position["fen"])
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    exercise_id = str(uuid.uuid4())
+    created_at = datetime.now(timezone.utc).isoformat()
+    specification_json = json.dumps(request.specification.model_dump(mode="json"),
+                                    sort_keys=True, separators=(",", ":"))
+    specification_digest = hashlib.sha256(specification_json.encode()).hexdigest()
+    database.execute(
+        """INSERT INTO study_exercises(id,study_id,position_id,sibling_group,source_json,
+           point_value,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?)""",
+        (exercise_id, study_id, request.position_id, request.sibling_group,
+         json.dumps(request.source, sort_keys=True, separators=(",", ":")),
+         request.point_value, created_at, created_at),
+    )
+    database.execute(
+        "INSERT INTO study_exercise_revisions VALUES(?,?,?,?,?)",
+        (exercise_id, 1, specification_json, specification_digest, created_at),
+    )
+    return {"id": exercise_id, "revision": 1, "status": "draft"}
+
+
+def enroll_exercise(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    study_id = str(payload["study_id"])
+    exercise_id = str(payload["exercise_id"])
+    study = database.execute("SELECT * FROM studies WHERE id=? FOR UPDATE", (study_id,)).fetchone()
+    if study is None:
+        raise HTTPException(404, "Studies not found")
+    exercise = _lock_exercise_in_study(database, payload)
+    if study["archived"] or exercise["status"] == "archived":
+        raise HTTPException(409, "Exercise cannot be enrolled")
+    position = _require_record(database, "study_positions", exercise["position_id"])
+    if not position["valid"]:
+        raise HTTPException(422, "Source position is invalid")
+    revision = database.execute(
+        "SELECT specification_json FROM study_exercise_revisions WHERE exercise_id=? AND revision=?",
+        (exercise_id, exercise["current_revision"]),
+    ).fetchone()
+    if revision is None:
+        raise HTTPException(409, "Exercise revision is unavailable")
+    specification = _SPECIFICATION_ADAPTER.validate_python(json.loads(revision["specification_json"]))
+    try:
+        validate_exercise(specification, position["fen"])
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    existing = database.execute(
+        "SELECT id FROM cards WHERE study_exercise_id=? AND archived=0", (exercise_id,),
+    ).fetchone()
+    if existing:
+        return {"card_id": existing[0], "idempotent": True}
+    card_id = str(uuid.uuid4())
+    database.execute(
+        """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+           content_type,study_exercise_id) VALUES(?,NULL,'exercise',?,'[]','new',?,'study_exercise',?)""",
+        (card_id, position["fen"], date.today().isoformat(), exercise_id),
+    )
+    database.execute("UPDATE study_exercises SET status='published' WHERE id=?", (exercise_id,))
+    request_queue_refresh_in_transaction(database, date.today().isoformat())
+    return {"card_id": card_id, "idempotent": False}
+
+
+def train_exercise_now(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    study_id = str(payload["study_id"])
+    exercise_id = str(payload["exercise_id"])
+    queue_date = date.today().isoformat()
+    study = database.execute("SELECT * FROM studies WHERE id=? FOR UPDATE", (study_id,)).fetchone()
+    if study is None:
+        raise HTTPException(404, "Studies not found")
+    exercise = _lock_exercise_in_study(database, payload)
+    card = database.execute(
+        "SELECT * FROM cards WHERE study_exercise_id=? AND archived=0 FOR UPDATE",
+        (exercise_id,),
+    ).fetchone()
+    if study["archived"] or exercise["status"] != "published" or not card or card["pending_validation"]:
+        raise HTTPException(409, "Enroll and resume this exercise before training it")
+    lock_queue_date_for_position(database, queue_date)
+    existing = database.execute(
+        """SELECT id FROM daily_queue WHERE card_id=? AND queue_date=? AND status='queued'
+           ORDER BY cycle DESC LIMIT 1""",
+        (card["id"], queue_date),
+    ).fetchone()
+    if existing:
+        return {"queue_entry_id": existing[0], "idempotent": True}
+    cycle = database.execute(
+        "SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue WHERE card_id=? AND queue_date=?",
+        (card["id"], queue_date),
+    ).fetchone()[0]
+    position = database.execute(
+        "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=?",
+        (queue_date,),
+    ).fetchone()[0]
+    queue_entry_id = database.execute(
+        """INSERT INTO daily_queue(queue_date,card_id,cycle,position,admission_kind,card_bucket)
+           VALUES(?,?,?,?,'explicit','study_exercise') RETURNING id""",
+        (queue_date, card["id"], cycle, position),
+    ).fetchone()[0]
+    request_queue_refresh_in_transaction(database, queue_date)
+    return {"queue_entry_id": queue_entry_id, "idempotent": False}
+
+
+def revise_exercise(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    request = ExerciseRevisionRequest.model_validate(payload["revision"])
+    exercise_id = str(payload["exercise_id"])
+    study_id = str(payload["study_id"])
+    if database.execute(
+        "SELECT id FROM studies WHERE id=? FOR UPDATE", (study_id,),
+    ).fetchone() is None:
+        raise HTTPException(404, "Study not found")
+    exercise = database.execute(
+        "SELECT * FROM study_exercises WHERE id=? FOR UPDATE", (exercise_id,),
+    ).fetchone()
+    if exercise is None:
+        raise HTTPException(404, "Study Exercises not found")
+    if (exercise["study_id"] != study_id
+            or exercise["current_revision"] != request.expected_revision):
+        raise HTTPException(409, "Exercise changed since it was opened")
+    position = _require_record(database, "study_positions", exercise["position_id"])
+    try:
+        validate_exercise(request.specification, position["fen"])
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
+    previous_revision = database.execute(
+        "SELECT specification_json FROM study_exercise_revisions WHERE exercise_id=? AND revision=?",
+        (exercise_id, exercise["current_revision"]),
+    ).fetchone()
+    if previous_revision is None:
+        raise HTTPException(409, "Exercise revision is unavailable")
+    previous = json.loads(previous_revision["specification_json"])
+    revised = request.specification.model_dump(mode="json")
+    material = (
+        {key: value for key, value in revised.items()
+         if key not in {"explanation", "further_analysis"}}
+        != {key: value for key, value in previous.items()
+            if key not in {"explanation", "further_analysis"}}
+    )
+    next_revision = int(exercise["current_revision"]) + 1
+    now = datetime.now(timezone.utc).isoformat()
+    revised_json = json.dumps(revised, sort_keys=True, separators=(",", ":"))
+    database.execute(
+        "INSERT INTO study_exercise_revisions VALUES(?,?,?,?,?)",
+        (exercise_id, next_revision, revised_json, hashlib.sha256(revised_json.encode()).hexdigest(), now),
+    )
+    database.execute(
+        "UPDATE study_exercises SET current_revision=?,updated_at=? WHERE id=?",
+        (next_revision, now, exercise_id),
+    )
+    if "source" in request.model_fields_set:
+        database.execute(
+            "UPDATE study_exercises SET source_json=? WHERE id=?",
+            (json.dumps(request.source or {}, sort_keys=True, separators=(",", ":")), exercise_id),
+        )
+    if "sibling_group" in request.model_fields_set:
+        database.execute(
+            "UPDATE study_exercises SET sibling_group=? WHERE id=?",
+            (request.sibling_group, exercise_id),
+        )
+    if "point_value" in request.model_fields_set:
+        database.execute(
+            "UPDATE study_exercises SET point_value=? WHERE id=?",
+            (request.point_value, exercise_id),
+        )
+    if material and request.schedule_decision == "reset":
+        old_card = database.execute(
+            "SELECT * FROM cards WHERE study_exercise_id=? AND archived=0 FOR UPDATE",
+            (exercise_id,),
+        ).fetchone()
+        if old_card:
+            database.execute("UPDATE cards SET archived=1 WHERE id=?", (old_card["id"],))
+            database.execute(
+                "UPDATE daily_queue SET status='blocked' WHERE card_id=? AND status='queued'",
+                (old_card["id"],),
+            )
+            database.execute(
+                """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,
+                   content_type,study_exercise_id,revision)
+                   VALUES(?,NULL,'exercise',?,'[]','new',?,'study_exercise',?,?)""",
+                (str(uuid.uuid4()), position["fen"], date.today().isoformat(),
+                 exercise_id, next_revision),
+            )
+    elif material:
+        database.execute(
+            "UPDATE cards SET revision=? WHERE study_exercise_id=? AND archived=0",
+            (next_revision, exercise_id),
+        )
+        database.execute(
+            """UPDATE daily_queue SET status='blocked' WHERE card_id IN
+               (SELECT id FROM cards WHERE study_exercise_id=?) AND status='queued'""",
+            (exercise_id,),
+        )
+    else:
+        database.execute(
+            "UPDATE cards SET revision=? WHERE study_exercise_id=? AND archived=0",
+            (next_revision, exercise_id),
+        )
+    if material:
+        request_queue_refresh_in_transaction(database, date.today().isoformat())
+    return {"id": exercise_id, "revision": next_revision, "material": material,
+            "schedule_reset": material and request.schedule_decision == "reset"}
 
 
 def create_chapter(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
@@ -140,9 +454,113 @@ def create_link(database: PostgresConnection, payload: dict[str, Any]) -> dict[s
     return {"id": link_id}
 
 
+def commit_study_import(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    """Save a parsed PGN source under the chapter lock and command receipt."""
+
+    request = StudyImportCommitRequest.model_validate(payload["request"])
+    study_id = str(payload["study_id"])
+    records = payload["records"]
+    if (len(records) != len(request.selected_records)
+            or [record["index"] for record in records] != request.selected_records):
+        raise HTTPException(422, "Selected PGN records are invalid")
+    chapter = database.execute(
+        "SELECT study_id FROM study_chapters WHERE id=? FOR UPDATE", (request.chapter_id,),
+    ).fetchone()
+    if chapter is None or chapter["study_id"] != study_id:
+        raise HTTPException(404, "Chapter not in this study")
+    source_group_filter = " AND source_group_id=?" if request.source_group_id else ""
+    exact_rows = database.execute(
+        "SELECT source_group_id,version,record_index FROM study_sources "
+        f"WHERE chapter_id=? AND sha256=?{source_group_filter} ORDER BY version DESC",
+        (request.chapter_id, request.preview_digest)
+        + ((request.source_group_id,) if request.source_group_id else ()),
+    ).fetchall()
+    exact = exact_rows[0] if exact_rows and request.mode != "copy" else None
+    existing_records = {row["record_index"] for row in exact_rows
+                        if exact and row["source_group_id"] == exact["source_group_id"]
+                        and row["version"] == exact["version"]}
+    if exact and set(request.selected_records) <= existing_records:
+        return {"source_group_id": exact["source_group_id"],
+                "created_source_ids": [], "idempotent": True}
+    if exact:
+        source_group_id = exact["source_group_id"]
+        version = exact["version"]
+    elif request.mode == "update":
+        if not request.source_group_id:
+            raise HTTPException(422, "Updating a source requires its source group ID")
+        latest = database.execute(
+            "SELECT MAX(version) FROM study_sources WHERE chapter_id=? AND source_group_id=?",
+            (request.chapter_id, request.source_group_id),
+        ).fetchone()[0]
+        if latest is None:
+            raise HTTPException(404, "Source group not found")
+        source_group_id = request.source_group_id
+        version = latest + 1
+    else:
+        source_group_id = str(uuid.uuid4())
+        version = 1
+    now = datetime.now(timezone.utc).isoformat()
+    created_source_ids = []
+    for record in records:
+        record_index = record["index"]
+        if record_index in existing_records:
+            continue
+        source_id = str(uuid.uuid4())
+        database.execute(
+            """INSERT INTO study_sources(id,chapter_id,source_group_id,version,raw_pgn,sha256,
+               filename,record_index,headers_json,diagnostics_json,valid,created_at)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (source_id, request.chapter_id, source_group_id, version,
+             record["raw_pgn"], request.preview_digest, request.filename, record_index,
+             json.dumps(record["headers"], sort_keys=True, separators=(",", ":")),
+             json.dumps(record["diagnostics"], sort_keys=True, separators=(",", ":")),
+             int(record["valid"]), now),
+        )
+        path_ids = {}
+        for node in record["nodes"]:
+            position_id = str(uuid.uuid4())
+            path_ids[node["path"]] = position_id
+            database.execute(
+                """INSERT INTO study_positions(id,source_id,parent_id,child_index,move_uci,fen,
+                   history_json,comment,starting_comment,nags_json,arrows_json,squares_json,node_path,valid)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (position_id, source_id, path_ids.get(node["parent_path"]), node["child_index"],
+                 node["move_uci"], node["fen"],
+                 json.dumps(node["history"], sort_keys=True, separators=(",", ":")),
+                 node["comment"], node["starting_comment"],
+                 json.dumps(node["nags"], sort_keys=True, separators=(",", ":")),
+                 json.dumps(node["arrows"], sort_keys=True, separators=(",", ":")),
+                 json.dumps(node["squares"], sort_keys=True, separators=(",", ":")),
+                 node["path"], int(record["valid"])),
+            )
+        created_source_ids.append(source_id)
+    return {"source_group_id": source_group_id,
+            "created_source_ids": created_source_ids,
+            "idempotent": False, "version": version}
+
+
+def import_study_bundle(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    request = StudyBundleImportRequest.model_validate(payload)
+    try:
+        return import_bundle(database, request.bundle, copy=request.mode == "copy")
+    except (ValueError, psycopg.IntegrityError) as error:
+        raise HTTPException(422, str(error)) from error
+
+
 register_command("studies.create", create_study)
 register_command("studies.update", update_study)
+register_command("studies.archive", archive_study)
+register_command("studies.unarchive", unarchive_study)
+register_command("studies.exercises.suspend", suspend_exercise)
+register_command("studies.exercises.resume", resume_exercise)
+register_command("studies.exercises.archive", archive_exercise)
+register_command("studies.exercises.create", create_exercise)
+register_command("studies.exercises.enroll", enroll_exercise)
+register_command("studies.exercises.train_now", train_exercise_now)
+register_command("studies.exercises.revise", revise_exercise)
 register_command("studies.chapters.create", create_chapter)
 register_command("studies.chapters.reorder", reorder_chapters)
 register_command("studies.chapters.rename", rename_chapter)
 register_command("studies.links.create", create_link)
+register_command("studies.import.commit", commit_study_import)
+register_command("studies.bundle.import", import_study_bundle)

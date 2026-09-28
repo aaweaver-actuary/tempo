@@ -7,7 +7,12 @@ from datetime import datetime, timezone
 from ..database import connection
 from .. import postgres_store
 from .activity_gate import activity_gate
-from .durable_tasks import enqueue_task, enqueue_task_in_transaction, lock_current_slice
+from .durable_tasks import (
+    enqueue_compact_postgres_task_in_transaction,
+    enqueue_task,
+    enqueue_task_in_transaction,
+    lock_current_slice,
+)
 
 
 def enqueue_repertoire_game_refresh(*, background: bool) -> None:
@@ -43,8 +48,24 @@ def execute_repertoire_game_refresh_slice(task: dict) -> bool:
                  completed_phases=0,next_attempt_at=NULL,updated_at=excluded.updated_at""",
             (game["id"], now),
         )
-        enqueue_task_in_transaction(
-            database, "repertoire_game_refresh", "all",
-            {"after_game_id": game["id"]}, priority=90,
-        )
+        if postgres_store.configured():
+            derivation_job = database.execute(
+                "SELECT derivation_version FROM game_derivation_jobs WHERE game_id=?",
+                (game["id"],),
+            ).fetchone()
+            enqueue_compact_postgres_task_in_transaction(
+                database, "game_derivation_positions", game["id"],
+                {"game_id": game["id"],
+                 "derivation_version": derivation_job["derivation_version"],
+                 "cursor": 0}, priority=125,
+            )
+            enqueue_compact_postgres_task_in_transaction(
+                database, "repertoire_game_refresh", "all",
+                {"after_game_id": game["id"]}, priority=90,
+            )
+        else:
+            enqueue_task_in_transaction(
+                database, "repertoire_game_refresh", "all",
+                {"after_game_id": game["id"]}, priority=90,
+            )
         return True

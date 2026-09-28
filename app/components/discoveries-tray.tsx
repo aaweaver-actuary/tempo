@@ -27,6 +27,8 @@ import { requestInteractiveAnalysis } from "../lib/engine-broker";
 import { loadExplorer, type ExplorerResult } from "../lib/lichess-explorer";
 import { readLichessSessionToken } from "../lib/lichess-session";
 import { readJsonResponse } from "../lib/validated-data";
+import { applyOpportunityCommand } from "../lib/opportunity-command";
+import { requestOpportunityRefresh } from "../lib/opportunity-refresh-command";
 import { usesLocalApi } from "../utils/local";
 import { notifications, publishNotification, resolveNotification } from "../lib/notifications";
 
@@ -502,10 +504,12 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   useEffect(() => {
     if (!open || !active?.unread || openedIds.current.has(active.id)) return;
     openedIds.current.add(active.id);
-    void fetch(`${API_URL}/api/repertoires/${active.repertoire_id}/opportunities/${active.id}/acknowledge`,
-      { method: "POST" })
-      .then((response) => { if (!response.ok) throw new Error(`Could not acknowledge discovery (HTTP ${response.status})`); return refresh(true); })
-      .catch((cause) => setError(cause instanceof Error ? cause.message : "Could not acknowledge discovery"));
+    void applyOpportunityCommand(active.repertoire_id, active.id, "acknowledge")
+      .then(() => refresh(true))
+      .catch((cause) => {
+        openedIds.current.delete(active.id);
+        setError(cause instanceof Error ? cause.message : "Could not acknowledge discovery");
+      });
   }, [open, active, refresh]);
 
   useEffect(() => {
@@ -515,12 +519,8 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     }
     requestedEvidenceRefreshes.current.add(active.id);
     setEvidenceRefreshPendingId(active.id);
-    void fetch(`${API_URL}/api/repertoires/${active.repertoire_id}/opportunities/refresh`, { method: "POST" })
-      .then(async (response) => {
-        if (!response.ok) {
-          const body = await response.json().catch(() => ({})) as { detail?: string };
-          throw new Error(body.detail ?? `Could not refresh discovery evidence (HTTP ${response.status})`);
-        }
+    void requestOpportunityRefresh(active.repertoire_id)
+      .then(async () => {
         await refresh(true);
       })
       .catch((cause) => {
@@ -706,11 +706,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   const act = async (item: DiscoveryItem, action: "train" | "snooze" | "dismiss") => {
     setBusyId(item.id);
     try {
-      const response = await fetch(`${API_URL}/api/repertoires/${item.repertoire_id}/opportunities/${item.id}/${action}`, { method: "POST" });
-      if (!response.ok) {
-        const body = await response.json().catch(() => ({})) as { detail?: string };
-        throw new Error(body.detail ?? `${action} failed (HTTP ${response.status})`);
-      }
+      await applyOpportunityCommand(item.repertoire_id, item.id, action);
       if (action === "train") await onQueueChanged();
       await refresh(true);
       if (action !== "train") setActiveId(null);

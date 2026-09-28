@@ -36,6 +36,24 @@ test("Games prioritizes a canonical miss and explains the targeted study card", 
   await expect(page.getByText(priorityReason)).toBeVisible();
 });
 
+test("Games loads every page of pending findings for the selected game", async ({ page }) => {
+  await prepareVisualUI(page);
+  const requestedOffsets: string[] = [];
+  await page.route("**/api/game-findings?**", route => {
+    const offset = new URL(route.request().url()).searchParams.get("offset") ?? "0";
+    requestedOffsets.push(offset);
+    return route.fulfill({ json: offset === "0"
+      ? { findings: [finding], next_offset: 1, total: 2 }
+      : { findings: [{ ...finding, id: "second-finding", kind: "first big mistake" }],
+          next_offset: null, total: 2 } });
+  });
+  await navigate(page, "Games");
+  await page.getByRole("tab", { name: "Findings" }).click();
+  await expect(page.getByText("repertoire lapse", { exact: true })).toBeVisible();
+  await expect(page.getByText("first big mistake", { exact: true })).toBeVisible();
+  expect(requestedOffsets).toEqual(expect.arrayContaining(["0", "1"]));
+});
+
 test("previously studied game-miss priority card starts without a teaching arrow", async ({ page }) => {
   await prepareVisualUI(page);
   await page.route("**/api/queue/window?**", route => route.fulfill({ json: { cards: [{

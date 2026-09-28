@@ -7,6 +7,7 @@ import sqlite3
 import os
 import random
 from redis import RedisError
+from redis.asyncio import Redis as AsyncRedis
 import time
 import uuid
 from contextlib import asynccontextmanager
@@ -21,7 +22,8 @@ from fastapi import FastAPI, File, Form, Header, HTTPException, Request, UploadF
 from fastapi.responses import PlainTextResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 
-from .database import card_columns, connection, initialize, query_only_request, read_connection
+from .database import (background_read_connection, card_columns, connection, initialize,
+                       query_only_request, read_connection)
 from . import postgres_store
 from .command_gateway import read_operation
 from .celery_app import celery_app
@@ -177,6 +179,18 @@ async def lifespan(_: FastAPI):
         if os.getenv("TEMPO_DATABASE_WRITE_URL"):
             raise RuntimeError("The PostgreSQL API must use only TEMPO_DATABASE_READ_URL")
         initialize()
+        from .command_dispatch import dispatch_command
+
+        startup_queue_request = dispatch_command(
+            "queue.ensure_current",
+            {"queue_date": date.today().isoformat()},
+            idempotency_key=None,
+        )
+        if isinstance(startup_queue_request, JSONResponse) and startup_queue_request.status_code == 202:
+            logging.getLogger("tempo.api").info(
+                "Today's PostgreSQL queue refresh is pending: %s",
+                startup_queue_request.headers.get("Location"),
+            )
         yield
         return
     configured_workers = max(
@@ -217,10 +231,13 @@ app.include_router(study_router)
 
 
 @app.get("/api/operations/{operation_id}")
-def operation_status(operation_id: str):
+def operation_status(operation_id: str, request: Request):
     if not postgres_store.configured():
         raise HTTPException(404, "Operations are available after PostgreSQL cutover")
-    receipt = read_operation(operation_id)
+    receipt = read_operation(
+        operation_id,
+        background=request.headers.get("x-tempo-work-class", "").casefold() == "background",
+    )
     if receipt["state"] == "pending":
         try:
             worker_state = celery_app.AsyncResult(operation_id).state
@@ -358,14 +375,62 @@ def _validated_analysis_evaluations(
     return validated
 
 
+def _game_analysis_threshold() -> int:
+    with background_read_connection() as database:
+        row = database.execute("SELECT major_mistake_cp FROM settings WHERE id=1").fetchone()
+    if row is None:
+        raise HTTPException(503, "Analysis settings are unavailable")
+    return int(row[0])
+
+
 @app.middleware("http")
 async def prioritize_foreground_requests(request: Request, call_next):
     request.state.started_monotonic = time.monotonic()
+    request_path_parts = request.url.path.strip("/").split("/")
+    read_only_post = (
+        request.method == "POST"
+        and (
+            request.url.path in {
+                "/api/repertoire/paste/preview",
+                "/api/endgames/probe",
+                "/api/cards/validate",
+            }
+            or (len(request_path_parts) == 5
+                and request_path_parts[:2] == ["api", "studies"]
+                and request_path_parts[3:] == ["import", "preview"])
+        )
+    )
     if postgres_store.configured() and request.method not in {"GET", "HEAD", "OPTIONS"}:
         path_parts = request.url.path.strip("/").split("/")
         study_root = path_parts[:2] == ["api", "studies"]
         study_create = study_root and len(path_parts) == 2 and request.method == "POST"
         study_update = study_root and len(path_parts) == 3 and request.method == "PATCH"
+        study_archive = (study_root and len(path_parts) == 4
+                         and path_parts[3] in {"archive", "unarchive"}
+                         and request.method == "POST")
+        study_import_commit = (study_root and len(path_parts) == 5
+                               and path_parts[3:] == ["import", "commit"]
+                               and request.method == "POST")
+        study_bundle_import = (study_root and path_parts[2:] == ["import-bundle"]
+                               and request.method == "POST")
+        exercise_create = (study_root and len(path_parts) == 4
+                           and path_parts[3] == "exercises" and request.method == "POST")
+        exercise_revise = (study_root and len(path_parts) == 5
+                           and path_parts[3] == "exercises" and request.method == "PUT")
+        exercise_enroll = (study_root and len(path_parts) == 6
+                           and path_parts[3] == "exercises" and path_parts[5] == "enroll"
+                           and request.method == "POST")
+        exercise_attempt = (study_root and len(path_parts) == 6
+                            and path_parts[3] == "exercises" and path_parts[5] == "attempts"
+                            and request.method == "POST")
+        exercise_self_assess = (study_root and len(path_parts) == 8
+                                and path_parts[3] == "exercises" and path_parts[5] == "attempts"
+                                and path_parts[7] == "self-assess" and request.method == "POST")
+        exercise_availability_command = (
+            study_root and len(path_parts) == 6 and path_parts[3] == "exercises"
+            and path_parts[5] in {"suspend", "resume", "archive", "train-now"}
+            and request.method == "POST"
+        )
         chapter_create = (study_root and len(path_parts) == 4
                           and path_parts[3] == "chapters" and request.method == "POST")
         chapter_reorder = (study_root and len(path_parts) == 5
@@ -379,8 +444,210 @@ async def prioritize_foreground_requests(request: Request, call_next):
                                and path_parts[4] in {"fail", "bury"} and request.method == "POST")
         card_review_command = (len(path_parts) == 4 and path_parts[:2] == ["api", "cards"]
                                and path_parts[3] == "review" and request.method == "POST")
-        if not any((study_create, study_update, chapter_create, chapter_reorder,
-                    chapter_rename, link_create, queue_entry_command, card_review_command)):
+        card_revision_command = (len(path_parts) == 3 and path_parts[:2] == ["api", "cards"]
+                                 and request.method == "PUT")
+        card_archive_command = (len(path_parts) == 3 and path_parts[:2] == ["api", "cards"]
+                                and request.method == "DELETE")
+        card_teaching_command = (len(path_parts) == 4 and path_parts[:2] == ["api", "cards"]
+                                 and path_parts[3] == "teaching" and request.method == "POST")
+        defense_answer_command = (len(path_parts) == 4
+                                  and path_parts[:2] == ["api", "defense-exercises"]
+                                  and path_parts[3] in {"attempt", "recognition"}
+                                  and request.method == "POST")
+        main_repertoire_command = (len(path_parts) == 4
+                                   and path_parts[:2] == ["api", "repertoires"]
+                                   and path_parts[3] == "main" and request.method == "PUT")
+        annotation_command = (len(path_parts) == 4
+                              and path_parts[:2] == ["api", "repertoires"]
+                              and path_parts[3] == "annotations" and request.method == "PUT")
+        repertoire_rename_command = (len(path_parts) == 3
+                                     and path_parts[:2] == ["api", "repertoires"]
+                                     and request.method == "PATCH")
+        repertoire_delete_command = (len(path_parts) == 3
+                                     and path_parts[:2] == ["api", "repertoires"]
+                                     and request.method == "DELETE")
+        opportunity_state_command = (
+            len(path_parts) == 6 and path_parts[:2] == ["api", "repertoires"]
+            and path_parts[3] == "opportunities"
+            and path_parts[5] in {"dismiss", "acknowledge", "snooze", "train"}
+            and request.method == "POST"
+        )
+        opportunity_refresh_command = (
+            len(path_parts) == 5 and path_parts[:2] == ["api", "repertoires"]
+            and path_parts[3:] == ["opportunities", "refresh"]
+            and request.method == "POST"
+        )
+        coverage_refresh_command = (
+            len(path_parts) == 5 and path_parts[:2] == ["api", "repertoires"]
+            and path_parts[3:] == ["coverage", "refresh"]
+            and request.method == "POST"
+        )
+        coverage_maia_command = (
+            len(path_parts) == 4 and path_parts[:3] == ["api", "repertoire-coverage", "maia"]
+            and path_parts[3] in {"claim", "submit", "heartbeat", "release", "failure"}
+            and request.method == "POST"
+        )
+        coverage_explorer_session = (
+            path_parts == ["api", "repertoire-coverage", "explorer-session"]
+            and request.method == "POST"
+        )
+        browser_activity = (path_parts == ["api", "system", "browser-activity"]
+                            and request.method == "POST")
+        activity_control_command = (path_parts == ["api", "system", "activity", "control"]
+                                    and request.method == "POST")
+        activity_progress_command = (path_parts == ["api", "system", "activity", "progress"]
+                                     and request.method == "POST")
+        task_retry_command = (len(path_parts) == 5 and path_parts[:3] == ["api", "system", "tasks"]
+                              and path_parts[4] == "retry" and request.method == "POST")
+        statistics_refresh_command = (
+            len(path_parts) == 5 and path_parts[:3] == ["api", "statistics", "daily"]
+            and path_parts[4] == "refresh" and request.method == "POST"
+        )
+        defensive_admin_command = (
+            request.method == "POST" and path_parts in (
+                ["api", "defensive-threats", "analysis", "audit"],
+                ["api", "defensive-threats", "backfill"],
+            )
+        )
+        defensive_candidate_command = (
+            request.method == "POST" and len(path_parts) == 5
+            and path_parts[:3] == ["api", "defensive-threats", "candidates"]
+            and path_parts[4] in {"dismiss", "approve", "train-now", "pause", "resume"}
+        )
+        defensive_analysis_command = (
+            request.method == "POST" and (
+                path_parts == ["api", "defensive-threats", "analysis", "claim"]
+                or (len(path_parts) == 5
+                    and path_parts[:3] == ["api", "defensive-threats", "analysis"]
+                    and path_parts[4] in {"report", "failure", "release", "retry"})
+            )
+        )
+        tactic_attempt_command = (path_parts == ["api", "tactics", "attempt"]
+                                  and request.method == "POST")
+        tactic_activation_command = (path_parts == ["api", "tactics", "activation"]
+                                     and request.method == "PUT")
+        game_accounts_command = (path_parts == ["api", "games", "accounts"]
+                                 and request.method == "PUT")
+        game_sync_command = (path_parts == ["api", "games", "sync"]
+                             and request.method == "POST")
+        game_exclusion_command = (len(path_parts) >= 4 and path_parts[:2] == ["api", "games"]
+                                  and path_parts[-1] == "exclusion" and request.method == "POST")
+        guided_review_start_command = (
+            len(path_parts) >= 4 and path_parts[:2] == ["api", "games"]
+            and path_parts[-1] == "guided-review" and request.method == "POST"
+        )
+        guided_review_attempt_command = (
+            len(path_parts) == 4 and path_parts[:2] == ["api", "guided-reviews"]
+            and path_parts[-1] == "attempt" and request.method == "POST"
+        )
+        game_finding_decision_command = (
+            len(path_parts) == 4 and path_parts[:2] == ["api", "game-findings"]
+            and path_parts[-1] in {"curation", "decision"} and request.method == "POST"
+        )
+        game_finding_card_command = (
+            len(path_parts) == 4 and path_parts[:2] == ["api", "game-findings"]
+            and path_parts[-1] == "card" and request.method == "POST"
+        )
+        game_threat_refresh_command = (len(path_parts) >= 5
+                                       and path_parts[:2] == ["api", "games"]
+                                       and path_parts[-2:] == ["defensive-threats", "refresh"]
+                                       and request.method == "POST")
+        game_analysis_claim_command = (path_parts == ["api", "games", "analysis", "claim"]
+                                       and request.method == "POST")
+        game_analysis_repair_command = (
+            path_parts in (["api", "games", "analysis", "repair-timeout"],
+                           ["api", "games", "analysis", "repair-provenance"])
+            and request.method == "POST"
+        )
+        game_manual_analysis_command = (
+            len(path_parts) >= 4 and path_parts[:2] == ["api", "games"]
+            and path_parts[-1] == "analysis" and request.method == "POST"
+        )
+        discovery_accept_command = (
+            len(path_parts) == 4 and path_parts[:2] == ["api", "discoveries"]
+            and path_parts[-1] == "accept" and request.method == "POST"
+        )
+        game_position_claim_command = (path_parts == ["api", "games", "analysis", "position", "claim"]
+                                       and request.method == "POST")
+        game_position_callback_command = (
+            len(path_parts) == 6 and path_parts[:4] == ["api", "games", "analysis", "position"]
+            and path_parts[5] in {"report", "release", "failure"} and request.method == "POST"
+        )
+        game_position_finalize_command = (
+            path_parts == ["api", "games", "analysis", "position", "finalize"]
+            and request.method == "POST"
+        )
+        game_parent_callback_command = (
+            len(path_parts) >= 5 and path_parts[:3] == ["api", "games", "analysis"]
+            and path_parts[3] != "position"
+            and path_parts[-1] in {"failure", "heartbeat", "release", "retry"}
+            and request.method == "POST"
+        )
+        settings_command = (path_parts == ["api", "settings"] and request.method == "PUT")
+        endgame_probe = (path_parts == ["api", "endgames", "probe"]
+                         and request.method == "POST")
+        endgame_template_command = (path_parts == ["api", "endgames", "templates"]
+                                    and request.method == "POST")
+        endgame_attempt_command = (len(path_parts) == 5
+                                   and path_parts[:3] == ["api", "endgames", "templates"]
+                                   and path_parts[4] == "attempt" and request.method == "POST")
+        branch_add_command = (path_parts == ["api", "repertoire", "branches"]
+                              and request.method == "POST")
+        branch_remove_command = (path_parts == ["api", "repertoire", "branches", "remove"]
+                                 and request.method == "POST")
+        pgn_import_command = (path_parts == ["api", "imports", "pgn"]
+                              and request.method == "POST")
+        analysis_paste_command = (path_parts == ["api", "repertoire", "paste", "commit"]
+                                  and request.method == "POST")
+        integrity_resolution_command = (
+            len(path_parts) == 7 and path_parts[:2] == ["api", "repertoires"]
+            and path_parts[3:5] == ["integrity", "issues"]
+            and path_parts[6] == "resolve" and request.method == "POST"
+        )
+        card_validation = (path_parts == ["api", "cards", "validate"]
+                           and request.method == "POST")
+        prefix_split_command = (
+            len(path_parts) in {4, 5}
+            and path_parts[:2] == ["api", "cards"]
+            and path_parts[3] == "prefix-split"
+            and (len(path_parts) == 4 or path_parts[4] == "reject")
+            and request.method == "POST"
+        )
+        if not read_only_post and not any((study_create, study_update, study_archive,
+                    study_import_commit, study_bundle_import,
+                    exercise_create, exercise_revise,
+                    exercise_enroll, exercise_attempt, exercise_self_assess,
+                    exercise_availability_command,
+                    chapter_create, chapter_reorder,
+                    chapter_rename, link_create, queue_entry_command, card_review_command,
+                    card_revision_command, card_archive_command,
+                    card_teaching_command, defense_answer_command,
+                    main_repertoire_command, annotation_command, repertoire_rename_command,
+                    repertoire_delete_command, opportunity_state_command,
+                    opportunity_refresh_command, coverage_refresh_command,
+                    coverage_maia_command, coverage_explorer_session,
+                    browser_activity, activity_control_command, activity_progress_command,
+                    task_retry_command, tactic_attempt_command,
+                    statistics_refresh_command,
+                    defensive_admin_command,
+                    defensive_candidate_command,
+                    defensive_analysis_command,
+                    tactic_activation_command, game_accounts_command, game_sync_command,
+                    game_exclusion_command, game_threat_refresh_command,
+                    guided_review_start_command, guided_review_attempt_command,
+                    game_finding_decision_command, game_finding_card_command,
+                    game_analysis_claim_command, game_analysis_repair_command,
+                    game_manual_analysis_command, discovery_accept_command,
+                    game_position_claim_command,
+                    game_position_callback_command, game_position_finalize_command,
+                    game_parent_callback_command,
+                    settings_command,
+                    endgame_probe, endgame_template_command,
+                    endgame_attempt_command, branch_add_command, branch_remove_command,
+                    pgn_import_command,
+                    analysis_paste_command,
+                    integrity_resolution_command,
+                    card_validation, prefix_split_command)):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
@@ -388,7 +655,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
     is_background = (
         request.headers.get("x-tempo-work-class", "").casefold() == "background"
     )
-    request_scope = query_only_request() if request.method == "GET" else None
+    request_scope = query_only_request() if request.method == "GET" or read_only_post else None
     if request_scope is not None:
         request_scope.__enter__()
     try:
@@ -440,10 +707,13 @@ async def storage_unavailable(request: Request, error: sqlite3.OperationalError)
 
 @app.get("/api/health")
 def health():
+    if postgres_store.configured():
+        from .postgres_readiness import postgres_health
+        response = postgres_health()
+        response["test_instance"] = os.getenv("TEMPO_TEST_INSTANCE") == "disposable"
+        return response
     with read_connection() as db:
         db.execute("SELECT id FROM settings LIMIT 1").fetchone()
-    if postgres_store.configured():
-        raise HTTPException(503, "PostgreSQL cutover is staged; remaining write routes and background handlers are not yet migrated")
     if not database_writer.healthy:
         raise HTTPException(503, "Database writer is unavailable")
     return {
@@ -475,7 +745,6 @@ def record_browser_activity():
 @app.get("/api/system/tasks")
 def system_tasks():
     tasks = list_tasks()
-    queued_counts = database_writer.queued_counts
     with read_connection() as database:
         projections = [
             dict(row)
@@ -483,7 +752,7 @@ def system_tasks():
                 "SELECT * FROM queue_projections ORDER BY queue_date DESC LIMIT 7"
             )
         ]
-    return {
+    status = {
         "tasks": tasks,
         "counts": {
             "queued": sum(task["state"] in {"queued", "retrying"} for task in tasks),
@@ -498,25 +767,37 @@ def system_tasks():
                 default=0,
             ),
         },
-        "writer": {"healthy": database_writer.healthy, **queued_counts},
         "queue_projections": projections,
     }
+    if not postgres_store.configured():
+        status["writer"] = {"healthy": database_writer.healthy,
+                            **database_writer.queued_counts}
+    return status
 
 
 @app.get("/api/system/activity")
 def system_activity(offset: int = 0, limit: int = 50):
     activity = list_activity(offset=offset, limit=limit)
-    activity["writer"] = {"healthy": database_writer.healthy, **database_writer.queued_counts}
+    if not postgres_store.configured():
+        activity["writer"] = {"healthy": database_writer.healthy,
+                              **database_writer.queued_counts}
     return activity
 
 
 @app.post("/api/system/activity/control")
-def control_system_activity(request: dict):
+def control_system_activity(request: dict,
+                            idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     source = request.get("source")
     work_id = request.get("id")
     action = request.get("action")
     if not isinstance(source, str) or not isinstance(work_id, str) or not isinstance(action, str):
         raise HTTPException(422, "Invalid activity control")
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "activity.control", {"source": source, "id": work_id, "action": action},
+            idempotency_key=idempotency_key,
+        )
     if not set_control(source, work_id, action):
         raise HTTPException(404, "Background activity not found")
     coordinator.wake()
@@ -524,7 +805,8 @@ def control_system_activity(request: dict):
 
 
 @app.post("/api/system/activity/progress")
-def report_system_activity_progress(request: dict):
+def report_system_activity_progress(request: dict,
+                                    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     source = request.get("source")
     work_id = request.get("id")
     generation = request.get("generation")
@@ -536,6 +818,14 @@ def report_system_activity_progress(request: dict):
         raise HTTPException(422, "Invalid analysis progress")
     if isinstance(completed, bool) or not isinstance(completed, int) or isinstance(total, bool) or not isinstance(total, int):
         raise HTTPException(422, "Invalid analysis progress count")
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "activity.progress", {"source": source, "id": work_id, "generation": generation,
+                                  "phase": phase, "completed": completed, "total": total,
+                                  "lease_id": lease_id},
+            idempotency_key=idempotency_key, background=True,
+        )
     try:
         reported = report_progress(source, work_id, generation, phase, completed, total, background=True, lease_id=lease_id)
     except ValueError as error:
@@ -546,7 +836,13 @@ def report_system_activity_progress(request: dict):
 
 
 @app.post("/api/system/tasks/{task_id}/retry")
-def retry_system_task(task_id: str):
+def retry_system_task(task_id: str,
+                      idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "activity.task.retry", {"task_id": task_id}, idempotency_key=idempotency_key,
+        )
     retried = retry_task(task_id)
     if retried is None:
         raise HTTPException(404, "Terminal task not found")
@@ -570,7 +866,15 @@ def get_settings():
 
 
 @app.put("/api/settings", response_model=Settings)
-def put_settings(s: Settings):
+def put_settings(s: Settings,
+                 idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "settings.update",
+            {"settings": s.model_dump(mode="json"), "supplied_fields": sorted(s.model_fields_set)},
+            idempotency_key=idempotency_key,
+        )
     coverage_fields = (
         "coverage_reply_denominator",
         "coverage_cumulative_target",
@@ -709,12 +1013,7 @@ def _priority_frontier_depth(priority_row) -> int:
         return 0
 
 
-def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> int:
-    """Admit unseen opening cards by impact without changing the active queue."""
-
-    candidates = db.execute(
-        """WITH active_miss AS (
-               SELECT DISTINCT event.card_id
+_ACTIVE_OPENING_MISS_SQL = """SELECT DISTINCT event.card_id
                FROM repertoire_decision_events event
                JOIN imported_games game ON game.id=event.game_id
                WHERE event.outcome='miss' AND game.adaptive_excluded=0
@@ -722,9 +1021,8 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
                      SELECT 1 FROM reviews review
                      WHERE review.card_id=event.card_id AND review.source_kind='study'
                        AND julianday(review.reviewed_at)>julianday(event.played_at)
-                 )
-           )
-           SELECT DISTINCT c.id,linked.id repertoire_id,c.moves_json,c.due_date,
+                 )"""
+_PRIORITY_OPENING_CANDIDATE_BODY = """SELECT DISTINCT c.id,linked.id repertoire_id,c.moves_json,c.due_date,
                   CASE WHEN c.state='locked' AND opportunity.id IS NOT NULL THEN
                     'Priority introduction · reached ' || json_extract(opportunity.evidence_json,'$.encounter_count') ||
                     ' times in games, missed ' || json_extract(opportunity.evidence_json,'$.miss_count') || ' times'
@@ -762,25 +1060,22 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
                         WHERE (r_ok.id=c.repertoire_id OR EXISTS(SELECT 1 FROM repertoire_cards rc_ok WHERE rc_ok.card_id=c.id AND rc_ok.repertoire_id=r_ok.id))
                           AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
                                          WHERE block.repertoire_id=r_ok.id AND block.card_id=c.id))
-             AND c.id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?)""",
-        (MISS_REASON, day, day, day, day),
-    ).fetchall()
-    introduced_by_repertoire = dict(
-        db.execute(
-            """SELECT COALESCE(q.admission_repertoire_id,c.repertoire_id),COUNT(DISTINCT c.id)
-               FROM daily_queue q JOIN cards c ON c.id=q.card_id
-               WHERE q.queue_date=? AND c.content_type='opening' AND c.introduced_at=?
-                 AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
-                                WHERE block.repertoire_id=c.repertoire_id AND block.card_id=c.id)
-               GROUP BY COALESCE(q.admission_repertoire_id,c.repertoire_id)""",
-            (day, day),
-        ).fetchall()
-    )
+             AND c.id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=?)"""
+_PRIORITY_OPENING_CANDIDATES_SQL = (
+    f"WITH active_miss AS ({_ACTIVE_OPENING_MISS_SQL}) "
+    + _PRIORITY_OPENING_CANDIDATE_BODY
+)
+
+
+def _plan_prioritized_opening_admissions(candidates, introduced_by_repertoire,
+                                         day: str, limit: int) -> list[tuple[str, dict]]:
+    """Preserve gameplay, breadth, and global-card ordering outside a transaction."""
+
     by_repertoire: dict[str, list] = {}
     for row in candidates:
         by_repertoire.setdefault(row["repertoire_id"], []).append(row)
-    next_position = maximum
     globally_selected_ids: set[str] = set()
+    planned: list[tuple[str, dict]] = []
     for repertoire_id, rows in by_repertoire.items():
         remaining = max(0, limit - introduced_by_repertoire.get(repertoire_id, 0))
         selected_ids: set[str] = set()
@@ -822,28 +1117,54 @@ def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> i
                     breadth_line_ids.update(json.loads(choice["completed_line_ids_json"] or "[]"))
                 except json.JSONDecodeError:
                     pass
-            next_position += 1
-            db.execute(
-                """INSERT INTO daily_queue(
-                       queue_date,card_id,position,gameplay_priority_reason,admission_repertoire_id
-                   ) VALUES(?,?,?,?,?)""",
-                (day, choice["id"], next_position, choice["gameplay_priority_reason"], repertoire_id),
-            )
-            db.execute(
-                "UPDATE cards SET introduced_at=?,state='learning' WHERE id=?",
-                (day, choice["id"]),
-            )
-            db.execute(
-                """UPDATE repertoire_opportunities SET status='resolved',resolved_at=?,updated_at=?
-                   WHERE repertoire_id=? AND card_id=? AND kind='weak_known_decision'
-                     AND json_extract(evidence_json,'$.analysis_based') IS NULL
-                     AND status='active'""",
-                (datetime.now(timezone.utc).isoformat(), datetime.now(timezone.utc).isoformat(),
-                 repertoire_id, choice["id"]),
-            )
+            planned.append((repertoire_id, choice))
             selected_ids.add(choice["id"])
             globally_selected_ids.add(choice["id"])
             remaining -= 1
+    return planned
+
+
+def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> int:
+    """Admit unseen opening cards by impact without changing the active queue."""
+
+    candidates = db.execute(
+        _PRIORITY_OPENING_CANDIDATES_SQL,
+        (MISS_REASON, day, day, day, day),
+    ).fetchall()
+    introduced_by_repertoire = dict(
+        db.execute(
+            """SELECT COALESCE(q.admission_repertoire_id,c.repertoire_id),COUNT(DISTINCT c.id)
+               FROM daily_queue q JOIN cards c ON c.id=q.card_id
+               WHERE q.queue_date=? AND c.content_type='opening' AND c.introduced_at=?
+                 AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
+                                WHERE block.repertoire_id=c.repertoire_id AND block.card_id=c.id)
+               GROUP BY COALESCE(q.admission_repertoire_id,c.repertoire_id)""",
+            (day, day),
+        ).fetchall()
+    )
+    next_position = maximum
+    for repertoire_id, choice in _plan_prioritized_opening_admissions(
+        candidates, introduced_by_repertoire, day, limit,
+    ):
+        next_position += 1
+        db.execute(
+            """INSERT INTO daily_queue(
+                   queue_date,card_id,position,gameplay_priority_reason,admission_repertoire_id
+               ) VALUES(?,?,?,?,?)""",
+            (day, choice["id"], next_position, choice["gameplay_priority_reason"], repertoire_id),
+        )
+        db.execute(
+            "UPDATE cards SET introduced_at=?,state='learning' WHERE id=?",
+            (day, choice["id"]),
+        )
+        db.execute(
+            """UPDATE repertoire_opportunities SET status='resolved',resolved_at=?,updated_at=?
+               WHERE repertoire_id=? AND card_id=? AND kind='weak_known_decision'
+                 AND json_extract(evidence_json,'$.analysis_based') IS NULL
+                 AND status='active'""",
+            (datetime.now(timezone.utc).isoformat(), datetime.now(timezone.utc).isoformat(),
+             repertoire_id, choice["id"]),
+        )
     return next_position
 
 
@@ -972,18 +1293,31 @@ _QUEUE_ELIGIBILITY_PHASES = (
 )
 
 
+def _reset_unintroduced_opening_cards(database, queue_date: str) -> None:
+    database.execute(
+        """UPDATE cards SET state='new' WHERE content_type='opening' AND state='learning'
+           AND introduced_at IS NULL AND NOT EXISTS(
+               SELECT 1 FROM reviews review WHERE review.card_id=cards.id)"""
+    )
+
+
+def _reset_stale_opening_introductions(database, queue_date: str) -> None:
+    database.execute(
+        """UPDATE cards SET state='new',introduced_at=NULL
+           WHERE content_type='opening' AND state='learning' AND introduced_at<?
+             AND NOT EXISTS(SELECT 1 FROM reviews review WHERE review.card_id=cards.id)
+             AND NOT EXISTS(SELECT 1 FROM daily_queue queue
+                            WHERE queue.card_id=cards.id AND queue.queue_date=?)""",
+        (queue_date, queue_date),
+    )
+
+
 def seed_queue(db, day):
     for _, apply_phase in _QUEUE_ELIGIBILITY_PHASES:
         apply_phase(db, day)
     seed_tactical_introductions(db, day)
-    db.execute("""UPDATE cards SET state='new' WHERE content_type='opening' AND state='learning'
-                  AND introduced_at IS NULL AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=cards.id)""")
-    db.execute(
-        """UPDATE cards SET state='new',introduced_at=NULL WHERE content_type='opening' AND state='learning'
-                  AND introduced_at<? AND NOT EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=cards.id)
-                  AND NOT EXISTS(SELECT 1 FROM daily_queue q WHERE q.card_id=cards.id AND q.queue_date=?)""",
-        (day, day),
-    )
+    _reset_unintroduced_opening_cards(db, day)
+    _reset_stale_opening_introductions(db, day)
     limit = db.execute("SELECT new_cards_per_day FROM settings WHERE id=1").fetchone()[
         0
     ]
@@ -1037,31 +1371,28 @@ def seed_queue(db, day):
                        (day, study_row["id"], next_position + offset))
 
 
-def randomize_daily_queue(db, day: str) -> None:
-    """Create a stable mixed queue whenever that day's membership changes."""
-    rows = db.execute(
-        """SELECT q.id,q.card_id,c.content_type,
+_QUEUE_RANDOMIZATION_ROWS_SQL = """SELECT q.id,q.card_id,c.content_type,
                   CASE WHEN q.admission_kind='explicit' THEN 'explicit'
                        WHEN EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id AND r.invalidated_at IS NULL) THEN 'review'
                        ELSE 'new' END admission_kind,
                   q.gameplay_priority_reason
            FROM daily_queue q JOIN cards c ON c.id=q.card_id
            WHERE q.queue_date=? AND q.status='queued'
-           ORDER BY q.id""",
-        (day,),
-    ).fetchall()
-    if not rows:
-        return
-    membership_hash = hashlib.sha256(
+           ORDER BY q.id"""
+
+
+def _queue_membership_hash(rows) -> str:
+    return hashlib.sha256(
         ("queue-mix-v2\0" + "\0".join(
             f"{row['id']}:{row['card_id']}" for row in rows
         )).encode()
     ).hexdigest()
-    saved = db.execute(
-        "SELECT seed,membership_hash FROM daily_queue_days WHERE queue_date=?", (day,)
-    ).fetchone()
-    if saved and saved["membership_hash"] == membership_hash:
-        return
+
+
+def _plan_daily_queue_order(rows, day: str, saved) -> tuple[int, str, list]:
+    """Compute the stable queue mix after its database read has closed."""
+
+    membership_hash = _queue_membership_hash(rows)
     seed = (
         saved["seed"]
         if saved
@@ -1107,6 +1438,21 @@ def randomize_daily_queue(db, day: str) -> None:
     if prioritized_misses:
         ordinary_cards = [row for row in ordered if row["gameplay_priority_reason"] != MISS_REASON]
         ordered = ordinary_cards[:4] + prioritized_misses + ordinary_cards[4:]
+    return seed, membership_hash, ordered
+
+
+def randomize_daily_queue(db, day: str) -> None:
+    """Create a stable mixed queue whenever that day's membership changes."""
+    rows = db.execute(_QUEUE_RANDOMIZATION_ROWS_SQL, (day,)).fetchall()
+    if not rows:
+        return
+    saved = db.execute(
+        "SELECT seed,membership_hash FROM daily_queue_days WHERE queue_date=?", (day,)
+    ).fetchone()
+    membership_hash = _queue_membership_hash(rows)
+    if saved and saved["membership_hash"] == membership_hash:
+        return
+    seed, membership_hash, ordered = _plan_daily_queue_order(rows, day, saved)
     for position, row in enumerate(ordered):
         db.execute(
             """UPDATE daily_queue SET position=?,card_bucket=?,admission_kind=? WHERE id=?""",
@@ -1555,6 +1901,7 @@ async def import_pgn(
     file: UploadFile = File(...),
     trained_color: str = Form("white"),
     initial_depth: int | None = Form(None),
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
     if not file.filename or not file.filename.lower().endswith(".pgn"):
         raise HTTPException(400, "Choose a .pgn file")
@@ -1572,6 +1919,14 @@ async def import_pgn(
     depth = max(
         2, min(20, initial_depth if initial_depth is not None else saved_depth)
     )
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        from .pgn_import_commands import prepare_import_payload
+        return dispatch_command(
+            "imports.pgn.admit",
+            prepare_import_payload(file.filename, trained_color, depth, games, lines),
+            idempotency_key=idempotency_key,
+        )
     imported_segments = [
         segment
         for line in lines
@@ -1777,6 +2132,7 @@ def list_repertoires():
                 GROUP BY repertoire_id
             )
             SELECT r.id,r.name,r.source_name,r.created_at,r.is_main,COALESCE(rs.status,'unchecked') integrity_status,
+                   COALESCE(rs.scan_status,'idle') integrity_scan_status,rs.scan_error integrity_scan_error,
                    (SELECT ii.id FROM repertoire_integrity_issues ii WHERE ii.repertoire_id=r.id ORDER BY ii.updated_at,ii.id LIMIT 1) integrity_first_issue_id,
                    COALESCE(lc.line_count,0) AS line_count,
                    COALESCE(cc.card_count,0) AS card_count,
@@ -1856,8 +2212,26 @@ def repertoire_integrity(identifier: str):
 
 @app.post("/api/repertoires/{identifier}/integrity/issues/{issue_id}/resolve")
 def resolve_repertoire_integrity(
-    identifier: str, issue_id: str, request: IntegrityResolutionRequest
+    identifier: str, issue_id: str, request: IntegrityResolutionRequest,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
 ):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        from .services.repertoire_integrity import prepare_issue_resolution
+
+        try:
+            prepared = prepare_issue_resolution(
+                identifier, issue_id, request.signature, request.selected_move_uci,
+            )
+        except KeyError as error:
+            raise HTTPException(404, str(error)) from error
+        except RuntimeError as error:
+            raise HTTPException(409, str(error)) from error
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+        return dispatch_command(
+            "integrity.issue.resolve", prepared, idempotency_key=idempotency_key,
+        )
     with read_connection() as database:
         issue = database.execute(
             "SELECT signature FROM repertoire_integrity_issues WHERE id=? AND repertoire_id=?",
@@ -1931,7 +2305,15 @@ def list_annotations(identifier: str, fen: str | None = None):
 
 
 @app.put("/api/repertoires/{identifier}/annotations")
-def save_annotation(identifier: str, request: PositionAnnotationRequest):
+def save_annotation(identifier: str, request: PositionAnnotationRequest,
+                    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "repertoires.annotation.save",
+            {"repertoire_id": identifier, "annotation": request.model_dump(mode="json", by_alias=True)},
+            idempotency_key=idempotency_key,
+        )
     key = fen_key(request.fen)
     now = datetime.now(timezone.utc).isoformat()
     arrows = [item.model_dump(by_alias=True) for item in request.arrows]
@@ -1991,7 +2373,15 @@ def list_teaching_states(identifier: str):
 
 
 @app.post("/api/cards/{identifier}/teaching")
-def mark_teaching_state(identifier: str, request: TeachingStateRequest):
+def mark_teaching_state(identifier: str, request: TeachingStateRequest,
+                        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "cards.teaching.record",
+            {"card_id": identifier, "teaching_state": request.model_dump(mode="json")},
+            idempotency_key=idempotency_key,
+        )
     taught_at = datetime.now(timezone.utc).isoformat()
     with connection() as db:
         if not db.execute(
@@ -2057,7 +2447,7 @@ def migration_snapshot():
         "repertoire_coverage_candidates",
         "game_sync_state",
     ]
-    with connection() as db:
+    with read_connection() as db:
         # Automatic coverage and Explorer cache rows are rebuildable enrichment.
         # Keeping them out of a portable study snapshot preserves its checksum
         # across a restart while background work continues independently.
@@ -2065,7 +2455,8 @@ def migration_snapshot():
             row["id"]
             for row in db.execute(
                 """SELECT id FROM repertoire_coverage_runs
-                   WHERE settings_json LIKE '%\"automatic_priority\": true%'"""
+                   WHERE settings_json LIKE ?""",
+                ('%"automatic_priority": true%',),
             )
         }
         automatic_coverage_node_ids = {
@@ -2093,7 +2484,7 @@ def migration_snapshot():
     return {
         "schemaVersion": 1,
         "exportedAt": datetime.now(timezone.utc).isoformat(),
-        "source": "tempo-sqlite",
+        "source": "tempo-postgres" if postgres_store.configured() else "tempo-sqlite",
         "tables": tables,
         "counts": counts,
         "checksum": hashlib.sha256(canonical.encode()).hexdigest(),
@@ -2101,7 +2492,14 @@ def migration_snapshot():
 
 
 @app.put("/api/repertoires/{identifier}/main")
-def make_main_repertoire(identifier: str):
+def make_main_repertoire(identifier: str,
+                         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "repertoires.main.select", {"repertoire_id": identifier},
+            idempotency_key=idempotency_key,
+        )
     with connection() as db:
         if not db.execute(
             "SELECT 1 FROM repertoires WHERE id=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__')",
@@ -2116,7 +2514,14 @@ def make_main_repertoire(identifier: str):
 
 
 @app.delete("/api/repertoires/{identifier}")
-def delete_repertoire(identifier: str):
+def delete_repertoire(identifier: str,
+                      idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "repertoires.delete", {"repertoire_id": identifier},
+            idempotency_key=idempotency_key,
+        )
     if identifier in {"__tactics__", "__endgames__"}:
         raise HTTPException(400, "This system repertoire cannot be deleted")
     with connection() as db:
@@ -2456,7 +2861,39 @@ def preview_analysis_paste(request: AnalysisPastePreviewRequest):
 
 
 @app.post("/api/repertoire/paste/commit")
-def commit_analysis_paste(request: AnalysisPasteCommitRequest):
+def commit_analysis_paste(request: AnalysisPasteCommitRequest,
+                          idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        if idempotency_key:
+            from .command_gateway import CommandConflict, read_operation, request_digest
+            try:
+                prior_receipt = read_operation(
+                    idempotency_key, command_name="analysis.paste.commit",
+                    request_hash=request_digest(
+                        "analysis.paste.commit", {"request": request.model_dump(mode="json")},
+                    ),
+                )
+            except CommandConflict as error:
+                raise HTTPException(409, str(error)) from error
+            if prior_receipt["state"] == "complete":
+                return prior_receipt["response"]
+            if prior_receipt["state"] == "failed":
+                error = prior_receipt["error"]
+                raise HTTPException(error.get("status_code", 500), error.get("message", "Save failed"))
+        try:
+            with read_connection() as database:
+                prepared_preview = build_paste_preview(
+                    database, request.text, request.starting_fen, request.source_gap_id,
+                )
+        except PasteInputError as error:
+            raise HTTPException(422, str(error)) from error
+        return dispatch_command(
+            "analysis.paste.commit",
+            {"request": request.model_dump(mode="json"),
+             "prepared_preview": prepared_preview},
+            idempotency_key=idempotency_key,
+        )
     try:
         parsed = parse_pasted_lines(request.text, request.starting_fen)
         with read_connection() as database:
@@ -2484,7 +2921,12 @@ def commit_analysis_paste(request: AnalysisPasteCommitRequest):
 
 
 @app.post("/api/repertoire/branches")
-def branch(request: BranchRequest):
+def branch(request: BranchRequest,
+           idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command("repertoire.branch.add", request.model_dump(mode="json"),
+                                idempotency_key=idempotency_key)
     board = chess.Board(request.starting_fen)
     moves = []
     try:
@@ -2570,7 +3012,14 @@ def branch(request: BranchRequest):
 
 
 @app.post("/api/repertoire/branches/remove")
-def remove_branch(request: RemoveBranchRequest):
+def remove_branch(request: RemoveBranchRequest,
+                  idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "repertoire.branch.remove", request.model_dump(mode="json"),
+            idempotency_key=idempotency_key,
+        )
     if not request.moves:
         raise HTTPException(422, "Choose a nonempty branch to remove")
     try:
@@ -2733,7 +3182,15 @@ def prefix_split_preview(identifier: str):
 
 
 @app.post("/api/cards/{identifier}/prefix-split", response_model=PrefixSplitResponse)
-def prefix_split_accept(identifier: str, request: PrefixSplitRequest):
+def prefix_split_accept(identifier: str, request: PrefixSplitRequest,
+                        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "cards.prefix_split.accept",
+            {"card_id": identifier, "request": request.model_dump(mode="json")},
+            idempotency_key=idempotency_key,
+        )
     with connection() as database:
         try:
             result = apply_prefix_split(database, identifier, request.expected_revision)
@@ -2787,7 +3244,15 @@ def prefix_split_accept(identifier: str, request: PrefixSplitRequest):
 
 
 @app.post("/api/cards/{identifier}/prefix-split/reject")
-def prefix_split_reject(identifier: str, request: PrefixSplitRequest):
+def prefix_split_reject(identifier: str, request: PrefixSplitRequest,
+                        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "cards.prefix_split.reject",
+            {"card_id": identifier, "request": request.model_dump(mode="json")},
+            idempotency_key=idempotency_key,
+        )
     with connection() as database:
         try:
             preview = preview_prefix_split(database, identifier)
@@ -2811,7 +3276,14 @@ def prefix_split_reject(identifier: str, request: PrefixSplitRequest):
 
 
 @app.put("/api/cards/{identifier}")
-def revise_card(identifier: str, request: CardRevisionRequest):
+def revise_card(identifier: str, request: CardRevisionRequest,
+                idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "cards.revise", {"card_id": identifier, "request": request.model_dump(mode="json")},
+            idempotency_key=idempotency_key,
+        )
     moves = validated_line(request.starting_fen, request.moves)
     replacement = card_id(request.starting_fen, moves)
     now = datetime.now(timezone.utc).isoformat()
@@ -2935,11 +3407,18 @@ def revise_card(identifier: str, request: CardRevisionRequest):
         "card_id": replacement,
         "replaced": replacement != identifier,
         "history_mode": request.history_mode,
+        "revision": int(existing["revision"]) if replacement != identifier and existing else revision,
     }
 
 
 @app.delete("/api/cards/{identifier}")
-def archive_card(identifier: str):
+def archive_card(identifier: str,
+                 idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "cards.archive", {"card_id": identifier}, idempotency_key=idempotency_key,
+        )
     with connection() as db:
         repertoire_ids = [
             row["repertoire_id"]
@@ -2969,7 +3448,14 @@ def archive_card(identifier: str):
 
 
 @app.patch("/api/repertoires/{identifier}")
-def rename_repertoire(identifier: str, request: RepertoireRenameRequest):
+def rename_repertoire(identifier: str, request: RepertoireRenameRequest,
+                      idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "repertoires.rename", {"repertoire_id": identifier, "name": request.name},
+            idempotency_key=idempotency_key,
+        )
     with connection() as db:
         if not db.execute(
             "UPDATE repertoires SET name=? WHERE id=?",
@@ -3060,7 +3546,14 @@ def export_all():
 
 
 @app.post("/api/repertoires/{identifier}/coverage/refresh", status_code=202)
-def refresh_repertoire_coverage(identifier: str):
+def refresh_repertoire_coverage(identifier: str,
+                                idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "coverage.refresh.request", {"repertoire_id": identifier},
+            idempotency_key=idempotency_key,
+        )
     try:
         run_id = enqueue_coverage_refresh(identifier)
     except KeyError as error:
@@ -3152,7 +3645,24 @@ def discovery_recommendations(opportunity_id: str):
 
 
 @app.post("/api/discoveries/{opportunity_id}/accept", status_code=202)
-def accept_discovery_continuation(opportunity_id: str, request: DiscoveryAcceptanceRequest):
+def accept_discovery_continuation(
+    opportunity_id: str, request: DiscoveryAcceptanceRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        from .discovery_commands import prepare_discovery_acceptance
+        try:
+            prepared = prepare_discovery_acceptance(
+                opportunity_id, request.selected_move_uci, request.evidence_fingerprint,
+            )
+        except KeyError as error:
+            raise HTTPException(404, str(error)) from error
+        except ValueError as error:
+            raise HTTPException(409, str(error)) from error
+        return dispatch_command(
+            "discovery.accept", prepared, idempotency_key=idempotency_key,
+        )
     try:
         intent = create_admission_intent(opportunity_id, request.selected_move_uci,
                                          request.evidence_fingerprint)
@@ -3185,7 +3695,14 @@ def discovery_admission_status(intent_id: str):
 
 
 @app.post("/api/repertoires/{identifier}/opportunities/refresh", status_code=202)
-def refresh_repertoire_opportunities(identifier: str):
+def refresh_repertoire_opportunities(identifier: str,
+                                      idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "opportunities.refresh", {"repertoire_id": identifier},
+            idempotency_key=idempotency_key,
+        )
     with read_connection() as database:
         if not database.execute("SELECT 1 FROM repertoires WHERE id=?", (identifier,)).fetchone():
             raise HTTPException(404, "Repertoire not found")
@@ -3195,7 +3712,14 @@ def refresh_repertoire_opportunities(identifier: str):
 
 
 @app.post("/api/repertoires/{identifier}/opportunities/{opportunity_id}/dismiss")
-def dismiss_repertoire_opportunity(identifier: str, opportunity_id: str):
+def dismiss_repertoire_opportunity(identifier: str, opportunity_id: str,
+                                   idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "opportunities.dismiss", {"repertoire_id": identifier, "opportunity_id": opportunity_id},
+            idempotency_key=idempotency_key,
+        )
     with connection() as database:
         if not dismiss_opportunity(database, identifier, opportunity_id):
             raise HTTPException(404, "Active opportunity not found")
@@ -3203,7 +3727,14 @@ def dismiss_repertoire_opportunity(identifier: str, opportunity_id: str):
 
 
 @app.post("/api/repertoires/{identifier}/opportunities/{opportunity_id}/acknowledge")
-def acknowledge_repertoire_opportunity(identifier: str, opportunity_id: str):
+def acknowledge_repertoire_opportunity(identifier: str, opportunity_id: str,
+                                       idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "opportunities.acknowledge", {"repertoire_id": identifier, "opportunity_id": opportunity_id},
+            idempotency_key=idempotency_key,
+        )
     with connection() as database:
         if not acknowledge_opportunity(database, identifier, opportunity_id):
             raise HTTPException(404, "Active discovery not found")
@@ -3211,7 +3742,14 @@ def acknowledge_repertoire_opportunity(identifier: str, opportunity_id: str):
 
 
 @app.post("/api/repertoires/{identifier}/opportunities/{opportunity_id}/snooze")
-def snooze_repertoire_opportunity(identifier: str, opportunity_id: str):
+def snooze_repertoire_opportunity(identifier: str, opportunity_id: str,
+                                  idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "opportunities.snooze", {"repertoire_id": identifier, "opportunity_id": opportunity_id},
+            idempotency_key=idempotency_key,
+        )
     with connection() as database:
         if not snooze_opportunity(database, identifier, opportunity_id):
             raise HTTPException(404, "Active discovery not found")
@@ -3219,7 +3757,14 @@ def snooze_repertoire_opportunity(identifier: str, opportunity_id: str):
 
 
 @app.post("/api/repertoires/{identifier}/opportunities/{opportunity_id}/train")
-def train_repertoire_opportunity(identifier: str, opportunity_id: str):
+def train_repertoire_opportunity(identifier: str, opportunity_id: str,
+                                 idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "opportunities.train", {"repertoire_id": identifier, "opportunity_id": opportunity_id},
+            idempotency_key=idempotency_key,
+        )
     with connection() as database:
         try:
             return admit_existing_decision(database, identifier, opportunity_id)
@@ -3229,22 +3774,53 @@ def train_repertoire_opportunity(identifier: str, opportunity_id: str):
             raise HTTPException(409, str(error)) from error
 
 
+@app.get("/api/repertoire-coverage/maia/available")
+def coverage_maia_available():
+    if not postgres_store.configured():
+        return {"available": True}
+    read_section = background_read_connection if activity_gate.in_background else read_connection
+    with read_section() as database:
+        row = database.execute_native(
+            "SELECT EXISTS(SELECT 1 FROM repertoire_coverage_nodes n "
+            "JOIN repertoire_coverage_runs r ON r.id=n.run_id "
+            "LEFT JOIN background_activity control ON control.source='coverage' "
+            "AND control.work_id=n.run_id "
+            "WHERE n.explorer_status='complete' AND r.status IN ('queued','running','complete') "
+            "AND (n.maia_status='queued' OR (n.maia_status='leased' AND n.lease_expires_at<%s)) "
+            "AND COALESCE(control.paused,0)=0)",
+            (datetime.now(timezone.utc).isoformat(),),
+        ).fetchone()
+    return {"available": bool(row[0])}
+
+
 @app.post("/api/repertoire-coverage/maia/claim")
-def coverage_maia_claim():
+def coverage_maia_claim(idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command("coverage.maia.claim", {}, idempotency_key=idempotency_key,
+                                background=True)
     return {"job": claim_maia_coverage_node()}
 
 
 @app.post("/api/repertoire-coverage/explorer-session")
 def coverage_explorer_session(authorization: str | None = Header(None)):
     token = authorization[7:].strip() if authorization and authorization[:7].lower() == "bearer " else None
-    set_explorer_session_token(token)
-    if token:
+    try:
+        set_explorer_session_token(token)
+    except RedisError as error:
+        raise HTTPException(503, "Explorer token store unavailable; retry registration") from error
+    if token and not postgres_store.configured():
         coordinator.wake()
     return {"registered": bool(token)}
 
 
 @app.post("/api/repertoire-coverage/maia/submit")
-def coverage_maia_submit(request: CoverageMaiaSubmission):
+def coverage_maia_submit(request: CoverageMaiaSubmission,
+                         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command("coverage.maia.submit", request.model_dump(mode="json"),
+                                idempotency_key=idempotency_key, background=True)
     try:
         submit_maia_coverage(
             request.node_id,
@@ -3257,7 +3833,12 @@ def coverage_maia_submit(request: CoverageMaiaSubmission):
 
 
 @app.post("/api/repertoire-coverage/maia/heartbeat")
-def coverage_maia_heartbeat(request: dict):
+def coverage_maia_heartbeat(request: dict,
+                            idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command("coverage.maia.heartbeat", request,
+                                idempotency_key=idempotency_key, background=True)
     node_id = request.get("node_id")
     lease_id = request.get("lease_id")
     if not isinstance(node_id, str) or not isinstance(lease_id, str):
@@ -3275,7 +3856,12 @@ def coverage_maia_heartbeat(request: dict):
 
 
 @app.post("/api/repertoire-coverage/maia/release")
-def coverage_maia_release(request: dict):
+def coverage_maia_release(request: dict,
+                          idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command("coverage.maia.release", request,
+                                idempotency_key=idempotency_key, background=True)
     node_id = request.get("node_id")
     lease_id = request.get("lease_id")
     if not isinstance(node_id, str) or not isinstance(lease_id, str):
@@ -3291,7 +3877,12 @@ def coverage_maia_release(request: dict):
 
 
 @app.post("/api/repertoire-coverage/maia/failure")
-def coverage_maia_failure(request: dict):
+def coverage_maia_failure(request: dict,
+                          idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command("coverage.maia.failure", request,
+                                idempotency_key=idempotency_key, background=True)
     node_id = request.get("node_id")
     lease_id = request.get("lease_id")
     error = request.get("error")
@@ -3374,7 +3965,16 @@ def tactics_catalog():
 
 
 @app.put("/api/tactics/activation")
-def tactics_activation(request: TacticActivationRequest):
+def tactics_activation(request: TacticActivationRequest,
+                       idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        response = dispatch_command(
+            "tactics.activation.set",
+            {"pack_ids": request.pack_ids, "active": request.active},
+            idempotency_key=idempotency_key,
+        )
+        return response if isinstance(response, JSONResponse) else tactics_catalog()
     def persist_activation(db):
         try:
             activate(db, request.pack_ids, request.active)
@@ -3388,7 +3988,8 @@ def tactics_activation(request: TacticActivationRequest):
 
 
 @app.post("/api/tactics/attempt")
-def tactic_attempt(request: TacticAttemptRequest):
+def tactic_attempt(request: TacticAttemptRequest,
+                   idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     membership = puzzle_membership().get(request.puzzle_id)
     if membership:
         pack_id, record = membership
@@ -3403,6 +4004,22 @@ def tactic_attempt(request: TacticAttemptRequest):
         pack_id = request.deck_id
         record = {"FEN": request.source_fen, "Moves": " ".join(request.moves)}
     training_fen, solution = validate_puzzle_record(record)  # ty: ignore[invalid-argument-type]
+    if postgres_store.configured():
+        if not request.attempt_id and not idempotency_key:
+            raise HTTPException(422, "Send attempt_id or Idempotency-Key so an uncertain save can be retried")
+        if not request.attempt_id:
+            request = request.model_copy(update={
+                "attempt_id": str(uuid.uuid5(uuid.NAMESPACE_URL, f"tempo:tactic:{idempotency_key}")),
+            })
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "tactics.attempt.submit",
+            {"request": request.model_dump(mode="json"), "pack_id": pack_id,
+             "training_fen": training_fen, "solution": solution},
+            idempotency_key=idempotency_key or (
+                f"tactic-attempt:{request.attempt_id}" if request.attempt_id else None
+            ),
+        )
     now = datetime.now(timezone.utc)
     cid = card_id(training_fen, solution)
     light_days = get_settings().light_first_interval_days
@@ -3522,7 +4139,22 @@ def tactic_progress():
 
 async def tablebase(fen: str):
     key = " ".join(fen.split()[:4])
-    with connection() as db:
+    redis_cache_key = "tempo:tablebase:" + hashlib.sha256(key.encode()).hexdigest()
+    redis_url = os.getenv("TEMPO_REDIS_URL") if postgres_store.configured() else None
+    if redis_url:
+        redis_cache = AsyncRedis.from_url(redis_url)
+        try:
+            cached_response = await redis_cache.get(redis_cache_key)
+            if cached_response is not None:
+                try:
+                    return json.loads(cached_response)
+                except (json.JSONDecodeError, UnicodeDecodeError):
+                    pass
+        except RedisError:
+            pass
+        finally:
+            await redis_cache.aclose()
+    with read_connection() as db:
         row = db.execute(
             "SELECT response_json FROM tablebase_cache WHERE fen_key=?", (key,)
         ).fetchone()
@@ -3539,11 +4171,20 @@ async def tablebase(fen: str):
             response.status_code, "Position is outside complete tablebase coverage"
         )
     data = response.json()
-    with connection() as db:
-        db.execute(
-            "INSERT OR REPLACE INTO tablebase_cache VALUES(?,?,?)",
-            (key, json.dumps(data), datetime.now(timezone.utc).isoformat()),
-        )
+    if redis_url:
+        redis_cache = AsyncRedis.from_url(redis_url)
+        try:
+            await redis_cache.setex(redis_cache_key, 30 * 24 * 60 * 60, json.dumps(data))
+        except RedisError:
+            pass
+        finally:
+            await redis_cache.aclose()
+    elif not postgres_store.configured():
+        with connection() as db:
+            db.execute(
+                "INSERT OR REPLACE INTO tablebase_cache VALUES(?,?,?)",
+                (key, json.dumps(data), datetime.now(timezone.utc).isoformat()),
+            )
     return data
 
 
@@ -3562,7 +4203,12 @@ def list_endgames():
 
 
 @app.post("/api/endgames/templates")
-def create_endgame(request: EndgameTemplateRequest):
+def create_endgame(request: EndgameTemplateRequest,
+                   idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command("endgames.template.create", request.model_dump(mode="json"),
+                                idempotency_key=idempotency_key)
     try:
         white = normalized_material(request.white_material)
         black = normalized_material(request.black_material)
@@ -3623,7 +4269,59 @@ def create_endgame(request: EndgameTemplateRequest):
 
 
 @app.post("/api/endgames/templates/{identifier}/attempt")
-async def create_endgame_attempt(identifier: str):
+async def create_endgame_attempt(
+    identifier: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        from .command_gateway import CommandConflict
+
+        operation_id = idempotency_key or uuid.uuid4().hex
+        try:
+            receipt = read_operation(operation_id, command_name="endgames.attempt.create")
+        except CommandConflict as error:
+            raise HTTPException(409, str(error)) from error
+        if receipt["state"] == "complete":
+            with read_connection() as db:
+                saved_attempt = db.execute(
+                    "SELECT template_id FROM endgame_attempts WHERE id=?",
+                    (receipt["response"]["id"],),
+                ).fetchone()
+            if saved_attempt is None or saved_attempt["template_id"] != identifier:
+                raise HTTPException(409, "Operation ID was already used for another template")
+            return receipt["response"]
+        if receipt["state"] == "failed":
+            failure = receipt["error"]
+            raise HTTPException(failure.get("status_code", 500), failure.get("message", "Save failed"))
+        with read_connection() as db:
+            template = db.execute(
+                "SELECT * FROM endgame_templates WHERE id=? AND enabled=1", (identifier,),
+            ).fetchone()
+        if not template:
+            raise HTTPException(404, "Endgame template not found")
+        for candidate_index in range(80):
+            candidate_seed = int.from_bytes(hashlib.sha256(
+                f"{operation_id}:{candidate_index}".encode(),
+            ).digest()[:8], "big")
+            fen = generate_position(
+                template["white_material"], template["black_material"],
+                template["trained_color"], seed=candidate_seed,
+            )
+            data = await tablebase(fen)
+            target = category_for_player(data.get("category", "unknown"))
+            if target != "loss" and (
+                template["goal_mix"] == "both" or target == template["goal_mix"]
+            ):
+                break
+        else:
+            raise HTTPException(422, "Could not find a supported win/draw position")
+        return dispatch_command(
+            "endgames.attempt.create",
+            {"template_id": identifier, "fen": fen, "target": target,
+             "moves": data.get("moves", [])},
+            idempotency_key=operation_id,
+        )
     with connection() as db:
         template = db.execute(
             "SELECT * FROM endgame_templates WHERE id=? AND enabled=1", (identifier,)
@@ -3655,14 +4353,22 @@ async def create_endgame_attempt(identifier: str):
 
 
 @app.put("/api/games/accounts")
-def accounts(a: AccountSettings):
+def accounts(a: AccountSettings,
+             idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.accounts.update", a.model_dump(mode="json"),
+            idempotency_key=idempotency_key,
+        )
     s = get_settings().model_copy(update=a.model_dump())
     put_settings(s)
     return a
 
 
 @app.post("/api/games/sync", response_model=GameSyncEnqueueResponse, status_code=202)
-def sync(request: GameSyncRequest):
+def sync(request: GameSyncRequest,
+         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     users = (
         ("lichess", request.lichess_username.strip()),
         ("chess.com", request.chesscom_username.strip()),
@@ -3675,6 +4381,12 @@ def sync(request: GameSyncRequest):
             "chesscom_username": users[1][1],
         }
     )
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.sync.enqueue", normalized_request.model_dump(mode="json"),
+            idempotency_key=idempotency_key,
+        )
     background = activity_gate.in_background
     job_id = enqueue_sync(normalized_request, background=background)
     coordinator.wake()
@@ -3719,11 +4431,29 @@ def sync_status():
 @app.post("/api/games/analysis/claim")
 def claim_game_analysis(
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     # Tabs that loaded the former browser scanner before a Docker rollout keep
     # polling this endpoint. Preserve its response shape without leasing work.
     if engine_worker != "docker":
         return {"job": None}
+    if postgres_store.configured():
+        with background_read_connection() as database:
+            available = database.execute_native(
+                "SELECT 1 FROM game_analysis_jobs j JOIN imported_games g ON g.id=j.game_id "
+                "LEFT JOIN background_activity control ON control.source='game_analysis' "
+                "AND control.work_id=j.game_id "
+                "WHERE (j.status='queued' OR (j.status='leased' AND j.lease_expires_at<%s)) "
+                "AND g.rated=1 AND g.speed IN ('blitz','rapid','classical') "
+                "AND COALESCE(control.paused,0)=0 LIMIT 1",
+                (datetime.now(timezone.utc).isoformat(),),
+            ).fetchone()
+        if available is None:
+            return {"job": None}
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.analysis.claim", {}, idempotency_key=idempotency_key, background=True,
+        )
     return _claim_game_analysis()
 
 
@@ -3780,8 +4510,19 @@ def _require_docker_engine(engine_worker: str | None) -> None:
 @app.post("/api/games/analysis/position/claim")
 def claim_game_analysis_position(
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     _require_docker_engine(engine_worker)
+    if postgres_store.configured():
+        from .game_analysis_commands import prepare_position_claim
+        from .command_dispatch import dispatch_command
+        plan = prepare_position_claim()
+        if plan is None:
+            return {"job": None}
+        return dispatch_command(
+            "games.analysis.position.claim", plan,
+            idempotency_key=idempotency_key, background=True,
+        )
     parent_job = _claim_game_analysis()["job"]
     return {"job": claim_position(parent_job)}
 
@@ -3790,8 +4531,22 @@ def claim_game_analysis_position(
 def submit_game_analysis_position(
     report_id: str, request: ThreatAnalysisSubmission,
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     _require_docker_engine(engine_worker)
+    if postgres_store.configured():
+        from .game_analysis_commands import prepare_position_report
+        from .command_dispatch import dispatch_command
+        try:
+            request_json = prepare_position_report(report_id, request.report)
+        except (KeyError, ValueError) as error:
+            raise HTTPException(422, str(error)) from error
+        return dispatch_command(
+            "games.analysis.position.report",
+            {"report_id": report_id, "lease_id": request.lease_id,
+             "request_json": request_json, "report": request.report},
+            idempotency_key=idempotency_key, background=True,
+        )
     try:
         return {"status": save_position_report(report_id, request.lease_id, request.report)}
     except (KeyError, ValueError) as error:
@@ -3802,8 +4557,16 @@ def submit_game_analysis_position(
 def release_game_analysis_position(
     report_id: str, request: GameAnalysisLeaseRequest,
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     _require_docker_engine(engine_worker)
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.analysis.position.release",
+            {"report_id": report_id, "lease_id": request.lease_id},
+            idempotency_key=idempotency_key, background=True,
+        )
     return {"status": release_position(report_id, request.lease_id)}
 
 
@@ -3811,8 +4574,16 @@ def release_game_analysis_position(
 def fail_game_analysis_position(
     report_id: str, request: ThreatAnalysisFailureRequest,
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     _require_docker_engine(engine_worker)
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.analysis.position.release",
+            {"report_id": report_id, "lease_id": request.lease_id, "error": request.error},
+            idempotency_key=idempotency_key, background=True,
+        )
     return {"status": release_position(report_id, request.lease_id, request.error)}
 
 
@@ -3820,9 +4591,11 @@ def fail_game_analysis_position(
 def finalize_game_analysis_position(
     request: GameAnalysisLeaseRequest,
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     _require_docker_engine(engine_worker)
-    with read_connection() as database:
+    read_section = background_read_connection if postgres_store.configured() else read_connection
+    with read_section() as database:
         row = database.execute(
             """SELECT j.game_id,j.analysis_version,j.analysis_evidence_version,
                       j.lease_id,g.color,g.start_fen,g.moves_json,c.divergence_ply
@@ -3844,14 +4617,44 @@ def finalize_game_analysis_position(
         analysis_evidence_version=GAME_WORKER_EVIDENCE_VERSION,
         engine_version="Stockfish 19 WASM", network_version="nn-61e7af4bb97d.nnue",
     )
+    if postgres_store.configured():
+        normalized_evaluations = _validated_analysis_evaluations(submission, dict(row))
+        result = classify_swings(
+            normalized_evaluations, row["color"],
+            _game_analysis_threshold(),
+            "white" if chess.Board(row["start_fen"]).turn else "black",
+        )
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.analysis.finalize.admit",
+            {"game_id": row["game_id"], "lease_id": request.lease_id,
+             "analysis_version": row["analysis_version"],
+             "expected_evidence_version": row["analysis_evidence_version"],
+             "analysis_evidence_version": submission.analysis_evidence_version,
+             "idempotency_key": submission.idempotency_key,
+             "result": result,
+             "prepared": {"game": {"color": row["color"],
+                                    "start_fen": row["start_fen"],
+                                    "moves_json": row["moves_json"]},
+                          "request": submission.model_dump(mode="json"),
+                          "evaluations": normalized_evaluations}},
+            idempotency_key=idempotency_key, background=True,
+        )
     return save_game_analysis(row["game_id"], submission)
 
 
 @app.post("/api/games/analysis/repair-timeout")
 def repair_one_stockfish_timeout(
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     _require_docker_engine(engine_worker)
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.analysis.repair_timeout", {}, idempotency_key=idempotency_key,
+            background=True,
+        )
     with connection(background=activity_gate.in_background) as database:
         row = database.execute(
             """SELECT game_id,last_error FROM game_analysis_jobs
@@ -3878,8 +4681,15 @@ def repair_one_stockfish_timeout(
 @app.post("/api/games/analysis/repair-provenance")
 def repair_one_legacy_network_identity(
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     _require_docker_engine(engine_worker)
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.analysis.repair_provenance", {}, idempotency_key=idempotency_key,
+            background=True,
+        )
     with connection(background=activity_gate.in_background) as database:
         row = database.execute(
             """SELECT j.game_id,j.analysis_version,g.analysis_version AS published_version
@@ -3911,7 +4721,15 @@ def repair_one_legacy_network_identity(
 
 
 @app.post("/api/games/analysis/{game_id:path}/failure")
-def fail_game_analysis(game_id: str, request: GameAnalysisFailureRequest):
+def fail_game_analysis(game_id: str, request: GameAnalysisFailureRequest,
+                       idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.analysis.failure",
+            {"game_id": game_id, "lease_id": request.lease_id, "error": request.error},
+            idempotency_key=idempotency_key, background=True,
+        )
     with connection(background=activity_gate.in_background) as db:
         job = db.execute(
             "SELECT lease_id,status FROM game_analysis_jobs WHERE game_id=?", (game_id,)
@@ -3931,7 +4749,14 @@ def fail_game_analysis(game_id: str, request: GameAnalysisFailureRequest):
 
 
 @app.post("/api/games/analysis/{game_id:path}/heartbeat")
-def heartbeat_game_analysis(game_id: str, request: GameAnalysisLeaseRequest):
+def heartbeat_game_analysis(game_id: str, request: GameAnalysisLeaseRequest,
+                            idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.analysis.heartbeat", {"game_id": game_id, "lease_id": request.lease_id},
+            idempotency_key=idempotency_key, background=True,
+        )
     now = datetime.now(timezone.utc)
     with connection(background=activity_gate.in_background) as db:
         updated = db.execute(
@@ -3950,7 +4775,14 @@ def heartbeat_game_analysis(game_id: str, request: GameAnalysisLeaseRequest):
 
 
 @app.post("/api/games/analysis/{game_id:path}/release")
-def release_game_analysis(game_id: str, request: GameAnalysisLeaseRequest):
+def release_game_analysis(game_id: str, request: GameAnalysisLeaseRequest,
+                          idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.analysis.release", {"game_id": game_id, "lease_id": request.lease_id},
+            idempotency_key=idempotency_key, background=True,
+        )
     with connection(background=activity_gate.in_background) as db:
         updated = db.execute(
             """UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,
@@ -3971,7 +4803,13 @@ def release_game_analysis(game_id: str, request: GameAnalysisLeaseRequest):
 
 
 @app.post("/api/games/analysis/{game_id:path}/retry")
-def retry_game_analysis(game_id: str):
+def retry_game_analysis(game_id: str,
+                        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.analysis.retry", {"game_id": game_id}, idempotency_key=idempotency_key,
+        )
     with connection() as db:
         updated = db.execute(
             """UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,lease_expires_at=NULL,last_error=NULL,updated_at=?
@@ -3993,7 +4831,41 @@ def retry_game_analysis(game_id: str):
 
 
 @app.post("/api/games/{game_id:path}/analysis")
-def save_game_analysis(game_id: str, request: GameAnalysisRequest):
+def save_game_analysis(
+    game_id: str, request: GameAnalysisRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        with read_connection() as database:
+            game_row = database.execute(
+                "SELECT color,start_fen,moves_json FROM imported_games WHERE id=?",
+                (game_id,),
+            ).fetchone()
+            if game_row is None:
+                raise HTTPException(404, "Game not found")
+            threshold_row = database.execute(
+                "SELECT major_mistake_cp FROM settings WHERE id=1"
+            ).fetchone()
+        if threshold_row is None:
+            raise HTTPException(503, "Analysis settings are unavailable")
+        game = dict(game_row)
+        evaluations = _validated_analysis_evaluations(request, game)
+        result = classify_swings(
+            evaluations, game["color"], int(threshold_row[0]),
+            "white" if chess.Board(game["start_fen"]).turn else "black",
+        )
+        from .command_dispatch import dispatch_command
+        response = dispatch_command(
+            "games.analysis.manual.admit",
+            {"game_id": game_id, "prepared": {
+                "game": game, "request": request.model_dump(mode="json"),
+                "evaluations": evaluations,
+            }, "result": result},
+            idempotency_key=idempotency_key or request.idempotency_key,
+        )
+        return response if isinstance(response, JSONResponse) else JSONResponse(
+            status_code=200 if response.get("idempotent") else 202, content=response,
+        )
     background = activity_gate.in_background
     with connection(background=background) as db:
         game_row = db.execute(
@@ -4166,14 +5038,30 @@ def save_game_analysis(game_id: str, request: GameAnalysisRequest):
 @app.post("/api/defensive-threats/analysis/claim")
 def claim_defensive_threat_analysis(
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     if engine_worker != "docker":
         raise HTTPException(403, "Defensive engine claims are handled by the Docker worker")
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command(
+            "threat.analysis.claim", {}, idempotency_key=idempotency_key,
+            background=True,
+        )
     return {"job": claim_analysis_request()}
 
 
 @app.post("/api/defensive-threats/analysis/audit")
-def audit_defensive_threat_reports():
+def audit_defensive_threat_reports(
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command(
+            "defensive.audit", {}, idempotency_key=idempotency_key,
+        )
     task = enqueue_task(
         "defensive_threat_report_audit", "saved-reports", {"cursor": ""}, priority=135,
     )
@@ -4182,14 +5070,34 @@ def audit_defensive_threat_reports():
 
 
 @app.post("/api/defensive-threats/backfill")
-def backfill_defensive_threats():
+def backfill_defensive_threats(
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command(
+            "defensive.backfill", {}, idempotency_key=idempotency_key,
+        )
     task = enqueue_threat_backfill()
     coordinator.wake()
     return {"status": "queued", "task_id": task["id"]}
 
 
 @app.post("/api/defensive-threats/analysis/{request_id}/report")
-def submit_defensive_threat_analysis(request_id: str, request: ThreatAnalysisSubmission):
+def submit_defensive_threat_analysis(
+    request_id: str, request: ThreatAnalysisSubmission,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command(
+            "threat.analysis.report",
+            {"request_id": request_id, "lease_id": request.lease_id,
+             "report": request.report},
+            idempotency_key=idempotency_key, background=True,
+        )
     try:
         candidate_ids = save_analysis_report(request_id, request.lease_id, request.report)
     except KeyError as error:
@@ -4204,7 +5112,19 @@ def submit_defensive_threat_analysis(request_id: str, request: ThreatAnalysisSub
 
 
 @app.post("/api/defensive-threats/analysis/{request_id}/failure")
-def fail_defensive_threat_analysis(request_id: str, request: ThreatAnalysisFailureRequest):
+def fail_defensive_threat_analysis(
+    request_id: str, request: ThreatAnalysisFailureRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command(
+            "threat.analysis.failure",
+            {"request_id": request_id, "lease_id": request.lease_id,
+             "error": request.error},
+            idempotency_key=idempotency_key, background=True,
+        )
     with connection(background=activity_gate.in_background) as database:
         updated = database.execute(
             """UPDATE threat_analysis_requests SET state=CASE WHEN attempts<3 THEN 'queued' ELSE 'failed' END,
@@ -4224,7 +5144,18 @@ def fail_defensive_threat_analysis(request_id: str, request: ThreatAnalysisFailu
 
 
 @app.post("/api/defensive-threats/analysis/{request_id}/release")
-def release_defensive_threat_analysis(request_id: str, request: GameAnalysisLeaseRequest):
+def release_defensive_threat_analysis(
+    request_id: str, request: GameAnalysisLeaseRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command(
+            "threat.analysis.release",
+            {"request_id": request_id, "lease_id": request.lease_id},
+            idempotency_key=idempotency_key, background=True,
+        )
     with connection(background=activity_gate.in_background) as database:
         updated = database.execute(
             """UPDATE threat_analysis_requests SET state='queued',lease_id=NULL,
@@ -4236,7 +5167,17 @@ def release_defensive_threat_analysis(request_id: str, request: GameAnalysisLeas
 
 
 @app.post("/api/defensive-threats/analysis/{request_id}/retry")
-def retry_defensive_threat_analysis(request_id: str):
+def retry_defensive_threat_analysis(
+    request_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command(
+            "threat.analysis.retry", {"request_id": request_id},
+            idempotency_key=idempotency_key,
+        )
     with connection() as database:
         updated = database.execute(
             """UPDATE threat_analysis_requests SET state='queued',attempts=0,last_error=NULL,updated_at=?
@@ -4249,7 +5190,15 @@ def retry_defensive_threat_analysis(request_id: str):
 
 
 @app.post("/api/games/{game_id:path}/defensive-threats/refresh")
-def refresh_game_defensive_threats(game_id: str):
+def refresh_game_defensive_threats(
+    game_id: str, idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.defensive_threats.refresh", {"game_id": game_id},
+            idempotency_key=idempotency_key,
+        )
     with read_connection() as database:
         row = database.execute(
             "SELECT analysis_version FROM imported_games WHERE id=? AND analysis_state='ready'",
@@ -4294,7 +5243,16 @@ def list_defensive_threat_candidates(game_id: str | None = None):
 
 
 @app.post("/api/defensive-threats/candidates/{candidate_id}/dismiss")
-def dismiss_defensive_threat_candidate(candidate_id: str):
+def dismiss_defensive_threat_candidate(
+    candidate_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command("defense.candidate.change",
+                                {"candidate_id": candidate_id, "action": "dismiss"},
+                                idempotency_key=idempotency_key)
     try:
         dismiss_defense_candidate(candidate_id)
     except KeyError as error:
@@ -4305,7 +5263,16 @@ def dismiss_defensive_threat_candidate(candidate_id: str):
 
 
 @app.post("/api/defensive-threats/candidates/{candidate_id}/approve")
-def approve_defensive_threat_candidate(candidate_id: str):
+def approve_defensive_threat_candidate(
+    candidate_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command("defense.candidate.change",
+                                {"candidate_id": candidate_id, "action": "approve"},
+                                idempotency_key=idempotency_key)
     try:
         card_id = approve_defense_candidate(candidate_id)
     except KeyError as error:
@@ -4317,7 +5284,16 @@ def approve_defensive_threat_candidate(candidate_id: str):
 
 
 @app.post("/api/defensive-threats/candidates/{candidate_id}/train-now")
-def train_defensive_threat_candidate_now(candidate_id: str):
+def train_defensive_threat_candidate_now(
+    candidate_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command("defense.candidate.change",
+                                {"candidate_id": candidate_id, "action": "train-now"},
+                                idempotency_key=idempotency_key)
     try:
         card_id = train_defense_candidate_now(candidate_id)
     except KeyError as error:
@@ -4328,7 +5304,16 @@ def train_defensive_threat_candidate_now(candidate_id: str):
 
 
 @app.post("/api/defensive-threats/candidates/{candidate_id}/pause")
-def pause_defensive_threat_candidate(candidate_id: str):
+def pause_defensive_threat_candidate(
+    candidate_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command("defense.candidate.change",
+                                {"candidate_id": candidate_id, "action": "pause"},
+                                idempotency_key=idempotency_key)
     try:
         pause_defense_candidate(candidate_id, True)
     except KeyError as error:
@@ -4339,7 +5324,16 @@ def pause_defensive_threat_candidate(candidate_id: str):
 
 
 @app.post("/api/defensive-threats/candidates/{candidate_id}/resume")
-def resume_defensive_threat_candidate(candidate_id: str):
+def resume_defensive_threat_candidate(
+    candidate_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command("defense.candidate.change",
+                                {"candidate_id": candidate_id, "action": "resume"},
+                                idempotency_key=idempotency_key)
     try:
         pause_defense_candidate(candidate_id, False)
     except KeyError as error:
@@ -4362,7 +5356,16 @@ def get_defense_exercise(candidate_id: str):
 
 
 @app.post("/api/defense-exercises/{candidate_id}/attempt")
-def attempt_defense_exercise(candidate_id: str, request: DefenseAttemptRequest):
+def attempt_defense_exercise(candidate_id: str, request: DefenseAttemptRequest,
+                             idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "defense.attempt.submit",
+            {"candidate_id": candidate_id, "request": request.model_dump(mode="json"),
+             "light_first_interval_days": get_settings().light_first_interval_days},
+            idempotency_key=idempotency_key or f"defense-attempt:{request.attempt_id}",
+        )
     try:
         result = submit_defense_attempt(
             candidate_id, attempt_id=request.attempt_id,
@@ -4382,7 +5385,15 @@ def attempt_defense_exercise(candidate_id: str, request: DefenseAttemptRequest):
 
 
 @app.post("/api/defense-exercises/{candidate_id}/recognition")
-def recognize_defense_exercise(candidate_id: str, request: DefenseRecognitionRequest):
+def recognize_defense_exercise(candidate_id: str, request: DefenseRecognitionRequest,
+                               idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "defense.recognition.submit",
+            {"candidate_id": candidate_id, "request": request.model_dump(mode="json")},
+            idempotency_key=idempotency_key or f"defense-recognition:{request.attempt_id}",
+        )
     try:
         return submit_defense_recognition(candidate_id, request)
     except KeyError as error:
@@ -4392,9 +5403,15 @@ def recognize_defense_exercise(candidate_id: str, request: DefenseRecognitionReq
 
 
 @app.get("/api/game-findings")
-def list_game_findings(status: str | None = None, game_id: str | None = None):
+def list_game_findings(
+    status: str | None = None, game_id: str | None = None,
+    offset: int = 0, limit: int | None = None,
+):
+    page_limit = limit if limit is not None else (500 if game_id else 100)
+    if offset < 0 or not 1 <= page_limit <= 1000:
+        raise HTTPException(422, "Use a nonnegative offset and a limit from 1 to 1000")
     clauses = []
-    parameters: list[str] = []
+    parameters: list[object] = []
     if status:
         if status not in {"pending", "accepted", "ignored", "excluded"}:
             raise HTTPException(422, "Unknown finding status")
@@ -4405,16 +5422,23 @@ def list_game_findings(status: str | None = None, game_id: str | None = None):
         parameters.append(game_id)
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     with connection() as db:
+        total = db.execute(
+            f"SELECT COUNT(*) FROM game_findings f JOIN imported_games g ON g.id=f.game_id {where}",
+            parameters,
+        ).fetchone()[0]
         rows = db.execute(
             f"""SELECT f.*,g.played_at,g.provider,g.opening_name,g.adaptive_excluded
                  FROM game_findings f JOIN imported_games g ON g.id=f.game_id
-                 {where} ORDER BY g.played_at DESC,f.ply,f.kind""",
-            parameters,
+                 {where} ORDER BY g.played_at DESC,f.ply,f.kind,f.id
+                 LIMIT ? OFFSET ?""",
+            [*parameters, page_limit, offset],
         ).fetchall()
     return {
         "findings": [
             {**dict(row), "evidence": json.loads(row["evidence_json"])} for row in rows
-        ]
+        ],
+        "total": total,
+        "next_offset": offset + len(rows) if offset + len(rows) < total else None,
     }
 
 
@@ -4458,7 +5482,15 @@ def next_tactical_finding(motif: str | None = None):
 
 
 @app.post("/api/game-findings/{finding_id}/curation")
-def curate_tactical_finding(finding_id: str, request: GameFindingCurationRequest):
+def curate_tactical_finding(finding_id: str, request: GameFindingCurationRequest,
+                            idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "game_findings.curate",
+            {"finding_id": finding_id, "request": request.model_dump(mode="json")},
+            idempotency_key=idempotency_key,
+        )
     now = datetime.now(timezone.utc)
     with connection() as db:
         finding = db.execute(
@@ -4499,7 +5531,15 @@ def game_tactical_statistics(
 
 
 @app.post("/api/game-findings/{finding_id}/decision")
-def decide_game_finding(finding_id: str, request: GameFindingDecisionRequest):
+def decide_game_finding(finding_id: str, request: GameFindingDecisionRequest,
+                        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "game_findings.decide",
+            {"finding_id": finding_id, "request": request.model_dump(mode="json")},
+            idempotency_key=idempotency_key,
+        )
     with connection() as db:
         finding = db.execute(
             """SELECT f.*,g.adaptive_excluded FROM game_findings f
@@ -4537,7 +5577,19 @@ def decide_game_finding(finding_id: str, request: GameFindingDecisionRequest):
 
 
 @app.post("/api/game-findings/{finding_id}/card")
-def create_card_from_game_finding(finding_id: str, request: GameFindingCardRequest):
+def create_card_from_game_finding(finding_id: str, request: GameFindingCardRequest,
+                                  idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        if not request.save:
+            from .finding_card_commands import preview_finding_card
+            with read_connection() as database:
+                return preview_finding_card(database, finding_id, request)
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "game_findings.card.save",
+            {"finding_id": finding_id, "request": request.model_dump(mode="json")},
+            idempotency_key=idempotency_key,
+        )
     with connection() as db:
         finding = db.execute(
             """SELECT f.*,g.color,g.adaptive_excluded,g.analysis_version AS game_analysis_version,
@@ -4655,7 +5707,16 @@ def create_card_from_game_finding(finding_id: str, request: GameFindingCardReque
 
 
 @app.post("/api/games/{game_id:path}/exclusion")
-def exclude_game_from_adaptation(game_id: str, request: GameExclusionRequest):
+def exclude_game_from_adaptation(
+    game_id: str, request: GameExclusionRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.exclusion.set", {"game_id": game_id, "excluded": request.excluded},
+            idempotency_key=idempotency_key,
+        )
     with connection() as db:
         if not db.execute(
             "SELECT 1 FROM imported_games WHERE id=?", (game_id,)
@@ -4864,15 +5925,22 @@ def summary(
 @app.get("/api/games/position-summary")
 def game_position_summary(fen: str, repertoire_id: str | None = None):
     position_key = fen_key(fen)
+    postgres_mode = postgres_store.configured()
     with connection() as db:
-        occurrences = db.execute(
-            """SELECT p.game_id,p.ply,p.move_uci,g.result,g.color,
+        repertoire_filter = (
+            "(%s::text IS NULL OR match.repertoire_id=%s)" if postgres_mode
+            else "(? IS NULL OR match.repertoire_id=?)"
+        )
+        execute = db.execute_native if postgres_mode else db.execute
+        occurrences = execute(
+            f"""SELECT p.game_id,p.ply,p.move_uci,g.result,g.color,
                       a.loss_cp,a.label
                FROM game_position_occurrences p
                JOIN imported_games g ON g.id=p.game_id
                LEFT JOIN game_repertoire_matches match ON match.game_id=g.id AND match.is_primary=1
                LEFT JOIN game_move_analysis a ON a.game_id=p.game_id AND a.ply=p.ply
-               WHERE p.fen_key=? AND (? IS NULL OR match.repertoire_id=?)
+               WHERE p.fen_key={'%s' if postgres_mode else '?'}
+                 AND {repertoire_filter}
                ORDER BY g.played_at DESC""",
             (position_key, repertoire_id, repertoire_id),
         ).fetchall()
@@ -4965,9 +6033,19 @@ def chess_statistics_breakdown(dimension: str = "color", window_days: int = 30):
 
 
 @app.post("/api/statistics/daily/{local_day}/refresh")
-def refresh_chess_statistics_day(local_day: str):
+def refresh_chess_statistics_day(
+    local_day: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
     try:
         datetime.fromisoformat(local_day)
+        if postgres_store.configured():
+            from .command_dispatch import dispatch_command
+
+            return dispatch_command(
+                "statistics.daily.refresh", {"local_day": local_day},
+                idempotency_key=idempotency_key,
+            )
         enqueue_daily_snapshot(local_day)
         coordinator.wake()
         return {"local_day": local_day, "status": "queued"}
@@ -4988,7 +6066,14 @@ def chess_statistics_insights(status: str = "pending"):
 
 
 @app.post("/api/games/{game_id:path}/guided-review")
-def start_guided_game_review(game_id: str):
+def start_guided_game_review(game_id: str,
+                             idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.guided_review.start", {"game_id": game_id},
+            idempotency_key=idempotency_key,
+        )
     try:
         return create_or_resume_session(game_id)
     except LookupError as error:
@@ -5004,7 +6089,15 @@ def guided_game_review(session_id: str):
 
 
 @app.post("/api/guided-reviews/{session_id}/attempt")
-def attempt_guided_game_review(session_id: str, request: GuidedReviewAttemptRequest):
+def attempt_guided_game_review(session_id: str, request: GuidedReviewAttemptRequest,
+                               idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.guided_review.attempt",
+            {"session_id": session_id, "move_uci": request.move_uci},
+            idempotency_key=idempotency_key,
+        )
     try:
         return submit_attempt(session_id, request.move_uci)
     except LookupError as error:

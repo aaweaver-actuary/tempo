@@ -6,6 +6,8 @@ from datetime import date, datetime, timezone
 import sqlite3
 
 from ..database import connection
+from ..postgres_store import PostgresConnection
+from ..queue_position_lock import lock_queue_date_for_position
 from .activity_gate import activity_gate
 from .review_service import ensure_card_queued_after
 
@@ -36,11 +38,21 @@ def prioritize_real_game_miss(database: sqlite3.Connection, event_id: str) -> bo
     ).fetchone()
     if not missed_event:
         return False
-    latest_study = database.execute(
-        """SELECT reviewed_at FROM reviews WHERE card_id=? AND source_kind='study'
-           ORDER BY julianday(reviewed_at) DESC,id DESC LIMIT 1""",
-        (missed_event["card_id"],),
-    ).fetchone()
+    if isinstance(database, PostgresConnection):
+        database.execute(
+            "SELECT id FROM cards WHERE id=? FOR UPDATE", (missed_event["card_id"],),
+        )
+        latest_study = database.execute_native(
+            "SELECT reviewed_at FROM reviews WHERE card_id=%s AND source_kind='study' "
+            "ORDER BY reviewed_at::timestamptz DESC,id DESC LIMIT 1",
+            (missed_event["card_id"],),
+        ).fetchone()
+    else:
+        latest_study = database.execute(
+            """SELECT reviewed_at FROM reviews WHERE card_id=? AND source_kind='study'
+               ORDER BY julianday(reviewed_at) DESC,id DESC LIMIT 1""",
+            (missed_event["card_id"],),
+        ).fetchone()
     if not latest_study or _utc_instant(missed_event["played_at"]) <= _utc_instant(latest_study["reviewed_at"]):
         return False
     if database.execute(
@@ -48,6 +60,8 @@ def prioritize_real_game_miss(database: sqlite3.Connection, event_id: str) -> bo
         (event_id,),
     ).fetchone():
         return False
+    if isinstance(database, PostgresConnection):
+        lock_queue_date_for_position(database, date.today().isoformat())
     existing_queue_entry = database.execute(
         """SELECT gameplay_priority_reason FROM daily_queue
            WHERE queue_date=? AND card_id=? AND status='queued'
