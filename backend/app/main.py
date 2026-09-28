@@ -499,6 +499,10 @@ async def prioritize_foreground_requests(request: Request, call_next):
                                      and request.method == "POST")
         task_retry_command = (len(path_parts) == 5 and path_parts[:3] == ["api", "system", "tasks"]
                               and path_parts[4] == "retry" and request.method == "POST")
+        statistics_refresh_command = (
+            len(path_parts) == 5 and path_parts[:3] == ["api", "statistics", "daily"]
+            and path_parts[4] == "refresh" and request.method == "POST"
+        )
         tactic_attempt_command = (path_parts == ["api", "tactics", "attempt"]
                                   and request.method == "POST")
         tactic_activation_command = (path_parts == ["api", "tactics", "activation"]
@@ -592,6 +596,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     coverage_maia_command, coverage_explorer_session,
                     browser_activity, activity_control_command, activity_progress_command,
                     task_retry_command, tactic_attempt_command,
+                    statistics_refresh_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     game_exclusion_command, game_threat_refresh_command,
                     guided_review_start_command, guided_review_attempt_command,
@@ -5788,9 +5793,19 @@ def chess_statistics_breakdown(dimension: str = "color", window_days: int = 30):
 
 
 @app.post("/api/statistics/daily/{local_day}/refresh")
-def refresh_chess_statistics_day(local_day: str):
+def refresh_chess_statistics_day(
+    local_day: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
     try:
         datetime.fromisoformat(local_day)
+        if postgres_store.configured():
+            from .command_dispatch import dispatch_command
+
+            return dispatch_command(
+                "statistics.daily.refresh", {"local_day": local_day},
+                idempotency_key=idempotency_key,
+            )
         enqueue_daily_snapshot(local_day)
         coordinator.wake()
         return {"local_day": local_day, "status": "queued"}

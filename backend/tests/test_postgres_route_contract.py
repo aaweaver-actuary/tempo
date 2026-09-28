@@ -51,5 +51,4 @@ def test_postgres_route_contract_tracks_remaining_blocked_product_routes():
         "retry_defensive_threat_analysis", "dismiss_defensive_threat_candidate",
         "approve_defensive_threat_candidate", "train_defensive_threat_candidate_now",
         "pause_defensive_threat_candidate", "resume_defensive_threat_candidate",
-        "refresh_chess_statistics_day",
     }

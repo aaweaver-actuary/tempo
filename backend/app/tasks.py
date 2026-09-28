@@ -38,6 +38,7 @@ from . import prefix_split_commands  # noqa: F401 - registers foreground prefix 
 from . import card_commands  # noqa: F401 - registers foreground card revisions
 from . import opportunity_commands  # noqa: F401 - registers foreground discovery state changes
 from . import activity_commands  # noqa: F401 - registers foreground activity controls
+from . import statistics_commands  # noqa: F401 - registers foreground statistics refresh
 from . import coverage_commands  # noqa: F401 - registers foreground coverage admission
 from . import coverage_maia_commands  # noqa: F401 - registers background Maia callbacks
 from . import game_analysis_commands  # noqa: F401 - registers background game analysis claims
@@ -67,6 +68,7 @@ from .services.postgres_game_events import execute_game_event_slice
 from .services.postgres_game_features import execute_game_feature_slice
 from .services.postgres_game_priorities import execute_game_priority_handoff_slice
 from .services.postgres_priority import execute_repertoire_priority_slice
+from .services.postgres_daily_statistics import execute_postgres_daily_statistics_slice
 from .services.postgres_game_sync_windows import execute_game_sync_window_slice
 from .services.postgres_opening_graph import execute_postgres_opening_graph_slice
 from .services.postgres_integrity import execute_postgres_integrity_slice
@@ -99,6 +101,7 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "game_derivation_features",
     "game_derivation_priorities",
     "repertoire_priority",
+    "daily_statistics",
     "game_sync_window",
     "opening_graph_rebuild",
     "integrity_scan",
@@ -205,6 +208,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
         "game_derivation_features": execute_game_feature_slice,
         "game_derivation_priorities": execute_game_priority_handoff_slice,
         "repertoire_priority": execute_repertoire_priority_slice,
+        "daily_statistics": execute_postgres_daily_statistics_slice,
         "game_sync_window": execute_game_sync_window_slice,
         "opening_graph_rebuild": execute_postgres_opening_graph_slice,
         "integrity_scan": execute_postgres_integrity_slice,
@@ -229,6 +233,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
                 "game_derivation_events",
                 "game_derivation_features", "game_derivation_priorities",
                 "repertoire_priority",
+                "daily_statistics",
                 "opening_graph_rebuild",
                 "integrity_scan",
                 "coverage_seed",
