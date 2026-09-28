@@ -92,23 +92,29 @@ def _public_item(finding, *, reveal: bool) -> dict:
 
 def read_session(session_id: str) -> dict:
     with connection() as database:
-        session = database.execute(
-            "SELECT * FROM guided_review_sessions WHERE id=?", (session_id,)
-        ).fetchone()
-        if not session:
-            raise LookupError("Guided review not found")
-        finding_ids = json.loads(session["finding_ids_json"])
-        findings = []
-        for finding_id in finding_ids:
-            finding = database.execute("SELECT * FROM game_findings WHERE id=?", (finding_id,)).fetchone()
-            if finding:
-                findings.append(finding)
-        current_index = int(session["current_index"])
-        current = findings[current_index] if current_index < len(findings) else None
-        attempts = database.execute(
-            "SELECT finding_id,move_uci,correct,attempted_at FROM guided_review_attempts WHERE session_id=?",
-            (session_id,),
-        ).fetchall()
+        return read_session_from_database(database, session_id)
+
+
+def read_session_from_database(database, session_id: str) -> dict:
+    """Build the usual session response inside a command's uncommitted transaction."""
+
+    session = database.execute(
+        "SELECT * FROM guided_review_sessions WHERE id=?", (session_id,),
+    ).fetchone()
+    if not session:
+        raise LookupError("Guided review not found")
+    finding_ids = json.loads(session["finding_ids_json"])
+    findings = []
+    for finding_id in finding_ids:
+        finding = database.execute("SELECT * FROM game_findings WHERE id=?", (finding_id,)).fetchone()
+        if finding:
+            findings.append(finding)
+    current_index = int(session["current_index"])
+    current = findings[current_index] if current_index < len(findings) else None
+    attempts = database.execute(
+        "SELECT finding_id,move_uci,correct,attempted_at FROM guided_review_attempts WHERE session_id=?",
+        (session_id,),
+    ).fetchall()
     return {
         "id": session["id"], "game_id": session["game_id"], "status": session["status"],
         "current_index": current_index, "total": len(findings),

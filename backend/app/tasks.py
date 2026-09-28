@@ -26,6 +26,7 @@ from . import account_commands  # noqa: F401 - registers foreground account comm
 from . import settings_commands  # noqa: F401 - registers foreground settings command
 from . import game_sync_commands  # noqa: F401 - registers foreground sync admission
 from . import game_commands  # noqa: F401 - registers foreground game changes
+from . import guided_review_commands  # noqa: F401 - registers foreground guided review changes
 from . import annotation_commands  # noqa: F401 - registers foreground position notes
 from . import endgame_commands  # noqa: F401 - registers foreground endgame templates
 from . import branch_commands  # noqa: F401 - registers foreground branch edits

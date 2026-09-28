@@ -16,6 +16,7 @@ import { useBoardPublisher } from "../hooks/use-board-publisher";
 import { API_URL, STANDARD_FEN } from "../const";
 import { setGameExclusion } from "../lib/game-exclusion-command";
 import { requestGameThreatRefresh } from "../lib/game-threat-refresh-command";
+import { startGuidedReviewCommand, submitGuidedReviewCommand } from "../lib/guided-review-command";
 import {
   readWorkspaceResponse,
   invalidateWorkspaceData,
@@ -785,17 +786,12 @@ export default function GamesView({
   }
   async function startGuidedReview() {
     if (!selected) return;
-    const response = await fetch(
-      `${API_URL}/api/games/${encodeURIComponent(selected.id)}/guided-review`,
-      { method: "POST" },
-    );
-    if (!response.ok) {
-      setError("Could not start this guided review.");
-      return;
-    }
-    setGuidedReview((await response.json()) as GuidedReviewSession);
-    setGuidedReveal(null);
-    setBoardMode("guided");
+    try {
+      const session = await startGuidedReviewCommand(selected.id);
+      setGuidedReview(session as GuidedReviewSession);
+      setGuidedReveal(null);
+      setBoardMode("guided");
+    } catch (reason) { setError(String(reason)); }
   }
   const attemptGuidedMove = useCallback(
     async (from: Square, to: Square) => {
@@ -804,19 +800,12 @@ export default function GamesView({
       const legalMove = board.move({ from, to, promotion: "q" });
       if (!legalMove) return;
       const moveUci = `${legalMove.from}${legalMove.to}${legalMove.promotion ?? ""}`;
-      const response = await fetch(
-        `${API_URL}/api/guided-reviews/${guidedReview.id}/attempt`,
-        {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ move_uci: moveUci }),
-        },
-      );
-      if (!response.ok) {
-        setError("Could not save that correction attempt.");
-        return;
-      }
-      setGuidedReveal((await response.json()) as GuidedReviewAttempt);
+      try {
+        const result = await submitGuidedReviewCommand(
+          guidedReview.id, guidedReview.current_index, moveUci,
+        );
+        setGuidedReveal(result as GuidedReviewAttempt);
+      } catch (reason) { setError(String(reason)); }
     },
     [guidedReview, guidedReveal],
   );

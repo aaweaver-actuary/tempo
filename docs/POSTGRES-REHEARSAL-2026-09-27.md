@@ -506,6 +506,11 @@ command. Its importer now inspects PostgreSQL columns through
 `idempotent=true` for an exact preserved bundle and copied its chapter under
 a new study ID. Bundle import is still a foreground transaction and needs a
 large-bundle latency check before release.
+Guided game review start and correction attempts now use foreground command
+receipts. The worker locks the game before choosing or creating a session and
+locks the session before advancing an attempt. A rolled-back rehearsal on the
+disposable PostgreSQL clone created an active five-finding session and saved a
+legal correction; the browser retains operation IDs across pending responses.
 
 An isolated localhost rehearsal now started the PostgreSQL API, separate
 foreground and background Celery workers, and Beat against the mutable scratch

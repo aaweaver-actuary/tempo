@@ -509,6 +509,14 @@ async def prioritize_foreground_requests(request: Request, call_next):
                              and request.method == "POST")
         game_exclusion_command = (len(path_parts) >= 4 and path_parts[:2] == ["api", "games"]
                                   and path_parts[-1] == "exclusion" and request.method == "POST")
+        guided_review_start_command = (
+            len(path_parts) >= 4 and path_parts[:2] == ["api", "games"]
+            and path_parts[-1] == "guided-review" and request.method == "POST"
+        )
+        guided_review_attempt_command = (
+            len(path_parts) == 4 and path_parts[:2] == ["api", "guided-reviews"]
+            and path_parts[-1] == "attempt" and request.method == "POST"
+        )
         game_threat_refresh_command = (len(path_parts) >= 5
                                        and path_parts[:2] == ["api", "games"]
                                        and path_parts[-2:] == ["defensive-threats", "refresh"]
@@ -578,6 +586,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     task_retry_command, tactic_attempt_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     game_exclusion_command, game_threat_refresh_command,
+                    guided_review_start_command, guided_review_attempt_command,
                     game_analysis_claim_command, game_position_claim_command,
                     game_position_callback_command, game_position_finalize_command,
                     game_parent_callback_command,
@@ -5761,7 +5770,14 @@ def chess_statistics_insights(status: str = "pending"):
 
 
 @app.post("/api/games/{game_id:path}/guided-review")
-def start_guided_game_review(game_id: str):
+def start_guided_game_review(game_id: str,
+                             idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.guided_review.start", {"game_id": game_id},
+            idempotency_key=idempotency_key,
+        )
     try:
         return create_or_resume_session(game_id)
     except LookupError as error:
@@ -5777,7 +5793,15 @@ def guided_game_review(session_id: str):
 
 
 @app.post("/api/guided-reviews/{session_id}/attempt")
-def attempt_guided_game_review(session_id: str, request: GuidedReviewAttemptRequest):
+def attempt_guided_game_review(session_id: str, request: GuidedReviewAttemptRequest,
+                               idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.guided_review.attempt",
+            {"session_id": session_id, "move_uci": request.move_uci},
+            idempotency_key=idempotency_key,
+        )
     try:
         return submit_attempt(session_id, request.move_uci)
     except LookupError as error:
