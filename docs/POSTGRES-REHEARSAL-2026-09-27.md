@@ -517,6 +517,11 @@ canonical repertoire lapse. The last action had no eligible recent study
 review, so it did not move a queue card. A second rolled-back rehearsal added
 an earlier study review to an eligible linked lapse. Acceptance queued that
 card at position 0 with the canonical gameplay priority reason in 30.0 ms.
+Finding-card preview now reads through the PostgreSQL reader, while save uses
+a foreground command and browser-persisted operation ID. A rolled-back
+disposable-database rehearsal previewed a finding, saved one card and queue
+entry, then repeated the save and reused the same card. Stale tactical
+opportunities are checked again under row locks before the worker writes.
 
 An isolated localhost rehearsal now started the PostgreSQL API, separate
 foreground and background Celery workers, and Beat against the mutable scratch

@@ -18,6 +18,7 @@ import { setGameExclusion } from "../lib/game-exclusion-command";
 import { requestGameThreatRefresh } from "../lib/game-threat-refresh-command";
 import { startGuidedReviewCommand, submitGuidedReviewCommand } from "../lib/guided-review-command";
 import { curateGameFinding, decideGameFinding } from "../lib/game-finding-command";
+import { prepareFindingCard } from "../lib/finding-card-command";
 import {
   readWorkspaceResponse,
   invalidateWorkspaceData,
@@ -680,32 +681,11 @@ export default function GamesView({
     }
   }
   async function createFindingCard(findingId: string, save: boolean) {
-    const response = await fetch(
-      `${API_URL}/api/game-findings/${findingId}/card`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ save }),
-      },
-    );
-    if (!response.ok) {
-      setError("Could not prepare that game position as a study card.");
-      return;
-    }
-    const payload = (await response.json()) as {
-      preview: {
-        starting_fen: string;
-        moves: string[];
-        best_move: string;
-        existing_card_id?: string | null;
-      };
-      saved: boolean;
-    };
-    setCardPreviews((current) => ({
-      ...current,
-      [findingId]: payload.preview,
-    }));
-    if (payload.saved) await loadFindings();
+    try {
+      const result = await prepareFindingCard(findingId, { save });
+      setCardPreviews((current) => ({ ...current, [findingId]: result.preview }));
+      if (result.saved) await loadFindings();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
   }
   const attemptTacticalMove = useCallback(
     (from: Square, to: Square) => {
@@ -734,27 +714,12 @@ export default function GamesView({
   async function previewTacticalCard(save: boolean) {
     if (!tacticalQueue.item || tacticalBusy) return;
     setTacticalBusy(true);
-    const response = await fetch(
-      `${API_URL}/api/game-findings/${tacticalQueue.item.id}/card`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ save }),
-      },
-    );
-    setTacticalBusy(false);
-    if (!response.ok) {
-      setError(
-        "Could not prepare this tactical position. The candidate remains available.",
-      );
-      return;
-    }
-    const payload = (await response.json()) as {
-      preview: typeof tacticalPreview;
-      saved: boolean;
-    };
-    setTacticalPreview(payload.preview);
-    if (payload.saved) await loadTacticalQueue();
+    try {
+      const result = await prepareFindingCard(tacticalQueue.item.id, { save });
+      setTacticalPreview(result.preview);
+      if (result.saved) await loadTacticalQueue();
+    } catch (reason) { setError(reason instanceof Error ? reason.message : String(reason)); }
+    finally { setTacticalBusy(false); }
   }
   async function startGuidedReview() {
     if (!selected) return;

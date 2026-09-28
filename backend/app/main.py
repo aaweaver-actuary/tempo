@@ -521,6 +521,10 @@ async def prioritize_foreground_requests(request: Request, call_next):
             len(path_parts) == 4 and path_parts[:2] == ["api", "game-findings"]
             and path_parts[-1] in {"curation", "decision"} and request.method == "POST"
         )
+        game_finding_card_command = (
+            len(path_parts) == 4 and path_parts[:2] == ["api", "game-findings"]
+            and path_parts[-1] == "card" and request.method == "POST"
+        )
         game_threat_refresh_command = (len(path_parts) >= 5
                                        and path_parts[:2] == ["api", "games"]
                                        and path_parts[-2:] == ["defensive-threats", "refresh"]
@@ -591,7 +595,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     game_exclusion_command, game_threat_refresh_command,
                     guided_review_start_command, guided_review_attempt_command,
-                    game_finding_decision_command,
+                    game_finding_decision_command, game_finding_card_command,
                     game_analysis_claim_command, game_position_claim_command,
                     game_position_callback_command, game_position_finalize_command,
                     game_parent_callback_command,
@@ -5331,7 +5335,19 @@ def decide_game_finding(finding_id: str, request: GameFindingDecisionRequest,
 
 
 @app.post("/api/game-findings/{finding_id}/card")
-def create_card_from_game_finding(finding_id: str, request: GameFindingCardRequest):
+def create_card_from_game_finding(finding_id: str, request: GameFindingCardRequest,
+                                  idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        if not request.save:
+            from .finding_card_commands import preview_finding_card
+            with read_connection() as database:
+                return preview_finding_card(database, finding_id, request)
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "game_findings.card.save",
+            {"finding_id": finding_id, "request": request.model_dump(mode="json")},
+            idempotency_key=idempotency_key,
+        )
     with connection() as db:
         finding = db.execute(
             """SELECT f.*,g.color,g.adaptive_excluded,g.analysis_version AS game_analysis_version,
