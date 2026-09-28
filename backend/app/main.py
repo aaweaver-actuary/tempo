@@ -386,13 +386,19 @@ def _game_analysis_threshold() -> int:
 @app.middleware("http")
 async def prioritize_foreground_requests(request: Request, call_next):
     request.state.started_monotonic = time.monotonic()
+    request_path_parts = request.url.path.strip("/").split("/")
     read_only_post = (
         request.method == "POST"
-        and request.url.path in {
-            "/api/repertoire/paste/preview",
-            "/api/endgames/probe",
-            "/api/cards/validate",
-        }
+        and (
+            request.url.path in {
+                "/api/repertoire/paste/preview",
+                "/api/endgames/probe",
+                "/api/cards/validate",
+            }
+            or (len(request_path_parts) == 5
+                and request_path_parts[:2] == ["api", "studies"]
+                and request_path_parts[3:] == ["import", "preview"])
+        )
     )
     if postgres_store.configured() and request.method not in {"GET", "HEAD", "OPTIONS"}:
         path_parts = request.url.path.strip("/").split("/")
@@ -402,6 +408,9 @@ async def prioritize_foreground_requests(request: Request, call_next):
         study_archive = (study_root and len(path_parts) == 4
                          and path_parts[3] in {"archive", "unarchive"}
                          and request.method == "POST")
+        study_import_commit = (study_root and len(path_parts) == 5
+                               and path_parts[3:] == ["import", "commit"]
+                               and request.method == "POST")
         exercise_create = (study_root and len(path_parts) == 4
                            and path_parts[3] == "exercises" and request.method == "POST")
         exercise_revise = (study_root and len(path_parts) == 5
@@ -550,7 +559,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
             and (len(path_parts) == 4 or path_parts[4] == "reject")
             and request.method == "POST"
         )
-        if not read_only_post and not any((study_create, study_update, study_archive, exercise_create, exercise_revise,
+        if not read_only_post and not any((study_create, study_update, study_archive,
+                    study_import_commit, exercise_create, exercise_revise,
                     exercise_enroll, exercise_attempt, exercise_self_assess,
                     exercise_availability_command,
                     chapter_create, chapter_reorder,

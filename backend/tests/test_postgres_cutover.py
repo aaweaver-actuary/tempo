@@ -1288,6 +1288,98 @@ def test_postgres_analysis_paste_preview_uses_query_only_reader_without_write_wo
     assert observed == ["query_only_entered", ("1. e4", None, None)]
 
 
+def test_postgres_study_import_preview_uses_query_only_reader_without_write_worker(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main, study_routes
+
+    observed = []
+
+    @contextmanager
+    def query_only_scope():
+        observed.append("query_only_entered")
+        yield
+
+    class PreviewDatabase:
+        def execute(self, statement, parameters=()):
+            observed.append((statement, parameters))
+            return SimpleNamespace(fetchone=lambda: {"id": "chapter-1", "study_id": "study-1"})
+
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(main, "query_only_request", query_only_scope)
+    monkeypatch.setattr(study_routes, "read_connection", lambda: nullcontext(PreviewDatabase()))
+    monkeypatch.setattr(study_routes, "connection", lambda **_kwargs: (_ for _ in ()).throw(
+        AssertionError("preview must not open a writer")))
+    monkeypatch.setattr(study_routes, "preview_pgn", lambda raw_pgn: {"digest": "digest", "records": []})
+    response = TestClient(main.app).post(
+        "/api/studies/study-1/import/preview",
+        json={"chapter_id": "chapter-1", "raw_pgn": "*"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"digest": "digest", "records": [], "existing_versions": []}
+    assert observed[0] == "query_only_entered"
+    assert observed[1][1] == ("chapter-1",)
+
+
+def test_postgres_study_import_commit_dispatches_parsed_source_with_stable_receipt(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main, study_routes
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(study_routes, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or
+                        {"created_source_ids": ["source-1"], "idempotent": False})
+    response = TestClient(main.app).post(
+        "/api/studies/study-1/import/commit",
+        json={"chapter_id": "chapter-1", "raw_pgn": "[Event \"Import\"]\n\n1. e4 *",
+              "preview_digest": __import__("hashlib").sha256(
+                  b'[Event "Import"]\n\n1. e4 *').hexdigest(),
+              "selected_records": [0]},
+        headers={"Idempotency-Key": "study-import-one"},
+    )
+    assert response.status_code == 200, response.text
+    assert dispatched[0][0] == "studies.import.commit"
+    assert dispatched[0][1]["study_id"] == "study-1"
+    assert dispatched[0][1]["records"][0]["nodes"][1]["move_uci"] == "e2e4"
+    assert dispatched[0][2] == "study-import-one"
+
+
+def test_postgres_study_import_worker_keeps_parent_links_and_duplicate_receipt():
+    from app.study_commands import commit_study_import
+    from app.services.study_pgn import preview_pgn
+
+    raw_pgn = '[Event "Import"]\n\n1. e4 *'
+    preview = preview_pgn(raw_pgn)
+    payload = {
+        "study_id": "study-1",
+        "request": {"chapter_id": "chapter-1", "raw_pgn": raw_pgn,
+                    "preview_digest": preview["digest"], "selected_records": [0]},
+        "records": preview["records"],
+    }
+    statements = []
+
+    class ImportDatabase:
+        def execute(self, statement, parameters=()):
+            statements.append((statement, parameters))
+            if "SELECT study_id FROM study_chapters" in statement:
+                return SimpleNamespace(fetchone=lambda: {"study_id": "study-1"})
+            if "SELECT source_group_id,version,record_index" in statement:
+                return SimpleNamespace(fetchall=lambda: [])
+            return SimpleNamespace()
+
+    result = commit_study_import(ImportDatabase(), payload)
+    assert not result["idempotent"]
+    assert len(result["created_source_ids"]) == 1
+    position_writes = [parameters for statement, parameters in statements
+                       if "INSERT INTO study_positions" in statement]
+    assert len(position_writes) == 2
+    assert position_writes[0][2] is None
+    assert position_writes[1][2] == position_writes[0][0]
+
+
 def test_postgres_analysis_paste_commit_dispatches_foreground_command_after_read_only_preview(monkeypatch):
     from fastapi.testclient import TestClient
     from app import command_gateway, main

@@ -14,7 +14,7 @@ from .command_gateway import register_command
 from .postgres_store import PostgresConnection
 from .queue_commands import request_queue_refresh_in_transaction
 from .queue_position_lock import lock_queue_date_for_position
-from .study_contracts import ChapterCreate, StudyCreate, StudyLinkCreate
+from .study_contracts import ChapterCreate, StudyCreate, StudyImportCommitRequest, StudyLinkCreate
 from .study_contracts import ExerciseCreate, ExerciseRevisionRequest, ExerciseSpecification
 from .services.study_grading import validate_exercise
 from pydantic import TypeAdapter
@@ -449,6 +449,91 @@ def create_link(database: PostgresConnection, payload: dict[str, Any]) -> dict[s
     return {"id": link_id}
 
 
+def commit_study_import(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    """Save a parsed PGN source under the chapter lock and command receipt."""
+
+    request = StudyImportCommitRequest.model_validate(payload["request"])
+    study_id = str(payload["study_id"])
+    records = payload["records"]
+    if (len(records) != len(request.selected_records)
+            or [record["index"] for record in records] != request.selected_records):
+        raise HTTPException(422, "Selected PGN records are invalid")
+    chapter = database.execute(
+        "SELECT study_id FROM study_chapters WHERE id=? FOR UPDATE", (request.chapter_id,),
+    ).fetchone()
+    if chapter is None or chapter["study_id"] != study_id:
+        raise HTTPException(404, "Chapter not in this study")
+    source_group_filter = " AND source_group_id=?" if request.source_group_id else ""
+    exact_rows = database.execute(
+        "SELECT source_group_id,version,record_index FROM study_sources "
+        f"WHERE chapter_id=? AND sha256=?{source_group_filter} ORDER BY version DESC",
+        (request.chapter_id, request.preview_digest)
+        + ((request.source_group_id,) if request.source_group_id else ()),
+    ).fetchall()
+    exact = exact_rows[0] if exact_rows and request.mode != "copy" else None
+    existing_records = {row["record_index"] for row in exact_rows
+                        if exact and row["source_group_id"] == exact["source_group_id"]
+                        and row["version"] == exact["version"]}
+    if exact and set(request.selected_records) <= existing_records:
+        return {"source_group_id": exact["source_group_id"],
+                "created_source_ids": [], "idempotent": True}
+    if exact:
+        source_group_id = exact["source_group_id"]
+        version = exact["version"]
+    elif request.mode == "update":
+        if not request.source_group_id:
+            raise HTTPException(422, "Updating a source requires its source group ID")
+        latest = database.execute(
+            "SELECT MAX(version) FROM study_sources WHERE chapter_id=? AND source_group_id=?",
+            (request.chapter_id, request.source_group_id),
+        ).fetchone()[0]
+        if latest is None:
+            raise HTTPException(404, "Source group not found")
+        source_group_id = request.source_group_id
+        version = latest + 1
+    else:
+        source_group_id = str(uuid.uuid4())
+        version = 1
+    now = datetime.now(timezone.utc).isoformat()
+    created_source_ids = []
+    for record in records:
+        record_index = record["index"]
+        if record_index in existing_records:
+            continue
+        source_id = str(uuid.uuid4())
+        database.execute(
+            """INSERT INTO study_sources(id,chapter_id,source_group_id,version,raw_pgn,sha256,
+               filename,record_index,headers_json,diagnostics_json,valid,created_at)
+               VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+            (source_id, request.chapter_id, source_group_id, version,
+             record["raw_pgn"], request.preview_digest, request.filename, record_index,
+             json.dumps(record["headers"], sort_keys=True, separators=(",", ":")),
+             json.dumps(record["diagnostics"], sort_keys=True, separators=(",", ":")),
+             int(record["valid"]), now),
+        )
+        path_ids = {}
+        for node in record["nodes"]:
+            position_id = str(uuid.uuid4())
+            path_ids[node["path"]] = position_id
+            database.execute(
+                """INSERT INTO study_positions(id,source_id,parent_id,child_index,move_uci,fen,
+                   history_json,comment,starting_comment,nags_json,arrows_json,squares_json,node_path,valid)
+                   VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
+                (position_id, source_id, path_ids.get(node["parent_path"]), node["child_index"],
+                 node["move_uci"], node["fen"],
+                 json.dumps(node["history"], sort_keys=True, separators=(",", ":")),
+                 node["comment"], node["starting_comment"],
+                 json.dumps(node["nags"], sort_keys=True, separators=(",", ":")),
+                 json.dumps(node["arrows"], sort_keys=True, separators=(",", ":")),
+                 json.dumps(node["squares"], sort_keys=True, separators=(",", ":")),
+                 node["path"], int(record["valid"])),
+            )
+        created_source_ids.append(source_id)
+    return {"source_group_id": source_group_id,
+            "created_source_ids": created_source_ids,
+            "idempotent": False, "version": version}
+
+
 register_command("studies.create", create_study)
 register_command("studies.update", update_study)
 register_command("studies.archive", archive_study)
@@ -464,3 +549,4 @@ register_command("studies.chapters.create", create_chapter)
 register_command("studies.chapters.reorder", reorder_chapters)
 register_command("studies.chapters.rename", rename_chapter)
 register_command("studies.links.create", create_link)
+register_command("studies.import.commit", commit_study_import)

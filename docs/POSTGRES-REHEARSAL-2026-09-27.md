@@ -495,6 +495,13 @@ microbenchmark, not the final container/backlog gate.
 
 ## Outstanding cutover gates
 
+Study PGN preview now uses the PostgreSQL read-only request path, while commit
+dispatches a typed Celery command and retains the browser's pending operation
+ID. A rolled-back import on the disposable PostgreSQL clone inserted one source
+and three linked positions; replay found the same source and returned
+`idempotent=true`. This covers the PGN import path, not the native study bundle
+import, which remains a cutover gate.
+
 An isolated localhost rehearsal now started the PostgreSQL API, separate
 foreground and background Celery workers, and Beat against the mutable scratch
 database. The API startup command requested today's queue, which reached

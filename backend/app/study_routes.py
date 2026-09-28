@@ -289,7 +289,8 @@ def preview_study_import(study_id: str, request: StudyImportPreviewRequest):
 
 
 @router.post("/{study_id}/import/commit")
-def commit_study_import(study_id: str, request: StudyImportCommitRequest):
+def commit_study_import(study_id: str, request: StudyImportCommitRequest,
+                        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     try:
         preview = preview_pgn(request.raw_pgn)
     except ValueError as error:
@@ -301,6 +302,13 @@ def commit_study_import(study_id: str, request: StudyImportCommitRequest):
         raise HTTPException(422, "Selected PGN records are invalid")
     if not selected:
         raise HTTPException(422, "Select at least one source record")
+    if postgres_store.configured():
+        return dispatch_command(
+            "studies.import.commit",
+            {"study_id": study_id, "request": request.model_dump(mode="json"),
+             "records": [preview["records"][index] for index in selected]},
+            idempotency_key=idempotency_key,
+        )
     created = []
     with connection() as database:
         chapter = _require(database, "study_chapters", request.chapter_id)
