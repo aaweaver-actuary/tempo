@@ -13,7 +13,8 @@ from ..database import background_read_connection, connection
 from ..postgres_store import PostgresConnection
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
-    enqueue_task_in_transaction, lock_current_slice,
+    enqueue_task_in_transaction, enqueue_compact_postgres_task_in_transaction,
+    lock_current_slice,
 )
 from .repertoire_coverage import discover_opponent_positions, recent_player_cohort
 
@@ -196,6 +197,12 @@ def execute_coverage_seed_slice(task: dict[str, Any]) -> bool:
                  "Repertoire lines changed during coverage build; refresh again" if changed else None,
                  _now(), payload["run_id"]),
             )
+            if not changed and total_nodes:
+                enqueue_compact_postgres_task_in_transaction(
+                    database, "coverage_explorer", str(payload["repertoire_id"]),
+                    {"run_id": payload["run_id"], "repertoire_id": payload["repertoire_id"],
+                     "after_node_id": ""}, priority=80,
+                )
             return complete_task_slice_in_transaction(database, task)
     prepared = prepare_next_coverage_line(
         str(payload["repertoire_id"]), str(payload.get("after_line_id", "")),

@@ -152,6 +152,39 @@ def enqueue_task_in_transaction(
     )
 
 
+def enqueue_compact_postgres_task_in_transaction(
+    database, kind: str, deduplication_key: str, payload: dict,
+    *, priority: int, delay_seconds: float = 0,
+) -> None:
+    """Checkpoint a follow-up and its event in one bounded PostgreSQL statement."""
+
+    from datetime import timedelta
+
+    now = _now()
+    database.execute_native(
+        "WITH queued AS ("
+        "INSERT INTO background_tasks("
+        "id,kind,deduplication_key,generation,priority,state,phase,payload_version,"
+        "payload_json,attempt_count,max_attempts,next_attempt_at,lease_token,"
+        "lease_expires_at,last_error,created_at,started_at,completed_at,updated_at) "
+        "VALUES(%s,%s,%s,1,%s,'queued','queued',1,%s,0,5,%s,"
+        "NULL,NULL,NULL,%s,NULL,NULL,%s) "
+        "ON CONFLICT(kind,deduplication_key) DO UPDATE SET "
+        "generation=background_tasks.generation+1,"
+        "priority=LEAST(background_tasks.priority,excluded.priority),"
+        "state='queued',phase='queued',payload_version=1,payload_json=excluded.payload_json,"
+        "attempt_count=0,max_attempts=5,next_attempt_at=excluded.next_attempt_at,"
+        "lease_token=NULL,lease_expires_at=NULL,last_error=NULL,"
+        "completed_at=NULL,updated_at=excluded.updated_at RETURNING id,generation) "
+        "INSERT INTO background_task_events(task_id,generation,event,phase,detail,created_at) "
+        "SELECT id,generation,'enqueued','queued',NULL,%s FROM queued",
+        (str(uuid.uuid4()), kind, deduplication_key, priority,
+         json.dumps(payload, separators=(",", ":")),
+         _iso(now + timedelta(seconds=delay_seconds)),
+         _iso(now), _iso(now), _iso(now)),
+    )
+
+
 def claim_task(
     kind: str | None = None, *, allowed_kinds: tuple[str, ...] | None = None,
     lease_seconds: int = 60,
@@ -334,11 +367,11 @@ def fail_task(task_id: str, generation: int, lease_token: str, error: Exception)
                 ("failed" if terminal else "retrying", sanitized_error,
                  integrity_payload["repertoire_id"], f"{task_id}:{generation}"),
             )
-        if terminal and row["kind"] == "coverage_seed":
+        if terminal and row["kind"] in {"coverage_seed", "coverage_explorer"}:
             coverage_payload = json.loads(row["payload_json"])
             database.execute(
                 "UPDATE repertoire_coverage_runs SET status='failed',last_error=?,updated_at=? "
-                "WHERE id=? AND status='building'",
+                "WHERE id=? AND status IN ('building','queued','running')",
                 (sanitized_error, _iso(now), coverage_payload["run_id"]),
             )
         _record_event(database, task_id, generation, state, state, sanitized_error)

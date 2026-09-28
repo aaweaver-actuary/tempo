@@ -11,9 +11,8 @@ from fastapi import HTTPException
 
 from .command_gateway import register_command
 from .postgres_store import PostgresConnection
-from .services.repertoire_coverage import (
-    CoverageCandidate, blend_probabilities, required_reply_moves,
-)
+from .services.postgres_coverage_candidates import recalculate_coverage_node
+from .services.durable_tasks import enqueue_compact_postgres_task_in_transaction
 
 
 def _now() -> str:
@@ -125,48 +124,8 @@ def submit_maia_node(database: PostgresConnection, payload: dict[str, Any]) -> d
             "maia_probability=excluded.maia_probability,covered=excluded.covered",
             (row["id"], covered_replies, json.dumps(moves)),
         )
-    candidates = database.execute_native(
-        "SELECT move_uci,explorer_probability,maia_probability "
-        "FROM repertoire_coverage_candidates WHERE node_id=%s", (row["id"],),
-    ).fetchall()
     settings = json.loads(row["settings_json"])
-    blended = {
-        candidate["move_uci"]: blend_probabilities(
-            candidate["explorer_probability"], candidate["maia_probability"],
-            explorer_games=int(row["explorer_games"])
-            if candidate["explorer_probability"] is not None else 0,
-        ) for candidate in candidates
-    }
-    total = sum(probability for probability in blended.values() if probability is not None)
-    normalized = {
-        move_uci: probability / total if probability is not None and total else None
-        for move_uci, probability in blended.items()
-    }
-    required = required_reply_moves(
-        [CoverageCandidate(move_uci, probability) for move_uci, probability in normalized.items()
-         if probability is not None],
-        denominator=int(settings["reply_denominator"]),
-        cumulative_target=float(settings["cumulative_target"]),
-    )
-    updates = [{
-        "move_uci": candidate["move_uci"],
-        "blended": normalized[candidate["move_uci"]],
-        "required": int(candidate["move_uci"] in required),
-        "source_state": "blended" if candidate["explorer_probability"] is not None
-        and candidate["maia_probability"] is not None else "explorer-only"
-        if candidate["explorer_probability"] is not None else "maia-only"
-        if candidate["maia_probability"] is not None else "unknown",
-    } for candidate in candidates]
-    if updates:
-        database.execute_native(
-            "UPDATE repertoire_coverage_candidates candidate SET "
-            "blended_probability=updated.blended,required=updated.required,"
-            "source_state=updated.source_state "
-            "FROM jsonb_to_recordset(%s::jsonb) AS updated("
-            "move_uci text,blended double precision,required bigint,source_state text) "
-            "WHERE candidate.node_id=%s AND candidate.move_uci=updated.move_uci",
-            (json.dumps(updates), row["id"]),
-        )
+    recalculate_coverage_node(database, row["id"], settings, int(row["explorer_games"]))
     database.execute_native(
         "UPDATE repertoire_coverage_nodes SET maia_status='complete',lease_id=NULL,"
         "lease_expires_at=NULL,updated_at=%s WHERE id=%s", (_now(), row["id"]),
@@ -200,28 +159,10 @@ def submit_maia_node(database: PostgresConnection, payload: dict[str, Any]) -> d
         "AND maia_status!='complete' LIMIT 1", (row["run_id"],),
     ).fetchone()
     if remaining is None:
-        followup_now = datetime.now(timezone.utc)
-        database.execute_native(
-            "WITH queued AS ("
-            "INSERT INTO background_tasks("
-            "id,kind,deduplication_key,generation,priority,state,phase,payload_version,"
-            "payload_json,attempt_count,max_attempts,next_attempt_at,lease_token,"
-            "lease_expires_at,last_error,created_at,started_at,completed_at,updated_at) "
-            "VALUES(%s,'repertoire_opportunity',%s,1,130,'queued','queued',1,%s,0,5,%s,"
-            "NULL,NULL,NULL,%s,NULL,NULL,%s) "
-            "ON CONFLICT(kind,deduplication_key) DO UPDATE SET "
-            "generation=background_tasks.generation+1,"
-            "priority=LEAST(background_tasks.priority,excluded.priority),"
-            "state='queued',phase='queued',payload_version=1,payload_json=excluded.payload_json,"
-            "attempt_count=0,max_attempts=5,next_attempt_at=excluded.next_attempt_at,"
-            "lease_token=NULL,lease_expires_at=NULL,last_error=NULL,"
-            "completed_at=NULL,updated_at=excluded.updated_at RETURNING id,generation) "
-            "INSERT INTO background_task_events(task_id,generation,event,phase,detail,created_at) "
-            "SELECT id,generation,'enqueued','queued',NULL,%s FROM queued",
-            (str(uuid.uuid4()), row["repertoire_id"],
-             json.dumps({"repertoire_id": row["repertoire_id"], "phase": "summaries", "cursor": ""}),
-             (followup_now + timedelta(seconds=5)).isoformat(),
-             followup_now.isoformat(), followup_now.isoformat(), followup_now.isoformat()),
+        enqueue_compact_postgres_task_in_transaction(
+            database, "repertoire_opportunity", row["repertoire_id"],
+            {"repertoire_id": row["repertoire_id"], "phase": "summaries", "cursor": ""},
+            priority=130, delay_seconds=5,
         )
     return {"status": "complete"}
 

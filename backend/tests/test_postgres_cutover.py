@@ -4783,6 +4783,43 @@ def test_postgres_coverage_refresh_dispatches_durable_seed(monkeypatch):
     assert requested == [(database, "rep", False)]
 
 
+def test_postgres_explorer_session_token_reaches_separate_worker(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+    from app.services import repertoire_coverage
+
+    values = {}
+
+    class TokenStore:
+        def setex(self, key, seconds, token):
+            assert seconds == 24 * 60 * 60
+            values[key] = token.encode()
+
+        def get(self, key):
+            return values.get(key)
+
+        def delete(self, key):
+            values.pop(key, None)
+
+    monkeypatch.delenv("TEMPO_LICHESS_EXPLORER_TOKEN", raising=False)
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(repertoire_coverage, "redis_client", lambda: TokenStore())
+    client = TestClient(main.app)
+    response = client.post(
+        "/api/repertoire-coverage/explorer-session",
+        headers={"Authorization": "Bearer rehearsal-token"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == {"registered": True}
+    repertoire_coverage._explorer_session_token = None
+    assert repertoire_coverage.get_explorer_session_token() == "rehearsal-token"
+    assert client.post("/api/repertoire-coverage/explorer-session").json() == {
+        "registered": False,
+    }
+    assert repertoire_coverage.get_explorer_session_token() is None
+
+
 def test_postgres_migration_snapshot_binds_automatic_coverage_filter(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main
@@ -5153,6 +5190,239 @@ def test_postgres_coverage_seed_rejects_source_change_before_activation(monkeypa
     assert len(updates) == 1
     assert "status='failed'" in updates[0][0]
     assert updates[0][1][2] == "run"
+
+
+def test_postgres_coverage_seed_queues_explorer_after_verified_activation(monkeypatch):
+    from app.services import postgres_coverage_seed
+
+    queued = []
+    statements = []
+    task = {
+        "id": "seed-task", "generation": 4, "lease_token": "lease",
+        "payload": {"run_id": "run", "repertoire_id": "rep", "phase": "activate",
+                    "source_fingerprint": "same", "after_node_id": "last-node"},
+    }
+
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            statements.append(statement)
+            if "SELECT id FROM repertoire_coverage_nodes" in statement:
+                return SimpleNamespace(fetchone=lambda: None)
+            if "SELECT COUNT(*) FROM repertoire_coverage_nodes" in statement:
+                return SimpleNamespace(fetchone=lambda: (3,))
+            return SimpleNamespace(fetchone=lambda: None)
+
+    monkeypatch.setattr(postgres_coverage_seed, "background_read_connection",
+                        lambda: nullcontext(Database()))
+    monkeypatch.setattr(postgres_coverage_seed, "connection",
+                        lambda *, background: nullcontext(Database()))
+    monkeypatch.setattr(postgres_coverage_seed, "_source_fingerprint",
+                        lambda *_args: "same")
+    monkeypatch.setattr(postgres_coverage_seed, "lock_current_slice", lambda *_args: True)
+    monkeypatch.setattr(postgres_coverage_seed, "complete_task_slice_in_transaction",
+                        lambda *_args: True)
+    monkeypatch.setattr(postgres_coverage_seed, "enqueue_compact_postgres_task_in_transaction",
+                        lambda database, kind, key, payload, **kwargs:
+                            queued.append((kind, key, payload)))
+    assert postgres_coverage_seed.execute_coverage_seed_slice(task) is True
+    assert queued == [("coverage_explorer", "rep", {
+        "run_id": "run", "repertoire_id": "rep", "after_node_id": "",
+    })]
+    assert any("status=%s" in statement for statement in statements)
+
+
+def test_postgres_explorer_closes_read_before_network_fetch(monkeypatch):
+    from app.services import postgres_coverage_explorer
+
+    open_read = False
+    fetched = []
+
+    class Database:
+        pass
+
+    @contextmanager
+    def bounded_read():
+        nonlocal open_read
+        open_read = True
+        try:
+            yield Database()
+        finally:
+            open_read = False
+
+    def fetch(fen, speeds, ratings, token):
+        assert not open_read
+        fetched.append((fen, speeds, ratings, token))
+        return {"moves": []}
+
+    monkeypatch.setattr(postgres_coverage_explorer, "background_read_connection", bounded_read)
+    monkeypatch.setattr(postgres_coverage_explorer, "_cached_explorer_payload",
+                        lambda *_args: (None, "cache-key"))
+    monkeypatch.setattr(postgres_coverage_explorer, "get_explorer_session_token",
+                        lambda: "registered-token")
+    monkeypatch.setattr(postgres_coverage_explorer, "_fetch_explorer", fetch)
+    result = postgres_coverage_explorer._cached_or_fetched_payload({
+        "fen": chess.STARTING_FEN,
+        "settings_json": '{"maia_elo":1500,"explorer_rating":1600,"speed_weights":{"rapid":1}}',
+    })
+    assert result[1:] == ("cache-key", "rapid:1.000000", "1600")
+    assert fetched[0][-1] == "registered-token"
+
+
+def test_postgres_explorer_yields_node_read_to_foreground(monkeypatch):
+    from app.services import postgres_coverage_explorer
+
+    foreground_finished = threading.Event()
+    read_started = threading.Event()
+    observed = []
+
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            observed.append(statement)
+            if "FROM background_tasks" in statement:
+                return SimpleNamespace(fetchone=lambda: {
+                    "generation": 1, "lease_token": "lease", "state": "leased",
+                })
+            return SimpleNamespace(fetchone=lambda: {
+                "id": "node", "run_id": "run", "fen": chess.STARTING_FEN,
+            })
+
+    @contextmanager
+    def gated_read():
+        assert foreground_finished.wait(2)
+        read_started.set()
+        yield Database()
+
+    monkeypatch.setattr(postgres_coverage_explorer, "background_read_connection", gated_read)
+    task = {"id": "task", "generation": 1, "lease_token": "lease",
+            "payload": {"run_id": "run", "after_node_id": ""}}
+    result = []
+    worker = threading.Thread(target=lambda: result.append(
+        postgres_coverage_explorer._prepare_next_node(task)))
+    worker.start()
+    assert not read_started.wait(0.05)
+    foreground_finished.set()
+    worker.join(timeout=2)
+    assert not worker.is_alive()
+    assert result[0]["id"] == "node"
+    assert len(observed) == 2
+    assert "COALESCE(control.paused,0)=0" in observed[1]
+
+
+def test_postgres_explorer_discards_stale_lease_before_publication(monkeypatch):
+    from app.services import postgres_coverage_explorer
+
+    writes = []
+
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            writes.append(statement)
+            return SimpleNamespace(fetchone=lambda: None)
+
+    monkeypatch.setattr(postgres_coverage_explorer, "lock_current_slice", lambda *_args: False)
+    assert postgres_coverage_explorer._publish_node(
+        Database(), {"id": "task", "generation": 2, "lease_token": "old"},
+        {"id": "node"}, {"moves": []}, "cache", "rapid:1.000000", "1600",
+    ) is False
+    assert writes == []
+
+
+def test_postgres_explorer_restart_skips_fetch_for_expired_lease(monkeypatch):
+    from app.services import postgres_coverage_explorer
+
+    statements = []
+
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            statements.append(statement)
+            return SimpleNamespace(fetchone=lambda: {
+                "generation": 2, "lease_token": "replacement", "state": "leased",
+            })
+
+    monkeypatch.setattr(postgres_coverage_explorer, "background_read_connection",
+                        lambda: nullcontext(Database()))
+    assert postgres_coverage_explorer._prepare_next_node({
+        "id": "task", "generation": 2, "lease_token": "expired",
+        "payload": {"run_id": "run", "after_node_id": ""},
+    }) is None
+    assert len(statements) == 1
+    assert "FROM background_tasks" in statements[0]
+
+
+def test_postgres_explorer_missing_token_fails_run_with_actionable_error(monkeypatch):
+    from app.services import postgres_coverage_explorer
+
+    statements = []
+
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            statements.append((statement, parameters))
+
+    monkeypatch.setattr(postgres_coverage_explorer, "connection",
+                        lambda *, background: nullcontext(Database()))
+    monkeypatch.setattr(postgres_coverage_explorer, "lock_current_slice", lambda *_args: True)
+    monkeypatch.setattr(postgres_coverage_explorer, "complete_task_slice_in_transaction",
+                        lambda *_args: True)
+    assert postgres_coverage_explorer._fail_for_missing_token(
+        {"id": "task", "generation": 1, "lease_token": "lease"},
+        {"id": "node", "run_id": "run"},
+    ) is True
+    assert any("UPDATE repertoire_coverage_runs SET status='failed'" in statement
+               and "Explorer token" in parameters[0]
+               for statement, parameters in statements)
+
+
+def test_postgres_explorer_terminal_failure_marks_run_failed(monkeypatch):
+    from app.services import durable_tasks
+
+    statements = []
+
+    class Database:
+        def execute(self, statement, parameters=()):
+            statements.append((statement, parameters))
+            if statement.startswith("SELECT attempt_count,max_attempts"):
+                return SimpleNamespace(fetchone=lambda: {
+                    "attempt_count": 5, "max_attempts": 5, "kind": "coverage_explorer",
+                    "payload_json": '{"run_id":"run-one"}',
+                })
+            return SimpleNamespace(rowcount=1)
+
+    monkeypatch.setattr(durable_tasks, "submit_background_write",
+                        lambda operation, *, label: operation(Database()))
+    monkeypatch.setattr(durable_tasks, "_record_event", lambda *_args: None)
+    assert durable_tasks.fail_task("task", 1, "lease", RuntimeError("Explorer unavailable"))["state"] == "failed"
+    assert any("UPDATE repertoire_coverage_runs SET status='failed'" in statement
+               and parameters[2] == "run-one" for statement, parameters in statements)
+
+
+def test_postgres_explorer_recovers_imported_active_run_once(monkeypatch):
+    from app import tasks
+    from app.services import postgres_coverage_recovery
+
+    available = [{"id": "run", "repertoire_id": "rep"}, None]
+    statements = []
+    queued = []
+
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            statements.append(statement)
+            return SimpleNamespace(fetchone=lambda: available.pop(0))
+
+    monkeypatch.setattr(postgres_coverage_recovery.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(postgres_coverage_recovery, "connection",
+                        lambda *, background: nullcontext(Database()))
+    monkeypatch.setattr(postgres_coverage_recovery, "enqueue_compact_postgres_task_in_transaction",
+                        lambda database, kind, key, payload, **kwargs:
+                            queued.append((kind, key, payload)))
+    assert postgres_coverage_recovery.recover_one_explorer_run() is True
+    assert postgres_coverage_recovery.recover_one_explorer_run() is False
+    assert queued == [("coverage_explorer", "rep", {
+        "run_id": "run", "repertoire_id": "rep", "after_node_id": "",
+    })]
+    assert "task.state IN ('queued','leased','retrying')" in statements[0]
+    assert "COALESCE(control.paused,0)=0" in statements[0]
+    assert tasks.celery_app.conf.task_routes["app.tasks.recover_active_coverage"] == {
+        "queue": "background",
+    }
 
 
 def test_postgres_coverage_seed_terminal_failure_marks_run_failed(monkeypatch):

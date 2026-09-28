@@ -24,11 +24,16 @@ celery_app.conf.update(
         "app.tasks.ensure_daily_queue": {"queue": "foreground"},
         "app.tasks.execute_background_slice": {"queue": "background"},
         "app.tasks.poll_background_tasks": {"queue": "background"},
+        "app.tasks.recover_active_coverage": {"queue": "background"},
     },
     beat_schedule={
         "poll-durable-background-tasks": {
             "task": "app.tasks.poll_background_tasks",
             "schedule": 1.0,
+        },
+        "recover-active-coverage": {
+            "task": "app.tasks.recover_active_coverage",
+            "schedule": 30.0,
         },
         "ensure-current-daily-queue": {
             "task": "app.tasks.ensure_daily_queue",

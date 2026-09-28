@@ -110,7 +110,6 @@ PostgreSQL branch additions and removals now checkpoint an automatic coverage
 seed in the same foreground transaction as the line edit. A changed line
 supersedes an active coverage run and advances its durable task generation,
 so a worker holding the prior lease cannot publish that stale generation.
-The Explorer node fetch and publication path remains to be ported.
 
 The external Maia worker callback path now uses named background Celery
 commands with operation receipts. It polls a read-only availability endpoint
@@ -126,11 +125,30 @@ progress included. The final Maia node initially timed out when it used the
 generic five-query durable enqueue for discovery. A single PostgreSQL CTE
 now updates the durable task and records its event atomically; the last-node
 rollback-only slice completed in 9.8 ms. The Explorer node fetch/publication
-path is still unported; Maia will have no new nodes to claim until that work
-is complete.
+path now has a durable worker: verified seed activation queues an Explorer task,
+each task reads one position, closes PostgreSQL before its Lichess request,
+publishes candidates under its lease, and advances one cursor. An expired
+lease is checked before network I/O and again before publication. A missing
+token fails the run with an actionable message. The PostgreSQL API stores
+short-lived browser-registered Explorer tokens in Redis for the separate
+worker; the Compose background worker also accepts an external environment
+token.
+
+Disposable final-node publications took 34.6 ms with one candidate and
+34.9 ms with 40 candidates. A real slice advanced the task, rejected replay
+under its old lease, and completed on its next lease with one candidate and a
+complete run. Seed activation durably queued that task in 35.8 ms. These
+local samples do not establish the foreground-load benchmark gate.
+Migration 008 indexes active-run recovery. A background Celery beat callback
+checks one queued or running run every 30 seconds and enqueues Explorer only
+when its current run lacks an active task. A disposable imported-style run
+without a task recovered generation 1 in 18.3 ms, then its test rows were
+removed. This covers an import or restart gap without startup traversal.
+
 Rollback-only candidate-count probes completed 40 moves in 7.9 ms and 200
 moves in 12.0 ms on one restored node; these are local samples, not a
 foreground-load benchmark.
+
 An API-to-Redis-to-Celery-to-PostgreSQL rehearsal returned HTTP 200 and
 `{"status":"stale"}` for an invalid lease release, then removed its test
 receipt. The temporary macOS Python 3.14 Celery prefork pool failed before

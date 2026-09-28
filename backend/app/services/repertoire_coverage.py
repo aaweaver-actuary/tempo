@@ -15,6 +15,8 @@ import chess
 import httpx
 
 from ..database import connection
+from .. import postgres_store
+from .redis_admission_gate import client as redis_client
 from .repertoire_comparison import canonical_fen
 from .activity_gate import activity_gate
 
@@ -22,6 +24,7 @@ from .activity_gate import activity_gate
 _explorer_session_lock = threading.Lock()
 _explorer_session_token: str | None = None
 _explorer_environment_token_rejected = False
+_EXPLORER_SESSION_KEY = "tempo:coverage:explorer-session-token"
 
 
 class ExplorerAuthenticationError(RuntimeError):
@@ -36,6 +39,11 @@ class ExplorerRequestError(RuntimeError):
 
 def set_explorer_session_token(token: str | None) -> None:
     global _explorer_session_token
+    if postgres_store.configured():
+        if token:
+            redis_client().setex(_EXPLORER_SESSION_KEY, 24 * 60 * 60, token)
+        else:
+            redis_client().delete(_EXPLORER_SESSION_KEY)
     with _explorer_session_lock:
         _explorer_session_token = token or None
 
@@ -44,6 +52,9 @@ def get_explorer_session_token() -> str | None:
     with _explorer_session_lock:
         if os.getenv("TEMPO_LICHESS_EXPLORER_TOKEN") and not _explorer_environment_token_rejected:
             return os.environ["TEMPO_LICHESS_EXPLORER_TOKEN"]
+        if postgres_store.configured():
+            stored = redis_client().get(_EXPLORER_SESSION_KEY)
+            return stored.decode() if stored else None
         return _explorer_session_token
 
 

@@ -51,6 +51,8 @@ from .services.postgres_integrity import execute_postgres_integrity_slice
 from .services.repertoire_opportunities import execute_opportunity_slice
 from .services.discovery_admission import execute_recommendation_request_slice
 from .services.postgres_coverage_seed import execute_coverage_seed_slice
+from .services.postgres_coverage_explorer import execute_coverage_explorer_slice
+from .services.postgres_coverage_recovery import recover_one_explorer_run
 
 
 _LOGGER = logging.getLogger("tempo.tasks")
@@ -67,6 +69,7 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "repertoire_opportunity",
     "discovery_recommendation",
     "coverage_seed",
+    "coverage_explorer",
 )
 
 
@@ -136,6 +139,12 @@ def poll_background_tasks() -> bool:
     return True
 
 
+@celery_app.task(name="app.tasks.recover_active_coverage")
+def recover_active_coverage() -> bool:
+    with activity_gate.background_job("coverage_recovery", "one-run"):
+        return recover_one_explorer_run()
+
+
 @celery_app.task(name="app.tasks.execute_background_slice", bind=True)
 def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
     background_handlers = {
@@ -151,6 +160,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
         "repertoire_opportunity": execute_opportunity_slice,
         "discovery_recommendation": execute_recommendation_request_slice,
         "coverage_seed": execute_coverage_seed_slice,
+        "coverage_explorer": execute_coverage_explorer_slice,
     }
     handler = background_handlers.get(claimed_task["kind"])
     if handler is None:
@@ -162,6 +172,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
                 "daily_queue", "game_sync_record", "game_sync_window", "opening_graph_rebuild",
                 "integrity_scan",
                 "coverage_seed",
+                "coverage_explorer",
             }:
                 complete_task(
                     claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"]
