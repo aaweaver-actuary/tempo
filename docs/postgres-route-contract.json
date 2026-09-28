@@ -406,6 +406,13 @@
     "state": "staged"
   },
   {
+    "method": "GET",
+    "path": "/api/queue/entries/{entry_id}/state",
+    "handler": "queue_entry_state",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
     "method": "POST",
     "path": "/api/queue/entries/{entry_id}/fail",
     "handler": "mark_attempt_failed",
