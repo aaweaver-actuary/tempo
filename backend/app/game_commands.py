@@ -43,6 +43,16 @@ def set_game_exclusion(database: PostgresConnection, payload: dict[str, Any]) ->
            completed_phases=0,next_attempt_at=NULL,updated_at=excluded.updated_at""",
         (game_id, now),
     )
+    derivation = database.execute(
+        "SELECT derivation_version FROM game_derivation_jobs WHERE game_id=?",
+        (game_id,),
+    ).fetchone()
+    enqueue_task_in_transaction(
+        database, "game_derivation_positions", game_id,
+        {"game_id": game_id, "derivation_version": derivation["derivation_version"],
+         "cursor": 0},
+        priority=125,
+    )
     affected_repertoire_ids = [row[0] for row in database.execute(
         "SELECT repertoire_id FROM game_repertoire_matches WHERE game_id=?",
         (game_id,),

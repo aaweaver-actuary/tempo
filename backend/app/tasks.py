@@ -51,6 +51,7 @@ from .services.repertoire_game_refresh import execute_repertoire_game_refresh_sl
 from .services.threat_pipeline import execute_threat_report_audit, execute_threat_scan_slice
 from .services.threat_training import execute_defense_rubric_audit_slice
 from .services.postgres_game_sync import execute_game_sync_record_slice
+from .services.postgres_game_derivation import execute_game_position_index_slice
 from .services.postgres_game_sync_windows import execute_game_sync_window_slice
 from .services.postgres_opening_graph import execute_postgres_opening_graph_slice
 from .services.postgres_integrity import execute_postgres_integrity_slice
@@ -70,6 +71,7 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "defensive_threat_scan",
     "priority_retention",
     "game_sync_record",
+    "game_derivation_positions",
     "game_sync_window",
     "opening_graph_rebuild",
     "integrity_scan",
@@ -164,6 +166,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
         "defensive_threat_scan": execute_threat_scan_slice,
         "priority_retention": execute_priority_retention_slice,
         "game_sync_record": execute_game_sync_record_slice,
+        "game_derivation_positions": execute_game_position_index_slice,
         "game_sync_window": execute_game_sync_window_slice,
         "opening_graph_rebuild": execute_postgres_opening_graph_slice,
         "integrity_scan": execute_postgres_integrity_slice,
@@ -181,7 +184,8 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
         try:
             more_work = handler(claimed_task)
             if claimed_task["kind"] not in {
-                "daily_queue", "game_sync_record", "game_sync_window", "opening_graph_rebuild",
+                "daily_queue", "game_sync_record", "game_sync_window", "game_derivation_positions",
+                "opening_graph_rebuild",
                 "integrity_scan",
                 "coverage_seed",
                 "coverage_explorer",
@@ -191,7 +195,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
                 complete_task(
                     claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"]
                 )
-        except (LockNotAvailable, TransactionTimeout):
+        except (DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout):
             defer_task_for_contention(
                 claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"]
             )

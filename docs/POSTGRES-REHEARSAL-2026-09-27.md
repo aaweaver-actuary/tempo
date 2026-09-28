@@ -834,3 +834,25 @@ bounded scan in the same transaction as the receipt. The Games view retains
 the operation ID while admission is pending. A disposable PostgreSQL rehearsal
 saved and replayed one synthetic refresh, confirmed one task generation and a
 completed receipt, and removed the fixture.
+
+Game derivation now has a bounded PostgreSQL position-index worker. Imported
+games, game exclusion, and published analysis enqueue its versioned task. It
+replays chess moves with the database closed, stages one occurrence per slice,
+checks the task lease and derivation version, and retains the final legal
+position if a saved move is invalid. Migration 011 keeps imported legacy
+positions visible through a read view until the final staged slice verifies
+its count and switches the published version. A disposable rehearsal confirmed
+the old row remained visible during the first slice, then all three new
+positions appeared together after the last slice (15.43, 9.17, and 11.58 ms
+whole-slice times). On disposable PostgreSQL, a three-move
+game indexed four positions in four slices (26.32, 10.96, 9.45, and 11.64 ms
+whole-slice times); stale replay made no change. Five warm one-game import
+sections with the 50 ms transaction limit took 30.93, 18.52, 8.52, 8.60, and
+6.89 ms. The analysis follow-up checkpointed the derivation row and index
+task in separate slices. Synthetic fixtures were removed. The later
+comparison, findings, feedback, events, features, and priority phases remain
+unported, so this is not a complete game derivation cutover.
+Migration 011 preserved all 128,593 restored position rows through the view.
+Five warm indexed FEN reads through that view took 1.18, 0.92, 0.85, 0.80,
+and 0.77 ms in PostgreSQL `EXPLAIN ANALYZE` (the direct legacy table took
+3.53, 0.65, 0.59, 0.57, and 0.58 ms in the same sequence).

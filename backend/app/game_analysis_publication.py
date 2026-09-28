@@ -324,6 +324,21 @@ def execute_game_analysis_followup_slice(task: dict[str, Any]) -> bool:
                 (game_id, now),
             )
             return advance_task_slice_in_transaction(
+                database, task, next_phase="derivation_task",
+                next_payload={**payload, "phase": "derivation_task"},
+            )
+        if phase == "derivation_task":
+            derivation = database.execute_native(
+                "SELECT derivation_version FROM game_derivation_jobs WHERE game_id=%s",
+                (game_id,),
+            ).fetchone()
+            enqueue_compact_postgres_task_in_transaction(
+                database, "game_derivation_positions", game_id,
+                {"game_id": game_id, "derivation_version": derivation["derivation_version"],
+                 "cursor": 0},
+                priority=125,
+            )
+            return advance_task_slice_in_transaction(
                 database, task, next_phase="threat",
                 next_payload={**payload, "phase": "threat"},
             )

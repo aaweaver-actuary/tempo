@@ -62,6 +62,8 @@ def test_postgres_game_exclusion_uses_foreground_receipt_and_atomic_followup(mon
             statements.append((statement, parameters))
             if "SELECT id FROM imported_games" in statement:
                 return Cursor([{"id": "provider:one"}])
+            if "SELECT derivation_version FROM game_derivation_jobs" in statement:
+                return Cursor([{"derivation_version": 2}])
             if "SELECT repertoire_id FROM game_repertoire_matches" in statement:
                 return Cursor([("repertoire-a",), ("repertoire-a",)])
             return Cursor([])
@@ -74,8 +76,12 @@ def test_postgres_game_exclusion_uses_foreground_receipt_and_atomic_followup(mon
     ) == {"game_id": "provider:one", "excluded": True}
     assert any("FOR UPDATE" in statement for statement, _ in statements)
     assert any("INSERT INTO game_derivation_jobs" in statement for statement, _ in statements)
-    assert followups == [("repertoire_opportunity", "repertoire-a",
-                          {"repertoire_id": "repertoire-a", "phase": "summaries", "cursor": ""}, 130)]
+    assert followups == [
+        ("game_derivation_positions", "provider:one",
+         {"game_id": "provider:one", "derivation_version": 2, "cursor": 0}, 125),
+        ("repertoire_opportunity", "repertoire-a",
+         {"repertoire_id": "repertoire-a", "phase": "summaries", "cursor": ""}, 130),
+    ]
 
 
 def test_postgres_manual_threat_refresh_admits_scan_through_foreground_receipt(monkeypatch):
@@ -2232,15 +2238,18 @@ def test_postgres_game_sync_admission_preserves_provider_rate_limit(monkeypatch)
     assert error.value.status_code == 429
 
 
-def test_postgres_game_sync_publishes_one_game_and_followup_intents_atomically():
+def test_postgres_game_sync_publishes_one_game_and_followup_intents_atomically(monkeypatch):
     from app.services.game_record import GameRecord
-    from app.services.postgres_game_sync import persist_game_record_in_transaction
+    from app.services import postgres_game_sync
 
     statements = []
+    enqueued = []
 
     class RecordingConnection:
         def execute(self, statement, parameters=()):
             statements.append((statement, parameters))
+            if "SELECT derivation_version FROM game_derivation_jobs" in statement:
+                return SimpleNamespace(fetchone=lambda: {"derivation_version": 1})
             return SimpleNamespace(fetchone=lambda: None)
 
     database = RecordingConnection()
@@ -2252,13 +2261,19 @@ def test_postgres_game_sync_publishes_one_game_and_followup_intents_atomically()
         start_fen="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
         uci_moves=["e2e4"], content_hash="hash-1",
     )
-    assert persist_game_record_in_transaction(database, record) == (
+    monkeypatch.setattr(postgres_game_sync, "enqueue_compact_postgres_task_in_transaction",
+                        lambda _database, kind, key, payload, *, priority:
+                        enqueued.append((kind, key, payload, priority)))
+    assert postgres_game_sync.persist_game_record_in_transaction(database, record) == (
         "inserted", "lichess:game-1",
     )
     assert statements[0][0].startswith("SELECT pg_advisory_xact_lock")
     assert any("INSERT INTO imported_games" in statement for statement, _ in statements)
     assert any("INSERT INTO game_analysis_jobs" in statement for statement, _ in statements)
     assert any("INSERT INTO game_derivation_jobs" in statement for statement, _ in statements)
+    assert enqueued == [("game_derivation_positions", "lichess:game-1",
+                         {"game_id": "lichess:game-1", "derivation_version": 1,
+                          "cursor": 0}, 125)]
     assert any("DELETE FROM daily_chess_snapshots" in statement for statement, _ in statements)
 
 

@@ -7,7 +7,10 @@ import json
 from typing import Any
 
 from ..postgres_store import PostgresConnection, connection
-from .durable_tasks import complete_task_slice_in_transaction, lock_current_slice
+from .durable_tasks import (
+    complete_task_slice_in_transaction, enqueue_compact_postgres_task_in_transaction,
+    lock_current_slice,
+)
 from .game_record import GameRecord
 from .postgres_game_sync_completion import finish_game_sync_if_complete
 from .redis_admission_gate import background_lease
@@ -84,6 +87,16 @@ def persist_game_record_in_transaction(
                derivation_version=game_derivation_jobs.derivation_version+1,
                completed_phases=0,next_attempt_at=NULL,updated_at=excluded.updated_at""",
             (game_id, now),
+        )
+        derivation = database.execute(
+            "SELECT derivation_version FROM game_derivation_jobs WHERE game_id=?",
+            (game_id,),
+        ).fetchone()
+        enqueue_compact_postgres_task_in_transaction(
+            database, "game_derivation_positions", game_id,
+            {"game_id": game_id, "derivation_version": derivation["derivation_version"],
+             "cursor": 0},
+            priority=125,
         )
         database.execute(
             "DELETE FROM daily_chess_snapshots WHERE local_day=?",

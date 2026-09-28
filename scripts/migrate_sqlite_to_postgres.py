@@ -28,6 +28,7 @@ from backend.app.schema_version import POSTGRES_SCHEMA_VERSION
 COPY_TARGETS = {
     "game_move_analysis": "game_move_analysis_legacy",
     "game_move_analysis_candidates": "game_move_analysis_candidates_legacy",
+    "game_position_occurrences": "game_position_occurrences_legacy",
 }
 
 
