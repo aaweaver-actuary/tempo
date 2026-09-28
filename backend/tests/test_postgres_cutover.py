@@ -44,6 +44,123 @@ def test_postgres_versioned_game_analysis_import_targets_preserve_published_view
     assert "CREATE VIEW game_move_analysis_candidates AS" in migration
 
 
+def test_postgres_game_finalization_admits_durable_publication_via_background_celery(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    observed = []
+    row = {"game_id": "game", "analysis_version": 2,
+           "analysis_evidence_version": 1, "lease_id": "parent-lease",
+           "color": "white", "start_fen": chess.STARTING_FEN,
+           "moves_json": '["e2e4"]', "divergence_ply": None}
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "background_request", lambda: nullcontext())
+    monkeypatch.setattr(main, "background_read_connection", lambda: nullcontext(
+        SimpleNamespace(execute=lambda *_args: SimpleNamespace(fetchone=lambda: row)),
+    ))
+    monkeypatch.setattr(main, "build_game_evaluations", lambda *_args: [])
+    monkeypatch.setattr(main, "_validated_analysis_evaluations", lambda *_args: [])
+    monkeypatch.setattr(main, "_game_analysis_threshold", lambda: 100)
+    monkeypatch.setattr(command_dispatch, "dispatch_command", lambda name, payload, **options:
+                        observed.append((name, payload, options)) or {"status": "preparing"})
+    response = TestClient(main.app).post(
+        "/api/games/analysis/position/finalize",
+        headers={"X-Tempo-Engine-Worker": "docker", "X-Tempo-Work-Class": "background",
+                 "Idempotency-Key": "finalize-one"},
+        json={"lease_id": "parent-lease"},
+    )
+    assert response.status_code == 200
+    assert observed[0][0] == "games.analysis.finalize.admit"
+    assert observed[0][1]["expected_evidence_version"] == 1
+    assert observed[0][1]["analysis_evidence_version"] == 3
+    assert observed[0][2] == {"idempotency_key": "finalize-one", "background": True}
+
+
+def test_postgres_game_publication_limits_each_slice_to_eight_moves():
+    from app.game_analysis_publication import PUBLICATION_SLICE_PLIES, _slice_rows
+
+    evaluations = [{"ply": ply, "before_cp": 10, "after_cp": 0,
+                    "mover_color": "white", "position_fen": chess.STARTING_FEN,
+                    "candidate_lines": [{"uci": "e2e4", "cp": 10, "pv": ["e2e4"]}
+                                        for _ in range(5)]}
+                   for ply in range(229)]
+    prepared = {"game_id": "game", "analysis_version": 2,
+                "game": {"color": "white", "moves_json": json.dumps(["e2e4"] * 229)},
+                "request": {"depth": 8, "engine_version": "engine", "network_version": "network"},
+                "result": {"major_mistake_ply": None, "missed_punishment_ply": None},
+                "evaluations": evaluations}
+    analysis_rows, candidate_rows = _slice_rows(prepared, 0)
+    assert PUBLICATION_SLICE_PLIES == 8
+    assert len(analysis_rows) == 8 and len(candidate_rows) == 40
+    assert [row["ply"] for row in analysis_rows] == list(range(8))
+
+
+def test_postgres_game_publication_rejects_incomplete_stage_before_visibility_switch(monkeypatch):
+    from app import game_analysis_publication
+
+    statements = []
+    monkeypatch.setattr(game_analysis_publication, "lock_current_slice", lambda *_args: True)
+
+    class IncompleteDatabase:
+        def execute_native(self, statement, *_parameters):
+            statements.append(statement)
+            if "FROM game_analysis_publications" in statement:
+                result = {"next_ply": 1, "status": "publishing"}
+            elif "FROM game_analysis_jobs" in statement:
+                result = {"status": "publishing", "analysis_evidence_version": 1}
+            elif "COUNT(*) FROM game_move_analysis_staged" in statement:
+                result = (0,)
+            else:
+                raise AssertionError("An incomplete stage must not publish any data")
+            return SimpleNamespace(fetchone=lambda: result)
+
+    with pytest.raises(RuntimeError, match="incomplete move rows"):
+        game_analysis_publication._switch_published_generation(
+            IncompleteDatabase(),
+            {"id": "task", "generation": 1, "lease_token": "lease",
+             "payload": {"game_id": "game", "analysis_version": 2}},
+            {"prepared": {"evaluations": [{}]},
+             "result_json": '{"major_mistake_ply":null,"missed_punishment_ply":null}',
+             "analysis_evidence_version": 3},
+        )
+    assert not any(statement.startswith("UPDATE imported_games") for statement in statements)
+
+
+def test_postgres_game_publication_admission_checkpoints_durable_task(monkeypatch):
+    from app import game_analysis_publication
+
+    statements = []
+    enqueued = []
+    monkeypatch.setattr(
+        game_analysis_publication, "enqueue_compact_postgres_task_in_transaction",
+        lambda _database, *args, **kwargs: enqueued.append((args, kwargs)),
+    )
+
+    class AdmissionDatabase:
+        def execute_native(self, statement, *_parameters):
+            statements.append(statement)
+            if "FROM game_analysis_jobs" in statement:
+                result = {"status": "leased", "lease_id": "lease", "analysis_version": 2,
+                          "analysis_evidence_version": 1, "idempotency_key": None}
+            elif "FROM background_tasks" in statement:
+                result = {"id": "publish-task"}
+            else:
+                result = None
+            return SimpleNamespace(fetchone=lambda: result)
+
+    result = game_analysis_publication.admit_game_analysis_publication(
+        AdmissionDatabase(), {"game_id": "game", "analysis_version": 2,
+                              "expected_evidence_version": 1,
+                              "analysis_evidence_version": 3,
+                              "lease_id": "lease", "idempotency_key": "save-one",
+                              "result": {"major_mistake_ply": None, "missed_punishment_ply": None},
+                              "prepared": {"evaluations": []}},
+    )
+    assert result == {"status": "preparing", "task_id": "publish-task"}
+    assert enqueued[0][0][:2] == ("game_analysis_publish", "game")
+    assert any("SET status='publishing'" in statement for statement in statements)
+
+
 def test_postgres_game_analysis_idle_claim_avoids_receipt_and_active_claim_uses_background_worker(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main

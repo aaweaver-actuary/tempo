@@ -803,3 +803,17 @@ rehearsal now reports differences in `background_activity` because earlier
 rehearsals changed that scratch table. A fresh clone is required for the final
 all-table verification. The bounded staged writer and final switch command
 are the next implementation steps.
+
+Migration 010 adds a durable publication record and a `publishing` analysis
+state. The Docker worker's finalize endpoint now validates complete position
+evidence after bounded reads, then admits one Celery publication task. Each
+slice stages at most eight move rows and their candidates with its task cursor
+in one background transaction. A final slice checks the staged row count,
+switches the published generation, and checkpoints a follow-up task. That
+task queues derivation, a defensive scan, and one repertoire refresh per slice.
+On disposable PostgreSQL, a one-move synthetic game completed publication and
+follow-ups, and a 229-move/five-candidate synthetic game completed in 30
+slices under the 50 ms database transaction timeout. The large admission
+transaction took 29.6 ms; its slowest complete slice call, including read and
+admission overhead, took 52.5 ms. All fixtures were removed. The queued
+derivation and defensive-scan handlers remain separate cutover work.

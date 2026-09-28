@@ -37,6 +37,10 @@ from . import activity_commands  # noqa: F401 - registers foreground activity co
 from . import coverage_commands  # noqa: F401 - registers foreground coverage admission
 from . import coverage_maia_commands  # noqa: F401 - registers background Maia callbacks
 from . import game_analysis_commands  # noqa: F401 - registers background game analysis claims
+from . import game_analysis_publication  # noqa: F401 - registers analysis publication admission
+from .game_analysis_publication import (
+    execute_game_analysis_followup_slice, execute_game_analysis_publication_slice,
+)
 from . import integrity_repair_commands  # noqa: F401 - registers guided integrity repairs
 from .services.activity_gate import activity_gate
 from .services.durable_tasks import claim_task, complete_task, defer_task_for_contention, fail_task
@@ -71,6 +75,8 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "discovery_recommendation",
     "coverage_seed",
     "coverage_explorer",
+    "game_analysis_publish",
+    "game_analysis_followup",
 )
 
 
@@ -162,6 +168,8 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
         "discovery_recommendation": execute_recommendation_request_slice,
         "coverage_seed": execute_coverage_seed_slice,
         "coverage_explorer": execute_coverage_explorer_slice,
+        "game_analysis_publish": execute_game_analysis_publication_slice,
+        "game_analysis_followup": execute_game_analysis_followup_slice,
     }
     handler = background_handlers.get(claimed_task["kind"])
     if handler is None:
@@ -174,6 +182,8 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
                 "integrity_scan",
                 "coverage_seed",
                 "coverage_explorer",
+                "game_analysis_publish",
+                "game_analysis_followup",
             }:
                 complete_task(
                     claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"]

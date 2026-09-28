@@ -374,6 +374,23 @@ def fail_task(task_id: str, generation: int, lease_token: str, error: Exception)
                 "WHERE id=? AND status IN ('building','queued','running')",
                 (sanitized_error, _iso(now), coverage_payload["run_id"]),
             )
+        if terminal and row["kind"] == "game_analysis_publish":
+            publication_payload = json.loads(row["payload_json"])
+            game_id = publication_payload["game_id"]
+            database.execute(
+                "UPDATE game_analysis_publications SET status='failed',last_error=?,updated_at=? "
+                "WHERE game_id=? AND status IN ('queued','publishing')",
+                (sanitized_error, _iso(now), game_id),
+            )
+            database.execute(
+                "UPDATE game_analysis_jobs SET status='failed',last_error=?,updated_at=? "
+                "WHERE game_id=? AND status='publishing'",
+                (sanitized_error, _iso(now), game_id),
+            )
+            database.execute(
+                "UPDATE imported_games SET analysis_state='failed' WHERE id=?",
+                (game_id,),
+            )
         _record_event(database, task_id, generation, state, state, sanitized_error)
         return {"state": state, "next_attempt_at": _iso(now + timedelta(seconds=delay))}
 

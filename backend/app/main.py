@@ -375,6 +375,14 @@ def _validated_analysis_evaluations(
     return validated
 
 
+def _game_analysis_threshold() -> int:
+    with background_read_connection() as database:
+        row = database.execute("SELECT major_mistake_cp FROM settings WHERE id=1").fetchone()
+    if row is None:
+        raise HTTPException(503, "Analysis settings are unavailable")
+    return int(row[0])
+
+
 @app.middleware("http")
 async def prioritize_foreground_requests(request: Request, call_next):
     request.state.started_monotonic = time.monotonic()
@@ -496,6 +504,10 @@ async def prioritize_foreground_requests(request: Request, call_next):
             len(path_parts) == 6 and path_parts[:4] == ["api", "games", "analysis", "position"]
             and path_parts[5] in {"report", "release", "failure"} and request.method == "POST"
         )
+        game_position_finalize_command = (
+            path_parts == ["api", "games", "analysis", "position", "finalize"]
+            and request.method == "POST"
+        )
         game_parent_callback_command = (
             len(path_parts) >= 5 and path_parts[:3] == ["api", "games", "analysis"]
             and path_parts[3] != "position"
@@ -547,7 +559,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     task_retry_command, tactic_attempt_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     game_analysis_claim_command, game_position_claim_command,
-                    game_position_callback_command, game_parent_callback_command,
+                    game_position_callback_command, game_position_finalize_command,
+                    game_parent_callback_command,
                     settings_command,
                     endgame_probe, endgame_template_command,
                     endgame_attempt_command, branch_add_command, branch_remove_command,
@@ -4473,9 +4486,11 @@ def fail_game_analysis_position(
 def finalize_game_analysis_position(
     request: GameAnalysisLeaseRequest,
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     _require_docker_engine(engine_worker)
-    with read_connection() as database:
+    read_section = background_read_connection if postgres_store.configured() else read_connection
+    with read_section() as database:
         row = database.execute(
             """SELECT j.game_id,j.analysis_version,j.analysis_evidence_version,
                       j.lease_id,g.color,g.start_fen,g.moves_json,c.divergence_ply
@@ -4497,6 +4512,29 @@ def finalize_game_analysis_position(
         analysis_evidence_version=GAME_WORKER_EVIDENCE_VERSION,
         engine_version="Stockfish 19 WASM", network_version="nn-61e7af4bb97d.nnue",
     )
+    if postgres_store.configured():
+        normalized_evaluations = _validated_analysis_evaluations(submission, dict(row))
+        result = classify_swings(
+            normalized_evaluations, row["color"],
+            _game_analysis_threshold(),
+            "white" if chess.Board(row["start_fen"]).turn else "black",
+        )
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.analysis.finalize.admit",
+            {"game_id": row["game_id"], "lease_id": request.lease_id,
+             "analysis_version": row["analysis_version"],
+             "expected_evidence_version": row["analysis_evidence_version"],
+             "analysis_evidence_version": submission.analysis_evidence_version,
+             "idempotency_key": submission.idempotency_key,
+             "result": result,
+             "prepared": {"game": {"color": row["color"],
+                                    "start_fen": row["start_fen"],
+                                    "moves_json": row["moves_json"]},
+                          "request": submission.model_dump(mode="json"),
+                          "evaluations": normalized_evaluations}},
+            idempotency_key=idempotency_key, background=True,
+        )
     return save_game_analysis(row["game_id"], submission)
 
 
