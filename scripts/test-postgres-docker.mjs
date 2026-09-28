@@ -13,7 +13,7 @@ for (const argument of process.argv.slice(2)) {
 }
 const skipBrowser = process.argv.includes("--skip-browser");
 if (process.argv.includes("--list")) {
-  console.log(JSON.stringify({ stages: ["compose_config", "startup", "command_receipt",
+  console.log(JSON.stringify({ stages: ["compose_config", "maintenance_cli", "startup", "command_receipt",
     "container_recreation", "backup_restore", ...(skipBrowser ? [] : ["browser"]),
     "cleanup"] }, null, 2));
   process.exit(0);
@@ -47,6 +47,7 @@ const testPort = await new Promise((resolve, reject) => {
   });
 });
 const project = `tempo-pg-regressions-${process.pid}`;
+const maintenanceImage = `${project}-maintenance`;
 const compose = ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml"];
 const environment = { ...process.env, TEMPO_PG_TEST_SECRETS: secretsDirectory,
   TEMPO_PG_TEST_PORT: String(testPort),
@@ -121,6 +122,11 @@ try {
   assert.equal(defaultStack.services.api.environment.TEMPO_DB_PATH, undefined);
   assert(!JSON.stringify(defaultStack.services.api.volumes ?? []).includes("tempo-data"));
   console.log("PASS default Compose selects PostgreSQL and keeps SQLite isolated");
+  run("docker", ["build", "-f", "Dockerfile.postgres-maintenance", "-t", maintenanceImage, "."]);
+  for (const script of ["apply_postgres_migrations.py", "migrate_sqlite_to_postgres.py"]) {
+    run("docker", ["run", "--rm", maintenanceImage, `scripts/${script}`, "--help"]);
+  }
+  console.log("PASS PostgreSQL maintenance image starts migration and import commands");
   run("docker", [...compose, "up", "--build", "-d"]);
   await waitForReady();
   const runningContainers = spawnSync("docker", [...compose, "ps", "--format", "json"],

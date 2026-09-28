@@ -4,6 +4,7 @@
 
 | Issue | Required regression |
 | --- | --- |
+| The PostgreSQL maintenance image cannot start the schema migration or SQLite import because it omits the shared schema-version module | `PostgreSQL maintenance image starts migration and import commands` in `scripts/test-postgres-docker.mjs` |
 | PostgreSQL game exclusion is rejected by the route guard or writes without a foreground receipt and durable refresh intents | `test_postgres_game_exclusion_uses_foreground_receipt_and_atomic_followup` |
 | Game exclusion reports a pending Celery receipt as a completed save or replays it with a new command ID | `game exclusion keeps its operation ID and never treats a pending receipt as saved`; `a different game exclusion decision waits for the prior receipt` |
 | A manual defensive scan writes an intent in the API or its browser treats a pending command as queued | `test_postgres_manual_threat_refresh_admits_scan_through_foreground_receipt`; `manual defensive scan retains its operation ID until admission is confirmed` |
