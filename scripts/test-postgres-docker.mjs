@@ -14,7 +14,8 @@ for (const argument of process.argv.slice(2)) {
 const skipBrowser = process.argv.includes("--skip-browser");
 if (process.argv.includes("--list")) {
   console.log(JSON.stringify({ stages: ["compose_config", "startup", "command_receipt",
-    "container_recreation", ...(skipBrowser ? [] : ["browser"]), "cleanup"] }, null, 2));
+    "container_recreation", "backup_restore", ...(skipBrowser ? [] : ["browser"]),
+    "cleanup"] }, null, 2));
   process.exit(0);
 }
 
@@ -27,7 +28,7 @@ const readerPassword = randomBytes(24).toString("hex");
 const writerPassword = randomBytes(24).toString("hex");
 const secretFiles = {
   admin_password: `${administratorPassword}\n`,
-  admin_pgpass: `postgres:5432:tempo:postgres:${administratorPassword}\n`,
+  admin_pgpass: `postgres:5432:*:postgres:${administratorPassword}\n`,
   reader_password: `${readerPassword}\n`,
   writer_password: `${writerPassword}\n`,
   reader_pgpass: `postgres:5432:tempo:tempo_reader:${readerPassword}\n`,
@@ -48,7 +49,11 @@ const testPort = await new Promise((resolve, reject) => {
 const project = `tempo-pg-regressions-${process.pid}`;
 const compose = ["compose", "-p", project, "-f", "docker-compose.postgres.test.yml"];
 const environment = { ...process.env, TEMPO_PG_TEST_SECRETS: secretsDirectory,
-  TEMPO_PG_TEST_PORT: String(testPort) };
+  TEMPO_PG_TEST_PORT: String(testPort),
+  TEMPO_POSTGRES_ADMIN_PASSWORD_FILE: join(secretsDirectory, "admin_password"),
+  TEMPO_POSTGRES_READER_PGPASS_FILE: join(secretsDirectory, "reader_pgpass"),
+  TEMPO_POSTGRES_WRITER_PGPASS_FILE: join(secretsDirectory, "writer_pgpass"),
+  TEMPO_POSTGRES_ADMIN_PGPASS_FILE: join(secretsDirectory, "admin_pgpass") };
 const origin = `http://127.0.0.1:${testPort}`;
 
 function run(command, argumentsList, options = {}) {
@@ -107,6 +112,15 @@ try {
   assert.equal(stack.volumes["redis-test-data"].external, undefined);
   assert(!JSON.stringify(stack.services.api.volumes ?? []).includes("tempo-data"));
   console.log("PASS PostgreSQL API has reader credentials and no SQLite mount");
+  const defaultConfig = spawnSync("docker", ["compose", "-f", "docker-compose.yml",
+    "config", "--format", "json"], { encoding: "utf8", env: environment });
+  assert.equal(defaultConfig.status, 0, defaultConfig.stderr);
+  const defaultStack = JSON.parse(defaultConfig.stdout);
+  assert(defaultStack.services.postgres && defaultStack.services["foreground-worker"]);
+  assert.equal(defaultStack.services.api.environment.TEMPO_DATABASE_WRITE_URL, undefined);
+  assert.equal(defaultStack.services.api.environment.TEMPO_DB_PATH, undefined);
+  assert(!JSON.stringify(defaultStack.services.api.volumes ?? []).includes("tempo-data"));
+  console.log("PASS default Compose selects PostgreSQL and keeps SQLite isolated");
   run("docker", [...compose, "up", "--build", "-d"]);
   await waitForReady();
   const runningContainers = spawnSync("docker", [...compose, "ps", "--format", "json"],
@@ -142,6 +156,22 @@ try {
   assert.deepEqual(after.cards.map(card => card.queue_entry_id),
     before.cards.map(card => card.queue_entry_id));
   console.log("PASS PostgreSQL settings, receipt, and queue order survive container recreation");
+  run("docker", [...compose, "stop", "api", "foreground-worker", "background-worker",
+    "background-scheduler", "defense-engine", "maia-worker", "web"]);
+  run("docker", [...compose, "exec", "-T", "postgres", "sh", "-ec",
+    "pg_dump -U postgres -d tempo -Fc -f /tmp/tempo-test.dump && " +
+    "pg_restore -l /tmp/tempo-test.dump >/dev/null && " +
+    "createdb -U postgres tempo_restore_check && " +
+    "pg_restore -U postgres -d tempo_restore_check /tmp/tempo-test.dump"]);
+  run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+    "/source/scripts/verify_postgres_backup.py",
+    "postgresql://postgres@postgres:5432/tempo",
+    "postgresql://postgres@postgres:5432/tempo_restore_check"]);
+  run("docker", [...compose, "exec", "-T", "postgres", "sh", "-ec",
+    "dropdb -U postgres tempo_restore_check && rm /tmp/tempo-test.dump"]);
+  console.log("PASS every PostgreSQL table matches after backup restoration");
+  run("docker", [...compose, "up", "-d"]);
+  await waitForReady();
   if (!skipBrowser) {
     const browserArguments = ["playwright", "test"];
     if (process.env.TEMPO_PG_BROWSER_GREP)

@@ -3,7 +3,6 @@ set -e
 
 PROJECT_DIR="${0:A:h}"
 cd "$PROJECT_DIR"
-mkdir -p data
 
 open_when_ready() {
   for attempt in {1..900}; do
@@ -13,46 +12,23 @@ open_when_ready() {
     fi
     sleep 1
   done
-  echo "Tempo has not become ready yet. Check the startup messages in this window."
+  echo "Tempo has not become ready yet. Run 'docker compose logs api foreground-worker background-worker' and check /api/health."
 }
 
-if command -v docker >/dev/null 2>&1 && docker info >/dev/null 2>&1; then
-  echo "Starting Tempo with Docker. This window can stay open while you use the app."
-  open_when_ready &
-  docker compose up --build
-  exit
-fi
-
-echo "Docker is not running, so Tempo will start directly on this Mac."
-if ! command -v node >/dev/null 2>&1 || ! command -v npm >/dev/null 2>&1; then
-  echo "Tempo needs either Docker Desktop or Node.js 22 or newer."
-  echo "Install Docker Desktop, open it, and double-click this file again."
+if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
+  echo "Tempo now requires Docker Desktop. Start Docker Desktop and double-click this file again."
   read "?Press Return to close."
   exit 1
 fi
 
-if [[ ! -d node_modules ]]; then
-  echo "Installing the web app for the first run…"
-  npm install
+if ! docker compose config >/dev/null; then
+  echo "PostgreSQL setup is incomplete. Check docs/POSTGRES-MAINTENANCE.md for external volumes and secret-file paths."
+  read "?Press Return to close."
+  exit 1
 fi
 
-if [[ ! -x .venv/bin/python ]]; then
-  echo "Preparing the local API for the first run…"
-  python3 -m venv .venv
-  .venv/bin/pip install -r backend/requirements.txt
-fi
-
-cleanup() {
-  kill "$API_PID" "$WEB_PID" >/dev/null 2>&1 || true
-}
-trap cleanup EXIT INT TERM
-
-echo "Starting the local database and web app…"
-TEMPO_DB_PATH="$PROJECT_DIR/data/tempo.db" PYTHONPATH="$PROJECT_DIR/backend" .venv/bin/uvicorn app.main:app --host 127.0.0.1 --port 8000 &
-API_PID=$!
-npm run dev:local -- --host 127.0.0.1 --port 3000 --strictPort &
-WEB_PID=$!
+echo "Starting Tempo with Docker and PostgreSQL. This window can stay open while you use the app."
 open_when_ready &
-
-echo "Tempo will open at http://localhost:3000. Press Control-C here to stop it."
-wait
+READY_PID=$!
+trap 'kill "$READY_PID" >/dev/null 2>&1 || true' EXIT INT TERM
+docker compose up --build

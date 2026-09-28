@@ -1,10 +1,10 @@
 # PostgreSQL maintenance-window cutover
 
-The PostgreSQL product stack is staged. **Do not start API traffic with it yet:**
-`/api/health` intentionally returns 503 while write routes and background
-handlers are still being ported. Use this procedure only after those handlers,
-the disposable PostgreSQL browser stack, the benchmark gates, and `make full`
-pass on the final checkout.
+The PostgreSQL product stack is staged in an isolated checkout. `/api/health`
+checks the schema, reader, both Celery worker classes, and today's queue. A
+failed check returns an actionable 503. Do not cut over until the disposable
+browser stack, restored-data audit, benchmark gates, fresh snapshot parity,
+backup restore drill, and `make full` pass on the final checkout.
 
 ## External data and secrets
 
@@ -19,6 +19,7 @@ Create the external Docker volumes before starting the stack:
 docker volume create tempo-postgres-data
 docker volume create tempo-redis-data
 docker volume create tempo-postgres-backups
+docker volume create tempo-engine-operations
 ```
 
 Set these environment variables to absolute paths outside the checkout:
@@ -28,31 +29,44 @@ Set these environment variables to absolute paths outside the checkout:
 `TEMPO_POSTGRES_WRITER_PGPASS_FILE`. The three `*_PASSWORD_FILE` files contain
 one password each. Each `*_PGPASS_FILE` is a libpq passfile with one line such
 as `postgres:5432:tempo:tempo_reader:<reader password>` for its corresponding
-role. Restrict the files to the account running Docker. Do not put passwords
+role. The admin passfile uses `postgres:5432:*:tempo:<admin password>` so it
+can also connect to the temporary restore database. Restrict the files to the
+account running Docker. Do not put passwords
 in Compose variables, command arguments, or the repository.
 
 ## Rehearsal before the live window
 
-1. Stop all SQLite writers and create a fresh snapshot with
-   `python scripts/create_sqlite_cutover_snapshot.py create /path/to/tempo.db /external/backups/tempo-rehearsal.db`.
-   Keep the snapshot outside the source volume and checkout. Run
-   `python scripts/create_sqlite_cutover_snapshot.py verify /external/backups/tempo-rehearsal.db /external/backups/tempo-rehearsal.db.manifest.json`.
+1. Stop all SQLite writers in a planned rehearsal window and create a fresh
+   snapshot with `scripts/create_sqlite_cutover_snapshot.py create`. For the
+   Docker volume, mount `tempo-data` and an external backup directory into a
+   short-lived Python container with this checkout's `scripts` directory at
+   `/scripts`. For example, from this checkout after setting
+   `TEMPO_BACKUP_DIRECTORY` to an absolute shared path outside the checkout:
+
+   ```sh
+   docker run --rm -v tempo-data:/data -v "$TEMPO_BACKUP_DIRECTORY:/backup" -v "$PWD/scripts:/scripts:ro" python:3.12-slim python /scripts/create_sqlite_cutover_snapshot.py create /data/tempo.db /backup/tempo-rehearsal.db
+   docker run --rm -v "$TEMPO_BACKUP_DIRECTORY:/backup:ro" -v "$PWD/scripts:/scripts:ro" python:3.12-slim python /scripts/create_sqlite_cutover_snapshot.py verify /backup/tempo-rehearsal.db /backup/tempo-rehearsal.db.manifest.json
+   ```
+
+   Keep the snapshot outside the source volume and checkout.
    This captures committed WAL pages and verifies integrity, foreign keys,
    table counts, the file checksum, and queue order. Do not use a volume archive
    whose database file disagrees with its logical manifest.
 2. Use distinct disposable volume names and a disposable database. Apply all
    versioned PostgreSQL migrations, stream the SQLite data, run `--verify-only`, reseed sequences,
    then restore a PostgreSQL custom-format backup into another disposable
-   database and compare all tables with `scripts/verify_postgres_restore.py`.
+   database. Use `scripts/verify_postgres_restore.py` for all migrated SQLite
+   tables and `scripts/verify_postgres_backup.py` for every PostgreSQL table,
+   including operation receipts and publication generations.
 3. Run the API, Celery, browser, and load tests against that disposable stack.
    Keep the production `tempo-data` volume untouched.
 
 ## Live stopped-writer window
 
-1. Stop the existing `api`, `analysis-worker`, and other writers. Take a **new**
-   WAL-aware snapshot outside the checkout with the `create` command above and
-   run its `verify` command. Retain `tempo-data` unchanged until before
-   PostgreSQL traffic resumes. Stop the cutover if any verification differs.
+1. Stop the existing `api`, `analysis-worker`, `defense-engine`, and every
+   other SQLite writer. Take a **new** WAL-aware snapshot outside the checkout
+   with the `create` command above and run its `verify` command. Retain
+   `tempo-data` unchanged. Stop the cutover if any verification differs.
 2. Point `TEMPO_SQLITE_SNAPSHOT` to the verified snapshot and set the
    external secret paths above. Start only PostgreSQL and Redis:
 
@@ -73,16 +87,32 @@ in Compose variables, command arguments, or the repository.
 4. Compare row counts, primary-key digests, active queue order, review IDs,
    settings, and job generations to the stopped SQLite snapshot. Take a
    PostgreSQL custom-format backup on the external backup volume and verify
-   that `pg_restore` can list it:
+   that `pg_restore` can list it. Restore the archive into a second database
+   and run both verification scripts; listing the archive alone does not prove
+   that it can be restored:
 
    ```sh
    docker compose -f docker-compose.postgres.yml run --rm --entrypoint sh postgres-backup -ec 'pg_dump -h postgres -U tempo -d tempo -Fc -f /backups/tempo-cutover.dump && pg_restore -l /backups/tempo-cutover.dump >/dev/null && sha256sum /backups/tempo-cutover.dump > /backups/tempo-cutover.dump.sha256'
    ```
 
+   While writes remain stopped, restore into a second database and compare
+   both the migrated source tables and every PostgreSQL table:
+
+   ```sh
+   docker compose -f docker-compose.postgres.yml run --rm --entrypoint sh postgres-backup -ec 'createdb -h postgres -U tempo tempo_restore_check && pg_restore -h postgres -U tempo -d tempo_restore_check --no-owner --no-privileges /backups/tempo-cutover.dump'
+   docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm migration scripts/verify_postgres_restore.py /source/tempo.db postgresql://tempo@postgres:5432/tempo postgresql://tempo@postgres:5432/tempo_restore_check
+   docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm migration scripts/verify_postgres_backup.py postgresql://tempo@postgres:5432/tempo postgresql://tempo@postgres:5432/tempo_restore_check
+   docker compose -f docker-compose.postgres.yml run --rm --entrypoint sh postgres-backup -ec 'dropdb -h postgres -U tempo tempo_restore_check'
+   ```
+
 5. Start the PostgreSQL API for read-only response comparison, then the
    dedicated Celery workers and Beat. Open the web and engine services only
    after API, command, queue-refresh, and browser checks pass with no
-   foreground 503s or data mismatch.
+   foreground 503s or data mismatch. On the validated checkout,
+   `docker-compose.yml` is the PostgreSQL product configuration and
+   `Start Tempo.command` requires Docker. The old stack is available only as
+   `docker-compose.sqlite.yml` for explicit legacy tests; never start it
+   against the live `tempo-data` volume after PostgreSQL accepts a write.
 6. Once PostgreSQL accepts a new write, do not revert to stale SQLite. Recover
    from a verified PostgreSQL backup and replay any accepted command receipts.
    Keep the old volume as historical evidence; use the recurring PostgreSQL

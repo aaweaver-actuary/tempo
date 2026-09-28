@@ -11,10 +11,12 @@ it after changing a data boundary. Its syntax-based classification is a review
 starting point; dynamic SQL and helpers accepting an existing connection still
 require the integration suite.
 
-The [route contract](postgres-route-contract.json) declares the intended
-PostgreSQL treatment and current implementation state for every registered API
-method. A regression compares it with FastAPI's runtime route table. Every
-mutation has a staged path; the health gate remains closed pending integration.
+The [route contract](postgres-route-contract.json) declares the PostgreSQL
+treatment for every registered API method: 58 reader GETs and 99 other routes.
+A regression compares it with FastAPI's runtime route table and checks that
+staged mutations pass the runtime write guard. `/api/health` now checks schema,
+reader access, Celery workers, and queue progress. It stays unavailable until
+those dependencies are ready.
 
 | Boundary | Inventory | Cutover owner |
 | --- | ---: | --- |
@@ -24,7 +26,7 @@ mutation has a staged path; the health gate remains closed pending integration.
 | Browser API callers across views, hooks, utilities, and outboxes | 60 files | Keep HTTP contracts, add pending-operation handling and cache policy |
 | Live application tables | 91, plus SQLite internal tables | Versioned PostgreSQL schema and row-by-row parity checks; migration 002 adds a PostgreSQL-only game-sync checkpoint table |
 
-## Concurrency findings to verify
+## Historical SQLite findings that shaped the PostgreSQL gate
 
 - **Confirmed cross-process priority gap:** the API and `analysis-worker` each
   have their own `DatabaseWriter` and `ApplicationActivityGate`. The worker
@@ -58,10 +60,12 @@ mutation has a staged path; the health gate remains closed pending integration.
 
 ## Cutover gates
 
-The production API must have no write credential, no SQLite mount, and no
+The production API has no write credential, no SQLite mount, and no
 runtime SQLite connection. The foreground Celery worker handles user writes;
 the background worker handles restartable analysis slices. Browser clients
 continue to call the API, and the phone's IndexedDB queue remains a local
-offline outbox. A cutover audit must reject any unclassified mutation route,
-untranslated SQL construct, or worker that can start a background database
-slice ahead of an active foreground request.
+offline outbox. The regular route contract test rejects unclassified API
+methods. The disposable PostgreSQL gate checks command receipts, container
+recreation, a full backup restore, and browser workflows. The release still
+requires a fresh stopped-writer source snapshot, exact import parity, restored
+data performance measurements, and the live maintenance window.
