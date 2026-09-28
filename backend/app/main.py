@@ -514,6 +514,14 @@ async def prioritize_foreground_requests(request: Request, call_next):
             and path_parts[:3] == ["api", "defensive-threats", "candidates"]
             and path_parts[4] in {"dismiss", "approve", "train-now", "pause", "resume"}
         )
+        defensive_analysis_command = (
+            request.method == "POST" and (
+                path_parts == ["api", "defensive-threats", "analysis", "claim"]
+                or (len(path_parts) == 5
+                    and path_parts[:3] == ["api", "defensive-threats", "analysis"]
+                    and path_parts[4] in {"report", "failure", "release", "retry"})
+            )
+        )
         tactic_attempt_command = (path_parts == ["api", "tactics", "attempt"]
                                   and request.method == "POST")
         tactic_activation_command = (path_parts == ["api", "tactics", "activation"]
@@ -610,6 +618,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     statistics_refresh_command,
                     defensive_admin_command,
                     defensive_candidate_command,
+                    defensive_analysis_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     game_exclusion_command, game_threat_refresh_command,
                     guided_review_start_command, guided_review_attempt_command,
@@ -4945,9 +4954,17 @@ def save_game_analysis(game_id: str, request: GameAnalysisRequest):
 @app.post("/api/defensive-threats/analysis/claim")
 def claim_defensive_threat_analysis(
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     if engine_worker != "docker":
         raise HTTPException(403, "Defensive engine claims are handled by the Docker worker")
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command(
+            "threat.analysis.claim", {}, idempotency_key=idempotency_key,
+            background=True,
+        )
     return {"job": claim_analysis_request()}
 
 
@@ -4984,7 +5001,19 @@ def backfill_defensive_threats(
 
 
 @app.post("/api/defensive-threats/analysis/{request_id}/report")
-def submit_defensive_threat_analysis(request_id: str, request: ThreatAnalysisSubmission):
+def submit_defensive_threat_analysis(
+    request_id: str, request: ThreatAnalysisSubmission,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command(
+            "threat.analysis.report",
+            {"request_id": request_id, "lease_id": request.lease_id,
+             "report": request.report},
+            idempotency_key=idempotency_key, background=True,
+        )
     try:
         candidate_ids = save_analysis_report(request_id, request.lease_id, request.report)
     except KeyError as error:
@@ -4999,7 +5028,19 @@ def submit_defensive_threat_analysis(request_id: str, request: ThreatAnalysisSub
 
 
 @app.post("/api/defensive-threats/analysis/{request_id}/failure")
-def fail_defensive_threat_analysis(request_id: str, request: ThreatAnalysisFailureRequest):
+def fail_defensive_threat_analysis(
+    request_id: str, request: ThreatAnalysisFailureRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command(
+            "threat.analysis.failure",
+            {"request_id": request_id, "lease_id": request.lease_id,
+             "error": request.error},
+            idempotency_key=idempotency_key, background=True,
+        )
     with connection(background=activity_gate.in_background) as database:
         updated = database.execute(
             """UPDATE threat_analysis_requests SET state=CASE WHEN attempts<3 THEN 'queued' ELSE 'failed' END,
@@ -5019,7 +5060,18 @@ def fail_defensive_threat_analysis(request_id: str, request: ThreatAnalysisFailu
 
 
 @app.post("/api/defensive-threats/analysis/{request_id}/release")
-def release_defensive_threat_analysis(request_id: str, request: GameAnalysisLeaseRequest):
+def release_defensive_threat_analysis(
+    request_id: str, request: GameAnalysisLeaseRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command(
+            "threat.analysis.release",
+            {"request_id": request_id, "lease_id": request.lease_id},
+            idempotency_key=idempotency_key, background=True,
+        )
     with connection(background=activity_gate.in_background) as database:
         updated = database.execute(
             """UPDATE threat_analysis_requests SET state='queued',lease_id=NULL,
@@ -5031,7 +5083,17 @@ def release_defensive_threat_analysis(request_id: str, request: GameAnalysisLeas
 
 
 @app.post("/api/defensive-threats/analysis/{request_id}/retry")
-def retry_defensive_threat_analysis(request_id: str):
+def retry_defensive_threat_analysis(
+    request_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command(
+            "threat.analysis.retry", {"request_id": request_id},
+            idempotency_key=idempotency_key,
+        )
     with connection() as database:
         updated = database.execute(
             """UPDATE threat_analysis_requests SET state='queued',attempts=0,last_error=NULL,updated_at=?

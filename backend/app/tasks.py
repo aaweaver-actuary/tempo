@@ -40,6 +40,7 @@ from . import opportunity_commands  # noqa: F401 - registers foreground discover
 from . import activity_commands  # noqa: F401 - registers foreground activity controls
 from . import statistics_commands  # noqa: F401 - registers foreground statistics refresh
 from . import defensive_admin_commands  # noqa: F401 - registers defensive admin tasks
+from . import threat_analysis_commands  # noqa: F401 - registers defensive engine callbacks
 from . import coverage_commands  # noqa: F401 - registers foreground coverage admission
 from . import coverage_maia_commands  # noqa: F401 - registers background Maia callbacks
 from . import game_analysis_commands  # noqa: F401 - registers background game analysis claims

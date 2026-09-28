@@ -858,7 +858,7 @@
     "path": "/api/defensive-threats/analysis/claim",
     "handler": "claim_defensive_threat_analysis",
     "treatment": "background_callback",
-    "state": "blocked"
+    "state": "staged"
   },
   {
     "method": "POST",
@@ -879,28 +879,28 @@
     "path": "/api/defensive-threats/analysis/{request_id}/report",
     "handler": "submit_defensive_threat_analysis",
     "treatment": "background_callback",
-    "state": "blocked"
+    "state": "staged"
   },
   {
     "method": "POST",
     "path": "/api/defensive-threats/analysis/{request_id}/failure",
     "handler": "fail_defensive_threat_analysis",
     "treatment": "background_callback",
-    "state": "blocked"
+    "state": "staged"
   },
   {
     "method": "POST",
     "path": "/api/defensive-threats/analysis/{request_id}/release",
     "handler": "release_defensive_threat_analysis",
     "treatment": "background_callback",
-    "state": "blocked"
+    "state": "staged"
   },
   {
     "method": "POST",
     "path": "/api/defensive-threats/analysis/{request_id}/retry",
     "handler": "retry_defensive_threat_analysis",
     "treatment": "foreground_command",
-    "state": "blocked"
+    "state": "staged"
   },
   {
     "method": "POST",
