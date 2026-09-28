@@ -276,13 +276,21 @@ test("nine phone conflicts can be inspected and discarded individually without c
     });
     database.close();
   }, cardIds);
+  const serverConflictReason = "This card was reviewed on another device";
+  let reviewPosts = 0;
+  await page.route("**/api/cards/*/review", (route) => {
+    reviewPosts += 1;
+    return route.fulfill({ status: 409, json: { detail: serverConflictReason } });
+  });
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect.poll(() => reviewPosts).toBe(9);
   await expect(page.locator(".notification-toast").getByText(/9 phone review\(s\) remain saved/)).toBeVisible();
   const after = (await board.boundingBox())!;
   expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
   expect(Math.abs(after.x - before.x)).toBeLessThanOrEqual(1);
   await expect(page.locator(".notification-toast")).toHaveCount(0, { timeout: 12_000 });
   await page.reload();
+  await expect.poll(() => reviewPosts).toBe(18);
   await page.getByRole("button", { name: "Notifications" }).click();
   await page.getByRole("button", { name: "warning", exact: true }).click();
   await expect(page.locator(".notification-list").getByText(/9 phone review\(s\) remain saved/)).toBeVisible();
@@ -297,14 +305,11 @@ test("nine phone conflicts can be inspected and discarded individually without c
   };
   expect(exported.severityThreshold).toBe("warning");
   expect(exported.notifications.find((record) => record.details?.cardIds?.length === 9)?.details?.cardIds).toEqual(cardIds);
-  let reviewPosts = 0;
-  await page.route("**/api/cards/*/review", (route) => { reviewPosts += 1; return route.fulfill({ status: 500 }); });
   await page.getByRole("button", { name: /Review conflicts/ }).click();
   const conflictDialog = page.getByRole("dialog", { name: "Review conflicts" });
   await expect(conflictDialog.locator(".offline-conflict-item")).toHaveCount(9);
   await expect(conflictDialog.locator(".offline-conflict-item").first()).toContainText(cardIds[0]);
   await expect(conflictDialog.locator(".offline-conflict-item").first()).toContainText("Correct");
-  const serverConflictReason = "This card belongs only to a repertoire awaiting integrity repair";
   await expect(conflictDialog.locator(".offline-conflict-item").first()).toContainText(serverConflictReason);
   await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true,
     value: { writeText: () => Promise.reject(new Error("blocked")) } }));
@@ -317,7 +322,7 @@ test("nine phone conflicts can be inspected and discarded individually without c
   expect(conflictData.attempts[0].conflict).toContain(serverConflictReason);
   await conflictDialog.locator(".offline-conflict-item").first().getByRole("button", { name: "Discard phone attempt" }).click();
   await expect(conflictDialog.locator(".offline-conflict-item")).toHaveCount(8);
-  expect(reviewPosts).toBe(0);
+  expect(reviewPosts).toBe(18);
   await page.unroute("**/api/cards/*/review");
   await page.reload();
   await page.getByRole("button", { name: /Review conflicts/ }).click();
