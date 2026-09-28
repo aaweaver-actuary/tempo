@@ -9,6 +9,7 @@ import sqlite3
 import uuid
 
 from ..database import read_connection
+from .. import postgres_store
 from .database_executor import submit_background_write, submit_foreground_write
 from .background_activity import claimable, control_order
 
@@ -196,9 +197,10 @@ def claim_task(
 
     def operation(database: sqlite3.Connection) -> dict | None:
         now = _iso()
+        reclaimed_phase = "" if postgres_store.configured() else ",phase='reclaimed'"
         database.execute(
-            """UPDATE background_tasks
-               SET state='queued',phase='reclaimed',lease_token=NULL,lease_expires_at=NULL,
+            f"""UPDATE background_tasks
+               SET state='queued'{reclaimed_phase},lease_token=NULL,lease_expires_at=NULL,
                    updated_at=?
                WHERE state='leased' AND lease_expires_at<=?""",
             (now, now),
@@ -222,9 +224,10 @@ def claim_task(
             return None
         lease_token = str(uuid.uuid4())
         lease_expires_at = _iso(_now() + timedelta(seconds=lease_seconds))
+        claimed_phase = "" if postgres_store.configured() else ",phase='claimed'"
         changed = database.execute(
-            """UPDATE background_tasks
-               SET state='leased',phase='claimed',attempt_count=attempt_count+1,
+            f"""UPDATE background_tasks
+               SET state='leased'{claimed_phase},attempt_count=attempt_count+1,
                    lease_token=?,lease_expires_at=?,started_at=COALESCE(started_at,?),updated_at=?
                WHERE id=? AND generation=? AND state IN ('queued','retrying')""",
             (lease_token, lease_expires_at, now, now, row["id"], row["generation"]),
@@ -323,13 +326,14 @@ def fail_task(task_id: str, generation: int, lease_token: str, error: Exception)
         delay = min(60.0, (2 ** max(0, row["attempt_count"] - 1)) + random.random())
         state = "failed" if terminal else "retrying"
         now = _now()
+        retry_phase = "phase" if postgres_store.configured() else "?"
         database.execute(
-            """UPDATE background_tasks SET state=?,phase=?,next_attempt_at=?,
+            f"""UPDATE background_tasks SET state=?,phase={retry_phase},next_attempt_at=?,
                    lease_token=NULL,lease_expires_at=NULL,last_error=?,
                    completed_at=?,updated_at=? WHERE id=? AND generation=?""",
             (
                 state,
-                state,
+                *((state,) if not postgres_store.configured() else ()),
                 _iso(now + timedelta(seconds=delay)),
                 sanitized_error,
                 _iso(now) if terminal else None,
@@ -402,8 +406,9 @@ def defer_task_for_contention(task_id: str, generation: int, lease_token: str) -
 
     def operation(database: sqlite3.Connection) -> bool:
         next_attempt_at = _iso(_now() + timedelta(milliseconds=250))
+        yielded_phase = "" if postgres_store.configured() else ",phase='yielded'"
         changed = database.execute(
-            """UPDATE background_tasks SET state='retrying',phase='yielded',
+            f"""UPDATE background_tasks SET state='retrying'{yielded_phase},
                attempt_count=CASE WHEN attempt_count>0 THEN attempt_count-1 ELSE 0 END,
                next_attempt_at=?,lease_token=NULL,lease_expires_at=NULL,
                last_error=NULL,updated_at=?
@@ -425,8 +430,9 @@ def retry_task(task_id: str) -> dict | None:
         if not row:
             return None
         now = _iso()
+        manual_phase = "" if postgres_store.configured() else ",phase='queued'"
         database.execute(
-            """UPDATE background_tasks SET state='queued',phase='queued',attempt_count=0,
+            f"""UPDATE background_tasks SET state='queued'{manual_phase},attempt_count=0,
                    next_attempt_at=?,lease_token=NULL,lease_expires_at=NULL,last_error=NULL,
                    completed_at=NULL,updated_at=? WHERE id=?""",
             (now, now, task_id),
@@ -450,8 +456,9 @@ def requeue_interrupted_tasks() -> None:
         interrupted = database.execute(
             "SELECT id,generation FROM background_tasks WHERE state='leased'"
         ).fetchall()
+        interrupted_phase = "" if postgres_store.configured() else ",phase='reclaimed'"
         database.execute(
-            """UPDATE background_tasks SET state='queued',phase='reclaimed',
+            f"""UPDATE background_tasks SET state='queued'{interrupted_phase},
                    lease_token=NULL,lease_expires_at=NULL,updated_at=? WHERE state='leased'""",
             (now,),
         )

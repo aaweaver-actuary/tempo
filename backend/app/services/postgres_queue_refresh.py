@@ -32,6 +32,7 @@ _ELIGIBILITY_PHASES = (
 )
 _UNLOCK_BATCH_SIZE = 8
 _QUARANTINE_READ_BATCH_SIZE = 32
+_OPENING_CANDIDATE_READ_BATCH_SIZE = 16
 
 
 def _bounded_read(statement: str, parameters: tuple = (), *, native: bool = False) -> list:
@@ -286,11 +287,25 @@ def _prepare_prioritized_openings(queue_date: str) -> list[dict[str, Any]]:
     candidate_sql = (
         "WITH active_miss AS (SELECT unnest(%s::text[]) AS card_id) "
         + postgres_sql(main._PRIORITY_OPENING_CANDIDATE_BODY)
+        + " AND c.id=ANY(%s::text[])"
     )
-    candidates = _bounded_read(
-        candidate_sql, (active_misses, main.MISS_REASON, queue_date,
-                        queue_date, queue_date, queue_date), native=True,
-    )
+    candidates = []
+    after_card_id = ""
+    while True:
+        card_ids = [row[0] for row in _bounded_read(
+            "SELECT id FROM cards WHERE content_type='opening' "
+            "AND state IN ('new','locked') AND introduced_at IS NULL "
+            "AND archived=0 AND COALESCE(pending_validation,0)=0 "
+            "AND id>%s ORDER BY id LIMIT %s",
+            (after_card_id, _OPENING_CANDIDATE_READ_BATCH_SIZE), native=True,
+        )]
+        if not card_ids:
+            break
+        candidates.extend(_bounded_read(
+            candidate_sql, (active_misses, main.MISS_REASON, queue_date,
+                            queue_date, queue_date, queue_date, card_ids), native=True,
+        ))
+        after_card_id = card_ids[-1]
     counts = _bounded_read(
         """SELECT COALESCE(q.admission_repertoire_id,c.repertoire_id),COUNT(DISTINCT c.id)
            FROM daily_queue q JOIN cards c ON c.id=q.card_id
