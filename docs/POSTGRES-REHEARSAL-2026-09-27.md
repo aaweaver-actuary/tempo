@@ -112,6 +112,14 @@ supersedes an active coverage run and advances its durable task generation,
 so a worker holding the prior lease cannot publish that stale generation.
 The Explorer and Maia node execution paths remain to be ported.
 
+A read-only API survey against the restored PostgreSQL clone returned 200 for
+the static study, queue, progress, repertoire, games, discovery, and settings
+routes. `/api/migration/snapshot` returned 500 because its literal SQL `LIKE`
+pattern was parsed as a placeholder. The pattern is now bound; the repaired
+query matched 16 automatic coverage runs through the API reader role. The
+snapshot's full large-data response was not exercised in that probe, so it is
+not a substitute for the verified `pg_dump` backup path.
+
 Migration 005 adds a `building` coverage-run state and indexes for line and
 node cursors. The foreground command records one source fingerprint and a
 durable `coverage_seed` task. Each background slice reads one line, closes the

@@ -2297,7 +2297,7 @@ def migration_snapshot():
         "repertoire_coverage_candidates",
         "game_sync_state",
     ]
-    with connection() as db:
+    with read_connection() as db:
         # Automatic coverage and Explorer cache rows are rebuildable enrichment.
         # Keeping them out of a portable study snapshot preserves its checksum
         # across a restart while background work continues independently.
@@ -2305,7 +2305,8 @@ def migration_snapshot():
             row["id"]
             for row in db.execute(
                 """SELECT id FROM repertoire_coverage_runs
-                   WHERE settings_json LIKE '%\"automatic_priority\": true%'"""
+                   WHERE settings_json LIKE ?""",
+                ('%"automatic_priority": true%',),
             )
         }
         automatic_coverage_node_ids = {
@@ -2333,7 +2334,7 @@ def migration_snapshot():
     return {
         "schemaVersion": 1,
         "exportedAt": datetime.now(timezone.utc).isoformat(),
-        "source": "tempo-sqlite",
+        "source": "tempo-postgres" if postgres_store.configured() else "tempo-sqlite",
         "tables": tables,
         "counts": counts,
         "checksum": hashlib.sha256(canonical.encode()).hexdigest(),

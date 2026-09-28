@@ -4783,6 +4783,35 @@ def test_postgres_coverage_refresh_dispatches_durable_seed(monkeypatch):
     assert requested == [(database, "rep", False)]
 
 
+def test_postgres_migration_snapshot_binds_automatic_coverage_filter(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    statements = []
+
+    class EmptyCursor:
+        def __iter__(self):
+            return iter(())
+
+        def fetchall(self):
+            return []
+
+    class Database:
+        def execute(self, statement, parameters=()):
+            statements.append((statement, parameters))
+            return EmptyCursor()
+
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(main, "read_connection", lambda: nullcontext(Database()))
+    response = TestClient(main.app).get("/api/migration/snapshot")
+    assert response.status_code == 200, response.text
+    assert response.json()["source"] == "tempo-postgres"
+    assert any("settings_json LIKE ?" in statement and
+               parameters == ('%"automatic_priority": true%',)
+               for statement, parameters in statements)
+
+
 def test_postgres_coverage_seed_supersedes_active_generation_after_branch_edit(monkeypatch):
     from app.services import postgres_coverage_seed
 
