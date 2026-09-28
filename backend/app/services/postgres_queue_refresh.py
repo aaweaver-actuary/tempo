@@ -10,7 +10,6 @@ from psycopg.errors import TransactionTimeout
 
 from ..database import background_read_connection, connection
 from .. import postgres_store
-from ..postgres_store import postgres_sql
 from ..queue_position_lock import lock_queue_date_for_position
 from .cards import card_id
 from .activity_gate import activity_gate
@@ -33,6 +32,59 @@ _ELIGIBILITY_PHASES = (
 _UNLOCK_BATCH_SIZE = 8
 _QUARANTINE_READ_BATCH_SIZE = 32
 _OPENING_CANDIDATE_READ_BATCH_SIZE = 16
+
+_PRIORITY_OPENING_PAGE_SQL = """WITH active_miss AS MATERIALIZED (
+    SELECT unnest(%s::text[]) AS card_id
+), eligible_cards AS MATERIALIZED (
+    SELECT * FROM cards WHERE id=ANY(%s::text[])
+)
+SELECT DISTINCT c.id,linked.id AS repertoire_id,c.moves_json,c.due_date,
+       CASE WHEN c.state='locked' AND opportunity.id IS NOT NULL THEN
+         'Priority introduction · reached ' ||
+         (opportunity.evidence_json::jsonb ->> 'encounter_count') ||
+         ' times in games, missed ' ||
+         (opportunity.evidence_json::jsonb ->> 'miss_count') || ' times'
+         WHEN active_miss.card_id IS NOT NULL THEN %s ELSE priority.reason END
+         AS gameplay_priority_reason,
+       CASE WHEN active_miss.card_id IS NOT NULL THEN %s ELSE priority.priority_date END
+         AS priority_date,
+       COALESCE(published.priority_score,legacy.priority_score) AS priority_score,
+       COALESCE(published.completed_line_ids_json,legacy.completed_line_ids_json)
+         AS completed_line_ids_json,
+       COALESCE(published.frontier_decisions_json,legacy.frontier_decisions_json)
+         AS frontier_decisions_json
+FROM eligible_cards c
+JOIN LATERAL (
+    SELECT c.repertoire_id AS repertoire_id
+    UNION SELECT link.repertoire_id FROM repertoire_cards link WHERE link.card_id=c.id
+) linked_ids ON TRUE
+JOIN repertoires linked ON linked.id=linked_ids.repertoire_id
+LEFT JOIN gameplay_card_priorities priority ON priority.card_id=c.id
+    AND priority.priority_date<=%s
+LEFT JOIN active_miss ON active_miss.card_id=c.id
+LEFT JOIN repertoire_opportunities opportunity ON opportunity.repertoire_id=linked.id
+    AND opportunity.card_id=c.id AND opportunity.kind='weak_known_decision'
+    AND opportunity.status='active'
+    AND (opportunity.evidence_json::jsonb ->> 'analysis_based') IS NULL
+LEFT JOIN repertoire_priority_publications publication ON publication.repertoire_id=linked.id
+LEFT JOIN repertoire_card_priority_generations published ON published.card_id=c.id
+    AND published.repertoire_id=linked.id AND published.generation=publication.generation
+LEFT JOIN repertoire_card_introduction_priorities legacy ON legacy.card_id=c.id
+    AND legacy.repertoire_id=linked.id
+WHERE c.content_type='opening'
+  AND (c.due_date<=%s OR priority.card_id IS NOT NULL OR active_miss.card_id IS NOT NULL
+       OR opportunity.id IS NOT NULL)
+  AND (c.state='new' OR (c.state='locked' AND opportunity.id IS NOT NULL))
+  AND c.introduced_at IS NULL AND c.archived=0 AND COALESCE(c.pending_validation,0)=0
+  AND EXISTS(
+      SELECT 1 FROM (
+          SELECT c.repertoire_id AS repertoire_id
+          UNION SELECT link.repertoire_id FROM repertoire_cards link WHERE link.card_id=c.id
+      ) eligible_link JOIN repertoires allowed ON allowed.id=eligible_link.repertoire_id
+      WHERE NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
+                       WHERE block.repertoire_id=allowed.id AND block.card_id=c.id)
+  )
+  AND c.id NOT IN(SELECT card_id FROM daily_queue WHERE queue_date=%s)"""
 
 
 def _bounded_read(statement: str, parameters: tuple = (), *, native: bool = False) -> list:
@@ -284,11 +336,6 @@ def _prepare_prioritized_openings(queue_date: str) -> list[dict[str, Any]]:
     from .. import main
 
     active_misses = [row[0] for row in _bounded_read(main._ACTIVE_OPENING_MISS_SQL)]
-    candidate_sql = (
-        "WITH active_miss AS (SELECT unnest(%s::text[]) AS card_id) "
-        + postgres_sql(main._PRIORITY_OPENING_CANDIDATE_BODY)
-        + " AND c.id=ANY(%s::text[])"
-    )
     candidates = []
     after_card_id = ""
     while True:
@@ -302,8 +349,9 @@ def _prepare_prioritized_openings(queue_date: str) -> list[dict[str, Any]]:
         if not card_ids:
             break
         candidates.extend(_bounded_read(
-            candidate_sql, (active_misses, main.MISS_REASON, queue_date,
-                            queue_date, queue_date, queue_date, card_ids), native=True,
+            _PRIORITY_OPENING_PAGE_SQL,
+            (active_misses, card_ids, main.MISS_REASON, queue_date,
+             queue_date, queue_date, queue_date), native=True,
         ))
         after_card_id = card_ids[-1]
     counts = _bounded_read(

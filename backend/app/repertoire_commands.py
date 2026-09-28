@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException
@@ -54,6 +55,20 @@ def delete_repertoire(database: PostgresConnection, payload: dict[str, Any]) -> 
     database.execute_native(
         "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
         ("tempo:main-repertoire",),
+    )
+    # A leased graph or integrity worker locks its task before inserting rows
+    # that reference the repertoire. Cancel those leases first so deletion
+    # cannot race a stale generation into a foreign-key failure.
+    now = datetime.now(timezone.utc).isoformat()
+    database.execute_native(
+        "WITH obsolete AS ("
+        "SELECT id FROM background_tasks WHERE state IN ('queued','leased','retrying') "
+        "AND (deduplication_key=%s OR payload_json::jsonb->>'repertoire_id'=%s) "
+        "ORDER BY id FOR UPDATE) "
+        "UPDATE background_tasks task SET state='complete',phase='cancelled',"
+        "lease_token=NULL,lease_expires_at=NULL,completed_at=%s,updated_at=%s "
+        "FROM obsolete WHERE task.id=obsolete.id",
+        (repertoire_id, repertoire_id, now, now),
     )
     repertoire = database.execute_native(
         "SELECT id FROM repertoires WHERE id=%s FOR UPDATE", (repertoire_id,),

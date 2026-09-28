@@ -16,9 +16,11 @@ def test_postgres_opening_candidates_read_small_pages_before_planning(monkeypatc
             assert parameters[1] == postgres_queue_refresh._OPENING_CANDIDATE_READ_BATCH_SIZE
             return next(identifiers)
         if statement.startswith("WITH active_miss"):
-            selected_pages.append(parameters[-1])
+            assert native
+            assert "eligible_cards AS MATERIALIZED" in statement
+            selected_pages.append(parameters[1])
             return [{"id": card_id, "repertoire_id": "rep",
-                     "gameplay_priority_reason": None} for card_id in parameters[-1]]
+                     "gameplay_priority_reason": None} for card_id in parameters[1]]
         if statement.startswith("SELECT COALESCE(q.admission_repertoire_id"):
             return []
         if statement.startswith("SELECT new_cards_per_day"):

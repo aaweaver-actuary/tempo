@@ -1926,10 +1926,38 @@ def test_postgres_repertoire_delete_preserves_shared_cards_and_queues_game_refre
                parameters == ("old", "old") for sql, parameters in statements)
     assert any(sql == "DELETE FROM repertoires WHERE id=%s" and
                parameters == ("old",) for sql, parameters in statements)
+    cancel_index = next(index for index, (statement, _) in enumerate(statements)
+                        if "WITH obsolete AS" in statement)
+    delete_index = next(index for index, (statement, _) in enumerate(statements)
+                        if statement == "DELETE FROM repertoires WHERE id=%s")
+    assert cancel_index < delete_index
+    assert "ORDER BY id FOR UPDATE" in statements[cancel_index][0]
+    assert statements[cancel_index][1][:2] == ("old", "old")
     assert any("SET is_main=CASE WHEN id=%s THEN 1 ELSE 0 END" in sql
                for sql, _ in statements)
     assert queued == [(database, "repertoire_game_refresh", "all",
                        {"after_game_id": ""}, 90)]
+
+
+def test_postgres_repertoire_delete_cancels_stale_graph_before_parent_removal(monkeypatch):
+    from app import repertoire_commands
+
+    statements = []
+
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            statements.append(statement)
+            return SimpleNamespace(fetchone=lambda: ("old",) if
+                                   "SELECT id FROM repertoires WHERE id=%s FOR UPDATE" in statement else None)
+
+    monkeypatch.setattr(repertoire_commands, "enqueue_task_in_transaction", lambda *_args, **_kwargs: None)
+    repertoire_commands.delete_repertoire(Database(), {"repertoire_id": "old"})
+    cancel_index = next(index for index, statement in enumerate(statements)
+                        if "WITH obsolete AS" in statement)
+    delete_index = statements.index("DELETE FROM repertoires WHERE id=%s")
+    assert cancel_index < delete_index
+    assert "state IN ('queued','leased','retrying')" in statements[cancel_index]
+    assert "lease_token=NULL" in statements[cancel_index]
 
 
 def test_postgres_branch_edit_dispatches_foreground_command_with_idempotency(monkeypatch):
@@ -5772,7 +5800,6 @@ def test_postgres_maia_idle_poll_reads_availability_without_receipt(monkeypatch)
             return SimpleNamespace(fetchone=lambda: (False,))
 
     monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(main.activity_gate, "background_request", lambda: nullcontext())
     monkeypatch.setattr(main, "background_read_connection", lambda: nullcontext(Database()))
     response = TestClient(main.app).get(
         "/api/repertoire-coverage/maia/available",
