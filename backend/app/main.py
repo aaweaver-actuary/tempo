@@ -509,6 +509,11 @@ async def prioritize_foreground_requests(request: Request, call_next):
                 ["api", "defensive-threats", "backfill"],
             )
         )
+        defensive_candidate_command = (
+            request.method == "POST" and len(path_parts) == 5
+            and path_parts[:3] == ["api", "defensive-threats", "candidates"]
+            and path_parts[4] in {"dismiss", "approve", "train-now", "pause", "resume"}
+        )
         tactic_attempt_command = (path_parts == ["api", "tactics", "attempt"]
                                   and request.method == "POST")
         tactic_activation_command = (path_parts == ["api", "tactics", "activation"]
@@ -604,6 +609,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     task_retry_command, tactic_attempt_command,
                     statistics_refresh_command,
                     defensive_admin_command,
+                    defensive_candidate_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     game_exclusion_command, game_threat_refresh_command,
                     guided_review_start_command, guided_review_attempt_command,
@@ -5091,7 +5097,16 @@ def list_defensive_threat_candidates(game_id: str | None = None):
 
 
 @app.post("/api/defensive-threats/candidates/{candidate_id}/dismiss")
-def dismiss_defensive_threat_candidate(candidate_id: str):
+def dismiss_defensive_threat_candidate(
+    candidate_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command("defense.candidate.change",
+                                {"candidate_id": candidate_id, "action": "dismiss"},
+                                idempotency_key=idempotency_key)
     try:
         dismiss_defense_candidate(candidate_id)
     except KeyError as error:
@@ -5102,7 +5117,16 @@ def dismiss_defensive_threat_candidate(candidate_id: str):
 
 
 @app.post("/api/defensive-threats/candidates/{candidate_id}/approve")
-def approve_defensive_threat_candidate(candidate_id: str):
+def approve_defensive_threat_candidate(
+    candidate_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command("defense.candidate.change",
+                                {"candidate_id": candidate_id, "action": "approve"},
+                                idempotency_key=idempotency_key)
     try:
         card_id = approve_defense_candidate(candidate_id)
     except KeyError as error:
@@ -5114,7 +5138,16 @@ def approve_defensive_threat_candidate(candidate_id: str):
 
 
 @app.post("/api/defensive-threats/candidates/{candidate_id}/train-now")
-def train_defensive_threat_candidate_now(candidate_id: str):
+def train_defensive_threat_candidate_now(
+    candidate_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command("defense.candidate.change",
+                                {"candidate_id": candidate_id, "action": "train-now"},
+                                idempotency_key=idempotency_key)
     try:
         card_id = train_defense_candidate_now(candidate_id)
     except KeyError as error:
@@ -5125,7 +5158,16 @@ def train_defensive_threat_candidate_now(candidate_id: str):
 
 
 @app.post("/api/defensive-threats/candidates/{candidate_id}/pause")
-def pause_defensive_threat_candidate(candidate_id: str):
+def pause_defensive_threat_candidate(
+    candidate_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command("defense.candidate.change",
+                                {"candidate_id": candidate_id, "action": "pause"},
+                                idempotency_key=idempotency_key)
     try:
         pause_defense_candidate(candidate_id, True)
     except KeyError as error:
@@ -5136,7 +5178,16 @@ def pause_defensive_threat_candidate(candidate_id: str):
 
 
 @app.post("/api/defensive-threats/candidates/{candidate_id}/resume")
-def resume_defensive_threat_candidate(candidate_id: str):
+def resume_defensive_threat_candidate(
+    candidate_id: str,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+
+        return dispatch_command("defense.candidate.change",
+                                {"candidate_id": candidate_id, "action": "resume"},
+                                idempotency_key=idempotency_key)
     try:
         pause_defense_candidate(candidate_id, False)
     except KeyError as error:

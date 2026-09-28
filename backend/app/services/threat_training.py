@@ -196,8 +196,8 @@ def _require_current(candidate) -> None:
         raise ValueError("Defensive candidate belongs to an older game analysis")
 
 
-def dismiss_defense_candidate(candidate_id: str) -> None:
-    with connection() as database:
+def dismiss_defense_candidate(candidate_id: str, *, write_database=None) -> None:
+    with (nullcontext(write_database) if write_database is not None else connection()) as database:
         candidate = _candidate(database, candidate_id)
         _require_current(candidate)
         if candidate["approved_at"]:
@@ -268,13 +268,13 @@ def _approve_in_transaction(database, candidate, *, reports_verified: bool = Fal
     return card_id
 
 
-def approve_defense_candidate(candidate_id: str) -> str:
-    with connection() as database:
+def approve_defense_candidate(candidate_id: str, *, write_database=None) -> str:
+    with (nullcontext(write_database) if write_database is not None else connection()) as database:
         return _approve_in_transaction(database, _candidate(database, candidate_id))
 
 
-def pause_defense_candidate(candidate_id: str, paused: bool) -> None:
-    with connection() as database:
+def pause_defense_candidate(candidate_id: str, paused: bool, *, write_database=None) -> None:
+    with (nullcontext(write_database) if write_database is not None else connection()) as database:
         candidate = _candidate(database, candidate_id)
         _require_current(candidate)
         if candidate["approved_at"]:
@@ -285,11 +285,13 @@ def pause_defense_candidate(candidate_id: str, paused: bool) -> None:
         )
 
 
-def train_defense_candidate_now(candidate_id: str) -> str:
-    with connection() as database:
+def train_defense_candidate_now(candidate_id: str, *, write_database=None) -> str:
+    with (nullcontext(write_database) if write_database is not None else connection()) as database:
         candidate = _candidate(database, candidate_id)
         _require_current(candidate)
         card_id = _approve_in_transaction(database, candidate, admission_mode="explicit")
+        if postgres_store.configured():
+            lock_queue_date_for_position(database, date.today().isoformat())
         ensure_card_queued_after(database, card_id, after_cards=0,
                                  attempt_state="guided", priority_reason="Discovery · defensive recognition")
         database.execute(

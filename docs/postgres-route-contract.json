@@ -921,35 +921,35 @@
     "path": "/api/defensive-threats/candidates/{candidate_id}/dismiss",
     "handler": "dismiss_defensive_threat_candidate",
     "treatment": "foreground_command",
-    "state": "blocked"
+    "state": "staged"
   },
   {
     "method": "POST",
     "path": "/api/defensive-threats/candidates/{candidate_id}/approve",
     "handler": "approve_defensive_threat_candidate",
     "treatment": "foreground_command",
-    "state": "blocked"
+    "state": "staged"
   },
   {
     "method": "POST",
     "path": "/api/defensive-threats/candidates/{candidate_id}/train-now",
     "handler": "train_defensive_threat_candidate_now",
     "treatment": "foreground_command",
-    "state": "blocked"
+    "state": "staged"
   },
   {
     "method": "POST",
     "path": "/api/defensive-threats/candidates/{candidate_id}/pause",
     "handler": "pause_defensive_threat_candidate",
     "treatment": "foreground_command",
-    "state": "blocked"
+    "state": "staged"
   },
   {
     "method": "POST",
     "path": "/api/defensive-threats/candidates/{candidate_id}/resume",
     "handler": "resume_defensive_threat_candidate",
     "treatment": "foreground_command",
-    "state": "blocked"
+    "state": "staged"
   },
   {
     "method": "GET",

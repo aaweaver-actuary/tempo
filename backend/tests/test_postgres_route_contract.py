@@ -47,7 +47,5 @@ def test_postgres_route_contract_tracks_remaining_blocked_product_routes():
         "repair_one_legacy_network_identity", "save_game_analysis",
         "claim_defensive_threat_analysis", "submit_defensive_threat_analysis",
         "fail_defensive_threat_analysis", "release_defensive_threat_analysis",
-        "retry_defensive_threat_analysis", "dismiss_defensive_threat_candidate",
-        "approve_defensive_threat_candidate", "train_defensive_threat_candidate_now",
-        "pause_defensive_threat_candidate", "resume_defensive_threat_candidate",
+        "retry_defensive_threat_analysis",
     }
