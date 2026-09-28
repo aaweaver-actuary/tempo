@@ -24,7 +24,7 @@ from .study_contracts import (
 from .services.study_attempts import finish_study_attempt as _finish_attempt
 from .services.study_grading import GRADER_VERSION, evaluate_answer, validate_exercise
 from .services.study_pgn import preview_pgn
-from .services.study_portable import export_bundle, import_bundle
+from .services.study_portable import export_bundle, import_bundle, validate_bundle
 
 
 router = APIRouter(prefix="/api/studies", tags=["studies"])
@@ -749,7 +749,17 @@ def export_study_pgn(study_id: str):
 
 
 @router.post("/import-bundle")
-def import_study_content(request: StudyBundleImportRequest):
+def import_study_content(request: StudyBundleImportRequest,
+                         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        try:
+            validate_bundle(request.bundle)
+        except ValueError as error:
+            raise HTTPException(422, str(error)) from error
+        return dispatch_command(
+            "studies.bundle.import", request.model_dump(mode="json"),
+            idempotency_key=idempotency_key,
+        )
     with connection() as database:
         try:
             return import_bundle(database, request.bundle, copy=request.mode == "copy")

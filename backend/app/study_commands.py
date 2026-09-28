@@ -9,14 +9,19 @@ import uuid
 from typing import Any
 
 from fastapi import HTTPException
+import psycopg
 
 from .command_gateway import register_command
 from .postgres_store import PostgresConnection
 from .queue_commands import request_queue_refresh_in_transaction
 from .queue_position_lock import lock_queue_date_for_position
-from .study_contracts import ChapterCreate, StudyCreate, StudyImportCommitRequest, StudyLinkCreate
+from .study_contracts import (
+    ChapterCreate, StudyBundleImportRequest, StudyCreate, StudyImportCommitRequest,
+    StudyLinkCreate,
+)
 from .study_contracts import ExerciseCreate, ExerciseRevisionRequest, ExerciseSpecification
 from .services.study_grading import validate_exercise
+from .services.study_portable import import_bundle
 from pydantic import TypeAdapter
 
 
@@ -534,6 +539,14 @@ def commit_study_import(database: PostgresConnection, payload: dict[str, Any]) -
             "idempotent": False, "version": version}
 
 
+def import_study_bundle(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    request = StudyBundleImportRequest.model_validate(payload)
+    try:
+        return import_bundle(database, request.bundle, copy=request.mode == "copy")
+    except (ValueError, psycopg.IntegrityError) as error:
+        raise HTTPException(422, str(error)) from error
+
+
 register_command("studies.create", create_study)
 register_command("studies.update", update_study)
 register_command("studies.archive", archive_study)
@@ -550,3 +563,4 @@ register_command("studies.chapters.reorder", reorder_chapters)
 register_command("studies.chapters.rename", rename_chapter)
 register_command("studies.links.create", create_link)
 register_command("studies.import.commit", commit_study_import)
+register_command("studies.bundle.import", import_study_bundle)

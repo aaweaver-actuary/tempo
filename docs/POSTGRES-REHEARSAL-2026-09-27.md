@@ -499,8 +499,13 @@ Study PGN preview now uses the PostgreSQL read-only request path, while commit
 dispatches a typed Celery command and retains the browser's pending operation
 ID. A rolled-back import on the disposable PostgreSQL clone inserted one source
 and three linked positions; replay found the same source and returned
-`idempotent=true`. This covers the PGN import path, not the native study bundle
-import, which remains a cutover gate.
+`idempotent=true`.
+The native study bundle endpoint also moved to a foreground Celery
+command. Its importer now inspects PostgreSQL columns through
+`information_schema`; a rolled-back disposable-database rehearsal returned
+`idempotent=true` for an exact preserved bundle and copied its chapter under
+a new study ID. Bundle import is still a foreground transaction and needs a
+large-bundle latency check before release.
 
 An isolated localhost rehearsal now started the PostgreSQL API, separate
 foreground and background Celery workers, and Beat against the mutable scratch

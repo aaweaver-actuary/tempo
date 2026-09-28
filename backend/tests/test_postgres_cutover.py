@@ -1380,6 +1380,32 @@ def test_postgres_study_import_worker_keeps_parent_links_and_duplicate_receipt()
     assert position_writes[1][2] == position_writes[0][0]
 
 
+def test_postgres_native_study_bundle_import_dispatches_celery_command(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main, study_routes
+    from app.services.study_portable import TABLES
+
+    dispatched = []
+    bundle = {"format": "tempo-study", "schema_version": 1,
+              "tables": {name: ([{"id": "study-1"}] if name == "studies" else [])
+                         for name in TABLES}}
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(study_routes, "connection", lambda **_kwargs: (_ for _ in ()).throw(
+        AssertionError("API must not write a native study bundle")))
+    monkeypatch.setattr(study_routes, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or
+                        {"study_id": "study-1", "idempotent": False})
+    response = TestClient(main.app).post(
+        "/api/studies/import-bundle", json={"bundle": bundle, "mode": "copy"},
+        headers={"Idempotency-Key": "bundle-one"},
+    )
+    assert response.status_code == 200, response.text
+    assert dispatched == [("studies.bundle.import",
+                           {"bundle": bundle, "mode": "copy"}, "bundle-one")]
+
+
 def test_postgres_analysis_paste_commit_dispatches_foreground_command_after_read_only_preview(monkeypatch):
     from fastapi.testclient import TestClient
     from app import command_gateway, main

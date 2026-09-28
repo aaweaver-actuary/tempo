@@ -411,6 +411,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
         study_import_commit = (study_root and len(path_parts) == 5
                                and path_parts[3:] == ["import", "commit"]
                                and request.method == "POST")
+        study_bundle_import = (study_root and path_parts[2:] == ["import-bundle"]
+                               and request.method == "POST")
         exercise_create = (study_root and len(path_parts) == 4
                            and path_parts[3] == "exercises" and request.method == "POST")
         exercise_revise = (study_root and len(path_parts) == 5
@@ -560,7 +562,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
             and request.method == "POST"
         )
         if not read_only_post and not any((study_create, study_update, study_archive,
-                    study_import_commit, exercise_create, exercise_revise,
+                    study_import_commit, study_bundle_import,
+                    exercise_create, exercise_revise,
                     exercise_enroll, exercise_attempt, exercise_self_assess,
                     exercise_availability_command,
                     chapter_create, chapter_reorder,
