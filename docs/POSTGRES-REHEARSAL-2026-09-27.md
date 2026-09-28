@@ -775,3 +775,10 @@ operation receipts after HTTP 202, so an ambiguous save remains pending.
 Synthetic games in disposable PostgreSQL verified claim, report, idempotent
 report replay, release, retry, and terminal failure; each fixture was removed.
 Game finalization and the other engine callback families remain unported.
+
+Parent game-analysis failure, heartbeat, release, and manual retry now also
+dispatch named Celery commands. Worker callbacks stay on the background queue;
+manual retry uses foreground capacity. A retry clears the failed position's
+attempt count and pause control so it can actually resume. One synthetic game
+in disposable PostgreSQL passed retry, claim, heartbeat, release, and failure;
+the fixture was removed. Final publication is still pending.

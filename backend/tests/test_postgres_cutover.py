@@ -239,6 +239,48 @@ def test_postgres_game_position_exhausted_retry_fails_parent_instead_of_repollin
     assert any("analysis_state='failed'" in statement for statement in statements)
 
 
+def test_postgres_game_parent_callbacks_dispatch_to_correct_celery_queue(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    observed = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "background_request", lambda: nullcontext())
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(command_dispatch, "dispatch_command", lambda name, payload, **options:
+                        observed.append((name, payload, options)) or {"status": "queued"})
+    client = TestClient(main.app)
+    headers = {"X-Tempo-Work-Class": "background", "Idempotency-Key": "parent-one"}
+    for action in ("failure", "heartbeat", "release"):
+        body = {"lease_id": "lease", **({"error": "engine stopped"} if action == "failure" else {})}
+        assert client.post(f"/api/games/analysis/game-one/{action}",
+                           headers=headers, json=body).status_code == 200
+    assert client.post("/api/games/analysis/game-one/retry",
+                       headers={"Idempotency-Key": "retry-one"}).status_code == 200
+    assert [entry[0] for entry in observed] == [
+        "games.analysis.failure", "games.analysis.heartbeat", "games.analysis.release",
+        "games.analysis.retry",
+    ]
+    assert all(entry[2].get("background") is True for entry in observed[:3])
+    assert observed[3][2] == {"idempotency_key": "retry-one"}
+
+
+def test_postgres_game_parent_retry_resets_failed_position_and_pause():
+    from app.game_analysis_commands import retry_parent_analysis
+
+    statements = []
+
+    class RetryDatabase:
+        def execute_native(self, statement, *_parameters):
+            statements.append(statement)
+            return SimpleNamespace(fetchone=lambda: {"analysis_version": 3})
+
+    assert retry_parent_analysis(RetryDatabase(), {"game_id": "game"}) == {"status": "queued"}
+    assert any("UPDATE game_analysis_position_reports SET state='queued',attempts=0" in statement
+               for statement in statements)
+    assert any("paused=0,phase='Queued'" in statement for statement in statements)
+
+
 def test_postgres_analysis_progress_and_task_retry_dispatch_out_of_api(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main

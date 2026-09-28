@@ -307,3 +307,86 @@ def release_position_report(database: PostgresConnection, payload: dict[str, Any
 
 register_command("games.analysis.position.report", publish_position_report)
 register_command("games.analysis.position.release", release_position_report)
+
+
+def fail_parent_analysis(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    game_id, lease_id = str(payload["game_id"]), str(payload["lease_id"])
+    error = str(payload["error"])
+    now = datetime.now(timezone.utc).isoformat()
+    failed = database.execute_native(
+        "UPDATE game_analysis_jobs SET status='failed',lease_id=NULL,lease_expires_at=NULL,"
+        "last_error=%s,updated_at=%s WHERE game_id=%s AND status='leased' AND lease_id=%s "
+        "RETURNING game_id", (error, now, game_id, lease_id),
+    ).fetchone()
+    if failed is None:
+        exists = database.execute_native(
+            "SELECT 1 FROM game_analysis_jobs WHERE game_id=%s", (game_id,),
+        ).fetchone()
+        raise HTTPException(409 if exists else 404,
+                            "Analysis lease is no longer active" if exists else "Analysis job not found")
+    database.execute_native(
+        "UPDATE imported_games SET analysis_state='failed' WHERE id=%s", (game_id,),
+    )
+    return {"status": "failed", "retryable": True}
+
+
+def heartbeat_parent_analysis(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, str]:
+    now = datetime.now(timezone.utc)
+    updated = database.execute_native(
+        "UPDATE game_analysis_jobs SET lease_expires_at=%s,updated_at=%s "
+        "WHERE game_id=%s AND status='leased' AND lease_id=%s RETURNING game_id",
+        ((now + timedelta(minutes=5)).isoformat(), now.isoformat(),
+         str(payload["game_id"]), str(payload["lease_id"])),
+    ).fetchone()
+    if updated is None:
+        raise HTTPException(409, "Analysis lease is no longer active")
+    return {"status": "leased"}
+
+
+def release_parent_analysis(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, str]:
+    game_id = str(payload["game_id"])
+    updated = database.execute_native(
+        "UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,lease_expires_at=NULL,"
+        "updated_at=%s WHERE game_id=%s AND status='leased' AND lease_id=%s RETURNING game_id",
+        (datetime.now(timezone.utc).isoformat(), game_id, str(payload["lease_id"])),
+    ).fetchone()
+    if updated is not None:
+        database.execute_native(
+            "UPDATE imported_games SET analysis_state='pending' WHERE id=%s", (game_id,),
+        )
+    return {"status": "queued" if updated is not None else "stale"}
+
+
+def retry_parent_analysis(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, str]:
+    game_id = str(payload["game_id"])
+    now = datetime.now(timezone.utc).isoformat()
+    retried = database.execute_native(
+        "UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,lease_expires_at=NULL,"
+        "last_error=NULL,updated_at=%s WHERE game_id=%s AND status='failed' "
+        "RETURNING analysis_version", (now, game_id),
+    ).fetchone()
+    if retried is None:
+        raise HTTPException(409, "Only failed analysis jobs can be retried")
+    database.execute_native(
+        "UPDATE game_analysis_position_reports SET state='queued',attempts=0,"
+        "lease_id=NULL,parent_lease_id=NULL,lease_expires_at=NULL,last_error=NULL,updated_at=%s "
+        "WHERE game_id=%s AND analysis_version=%s AND state='failed'",
+        (now, game_id, retried["analysis_version"]),
+    )
+    database.execute_native(
+        "UPDATE imported_games SET analysis_state='pending' WHERE id=%s", (game_id,),
+    )
+    database.execute_native(
+        "INSERT INTO background_activity(source,work_id,paused,phase,updated_at) "
+        "VALUES('game_analysis',%s,0,'Queued',%s) "
+        "ON CONFLICT(source,work_id) DO UPDATE SET paused=0,phase='Queued',"
+        "completed_units=NULL,total_units=NULL,updated_at=excluded.updated_at",
+        (game_id, now),
+    )
+    return {"status": "queued"}
+
+
+register_command("games.analysis.failure", fail_parent_analysis)
+register_command("games.analysis.heartbeat", heartbeat_parent_analysis)
+register_command("games.analysis.release", release_parent_analysis)
+register_command("games.analysis.retry", retry_parent_analysis)

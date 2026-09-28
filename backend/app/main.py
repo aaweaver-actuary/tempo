@@ -496,6 +496,12 @@ async def prioritize_foreground_requests(request: Request, call_next):
             len(path_parts) == 6 and path_parts[:4] == ["api", "games", "analysis", "position"]
             and path_parts[5] in {"report", "release", "failure"} and request.method == "POST"
         )
+        game_parent_callback_command = (
+            len(path_parts) >= 5 and path_parts[:3] == ["api", "games", "analysis"]
+            and path_parts[3] != "position"
+            and path_parts[-1] in {"failure", "heartbeat", "release", "retry"}
+            and request.method == "POST"
+        )
         settings_command = (path_parts == ["api", "settings"] and request.method == "PUT")
         endgame_probe = (path_parts == ["api", "endgames", "probe"]
                          and request.method == "POST")
@@ -541,7 +547,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     task_retry_command, tactic_attempt_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
                     game_analysis_claim_command, game_position_claim_command,
-                    game_position_callback_command,
+                    game_position_callback_command, game_parent_callback_command,
                     settings_command,
                     endgame_probe, endgame_template_command,
                     endgame_attempt_command, branch_add_command, branch_remove_command,
@@ -4558,7 +4564,15 @@ def repair_one_legacy_network_identity(
 
 
 @app.post("/api/games/analysis/{game_id:path}/failure")
-def fail_game_analysis(game_id: str, request: GameAnalysisFailureRequest):
+def fail_game_analysis(game_id: str, request: GameAnalysisFailureRequest,
+                       idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.analysis.failure",
+            {"game_id": game_id, "lease_id": request.lease_id, "error": request.error},
+            idempotency_key=idempotency_key, background=True,
+        )
     with connection(background=activity_gate.in_background) as db:
         job = db.execute(
             "SELECT lease_id,status FROM game_analysis_jobs WHERE game_id=?", (game_id,)
@@ -4578,7 +4592,14 @@ def fail_game_analysis(game_id: str, request: GameAnalysisFailureRequest):
 
 
 @app.post("/api/games/analysis/{game_id:path}/heartbeat")
-def heartbeat_game_analysis(game_id: str, request: GameAnalysisLeaseRequest):
+def heartbeat_game_analysis(game_id: str, request: GameAnalysisLeaseRequest,
+                            idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.analysis.heartbeat", {"game_id": game_id, "lease_id": request.lease_id},
+            idempotency_key=idempotency_key, background=True,
+        )
     now = datetime.now(timezone.utc)
     with connection(background=activity_gate.in_background) as db:
         updated = db.execute(
@@ -4597,7 +4618,14 @@ def heartbeat_game_analysis(game_id: str, request: GameAnalysisLeaseRequest):
 
 
 @app.post("/api/games/analysis/{game_id:path}/release")
-def release_game_analysis(game_id: str, request: GameAnalysisLeaseRequest):
+def release_game_analysis(game_id: str, request: GameAnalysisLeaseRequest,
+                          idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.analysis.release", {"game_id": game_id, "lease_id": request.lease_id},
+            idempotency_key=idempotency_key, background=True,
+        )
     with connection(background=activity_gate.in_background) as db:
         updated = db.execute(
             """UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,
@@ -4618,7 +4646,13 @@ def release_game_analysis(game_id: str, request: GameAnalysisLeaseRequest):
 
 
 @app.post("/api/games/analysis/{game_id:path}/retry")
-def retry_game_analysis(game_id: str):
+def retry_game_analysis(game_id: str,
+                        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.analysis.retry", {"game_id": game_id}, idempotency_key=idempotency_key,
+        )
     with connection() as db:
         updated = db.execute(
             """UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,lease_expires_at=NULL,last_error=NULL,updated_at=?
