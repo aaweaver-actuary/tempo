@@ -55,7 +55,9 @@ from .services.threat_pipeline import (
     execute_threat_backfill_slice, execute_threat_report_audit,
     execute_threat_scan_slice, execute_threat_validation,
 )
-from .services.threat_training import execute_defense_rubric_audit_slice
+from .services.threat_training import (
+    execute_defense_admission_slice, execute_defense_rubric_audit_slice,
+)
 from .services.postgres_game_sync import execute_game_sync_record_slice
 from .services.postgres_game_derivation import execute_game_position_index_slice
 from .services.postgres_game_repertoire import execute_game_repertoire_comparison_slice
@@ -74,6 +76,7 @@ _LOGGER = logging.getLogger("tempo.tasks")
 _SUPPORTED_BACKGROUND_KINDS = (
     "daily_queue",
     "defensive_rubric_audit",
+    "defensive_admission",
     "repertoire_game_refresh",
     "defensive_threat_report_audit",
     "defensive_threat_scan",
@@ -173,6 +176,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
     background_handlers = {
         "daily_queue": execute_postgres_queue_refresh_slice,
         "defensive_rubric_audit": execute_defense_rubric_audit_slice,
+        "defensive_admission": execute_defense_admission_slice,
         "repertoire_game_refresh": execute_repertoire_game_refresh_slice,
         "defensive_threat_report_audit": execute_threat_report_audit,
         "defensive_threat_scan": execute_threat_scan_slice,

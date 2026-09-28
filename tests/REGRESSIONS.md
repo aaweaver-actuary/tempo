@@ -467,6 +467,7 @@ Append every new reported issue and its test names here. All listed tests belong
 - PostgreSQL repertoire refresh admits a versioned position-index task for each affected game: `test_postgres_repertoire_refresh_admits_position_index_with_job_version`.
 - PostgreSQL defensive validation publishes its result and admission task only under the current lease, and stale redelivery has no effect: `test_postgres_threat_validation_commits_result_and_admission_with_lease`.
 - PostgreSQL defensive backfill advances one analyzed game at a time, ignores stale delivery, and completes after repertoire scans: `test_postgres_threat_backfill_advances_one_game_and_completes_after_repertoires`.
+- PostgreSQL defensive card admission queues a daily refresh in the same leased slice and stale redelivery cannot admit twice: `test_postgres_defense_admission_handoffs_queue_only_under_current_lease`.
 - Per-repertoire statistics show distinct practice and game percentages and report service failure instead of false zeroes: `repertoire statistics separates study accuracy and game adherence and opens supporting games`; `repertoire statistics shows an actionable failure instead of zero values`.
 - Per-repertoire statistics GETs remain query-only and satisfy the foreground read budget: `test_repertoire_statistics_gets_are_query_only_and_within_foreground_read_budget`.
 - Per-repertoire game comparisons stay visibly stale while card counts remain available: `repertoire statistics labels stale game comparisons while retaining published card counts`.

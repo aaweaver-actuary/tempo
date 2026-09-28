@@ -14,7 +14,12 @@ from ..database import background_read_connection, connection, read_connection
 from .. import postgres_store
 from ..queue_position_lock import lock_queue_date_for_position
 from .activity_gate import activity_gate
-from .durable_tasks import enqueue_task, lock_current_slice
+from .durable_tasks import (
+    advance_task_slice_in_transaction,
+    enqueue_compact_postgres_task_in_transaction,
+    enqueue_task,
+    lock_current_slice,
+)
 from .review_service import (
     apply_scheduling_review, ensure_card_queued_after, preserve_daily_queue_order,
     rebuild_defense_schedule,
@@ -314,7 +319,8 @@ def execute_defense_admission_slice(task: dict) -> bool:
     cursor = int(task["payload"].get("cursor", 0)) if str(task["payload"].get("cursor", 0)).isdigit() else 0
     control_exhausted = bool(task["payload"].get("control_exhausted", False))
     activity_gate.wait_for_foreground()
-    with read_connection() as database:
+    read_section = background_read_connection if postgres_store.configured() else read_connection
+    with read_section() as database:
         limit = database.execute(
             "SELECT defense_new_cards_per_day FROM settings WHERE id=1",
         ).fetchone()[0]
@@ -402,11 +408,16 @@ def execute_defense_admission_slice(task: dict) -> bool:
     introduced = False
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
-        lease = database.execute(
-            "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
-        ).fetchone()
-        if not lease or lease["generation"] != task["generation"] or lease["lease_token"] != task["lease_token"]:
-            return True
+        if postgres_store.configured():
+            if not lock_current_slice(database, task):
+                return False
+        else:
+            lease = database.execute(
+                "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
+            ).fetchone()
+            if (not lease or lease["generation"] != task["generation"]
+                    or lease["lease_token"] != task["lease_token"]):
+                return True
         limit = database.execute(
             "SELECT defense_new_cards_per_day FROM settings WHERE id=1"
         ).fetchone()[0]
@@ -437,15 +448,27 @@ def execute_defense_admission_slice(task: dict) -> bool:
                                     prepared_position_fen=board.fen(),
                                     admission_mode="automatic")
             introduced = True
+        next_payload = {
+            "queue_date": day,
+            "phase": "threat" if introduced and phase == "control" else phase,
+            "cursor": 0 if introduced else cursor + 1,
+            "control_exhausted": control_exhausted,
+        }
+        if postgres_store.configured():
+            if introduced:
+                enqueue_compact_postgres_task_in_transaction(
+                    database, "daily_queue", "current", {"queue_date": day}, priority=10,
+                )
+            return advance_task_slice_in_transaction(
+                database, task, next_phase=next_payload["phase"],
+                next_payload=next_payload,
+            )
         database.execute(
             """UPDATE background_tasks SET generation=generation+1,state='queued',phase='queued',
                  payload_json=?,attempt_count=0,next_attempt_at=?,lease_token=NULL,
                  lease_expires_at=NULL,updated_at=?
                WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
-            (json.dumps({"queue_date": day,
-                         "phase": "threat" if introduced and phase == "control" else phase,
-                         "cursor": 0 if introduced else cursor + 1,
-                         "control_exhausted": control_exhausted}),
+            (json.dumps(next_payload),
              _now(), _now(),
              task["id"], task["generation"], task["lease_token"]),
         )
