@@ -1,21 +1,27 @@
 # PostgreSQL cutover inventory
 
-The machine-readable [source inventory](postgres-cutover-inventory.json) was
-generated from the stopped, verified September 27 SQLite backup with
-`python scripts/audit_storage_cutover.py --sqlite-path SNAPSHOT --output
-docs/postgres-cutover-inventory.json`. It contains every declared FastAPI route,
+The machine-readable [source inventory](postgres-cutover-inventory.json) now
+reflects the continuation checkout's current code. Its 91-table schema section
+still comes from the September 27 SQLite extract; refresh that section from a
+new verified WAL-aware snapshot before cutover. The inventory contains every
+declared FastAPI route,
 backend `execute`/connection call site, SQLite-only syntax occurrence, frontend
 API caller file, and the live table/column/index/foreign-key schema. Regenerate
 it after changing a data boundary. Its syntax-based classification is a review
 starting point; dynamic SQL and helpers accepting an existing connection still
 require the integration suite.
 
+The [route contract](postgres-route-contract.json) declares the intended
+PostgreSQL treatment and current implementation state for every registered API
+method. A regression compares it with FastAPI's runtime route table. Seventeen
+mutations remain explicitly blocked, and the health gate remains closed.
+
 | Boundary | Inventory | Cutover owner |
 | --- | ---: | --- |
-| FastAPI endpoints in `main.py` and `study_routes.py` | 156 routes | GET projections use the read-only PostgreSQL role; mutating routes dispatch typed commands |
-| Backend data access in `database.py`, `main.py`, `study_routes.py`, and service modules | 1,509 call sites | Port SQL dialect, transaction boundaries, and row behavior |
-| SQLite-only source constructs | 250 line occurrences | Replace or explicitly translate before disabling the SQLite runtime |
-| Browser API callers across views, hooks, utilities, and outboxes | 38 files | Keep HTTP contracts, add pending-operation handling and cache policy |
+| FastAPI endpoints in `main.py` and `study_routes.py` | 157 routes | GET projections use the read-only PostgreSQL role; mutating routes dispatch typed commands |
+| Backend data access in `database.py`, `main.py`, `study_routes.py`, and service modules | 1,935 call sites | Port SQL dialect, transaction boundaries, and row behavior |
+| SQLite-only source constructs | 254 line occurrences | Replace or explicitly translate before disabling the SQLite runtime |
+| Browser API callers across views, hooks, utilities, and outboxes | 60 files | Keep HTTP contracts, add pending-operation handling and cache policy |
 | Live application tables | 91, plus SQLite internal tables | Versioned PostgreSQL schema and row-by-row parity checks; migration 002 adds a PostgreSQL-only game-sync checkpoint table |
 
 ## Concurrency findings to verify

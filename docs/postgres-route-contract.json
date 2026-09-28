@@ -1,0 +1,1101 @@
+[
+  {
+    "method": "GET",
+    "path": "/api/studies",
+    "handler": "list_studies",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/studies",
+    "handler": "create_study",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/studies/{study_id}",
+    "handler": "get_study",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/studies/{study_id}",
+    "handler": "update_study",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/studies/{study_id}/archive",
+    "handler": "archive_study",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/studies/{study_id}/unarchive",
+    "handler": "unarchive_study",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/studies/{study_id}/chapters",
+    "handler": "create_chapter",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/studies/{study_id}/chapters/order",
+    "handler": "reorder_chapters",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/studies/{study_id}/chapters/{chapter_id}",
+    "handler": "get_chapter",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/studies/{study_id}/chapters/{chapter_id}",
+    "handler": "rename_chapter",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/studies/{study_id}/links",
+    "handler": "create_link",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/studies/{study_id}/import/preview",
+    "handler": "preview_study_import",
+    "treatment": "read_only_post",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/studies/{study_id}/import/commit",
+    "handler": "commit_study_import",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/studies/{study_id}/exercises",
+    "handler": "create_exercise",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/studies/{study_id}/exercises/{exercise_id}",
+    "handler": "get_exercise",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/studies/{study_id}/exercises/{exercise_id}/present",
+    "handler": "present_exercise",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/studies/{study_id}/exercises/{exercise_id}",
+    "handler": "revise_exercise",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/studies/{study_id}/exercises/{exercise_id}/enroll",
+    "handler": "enroll_exercise",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/studies/{study_id}/exercises/{exercise_id}/suspend",
+    "handler": "suspend_exercise",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/studies/{study_id}/exercises/{exercise_id}/train-now",
+    "handler": "train_exercise_now",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/studies/{study_id}/exercises/{exercise_id}/resume",
+    "handler": "resume_exercise",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/studies/{study_id}/exercises/{exercise_id}/archive",
+    "handler": "archive_exercise",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/studies/{study_id}/exercises/{exercise_id}/attempts",
+    "handler": "submit_attempt",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/studies/{study_id}/exercises/{exercise_id}/attempts/{attempt_id}/self-assess",
+    "handler": "self_assess",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/studies/{study_id}/exercises/{exercise_id}/attempts/{attempt_id}/feedback",
+    "handler": "attempt_feedback",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/studies/{study_id}/summary",
+    "handler": "study_summary",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/studies/{study_id}/export",
+    "handler": "export_study_content",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/studies/{study_id}/export.pgn",
+    "handler": "export_study_pgn",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/studies/import-bundle",
+    "handler": "import_study_content",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/operations/{operation_id}",
+    "handler": "operation_status",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/health",
+    "handler": "health",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/system/foreground-active",
+    "handler": "foreground_active",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/system/foreground-requests-active",
+    "handler": "foreground_requests_active",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/system/browser-activity",
+    "handler": "record_browser_activity",
+    "treatment": "ephemeral_signal",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/system/tasks",
+    "handler": "system_tasks",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/system/activity",
+    "handler": "system_activity",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/system/activity/control",
+    "handler": "control_system_activity",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/system/activity/progress",
+    "handler": "report_system_activity_progress",
+    "treatment": "background_callback",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/system/tasks/{task_id}/retry",
+    "handler": "retry_system_task",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/analysis/capabilities",
+    "handler": "capabilities",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/settings",
+    "handler": "get_settings",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/settings",
+    "handler": "put_settings",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/queue/today",
+    "handler": "queue_today",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/queue/prepared",
+    "handler": "prepared_queue",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/queue/window",
+    "handler": "queue_window",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/imports/pgn",
+    "handler": "import_pgn",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoires",
+    "handler": "list_repertoires",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoire/lines",
+    "handler": "repertoire_lines",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoire/conflicts",
+    "handler": "repertoire_conflicts",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoires/{identifier}/integrity",
+    "handler": "repertoire_integrity",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoires/{identifier}/integrity/issues/{issue_id}/resolve",
+    "handler": "resolve_repertoire_integrity",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoires/{identifier}/annotations",
+    "handler": "list_annotations",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/repertoires/{identifier}/annotations",
+    "handler": "save_annotation",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/cards/{identifier}/teaching",
+    "handler": "list_teaching_states",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/cards/{identifier}/teaching",
+    "handler": "mark_teaching_state",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/migration/snapshot",
+    "handler": "migration_snapshot",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/repertoires/{identifier}/main",
+    "handler": "make_main_repertoire",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/repertoires/{identifier}",
+    "handler": "delete_repertoire",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/queue/entries/{entry_id}/fail",
+    "handler": "mark_attempt_failed",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/queue/entries/{entry_id}/bury",
+    "handler": "bury_queue_entry",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/cards/{identifier}/review",
+    "handler": "review",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoire/paste/preview",
+    "handler": "preview_analysis_paste",
+    "treatment": "read_only_post",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoire/paste/commit",
+    "handler": "commit_analysis_paste",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoire/branches",
+    "handler": "branch",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoire/branches/remove",
+    "handler": "remove_branch",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/progress",
+    "handler": "progress_summary",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/cards/validate",
+    "handler": "validate_card",
+    "treatment": "read_only_post",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/cards/{identifier}/prefix-split",
+    "handler": "prefix_split_preview",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/cards/{identifier}/prefix-split",
+    "handler": "prefix_split_accept",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/cards/{identifier}/prefix-split/reject",
+    "handler": "prefix_split_reject",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/cards/{identifier}",
+    "handler": "revise_card",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "DELETE",
+    "path": "/api/cards/{identifier}",
+    "handler": "archive_card",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "PATCH",
+    "path": "/api/repertoires/{identifier}",
+    "handler": "rename_repertoire",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoires/{identifier}/export.pgn",
+    "handler": "export_one",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoires/export.pgn",
+    "handler": "export_all",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoires/{identifier}/coverage/refresh",
+    "handler": "refresh_repertoire_coverage",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoires/{identifier}/statistics",
+    "handler": "repertoire_statistics_summary",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoires/{identifier}/statistics/positions",
+    "handler": "repertoire_statistics_positions",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoires/{identifier}/coverage",
+    "handler": "repertoire_coverage",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoires/{identifier}/coverage/gaps",
+    "handler": "repertoire_coverage_gaps",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoires/{identifier}/opportunities",
+    "handler": "repertoire_opportunities",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/discoveries",
+    "handler": "discoveries_feed",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/discoveries/{opportunity_id}/recommendations",
+    "handler": "discovery_recommendations",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/discoveries/{opportunity_id}/accept",
+    "handler": "accept_discovery_continuation",
+    "treatment": "foreground_command",
+    "state": "blocked"
+  },
+  {
+    "method": "GET",
+    "path": "/api/discovery-admissions/{intent_id}",
+    "handler": "discovery_admission_status",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoires/{identifier}/opportunities/refresh",
+    "handler": "refresh_repertoire_opportunities",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoires/{identifier}/opportunities/{opportunity_id}/dismiss",
+    "handler": "dismiss_repertoire_opportunity",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoires/{identifier}/opportunities/{opportunity_id}/acknowledge",
+    "handler": "acknowledge_repertoire_opportunity",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoires/{identifier}/opportunities/{opportunity_id}/snooze",
+    "handler": "snooze_repertoire_opportunity",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoires/{identifier}/opportunities/{opportunity_id}/train",
+    "handler": "train_repertoire_opportunity",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoire-coverage/maia/available",
+    "handler": "coverage_maia_available",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoire-coverage/maia/claim",
+    "handler": "coverage_maia_claim",
+    "treatment": "background_callback",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoire-coverage/explorer-session",
+    "handler": "coverage_explorer_session",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoire-coverage/maia/submit",
+    "handler": "coverage_maia_submit",
+    "treatment": "background_callback",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoire-coverage/maia/heartbeat",
+    "handler": "coverage_maia_heartbeat",
+    "treatment": "background_callback",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoire-coverage/maia/release",
+    "handler": "coverage_maia_release",
+    "treatment": "background_callback",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoire-coverage/maia/failure",
+    "handler": "coverage_maia_failure",
+    "treatment": "background_callback",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/explorer/{database_name}",
+    "handler": "explorer",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/tactics/catalog",
+    "handler": "tactics_catalog",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/tactics/activation",
+    "handler": "tactics_activation",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/tactics/attempt",
+    "handler": "tactic_attempt",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/tactics/progress",
+    "handler": "tactic_progress",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/endgames/probe",
+    "handler": "probe_endgame",
+    "treatment": "read_only_post",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/endgames/templates",
+    "handler": "list_endgames",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/endgames/templates",
+    "handler": "create_endgame",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/endgames/templates/{identifier}/attempt",
+    "handler": "create_endgame_attempt",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "PUT",
+    "path": "/api/games/accounts",
+    "handler": "accounts",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/games/sync",
+    "handler": "sync",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/games/sync/status",
+    "handler": "sync_status",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/games/analysis/claim",
+    "handler": "claim_game_analysis",
+    "treatment": "background_callback",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/games/analysis/position/claim",
+    "handler": "claim_game_analysis_position",
+    "treatment": "background_callback",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/games/analysis/position/{report_id}/report",
+    "handler": "submit_game_analysis_position",
+    "treatment": "background_callback",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/games/analysis/position/{report_id}/release",
+    "handler": "release_game_analysis_position",
+    "treatment": "background_callback",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/games/analysis/position/{report_id}/failure",
+    "handler": "fail_game_analysis_position",
+    "treatment": "background_callback",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/games/analysis/position/finalize",
+    "handler": "finalize_game_analysis_position",
+    "treatment": "background_callback",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/games/analysis/repair-timeout",
+    "handler": "repair_one_stockfish_timeout",
+    "treatment": "background_callback",
+    "state": "blocked"
+  },
+  {
+    "method": "POST",
+    "path": "/api/games/analysis/repair-provenance",
+    "handler": "repair_one_legacy_network_identity",
+    "treatment": "background_callback",
+    "state": "blocked"
+  },
+  {
+    "method": "POST",
+    "path": "/api/games/analysis/{game_id:path}/failure",
+    "handler": "fail_game_analysis",
+    "treatment": "background_callback",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/games/analysis/{game_id:path}/heartbeat",
+    "handler": "heartbeat_game_analysis",
+    "treatment": "background_callback",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/games/analysis/{game_id:path}/release",
+    "handler": "release_game_analysis",
+    "treatment": "background_callback",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/games/analysis/{game_id:path}/retry",
+    "handler": "retry_game_analysis",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/games/{game_id:path}/analysis",
+    "handler": "save_game_analysis",
+    "treatment": "foreground_command",
+    "state": "blocked"
+  },
+  {
+    "method": "POST",
+    "path": "/api/defensive-threats/analysis/claim",
+    "handler": "claim_defensive_threat_analysis",
+    "treatment": "background_callback",
+    "state": "blocked"
+  },
+  {
+    "method": "POST",
+    "path": "/api/defensive-threats/analysis/audit",
+    "handler": "audit_defensive_threat_reports",
+    "treatment": "foreground_command",
+    "state": "blocked"
+  },
+  {
+    "method": "POST",
+    "path": "/api/defensive-threats/backfill",
+    "handler": "backfill_defensive_threats",
+    "treatment": "foreground_command",
+    "state": "blocked"
+  },
+  {
+    "method": "POST",
+    "path": "/api/defensive-threats/analysis/{request_id}/report",
+    "handler": "submit_defensive_threat_analysis",
+    "treatment": "background_callback",
+    "state": "blocked"
+  },
+  {
+    "method": "POST",
+    "path": "/api/defensive-threats/analysis/{request_id}/failure",
+    "handler": "fail_defensive_threat_analysis",
+    "treatment": "background_callback",
+    "state": "blocked"
+  },
+  {
+    "method": "POST",
+    "path": "/api/defensive-threats/analysis/{request_id}/release",
+    "handler": "release_defensive_threat_analysis",
+    "treatment": "background_callback",
+    "state": "blocked"
+  },
+  {
+    "method": "POST",
+    "path": "/api/defensive-threats/analysis/{request_id}/retry",
+    "handler": "retry_defensive_threat_analysis",
+    "treatment": "foreground_command",
+    "state": "blocked"
+  },
+  {
+    "method": "POST",
+    "path": "/api/games/{game_id:path}/defensive-threats/refresh",
+    "handler": "refresh_game_defensive_threats",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/defensive-threats/candidates",
+    "handler": "list_defensive_threat_candidates",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/defensive-threats/candidates/{candidate_id}/dismiss",
+    "handler": "dismiss_defensive_threat_candidate",
+    "treatment": "foreground_command",
+    "state": "blocked"
+  },
+  {
+    "method": "POST",
+    "path": "/api/defensive-threats/candidates/{candidate_id}/approve",
+    "handler": "approve_defensive_threat_candidate",
+    "treatment": "foreground_command",
+    "state": "blocked"
+  },
+  {
+    "method": "POST",
+    "path": "/api/defensive-threats/candidates/{candidate_id}/train-now",
+    "handler": "train_defensive_threat_candidate_now",
+    "treatment": "foreground_command",
+    "state": "blocked"
+  },
+  {
+    "method": "POST",
+    "path": "/api/defensive-threats/candidates/{candidate_id}/pause",
+    "handler": "pause_defensive_threat_candidate",
+    "treatment": "foreground_command",
+    "state": "blocked"
+  },
+  {
+    "method": "POST",
+    "path": "/api/defensive-threats/candidates/{candidate_id}/resume",
+    "handler": "resume_defensive_threat_candidate",
+    "treatment": "foreground_command",
+    "state": "blocked"
+  },
+  {
+    "method": "GET",
+    "path": "/api/defense-exercises/{candidate_id}",
+    "handler": "get_defense_exercise",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/defense-exercises/{candidate_id}/attempt",
+    "handler": "attempt_defense_exercise",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/defense-exercises/{candidate_id}/recognition",
+    "handler": "recognize_defense_exercise",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/game-findings",
+    "handler": "list_game_findings",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/game-findings/tactical-queue",
+    "handler": "next_tactical_finding",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/game-findings/{finding_id}/curation",
+    "handler": "curate_tactical_finding",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/game-insights/tactical",
+    "handler": "game_tactical_statistics",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/game-findings/{finding_id}/decision",
+    "handler": "decide_game_finding",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/game-findings/{finding_id}/card",
+    "handler": "create_card_from_game_finding",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/games/{game_id:path}/exclusion",
+    "handler": "exclude_game_from_adaptation",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/game-insights/motifs",
+    "handler": "game_motif_insights",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/games/summary",
+    "handler": "summary",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/games/position-summary",
+    "handler": "game_position_summary",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/games/{game_id:path}",
+    "handler": "game_detail",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/statistics/overview",
+    "handler": "chess_statistics_overview",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/statistics/breakdown",
+    "handler": "chess_statistics_breakdown",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/statistics/daily/{local_day}/refresh",
+    "handler": "refresh_chess_statistics_day",
+    "treatment": "foreground_command",
+    "state": "blocked"
+  },
+  {
+    "method": "GET",
+    "path": "/api/statistics/insights",
+    "handler": "chess_statistics_insights",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/games/{game_id:path}/guided-review",
+    "handler": "start_guided_game_review",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/guided-reviews/{session_id}",
+    "handler": "guided_game_review",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/guided-reviews/{session_id}/attempt",
+    "handler": "attempt_guided_game_review",
+    "treatment": "foreground_command",
+    "state": "staged"
+  }
+]
