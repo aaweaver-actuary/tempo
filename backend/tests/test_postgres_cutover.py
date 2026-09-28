@@ -25,6 +25,59 @@ from app.postgres_store import TempoRow, postgres_sql
 from app.services import redis_admission_gate
 
 
+def test_postgres_game_exclusion_uses_foreground_receipt_and_atomic_followup(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import game_commands, main
+    from app import command_dispatch
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(command_dispatch, "dispatch_command",
+                        lambda name, payload, *, idempotency_key:
+                        dispatched.append((name, payload, idempotency_key)) or
+                        {"game_id": payload["game_id"], "excluded": payload["excluded"]})
+    response = TestClient(main.app).post(
+        "/api/games/provider:one/exclusion", json={"excluded": True},
+        headers={"Idempotency-Key": "exclude-one"},
+    )
+    assert response.status_code == 200, response.text
+    assert dispatched == [("games.exclusion.set",
+                           {"game_id": "provider:one", "excluded": True}, "exclude-one")]
+
+    statements = []
+    followups = []
+
+    class Cursor:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+
+        def __iter__(self):
+            return iter(self.rows)
+
+    class Database:
+        def execute(self, statement, parameters):
+            statements.append((statement, parameters))
+            if "SELECT id FROM imported_games" in statement:
+                return Cursor([{"id": "provider:one"}])
+            if "SELECT repertoire_id FROM game_repertoire_matches" in statement:
+                return Cursor([("repertoire-a",), ("repertoire-a",)])
+            return Cursor([])
+
+    monkeypatch.setattr(game_commands, "enqueue_task_in_transaction",
+                        lambda _database, kind, key, payload, *, priority:
+                        followups.append((kind, key, payload, priority)))
+    assert game_commands.set_game_exclusion(
+        Database(), {"game_id": "provider:one", "excluded": True},
+    ) == {"game_id": "provider:one", "excluded": True}
+    assert any("FOR UPDATE" in statement for statement, _ in statements)
+    assert any("INSERT INTO game_derivation_jobs" in statement for statement, _ in statements)
+    assert followups == [("repertoire_opportunity", "repertoire-a",
+                          {"repertoire_id": "repertoire-a", "phase": "summaries", "cursor": ""}, 130)]
+
+
 def test_postgres_threat_scan_prepares_outside_transaction_and_rejects_stale_lease(monkeypatch):
     from app import tasks
     from app.services import threat_pipeline

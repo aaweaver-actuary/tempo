@@ -496,6 +496,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                                  and request.method == "PUT")
         game_sync_command = (path_parts == ["api", "games", "sync"]
                              and request.method == "POST")
+        game_exclusion_command = (len(path_parts) >= 4 and path_parts[:2] == ["api", "games"]
+                                  and path_parts[-1] == "exclusion" and request.method == "POST")
         game_analysis_claim_command = (path_parts == ["api", "games", "analysis", "claim"]
                                        and request.method == "POST")
         game_position_claim_command = (path_parts == ["api", "games", "analysis", "position", "claim"]
@@ -558,6 +560,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     browser_activity, activity_control_command, activity_progress_command,
                     task_retry_command, tactic_attempt_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
+                    game_exclusion_command,
                     game_analysis_claim_command, game_position_claim_command,
                     game_position_callback_command, game_position_finalize_command,
                     game_parent_callback_command,
@@ -5391,7 +5394,16 @@ def create_card_from_game_finding(finding_id: str, request: GameFindingCardReque
 
 
 @app.post("/api/games/{game_id:path}/exclusion")
-def exclude_game_from_adaptation(game_id: str, request: GameExclusionRequest):
+def exclude_game_from_adaptation(
+    game_id: str, request: GameExclusionRequest,
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.exclusion.set", {"game_id": game_id, "excluded": request.excluded},
+            idempotency_key=idempotency_key,
+        )
     with connection() as db:
         if not db.execute(
             "SELECT 1 FROM imported_games WHERE id=?", (game_id,)

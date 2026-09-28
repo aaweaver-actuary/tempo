@@ -4,6 +4,8 @@
 
 | Issue | Required regression |
 | --- | --- |
+| PostgreSQL game exclusion is rejected by the route guard or writes without a foreground receipt and durable refresh intents | `test_postgres_game_exclusion_uses_foreground_receipt_and_atomic_followup` |
+| Game exclusion reports a pending Celery receipt as a completed save or replays it with a new command ID | `game exclusion keeps its operation ID and never treats a pending receipt as saved`; `a different game exclusion decision waits for the prior receipt` |
 | PostgreSQL game follow-up enqueues a defensive scan that no Celery worker claims, or a stale scan writes after its lease changes | `test_postgres_threat_scan_prepares_outside_transaction_and_rejects_stale_lease` |
 | A defensive scan writes every detected seed in one PostgreSQL transaction and blocks foreground work | `test_postgres_threat_scan_publishes_one_seed_per_restartable_slice` |
 | PostgreSQL API startup leaves today's queue refreshing forever because it never requests the durable queue task | `test_postgres_api_startup_requests_todays_queue_through_foreground_command` |

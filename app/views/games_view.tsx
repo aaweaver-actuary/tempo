@@ -14,6 +14,7 @@ import {
 } from "../components/chessboard";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
 import { API_URL, STANDARD_FEN } from "../const";
+import { setGameExclusion } from "../lib/game-exclusion-command";
 import {
   readWorkspaceResponse,
   invalidateWorkspaceData,
@@ -691,16 +692,12 @@ export default function GamesView({
   }
   async function excludeSelectedGame() {
     if (!selected) return;
-    const response = await fetch(
-      `${API_URL}/api/games/${encodeURIComponent(selected.id)}/exclusion`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ excluded: true }),
-      },
-    );
-    if (!response.ok) setError("Could not exclude this game from adaptation.");
-    else await loadFindings();
+    try {
+      await setGameExclusion(selected.id, true);
+      await loadFindings();
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not exclude this game from adaptation.");
+    }
   }
   async function createFindingCard(findingId: string, save: boolean) {
     const response = await fetch(

@@ -821,3 +821,10 @@ claimed by the PostgreSQL Celery worker. It prepares chess evidence outside
 the write transaction, locks its lease before publication, and publishes one
 detected seed per restartable slice. Its PostgreSQL transaction duration still
 needs a real-data rehearsal before the health gate can open.
+
+The game-exclusion route now dispatches a foreground command. Its game update,
+finding status, derivation intent, and repertoire opportunity intents commit in
+one PostgreSQL transaction. The Games browser view retains the command ID
+across a pending response. A disposable PostgreSQL rehearsal inserted one
+synthetic game, saved and replayed the same exclusion receipt, verified the
+queued derivation, and removed the fixture.
