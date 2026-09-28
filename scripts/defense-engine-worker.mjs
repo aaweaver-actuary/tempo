@@ -1,6 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import StockfishFactory from "../public/engines/sf_19_smallnet.js";
+import { requestMaiaApi } from "./maia-coverage-client.mjs";
 
 const api = process.env.TEMPO_API_URL ?? "http://api:8000";
 const assetDirectory = resolve(import.meta.dirname, "../public/engines");
@@ -18,12 +19,9 @@ engine.uci("isready");
 const sleep = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds));
 
 async function request(path, options = {}) {
-  const response = await fetch(`${api}${path}`, {
-    ...options,
-    headers: { "X-Tempo-Work-Class": "background", "X-Tempo-Engine-Worker": "docker", "Content-Type": "application/json" },
+  return requestMaiaApi(api, path, {
+    ...options, headers: { ...options.headers, "X-Tempo-Engine-Worker": "docker" },
   });
-  if (!response.ok) throw new Error(`${path}: HTTP ${response.status} ${await response.text()}`);
-  return response.json();
 }
 
 function evaluate(job) {
@@ -149,6 +147,11 @@ while (true) {
       method: "POST", body: JSON.stringify({ lease_id: job.lease_id, report }),
     });
   } catch (error) {
+    if (error.operationId) {
+      console.error("Engine database command is still pending:", error.operationId);
+      await sleep(2_000);
+      continue;
+    }
     if (job) {
       const preempted = error.message === "preempted";
       try {

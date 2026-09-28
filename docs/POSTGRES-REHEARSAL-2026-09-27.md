@@ -764,3 +764,14 @@ database verified the PostgreSQL SQL and lease shape. The Docker Stockfish
 worker currently calls the position-claim endpoint; that second stage and its
 report/finalization callbacks remain cutover work, so the health gate remains
 closed.
+
+The Docker worker's position claim now prepares the next chess position after
+closing a bounded PostgreSQL read. A background Celery command checks the game
+generation and pause control under row lock, then leases one position and its
+parent in the same transaction. Position report validation also runs after a
+read closes; publication and parent release share one command transaction.
+Release and failure callbacks use the same lease checks. The worker polls
+operation receipts after HTTP 202, so an ambiguous save remains pending.
+Synthetic games in disposable PostgreSQL verified claim, report, idempotent
+report replay, release, retry, and terminal failure; each fixture was removed.
+Game finalization and the other engine callback families remain unported.

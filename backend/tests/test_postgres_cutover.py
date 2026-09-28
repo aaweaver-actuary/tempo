@@ -76,6 +76,169 @@ def test_postgres_game_analysis_claim_uses_skip_locked_and_preserves_lease_shape
     assert "UPDATE imported_games" in statements[2]
 
 
+def test_postgres_game_position_claim_dispatches_prepared_plan_to_background(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main, game_analysis_commands
+
+    plan = {"game_id": "game", "analysis_version": 2,
+            "analysis_evidence_version": 3, "kind": "search",
+            "scan_pass": "shallow", "position_index": 0, "request": {}}
+    observed = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "background_request", lambda: nullcontext())
+    monkeypatch.setattr(game_analysis_commands, "prepare_position_claim", lambda: plan)
+    monkeypatch.setattr(command_dispatch, "dispatch_command", lambda name, payload, **options:
+                        observed.append((name, payload, options)) or {"job": None})
+    response = TestClient(main.app).post(
+        "/api/games/analysis/position/claim",
+        headers={"X-Tempo-Engine-Worker": "docker", "X-Tempo-Work-Class": "background",
+                 "Idempotency-Key": "position-one"},
+    )
+    assert response.status_code == 200
+    assert observed == [("games.analysis.position.claim", plan,
+                         {"idempotency_key": "position-one", "background": True})]
+
+
+def test_postgres_game_position_preparation_closes_database_before_chess_traversal(monkeypatch):
+    from app import game_analysis_commands
+
+    active = False
+
+    @contextmanager
+    def read_section():
+        nonlocal active
+        active = True
+
+        class Database:
+            def execute_native(self, statement, *_parameters):
+                if "FROM game_analysis_jobs" in statement:
+                    return SimpleNamespace(fetchone=lambda: {
+                        "game_id": "game", "analysis_version": 1,
+                        "analysis_evidence_version": 3, "start_fen": chess.STARTING_FEN,
+                        "moves_json": '["e2e4"]', "divergence_ply": None,
+                    })
+                return []
+
+        try:
+            yield Database()
+        finally:
+            active = False
+
+    original_positions = game_analysis_commands._positions
+
+    def traverse(*args):
+        assert not active
+        return original_positions(*args)
+
+    monkeypatch.setattr(game_analysis_commands, "background_read_connection", read_section)
+    monkeypatch.setattr(game_analysis_commands, "_positions", traverse)
+    plan = game_analysis_commands.prepare_position_claim()
+    assert plan["kind"] == "search" and plan["position_index"] == 0
+
+
+def test_postgres_game_position_claim_discards_stale_generation_before_write():
+    from app.game_analysis_commands import claim_game_analysis_position
+
+    statements = []
+
+    class StaleDatabase:
+        def execute_native(self, statement, *_parameters):
+            statements.append(statement)
+            return SimpleNamespace(fetchone=lambda: {
+                "analysis_version": 3, "analysis_evidence_version": 3,
+                "status": "queued", "lease_expires_at": None,
+                "rated": 1, "speed": "rapid",
+            })
+
+    assert claim_game_analysis_position(StaleDatabase(), {
+        "game_id": "game", "analysis_version": 2,
+        "analysis_evidence_version": 3, "kind": "search",
+        "scan_pass": "shallow", "position_index": 0, "request": {},
+    }) == {"job": None}
+    assert len(statements) == 1
+
+
+def test_postgres_game_position_callbacks_dispatch_with_receipts(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main, game_analysis_commands
+
+    observed = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "background_request", lambda: nullcontext())
+    monkeypatch.setattr(game_analysis_commands, "prepare_position_report", lambda *_args: "request-json")
+    monkeypatch.setattr(command_dispatch, "dispatch_command", lambda name, payload, **options:
+                        observed.append((name, payload, options)) or {"status": "complete"})
+    client = TestClient(main.app)
+    headers = {"X-Tempo-Engine-Worker": "docker", "X-Tempo-Work-Class": "background",
+               "Idempotency-Key": "position-callback"}
+    report = client.post("/api/games/analysis/position/report-one/report", headers=headers,
+                         json={"lease_id": "lease", "report": {}})
+    released = client.post("/api/games/analysis/position/report-one/release", headers=headers,
+                           json={"lease_id": "lease"})
+    failed = client.post("/api/games/analysis/position/report-one/failure", headers=headers,
+                         json={"lease_id": "lease", "error": "engine unavailable"})
+    assert [response.status_code for response in (report, released, failed)] == [200, 200, 200]
+    assert [entry[0] for entry in observed] == [
+        "games.analysis.position.report", "games.analysis.position.release",
+        "games.analysis.position.release",
+    ]
+    assert all(entry[2] == {"idempotency_key": "position-callback", "background": True}
+               for entry in observed)
+    assert observed[0][1]["request_json"] == "request-json"
+    assert observed[2][1]["error"] == "engine unavailable"
+
+
+def test_postgres_game_position_report_rejects_stale_lease_before_publication():
+    from app.game_analysis_commands import publish_position_report
+
+    statements = []
+
+    class StaleDatabase:
+        def execute_native(self, statement, *_parameters):
+            statements.append(statement)
+            return SimpleNamespace(fetchone=lambda: {
+                "game_id": "game", "request_json": "request-json", "report_json": None,
+                "state": "leased", "lease_id": "new-lease", "parent_lease_id": "parent",
+            })
+
+    with pytest.raises(HTTPException) as error:
+        publish_position_report(StaleDatabase(), {
+            "report_id": "report", "lease_id": "old-lease",
+            "request_json": "request-json", "report": {},
+        })
+    assert error.value.status_code == 422
+    assert len(statements) == 1
+
+
+def test_postgres_game_position_exhausted_retry_fails_parent_instead_of_repolling():
+    from app.game_analysis_commands import claim_game_analysis_position
+
+    statements = []
+
+    class FailedPositionDatabase:
+        def execute_native(self, statement, *_parameters):
+            statements.append(statement)
+            if "FROM game_analysis_jobs j" in statement:
+                row = {"analysis_version": 2, "analysis_evidence_version": 3,
+                       "status": "queued", "lease_expires_at": None,
+                       "rated": 1, "speed": "rapid"}
+            elif "FROM background_activity" in statement:
+                row = None
+            elif "FROM game_analysis_position_reports" in statement:
+                row = {"id": "position", "state": "failed"}
+            else:
+                row = None
+            return SimpleNamespace(fetchone=lambda: row)
+
+    assert claim_game_analysis_position(FailedPositionDatabase(), {
+        "game_id": "game", "analysis_version": 2,
+        "analysis_evidence_version": 3, "kind": "search",
+        "scan_pass": "shallow", "position_index": 0, "request": {},
+    }) == {"job": None}
+    assert any("SET status='failed'" in statement for statement in statements)
+    assert any("analysis_state='failed'" in statement for statement in statements)
+
+
 def test_postgres_analysis_progress_and_task_retry_dispatch_out_of_api(monkeypatch):
     from fastapi.testclient import TestClient
     from app import main

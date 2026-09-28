@@ -6,6 +6,19 @@ const response = (status: number, body: unknown) => new Response(JSON.stringify(
 });
 
 describe("Maia background command receipts", () => {
+  it("Docker engine callback waits for its PostgreSQL receipt with the worker header", async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(response(202, { operation_id: "position-save", state: "pending" }))
+      .mockResolvedValueOnce(response(200, { state: "complete", response: { status: "complete" } }));
+    const result = await requestMaiaApi("http://tempo", "/api/games/analysis/position/report/report",
+      { method: "POST", headers: { "X-Tempo-Engine-Worker": "docker" } },
+      { fetchImpl, pause: async () => {} });
+    expect(result).toEqual({ status: "complete" });
+    expect(fetchImpl.mock.calls[0][1].headers["X-Tempo-Engine-Worker"]).toBe("docker");
+    expect(fetchImpl.mock.calls[0][1].headers["Idempotency-Key"]).toBeTruthy();
+    expect(fetchImpl.mock.calls[1][0]).toBe("http://tempo/api/operations/position-save");
+  });
+
   it("keeps one idempotency key after broker retry and waits for a completed receipt", async () => {
     const fetchImpl = vi.fn()
       .mockResolvedValueOnce(response(503, { detail: "broker unavailable" }))

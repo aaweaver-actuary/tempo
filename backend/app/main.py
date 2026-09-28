@@ -490,6 +490,12 @@ async def prioritize_foreground_requests(request: Request, call_next):
                              and request.method == "POST")
         game_analysis_claim_command = (path_parts == ["api", "games", "analysis", "claim"]
                                        and request.method == "POST")
+        game_position_claim_command = (path_parts == ["api", "games", "analysis", "position", "claim"]
+                                       and request.method == "POST")
+        game_position_callback_command = (
+            len(path_parts) == 6 and path_parts[:4] == ["api", "games", "analysis", "position"]
+            and path_parts[5] in {"report", "release", "failure"} and request.method == "POST"
+        )
         settings_command = (path_parts == ["api", "settings"] and request.method == "PUT")
         endgame_probe = (path_parts == ["api", "endgames", "probe"]
                          and request.method == "POST")
@@ -534,7 +540,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     browser_activity, activity_control_command, activity_progress_command,
                     task_retry_command, tactic_attempt_command,
                     tactic_activation_command, game_accounts_command, game_sync_command,
-                    game_analysis_claim_command,
+                    game_analysis_claim_command, game_position_claim_command,
+                    game_position_callback_command,
                     settings_command,
                     endgame_probe, endgame_template_command,
                     endgame_attempt_command, branch_add_command, branch_remove_command,
@@ -4379,8 +4386,19 @@ def _require_docker_engine(engine_worker: str | None) -> None:
 @app.post("/api/games/analysis/position/claim")
 def claim_game_analysis_position(
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     _require_docker_engine(engine_worker)
+    if postgres_store.configured():
+        from .game_analysis_commands import prepare_position_claim
+        from .command_dispatch import dispatch_command
+        plan = prepare_position_claim()
+        if plan is None:
+            return {"job": None}
+        return dispatch_command(
+            "games.analysis.position.claim", plan,
+            idempotency_key=idempotency_key, background=True,
+        )
     parent_job = _claim_game_analysis()["job"]
     return {"job": claim_position(parent_job)}
 
@@ -4389,8 +4407,22 @@ def claim_game_analysis_position(
 def submit_game_analysis_position(
     report_id: str, request: ThreatAnalysisSubmission,
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     _require_docker_engine(engine_worker)
+    if postgres_store.configured():
+        from .game_analysis_commands import prepare_position_report
+        from .command_dispatch import dispatch_command
+        try:
+            request_json = prepare_position_report(report_id, request.report)
+        except (KeyError, ValueError) as error:
+            raise HTTPException(422, str(error)) from error
+        return dispatch_command(
+            "games.analysis.position.report",
+            {"report_id": report_id, "lease_id": request.lease_id,
+             "request_json": request_json, "report": request.report},
+            idempotency_key=idempotency_key, background=True,
+        )
     try:
         return {"status": save_position_report(report_id, request.lease_id, request.report)}
     except (KeyError, ValueError) as error:
@@ -4401,8 +4433,16 @@ def submit_game_analysis_position(
 def release_game_analysis_position(
     report_id: str, request: GameAnalysisLeaseRequest,
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     _require_docker_engine(engine_worker)
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.analysis.position.release",
+            {"report_id": report_id, "lease_id": request.lease_id},
+            idempotency_key=idempotency_key, background=True,
+        )
     return {"status": release_position(report_id, request.lease_id)}
 
 
@@ -4410,8 +4450,16 @@ def release_game_analysis_position(
 def fail_game_analysis_position(
     report_id: str, request: ThreatAnalysisFailureRequest,
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
+    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
 ):
     _require_docker_engine(engine_worker)
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "games.analysis.position.release",
+            {"report_id": report_id, "lease_id": request.lease_id, "error": request.error},
+            idempotency_key=idempotency_key, background=True,
+        )
     return {"status": release_position(report_id, request.lease_id, request.error)}
 
 
