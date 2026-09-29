@@ -45,6 +45,7 @@ case "$*" in *apply_postgres_migrations.py*) exit 17;; esac
     )
     assert result.returncode == 17
     commands = command_log.read_text()
+    assert "test ! -e /backups/" in commands
     assert "apply_postgres_migrations.py" in commands
     assert "compose up -d foreground-worker" not in commands
     assert "compose up -d web defense-engine" not in commands

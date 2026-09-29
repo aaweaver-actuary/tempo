@@ -27,7 +27,7 @@ docker compose build api foreground-worker background-worker background-schedule
 docker compose stop web defense-engine maia-worker api foreground-worker background-worker background-scheduler
 docker compose up -d postgres redis postgres-backup
 
-docker compose exec -T postgres-backup sh -ec "pg_dump -h postgres -U tempo -d tempo -Fc -f /backups/$backup_name && pg_restore -l /backups/$backup_name >/dev/null && sha256sum /backups/$backup_name > /backups/$backup_name.sha256 && cd /backups && sha256sum -c $backup_name.sha256"
+docker compose exec -T postgres-backup sh -ec "test ! -e /backups/$backup_name && pg_dump -h postgres -U tempo -d tempo -Fc -f /backups/$backup_name && pg_restore -l /backups/$backup_name >/dev/null && sha256sum /backups/$backup_name > /backups/$backup_name.sha256 && cd /backups && sha256sum -c $backup_name.sha256"
 docker compose exec -T postgres-backup sh -ec "createdb -h postgres -U tempo $restore_database && pg_restore -h postgres -U tempo -d $restore_database --no-owner --no-privileges /backups/$backup_name"
 docker compose -f docker-compose.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm --no-deps migration scripts/verify_postgres_backup.py postgresql://tempo@postgres:5432/tempo "postgresql://tempo@postgres:5432/$restore_database"
 docker compose exec -T postgres-backup dropdb -h postgres -U tempo "$restore_database"
