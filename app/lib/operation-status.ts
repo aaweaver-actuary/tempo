@@ -1,8 +1,8 @@
 import { API_URL } from "../const";
 
 export class PendingOperationError extends Error {
-  constructor(readonly operationId: string) {
-    super(`Save is still pending (operation ${operationId}). Retry to check its result.`);
+  constructor(readonly operationId: string, message?: string, readonly blocked = false) {
+    super(message ?? `Save is still pending (operation ${operationId}). Retry to check its result.`);
     this.name = "PendingOperationError";
   }
 }
@@ -27,6 +27,8 @@ export async function confirmOperationResponse(response: Response): Promise<Resp
     state?: string;
     response?: unknown;
     error?: { message?: string };
+    last_error?: { message?: string };
+    message?: string;
   };
   if (receipt.state === "complete")
     return Response.json(receipt.response);
@@ -35,5 +37,9 @@ export async function confirmOperationResponse(response: Response): Promise<Resp
       receipt.error?.message ?? "The save failed. Check the service before retrying.",
       pending.operation_id,
     );
+  if (receipt.state === "blocked")
+    throw new PendingOperationError(pending.operation_id,
+      `Operation ${pending.operation_id} is blocked: ${receipt.last_error?.message ?? receipt.message ?? "check the local service"}. Retry it from the operation status after resolving the error.`,
+      true);
   throw new PendingOperationError(pending.operation_id);
 }

@@ -1,12 +1,13 @@
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import StockfishFactory from "../public/engines/sf_19_smallnet.js";
-import { createDurableEngineRequest } from "./durable-engine-request.mjs";
+import { createDurableEngineRequest, migrateLegacyDefenseClaimJournal } from "./durable-engine-request.mjs";
 
 const api = process.env.TEMPO_API_URL ?? "http://api:8000";
-const durableRequest = createDurableEngineRequest(
-  api, process.env.TEMPO_ENGINE_OUTBOX_PATH ?? "/tmp/tempo-engine-pending-command.json",
-);
+const journalPath = process.env.TEMPO_ENGINE_OUTBOX_PATH ?? "/tmp/tempo-engine-pending-command.json";
+await migrateLegacyDefenseClaimJournal(journalPath);
+const durableRequest = createDurableEngineRequest(api, journalPath);
+const defenseClaimRequest = createDurableEngineRequest(api, `${journalPath}.defense`);
 const assetDirectory = resolve(import.meta.dirname, "../public/engines");
 const engine = await StockfishFactory({
   locateFile: (name) => resolve(assetDirectory, name),
@@ -22,8 +23,12 @@ engine.uci("isready");
 const sleep = (milliseconds) => new Promise((done) => setTimeout(done, milliseconds));
 
 async function request(path, options = {}) {
-  return durableRequest.send(path, {
-    ...options, headers: { ...options.headers, "X-Tempo-Engine-Worker": "docker" },
+  const journal = path === "/api/defensive-threats/analysis/claim"
+    ? defenseClaimRequest : durableRequest;
+  return journal.send(path, {
+    ...options,
+    ...(path === "/api/defensive-threats/analysis/claim" ? { pollAttempts: 20 } : {}),
+    headers: { ...options.headers, "X-Tempo-Engine-Worker": "docker" },
   });
 }
 
@@ -126,17 +131,34 @@ while (true) {
   let jobKind;
   try {
     const recovered = await durableRequest.recover();
-    if (recovered?.path === "/api/defensive-threats/analysis/claim") {
-      job = recovered.result.job;
-      jobKind = "defense";
-    } else if (recovered?.path === "/api/games/analysis/position/claim") {
+    if (recovered?.path === "/api/games/analysis/position/claim") {
       job = recovered.result.job;
       jobKind = "game";
+    }
+    let defenseClaimUnresolved = false;
+    try {
+      const recoveredDefense = await defenseClaimRequest.recover();
+      if (recoveredDefense) {
+        job = recoveredDefense.result.job;
+        jobKind = "defense";
+      }
+    } catch (error) {
+      if (!error.operationId) throw error;
+      defenseClaimUnresolved = true;
+      console.error("Defensive claim remains unresolved:", error.operationId, error.message);
     }
     if (!job) {
       const available = await request("/api/system/foreground-active");
       if (available.active) { await sleep(2_000); continue; }
-      job = (await request("/api/defensive-threats/analysis/claim", { method: "POST" })).job;
+      if (!defenseClaimUnresolved) {
+        try {
+          job = (await request("/api/defensive-threats/analysis/claim", { method: "POST" })).job;
+        } catch (error) {
+          if (!error.operationId) throw error;
+          defenseClaimUnresolved = true;
+          console.error("Defensive claim remains unresolved:", error.operationId, error.message);
+        }
+      }
       if (job) jobKind = "defense";
       else {
         await request("/api/games/analysis/repair-timeout", { method: "POST" });

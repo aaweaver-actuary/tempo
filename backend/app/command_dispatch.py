@@ -58,13 +58,9 @@ def dispatch_command(
     if receipt["state"] == "failed":
         error = receipt["error"]
         raise HTTPException(error.get("status_code", 500), error.get("message", "Save failed"))
-    try:
-        if task.state in {"FAILURE", "REVOKED"}:
-            raise HTTPException(503, "Save worker could not complete the command; retry with the same Idempotency-Key")
-    except RedisError:
-        pass
     return JSONResponse(
         status_code=202,
-        content={"operation_id": operation_id, "state": "pending"},
+        content={"operation_id": operation_id, "state": receipt["state"],
+                 **({"message": receipt["message"]} if receipt.get("message") else {})},
         headers={"Location": f"/api/operations/{operation_id}"},
     )

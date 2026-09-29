@@ -5,7 +5,7 @@ import { API_URL } from "../const";
 import { usesLocalApi } from "../utils/local";
 import type { GameProviderValue, GameSyncJobStatusValue } from "../types";
 import { backgroundFetch } from "../lib/background-fetch";
-import { reportDebugError } from "../lib/debug-reporting";
+import { reportDebugError, resolveApiIncidentsForEndpoint, resolveValidationIncidentsForEndpoint } from "../lib/debug-reporting";
 import { enqueueGameSyncCommand, hasPendingGameSyncCommand } from "../lib/game-sync-command";
 import { PendingOperationError } from "../lib/operation-status";
 
@@ -50,7 +50,7 @@ export function useGameSync() {
     let failedMethod = "GET";
     try {
       const settingsResponse = await (manual ? fetch : backgroundFetch)(`${API_URL}/api/settings`);
-      const settings = await readJsonResponse(settingsResponse, settingsResponseSchema, "game sync settings");
+      const settings = await readJsonResponse(settingsResponse, settingsResponseSchema, "game sync settings", { endpoint: failedEndpoint, reportHttpFailure: false });
       interval.current = Number(settings.auto_sync_minutes ?? 3) * 60_000;
       if (!settings.lichess_username && !settings.chesscom_username) {
         if (manual) setState((current) => ({ ...current, error: "Add a Lichess or Chess.com username in Settings." }));
@@ -62,12 +62,13 @@ export function useGameSync() {
       failedOperation = "sync games";
       failedMethod = "POST";
       const response = await enqueueGameSyncCommand({ lichess_username: settings.lichess_username, chesscom_username: settings.chesscom_username, days: 90, speeds: ["blitz", "rapid", "classical"], rated_only: true, repair }, manual ? fetch : backgroundFetch);
-      const result = await readJsonResponse(response, syncResultSchema, "game sync");
+      const result = await readJsonResponse(response, syncResultSchema, "game sync", { endpoint: failedEndpoint, reportHttpFailure: false });
       const providerResults = Object.values(result.providers);
       setState((current) => ({ ...current, syncing: result.status !== "complete" && result.status !== "failed", error: providerResults.filter((provider) => provider.error).map((provider) => `${provider.provider}: ${provider.error}`).join(" · "), imported: result.imported, providers: providerResults, jobStatus: result.status }));
     } catch (error) {
       if (error instanceof PendingOperationError) {
-        setState((current) => ({ ...current, syncing: true, error: "" }));
+        setState((current) => ({ ...current, syncing: !error.blocked,
+          error: error.blocked ? error.message : "" }));
         return;
       }
       reportDebugError(error, {
@@ -94,7 +95,9 @@ export function useGameSync() {
       const requestGeneration = statusScheduleGeneration;
       try {
         const response = await backgroundFetch(`${API_URL}/api/games/sync/status`);
-        const result = await readJsonResponse(response, syncStatusSchema, "game sync status");
+        const result = await readJsonResponse(response, syncStatusSchema, "game sync status", { endpoint: `${API_URL}/api/games/sync/status`, reportHttpFailure: false });
+        resolveValidationIncidentsForEndpoint(`${API_URL}/api/games/sync/status`);
+        resolveApiIncidentsForEndpoint(`${API_URL}/api/games/sync/status`, "game-sync-status");
         statusFailureCount.current = 0;
         lastReportedStatusFailure.current = "";
         const latest = result.providers.map((provider) => provider.last_success_at ?? "").sort().at(-1) ?? "";

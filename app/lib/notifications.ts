@@ -5,6 +5,7 @@ export type NotificationRecord = {
   key?: string;
   occurredAt: string;
   updatedAt: string;
+  occurrenceCount?: number;
   resolvedAt: string | null;
   active: boolean;
   severity: NotificationSeverity;
@@ -71,7 +72,8 @@ export function hydrateNotifications() {
       typeof item.source === "string" && typeof item.updatedAt === "string" &&
       ["info", "success", "warning", "error"].includes(item.severity))
       .slice(0, NOTIFICATION_HISTORY_LIMIT)
-      .map((item) => ({ ...item, active: false, message: sanitizeNotificationText(item.message), details: safeDetails(item.details) }));
+      .map((item) => ({ ...item, active: false, occurrenceCount: item.occurrenceCount ?? 1,
+        message: sanitizeNotificationText(item.message), details: safeDetails(item.details) }));
     history = [...history, ...restored.filter((item) => !history.some((current) => current.id === item.id))]
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, NOTIFICATION_HISTORY_LIMIT);
@@ -107,8 +109,15 @@ export function publishNotification(input: NotificationInput): string {
   hydrateNotifications();
   const message = sanitizeNotificationText(input.message);
   const existing = input.key && history.find((record) => record.key === input.key && !record.resolvedAt);
-  if (existing && existing.message === message && existing.severity === input.severity &&
-      JSON.stringify(existing.details) === JSON.stringify(safeDetails(input.details))) return existing.id;
+  if (existing && existing.message === message && existing.severity === input.severity) {
+    const observed = { ...existing, occurrenceCount: (existing.occurrenceCount ?? 1) + 1,
+      updatedAt: new Date().toISOString(), details: safeDetails(input.details) ?? existing.details };
+    history = [observed, ...history.filter((record) => record.id !== existing.id)]
+      .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+    persist();
+    notifySubscribers();
+    return existing.id;
+  }
   if (existing) {
     updateNotification(existing.id, input);
     return existing.id;
@@ -120,6 +129,7 @@ export function publishNotification(input: NotificationInput): string {
     key: input.key,
     occurredAt: now,
     updatedAt: now,
+    occurrenceCount: 1,
     resolvedAt: null,
     active: input.active ?? false,
     severity: input.severity,

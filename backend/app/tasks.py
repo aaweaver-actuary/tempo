@@ -9,10 +9,14 @@ from datetime import date
 from typing import Any
 
 from kombu.exceptions import OperationalError as BrokerUnavailable
+import psycopg
 from psycopg.errors import DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout
 
 from .celery_app import celery_app
-from .command_gateway import execute_command
+from .command_gateway import (
+    claim_recoverable_operation, execute_command, record_operation_attempt,
+    record_operation_retry,
+)
 from .database import read_connection
 from . import study_commands  # noqa: F401 - registers explicit worker commands
 from . import study_attempt_commands  # noqa: F401 - registers Study attempt commands
@@ -141,13 +145,23 @@ def ensure_daily_queue() -> bool:
 
 @celery_app.task(name="app.tasks.execute_foreground_command", bind=True)
 def execute_foreground_command(
-    self, operation_id: str, command_name: str, payload: dict[str, Any]
+    self, operation_id: str, command_name: str, payload: dict[str, Any], allow_blocked: bool = False,
 ) -> Any:
     submitted_at = (self.request.headers or {}).get("submitted_at")
     queue_wait = max(0.0, time.time() - float(submitted_at)) if submitted_at else None
     started = time.perf_counter()
     with activity_gate.foreground():
-        result = execute_command(operation_id, command_name, payload)
+        should_execute, saved_payload = record_operation_attempt(
+            operation_id, command_name, payload, background=False, allow_blocked=allow_blocked,
+        )
+        if not should_execute:
+            return None
+        try:
+            result = execute_command(operation_id, command_name, saved_payload)
+        except Exception as error:
+            record_operation_retry(operation_id, error, delay_seconds=0, exhausted=True,
+                                   background=False)
+            raise
     _LOGGER.info(
         "foreground command=%s queue_wait_seconds=%s execution_seconds=%.3f",
         command_name, f"{queue_wait:.3f}" if queue_wait is not None else "unknown",
@@ -158,15 +172,56 @@ def execute_foreground_command(
 
 @celery_app.task(name="app.tasks.execute_background_command", bind=True, max_retries=10)
 def execute_background_command(
-    self, operation_id: str, command_name: str, payload: dict[str, Any]
+    self, operation_id: str, command_name: str, payload: dict[str, Any], allow_blocked: bool = False,
 ) -> Any:
     """Execute an external worker callback in a bounded background section."""
 
     with activity_gate.background_job(command_name, operation_id):
         try:
-            return execute_command(operation_id, command_name, payload, background=True)
-        except (DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout) as error:
-            raise self.retry(exc=error, countdown=min(1.0, 0.1 * (self.request.retries + 1)))
+            should_execute, saved_payload = record_operation_attempt(
+                operation_id, command_name, payload, background=True, allow_blocked=allow_blocked,
+            )
+            if not should_execute:
+                return None
+            return execute_command(operation_id, command_name, saved_payload, background=True)
+        except (psycopg.OperationalError, psycopg.InterfaceError,
+                DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout) as error:
+            exhausted = self.request.retries >= self.max_retries
+            delay_seconds = min(30.0, 0.5 * 2 ** self.request.retries)
+            try:
+                record_operation_retry(operation_id, error, delay_seconds=delay_seconds,
+                                       exhausted=exhausted, background=True)
+            except (psycopg.OperationalError, psycopg.InterfaceError):
+                _LOGGER.exception("Could not record retry operation_id=%s", operation_id)
+            _LOGGER.warning("background command=%s operation_id=%s attempt=%s stage=execute "
+                            "error_class=%s next_retry_seconds=%s", command_name, operation_id,
+                            self.request.retries + 1, type(error).__name__,
+                            None if exhausted else delay_seconds)
+            if exhausted:
+                return None
+            raise self.retry(exc=error, countdown=delay_seconds)
+        except Exception as error:
+            record_operation_retry(operation_id, error, delay_seconds=0, exhausted=True,
+                                   background=True)
+            raise
+
+
+@celery_app.task(name="app.tasks.recover_operations")
+def recover_operations() -> bool:
+    with activity_gate.background_job("operation_recovery", "one-run"):
+        operation = claim_recoverable_operation()
+    if operation is None:
+        return False
+    task_is_background = operation["background"]
+    celery_app.send_task(
+        "app.tasks.execute_background_command" if task_is_background
+        else "app.tasks.execute_foreground_command",
+        args=[operation["operation_id"], operation["command_name"], operation["payload"]],
+        task_id=operation["operation_id"],
+        queue="background" if task_is_background else "foreground",
+        headers={"submitted_at": time.time()},
+    )
+    return True
 
 
 @celery_app.task(name="app.tasks.poll_background_tasks")

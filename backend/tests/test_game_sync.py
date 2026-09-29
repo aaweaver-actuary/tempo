@@ -10,10 +10,34 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import database
-from app.models import GameSyncRequest
+from app.models import GameSyncRequest, GameSyncJob
 from app.main import app
 import app.main as main_module
 import app.services.game_sync_coordinator as game_sync_coordinator
+
+
+@pytest.mark.parametrize("state", ["queued", "running", "paused", "retrying", "failed"])
+def test_incomplete_game_sync_never_exposes_internal_counters_as_completed_result(state):
+    row = {"id": "job", "status": state, "created_at": "2026-09-29T10:00:00Z",
+           "started_at": None, "completed_at": None, "updated_at": "2026-09-29T10:00:00Z",
+           "error": "provider failed" if state == "failed" else None,
+           "result_json": json.dumps({"imported": 1, "providers": {
+               "lichess": {"inserted": 1, "updated": 0, "duplicates": 0}}})}
+    public_job = game_sync_coordinator.serialize_job(row)
+    assert public_job["result"] is None
+    assert public_job["error"] == row["error"]
+    assert GameSyncJob.model_validate(public_job).result is None
+    assert json.loads(row["result_json"])["providers"]["lichess"]["inserted"] == 1
+
+
+def test_completed_game_sync_rejects_partial_result_in_public_model():
+    row = {"id": "job", "status": "complete", "created_at": "2026-09-29T10:00:00Z",
+           "started_at": None, "completed_at": "2026-09-29T10:01:00Z",
+           "updated_at": "2026-09-29T10:01:00Z", "error": None,
+           "result_json": json.dumps({"imported": 1, "providers": {
+               "lichess": {"inserted": 1, "updated": 0, "duplicates": 0}}})}
+    with pytest.raises(ValueError):
+        GameSyncJob.model_validate(game_sync_coordinator.serialize_job(row))
 from app.services.lichess_client import fetch_lichess_games_window
 from app.services.chesscom_client import (
     fetch_chesscom_archive_urls, fetch_chesscom_archive_month,

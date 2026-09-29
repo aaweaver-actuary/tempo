@@ -27,6 +27,23 @@ it("legacy rejected discovery saves recover with a bounded key after reload", as
   expect(pendingDiscoveryAdmissions()[0]).toMatchObject({ state: "accepted", intentId: "intent" });
 });
 
+it("legacy oversized stored operation key is repaired only after its confirmed rejection", () => {
+  localStorage.setItem("tempo-pending-discovery-admissions-v1", JSON.stringify([{
+    ...hashAdmission, operationId: "x".repeat(140), state: "failed",
+    error: "Idempotency-Key must be at most 128 characters",
+  }]));
+  recoverUnacknowledgedDiscoveryAdmissions();
+  expect(pendingDiscoveryAdmissions()[0]).toMatchObject({ state: "pending" });
+  expect(pendingDiscoveryAdmissions()[0].operationId.length).toBeLessThanOrEqual(128);
+});
+
+it("uncertain invalid stored operation key remains intact with an actionable error", () => {
+  const saved = JSON.stringify([{ ...hashAdmission, operationId: "x".repeat(140), state: "pending" }]);
+  localStorage.setItem("tempo-pending-discovery-admissions-v1", saved);
+  expect(() => recoverUnacknowledgedDiscoveryAdmissions()).toThrow("Saved discovery requests are invalid");
+  expect(localStorage.getItem("tempo-pending-discovery-admissions-v1")).toBe(saved);
+});
+
 it("uncertain discovery retries retain one operation key and the same choice", async () => {
   vi.useFakeTimers();
   try {
@@ -108,6 +125,42 @@ it("discovery replay sends at most two due admissions and prioritizes the new ch
   expect(acceptedIds[0]).toBe("new-choice");
   await flushPendingDiscoveryAdmissions();
   expect(acceptedIds).toHaveLength(3);
+});
+
+it("two indefinitely preparing admissions cannot starve a later unsent discovery", async () => {
+  for (const opportunityId of ["first", "second", "third"])
+    enqueuePendingDiscoveryAdmission({ ...admission, opportunityId });
+  const submitted: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url.endsWith("/accept")) {
+      const opportunityId = url.split("/discoveries/")[1].split("/")[0];
+      submitted.push(opportunityId);
+      return Response.json({ status: "preparing", intent_id: `intent-${opportunityId}` });
+    }
+    return Response.json({ state: "preparing", error: null });
+  }));
+  await flushPendingDiscoveryAdmissions();
+  await flushPendingDiscoveryAdmissions();
+  expect(submitted).toEqual(["first", "second", "third"]);
+  expect(pendingDiscoveryAdmissions()).toHaveLength(3);
+});
+
+it("a large saved discovery backlog receives bounded submission service", async () => {
+  for (let admissionNumber = 0; admissionNumber < 24; admissionNumber += 1)
+    enqueuePendingDiscoveryAdmission({ ...admission, opportunityId: `gap-${admissionNumber}` });
+  const submitted: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url.endsWith("/accept")) {
+      const opportunityId = url.split("/discoveries/")[1].split("/")[0];
+      submitted.push(opportunityId);
+      return Response.json({ status: "preparing", intent_id: `intent-${opportunityId}` });
+    }
+    return Response.json({ state: "preparing", error: null });
+  }));
+  for (let flushNumber = 0; flushNumber < 12; flushNumber += 1)
+    await flushPendingDiscoveryAdmissions();
+  expect(new Set(submitted).size).toBe(24);
+  expect(pendingDiscoveryAdmissions()).toHaveLength(24);
 });
 
 it("discovery save outbox survives reload and waits for queued confirmation", async () => {

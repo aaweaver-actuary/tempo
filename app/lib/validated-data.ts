@@ -72,6 +72,7 @@ export function parseData<T>(
   schema: z.ZodType<T>,
   raw: unknown,
   source: string,
+  endpoint?: string,
 ): T {
   const result = schema.safeParse(raw);
   if (result.success) return result.data;
@@ -84,7 +85,7 @@ export function parseData<T>(
     kind: "data-validation",
     source: "validated-data",
     operation: "schema validation",
-    endpoint: source,
+    endpoint,
   });
   throw failure;
 }
@@ -123,6 +124,7 @@ export async function readJsonResponse<T>(
   response: Response,
   schema: z.ZodType<T>,
   source: string,
+  options: { endpoint?: string; reportHttpFailure?: boolean } = {},
 ): Promise<T> {
   let raw: unknown;
   try {
@@ -141,14 +143,14 @@ export async function readJsonResponse<T>(
         ? error.data.detail
         : `${source} failed (HTTP ${response.status})`,
     );
-    reportDebugError(failure, {
+    if (options.reportHttpFailure !== false) reportDebugError(failure, {
       kind: "api",
       source: "validated-response",
       operation: "read JSON response",
-      endpoint: response.url || source,
+      endpoint: options.endpoint || response.url || source,
       status: response.status,
     });
     throw failure;
   }
-  return parseData(schema, raw, source);
+  return parseData(schema, raw, source, options.endpoint || response.url || undefined);
 }

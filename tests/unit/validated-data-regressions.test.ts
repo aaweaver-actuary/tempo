@@ -1,4 +1,5 @@
 import { beforeEach, expect, it } from "vitest";
+import * as z from "zod";
 import { Chess } from "chess.js";
 import { queueCardsFromPayload } from "../../app/domain/adapters/practice-card-adapters";
 import {
@@ -18,9 +19,30 @@ import {
   dataDiagnostics,
   readStoredValue,
   validRecords,
+  readJsonResponse,
 } from "../../app/lib/validated-data";
+import { clearDebugErrors, reportDebugError, resolveValidationIncidentsForEndpoint } from "../../app/lib/debug-reporting";
+import { clearNotificationHistory, notifications } from "../../app/lib/notifications";
 
 beforeEach(clearDataDiagnostics);
+
+it("one validation exception reports once with its HTTP endpoint and resolves after valid status", async () => {
+  clearDebugErrors();
+  clearNotificationHistory();
+  const endpoint = "http://127.0.0.1:8000/api/games/sync/status";
+  const invalidResponse = Response.json({ value: "wrong" });
+  Object.defineProperty(invalidResponse, "url", { value: endpoint });
+  try {
+    await readJsonResponse(invalidResponse, z.object({ value: z.number() }), "game sync status");
+  } catch (error) {
+    reportDebugError(error, { source: "game-sync-status", endpoint });
+  }
+  expect(notifications()).toHaveLength(1);
+  expect(notifications()[0].details?.endpointPath).toBe("/api/games/sync/status");
+  await readJsonResponse(Response.json({ value: 1 }), z.object({ value: z.number() }), "game sync status");
+  resolveValidationIncidentsForEndpoint(endpoint);
+  expect(notifications()[0].resolvedAt).not.toBeNull();
+});
 
 it("continuation preview accepts report provenance and rejects unknown candidate fields", () => {
   const candidate = {
