@@ -59,7 +59,7 @@ interface TrainingViewProps {
   onAcceptPrefixSplit?: (card: PracticeCard) => Promise<void>;
   onRejectPrefixSplit?: (card: PracticeCard) => Promise<void>;
   onMove: (from: Square, to: Square) => void;
-  onOpenPosition?: (target: "analysis" | "builder" | "games") => void;
+  onOpenPosition?: (target: "analysis" | "builder" | "games" | "compare") => void;
   useSharedBoard?: boolean;
   onDefenseGraded?: () => Promise<void>;
   onBury?: () => Promise<void>;
@@ -466,6 +466,9 @@ function StandardTrainingView({
               </Button>
             </div>
             <div className="position-actions" aria-label="Open review position">
+              {usesLocalApi() && card.kind === "opening" && (attemptFailed || feedback === "complete") && (
+                <Button onClick={() => onOpenPosition("compare")}>Compare positions</Button>
+              )}
               <Button onClick={() => onOpenPosition("analysis")}>
                 Analysis
               </Button>

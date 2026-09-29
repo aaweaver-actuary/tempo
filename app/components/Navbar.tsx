@@ -84,7 +84,7 @@ export default function Navbar({
         aria-controls="workspace-menu"
         onClick={() => setMenuOpen(!menuOpen)}
       >
-        {WORKSPACES.find((item) => item.id === view)?.label} ▾
+        {WORKSPACES.find((item) => item.id === view)?.label ?? "Compare"} ▾
       </Button>
       {menuOpen && (
         <div

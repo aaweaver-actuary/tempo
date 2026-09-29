@@ -2194,6 +2194,34 @@ def repertoire_lines():
     }
 
 
+@app.get("/api/compare/cards")
+def comparison_cards():
+    """Return saved opening routes; chess replay belongs outside the database read."""
+    with read_connection() as db:
+        rows = db.execute("""SELECT c.id,c.start_fen,c.moves_json,c.state,c.kind,
+                                  c.trained_color,r.id repertoire_id,r.name repertoire_name
+                           FROM cards c
+                           JOIN repertoire_cards rc ON rc.card_id=c.id
+                           JOIN repertoires r ON r.id=rc.repertoire_id
+                           WHERE c.content_type='opening' AND c.archived=0
+                             AND c.pending_validation=0
+                           ORDER BY c.id,r.id""").fetchall()
+        records = [dict(row) for row in rows]
+    cards = []
+    for record in records:
+        if not cards or cards[-1]["id"] != record["id"]:
+            cards.append({
+                "id": record["id"], "start_fen": record["start_fen"],
+                "moves": json.loads(record["moves_json"]),
+                "state": record["state"], "kind": record["kind"],
+                "trained_color": record["trained_color"], "repertoires": [],
+            })
+        cards[-1]["repertoires"].append({
+            "id": record["repertoire_id"], "name": record["repertoire_name"],
+        })
+    return {"cards": cards}
+
+
 @app.get("/api/repertoire/conflicts")
 def repertoire_conflicts(repertoire_id: str | None = None):
     with connection() as db:

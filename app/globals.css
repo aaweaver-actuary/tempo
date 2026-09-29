@@ -3831,6 +3831,9 @@ button {
     flex: 1;
     justify-content: center;
   }
+  .analysis-switches .analysis-compare-trigger {
+    flex: 0 0 100%;
+  }
   .explorer-row {
     grid-template-columns: 30px 1fr 60px;
   }

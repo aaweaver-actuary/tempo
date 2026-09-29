@@ -163,6 +163,10 @@ test("training-feedback-phone", async ({ page }) => {
   await expect(
     page.getByText("Try that position again", { exact: true }),
   ).toBeVisible();
+  await expect(page.locator(".feedback.wrong")).toBeVisible();
+  await page.evaluate(() => new Promise<void>((resolve) =>
+    requestAnimationFrame(() => requestAnimationFrame(() => resolve())),
+  ));
   await expect(page).toHaveScreenshot("training-feedback-phone.png", {
     fullPage: true,
   });

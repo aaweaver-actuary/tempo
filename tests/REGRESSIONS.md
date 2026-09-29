@@ -4,6 +4,7 @@
 
 | Issue | Required regression |
 | --- | --- |
+| A similar London card recommends `Bxc4` while the pictured `...Nf6` card recommends `Nc3`; comparison must preserve that difference, exact move-order routes, and the active training attempt | `London comparison keeps Nc3 distinct from the nearby Bxc4 decision and retains transposed card routes`; `test_comparison_cards_returns_active_routes_and_all_repertoire_links`; `four comparison boards retain distinct routes and independent ply navigation`; `training comparison stays concealed until a mistake and returning preserves the attempt`; `comparison card service failure gives a retry without sample matches` |
 | PostgreSQL defensive threat scan exhausts retries because its candidate upsert refers ambiguously to the existing source fingerprint | `PostgreSQL defensive candidate upsert replays and resets changed evidence` in `scripts/check_postgres_threat_candidate_upsert.py`, run by `scripts/test-postgres-docker.mjs` |
 | The PostgreSQL maintenance image cannot start the schema migration or SQLite import because it omits the shared schema-version module | `PostgreSQL maintenance image starts migration and import commands` in `scripts/test-postgres-docker.mjs` |
 | Cutover verification hashes PostgreSQL-only publication columns and falsely reports a mismatch with the SQLite source | `test_postgres_cutover_digest_ignores_new_target_columns` |

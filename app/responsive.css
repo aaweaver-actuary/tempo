@@ -114,6 +114,61 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
   gap: 8px;
   align-items: start;
 }
+.comparison-workspace {
+  width: min(100% - 32px, 1760px);
+  margin: 24px auto 56px;
+}
+.comparison-header,
+.comparison-results-heading,
+.comparison-tile-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.comparison-header { margin-bottom: 20px; }
+.comparison-header h1 { margin: 0 0 6px; font-family: Georgia, serif; }
+.comparison-header p,
+.comparison-results-heading p { margin: 0; color: var(--muted); }
+.comparison-header-actions,
+.comparison-tile-heading > div:last-child { display: flex; flex-wrap: wrap; gap: 8px; }
+.comparison-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 350px), 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.comparison-tile,
+.comparison-results {
+  min-width: 0;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel);
+  padding: 14px;
+}
+.comparison-tile.selected { border-color: var(--green); box-shadow: 0 0 0 2px var(--sage); }
+.comparison-tile-heading { min-height: 53px; }
+.comparison-tile-heading small { display: block; margin-top: 4px; color: var(--muted); }
+.comparison-tile .board-viewport { width: min(100%, 440px); margin: 10px auto; }
+.comparison-tile-controls,
+.comparison-moves,
+.comparison-match-routes { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; }
+.comparison-tile-controls { margin: 8px 0; }
+.comparison-tile-controls span { font-size: .88rem; }
+.comparison-moves { max-height: 100px; overflow: auto; }
+.comparison-moves button.active { background: var(--sage); }
+.comparison-results { margin-top: 20px; }
+.comparison-results-heading { margin-bottom: 16px; }
+.comparison-results-heading h2 { margin: 0 0 4px; }
+.comparison-match { padding: 12px 0; border-top: 1px solid var(--line); }
+.comparison-match > div:first-child { display: flex; justify-content: space-between; gap: 12px; margin-bottom: 8px; }
+.comparison-match small { color: var(--muted); }
+.comparison-match-routes button { display: grid; gap: 4px; text-align: left; white-space: normal; }
+@media (max-width: 767px) {
+  .comparison-header,
+  .comparison-results-heading { flex-direction: column; }
+  .comparison-grid { grid-template-columns: minmax(0, 1fr); }
+}
 .workspace-board-column {
   position: sticky;
   top: calc(var(--nav-height) + 16px);
