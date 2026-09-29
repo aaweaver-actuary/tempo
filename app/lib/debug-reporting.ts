@@ -4,7 +4,8 @@ import { dataDiagnostics } from "./validated-data";
 import { usesLocalApi } from "../utils/local";
 import { serviceStatusSnapshot } from "./service-status";
 import { offlineShellVersion } from "./offline-shell";
-import { notifications, publishNotification, resolveNotification } from "./notifications";
+import { debugIncidentKey, notifications, publishNotification,
+  resolveNotification, sanitizeNotificationText } from "./notifications";
 
 export type DebugErrorKind =
   | "uncaught-exception"
@@ -61,17 +62,7 @@ function notify() {
 }
 
 function sanitizeText(value: string): string {
-  return value
-    .replace(/https?:\/\/[^\s)]+/gi, (url) => {
-      try {
-        return new URL(url).pathname;
-      } catch {
-        return "[redacted-url]";
-      }
-    })
-    .replace(/[?&][A-Za-z0-9_.-]+=[^\s&]+/g, (parameter) => `${parameter.slice(0, parameter.indexOf("=") + 1)}[redacted]`)
-    .replace(/[\w.+-]+@[\w.-]+\.[A-Za-z]{2,}/g, "[redacted-email]")
-    .slice(0, MAX_TEXT_LENGTH);
+  return sanitizeNotificationText(value).slice(0, MAX_TEXT_LENGTH);
 }
 
 function errorDetails(failure: unknown): {
@@ -81,7 +72,7 @@ function errorDetails(failure: unknown): {
 } {
   if (failure instanceof Error) {
     return {
-      name: failure.name || "Error",
+      name: sanitizeText(failure.name || "Error"),
       message: sanitizeText(failure.message || "Unknown error"),
       stack: failure.stack ? sanitizeText(failure.stack) : undefined,
     };
@@ -105,7 +96,7 @@ function endpointPath(endpoint: string | undefined): string | undefined {
 }
 
 export function setActiveDebugWorkspace(workspace: string) {
-  activeWorkspace = workspace;
+  activeWorkspace = sanitizeText(workspace);
 }
 
 export function subscribeDebugErrors(listener: () => void) {
@@ -133,10 +124,10 @@ export function reportDebugError(
   }
   const details = errorDetails(failure);
   const normalizedContext = {
-    source: context.source ?? "frontend",
+    source: sanitizeText(context.source ?? "frontend"),
     operation: context.operation ? sanitizeText(context.operation) : undefined,
     endpointPath: endpointPath(context.endpoint),
-    method: context.method,
+    method: context.method ? sanitizeText(context.method) : undefined,
     status: context.status,
     retryable: context.retryable,
     scriptPath: endpointPath(context.script),
@@ -179,7 +170,7 @@ export function reportDebugError(
   notify();
   if (normalizedContext.source !== "browser-extension") publishNotification({
     severity: "error", source: normalizedContext.source,
-    message: record.message, key: `debug-incident:${signature}`,
+    message: record.message, key: debugIncidentKey(signature),
     details: {
       debugRecordId: record.id,
       kind: record.kind,
@@ -303,7 +294,8 @@ export function buildDebugBundle(recordId?: string): string {
       "URL query parameters and secrets",
     ],
   };
-  return JSON.stringify(payload, null, 2);
+  return JSON.stringify(payload, (_key, value: unknown) =>
+    typeof value === "string" ? sanitizeText(value) : value, 2);
 }
 
 export async function copyDebugBundle(recordId?: string): Promise<boolean> {

@@ -21,6 +21,31 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
+_ELIGIBLE_THREAT_REQUEST = (
+    "SELECT request.id,request.request_json FROM threat_analysis_requests request "
+    "LEFT JOIN background_activity control ON control.source='threat_analysis' "
+    "AND control.work_id=request.id "
+    "WHERE request.state='queued' AND COALESCE(control.paused,0)=0 "
+    "AND (EXISTS(SELECT 1 FROM threat_candidate_requests relation "
+    "JOIN threat_training_candidates candidate ON candidate.id=relation.candidate_id "
+    "JOIN imported_games game ON game.id=candidate.game_id "
+    "WHERE relation.request_id=request.id AND candidate.superseded_at IS NULL "
+    "AND candidate.analysis_version=game.analysis_version "
+    # OFFSET 0 keeps these as indexed per-request probes. Flattening the view
+    # into a global semi-join scanned the entire restored backlog per claim.
+    "AND (candidate.validation_state='needs_analysis' OR relation.role='attempt') "
+    "LIMIT 1 OFFSET 0) "
+    "OR EXISTS(SELECT 1 FROM discovery_recommendation_requests recommendation "
+    "JOIN repertoire_opportunities opportunity ON opportunity.id=recommendation.opportunity_id "
+    "WHERE recommendation.request_id=request.id AND opportunity.status='active' "
+    "AND opportunity.card_id IS NULL LIMIT 1 OFFSET 0) "
+    "OR EXISTS(SELECT 1 FROM coverage_discovery_recommendation_requests recommendation "
+    "JOIN repertoire_opportunities opportunity ON opportunity.id=recommendation.opportunity_id "
+    "WHERE recommendation.request_id=request.id AND opportunity.status='active' "
+    "AND opportunity.card_id IS NULL LIMIT 1 OFFSET 0)) "
+)
+
+
 def claim_threat_analysis(database: PostgresConnection, _payload: dict[str, Any]) -> dict:
     now = _now()
     database.execute_native(
@@ -31,30 +56,31 @@ def claim_threat_analysis(database: PostgresConnection, _payload: dict[str, Any]
         "ORDER BY lease_expires_at,id LIMIT 1 FOR UPDATE SKIP LOCKED)",
         (now, now),
     )
-    row = database.execute_native(
-        "SELECT request.id,request.request_json FROM threat_analysis_requests request "
-        "LEFT JOIN background_activity control ON control.source='threat_analysis' "
-        "AND control.work_id=request.id "
-        "WHERE request.state='queued' AND COALESCE(control.paused,0)=0 "
-        "AND (EXISTS(SELECT 1 FROM threat_candidate_requests relation "
-        "JOIN threat_training_candidates candidate ON candidate.id=relation.candidate_id "
-        "JOIN imported_games game ON game.id=candidate.game_id "
-        "WHERE relation.request_id=request.id AND candidate.superseded_at IS NULL "
-        "AND candidate.analysis_version=game.analysis_version "
-        "AND (candidate.validation_state='needs_analysis' OR relation.role='attempt')) "
-        "OR EXISTS(SELECT 1 FROM discovery_recommendation_requests recommendation "
-        "JOIN repertoire_opportunities opportunity ON opportunity.id=recommendation.opportunity_id "
-        "WHERE recommendation.request_id=request.id AND opportunity.status='active' "
-        "AND opportunity.card_id IS NULL) "
-        "OR EXISTS(SELECT 1 FROM coverage_discovery_recommendation_requests recommendation "
-        "JOIN repertoire_opportunities opportunity ON opportunity.id=recommendation.opportunity_id "
-        "WHERE recommendation.request_id=request.id AND opportunity.status='active' "
-        "AND opportunity.card_id IS NULL)) "
-        "ORDER BY CASE WHEN EXISTS(SELECT 1 FROM threat_candidate_requests foreground "
-        "WHERE foreground.request_id=request.id AND foreground.role='attempt') "
-        "THEN 0 ELSE 1 END,COALESCE(control.promoted,0) DESC,"
-        "request.created_at,request.id LIMIT 1 FOR UPDATE OF request SKIP LOCKED",
-    ).fetchone()
+    # Keep foreground attempts, promoted work, ordinary work, and negative
+    # legacy promotion values in their existing priority order. The common
+    # case can stop at the first eligible request in created order.
+    row = None
+    for priority_filter, ordering in (
+        ("AND request.id IN (SELECT request_id FROM threat_candidate_requests "
+         "WHERE role='attempt') ",
+         "COALESCE(control.promoted,0) DESC,request.created_at,request.id"),
+        ("AND COALESCE(control.promoted,0)>0 ",
+         "control.promoted DESC,request.created_at,request.id"),
+        ("AND COALESCE(control.promoted,0)=0 ", "request.created_at,request.id"),
+        ("AND control.promoted<0 ",
+         "control.promoted DESC,request.created_at,request.id"),
+    ):
+        if priority_filter.startswith("AND COALESCE(control.promoted,0)>0") and not database.execute_native(
+            "SELECT 1 FROM background_activity WHERE source='threat_analysis' "
+            "AND promoted>0 AND paused=0 LIMIT 1",
+        ).fetchone():
+            continue
+        row = database.execute_native(
+            _ELIGIBLE_THREAT_REQUEST + priority_filter + "ORDER BY " + ordering +
+            " LIMIT 1 FOR UPDATE OF request SKIP LOCKED",
+        ).fetchone()
+        if row is not None:
+            break
     if row is None:
         return {"job": None}
     lease_id = str(uuid.uuid4())

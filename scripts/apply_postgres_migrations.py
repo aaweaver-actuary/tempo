@@ -5,7 +5,6 @@ from __future__ import annotations
 import argparse
 import os
 from pathlib import Path
-import re
 import sys
 
 import psycopg
@@ -16,29 +15,36 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from backend.app.schema_version import POSTGRES_SCHEMA_VERSION
 
 
+def validate_migration_history(
+    files: list[Path], applied_versions: list[int], *, expected_version: int,
+) -> int:
+    file_versions = [int(path.name[:3]) for path in files]
+    if file_versions != list(range(1, expected_version + 1)):
+        raise RuntimeError("Checked-in PostgreSQL migration files have a gap or duplicate")
+    if applied_versions and applied_versions[-1] > expected_version:
+        raise RuntimeError("PostgreSQL schema is newer than this image; stop the upgrade")
+    if applied_versions != list(range(1, len(applied_versions) + 1)):
+        raise RuntimeError("PostgreSQL migration history has a gap or duplicate; stop the upgrade")
+    return len(applied_versions)
+
+
 def apply_migrations(database_url: str) -> None:
     files = sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql"))
     if not files:
         raise RuntimeError("No PostgreSQL migrations found")
-    latest_file_version = int(files[-1].name[:3])
-    if latest_file_version != POSTGRES_SCHEMA_VERSION:
-        raise RuntimeError(
-            f"Latest PostgreSQL migration is {latest_file_version}; "
-            f"API expects {POSTGRES_SCHEMA_VERSION}"
-        )
     with psycopg.connect(database_url) as database:
         exists = database.execute(
             "SELECT to_regclass('public.tempo_schema_migrations') IS NOT NULL"
         ).fetchone()[0]
-        current_version = (
-            database.execute("SELECT COALESCE(MAX(version),0) FROM tempo_schema_migrations").fetchone()[0]
-            if exists else 0
+        applied_versions = ([row[0] for row in database.execute(
+            "SELECT version FROM tempo_schema_migrations ORDER BY version"
+        ).fetchall()] if exists else [])
+        current_version = validate_migration_history(
+            files, applied_versions, expected_version=POSTGRES_SCHEMA_VERSION,
         )
         database.commit()
         for path in files:
-            match = re.match(r"^(\d{3})_", path.name)
-            assert match is not None
-            version = int(match.group(1))
+            version = int(path.name[:3])
             if version <= current_version:
                 continue
             if version != current_version + 1:

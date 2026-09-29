@@ -145,22 +145,25 @@ def ensure_daily_queue() -> bool:
 
 @celery_app.task(name="app.tasks.execute_foreground_command", bind=True)
 def execute_foreground_command(
-    self, operation_id: str, command_name: str, payload: dict[str, Any], allow_blocked: bool = False,
+    self, operation_id: str, command_name: str, payload: dict[str, Any],
+    expected_retry_cycle: int | None = None,
 ) -> Any:
     submitted_at = (self.request.headers or {}).get("submitted_at")
     queue_wait = max(0.0, time.time() - float(submitted_at)) if submitted_at else None
     started = time.perf_counter()
     with activity_gate.foreground():
-        should_execute, saved_payload = record_operation_attempt(
-            operation_id, command_name, payload, background=False, allow_blocked=allow_blocked,
+        should_execute, saved_payload, attempt_token, _attempt_number = record_operation_attempt(
+            operation_id, command_name, payload, background=False,
+            expected_retry_cycle=expected_retry_cycle,
         )
         if not should_execute:
             return None
         try:
-            result = execute_command(operation_id, command_name, saved_payload)
+            result = execute_command(operation_id, command_name, saved_payload,
+                                     attempt_token=attempt_token)
         except Exception as error:
-            record_operation_retry(operation_id, error, delay_seconds=0, exhausted=True,
-                                   background=False)
+            record_operation_retry(operation_id, attempt_token, error,
+                                   retryable=False, background=False)
             raise
     _LOGGER.info(
         "foreground command=%s queue_wait_seconds=%s execution_seconds=%.3f",
@@ -170,39 +173,35 @@ def execute_foreground_command(
     return result
 
 
-@celery_app.task(name="app.tasks.execute_background_command", bind=True, max_retries=10)
+@celery_app.task(name="app.tasks.execute_background_command", bind=True)
 def execute_background_command(
-    self, operation_id: str, command_name: str, payload: dict[str, Any], allow_blocked: bool = False,
+    self, operation_id: str, command_name: str, payload: dict[str, Any],
+    expected_retry_cycle: int | None = None,
 ) -> Any:
     """Execute an external worker callback in a bounded background section."""
 
     with activity_gate.background_job(command_name, operation_id):
+        should_execute, saved_payload, attempt_token, attempt_number = record_operation_attempt(
+            operation_id, command_name, payload, background=True,
+            expected_retry_cycle=expected_retry_cycle,
+        )
+        if not should_execute:
+            return None
         try:
-            should_execute, saved_payload = record_operation_attempt(
-                operation_id, command_name, payload, background=True, allow_blocked=allow_blocked,
-            )
-            if not should_execute:
-                return None
-            return execute_command(operation_id, command_name, saved_payload, background=True)
+            return execute_command(operation_id, command_name, saved_payload,
+                                   background=True, attempt_token=attempt_token)
         except (psycopg.OperationalError, psycopg.InterfaceError,
                 DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout) as error:
-            exhausted = self.request.retries >= self.max_retries
-            delay_seconds = min(30.0, 0.5 * 2 ** self.request.retries)
-            try:
-                record_operation_retry(operation_id, error, delay_seconds=delay_seconds,
-                                       exhausted=exhausted, background=True)
-            except (psycopg.OperationalError, psycopg.InterfaceError):
-                _LOGGER.exception("Could not record retry operation_id=%s", operation_id)
+            exhausted, delay_seconds = record_operation_retry(
+                operation_id, attempt_token, error, retryable=True, background=True,
+            )
             _LOGGER.warning("background command=%s operation_id=%s attempt=%s stage=execute "
                             "error_class=%s next_retry_seconds=%s", command_name, operation_id,
-                            self.request.retries + 1, type(error).__name__,
-                            None if exhausted else delay_seconds)
-            if exhausted:
-                return None
-            raise self.retry(exc=error, countdown=delay_seconds)
+                            attempt_number, type(error).__name__, delay_seconds)
+            return None
         except Exception as error:
-            record_operation_retry(operation_id, error, delay_seconds=0, exhausted=True,
-                                   background=True)
+            record_operation_retry(operation_id, attempt_token, error,
+                                   retryable=False, background=True)
             raise
 
 

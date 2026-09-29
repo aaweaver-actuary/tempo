@@ -2,6 +2,7 @@
 
 from datetime import datetime, timezone
 import json
+import sqlite3
 
 import chess
 
@@ -69,3 +70,27 @@ def test_storage_reclaim_preserves_authoritative_fingerprints_and_compacts(tmp_p
         assert fingerprints(recovery_database) == before
         assert queue_order_checksum(recovery_database) == before_queue_order
     assert database_path.stat().st_size < before_file_bytes
+
+
+def test_settings_schema_upgrade_materializes_path_floor_before_compaction(tmp_path, monkeypatch):
+    database_path = tmp_path / "legacy-tempo.db"
+    with sqlite3.connect(database_path) as legacy_database:
+        legacy_database.execute(
+            """CREATE TABLE settings (
+                   id INTEGER PRIMARY KEY CHECK(id=1),
+                   initial_depth INTEGER NOT NULL DEFAULT 6,
+                   timezone TEXT NOT NULL DEFAULT 'local',
+                   new_cards_per_day INTEGER NOT NULL DEFAULT 10,
+                   lichess_username TEXT NOT NULL DEFAULT '',
+                   chesscom_username TEXT NOT NULL DEFAULT '')"""
+        )
+        legacy_database.execute("INSERT INTO settings(id) VALUES(1)")
+    monkeypatch.setattr(database, "DB_PATH", database_path)
+    database.initialize()
+
+    with open_database(database_path, read_only=False) as recovery_database:
+        assert recovery_database.execute(
+            "SELECT coverage_path_floor FROM settings WHERE id=1"
+        ).fetchone()[0] == 0.0005
+        compact(recovery_database)
+        assert recovery_database.execute("PRAGMA integrity_check").fetchone()[0] == "ok"

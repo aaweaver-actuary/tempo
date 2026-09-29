@@ -34,7 +34,8 @@ def postgres_health() -> dict[str, object]:
             503, "PostgreSQL reader unavailable; check the database, reader role, and migrations"
         ) from error
     if version_row is None or version_row[0] != POSTGRES_SCHEMA_VERSION:
-        raise HTTPException(503, f"PostgreSQL schema is not version {POSTGRES_SCHEMA_VERSION}; apply migrations")
+        raise HTTPException(503, f"PostgreSQL schema is not version {POSTGRES_SCHEMA_VERSION}; "
+                            "stop writers, verify a backup, then apply the documented schema upgrade")
     if settings_row is None:
         raise HTTPException(503, "PostgreSQL settings are missing; verify the SQLite import")
     try:

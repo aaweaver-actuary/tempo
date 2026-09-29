@@ -25,21 +25,48 @@ def test_personal_evidence_reads_864_positions_in_bounded_complete_sections():
         nonlocal section_count
         section_count += 1
 
-        def execute(_statement, parameters):
-            selected_keys = parameters[:-4]
+        def execute(statement, parameters):
+            has_cursor = "(p.fen_key,p.game_id,p.ply)>" in statement
+            selected_keys = parameters[:-(8 if has_cursor else 5)]
             assert len(selected_keys) <= 128
-            requested.extend(selected_keys)
+            if not has_cursor:
+                requested.extend(selected_keys)
             return SimpleNamespace(fetchall=lambda: [
-                {"fen_key": key, "move_uci": "e2e4", "played_at": "2026-09-29T00:00:00Z"}
-                for key in selected_keys
+                {"fen_key": key, "game_id": key, "ply": 1,
+                 "move_uci": "e2e4", "played_at": "2026-09-29T00:00:00Z"}
+                for key in selected_keys if not has_cursor
             ])
 
         yield SimpleNamespace(execute=execute)
 
     rows = priorities._read_personal_evidence_rows(read_section, keys, "white")
-    assert section_count == 7
+    assert section_count == 13
     assert requested == keys
     assert [row["fen_key"] for row in rows] == keys
+
+
+def test_popular_position_evidence_pages_joined_rows_without_loss():
+    occurrences = [{"fen_key": "popular", "game_id": f"game-{number:04d}",
+                    "ply": 1, "move_uci": "e2e4", "played_at": "2026-09-29T00:00:00Z"}
+                   for number in range(600)]
+    section_sizes = []
+
+    @contextmanager
+    def read_section():
+        def execute(statement, parameters):
+            assert "LIMIT" in statement
+            cursor = parameters[-4:-1] if "(p.fen_key,p.game_id,p.ply)>" in statement else None
+            remaining = [row for row in occurrences if cursor is None or
+                         (row["fen_key"], row["game_id"], row["ply"]) > tuple(cursor)]
+            page = remaining[:parameters[-1]]
+            section_sizes.append(len(page))
+            return SimpleNamespace(fetchall=lambda: page)
+
+        yield SimpleNamespace(execute=execute)
+
+    rows = priorities._read_personal_evidence_rows(read_section, ["popular"], "white")
+    assert len(rows) == 600
+    assert section_sizes == [128, 128, 128, 128, 88]
 
 
 def _seed_repertoire(database_connection, repertoire_id: str = "storage-rep") -> None:
