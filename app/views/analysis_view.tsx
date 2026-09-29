@@ -1240,7 +1240,7 @@ export default function BuilderView({
       <div className="analysis-heading compact-analysis">
         <h1>Builder</h1>
         <div className="analysis-switches">
-          {onCompare && usesLocalApi() && <Button onClick={() => onCompare({
+          {onCompare && usesLocalApi() && <Button className="analysis-compare-trigger" onClick={() => onCompare({
             id: "source", label: "Builder position", startingFen, orientation,
             history: history.map((move) => ({ uci: move.uci, san: move.san, fen: move.fen })),
             cursor,
