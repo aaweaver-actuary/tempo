@@ -6,6 +6,71 @@ failed check returns an actionable 503. Do not cut over until the disposable
 browser stack, restored-data audit, benchmark gates, fresh snapshot parity,
 backup restore drill, and `make full` pass on the final checkout.
 
+## PostgreSQL schema upgrades after cutover
+
+Use this only after approval of the exact product database and maintenance
+window. Confirm `docker context show`, the Compose project, resolved volume
+names, mounts, ports, and secret-file paths. The external `tempo-postgres-data`
+volume is shared across Compose project names. Never point a disposable test
+stack at it. Do not run the SQLite import for a PostgreSQL schema upgrade.
+
+From the approved candidate checkout, build the migration and application
+images from the same revision. Record `git rev-parse HEAD` and the resulting
+image IDs. Then stop application writers and readers before the backup:
+
+The checked-in `scripts/upgrade-postgres-schema.sh --apply` runs the sequence
+below and exits before dependent startup if backup verification or migration
+fails. Set `COMPOSE_PROJECT_NAME` and `TEMPO_UPGRADE_EXPECTED_PROJECT` to the
+approved project name before invoking it; the script verifies the resolved
+project and fixed external volume mappings. Inspect the resolved Compose
+configuration and current container mounts separately before invocation.
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.postgres-maintenance.yml build migration
+docker compose build api foreground-worker background-worker background-scheduler web defense-engine maia-worker
+docker compose stop web defense-engine maia-worker api foreground-worker background-worker background-scheduler
+docker compose up -d postgres redis postgres-backup
+```
+
+While writers remain stopped, take a new custom-format backup. The fixed
+restore-check database name deliberately makes a prior incomplete drill a stop
+condition rather than silently replacing it:
+
+```sh
+docker compose exec -T postgres-backup sh -ec 'pg_dump -h postgres -U tempo -d tempo -Fc -f /backups/tempo-upgrade-pre.dump && pg_restore -l /backups/tempo-upgrade-pre.dump >/dev/null && sha256sum /backups/tempo-upgrade-pre.dump > /backups/tempo-upgrade-pre.dump.sha256 && cd /backups && sha256sum -c tempo-upgrade-pre.dump.sha256'
+docker compose exec -T postgres-backup sh -ec 'createdb -h postgres -U tempo tempo_upgrade_restore && pg_restore -h postgres -U tempo -d tempo_upgrade_restore --no-owner --no-privileges /backups/tempo-upgrade-pre.dump'
+docker compose -f docker-compose.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm --no-deps migration scripts/verify_postgres_backup.py postgresql://tempo@postgres:5432/tempo postgresql://tempo@postgres:5432/tempo_upgrade_restore
+docker compose exec -T postgres-backup dropdb -h postgres -U tempo tempo_upgrade_restore
+```
+
+Record receipt, queue, review, and business-row counts before migration. Apply
+only the checked-in ordered migrations; the runner rejects newer, gapped, or
+malformed history and is safe to re-run after success:
+
+```sh
+docker compose -f docker-compose.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm --no-deps migration scripts/apply_postgres_migrations.py
+```
+
+**Stop if any command fails.** Do not start dependent application services.
+Read the migration ledger and inspect the failure before another attempt.
+After success, verify the ledger reaches the candidate's
+`POSTGRES_SCHEMA_VERSION`, compare authoritative row counts and receipt IDs,
+then start workers before the API because readiness requires both queues:
+
+```sh
+docker compose up -d foreground-worker background-worker background-scheduler api
+curl --silent --show-error --include --max-time 10 http://127.0.0.1:8000/api/health
+docker compose up -d web defense-engine maia-worker
+docker compose ps -a
+```
+
+Repeat health checks and exercise a foreground save before resuming study.
+The API uses reader credentials; never give it the administrator passfile.
+If the new stack fails after migration, stop application services and fix
+forward with a compatible image. The prior image requires schema 16 and cannot
+run against schema 17–19. Do not restore the pre-upgrade dump over a
+database that has accepted newer writes.
+
 ## External data and secrets
 
 Keep the stopped SQLite source, snapshot, and all secrets outside the checkout.
@@ -79,8 +144,8 @@ in Compose variables, command arguments, or the repository.
 
    ```sh
    docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm migration scripts/apply_postgres_migrations.py
-   docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm migration scripts/migrate_sqlite_to_postgres.py /source/tempo.db
-   docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm migration scripts/migrate_sqlite_to_postgres.py /source/tempo.db --verify-only
+   docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm -v "$TEMPO_SQLITE_SNAPSHOT:/source/tempo.db:ro" migration scripts/migrate_sqlite_to_postgres.py /source/tempo.db
+   docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm -v "$TEMPO_SQLITE_SNAPSHOT:/source/tempo.db:ro" migration scripts/migrate_sqlite_to_postgres.py /source/tempo.db --verify-only
    docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm migration scripts/provision_postgres_roles.py --reader-password-file /run/secrets/reader_password --writer-password-file /run/secrets/writer_password
    ```
 
@@ -100,7 +165,7 @@ in Compose variables, command arguments, or the repository.
 
    ```sh
    docker compose -f docker-compose.postgres.yml run --rm --entrypoint sh postgres-backup -ec 'createdb -h postgres -U tempo tempo_restore_check && pg_restore -h postgres -U tempo -d tempo_restore_check --no-owner --no-privileges /backups/tempo-cutover.dump'
-   docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm migration scripts/verify_postgres_restore.py /source/tempo.db postgresql://tempo@postgres:5432/tempo postgresql://tempo@postgres:5432/tempo_restore_check
+   docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm -v "$TEMPO_SQLITE_SNAPSHOT:/source/tempo.db:ro" migration scripts/verify_postgres_restore.py /source/tempo.db postgresql://tempo@postgres:5432/tempo postgresql://tempo@postgres:5432/tempo_restore_check
    docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm migration scripts/verify_postgres_backup.py postgresql://tempo@postgres:5432/tempo postgresql://tempo@postgres:5432/tempo_restore_check
    docker compose -f docker-compose.postgres.yml run --rm --entrypoint sh postgres-backup -ec 'dropdb -h postgres -U tempo tempo_restore_check'
    ```

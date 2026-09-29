@@ -187,7 +187,8 @@ def initialize() -> None:
         if version != POSTGRES_SCHEMA_VERSION:
             raise RuntimeError(
                 f"Unsupported PostgreSQL schema version: {version!r}; "
-                f"expected {POSTGRES_SCHEMA_VERSION}"
+                f"expected {POSTGRES_SCHEMA_VERSION}. Stop writers, verify a backup, "
+                "then apply the PostgreSQL schema upgrade in docs/STARTUP-BACKGROUND-RECOVERY.md"
             )
         return
     if DB_PATH.exists():

@@ -10,9 +10,19 @@ open_when_ready() {
       open http://localhost:3000
       return
     fi
+    if (( attempt == 60 )); then
+      api_id="$(docker compose ps -a -q api 2>/dev/null)"
+      if [[ -n "$api_id" && "$(docker inspect --format '{{.State.Restarting}}' "$api_id" 2>/dev/null)" == "true" ]]; then
+        break
+      fi
+    fi
     sleep 1
   done
-  echo "Tempo has not become ready yet. Run 'docker compose logs api foreground-worker background-worker' and check /api/health."
+  echo "Tempo has not become ready. API health response, if the process is listening:"
+  curl --silent --show-error --include --max-time 5 http://127.0.0.1:8000/api/health || true
+  echo "Recent API startup errors:"
+  docker compose logs --no-color --tail=45 api || true
+  echo "See docs/STARTUP-BACKGROUND-RECOVERY.md before any schema upgrade."
 }
 
 if ! command -v docker >/dev/null 2>&1 || ! docker info >/dev/null 2>&1; then
@@ -31,4 +41,9 @@ echo "Starting Tempo with Docker and PostgreSQL. This window can stay open while
 open_when_ready &
 READY_PID=$!
 trap 'kill "$READY_PID" >/dev/null 2>&1 || true' EXIT INT TERM
-docker compose up --build
+if ! docker compose up --build; then
+  echo "Tempo did not start. Recent API startup errors:"
+  docker compose logs --no-color --tail=45 api || true
+  curl --silent --show-error --include --max-time 5 http://127.0.0.1:8000/api/health || true
+  exit 1
+fi

@@ -1,5 +1,5 @@
-# Use with docker-compose.postgres.yml during a stopped-writer maintenance window.
-# TEMPO_SQLITE_SNAPSHOT must be a verified SQLite backup outside the checkout.
+# Use with docker-compose.yml during a stopped-writer maintenance window.
+# SQLite import alone needs an explicit read-only snapshot mount at `docker compose run`.
 services:
   migration:
     profiles: ["maintenance"]
@@ -20,8 +20,6 @@ services:
       - source: writer_password
         target: writer_password
         mode: 0400
-    volumes:
-      - ${TEMPO_SQLITE_SNAPSHOT:?Set the verified SQLite backup path outside the checkout}:/source/tempo.db:ro
     depends_on:
       postgres: {condition: service_healthy}
     command: ["scripts/apply_postgres_migrations.py"]
