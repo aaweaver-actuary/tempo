@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class Settings(BaseModel):
@@ -380,6 +380,33 @@ class ProviderSyncStatus(BaseModel):
     last_result: ProviderSyncResult | None = None
 
 
+class CompletedProviderSyncResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: GameProvider
+    username: str
+    status: Literal["idle", "error"]
+    fetched: int
+    inserted: int
+    updated: int
+    duplicates: int
+    filtered: int
+    rejected: int
+    failed: int
+    error: str | None
+    retry_after: str | None
+
+
+class CompletedGameSyncResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    imported: int
+    synced_at: str
+    cached: bool
+    incremental: bool
+    providers: dict[GameProvider, CompletedProviderSyncResult]
+
+
 class GameSyncJob(BaseModel):
     """Model representing a game sync job."""
 
@@ -390,7 +417,13 @@ class GameSyncJob(BaseModel):
     completed_at: str | None = None
     updated_at: str
     error: str | None = None
-    result: dict | None = None
+    result: CompletedGameSyncResult | None = None
+
+    @model_validator(mode="after")
+    def completed_result_matches_status(self):
+        if (self.status == "complete") != (self.result is not None):
+            raise ValueError("Only complete game sync jobs may expose a completed result")
+        return self
 
 
 class GameSyncEnqueueResponse(BaseModel):

@@ -653,5 +653,6 @@ def serialize_job(row: dict | None) -> dict | None:
         "completed_at": row["completed_at"],
         "updated_at": row["updated_at"],
         "error": row["error"],
-        "result": json.loads(row["result_json"]) if row["result_json"] else None,
+        "result": (json.loads(row["result_json"])
+                   if row["status"] == "complete" and row["result_json"] else None),
     }
