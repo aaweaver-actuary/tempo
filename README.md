@@ -8,7 +8,7 @@ Docker Tempo is the full product. After the [PostgreSQL maintenance cutover](doc
 
 For prepared daily training on an iPhone while the computer is unavailable, see [phone training](docs/PHONE-TRAINING.md).
 
-Every reported defect must have a named regression test before closure. Run `npm test` for the required frontend, backend, Rust, browser, and Docker checks; CI runs the same command. See [CONTRIBUTING.md](CONTRIBUTING.md) and [tests/REGRESSIONS.md](tests/REGRESSIONS.md).
+Every reported defect must have a named regression test before closure. Run `make full` (or `npm test`) for frontend, backend, Rust, one PostgreSQL-backed browser matrix, and Docker durability checks; CI runs the same gate. `make legacy-sqlite` runs the optional full SQLite compatibility runner. See [CONTRIBUTING.md](CONTRIBUTING.md), [testing scopes](docs/testing.md), and [tests/REGRESSIONS.md](tests/REGRESSIONS.md).
 
 - Interactive opening and tactics drills using Lichess's Chessground board, with click-to-move or drag-and-drop.
 - Fluid responsive sizing, Cburnett and Merida piece sets, three board palettes, legal-move markers, last-move highlighting, automatic opponent replies, and native SVG teaching arrows.
@@ -146,7 +146,8 @@ the study worker. Maia inference runs in a separate worker. Board input and DOM
 updates remain in TypeScript; Python/SQLite remains authoritative. Rust/WASM
 continues behind the existing golden parity fixtures. Recent readiness, move
 paint, and workspace switch timings are available in the browser Performance
-panel as `tempo:*` measurements.
+panel as `tempo:*` measurements. PostgreSQL is authoritative for Docker product
+records; SQLite remains a compatibility and verified-import path.
 
 ## Remaining implementation decision
 

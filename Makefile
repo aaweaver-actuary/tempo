@@ -8,17 +8,16 @@
 #  2 defense-engine smoke         8 typecheck
 #  3 Python backend tests         9 WASM build
 #  4 Rust format                 10 local frontend build
-#  5 Rust lint                   11 SQLite Docker durability + browser matrix
-#  6 Rust workspace tests        12 PostgreSQL Docker durability + browser matrix
-#                                13 pinned visual + performance Playwright tests
+#  5 Rust lint                   11 PostgreSQL durability + regular browser matrix
+#  6 Rust workspace tests        12 pinned visual + performance Playwright tests
 # The local browser target is deliberately absent from full: Docker already
 # runs the same regular Playwright specs. Visual/performance specs are disjoint.
 
 .DEFAULT_GOAL := help
 .NOTPARALLEL:
-.PHONY: help plan preflight slow-tests fast python backend rust integration ui browser visual perf full docker-durability unit-file python-file ui-file view rust-case
+.PHONY: help plan preflight slow-tests fast python backend rust integration ui browser visual perf full docker-durability legacy-sqlite unit-file python-file ui-file view rust-case
 
-VERIFY_TARGETS := preflight fast python backend rust integration ui browser visual perf full docker-durability unit-file python-file ui-file view rust-case
+VERIFY_TARGETS := preflight fast python backend rust integration ui browser visual perf full docker-durability legacy-sqlite unit-file python-file ui-file view rust-case
 SELECTED_VERIFY_TARGETS := $(filter $(VERIFY_TARGETS),$(MAKECMDGOALS))
 ifneq ($(words $(SELECTED_VERIFY_TARGETS)),0)
 ifneq ($(words $(SELECTED_VERIFY_TARGETS)),1)
@@ -29,6 +28,7 @@ endif
 TIER ?= full
 COUNT ?= 10
 PYTHON ?= $(shell node --input-type=module -e 'import { resolvePython } from "./scripts/resolve-python.mjs"; console.log(resolvePython())')
+export FILE VIEW
 
 help:
 	@printf '%s\n' 'Inspect: make plan [TIER=full|fast|python|backend|rust|integration|ui]'
@@ -36,7 +36,8 @@ help:
 	@printf '%s\n' 'Release/CI-equivalent: make full (run this one target, not fast + integration + full)'
 	@printf '%s\n' 'Capability check: make preflight (full and browser scopes run it first automatically)'
 	@printf '%s\n' 'Focused scopes: make fast | python | backend | rust | integration | ui | browser | visual | perf'
-	@printf '%s\n' 'Docker recovery: make docker-durability (after the browser matrix already ran)'
+	@printf '%s\n' 'Docker recovery: make docker-durability (PostgreSQL durability without browser specs)'
+	@printf '%s\n' 'Optional compatibility: make legacy-sqlite (full SQLite runtime/browser runner)'
 	@printf '%s\n' 'Focused files: make unit-file FILE=tests/unit/example.test.ts'
 	@printf '%s\n' '               make python-file FILE=backend/tests/test_services.py'
 	@printf '%s\n' '               make ui-file FILE=games-board-context.spec.ts'
@@ -71,8 +72,8 @@ ui:
 	node scripts/test-all.mjs ui
 
 browser:
-	node scripts/check-test-capabilities.mjs --loopback
-	npm run test:browser
+	node scripts/check-test-capabilities.mjs --docker --loopback --workspace-mount
+	node scripts/test-postgres-docker.mjs
 
 visual:
 	node scripts/check-test-capabilities.mjs --docker --workspace-mount
@@ -87,7 +88,11 @@ full:
 
 docker-durability:
 	node scripts/check-test-capabilities.mjs --docker --loopback
-	node scripts/test-docker.mjs --skip-browser
+	node scripts/test-postgres-docker.mjs --skip-browser
+
+legacy-sqlite:
+	node scripts/check-test-capabilities.mjs --docker --loopback --workspace-mount
+	node scripts/test-docker.mjs
 
 unit-file:
 	@test -n "$(FILE)" || { echo 'Set FILE=tests/unit/<name>.test.ts'; exit 2; }
@@ -99,13 +104,13 @@ python-file:
 
 ui-file:
 	@test -n "$(FILE)" || { echo 'Set FILE=<name>.spec.ts from tests/browser'; exit 2; }
-	node scripts/check-test-capabilities.mjs --loopback
-	npm run test:browser -- "$(FILE)"
+	node scripts/check-test-capabilities.mjs --docker --loopback --workspace-mount
+	node scripts/run-focused-postgres-browser.mjs file
 
 view:
 	@test -n "$(VIEW)" || { echo 'Set VIEW to a browser test title pattern, for example VIEW=Builder'; exit 2; }
-	node scripts/check-test-capabilities.mjs --loopback
-	npm run test:browser -- --grep "$(VIEW)"
+	node scripts/check-test-capabilities.mjs --docker --loopback --workspace-mount
+	node scripts/run-focused-postgres-browser.mjs grep
 
 rust-case:
 	@test -n "$(FILTER)" || { echo 'Set FILTER to a Rust test name'; exit 2; }
