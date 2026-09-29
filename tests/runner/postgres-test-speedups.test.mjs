@@ -1,0 +1,253 @@
+import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import { mkdtempSync, readFileSync, readdirSync, rmSync, mkdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import { test } from "node:test";
+import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "../../scripts/postgres-test-options.mjs";
+import { executePostgresTestPlan, postgresTestStages } from "../../scripts/postgres-test-plan.mjs";
+import { assertNoCompletedFixtureConflict } from "../../scripts/postgres-test-fixture.mjs";
+import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
+
+const root = fileURLToPath(new URL("../../", import.meta.url));
+const parse = (args) => parsePostgresTestOptions(args, {}, root);
+const fullStages = [
+  "compose_config", "image_build", "maintenance_cli", "startup", "service_health",
+  "background_budget", "operation_recovery", "schema_upgrade", "background_workloads",
+  "threat_candidate_upsert", "command_recreation", "backup_restore", "browser",
+  "study_durability", "cleanup",
+];
+const browserStages = ["compose_config", "image_build", "startup", "service_health", "browser", "cleanup"];
+const directMeasurement = async (_name, action) => action();
+
+function temporaryDirectory(testContext) {
+  const directory = mkdtempSync(join(tmpdir(), "tempo-runner-speed-"));
+  testContext.after(() => rmSync(directory, { recursive: true, force: true }));
+  return directory;
+}
+
+test("default PostgreSQL gate retains every recovery check and one unfiltered browser matrix", () => {
+  const options = parse([]);
+  assert.equal(options.mode, "full");
+  assert.deepEqual(postgresTestStages(options), fullStages);
+  assert.deepEqual(buildPostgresPlaywrightArguments(options), ["playwright", "test"]);
+});
+
+test("focused PostgreSQL browser execution excludes maintenance and durability scenarios", () => {
+  assert.deepEqual(postgresTestStages(parse(["--mode", "browser"])), browserStages);
+  const options = parse(["--browser-grep", "Builder [review]"]);
+  assert.equal(options.mode, "browser");
+  assert.deepEqual(postgresTestStages(options), browserStages);
+  assert.deepEqual(buildPostgresPlaywrightArguments(options), ["playwright", "test", "--grep", "Builder [review]"]);
+});
+
+test("durability mode and legacy skip-browser retain study recovery while omitting only browser execution", () => {
+  const expected = fullStages.filter((stage) => stage !== "browser");
+  assert.deepEqual(postgresTestStages(parse(["--mode", "durability"])), expected);
+  assert.deepEqual(postgresTestStages(parse(["--skip-browser"])), expected);
+  assert.equal(parse(["--mode", "durability"]).skipBrowser, true);
+});
+
+test("full and durability modes cannot silently narrow their browser coverage", () => {
+  for (const mode of ["full", "durability"]) {
+    assert.throws(() => parse(["--mode", mode, "--browser-grep", "Builder"]), /cannot be combined/);
+  }
+  assert.throws(() => parse(["--skip-browser", "--mode", "full"]), /cannot be combined/);
+  assert.throws(() => parse(["--skip-browser", "--mode", "browser"]), /cannot be combined/);
+  assert.throws(() => parsePostgresTestOptions([], { TEMPO_PG_BROWSER_GREP: "Builder" }), /clear inherited/);
+});
+
+test("invalid and duplicate mode or browser options fail before infrastructure work", () => {
+  for (const args of [["--mode"], ["--mode", "unknown"], ["--mode", "browser", "--mode", "full"],
+    ["--browser-grep", ""], ["--browser-grep", "["], ["--unexpected"],
+    ["--browser-grep", "A", "--browser-grep", "B"]]) {
+    assert.throws(() => parse(args));
+  }
+  assert.throws(() => postgresTestStages({ mode: "unknown" }), /Unknown/);
+});
+
+test("file focus is explicit, discrete, and restricted to an existing browser basename", (context) => {
+  const directory = temporaryDirectory(context);
+  mkdirSync(join(directory, "tests/browser"), { recursive: true });
+  writeFileSync(join(directory, "tests/browser/fixture.spec.ts"), "");
+  const options = parsePostgresTestOptions(["--browser-file", "fixture.spec.ts"], {}, directory);
+  assert.equal(options.mode, "browser");
+  assert.deepEqual(buildPostgresPlaywrightArguments(options), ["playwright", "test", join("tests", "browser", "fixture.spec.ts")]);
+  for (const file of ["../fixture.spec.ts", "..\\fixture.spec.ts", "/fixture.spec.ts", "missing.spec.ts"]) {
+    assert.throws(() => parsePostgresTestOptions(["--browser-file", file], {}, directory));
+  }
+});
+
+for (const mode of ["full", "browser", "durability"]) {
+  test(`${mode} --list exposes the executable plan without Docker, ports, secrets, or timing files`, (context) => {
+    const directory = temporaryDirectory(context);
+    const result = spawnSync(process.execPath, [resolve(root, "scripts/test-postgres-docker.mjs"), "--list", "--mode", mode], {
+      cwd: directory, encoding: "utf8", timeout: 5_000,
+      env: { PATH: "", TEMPO_TEST_TIMING_DIR: join(directory, "timings") },
+    });
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout).stages, postgresTestStages({ mode }));
+    assert.equal(JSON.parse(result.stdout).mode, mode);
+    assert.deepEqual(readdirSync(directory), []);
+  });
+
+  test(`${mode} executor invokes exactly its planned actions once, including cleanup`, async () => {
+    const called = [];
+    const actions = Object.fromEntries(fullStages.map((name) => [name, async () => { called.push(name); }]));
+    const stages = postgresTestStages({ mode });
+    await executePostgresTestPlan(stages, actions, directMeasurement);
+    assert.deepEqual(called, stages);
+  });
+}
+
+test("scenario failure captures diagnostics before cleanup and never runs later tests", async () => {
+  const called = [];
+  const failure = new Error("browser failed");
+  await assert.rejects(executePostgresTestPlan(["browser", "study_durability", "cleanup"], {
+    browser: () => { called.push("browser"); throw failure; },
+    study_durability: () => called.push("study_durability"),
+    cleanup: () => called.push("cleanup"),
+  }, directMeasurement, () => called.push("diagnostics")), (error) => error === failure);
+  assert.deepEqual(called, ["browser", "diagnostics", "cleanup"]);
+});
+
+test("failed startup still cleans up and a cleanup failure cannot mask the original failure", async () => {
+  const failure = new Error("startup failed");
+  const cleanupFailure = new Error("cleanup failed");
+  await assert.rejects(executePostgresTestPlan(["startup", "cleanup"], {
+    startup: () => { throw failure; }, cleanup: () => { throw cleanupFailure; },
+  }, directMeasurement), (error) => error instanceof AggregateError
+    && error.errors[0] === failure && error.errors[1] === cleanupFailure);
+});
+
+test("cleanup failure after otherwise passing checks still fails the invocation", async () => {
+  await assert.rejects(executePostgresTestPlan(["browser", "cleanup"], {
+    browser: () => {}, cleanup: () => { throw new Error("cleanup failed"); },
+  }, directMeasurement), /cleanup failed/);
+});
+
+test("falsy rejection reasons cannot turn a failing scenario into success", async () => {
+  await assert.rejects(executePostgresTestPlan(["browser", "cleanup"], {
+    browser: () => Promise.reject(null), cleanup: () => {},
+  }, directMeasurement), /null/);
+});
+
+test("missing or duplicate planned actions fail while cleanup still runs exactly once", async () => {
+  let cleanups = 0;
+  const actions = { startup: () => {}, cleanup: () => { cleanups += 1; } };
+  await assert.rejects(executePostgresTestPlan(["missing", "cleanup"], actions, directMeasurement), /Missing/);
+  await assert.rejects(executePostgresTestPlan(["startup", "startup", "cleanup"], actions, directMeasurement), /unique/);
+  assert.equal(cleanups, 2);
+});
+
+test("timings retain successful, failed, and cleanup durations without recording secret-bearing errors", async (context) => {
+  const directory = temporaryDirectory(context);
+  const outputPath = join(directory, "nested", "postgres-scenarios-full.json");
+  let now = 1_000;
+  const measure = createScenarioTimer(outputPath, { mode: "full", planned_stages: ["startup", "browser", "cleanup"] }, () => now);
+  assert.equal(await measure("startup", async () => { now += 250; return 42; }), 42);
+  await assert.rejects(measure("browser", async () => { now += 1_000; throw new Error("secret-canary"); }), /secret-canary/);
+  await measure("cleanup", () => { now += 100; });
+  const serialized = readFileSync(outputPath, "utf8");
+  const report = JSON.parse(serialized);
+  assert.deepEqual(report.stages, {
+    startup: { duration_seconds: 0.25, exit_code: 0 },
+    browser: { duration_seconds: 1, exit_code: 1 },
+    cleanup: { duration_seconds: 0.1, exit_code: 0 },
+  });
+  assert.equal(report.mode, "full");
+  assert.equal(serialized.includes("secret-canary"), false);
+  assert.deepEqual(readdirSync(join(directory, "nested")), ["postgres-scenarios-full.json"]);
+  await assert.rejects(measure("startup", () => {}), /Duplicate/);
+});
+
+test("completed invalid study fixtures fail immediately instead of polling for impossible admission", () => {
+  assert.throws(() => assertNoCompletedFixtureConflict({
+    scan_status: "idle", status: "needs_repair", issues: [{ kind: "conflicting_move" }],
+  }, "fixture-id"), /fixture-id.*needs_repair.*conflicting_move/);
+});
+
+test("pending integrity generations and clean fixtures are not rejected as completed conflicts", () => {
+  for (const scanStatus of ["queued", "running", "retrying"]) {
+    assert.doesNotThrow(() => assertNoCompletedFixtureConflict({ scan_status: scanStatus, status: "needs_repair" }, "fixture"));
+  }
+  assert.doesNotThrow(() => assertNoCompletedFixtureConflict({ scan_status: "idle", status: "clean" }, "fixture"));
+  assert.doesNotThrow(() => assertNoCompletedFixtureConflict({ scan_status: "idle", status: "unchecked" }, "fixture"));
+});
+
+test("full tier remains unfiltered while UI and browser tiers use browser-only PostgreSQL execution", () => {
+  for (const tier of ["full", "ui", "browser"]) {
+    const result = spawnSync(process.execPath, ["scripts/test-all.mjs", "--list", tier], {
+      cwd: root, encoding: "utf8", timeout: 5_000,
+    });
+    assert.equal(result.status, 0, result.stderr);
+    const { stages } = JSON.parse(result.stdout);
+    const postgres = stages.filter((stage) => stage.name === "postgres_docker");
+    assert.equal(postgres.length, 1);
+    assert.deepEqual(postgres[0].args, tier === "full"
+      ? ["scripts/test-postgres-docker.mjs"]
+      : ["scripts/test-postgres-docker.mjs", "--mode", "browser"]);
+  }
+});
+
+test("Make browser and durability select different scopes without changing the release entry point", () => {
+  for (const [target, expected] of [
+    ["browser", "node scripts/test-postgres-docker.mjs --mode browser"],
+    ["docker-durability", "node scripts/test-postgres-docker.mjs --mode durability"],
+    ["full", "node scripts/test-all.mjs full"],
+  ]) {
+    const result = spawnSync("make", ["-n", target], { cwd: root, encoding: "utf8", timeout: 5_000 });
+    assert.equal(result.status, 0, result.stderr);
+    assert(result.stdout.includes(expected));
+  }
+  const focusedWrapper = readFileSync(join(root, "scripts/run-focused-postgres-browser.mjs"), "utf8");
+  assert(focusedWrapper.includes('"--mode", "browser", flag, value'));
+});
+
+test("Docker context excludes generated test credentials and local cache churn", () => {
+  const patterns = readFileSync(join(root, ".dockerignore"), "utf8").split(/\r?\n/);
+  for (const expected of [".tempo-pg-test-secrets-*", ".dev-copies", ".pytest_cache", "**/__pycache__", "test-results"]) {
+    assert(patterns.includes(expected), `Missing Docker exclusion: ${expected}`);
+  }
+});
+
+test("scenario dispatch builds once and all startup paths forbid implicit rebuilds", () => {
+  const source = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  assert.equal(source.split('[...compose, "build"]').length - 1, 1);
+  assert.equal(source.includes('[...compose, "up", "--build"'), false);
+  assert.equal(source.includes('[...compose, "up", "-d"'), false);
+  assert(source.includes('[...compose, "up", "--no-build", "-d"]'));
+  assert(source.includes('[...compose, "down", "--rmi", "local", "-v"]'));
+  assert(source.includes('executePostgresTestPlan(stages, actions, measureScenario'));
+});
+
+test("CI isolates cancellation by PR or ref, caches dependencies, and retains the full gate", () => {
+  const workflow = readFileSync(join(root, ".github/workflows/pages.yml"), "utf8");
+  assert(workflow.includes("github.event.pull_request.number || github.ref"));
+  assert(workflow.includes("cancel-in-progress: ${{ github.event_name == 'pull_request' }}"));
+  assert(workflow.includes("cache: pip"));
+  assert.equal(workflow.split("uses: Swatinem/rust-cache@v2").length - 1, 2);
+  assert(workflow.includes("- run: npm test"));
+  assert(workflow.includes("group: tempo-pages-deployment\n      cancel-in-progress: false"));
+});
+
+
+test("timing write failure preserves the original scenario error and still permits cleanup", async (context) => {
+  const directory = temporaryDirectory(context);
+  const blockedDirectory = join(directory, "not-a-directory");
+  writeFileSync(blockedDirectory, "blocked");
+  const measure = createScenarioTimer(join(blockedDirectory, "report.json"), {});
+  const testFailure = new Error("original scenario failure");
+  let cleaned = false;
+  await assert.rejects(executePostgresTestPlan(["browser", "cleanup"], {
+    browser: () => { throw testFailure; },
+    cleanup: () => { cleaned = true; },
+  }, measure), (error) => {
+    assert(error instanceof AggregateError);
+    assert(error.errors[0] instanceof AggregateError);
+    assert.equal(error.errors[0].errors[0], testFailure);
+    return true;
+  });
+  assert.equal(cleaned, true);
+});

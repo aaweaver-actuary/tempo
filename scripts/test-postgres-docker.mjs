@@ -8,13 +8,15 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createIsolatedTestEnvironment } from "./test-environment.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
+import { executePostgresTestPlan, postgresTestStages } from "./postgres-test-plan.mjs";
+import { assertNoCompletedFixtureConflict } from "./postgres-test-fixture.mjs";
+import { createScenarioTimer } from "./test-scenario-timings.mjs";
 
 const options = parsePostgresTestOptions(process.argv.slice(2));
-const { skipBrowser } = options;
+const stages = postgresTestStages(options);
 if (options.list) {
-  console.log(JSON.stringify({ stages: ["compose_config", "maintenance_cli", "startup", "command_receipt",
-    "container_recreation", "backup_restore", ...(skipBrowser ? [] : ["browser"]),
-    "cleanup"], browser_file: options.browserFile, browser_grep: options.browserGrep }, null, 2));
+  console.log(JSON.stringify({ mode: options.mode, stages,
+    browser_file: options.browserFile, browser_grep: options.browserGrep }, null, 2));
   process.exit(0);
 }
 
@@ -58,6 +60,17 @@ const environment = createIsolatedTestEnvironment(process.env, {
 });
 const origin = `http://127.0.0.1:${testPort}`;
 let resourcesCreated = false;
+let maintenanceImageCreated = false;
+const timingPath = join(process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance",
+  `postgres-scenarios-${options.mode}-${project}.json`);
+const commitResult = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
+const measureScenario = createScenarioTimer(timingPath, {
+  runner: "postgres", mode: options.mode,
+  commit: commitResult.status === 0 ? commitResult.stdout.trim() : null,
+  browser_file: options.browserFile, browser_grep: options.browserGrep,
+  planned_stages: stages,
+});
+console.log(`PostgreSQL ${options.mode} timings: ${timingPath}`);
 const measuredHttpRequests = [];
 
 async function apiRequest(path, options = {}, label = null) {
@@ -137,14 +150,15 @@ async function waitForImportSettled(repertoireId) {
     const [system, integrity, queue] = await Promise.all([
       get("system/tasks"), get(`repertoires/${repertoireId}/integrity`), get("queue/today"),
     ]);
+    assertNoCompletedFixtureConflict(integrity, repertoireId);
     const graphTask = system.tasks.find((task) => task.kind === "opening_graph_rebuild"
       && task.deduplication_key === repertoireId);
     if (graphTask?.state === "failed" || integrity.scan_status === "failed"
       || queue.projection?.state === "failed") {
-      throw new Error(graphTask?.last_error ?? integrity.last_error
+      throw new Error(graphTask?.last_error ?? integrity.last_scan_error ?? integrity.last_error
         ?? queue.projection?.last_error ?? "PostgreSQL import background work failed");
     }
-    if (graphTask?.state === "complete" && integrity.scan_status === "idle"
+    if (graphTask?.state === "complete" && integrity.scan_status === "idle" && integrity.status === "clean"
       && queue.projection?.state === "ready" && !queue.projection.refresh_pending) {
       settledSamples += 1;
       if (settledSamples >= 3) return queue;
@@ -218,7 +232,10 @@ async function waitForStudyQueue(repertoireId, minimumCardCount) {
     if (card.repertoire_id === repertoireId) repertoireCardIds.add(card.id);
   }
   for (let attempt = 0; attempt < 240; attempt += 1) {
-    const queue = await get("queue/today");
+    const [queue, integrity] = await Promise.all([
+      get("queue/today"), get(`repertoires/${repertoireId}/integrity`),
+    ]);
+    assertNoCompletedFixtureConflict(integrity, repertoireId);
     const cards = queue.cards.filter((card) => repertoireCardIds.has(card.id));
     if (cards.length >= minimumCardCount) return { queue, snapshot: initialSnapshot, cards };
     if (queue.projection?.state === "failed")
@@ -379,7 +396,7 @@ async function verifyForegroundAndStudyDurability() {
 
   const savedReviewCount = beforeRestartState.reviews.length;
   run("docker", [...compose, "down"]);
-  run("docker", [...compose, "up", "-d"]);
+  run("docker", [...compose, "up", "--no-build", "-d"]);
   await waitForReady();
   await waitForImportSettled(importedStudy.repertoire_id);
   await waitForImportSettled(importedBackground.repertoire_id);
@@ -396,143 +413,187 @@ async function verifyForegroundAndStudyDurability() {
   console.log("PASS PostgreSQL study state, queue order, guided failure, and command identity survive service recreation");
 }
 
+const actions = {
+  compose_config: async () => {
+    const config = spawnSync("docker", [...compose, "config", "--format", "json"],
+      { encoding: "utf8", env: environment });
+    assert.equal(config.status, 0, config.stderr);
+    const stack = JSON.parse(config.stdout);
+    assert.equal(stack.name, project);
+    for (const volumeName of ["postgres-test-data", "redis-test-data", "engine-test-operations"]) {
+      assert.equal(stack.volumes[volumeName].external, undefined);
+      assert.equal(stack.volumes[volumeName].name, `${project}_${volumeName}`);
+    }
+    assert.equal(stack.services.api.environment.TEMPO_DATABASE_READ_URL,
+      "postgresql://tempo_reader@postgres:5432/tempo");
+    assert.equal(stack.services.api.environment.TEMPO_REDIS_URL, "redis://redis:6379/0");
+    assert.equal(stack.services.api.environment.TEMPO_DATABASE_WRITE_URL, undefined);
+    assert.equal(stack.services.api.environment.TEMPO_DB_PATH, undefined);
+    assert(!JSON.stringify(stack.services.api.volumes ?? []).includes("tempo-data"));
+    assert.equal(stack.services["background-worker"].environment.TEMPO_DATABASE_WRITE_URL,
+      "postgresql://tempo_writer@postgres:5432/tempo");
+    assert.equal(stack.services.web.ports[0].host_ip, "127.0.0.1");
+    assert.equal(Number(stack.services.web.ports[0].published), testPort);
+    assert(Object.values(stack.networks ?? {}).every((network) => !network.external
+      && network.name.startsWith(`${project}_`)));
+    console.log("PASS PostgreSQL API has reader credentials and no SQLite mount");
+    const defaultConfig = spawnSync("docker", ["compose", "-f", "docker-compose.yml",
+      "config", "--format", "json"], { encoding: "utf8", env: environment });
+    assert.equal(defaultConfig.status, 0, defaultConfig.stderr);
+    const defaultStack = JSON.parse(defaultConfig.stdout);
+    assert(defaultStack.services.postgres && defaultStack.services["foreground-worker"]);
+    assert.equal(defaultStack.services.api.environment.TEMPO_DATABASE_WRITE_URL, undefined);
+    assert.equal(defaultStack.services.api.environment.TEMPO_DB_PATH, undefined);
+    assert(!JSON.stringify(defaultStack.services.api.volumes ?? []).includes("tempo-data"));
+    const backupCommand = defaultStack.services["postgres-backup"].command;
+    assert.equal(backupCommand.length, 1, "backup loop must be one shell argument");
+    const backupSyntax = spawnSync("sh", ["-n", "-c", backupCommand[0].replaceAll("$$", "$")],
+      { encoding: "utf8" });
+    assert.equal(backupSyntax.status, 0, backupSyntax.stderr);
+    console.log("PASS recurring PostgreSQL backup loop has valid shell syntax");
+    console.log("PASS default Compose selects PostgreSQL and keeps SQLite isolated");
+    verifyProjectIsUnused();
+  },
+  image_build: async () => {
+    resourcesCreated = true;
+    run("docker", [...compose, "build"]);
+  },
+  maintenance_cli: async () => {
+    run("docker", ["build", "-f", "Dockerfile.postgres-maintenance", "-t", maintenanceImage, "."]);
+    maintenanceImageCreated = true;
+    for (const script of ["apply_postgres_migrations.py", "migrate_sqlite_to_postgres.py"]) {
+      run("docker", ["run", "--rm", maintenanceImage, `scripts/${script}`, "--help"]);
+    }
+    console.log("PASS PostgreSQL maintenance image starts migration and import commands");
+  },
+  startup: async () => {
+    run("docker", [...compose, "up", "--no-build", "-d"]);
+    await waitForReady();
+  },
+  service_health: async () => {
+    const runningContainers = spawnSync("docker", [...compose, "ps", "--format", "json"],
+      { encoding: "utf8", env: environment });
+    assert.equal(runningContainers.status, 0, runningContainers.stderr);
+    const runningServices = new Set(runningContainers.stdout.trim().split("\n")
+      .filter(Boolean).map(line => JSON.parse(line))
+      .filter(container => container.State === "running")
+      .map(container => container.Service));
+    for (const service of ["api", "foreground-worker", "background-worker",
+      "background-scheduler", "defense-engine", "maia-worker", "web"])
+      assert(runningServices.has(service), `${service} exited during PostgreSQL startup`);
+  },
+  background_budget: async () => {
+    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+      "/source/scripts/check_postgres_background_budget.py"]);
+  },
+  operation_recovery: async () => {
+    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+      "/source/scripts/check_postgres_operation_recovery.py"]);
+  },
+  schema_upgrade: async () => {
+    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+      "/source/scripts/check_postgres_upgrade.py"]);
+  },
+  background_workloads: async () => {
+    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+      "/source/scripts/check_postgres_background_workloads.py"]);
+  },
+  threat_candidate_upsert: async () => {
+    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+      "/source/scripts/check_postgres_threat_candidate_upsert.py"]);
+  },
+  command_recreation: async () => {
+    const settings = await get("settings");
+    const before = await get("queue/today");
+    const operationId = `pg-durability-${randomBytes(12).toString("hex")}`;
+    const updatedSettings = { ...settings, new_cards_per_day: settings.new_cards_per_day + 1 };
+    const sendSettings = () => apiRequest("settings", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json", "Idempotency-Key": operationId },
+      body: JSON.stringify(updatedSettings),
+    });
+    const uncertainResponse = await sendSettings();
+    assert(uncertainResponse.ok, `Settings command accepted before simulating a lost response: ${uncertainResponse.status}`);
+    await uncertainResponse.body?.cancel();
+    let settingsCommitted = false;
+    for (let attempt = 0; attempt < 60; attempt += 1) {
+      if ((await get("settings")).new_cards_per_day === updatedSettings.new_cards_per_day) {
+        settingsCommitted = true;
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+    assert(settingsCommitted, "Settings business effect commits after its response is discarded");
+    run("docker", [...compose, "down"]);
+    run("docker", [...compose, "up", "--no-build", "-d"]);
+    await waitForReady();
+    assert.equal((await get("settings")).new_cards_per_day, updatedSettings.new_cards_per_day);
+    await confirm(await sendSettings());
+    const receipt = await get(`operations/${operationId}`);
+    assert.equal(receipt.state, "complete");
+    const after = await get("queue/today");
+    assert.deepEqual(after.cards.map(card => card.queue_entry_id),
+      before.cards.map(card => card.queue_entry_id));
+    console.log("PASS PostgreSQL lost-response receipt replay, settings, and queue order survive container recreation");
+  },
+  backup_restore: async () => {
+    run("docker", [...compose, "stop", "api", "foreground-worker", "background-worker",
+      "background-scheduler", "defense-engine", "maia-worker", "web"]);
+    run("docker", [...compose, "exec", "-T", "postgres", "sh", "-ec",
+      "pg_dump -U postgres -d tempo -Fc -f /tmp/tempo-test.dump && " +
+      "pg_restore -l /tmp/tempo-test.dump >/dev/null && " +
+      "createdb -U postgres tempo_restore_check && " +
+      "pg_restore -U postgres -d tempo_restore_check /tmp/tempo-test.dump"]);
+    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+      "/source/scripts/verify_postgres_backup.py",
+      "postgresql://postgres@postgres:5432/tempo",
+      "postgresql://postgres@postgres:5432/tempo_restore_check"]);
+    run("docker", [...compose, "exec", "-T", "postgres", "sh", "-ec",
+      "dropdb -U postgres tempo_restore_check && rm /tmp/tempo-test.dump"]);
+    console.log("PASS every PostgreSQL table matches after backup restoration");
+    run("docker", [...compose, "up", "--no-build", "-d"]);
+    await waitForReady();
+  },
+  browser: async () => {
+      const browserArguments = buildPostgresPlaywrightArguments(options);
+      run("npx", browserArguments, { env: { ...environment,
+        TEMPO_DOCKER_URL: origin,
+        TEMPO_TEST_OUTPUT_DIR: join(process.cwd(), "test-results", `browser-postgres-${process.pid}`),
+      } });
+  },
+  study_durability: async () => {
+    await verifyForegroundAndStudyDurability();
+  },
+  cleanup: async () => {
+    const cleanupErrors = [];
+    try {
+      if (resourcesCreated) {
+        const stopped = spawnSync("docker", [...compose, "down", "--rmi", "local", "-v"],
+          { stdio: "inherit", env: environment });
+        if (stopped.error || stopped.status !== 0) cleanupErrors.push(new Error("Disposable PostgreSQL stack cleanup failed"));
+      }
+      if (maintenanceImageCreated) {
+        const removedMaintenanceImage = spawnSync("docker", ["image", "rm", maintenanceImage],
+          { stdio: "ignore", env: environment });
+        if (removedMaintenanceImage.error || removedMaintenanceImage.status !== 0)
+          cleanupErrors.push(new Error("Disposable maintenance image cleanup failed"));
+      }
+    } finally {
+      rmSync(secretsDirectory, { recursive: true, force: true });
+    }
+    if (cleanupErrors.length) throw new AggregateError(cleanupErrors, "PostgreSQL resource cleanup failed");
+  },
+};
+
 let failed = false;
 try {
-  const config = spawnSync("docker", [...compose, "config", "--format", "json"],
-    { encoding: "utf8", env: environment });
-  assert.equal(config.status, 0, config.stderr);
-  const stack = JSON.parse(config.stdout);
-  assert.equal(stack.name, project);
-  for (const volumeName of ["postgres-test-data", "redis-test-data", "engine-test-operations"]) {
-    assert.equal(stack.volumes[volumeName].external, undefined);
-    assert.equal(stack.volumes[volumeName].name, `${project}_${volumeName}`);
-  }
-  assert.equal(stack.services.api.environment.TEMPO_DATABASE_READ_URL,
-    "postgresql://tempo_reader@postgres:5432/tempo");
-  assert.equal(stack.services.api.environment.TEMPO_REDIS_URL, "redis://redis:6379/0");
-  assert.equal(stack.services.api.environment.TEMPO_DATABASE_WRITE_URL, undefined);
-  assert.equal(stack.services.api.environment.TEMPO_DB_PATH, undefined);
-  assert(!JSON.stringify(stack.services.api.volumes ?? []).includes("tempo-data"));
-  assert.equal(stack.services["background-worker"].environment.TEMPO_DATABASE_WRITE_URL,
-    "postgresql://tempo_writer@postgres:5432/tempo");
-  assert.equal(stack.services.web.ports[0].host_ip, "127.0.0.1");
-  assert.equal(Number(stack.services.web.ports[0].published), testPort);
-  assert(Object.values(stack.networks ?? {}).every((network) => !network.external
-    && network.name.startsWith(`${project}_`)));
-  console.log("PASS PostgreSQL API has reader credentials and no SQLite mount");
-  const defaultConfig = spawnSync("docker", ["compose", "-f", "docker-compose.yml",
-    "config", "--format", "json"], { encoding: "utf8", env: environment });
-  assert.equal(defaultConfig.status, 0, defaultConfig.stderr);
-  const defaultStack = JSON.parse(defaultConfig.stdout);
-  assert(defaultStack.services.postgres && defaultStack.services["foreground-worker"]);
-  assert.equal(defaultStack.services.api.environment.TEMPO_DATABASE_WRITE_URL, undefined);
-  assert.equal(defaultStack.services.api.environment.TEMPO_DB_PATH, undefined);
-  assert(!JSON.stringify(defaultStack.services.api.volumes ?? []).includes("tempo-data"));
-  const backupCommand = defaultStack.services["postgres-backup"].command;
-  assert.equal(backupCommand.length, 1, "backup loop must be one shell argument");
-  const backupSyntax = spawnSync("sh", ["-n", "-c", backupCommand[0].replaceAll("$$", "$")],
-    { encoding: "utf8" });
-  assert.equal(backupSyntax.status, 0, backupSyntax.stderr);
-  console.log("PASS recurring PostgreSQL backup loop has valid shell syntax");
-  console.log("PASS default Compose selects PostgreSQL and keeps SQLite isolated");
-  verifyProjectIsUnused();
-  resourcesCreated = true;
-  run("docker", ["build", "-f", "Dockerfile.postgres-maintenance", "-t", maintenanceImage, "."]);
-  for (const script of ["apply_postgres_migrations.py", "migrate_sqlite_to_postgres.py"]) {
-    run("docker", ["run", "--rm", maintenanceImage, `scripts/${script}`, "--help"]);
-  }
-  console.log("PASS PostgreSQL maintenance image starts migration and import commands");
-  run("docker", [...compose, "up", "--build", "-d"]);
-  await waitForReady();
-  run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
-    "/source/scripts/check_postgres_background_budget.py"]);
-  run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
-    "/source/scripts/check_postgres_operation_recovery.py"]);
-  run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
-    "/source/scripts/check_postgres_upgrade.py"]);
-  run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
-    "/source/scripts/check_postgres_background_workloads.py"]);
-  run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
-    "/source/scripts/check_postgres_threat_candidate_upsert.py"]);
-  const runningContainers = spawnSync("docker", [...compose, "ps", "--format", "json"],
-    { encoding: "utf8", env: environment });
-  assert.equal(runningContainers.status, 0, runningContainers.stderr);
-  const runningServices = new Set(runningContainers.stdout.trim().split("\n")
-    .filter(Boolean).map(line => JSON.parse(line))
-    .filter(container => container.State === "running")
-    .map(container => container.Service));
-  for (const service of ["api", "foreground-worker", "background-worker",
-    "background-scheduler", "defense-engine", "maia-worker", "web"])
-    assert(runningServices.has(service), `${service} exited during PostgreSQL startup`);
-  const settings = await get("settings");
-  const before = await get("queue/today");
-  const operationId = `pg-durability-${randomBytes(12).toString("hex")}`;
-  const updatedSettings = { ...settings, new_cards_per_day: settings.new_cards_per_day + 1 };
-  const sendSettings = () => apiRequest("settings", {
-    method: "PUT",
-    headers: { "Content-Type": "application/json", "Idempotency-Key": operationId },
-    body: JSON.stringify(updatedSettings),
+  await executePostgresTestPlan(stages, actions, measureScenario, () => {
+    // Capture failure diagnostics before the executor tears down this test stack.
+    if (resourcesCreated) spawnSync("docker", [...compose, "logs", "--tail=80"],
+      { stdio: "inherit", env: environment });
   });
-  const uncertainResponse = await sendSettings();
-  assert(uncertainResponse.ok, `Settings command accepted before simulating a lost response: ${uncertainResponse.status}`);
-  await uncertainResponse.body?.cancel();
-  let settingsCommitted = false;
-  for (let attempt = 0; attempt < 60; attempt += 1) {
-    if ((await get("settings")).new_cards_per_day === updatedSettings.new_cards_per_day) {
-      settingsCommitted = true;
-      break;
-    }
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-  assert(settingsCommitted, "Settings business effect commits after its response is discarded");
-  run("docker", [...compose, "down"]);
-  run("docker", [...compose, "up", "-d"]);
-  await waitForReady();
-  assert.equal((await get("settings")).new_cards_per_day, updatedSettings.new_cards_per_day);
-  await confirm(await sendSettings());
-  const receipt = await get(`operations/${operationId}`);
-  assert.equal(receipt.state, "complete");
-  const after = await get("queue/today");
-  assert.deepEqual(after.cards.map(card => card.queue_entry_id),
-    before.cards.map(card => card.queue_entry_id));
-  console.log("PASS PostgreSQL lost-response receipt replay, settings, and queue order survive container recreation");
-  run("docker", [...compose, "stop", "api", "foreground-worker", "background-worker",
-    "background-scheduler", "defense-engine", "maia-worker", "web"]);
-  run("docker", [...compose, "exec", "-T", "postgres", "sh", "-ec",
-    "pg_dump -U postgres -d tempo -Fc -f /tmp/tempo-test.dump && " +
-    "pg_restore -l /tmp/tempo-test.dump >/dev/null && " +
-    "createdb -U postgres tempo_restore_check && " +
-    "pg_restore -U postgres -d tempo_restore_check /tmp/tempo-test.dump"]);
-  run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
-    "/source/scripts/verify_postgres_backup.py",
-    "postgresql://postgres@postgres:5432/tempo",
-    "postgresql://postgres@postgres:5432/tempo_restore_check"]);
-  run("docker", [...compose, "exec", "-T", "postgres", "sh", "-ec",
-    "dropdb -U postgres tempo_restore_check && rm /tmp/tempo-test.dump"]);
-  console.log("PASS every PostgreSQL table matches after backup restoration");
-  run("docker", [...compose, "up", "-d"]);
-  await waitForReady();
-  if (!skipBrowser) {
-    const browserArguments = buildPostgresPlaywrightArguments(options);
-    run("npx", browserArguments, { env: { ...environment,
-      TEMPO_DOCKER_URL: origin,
-      TEMPO_TEST_OUTPUT_DIR: join(process.cwd(), "test-results", `browser-postgres-${process.pid}`),
-    } });
-  }
-  await verifyForegroundAndStudyDurability();
 } catch (error) {
   failed = true;
   console.error(error);
-  spawnSync("docker", [...compose, "logs", "--tail=80"], { stdio: "inherit", env: environment });
-} finally {
-  if (resourcesCreated) {
-    const stopped = spawnSync("docker", [...compose, "down", "--rmi", "local", "-v"],
-      { stdio: "inherit", env: environment });
-    if (stopped.status !== 0) failed = true;
-    const removedMaintenanceImage = spawnSync("docker", ["image", "rm", maintenanceImage],
-      { stdio: "ignore", env: environment });
-    if (removedMaintenanceImage.error) failed = true;
-  }
-  rmSync(secretsDirectory, { recursive: true, force: true });
 }
 process.exit(failed ? 1 : 0);

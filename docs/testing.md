@@ -40,7 +40,7 @@ The standalone engine smoke verifies a restricted Stockfish search without conne
 
 The unit stage also writes one Vitest JSON report to `test-results/performance/unit-files-full.json` during that same test run. `make slow-tests` lists the slowest unit files from it. Use `make slow-tests TIER=fast` after `make fast`; `COUNT=20` shows more files. File wall times include setup and may overlap across workers, so their sum is not the suite wall time.
 
-The regular Playwright specs run **once** in stage 11 on PostgreSQL. `make browser`, `make ui-file`, and `make view` use this same isolated PostgreSQL runner. The visual config selects `visual.spec.ts` and `performance.spec.ts`; the regular browser config excludes those files. `make perf` runs only the performance subset of `make visual`, so it is a focused diagnostic command, not an extra full-gate stage.
+The regular Playwright specs run **once** in stage 11 on PostgreSQL. `make browser`, `make ui-file`, and `make view` use this same isolated PostgreSQL runner in browser-only mode, without maintenance, backup/restore, or study-durability scenarios. The visual config selects `visual.spec.ts` and `performance.spec.ts`; the regular browser config excludes those files. `make perf` runs only the performance subset of `make visual`, so it is a focused diagnostic command, not an extra full-gate stage.
 
 For an independent pinned performance repeat, use `TEMPO_TEST_TIMING_DIR=test-results/performance/repeat-<label> make perf`. The directory must be inside the checkout so the Docker runner can write the raw samples there. The ordinary full-run artifacts then remain available for comparison.
 
@@ -57,15 +57,15 @@ For an independent pinned performance repeat, use `TEMPO_TEST_TIMING_DIR=test-re
 | One Rust test name | `make rust-case FILTER=card_identity` | Filtered Rust workspace test |
 | Backend and Rust integration | `make integration` | Defense smoke, pytest, and Rust checks once each |
 | UI as a whole | `make ui` | PostgreSQL regular browser matrix plus disjoint pinned visual/performance specs |
-| Regular browser only | `make browser` | PostgreSQL regular Playwright matrix and study durability |
+| Regular browser only | `make browser` | PostgreSQL regular Playwright matrix only; no recovery scenarios |
 | One browser spec | `make ui-file FILE=games-board-context.spec.ts` | Exact spec from `tests/browser` |
 | View title filter | `make view VIEW=Builder` | Browser tests whose titles match the pattern; focused subset only |
 | Visual and performance | `make visual` | Pinned visual and performance specs |
 | Performance only | `make perf` | Pinned performance specs; subset of `visual` |
-| PostgreSQL durability only | `make docker-durability` | Compose and container recreation checks; skips browser specs |
+| PostgreSQL durability only | `make docker-durability` | All PostgreSQL recovery and study-durability checks; no browser specs |
 | Legacy SQLite compatibility | `make legacy-sqlite` | Former SQLite runtime/browser runner; optional, outside the default full gate |
 
-`make plan TIER=fast`, `TIER=python`, `TIER=backend`, `TIER=rust`, `TIER=integration`, or `TIER=ui` prints that scope's exact stages. A view title filter is convenient during development but is not a claim of complete coverage for that view; use `make ui` or `make full` for the broader gate. Make rejects multiple verification targets in one invocation so a combined command cannot accidentally repeat a suite.
+`make plan TIER=fast`, `TIER=python`, `TIER=backend`, `TIER=rust`, `TIER=integration`, `TIER=ui`, or `TIER=browser` prints that scope's exact stages. A view title filter is convenient during development but is not a claim of complete coverage for that view; use `make ui` or `make full` for the broader gate. Make rejects multiple verification targets in one invocation so a combined command cannot accidentally repeat a suite.
 
 The focused SQLite snapshot, validation, import-fidelity, source-nonmutation, destination-safeguard, historical-schema, and SQLite-backed product regressions remain part of the normal unit/backend suite. The old complete SQLite runtime runner is optional so the default gate does not execute the regular Playwright matrix twice.
 
@@ -77,3 +77,32 @@ The focused SQLite snapshot, validation, import-fidelity, source-nonmutation, de
 | SQLite snapshot integrity, import fidelity, and safety guards | Focused SQLite unit/backend regressions remain in `make full` |
 
 Use `node scripts/test-postgres-docker.mjs --list` or `node scripts/test-docker.mjs --list` to inspect runner stages without starting a stack. The full gate always includes the PostgreSQL browser matrix.
+
+## PostgreSQL execution modes and timings
+
+The runner defaults to `--mode full`. This remains the mode used by `make full`, `npm test`, and CI. `make browser`, `make ui`, `make ui-file`, and `make view` explicitly use `--mode browser`. `make docker-durability` uses `--mode durability`; the old `--skip-browser` argument remains a supported alias. A browser-file or browser-grep argument without an explicit mode selects browser-only execution. Filters are rejected in explicit full or durability mode so a filtered run cannot masquerade as a full gate.
+
+```sh
+node scripts/test-postgres-docker.mjs --list --mode browser
+node scripts/test-postgres-docker.mjs --list --mode durability
+make ui-file FILE=games-board-context.spec.ts
+make docker-durability
+```
+
+These are alternative development scopes, not a sequence to repeat after every edit. Use the named regression while fixing a defect, the relevant subsystem when stable, and the full gate on the final candidate before release. A passing focused run is not evidence that the full gate passed.
+
+Browser-only execution still validates Compose isolation, builds the current checkout's images, starts fresh disposable PostgreSQL/Redis state, checks service health, runs the selected Playwright cases, and cleans up. It does not run the maintenance CLI, workload/recovery probes, settings-replay recreation, backup/restore comparison, or study-durability scenario. Full and durability modes retain those checks. Completed `needs_repair` integrity results now fail the study fixture immediately; the fixture must become valid rather than wait for impossible queue admission.
+
+The executable scenario plan also drives `--list`. Every invocation writes a separate `postgres-scenarios-<mode>-<project>.json` under `test-results/performance/` (or the explicitly selected `TEMPO_TEST_TIMING_DIR`). It records commit, mode, requested browser filter, planned stages, and measured duration/exit status after each executed stage, including failures and cleanup. It does not copy environment variables or exception payloads into the timing report. Never sum these scenario durations with the enclosing `postgres_docker` duration: they are nested measurements of the same work. CI's existing artifact upload includes the raw scenario reports.
+
+## Cache behavior and isolation
+
+The PostgreSQL runner invokes the Compose image build once; startup and recovery recreation explicitly use `--no-build` to reuse those images within the run. Every run still owns fresh project-scoped containers, volumes, network, credentials, and a loopback port. Cleanup remains project-scoped and no production database is reused.
+
+Docker's build context excludes `.tempo-pg-test-secrets-*`, `.dev-copies`, Python bytecode/cache files, and test output. In particular, generated credentials must never enter a `COPY . .` image layer or invalidate an otherwise reusable frontend build layer. Existing local BuildKit cache remains available; this change does not add persistent remote Docker-layer caching.
+
+CI retains npm caching and adds pip downloads plus Rust compiler/dependency caches after toolchain setup. Workflow cancellation is scoped to the same PR or ref, and only superseded PR runs are cancelled. Pages deployment has its own non-cancelling concurrency group. All full-gate stages and pinned visual/performance settings remain required and unchanged. Vitest worker counts and test isolation are intentionally unchanged pending measurements.
+
+## Runner regression coverage
+
+`tests/unit/postgres-test-speedups-regressions.test.ts` runs the dependency-free Node suite in `tests/runner/postgres-test-speedups.test.mjs` as part of the regular frontend gate. The same cases can be run directly with `node --test tests/runner/postgres-test-speedups.test.mjs` while editing the harness. The suite checks executable mode selection, read-only plans, failure/cleanup propagation, timings, fail-fast fixtures, and the Make/CI entry points. These harness tests do not replace live PostgreSQL or browser verification.
