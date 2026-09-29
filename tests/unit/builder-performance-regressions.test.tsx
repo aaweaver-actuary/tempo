@@ -37,6 +37,11 @@ it("Builder unrelated rerender does not rewrite repertoire selection or session"
   await waitFor(() => expect(
     (screen.getByRole("combobox", { name: "Active repertoire" }) as unknown as HTMLSelectElement).value,
   ).toBe("white-one"));
+  await waitFor(() => {
+    expect(localStorage.getItem("tempo-active-repertoire-white")).toBe("white-one");
+    expect(JSON.parse(localStorage.getItem("tempo-builder-session") ?? "null")?.activeRepertoireId)
+      .toBe("white-one");
+  });
   storageWrites.mockClear();
   view.rerender(<BuilderView {...props} />);
   expect(storageWrites.mock.calls.filter(([key]) =>
