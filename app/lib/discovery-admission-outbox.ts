@@ -18,7 +18,9 @@ export const DISCOVERY_ADMISSION_QUEUED = "tempo-discovery-admission-queued";
 const storageKey = "tempo-pending-discovery-admissions-v1";
 const requestTimeoutMs = 15_000;
 const retryDelayMs = 3_000;
-const maximumAdmissionsPerFlush = 2;
+const maximumSubmissionsPerFlush = 2;
+const maximumConfirmationsPerFlush = 2;
+const legacyOversizedKeyError = "Idempotency-Key must be at most 128 characters";
 let activeFlush: Promise<void> | undefined;
 
 function notifyChanged() {
@@ -35,7 +37,9 @@ export function pendingDiscoveryAdmissions(): PendingDiscoveryAdmission[] {
     typeof item.selectedMoveUci !== "string" ||
     typeof item.evidenceFingerprint !== "string" ||
     (item.operationId !== undefined &&
-      (typeof item.operationId !== "string" || !item.operationId || item.operationId.length > 128)) ||
+      (typeof item.operationId !== "string" || !item.operationId ||
+        (item.operationId.length > 128 &&
+          !(item.state === "failed" && item.error === legacyOversizedKeyError)))) ||
     !["pending", "accepted", "failed"].includes(item.state) ||
     (item.intentId !== undefined && typeof item.intentId !== "string") ||
     (item.error !== undefined && typeof item.error !== "string") ||
@@ -87,7 +91,7 @@ export function recoverUnacknowledgedDiscoveryAdmissions() {
   let changed = false;
   const recovered = admissions.map((admission) => {
     const oldKeyWasRejected = admission.state === "failed" &&
-      admission.error?.includes("Idempotency-Key must be at most 128 characters");
+      admission.error === legacyOversizedKeyError;
     const oldTimeoutNeedsRecovery = admission.state === "failed" &&
       admission.error?.startsWith("Discovery save timed out after 15 seconds.");
     if (admission.state !== "accepted" && !oldTimeoutNeedsRecovery && !oldKeyWasRejected)
@@ -197,9 +201,12 @@ export function flushPendingDiscoveryAdmissions(preferredOpportunityId?: string)
         (admission.nextAttemptAt ?? 0) <= Date.now())
       .sort((left, right) =>
         Number(right.opportunityId === preferredOpportunityId) -
-        Number(left.opportunityId === preferredOpportunityId))
-      .slice(0, maximumAdmissionsPerFlush);
-    activeFlush = Promise.all(readyAdmissions.map(processAdmission))
+        Number(left.opportunityId === preferredOpportunityId));
+    const submissions = readyAdmissions.filter((admission) => !admission.intentId)
+      .slice(0, maximumSubmissionsPerFlush);
+    const confirmations = readyAdmissions.filter((admission) => admission.intentId)
+      .slice(0, maximumConfirmationsPerFlush);
+    activeFlush = Promise.all([...submissions, ...confirmations].map(processAdmission))
       .then(() => undefined).finally(() => { activeFlush = undefined; });
   }
   return activeFlush;
