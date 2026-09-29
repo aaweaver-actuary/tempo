@@ -6,7 +6,7 @@
 - [x] Source defects reproduced: separate Celery and scheduler retry budgets; conflicting task delivery could alter the original receipt; discovery confirmations favored the first entries; a recovered game job could be overwritten by the defensive journal; diagnostic incident keys persisted raw error signatures; the old-image rollback instruction was incompatible with schema 17.
 - [x] Verify the candidate's populated 16→20 upgrade and repeat run, preserved rows, real task replay, and running image source consistency. The disposable Docker gate applied migration 020, repeated the runner, preserved receipts and business rows, and passed service recreation.
 - [x] Measure four background workloads on an isolated restore of a verified product backup. After the ordered claim and smaller result pages, a 30-minute, four-CPU database concurrency probe completed with no operation failures or background transaction/lock errors and with foreground p95 below its same-container idle baseline. This exercised SQL operations, not HTTP requests; production HTTP latency remains unverified.
-- [ ] Repeat `make full` on the final checkout after the contention fix. The prior candidate at `90fd04f` passed the full gate: 348 unit, 710 backend, 131 SQLite browser, 131 PostgreSQL browser, and 48 pinned visual/performance cases, plus Rust, lint, typecheck, and builds.
+- [x] Run `make full` on source revision `d758983` after the contention fix: 348 unit, 711 backend, 131 SQLite browser, 131 PostgreSQL browser, and 48 pinned visual/performance cases, plus Rust, lint, typecheck, and builds. All stages exited 0.
 - [ ] Obtain approval for the exact live target and maintenance window before stopping writers or migrating it.
 
 ## Historical SQLite integrity failure
@@ -18,8 +18,9 @@ the incident baseline `872348a` and this candidate, using the same arm64
 Python 3.14.5, SQLite 3.53.2, FastAPI 0.116.1, and psycopg 3.3.6 runtime.
 An instrumented run captured `PRAGMA integrity_check = ['ok']` and
 `PRAGMA foreign_key_check = []` on both. The historical failure is not
-reproduced here; the regression remains enabled. This result says nothing
-about the live PostgreSQL database's integrity.
+reproduced here; the regression remains enabled. The historical Actions page
+could not be refreshed through the GitHub CLI or web access in this environment.
+This result says nothing about the live PostgreSQL database's integrity.
 
 ## Read-only startup diagnosis
 
