@@ -218,8 +218,9 @@ def compact(database: sqlite3.Connection) -> None:
     _checkpoint(database)
     database.execute("VACUUM")
     _checkpoint(database)
-    if database.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
-        raise RuntimeError("SQLite integrity check failed")
+    integrity_results = [row[0] for row in database.execute("PRAGMA integrity_check")]
+    if integrity_results != ["ok"]:
+        raise RuntimeError(f"SQLite integrity check failed: {integrity_results}")
     if database.execute("PRAGMA foreign_key_check").fetchone() is not None:
         raise RuntimeError("SQLite foreign-key check failed")
 
