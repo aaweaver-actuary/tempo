@@ -1,4 +1,5 @@
 import type { AnalysisLine, CanonicalLine } from "../types";
+import type { ComparisonCard } from "./comparison";
 import { packagedPuzzleSchema } from "../domain/schemas";
 import { validRecords } from "./validated-data";
 import {
@@ -31,7 +32,10 @@ export type PureStudyTask =
 export type StudyPositionTask =
   | { kind: "initializePositionIndex"; repertoireId: string; revision: number; lines: CanonicalLine[] }
   | { kind: "findPositionMatches"; repertoireId: string; revision: number; fen: string; limit?: number }
-  | { kind: "releasePositionIndex"; repertoireId: string; revision: number };
+  | { kind: "releasePositionIndex"; repertoireId: string; revision: number }
+  | { kind: "initializeComparisonIndex"; revision: number; cards: ComparisonCard[] }
+  | { kind: "findComparisonMatches"; revision: number; fen: string; repertoireId?: string }
+  | { kind: "releaseComparisonIndex"; revision: number };
 
 export type StudyTask = PureStudyTask | StudyPositionTask;
 

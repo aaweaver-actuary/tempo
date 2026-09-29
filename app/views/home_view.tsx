@@ -53,6 +53,8 @@ import { usesLocalApi, localDayKey } from "../utils/local";
 import { trainedColor } from "../utils/cards";
 import { buryQueuedCard } from "../domain/training-session";
 import BuilderView from "./analysis_view";
+import ComparisonView from "./comparison_view";
+import type { ComparisonBoard, ComparisonLaunch } from "../lib/comparison";
 import CardEditor from "./card_editor";
 import EndgamesView from "./endgames_view";
 import GamesView from "./games_view";
@@ -123,6 +125,8 @@ export default function Home() {
     };
   }, []);
   const [currentView, setCurrentView] = useState<View>("train");
+  const [comparisonLaunch, setComparisonLaunch] = useState<ComparisonLaunch>();
+  const [comparisonOpenError, setComparisonOpenError] = useState("");
   const [discoveryReturn, setDiscoveryReturn] = useState<{
     view: View;
     id: string;
@@ -1238,7 +1242,30 @@ export default function Home() {
     persistExplicitAttemptFailure();
   }
 
-  function openReviewPosition(target: "analysis" | "builder" | "games") {
+  function openReviewPosition(target: "analysis" | "builder" | "games" | "compare") {
+    if (target === "compare") {
+      try {
+        const position = new Chess(card.startingFen);
+        const history = card.moves.map((san) => {
+          const move = position.move(san);
+          return { uci: `${move.from}${move.to}${move.promotion ?? ""}`, san: move.san, fen: position.fen() };
+        });
+        const source: ComparisonBoard = {
+          id: "source", label: card.title || "Training card", cardId: card.backendId ?? card.id,
+          orientation: trainedColor(card), startingFen: card.startingFen,
+          history, cursor: Math.min(step, history.length),
+        };
+        setComparisonOpenError("");
+        setComparisonLaunch({
+          source, sourceKey: `${source.cardId}:${card.revision ?? 1}:${source.cursor}:${currentFenString}`,
+          repertoireId: card.repertoireId, returnView: "train",
+        });
+        changeWorkspace("compare");
+      } catch (error) {
+        setComparisonOpenError(`Cannot compare this card until its move route is repaired. ${String(error)}`);
+      }
+      return;
+    }
     if (target === "games") {
       setGamesFenFilter(canonicalFenKey(currentFenString));
       setGamesRepertoireFilter("");
@@ -1376,6 +1403,7 @@ export default function Home() {
       )}
 
       <BoardWorkspaceContainer enabled={boardWorkspace} view={currentView}>
+        {comparisonOpenError && currentView === "train" && <div className="ui-notice error" role="alert">{comparisonOpenError}</div>}
         {currentView === "train" && (
           <>
             <OfflineReviewConflicts />
@@ -1602,9 +1630,27 @@ export default function Home() {
               imported={importedRepertoires}
               settings={new Settings()}
               onPasteAnalysis={setPasteContext}
+              onCompare={(source, repertoireId) => {
+                setComparisonLaunch({
+                  source,
+                  sourceKey: `${source.startingFen}:${source.cursor}:${source.history.map((move) => move.uci).join(" ")}`,
+                  repertoireId,
+                  returnView: "builder",
+                });
+                changeWorkspace("compare");
+              }}
               useSharedBoard
             />
           </>
+        )}
+        {currentView === "compare" && comparisonLaunch && (
+          <ComparisonView
+            key={comparisonLaunch.sourceKey}
+            launch={comparisonLaunch}
+            theme={boardTheme}
+            pieceSet={pieceSet}
+            onReturn={() => changeWorkspace(comparisonLaunch.returnView)}
+          />
         )}
         {currentView === "studies" && (
           <StudiesView boardTheme={boardTheme} pieceSet={pieceSet} />
