@@ -179,6 +179,28 @@ it("discovery save outbox survives reload and waits for queued confirmation", as
   expect(fetcher.mock.calls.filter(([url]) => String(url).includes("/accept"))).toHaveLength(1);
 });
 
+it("stalled discovery confirmations cannot starve a later queued admission across reloads", async () => {
+  localStorage.setItem("tempo-pending-discovery-admissions-v1", JSON.stringify(
+    ["a", "b", "c"].map((opportunityId) => ({
+      ...admission, opportunityId, operationId: `operation-${opportunityId}`,
+      intentId: `intent-${opportunityId}`, state: "accepted",
+    })),
+  ));
+  const polled: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    const intentId = url.split("/discovery-admissions/")[1];
+    polled.push(intentId);
+    return Response.json({ state: intentId === "intent-c" ? "queued" : "preparing" });
+  }));
+  await flushPendingDiscoveryAdmissions("a");
+  await vi.resetModules();
+  const reloaded = await import("../../app/lib/discovery-admission-outbox");
+  await reloaded.flushPendingDiscoveryAdmissions("a");
+  expect(polled).toContain("intent-c");
+  expect(reloaded.pendingDiscoveryAdmissions().map((item) => item.opportunityId))
+    .toEqual(["a", "b"]);
+});
+
 it("legacy discovery admission 202 keeps its intent receipt without a Celery operation ID", async () => {
   enqueuePendingDiscoveryAdmission(admission);
   const fetcher = vi.fn().mockResolvedValueOnce(Response.json(

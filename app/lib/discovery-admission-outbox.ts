@@ -11,6 +11,7 @@ export type PendingDiscoveryAdmission = {
   error?: string;
   retryCount?: number;
   nextAttemptAt?: number;
+  confirmationPollOrder?: number;
 };
 
 export const DISCOVERY_ADMISSIONS_CHANGED = "tempo-discovery-admissions-changed";
@@ -44,7 +45,9 @@ export function pendingDiscoveryAdmissions(): PendingDiscoveryAdmission[] {
     (item.intentId !== undefined && typeof item.intentId !== "string") ||
     (item.error !== undefined && typeof item.error !== "string") ||
     (item.retryCount !== undefined && (!Number.isInteger(item.retryCount) || item.retryCount < 0)) ||
-    (item.nextAttemptAt !== undefined && !Number.isFinite(item.nextAttemptAt)))) {
+    (item.nextAttemptAt !== undefined && !Number.isFinite(item.nextAttemptAt)) ||
+    (item.confirmationPollOrder !== undefined &&
+      (!Number.isSafeInteger(item.confirmationPollOrder) || item.confirmationPollOrder < 0)))) {
     throw new Error("Saved discovery requests are invalid. Restore your browser data before continuing.");
   }
   const admissions = parsed as PendingDiscoveryAdmission[];
@@ -198,14 +201,27 @@ export function flushPendingDiscoveryAdmissions(preferredOpportunityId?: string)
   if (!activeFlush) {
     const readyAdmissions = pendingDiscoveryAdmissions()
       .filter((admission) => admission.state !== "failed" &&
-        (admission.nextAttemptAt ?? 0) <= Date.now())
-      .sort((left, right) =>
-        Number(right.opportunityId === preferredOpportunityId) -
-        Number(left.opportunityId === preferredOpportunityId));
+        (admission.nextAttemptAt ?? 0) <= Date.now());
     const submissions = readyAdmissions.filter((admission) => !admission.intentId)
+      .sort((left, right) => Number(right.opportunityId === preferredOpportunityId) -
+        Number(left.opportunityId === preferredOpportunityId))
       .slice(0, maximumSubmissionsPerFlush);
+    // Poll order lives with each admission so a reload cannot favor the first entries again.
+    // For N continuously eligible confirmations, each is serviced within ceil(N / 2) flushes.
     const confirmations = readyAdmissions.filter((admission) => admission.intentId)
+      .sort((left, right) => (left.confirmationPollOrder ?? 0) -
+        (right.confirmationPollOrder ?? 0) ||
+        Number(right.opportunityId === preferredOpportunityId) -
+        Number(left.opportunityId === preferredOpportunityId))
       .slice(0, maximumConfirmationsPerFlush);
+    let nextPollOrder = Math.max(0, ...pendingDiscoveryAdmissions().map(
+      (admission) => admission.confirmationPollOrder ?? 0));
+    for (const admission of confirmations) {
+      nextPollOrder += 1;
+      replaceAdmission(admission.opportunityId, (current) => ({
+        ...current, confirmationPollOrder: nextPollOrder,
+      }));
+    }
     activeFlush = Promise.all([...submissions, ...confirmations].map(processAdmission))
       .then(() => undefined).finally(() => { activeFlush = undefined; });
   }
