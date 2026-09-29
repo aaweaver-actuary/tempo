@@ -81,4 +81,18 @@ describe("notification regressions", () => {
     expect(exported).not.toContain("player@example.com");
     expect(exported).not.toContain("token=secret");
   });
+
+  it("repeated incident observations keep first seen history and count occurrences", () => {
+    const incident = { severity: "error" as const, source: "sync status",
+      key: "incident:sync-schema", message: "Invalid status" };
+    const firstId = publishNotification(incident);
+    expect(publishNotification(incident)).toBe(firstId);
+    expect(notifications()).toHaveLength(1);
+    expect(notifications()[0].occurrenceCount).toBe(2);
+    const firstSeen = notifications()[0].occurredAt;
+    resolveNotification(firstId);
+    const recurrenceId = publishNotification(incident);
+    expect(recurrenceId).not.toBe(firstId);
+    expect(notifications().find((item) => item.id === firstId)?.occurredAt).toBe(firstSeen);
+  });
 });

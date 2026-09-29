@@ -5,7 +5,7 @@ import { API_URL } from "../const";
 import { usesLocalApi } from "../utils/local";
 import type { GameProviderValue, GameSyncJobStatusValue } from "../types";
 import { backgroundFetch } from "../lib/background-fetch";
-import { reportDebugError } from "../lib/debug-reporting";
+import { reportDebugError, resolveValidationIncidentsForEndpoint } from "../lib/debug-reporting";
 import { enqueueGameSyncCommand, hasPendingGameSyncCommand } from "../lib/game-sync-command";
 import { PendingOperationError } from "../lib/operation-status";
 
@@ -67,7 +67,8 @@ export function useGameSync() {
       setState((current) => ({ ...current, syncing: result.status !== "complete" && result.status !== "failed", error: providerResults.filter((provider) => provider.error).map((provider) => `${provider.provider}: ${provider.error}`).join(" · "), imported: result.imported, providers: providerResults, jobStatus: result.status }));
     } catch (error) {
       if (error instanceof PendingOperationError) {
-        setState((current) => ({ ...current, syncing: true, error: "" }));
+        setState((current) => ({ ...current, syncing: !error.blocked,
+          error: error.blocked ? error.message : "" }));
         return;
       }
       reportDebugError(error, {
@@ -95,6 +96,7 @@ export function useGameSync() {
       try {
         const response = await backgroundFetch(`${API_URL}/api/games/sync/status`);
         const result = await readJsonResponse(response, syncStatusSchema, "game sync status");
+        resolveValidationIncidentsForEndpoint(`${API_URL}/api/games/sync/status`);
         statusFailureCount.current = 0;
         lastReportedStatusFailure.current = "";
         const latest = result.providers.map((provider) => provider.last_success_at ?? "").sort().at(-1) ?? "";

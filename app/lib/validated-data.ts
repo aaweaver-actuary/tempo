@@ -72,6 +72,7 @@ export function parseData<T>(
   schema: z.ZodType<T>,
   raw: unknown,
   source: string,
+  endpoint?: string,
 ): T {
   const result = schema.safeParse(raw);
   if (result.success) return result.data;
@@ -84,7 +85,7 @@ export function parseData<T>(
     kind: "data-validation",
     source: "validated-data",
     operation: "schema validation",
-    endpoint: source,
+    endpoint,
   });
   throw failure;
 }
@@ -150,5 +151,5 @@ export async function readJsonResponse<T>(
     });
     throw failure;
   }
-  return parseData(schema, raw, source);
+  return parseData(schema, raw, source, response.url || undefined);
 }

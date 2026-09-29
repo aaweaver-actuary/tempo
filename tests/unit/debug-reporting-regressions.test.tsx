@@ -14,6 +14,7 @@ import { TempoErrorBoundary } from "../../app/components/error-boundary";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import { useTrainingStore } from "../../app/state/training-store";
 import { STANDARD_FEN } from "../../app/const";
+import { notifications } from "../../app/lib/notifications";
 
 beforeEach(() => {
   clearDebugErrors();
@@ -61,12 +62,39 @@ describe("frontend debug reporting", () => {
 
   it("deduplicates immediate repeats and bounds retained errors", () => {
     const first = reportDebugError(new Error("same failure"), { source: "test" });
-    const duplicate = reportDebugError(new Error("same failure"), { source: "other" });
+    const duplicate = reportDebugError(new Error("same failure"), { source: "test" });
     expect(duplicate.id).toBe(first.id);
+    expect(reportDebugError(new Error("same failure"), { source: "other" }).id).not.toBe(first.id);
     for (let index = 0; index < 25; index += 1)
       reportDebugError(new Error(`failure ${index}`), { source: "test" });
     expect(debugErrors()).toHaveLength(20);
     expect(JSON.parse(buildDebugBundle()).recentErrors).toHaveLength(10);
+  });
+
+  it("does not reuse notification identity after debug module reload", async () => {
+    const first = reportDebugError(new Error("first failure"), { source: "sync", endpoint: "/api/games/sync/status" });
+    vi.resetModules();
+    const fresh = await import("../../app/lib/debug-reporting");
+    const freshNotifications = await import("../../app/lib/notifications");
+    const second = fresh.reportDebugError(new Error("second failure"), { source: "sync", endpoint: "/api/games/sync/status" });
+    expect(second.id).not.toBe(first.id);
+    expect(freshNotifications.notifications().map((record) => record.message)).toContain("first failure");
+    expect(freshNotifications.notifications().map((record) => record.message)).toContain("second failure");
+  });
+
+  it("repeated status polling updates one incident without another toast", () => {
+    vi.useFakeTimers();
+    try {
+      reportDebugError(new Error("invalid sync payload"), {
+        kind: "data-validation", source: "validated-data", endpoint: "/api/games/sync/status",
+      });
+      vi.advanceTimersByTime(2_000);
+      reportDebugError(new Error("invalid sync payload"), {
+        kind: "data-validation", source: "validated-data", endpoint: "/api/games/sync/status",
+      });
+      expect(notifications().filter((record) => record.message === "invalid sync payload")).toHaveLength(1);
+      expect(notifications().find((record) => record.message === "invalid sync payload")?.occurrenceCount).toBe(2);
+    } finally { vi.useRealTimers(); }
   });
 
   it("captures window exceptions and unhandled rejections", () => {

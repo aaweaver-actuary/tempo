@@ -4,7 +4,7 @@ import { dataDiagnostics } from "./validated-data";
 import { usesLocalApi } from "../utils/local";
 import { serviceStatusSnapshot } from "./service-status";
 import { offlineShellVersion } from "./offline-shell";
-import { publishNotification } from "./notifications";
+import { notifications, publishNotification, resolveNotification } from "./notifications";
 
 export type DebugErrorKind =
   | "uncaught-exception"
@@ -53,6 +53,7 @@ const listeners = new Set<() => void>();
 let records: readonly DebugErrorRecord[] = [];
 let activeWorkspace = "unknown";
 let nextErrorId = 1;
+let alreadyReported = new WeakMap<Error, DebugErrorRecord>();
 let globalCleanup: (() => void) | undefined;
 
 function notify() {
@@ -118,6 +119,7 @@ export function debugErrors() {
 
 export function clearDebugErrors() {
   records = [];
+  alreadyReported = new WeakMap();
   notify();
 }
 
@@ -125,6 +127,10 @@ export function reportDebugError(
   failure: unknown,
   context: DebugErrorContext = {},
 ): DebugErrorRecord {
+  if (failure instanceof Error) {
+    const priorReport = alreadyReported.get(failure);
+    if (priorReport) return priorReport;
+  }
   const details = errorDetails(failure);
   const normalizedContext = {
     source: context.source ?? "frontend",
@@ -139,6 +145,7 @@ export function reportDebugError(
   };
   const signature = [
     context.kind ?? "ui",
+    normalizedContext.source,
     normalizedContext.endpointPath ?? "",
     details.name,
     details.message,
@@ -148,6 +155,7 @@ export function reportDebugError(
     previous &&
     [
       previous.kind,
+      previous.context.source,
       previous.context.endpointPath ?? "",
       previous.name,
       previous.message,
@@ -157,7 +165,8 @@ export function reportDebugError(
     return previous;
 
   const record: DebugErrorRecord = {
-    id: `debug-${nextErrorId++}`,
+    id: `debug-${typeof crypto !== "undefined" && "randomUUID" in crypto
+      ? crypto.randomUUID() : `${Date.now()}-${nextErrorId++}-${Math.random()}`}`,
     occurredAt: new Date().toISOString(),
     kind: context.kind ?? "ui",
     name: details.name,
@@ -166,10 +175,11 @@ export function reportDebugError(
     context: normalizedContext,
   };
   records = [...records.slice(-(MAX_ERROR_RECORDS - 1)), record];
+  if (failure instanceof Error) alreadyReported.set(failure, record);
   notify();
   if (normalizedContext.source !== "browser-extension") publishNotification({
     severity: "error", source: normalizedContext.source,
-    message: record.message, key: `debug:${record.id}`,
+    message: record.message, key: `debug-incident:${signature}`,
     details: {
       debugRecordId: record.id,
       kind: record.kind,
@@ -181,6 +191,16 @@ export function reportDebugError(
     },
   });
   return record;
+}
+
+export function resolveValidationIncidentsForEndpoint(endpoint: string): void {
+  const resolvedPath = endpointPath(endpoint);
+  for (const record of notifications()) {
+    if (record.resolvedAt || record.source !== "validated-data" ||
+        record.details?.kind !== "data-validation" ||
+        record.details.endpointPath !== resolvedPath) continue;
+    resolveNotification(record.id);
+  }
 }
 
 function diagnosticSummary() {
