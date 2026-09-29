@@ -5,6 +5,7 @@
 - Do not make any changes on the main branch directly.
 - Always create a new branch for any changes, and ensure it is based on the latest main branch.
 - Clone the latest main branch before starting any work. You have been given a dev location inside the top-level `.dev-copies` directory. Please clone the repository into that location, create a new branch for your work, and start making changes there. You always have the main branch as your reference point.
+- After cloning, make sure that you build the python venv before testing (common cause of testing failures). We use `uv` for virtual environment management. Run `uv sync` to create the venv, and the standard `source .venv/bin/activate` to activate it. 
 
 ## Tempo is actively used for study
 
