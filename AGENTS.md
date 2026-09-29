@@ -6,6 +6,8 @@
 - Always create a new branch for any changes, and ensure it is based on the latest main branch.
 - Clone the latest main branch before starting any work. You have been given a dev location inside the top-level `.dev-copies` directory. Please clone the repository into that location, create a new branch for your work, and start making changes there. You always have the main branch as your reference point.
 - After cloning, make sure that you build the python venv before testing (common cause of testing failures). We use `uv` for virtual environment management. Run `uv sync` to create the venv, and the standard `source .venv/bin/activate` to activate it. 
+- The clone’s Python project is under backend/, so root-level `uv sync` will find no pyproject.toml; Instead run `uv sync` from within the backend/ directory to properly set up the virtual environment for the project. You will need an elevated network path to install dependencies.
+- After setting up the virtual environment, make sure to install all required dependencies and verify that the environment is correctly configured before running any tests or starting development, and change your working directory back to the project root once you are done.
 
 ## Tempo is actively used for study
 
@@ -54,3 +56,11 @@ Apply SOLID principles only where they reduce real complexity, improve testabili
 - Justify each refactor briefly: which principle it addresses, what pain it removes, and why the abstraction earns its place.
 - If the code is already sound, leave it alone. Do not refactor for style alone.
 - Validate with targeted tests before and after changes; make regression protection explicit when behavior is user-facing.
+
+## Cleanup and Codebase Stewardship
+
+- Regularly remove unused code, dependencies, and configuration to keep the codebase lean and maintainable.
+- You are responsible for cleaning up after yourself, ensuring that any temporary files, experimental code, or obsolete configurations are removed promptly. Delete any unused docker containers, images, and volumes to prevent clutter and potential conflicts.
+- Regularly review and refactor the codebase to remove technical debt, improve readability, and maintain consistency with project standards.
+- Document any significant changes, architectural decisions, or patterns introduced to help future maintainers understand the rationale behind them.
+- Encourage team members to follow these practices consistently to maintain a high-quality, manageable codebase.
