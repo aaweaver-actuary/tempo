@@ -5766,29 +5766,23 @@ def test_postgres_maia_background_contention_retries_same_operation(monkeypatch)
     attempted = []
     retried = []
 
-    class RetryObserved(Exception):
-        pass
-
-    def timed_out(operation_id, command_name, payload, *, background):
-        attempted.append((operation_id, command_name, payload, background))
+    def timed_out(operation_id, command_name, payload, *, background, attempt_token):
+        attempted.append((operation_id, command_name, payload, background, attempt_token))
         raise TransactionTimeout("bounded section expired")
-
-    def retry(**kwargs):
-        retried.append(kwargs)
-        raise RetryObserved()
 
     monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_args: nullcontext())
     monkeypatch.setattr(tasks, "record_operation_attempt",
-                        lambda operation_id, command_name, payload, **_kwargs: (True, payload))
-    monkeypatch.setattr(tasks, "record_operation_retry", lambda *_args, **_kwargs: None)
+                        lambda operation_id, command_name, payload, **_kwargs:
+                            (True, payload, "claimed-token", 1))
+    monkeypatch.setattr(tasks, "record_operation_retry", lambda *_args, **kwargs:
+                        retried.append(kwargs) or (False, 0.5))
     monkeypatch.setattr(tasks, "execute_command", timed_out)
-    monkeypatch.setattr(tasks.execute_background_command, "retry", retry)
-    with pytest.raises(RetryObserved):
-        tasks.execute_background_command.run(
-            "maia-one", "coverage.maia.submit", {"node_id": "node"},
-        )
-    assert attempted == [("maia-one", "coverage.maia.submit", {"node_id": "node"}, True)]
-    assert isinstance(retried[0]["exc"], TransactionTimeout)
+    assert tasks.execute_background_command.run(
+        "maia-one", "coverage.maia.submit", {"node_id": "node"},
+    ) is None
+    assert attempted == [("maia-one", "coverage.maia.submit",
+                          {"node_id": "node"}, True, "claimed-token")]
+    assert retried == [{"retryable": True, "background": True}]
 
 
 def test_postgres_maia_idle_poll_reads_availability_without_receipt(monkeypatch):
@@ -5840,14 +5834,14 @@ def test_blocked_operation_retry_reuses_durable_identity_and_payload(monkeypatch
     monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
     monkeypatch.setattr(main, "load_blocked_operation", lambda operation_id: {
         "operation_id": operation_id, "command_name": "defensive.threat.claim",
-        "payload": {"source": "saved"}, "background": True,
+        "payload": {"source": "saved"}, "background": True, "retry_cycle": 0,
     })
     monkeypatch.setattr(main.celery_app, "send_task",
                         lambda name, **kwargs: sent.append((name, kwargs)))
     response = TestClient(main.app).post("/api/operations/original-id/retry")
     assert response.status_code == 202, response.text
     assert sent == [("app.tasks.execute_background_command", {
-        "args": ["original-id", "defensive.threat.claim", {"source": "saved"}, True],
+        "args": ["original-id", "defensive.threat.claim", {"source": "saved"}, 0],
         "task_id": "original-id", "queue": "background",
         "headers": sent[0][1]["headers"],
     })]

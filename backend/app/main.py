@@ -254,7 +254,8 @@ def retry_blocked_operation(operation_id: str):
         celery_app.send_task(
             "app.tasks.execute_background_command" if task_is_background
             else "app.tasks.execute_foreground_command",
-            args=[operation_id, operation["command_name"], operation["payload"], True],
+            args=[operation_id, operation["command_name"], operation["payload"],
+                  operation["retry_cycle"]],
             task_id=operation_id,
             queue="background" if task_is_background else "foreground",
             headers={"submitted_at": time.time()},
@@ -265,7 +266,7 @@ def retry_blocked_operation(operation_id: str):
             raise HTTPException(503, "Save queue unavailable; blocked operation remains durable") from error
         raise
     return {"operation_id": operation_id, "state": "blocked",
-            "message": "Retry queued with the original operation identity and payload"}
+            "message": "Retry requested with the original operation identity and payload"}
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
