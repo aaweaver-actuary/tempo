@@ -2,8 +2,9 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
-import { createDurableEngineRequest } from "../../scripts/durable-engine-request.mjs";
+import { createDurableEngineRequest, migrateLegacyDefenseClaimJournal } from "../../scripts/durable-engine-request.mjs";
 import { requestMaiaApi } from "../../scripts/maia-coverage-client.mjs";
+import { confirmOperationResponse, PendingOperationError } from "../../app/lib/operation-status";
 
 describe("Docker engine command journal", () => {
   it("replays the same operation ID after a pending response and process restart", async () => {
@@ -56,5 +57,49 @@ describe("Docker engine command journal", () => {
       { method: "POST", operationId: "repair-stable" }, { fetchImpl });
     expect((fetchImpl.mock.calls[0][1].headers as Record<string, string>)["Idempotency-Key"])
       .toBe("repair-stable");
+  });
+
+  it("moves a legacy unresolved defensive claim to its dedicated durable journal", async () => {
+    const directory = mkdtempSync(join(tmpdir(), "tempo-engine-journal-"));
+    const journalPath = join(directory, "pending.json");
+    try {
+      const legacy = createDurableEngineRequest("http://api", journalPath,
+        async () => { throw new Error("uncertain claim"); });
+      await expect(legacy.send("/api/defensive-threats/analysis/claim", { method: "POST" }))
+        .rejects.toThrow("uncertain claim");
+      const original = JSON.parse(readFileSync(journalPath, "utf8"));
+      await migrateLegacyDefenseClaimJournal(journalPath);
+      expect(JSON.parse(readFileSync(`${journalPath}.defense`, "utf8")).operationId)
+        .toBe(original.operationId);
+      const ordinary = createDurableEngineRequest("http://api", journalPath,
+        async () => ({ job: { id: "game" } }));
+      expect(await ordinary.send("/api/games/analysis/position/claim", { method: "POST" }))
+        .toEqual({ job: { id: "game" } });
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  });
+
+  it("returns blocked operation details without discarding an uncertain engine command", async () => {
+    const fetchImpl = vi.fn()
+      .mockResolvedValueOnce(Response.json({ operation_id: "claim-one", state: "executing" }, { status: 202 }))
+      .mockResolvedValueOnce(Response.json({ state: "blocked", last_error: { message: "timeout budget exhausted" } }));
+    await expect(requestMaiaApi("http://api", "/api/defensive-threats/analysis/claim",
+      { method: "POST", operationId: "claim-one", pollAttempts: 1 },
+      { fetchImpl, pause: async () => undefined })).rejects.toMatchObject({
+      operationId: "claim-one",
+      message: expect.stringContaining("timeout budget exhausted"),
+    });
+  });
+
+  it("reports a blocked browser operation without losing its original identity", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({
+      state: "blocked", last_error: { message: "transaction budget exhausted" },
+    })));
+    await expect(confirmOperationResponse(Response.json(
+      { operation_id: "original-id", state: "queued" }, { status: 202 },
+    ))).rejects.toMatchObject({
+      operationId: "original-id", blocked: true,
+      message: expect.stringContaining("transaction budget exhausted"),
+    } satisfies Partial<PendingOperationError>);
+    vi.unstubAllGlobals();
   });
 });

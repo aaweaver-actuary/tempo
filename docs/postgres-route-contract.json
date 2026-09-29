@@ -210,6 +210,13 @@
     "state": "staged"
   },
   {
+    "method": "POST",
+    "path": "/api/operations/{operation_id}/retry",
+    "handler": "retry_blocked_operation",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
     "method": "GET",
     "path": "/api/health",
     "handler": "health",

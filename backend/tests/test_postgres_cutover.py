@@ -4264,7 +4264,7 @@ def test_postgres_cutover_ambiguous_timeout_stays_pending(monkeypatch):
     response = command_dispatch.dispatch_command(
         "review.submit", {"card_id": "a"}, idempotency_key="review-a"
     )
-    assert response.status_code == 202
+    assert response.status_code == 202, response.text
     assert response.headers["location"] == "/api/operations/review-a"
     assert b'"state":"pending"' in response.body
 
@@ -5778,6 +5778,9 @@ def test_postgres_maia_background_contention_retries_same_operation(monkeypatch)
         raise RetryObserved()
 
     monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_args: nullcontext())
+    monkeypatch.setattr(tasks, "record_operation_attempt",
+                        lambda operation_id, command_name, payload, **_kwargs: (True, payload))
+    monkeypatch.setattr(tasks, "record_operation_retry", lambda *_args, **_kwargs: None)
     monkeypatch.setattr(tasks, "execute_command", timed_out)
     monkeypatch.setattr(tasks.execute_background_command, "retry", retry)
     with pytest.raises(RetryObserved):
@@ -5827,6 +5830,27 @@ def test_postgres_maia_receipt_poll_uses_background_read_admission(monkeypatch):
     )
     assert response.status_code == 200, response.text
     assert observed == [("maia-one", True)]
+
+
+def test_blocked_operation_retry_reuses_durable_identity_and_payload(monkeypatch):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    sent = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main, "load_blocked_operation", lambda operation_id: {
+        "operation_id": operation_id, "command_name": "defensive.threat.claim",
+        "payload": {"source": "saved"}, "background": True,
+    })
+    monkeypatch.setattr(main.celery_app, "send_task",
+                        lambda name, **kwargs: sent.append((name, kwargs)))
+    response = TestClient(main.app).post("/api/operations/original-id/retry")
+    assert response.status_code == 202, response.text
+    assert sent == [("app.tasks.execute_background_command", {
+        "args": ["original-id", "defensive.threat.claim", {"source": "saved"}, True],
+        "task_id": "original-id", "queue": "background",
+        "headers": sent[0][1]["headers"],
+    })]
 
 
 def test_postgres_maia_claim_respects_pause_and_uses_row_lease(monkeypatch):

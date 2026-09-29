@@ -25,7 +25,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from .database import (background_read_connection, card_columns, connection, initialize,
                        query_only_request, read_connection)
 from . import postgres_store
-from .command_gateway import read_operation
+from .command_gateway import load_blocked_operation, read_operation
 from .celery_app import celery_app
 from .study_routes import router as study_router
 from .models import TacticActivationRequest
@@ -239,14 +239,33 @@ def operation_status(operation_id: str, request: Request):
         operation_id,
         background=request.headers.get("x-tempo-work-class", "").casefold() == "background",
     )
-    if receipt["state"] == "pending":
-        try:
-            worker_state = celery_app.AsyncResult(operation_id).state
-        except RedisError:
-            worker_state = "PENDING"
-        if worker_state in {"FAILURE", "REVOKED"}:
-            raise HTTPException(503, "Save worker could not complete the command; retry with the same Idempotency-Key")
     return receipt
+
+
+@app.post("/api/operations/{operation_id}/retry", status_code=202)
+def retry_blocked_operation(operation_id: str):
+    if not postgres_store.configured():
+        raise HTTPException(404, "Operations are available after PostgreSQL cutover")
+    operation = load_blocked_operation(operation_id)
+    if operation is None:
+        raise HTTPException(409, "Only a durable blocked operation can be retried")
+    task_is_background = operation["background"]
+    try:
+        celery_app.send_task(
+            "app.tasks.execute_background_command" if task_is_background
+            else "app.tasks.execute_foreground_command",
+            args=[operation_id, operation["command_name"], operation["payload"], True],
+            task_id=operation_id,
+            queue="background" if task_is_background else "foreground",
+            headers={"submitted_at": time.time()},
+        )
+    except Exception as error:
+        from kombu.exceptions import OperationalError as BrokerUnavailable
+        if isinstance(error, BrokerUnavailable):
+            raise HTTPException(503, "Save queue unavailable; blocked operation remains durable") from error
+        raise
+    return {"operation_id": operation_id, "state": "blocked",
+            "message": "Retry queued with the original operation identity and payload"}
 app.add_middleware(
     CORSMiddleware,
     allow_origin_regex=r"https?://(localhost|127\.0\.0\.1)(:\d+)?",
@@ -585,6 +604,9 @@ async def prioritize_foreground_requests(request: Request, call_next):
             and request.method == "POST"
         )
         settings_command = (path_parts == ["api", "settings"] and request.method == "PUT")
+        operation_retry_command = (len(path_parts) == 4
+                                   and path_parts[:2] == ["api", "operations"]
+                                   and path_parts[3] == "retry" and request.method == "POST")
         endgame_probe = (path_parts == ["api", "endgames", "probe"]
                          and request.method == "POST")
         endgame_template_command = (path_parts == ["api", "endgames", "templates"]
@@ -643,6 +665,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     game_position_callback_command, game_position_finalize_command,
                     game_parent_callback_command,
                     settings_command,
+                    operation_retry_command,
                     endgame_probe, endgame_template_command,
                     endgame_attempt_command, branch_add_command, branch_remove_command,
                     pgn_import_command,

@@ -51,3 +51,21 @@ export function createDurableEngineRequest(apiUrl, journalPath, transport = requ
 
   return { send, recover, pending };
 }
+
+export async function migrateLegacyDefenseClaimJournal(journalPath) {
+  let saved;
+  try { saved = JSON.parse(await readFile(journalPath, "utf8")); }
+  catch (error) {
+    if (error.code === "ENOENT") return;
+    throw error;
+  }
+  if (saved?.path !== "/api/defensive-threats/analysis/claim") return;
+  const defensePath = `${journalPath}.defense`;
+  try {
+    await readFile(defensePath);
+    throw new Error("Both legacy and dedicated defensive claim journals exist; preserve both for recovery");
+  } catch (error) {
+    if (error.code !== "ENOENT") throw error;
+  }
+  await rename(journalPath, defensePath);
+}

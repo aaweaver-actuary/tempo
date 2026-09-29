@@ -3,8 +3,8 @@ import { randomUUID } from "node:crypto";
 const pause = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
 export class PendingMaiaCommandError extends Error {
-  constructor(path, operationId) {
-    super(`${path}: database command ${operationId} remains pending after 120 seconds`);
+  constructor(path, operationId, reason = "remains pending after 120 seconds") {
+    super(`${path}: database command ${operationId} ${reason}`);
     this.name = "PendingMaiaCommandError";
     this.operationId = operationId;
   }
@@ -13,7 +13,7 @@ export class PendingMaiaCommandError extends Error {
 export async function requestMaiaApi(apiUrl, path, options = {}, transport = {}) {
   const fetchImpl = transport.fetchImpl ?? fetch;
   const wait = transport.pause ?? pause;
-  const { operationId: suppliedOperationId, ...requestOptions } = options;
+  const { operationId: suppliedOperationId, pollAttempts = 480, ...requestOptions } = options;
   const operationId = options.method === "POST" ? (suppliedOperationId ?? randomUUID()) : undefined;
   const headers = {
     "X-Tempo-Work-Class": "background",
@@ -41,7 +41,7 @@ export async function requestMaiaApi(apiUrl, path, options = {}, transport = {})
   const pending = await response.json();
   const receiptId = pending.operation_id;
   if (!receiptId) throw new Error(`${path}: pending command did not return an operation ID`);
-  for (let attempt = 0; attempt < 480; attempt += 1) {
+  for (let attempt = 0; attempt < pollAttempts; attempt += 1) {
     await wait(250);
     const receiptResponse = await fetchImpl(
       `${apiUrl}/api/operations/${encodeURIComponent(receiptId)}`,
@@ -58,6 +58,10 @@ export async function requestMaiaApi(apiUrl, path, options = {}, transport = {})
       error.terminal = true;
       throw error;
     }
+    if (receipt.state === "blocked")
+      throw new PendingMaiaCommandError(path, receiptId,
+        `is blocked: ${receipt.last_error?.message ?? receipt.message ?? "check operation status"}`);
   }
-  throw new PendingMaiaCommandError(path, receiptId);
+  throw new PendingMaiaCommandError(path, receiptId,
+    `remains pending after ${(pollAttempts * 250) / 1000} seconds`);
 }
