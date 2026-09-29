@@ -140,6 +140,8 @@ try {
   run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
     "/source/scripts/check_postgres_operation_recovery.py"]);
   run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+    "/source/scripts/check_postgres_upgrade.py"]);
+  run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
     "/source/scripts/check_postgres_background_workloads.py"]);
   run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
     "/source/scripts/check_postgres_threat_candidate_upsert.py"]);

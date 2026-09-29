@@ -1,5 +1,14 @@
 # Reported issues and regression coverage
 
+| Issue | Required regression |
+| --- | --- |
+| API cannot start when a populated PostgreSQL ledger ends at 16 and the image requires a newer schema | `scripts/check_postgres_upgrade.py` rehearses populated 16→current and repeat migration; `test_postgres_upgrade_rejects_newer_and_gapped_history`; `test_postgres_schema_upgrade_does_not_require_sqlite_snapshot`; `test_failed_postgres_migration_prevents_dependent_rollout` |
+| A retry starts a duplicate execution, loses its original identity, or allows a stale attempt to publish | `scripts/check_postgres_operation_recovery.py` exercises the real task entry point against disposable PostgreSQL, including replay, conflict, explicit retry, and stale ownership |
+| Preparing discovery confirmations starve later eligible confirmations after reload | `stalled discovery confirmations cannot starve a later queued admission across reloads` |
+| A recovered game job is overwritten by a defensive journal result | `handles a recovered game job before clearing a defensive claim journal`; `a defensive null result cannot overwrite a recovered game job` |
+| Diagnostic incident keys or serialized bundles persist a credential | `hydrates legacy secret-bearing incident keys without losing counts or identity`; `removes canary secrets from every persisted and exported incident field` |
+| A 250 ms background transaction times out while claiming threats or reading recurring evidence | `test_postgres_recurring_evidence_uses_per_event_analysis_lookups`; `scripts/check_postgres_upgrade.py` verifies the request lookup index; `scripts/measure_postgres_incident_workloads.py` measures all four reported workloads on an isolated restore |
+
 | Docker Compose warns that the existing Tempo data volume belongs to another project | `test_tempo_data_volume_is_external` in `scripts/test-docker.mjs` verifies Compose resolves `tempo-data` as external and retains its name |
 
 | Issue | Required regression |
