@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import StockfishFactory from "../public/engines/sf_19_smallnet.js";
 import { createDurableEngineRequest, migrateLegacyDefenseClaimJournal } from "./durable-engine-request.mjs";
+import { recoverNextEngineJob } from "./engine-job-recovery.mjs";
 
 const api = process.env.TEMPO_API_URL ?? "http://api:8000";
 const journalPath = process.env.TEMPO_ENGINE_OUTBOX_PATH ?? "/tmp/tempo-engine-pending-command.json";
@@ -130,23 +131,9 @@ while (true) {
   let job;
   let jobKind;
   try {
-    const recovered = await durableRequest.recover();
-    if (recovered?.path === "/api/games/analysis/position/claim") {
-      job = recovered.result.job;
-      jobKind = "game";
-    }
-    let defenseClaimUnresolved = false;
-    try {
-      const recoveredDefense = await defenseClaimRequest.recover();
-      if (recoveredDefense) {
-        job = recoveredDefense.result.job;
-        jobKind = "defense";
-      }
-    } catch (error) {
-      if (!error.operationId) throw error;
-      defenseClaimUnresolved = true;
-      console.error("Defensive claim remains unresolved:", error.operationId, error.message);
-    }
+    const recovered = await recoverNextEngineJob(durableRequest, defenseClaimRequest);
+    ({ job, jobKind } = recovered);
+    let { defenseClaimUnresolved } = recovered;
     if (!job) {
       const available = await request("/api/system/foreground-active");
       if (available.active) { await sleep(2_000); continue; }
