@@ -5,9 +5,11 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { test } from "node:test";
+import { Chess } from "chess.js";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "../../scripts/postgres-test-options.mjs";
 import { executePostgresTestPlan, postgresTestStages } from "../../scripts/postgres-test-plan.mjs";
-import { assertNoCompletedFixtureConflict } from "../../scripts/postgres-test-fixture.mjs";
+import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
+  studyDurabilityPgn } from "../../scripts/postgres-test-fixture.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -16,7 +18,7 @@ const fullStages = [
   "compose_config", "image_build", "maintenance_cli", "startup", "service_health",
   "background_budget", "operation_recovery", "schema_upgrade", "background_workloads",
   "threat_candidate_upsert", "command_recreation", "backup_restore", "browser",
-  "study_durability", "cleanup",
+  "study_isolation", "study_durability", "cleanup",
 ];
 const browserStages = ["compose_config", "image_build", "startup", "service_health", "browser", "cleanup"];
 const directMeasurement = async (_name, action) => action();
@@ -43,10 +45,45 @@ test("focused PostgreSQL browser execution excludes maintenance and durability s
 });
 
 test("durability mode and legacy skip-browser retain study recovery while omitting only browser execution", () => {
-  const expected = fullStages.filter((stage) => stage !== "browser");
+  const expected = fullStages.filter((stage) => !["browser", "study_isolation"].includes(stage));
   assert.deepEqual(postgresTestStages(parse(["--mode", "durability"])), expected);
   assert.deepEqual(postgresTestStages(parse(["--skip-browser"])), expected);
   assert.equal(parse(["--mode", "durability"]).skipBrowser, true);
+});
+
+test("valid opponent-branch durability and background fixtures prescribe one White response per position", () => {
+  for (const [pgn, expectedGameCount, initialResponse] of [
+    [studyDurabilityPgn, 3, "e2e4"], [backgroundPublicationPgn, 1, "c2c4"],
+  ]) {
+    const prescribedResponses = new Map();
+    const games = pgn.trim().split(/(?=\[Event )/).filter(Boolean);
+    assert.equal(games.length, expectedGameCount);
+    for (const game of games) {
+      const parsed = new Chess();
+      parsed.loadPgn(game);
+      const board = new Chess();
+      for (const move of parsed.history({ verbose: true })) {
+        if (board.turn() === "w") {
+          const position = board.fen().split(" ").slice(0, 4).join(" ");
+          const response = `${move.from}${move.to}${move.promotion ?? ""}`;
+          const priorResponse = prescribedResponses.get(position);
+          assert(priorResponse === undefined || priorResponse === response,
+            `${position} prescribes ${priorResponse} and ${response}`);
+          prescribedResponses.set(position, response);
+        }
+        board.move(move);
+      }
+      assert.equal(board.turn(), "b", "Every line ends after a trained-player response");
+    }
+    assert.equal(prescribedResponses.get(new Chess().fen().split(" ").slice(0, 4).join(" ")), initialResponse);
+  }
+});
+
+test("full browser coverage creates a fresh durability database before study commands", () => {
+  const browserIndex = fullStages.indexOf("browser");
+  assert.equal(fullStages[browserIndex + 1], "study_isolation");
+  assert.equal(fullStages[browserIndex + 2], "study_durability");
+  assert.equal(browserStages.includes("study_isolation"), false);
 });
 
 test("full and durability modes cannot silently narrow their browser coverage", () => {

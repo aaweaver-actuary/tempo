@@ -9,7 +9,8 @@ import { join } from "node:path";
 import { createIsolatedTestEnvironment } from "./test-environment.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
 import { executePostgresTestPlan, postgresTestStages } from "./postgres-test-plan.mjs";
-import { assertNoCompletedFixtureConflict } from "./postgres-test-fixture.mjs";
+import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
+  studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer } from "./test-scenario-timings.mjs";
 
 const options = parsePostgresTestOptions(process.argv.slice(2));
@@ -72,6 +73,7 @@ const measureScenario = createScenarioTimer(timingPath, {
 });
 console.log(`PostgreSQL ${options.mode} timings: ${timingPath}`);
 const measuredHttpRequests = [];
+let activeStudyRepertoireId = null;
 
 async function apiRequest(path, options = {}, label = null) {
   const startedAt = performance.now();
@@ -144,7 +146,7 @@ async function confirm(response) {
   throw new Error(`PostgreSQL operation ${pending.operation_id} remains pending`);
 }
 
-async function waitForImportSettled(repertoireId) {
+async function waitForStudyableImport(repertoireId) {
   let settledSamples = 0;
   for (let attempt = 0; attempt < 180; attempt += 1) {
     const [system, integrity, queue] = await Promise.all([
@@ -243,47 +245,59 @@ async function waitForStudyQueue(repertoireId, minimumCardCount) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   const queue = await get("queue/today");
-  const priority = (initialSnapshot.tables.repertoire_priority_jobs ?? [])
-    .find((row) => row.repertoire_id === repertoireId);
   throw new Error(`PostgreSQL study queue did not admit ${minimumCardCount} entries for ${repertoireId}; `
     + `queue=${queue.cards.filter((card) => repertoireCardIds.has(card.id)).length}, `
-    + `priority=${JSON.stringify(priority ?? null)}, projection=${JSON.stringify(queue.projection ?? null)}`);
+    + `projection=${JSON.stringify(queue.projection ?? null)}`);
 }
 
-function seedImportedCardsIntoDisposableStudyQueue(repertoireId) {
-  assert.match(repertoireId, /^[0-9a-f-]{36}$/i, "Imported repertoire ID is a UUID");
-  // Integrity diagnostics are covered independently; this exercise holds the
-  // imported opening fixture eligible so persistence commands can use its cards.
-  const sql = `DELETE FROM repertoire_integrity_card_blocks WHERE repertoire_id='${repertoireId}';
-  UPDATE repertoire_integrity_state SET status='clean',scan_status='idle',scan_error=NULL
-    WHERE repertoire_id='${repertoireId}';
-  UPDATE cards SET pending_validation=0
-    WHERE repertoire_id='${repertoireId}' OR id IN (
-      SELECT card_id FROM repertoire_cards WHERE repertoire_id='${repertoireId}'
-    );
-  WITH candidates AS (
-    SELECT cards.id AS card_id,
-           COALESCE((SELECT MAX(queued.cycle)+1 FROM daily_queue queued
-                     WHERE queued.queue_date=CURRENT_DATE::text AND queued.card_id=cards.id),0) AS next_cycle,
-           row_number() OVER (ORDER BY cards.id) AS offset
-    FROM cards
-    WHERE cards.archived=0 AND jsonb_array_length(cards.moves_json::jsonb)>=3
-      AND (cards.repertoire_id='${repertoireId}' OR cards.id IN (
-        SELECT card_id FROM repertoire_cards WHERE repertoire_id='${repertoireId}'
-      ))
-    ORDER BY cards.id
-    LIMIT 3
-  ), current_position AS (
-    SELECT COALESCE(MAX(position), -1) AS maximum FROM daily_queue
-    WHERE queue_date=CURRENT_DATE::text
-  )
-  INSERT INTO daily_queue(queue_date,card_id,cycle,position,admission_kind,admission_repertoire_id)
-  SELECT CURRENT_DATE::text,candidates.card_id,candidates.next_cycle,current_position.maximum+candidates.offset,
-         'explicit','${repertoireId}'
-  FROM candidates CROSS JOIN current_position
-  ON CONFLICT(queue_date,card_id,cycle) DO NOTHING;`;
-  run("docker", [...compose, "exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo",
-    "-v", "ON_ERROR_STOP=1", "-c", sql]);
+function readScopedPostgresRows(statement) {
+  const result = spawnSync("docker", [...compose, "exec", "-T", "postgres", "psql", "-U", "postgres",
+    "-d", "tempo", "-Atqc", statement], { encoding: "utf8", env: environment });
+  if (result.status !== 0) throw new Error(result.stderr);
+  return JSON.parse(result.stdout.trim());
+}
+
+async function reportStudyFixtureDiagnostics(repertoireId) {
+  assert.match(repertoireId, /^[0-9a-f-]{36}$/i);
+  const [snapshot, integrity, system, queue] = await Promise.all([
+    get("migration/snapshot"), get(`repertoires/${repertoireId}/integrity`),
+    get("system/tasks"), get("queue/today"),
+  ]);
+  const repertoireCardIds = new Set(snapshot.tables.repertoire_cards
+    .filter((row) => row.repertoire_id === repertoireId).map((row) => row.card_id));
+  for (const card of snapshot.tables.cards) {
+    if (card.repertoire_id === repertoireId) repertoireCardIds.add(card.id);
+  }
+  const scopedSql = (table, fields, where) => readScopedPostgresRows(
+    `SELECT COALESCE(jsonb_agg(to_jsonb(rows)), '[]'::jsonb) FROM `
+    + `(SELECT ${fields} FROM ${table} WHERE ${where}) rows;`);
+  const scopedCardWhere = `card_id IN (SELECT card_id FROM repertoire_cards WHERE repertoire_id='${repertoireId}' `
+    + `UNION SELECT id FROM cards WHERE repertoire_id='${repertoireId}')`;
+  const diagnostics = {
+    repertoire_id: repertoireId,
+    integrity,
+    graph_tasks: system.tasks.filter((task) => task.deduplication_key === repertoireId),
+    card_ids: [...repertoireCardIds].sort(),
+    cards: snapshot.tables.cards.filter((card) => repertoireCardIds.has(card.id)).map((card) => ({
+      id: card.id, archived: card.archived, pending_validation: card.pending_validation,
+      state: card.state, revision: card.revision, move_count: JSON.parse(card.moves_json).length,
+    })),
+    queue_projection: queue.projection,
+    queue_api_cards: queue.cards.filter((card) => repertoireCardIds.has(card.id)).map((card) => ({
+      id: card.id, queue_entry_id: card.queue_entry_id, attempt_state: card.attempt_state,
+    })),
+    integrity_issues: scopedSql("repertoire_integrity_issues", "id,kind,fen_key,moves_json", `repertoire_id='${repertoireId}'`),
+    integrity_card_blocks: scopedSql("repertoire_integrity_card_blocks", "card_id,issue_id,scan_generation", `repertoire_id='${repertoireId}'`),
+    priority_jobs: scopedSql("repertoire_priority_jobs", "repertoire_id,generation,status,last_error", `repertoire_id='${repertoireId}'`),
+    priority_publications: scopedSql("repertoire_priority_publications", "repertoire_id,generation", `repertoire_id='${repertoireId}'`),
+    daily_queue: scopedSql("daily_queue", "id,queue_date,card_id,status,cycle,position,attempt_state,attempt_failed",
+      `queue_date=CURRENT_DATE::text AND ${scopedCardWhere}`),
+    queue_projection_rows: scopedSql("queue_projections", "queue_date,state,generation,refresh_pending,last_error",
+      "queue_date=CURRENT_DATE::text"),
+    operation_receipts: scopedSql("operation_receipts", "operation_id,command_name,state,error_json",
+      `operation_id LIKE 'pg-study-%' OR response_json LIKE '%${repertoireId}%'`),
+  };
+  console.error(`PostgreSQL study fixture diagnostics: ${JSON.stringify(diagnostics)}`);
 }
 
 async function verifyForegroundAndStudyDurability() {
@@ -291,13 +305,8 @@ async function verifyForegroundAndStudyDurability() {
   await postCommand("settings", { ...studySettings, new_cards_per_day: 100, study_new_per_day: 100 }, {
     method: "PUT", label: "foreground PUT study queue allowance",
   });
-  const studyPgn = [
-    '[Event "PostgreSQL recovery durability"]', "",
-    "1. e4 e5 2. Nf3 Nc6 3. Bc4 Nf6 4. d3 d6 5. O-O Be7 6. c3 O-O 7. Re1 a6 8. Bb3 *",
-    '[Event "Second deterministic line"]', "",
-    "1. d4 d5 2. c4 e6 3. Nc3 Nf6 4. Nf3 Be7 5. Bg5 O-O 6. e3 h6 7. Bh4 b6 8. cxd5 *", "",
-  ].join("\n");
-  const importedStudy = await importFixture("recovery-study.pgn", studyPgn);
+  const importedStudy = await importFixture("recovery-study.pgn", studyDurabilityPgn);
+  activeStudyRepertoireId = importedStudy.repertoire_id;
   const coverageRefreshResponse = await apiRequest(
     `repertoires/${importedStudy.repertoire_id}/coverage/refresh`, {
       method: "POST",
@@ -308,20 +317,16 @@ async function verifyForegroundAndStudyDurability() {
   await postCommand("settings", await get("settings"), {
     method: "PUT", label: "foreground PUT initial study queue refresh",
   });
-  await waitForImportSettled(importedStudy.repertoire_id);
-  seedImportedCardsIntoDisposableStudyQueue(importedStudy.repertoire_id);
-  const { cards: studyCards } = await waitForStudyQueue(importedStudy.repertoire_id, 2);
+  await waitForStudyableImport(importedStudy.repertoire_id);
+  const { cards: studyCards } = await waitForStudyQueue(importedStudy.repertoire_id, 3);
   const reviewCard = studyCards[0];
-  const splitCard = studyCards.find((card) => card.id !== reviewCard.id && card.moves.length >= 3);
-  const guidedCard = splitCard;
-  assert(splitCard, "Study fixture includes a separate multi-move prefix-split entry");
+  const guidedCard = studyCards[1];
+  const splitCard = studyCards.find((card) => card.id !== reviewCard.id
+    && card.id !== guidedCard.id && card.moves.length >= 3);
+  assert(splitCard, "Study fixture includes a third multi-move prefix-split entry");
 
   run("docker", [...compose, "stop", "background-worker"]);
-  const backgroundStudyPgn = [
-    '[Event "Queued background publication"]', "",
-    "1. c4 e5 2. Nc3 Nf6 3. g3 d5 4. cxd5 Nxd5 *", "",
-  ].join("\n");
-  const importedBackground = await importFixture("background-publication.pgn", backgroundStudyPgn);
+  const importedBackground = await importFixture("background-publication.pgn", backgroundPublicationPgn);
   const queuedSystem = await get("system/tasks");
   assert(queuedSystem.tasks.some((task) => task.kind === "opening_graph_rebuild"
     && task.deduplication_key === importedBackground.repertoire_id
@@ -373,8 +378,8 @@ async function verifyForegroundAndStudyDurability() {
     "-Atqc", "SELECT count(*) FROM reviews; SELECT count(*) FROM queue_projections;"]);
   console.log(`PostgreSQL direct SQL probe: ${Math.round((performance.now() - sqlStartedAt) * 10) / 10}ms (review and queue-projection counts)`);
   run("docker", [...compose, "start", "background-worker"]);
-  await waitForImportSettled(importedStudy.repertoire_id);
-  await waitForImportSettled(importedBackground.repertoire_id);
+  await waitForStudyableImport(importedStudy.repertoire_id);
+  await waitForStudyableImport(importedBackground.repertoire_id);
   const savedTeaching = await get(`cards/${reviewCard.id}/teaching`);
   assert(savedTeaching.states.some((state) => state.revision === reviewCard.revision && state.ply === 0));
   const savedAnnotations = await get(`repertoires/${importedStudy.repertoire_id}/annotations?fen=${encodeURIComponent(reviewCard.start_fen)}`);
@@ -398,8 +403,8 @@ async function verifyForegroundAndStudyDurability() {
   run("docker", [...compose, "down"]);
   run("docker", [...compose, "up", "--no-build", "-d"]);
   await waitForReady();
-  await waitForImportSettled(importedStudy.repertoire_id);
-  await waitForImportSettled(importedBackground.repertoire_id);
+  await waitForStudyableImport(importedStudy.repertoire_id);
+  await waitForStudyableImport(importedBackground.repertoire_id);
   const afterRestartSnapshot = await get("migration/snapshot");
   assert.deepEqual(stableStudyState(afterRestartSnapshot, importedStudy.repertoire_id), beforeRestartState,
     "Authoritative study identities, values, scheduling, annotation, queue, and split survive service recreation");
@@ -411,6 +416,7 @@ async function verifyForegroundAndStudyDurability() {
   assert.equal(stableStudyState(afterReplaySnapshot, importedStudy.repertoire_id).reviews.length,
     savedReviewCount, "Confirmed review replay does not create a duplicate business effect");
   console.log("PASS PostgreSQL study state, queue order, guided failure, and command identity survive service recreation");
+  activeStudyRepertoireId = null;
 }
 
 const actions = {
@@ -561,6 +567,13 @@ const actions = {
         TEMPO_TEST_OUTPUT_DIR: join(process.cwd(), "test-results", `browser-postgres-${process.pid}`),
       } });
   },
+  study_isolation: async () => {
+    run("docker", [...compose, "down", "-v"]);
+    run("docker", [...compose, "up", "--no-build", "-d"]);
+    await waitForReady();
+    assert.equal((await get("queue/today")).cards.length, 0,
+      "Fresh durability database starts without browser queue entries");
+  },
   study_durability: async () => {
     await verifyForegroundAndStudyDurability();
   },
@@ -587,10 +600,14 @@ const actions = {
 
 let failed = false;
 try {
-  await executePostgresTestPlan(stages, actions, measureScenario, () => {
+  await executePostgresTestPlan(stages, actions, measureScenario, async () => {
     // Capture failure diagnostics before the executor tears down this test stack.
-    if (resourcesCreated) spawnSync("docker", [...compose, "logs", "--tail=80"],
-      { stdio: "inherit", env: environment });
+    try {
+      if (activeStudyRepertoireId) await reportStudyFixtureDiagnostics(activeStudyRepertoireId);
+    } finally {
+      if (resourcesCreated) spawnSync("docker", [...compose, "logs", "--tail=80"],
+        { stdio: "inherit", env: environment });
+    }
   });
 } catch (error) {
   failed = true;

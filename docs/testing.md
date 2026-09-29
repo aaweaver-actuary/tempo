@@ -40,7 +40,7 @@ The standalone engine smoke verifies a restricted Stockfish search without conne
 
 The unit stage also writes one Vitest JSON report to `test-results/performance/unit-files-full.json` during that same test run. `make slow-tests` lists the slowest unit files from it. Use `make slow-tests TIER=fast` after `make fast`; `COUNT=20` shows more files. File wall times include setup and may overlap across workers, so their sum is not the suite wall time.
 
-The regular Playwright specs run **once** in stage 11 on PostgreSQL. `make browser`, `make ui-file`, and `make view` use this same isolated PostgreSQL runner in browser-only mode, without maintenance, backup/restore, or study-durability scenarios. The visual config selects `visual.spec.ts` and `performance.spec.ts`; the regular browser config excludes those files. `make perf` runs only the performance subset of `make visual`, so it is a focused diagnostic command, not an extra full-gate stage.
+The regular Playwright specs run **once** in stage 11 on PostgreSQL. Full mode then removes only its unique disposable stack's volumes and starts fresh volumes for study durability. This keeps browser queue entries from affecting commands that require the first active queue entry. `make browser`, `make ui-file`, and `make view` use this same isolated PostgreSQL runner in browser-only mode, without maintenance, backup/restore, or study-durability scenarios. The visual config selects `visual.spec.ts` and `performance.spec.ts`; the regular browser config excludes those files. `make perf` runs only the performance subset of `make visual`, so it is a focused diagnostic command, not an extra full-gate stage.
 
 For an independent pinned performance repeat, use `TEMPO_TEST_TIMING_DIR=test-results/performance/repeat-<label> make perf`. The directory must be inside the checkout so the Docker runner can write the raw samples there. The ordinary full-run artifacts then remain available for comparison.
 
@@ -97,7 +97,7 @@ The executable scenario plan also drives `--list`. Every invocation writes a sep
 
 ## Cache behavior and isolation
 
-The PostgreSQL runner invokes the Compose image build once; startup and recovery recreation explicitly use `--no-build` to reuse those images within the run. Every run still owns fresh project-scoped containers, volumes, network, credentials, and a loopback port. Cleanup remains project-scoped and no production database is reused.
+The PostgreSQL runner invokes the Compose image build once; startup, recovery recreation, and the full-mode fresh study stack explicitly use `--no-build` to reuse those images within the run. Every run still owns fresh project-scoped containers, volumes, network, credentials, and a loopback port. Cleanup remains project-scoped and no production database is reused.
 
 Docker's build context excludes `.tempo-pg-test-secrets-*`, `.dev-copies`, Python bytecode/cache files, and test output. In particular, generated credentials must never enter a `COPY . .` image layer or invalidate an otherwise reusable frontend build layer. Existing local BuildKit cache remains available; this change does not add persistent remote Docker-layer caching.
 

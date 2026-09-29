@@ -9,6 +9,7 @@ export function postgresTestStages({ mode }) {
     "compose_config", "image_build", ...(mode === "browser" ? [] : ["maintenance_cli"]),
     "startup", "service_health", ...(mode === "browser" ? [] : durabilityStages),
     ...(mode === "durability" ? [] : ["browser"]),
+    ...(mode === "full" ? ["study_isolation"] : []),
     ...(mode === "browser" ? [] : ["study_durability"]), "cleanup",
   ];
 }
