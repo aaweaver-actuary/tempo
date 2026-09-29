@@ -70,6 +70,26 @@ describe("notification regressions", () => {
     blocked.mockRestore();
   });
 
+  it("hydrates legacy secret-bearing incident keys without losing counts or identity", async () => {
+    const legacySignature = "api\u0000sync\u0000/api/games/sync/status\u0000Error\u0000password=canary-legacy-42";
+    localStorage.setItem("tempo-notifications-v1", JSON.stringify([{
+      id: "notification-legacy", key: `debug-incident:${legacySignature}`,
+      occurredAt: "2026-09-28T12:00:00.000Z", updatedAt: "2026-09-29T12:00:00.000Z",
+      occurrenceCount: 7, resolvedAt: null, active: true, severity: "error",
+      source: "sync", message: "password=canary-legacy-42", details: {},
+    }]));
+    vi.resetModules();
+    const fresh = await import("../../app/lib/notifications");
+    fresh.hydrateNotifications();
+    expect(fresh.notifications()[0]).toMatchObject({
+      id: "notification-legacy", occurrenceCount: 7,
+      occurredAt: "2026-09-28T12:00:00.000Z",
+    });
+    expect(fresh.notifications()[0].key).toMatch(/^debug-incident:[a-f0-9]{16}$/);
+    expect(`${localStorage.getItem("tempo-notifications-v1")}${fresh.buildNotificationExport("error")}`)
+      .not.toContain("canary-legacy-42");
+  });
+
   it("severity JSON export includes safe details and excludes secrets", () => {
     publishNotification({ severity: "info", source: "test", message: "ordinary" });
     publishNotification({ severity: "warning", source: "sync", message: "Conflict for player@example.com?token=secret", details: { cardIds: ["card-1"] } });

@@ -44,6 +44,29 @@ export function sanitizeNotificationText(value: string): string {
     .slice(0, 2_000);
 }
 
+function opaqueKey(value: string): string {
+  let first = 0x811c9dc5;
+  let second = 0x9e3779b9;
+  for (const character of value) {
+    first = Math.imul(first ^ character.charCodeAt(0), 0x01000193);
+    second = Math.imul(second ^ character.charCodeAt(0), 0x01000193);
+  }
+  return `${(first >>> 0).toString(16).padStart(8, "0")}${(second >>> 0).toString(16).padStart(8, "0")}`;
+}
+
+export function debugIncidentKey(signature: string): string {
+  return `debug-incident:${opaqueKey(signature.split("\u0000").map(sanitizeNotificationText).join("\u0000"))}`;
+}
+
+function safeKey(key: string | undefined): string | undefined {
+  if (!key) return key;
+  if (key.startsWith("debug-incident:"))
+    return /^debug-incident:[a-f0-9]{16}$/.test(key) ? key :
+      debugIncidentKey(key.slice("debug-incident:".length));
+  const sanitized = sanitizeNotificationText(key);
+  return sanitized === key ? key : `notification-key:${opaqueKey(sanitized)}`;
+}
+
 function safeDetails(details: NotificationInput["details"]): NotificationRecord["details"] {
   if (!details) return undefined;
   return Object.fromEntries(Object.entries(details).slice(0, 30).map(([name, value]) => [
@@ -72,12 +95,18 @@ export function hydrateNotifications() {
       typeof item.source === "string" && typeof item.updatedAt === "string" &&
       ["info", "success", "warning", "error"].includes(item.severity))
       .slice(0, NOTIFICATION_HISTORY_LIMIT)
-      .map((item) => ({ ...item, active: false, occurrenceCount: item.occurrenceCount ?? 1,
+      .map((item) => ({ ...item,
+        id: sanitizeNotificationText(item.id) === item.id ? item.id :
+          `notification-${opaqueKey(item.id)}`,
+        key: typeof item.key === "string" ? safeKey(item.key) : undefined,
+        source: sanitizeNotificationText(item.source),
+        active: false, occurrenceCount: item.occurrenceCount ?? 1,
         message: sanitizeNotificationText(item.message), details: safeDetails(item.details) }));
     history = [...history, ...restored.filter((item) => !history.some((current) => current.id === item.id))]
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
       .slice(0, NOTIFICATION_HISTORY_LIMIT);
     notifySubscribers();
+    persist();
   } catch {
     // A damaged history must not prevent the app from opening.
   }
@@ -108,7 +137,8 @@ export function hideNotificationToast(id: string) {
 export function publishNotification(input: NotificationInput): string {
   hydrateNotifications();
   const message = sanitizeNotificationText(input.message);
-  const existing = input.key && history.find((record) => record.key === input.key && !record.resolvedAt);
+  const key = safeKey(input.key);
+  const existing = key && history.find((record) => record.key === key && !record.resolvedAt);
   if (existing && existing.message === message && existing.severity === input.severity) {
     const observed = { ...existing, occurrenceCount: (existing.occurrenceCount ?? 1) + 1,
       updatedAt: new Date().toISOString(), details: safeDetails(input.details) ?? existing.details };
@@ -126,7 +156,7 @@ export function publishNotification(input: NotificationInput): string {
   const record: NotificationRecord = {
     id: typeof crypto !== "undefined" && "randomUUID" in crypto
       ? `notification-${crypto.randomUUID()}` : `notification-${Date.now()}-${nextId++}`,
-    key: input.key,
+    key,
     occurredAt: now,
     updatedAt: now,
     occurrenceCount: 1,
@@ -150,6 +180,7 @@ export function updateNotification(id: string, changes: Partial<NotificationInpu
   const updated: NotificationRecord = {
     ...existing,
     ...changes,
+    key: changes.key === undefined ? existing.key : safeKey(changes.key),
     message: changes.message === undefined ? existing.message : sanitizeNotificationText(changes.message),
     source: changes.source === undefined ? existing.source : sanitizeNotificationText(changes.source),
     details: changes.details === undefined ? existing.details : safeDetails(changes.details),

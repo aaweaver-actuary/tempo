@@ -14,7 +14,7 @@ import { TempoErrorBoundary } from "../../app/components/error-boundary";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import { useTrainingStore } from "../../app/state/training-store";
 import { STANDARD_FEN } from "../../app/const";
-import { notifications } from "../../app/lib/notifications";
+import { buildNotificationExport, notifications } from "../../app/lib/notifications";
 
 beforeEach(() => {
   clearDebugErrors();
@@ -24,6 +24,16 @@ beforeEach(() => {
 });
 
 describe("frontend debug reporting", () => {
+  it("removes canary secrets from every persisted and exported incident field", () => {
+    const canaries = ["canary-password-42", "canary-api-key-42", "canary-bearer-42", "canary-url-42"];
+    reportDebugError(new Error(
+      `password=${canaries[0]} api_key=${canaries[1]} Bearer ${canaries[2]} ` +
+      `https://person:${canaries[3]}@tempo.example/path?token=${canaries[3]}`,
+    ), { source: "sync", endpoint: "/api/games/sync/status" });
+    const serialized = `${localStorage.getItem("tempo-notifications-v1")}${buildNotificationExport("error")}`;
+    for (const canary of canaries) expect(serialized).not.toContain(canary);
+    expect(notifications()[0].key).toMatch(/^debug-incident:[a-f0-9]+$/);
+  });
   it("builds a bounded redacted bundle from the active board and training state", () => {
     useBoardShellStore.getState().setShellBoardForOwner("builder", {
       ...useBoardShellStore.getState().board,
