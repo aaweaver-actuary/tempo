@@ -85,6 +85,7 @@ from .services.activity_gate import activity_gate
 from .services.cards import card_id
 from .services.pgn import ends_on_trained_move, parse_pgn, prefix_through_user_moves
 from .services.review_service import apply_scheduling_review, ensure_card_queued_after, preserve_daily_queue_order
+from .services.review_reconciliation import card_schedule_state, save_schedule_snapshot, reconcile_completed_review
 from .services.real_game_feedback import MISS_REASON, prioritize_real_game_miss
 from .services.endgames import (
     category_for_player,
@@ -2692,6 +2693,19 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
         now = recorded_at.astimezone(timezone.utc)
     day = date.today().isoformat()
     with (nullcontext(database) if database is not None else connection()) as db:
+        if request.attempt_id:
+            receipt = db.execute(
+                "SELECT card_id,queue_entry_id,outcome,guided,completed_at,result_json "
+                "FROM review_attempt_receipts WHERE attempt_id=?",
+                (request.attempt_id,),
+            ).fetchone()
+            if receipt:
+                if (receipt["card_id"] != identifier or
+                        (request.queue_entry_id is not None and receipt["queue_entry_id"] != request.queue_entry_id) or
+                        receipt["outcome"] != request.outcome or bool(receipt["guided"]) != request.guided or
+                        receipt["completed_at"] != (now.isoformat() if request.recorded_at else None)):
+                    raise HTTPException(409, "Review attempt ID was reused for a different result")
+                return json.loads(receipt["result_json"])
         content_row = db.execute("SELECT content_type FROM cards WHERE id=?", (identifier,)).fetchone()
         if content_row and content_row["content_type"] == "defense":
             raise HTTPException(409, "Defensive exercises must be graded through their move rubric")
@@ -2735,6 +2749,29 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
                 stored_result = json.loads(entry["review_result_json"])
                 recorded_request = stored_result.pop("_request", None)
                 recorded_time = stored_result.pop("_recorded_at", None)
+                recorded_attempt_id = stored_result.pop("_attempt_id", None)
+                if request.attempt_id and recorded_attempt_id is None and recorded_request == original_request and \
+                        request.recorded_at and recorded_time == now.isoformat():
+                    confirmed = {**stored_result, "queue_entry_id": entry["id"],
+                                 "persisted": True, "idempotent": True}
+                    db.execute(
+                        "INSERT INTO review_attempt_receipts(attempt_id,card_id,queue_entry_id,outcome,guided,completed_at,review_id,scheduling_status,warning,result_json) "
+                        "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                        (request.attempt_id, identifier, entry["id"], request.outcome,
+                         int(request.guided), now.isoformat(), stored_result["review_id"],
+                         "canonical", None, json.dumps(confirmed)),
+                    )
+                    return confirmed
+                if request.attempt_id and request.attempt_id != recorded_attempt_id:
+                    return reconcile_completed_review(
+                        db, identifier, entry["id"], attempt_id=request.attempt_id,
+                        outcome=request.outcome, guided=request.guided,
+                        completed_at=now if request.recorded_at else None,
+                        expected_revision=request.expected_revision,
+                        timezone_name=get_settings().timezone,
+                        competing_review={"outcome": recorded_request.get("outcome") if recorded_request else None,
+                                          "completed_at": recorded_time},
+                    )
                 if recorded_request is not None and recorded_request != original_request:
                     raise HTTPException(409, "A different review already completed this queue attempt")
                 if request.recorded_at and recorded_time != now.isoformat():
@@ -2766,6 +2803,7 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
             review_day = date.today()
         if entry["attempt_failed"] or request.guided:
             request = request.model_copy(update={"outcome": "again", "guided": True})
+        schedule_before_review = card_schedule_state(db, identifier)
         try:
             result = apply_scheduling_review(
                 db,
@@ -2773,7 +2811,7 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
                 request.outcome,
                 guided=request.guided,
                 source_kind="study",
-                source_ref=None,
+                source_ref=f"attempt:{request.attempt_id}" if request.attempt_id else None,
                 light_first_interval_days=settings.light_first_interval_days,
                 reviewed_at=now,
                 review_day=review_day,
@@ -2820,10 +2858,21 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
             "persisted": True,
             "idempotent": False,
         }
+        if schedule_before_review:
+            save_schedule_snapshot(db, persisted_result["review_id"], schedule_before_review)
+        if request.attempt_id:
+            db.execute(
+                "INSERT INTO review_attempt_receipts(attempt_id,card_id,queue_entry_id,outcome,guided,completed_at,review_id,scheduling_status,warning,result_json) "
+                "VALUES(?,?,?,?,?,?,?,?,?,?)",
+                (request.attempt_id, identifier, entry["id"], original_request["outcome"],
+                 int(original_request["guided"]), now.isoformat() if request.recorded_at else None,
+                 persisted_result["review_id"], "canonical", None, json.dumps(persisted_result)),
+            )
         db.execute(
             "UPDATE daily_queue SET review_result_json=? WHERE id=?",
             (json.dumps({**persisted_result, "_request": original_request,
-                         "_recorded_at": now.isoformat() if request.recorded_at else None}), entry["id"]),
+                         "_recorded_at": now.isoformat() if request.recorded_at else None,
+                         "_attempt_id": request.attempt_id}), entry["id"]),
         )
         if postgres_store.configured():
             if persisted_result["state"] == "mature":

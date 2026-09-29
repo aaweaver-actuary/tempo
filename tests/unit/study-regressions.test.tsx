@@ -683,10 +683,12 @@ describe("reported study regressions", () => {
       vi.fn(async (input) => {
         if (String(input).includes("/api/queue/window"))
           return Response.json({ cards: queue });
-        if (String(input).endsWith("/review"))
+        if (String(input).endsWith("/review")) {
           queue = [
             { ...queue[0], queue_entry_id: 2, attempt_state: "reinforcement" },
           ];
+          return Response.json({ persisted: true });
+        }
         return Response.json(
           String(input).endsWith("/teaching")
             ? { states: [] }
@@ -903,7 +905,7 @@ describe("reported study regressions", () => {
             reviews.length === 1
               ? [{ ...queue[0], queue_entry_id: 2, cycle: 1 }]
               : [];
-          return Response.json({});
+          return Response.json({ persisted: true });
         }
         return Response.json({ providers: [], states: [] });
       }),

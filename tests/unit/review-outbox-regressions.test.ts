@@ -11,11 +11,11 @@ describe("optimistic training review outbox", () => {
     const review = { backendId: "card-a", queueEntryId: 17, outcome: "correct" as const, guided: false };
     enqueuePendingReview(review);
     enqueuePendingReview(review);
-    expect(pendingReviews()).toEqual([review]);
+    expect(pendingReviews()).toEqual([expect.objectContaining(review)]);
     vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(Response.json({ detail: "busy" }, { status: 503 }))
       .mockResolvedValueOnce(Response.json({ persisted: true })));
     await expect(flushPendingReviews()).rejects.toThrow("busy");
-    expect(pendingReviews()).toEqual([review]);
+    expect(pendingReviews()).toEqual([expect.objectContaining(review)]);
     await flushPendingReviews();
     expect(pendingReviews()).toEqual([]);
   });
@@ -59,7 +59,7 @@ describe("optimistic training review outbox", () => {
       .mockResolvedValueOnce(Response.json({ detail: "This queue attempt is no longer available" }, { status: 409 })));
 
     await expect(flushPendingReviews()).rejects.toThrow("no longer available");
-    expect(pendingReviews()).toEqual([review]);
+    expect(pendingReviews()).toEqual([expect.objectContaining(review)]);
   });
 
   it("drains a review appended while an earlier review request is still in flight", async () => {
@@ -93,7 +93,7 @@ describe("optimistic training review outbox", () => {
       const rejected = expect(saving).rejects.toThrow(/timed out/i);
       await vi.advanceTimersByTimeAsync(15_000);
       await rejected;
-      expect(pendingReviews()).toEqual([review]);
+      expect(pendingReviews()).toEqual([expect.objectContaining(review)]);
     } finally {
       vi.useRealTimers();
     }
@@ -110,10 +110,37 @@ describe("optimistic training review outbox", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(flushPendingReviews()).rejects.toThrow("still pending");
-    expect(pendingReviews()).toEqual([review]);
+    expect(pendingReviews()).toEqual([expect.objectContaining(review)]);
     await flushPendingReviews();
     expect(pendingReviews()).toEqual([]);
-    expect(fetchMock.mock.calls[0][1].headers["Idempotency-Key"]).toBe("review:81");
-    expect(fetchMock.mock.calls[2][1].headers["Idempotency-Key"]).toBe("review:81");
+    expect(fetchMock.mock.calls[0][1].headers["Idempotency-Key"]).toMatch(/^review-attempt:/);
+    expect(fetchMock.mock.calls[2][1].headers["Idempotency-Key"]).toBe(fetchMock.mock.calls[0][1].headers["Idempotency-Key"]);
+  });
+
+  it("retries one phone review identity after an uncertain save and clears it only on confirmation", async () => {
+    enqueuePendingReview({ backendId: "phone-card", queueEntryId: 91, outcome: "correct", guided: false });
+    const saved = pendingReviews()[0];
+    expect(saved.attemptId).toBeTruthy();
+    expect(saved.completedAt).toBeTruthy();
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce(Response.json({ detail: "Temporarily unavailable" }, { status: 503 }))
+      .mockResolvedValueOnce(Response.json({ persisted: true, review_id: 32,
+        reconciliation: "chronological", warning: null }));
+    vi.stubGlobal("fetch", fetchMock);
+    await expect(flushPendingReviews()).rejects.toThrow("Temporarily unavailable");
+    expect(pendingReviews()[0]).toEqual(saved);
+    await flushPendingReviews();
+    expect(pendingReviews()).toEqual([]);
+    expect(fetchMock.mock.calls[0][1].headers["Idempotency-Key"]).toBe(fetchMock.mock.calls[1][1].headers["Idempotency-Key"]);
+    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toMatchObject({
+      attempt_id: saved.attemptId, recorded_at: saved.completedAt,
+    });
+  });
+
+  it("keeps a phone review when the server omits persistence confirmation", async () => {
+    enqueuePendingReview({ backendId: "phone-card", queueEntryId: 92, outcome: "again", guided: false });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({})));
+    await expect(flushPendingReviews()).rejects.toThrow("did not confirm");
+    expect(pendingReviews()).toHaveLength(1);
   });
 });

@@ -275,6 +275,26 @@ def initialize() -> None:
         )
         """,
         """
+        CREATE TABLE IF NOT EXISTS review_attempt_receipts (
+            attempt_id TEXT PRIMARY KEY,
+            card_id TEXT NOT NULL,
+            queue_entry_id INTEGER,
+            outcome TEXT NOT NULL,
+            guided INTEGER NOT NULL,
+            completed_at TEXT,
+            review_id INTEGER,
+            scheduling_status TEXT NOT NULL,
+            warning TEXT,
+            result_json TEXT NOT NULL
+        )
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS review_schedule_snapshots (
+            review_id INTEGER PRIMARY KEY,
+            state_json TEXT NOT NULL
+        )
+        """,
+        """
         CREATE INDEX IF NOT EXISTS idx_reviews_card_reviewed_at
         ON reviews(card_id, reviewed_at)
         """,

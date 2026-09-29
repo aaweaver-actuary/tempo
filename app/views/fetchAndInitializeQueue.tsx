@@ -165,9 +165,29 @@ export async function fetchAndInitializeQueue(
     let pendingReviewError = "";
     if (typeof indexedDB !== "undefined") {
       try {
+        if (savedPreparedQueue?.attempts.some((attempt) => !attempt.serverReviewId && !attempt.serverAcknowledged && !attempt.conflict))
+          publishNotification({ severity: "info", source: "phone review sync", key: "phone-review-syncing",
+            message: "Syncing reviews saved on this phone with the computer." });
         replayed = await replayOfflineAttempts();
+        const syncing = notifications().find((record) => record.key === "phone-review-syncing" && !record.resolvedAt);
+        if (syncing) resolveNotification(syncing.id, replayed?.attempts.some((attempt) => attempt.conflict)
+          ? { severity: "warning", message: "Phone review sync needs attention. The unresolved attempts remain saved on this phone." }
+          : { severity: "success", message: "Phone review sync finished." });
+        for (const attempt of replayed?.attempts ?? []) {
+          const previouslySaved = savedPreparedQueue?.attempts.find((item) => item.localEntryId === attempt.localEntryId);
+          if (!previouslySaved || previouslySaved.serverReviewId || previouslySaved.serverAcknowledged || attempt.conflict ||
+              (!attempt.serverReviewId && !attempt.serverAcknowledged)) continue;
+          publishNotification({ severity: "success", source: "phone review sync",
+            key: `phone-review-credited:${attempt.localEntryId}:${attempt.completedAt}`,
+            message: `Phone review confirmed by the computer: ${attempt.outcome} at ${attempt.completedAt}.`,
+            details: { cardId: attempt.cardId, outcome: attempt.outcome, completedAt: attempt.completedAt },
+          });
+        }
       } catch (error) {
         pendingReviewError = error instanceof Error ? error.message : String(error);
+        const syncing = notifications().find((record) => record.key === "phone-review-syncing" && !record.resolvedAt);
+        if (syncing) resolveNotification(syncing.id, { severity: "warning",
+          message: "Phone review sync paused. The saved attempts remain on this phone; reconnect and retry sync." });
         if (generation === requestGeneration) reportDebugError(error, {
           kind: "api", source: "training-offline-review-replay", operation: "replay saved offline reviews",
           endpoint: error instanceof OfflineReplayError ? error.endpoint : undefined,
@@ -175,7 +195,7 @@ export async function fetchAndInitializeQueue(
       }
     }
     pendingOfflineCardIds = new Set((replayed ?? savedPreparedQueue)?.attempts
-      .filter((attempt) => !attempt.serverReviewId && !attempt.conflict)
+      .filter((attempt) => !attempt.serverReviewId && !attempt.serverAcknowledged)
       .map((attempt) => attempt.cardId) ?? []);
     if (pendingReviews().length) {
       try {
@@ -215,10 +235,20 @@ export async function fetchAndInitializeQueue(
       // A full browser storage quota must not turn a successful queue read into a failure.
     }
     const conflicts = replayed?.attempts.filter((attempt) => attempt.conflict) ?? [];
+    const creditedWarnings = replayed?.attempts.filter((attempt) => attempt.syncWarning) ?? [];
+    for (const attempt of creditedWarnings) {
+      publishNotification({ severity: "warning", source: "phone review sync",
+        key: `phone-review-warning:${attempt.localEntryId}:${attempt.completedAt}`,
+        message: `${attempt.syncWarning} Phone: ${attempt.outcome} at ${attempt.completedAt}. Card: ${attempt.cardId}.`,
+        details: { cardId: attempt.cardId, outcome: attempt.outcome, completedAt: attempt.completedAt },
+      });
+    }
     if (conflicts.length) {
       publishNotification({ severity: "warning", source: "phone review sync", key: "phone-review-conflicts",
-        message: `${conflicts.length} ${isIPhoneHomeScreen() ? "phone" : "offline"} review conflict(s) remain saved ${isIPhoneHomeScreen() ? "on this phone" : "in this browser"}. The computer's saved results take priority.`,
-        details: { cardIds: conflicts.map((attempt) => attempt.cardId) },
+        message: `${conflicts.length} ${isIPhoneHomeScreen() ? "phone" : "offline"} review(s) remain saved ${isIPhoneHomeScreen() ? "on this phone" : "in this browser"} and need attention. Open details for each result and reason, then reconnect and retry sync.`,
+        details: { cardIds: conflicts.map((attempt) => attempt.cardId),
+          attempts: conflicts.map((attempt) =>
+            `${attempt.cardId}: ${attempt.outcome} at ${attempt.completedAt}; ${attempt.conflict}`) },
       });
       useTrainingStore.getState().setQueueNotice("");
     } else {
