@@ -203,6 +203,16 @@ export function resolveValidationIncidentsForEndpoint(endpoint: string): void {
   }
 }
 
+export function resolveApiIncidentsForEndpoint(endpoint: string, source: string): void {
+  const resolvedPath = endpointPath(endpoint);
+  for (const record of notifications()) {
+    if (record.resolvedAt || record.source !== source ||
+        record.details?.kind !== "api" ||
+        record.details.endpointPath !== resolvedPath) continue;
+    resolveNotification(record.id);
+  }
+}
+
 function diagnosticSummary() {
   const groups = new Map<string, { source: string; message: string; count: number }>();
   for (const diagnostic of dataDiagnostics()) {
