@@ -4,9 +4,9 @@ Tempo treats training, tactics, editing, and active-workspace reads as foregroun
 
 ## Handler contract
 
-Every background handler must claim one durable item, read a bounded snapshot, close SQLite while doing computation or network I/O, then commit one idempotent result through `connection(background=True)`. It must persist its cursor, retry state, and actionable error before yielding to the coordinator. A handler must tolerate process restart and repeated execution without duplicate cards, findings, issues, or priorities.
+Every background handler must claim one durable item, read a bounded snapshot, close its SQLite or PostgreSQL connection while doing computation or network I/O, then commit one idempotent result through a background connection. It must persist its cursor, retry state, and actionable error before yielding to the coordinator. A handler must tolerate process restart and repeated execution without duplicate cards, findings, issues, or priorities.
 
-Ordinary HTTP requests are foreground by default. Browser workers use `backgroundFetch`, which sends `X-Tempo-Work-Class: background`. Background database sections wait for foreground requests, use the short background busy timeout, and are limited to one domain item or a 50 ms/100-row batch. No sweep, rebuild, or all-records analysis belongs in startup, queue hydration, or an interactive request transaction.
+Ordinary HTTP requests are foreground by default. Browser workers use `backgroundFetch`, which sends `X-Tempo-Work-Class: background`. SQLite background sections use its short busy timeout and bounded rows. PostgreSQL background transactions use `TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS` (default 250 ms), separately from `TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS` (default 25 ms). The 250 ms ceiling gives headroom over the 8–19 ms populated synthetic measurements while still bounding a stalled section; reassess against a verified production-scale copy before changing it. Both settings are transaction local and reset on pooled connection reuse. These are limits, not a license for long transactions: claim, read, and publish bounded slices, and measure stage timings. No sweep, rebuild, or all-records analysis belongs in startup, queue hydration, or an interactive request transaction.
 
 ## Publication and availability
 

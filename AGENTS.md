@@ -23,11 +23,11 @@ Treat this naming rule as canonical for this project before starting substantial
 
 Read `CONTRIBUTING.md` before changing behavior. Every user-raised defect, now and in future work, requires a specific named regression test in the regular suite before it can be closed. Record coverage in `tests/REGRESSIONS.md`. Never bypass or silently skip those tests to release a change.
 
-Local Docker Tempo is the full product. SQLite is authoritative for cards, reviews, queues, repertoires, games, and sync metadata. A service failure must show an actionable error and never substitute sample records or false success. GitHub Pages is a clearly marked practice demo.
+Local Docker Tempo is the full product. The supported SQLite stack keeps those records in SQLite; the PostgreSQL stack keeps them in PostgreSQL after its verified migration. A service failure must show an actionable error and never substitute sample records or false success. GitHub Pages is a clearly marked practice demo.
 
 ### Foreground-first background work
 
-Training, tactics, editing, and reads for the active workspace are foreground work. Every analysis or derived-data pipeline is secondary and must run as durable, restartable slices. A background handler must claim one bounded item, close its database connection before computation or network I/O, then commit one short result through a background connection and yield. It must never run from application startup or hold a SQLite transaction across traversal, engine work, or a batch loop. New handlers require a named foreground-concurrency regression covering contention, restart, and idempotent replay.
+Training, tactics, editing, and reads for the active workspace are foreground work. Every analysis or derived-data pipeline is secondary and must run as durable, restartable slices. A background handler must claim one bounded item, close its database connection before computation or network I/O, then commit one short result through a background connection and yield. It must never run from application startup or hold a database transaction across traversal, engine work, or a batch loop. New handlers require a named foreground-concurrency regression covering contention, restart, and idempotent replay.
 
 Keep coherent fixes in separate commits and preserve existing uncommitted work. Migrate deterministic logic toward Rust/WASM only after Python/Rust parity fixtures pass. Do not remove the Python compatibility path before parity.
 
