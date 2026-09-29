@@ -18,7 +18,10 @@ test("four comparison boards retain distinct routes and independent ply navigati
   await page.goto("/");
   await nav(page, "Builder");
   for (const uci of screenshotMoves.slice(0, 8)) await move(page, uci.slice(0, 2), uci.slice(2, 4));
-  const sourceFen = await page.locator(".board-frame").first().getAttribute("data-fen");
+  const sourcePosition = new Chess();
+  for (const uci of screenshotMoves.slice(0, 8)) sourcePosition.move(uci);
+  const sourceFen = sourcePosition.fen();
+  await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", sourceFen);
   await page.getByRole("button", { name: "Compare positions" }).click();
   await expect(page.getByRole("heading", { name: "Compare positions" })).toBeVisible();
   await expect(page.locator(".comparison-tile")).toHaveCount(1);
