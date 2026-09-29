@@ -1,9 +1,10 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { DiscoveriesTray } from "../../app/components/discoveries-tray";
-import { flushPendingDiscoveryAdmissions, pendingDiscoveryAdmissions } from
+import { DISCOVERY_ADMISSION_QUEUED, flushPendingDiscoveryAdmissions, pendingDiscoveryAdmissions } from
   "../../app/lib/discovery-admission-outbox";
 import { Chess } from "chess.js";
+import { clearNotificationHistory, notifications, publishNotification } from "../../app/lib/notifications";
 
 vi.mock("../../app/utils/local", () => ({ usesLocalApi: () => true }));
 const backgroundFetch = vi.hoisted(() => vi.fn());
@@ -23,7 +24,30 @@ vi.mock("../../app/lib/lichess-explorer", () => ({ loadExplorer: () => new Promi
 
 const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
-beforeEach(() => localStorage.clear());
+beforeEach(() => { localStorage.clear(); clearNotificationHistory(); });
+
+it("discovery confirmation waits for a queued admission", async () => {
+  localStorage.setItem("tempo-pending-discovery-admissions-v1", JSON.stringify([{
+    opportunityId: "gap", selectedMoveUci: "g1f3", evidenceFingerprint: "revision",
+    state: "failed", error: "stale evidence",
+  }]));
+  const notificationId = publishNotification({ severity: "error", source: "discovery save",
+    key: "discovery-save:gap", message: "Discovery save failed: stale evidence" });
+  backgroundFetch.mockReset();
+  backgroundFetch.mockResolvedValue(Response.json({
+    discoveries: [], total: 0, next_offset: null, unread_count: 0,
+  }));
+  render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  await waitFor(() => expect(backgroundFetch).toHaveBeenCalled());
+  expect(notifications().find((record) => record.id === notificationId)).toMatchObject({
+    severity: "error", resolvedAt: null,
+  });
+  act(() => window.dispatchEvent(new CustomEvent(DISCOVERY_ADMISSION_QUEUED,
+    { detail: { opportunityId: "gap" } })));
+  expect(notifications().find((record) => record.id === notificationId)).toMatchObject({
+    severity: "success", message: "Discovery save confirmed.",
+  });
+});
 
 it("slow discovery pagination does not start overlapping background refreshes", async () => {
   let finishFirstPage: ((response: Response) => void) | undefined;

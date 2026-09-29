@@ -92,6 +92,7 @@ import { WorkspaceRefreshStatus } from "../components/workspace-refresh-status";
 import { RepertoireIntegrityDialog } from "../components/repertoire-integrity-dialog";
 import { repertoiresResponseSchema } from "../domain/schemas";
 import { NotificationCenter } from "../components/notification-center";
+import { OfflineReviewConflicts } from "../components/offline-review-conflicts";
 import { notifications, publishNotification, resolveNotification } from "../lib/notifications";
 import { ServiceStatusPanel } from "../components/service-status-panel";
 import {
@@ -1377,6 +1378,7 @@ export default function Home() {
       <BoardWorkspaceContainer enabled={boardWorkspace} view={currentView}>
         {currentView === "train" && (
           <>
+            <OfflineReviewConflicts />
             {offlineQueue && (
               <div className="ui-notice training-offline-notice" role="status">
                 <strong>Offline queue</strong>

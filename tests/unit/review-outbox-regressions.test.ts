@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { enqueuePendingReview, flushPendingReviews, pendingReviews } from "../../app/lib/review-outbox";
+import { enqueueTrainingFailure, pendingTrainingFailures } from "../../app/lib/training-failure-outbox";
 
 beforeEach(() => {
   localStorage.clear();
@@ -7,6 +8,15 @@ beforeEach(() => {
 });
 
 describe("optimistic training review outbox", () => {
+  it("confirmed guided review clears its earlier failure marker", async () => {
+    enqueueTrainingFailure(17);
+    enqueuePendingReview({ backendId: "card-a", queueEntryId: 17,
+      outcome: "again", guided: true });
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ persisted: true })));
+    await flushPendingReviews();
+    expect(pendingReviews()).toEqual([]);
+    expect(pendingTrainingFailures()).toEqual([]);
+  });
   it("retains a failed review for retry after reload without duplicating the queue entry", async () => {
     const review = { backendId: "card-a", queueEntryId: 17, outcome: "correct" as const, guided: false };
     enqueuePendingReview(review);

@@ -224,19 +224,15 @@ export default function RepertoireView({
       }
       invalidateWorkspaceData();
       onDeleteLocal(item.id);
+      await loadBackend();
       let queueRefreshFailed = false;
       try {
         await onQueueChanged();
       } catch {
         queueRefreshFailed = true;
       }
-      try {
-        await loadBackend();
-        if (queueRefreshFailed)
-          setError("Repertoire deleted. Training queue refresh failed; retry loading the workspace.");
-      } catch {
-        setError("Repertoire deleted. Refresh failed; retry loading the workspace.");
-      }
+      if (queueRefreshFailed)
+        setError("Repertoire deleted. Training queue refresh failed; retry loading the workspace.");
     } else onDeleteLocal(item.id);
   }
 

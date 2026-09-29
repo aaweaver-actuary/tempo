@@ -1,10 +1,11 @@
 import { API_URL } from "../const";
-import { confirmOperationResponse } from "./operation-status";
+import { confirmOperationResponse, FailedOperationError } from "./operation-status";
 
 export type PendingDiscoveryAdmission = {
   opportunityId: string;
   selectedMoveUci: string;
   evidenceFingerprint: string;
+  operationId: string;
   intentId?: string;
   state: "pending" | "accepted" | "failed";
   error?: string;
@@ -17,6 +18,7 @@ export const DISCOVERY_ADMISSION_QUEUED = "tempo-discovery-admission-queued";
 const storageKey = "tempo-pending-discovery-admissions-v1";
 const requestTimeoutMs = 15_000;
 const retryDelayMs = 3_000;
+const maximumAdmissionsPerFlush = 2;
 let activeFlush: Promise<void> | undefined;
 
 function notifyChanged() {
@@ -32,6 +34,8 @@ export function pendingDiscoveryAdmissions(): PendingDiscoveryAdmission[] {
     typeof item.opportunityId !== "string" ||
     typeof item.selectedMoveUci !== "string" ||
     typeof item.evidenceFingerprint !== "string" ||
+    (item.operationId !== undefined &&
+      (typeof item.operationId !== "string" || !item.operationId || item.operationId.length > 128)) ||
     !["pending", "accepted", "failed"].includes(item.state) ||
     (item.intentId !== undefined && typeof item.intentId !== "string") ||
     (item.error !== undefined && typeof item.error !== "string") ||
@@ -39,7 +43,14 @@ export function pendingDiscoveryAdmissions(): PendingDiscoveryAdmission[] {
     (item.nextAttemptAt !== undefined && !Number.isFinite(item.nextAttemptAt)))) {
     throw new Error("Saved discovery requests are invalid. Restore your browser data before continuing.");
   }
-  return parsed as PendingDiscoveryAdmission[];
+  const admissions = parsed as PendingDiscoveryAdmission[];
+  if (admissions.some((admission) => !admission.operationId)) {
+    const upgraded = admissions.map((admission) => ({ ...admission,
+      operationId: admission.operationId || crypto.randomUUID() }));
+    localStorage.setItem(storageKey, JSON.stringify(upgraded));
+    return upgraded;
+  }
+  return admissions;
 }
 
 function writeAdmissions(admissions: PendingDiscoveryAdmission[]) {
@@ -55,32 +66,37 @@ function replaceAdmission(opportunityId: string, change: (admission: PendingDisc
   }));
 }
 
-export function enqueuePendingDiscoveryAdmission(admission: Omit<PendingDiscoveryAdmission, "state">) {
+export function enqueuePendingDiscoveryAdmission(admission: Omit<PendingDiscoveryAdmission, "state" | "operationId">) {
   const current = pendingDiscoveryAdmissions();
   if (current.some((item) => item.opportunityId === admission.opportunityId))
     throw new Error("This discovery already has a pending save.");
-  writeAdmissions([...current, { ...admission, state: "pending" }]);
+  writeAdmissions([...current, { ...admission, operationId: crypto.randomUUID(), state: "pending" }]);
 }
 
 export function retryPendingDiscoveryAdmission(opportunityId: string) {
   replaceAdmission(opportunityId, (admission) => ({
     ...admission, intentId: admission.state === "failed" ? undefined : admission.intentId,
+    operationId: admission.state === "failed" ? crypto.randomUUID() : admission.operationId,
     state: "pending", error: undefined, retryCount: 0, nextAttemptAt: undefined,
   }));
-  return flushPendingDiscoveryAdmissions();
+  return flushPendingDiscoveryAdmissions(opportunityId);
 }
 
 export function recoverUnacknowledgedDiscoveryAdmissions() {
   const admissions = pendingDiscoveryAdmissions();
   let changed = false;
   const recovered = admissions.map((admission) => {
-    if (admission.state !== "accepted" &&
-        (admission.state !== "failed" ||
-         !admission.error?.startsWith("Discovery save timed out after 15 seconds.")))
+    const oldKeyWasRejected = admission.state === "failed" &&
+      admission.error?.includes("Idempotency-Key must be at most 128 characters");
+    const oldTimeoutNeedsRecovery = admission.state === "failed" &&
+      admission.error?.startsWith("Discovery save timed out after 15 seconds.");
+    if (admission.state !== "accepted" && !oldTimeoutNeedsRecovery && !oldKeyWasRejected)
       return admission;
     changed = true;
     return { ...admission, intentId: undefined, state: "pending" as const,
-      error: admission.state === "failed"
+      operationId: admission.state === "accepted" || oldKeyWasRejected
+        ? crypto.randomUUID() : admission.operationId,
+      error: oldKeyWasRejected ? undefined : admission.state === "failed"
         ? "Discovery save timed out after 15 seconds; confirmation is pending."
         : admission.error,
       retryCount: 0, nextAttemptAt: undefined };
@@ -118,7 +134,11 @@ function retryLater(admission: PendingDiscoveryAdmission, cause: unknown) {
 }
 
 async function checkedResponse(response: Response): Promise<Response> {
-  response = await confirmOperationResponse(response);
+  try { response = await confirmOperationResponse(response); }
+  catch (cause) {
+    if (cause instanceof FailedOperationError) throw new ConfirmedSaveError(cause.message);
+    throw cause;
+  }
   if (!response.ok) {
     const message = await responseError(response);
     if (response.status < 500 && response.status !== 408 && response.status !== 429)
@@ -133,7 +153,7 @@ async function processAdmission(admission: PendingDiscoveryAdmission) {
     if (!admission.intentId) {
       const response = await checkedResponse(await requestWithTimeout(`${API_URL}/api/discoveries/${admission.opportunityId}/accept`, {
         method: "POST", headers: { "Content-Type": "application/json",
-          "Idempotency-Key": `discovery:${admission.opportunityId}:${admission.evidenceFingerprint}` },
+          "Idempotency-Key": admission.operationId },
         body: JSON.stringify({ selected_move_uci: admission.selectedMoveUci,
           evidence_fingerprint: admission.evidenceFingerprint }),
       }));
@@ -168,12 +188,19 @@ async function processAdmission(admission: PendingDiscoveryAdmission) {
   }
 }
 
-export function flushPendingDiscoveryAdmissions(): Promise<void> {
+export function flushPendingDiscoveryAdmissions(preferredOpportunityId?: string): Promise<void> {
+  if (activeFlush && preferredOpportunityId)
+    return activeFlush.then(() => flushPendingDiscoveryAdmissions(preferredOpportunityId));
   if (!activeFlush) {
-    activeFlush = Promise.all(pendingDiscoveryAdmissions()
+    const readyAdmissions = pendingDiscoveryAdmissions()
       .filter((admission) => admission.state !== "failed" &&
         (admission.nextAttemptAt ?? 0) <= Date.now())
-      .map(processAdmission)).then(() => undefined).finally(() => { activeFlush = undefined; });
+      .sort((left, right) =>
+        Number(right.opportunityId === preferredOpportunityId) -
+        Number(left.opportunityId === preferredOpportunityId))
+      .slice(0, maximumAdmissionsPerFlush);
+    activeFlush = Promise.all(readyAdmissions.map(processAdmission))
+      .then(() => undefined).finally(() => { activeFlush = undefined; });
   }
   return activeFlush;
 }

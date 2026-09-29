@@ -132,11 +132,6 @@ export async function fetchAndInitializeQueue(
     };
     const pendingFailureEntries = new Set(pendingTrainingFailures());
     let failureSaveError: string | null = null;
-    if (pendingFailureEntries.size)
-      void flushTrainingFailures().catch((error) => {
-        failureSaveError = `Could not confirm a guided attempt. Refresh the training queue. ${String(error)}`;
-        showQueueNotice(failureSaveError, "warning");
-      });
     const retainPendingFailures = (cards: PracticeCard[]) => cards.map((card) =>
       card.queueEntryId && pendingFailureEntries.has(card.queueEntryId)
         ? { ...card, attemptFailed: true } : card);
@@ -211,6 +206,11 @@ export async function fetchAndInitializeQueue(
           });
       }
     }
+    if (pendingFailureEntries.size)
+      void flushTrainingFailures().catch((error) => {
+        failureSaveError = `Could not confirm a guided attempt. Refresh the training queue. ${String(error)}`;
+        showQueueNotice(failureSaveError, "warning");
+      });
     let raw: QueuePayload;
     try {
       raw = await loadTodayQueueWithRetry(controller.signal);

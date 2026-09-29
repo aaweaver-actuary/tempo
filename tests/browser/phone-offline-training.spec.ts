@@ -236,7 +236,7 @@ test("competing computer review credits the saved phone result and explains the 
   expect(savedAttempt.syncWarning).toContain("computer schedule");
 });
 
-test("nine phone conflicts stay in the notification tray without moving training", async ({ page }) => {
+test("nine phone conflicts can be inspected and discarded individually without changing computer reviews", async ({ page }) => {
   const payload = { local_date: localDate, count: preparedCards.length, cards: preparedCards,
     projection: { state: "ready", generation: 1, updated_at: null, refresh_pending: 0, last_error: null, blocked_count: 0 } };
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: payload }));
@@ -276,13 +276,21 @@ test("nine phone conflicts stay in the notification tray without moving training
     });
     database.close();
   }, cardIds);
+  const serverConflictReason = "This card was reviewed on another device";
+  let reviewPosts = 0;
+  await page.route("**/api/cards/*/review", (route) => {
+    reviewPosts += 1;
+    return route.fulfill({ status: 409, json: { detail: serverConflictReason } });
+  });
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
+  await expect.poll(() => reviewPosts).toBe(9);
   await expect(page.locator(".notification-toast").getByText(/9 phone review\(s\) remain saved/)).toBeVisible();
   const after = (await board.boundingBox())!;
   expect(Math.abs(after.y - before.y)).toBeLessThanOrEqual(1);
   expect(Math.abs(after.x - before.x)).toBeLessThanOrEqual(1);
   await expect(page.locator(".notification-toast")).toHaveCount(0, { timeout: 12_000 });
   await page.reload();
+  await expect.poll(() => reviewPosts).toBe(18);
   await page.getByRole("button", { name: "Notifications" }).click();
   await page.getByRole("button", { name: "warning", exact: true }).click();
   await expect(page.locator(".notification-list").getByText(/9 phone review\(s\) remain saved/)).toBeVisible();
@@ -297,6 +305,35 @@ test("nine phone conflicts stay in the notification tray without moving training
   };
   expect(exported.severityThreshold).toBe("warning");
   expect(exported.notifications.find((record) => record.details?.cardIds?.length === 9)?.details?.cardIds).toEqual(cardIds);
+  await page.getByRole("button", { name: /Review conflicts/ }).click();
+  const conflictDialog = page.getByRole("dialog", { name: "Review conflicts" });
+  await expect(conflictDialog.locator(".offline-conflict-item")).toHaveCount(9);
+  await expect(conflictDialog.locator(".offline-conflict-item").first()).toContainText(cardIds[0]);
+  await expect(conflictDialog.locator(".offline-conflict-item").first()).toContainText("Correct");
+  await expect(conflictDialog.locator(".offline-conflict-item").first()).toContainText(serverConflictReason);
+  await page.evaluate(() => Object.defineProperty(navigator, "clipboard", { configurable: true,
+    value: { writeText: () => Promise.reject(new Error("blocked")) } }));
+  await conflictDialog.getByRole("button", { name: "Copy conflict data" }).click();
+  const conflictData = JSON.parse(await conflictDialog.getByRole("textbox", { name: "Conflict data" }).inputValue()) as {
+    attempts: Array<{ cardId: string; outcome: string; conflict: string }>;
+  };
+  expect(conflictData.attempts).toHaveLength(9);
+  expect(conflictData.attempts[0]).toMatchObject({ cardId: cardIds[0], outcome: "correct" });
+  expect(conflictData.attempts[0].conflict).toContain(serverConflictReason);
+  await conflictDialog.locator(".offline-conflict-item").first().getByRole("button", { name: "Discard phone attempt" }).click();
+  await expect(conflictDialog.locator(".offline-conflict-item")).toHaveCount(8);
+  expect(reviewPosts).toBe(18);
+  await page.unroute("**/api/cards/*/review");
+  await page.reload();
+  await page.getByRole("button", { name: /Review conflicts/ }).click();
+  await expect(page.getByRole("dialog", { name: "Review conflicts" }).locator(".offline-conflict-item")).toHaveCount(8);
+  for (let remaining = 8; remaining > 0; remaining -= 1) {
+    await page.getByRole("dialog", { name: "Review conflicts" }).locator(".offline-conflict-item").first()
+      .getByRole("button", { name: "Discard phone attempt" }).click();
+    await expect(page.getByRole("dialog", { name: "Review conflicts" }).locator(".offline-conflict-item"))
+      .toHaveCount(remaining - 1);
+  }
+  await expect(page.getByRole("button", { name: /Review conflicts/ })).toHaveCount(0);
 });
 
 test("an older prepared response cannot replace a newer saved phone queue", async ({ page }) => {

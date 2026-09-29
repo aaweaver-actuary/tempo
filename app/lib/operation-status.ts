@@ -7,6 +7,13 @@ export class PendingOperationError extends Error {
   }
 }
 
+export class FailedOperationError extends Error {
+  constructor(message: string, readonly operationId: string) {
+    super(message);
+    this.name = "FailedOperationError";
+  }
+}
+
 export async function confirmOperationResponse(response: Response): Promise<Response> {
   if (response.status !== 202) return response;
   const pending = await response.clone().json() as { operation_id?: string };
@@ -24,6 +31,9 @@ export async function confirmOperationResponse(response: Response): Promise<Resp
   if (receipt.state === "complete")
     return Response.json(receipt.response);
   if (receipt.state === "failed")
-    throw new Error(receipt.error?.message ?? "The save failed. Check the service before retrying.");
+    throw new FailedOperationError(
+      receipt.error?.message ?? "The save failed. Check the service before retrying.",
+      pending.operation_id,
+    );
   throw new PendingOperationError(pending.operation_id);
 }
