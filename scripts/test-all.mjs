@@ -9,7 +9,7 @@ function protectRegressionSuite(directory) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = `${directory}/${entry.name}`;
     if (entry.isDirectory() && entry.name !== "__pycache__") protectRegressionSuite(path);
-    else if (/\.(tsx?|py)$/.test(path) && /\b(?:test|it|describe)\.(?:skip|todo|only)\s*\(|pytest\.mark\.skip|@(?:unittest\.)?skip/.test(readFileSync(path, "utf8"))) {
+    else if (/\.(tsx?|py|mjs)$/.test(path) && /\b(?:test|it|describe)\.(?:skip|todo|only)\s*\(|pytest\.mark\.skip|@(?:unittest\.)?skip/.test(readFileSync(path, "utf8"))) {
       throw new Error(`Regression suites cannot contain skipped, todo, or exclusive tests: ${path}`);
     }
   }
@@ -55,7 +55,11 @@ const stagesByTier = {
 };
 const stageNames = stagesByTier[tier];
 const selectedStages = stageNames
-  ? stages.filter(([name]) => stageNames.includes(name))
+  ? stages.filter(([name]) => stageNames.includes(name)).map(([name, command, args]) => [
+    name, command,
+    name === "postgres_docker" && ["ui", "browser"].includes(tier)
+      ? [...args, "--mode", "browser"] : args,
+  ])
   : null;
 if (!selectedStages) throw new Error(`Unknown test tier: ${tier}`);
 if (listOnly) {

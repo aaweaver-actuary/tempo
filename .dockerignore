@@ -13,3 +13,9 @@ local-dist
 test-results
 static/test-results
 playwright-report
+# Disposable runtime secrets and local churn must never enter COPY . . layers.
+.tempo-pg-test-secrets-*
+.dev-copies
+.pytest_cache
+**/__pycache__
+**/*.pyc

@@ -31,11 +31,12 @@ PYTHON ?= $(shell node --input-type=module -e 'import { resolvePython } from "./
 export FILE VIEW
 
 help:
-	@printf '%s\n' 'Inspect: make plan [TIER=full|fast|python|backend|rust|integration|ui]'
+	@printf '%s\n' 'Inspect: make plan [TIER=full|fast|python|backend|rust|integration|ui|browser]'
 	@printf '%s\n' '         make slow-tests [TIER=full|fast] [COUNT=10] (reads last unit profile)'
 	@printf '%s\n' 'Release/CI-equivalent: make full (run this one target, not fast + integration + full)'
 	@printf '%s\n' 'Capability check: make preflight (full and browser scopes run it first automatically)'
 	@printf '%s\n' 'Focused scopes: make fast | python | backend | rust | integration | ui | browser | visual | perf'
+	@printf '%s\n' 'Browser scopes exclude recovery/backup checks; make full still requires them all.'
 	@printf '%s\n' 'Docker recovery: make docker-durability (PostgreSQL durability without browser specs)'
 	@printf '%s\n' 'Optional compatibility: make legacy-sqlite (full SQLite runtime/browser runner)'
 	@printf '%s\n' 'Focused files: make unit-file FILE=tests/unit/example.test.ts'
@@ -73,7 +74,7 @@ ui:
 
 browser:
 	node scripts/check-test-capabilities.mjs --docker --loopback --workspace-mount
-	node scripts/test-postgres-docker.mjs
+	node scripts/test-postgres-docker.mjs --mode browser
 
 visual:
 	node scripts/check-test-capabilities.mjs --docker --workspace-mount
@@ -88,7 +89,7 @@ full:
 
 docker-durability:
 	node scripts/check-test-capabilities.mjs --docker --loopback
-	node scripts/test-postgres-docker.mjs --skip-browser
+	node scripts/test-postgres-docker.mjs --mode durability
 
 legacy-sqlite:
 	node scripts/check-test-capabilities.mjs --docker --loopback --workspace-mount
