@@ -103,8 +103,8 @@ def main() -> None:
 
     with psycopg.connect(options.dsn) as database:
         version = database.execute("SELECT MAX(version) FROM tempo_schema_migrations").fetchone()[0]
-        if version != 19:
-            raise RuntimeError(f"Restore schema must be 19 for candidate measurements; found {version}")
+        if version != 20:
+            raise RuntimeError(f"Restore schema must be 20 for candidate measurements; found {version}")
         recurring = database.execute(
             "SELECT repertoire_id,card_id,COUNT(*) FROM repertoire_decision_events "
             "WHERE card_id IS NOT NULL GROUP BY repertoire_id,card_id "

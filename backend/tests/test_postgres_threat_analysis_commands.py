@@ -41,6 +41,28 @@ def test_postgres_threat_claim_reclaims_one_lease_and_returns_claimed_request(mo
     assert "FOR UPDATE OF request SKIP LOCKED" in statements[1][0]
 
 
+def test_postgres_threat_claim_checks_sparse_priorities_before_ordered_queue():
+    statements = []
+    request_queries = 0
+
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            nonlocal request_queries
+            statements.append(statement)
+            if statement.startswith("SELECT request.id"):
+                request_queries += 1
+                if request_queries == 2:
+                    return Cursor({"id": "ordinary-request", "request_json": "{}"})
+            return Cursor()
+
+    result = threat_analysis_commands.claim_threat_analysis(Database(), {})
+    assert result["job"]["id"] == "ordinary-request"
+    assert "WHERE role='attempt'" in statements[1]
+    assert "SELECT 1 FROM background_activity" in statements[2]
+    assert "ORDER BY request.created_at,request.id" in statements[3]
+    assert "LIMIT 1 OFFSET 0" in statements[3]
+
+
 def test_postgres_threat_report_validates_lease_and_queues_candidates_atomically(monkeypatch):
     state = {"lease_id": "current", "status": "leased"}
     writes = []

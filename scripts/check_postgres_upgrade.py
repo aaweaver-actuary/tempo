@@ -58,6 +58,11 @@ def main() -> None:
                 "SELECT COUNT(*) FROM pg_indexes WHERE indexname="
                 "'idx_threat_candidate_requests_request_role'"
             ).fetchone()[0] == 1
+            assert database.execute(
+                "SELECT COUNT(*) FROM pg_indexes WHERE indexname IN ("
+                "'idx_threat_candidate_requests_role_request',"
+                "'idx_threat_analysis_requests_state_created')"
+            ).fetchone()[0] == 2
     finally:
         with psycopg.connect(admin_dsn, autocommit=True) as admin:
             admin.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(
