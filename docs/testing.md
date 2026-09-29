@@ -15,6 +15,11 @@ make plan
 make full
 ```
 
+For a fresh checkout, install Node dependencies with `npm ci`. Create the
+backend environment with `cd backend && uv sync`, then install the pinned
+runtime/test dependencies with `uv pip install --python .venv/bin/python -r
+requirements.txt`; return to the repository root before running Make targets.
+
 The full runner stops at the first failure and writes per-stage timing and exit status to `test-results/performance/test-stages-full.json`. Its ordered stages are:
 
 0. Docker daemon, `127.0.0.1` bind, and checkout bind-mount preflight; no tests have run if this fails.
@@ -30,12 +35,12 @@ The standalone engine smoke verifies a restricted Stockfish search without conne
 8. Typecheck.
 9. WASM build.
 10. Local frontend build.
-11. Docker integration, including the regular Playwright browser matrix against the full proxy and the container durability checks.
+11. PostgreSQL disposable stack, including recovery and study durability, plus the regular Playwright browser matrix exactly once.
 12. Pinned Linux visual and performance Playwright specs.
 
 The unit stage also writes one Vitest JSON report to `test-results/performance/unit-files-full.json` during that same test run. `make slow-tests` lists the slowest unit files from it. Use `make slow-tests TIER=fast` after `make fast`; `COUNT=20` shows more files. File wall times include setup and may overlap across workers, so their sum is not the suite wall time.
 
-The regular Playwright specs run **once** in stage 11. The standalone local `browser` stage is excluded from full because it selects the same specs. The visual config selects `visual.spec.ts` and `performance.spec.ts`; the regular browser config excludes those files. `make perf` runs only the performance subset of `make visual`, so it is a focused diagnostic command, not an extra full-gate stage.
+The regular Playwright specs run **once** in stage 11 on PostgreSQL. `make browser`, `make ui-file`, and `make view` use this same isolated PostgreSQL runner. The visual config selects `visual.spec.ts` and `performance.spec.ts`; the regular browser config excludes those files. `make perf` runs only the performance subset of `make visual`, so it is a focused diagnostic command, not an extra full-gate stage.
 
 For an independent pinned performance repeat, use `TEMPO_TEST_TIMING_DIR=test-results/performance/repeat-<label> make perf`. The directory must be inside the checkout so the Docker runner can write the raw samples there. The ordinary full-run artifacts then remain available for comparison.
 
@@ -51,14 +56,24 @@ For an independent pinned performance repeat, use `TEMPO_TEST_TIMING_DIR=test-re
 | Rust | `make rust` | Format, Clippy, and Rust workspace tests once each |
 | One Rust test name | `make rust-case FILTER=card_identity` | Filtered Rust workspace test |
 | Backend and Rust integration | `make integration` | Defense smoke, pytest, and Rust checks once each |
-| UI as a whole | `make ui` | Local regular browser matrix plus disjoint pinned visual/performance specs |
-| Regular browser only | `make browser` | Local regular Playwright matrix |
+| UI as a whole | `make ui` | PostgreSQL regular browser matrix plus disjoint pinned visual/performance specs |
+| Regular browser only | `make browser` | PostgreSQL regular Playwright matrix and study durability |
 | One browser spec | `make ui-file FILE=games-board-context.spec.ts` | Exact spec from `tests/browser` |
 | View title filter | `make view VIEW=Builder` | Browser tests whose titles match the pattern; focused subset only |
 | Visual and performance | `make visual` | Pinned visual and performance specs |
 | Performance only | `make perf` | Pinned performance specs; subset of `visual` |
-| Docker durability recovery | `make docker-durability` | Compose and container recreation checks after a completed browser matrix; skips only the regular browser specs |
+| PostgreSQL durability only | `make docker-durability` | Compose and container recreation checks; skips browser specs |
+| Legacy SQLite compatibility | `make legacy-sqlite` | Former SQLite runtime/browser runner; optional, outside the default full gate |
 
 `make plan TIER=fast`, `TIER=python`, `TIER=backend`, `TIER=rust`, `TIER=integration`, or `TIER=ui` prints that scope's exact stages. A view title filter is convenient during development but is not a claim of complete coverage for that view; use `make ui` or `make full` for the broader gate. Make rejects multiple verification targets in one invocation so a combined command cannot accidentally repeat a suite.
 
-If Docker browser tests finish but a failure prevents the later container recreation checks, `make docker-durability` completes only those later checks. `node scripts/test-docker.mjs --list --skip-browser` prints its exact recovery plan. A normal `make full` always includes the browser matrix.
+The focused SQLite snapshot, validation, import-fidelity, source-nonmutation, destination-safeguard, historical-schema, and SQLite-backed product regressions remain part of the normal unit/backend suite. The old complete SQLite runtime runner is optional so the default gate does not execute the regular Playwright matrix twice.
+
+| Retired default SQLite assertion | Replacement or optional route |
+| --- | --- |
+| Regular product workflows and browser recovery | One PostgreSQL-backed regular browser matrix in `make full` |
+| Service recreation, durable receipt replay, queue identity | PostgreSQL study durability scenario in the default runner |
+| SQLite runtime service/browser specifics | `make legacy-sqlite` |
+| SQLite snapshot integrity, import fidelity, and safety guards | Focused SQLite unit/backend regressions remain in `make full` |
+
+Use `node scripts/test-postgres-docker.mjs --list` or `node scripts/test-docker.mjs --list` to inspect runner stages without starting a stack. The full gate always includes the PostgreSQL browser matrix.

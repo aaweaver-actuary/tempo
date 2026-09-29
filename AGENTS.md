@@ -24,7 +24,7 @@ Treat this naming rule as canonical for this project before starting substantial
 
 Read `CONTRIBUTING.md` before changing behavior. Every user-raised defect, now and in future work, requires a specific named regression test in the regular suite before it can be closed. Record coverage in `tests/REGRESSIONS.md`. Never bypass or silently skip those tests to release a change.
 
-Local Docker Tempo is the full product. The supported SQLite stack keeps those records in SQLite; the PostgreSQL stack keeps them in PostgreSQL after its verified migration. A service failure must show an actionable error and never substitute sample records or false success. GitHub Pages is a clearly marked practice demo.
+Local Docker Tempo is the full product and PostgreSQL is authoritative after the verified migration. SQLite is a historical import/recovery source and an optional compatibility test stack. A service failure must show an actionable error and never substitute sample records or false success. GitHub Pages is a clearly marked practice demo.
 
 ### Foreground-first background work
 

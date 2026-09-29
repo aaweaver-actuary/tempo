@@ -2,12 +2,19 @@
 
 ## Repair checklist and finding status
 
-- [x] Startup cause reproduced on the current live installation: the API image requires schema 17 and its PostgreSQL migration ledger contains versions 1–16. The API exits during lifespan startup; `/api/health` cannot respond. No live migration has been run.
+- [x] Historical startup cause reproduced: the API image required schema 17 while the PostgreSQL migration ledger contained versions 1–16; API lifespan startup failed. On 2026-09-29 the selected Docker context had no product containers or images and port 8000 was not listening, so the current live state is unverified. No live migration has been run.
 - [x] Source defects reproduced: separate Celery and scheduler retry budgets; conflicting task delivery could alter the original receipt; discovery confirmations favored the first entries; a recovered game job could be overwritten by the defensive journal; diagnostic incident keys persisted raw error signatures; the old-image rollback instruction was incompatible with schema 17.
 - [x] Verify the candidate's populated 16→20 upgrade and repeat run, preserved rows, real task replay, and running image source consistency. The disposable Docker gate applied migration 020, repeated the runner, preserved receipts and business rows, and passed service recreation.
 - [x] Measure four background workloads on an isolated restore of a verified product backup. After the ordered claim and smaller result pages, a 30-minute, four-CPU database concurrency probe completed with no operation failures or background transaction/lock errors and with foreground p95 below its same-container idle baseline. This exercised SQL operations, not HTTP requests; production HTTP latency remains unverified.
 - [x] Run `make full` on source revision `d758983` after the contention fix: 348 unit, 711 backend, 131 SQLite browser, 131 PostgreSQL browser, and 48 pinned visual/performance cases, plus Rust, lint, typecheck, and builds. All stages exited 0.
 - [ ] Obtain approval for the exact live target and maintenance window before stopping writers or migrating it.
+
+### Candidate verification checklist
+
+- [x] Fresh clone from fetched `origin/main`; isolated `codex/finalize-recovery-postgres-tests` branch and Python environment.
+- [x] Disposable PostgreSQL stack verifies project-owned volumes/network, loopback port, PostgreSQL and Redis endpoints, API reader credentials, and no SQLite mount before startup.
+- [ ] Re-run recovery regressions, full PostgreSQL study durability and browser coverage on the final candidate; run `make full` once and `make legacy-sqlite` once.
+- [ ] Review and publish one PR; keep all live restart, migration, and replay actions outside this change.
 
 ## Historical SQLite integrity failure
 

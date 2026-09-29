@@ -5,6 +5,8 @@ import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { performance } from "node:perf_hooks";
 import assert from "node:assert/strict";
+import { randomBytes } from "node:crypto";
+import { createIsolatedTestEnvironment } from "./test-environment.mjs";
 const supportedArguments = new Set(["--list", "--skip-browser"]);
 for (const argument of process.argv.slice(2)) {
   if (!supportedArguments.has(argument)) throw new Error(`Unknown Docker test option: ${argument}`);
@@ -48,6 +50,7 @@ async function timeStage(stageName, operation) {
 }
 saveTimingReport();
 const directory = mkdtempSync(join(tmpdir(), "tempo-docker-tests-"));
+const project = `tempo-regressions-${process.pid}-${randomBytes(4).toString("hex")}`;
 const testPort = await new Promise((resolve, reject) => {
   const server = createServer();
   server.once("error", reject);
@@ -57,8 +60,12 @@ const testPort = await new Promise((resolve, reject) => {
     server.close(() => resolve(address.port));
   });
 });
-const env = { ...process.env, TEMPO_TEST_DATA: directory, TEMPO_TEST_PORT: String(testPort) };
-const composeArgs = ["compose", "-p", `tempo-regressions-${process.pid}`, "-f", "docker-compose.test.yml"];
+const env = createIsolatedTestEnvironment(process.env, {
+  TEMPO_TEST_DATA: directory,
+  TEMPO_TEST_PORT: String(testPort),
+});
+const composeArgs = ["compose", "-p", project, "-f", "docker-compose.test.yml"];
+let resourcesCreated = false;
 function run(command, args, extra = {}) {
   const result = spawnSync(command, args, { stdio: "inherit", env: { ...env, ...extra } });
   if (result.error || result.status !== 0) throw new Error(`${command} ${args.join(" ")} failed`);
@@ -78,6 +85,37 @@ function verifyTempoDataVolumeIsExternal() {
     "Web proxy must wait for API health before serving requests");
   console.log("PASS test_tempo_web_waits_for_api_health_before_proxying: cold startup cannot expose an unready API.");
 }
+function verifyTestStackIsolation() {
+  const configResult = spawnSync("docker", [...composeArgs, "config", "--format", "json"], {
+    encoding: "utf8", env,
+  });
+  if (configResult.error || configResult.status !== 0) {
+    throw new Error("Disposable SQLite Compose configuration could not be resolved");
+  }
+  const config = JSON.parse(configResult.stdout);
+  assert.equal(config.name, project);
+  assert.equal(config.services.api.environment.TEMPO_DB_PATH, "/data/tempo.db");
+  assert.equal(config.services.api.environment.TEMPO_TEST_INSTANCE, "disposable");
+  assert.equal(config.services.api.environment.TEMPO_DATABASE_READ_URL, undefined);
+  assert.equal(config.services.api.environment.TEMPO_DATABASE_WRITE_URL, undefined);
+  assert.equal(config.services.web.ports[0].host_ip, "127.0.0.1");
+  assert.equal(Number(config.services.web.ports[0].published), testPort);
+  for (const serviceName of ["api", "analysis-worker"]) {
+    const mount = config.services[serviceName].volumes.find((volume) => volume.target === "/data");
+    assert.equal(mount.type, "bind");
+    assert.equal(mount.source, directory);
+  }
+  assert.equal(Object.values(config.volumes ?? {}).some((volume) => volume.external), false);
+  for (const [resourceName, argumentsList] of [
+    ["container", ["ps", "-aq", "--filter", `label=com.docker.compose.project=${project}`]],
+    ["network", ["network", "ls", "-q", "--filter", `label=com.docker.compose.project=${project}`]],
+  ]) {
+    const result = spawnSync("docker", argumentsList, { encoding: "utf8", env });
+    assert.equal(result.status, 0, `Could not verify SQLite test ${resourceName} isolation`);
+    assert.equal(result.stdout.trim(), "", `Refusing to reuse pre-existing SQLite test ${resourceName}s`);
+  }
+  console.log("PASS disposable SQLite stack uses only its private bind mount and loopback port");
+}
 let exitCode = 0;
 const base = `http://127.0.0.1:${testPort}/api`;
 async function json(path, options) {
@@ -87,7 +125,15 @@ async function json(path, options) {
 }
 async function waitForHealth() {
   for (let attempt = 0; attempt < 60; attempt++) {
-    try { if ((await fetch(`${base}/health`)).ok) return; } catch { /* startup */ }
+    try {
+      const response = await fetch(`${base}/health`);
+      if (response.ok) {
+        const health = await response.json();
+        assert.equal(health.storage, "local-sqlite");
+        assert.equal(health.test_instance, true);
+        return;
+      }
+    } catch { /* startup */ }
     await new Promise(resolve => setTimeout(resolve, 500));
   }
   throw new Error("Docker Tempo did not become healthy");
@@ -170,6 +216,8 @@ async function verifyStudySurvivesContainerRecreation() {
 }
 try {
   await timeStage("compose_config", verifyTempoDataVolumeIsExternal);
+  await timeStage("test_stack_isolation", verifyTestStackIsolation);
+  resourcesCreated = true;
   await timeStage("container_start", async () => {
     run("docker", ["info", "--format", "{{.ServerVersion}}"]);
     run("docker", [...composeArgs, "up", "--build", "-d"]);
@@ -184,10 +232,12 @@ try {
   await timeStage("durability", verifyStudySurvivesContainerRecreation);
 } catch (error) { console.error(error.message); exitCode = 1; }
 finally {
-  await timeStage("container_stop", () => {
-    const result = spawnSync("docker", [...composeArgs, "down"], { stdio: "inherit", env });
-    if (result.error || result.status !== 0) throw new Error("Docker test containers could not stop");
-  }).catch((error) => { console.error(error.message); exitCode = 1; });
+  if (resourcesCreated) {
+    await timeStage("container_stop", () => {
+      const result = spawnSync("docker", [...composeArgs, "down", "--rmi", "local"], { stdio: "inherit", env });
+      if (result.error || result.status !== 0) throw new Error("Docker test containers could not stop");
+    }).catch((error) => { console.error(error.message); exitCode = 1; });
+  }
   rmSync(directory, { recursive: true });
 }
 process.exit(exitCode);

@@ -18,12 +18,21 @@ From the approved candidate checkout, build the migration and application
 images from the same revision. Record `git rev-parse HEAD` and the resulting
 image IDs. Then stop application writers and readers before the backup:
 
-The checked-in `scripts/upgrade-postgres-schema.sh --apply` runs the sequence
-below and exits before dependent startup if backup verification or migration
-fails. Set `COMPOSE_PROJECT_NAME` and `TEMPO_UPGRADE_EXPECTED_PROJECT` to the
-approved project name before invoking it; the script verifies the resolved
-project and fixed external volume mappings. Inspect the resolved Compose
-configuration and current container mounts separately before invocation.
+First run `scripts/upgrade-postgres-schema.sh --plan`. This read-only option
+validates the Compose project and external volume identities, then prints the
+sequence without building images, stopping services, backing up, or migrating.
+The `--apply` option runs the sequence below and exits before dependent startup
+if backup verification or migration fails. Set `COMPOSE_PROJECT_NAME` and
+`TEMPO_UPGRADE_EXPECTED_PROJECT` to the approved project name before invoking
+it; inspect the resolved Compose configuration and current container mounts
+separately.
+
+An ordinary restart on the same image and schema uses `docker compose up -d`.
+For an image-only update, rebuild changed services from one revision and
+recreate them together after verifying the schema is unchanged. Use the
+stopped-writer backup and restore procedure below only for a schema upgrade.
+Initial SQLite import is a separate one-time cutover workflow and requires a
+verified, read-only SQLite snapshot.
 
 ```sh
 docker compose -f docker-compose.yml -f docker-compose.postgres-maintenance.yml build migration

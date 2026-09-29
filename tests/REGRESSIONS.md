@@ -5,6 +5,7 @@
 | API cannot start when a populated PostgreSQL ledger ends at 16 and the image requires a newer schema | `scripts/check_postgres_upgrade.py` rehearses populated 16→current and repeat migration; `test_postgres_upgrade_rejects_newer_and_gapped_history`; `test_postgres_schema_upgrade_does_not_require_sqlite_snapshot`; `test_failed_postgres_migration_prevents_dependent_rollout` |
 | A retry starts a duplicate execution, loses its original identity, or allows a stale attempt to publish | `scripts/check_postgres_operation_recovery.py` exercises the real task entry point against disposable PostgreSQL, including replay, conflict, explicit retry, and stale ownership |
 | Preparing discovery confirmations starve later eligible confirmations after reload | `stalled discovery confirmations cannot starve a later queued admission across reloads` |
+| A later accepted discovery C waits behind indefinitely preparing A and B | `confirms later discovery C within three eligible flushes while A and B keep preparing` |
 | A recovered game job is overwritten by a defensive journal result | `handles a recovered game job before clearing a defensive claim journal`; `a defensive null result cannot overwrite a recovered game job` |
 | Diagnostic incident keys or serialized bundles persist a credential | `hydrates legacy secret-bearing incident keys without losing counts or identity`; `removes canary secrets from every persisted and exported incident field` |
 | A 250 ms background transaction times out while claiming threats or reading recurring evidence | `test_postgres_threat_claim_checks_sparse_priorities_before_ordered_queue`; `test_postgres_recurring_evidence_uses_per_event_analysis_lookups`; `scripts/check_postgres_upgrade.py` verifies the claim indexes; `scripts/measure_postgres_incident_workloads.py` measures all four reported workloads on an isolated restore |
@@ -696,3 +697,12 @@ Append every new reported issue and its test names here. All listed tests belong
 - PostgreSQL tactical insight aggregation loses the overall totals or pin categories while avoiding a full opportunity scan: `backend/tests/test_postgres_tactical_statistics.py::test_postgres_tactical_summary_keeps_pin_breakdown_without_loading_all_motifs`.
 - A PostgreSQL queue refresh scans all eligible opening cards in one 50 ms read and stalls new imports: `backend/tests/test_postgres_opening_candidate_pages.py::test_postgres_opening_candidates_read_small_pages_before_planning`.
 - A PostgreSQL GET route fails under the reader role: `scripts/audit_postgres_reads.py` exercises all 58 registered GET routes against a restored copy and rejects unexpected 5xx responses.
+
+## PostgreSQL-first test gate consolidation
+
+- PostgreSQL foreground study actions, queued background publication, restart persistence, or confirmed command identity regress: `PostgreSQL study state, queue order, guided failure, and command identity survive service recreation` in `scripts/test-postgres-docker.mjs`.
+- The full gate executes regular Playwright twice or omits the PostgreSQL runner: `full verification owns every test family once without repeating regular browser specs` in `tests/unit/test-plan-regressions.test.ts`.
+- A browser focus value is split, ignored, inherited from the product environment, or accepted when empty/unknown: `PostgreSQL runner forwards a focused spec as discrete arguments` and `PostgreSQL runner rejects empty, unknown, conflicting, and inherited filters` in `tests/unit/postgres-test-runner-regressions.test.ts`.
+- A runner inherits product database, broker, or test endpoint settings: `test environment strips dangerous product database and broker settings before any runner work` in `tests/unit/postgres-test-runner-regressions.test.ts`.
+
+The retired full SQLite runner's default assertions map to the PostgreSQL-backed regular browser matrix and service recreation scenario. Full SQLite runtime/browser specifics remain available through `make legacy-sqlite`; focused SQLite snapshot, validation, import-fidelity, source-nonmutation, destination-safeguard, historical-schema, product regressions, and `coverage_path_floor` checks remain in default unit/backend stages.

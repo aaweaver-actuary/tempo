@@ -39,9 +39,7 @@ const stages = [
   ["typecheck", "npm", ["run", "typecheck"]],
   ["wasm_build", "npm", ["run", "build:wasm"]],
   ["local_build", "npm", ["run", "build:local"]],
-  ["browser", "npm", ["run", "test:browser"]],
-  // Docker runs the regular Playwright suite against the full proxy once.
-  ["docker", "npm", ["run", "test:docker"]],
+  // The PostgreSQL runner owns the single regular Playwright matrix.
   ["postgres_docker", "node", ["scripts/test-postgres-docker.mjs"]],
   ["visual", "npm", ["run", "test:visual"]],
 ];
@@ -51,8 +49,9 @@ const stagesByTier = {
   backend: ["defense_engine", "backend"],
   rust: ["rust_format", "rust_lint", "rust_test"],
   integration: ["defense_engine", "backend", "rust_format", "rust_lint", "rust_test"],
-  ui: ["capabilities", "browser", "visual"],
-  full: stages.map(([name]) => name).filter((name) => name !== "browser"),
+  ui: ["capabilities", "postgres_docker", "visual"],
+  browser: ["capabilities", "postgres_docker"],
+  full: stages.map(([name]) => name),
 };
 const stageNames = stagesByTier[tier];
 const selectedStages = stageNames
