@@ -1272,7 +1272,6 @@ def initialize() -> None:
         database.execute("BEGIN IMMEDIATE")
         for statement in statements:
             database.execute(statement)
-        database.execute("INSERT OR IGNORE INTO settings (id) VALUES (1)")
         # Existing local databases are migrated in place; user review history is never rebuilt.
         columns = {
             "daily_queue": {
@@ -1410,6 +1409,12 @@ def initialize() -> None:
                     database.execute(
                         f"ALTER TABLE {table} ADD COLUMN {name} {definition}"
                     )
+        # Materialize the default in existing rows before a later VACUUM. Older
+        # SQLite builds can report a virtual NOT NULL default as NULL afterward.
+        database.execute(
+            "UPDATE settings SET coverage_path_floor=COALESCE(coverage_path_floor, 0.0005)"
+        )
+        database.execute("INSERT OR IGNORE INTO settings (id) VALUES (1)")
         database.execute(
             "CREATE INDEX IF NOT EXISTS idx_game_findings_opportunity ON game_findings(source_opportunity_id)"
         )

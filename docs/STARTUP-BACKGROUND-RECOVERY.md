@@ -17,10 +17,15 @@ The reported CI run `36579802303` failed in
 the incident baseline `872348a` and this candidate, using the same arm64
 Python 3.14.5, SQLite 3.53.2, FastAPI 0.116.1, and psycopg 3.3.6 runtime.
 An instrumented run captured `PRAGMA integrity_check = ['ok']` and
-`PRAGMA foreign_key_check = []` on both. The historical failure is not
-reproduced here; the regression remains enabled. The historical Actions page
-could not be refreshed through the GitHub CLI or web access in this environment.
-This result says nothing about the live PostgreSQL database's integrity.
+`PRAGMA foreign_key_check = []` on both. PR #24 CI run `36611686206` then
+reproduced the failure under Python 3.12.14 and reported the underlying
+integrity result: `NULL value in settings.coverage_path_floor`. The SQLite
+initialization path had inserted its singleton settings row before adding the
+`REAL NOT NULL DEFAULT 0.0005` column. The repair inserts new settings rows
+after the schema additions and materializes the default in existing rows;
+`test_settings_schema_upgrade_materializes_path_floor_before_compaction`
+covers the older schema. This result says nothing about the live PostgreSQL
+database's integrity.
 
 ## Read-only startup diagnosis
 
