@@ -114,7 +114,7 @@ def main() -> None:
         options.output.write_text(json.dumps({"routes": results}, indent=2) + "\n")
     print(f"Audited {len(results)} GET routes; "
           f"{sum(row['status'] >= 500 for row in results)} returned 5xx", flush=True)
-    if len(results) != 58 or any(row["status"] >= 500 and row["path"] != "/api/health"
+    if len(results) != 59 or any(row["status"] >= 500 and row["path"] != "/api/health"
                                  for row in results):
         raise SystemExit(1)
 

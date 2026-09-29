@@ -337,6 +337,13 @@
   },
   {
     "method": "GET",
+    "path": "/api/compare/cards",
+    "handler": "comparison_cards",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
     "path": "/api/repertoire/conflicts",
     "handler": "repertoire_conflicts",
     "treatment": "reader",

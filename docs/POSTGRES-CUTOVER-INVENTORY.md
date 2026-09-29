@@ -12,7 +12,7 @@ starting point; dynamic SQL and helpers accepting an existing connection still
 require the integration suite.
 
 The [route contract](postgres-route-contract.json) declares the PostgreSQL
-treatment for every registered API method: 58 reader GETs and 99 other routes.
+treatment for every registered API method: 59 reader GETs and 99 other routes.
 A regression compares it with FastAPI's runtime route table and checks that
 staged mutations pass the runtime write guard. `/api/health` now checks schema,
 reader access, Celery workers, and queue progress. It stays unavailable until
