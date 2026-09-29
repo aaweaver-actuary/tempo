@@ -3,6 +3,8 @@
 from datetime import datetime, timezone
 import json
 import threading
+from contextlib import contextmanager
+from types import SimpleNamespace
 
 import chess
 
@@ -11,6 +13,33 @@ from app.services import introduction_priorities as priorities
 from app.services.activity_gate import activity_gate
 from app.services.database_executor import database_writer
 from app.services.durable_tasks import claim_task, requeue_interrupted_tasks
+
+
+def test_personal_evidence_reads_864_positions_in_bounded_complete_sections():
+    keys = [f"position-{position_number}" for position_number in range(864)]
+    requested: list[str] = []
+    section_count = 0
+
+    @contextmanager
+    def read_section():
+        nonlocal section_count
+        section_count += 1
+
+        def execute(_statement, parameters):
+            selected_keys = parameters[:-4]
+            assert len(selected_keys) <= 128
+            requested.extend(selected_keys)
+            return SimpleNamespace(fetchall=lambda: [
+                {"fen_key": key, "move_uci": "e2e4", "played_at": "2026-09-29T00:00:00Z"}
+                for key in selected_keys
+            ])
+
+        yield SimpleNamespace(execute=execute)
+
+    rows = priorities._read_personal_evidence_rows(read_section, keys, "white")
+    assert section_count == 7
+    assert requested == keys
+    assert [row["fen_key"] for row in rows] == keys
 
 
 def _seed_repertoire(database_connection, repertoire_id: str = "storage-rep") -> None:

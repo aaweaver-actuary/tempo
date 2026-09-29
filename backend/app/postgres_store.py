@@ -15,6 +15,8 @@ import atexit
 import os
 import re
 import threading
+import logging
+import time
 from typing import Any
 
 import psycopg
@@ -147,6 +149,14 @@ class PostgresConnection:
 
 _pool_lock = threading.Lock()
 _pools: dict[tuple[int, str], ConnectionPool] = {}
+_logger = logging.getLogger("tempo.background.postgres")
+
+
+def _background_timeout_ms(name: str, default: int, *, minimum: int, maximum: int) -> int:
+    value = int(os.getenv(name, str(default)))
+    if not minimum <= value <= maximum:
+        raise ValueError(f"{name} must be between {minimum} and {maximum} milliseconds")
+    return value
 
 
 def close_pools() -> None:
@@ -186,8 +196,37 @@ def _pool(read_only: bool) -> ConnectionPool:
 
 @contextmanager
 def connection(*, read_only: bool = False, background: bool = False) -> Iterator[PostgresConnection]:
-    with _pool(read_only).connection() as database:
-        if background:
-            database.execute("SET LOCAL transaction_timeout = '50ms'")
-            database.execute("SET LOCAL lock_timeout = '25ms'")
-        yield PostgresConnection(database)
+    started_at = time.perf_counter()
+    acquired_at = configured_at = handled_at = None
+    try:
+        with _pool(read_only).connection() as database:
+            acquired_at = time.perf_counter()
+            if background:
+                transaction_limit = _background_timeout_ms(
+                    "TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS", 250,
+                    minimum=50, maximum=10000,
+                )
+                lock_limit = _background_timeout_ms(
+                    "TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS", 25,
+                    minimum=1, maximum=1000,
+                )
+                database.execute("SELECT set_config('transaction_timeout', %s, true)",
+                                 (f"{transaction_limit}ms",))
+                database.execute("SELECT set_config('lock_timeout', %s, true)",
+                                 (f"{lock_limit}ms",))
+            configured_at = time.perf_counter()
+            try:
+                yield PostgresConnection(database)
+            finally:
+                handled_at = time.perf_counter()
+    finally:
+        if background and acquired_at is not None:
+            finished_at = time.perf_counter()
+            _logger.info(
+                "background_postgres_connection acquisition_seconds=%.3f settings_seconds=%.3f "
+                "handler_seconds=%.3f commit_cleanup_seconds=%.3f",
+                acquired_at - started_at,
+                (configured_at or finished_at) - acquired_at,
+                (handled_at or finished_at) - (configured_at or finished_at),
+                finished_at - (handled_at or finished_at),
+            )

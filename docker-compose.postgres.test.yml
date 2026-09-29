@@ -38,6 +38,7 @@ services:
       - /run/secrets/writer_password
     environment:
       PGPASSFILE: /run/secrets/admin_pgpass
+      TEMPO_TEST_INSTANCE: disposable
     secrets:
       - source: admin_pgpass
         mode: 0400
@@ -54,6 +55,8 @@ services:
       dockerfile: backend/Dockerfile
     environment:
       TEMPO_DATABASE_READ_URL: postgresql://tempo_reader@postgres:5432/tempo
+      TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS: ${TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS:-250}
+      TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS: ${TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS:-25}
       TEMPO_REDIS_URL: redis://redis:6379/0
       TEMPO_COORDINATOR_MODE: external
       TEMPO_TEST_INSTANCE: disposable
@@ -80,6 +83,8 @@ services:
     environment:
       TEMPO_DATABASE_WRITE_URL: postgresql://tempo_writer@postgres:5432/tempo
       TEMPO_DATABASE_READ_URL: postgresql://tempo_writer@postgres:5432/tempo
+      TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS: ${TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS:-250}
+      TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS: ${TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS:-25}
       TEMPO_REDIS_URL: redis://redis:6379/0
       PGPASSFILE: /run/secrets/writer_pgpass
       TZ: America/New_York
@@ -98,6 +103,8 @@ services:
     environment:
       TEMPO_DATABASE_WRITE_URL: postgresql://tempo_writer@postgres:5432/tempo
       TEMPO_DATABASE_READ_URL: postgresql://tempo_writer@postgres:5432/tempo
+      TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS: ${TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS:-250}
+      TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS: ${TEMPO_POSTGRES_BACKGROUND_LOCK_TIMEOUT_MS:-25}
       TEMPO_REDIS_URL: redis://redis:6379/0
       PGPASSFILE: /run/secrets/writer_pgpass
       TZ: America/New_York

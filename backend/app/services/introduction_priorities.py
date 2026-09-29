@@ -28,6 +28,7 @@ PERSONAL_PRIOR_GAMES = 20.0
 RECENCY_HALF_LIFE_DAYS = 90.0
 FRONTIER_WEIGHTS = (1.0, 0.25, 0.0625)
 SUPPORTED_PERSONAL_SPEEDS = ("blitz", "rapid", "classical")
+PERSONAL_EVIDENCE_KEYS_PER_READ = 128
 
 
 @dataclass(frozen=True)
@@ -596,21 +597,9 @@ def _load_priority_calculation_input(
     reply_moves = _repertoire_reply_moves(list(lines))
     personal_rows: list[dict] = []
     if lines and reply_moves:
-        fen_keys = sorted(reply_moves)
-        placeholders = ",".join("?" for _ in fen_keys)
-        with read_section() as database:
-            personal_rows = [
-                dict(row)
-                for row in database.execute(
-                    f"""SELECT p.fen_key,p.move_uci,g.played_at
-                        FROM game_position_occurrences p
-                        JOIN imported_games g ON g.id=p.game_id
-                        WHERE p.fen_key IN ({placeholders}) AND p.move_uci IS NOT NULL
-                          AND g.color=? AND g.adaptive_excluded=0
-                          AND g.speed IN ({','.join('?' for _ in SUPPORTED_PERSONAL_SPEEDS)})""",
-                    (*fen_keys, lines[0].trained_color, *SUPPORTED_PERSONAL_SPEEDS),
-                )
-            ]
+        personal_rows = _read_personal_evidence_rows(
+            read_section, sorted(reply_moves), lines[0].trained_color,
+        )
     return PriorityCalculationInput(
         repertoire_id,
         lines,
@@ -621,6 +610,24 @@ def _load_priority_calculation_input(
         float(settings["coverage_path_floor"]),
         real_game_misses,
     )
+
+
+def _read_personal_evidence_rows(read_section, fen_keys: list[str], trained_color: str) -> list[dict]:
+    rows: list[dict] = []
+    for start in range(0, len(fen_keys), PERSONAL_EVIDENCE_KEYS_PER_READ):
+        selected_keys = fen_keys[start:start + PERSONAL_EVIDENCE_KEYS_PER_READ]
+        placeholders = ",".join("?" for _ in selected_keys)
+        with read_section() as database:
+            rows.extend(dict(row) for row in database.execute(
+                f"""SELECT p.fen_key,p.move_uci,g.played_at
+                    FROM game_position_occurrences p
+                    JOIN imported_games g ON g.id=p.game_id
+                    WHERE p.fen_key IN ({placeholders}) AND p.move_uci IS NOT NULL
+                      AND g.color=? AND g.adaptive_excluded=0
+                      AND g.speed IN ({','.join('?' for _ in SUPPORTED_PERSONAL_SPEEDS)})""",
+                (*selected_keys, trained_color, *SUPPORTED_PERSONAL_SPEEDS),
+            ).fetchall())
+    return rows
 
 
 def _replace_priority_records(
