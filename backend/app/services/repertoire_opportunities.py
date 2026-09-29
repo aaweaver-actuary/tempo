@@ -285,6 +285,27 @@ def _load_recurring_decisions(database: sqlite3.Connection, repertoire_id: str,
     placeholder = "%s" if postgres else "?"
     even_ply_gap = ("MOD(event.ply-earlier.ply,2)=0" if postgres
                     else "(event.ply-earlier.ply)%2=0")
+    analysis_joins = (
+        """LEFT JOIN LATERAL (
+             SELECT loss_cp,eval_after_cp,mate_before,mate_after
+             FROM game_move_analysis
+             WHERE game_id=event.game_id AND ply=event.ply LIMIT 1
+           ) analysis ON TRUE
+           LEFT JOIN LATERAL (
+             SELECT eval_after_cp,mate_after FROM game_move_analysis
+             WHERE game_id=event.game_id AND ply=event.ply-2 LIMIT 1
+           ) previous ON TRUE
+           LEFT JOIN LATERAL (
+             SELECT eval_after_cp,mate_after FROM game_move_analysis
+             WHERE game_id=event.game_id AND ply=event.ply+6 LIMIT 1
+           ) following ON TRUE""" if postgres else
+        """LEFT JOIN game_move_analysis analysis
+             ON analysis.game_id=event.game_id AND analysis.ply=event.ply
+           LEFT JOIN game_move_analysis previous
+             ON previous.game_id=event.game_id AND previous.ply=event.ply-2
+           LEFT JOIN game_move_analysis following
+             ON following.game_id=event.game_id AND following.ply=event.ply+6"""
+    )
     return [dict(row) for row in execute(
         f"""SELECT event.game_id,event.fen_key,event.expected_uci,event.ply,
                   game.color,analysis.loss_cp,analysis.eval_after_cp,
@@ -301,12 +322,7 @@ def _load_recurring_decisions(database: sqlite3.Connection, repertoire_id: str,
                      previous_weak_count
            FROM repertoire_decision_events event
            JOIN imported_games game ON game.id=event.game_id
-           LEFT JOIN game_move_analysis analysis
-             ON analysis.game_id=event.game_id AND analysis.ply=event.ply
-           LEFT JOIN game_move_analysis previous
-             ON previous.game_id=event.game_id AND previous.ply=event.ply-2
-           LEFT JOIN game_move_analysis following
-             ON following.game_id=event.game_id AND following.ply=event.ply+6
+           {analysis_joins}
            WHERE event.repertoire_id={placeholder} AND event.card_id={placeholder}
              AND event.played_at>={placeholder}
              AND game.adaptive_excluded=0

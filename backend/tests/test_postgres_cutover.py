@@ -5401,6 +5401,23 @@ def test_postgres_opportunity_recurring_query_uses_native_modulo(monkeypatch):
     assert "event.repertoire_id=%s" in statements[0]
 
 
+def test_postgres_recurring_evidence_uses_per_event_analysis_lookups(monkeypatch):
+    from app.services import repertoire_opportunities
+
+    statements: list[str] = []
+
+    class RecordingDatabase:
+        def execute_native(self, statement, _parameters):
+            statements.append(statement)
+            return []
+
+    monkeypatch.setattr(repertoire_opportunities.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(repertoire_opportunities, "_window_days", lambda _database: 90)
+    assert repertoire_opportunities._load_recurring_decisions(RecordingDatabase(), "rep", "card") == []
+    assert statements[0].count("LEFT JOIN LATERAL") == 3
+    assert statements[0].count("LIMIT 1") == 3
+
+
 def test_postgres_cutover_threat_report_audit_yields_and_replays_once(monkeypatch):
     from app import tasks
     from app.services import threat_pipeline

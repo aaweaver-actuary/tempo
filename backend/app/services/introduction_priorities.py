@@ -29,6 +29,7 @@ RECENCY_HALF_LIFE_DAYS = 90.0
 FRONTIER_WEIGHTS = (1.0, 0.25, 0.0625)
 SUPPORTED_PERSONAL_SPEEDS = ("blitz", "rapid", "classical")
 PERSONAL_EVIDENCE_KEYS_PER_READ = 128
+PERSONAL_EVIDENCE_ROWS_PER_READ = 256
 
 
 @dataclass(frozen=True)
@@ -617,16 +618,27 @@ def _read_personal_evidence_rows(read_section, fen_keys: list[str], trained_colo
     for start in range(0, len(fen_keys), PERSONAL_EVIDENCE_KEYS_PER_READ):
         selected_keys = fen_keys[start:start + PERSONAL_EVIDENCE_KEYS_PER_READ]
         placeholders = ",".join("?" for _ in selected_keys)
-        with read_section() as database:
-            rows.extend(dict(row) for row in database.execute(
-                f"""SELECT p.fen_key,p.move_uci,g.played_at
+        last_position: tuple[str, str, int] | None = None
+        while True:
+            cursor_clause = " AND (p.fen_key,p.game_id,p.ply)>(?,?,?)" if last_position else ""
+            with read_section() as database:
+                page = [dict(row) for row in database.execute(
+                    f"""SELECT p.fen_key,p.game_id,p.ply,p.move_uci,g.played_at
                     FROM game_position_occurrences p
                     JOIN imported_games g ON g.id=p.game_id
                     WHERE p.fen_key IN ({placeholders}) AND p.move_uci IS NOT NULL
                       AND g.color=? AND g.adaptive_excluded=0
-                      AND g.speed IN ({','.join('?' for _ in SUPPORTED_PERSONAL_SPEEDS)})""",
-                (*selected_keys, trained_color, *SUPPORTED_PERSONAL_SPEEDS),
-            ).fetchall())
+                      AND g.speed IN ({','.join('?' for _ in SUPPORTED_PERSONAL_SPEEDS)})
+                      {cursor_clause}
+                    ORDER BY p.fen_key,p.game_id,p.ply LIMIT ?""",
+                    (*selected_keys, trained_color, *SUPPORTED_PERSONAL_SPEEDS,
+                     *(last_position or ()), PERSONAL_EVIDENCE_ROWS_PER_READ),
+                ).fetchall()]
+            rows.extend(page)
+            if len(page) < PERSONAL_EVIDENCE_ROWS_PER_READ:
+                break
+            final_row = page[-1]
+            last_position = (final_row["fen_key"], final_row["game_id"], final_row["ply"])
     return rows
 
 
