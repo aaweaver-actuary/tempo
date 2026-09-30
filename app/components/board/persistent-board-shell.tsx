@@ -13,6 +13,7 @@ function noopMove() {
 
 export function PersistentBoardShell() {
   const board = useBoardShellStore(useShallow((state) => state.board));
+  const session = useBoardShellStore((state) => state.session);
   return (
     <div className="persistent-board-shell" data-board-owner={board.owner} data-unavailable={Boolean(board.unavailable)}>
       {board.unavailable && <div className="board-unavailable" role="status">{board.unavailable}</div>}
@@ -35,6 +36,7 @@ export function PersistentBoardShell() {
         orientation={board.orientation}
         onFlip={board.onFlip}
         positionRevision={board.positionRevision}
+        positionKey={`${session}:${board.positionKey ?? ""}`}
         owner={board.owner}
       />
     </div>

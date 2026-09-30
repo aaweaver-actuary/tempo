@@ -66,8 +66,6 @@ export default function EndgamesView({
   const [target, setTarget] = useState<"win" | "draw">("win");
   const [status, setStatus] = useState("Finding a legal tablebase position…");
   const [fen, setFen] = useState(STANDARD_FEN);
-  const { setShellBoardForOwner, releaseShellBoardForOwner } =
-    useBoardPublisher();
   const [busy, setBusy] = useState(true);
   const [userMoves, setUserMoves] = useState(0);
   const [complete, setComplete] = useState(false);
@@ -352,43 +350,24 @@ export default function EndgamesView({
     ],
   );
 
-  useEffect(() => {
-    if (!useSharedBoard) return;
-    setShellBoardForOwner("endgames", {
-      unavailable: fen === STANDARD_FEN ? status : undefined,
-      fen,
-      interactionMode:
-        busy || classification !== target || complete ? "readonly" : "legal",
-      showHint: false,
-      theme,
-      pieceSet,
-      orientation: scheduledCard?.orientation === "black" ? "black" : "white",
-      shapes: [],
-      drawnShapes: [],
-      positionRevision: userMoves,
-      onMove: (from, to) => void play(from, to),
-      onSquareSelect: undefined,
-      onFreeMove: undefined,
-      onDrawnShapesChange: undefined,
-      onFlip: undefined,
-    });
-    return () => releaseShellBoardForOwner("endgames");
-  }, [
-    status,
-    busy,
-    classification,
-    complete,
+  const endgamePositionKey = `${scheduledCard?.queueEntryId ?? scheduledCard?.id ?? selected}:${scheduledCard?.queueCycle ?? 0}:${scheduledCard?.revision ?? 1}`;
+  useBoardPublisher("endgames", useSharedBoard ? {
+    positionKey: endgamePositionKey,
+    unavailable: fen === STANDARD_FEN ? status : undefined,
     fen,
-    pieceSet,
-    play,
-    releaseShellBoardForOwner,
-    scheduledCard?.orientation,
-    setShellBoardForOwner,
-    target,
+    interactionMode:
+      busy || classification !== target || complete ? "readonly" : "legal",
+    showHint: false,
     theme,
-    useSharedBoard,
-    userMoves,
-  ]);
+    pieceSet,
+    orientation: scheduledCard?.orientation === "black" ? "black" : "white",
+    positionRevision: userMoves,
+    onMove: (from, to) => void play(from, to),
+    onSquareSelect: undefined,
+    onFreeMove: undefined,
+    onDrawnShapesChange: undefined,
+    onFlip: undefined,
+  } : null);
 
   return (
     <section
@@ -435,6 +414,7 @@ export default function EndgamesView({
         <div className="board-column centered-board">
           {!useSharedBoard && (
             <Chessboard
+              positionKey={endgamePositionKey}
               fen={fen}
               locked={busy || classification !== target || complete}
               showHint={false}

@@ -1,3 +1,4 @@
+import { boardDiagnostics } from "./board-diagnostics";
 import { useBoardShellStore } from "../state/board-shell-store";
 import { useTrainingStore } from "../state/training-store";
 import { dataDiagnostics } from "./validated-data";
@@ -270,6 +271,7 @@ export function buildDebugBundle(recordId?: string): string {
         interactionMode: board.interactionMode,
         unavailable: board.unavailable,
         positionRevision: board.positionRevision,
+        counters: boardDiagnostics(),
       },
       training: {
         activeCardIndex: training.activeCardIndex,

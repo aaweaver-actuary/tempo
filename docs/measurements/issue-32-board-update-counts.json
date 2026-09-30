@@ -1,0 +1,38 @@
+{
+  "sourceBaseline": "9dec8735fcc377e70ae3e2633870a81dfd3ebff2",
+  "recordedAt": "2026-09-30T21:22:06.259Z",
+  "environment": "Vitest/jsdom with mocked Chessground API; counts, not drag latency",
+  "comparison": {
+    "before": {
+      "equivalentMoves": {
+        "updates": 10,
+        "cancellations": 10,
+        "fenSets": 10
+      },
+      "parentStatus": {
+        "updates": 20,
+        "storeTransitions": 40,
+        "readonlyTransitions": 20,
+        "cancellations": 0,
+        "fenSets": 0,
+        "sameHandler": false
+      }
+    },
+    "after": {
+      "equivalentMoves": {
+        "updates": 10,
+        "cancellations": 0,
+        "fenSets": 0
+      },
+      "parentStatus": {
+        "updates": 20,
+        "storeTransitions": 0,
+        "readonlyTransitions": 0,
+        "cancellations": 0,
+        "fenSets": 0,
+        "sameHandler": true
+      }
+    }
+  },
+  "sourceCandidate": "isolated issue-32 implementation before commit; operation workloads protected by named regressions"
+}
