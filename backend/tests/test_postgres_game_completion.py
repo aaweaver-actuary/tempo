@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from types import SimpleNamespace
 from pathlib import Path
 import sys
 
@@ -43,15 +42,18 @@ def test_postgres_priority_request_admits_matching_celery_generation(monkeypatch
 
     monkeypatch.setattr(postgres_store, "configured", lambda: True)
     monkeypatch.setattr(durable_tasks, "enqueue_compact_postgres_task_in_transaction",
-                        lambda _database, kind, key, payload, *, priority, delay_seconds:
+                        lambda _database, kind, key, payload, *, priority, delay_seconds=0:
                         enqueued.append((kind, key, payload, priority, delay_seconds)))
 
     assert introduction_priorities.enqueue_priority_refresh_in_transaction(
         Database(), "repertoire-one", quiet_seconds=5,
     ) == 4
-    assert enqueued == [("repertoire_priority", "repertoire-one",
-                         {"repertoire_id": "repertoire-one", "generation": 4,
-                          "cursor": 0}, 131, 5)]
+    assert enqueued == [
+        ("repertoire_priority", "repertoire-one",
+         {"repertoire_id": "repertoire-one", "generation": 4}, 131, 5),
+        ("priority_retention", "repertoire-one",
+         {"repertoire_id": "repertoire-one"}, 200, 0),
+    ]
 
 
 def test_postgres_game_events_stage_then_publish_without_stale_replay(monkeypatch):
@@ -215,11 +217,12 @@ def test_postgres_game_priority_handoff_finishes_only_after_last_repertoire(monk
 
 def test_postgres_priority_generation_stages_and_publishes_after_replay(monkeypatch):
     assert "repertoire_priority" in tasks._SUPPORTED_BACKGROUND_KINDS
-    record = SimpleNamespace(
-        card_id="card-one", priority_score=1.0, evidence_json="{}",
-        completed_line_ids_json="[]", frontier_decisions_json="[]",
-        completion_mass=0.0, frontier_reach=0.0,
-    )
+    record = {
+        "ordinal": 0, "card_id": "card-one", "priority_score": 1.0,
+        "evidence_json": "{}", "completed_line_ids_json": "[]",
+        "frontier_decisions_json": "[]", "completion_mass": 0.0,
+        "frontier_reach": 0.0,
+    }
     staged = []
     advanced = []
     queued = []
@@ -227,12 +230,20 @@ def test_postgres_priority_generation_stages_and_publishes_after_replay(monkeypa
 
     class Database:
         def execute(self, statement, parameters=()):
-            if "FROM repertoire_priority_jobs" in statement:
-                return Cursor({"generation": 4, "status": "queued"})
+            if "SELECT * FROM repertoire_priority_prepared_rows" in statement:
+                class Rows:
+                    def __iter__(self):
+                        return iter([record] if parameters[2] == 0 else [])
+                return Rows()
+            if "COUNT(*) FROM repertoire_priority_prepared_rows" in statement:
+                return Cursor((1,))
             if "COUNT(*) FROM repertoire_card_priority_generations" in statement:
                 return Cursor((len(staged),))
+            return Cursor()
+
+        def executemany(self, statement, parameters):
             if "INSERT INTO repertoire_card_priority_generations" in statement:
-                staged.append(parameters)
+                staged.extend(parameters)
             return Cursor()
 
     @contextmanager
@@ -240,11 +251,15 @@ def test_postgres_priority_generation_stages_and_publishes_after_replay(monkeypa
         assert background
         yield Database()
 
-    monkeypatch.setattr(postgres_priority, "_load_priority_calculation_input",
-                        lambda _id, **_kwargs: object())
-    monkeypatch.setattr(postgres_priority, "calculate_priority_records", lambda _input: [record])
     monkeypatch.setattr(postgres_priority, "connection", write_database)
-    monkeypatch.setattr(postgres_priority, "lock_current_slice", lambda *_args: lease_current)
+    monkeypatch.setattr(postgres_priority, "_has_current_priority_lease",
+                        lambda *_args: lease_current)
+    monkeypatch.setattr(postgres_priority, "_load_preparation_manifest", lambda *_args: {
+        "status": "ready", "scoring_version": postgres_priority.SCORING_VERSION,
+        "source_version": "0:0", "expected_count": 1,
+    })
+    monkeypatch.setattr(postgres_priority, "_priority_source_version",
+                        lambda *_args, **_kwargs: "0:0")
     monkeypatch.setattr(postgres_priority, "advance_task_slice_in_transaction",
                         lambda _database, _task, *, next_phase, next_payload:
                         advanced.append(next_payload) or True)
@@ -252,7 +267,7 @@ def test_postgres_priority_generation_stages_and_publishes_after_replay(monkeypa
                         lambda _database, kind, key, payload, *, priority:
                         queued.append((kind, key, payload, priority)))
     monkeypatch.setattr(postgres_priority, "complete_task_slice_in_transaction",
-                        lambda _database, _task: True)
+                        lambda _database, _task: lease_current)
 
     task = {"id": "priority", "generation": 1, "lease_token": "live",
             "payload": {"repertoire_id": "repertoire-one", "generation": 4, "cursor": 0}}

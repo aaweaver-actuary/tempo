@@ -4592,8 +4592,8 @@ def test_postgres_cutover_priority_retention_locks_bounded_primary_keys(monkeypa
                 return Cursor(row={"generation": 1, "lease_token": "lease", "state": "leased"})
             if "FROM repertoire_priority_publications" in statement:
                 return Cursor(row={"generation": 3})
-            if "FROM repertoire_priority_jobs" in statement:
-                return Cursor(row={"generation": 4})
+                if "FROM repertoire_priority_jobs" in statement:
+                    return Cursor(row={"generation": 4, "status": "running"})
             if "SELECT generation,card_id" in statement:
                 return Cursor(rows=[{"generation": 2, "card_id": "stale-card"}])
             return Cursor()
@@ -5940,7 +5940,7 @@ def test_postgres_maia_submit_publishes_candidates_in_bounded_sets(remaining_nod
     assert any(statement.startswith("INSERT INTO repertoire_priority_jobs")
                and parameters[0] == "rep" for statement, parameters in statements)
     assert sum(statement.startswith("WITH queued AS") for statement, _ in statements) == (
-        1 + int(not remaining_nodes)
+        2 + int(not remaining_nodes)
     )
 
 
