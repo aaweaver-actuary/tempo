@@ -60,11 +60,13 @@ export type TempoDragSession = {
 };
 
 const dragSessions: TempoDragSession[] = [];
+const activeDragOperations = new Map<number, { start: PhaseSample; sessionIds: Set<number> }>();
+let dragOperationsTruncated = false;
 const dragCleanups = new Set<(reason: TempoDragEndReason) => void>();
 let dragDisabled = false;
 let nextDragId = 1;
 let nextPhaseId = 1;
-const dragLimits = { sessions: 10, events: 512, frames: 512, longTasks: 64, boardEvents: 128, phases: 128, durationMs: 30_000 } as const;
+const dragLimits = { sessions: 10, events: 512, frames: 512, longTasks: 64, boardEvents: 128, phases: 128, activeOperations: 128, durationMs: 30_000 } as const;
 
 function dragCaptureEnabled() {
   return !dragDisabled && typeof window !== "undefined" &&
@@ -73,7 +75,8 @@ function dragCaptureEnabled() {
 
 export function tempoDragDiagnostics() {
   return {
-    schemaVersion: 1, enabled: dragCaptureEnabled(), limits: { ...dragLimits },
+    schemaVersion: 2, enabled: dragCaptureEnabled(), limits: { ...dragLimits },
+    phaseTracking: { activeOperations: activeDragOperations.size, truncated: dragOperationsTruncated },
     units: { timestamps: "performance time origin milliseconds", displacement: "CSS pixels" },
     measurement: "event receipt and DOM transform at requestAnimationFrame; not physical presentation or INP",
     sessions: structuredClone(dragSessions),
@@ -82,26 +85,56 @@ export function tempoDragDiagnostics() {
 
 export function disableTempoDragDiagnostics() {
   dragDisabled = true;
+  activeDragOperations.clear();
+  dragOperationsTruncated = false;
   for (const cleanup of [...dragCleanups]) cleanup("disabled");
 }
 
 export function resetTempoDragDiagnostics() {
   for (const cleanup of [...dragCleanups]) cleanup("reset");
   dragSessions.length = 0;
+  activeDragOperations.clear();
+  dragOperationsTruncated = false;
   // Reset may clear a disabled capture, but cannot enable it without the URL opt-in.
   dragDisabled = false;
 }
 
+function appendDragPhase(session: TempoDragSession, sample: PhaseSample) {
+  if (session.phases.length < dragLimits.phases) session.phases.push({ ...sample });
+  else session.truncated.phases = true;
+}
+
 export function recordTempoDragPhase(operation: TempoDragPhase, edge: PhaseSample["edge"], operationId?: number) {
   if (!dragCaptureEnabled()) return 0;
-  const id = operationId ?? nextPhaseId++;
-  const session = dragSessions.at(-1);
-  if (session) {
-    if (session.phases.length < dragLimits.phases)
-      session.phases.push({ operationId: id, operation, edge, atMs: performance.now() });
-    else session.truncated.phases = true;
+  if (edge === "start") {
+    // Existing IDs may identify an already running operation, never resurrect
+    // an invalidated operation from a previous reset/disable generation.
+    if (operationId !== undefined)
+      return activeDragOperations.get(operationId)?.start.operation === operation ? operationId : 0;
+    if (activeDragOperations.size >= dragLimits.activeOperations) {
+      dragOperationsTruncated = true;
+      const latestSession = dragSessions.at(-1);
+      if (latestSession) latestSession.truncated.phases = true;
+      return 0;
+    }
+    const id = nextPhaseId++;
+    const start: PhaseSample = { operationId: id, operation, edge, atMs: performance.now() };
+    const sessionIds = new Set<number>();
+    const latestSession = dragSessions.at(-1);
+    if (latestSession) {
+      sessionIds.add(latestSession.id);
+      appendDragPhase(latestSession, start);
+    }
+    activeDragOperations.set(id, { start, sessionIds });
+    return id;
   }
-  return id;
+  const activeOperation = operationId === undefined ? undefined : activeDragOperations.get(operationId);
+  if (!activeOperation || activeOperation.start.operation !== operation) return 0;
+  const terminal: PhaseSample = { operationId: activeOperation.start.operationId, operation, edge, atMs: performance.now() };
+  for (const session of dragSessions)
+    if (activeOperation.sessionIds.has(session.id)) appendDragPhase(session, terminal);
+  activeDragOperations.delete(terminal.operationId);
+  return terminal.operationId;
 }
 
 export function measureTempoDragPhase(operation: TempoDragPhase) {
@@ -185,7 +218,13 @@ export function installTempoDragCapture(surface: HTMLElement, api: import("@lich
       };
       pendingEvents = [];
       dragSessions.push(session);
-      if (dragSessions.length > dragLimits.sessions) dragSessions.shift();
+      const evictedSession = dragSessions.length > dragLimits.sessions ? dragSessions.shift() : undefined;
+      for (const activeOperation of activeDragOperations.values()) {
+        if (evictedSession) activeOperation.sessionIds.delete(evictedSession.id);
+        activeOperation.sessionIds.add(session.id);
+        appendDragPhase(session, activeOperation.start);
+      }
+      if (dragOperationsTruncated) session.truncated.phases = true;
       if (session.longTasksSupported) {
         longTaskObserver = new PerformanceObserver(list => collectLongTasks(list.getEntries()));
         longTaskObserver.observe({ type: "longtask" });
