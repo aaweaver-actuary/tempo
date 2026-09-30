@@ -140,7 +140,6 @@ export default function StudiesView({ boardTheme, pieceSet }: { boardTheme: Boar
   useEffect(() => {
     if (error) publishNotification({ severity: "error", source: "studies", key: "studies-error", message: error });
   }, [error]);
-  const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
 
   const loadStudies = useCallback(async () => {
     try { setStudies((await api<{ studies: Study[] }>("/api/studies")).studies); setError(""); }
@@ -181,18 +180,15 @@ export default function StudiesView({ boardTheme, pieceSet }: { boardTheme: Boar
       {renderPositionChildren(sourceId, position.id)}
     </li>)}</ul>;
   };
-  useEffect(() => {
-    if (!selectedPosition) return;
-    setShellBoardForOwner("studies", {
-      fen: selectedPosition.fen, theme: boardTheme, pieceSet, orientation: "white",
-      interactionMode: exerciseType === "square_set" || exerciseType === "knight_path" ? "select" : "readonly",
-      showHint: false, shapes: [], drawnShapes: [], onSquareSelect: (square: Square) => {
-        if (exerciseType === "square_set") setRequired((current) => [...new Set([...squares(current), square])].join(" "));
-        if (exerciseType === "knight_path") setTargetSquares((current) => [...new Set([...squares(current), square])].join(" "));
-      },
-    });
-    return () => releaseShellBoardForOwner("studies");
-  }, [selectedPosition, boardTheme, pieceSet, exerciseType, setShellBoardForOwner, releaseShellBoardForOwner]);
+  useBoardPublisher("studies", selectedPosition ? {
+    positionKey: selectedPosition.id,
+    fen: selectedPosition.fen, theme: boardTheme, pieceSet, orientation: "white",
+    interactionMode: exerciseType === "square_set" || exerciseType === "knight_path" ? "select" : "readonly",
+    showHint: false, onSquareSelect: (square: Square) => {
+      if (exerciseType === "square_set") setRequired((current) => [...new Set([...squares(current), square])].join(" "));
+      if (exerciseType === "knight_path") setTargetSquares((current) => [...new Set([...squares(current), square])].join(" "));
+    },
+  } : null);
 
   const createStudy = async () => {
     try { const result = await api<{ id: string }>("/api/studies", "POST", { title: studyTitle, description: studyDescription });

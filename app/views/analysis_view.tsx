@@ -304,8 +304,6 @@ export default function BuilderView({
   const [transpositionState, setTranspositionState] = useState<
     "idle" | "loading" | "ready" | "error"
   >("idle");
-  const { setShellBoardForOwner, releaseShellBoardForOwner } =
-    useBoardPublisher();
   const transpositionController = useRef<AbortController | null>(null);
   const [dismissedTranspositions, setDismissedTranspositions] = useState<
     string[]
@@ -1182,42 +1180,24 @@ export default function BuilderView({
     [annotation],
   );
 
-  useEffect(() => {
-    if (!useSharedBoard) return;
-    setShellBoardForOwner("builder", {
-      fen,
-      lastMove,
-      showHint: false,
-      theme,
-      pieceSet,
-      shapes,
-      drawnShapes,
-      interactionMode: "legal",
-      orientation,
-      positionRevision: cursor,
-      onMove: playMove,
-      onDrawnShapesChange: updateAnnotationShapes,
-      onFlip: flipBuilder,
-      onSquareSelect: undefined,
-      onFreeMove: undefined,
-    });
-    return () => releaseShellBoardForOwner("builder");
-  }, [
-    cursor,
-    drawnShapes,
+  useBoardPublisher("builder", useSharedBoard ? {
+    positionKey: selectedRepertoireId,
     fen,
-    flipBuilder,
     lastMove,
-    orientation,
-    pieceSet,
-    playMove,
-    releaseShellBoardForOwner,
-    setShellBoardForOwner,
-    shapes,
+    showHint: false,
     theme,
-    updateAnnotationShapes,
-    useSharedBoard,
-  ]);
+    pieceSet,
+    shapes,
+    drawnShapes,
+    interactionMode: "legal",
+    orientation,
+    positionRevision: cursor,
+    onMove: playMove,
+    onDrawnShapesChange: updateAnnotationShapes,
+    onFlip: flipBuilder,
+    onSquareSelect: undefined,
+    onFreeMove: undefined,
+  } : null);
 
   function reset() {
     setHistory([]);
@@ -1370,6 +1350,7 @@ export default function BuilderView({
           )}
           {!useSharedBoard && (
             <Chessboard
+              positionKey={selectedRepertoireId}
               fen={fen}
               lastMove={lastMove}
               locked={false}

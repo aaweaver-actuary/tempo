@@ -1,3 +1,4 @@
+import { useCommittedCallback } from "../hooks/use-committed-callback";
 import { Button } from "../components/buttons/BaseButton";
 import { teachingResponseSchema } from "../domain/schemas";
 import { acceptPrefixSplitCommand, rejectPrefixSplitCommand } from "../lib/prefix-split-command";
@@ -720,7 +721,7 @@ export default function Home() {
     setSafeBreakCounter((count) => count + 1);
   }
 
-  function tryMove(from: Square, to: Square) {
+  const tryMove = useCommittedCallback((from: Square, to: Square) => {
     if (serviceError && !offlineQueue) return;
     const currentTurn =
       new Chess(currentFenString).turn() === "b" ? "black" : "white";
@@ -847,7 +848,7 @@ export default function Home() {
       playChessMoveSound(reply, replyPosition.isCheck());
       if (nextStep >= card.moves.length) completeAttempt(replyPosition.fen());
     }, 420);
-  }
+  });
 
   function changeBoardTheme(value: BoardTheme) {
     setBoardTheme(value);

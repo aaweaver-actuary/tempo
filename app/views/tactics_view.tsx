@@ -228,8 +228,6 @@ export default function TacticsView({
   }));
   const finishingRef = useRef("");
   const [saveError, setSaveError] = useState("");
-  const { setShellBoardForOwner, releaseShellBoardForOwner } =
-    useBoardPublisher();
   const attemptTokenRef = useRef(0);
   const advanceTimers = useRef(new Set<number>());
   useEffect(() => {
@@ -466,50 +464,27 @@ export default function TacticsView({
     [finish, guideAttempt],
   );
 
-  useLayoutEffect(() => {
-    if (!useSharedBoard) return;
-    setShellBoardForOwner("tactics", {
-      unavailable:
-        !progressReady || !deckReady || !selectedPuzzle
-          ? saveError || "Preparing puzzles…"
-          : undefined,
-      fen,
-      expectedSan: puzzle.moves[step],
-      interactionMode:
-        Boolean(outcome) || step >= puzzle.moves.length ? "readonly" : "legal",
-      showHint: hint,
-      theme,
-      pieceSet,
-      orientation: puzzleSide,
-      shapes: [],
-      drawnShapes: [],
-      positionRevision: boardAttempt,
-      onMove: movePiece,
-      onSquareSelect: undefined,
-      onFreeMove: undefined,
-      onDrawnShapesChange: undefined,
-      onFlip: undefined,
-    });
-    return () => releaseShellBoardForOwner("tactics");
-  }, [
-    progressReady,
-    deckReady,
-    selectedPuzzle,
-    saveError,
-    boardAttempt,
+  useBoardPublisher("tactics", useSharedBoard ? {
+    positionKey: entryKey,
+    unavailable:
+      !progressReady || !deckReady || !selectedPuzzle
+        ? saveError || "Preparing puzzles…"
+        : undefined,
     fen,
-    hint,
-    movePiece,
-    outcome,
-    pieceSet,
-    puzzle.moves,
-    puzzleSide,
-    releaseShellBoardForOwner,
-    setShellBoardForOwner,
-    step,
+    expectedSan: puzzle.moves[step],
+    interactionMode:
+      Boolean(outcome) || step >= puzzle.moves.length ? "readonly" : "legal",
+    showHint: hint,
     theme,
-    useSharedBoard,
-  ]);
+    pieceSet,
+    orientation: puzzleSide,
+    positionRevision: boardAttempt,
+    onMove: movePiece,
+    onSquareSelect: undefined,
+    onFreeMove: undefined,
+    onDrawnShapesChange: undefined,
+    onFlip: undefined,
+  } : null);
 
   const current = [
     motif,
