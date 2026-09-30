@@ -171,14 +171,20 @@ it("describes valid zero-sample analysis without requesting an evidence refresh"
   };
   backgroundFetch.mockImplementation(async () => Response.json({ discoveries: [discovery], total: 1,
     next_offset: null, unread_count: 0 }));
-  const fetcher = vi.fn(async () => Response.json({ acknowledged: true }));
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).endsWith("/opportunities/no-follow-up/training-eligibility"))
+      return Response.json({ eligible: true, reason: null });
+    throw new Error(`Unexpected request: ${String(input)}`);
+  });
   vi.stubGlobal("fetch", fetcher);
   render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
   fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
   fireEvent.click(await screen.findByText("Why this position was flagged"));
   expect(screen.getByText(/Immediate loss: no complete samples/)).toBeTruthy();
   expect(screen.getByText(/Observed change through your third later turn: no complete games/)).toBeTruthy();
-  expect(fetcher).not.toHaveBeenCalled();
+  expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
+    "http://127.0.0.1:8000/api/repertoires/rep/opportunities/no-follow-up/training-eligibility",
+  ]);
 });
 
 it("ready discovery queue paginates before navigation and keeps feed order", async () => {
