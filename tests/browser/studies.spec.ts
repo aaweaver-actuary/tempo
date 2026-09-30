@@ -70,10 +70,13 @@ test("FEN-only study square exercise is authored enrolled and reviewed through t
   await nav(page, "Train");
   await expect(page.getByText("Select the white knight square")).toBeVisible();
   await expect(page.getByText("Original synthetic study")).toHaveCount(0);
-  const beforeFen = await page.locator(".board-frame").first().getAttribute("data-fen");
+  const exerciseBoard = page.locator(".board-frame").first();
+  // The prompt can render before the shared board's publication effect.
+  await expect(exerciseBoard).toHaveAttribute("data-fen", fen);
+  const beforeFen = await exerciseBoard.getAttribute("data-fen");
   await page.getByLabel("Coordinates or UCI move").fill("g1");
   await page.getByRole("button", { name: "Add", exact: true }).click();
-  expect(await page.locator(".board-frame").first().getAttribute("data-fen")).toBe(beforeFen);
+  expect(await exerciseBoard.getAttribute("data-fen")).toBe(beforeFen);
   await page.getByRole("button", { name: "Submit" }).click();
   await expect(page.getByRole("status").filter({ hasText: "Square selection assessed" })).toBeVisible();
   const queue = await (await request.get(`${api}/queue/today`)).json();
