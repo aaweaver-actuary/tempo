@@ -57,12 +57,8 @@ test("held_drag_status_and_preview_scenario_observes_continuity_before_drop", as
     expect(previewReleased && statusReleased).toBe(true);
     expect(result.probe.sawDragging).toBe(true);
     expect(result.probe.samples.length).toBeGreaterThan(10);
-    // #31 measures current behavior; a cancellation is evidence for #32, not
-    // permission to change board ownership here. Both observers must agree.
-    if (result.probe.interrupted) {
-      expect(result.snapshot?.sessions.at(-1)?.endReason).toBe("board-interruption");
-      expect(result.snapshot?.sessions.at(-1)?.boardEvents.some(event => event.kind === "cancel-move")).toBe(true);
-    } else expect(result.snapshot?.sessions.at(-1)?.endReason).toBeNull();
+    expect(result.probe.interrupted).toBe(false);
+    expect(result.snapshot?.sessions.at(-1)?.endReason).toBeNull();
   } finally { releasePreview?.(); releaseStatus?.(); }
 });
 

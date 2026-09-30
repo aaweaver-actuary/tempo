@@ -1,5 +1,7 @@
+import { cpus, totalmem } from "node:os";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
-import { isAbsolute, relative, resolve, sep } from "node:path";
+import { isAbsolute, join, relative, resolve, sep } from "node:path";
 import { pinnedPlaywrightImage } from "./pinned-playwright-image.mjs";
 const update = process.argv.includes("--update");
 const performanceOnly = process.argv.includes("--performance-only");
@@ -18,6 +20,16 @@ const commitResult = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" 
 const commit = process.env.GITHUB_SHA ?? (commitResult.status === 0 ? commitResult.stdout.trim() : "unknown");
 const dockerCapacity = spawnSync("docker", ["info", "--format", "{{json .NCPU}} {{json .MemTotal}}"], { encoding: "utf8" });
 const [diagnosticCpus, diagnosticMemory] = dockerCapacity.status === 0 ? dockerCapacity.stdout.trim().split(" ") : [];
+const hostDetails = { platform: process.platform, architecture: process.arch,
+  cpuModel: cpus()[0]?.model ?? "unavailable", logicalCpus: cpus().length, memoryBytes: totalmem() };
+const timingDirectory = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";
+mkdirSync(timingDirectory, { recursive: true });
+writeFileSync(join(timingDirectory, "performance-run.json"), JSON.stringify({
+  schema_version: 1, commit, timestamp: new Date().toISOString(), stages: {},
+  environment: { platform: process.platform, architecture: process.arch,
+    dockerCpus: diagnosticCpus ?? null, dockerMemoryBytes: diagnosticMemory ?? null,
+    host: hostDetails, runner: "linux-pinned", buildMode: "production-local" },
+}, null, 2) + "\n");
 const result = spawnSync(
   "docker",
   [
@@ -33,7 +45,7 @@ const result = spawnSync(
     `TEMPO_COMMIT=${commit}`,
     "-e", `TEMPO_DIAGNOSTIC_DOCKER_CPUS=${diagnosticCpus ?? "unavailable"}`,
     "-e", `TEMPO_DIAGNOSTIC_DOCKER_MEMORY=${diagnosticMemory ?? "unavailable"}`,
-    "-e", `TEMPO_DIAGNOSTIC_HOST=${process.platform}/${process.arch}`,
+    "-e", `TEMPO_DIAGNOSTIC_HOST=${JSON.stringify(hostDetails)}`,
     "-e", "TEMPO_DIAGNOSTIC_CONTAINER_LIMITS=no explicit per-container CPU/memory limits; shared Docker VM",
     ...(containerTimingDirectory ? ["-e", `TEMPO_TEST_TIMING_DIR=${containerTimingDirectory}`] : []),
     ...(process.env.CI ? ["-e", "CI=true"] : []),

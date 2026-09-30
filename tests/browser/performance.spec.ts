@@ -419,14 +419,15 @@ test("held-piece drag baseline separates workloads and capture overhead", async 
     fixture: { name: heldDragFixtureVersion, pointerMoves: 40, paceMs: 20, repetitions: 3, dataset: "Spanish five-ply card and one discovery", probe: "bounded-transform-probe-v1" },
     environment: {
       browser: "chromium", browserVersion: browser.version(), buildMode: "production-local", runner: process.env.TEMPO_VISUAL_RUNNER,
-      architecture: process.arch, viewport: { width: 1280, height: 800 }, devicePixelRatio: 1, reducedMotion: "no-preference",
+      architecture: process.arch, viewport: { width: 1280, height: 800 }, devicePixelRatio: 1, reducedMotion: "no-preference", serviceWorkers: "block",
       dockerCpus: process.env.TEMPO_DIAGNOSTIC_DOCKER_CPUS ?? "unavailable", dockerMemoryBytes: process.env.TEMPO_DIAGNOSTIC_DOCKER_MEMORY ?? "unavailable",
       host: process.env.TEMPO_DIAGNOSTIC_HOST ?? "unavailable", containerLimits: process.env.TEMPO_DIAGNOSTIC_CONTAINER_LIMITS ?? "unavailable",
       gpu: "unavailable; headless pinned browser", physicalPresentation: "unavailable", liveBackendLoad: "unmeasured; routed synthetic API fixtures",
     },
     measurement: "DOM transform at rAF; not presentation latency or INP; identical independent probe runs with capture on/off",
     runs, summaries: [] as Array<{ workload: Workload; enabled: boolean; count: number; frameSampleCount: number; displacementSampleCount: number; interruptionCount: number;
-      frameGapMs: { p50: number; p95: number } | null; displacementCssPx: { p50: number; p95: number } | null }>,
+      frameGapMs: { p50: number; p95: number } | null; maximumFrameGapMs: number | null;
+      captureFrameCostMs: { p50: number; p95: number } | null; captureEventCostMs: { p50: number; p95: number } | null; displacementCssPx: { p50: number; p95: number } | null }>,
   };
   function persist() { writePerformanceReport("held-drag-chromium.json", JSON.stringify(report, null, 2)); }
   try {
@@ -437,7 +438,7 @@ test("held-piece drag baseline separates workloads and capture overhead", async 
         for (const enabled of repetition % 2 ? [false, true] : [true, false]) {
           const context = await browser.newContext({
             baseURL: testInfo.project.use.baseURL, viewport: { width: 1280, height: 800 },
-            deviceScaleFactor: 1, reducedMotion: "no-preference", locale: "en-US", timezoneId: "America/New_York",
+            deviceScaleFactor: 1, reducedMotion: "no-preference", serviceWorkers: "block", locale: "en-US", timezoneId: "America/New_York",
           });
           const experimentPage = await context.newPage();
           try {
@@ -492,13 +493,14 @@ test("held-piece drag baseline separates workloads and capture overhead", async 
                       worker.postMessage("start");
                     });
                   } else if (workload === "main-thread-stall") {
-                    await experimentPage.evaluate(() => {
+                    await experimentPage.evaluate(() => new Promise<void>(resolve => setTimeout(() => {
                       const evidence = Reflect.get(window, "tempoWorkloadEvidence");
                       evidence.startedAtMs = performance.now();
                       const until = performance.now() + 80;
                       while (performance.now() < until) { /* deliberate positive control */ }
                       evidence.endedAtMs = performance.now();
-                    });
+                      resolve();
+                    }, 0)));
                   } else if (workload === "stockfish-worker") {
                     await experimentPage.evaluate(fen => {
                       const evidence = Reflect.get(window, "tempoWorkloadEvidence");
@@ -525,6 +527,11 @@ test("held-piece drag baseline separates workloads and capture overhead", async 
                 if (enabled) expect(result.snapshot?.sessions.length).toBeGreaterThan(0);
                 else expect(result.snapshot).toBeNull();
                 expect(workloadEvidence.error).toBeNull();
+                if (workload === "main-thread-stall") {
+                  expect(result.probe.samples.some(sample => (sample.gapMs ?? 0) >= 70)).toBe(true);
+                  if (enabled) expect(result.snapshot?.sessions.some(session =>
+                    session.longTasks.some(task => task.atMs <= workloadEvidence.endedAtMs! && task.atMs + task.durationMs >= workloadEvidence.startedAtMs!))).toBe(true);
+                }
                 if (workload === "stockfish-worker") expect(workloadEvidence.messages).toBeGreaterThan(0);
               } finally {
                 discovery.release();
@@ -541,8 +548,15 @@ test("held-piece drag baseline separates workloads and capture overhead", async 
         const matching = runs.filter(run => run.workload === workload && run.enabled === enabled);
         const frameGaps = matching.flatMap(run => run.probe.samples.flatMap(sample => sample.gapMs === null ? [] : [sample.gapMs]));
         const displacements = matching.flatMap(run => run.probe.samples.flatMap(sample => sample.displacementCssPx === null ? [] : [sample.displacementCssPx]));
+        const frameCosts = matching.flatMap(run => run.snapshot?.sessions.flatMap(session => session.frames.flatMap(frame =>
+          frame.captureCostMs === undefined ? [] : [frame.captureCostMs])) ?? []);
+        const eventCosts = matching.flatMap(run => run.snapshot?.sessions.flatMap(session => session.events.flatMap(event =>
+          event.captureCostMs === undefined ? [] : [event.captureCostMs])) ?? []);
         report.summaries.push({ workload, enabled, count: matching.length, frameSampleCount: frameGaps.length, displacementSampleCount: displacements.length, interruptionCount: matching.filter(run => run.probe.interrupted).length,
           frameGapMs: frameGaps.length ? summarize(frameGaps) : null,
+          maximumFrameGapMs: frameGaps.length ? Math.max(...frameGaps) : null,
+          captureFrameCostMs: frameCosts.length ? summarize(frameCosts) : null,
+          captureEventCostMs: eventCosts.length ? summarize(eventCosts) : null,
           displacementCssPx: displacements.length ? summarize(displacements) : null });
       }
     }

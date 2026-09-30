@@ -25,7 +25,7 @@ function readArtifact(directory, filename) {
 }
 
 function collectMetrics(directory) {
-  const stageReport = readArtifact(directory, "test-stages-full.json");
+  const stageReport = readArtifact(directory, "test-stages-full.json") ?? readArtifact(directory, "performance-run.json");
   const unitProfile = readArtifact(directory, "unit-files-full.json");
   const commit = stageReport?.commit ?? null;
   const environment = stageReport?.environment ?? null;

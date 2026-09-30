@@ -40,11 +40,11 @@ export type TempoDragEndReason = "drop" | "board-interruption" | "pointer-cancel
   "lost-capture" | "geometry-change" | "hidden-tab" | "unmount" | "disabled" | "reset" | "capture-limit";
 export type TempoDragEvent = {
   type: string; eventAtMs: number; receivedAtMs: number; xCssPx: number; yCssPx: number;
-  coalescedCount: number;
+  coalescedCount: number; captureCostMs?: number;
 };
 export type TempoDragFrame = {
   atMs: number; gapMs: number | null; eventAgeMs: number | null;
-  displacementCssPx: number | null; xCssPx: number | null; yCssPx: number | null;
+  displacementCssPx: number | null; xCssPx: number | null; yCssPx: number | null; captureCostMs?: number;
 };
 type PhaseSample = { operationId: number; operation: TempoDragPhase; edge: "start" | "end" | "error"; atMs: number };
 export type TempoDragSession = {
@@ -155,6 +155,7 @@ export function installTempoDragCapture(surface: HTMLElement, api: import("@lich
     }
   }
   function observeFrame(atMs: number) {
+    const captureStartedAtMs = performance.now();
     frame = 0;
     if (!pending || disposed) return;
     const drag = api.state.draggable.current;
@@ -207,15 +208,17 @@ export function installTempoDragCapture(surface: HTMLElement, api: import("@lich
         xCssPx, yCssPx });
     } else session.truncated.frames = true;
     frame = requestAnimationFrame(observeFrame);
+    const observed = session.frames.at(-1);
+    if (observed?.atMs === atMs) observed.captureCostMs = performance.now() - captureStartedAtMs;
   }
   function recordInput(event: Event) {
     if (!pending) return;
+    const receivedAtMs = performance.now();
     const pointer = event as PointerEvent;
     if (event.type.startsWith("pointer")) pointerEventsSeen = true;
     if (pointerEventsSeen && event.type.startsWith("mouse")) return;
     const coalesced = typeof pointer.getCoalescedEvents === "function" ? pointer.getCoalescedEvents() : [];
     const last = coalesced.at(-1) ?? pointer;
-    const receivedAtMs = performance.now();
     latestEvent = {
       type: event.type, eventAtMs: last.timeStamp > 1e12 ? last.timeStamp - performance.timeOrigin : last.timeStamp,
       receivedAtMs, xCssPx: last.clientX, yCssPx: last.clientY, coalescedCount: coalesced.length,
@@ -224,6 +227,7 @@ export function installTempoDragCapture(surface: HTMLElement, api: import("@lich
     if (events.length < dragLimits.events) events.push(latestEvent);
     else if (session) session.truncated.events = true;
     else pendingEventsTruncated = true;
+    latestEvent.captureCostMs = performance.now() - receivedAtMs;
   }
   function start(event: Event) {
     if (pending || disposed || !dragCaptureEnabled() || document.visibilityState === "hidden") return;

@@ -7,7 +7,7 @@ export type DragProbe = {
   samples: Array<{ atMs: number; dragging: boolean; gapMs: number | null; displacementCssPx: number | null }>;
   startedAtMs: number; endedAtMs: number; sawDragging: boolean; interrupted: boolean;
 };
-export const heldDragFixtureVersion = "held-drag-v1-40-moves";
+export const heldDragFixtureVersion = "held-drag-v2-40-moves-blocked-sw";
 export const heldDragStartFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 export async function prepareHeldDrag(page: Page, enabled = true, beforeNavigate?: () => Promise<void>) {

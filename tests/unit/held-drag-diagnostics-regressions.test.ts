@@ -13,15 +13,16 @@ function fixture() {
   document.body.appendChild(surface);
   const state = {
     draggable: { current: undefined as undefined | {
-      started: boolean; origPos: [number, number]; pos: [number, number]; element: HTMLElement;
+      started: boolean; orig: string; origPos: [number, number]; pos: [number, number]; element: HTMLElement;
     } },
     dom: { bounds: vi.fn(() => ({ left: 10, top: 20, width: 400, height: 400 })) },
     orientation: "white", animation: { enabled: true, duration: 180 },
   };
   const capture = installTempoDragCapture(surface, { state } as unknown as Api);
   function start() {
-    state.draggable.current = { started: true, origPos: [265, 375], pos: [260, 370], element: piece };
-    piece.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, buttons: 1, clientX: 265, clientY: 375 }));
+    const grab: [number, number] = state.orientation === "black" ? [190, 100] : [240, 350];
+    state.draggable.current = { started: true, orig: "e2", origPos: grab, pos: [260, 370], element: piece };
+    piece.dispatchEvent(new MouseEvent("mousedown", { bubbles: true, buttons: 1, clientX: grab[0], clientY: grab[1] }));
     vi.advanceTimersByTime(20);
   }
   function end() {
@@ -42,6 +43,7 @@ afterEach(() => {
   window.history.replaceState({}, "", "/");
   vi.useRealTimers();
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 it("held_drag_capture_is_bounded_and_disabled_by_default", () => {
@@ -97,6 +99,7 @@ it("held_drag_capture_cleans_up_on_visibility_cancel_capture_loss_and_unmount", 
 });
 
 it("held_drag_metrics_account_for_grab_offset_orientation_and_coalescing", () => {
+  vi.stubGlobal("devicePixelRatio", 2);
   const active = fixture(); active.state.orientation = "black"; active.start();
   const move = new MouseEvent("pointermove", { clientX: 260, clientY: 370, buttons: 1 });
   Object.defineProperty(move, "getCoalescedEvents", { value: () => [
@@ -107,10 +110,13 @@ it("held_drag_metrics_account_for_grab_offset_orientation_and_coalescing", () =>
   recordTempoDragPhase("opponent-reply", "start"); active.end();
   const session = tempoDragDiagnostics().sessions.at(-1)!;
   expect(session.orientation).toBe("black");
+  expect(session.viewport.devicePixelRatio).toBe(2);
   expect(session.initialGrabOffsetCssPx).toEqual([5, 5]);
   expect(session.events.find(event => event.type === "pointermove")?.coalescedCount).toBe(2);
   expect(session.frames.at(-1)?.displacementCssPx).toBe(0);
   expect(session.frames.at(-1)?.eventAgeMs).toBeGreaterThanOrEqual(0);
+  expect(session.frames.at(-1)?.captureCostMs).toBeGreaterThanOrEqual(0);
+  expect(session.events.find(event => event.type === "pointermove")?.captureCostMs).toBeGreaterThanOrEqual(0);
   expect(session.phases.some(phase => phase.operation === "opponent-reply")).toBe(true);
   expect(active.state.dom.bounds).toHaveBeenCalledTimes(1);
   active.capture.dispose();

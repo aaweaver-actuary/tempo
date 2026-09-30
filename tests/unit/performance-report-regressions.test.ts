@@ -231,6 +231,10 @@ it("held_drag_reports_reject_stale_or_incomparable_baselines", () => {
       return JSON.parse(readFileSync(join(currentDirectory, "performance-summary.json"), "utf8"));
     };
     expect(runSummary().regressions).toHaveLength(1);
+    // Standalone make perf runs have a manifest, not a fabricated full gate.
+    writeFileSync(join(currentDirectory, "performance-run.json"), readFileSync(join(currentDirectory, "test-stages-full.json")));
+    rmSync(join(currentDirectory, "test-stages-full.json"));
+    expect(runSummary().regressions).toHaveLength(1);
     writeFileSync(join(baselineDirectory, "held-drag-chromium.json"), JSON.stringify(artifact("baseline", { ...environment, dockerCpus: "2" })));
     expect(runSummary().regressions).toEqual([]);
     writeFileSync(join(currentDirectory, "held-drag-chromium.json"), JSON.stringify(artifact("stale")));
