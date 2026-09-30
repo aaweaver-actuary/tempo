@@ -193,3 +193,34 @@ The existing performance report reader compares held-drag summaries only for mat
 - Host contention: worker-load or engine scenarios with larger gaps but no corresponding main-thread long tasks support investigation of CPU scheduling. Confirm using host/VM profiling; worker overlap alone does not establish causality.
 
 For a manual capture, load the flagged URL, reset, hold and move a piece through many intermediate positions, release, then copy `JSON.stringify(window.tempoPerformance.snapshot())` through the console or the existing debug bundle. Retain browser/version, commit/build, viewport/DPR, active workload, foreground/hidden state and warm/cold context. Capture idle and loaded runs using the same position and motion. Do not pause/reset live services, expose tokens or publish personal game payloads. Use browser tracing/video separately if physical pixel lag is the concern. Live capture is optional and was not used for the isolated baseline.
+
+
+### Recorded baseline — September 30, 2026
+
+The complete baseline at `91cb391` is retained as [a per-run summary](performance-baselines/held-drag-v3/summary.json), [compressed raw samples](performance-baselines/held-drag-v3/held-drag-chromium.json.gz), and [its run manifest](performance-baselines/held-drag-v3/performance-run.json). The summary includes the decompressed raw artifact's SHA-256. It contains 60 holds: three independent repetitions × five workloads × capture on/off × cold/warm context. All observed holds remained uninterrupted. The regular suite separately detects the injected board-flip cancellation before release and verifies distinct drop/reply/review/readiness phases.
+
+Environment: Apple M3, eight logical host CPUs, 24 GiB host memory; shared ARM64 Docker VM with four CPUs and about 5.77 GiB memory; pinned headless Chromium 153.0.8010.12; production local build; 1280×800 viewport, DPR 1, normal animation preference. No exclusive CPU reservation was made, and the live study stack remained running. Container limits and unavailable GPU/presentation evidence are recorded in the artifact. These measurements do not establish production drag latency.
+
+| Workload | Independent probe callback-gap p95, capture on | Capture off | Recorder frame callback cost p95 | Recorder input callback cost p95 |
+| --- | ---: | ---: | ---: | ---: |
+| idle | 27.21 ms | 23.69 ms | 0.040 ms | 0.050 ms |
+| synthetic-worker | 37.41 ms | 29.36 ms | 0.055 ms | 0.050 ms |
+| discovery-preparation | 29.93 ms | 32.40 ms | 0.050 ms | 0.050 ms |
+| stockfish-worker | 33.18 ms | 33.50 ms | 0.060 ms | 0.055 ms |
+| main-thread-stall | 25.43 ms | 31.93 ms | 0.035 ms | 0.050 ms |
+
+Each row pools callback samples from six holds per capture mode. The independent probe is armed immediately before pointer press and stops before release, so it includes brief setup observations; the per-run summary separately reports strictly confirmed-drag callback gaps from the app recorder. Displacement is a DOM-transform proxy and includes callback ordering and driver granularity; it is not pixel presentation latency. The synchronous recorder cost was small (p95 at most 0.060 ms per frame and 0.055 ms per recorded input), but observable cadence varied across paired loaded runs. Synthetic-worker p95 was higher with capture on, while discovery and stall scenarios were lower; this small shared-host baseline cannot attribute those differences to instrumentation alone or support a hard budget.
+
+All six enabled main-thread-stall holds recorded an overlapping 80–81 ms long task and the independent receipt-cadence positive control passed for all twelve on/off holds. An earlier calibration failed when an 80 ms task yielded only a 66.7 ms nominal rAF gap; the final metric retains nominal timestamps separately and uses actual callback receipt cadence. Stockfish emitted real search messages while held. The normal status/preview regression and these workload holds provide no reproduced board invalidation or proven root cause for the user's live symptom. Longer gaps under load motivate host/main-thread profiling; physical rendering/compositing remains unmeasured.
+
+To compare a future matching run with this saved baseline:
+
+```sh
+mkdir -p test-results/performance/saved-held-drag-v3
+gzip -dc docs/performance-baselines/held-drag-v3/held-drag-chromium.json.gz > test-results/performance/saved-held-drag-v3/held-drag-chromium.json
+cp docs/performance-baselines/held-drag-v3/performance-run.json test-results/performance/saved-held-drag-v3/performance-run.json
+TEMPO_TEST_TIMING_DIR=test-results/performance/held-drag-repeat make perf
+node scripts/report-performance.mjs --directory test-results/performance/held-drag-repeat --baseline test-results/performance/saved-held-drag-v3
+```
+
+Comparisons retain the same dataset/workload and reject different browser, host/VM capacity, viewport/DPR, build mode, fixture/probe version, or incomplete repetition counts. Numerical signals remain advisory; never replace the deterministic cancellation, cleanup, and continuity regressions with a percentile threshold.

@@ -149,3 +149,42 @@ it("held_drag_reset_reuses_capture_without_pointer_storage_network_or_layout_wor
   expect(tempoDragDiagnostics().sessions[0].events.length).toBeGreaterThan(0);
   active.capture.dispose();
 });
+
+it("held_drag_frame_cadence_uses_callback_receipt_not_nominal_rAF_timestamp", () => {
+  const pendingFrames: FrameRequestCallback[] = [];
+  vi.spyOn(window, "requestAnimationFrame").mockImplementation(callback => {
+    pendingFrames.push(callback); return pendingFrames.length;
+  });
+  const active = fixture(); active.start();
+  pendingFrames.shift()!(16);
+  vi.advanceTimersByTime(80);
+  pendingFrames.shift()!(32);
+  const frames = tempoDragDiagnostics().sessions.at(-1)!.frames;
+  expect(frames.at(-1)?.rAFGapMs).toBe(16);
+  expect(frames.at(-1)?.gapMs).toBe(80);
+  active.capture.dispose();
+});
+
+it("held_drag_long_tasks_and_operation_correlations_are_bounded", () => {
+  let collect: PerformanceObserverCallback | undefined;
+  const disconnect = vi.fn();
+  vi.stubGlobal("PerformanceObserver", class {
+    static supportedEntryTypes = ["longtask"];
+    constructor(callback: PerformanceObserverCallback) { collect = callback; }
+    observe() {}
+    takeRecords() { return []; }
+    disconnect = disconnect;
+  });
+  const active = fixture(); active.start();
+  collect!({ getEntries: () => Array.from({ length: 100 }, () => ({ startTime: performance.now(), duration: 80 })) } as unknown as PerformanceObserverEntryList, {} as PerformanceObserver);
+  for (let operation = 0; operation < 200; operation++) {
+    recordTempoDragPhase("engine-work", "start");
+    active.capture.boardEvent("annotations");
+  }
+  const captured = tempoDragDiagnostics().sessions.at(-1)!;
+  expect(captured.longTasks).toHaveLength(64);
+  expect(captured.phases).toHaveLength(128);
+  expect(captured.boardEvents).toHaveLength(128);
+  expect(captured.truncated).toMatchObject({ longTasks: true, phases: true, boardEvents: true });
+  active.capture.dispose(); expect(disconnect).toHaveBeenCalled();
+});
