@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import { Chess } from "chess.js";
-import type { z } from "zod";
+import { z } from "zod";
 import { API_URL } from "../const";
 import { Chessboard, type BoardTheme, type PieceSet } from "./board/chessboard";
 import { MoveComparisonTable } from "./move-comparison-table";
@@ -27,7 +27,7 @@ import {
 import { requestInteractiveAnalysis } from "../lib/engine-broker";
 import { loadExplorer, type ExplorerResult } from "../lib/lichess-explorer";
 import { readLichessSessionToken } from "../lib/lichess-session";
-import { readJsonResponse } from "../lib/validated-data";
+import { parseData, readJsonResponse } from "../lib/validated-data";
 import { reportDebugError } from "../lib/debug-reporting";
 import { applyOpportunityCommand } from "../lib/opportunity-command";
 import { requestOpportunityRefresh } from "../lib/opportunity-refresh-command";
@@ -249,7 +249,8 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   const stalePreviewKeys = useRef(new Set<string>());
   const currentFeedItems = useRef(new Map<string, DiscoveryItem>());
   const previewGenerations = useRef(new Map<string, number>());
-  const eligibilityRequests = useRef(new Set<string>());
+  const eligibilityGenerations = useRef(new Map<string, number>());
+  const eligibilityRequests = useRef(new Map<string, { key: string; generation: number }>());
   const initialPreflightStarted = useRef(false);
   const pendingSafeBreak = useRef(false);
   const preflightState = useRef({ discoveries, previewFingerprints, previewStatuses });
@@ -338,7 +339,14 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
       const currentPreviewKeys = new Set([...byId.values()].map((item) =>
         `${item.id}:${item.evidence_fingerprint}`));
       for (const id of new Set([...currentFeedItems.current.keys(), ...byId.keys()])) {
-        const previousFingerprint = currentFeedItems.current.get(id)?.evidence_fingerprint;
+        const previousItem = currentFeedItems.current.get(id);
+        const nextItem = byId.get(id);
+        if ((previousItem ? eligibilityKey(previousItem) : undefined) !==
+            (nextItem ? eligibilityKey(nextItem) : undefined)) {
+          eligibilityGenerations.current.set(id, (eligibilityGenerations.current.get(id) ?? 0) + 1);
+          eligibilityRequests.current.delete(id);
+        }
+        const previousFingerprint = previousItem?.evidence_fingerprint;
         const nextFingerprint = byId.get(id)?.evidence_fingerprint;
         if (previousFingerprint !== nextFingerprint)
           previewGenerations.current.set(id, (previewGenerations.current.get(id) ?? 0) + 1);
@@ -405,10 +413,37 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     });
   }, [refresh]);
 
-  const checkTrainingEligibility = useCallback(async (item: DiscoveryItem): Promise<TrainingEligibility> => {
-    const response = await fetch(`${API_URL}/api/repertoires/${encodeURIComponent(item.repertoire_id)}` +
-      `/opportunities/${encodeURIComponent(item.id)}/training-eligibility`);
-    return readJsonResponse(response, discoveryTrainingEligibilitySchema, "discovery training eligibility");
+  const isEligibilityCurrent = useCallback((item: DiscoveryItem, generation: number) => {
+    const current = currentFeedItems.current.get(item.id);
+    return !!current && eligibilityKey(current) === eligibilityKey(item) &&
+      eligibilityGenerations.current.get(item.id) === generation;
+  }, []);
+
+  const checkTrainingEligibility = useCallback(async (
+    item: DiscoveryItem, isCurrent: () => boolean,
+  ): Promise<TrainingEligibility | null> => {
+    const endpoint = `${API_URL}/api/repertoires/${encodeURIComponent(item.repertoire_id)}` +
+      `/opportunities/${encodeURIComponent(item.id)}/training-eligibility`;
+    const response = await fetch(endpoint);
+    if (!isCurrent()) return null;
+    // Decode before reporting: the discovery can leave the feed while its body is pending.
+    let raw: unknown;
+    try { raw = await response.json(); }
+    catch {
+      if (!isCurrent()) return null;
+      throw new Error(response.ok ? "Invalid discovery training eligibility response JSON" :
+        `discovery training eligibility failed (HTTP ${response.status})`);
+    }
+    if (!isCurrent()) return null;
+    if (!response.ok) {
+      const details = z.looseObject({ detail: z.string().optional() }).safeParse(raw);
+      const failure = new Error(details.success && details.data.detail ? details.data.detail :
+        `discovery training eligibility failed (HTTP ${response.status})`);
+      reportDebugError(failure, { kind: "api", source: "validated-response",
+        operation: "read JSON response", endpoint, status: response.status });
+      throw failure;
+    }
+    return parseData(discoveryTrainingEligibilitySchema, raw, "discovery training eligibility", endpoint);
   }, []);
 
   const recheckTrainingEligibility = useCallback((item: DiscoveryItem) => {
@@ -429,21 +464,29 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   useEffect(() => {
     if (!active?.card_id) return;
     const key = eligibilityKey(active);
-    if (trainingEligibility[key] || eligibilityErrors[key] || eligibilityRequests.current.has(key)) return;
-    eligibilityRequests.current.add(key);
-    void checkTrainingEligibility(active).then((result) => {
-      const current = currentFeedItems.current.get(active.id);
-      if (current && eligibilityKey(current) === key)
-        setTrainingEligibility((items) => ({ ...items, [key]: result }));
+    const generation = eligibilityGenerations.current.get(active.id) ?? 0;
+    if (!isEligibilityCurrent(active, generation) || trainingEligibility[key] || eligibilityErrors[key] ||
+        eligibilityRequests.current.has(active.id)) return;
+    const request = { key, generation };
+    eligibilityRequests.current.set(active.id, request);
+    const isCurrent = () => isEligibilityCurrent(active, request.generation) &&
+      eligibilityRequests.current.get(active.id) === request;
+    void checkTrainingEligibility(active, isCurrent).then((result) => {
+      if (result && isCurrent())
+        setTrainingEligibility((items) => isEligibilityCurrent(active, request.generation)
+          ? { ...items, [key]: result } : items);
     }).catch((cause) => {
-      const current = currentFeedItems.current.get(active.id);
-      if (current && eligibilityKey(current) === key) {
+      if (isCurrent()) {
         const message = cause instanceof Error ? cause.message : "Could not check training eligibility";
-        setEligibilityErrors((items) => ({ ...items, [key]: message }));
-        setError(message);
+        setEligibilityErrors((items) => isEligibilityCurrent(active, request.generation)
+          ? { ...items, [key]: message } : items);
+        setError((current) => isEligibilityCurrent(active, request.generation) ? message : current);
       }
-    }).finally(() => { eligibilityRequests.current.delete(key); });
-  }, [active, trainingEligibility, eligibilityErrors, checkTrainingEligibility]);
+    }).finally(() => {
+      if (eligibilityRequests.current.get(active.id) === request)
+        eligibilityRequests.current.delete(active.id);
+    });
+  }, [active, trainingEligibility, eligibilityErrors, checkTrainingEligibility, isEligibilityCurrent]);
 
   useEffect(() => {
     if (!usesLocalApi()) return;
@@ -840,18 +883,26 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
 
   const act = async (item: DiscoveryItem, action: "train" | "snooze" | "dismiss") => {
     setBusyId(item.id);
+    const generation = eligibilityGenerations.current.get(item.id) ?? 0;
+    const isCurrent = () => isEligibilityCurrent(item, generation);
+    let commandSubmitted = false;
     try {
       if (action === "train") {
-        const currentEligibility = await checkTrainingEligibility(item);
+        const currentEligibility = await checkTrainingEligibility(item, isCurrent);
+        if (!currentEligibility || !isCurrent()) return;
         const key = eligibilityKey(item);
-        setTrainingEligibility((items) => ({ ...items, [key]: currentEligibility }));
+        setTrainingEligibility((items) => isCurrent() ? { ...items, [key]: currentEligibility } : items);
         if (!currentEligibility.eligible) return;
       }
+      commandSubmitted = true;
       await applyOpportunityCommand(item.repertoire_id, item.id, action);
       if (action === "train") await onQueueChanged();
       await refresh(true);
       if (action !== "train") setActiveId(null);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : `Could not ${action} discovery`); }
+    } catch (cause) {
+      if (action !== "train" || commandSubmitted || isCurrent())
+        setError(cause instanceof Error ? cause.message : `Could not ${action} discovery`);
+    }
     finally { setBusyId(null); }
   };
 
