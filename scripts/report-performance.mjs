@@ -25,7 +25,12 @@ function readArtifact(directory, filename) {
 }
 
 function collectMetrics(directory) {
-  const stageReport = readArtifact(directory, "test-stages-full.json") ?? readArtifact(directory, "performance-run.json");
+  const fullManifest = readArtifact(directory, "test-stages-full.json");
+  const performanceManifest = readArtifact(directory, "performance-run.json");
+  const validManifest = (manifest) => Boolean(manifest?.commit && Number.isFinite(Date.parse(manifest.timestamp ?? "")));
+  const stageReport = validManifest(performanceManifest) &&
+    (!validManifest(fullManifest) || Date.parse(performanceManifest.timestamp) > Date.parse(fullManifest.timestamp))
+    ? performanceManifest : validManifest(fullManifest) ? fullManifest : null;
   const unitProfile = readArtifact(directory, "unit-files-full.json");
   const commit = stageReport?.commit ?? null;
   const environment = stageReport?.environment ?? null;

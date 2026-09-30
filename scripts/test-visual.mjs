@@ -17,7 +17,7 @@ if (process.env.TEMPO_TEST_TIMING_DIR) {
   containerTimingDirectory = `/workspace/${relativeTimingDirectory.split(sep).join("/")}`;
 }
 const commitResult = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
-const commit = process.env.GITHUB_SHA ?? (commitResult.status === 0 ? commitResult.stdout.trim() : "unknown");
+const commit = process.env.TEMPO_FULL_TEST_RUN_COMMIT ?? process.env.GITHUB_SHA ?? (commitResult.status === 0 ? commitResult.stdout.trim() : "unknown");
 const dockerCapacity = spawnSync("docker", ["info", "--format", "{{json .NCPU}} {{json .MemTotal}}"], { encoding: "utf8" });
 const [diagnosticCpus, diagnosticMemory] = dockerCapacity.status === 0 ? dockerCapacity.stdout.trim().split(" ") : [];
 const hostDetails = { platform: process.platform, architecture: process.arch,
@@ -25,7 +25,7 @@ const hostDetails = { platform: process.platform, architecture: process.arch,
 const timingDirectory = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";
 mkdirSync(timingDirectory, { recursive: true });
 writeFileSync(join(timingDirectory, "performance-run.json"), JSON.stringify({
-  schema_version: 1, commit, timestamp: new Date().toISOString(), stages: {},
+  schema_version: 1, commit, timestamp: process.env.TEMPO_FULL_TEST_RUN_TIMESTAMP ?? new Date().toISOString(), stages: {},
   environment: { platform: process.platform, architecture: process.arch,
     dockerCpus: diagnosticCpus ?? null, dockerMemoryBytes: diagnosticMemory ?? null,
     host: hostDetails, runner: "linux-pinned", buildMode: "production-local" },

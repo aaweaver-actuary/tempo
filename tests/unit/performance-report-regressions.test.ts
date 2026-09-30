@@ -295,3 +295,56 @@ it("held_drag_reports_flag_new_interruptions_without_inventing_percentages", () 
     rmSync(baselineDirectory, { recursive: true, force: true });
   }
 });
+
+it("held_drag_reports_select_the_newest_valid_manifest_and_prefer_full_on_ties", () => {
+  const directory = mkdtempSync(join(tmpdir(), "tempo-manifests-"));
+  const fullTimestamp = "2026-09-30T12:00:00Z";
+  const perfTimestamp = "2026-09-30T13:00:00Z";
+  const writeManifest = (filename: string, commit: string, timestamp: string, full = false) => {
+    writeFileSync(join(directory, filename), JSON.stringify({ commit, timestamp, environment: { platform: "linux" },
+      stages: full ? { unit: { duration_seconds: 40, exit_code: 0 } } : {} }));
+  };
+  const writeArtifact = (commit: string, timestamp: string) => {
+    writeFileSync(join(directory, "held-drag-chromium.json"), JSON.stringify({ commit, timestamp,
+      fixture: "held-v3", environment: { browser: "153" },
+      summaries: [{ workload: "idle", enabled: false, count: 6, interruptionCount: 0 }] }));
+  };
+  const report = () => {
+    const run = spawnSync(process.execPath, ["scripts/report-performance.mjs", "--directory", directory], { encoding: "utf8" });
+    expect(run.status, run.stderr).toBe(0);
+    return { json: JSON.parse(readFileSync(join(directory, "performance-summary.json"), "utf8")),
+      markdown: readFileSync(join(directory, "performance-summary.md"), "utf8") };
+  };
+  try {
+    writeManifest("test-stages-full.json", "old-full", fullTimestamp, true);
+    writeManifest("performance-run.json", "new-perf", perfTimestamp);
+    writeArtifact("new-perf", perfTimestamp);
+    const newest = report();
+    expect(newest.json.commit).toBe("new-perf");
+    expect(newest.json.metrics.map((metric: { id: string }) => metric.id)).toEqual(["held-drag.idle.capture-off.interruptions"]);
+    expect(newest.markdown).toContain("Held drag idle.capture-off interrupted holds");
+    expect(newest.json.staleArtifacts).toEqual([]);
+    writeManifest("test-stages-full.json", "new-full", "2026-09-30T14:00:00Z", true);
+    writeArtifact("new-full", "2026-09-30T14:01:00Z");
+    expect(report().json.metrics).toHaveLength(2);
+    expect(report().json.commit).toBe("new-full");
+    writeManifest("performance-run.json", "nested-perf", "2026-09-30T14:00:00Z");
+    expect(report().json.commit).toBe("new-full");
+    writeManifest("test-stages-full.json", "invalid-full", "invalid", true);
+    writeArtifact("nested-perf", "2026-09-30T14:01:00Z");
+    expect(report().json.commit).toBe("nested-perf");
+    writeManifest("test-stages-full.json", "valid-full", fullTimestamp, true);
+    writeManifest("performance-run.json", "invalid-perf", "invalid");
+    writeArtifact("valid-full", fullTimestamp);
+    expect(report().json.commit).toBe("valid-full");
+    writeArtifact("old-full", fullTimestamp);
+    expect(report().json.staleArtifacts).toContain("held-drag-chromium.json");
+    writeArtifact("valid-full", "2026-09-30T11:59:59Z");
+    expect(report().json.staleArtifacts).toContain("held-drag-chromium.json");
+    writeManifest("test-stages-full.json", "invalid-full", "invalid", true);
+    const invalid = report();
+    expect(invalid.json.commit).toBeNull();
+    expect(invalid.json.metrics).toEqual([]);
+    expect(invalid.markdown).toContain("Commit: `unavailable`");
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
