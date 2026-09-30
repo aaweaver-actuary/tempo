@@ -285,6 +285,10 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     ? (discoveries.find((item) => item.id === activeSnapshot.id) ??
       activeSnapshot)
     : undefined;
+  useEffect(() => {
+    if (open && activeId && !currentFeedItems.current.has(activeId) && reviewItems.length)
+      setActiveId(reviewItems[0].id);
+  }, [open, activeId, reviewItems]);
   const fen = active ? decisionFen(active) : "";
   const legalDecisionMoves = useMemo(() => fen ? decisionMoves(fen) : new Set<string>(), [fen]);
   const savedPreview = active ? previews[active.id] : undefined;
@@ -363,7 +367,6 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
         const replacement = byId.get(item.id);
         return replacement ? [replacement] : [];
       }));
-      setActiveId((current) => current && !byId.has(current) ? byId.keys().next().value ?? null : current);
       setEvidenceRefreshPendingId((pendingId) => {
         const refreshedItem = pendingId ? byId.get(pendingId) : undefined;
         return pendingId && (!refreshedItem || hasCurrentRecurringEvidence(refreshedItem)) ? null : pendingId;
@@ -439,7 +442,9 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     const requestGeneration = previewGenerations.current.get(item.id);
     const isCurrent = () => currentFeedItems.current.get(item.id)?.evidence_fingerprint === item.evidence_fingerprint &&
       previewGenerations.current.get(item.id) === requestGeneration;
-    if (requestedPreflights.current.has(key) || stalePreviewKeys.current.has(key) || !isCurrent()) return;
+    if (requestedPreflights.current.has(key) ||
+        (stalePreviewKeys.current.has(key) &&
+          performance.now() < (nextPreflightRetryAt.current.get(key) ?? 0)) || !isCurrent()) return;
     requestedPreflights.current.add(key);
     try {
       const response = await backgroundFetch(`${API_URL}/api/discoveries/${item.id}/recommendations`);
@@ -450,13 +455,14 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
           setPreviews((current) => { const next = { ...current }; delete next[item.id]; return next; });
           setPreviewFingerprints((current) => { const next = { ...current }; delete next[item.id]; return next; });
           setPreviewStatuses((current) => { const next = { ...current }; delete next[item.id]; return next; });
-          nextPreflightRetryAt.current.delete(key);
+          nextPreflightRetryAt.current.set(key, performance.now() + previewRetryDelayMs);
           refreshAfterInactivePreview();
         }
         return;
       }
       const result = await readJsonResponse(response, discoveryRecommendationSchema, "continuation preview");
       if (!isCurrent()) return;
+      stalePreviewKeys.current.delete(key);
       const unusableReadyResult = result.state === "ready" &&
         (result.evidence_fingerprint !== item.evidence_fingerprint || !previewMatchesDecision(item, result));
       const checkedResult: Recommendation = unusableReadyResult
@@ -477,6 +483,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
       else nextPreflightRetryAt.current.delete(key);
     } catch (cause) {
       if (!isCurrent()) return;
+      stalePreviewKeys.current.delete(key);
       reportDebugError(cause, { kind: "api", source: "discovery preview",
         endpoint: `${API_URL}/api/discoveries/${item.id}/recommendations` });
       setPreviewFingerprints((current) => ({ ...current, [item.id]: item.evidence_fingerprint }));
@@ -514,10 +521,10 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
       const { discoveries: currentDiscoveries, previewFingerprints: currentFingerprints,
         previewStatuses: currentStatuses } = preflightState.current;
       const waitingItems = currentDiscoveries.filter((item) => !item.card_id &&
-        !stalePreviewKeys.current.has(`${item.id}:${item.evidence_fingerprint}`) &&
-        currentFingerprints[item.id] === item.evidence_fingerprint &&
-        (currentStatuses[item.id] === "waiting" || currentStatuses[item.id] === "failed") &&
-        performance.now() >= (nextPreflightRetryAt.current.get(`${item.id}:${item.evidence_fingerprint}`) ?? 0));
+        performance.now() >= (nextPreflightRetryAt.current.get(`${item.id}:${item.evidence_fingerprint}`) ?? 0) &&
+        (stalePreviewKeys.current.has(`${item.id}:${item.evidence_fingerprint}`) ||
+          (currentFingerprints[item.id] === item.evidence_fingerprint &&
+            (currentStatuses[item.id] === "waiting" || currentStatuses[item.id] === "failed"))));
       void withConcurrency(waitingItems, previewConcurrency, loadPreview);
     }, 3_000);
     return () => window.clearInterval(retryTimer);
@@ -1044,7 +1051,19 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
                     {active.card_id && !trainingEligibility[eligibilityKey(active)]?.eligible && (
                       <p role="status">{trainingEligibility[eligibilityKey(active)]?.reason ??
                         eligibilityErrors[eligibilityKey(active)] ?? "Checking direct training eligibility."}
-                        {" "}Open in Builder to inspect this decision.</p>
+                        {" "}Open in Builder to inspect this decision.
+                        {eligibilityErrors[eligibilityKey(active)] && (
+                          <> <Button type="button" onClick={() => {
+                            const key = eligibilityKey(active);
+                            setEligibilityErrors((items) => {
+                              const remaining = { ...items };
+                              delete remaining[key];
+                              return remaining;
+                            });
+                            setError((current) => current === eligibilityErrors[key] ? null : current);
+                          }}>Retry eligibility</Button></>
+                        )}
+                      </p>
                     )}
                     {!active.card_id && (
                       <Button

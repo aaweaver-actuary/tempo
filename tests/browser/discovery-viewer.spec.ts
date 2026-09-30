@@ -53,6 +53,77 @@ test("inactive discovery preview refreshes once without a retry notification and
   await expect(page.locator("#notification-tray").getByText(/Active discovery not found/)).toHaveCount(0);
 });
 
+test("same-key inactive preview recovers after the retry delay without an error notification", async ({ page }) => {
+  await page.clock.install();
+  let previewReads = 0;
+  let previewReady = false;
+  await page.route("**/api/discoveries?**", route => route.fulfill({ json: discoveryFeed([
+    discoveryFixture("recovering"),
+  ]) }));
+  await page.route("**/api/discoveries/recovering/recommendations", route => {
+    previewReads++;
+    return previewReady
+      ? route.fulfill({ json: readyPreview("recovering") })
+      : route.fulfill({ status: 404, json: { detail: "'Active discovery not found'" } });
+  });
+  await prepareUI(page);
+  await expect.poll(() => previewReads).toBe(1);
+  previewReady = true;
+  await page.clock.fastForward(31_000);
+  await page.getByRole("button", { name: "Discoveries" }).click();
+  const viewer = page.getByRole("dialog", { name: "Discoveries" });
+  await expect(viewer.getByText("1 of 1 · white to move")).toBeVisible();
+  expect(previewReads).toBe(2);
+  await viewer.getByRole("button", { name: "Back to work" }).click();
+  await page.getByRole("button", { name: "Notifications" }).click();
+  await expect(page.locator("#notification-tray").getByText(/Active discovery not found/)).toHaveCount(0);
+});
+
+test("repeated same-key inactive 404 previews stay bounded and silent", async ({ page }) => {
+  await page.clock.install();
+  let previewReads = 0;
+  await page.route("**/api/discoveries?**", route => route.fulfill({ json: discoveryFeed([
+    discoveryFixture("still-inactive"),
+  ]) }));
+  await page.route("**/api/discoveries/still-inactive/recommendations", route => {
+    previewReads++;
+    return route.fulfill({ status: 404, json: { detail: "'Active discovery not found'" } });
+  });
+  await prepareUI(page);
+  await expect.poll(() => previewReads).toBe(1);
+  await page.clock.fastForward(29_000);
+  expect(previewReads).toBe(1);
+  await page.clock.fastForward(35_000);
+  await expect.poll(() => previewReads).toBeGreaterThanOrEqual(2);
+  expect(previewReads).toBeLessThanOrEqual(3);
+  await page.getByRole("button", { name: "Notifications" }).click();
+  await expect(page.locator("#notification-tray").getByText(/Active discovery not found/)).toHaveCount(0);
+});
+
+test("refresh selects the remaining review item when the first feed item is waiting", async ({ page }) => {
+  await page.clock.install();
+  let refreshed = false;
+  await page.route("**/api/discoveries?**", route => route.fulfill({ json: discoveryFeed(refreshed
+    ? [discoveryFixture("waiting"), discoveryFixture("B", "B-revision", "card-B")]
+    : [discoveryFixture("A", "A-revision", "card-A"), discoveryFixture("B", "B-revision", "card-B")],
+  ) }));
+  await page.route("**/api/discoveries/waiting/recommendations", route => route.fulfill({ json: {
+    state: "waiting", opportunity_id: "waiting", candidates: [], reason: "Preparing preview",
+  } }));
+  await page.route("**/api/repertoires/rep/opportunities/*/training-eligibility", route =>
+    route.fulfill({ json: { eligible: true, reason: null } }));
+  await prepareUI(page);
+  await page.getByRole("button", { name: "Discoveries" }).click();
+  const viewer = page.getByRole("dialog", { name: "Discoveries" });
+  await expect(viewer.getByText("1 of 2 · white to move")).toBeVisible();
+  refreshed = true;
+  await page.clock.fastForward(31_000);
+  await expect(viewer.getByText("1 of 1 · white to move")).toBeVisible();
+  await expect(viewer.getByRole("button", { name: "Train this decision" })).toBeEnabled();
+  await expect(viewer.getByRole("button", { name: "Previous", exact: true })).toBeDisabled();
+  await expect(viewer.getByRole("button", { name: "Next", exact: true })).toBeDisabled();
+});
+
 for (const failure of [
   { name: "unrelated 404", status: 404, body: { detail: "Recommendation unavailable" }, message: /Recommendation unavailable/ },
   { name: "server error", status: 503, body: { detail: "Preview service unavailable" }, message: /Preview service unavailable/ },
@@ -142,6 +213,7 @@ test("late removed preview cannot be reused when the discovery returns", async (
   await prepareUI(page);
   await expect.poll(() => Boolean(releaseRemovedPreview)).toBe(true);
   await page.clock.fastForward(30_100);
+  await expect.poll(() => feedReads).toBeGreaterThanOrEqual(2);
   await page.clock.fastForward(30_100);
   await expect.poll(() => feedReads).toBeGreaterThanOrEqual(3);
   releaseRemovedPreview?.();
@@ -211,6 +283,36 @@ test("genuine training eligibility failure remains visible and blocks direct tra
   await expect(viewer.getByText("Eligibility service unavailable").first()).toBeVisible();
   await expect(viewer.getByRole("button", { name: "Train this decision" })).toBeDisabled();
   expect(trainPosts).toBe(0);
+});
+
+test("eligibility recovers after an unchanged feed poll through an item retry", async ({ page }) => {
+  await page.clock.install();
+  let eligibilityReads = 0;
+  let eligibilityReady = false;
+  let feedReads = 0;
+  await page.route("**/api/discoveries?**", route => {
+    feedReads++;
+    return route.fulfill({ json: discoveryFeed([
+      discoveryFixture("recovering-eligibility", "revision", "response-card"),
+    ]) });
+  });
+  await page.route("**/api/repertoires/rep/opportunities/recovering-eligibility/training-eligibility", route => {
+    eligibilityReads++;
+    return eligibilityReady
+      ? route.fulfill({ json: { eligible: true, reason: null } })
+      : route.fulfill({ status: 503, json: { detail: "Eligibility service unavailable" } });
+  });
+  await prepareUI(page);
+  await page.getByRole("button", { name: "Discoveries" }).click();
+  const viewer = page.getByRole("dialog", { name: "Discoveries" });
+  await expect(viewer.getByText("Eligibility service unavailable").first()).toBeVisible();
+  await expect(viewer.getByRole("button", { name: "Train this decision" })).toBeDisabled();
+  await page.clock.fastForward(31_000);
+  await expect.poll(() => feedReads).toBeGreaterThanOrEqual(2);
+  eligibilityReady = true;
+  await viewer.getByRole("button", { name: "Retry eligibility" }).click();
+  await expect.poll(() => eligibilityReads).toBe(2);
+  await expect(viewer.getByRole("button", { name: "Train this decision" })).toBeEnabled();
 });
 
 test("discovery viewer with a white decision rejects a black recommendation", async ({ page }) => {
