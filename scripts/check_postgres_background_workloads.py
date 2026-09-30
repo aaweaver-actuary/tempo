@@ -11,6 +11,7 @@ import time
 
 import psycopg
 from psycopg.errors import TransactionTimeout
+from psycopg.rows import dict_row
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from app import postgres_store
@@ -22,6 +23,7 @@ from app.threat_analysis_commands import claim_threat_analysis
 DATABASE_URL = "postgresql://postgres@postgres:5432/tempo"
 REPERTOIRE_ID = "incident-benchmark-repertoire"
 GAME_ID = "incident-benchmark-game"
+THREAT_REQUEST_ID = "incident-benchmark-threat-19999"
 NOW = datetime.now(timezone.utc).isoformat()
 
 
@@ -92,12 +94,46 @@ def seed(database) -> None:
     )
 
 
+def threat_request_state() -> dict:
+    """Inspect committed state through a fresh connection, including after timeout."""
+    with psycopg.connect(DATABASE_URL, row_factory=dict_row) as database:
+        request = database.execute(
+            "SELECT id,state,lease_id,lease_expires_at,attempts,updated_at,last_error "
+            "FROM threat_analysis_requests WHERE id=%s", (THREAT_REQUEST_ID,),
+        ).fetchone()
+        control = database.execute(
+            "SELECT * FROM background_activity WHERE source='threat_analysis' AND work_id=%s",
+            (THREAT_REQUEST_ID,),
+        ).fetchone()
+        recommendations = database.execute(
+            "SELECT recommendation.opportunity_id,recommendation.request_id,"
+            "recommendation.source_game_id,recommendation.source_ply,"
+            "opportunity.status,opportunity.card_id "
+            "FROM discovery_recommendation_requests recommendation "
+            "LEFT JOIN repertoire_opportunities opportunity ON opportunity.id=recommendation.opportunity_id "
+            "WHERE recommendation.request_id=%s", (THREAT_REQUEST_ID,),
+        ).fetchall()
+    return {"request": request, "background_activity": control, "recommendations": recommendations}
+
+
 def measure() -> None:
     with postgres_store.connection(background=True) as database:
         settings = database.execute_native(
             "SELECT current_setting('transaction_timeout'),current_setting('lock_timeout')",
         ).fetchone()
         print(f"effective background settings: transaction={settings[0]}, lock={settings[1]}")
+        expected_lock_timeout = settings[1]
+    before_baseline = threat_request_state()
+    request = before_baseline["request"]
+    assert request is not None and request["state"] == "queued" and request["attempts"] == 0, (
+        f"Expected an unclaimed benchmark request; request_state={before_baseline}"
+    )
+    assert request["lease_id"] is None and request["lease_expires_at"] is None, before_baseline
+    assert before_baseline["background_activity"] is None, before_baseline
+    assert len(before_baseline["recommendations"]) == 1, before_baseline
+    recommendation = before_baseline["recommendations"][0]
+    assert recommendation["status"] == "active" and recommendation["card_id"] is None, before_baseline
+
     os.environ["TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS"] = "50"
     baseline_started = time.perf_counter()
     baseline_timed_out = False
@@ -108,12 +144,44 @@ def measure() -> None:
     except TransactionTimeout:
         baseline_timed_out = True
     print(f"threat claim at 50ms: timed_out={baseline_timed_out}, elapsed={time.perf_counter()-baseline_started:.3f}s")
+    after_baseline = threat_request_state()
+    assert after_baseline == before_baseline, (
+        "Timed-out or rolled-back baseline claim must not persist a lease; "
+        f"before={before_baseline}, request_state={after_baseline}"
+    )
     os.environ["TEMPO_POSTGRES_BACKGROUND_TRANSACTION_TIMEOUT_MS"] = "250"
+    before_claim = threat_request_state()
+    assert before_claim == before_baseline, (
+        "Expected benchmark request to remain claimable before the second attempt; "
+        f"request_state={before_claim}"
+    )
     started = time.perf_counter()
-    with postgres_store.connection(background=True) as database:
-        claimed = claim_threat_analysis(database, {})
-    assert claimed["job"]["id"] == "incident-benchmark-threat-19999"
-    print(f"threat claim: 20000 queued, 1 eligible, committed in {time.perf_counter()-started:.3f}s")
+    try:
+        with postgres_store.connection(background=True) as database:
+            settings = database.execute_native(
+                "SELECT current_setting('transaction_timeout'),current_setting('lock_timeout')",
+            ).fetchone()
+            assert tuple(settings) == ("250ms", expected_lock_timeout), (
+                f"Unexpected second-claim settings: {tuple(settings)}"
+            )
+            claimed = claim_threat_analysis(database, {})
+    except Exception as error:
+        error.add_note(f"Benchmark second claim failed; request_state={threat_request_state()}")
+        raise
+    claim_elapsed = time.perf_counter() - started
+    after_claim = threat_request_state()
+    assert claimed["job"] is not None, (
+        "Expected benchmark threat request to remain claimable; "
+        f"request_state={after_claim}"
+    )
+    assert claimed["job"]["id"] == THREAT_REQUEST_ID, (
+        f"Expected benchmark request, got {claimed['job']}; request_state={after_claim}"
+    )
+    request = after_claim["request"]
+    assert request is not None and request["state"] == "leased", after_claim
+    assert request["lease_id"] == claimed["job"]["lease_id"], after_claim
+    assert request["lease_expires_at"] is not None and request["attempts"] == 1, after_claim
+    print(f"threat claim: 20000 queued, 1 eligible, committed in {claim_elapsed:.3f}s; baseline rollback and committed lease verified")
 
     started = time.perf_counter()
     with background_read_connection() as database:

@@ -3,6 +3,8 @@ import { beforeEach, expect, it, vi } from "vitest";
 import { DiscoveriesTray } from "../../app/components/discoveries-tray";
 import { DISCOVERY_ADMISSION_QUEUED, flushPendingDiscoveryAdmissions, pendingDiscoveryAdmissions } from
   "../../app/lib/discovery-admission-outbox";
+import { clearDataDiagnostics, dataDiagnostics } from "../../app/lib/validated-data";
+import { clearDebugErrors, debugErrors } from "../../app/lib/debug-reporting";
 import { Chess } from "chess.js";
 import { clearNotificationHistory, notifications, publishNotification } from "../../app/lib/notifications";
 
@@ -171,14 +173,20 @@ it("describes valid zero-sample analysis without requesting an evidence refresh"
   };
   backgroundFetch.mockImplementation(async () => Response.json({ discoveries: [discovery], total: 1,
     next_offset: null, unread_count: 0 }));
-  const fetcher = vi.fn(async () => Response.json({ acknowledged: true }));
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).endsWith("/opportunities/no-follow-up/training-eligibility"))
+      return Response.json({ eligible: true, reason: null });
+    throw new Error(`Unexpected request: ${String(input)}`);
+  });
   vi.stubGlobal("fetch", fetcher);
   render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
   fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
   fireEvent.click(await screen.findByText("Why this position was flagged"));
   expect(screen.getByText(/Immediate loss: no complete samples/)).toBeTruthy();
   expect(screen.getByText(/Observed change through your third later turn: no complete games/)).toBeTruthy();
-  expect(fetcher).not.toHaveBeenCalled();
+  await waitFor(() => expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
+    "http://127.0.0.1:8000/api/repertoires/rep/opportunities/no-follow-up/training-eligibility",
+  ]));
 });
 
 it("ready discovery queue paginates before navigation and keeps feed order", async () => {
@@ -500,4 +508,312 @@ it("confirmed failed discovery save remains visible with a retry action", async 
   fireEvent.click(screen.getByRole("button", { name: "Add and train" }));
   await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("stale evidence"));
   expect(screen.getByRole("button", { name: "Retry save" })).toBeTruthy();
+});
+
+
+function savedEligibilityDiscovery() {
+  return {
+    id: "eligibility-recovery", repertoire_id: "rep", kind: "weak_known_decision", status: "active",
+    fen_key: startFen.split(" ").slice(0, 4).join(" "), fen: startFen,
+    card_id: "card", opponent_move_uci: null, trained_color: "white", score: 0.8,
+    evidence: { supporting_games: 0 }, evidence_fingerprint: "unchanged-evidence",
+    seen_at: "2026-09-24T00:00:00Z", snoozed_until: null,
+    admission_state: null, admitted_card_id: null, unread: false, source_games: [], routes: [],
+    created_at: "2026-09-24T00:00:00Z", updated_at: "2026-09-24T00:00:00Z",
+  };
+}
+
+it("negative discovery eligibility recovers through an explicit recheck after an unchanged feed refresh", async () => {
+  const discovery = savedEligibilityDiscovery();
+  backgroundFetch.mockReset();
+  backgroundFetch.mockImplementation(async () => Response.json({ discoveries: [discovery], total: 1,
+    next_offset: null, unread_count: 0 }));
+  let backendEligible = false;
+  let finishRecheck: ((response: Response) => void) | undefined;
+  let eligibilityRequests = 0;
+  const requests: string[] = [];
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.endsWith("/training-eligibility")) {
+      eligibilityRequests += 1;
+      if (eligibilityRequests === 2)
+        return new Promise<Response>((resolve) => { finishRecheck = resolve; });
+      return Response.json(backendEligible
+        ? { eligible: true, reason: null }
+        : { eligible: false, reason: "The saved card is unavailable or awaiting validation" });
+    }
+    if (url.endsWith("/train")) return Response.json({ card_id: "card", queued: true, idempotent: false });
+    throw new Error(`Unexpected request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  let refreshTick: (() => void) | undefined;
+  const originalSetInterval = window.setInterval.bind(window);
+  const interval = vi.spyOn(window, "setInterval").mockImplementation((callback, delay) => {
+    if (delay === 30_000) {
+      refreshTick = callback as () => void;
+      return originalSetInterval(() => undefined, delay) as unknown as NodeJS.Timeout;
+    }
+    return originalSetInterval(callback, delay) as unknown as NodeJS.Timeout;
+  });
+  const onQueueChanged = vi.fn(async () => {});
+  try {
+    render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={onQueueChanged} />);
+    fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+    await screen.findByText(/The saved card is unavailable or awaiting validation/);
+    const train = screen.getByRole("button", { name: "Train this decision" }) as HTMLButtonElement;
+    expect(train.disabled).toBe(true);
+    expect(eligibilityRequests).toBe(1);
+    backendEligible = true;
+    await act(async () => { refreshTick?.(); });
+    expect(backgroundFetch).toHaveBeenCalledTimes(2);
+    expect(eligibilityRequests).toBe(1);
+    expect(train.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Recheck eligibility" }));
+    await waitFor(() => expect(eligibilityRequests).toBe(2));
+    expect(train.disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "Recheck eligibility" })).toBeNull();
+    await act(async () => { finishRecheck?.(Response.json({ eligible: true, reason: null })); });
+    await waitFor(() => expect(train.disabled).toBe(false));
+    fireEvent.click(train);
+    await waitFor(() => expect(onQueueChanged).toHaveBeenCalledTimes(1));
+    expect(requests.map((url) => url.split("/").at(-1))).toEqual([
+      "training-eligibility", "training-eligibility", "training-eligibility", "train",
+    ]);
+  } finally { interval.mockRestore(); }
+});
+
+it("failed negative eligibility recheck remains observable and retries before enabling training", async () => {
+  const discovery = savedEligibilityDiscovery();
+  backgroundFetch.mockReset();
+  backgroundFetch.mockResolvedValue(Response.json({ discoveries: [discovery], total: 1,
+    next_offset: null, unread_count: 0 }));
+  let finishRetry: ((response: Response) => void) | undefined;
+  const fetcher = vi.fn()
+    .mockResolvedValueOnce(Response.json({ eligible: false,
+      reason: "The saved card is unavailable or awaiting validation" }))
+    .mockResolvedValueOnce(Response.json({ detail: "Eligibility temporarily unavailable" }, { status: 503 }))
+    .mockImplementationOnce(() => new Promise<Response>((resolve) => { finishRetry = resolve; }));
+  vi.stubGlobal("fetch", fetcher);
+  render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Recheck eligibility" }));
+  const retry = await screen.findByRole("button", { name: "Retry eligibility" });
+  expect(screen.getAllByText(/Eligibility temporarily unavailable/).length).toBeGreaterThan(0);
+  const train = screen.getByRole("button", { name: "Train this decision" }) as HTMLButtonElement;
+  expect(train.disabled).toBe(true);
+  fireEvent.click(retry);
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+  expect(screen.queryByText(/Eligibility temporarily unavailable/)).toBeNull();
+  expect(train.disabled).toBe(true);
+  await act(async () => { finishRetry?.(Response.json({ eligible: true, reason: null })); });
+  await waitFor(() => expect(train.disabled).toBe(false));
+});
+
+
+function deferredEligibility<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (cause: Error) => void;
+  const promise = new Promise<T>((finish, fail) => { resolve = finish; reject = fail; });
+  return { promise, resolve, reject };
+}
+
+async function eligibilityLifecycleFixture() {
+  const discovery = savedEligibilityDiscovery();
+  let feed = [discovery];
+  let refreshTick: (() => void) | undefined;
+  const requests: ReturnType<typeof deferredEligibility<Response>>[] = [];
+  const originalSetInterval = window.setInterval.bind(window);
+  const interval = vi.spyOn(window, "setInterval").mockImplementation((callback, delay) => {
+    if (delay === 30_000) {
+      refreshTick = callback as () => void;
+      return originalSetInterval(() => undefined, delay) as unknown as NodeJS.Timeout;
+    }
+    return originalSetInterval(callback, delay) as unknown as NodeJS.Timeout;
+  });
+  backgroundFetch.mockReset();
+  backgroundFetch.mockImplementation(async () => Response.json({ discoveries: feed, total: feed.length,
+    next_offset: null, unread_count: 0 }));
+  const fetcher = vi.fn((input: RequestInfo | URL) => {
+    if (!String(input).endsWith("/training-eligibility"))
+      return Promise.resolve(Response.json({ card_id: "card", queued: true, idempotent: false }));
+    const request = deferredEligibility<Response>();
+    requests.push(request);
+    return request.promise;
+  });
+  vi.stubGlobal("fetch", fetcher);
+  clearDataDiagnostics();
+  clearDebugErrors();
+  const view = render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+  const refreshFeed = async (next: typeof feed) => {
+    feed = next;
+    await act(async () => { refreshTick?.(); });
+  };
+  return { discovery, requests, fetcher, refreshFeed,
+    train: () => screen.getByRole("button", { name: "Train this decision" }) as HTMLButtonElement,
+    dispose: async () => {
+      view.unmount();
+      await act(async () => { requests.forEach((request) => request.resolve(Response.json({ eligible: true, reason: null }))); });
+      interval.mockRestore();
+    },
+  };
+}
+
+const obsoleteEligibilityOutcomes = [
+  { name: "positive", settle: (request: ReturnType<typeof deferredEligibility<Response>>) =>
+    request.resolve(Response.json({ eligible: true, reason: null })) },
+  { name: "negative", settle: (request: ReturnType<typeof deferredEligibility<Response>>) =>
+    request.resolve(Response.json({ eligible: false, reason: "Obsolete negative eligibility" })) },
+  { name: "HTTP failure", settle: (request: ReturnType<typeof deferredEligibility<Response>>) =>
+    request.resolve(Response.json({ detail: "Obsolete eligibility HTTP failure" }, { status: 503 })) },
+  { name: "malformed JSON", settle: (request: ReturnType<typeof deferredEligibility<Response>>) =>
+    request.resolve(new Response("{broken")) },
+  { name: "malformed schema", settle: (request: ReturnType<typeof deferredEligibility<Response>>) =>
+    request.resolve(Response.json({ eligible: "invalid" })) },
+  { name: "network rejection", settle: (request: ReturnType<typeof deferredEligibility<Response>>) =>
+    request.reject(new Error("Obsolete eligibility network failure")) },
+];
+
+function expectNoObsoleteEligibilityFailure() {
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.queryByRole("button", { name: "Retry eligibility" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Recheck eligibility" })).toBeNull();
+  expect(dataDiagnostics()).toHaveLength(0);
+  expect(debugErrors()).toHaveLength(0);
+}
+
+it.each(obsoleteEligibilityOutcomes)("returned discovery starts fresh eligibility before obsolete request settles: $name", async ({ settle }) => {
+  const fixture = await eligibilityLifecycleFixture();
+  try {
+    await waitFor(() => expect(fixture.requests).toHaveLength(1));
+    await fixture.refreshFeed([]);
+    await fixture.refreshFeed([fixture.discovery]);
+    expect(fixture.requests).toHaveLength(2);
+    expect(fixture.train().disabled).toBe(true);
+    await act(async () => { settle(fixture.requests[0]); });
+    expect(fixture.train().disabled).toBe(true);
+    expectNoObsoleteEligibilityFailure();
+    await act(async () => fixture.requests[1].resolve(Response.json({ eligible: true, reason: null })));
+    expect(fixture.train().disabled).toBe(false);
+  } finally { await fixture.dispose(); }
+});
+
+it.each(obsoleteEligibilityOutcomes)("obsolete eligibility settlement cannot overwrite replacement success: $name", async ({ settle }) => {
+  const fixture = await eligibilityLifecycleFixture();
+  try {
+    await waitFor(() => expect(fixture.requests).toHaveLength(1));
+    await fixture.refreshFeed([]);
+    await fixture.refreshFeed([fixture.discovery]);
+    expect(fixture.requests).toHaveLength(2);
+    await act(async () => fixture.requests[1].resolve(Response.json({ eligible: true, reason: null })));
+    expect(fixture.train().disabled).toBe(false);
+    await act(async () => { settle(fixture.requests[0]); });
+    expect(fixture.train().disabled).toBe(false);
+    expectNoObsoleteEligibilityFailure();
+  } finally { await fixture.dispose(); }
+});
+
+it("obsolete eligibility cleanup preserves replacement request ownership", async () => {
+  const fixture = await eligibilityLifecycleFixture();
+  try {
+    await waitFor(() => expect(fixture.requests).toHaveLength(1));
+    await fixture.refreshFeed([fixture.discovery]);
+    expect(fixture.requests).toHaveLength(1);
+    await fixture.refreshFeed([]);
+    await fixture.refreshFeed([fixture.discovery]);
+    expect(fixture.requests).toHaveLength(2);
+    await act(async () => fixture.requests[0].resolve(Response.json({ eligible: true, reason: null })));
+    await fixture.refreshFeed([fixture.discovery]);
+    expect(fixture.requests).toHaveLength(2);
+    expect(fixture.train().disabled).toBe(true);
+    await act(async () => fixture.requests[1].resolve(Response.json({ eligible: true, reason: null })));
+    expect(fixture.train().disabled).toBe(false);
+    await fixture.refreshFeed([fixture.discovery]);
+    expect(fixture.requests).toHaveLength(2);
+  } finally { await fixture.dispose(); }
+});
+
+it.each(["evidence_fingerprint", "card_id"] as const)("eligibility identity change away and back invalidates earlier requests: %s", async (field) => {
+  const fixture = await eligibilityLifecycleFixture();
+  try {
+    await waitFor(() => expect(fixture.requests).toHaveLength(1));
+    await fixture.refreshFeed([{ ...fixture.discovery, [field]: "replacement" }]);
+    expect(fixture.requests).toHaveLength(2);
+    await fixture.refreshFeed([fixture.discovery]);
+    expect(fixture.requests).toHaveLength(3);
+    await act(async () => {
+      fixture.requests[0].resolve(Response.json({ eligible: true, reason: null }));
+      fixture.requests[1].resolve(Response.json({ detail: "Obsolete identity" }, { status: 503 }));
+    });
+    expect(fixture.train().disabled).toBe(true);
+    expectNoObsoleteEligibilityFailure();
+    await act(async () => fixture.requests[2].resolve(Response.json({ eligible: true, reason: null })));
+    expect(fixture.train().disabled).toBe(false);
+  } finally { await fixture.dispose(); }
+});
+
+it.each([
+  { name: "schema failure", status: 200, raw: { eligible: "invalid" } },
+  { name: "HTTP failure", status: 503, raw: { detail: "Obsolete decoded HTTP failure" } },
+])("obsolete eligibility body decoding cannot publish validation diagnostics: $name", async ({ status, raw }) => {
+  const fixture = await eligibilityLifecycleFixture();
+  const body = deferredEligibility<unknown>();
+  try {
+    await waitFor(() => expect(fixture.requests).toHaveLength(1));
+    const response = Response.json({}, { status });
+    const decode = vi.spyOn(response, "json").mockReturnValue(body.promise);
+    await act(async () => fixture.requests[0].resolve(response));
+    expect(decode).toHaveBeenCalledTimes(1);
+    await fixture.refreshFeed([]);
+    // Finish decoding while absent: even an identity-only handler rejects this response,
+    // but reporting inside the shared reader must also be guarded.
+    await act(async () => body.resolve(raw));
+    expect(dataDiagnostics()).toHaveLength(0);
+    expect(debugErrors()).toHaveLength(0);
+    await fixture.refreshFeed([fixture.discovery]);
+    expect(fixture.requests).toHaveLength(2);
+    expect(fixture.train().disabled).toBe(true);
+    await act(async () => fixture.requests[1].resolve(Response.json({ eligible: true, reason: null })));
+    expect(fixture.train().disabled).toBe(false);
+  } finally { body.resolve({ eligible: true, reason: null }); await fixture.dispose(); }
+});
+
+it.each([obsoleteEligibilityOutcomes[0], obsoleteEligibilityOutcomes[2], obsoleteEligibilityOutcomes[5]])(
+  "obsolete command-time eligibility cannot cache authorization or submit Train: $name", async ({ settle }) => {
+  const fixture = await eligibilityLifecycleFixture();
+  try {
+    await waitFor(() => expect(fixture.requests).toHaveLength(1));
+    await act(async () => fixture.requests[0].resolve(Response.json({ eligible: true, reason: null })));
+    fireEvent.click(fixture.train());
+    expect(fixture.requests).toHaveLength(2);
+    await fixture.refreshFeed([]);
+    await fixture.refreshFeed([fixture.discovery]);
+    expect(fixture.requests).toHaveLength(3);
+    await act(async () => { settle(fixture.requests[1]); });
+    expectNoObsoleteEligibilityFailure();
+    expect(fixture.fetcher.mock.calls.every(([input]) => String(input).endsWith("/training-eligibility"))).toBe(true);
+    expect(fixture.train().disabled).toBe(true);
+    await act(async () => fixture.requests[2].resolve(Response.json({ eligible: true, reason: null })));
+    expect(fixture.train().disabled).toBe(false);
+  } finally { await fixture.dispose(); }
+});
+
+
+it.each(obsoleteEligibilityOutcomes.slice(2))("current eligibility failure remains observable and retryable: $name", async ({ name, settle }) => {
+  const fixture = await eligibilityLifecycleFixture();
+  try {
+    await waitFor(() => expect(fixture.requests).toHaveLength(1));
+    await act(async () => { settle(fixture.requests[0]); });
+    expect(fixture.train().disabled).toBe(true);
+    expect(screen.getByRole("button", { name: "Retry eligibility" })).toBeTruthy();
+    expect(screen.getByRole("alert").textContent).toBeTruthy();
+    if (name === "HTTP failure" || name === "malformed schema") expect(debugErrors()).toHaveLength(1);
+    if (name === "malformed schema") expect(dataDiagnostics()).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Retry eligibility" }));
+    expect(fixture.requests).toHaveLength(2);
+    expect(fixture.train().disabled).toBe(true);
+    await act(async () => fixture.requests[1].resolve(Response.json({ eligible: true, reason: null })));
+    expect(fixture.train().disabled).toBe(false);
+  } finally { await fixture.dispose(); }
 });

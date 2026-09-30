@@ -644,6 +644,13 @@
     "state": "staged"
   },
   {
+    "method": "GET",
+    "path": "/api/repertoires/{identifier}/opportunities/{opportunity_id}/training-eligibility",
+    "handler": "repertoire_opportunity_training_eligibility",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
     "method": "POST",
     "path": "/api/repertoires/{identifier}/opportunities/{opportunity_id}/train",
     "handler": "train_repertoire_opportunity",

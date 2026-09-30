@@ -288,3 +288,46 @@ test("timing write failure preserves the original scenario error and still permi
   });
   assert.equal(cleaned, true);
 });
+
+for (const failWorkload of [false, true]) {
+  test(`background workload isolates consumers and restores them after ${failWorkload ? "failure" : "success"}`, async () => {
+    const { executeIsolatedBackgroundWorkload } = await import("../../scripts/postgres-test-plan.mjs");
+    const events = [];
+    const benchmarkFailure = new Error("benchmark failed");
+    const result = executeIsolatedBackgroundWorkload({
+      stopConsumers: async () => { events.push("consumers stopped and verified"); },
+      measureWorkload: async () => {
+        events.push("seed, measure, cleanup");
+        if (failWorkload) throw benchmarkFailure;
+      },
+      restoreConsumers: async () => { events.push("consumers restored and ready"); },
+    });
+    if (failWorkload) await assert.rejects(result, (error) => error === benchmarkFailure);
+    else await result;
+    assert.deepEqual(events, ["consumers stopped and verified", "seed, measure, cleanup", "consumers restored and ready"]);
+  });
+}
+
+test("background workload restores partially stopped consumers without masking the isolation failure", async () => {
+  const { executeIsolatedBackgroundWorkload } = await import("../../scripts/postgres-test-plan.mjs");
+  const events = [];
+  const isolationFailure = new Error("consumer stop failed");
+  await assert.rejects(executeIsolatedBackgroundWorkload({
+    stopConsumers: () => { events.push("stop"); throw isolationFailure; },
+    measureWorkload: () => { events.push("benchmark"); },
+    restoreConsumers: () => { events.push("restore"); },
+  }), (error) => error === isolationFailure);
+  assert.deepEqual(events, ["stop", "restore"]);
+});
+
+test("background workload preserves benchmark and consumer restoration failures", async () => {
+  const { executeIsolatedBackgroundWorkload } = await import("../../scripts/postgres-test-plan.mjs");
+  const benchmarkFailure = new Error("benchmark failed");
+  const restorationFailure = new Error("consumer restoration failed");
+  await assert.rejects(executeIsolatedBackgroundWorkload({
+    stopConsumers: () => {},
+    measureWorkload: () => { throw benchmarkFailure; },
+    restoreConsumers: () => { throw restorationFailure; },
+  }), (error) => error instanceof AggregateError
+    && error.errors[0] === benchmarkFailure && error.errors[1] === restorationFailure);
+});
