@@ -70,6 +70,7 @@ test("FEN-only study square exercise is authored enrolled and reviewed through t
   await nav(page, "Train");
   await expect(page.getByText("Select the white knight square")).toBeVisible();
   await expect(page.getByText("Original synthetic study")).toHaveCount(0);
+  await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", fen);
   const beforeFen = await page.locator(".board-frame").first().getAttribute("data-fen");
   await page.getByLabel("Coordinates or UCI move").fill("g1");
   await page.getByRole("button", { name: "Add", exact: true }).click();

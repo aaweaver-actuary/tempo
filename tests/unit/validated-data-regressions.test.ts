@@ -9,6 +9,7 @@ import {
 import {
   builderSessionSchema,
   discoveryRecommendationSchema,
+  discoveryTrainingEligibilitySchema,
   gameAnalysisClaimSchema,
   portableSnapshotSchema,
   repertoireCoverageSummarySchema,
@@ -25,6 +26,14 @@ import { clearDebugErrors, reportDebugError, resolveValidationIncidentsForEndpoi
 import { clearNotificationHistory, notifications } from "../../app/lib/notifications";
 
 beforeEach(clearDataDiagnostics);
+
+it("discovery training eligibility requires an explanation when direct training is unavailable", () => {
+  expect(discoveryTrainingEligibilitySchema.parse({ eligible: true, reason: null }).eligible).toBe(true);
+  expect(discoveryTrainingEligibilitySchema.parse({ eligible: false, reason: "Inspect in Builder" }).eligible).toBe(false);
+  expect(discoveryTrainingEligibilitySchema.safeParse({ eligible: false, reason: null }).success).toBe(false);
+  expect(discoveryTrainingEligibilitySchema.safeParse({ eligible: true, reason: "Unexpected" }).success).toBe(false);
+  expect(discoveryTrainingEligibilitySchema.safeParse({ eligible: true, reason: null, extra: true }).success).toBe(false);
+});
 
 it("one validation exception reports once with its HTTP endpoint and resolves after valid status", async () => {
   clearDebugErrors();

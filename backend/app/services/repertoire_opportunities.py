@@ -1065,9 +1065,9 @@ def snooze_opportunity(database: sqlite3.Connection, repertoire_id: str,
     return result.rowcount > 0
 
 
-def admit_existing_decision(database: sqlite3.Connection, repertoire_id: str,
-                            opportunity_id: str) -> dict:
-    """Explicitly queue a saved decision without changing ancestor mastery or reviews."""
+def _existing_decision_training_plan(database: sqlite3.Connection, repertoire_id: str,
+                                     opportunity_id: str) -> tuple[sqlite3.Row, sqlite3.Row | None]:
+    """Validate direct training without writing, including the exact target position."""
     opportunity = database.execute(
         """SELECT * FROM repertoire_opportunities WHERE id=? AND repertoire_id=?""",
         (opportunity_id, repertoire_id),
@@ -1075,8 +1075,7 @@ def admit_existing_decision(database: sqlite3.Connection, repertoire_id: str,
     if not opportunity:
         raise KeyError("Discovery not found")
     if opportunity["admission_state"] == "queued" and opportunity["admitted_card_id"]:
-        return {"card_id": opportunity["admitted_card_id"], "queued": True,
-                "idempotent": True}
+        return opportunity, None
     if opportunity["status"] != "active":
         raise ValueError("Discovery is no longer actionable")
     if not opportunity["card_id"]:
@@ -1099,9 +1098,8 @@ def admit_existing_decision(database: sqlite3.Connection, repertoire_id: str,
         (repertoire_id, card["id"]),
     ).fetchone() and card["repertoire_id"] != repertoire_id:
         raise ValueError("The card is no longer in this repertoire")
-    target_card_id = card["id"]
     if card["kind"] == "prefix":
-        from .prefix_split import apply_prefix_split, preview_prefix_split
+        from .prefix_split import preview_prefix_split
         preview = preview_prefix_split(database, card["id"])
         continuation_board = chess.Board(preview["continuation"]["starting_fen"])
         learner_color = chess.WHITE if card["trained_color"] == "white" else chess.BLACK
@@ -1112,8 +1110,6 @@ def admit_existing_decision(database: sqlite3.Connection, repertoire_id: str,
         continuation_key = " ".join(continuation_board.fen().split()[:4])
         if continuation_key != opportunity["fen_key"]:
             raise ValueError("The target decision cannot be isolated from this prefix card")
-        split = apply_prefix_split(database, card["id"], int(card["revision"]))
-        target_card_id = split["continuation"]["card_id"]
     else:
         board = chess.Board(card["start_fen"])
         trained_color = chess.WHITE if card["trained_color"] == "white" else chess.BLACK
@@ -1128,6 +1124,31 @@ def admit_existing_decision(database: sqlite3.Connection, repertoire_id: str,
             raise ValueError("This card contains more than one decision")
         if decision_fen_key != opportunity["fen_key"]:
             raise ValueError("The saved card no longer tests this decision")
+    return opportunity, card
+
+
+def existing_decision_training_eligibility(database: sqlite3.Connection, repertoire_id: str,
+                                           opportunity_id: str) -> dict:
+    """Read-only admission check for the Discoveries UI."""
+    try:
+        _existing_decision_training_plan(database, repertoire_id, opportunity_id)
+    except ValueError as error:
+        return {"eligible": False, "reason": str(error)}
+    return {"eligible": True, "reason": None}
+
+
+def admit_existing_decision(database: sqlite3.Connection, repertoire_id: str,
+                            opportunity_id: str) -> dict:
+    """Explicitly queue a saved decision without changing ancestor mastery or reviews."""
+    opportunity, card = _existing_decision_training_plan(database, repertoire_id, opportunity_id)
+    if card is None:
+        return {"card_id": opportunity["admitted_card_id"], "queued": True,
+                "idempotent": True}
+    target_card_id = card["id"]
+    if card["kind"] == "prefix":
+        from .prefix_split import apply_prefix_split
+        split = apply_prefix_split(database, card["id"], int(card["revision"]))
+        target_card_id = split["continuation"]["card_id"]
     from .review_service import ensure_card_queued_after
     from datetime import date
     today = date.today().isoformat()

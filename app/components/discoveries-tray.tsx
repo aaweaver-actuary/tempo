@@ -5,11 +5,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import { Chess } from "chess.js";
-import type { z } from "zod";
+import { z } from "zod";
 import { API_URL } from "../const";
 import { Chessboard, type BoardTheme, type PieceSet } from "./board/chessboard";
 import { MoveComparisonTable } from "./move-comparison-table";
-import { discoveriesFeedSchema, discoveryRecommendationSchema } from "../domain/schemas";
+import { discoveriesFeedSchema, discoveryRecommendationSchema,
+  discoveryTrainingEligibilitySchema } from "../domain/schemas";
 import { adaptEngineMoves, adaptExplorerMoves } from "../domain/adapters/analysis-adapters";
 import type { CandidateMove } from "../domain";
 import { backgroundFetch } from "../lib/background-fetch";
@@ -26,7 +27,8 @@ import {
 import { requestInteractiveAnalysis } from "../lib/engine-broker";
 import { loadExplorer, type ExplorerResult } from "../lib/lichess-explorer";
 import { readLichessSessionToken } from "../lib/lichess-session";
-import { readJsonResponse } from "../lib/validated-data";
+import { parseData, readJsonResponse } from "../lib/validated-data";
+import { reportDebugError } from "../lib/debug-reporting";
 import { applyOpportunityCommand } from "../lib/opportunity-command";
 import { requestOpportunityRefresh } from "../lib/opportunity-refresh-command";
 import { usesLocalApi } from "../utils/local";
@@ -34,6 +36,7 @@ import { notifications, publishNotification, resolveNotification } from "../lib/
 
 export type DiscoveryItem = z.infer<typeof discoveriesFeedSchema>["discoveries"][number];
 type Recommendation = z.infer<typeof discoveryRecommendationSchema>;
+type TrainingEligibility = z.infer<typeof discoveryTrainingEligibilitySchema>;
 type PreviewStatus = "waiting" | "unavailable" | "failed";
 const previewRetryDelayMs = 30_000;
 const previewConcurrency = 2;
@@ -46,6 +49,19 @@ async function withConcurrency<T>(items: T[], limit: number, visit: (item: T) =>
       if (item !== undefined) await visit(item);
     }
   }));
+}
+
+async function inactiveDiscoveryPreview(response: Response): Promise<boolean> {
+  if (response.status !== 404) return false;
+  try {
+    const body: unknown = await response.clone().json();
+    if (typeof body !== "object" || body === null || !("detail" in body)) return false;
+    return body.detail === "Active discovery not found" || body.detail === "'Active discovery not found'";
+  } catch { return false; }
+}
+
+function eligibilityKey(item: DiscoveryItem): string {
+  return `${item.id}:${item.evidence_fingerprint}:${item.card_id ?? ""}`;
 }
 
 function decisionFen(discovery: DiscoveryItem): string {
@@ -215,6 +231,8 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   const [previews, setPreviews] = useState<Record<string, Recommendation>>({});
   const [previewFingerprints, setPreviewFingerprints] = useState<Record<string, string>>({});
   const [previewStatuses, setPreviewStatuses] = useState<Record<string, PreviewStatus>>({});
+  const [trainingEligibility, setTrainingEligibility] = useState<Record<string, TrainingEligibility>>({});
+  const [eligibilityErrors, setEligibilityErrors] = useState<Record<string, string>>({});
   const [feedLoaded, setFeedLoaded] = useState(() => !usesLocalApi());
   const [initialPreflightComplete, setInitialPreflightComplete] = useState(() => !usesLocalApi());
   const [initialAdmissionFlushFinished, setInitialAdmissionFlushFinished] = useState(() => !usesLocalApi());
@@ -228,10 +246,16 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   const requestedEvidenceRefreshes = useRef(new Set<string>());
   const requestedPreflights = useRef(new Set<string>());
   const nextPreflightRetryAt = useRef(new Map<string, number>());
+  const stalePreviewKeys = useRef(new Set<string>());
+  const currentFeedItems = useRef(new Map<string, DiscoveryItem>());
+  const previewGenerations = useRef(new Map<string, number>());
+  const eligibilityGenerations = useRef(new Map<string, number>());
+  const eligibilityRequests = useRef(new Map<string, { key: string; generation: number }>());
   const initialPreflightStarted = useRef(false);
   const pendingSafeBreak = useRef(false);
   const preflightState = useRef({ discoveries, previewFingerprints, previewStatuses });
   const refreshInFlight = useRef<Promise<void> | null>(null);
+  const staleRefreshInFlight = useRef<Promise<void> | null>(null);
   const lastSafeBreak = useRef(safeBreakCounter);
   const lastOpenRequestToken = useRef(openRequest?.token);
   const triggerRef = useRef<HTMLButtonElement>(null);
@@ -262,6 +286,10 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     ? (discoveries.find((item) => item.id === activeSnapshot.id) ??
       activeSnapshot)
     : undefined;
+  useEffect(() => {
+    if (open && activeId && !currentFeedItems.current.has(activeId) && reviewItems.length)
+      setActiveId(reviewItems[0].id);
+  }, [open, activeId, reviewItems]);
   const fen = active ? decisionFen(active) : "";
   const legalDecisionMoves = useMemo(() => fen ? decisionMoves(fen) : new Set<string>(), [fen]);
   const savedPreview = active ? previews[active.id] : undefined;
@@ -310,9 +338,43 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
       const byId = new Map(pages.flatMap((page) => page.discoveries).map((item) => [item.id, item]));
       const currentPreviewKeys = new Set([...byId.values()].map((item) =>
         `${item.id}:${item.evidence_fingerprint}`));
+      for (const id of new Set([...currentFeedItems.current.keys(), ...byId.keys()])) {
+        const previousItem = currentFeedItems.current.get(id);
+        const nextItem = byId.get(id);
+        if ((previousItem ? eligibilityKey(previousItem) : undefined) !==
+            (nextItem ? eligibilityKey(nextItem) : undefined)) {
+          eligibilityGenerations.current.set(id, (eligibilityGenerations.current.get(id) ?? 0) + 1);
+          eligibilityRequests.current.delete(id);
+        }
+        const previousFingerprint = previousItem?.evidence_fingerprint;
+        const nextFingerprint = byId.get(id)?.evidence_fingerprint;
+        if (previousFingerprint !== nextFingerprint)
+          previewGenerations.current.set(id, (previewGenerations.current.get(id) ?? 0) + 1);
+      }
+      currentFeedItems.current = byId;
       for (const key of nextPreflightRetryAt.current.keys())
         if (!currentPreviewKeys.has(key)) nextPreflightRetryAt.current.delete(key);
+      for (const key of stalePreviewKeys.current)
+        if (!currentPreviewKeys.has(key)) stalePreviewKeys.current.delete(key);
+      const currentPreviewIds = new Set(Object.entries(preflightState.current.previewFingerprints)
+        .filter(([id, fingerprint]) => byId.get(id)?.evidence_fingerprint === fingerprint)
+        .map(([id]) => id));
+      setPreviews((current) => Object.fromEntries(Object.entries(current).filter(
+        ([id]) => currentPreviewIds.has(id))));
+      setPreviewFingerprints((current) => Object.fromEntries(Object.entries(current).filter(
+        ([id, fingerprint]) => byId.get(id)?.evidence_fingerprint === fingerprint)));
+      setPreviewStatuses((current) => Object.fromEntries(Object.entries(current).filter(
+        ([id]) => currentPreviewIds.has(id))));
+      const currentEligibilityKeys = new Set([...byId.values()].map(eligibilityKey));
+      setTrainingEligibility((current) => Object.fromEntries(Object.entries(current).filter(
+        ([key]) => currentEligibilityKeys.has(key))));
+      setEligibilityErrors((current) => Object.fromEntries(Object.entries(current).filter(
+        ([key]) => currentEligibilityKeys.has(key))));
       setDiscoveries([...byId.values()]);
+      setSessionItems((current) => current.flatMap((item) => {
+        const replacement = byId.get(item.id);
+        return replacement ? [replacement] : [];
+      }));
       setEvidenceRefreshPendingId((pendingId) => {
         const refreshedItem = pendingId ? byId.get(pendingId) : undefined;
         return pendingId && (!refreshedItem || hasCurrentRecurringEvidence(refreshedItem)) ? null : pendingId;
@@ -342,6 +404,90 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
       : startRefresh();
   }, [startRefresh]);
 
+  const refreshAfterInactivePreview = useCallback(() => {
+    if (staleRefreshInFlight.current) return;
+    const pendingRefresh = refresh(true);
+    staleRefreshInFlight.current = pendingRefresh;
+    void pendingRefresh.finally(() => {
+      if (staleRefreshInFlight.current === pendingRefresh) staleRefreshInFlight.current = null;
+    });
+  }, [refresh]);
+
+  const isEligibilityCurrent = useCallback((item: DiscoveryItem, generation: number) => {
+    const current = currentFeedItems.current.get(item.id);
+    return !!current && eligibilityKey(current) === eligibilityKey(item) &&
+      eligibilityGenerations.current.get(item.id) === generation;
+  }, []);
+
+  const checkTrainingEligibility = useCallback(async (
+    item: DiscoveryItem, isCurrent: () => boolean,
+  ): Promise<TrainingEligibility | null> => {
+    const endpoint = `${API_URL}/api/repertoires/${encodeURIComponent(item.repertoire_id)}` +
+      `/opportunities/${encodeURIComponent(item.id)}/training-eligibility`;
+    const response = await fetch(endpoint);
+    if (!isCurrent()) return null;
+    // Decode before reporting: the discovery can leave the feed while its body is pending.
+    let raw: unknown;
+    try { raw = await response.json(); }
+    catch {
+      if (!isCurrent()) return null;
+      throw new Error(response.ok ? "Invalid discovery training eligibility response JSON" :
+        `discovery training eligibility failed (HTTP ${response.status})`);
+    }
+    if (!isCurrent()) return null;
+    if (!response.ok) {
+      const details = z.looseObject({ detail: z.string().optional() }).safeParse(raw);
+      const failure = new Error(details.success && details.data.detail ? details.data.detail :
+        `discovery training eligibility failed (HTTP ${response.status})`);
+      reportDebugError(failure, { kind: "api", source: "validated-response",
+        operation: "read JSON response", endpoint, status: response.status });
+      throw failure;
+    }
+    return parseData(discoveryTrainingEligibilitySchema, raw, "discovery training eligibility", endpoint);
+  }, []);
+
+  const recheckTrainingEligibility = useCallback((item: DiscoveryItem) => {
+    const key = eligibilityKey(item);
+    setTrainingEligibility((items) => {
+      const remaining = { ...items };
+      delete remaining[key];
+      return remaining;
+    });
+    setEligibilityErrors((items) => {
+      const remaining = { ...items };
+      delete remaining[key];
+      return remaining;
+    });
+    setError((current) => current === eligibilityErrors[key] ? null : current);
+  }, [eligibilityErrors]);
+
+  useEffect(() => {
+    if (!active?.card_id) return;
+    const key = eligibilityKey(active);
+    const generation = eligibilityGenerations.current.get(active.id) ?? 0;
+    if (!isEligibilityCurrent(active, generation) || trainingEligibility[key] || eligibilityErrors[key] ||
+        eligibilityRequests.current.has(active.id)) return;
+    const request = { key, generation };
+    eligibilityRequests.current.set(active.id, request);
+    const isCurrent = () => isEligibilityCurrent(active, request.generation) &&
+      eligibilityRequests.current.get(active.id) === request;
+    void checkTrainingEligibility(active, isCurrent).then((result) => {
+      if (result && isCurrent())
+        setTrainingEligibility((items) => isEligibilityCurrent(active, request.generation)
+          ? { ...items, [key]: result } : items);
+    }).catch((cause) => {
+      if (isCurrent()) {
+        const message = cause instanceof Error ? cause.message : "Could not check training eligibility";
+        setEligibilityErrors((items) => isEligibilityCurrent(active, request.generation)
+          ? { ...items, [key]: message } : items);
+        setError((current) => isEligibilityCurrent(active, request.generation) ? message : current);
+      }
+    }).finally(() => {
+      if (eligibilityRequests.current.get(active.id) === request)
+        eligibilityRequests.current.delete(active.id);
+    });
+  }, [active, trainingEligibility, eligibilityErrors, checkTrainingEligibility, isEligibilityCurrent]);
+
   useEffect(() => {
     if (!usesLocalApi()) return;
     const initialTimer = window.setTimeout(() => void refresh(), 0);
@@ -351,11 +497,30 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
 
   const loadPreview = useCallback(async (item: DiscoveryItem): Promise<void> => {
     const key = `${item.id}:${item.evidence_fingerprint}`;
-    if (requestedPreflights.current.has(key)) return;
+    const requestGeneration = previewGenerations.current.get(item.id);
+    const isCurrent = () => currentFeedItems.current.get(item.id)?.evidence_fingerprint === item.evidence_fingerprint &&
+      previewGenerations.current.get(item.id) === requestGeneration;
+    if (requestedPreflights.current.has(key) ||
+        (stalePreviewKeys.current.has(key) &&
+          performance.now() < (nextPreflightRetryAt.current.get(key) ?? 0)) || !isCurrent()) return;
     requestedPreflights.current.add(key);
     try {
       const response = await backgroundFetch(`${API_URL}/api/discoveries/${item.id}/recommendations`);
+      if (!isCurrent()) return;
+      if (await inactiveDiscoveryPreview(response)) {
+        if (isCurrent()) {
+          stalePreviewKeys.current.add(key);
+          setPreviews((current) => { const next = { ...current }; delete next[item.id]; return next; });
+          setPreviewFingerprints((current) => { const next = { ...current }; delete next[item.id]; return next; });
+          setPreviewStatuses((current) => { const next = { ...current }; delete next[item.id]; return next; });
+          nextPreflightRetryAt.current.set(key, performance.now() + previewRetryDelayMs);
+          refreshAfterInactivePreview();
+        }
+        return;
+      }
       const result = await readJsonResponse(response, discoveryRecommendationSchema, "continuation preview");
+      if (!isCurrent()) return;
+      stalePreviewKeys.current.delete(key);
       const unusableReadyResult = result.state === "ready" &&
         (result.evidence_fingerprint !== item.evidence_fingerprint || !previewMatchesDecision(item, result));
       const checkedResult: Recommendation = unusableReadyResult
@@ -374,18 +539,28 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
       if (checkedResult.state === "waiting")
         nextPreflightRetryAt.current.set(key, performance.now() + previewRetryDelayMs);
       else nextPreflightRetryAt.current.delete(key);
-    } catch {
+    } catch (cause) {
+      if (!isCurrent()) return;
+      stalePreviewKeys.current.delete(key);
+      reportDebugError(cause, { kind: "api", source: "discovery preview",
+        endpoint: `${API_URL}/api/discoveries/${item.id}/recommendations` });
       setPreviewFingerprints((current) => ({ ...current, [item.id]: item.evidence_fingerprint }));
       setPreviewStatuses((current) => ({ ...current, [item.id]: "failed" }));
       nextPreflightRetryAt.current.set(key, performance.now() + previewRetryDelayMs);
     } finally {
       requestedPreflights.current.delete(key);
+      const replacement = currentFeedItems.current.get(item.id);
+      if (replacement && !replacement.card_id &&
+          replacement.evidence_fingerprint === item.evidence_fingerprint &&
+          previewGenerations.current.get(item.id) !== requestGeneration)
+        setDiscoveries((current) => [...current]);
     }
-  }, []);
+  }, [refreshAfterInactivePreview]);
 
   useEffect(() => {
     if (!feedLoaded || !initialAdmissionFlushFinished) return;
     const preflightItems = discoveries.filter((item) => !item.card_id &&
+      !stalePreviewKeys.current.has(`${item.id}:${item.evidence_fingerprint}`) &&
       (previewFingerprints[item.id] !== item.evidence_fingerprint ||
         (!previews[item.id] && !previewStatuses[item.id])));
     if (!initialPreflightComplete) {
@@ -404,9 +579,10 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
       const { discoveries: currentDiscoveries, previewFingerprints: currentFingerprints,
         previewStatuses: currentStatuses } = preflightState.current;
       const waitingItems = currentDiscoveries.filter((item) => !item.card_id &&
-        currentFingerprints[item.id] === item.evidence_fingerprint &&
-        (currentStatuses[item.id] === "waiting" || currentStatuses[item.id] === "failed") &&
-        performance.now() >= (nextPreflightRetryAt.current.get(`${item.id}:${item.evidence_fingerprint}`) ?? 0));
+        performance.now() >= (nextPreflightRetryAt.current.get(`${item.id}:${item.evidence_fingerprint}`) ?? 0) &&
+        (stalePreviewKeys.current.has(`${item.id}:${item.evidence_fingerprint}`) ||
+          (currentFingerprints[item.id] === item.evidence_fingerprint &&
+            (currentStatuses[item.id] === "waiting" || currentStatuses[item.id] === "failed"))));
       void withConcurrency(waitingItems, previewConcurrency, loadPreview);
     }, 3_000);
     return () => window.clearInterval(retryTimer);
@@ -707,12 +883,26 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
 
   const act = async (item: DiscoveryItem, action: "train" | "snooze" | "dismiss") => {
     setBusyId(item.id);
+    const generation = eligibilityGenerations.current.get(item.id) ?? 0;
+    const isCurrent = () => isEligibilityCurrent(item, generation);
+    let commandSubmitted = false;
     try {
+      if (action === "train") {
+        const currentEligibility = await checkTrainingEligibility(item, isCurrent);
+        if (!currentEligibility || !isCurrent()) return;
+        const key = eligibilityKey(item);
+        setTrainingEligibility((items) => isCurrent() ? { ...items, [key]: currentEligibility } : items);
+        if (!currentEligibility.eligible) return;
+      }
+      commandSubmitted = true;
       await applyOpportunityCommand(item.repertoire_id, item.id, action);
       if (action === "train") await onQueueChanged();
       await refresh(true);
       if (action !== "train") setActiveId(null);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : `Could not ${action} discovery`); }
+    } catch (cause) {
+      if (action !== "train" || commandSubmitted || isCurrent())
+        setError(cause instanceof Error ? cause.message : `Could not ${action} discovery`);
+    }
     finally { setBusyId(null); }
   };
 
@@ -840,6 +1030,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
                 <Button
                   onClick={() => {
                     setError(null);
+                    setEligibilityErrors({});
                     void refresh(true);
                   }}
                 >
@@ -913,7 +1104,8 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
                       <Button
                         disabled={
                           busyId === active.id ||
-                          active.admission_state === "queued"
+                          active.admission_state === "queued" ||
+                          !trainingEligibility[eligibilityKey(active)]?.eligible
                         }
                         onClick={() => void act(active, "train")}
                       >
@@ -921,6 +1113,19 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
                           ? "In training queue"
                           : "Train this decision"}
                       </Button>
+                    )}
+                    {active.card_id && !trainingEligibility[eligibilityKey(active)]?.eligible && (
+                      <p role="status">{trainingEligibility[eligibilityKey(active)]?.reason ??
+                        eligibilityErrors[eligibilityKey(active)] ?? "Checking direct training eligibility."}
+                        {" "}Open in Builder to inspect this decision.
+                        {(eligibilityErrors[eligibilityKey(active)] ||
+                          trainingEligibility[eligibilityKey(active)]?.eligible === false) && (
+                          <> <Button type="button" disabled={busyId === active.id}
+                            onClick={() => recheckTrainingEligibility(active)}>
+                            {eligibilityErrors[eligibilityKey(active)] ? "Retry eligibility" : "Recheck eligibility"}
+                          </Button></>
+                        )}
+                      </p>
                     )}
                     {!active.card_id && (
                       <Button
