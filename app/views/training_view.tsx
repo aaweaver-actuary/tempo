@@ -111,6 +111,7 @@ function StandardTrainingView({
     currentFenString,
     teachingEncounterKey,
   } = useTrainingStore(useShallow(selectTrainingViewState));
+  const attemptGeneration = useTrainingStore((state) => state.attempt.generation);
   const reviewBlocked = reviewPersistenceState === "saveFailed";
 
   useEffect(() => {
@@ -139,8 +140,6 @@ function StandardTrainingView({
   }, [card.id, card.queueEntryId, reviewPersistenceState, reviewSaveError]);
   const liveQueueBlocked = Boolean(serviceError && !offlineQueue);
   const isEndgame = card.kind === "endgame";
-  const { setShellBoardForOwner, releaseShellBoardForOwner } =
-    useBoardPublisher();
   const feedbackCopy = getFeedbackCopy(attemptFailed, card)[feedback];
   const playerName = trainedColor(card) === "white" ? "White" : "Black";
   const currentMoveKey = `${card.backendId ?? card.id}:${card.revision ?? 1}:${step}`;
@@ -172,65 +171,40 @@ function StandardTrainingView({
     feedback === "complete" ? card.moves.length : step,
   );
 
-  useEffect(() => {
-    if (!useSharedBoard || isEndgame) return;
-    setShellBoardForOwner("train", {
-      unavailable:
-        cardsLeft <= 0
-          ? serviceError
-            ? "Training position unavailable. Retry the local service."
-            : /requires? the computer/.test(queueNotice)
-              ? "Prepared exercises require the computer. Reconnect to continue."
-              : "No cards due. Your next session will appear here."
-          : undefined,
-      fen: currentFenString,
-      expectedSan: card.moves[step],
-      lastMove,
-      interactionMode:
-        isLocked ||
-        liveQueueBlocked ||
-        reviewBlocked ||
-        step >= card.moves.length ||
-        cardsLeft === 0
-          ? "readonly"
-          : "legal",
-      showHint: cardsLeft > 0 && showTeachingArrow,
-      theme: boardTheme,
-      pieceSet,
-      orientation: card.orientation === "black" ? "black" : "white",
-      shapes: trainingShapes,
-      drawnShapes: [],
-      positionRevision: boardAttempt,
-      onMove,
-      onSquareSelect: undefined,
-      onFreeMove: undefined,
-      onDrawnShapesChange: undefined,
-      onFlip: undefined,
-    });
-    return () => releaseShellBoardForOwner("train");
-  }, [
-    serviceError,
-    boardAttempt,
-    boardTheme,
-    card.moves,
-    card.orientation,
-    cardsLeft,
-    currentFenString,
-    isEndgame,
-    isLocked,
-    liveQueueBlocked,
-    reviewBlocked,
+  const trainingPositionKey = `${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${card.revision ?? 1}:${attemptGeneration}`;
+  useBoardPublisher("train", useSharedBoard && !isEndgame ? {
+    positionKey: trainingPositionKey,
+    unavailable:
+      cardsLeft <= 0
+        ? serviceError
+          ? "Training position unavailable. Retry the local service."
+          : /requires? the computer/.test(queueNotice)
+            ? "Prepared exercises require the computer. Reconnect to continue."
+            : "No cards due. Your next session will appear here."
+        : undefined,
+    fen: currentFenString,
+    expectedSan: card.moves[step],
     lastMove,
-    onMove,
+    interactionMode:
+      isLocked ||
+      liveQueueBlocked ||
+      reviewBlocked ||
+      step >= card.moves.length ||
+      cardsLeft === 0
+        ? "readonly"
+        : "legal",
+    showHint: cardsLeft > 0 && showTeachingArrow,
+    theme: boardTheme,
     pieceSet,
-    queueNotice,
-    releaseShellBoardForOwner,
-    setShellBoardForOwner,
-    showTeachingArrow,
-    step,
-    trainingShapes,
-    useSharedBoard,
-  ]);
+    orientation: card.orientation === "black" ? "black" : "white",
+    shapes: trainingShapes,
+    positionRevision: boardAttempt,
+    onMove,
+    onSquareSelect: undefined,
+    onFreeMove: undefined,
+    onDrawnShapesChange: undefined,
+    onFlip: undefined,
+  } : null);
 
   function handleAnalyzeOnLichessClick() {
     if (!attemptFailed && !reviewBlocked && !liveQueueBlocked) void rateCard("again");
@@ -307,6 +281,7 @@ function StandardTrainingView({
               <Chessboard
                 key={`${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${card.revision ?? 1}`}
                 positionRevision={boardAttempt}
+                positionKey={trainingPositionKey}
                 fen={currentFenString}
                 expectedSan={card.moves[step]}
                 lastMove={lastMove}

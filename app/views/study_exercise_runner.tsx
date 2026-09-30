@@ -57,7 +57,6 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
   const pendingRef = useRef<{ id: string; payload: Record<string, unknown> } | null>(null);
   const offlineAnswerRef = useRef<StudyAnswer | null>(null);
   const generationRef = useRef(0);
-  const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
 
   useEffect(() => {
     const generation = ++generationRef.current;
@@ -83,7 +82,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
           occupancy_rule: specification.occupancy_rule } : {}),
         ...("options" in specification ? { options: specification.options } : {}),
       }); });
-      return () => { generationRef.current += 1; releaseShellBoardForOwner("train"); };
+      return () => { generationRef.current += 1; };
     }
     void fetch(`${API_URL}/api/studies/${studyId}/exercises/${exerciseId}/present`, { signal: controller.signal })
       .then(async (response) => {
@@ -95,8 +94,8 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
         if (!controller.signal.aborted && generation === generationRef.current)
           setLoadError(error instanceof Error ? error.message : "Could not load this exercise.");
       });
-    return () => { controller.abort(); generationRef.current += 1; releaseShellBoardForOwner("train"); };
-  }, [studyId, exerciseId, card?.studySnapshot, releaseShellBoardForOwner]);
+    return () => { controller.abort(); generationRef.current += 1; };
+  }, [studyId, exerciseId, card?.studySnapshot]);
 
   const answerLocked = Boolean(reply);
   const currentFen = useMemo(() => {
@@ -129,16 +128,13 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     orig: square as Square, brush: "blue",
   })), [selectedSquares]);
   const selectionMode = exercise?.type === "square_set" || exercise?.type === "knight_path";
-  useEffect(() => {
-    if (!useSharedBoard || !exercise) return;
-    setShellBoardForOwner("train", {
-      fen: currentFen, orientation, interactionMode: blocked || reply ? "readonly" : selectionMode ? "select" : exercise.type === "move_line" ? "legal" : "readonly",
-      showHint: false, theme: boardTheme, pieceSet, shapes: answerShapes, drawnShapes: [],
-      lastMove: undefined, onMove, onSquareSelect: selectSquare,
-    });
-    return () => releaseShellBoardForOwner("train");
-  }, [useSharedBoard, exercise, currentFen, orientation, reply, blocked, selectionMode, boardTheme, pieceSet,
-    answerShapes, onMove, selectSquare, setShellBoardForOwner, releaseShellBoardForOwner]);
+  const studyPositionKey = `${studyId}:${exerciseId}:${exercise?.revision ?? 0}:${card?.queueEntryId ?? ""}`;
+  useBoardPublisher("train", useSharedBoard && exercise?.id === exerciseId ? {
+    positionKey: studyPositionKey,
+    fen: currentFen, orientation, interactionMode: blocked || reply ? "readonly" : selectionMode ? "select" : exercise.type === "move_line" ? "legal" : "readonly",
+    showHint: false, theme: boardTheme, pieceSet, shapes: answerShapes,
+    lastMove: undefined, onMove, onSquareSelect: selectSquare,
+  } : null);
 
   const addCoordinates = () => {
     const values = coordinateInput.toLowerCase().match(/[a-h][1-8]/g) ?? [];
@@ -276,7 +272,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     <p>{exercise.prompt}</p>
     {exercise.type === "square_set" && <p>{exercise.criterion}</p>}
     {exercise.type === "knight_path" && <p>Static, non-capturing knight route from {exercise.start_square} attacking {exercise.target_squares?.join(", ")}. {exercise.hop_rule === "exact" ? "Exactly" : "At most"} {exercise.maximum_hops} hops. Other pieces stay fixed.</p>}
-    {!useSharedBoard && <Chessboard fen={currentFen} locked={blocked || Boolean(reply) || !selectionMode && exercise.type !== "move_line"}
+    {!useSharedBoard && <Chessboard positionKey={studyPositionKey} fen={currentFen} locked={blocked || Boolean(reply) || !selectionMode && exercise.type !== "move_line"}
       selectOnly={selectionMode && !reply} onMove={onMove} onSquareSelect={selectSquare}
       showHint={false} theme={boardTheme} pieceSet={pieceSet} shapes={answerShapes}
       orientation={orientation} onFlip={() => setOrientation((value) => value === "white" ? "black" : "white")} />}

@@ -95,7 +95,6 @@ export default function DefenseTrainingView({
   const loadedRevision = useRef<number | null>(null);
   const pendingRef = useRef<PendingAttempt | null>(null);
   const submittingRef = useRef(false);
-  const { setShellBoardForOwner, releaseShellBoardForOwner } = useBoardPublisher();
 
   const loadExercise = useCallback(async () => {
     if (!candidateId) {
@@ -263,37 +262,32 @@ export default function DefenseTrainingView({
       }), [recognitionDone, showingPreview, shownFeedback, selectedSquares]);
   const locked = blocked || !exercise || busy || Boolean(pending) || recognitionStage
     || (recognitionDone && !defenseReady) || grade?.status === "correct" || grade?.status === "incorrect";
-  useEffect(() => {
-    if (!useSharedBoard) return;
-    setShellBoardForOwner("train", {
-      unavailable: loadError || undefined,
-      fen: boardFen,
-      expectedSan: undefined,
-      lastMove: undefined,
-      interactionMode: blocked ? "readonly" : recognitionStage && !assessmentDone ? "free" : locked ? "readonly" : "legal",
-      showHint: false,
-      theme: boardTheme,
-      pieceSet,
-      orientation: card.orientation === "black" ? "black" : "white",
-      shapes: recognitionShapes,
-      drawnShapes: [],
-      positionRevision: card.revision ?? 1,
-      onMove,
-      onSquareSelect: !blocked && recognitionStage && !assessmentDone ? selectSquare : undefined,
-      onFreeMove: !blocked && recognitionStage && !assessmentDone ? (from, to) => { selectSquare(from); selectSquare(to); } : undefined,
-      onDrawnShapesChange: undefined,
-      onFlip: undefined,
-    });
-    return () => releaseShellBoardForOwner("train");
-  }, [useSharedBoard, setShellBoardForOwner, releaseShellBoardForOwner,
-      boardFen, card.orientation, card.revision, loadError, locked, blocked,
-      boardTheme, pieceSet, onMove, recognitionStage, assessmentDone, selectSquare, recognitionShapes]);
+  const defensePositionKey = `${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${card.revision ?? 1}`;
+  useBoardPublisher("train", useSharedBoard ? {
+    positionKey: defensePositionKey,
+    unavailable: loadError || undefined,
+    fen: boardFen,
+    expectedSan: undefined,
+    lastMove: undefined,
+    interactionMode: blocked ? "readonly" : recognitionStage && !assessmentDone ? "free" : locked ? "readonly" : "legal",
+    showHint: false,
+    theme: boardTheme,
+    pieceSet,
+    orientation: card.orientation === "black" ? "black" : "white",
+    shapes: recognitionShapes,
+    positionRevision: card.revision ?? 1,
+    onMove,
+    onSquareSelect: !blocked && recognitionStage && !assessmentDone ? selectSquare : undefined,
+    onFreeMove: !blocked && recognitionStage && !assessmentDone ? (from, to) => { selectSquare(from); selectSquare(to); } : undefined,
+    onDrawnShapesChange: undefined,
+    onFlip: undefined,
+  } : null);
 
   const definitive = grade?.status === "correct" || grade?.status === "incorrect";
   return (
     <section className={`training-grid${useSharedBoard ? " training-grid-shared" : ""}`} aria-label="Defensive decision exercise">
       <div className="board-column">
-        {!useSharedBoard && <Chessboard fen={boardFen} locked={blocked || Boolean(locked && (!recognitionStage || assessmentDone))} showHint={false}
+        {!useSharedBoard && <Chessboard positionKey={defensePositionKey} fen={boardFen} locked={blocked || Boolean(locked && (!recognitionStage || assessmentDone))} showHint={false}
           theme={boardTheme} pieceSet={pieceSet} orientation={card.orientation} onMove={onMove} shapes={recognitionShapes}
           editMode={recognitionStage && !assessmentDone} onSquareSelect={recognitionStage && !assessmentDone ? selectSquare : undefined}
           onFreeMove={recognitionStage && !assessmentDone ? (from, to) => { selectSquare(from); selectSquare(to); } : undefined} />}

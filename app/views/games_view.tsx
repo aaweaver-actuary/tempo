@@ -264,8 +264,6 @@ export default function GamesView({
   } | null>(null);
   const [tacticalBusy, setTacticalBusy] = useState(false);
   const [lines, setLines] = useState<AnalysisLine[]>([]);
-  const { setShellBoardForOwner, releaseShellBoardForOwner } =
-    useBoardPublisher();
   const [filters, setFilters] = useState(() => ({
     source: "All",
     status: "All",
@@ -845,78 +843,54 @@ export default function GamesView({
       finding.kind !== "defensive tactical threat",
   );
 
-  useEffect(() => {
-    if (!useSharedBoard) return;
-    setShellBoardForOwner("games", {
-      unavailable: !selected
+  const gamePositionKey = `${selected?.id ?? "none"}:${boardMode}`;
+  useBoardPublisher("games", useSharedBoard ? {
+    positionKey: gamePositionKey,
+    unavailable: !selected
+      ? error
+        ? "Game position unavailable. Retry the local service."
+        : loaded
+          ? "Select an imported game to review."
+          : "Loading games…"
+      : !selectedDetailsReady
         ? error
-          ? "Game position unavailable. Retry the local service."
-          : loaded
-            ? "Select an imported game to review."
-            : "Loading games…"
-        : !selectedDetailsReady
-          ? error
-            ? "Could not load the selected game. Retry the local service."
-            : "Loading selected game…"
-          : undefined,
-      fen: displayedFen,
-      lastMove: displayedLastMove
-        ? ([
-            displayedLastMove.slice(0, 2),
-            displayedLastMove.slice(2, 4),
-          ] as readonly [string, string])
+          ? "Could not load the selected game. Retry the local service."
+          : "Loading selected game…"
         : undefined,
-      shapes: displayedShapes,
-      interactionMode:
-        (boardMode === "guided" && guidedReview?.current && !guidedReveal) ||
-        (boardMode === "tactical" && tacticalQueue.item && !tacticalReveal)
-          ? "legal"
-          : "readonly",
-      showHint: false,
-      theme,
-      pieceSet,
-      orientation:
-        boardMode === "tactical" && tacticalQueue.item
-          ? tacticalQueueBoardOrientation(tacticalQueue.item.color)
-          : selected?.color === "black"
-            ? "black"
-            : "white",
-      positionRevision: cursor,
-      onMove:
-        boardMode === "guided" && guidedReview?.current && !guidedReveal
-          ? attemptGuidedMove
-          : boardMode === "tactical" && tacticalQueue.item && !tacticalReveal
-            ? attemptTacticalMove
-            : undefined,
-      onSquareSelect: undefined,
-      onFreeMove: undefined,
-      onDrawnShapesChange: undefined,
-      onFlip: undefined,
-    });
-    return () => releaseShellBoardForOwner("games");
-  }, [
-    loaded,
-    error,
-    selected,
-    selectedDetailsReady,
-    cursor,
-    displayedFen,
-    displayedLastMove,
-    displayedShapes,
-    boardMode,
-    pieceSet,
-    releaseShellBoardForOwner,
-    selected?.color,
-    setShellBoardForOwner,
+    fen: displayedFen,
+    lastMove: displayedLastMove
+      ? ([
+          displayedLastMove.slice(0, 2),
+          displayedLastMove.slice(2, 4),
+        ] as readonly [string, string])
+      : undefined,
+    shapes: displayedShapes,
+    interactionMode:
+      (boardMode === "guided" && guidedReview?.current && !guidedReveal) ||
+      (boardMode === "tactical" && tacticalQueue.item && !tacticalReveal)
+        ? "legal"
+        : "readonly",
+    showHint: false,
     theme,
-    useSharedBoard,
-    guidedReview,
-    guidedReveal,
-    attemptGuidedMove,
-    tacticalQueue,
-    tacticalReveal,
-    attemptTacticalMove,
-  ]);
+    pieceSet,
+    orientation:
+      boardMode === "tactical" && tacticalQueue.item
+        ? tacticalQueueBoardOrientation(tacticalQueue.item.color)
+        : selected?.color === "black"
+          ? "black"
+          : "white",
+    positionRevision: cursor,
+    onMove:
+      boardMode === "guided" && guidedReview?.current && !guidedReveal
+        ? attemptGuidedMove
+        : boardMode === "tactical" && tacticalQueue.item && !tacticalReveal
+          ? attemptTacticalMove
+          : undefined,
+    onSquareSelect: undefined,
+    onFreeMove: undefined,
+    onDrawnShapesChange: undefined,
+    onFlip: undefined,
+  } : null);
 
   return (
     <section className="games-page" {...tools.panelProps}>
@@ -1019,6 +993,7 @@ export default function GamesView({
           <div className="game-board">
             {!useSharedBoard && (
               <Chessboard
+                positionKey={gamePositionKey}
                 fen={displayedFen}
                 lastMove={
                   displayedLastMove

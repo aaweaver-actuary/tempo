@@ -5,8 +5,10 @@ import type { Api } from "@lichess-org/chessground/api";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import { Chess, type Square } from "chess.js";
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useBoardViewport } from "../../hooks/use-board-viewport";
+import { sameLastMove, sameBoardShapes } from "../../state/board-shell-store";
+import { recordBoardEvent } from "../../lib/board-diagnostics";
 import { measureTempoOperation } from "../../lib/performance";
 import { playChessMoveSound, playMoveSound } from "../../lib/move-sound";
 
@@ -41,6 +43,7 @@ type ChessboardProps = {
   orientation?: "white" | "black";
   onFlip?: () => void;
   positionRevision?: number;
+  positionKey?: string;
 };
 
 export function Chessboard({
@@ -63,10 +66,20 @@ export function Chessboard({
   orientation = "white",
   onFlip,
   positionRevision = 0,
+  positionKey,
 }: ChessboardProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<Api | null>(null);
+  const appliedPosition = useRef<{
+    fen: string; owner?: string; positionKey?: string; positionRevision: number;
+    orientation: "white" | "black"; locked: boolean; editMode: boolean; selectOnly: boolean;
+    lastMove?: readonly [string, string];
+  } | undefined>(undefined);
+  const resetVersion = useRef(0);
+  const inputGeneration = useRef(0);
+  const appliedAutoShapes = useRef<{ shapes: DrawShape[]; version: number } | undefined>(undefined);
+  const appliedDrawnShapes = useRef<{ shapes: DrawShape[]; version: number } | undefined>(undefined);
   const handlers = useRef({
     onMove,
     onFreeMove,
@@ -74,6 +87,7 @@ export function Chessboard({
     onDrawnShapesChange,
     editMode,
     selectOnly,
+    locked,
   });
   const surfaceSize = useBoardViewport(hostRef);
   const [flippedOwner, setFlippedOwner] = useState<string | null>(null);
@@ -111,6 +125,7 @@ export function Chessboard({
       onDrawnShapesChange,
       editMode,
       selectOnly,
+      locked,
     };
     positionRef.current = position;
   }, [
@@ -120,6 +135,7 @@ export function Chessboard({
     onDrawnShapesChange,
     editMode,
     selectOnly,
+    locked,
     position,
   ]);
 
@@ -176,8 +192,50 @@ export function Chessboard({
     };
   }, [onFlip, owner]);
 
+  // Chessground defers events by a timer. A callback queued before genuine
+  // invalidation must not grade a replacement card or change its annotations.
+  const createInputEvents = useCallback(() => {
+    const generation = inputGeneration.current;
+    return {
+      after: (from: Key, to: Key) => {
+        if (generation !== inputGeneration.current) return;
+        if (handlers.current.locked || handlers.current.selectOnly) return;
+        const finishMove = measureTempoOperation("move-to-paint");
+        const chess = positionRef.current.chess;
+        if (handlers.current.editMode) {
+          const capture =
+            Boolean(chess.get(to as Square)) ||
+            (chess.get(from as Square)?.type === "p" && from[0] !== to[0]);
+          playMoveSound({ capture });
+        } else {
+          try {
+            const nextPosition = new Chess(chess.fen());
+            const move = nextPosition.move({ from, to, promotion: "q" });
+            playChessMoveSound(move, nextPosition.isCheck());
+          } catch {
+            playMoveSound();
+          }
+        }
+        apiRef.current?.setAutoShapes([]);
+        if (handlers.current.editMode)
+          handlers.current.onFreeMove?.(from as Square, to as Square);
+        else handlers.current.onMove(from as Square, to as Square);
+        requestAnimationFrame(finishMove);
+      },
+      select: (square: Key) => {
+        if (generation !== inputGeneration.current) return;
+        if (!handlers.current.locked && (handlers.current.editMode || handlers.current.selectOnly))
+          handlers.current.onSquareSelect?.(square as Square);
+      },
+      onDrawnShapesChange: (value: DrawShape[]) => {
+        if (generation === inputGeneration.current) handlers.current.onDrawnShapesChange?.(value);
+      },
+    };
+  }, []);
+
   useLayoutEffect(() => {
     if (!surfaceRef.current) return;
+    const inputEvents = createInputEvents();
     const finishReady = measureTempoOperation("board-ready");
     apiRef.current = Chessground(surfaceRef.current, {
       viewOnly: false,
@@ -192,41 +250,16 @@ export function Chessboard({
         enabled: true,
         visible: true,
         brushes: DRAW_BRUSHES,
-        onChange: (value) => handlers.current.onDrawnShapesChange?.(value),
+        onChange: inputEvents.onDrawnShapesChange,
       },
       movable: {
         free: false,
         events: {
-          after: (from, to) => {
-            const finishMove = measureTempoOperation("move-to-paint");
-            const chess = positionRef.current.chess;
-            if (handlers.current.editMode) {
-              const capture =
-                Boolean(chess.get(to as Square)) ||
-                (chess.get(from as Square)?.type === "p" && from[0] !== to[0]);
-              playMoveSound({ capture });
-            } else {
-              try {
-                const nextPosition = new Chess(chess.fen());
-                const move = nextPosition.move({ from, to, promotion: "q" });
-                playChessMoveSound(move, nextPosition.isCheck());
-              } catch {
-                playMoveSound();
-              }
-            }
-            apiRef.current?.setAutoShapes([]);
-            if (handlers.current.editMode)
-              handlers.current.onFreeMove?.(from as Square, to as Square);
-            else handlers.current.onMove(from as Square, to as Square);
-            requestAnimationFrame(finishMove);
-          },
+          after: inputEvents.after,
         },
       },
       events: {
-        select: (square) => {
-          if (handlers.current.editMode || handlers.current.selectOnly)
-            handlers.current.onSquareSelect?.(square as Square);
-        },
+        select: inputEvents.select,
       },
     });
     const frame = requestAnimationFrame(finishReady);
@@ -234,55 +267,79 @@ export function Chessboard({
       cancelAnimationFrame(frame);
       apiRef.current?.destroy();
       apiRef.current = null;
+      inputGeneration.current += 1;
+      appliedPosition.current = undefined;
+      appliedAutoShapes.current = undefined;
+      appliedDrawnShapes.current = undefined;
     };
-  }, []);
+  }, [createInputEvents]);
 
   useLayoutEffect(() => {
-    apiRef.current?.cancelMove?.();
-    const positionIsChecked = position.chess.isCheck();
-    apiRef.current?.set({
-      fen,
-      check: positionIsChecked
-        ? position.chess.turn() === "w" ? "white" : "black"
-        : false,
-      orientation: visualOrientation,
-      turnColor: position.chess.turn() === "w" ? "white" : "black",
-      lastMove: lastMove ? ([...lastMove] as Key[]) : undefined,
-      movable: {
-        free: editMode,
-        color: selectOnly
-          ? undefined
-          : editMode
-          ? "both"
-          : locked
-            ? undefined
-            : position.chess.turn() === "w"
-              ? "white"
-              : "black",
-        dests: editMode ? new Map() : position.destinations,
-        showDests: true,
-      },
-      draggable: { enabled: !selectOnly && (editMode || !locked), showGhost: true },
-      selectable: { enabled: selectOnly || editMode || !locked },
-    });
-  }, [
-    fen,
-    owner,
-    visualOrientation,
-    position,
-    lastMove,
-    locked,
-    editMode,
-    selectOnly,
-    positionRevision,
-  ]);
+    const configuration: Parameters<Api["set"]>[0] = {};
+    const previousPosition = appliedPosition.current;
+    const positionChanged = !previousPosition || previousPosition.fen !== fen || previousPosition.owner !== owner ||
+      previousPosition.positionKey !== positionKey || previousPosition.positionRevision !== positionRevision;
+    const modeChanged = !previousPosition || previousPosition.editMode !== editMode || previousPosition.selectOnly !== selectOnly;
+    const lockChanged = !previousPosition || previousPosition.locked !== locked;
+    const orientationChanged = !previousPosition || previousPosition.orientation !== visualOrientation;
+    const highlightChanged = !previousPosition || !sameLastMove(previousPosition.lastMove, lastMove);
+    if (positionChanged || modeChanged || (lockChanged && locked) || orientationChanged) {
+      recordBoardEvent("inputCancellations");
+      apiRef.current?.cancelMove?.();
+    }
+    if (positionChanged || modeChanged) {
+      recordBoardEvent("positionResets");
+      resetVersion.current += 1;
+      Object.assign(configuration, {
+        fen,
+        check: position.chess.isCheck()
+          ? position.chess.turn() === "w" ? "white" : "black"
+          : false,
+        turnColor: position.chess.turn() === "w" ? "white" : "black",
+      });
+    }
+    if (positionChanged || modeChanged || lockChanged) {
+      Object.assign(configuration, {
+        movable: {
+          free: editMode,
+          color: locked || selectOnly ? undefined : editMode ? "both"
+            : position.chess.turn() === "w" ? "white" : "black",
+          dests: editMode ? new Map() : position.destinations,
+          showDests: true,
+        },
+        draggable: { enabled: !locked && !selectOnly, showGhost: true },
+        selectable: { enabled: !locked },
+      });
+    }
+    if (previousPosition && (positionChanged || modeChanged || lockChanged || orientationChanged)) {
+      inputGeneration.current += 1;
+      const inputEvents = createInputEvents();
+      configuration.movable = { ...configuration.movable, events: { after: inputEvents.after } };
+      configuration.events = { select: inputEvents.select };
+      configuration.drawable = { onChange: inputEvents.onDrawnShapesChange };
+    }
+    if (orientationChanged) Object.assign(configuration, { orientation: visualOrientation });
+    if (positionChanged || highlightChanged)
+      Object.assign(configuration, { lastMove: lastMove ? [...lastMove] as Key[] : undefined });
+    if (Object.keys(configuration).length) apiRef.current?.set(configuration);
+    appliedPosition.current = { fen, owner, positionKey, positionRevision, orientation: visualOrientation,
+      locked, editMode, selectOnly, lastMove };
+  });
 
   useLayoutEffect(() => {
-    apiRef.current?.setAutoShapes(hint ? [...shapes, hint] : shapes);
-  }, [shapes, hint, owner]);
+    const autoShapes = hint ? [...shapes, hint] : shapes;
+    if (appliedAutoShapes.current?.version === resetVersion.current &&
+      sameBoardShapes(appliedAutoShapes.current.shapes, autoShapes)) return;
+    // Chessground may mutate drawing arrays; keep published snapshots immutable.
+    apiRef.current?.setAutoShapes([...autoShapes]);
+    appliedAutoShapes.current = { shapes: autoShapes, version: resetVersion.current };
+  });
   useLayoutEffect(() => {
-    apiRef.current?.setShapes(drawnShapes);
-  }, [drawnShapes, owner]);
+    if (appliedDrawnShapes.current?.version === resetVersion.current &&
+      sameBoardShapes(appliedDrawnShapes.current.shapes, drawnShapes)) return;
+    apiRef.current?.setShapes([...drawnShapes]);
+    appliedDrawnShapes.current = { shapes: drawnShapes, version: resetVersion.current };
+  });
   useLayoutEffect(() => {
     if (!surfaceSize) return;
     apiRef.current?.redrawAll();
@@ -304,7 +361,7 @@ export function Chessboard({
         console.error("Tempo board geometry mismatch", { surface, board });
       }
     }
-  }, [surfaceSize, theme, pieceSet]);
+  }, [surfaceSize]);
 
   return (
     <div className="board-viewport" ref={hostRef}>
@@ -314,7 +371,7 @@ export function Chessboard({
         data-fen={fen}
         data-orientation={visualOrientation}
         data-hint={Boolean(hint)}
-        data-input-enabled={selectOnly || editMode || !locked}
+        data-input-enabled={!locked}
         style={
           surfaceSize
             ? { width: surfaceSize + 18, height: surfaceSize + 18 }
