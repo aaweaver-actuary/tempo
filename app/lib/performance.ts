@@ -43,7 +43,7 @@ export type TempoDragEvent = {
   coalescedCount: number; captureCostMs?: number;
 };
 export type TempoDragFrame = {
-  atMs: number; gapMs: number | null; eventAgeMs: number | null;
+  atMs: number; callbackAtMs: number; gapMs: number | null; rAFGapMs: number | null; eventAgeMs: number | null;
   displacementCssPx: number | null; xCssPx: number | null; yCssPx: number | null; captureCostMs?: number;
 };
 type PhaseSample = { operationId: number; operation: TempoDragPhase; edge: "start" | "end" | "error"; atMs: number };
@@ -201,8 +201,10 @@ export function installTempoDragCapture(surface: HTMLElement, api: import("@lich
     const yCssPx = position ? geometry.top + position[1] + geometry.height / 16 : null;
     const previous = session.frames.at(-1);
     if (session.frames.length < dragLimits.frames) {
-      session.frames.push({ atMs, gapMs: previous ? atMs - previous.atMs : null,
-        eventAgeMs: latestEvent ? Math.max(0, atMs - latestEvent.eventAtMs) : null,
+      session.frames.push({ atMs, callbackAtMs: captureStartedAtMs,
+        gapMs: previous ? captureStartedAtMs - previous.callbackAtMs : null,
+        rAFGapMs: previous ? atMs - previous.atMs : null,
+        eventAgeMs: latestEvent ? Math.max(0, captureStartedAtMs - latestEvent.eventAtMs) : null,
         displacementCssPx: latestEvent && xCssPx !== null && yCssPx !== null
           ? Math.hypot(xCssPx - latestEvent.xCssPx, yCssPx - latestEvent.yCssPx) : null,
         xCssPx, yCssPx });

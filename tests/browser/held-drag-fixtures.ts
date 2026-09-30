@@ -4,10 +4,10 @@ import type { tempoDragDiagnostics } from "../../app/lib/performance";
 
 export type DragSnapshot = ReturnType<typeof tempoDragDiagnostics>;
 export type DragProbe = {
-  samples: Array<{ atMs: number; dragging: boolean; gapMs: number | null; displacementCssPx: number | null }>;
+  samples: Array<{ atMs: number; callbackAtMs: number; dragging: boolean; gapMs: number | null; rAFGapMs: number | null; displacementCssPx: number | null }>;
   startedAtMs: number; endedAtMs: number; sawDragging: boolean; interrupted: boolean;
 };
-export const heldDragFixtureVersion = "held-drag-v2-40-moves-blocked-sw";
+export const heldDragFixtureVersion = "held-drag-v3-callback-cadence-blocked-sw";
 export const heldDragStartFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
 
 export async function prepareHeldDrag(page: Page, enabled = true, beforeNavigate?: () => Promise<void>) {
@@ -43,16 +43,18 @@ export async function heldDrag(page: Page, during?: (step: number) => Promise<vo
     document.addEventListener("pointermove", move);
     const sample = (atMs: number) => {
       if (stopped) return;
+      const callbackAtMs = performance.now();
       const piece = document.querySelector<HTMLElement>("cg-board piece.dragging:not(.ghost)");
       if (piece) probe.sawDragging = true;
       else if (probe.sawDragging) probe.interrupted = true;
       const transform = piece?.style.transform.match(/^translate\(\s*(-?[\d.]+)px,\s*(-?[\d.]+)px\s*\)$/);
-      const gapMs = probe.samples.length ? atMs - probe.samples.at(-1)!.atMs : null;
+      const gapMs = probe.samples.length ? callbackAtMs - probe.samples.at(-1)!.callbackAtMs : null;
+      const rAFGapMs = probe.samples.length ? atMs - probe.samples.at(-1)!.atMs : null;
       const displacementCssPx = transform && pointer ? Math.hypot(
         geometry.x + Number(transform[1]) + geometry.width / 16 - pointer.x,
         geometry.y + Number(transform[2]) + geometry.height / 16 - pointer.y,
       ) : null;
-      if (probe.samples.length < 512) probe.samples.push({ atMs, dragging: !!piece, gapMs, displacementCssPx });
+      if (probe.samples.length < 512) probe.samples.push({ atMs, callbackAtMs, dragging: !!piece, gapMs, rAFGapMs, displacementCssPx });
       frame = requestAnimationFrame(sample);
     };
     frame = requestAnimationFrame(sample);
