@@ -179,6 +179,33 @@ it("discovery save outbox survives reload and waits for queued confirmation", as
   expect(fetcher.mock.calls.filter(([url]) => String(url).includes("/accept"))).toHaveLength(1);
 });
 
+it("confirms later discovery C within three eligible flushes while A and B keep preparing", async () => {
+  for (const opportunityId of ["A", "B", "C"])
+    enqueuePendingDiscoveryAdmission({ ...admission, opportunityId });
+  const confirmationFlushes: string[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (input: string | URL | Request) => {
+    const url = String(input);
+    if (url.endsWith("/accept")) {
+      const opportunityId = url.split("/discoveries/")[1].split("/")[0];
+      return Response.json({ status: "preparing", intent_id: `intent-${opportunityId}` });
+    }
+    const opportunityId = url.split("/discovery-admissions/intent-")[1];
+    confirmationFlushes.push(opportunityId);
+    return Response.json({ state: opportunityId === "C" ? "queued" : "preparing", error: null });
+  }));
+
+  let confirmationsBeforeC = 0;
+  for (let eligibleFlush = 1; eligibleFlush <= 3; eligibleFlush += 1) {
+    await flushPendingDiscoveryAdmissions();
+    if (confirmationFlushes.includes("C")) break;
+    confirmationsBeforeC = eligibleFlush;
+  }
+  expect(confirmationFlushes).toContain("C");
+  expect(confirmationFlushes.filter((id) => id === "C").length).toBe(1);
+  expect(pendingDiscoveryAdmissions().map(({ opportunityId }) => opportunityId)).toEqual(["A", "B"]);
+  expect(confirmationsBeforeC).toBeLessThanOrEqual(3);
+});
+
 it("stalled discovery confirmations cannot starve a later queued admission across reloads", async () => {
   localStorage.setItem("tempo-pending-discovery-admissions-v1", JSON.stringify(
     ["a", "b", "c"].map((opportunityId) => ({

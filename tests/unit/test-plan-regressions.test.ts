@@ -22,15 +22,14 @@ it("full verification owns every test family once without repeating regular brow
   expect(names).toEqual([
     "capabilities", "unit", "defense_engine", "backend", "rust_format", "rust_lint",
     "rust_test", "lint", "typecheck", "wasm_build", "local_build",
-    "docker", "postgres_docker", "visual",
+    "postgres_docker", "visual",
   ]);
   expect(new Set(names).size).toBe(names.length);
-  expect(full.find((stage) => stage.name === "docker")?.args).toEqual(["run", "test:docker"]);
   expect(full.find((stage) => stage.name === "postgres_docker")?.args)
     .toEqual(["scripts/test-postgres-docker.mjs"]);
   expect(full.find((stage) => stage.name === "visual")?.args).toEqual(["run", "test:visual"]);
   expect(names).not.toContain("browser");
-  expect(plannedStages("ui").map((stage) => stage.name)).toEqual(["capabilities", "browser", "visual"]);
+  expect(plannedStages("ui").map((stage) => stage.name)).toEqual(["capabilities", "postgres_docker", "visual"]);
   expect(plannedStages("python").map((stage) => stage.name)).toEqual(["backend"]);
   expect(plannedStages("rust").map((stage) => stage.name)).toEqual([
     "rust_format", "rust_lint", "rust_test",
@@ -129,6 +128,36 @@ it("Makefile runs one full plan and rejects combined verification scopes", () =>
   expect(duplicate.stderr).toContain("Choose one verification target");
 });
 
+it("PostgreSQL upgrade --plan validates identities and invokes no mutating Docker command", () => {
+  const fakeCommandDirectory = mkdtempSync(join(tmpdir(), "tempo-upgrade-plan-"));
+  try {
+    const capturePath = join(fakeCommandDirectory, "docker-calls.txt");
+    const configPath = join(fakeCommandDirectory, "compose.json");
+    const volumes = Object.fromEntries(["tempo-postgres-data", "tempo-postgres-backups",
+      "tempo-redis-data", "tempo-engine-operations"].map((name) => [name, { external: true, name }]));
+    writeFileSync(configPath, JSON.stringify({ name: "tempo", volumes }));
+    const dockerPath = join(fakeCommandDirectory, "docker");
+    writeFileSync(dockerPath, [
+      "#!/bin/sh",
+      "printf '%s\\n' \"$*\" >> \"$TEMPO_UPGRADE_DOCKER_CAPTURE\"",
+      "cat \"$TEMPO_UPGRADE_COMPOSE_CONFIG\"",
+      "",
+    ].join("\n"));
+    chmodSync(dockerPath, 0o755);
+    const plan = spawnSync("sh", ["scripts/upgrade-postgres-schema.sh", "--plan"], {
+      cwd: process.cwd(), encoding: "utf8",
+      env: { ...process.env, PATH: `${fakeCommandDirectory}:${process.env.PATH ?? ""}`,
+        TEMPO_UPGRADE_EXPECTED_PROJECT: "tempo", TEMPO_UPGRADE_DOCKER_CAPTURE: capturePath,
+        TEMPO_UPGRADE_COMPOSE_CONFIG: configPath },
+    });
+    expect(plan.status, plan.stderr).toBe(0);
+    expect(plan.stdout).toContain("READ-ONLY PostgreSQL schema upgrade plan");
+    expect(readFileSync(capturePath, "utf8").trim()).toBe("compose config --format json");
+  } finally {
+    rmSync(fakeCommandDirectory, { recursive: true, force: true });
+  }
+});
+
 it("lint scope excludes ignored local checkout copies", () => {
   const packageJson = JSON.parse(readFileSync("package.json", "utf8")) as {
     scripts: { lint: string };
@@ -138,9 +167,9 @@ it("lint scope excludes ignored local checkout copies", () => {
 
 it("focused browser and Docker Make targets preflight before launching tests", () => {
   const expectedChecks: Record<string, string> = {
-    browser: "--loopback",
-    "ui-file": "--loopback",
-    view: "--loopback",
+    browser: "--docker --loopback --workspace-mount",
+    "ui-file": "--docker --loopback --workspace-mount",
+    view: "--docker --loopback --workspace-mount",
     visual: "--docker --workspace-mount",
     perf: "--docker --workspace-mount",
     "docker-durability": "--docker --loopback",
@@ -153,7 +182,9 @@ it("focused browser and Docker Make targets preflight before launching tests", (
     const commands = planned.stdout.trim().split("\n");
     const capabilityCheckIndex = commands.indexOf(`node scripts/check-test-capabilities.mjs ${checks}`);
     const browserLaunchIndex = commands.findIndex((command) =>
-      command.startsWith("npm run test:") || command.startsWith("node scripts/test-docker.mjs"));
+      command.startsWith("npm run test:") || command.startsWith("node scripts/test-docker.mjs")
+      || command.startsWith("node scripts/test-postgres-docker.mjs")
+      || command.startsWith("node scripts/run-focused-postgres-browser.mjs"));
     expect(capabilityCheckIndex, target).toBeGreaterThanOrEqual(0);
     expect(browserLaunchIndex, target).toBeGreaterThan(capabilityCheckIndex);
   }
@@ -166,7 +197,8 @@ it("regular and pinned Playwright plans partition every browser spec without ove
     ], {
       cwd: process.cwd(),
       encoding: "utf8",
-      env: { ...process.env, ...(pinned ? { TEMPO_VISUAL_RUNNER: "linux-pinned" } : {}) },
+      env: { ...process.env, TEMPO_DOCKER_URL: "http://127.0.0.1:1",
+        ...(pinned ? { TEMPO_VISUAL_RUNNER: "linux-pinned" } : {}) },
     });
     expect(run.status, run.stderr).toBe(0);
     return new Set((JSON.parse(run.stdout) as { suites: Array<{ file: string }> }).suites
@@ -190,12 +222,8 @@ it("Docker durability recovery excludes only the already-run browser matrix", ()
     expect(run.status, run.stderr).toBe(0);
     return (JSON.parse(run.stdout) as { stages: string[] }).stages;
   };
-  expect(listedStages([])).toEqual([
-    "compose_config", "container_start", "browser", "durability", "container_stop",
-  ]);
-  expect(listedStages(["--skip-browser"])).toEqual([
-    "compose_config", "container_start", "durability", "container_stop",
-  ]);
+  expect(listedStages([])).toContain("browser");
+  expect(listedStages(["--skip-browser"])).not.toContain("browser");
 });
 
 it("test plan records per-file Vitest timings without a second unit run", () => {

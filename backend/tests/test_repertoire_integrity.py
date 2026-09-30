@@ -94,6 +94,17 @@ def test_repertoire_integrity_sweep_pauses_conflicting_transpositions_after_impo
         assert client.get("/api/queue/today").json()["cards"] == []
 
 
+def test_opponent_branch_lines_share_one_trained_response_without_integrity_conflict(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    with TestClient(app) as client:
+        with database.connection() as db:
+            _line(db, "king-pawn", "rep", ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4"])
+            _line(db, "sicilian", "rep", ["e2e4", "c7c5", "g1f3", "d7d6", "d2d4"])
+        integrity = _integrity(client)
+        assert integrity["status"] == "clean"
+        assert integrity["issues"] == []
+
+
 def test_integrity_blocks_only_affected_decision_segments(
     tmp_path, monkeypatch
 ):

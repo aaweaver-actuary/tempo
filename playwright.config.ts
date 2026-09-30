@@ -1,9 +1,8 @@
 import { defineConfig } from "@playwright/test";
-import { resolve } from "node:path";
-const apiPort = process.env.TEMPO_BROWSER_API_PORT ?? "8001";
-const uiPort = process.env.TEMPO_BROWSER_UI_PORT ?? "3001";
-const apiUrl = `http://127.0.0.1:${apiPort}`;
-const uiUrl = `http://127.0.0.1:${uiPort}`;
+const postgresTestUrl = process.env.TEMPO_DOCKER_URL;
+if (!postgresTestUrl) {
+  throw new Error("Regular Playwright tests require an isolated PostgreSQL stack; use make browser or scripts/test-postgres-docker.mjs");
+}
 export default defineConfig({
   outputDir: process.env.TEMPO_TEST_OUTPUT_DIR ?? "test-results/browser",
   testDir: "tests/browser",
@@ -26,26 +25,8 @@ export default defineConfig({
     },
   ],
   use: {
-    baseURL: process.env.TEMPO_DOCKER_URL ?? uiUrl,
+    baseURL: postgresTestUrl,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
   },
-  webServer: process.env.TEMPO_DOCKER_URL
-    ? undefined
-    : [
-        {
-          command: "node scripts/test-api.mjs",
-          env: { TEMPO_BROWSER_API_PORT: apiPort },
-          url: `${apiUrl}/api/health`,
-          reuseExistingServer: false,
-        },
-        {
-          command:
-            `npm run build:local && TEMPO_TARGET=local vite preview --config vite.static.config.ts --host 127.0.0.1 --port ${uiPort} --strictPort`,
-          env: { TEMPO_PROXY_API: apiUrl, TEMPO_BROWSER_BUILD_DIR: process.env.TEMPO_BROWSER_BUILD_DIR ?? resolve("test-results/browser-build-manual") },
-          url: uiUrl,
-          timeout: 120_000,
-          reuseExistingServer: false,
-        },
-      ],
 });

@@ -1,7 +1,8 @@
 # Tempo backend
 
 This directory contains the authoritative local product backend: FastAPI,
-Python domain services, and SQLite persistence. Docker runs this backend at
+Python domain services, and PostgreSQL persistence in Docker. SQLite remains a
+compatibility path for focused tests and verified historical import. Docker runs this backend at
 `http://localhost:8000`; the static browser demo does not use it.
 
 ## Start and test
@@ -20,9 +21,9 @@ The backend can also be run through the repository launchers. Use the root
 
 - `app/main.py` — current FastAPI application and route registration. It is a
   known extraction target; see [the organization audit](../docs/CODE-ORGANIZATION-AUDIT.md).
-- `app/database.py` — SQLite connection policy, schema bootstrap, and migration
-  compatibility logic. SQLite is authoritative for cards, reviews, queues,
-  repertoires, games, and sync metadata.
+- `app/database.py` — PostgreSQL connection routing and the SQLite compatibility
+  path. PostgreSQL is authoritative for cards, reviews, queues, repertoires,
+  games, and sync metadata after the verified cutover.
 - `app/models.py` — request/response models used at the HTTP boundary.
 - `app/services/` — business logic, provider clients, and durable derived-data
   handlers. See its local README for the service clusters.

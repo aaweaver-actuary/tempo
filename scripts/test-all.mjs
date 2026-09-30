@@ -9,7 +9,7 @@ function protectRegressionSuite(directory) {
   for (const entry of readdirSync(directory, { withFileTypes: true })) {
     const path = `${directory}/${entry.name}`;
     if (entry.isDirectory() && entry.name !== "__pycache__") protectRegressionSuite(path);
-    else if (/\.(tsx?|py)$/.test(path) && /\b(?:test|it|describe)\.(?:skip|todo|only)\s*\(|pytest\.mark\.skip|@(?:unittest\.)?skip/.test(readFileSync(path, "utf8"))) {
+    else if (/\.(tsx?|py|mjs)$/.test(path) && /\b(?:test|it|describe)\.(?:skip|todo|only)\s*\(|pytest\.mark\.skip|@(?:unittest\.)?skip/.test(readFileSync(path, "utf8"))) {
       throw new Error(`Regression suites cannot contain skipped, todo, or exclusive tests: ${path}`);
     }
   }
@@ -39,9 +39,7 @@ const stages = [
   ["typecheck", "npm", ["run", "typecheck"]],
   ["wasm_build", "npm", ["run", "build:wasm"]],
   ["local_build", "npm", ["run", "build:local"]],
-  ["browser", "npm", ["run", "test:browser"]],
-  // Docker runs the regular Playwright suite against the full proxy once.
-  ["docker", "npm", ["run", "test:docker"]],
+  // The PostgreSQL runner owns the single regular Playwright matrix.
   ["postgres_docker", "node", ["scripts/test-postgres-docker.mjs"]],
   ["visual", "npm", ["run", "test:visual"]],
 ];
@@ -51,12 +49,17 @@ const stagesByTier = {
   backend: ["defense_engine", "backend"],
   rust: ["rust_format", "rust_lint", "rust_test"],
   integration: ["defense_engine", "backend", "rust_format", "rust_lint", "rust_test"],
-  ui: ["capabilities", "browser", "visual"],
-  full: stages.map(([name]) => name).filter((name) => name !== "browser"),
+  ui: ["capabilities", "postgres_docker", "visual"],
+  browser: ["capabilities", "postgres_docker"],
+  full: stages.map(([name]) => name),
 };
 const stageNames = stagesByTier[tier];
 const selectedStages = stageNames
-  ? stages.filter(([name]) => stageNames.includes(name))
+  ? stages.filter(([name]) => stageNames.includes(name)).map(([name, command, args]) => [
+    name, command,
+    name === "postgres_docker" && ["ui", "browser"].includes(tier)
+      ? [...args, "--mode", "browser"] : args,
+  ])
   : null;
 if (!selectedStages) throw new Error(`Unknown test tier: ${tier}`);
 if (listOnly) {

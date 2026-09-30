@@ -2,8 +2,8 @@
 # Run only in an approved maintenance window against the verified product target.
 set -eu
 
-if [ "${1:-}" != "--apply" ] || [ "$#" -ne 1 ]; then
-  echo "Usage: scripts/upgrade-postgres-schema.sh --apply (after target approval)" >&2
+if [ "$#" -ne 1 ] || { [ "$1" != "--apply" ] && [ "$1" != "--plan" ]; }; then
+  echo "Usage: scripts/upgrade-postgres-schema.sh --plan | --apply (after target approval)" >&2
   exit 2
 fi
 
@@ -19,6 +19,30 @@ for volume in ("tempo-postgres-data", "tempo-postgres-backups", "tempo-redis-dat
     if not configured.get("external") or configured.get("name") != volume:
         raise SystemExit(f"Unexpected product volume mapping: {volume}")
 '
+
+if [ "$1" = "--plan" ]; then
+  candidate_schema_version="$(sed -n 's/^POSTGRES_SCHEMA_VERSION = //p' backend/app/schema_version.py)"
+  case "$candidate_schema_version" in
+    ''|*[!0-9]*) echo "Could not read candidate PostgreSQL schema version" >&2; exit 1 ;;
+  esac
+  printf 'Candidate PostgreSQL schema version: %s\n' "$candidate_schema_version"
+  echo "Candidate migration files:"
+  find backend/migrations -maxdepth 1 -type f -name '[0-9]*.sql' -print | sort
+  cat <<'PLAN'
+READ-ONLY PostgreSQL schema upgrade plan
+  1. Build the migration image and candidate application images.
+  2. Stop application services and start PostgreSQL, Redis, and backup service.
+  3. Create and verify a named PostgreSQL backup; restore it into a temporary database and compare authoritative state.
+  4. Apply candidate migrations; a failure exits before application services start.
+  5. Start API/workers, verify health/readiness, then start web/engine services.
+
+This plan only validated Compose project and external volume identity. No image,
+service, backup, database, or volume has been changed. Review the plan and verify
+the deployed image and schema before a separately authorized --apply operation.
+PLAN
+  exit 0
+fi
+
 backup_name="tempo-upgrade-$(date -u +%Y%m%dT%H%M%SZ).dump"
 restore_database="tempo_upgrade_restore"
 
