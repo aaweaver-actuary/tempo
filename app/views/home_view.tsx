@@ -8,7 +8,7 @@ import {
 } from "../lib/validated-data";
 import * as z from "zod";
 import { localRepertoireSchema } from "../domain/schemas";
-import { measureTempoOperation } from "../lib/performance";
+import { measureTempoOperation, measureTempoDragPhase } from "../lib/performance";
 import { isCurrentAttempt } from "../domain/attempt";
 import { DataDiagnosticsNotice } from "../components/data-diagnostics-notice";
 import { useState, useCallback, useEffect, useRef } from "react";
@@ -812,13 +812,15 @@ export default function Home() {
     }
     setAttemptPhase("opponentReplyPending");
     const token = useTrainingStore.getState().attempt;
+    const finishOpponentReply = measureTempoDragPhase("opponent-reply");
     replyTimer.current = setTimeout(() => {
-      if (!isCurrentAttempt(useTrainingStore.getState().attempt, token)) return;
+      if (!isCurrentAttempt(useTrainingStore.getState().attempt, token)) { finishOpponentReply(true); return; }
       const replyPosition = new Chess(position.fen());
       let reply: Move | null;
       try {
         reply = replyPosition.move(card.moves[opponentStep]);
       } catch {
+        finishOpponentReply(true);
         setAttemptPhase("guided", token);
         setServiceError(
           "This line needs repair: its opponent reply is illegal.",
@@ -826,11 +828,13 @@ export default function Home() {
         return;
       }
       if (!reply) {
+        finishOpponentReply(true);
         setAttemptPhase(
           useTrainingStore.getState().isAttemptFailed ? "guided" : "playerTurn",
         );
         return;
       }
+      finishOpponentReply();
       const nextStep = opponentStep + 1;
       setCurrentFenString(asFenString(replyPosition.fen()));
       setLastMove([reply.from, reply.to]);
@@ -928,10 +932,15 @@ export default function Home() {
                 useTrainingStore.getState().assistedThisAttempt,
             });
           }
+          const finishNextCard = measureTempoDragPhase("next-card-readiness");
           advancedFromCache = useTrainingStore.getState().advanceCachedQueue();
+          if (advancedFromCache) requestAnimationFrame(() => finishNextCard());
+          else finishNextCard(true);
           setReviewed((count) => count + 1);
         }
-        await flushPendingReviews();
+        const finishReviewPersistence = measureTempoDragPhase("review-persistence");
+        try { await flushPendingReviews(); finishReviewPersistence(); }
+        catch (error) { finishReviewPersistence(true); throw error; }
         if (transitionGeneration === reviewTransitionGeneration.current)
           setReviewPersistenceState("saved");
         setQueueNotice("");
@@ -942,15 +951,18 @@ export default function Home() {
           (!retryPending || retryNeedsAdvance)
         )
           setReviewPersistenceState("refreshingQueue");
+        const finishQueueReadiness = measureTempoDragPhase("next-card-readiness");
         void refreshDatabaseQueue(
           !advancedFromCache && (!retryPending || retryNeedsAdvance),
         )
           .then(() => {
+            requestAnimationFrame(() => finishQueueReadiness());
             if (transitionGeneration === reviewTransitionGeneration.current)
               setReviewPersistenceState("idle");
             setSafeBreakCounter((count) => count + 1);
           })
           .catch(() => {
+            finishQueueReadiness(true);
             if (transitionGeneration === reviewTransitionGeneration.current)
               setReviewPersistenceState("queueFailed");
             showTrainingNotice("Result saved. The queue could not be refreshed.", "warning");

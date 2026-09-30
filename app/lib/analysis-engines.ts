@@ -1,3 +1,4 @@
+import { trackTempoDragPromise } from "./performance";
 import { Chess, Move } from "chess.js";
 import { assetUrl } from "../const";
 
@@ -52,14 +53,14 @@ export function analyzeWithStockfish(
   depth = 10,
   signal?: AbortSignal,
 ): Promise<EngineMove[]> {
-  return stockfishAnalysis({ fen, depth }, signal);
+  return trackTempoDragPromise("engine-work", stockfishAnalysis({ fen, depth }, signal));
 }
 
 export function analyzeWithStockfishRequest(
   request: StockfishRequest,
   signal?: AbortSignal,
 ): Promise<EngineMove[]> {
-  return stockfishAnalysis(request, signal);
+  return trackTempoDragPromise("engine-work", stockfishAnalysis(request, signal));
 }
 
 async function stockfishAnalysis(

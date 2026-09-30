@@ -1,4 +1,5 @@
 "use client";
+import { measureTempoDragPhase } from "../lib/performance";
 import { Button } from "./buttons/BaseButton";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -353,6 +354,8 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     const key = `${item.id}:${item.evidence_fingerprint}`;
     if (requestedPreflights.current.has(key)) return;
     requestedPreflights.current.add(key);
+    const finishPreview = measureTempoDragPhase("discovery-preview");
+    let previewFailed = false;
     try {
       const response = await backgroundFetch(`${API_URL}/api/discoveries/${item.id}/recommendations`);
       const result = await readJsonResponse(response, discoveryRecommendationSchema, "continuation preview");
@@ -375,10 +378,12 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
         nextPreflightRetryAt.current.set(key, performance.now() + previewRetryDelayMs);
       else nextPreflightRetryAt.current.delete(key);
     } catch {
+      previewFailed = true;
       setPreviewFingerprints((current) => ({ ...current, [item.id]: item.evidence_fingerprint }));
       setPreviewStatuses((current) => ({ ...current, [item.id]: "failed" }));
       nextPreflightRetryAt.current.set(key, performance.now() + previewRetryDelayMs);
     } finally {
+      finishPreview(previewFailed);
       requestedPreflights.current.delete(key);
     }
   }, []);

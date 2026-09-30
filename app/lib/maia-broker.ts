@@ -1,3 +1,4 @@
+import { trackTempoDragPromise } from "./performance";
 import {
   analyzeWithMaia,
   MaiaCancelledError,
@@ -27,12 +28,12 @@ function processNext() {
   processing = true;
   activeRequest = request;
   request.controller = new AbortController();
-  void analyzeWithMaia(
+  void trackTempoDragPromise("engine-work", analyzeWithMaia(
     request.fen,
     request.elo,
     request.onProgress,
     request.controller.signal,
-  )
+  ))
     .then(request.resolve)
     .catch((error) => {
       if (

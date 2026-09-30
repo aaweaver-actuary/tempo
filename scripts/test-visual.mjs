@@ -16,6 +16,8 @@ if (process.env.TEMPO_TEST_TIMING_DIR) {
 }
 const commitResult = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
 const commit = process.env.GITHUB_SHA ?? (commitResult.status === 0 ? commitResult.stdout.trim() : "unknown");
+const dockerCapacity = spawnSync("docker", ["info", "--format", "{{json .NCPU}} {{json .MemTotal}}"], { encoding: "utf8" });
+const [diagnosticCpus, diagnosticMemory] = dockerCapacity.status === 0 ? dockerCapacity.stdout.trim().split(" ") : [];
 const result = spawnSync(
   "docker",
   [
@@ -29,6 +31,10 @@ const result = spawnSync(
     "TEMPO_VISUAL_RUNNER=linux-pinned",
     "-e",
     `TEMPO_COMMIT=${commit}`,
+    "-e", `TEMPO_DIAGNOSTIC_DOCKER_CPUS=${diagnosticCpus ?? "unavailable"}`,
+    "-e", `TEMPO_DIAGNOSTIC_DOCKER_MEMORY=${diagnosticMemory ?? "unavailable"}`,
+    "-e", `TEMPO_DIAGNOSTIC_HOST=${process.platform}/${process.arch}`,
+    "-e", "TEMPO_DIAGNOSTIC_CONTAINER_LIMITS=no explicit per-container CPU/memory limits; shared Docker VM",
     ...(containerTimingDirectory ? ["-e", `TEMPO_TEST_TIMING_DIR=${containerTimingDirectory}`] : []),
     ...(process.env.CI ? ["-e", "CI=true"] : []),
     "-v",

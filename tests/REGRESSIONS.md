@@ -710,3 +710,12 @@ Append every new reported issue and its test names here. All listed tests belong
 - A runner inherits product database, broker, or test endpoint settings: `test environment strips dangerous product database and broker settings before any runner work` in `tests/unit/postgres-test-runner-regressions.test.ts`.
 
 The retired full SQLite runner's default assertions map to the PostgreSQL-backed regular browser matrix and service recreation scenario. Full SQLite runtime/browser specifics remain available through `make legacy-sqlite`; focused SQLite snapshot, validation, import-fidelity, source-nonmutation, destination-safeguard, historical-schema, product regressions, and `coverage_path_floor` checks remain in default unit/backend stages.
+
+## Issue #31 — held-piece drag diagnostics
+
+Opt-in bounded instrumentation measures a continuously held drag rather than inferring smoothness from its final square. Production board, timing, and engine policies remain unchanged.
+
+- `tests/unit/held-drag-diagnostics-regressions.test.ts`: `held_drag_capture_is_bounded_and_disabled_by_default`, `held_drag_capture_cleans_up_on_visibility_cancel_capture_loss_and_unmount`, `held_drag_metrics_account_for_grab_offset_orientation_and_coalescing`, `held_drag_detector_reports_mid_drag_board_cancellation`, `held_drag_reset_reuses_capture_without_pointer_storage_network_or_layout_work`.
+- `tests/browser/held-drag.spec.ts`: `held_drag_detector_reports_mid_drag_board_cancellation` validates uninterrupted and injected-interruption controls; `held_drag_status_and_preview_scenario_observes_continuity_before_drop` compares the independent probe with diagnostics while status and preview responses arrive; `held_drag_training_phases_separate_drop_reply_review_and_readiness` checks separately correlated training phase completions.
+- `tests/unit/performance-report-regressions.test.ts`: `held_drag_reports_reject_stale_or_incomparable_baselines`.
+- Pinned `tests/browser/performance.spec.ts`: `held-piece drag baseline separates workloads and capture overhead` retains three cold/warm repetitions for five isolated workloads, with capture enabled and disabled. Timing distributions are advisory; deterministic behavioral checks remain required.

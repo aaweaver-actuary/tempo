@@ -39,12 +39,12 @@ it("performance summary flags measured regressions without repeating test stages
     expect(report.status, report.stderr).toBe(0);
     const summary = readFileSync(join(currentDirectory, "performance-summary.md"), "utf8");
     expect(summary).toContain("unit");
-    expect(summary).toContain("Builder move to paint p95");
+    expect(summary).toContain("Builder after-move to rAF p95 (legacy move-to-paint)");
     expect(summary).toContain("Builder query to paint p95");
     expect(summary).toContain("30.0% slower");
     const structured = JSON.parse(readFileSync(join(currentDirectory, "performance-summary.json"), "utf8"));
     expect(structured.regressions.map((regression: { metric: string }) => regression.metric))
-      .toEqual(["unit", "Builder move to paint p95"]);
+      .toEqual(["unit", "Builder after-move to rAF p95 (legacy move-to-paint)"]);
 
     const baselineStagePath = join(baselineDirectory, "test-stages-full.json");
     const baselineStage = JSON.parse(readFileSync(baselineStagePath, "utf8"));
@@ -206,6 +206,37 @@ it("performance summary flags newly observed long tasks on the same browser fixt
     expect(structured.regressions).toEqual(expect.arrayContaining([
       expect.objectContaining({ metric: "Long tasks", current: 2, baseline: 0 }),
     ]));
+  } finally {
+    rmSync(currentDirectory, { recursive: true, force: true });
+    rmSync(baselineDirectory, { recursive: true, force: true });
+  }
+});
+
+it("held_drag_reports_reject_stale_or_incomparable_baselines", () => {
+  const currentDirectory = mkdtempSync(join(tmpdir(), "tempo-held-current-"));
+  const baselineDirectory = mkdtempSync(join(tmpdir(), "tempo-held-baseline-"));
+  try {
+    const timestamp = "2026-09-30T12:00:00Z";
+    const fixture = { name: "held-v1", repetitions: 3 };
+    const environment = { browserVersion: "153", buildMode: "production", viewport: { width: 1280 }, devicePixelRatio: 1, dockerCpus: "4" };
+    const artifact = (commit: string, browserEnvironment = environment) => ({ commit, timestamp, environment: browserEnvironment, fixture,
+      summaries: [{ workload: "idle", enabled: true, count: 6, frameGapMs: { p95: commit === "current" ? 50 : 16 }, displacementCssPx: { p95: 5 }, interruptionCount: 0 }] });
+    for (const [directory, commit] of [[currentDirectory, "current"], [baselineDirectory, "baseline"]]) {
+      writeFileSync(join(directory, "test-stages-full.json"), JSON.stringify({ commit, timestamp, environment: { platform: "linux" }, stages: {} }));
+      writeFileSync(join(directory, "held-drag-chromium.json"), JSON.stringify(artifact(commit)));
+    }
+    const runSummary = () => {
+      const result = spawnSync(process.execPath, ["scripts/report-performance.mjs", "--directory", currentDirectory, "--baseline", baselineDirectory], { encoding: "utf8" });
+      expect(result.status, result.stderr).toBe(0);
+      return JSON.parse(readFileSync(join(currentDirectory, "performance-summary.json"), "utf8"));
+    };
+    expect(runSummary().regressions).toHaveLength(1);
+    writeFileSync(join(baselineDirectory, "held-drag-chromium.json"), JSON.stringify(artifact("baseline", { ...environment, dockerCpus: "2" })));
+    expect(runSummary().regressions).toEqual([]);
+    writeFileSync(join(currentDirectory, "held-drag-chromium.json"), JSON.stringify(artifact("stale")));
+    const stale = runSummary();
+    expect(stale.staleArtifacts).toContain("held-drag-chromium.json");
+    expect(stale.metrics).toEqual([]);
   } finally {
     rmSync(currentDirectory, { recursive: true, force: true });
     rmSync(baselineDirectory, { recursive: true, force: true });

@@ -55,6 +55,20 @@ function collectMetrics(directory) {
     }
   }
   const browserArtifacts = [
+    ["held-drag-chromium.json", (artifact) => {
+      for (const summary of artifact.summaries ?? []) {
+        const comparisonKey = JSON.stringify([artifact.environment, artifact.fixture, summary.workload, summary.enabled, summary.count]);
+        const suffix = `${summary.workload}.${summary.enabled ? "capture-on" : "capture-off"}`;
+        for (const [metric, label, value, unit] of [
+          ["gap", "frame gap p95", summary.frameGapMs?.p95, "ms"],
+          ["displacement", "DOM displacement p95", summary.displacementCssPx?.p95, "CSS px"],
+          ["interruptions", "interrupted holds", summary.interruptionCount, "count"],
+        ]) if (typeof value === "number") metrics.push({
+          id: `held-drag.${suffix}.${metric}`, label: `Held drag ${suffix} ${label}`,
+          value, unit, comparisonKey,
+        });
+      }
+    }],
     ["browser-chromium.json", (artifact) => {
       const fixtureKey = JSON.stringify([environment, artifact.browser, artifact.fixture]);
       if (Array.isArray(artifact.longTasks))
@@ -65,7 +79,7 @@ function collectMetrics(directory) {
           value: summary.p95, unit: "ms", comparisonKey: fixtureKey });
       for (const [id, label, summary] of [
         ["board-ready.p95", "Board ready p95", artifact.boardReadySummary],
-        ["move-to-paint.p95", "Builder move to paint p95", artifact.moveToPaintSummary],
+        ["move-to-paint.p95", "Builder after-move to rAF p95 (legacy move-to-paint)", artifact.moveToPaintSummary],
       ]) if (typeof summary?.p95 === "number")
         metrics.push({ id, label, value: summary.p95, unit: "ms", comparisonKey: fixtureKey });
     }],

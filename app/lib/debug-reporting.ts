@@ -1,3 +1,4 @@
+import { tempoDragDiagnostics } from "./performance";
 import { useBoardShellStore } from "../state/board-shell-store";
 import { useTrainingStore } from "../state/training-store";
 import { dataDiagnostics } from "./validated-data";
@@ -261,6 +262,7 @@ export function buildDebugBundle(recordId?: string): string {
       column: record.context.column,
     })),
     environment: environmentSnapshot(),
+    dragDiagnostics: tempoDragDiagnostics(),
     workspace: {
       activeView: activeWorkspace,
       board: {
