@@ -73,7 +73,7 @@ function dragCaptureEnabled() {
 
 export function tempoDragDiagnostics() {
   return {
-    schemaVersion: 1, enabled: dragCaptureEnabled(), limits: dragLimits,
+    schemaVersion: 1, enabled: dragCaptureEnabled(), limits: { ...dragLimits },
     units: { timestamps: "performance time origin milliseconds", displacement: "CSS pixels" },
     measurement: "event receipt and DOM transform at requestAnimationFrame; not physical presentation or INP",
     sessions: structuredClone(dragSessions),

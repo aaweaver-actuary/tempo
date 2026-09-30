@@ -188,3 +188,17 @@ it("held_drag_long_tasks_and_operation_correlations_are_bounded", () => {
   expect(captured.truncated).toMatchObject({ longTasks: true, phases: true, boardEvents: true });
   active.capture.dispose(); expect(disconnect).toHaveBeenCalled();
 });
+
+it("held_drag_snapshot_metadata_cannot_change_live_capture_limits", () => {
+  const active = fixture(); active.start();
+  const snapshot = tempoDragDiagnostics();
+  try {
+    Reflect.set(snapshot.limits, "events", 1);
+    for (let move = 0; move < 20; move++)
+      document.dispatchEvent(new MouseEvent("mousemove", { clientX: 260, clientY: 370, buttons: 1 }));
+    expect(tempoDragDiagnostics().sessions.at(-1)!.events.length).toBeGreaterThan(1);
+  } finally {
+    Reflect.set(snapshot.limits, "events", 512);
+    active.capture.dispose();
+  }
+});
