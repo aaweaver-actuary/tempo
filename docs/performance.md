@@ -224,3 +224,5 @@ node scripts/report-performance.mjs --directory test-results/performance/held-dr
 ```
 
 Comparisons retain the same dataset/workload and reject different browser, host/VM capacity, viewport/DPR, build mode, fixture/probe version, or incomplete repetition counts. Numerical signals remain advisory; never replace the deterministic cancellation, cleanup, and continuity regressions with a percentile threshold.
+
+Comparable held-drag interruption counters changing from zero to positive produce an advisory “new interrupted holds” signal with a null percentage. Zero-to-zero is unchanged. Incompatible or missing baselines and stale artifacts cannot produce a verdict. These signals do not impose a blocking budget.

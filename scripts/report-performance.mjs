@@ -134,14 +134,17 @@ const metricRows = current.metrics.map((metric) => {
     ? (metric.value / previous.value - 1) * 100 : null;
   const newLongTasks = metric.id === "browser.long-tasks" && sameFixture &&
     previous.value === 0 && metric.value > 0;
+  const interruptionCounter = metric.id.startsWith("held-drag.") && metric.id.endsWith(".interruptions");
+  const newInterruptedHolds = interruptionCounter && sameFixture && previous.value === 0 && metric.value > 0;
   if (percentage !== null && percentage > 25)
     regressions.push({ metric: metric.label, percentage, current: metric.value,
       baseline: previous.value, unit: metric.unit });
-  if (newLongTasks)
+  if (newLongTasks || newInterruptedHolds)
     regressions.push({ metric: metric.label, percentage: null, current: metric.value,
       baseline: 0, unit: metric.unit });
   const change = newLongTasks ? "new long tasks" :
-    metric.id === "browser.long-tasks" && sameFixture && metric.value === 0 && previous.value === 0
+    newInterruptedHolds ? "new interrupted holds" :
+    (metric.id === "browser.long-tasks" || interruptionCounter) && sameFixture && metric.value === 0 && previous.value === 0
       ? "no change" : percentage === null ? (baseline ? "not comparable" : "—") :
         `${Math.abs(percentage).toFixed(1)}% ${percentage >= 0 ? "slower" : "faster"}`;
   return `| ${metric.label} | ${metric.value.toFixed(metric.unit === "s" ? 2 : 1)} ${metric.unit} | ` +
@@ -161,8 +164,8 @@ const lines = [
 ];
 if (!baseline) lines.push("No baseline supplied; no regression verdict.", "");
 else if (regressions.length)
-  lines.push(`**${regressions.length} performance signal(s) warrant review.** A comparable metric exceeded 25% degradation or new long tasks appeared. Check raw samples and runner variance before setting a blocking budget.`, "");
-else lines.push("No comparable metric exceeded 25% degradation and no new long tasks appeared.", "");
+  lines.push(`**${regressions.length} performance signal(s) warrant review.** A comparable metric exceeded 25% degradation, new long tasks appeared, or new interrupted holds appeared. Check raw samples and runner variance before setting a blocking budget.`, "");
+else lines.push("No comparable metric exceeded 25% degradation, no new long tasks appeared, and no new interrupted holds appeared.", "");
 if (current.staleArtifacts.length)
   lines.push(`Stale performance artifacts excluded: ${current.staleArtifacts.join(", ")}.`, "");
 if (current.slowestUnitFiles.length) {

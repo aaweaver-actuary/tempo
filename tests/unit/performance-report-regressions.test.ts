@@ -246,3 +246,52 @@ it("held_drag_reports_reject_stale_or_incomparable_baselines", () => {
     rmSync(baselineDirectory, { recursive: true, force: true });
   }
 });
+
+it("held_drag_reports_flag_new_interruptions_without_inventing_percentages", () => {
+  const currentDirectory = mkdtempSync(join(tmpdir(), "tempo-interrupt-current-"));
+  const baselineDirectory = mkdtempSync(join(tmpdir(), "tempo-interrupt-baseline-"));
+  const timestamp = "2026-09-30T12:00:00Z";
+  const writeRun = (directory: string, commit: string, interruptionCount: number, fixture = "held-v3", artifactCommit = commit) => {
+    writeFileSync(join(directory, "performance-run.json"), JSON.stringify({ commit, timestamp, stages: {} }));
+    writeFileSync(join(directory, "held-drag-chromium.json"), JSON.stringify({
+      commit: artifactCommit, timestamp, environment: { browser: "153", architecture: "arm64" }, fixture,
+      summaries: [{ workload: "idle", enabled: true, count: 6, interruptionCount }],
+    }));
+  };
+  const report = (withBaseline = true) => {
+    const run = spawnSync(process.execPath, ["scripts/report-performance.mjs", "--directory", currentDirectory,
+      ...(withBaseline ? ["--baseline", baselineDirectory] : [])], { encoding: "utf8" });
+    expect(run.status, run.stderr).toBe(0);
+    return { markdown: readFileSync(join(currentDirectory, "performance-summary.md"), "utf8"),
+      json: JSON.parse(readFileSync(join(currentDirectory, "performance-summary.json"), "utf8")) };
+  };
+  try {
+    writeRun(baselineDirectory, "baseline", 0);
+    writeRun(currentDirectory, "current", 1);
+    const interrupted = report();
+    expect(interrupted.json.regressions).toEqual([{ metric: "Held drag idle.capture-on interrupted holds",
+      current: 1, baseline: 0, percentage: null, unit: "count" }]);
+    expect(interrupted.markdown).toContain("| 0.0 count | new interrupted holds |");
+    expect(interrupted.markdown).toContain("or new interrupted holds appeared");
+    writeRun(currentDirectory, "current", 0);
+    const unchanged = report();
+    expect(unchanged.json.regressions).toEqual([]);
+    expect(unchanged.markdown).toContain("| 0.0 count | no change |");
+    expect(unchanged.markdown).toContain("no new interrupted holds appeared");
+    writeRun(currentDirectory, "current", 1, "different-fixture");
+    expect(report().json.regressions).toEqual([]);
+    expect(report().markdown).toContain("not comparable");
+    writeRun(currentDirectory, "current", 1, "held-v3", "stale");
+    expect(report().json.staleArtifacts).toContain("held-drag-chromium.json");
+    expect(report().json.regressions).toEqual([]);
+    writeRun(currentDirectory, "current", 1);
+    expect(report(false).json.regressions).toEqual([]);
+    expect(report(false).markdown).toContain("no regression verdict");
+    writeRun(baselineDirectory, "baseline", 1);
+    writeRun(currentDirectory, "current", 2);
+    expect(report().json.regressions[0].percentage).toBe(100);
+  } finally {
+    rmSync(currentDirectory, { recursive: true, force: true });
+    rmSync(baselineDirectory, { recursive: true, force: true });
+  }
+});
