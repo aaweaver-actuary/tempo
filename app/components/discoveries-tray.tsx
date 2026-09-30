@@ -411,6 +411,21 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     return readJsonResponse(response, discoveryTrainingEligibilitySchema, "discovery training eligibility");
   }, []);
 
+  const recheckTrainingEligibility = useCallback((item: DiscoveryItem) => {
+    const key = eligibilityKey(item);
+    setTrainingEligibility((items) => {
+      const remaining = { ...items };
+      delete remaining[key];
+      return remaining;
+    });
+    setEligibilityErrors((items) => {
+      const remaining = { ...items };
+      delete remaining[key];
+      return remaining;
+    });
+    setError((current) => current === eligibilityErrors[key] ? null : current);
+  }, [eligibilityErrors]);
+
   useEffect(() => {
     if (!active?.card_id) return;
     const key = eligibilityKey(active);
@@ -1052,16 +1067,12 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
                       <p role="status">{trainingEligibility[eligibilityKey(active)]?.reason ??
                         eligibilityErrors[eligibilityKey(active)] ?? "Checking direct training eligibility."}
                         {" "}Open in Builder to inspect this decision.
-                        {eligibilityErrors[eligibilityKey(active)] && (
-                          <> <Button type="button" onClick={() => {
-                            const key = eligibilityKey(active);
-                            setEligibilityErrors((items) => {
-                              const remaining = { ...items };
-                              delete remaining[key];
-                              return remaining;
-                            });
-                            setError((current) => current === eligibilityErrors[key] ? null : current);
-                          }}>Retry eligibility</Button></>
+                        {(eligibilityErrors[eligibilityKey(active)] ||
+                          trainingEligibility[eligibilityKey(active)]?.eligible === false) && (
+                          <> <Button type="button" disabled={busyId === active.id}
+                            onClick={() => recheckTrainingEligibility(active)}>
+                            {eligibilityErrors[eligibilityKey(active)] ? "Retry eligibility" : "Recheck eligibility"}
+                          </Button></>
                         )}
                       </p>
                     )}

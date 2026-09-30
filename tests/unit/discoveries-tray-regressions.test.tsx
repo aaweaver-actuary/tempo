@@ -507,3 +507,103 @@ it("confirmed failed discovery save remains visible with a retry action", async 
   await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("stale evidence"));
   expect(screen.getByRole("button", { name: "Retry save" })).toBeTruthy();
 });
+
+
+function savedEligibilityDiscovery() {
+  return {
+    id: "eligibility-recovery", repertoire_id: "rep", kind: "weak_known_decision", status: "active",
+    fen_key: startFen.split(" ").slice(0, 4).join(" "), fen: startFen,
+    card_id: "card", opponent_move_uci: null, trained_color: "white", score: 0.8,
+    evidence: { supporting_games: 0 }, evidence_fingerprint: "unchanged-evidence",
+    seen_at: "2026-09-24T00:00:00Z", snoozed_until: null,
+    admission_state: null, admitted_card_id: null, unread: false, source_games: [], routes: [],
+    created_at: "2026-09-24T00:00:00Z", updated_at: "2026-09-24T00:00:00Z",
+  };
+}
+
+it("negative discovery eligibility recovers through an explicit recheck after an unchanged feed refresh", async () => {
+  const discovery = savedEligibilityDiscovery();
+  backgroundFetch.mockReset();
+  backgroundFetch.mockImplementation(async () => Response.json({ discoveries: [discovery], total: 1,
+    next_offset: null, unread_count: 0 }));
+  let backendEligible = false;
+  let finishRecheck: ((response: Response) => void) | undefined;
+  let eligibilityRequests = 0;
+  const requests: string[] = [];
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    requests.push(url);
+    if (url.endsWith("/training-eligibility")) {
+      eligibilityRequests += 1;
+      if (eligibilityRequests === 2)
+        return new Promise<Response>((resolve) => { finishRecheck = resolve; });
+      return Response.json(backendEligible
+        ? { eligible: true, reason: null }
+        : { eligible: false, reason: "The saved card is unavailable or awaiting validation" });
+    }
+    if (url.endsWith("/train")) return Response.json({ card_id: "card", queued: true, idempotent: false });
+    throw new Error(`Unexpected request: ${url}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  let refreshTick: (() => void) | undefined;
+  const originalSetInterval = window.setInterval.bind(window);
+  const interval = vi.spyOn(window, "setInterval").mockImplementation((callback, delay) => {
+    if (delay === 30_000) {
+      refreshTick = callback as () => void;
+      return originalSetInterval(() => undefined, delay) as unknown as NodeJS.Timeout;
+    }
+    return originalSetInterval(callback, delay) as unknown as NodeJS.Timeout;
+  });
+  const onQueueChanged = vi.fn(async () => {});
+  try {
+    render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={onQueueChanged} />);
+    fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+    await screen.findByText(/The saved card is unavailable or awaiting validation/);
+    const train = screen.getByRole("button", { name: "Train this decision" }) as HTMLButtonElement;
+    expect(train.disabled).toBe(true);
+    expect(eligibilityRequests).toBe(1);
+    backendEligible = true;
+    await act(async () => { refreshTick?.(); });
+    expect(backgroundFetch).toHaveBeenCalledTimes(2);
+    expect(eligibilityRequests).toBe(1);
+    expect(train.disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Recheck eligibility" }));
+    await waitFor(() => expect(eligibilityRequests).toBe(2));
+    expect(train.disabled).toBe(true);
+    expect(screen.queryByRole("button", { name: "Recheck eligibility" })).toBeNull();
+    await act(async () => { finishRecheck?.(Response.json({ eligible: true, reason: null })); });
+    await waitFor(() => expect(train.disabled).toBe(false));
+    fireEvent.click(train);
+    await waitFor(() => expect(onQueueChanged).toHaveBeenCalledTimes(1));
+    expect(requests.map((url) => url.split("/").at(-1))).toEqual([
+      "training-eligibility", "training-eligibility", "training-eligibility", "train",
+    ]);
+  } finally { interval.mockRestore(); }
+});
+
+it("failed negative eligibility recheck remains observable and retries before enabling training", async () => {
+  const discovery = savedEligibilityDiscovery();
+  backgroundFetch.mockReset();
+  backgroundFetch.mockResolvedValue(Response.json({ discoveries: [discovery], total: 1,
+    next_offset: null, unread_count: 0 }));
+  let finishRetry: ((response: Response) => void) | undefined;
+  const fetcher = vi.fn()
+    .mockResolvedValueOnce(Response.json({ eligible: false,
+      reason: "The saved card is unavailable or awaiting validation" }))
+    .mockResolvedValueOnce(Response.json({ detail: "Eligibility temporarily unavailable" }, { status: 503 }))
+    .mockImplementationOnce(() => new Promise<Response>((resolve) => { finishRetry = resolve; }));
+  vi.stubGlobal("fetch", fetcher);
+  render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+  fireEvent.click(await screen.findByRole("button", { name: "Recheck eligibility" }));
+  const retry = await screen.findByRole("button", { name: "Retry eligibility" });
+  expect(screen.getAllByText(/Eligibility temporarily unavailable/).length).toBeGreaterThan(0);
+  const train = screen.getByRole("button", { name: "Train this decision" }) as HTMLButtonElement;
+  expect(train.disabled).toBe(true);
+  fireEvent.click(retry);
+  await waitFor(() => expect(fetcher).toHaveBeenCalledTimes(3));
+  expect(screen.queryByText(/Eligibility temporarily unavailable/)).toBeNull();
+  expect(train.disabled).toBe(true);
+  await act(async () => { finishRetry?.(Response.json({ eligible: true, reason: null })); });
+  await waitFor(() => expect(train.disabled).toBe(false));
+});
