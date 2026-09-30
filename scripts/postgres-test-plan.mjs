@@ -14,6 +14,26 @@ export function postgresTestStages({ mode }) {
   ];
 }
 
+// The benchmark owns its synthetic rows until its cleanup completes. Real
+// engine callbacks otherwise enqueue claims against those same eligible rows.
+export async function executeIsolatedBackgroundWorkload({ stopConsumers, measureWorkload, restoreConsumers }) {
+  let failure;
+  try {
+    await stopConsumers();
+    await measureWorkload();
+  } catch (error) {
+    failure = error instanceof Error ? error : new Error(String(error));
+  } finally {
+    try { await restoreConsumers(); }
+    catch (error) {
+      failure = failure
+        ? new AggregateError([failure, error], "Background workload and consumer restoration failed")
+        : error instanceof Error ? error : new Error(String(error));
+    }
+  }
+  if (failure) throw failure;
+}
+
 // Inject actions so the real selection, failure, and cleanup behavior can be
 // regression-tested without starting Docker or weakening the product gate.
 export async function executePostgresTestPlan(stages, actions, measure, onFailure = () => {}) {

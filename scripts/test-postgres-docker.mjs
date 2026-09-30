@@ -8,7 +8,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createIsolatedTestEnvironment } from "./test-environment.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
-import { executePostgresTestPlan, postgresTestStages } from "./postgres-test-plan.mjs";
+import { executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages } from "./postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer } from "./test-scenario-timings.mjs";
@@ -98,6 +98,18 @@ function run(command, argumentsList, options = {}) {
   const result = spawnSync(command, argumentsList, { stdio: "inherit", env: environment, ...options });
   if (result.error || result.status !== 0)
     throw new Error(`${command} ${argumentsList.join(" ")} failed`);
+}
+
+const workloadConsumers = ["defense-engine", "background-worker"];
+
+function verifyWorkloadConsumers(expectedState) {
+  const result = spawnSync("docker", [...compose, "ps", "--all", "--format", "json", ...workloadConsumers],
+    { encoding: "utf8", env: environment });
+  assert.equal(result.status, 0, result.stderr);
+  const states = new Map(result.stdout.trim().split("\n").filter(Boolean)
+    .map(line => JSON.parse(line)).map(container => [container.Service, container.State]));
+  for (const service of workloadConsumers)
+    assert.equal(states.get(service), expectedState, `${service} must be ${expectedState} for the workload benchmark`);
 }
 
 async function waitForReady() {
@@ -501,8 +513,21 @@ const actions = {
       "/source/scripts/check_postgres_upgrade.py"]);
   },
   background_workloads: async () => {
-    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
-      "/source/scripts/check_postgres_background_workloads.py"]);
+    await executeIsolatedBackgroundWorkload({
+      stopConsumers: () => {
+        run("docker", [...compose, "stop", ...workloadConsumers]);
+        verifyWorkloadConsumers("exited");
+      },
+      measureWorkload: () => {
+        run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+          "/source/scripts/check_postgres_background_workloads.py"]);
+      },
+      restoreConsumers: async () => {
+        run("docker", [...compose, "start", ...workloadConsumers]);
+        await waitForReady();
+        verifyWorkloadConsumers("running");
+      },
+    });
   },
   threat_candidate_upsert: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
