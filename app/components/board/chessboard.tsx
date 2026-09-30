@@ -283,11 +283,16 @@ export function Chessboard({
     const lockChanged = !previousPosition || previousPosition.locked !== locked;
     const orientationChanged = !previousPosition || previousPosition.orientation !== visualOrientation;
     const highlightChanged = !previousPosition || !sameLastMove(previousPosition.lastMove, lastMove);
-    if (positionChanged || modeChanged || (lockChanged && locked) || orientationChanged) {
+    const becameLocked = previousPosition !== undefined && !previousPosition.locked && locked;
+    // Chessground applies a user move before its deferred callback. Cancelling
+    // input cannot undo that move; genuine invalidation restores current props.
+    const mustRestoreAuthoritativePosition = positionChanged || modeChanged || becameLocked || orientationChanged;
+    const mustRefreshInputConfiguration = mustRestoreAuthoritativePosition || lockChanged;
+    if (mustRestoreAuthoritativePosition) {
       recordBoardEvent("inputCancellations");
       apiRef.current?.cancelMove?.();
     }
-    if (positionChanged || modeChanged) {
+    if (mustRestoreAuthoritativePosition) {
       recordBoardEvent("positionResets");
       resetVersion.current += 1;
       Object.assign(configuration, {
@@ -298,7 +303,7 @@ export function Chessboard({
         turnColor: position.chess.turn() === "w" ? "white" : "black",
       });
     }
-    if (positionChanged || modeChanged || lockChanged) {
+    if (mustRefreshInputConfiguration) {
       Object.assign(configuration, {
         movable: {
           free: editMode,
@@ -311,7 +316,7 @@ export function Chessboard({
         selectable: { enabled: !locked },
       });
     }
-    if (previousPosition && (positionChanged || modeChanged || lockChanged || orientationChanged)) {
+    if (previousPosition && mustRefreshInputConfiguration) {
       inputGeneration.current += 1;
       const inputEvents = createInputEvents();
       configuration.movable = { ...configuration.movable, events: { after: inputEvents.after } };
@@ -319,7 +324,7 @@ export function Chessboard({
       configuration.drawable = { onChange: inputEvents.onDrawnShapesChange };
     }
     if (orientationChanged) Object.assign(configuration, { orientation: visualOrientation });
-    if (positionChanged || highlightChanged)
+    if (mustRestoreAuthoritativePosition || highlightChanged)
       Object.assign(configuration, { lastMove: lastMove ? [...lastMove] as Key[] : undefined });
     if (Object.keys(configuration).length) apiRef.current?.set(configuration);
     appliedPosition.current = { fen, owner, positionKey, positionRevision, orientation: visualOrientation,
