@@ -376,6 +376,53 @@ def test_discovery_prefix_split_isolates_target_without_transferring_reviews(tmp
         assert db.execute("SELECT admission_kind FROM daily_queue WHERE card_id=?", (continuation_id,)).fetchone()[0] == "explicit"
 
 
+def test_discovery_training_eligibility_rejects_earlier_prefix_target_without_writes(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as db:
+        root_key, target_key = _seed_decision_route(db)
+        db.execute("""UPDATE cards SET kind='prefix',start_fen=?,moves_json=? WHERE id='target'""",
+                   (chess.STARTING_FEN, json.dumps(["e2e4", "e7e5", "g1f3", "b8c6", "f1c4"])))
+        for number in range(1, 6):
+            _seed_decision_game(db, number, root_key, target_key)
+        refresh_card_opportunity(db, "rep", "target")
+        opportunity_id = list_opportunities(db, "rep")[0]["id"]
+        original_card = tuple(db.execute("SELECT * FROM cards WHERE id='target'").fetchone())
+        original_queue = db.execute("SELECT COUNT(*) FROM daily_queue").fetchone()[0]
+    client = TestClient(app)
+    eligibility = client.get(f"/api/repertoires/rep/opportunities/{opportunity_id}/training-eligibility")
+    assert eligibility.status_code == 200
+    assert eligibility.json() == {
+        "eligible": False,
+        "reason": "The target decision cannot be isolated from this prefix card",
+    }
+    response = client.post(f"/api/repertoires/rep/opportunities/{opportunity_id}/train")
+    assert response.status_code == 409
+    with database.connection() as db:
+        assert tuple(db.execute("SELECT * FROM cards WHERE id='target'").fetchone()) == original_card
+        assert db.execute("SELECT COUNT(*) FROM daily_queue").fetchone()[0] == original_queue
+        assert db.execute("SELECT COUNT(*) FROM prefix_splits").fetchone()[0] == 0
+        assert db.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 0
+
+
+def test_discovery_training_eligibility_accepts_supported_target(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as db:
+        root_key, target_key = _seed_decision_route(db)
+        for number in range(1, 6):
+            _seed_decision_game(db, number, root_key, target_key)
+        refresh_card_opportunity(db, "rep", "target")
+        opportunity_id = list_opportunities(db, "rep")[0]["id"]
+    client = TestClient(app)
+    eligibility = client.get(f"/api/repertoires/rep/opportunities/{opportunity_id}/training-eligibility")
+    assert eligibility.status_code == 200
+    assert eligibility.json() == {"eligible": True, "reason": None}
+    response = client.post(f"/api/repertoires/rep/opportunities/{opportunity_id}/train")
+    assert response.status_code == 200
+    assert response.json()["queued"] is True
+
+
 def test_discovery_accepted_engine_branch_survives_publication_restart(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     # This test drives the durable admission slice itself; an embedded worker

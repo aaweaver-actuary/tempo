@@ -924,6 +924,12 @@ export const discoveriesFeedSchema = z.strictObject({
   next_offset: integer.nullable(),
   unread_count: integer,
 });
+export const discoveryTrainingEligibilitySchema = z.strictObject({
+  eligible: z.boolean(),
+  reason: z.string().nullable(),
+}).refine((value) => value.eligible ? value.reason === null : Boolean(value.reason), {
+  message: "Training eligibility must explain unsupported decisions",
+});
 export const discoveryRecommendationSchema = z.strictObject({
   state: z.enum(["ready", "waiting", "unavailable"]),
   opportunity_id: z.string(),

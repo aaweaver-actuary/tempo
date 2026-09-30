@@ -163,7 +163,8 @@ from .services.opening_graph import (
 )
 from .services.repertoire_opportunities import (
     acknowledge_opportunity, admit_existing_decision, dismiss_opportunity,
-    enqueue_opportunity_refresh, execute_opportunity_slice, list_opportunities,
+    enqueue_opportunity_refresh, execute_opportunity_slice, existing_decision_training_eligibility,
+    list_opportunities,
     snooze_opportunity,
 )
 from .services.discovery_admission import (
@@ -3880,6 +3881,15 @@ def snooze_repertoire_opportunity(identifier: str, opportunity_id: str,
         if not snooze_opportunity(database, identifier, opportunity_id):
             raise HTTPException(404, "Active discovery not found")
     return {"snoozed": True}
+
+
+@app.get("/api/repertoires/{identifier}/opportunities/{opportunity_id}/training-eligibility")
+def repertoire_opportunity_training_eligibility(identifier: str, opportunity_id: str):
+    with read_connection() as database:
+        try:
+            return existing_decision_training_eligibility(database, identifier, opportunity_id)
+        except KeyError as error:
+            raise HTTPException(404, str(error)) from error
 
 
 @app.post("/api/repertoires/{identifier}/opportunities/{opportunity_id}/train")
