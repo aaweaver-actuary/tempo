@@ -1125,5 +1125,33 @@
     "handler": "attempt_guided_game_review",
     "treatment": "foreground_command",
     "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoires/{identifier}/segmentation",
+    "handler": "segmentation_list",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoires/{identifier}/segmentation/{recommendation_id}",
+    "handler": "segmentation_detail",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoires/{identifier}/segmentation/refresh",
+    "handler": "request_refresh",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoires/{identifier}/segmentation/{recommendation_id}/preference",
+    "handler": "request_preference",
+    "treatment": "foreground_command",
+    "state": "staged"
   }
 ]

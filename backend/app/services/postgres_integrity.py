@@ -111,6 +111,9 @@ def invalidate_integrity_in_transaction(
 ) -> None:
     """Never expose an old clean scan as the result of newly written lines."""
 
+    from .postgres_opening_segmentation import invalidate_segmentation_in_transaction
+    invalidate_segmentation_in_transaction(database, repertoire_id)
+
     database.execute_native(
         "INSERT INTO repertoire_integrity_state("
         "repertoire_id,status,checked_at,scan_status,scan_generation,"
@@ -516,6 +519,9 @@ def complete_integrity_scan_in_transaction(
         if not complete_task_slice_in_transaction(database, task):
             raise RuntimeError("Integrity lease changed before stale scan completion")
         return False
+    from .postgres_opening_segmentation import request_segmentation_in_transaction
+    request_segmentation_in_transaction(database, repertoire_id, int(payload["graph_generation"]))
+
     from ..queue_commands import request_queue_refresh_in_transaction
 
     request_queue_refresh_in_transaction(database, str(payload["local_day"]))
