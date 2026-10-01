@@ -1,5 +1,6 @@
 """Named AS-14/19/21 checks on the runner-owned disposable PostgreSQL instance."""
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import datetime, timezone, date
 import json
 import os
@@ -110,10 +111,54 @@ def main():
         assert len(detail['routes']) == 3 and len(detail['segments']) == 4
         for _ in range(3): assert segmentation_list(repertoire_id) == listing
         assert len(traversals) == 2, 'Cached reads traversed chess'
+        # Publish a different run and edit its route names midway through a read.
+        # Repeatable read must return the old names with the old publication, never a mixture.
+        from app import opening_segmentation_api as preview_api
+        from fastapi import HTTPException
+        original_read = preview_api.read_connection
+        with postgres_store.connection(read_only=True) as database:
+            original_run = database.execute_native('SELECT run_id FROM opening_segmentation_state WHERE repertoire_id=%s', (repertoire_id,)).fetchone()[0]
+        publication_changed = False
+        @contextmanager
+        def publishing_read():
+            nonlocal publication_changed
+            with original_read() as database:
+                class PublishingConnection:
+                    def execute_native(self, statement, arguments=()):
+                        nonlocal publication_changed
+                        if 'SELECT DISTINCT line.id' in statement:
+                            with postgres_store.connection(read_only=False) as writer:
+                                writer.execute_native('UPDATE repertoire_lines SET name=%s WHERE repertoire_id=%s', ('New publication route', repertoire_id))
+                                writer.execute_native('UPDATE opening_segmentation_state SET run_id=%s WHERE repertoire_id=%s', ('replacement-publication', repertoire_id))
+                            publication_changed = True
+                        return database.execute_native(statement, arguments)
+                yield PublishingConnection()
+        preview_api.read_connection = publishing_read
+        try:
+            coherent = segmentation_detail(repertoire_id, recommendation['id'], snapshot_id=detail['snapshot_id'])
+            assert publication_changed and coherent == detail, 'Response mixed publication metadata and newer route names'
+        finally:
+            preview_api.read_connection = original_read
+            with postgres_store.connection(read_only=False) as database:
+                database.execute_native('UPDATE opening_segmentation_state SET run_id=%s WHERE repertoire_id=%s', (original_run, repertoire_id))
+                for line in lines:
+                    database.execute_native('UPDATE repertoire_lines SET name=%s WHERE id=%s', (line['name'], line['id']))
+        for cursor in ('after_segment', 'after_route'):
+            assert segmentation_detail(repertoire_id, recommendation['id'], snapshot_id=detail['snapshot_id'], **{cursor: 'last'})['snapshot_id'] == detail['snapshot_id']
+            with postgres_store.connection(read_only=False) as database:
+                database.execute_native('UPDATE opening_segmentation_state SET run_id=%s WHERE repertoire_id=%s', ('replacement-publication', repertoire_id))
+            try:
+                segmentation_detail(repertoire_id, recommendation['id'], snapshot_id=detail['snapshot_id'], **{cursor: 'last'})
+            except HTTPException as error: assert error.status_code == 409
+            else: raise AssertionError('A new publication accepted old pagination')
+            finally:
+                with postgres_store.connection(read_only=False) as database:
+                    database.execute_native('UPDATE opening_segmentation_state SET run_id=%s WHERE repertoire_id=%s', (original_run, repertoire_id))
+        print(json.dumps({'test': 'test_preview_response_remains_consistent_during_concurrent_postgres_publication', 'pagination_conflicts': 2}))
         operation_id = 'segmentation-preference-' + uuid.uuid4().hex
         payload = {'repertoire_id': repertoire_id, 'recommendation_id': recommendation['id'], 'request': {
             'content_version': listing['content_version'], 'graph_generation': 1,
-            'source_fingerprint': detail['source_fingerprint'], 'choice': 'keep_current'}}
+            'source_fingerprint': detail['source_fingerprint'], 'snapshot_id': detail['snapshot_id'], 'choice': 'keep_current'}}
         first_result = execute_command(operation_id, 'opening.segmentation.preference', payload)
         assert execute_command(operation_id, 'opening.segmentation.preference', payload) == first_result
         assert not segmentation_list(repertoire_id)['recommendations']

@@ -143,3 +143,13 @@ was corrected and the complete command subsequently passed.
 CI full validation remains required on the actual PR candidate. Local `make full`
 was not run because CI owns that gate. Decision evidence, executable exercises,
 activation/opt-out and adaptation are not delivered by PR 1.
+
+### PR #50 preview snapshot repair
+
+Every list recommendation and detail carries an opaque `snapshot_id`, hashing contract/policy versions, repertoire/recommendation IDs, publication ID, content version, graph generation and source fingerprint. Initial reads may omit the binding for older readers; pagination must name it. Missing or superseded pagination returns actionable HTTP 409. Bounded read-only repeatable-read PostgreSQL transactions prevent mixed publications within a response. New preference commands submit the token; old durable payloads retain their existing source/version checks and receipts. No schema migration is needed.
+
+The client checks the response against both its current list and displayed snapshot before appending. List/detail/command generations invalidate late successes, failures and cleanup after closure, repertoire changes or newer work. Stale/missing/changed previews cannot submit preferences. Pagination preserves original metadata. HTTP 409 on a command removes its obsolete preview. Recovery: refresh recommendations, load a fresh preview, then retry the choice; uncertain transport retries retain the idempotency key.
+
+Validation uses the named component/API regressions and disposable PostgreSQL concurrent-publication rehearsal. Evidence capture, activation and scheduling remain unavailable.
+
+Repair evidence (dirty snapshot patch over `26bbf2a`, macOS ARM64, Node 26.3.0, Python 3.14.5): `npm run test:unit -- tests/unit/opening-segmentation-regressions.test.tsx tests/unit/api-schema-parity-regressions.test.ts` passed 20 cases in 1.36s; `PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_opening_segmentation_snapshot_api.py backend/tests/test_opening_segmentation.py backend/tests/test_postgres_opening_segmentation.py backend/tests/test_postgres_route_contract.py -q -o cache_dir=.pytest_cache --rootdir=.` passed 29 in 0.56s. Typecheck passed; lint passed with existing warnings and ref-cleanup warnings. Elevated `make docker-durability` passed every planned stage (158.21s scenario sum; includes setup/cleanup). The original component failed the new segment rebuild regression in 5.70s. These focused results are not a complete candidate gate; CI remains pending.

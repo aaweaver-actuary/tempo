@@ -784,3 +784,5 @@ Client contracts: `tests/unit/opening-segmentation-regressions.test.tsx`.
 Real product browser: `tests/browser/opening-segmentation.spec.ts` (390px and 1280px).
 PostgreSQL rehearsal runs through the regular durability/full runner's isolated
 background workload stage; it never uses the live study database.
+
+PR #50 snapshot repair: `tests/unit/opening-segmentation-regressions.test.tsx` covers normal bound pagination, rebuilds between segment/route pages, stale/building/failed lists, removed/changed selections, late list/detail/command responses and preference idempotency. `backend/tests/test_opening_segmentation_snapshot_api.py` covers missing and superseded pagination bindings, all snapshot identity components and preference mismatch without writes. `scripts/check_postgres_opening_segmentation.py::test_preview_response_remains_consistent_during_concurrent_postgres_publication` changes the publication and route names during a real read; the response must retain the original complete snapshot.

@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from . import postgres_store
 from .command_gateway import register_command
 from .database import read_connection
-from .services.opening_segmentation import RECOMMENDATION_VERSION
+from .services.opening_segmentation import RECOMMENDATION_VERSION, POLICY_VERSION, stable_key
 from .services.postgres_opening_segmentation import request_segmentation_in_transaction
 
 router = APIRouter()
@@ -20,6 +20,8 @@ class SegmentationPreference(BaseModel):
     graph_generation: int = Field(ge=1)
     source_fingerprint: str = Field(min_length=1)
     choice: Literal['dismissed', 'keep_current']
+    # Existing durable commands retain their source checks; new clients bind the publication too.
+    snapshot_id: str | None = Field(default=None, min_length=1)
 
 
 def require_postgres():
@@ -50,10 +52,27 @@ def source_fingerprint(database, run_id: str, recommendation_id: str) -> str:
     ).fetchone()[0]
 
 
+def recommendation_snapshot(state: dict, recommendation: dict) -> str:
+    return stable_key('opening-segmentation-snapshot', RECOMMENDATION_VERSION, POLICY_VERSION,
+                      recommendation['repertoire_id'], recommendation['id'], state['run_id'],
+                      state['content_version'], state['graph_generation'], recommendation['source_fingerprint'])
+
+
+def recommendation_projection(state: dict, recommendation) -> dict:
+    projected = {key: value for key, value in dict(recommendation).items() if key != 'run_id'}
+    return {**projected, 'snapshot_id': recommendation_snapshot(state, projected)}
+
+
+def consistent_preview_read(database):
+    # First statement: all bounded reads see one publication, even during a concurrent rebuild.
+    database.execute_native('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY')
+
+
 @router.get('/api/repertoires/{identifier}/segmentation')
 def segmentation_list(identifier: str):
     require_postgres()
     with read_connection() as database:
+        consistent_preview_read(database)
         state = state_projection(database, identifier)
         rows = database.execute_native(
             "SELECT recommendation.* FROM opening_segmentation_recommendations recommendation "
@@ -73,13 +92,16 @@ def segmentation_list(identifier: str):
     return {'version': RECOMMENDATION_VERSION, 'preview_only': True, 'state': state['state'],
             'content_version': state['content_version'], 'graph_generation': state['graph_generation'],
             'error': state['error'], 'invalidated_pins': invalidated_pins,
-            'recommendations': [{key: value for key, value in dict(row).items() if key != 'run_id'} for row in rows]}
+            'recommendations': [recommendation_projection(state, row) for row in rows]}
 
 
 @router.get('/api/repertoires/{identifier}/segmentation/{recommendation_id}')
-def segmentation_detail(identifier: str, recommendation_id: str, after_segment: str = '', after_route: str = ''):
+def segmentation_detail(identifier: str, recommendation_id: str, after_segment: str = '', after_route: str = '', snapshot_id: str | None = None):
     require_postgres()
+    if (after_segment or after_route) and not snapshot_id:
+        raise HTTPException(409, 'Pagination requires its preview snapshot. Refresh the recommendation and retry.')
     with read_connection() as database:
+        consistent_preview_read(database)
         state = state_projection(database, identifier)
         if state['state'] != 'ready':
             raise HTTPException(409, 'The repertoire changed. Refresh recommended segmentation.')
@@ -88,7 +110,10 @@ def segmentation_detail(identifier: str, recommendation_id: str, after_segment: 
             (state['run_id'], recommendation_id),
         ).fetchone()
         if recommendation is None:
-            raise HTTPException(404, 'Recommendation not found in the current source')
+            raise HTTPException(409 if snapshot_id else 404, 'Recommendation not found in the current source. Refresh the preview.')
+        snapshot = recommendation_snapshot(state, dict(recommendation))
+        if snapshot_id is not None and snapshot_id != snapshot:
+            raise HTTPException(409, 'This preview snapshot changed. Refresh the recommendation before continuing.')
         parts = database.execute_native(
             'SELECT segment_id,segment_json FROM opening_segmentation_parts WHERE run_id=%s AND recommendation_id=%s '
             'AND segment_id>%s ORDER BY segment_id LIMIT 9', (state['run_id'], recommendation_id, after_segment),
@@ -103,8 +128,8 @@ def segmentation_detail(identifier: str, recommendation_id: str, after_segment: 
         fingerprint = source_fingerprint(database, state['run_id'], recommendation_id)
     kind = recommendation['kind']
     return {'version': RECOMMENDATION_VERSION, 'preview_only': True, 'content_version': state['content_version'],
-            'graph_generation': state['graph_generation'], 'source_fingerprint': fingerprint,
-            'recommendation': {key: value for key, value in dict(recommendation).items() if key != 'run_id'},
+            'graph_generation': state['graph_generation'], 'source_fingerprint': fingerprint, 'snapshot_id': snapshot,
+            'recommendation': recommendation_projection(state, recommendation),
             'rationale': ('These lines share moves before branching. Practice the shared opening once, then review the branches separately.'
                           if kind == 'shared_trunk' else 'Different move orders reach a compatible continuation. Keep the incoming routes and share the continuation.'),
             'estimate_basis': 'structural learner-decision count; not a time or learning estimate',
@@ -121,11 +146,14 @@ def save_preference(database, payload: dict) -> dict:
     if (state['state'] != 'ready' or state['content_version'] != request.content_version
             or state['graph_generation'] != request.graph_generation):
         raise HTTPException(409, 'The repertoire changed. Refresh the recommendation before saving this choice.')
-    if not database.execute_native(
-        'SELECT 1 FROM opening_segmentation_recommendations WHERE run_id=%s AND id=%s',
+    recommendation = database.execute_native(
+        'SELECT * FROM opening_segmentation_recommendations WHERE run_id=%s AND id=%s',
         (state['run_id'], payload['recommendation_id']),
-    ).fetchone():
+    ).fetchone()
+    if recommendation is None:
         raise HTTPException(409, 'This recommendation is no longer current')
+    if request.snapshot_id is not None and request.snapshot_id != recommendation_snapshot(state, dict(recommendation)):
+        raise HTTPException(409, 'This preview snapshot changed. Refresh before saving this choice.')
     if source_fingerprint(database, state['run_id'], payload['recommendation_id']) != request.source_fingerprint:
         raise HTTPException(409, 'The recommendation sources changed. Refresh before saving.')
     database.execute_native(
