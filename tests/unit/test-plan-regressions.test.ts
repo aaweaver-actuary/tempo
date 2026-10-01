@@ -253,3 +253,14 @@ it("test plan records per-file Vitest timings without a second unit run", () => 
     rmSync(temporaryDirectory, { recursive: true, force: true });
   }
 });
+
+
+it("split complete verification matches the existing full command inventory", () => {
+  const full = plannedStages("full").filter(stage => !["capabilities", "postgres_docker", "visual"].includes(stage.name));
+  const split = ["ci-frontend", "ci-backend", "ci-build"].flatMap(plannedStages);
+  expect(new Set(split.map(stage => stage.name)).size).toBe(split.length);
+  const normalized = (stages: PlannedStage[]) => stages.map(stage => ({ ...stage,
+    args: stage.args.filter(argument => !argument.startsWith("--junitxml=")).map(argument => argument.replace(/unit-files-[^/]+\.json$/, "unit-files-TIER.json")),
+  })).sort((left, right) => left.name.localeCompare(right.name));
+  expect(normalized(split)).toEqual(normalized(full));
+});

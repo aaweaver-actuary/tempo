@@ -1,6 +1,6 @@
 # Test scopes and exact full coverage
 
-Use one Make target for the question you are answering. `make plan` prints the exact commands in the full plan without running them. `make full` is the release and CI-equivalent gate; `npm test` and `npm run test:full` use the same runner. Run the full gate once on the final checkout. Do not chain `fast`, `integration`, `ui`, and `full` in one invocation: the smaller scopes are subsets of full.
+Use one Make target for the question you are answering. `make plan` prints the exact commands in the full plan without running them. `make full` is the complete local gate; `npm test` and `npm run test:full` use the same runner. CI owns required final-candidate verification by default; run a local full gate only for the reasons in `AGENTS.md`. Do not chain `fast`, `integration`, `ui`, and `full` in one invocation: the smaller scopes are subsets of full.
 
 Lint checks project source and tests while excluding generated output and the Git-ignored `.dev-copies/` directory used for local checkout copies. Those copies contain bundled dependencies and are verified through their own checkout when needed. The named test-plan regression protects this exclusion so a nested copy cannot fail the full gate after earlier test stages have passed.
 
@@ -80,7 +80,7 @@ Use `node scripts/test-postgres-docker.mjs --list` or `node scripts/test-docker.
 
 ## PostgreSQL execution modes and timings
 
-The runner defaults to `--mode full`. This remains the mode used by `make full`, `npm test`, and CI. `make browser`, `make ui`, `make ui-file`, and `make view` explicitly use `--mode browser`. `make docker-durability` uses `--mode durability`; the old `--skip-browser` argument remains a supported alias. A browser-file or browser-grep argument without an explicit mode selects browser-only execution. Filters are rejected in explicit full or durability mode so a filtered run cannot masquerade as a full gate.
+The runner defaults to `--mode full`. This remains the mode used by `make full` and `npm test`; CI uses separate durability and browser modes. `make browser`, `make ui`, `make ui-file`, and `make view` explicitly use `--mode browser`. `make docker-durability` uses `--mode durability`; the old `--skip-browser` argument remains a supported alias. A browser-file or browser-grep argument without an explicit mode selects browser-only execution. Filters are rejected in explicit full or durability mode so a filtered run cannot masquerade as a full gate.
 
 ```sh
 node scripts/test-postgres-docker.mjs --list --mode browser
@@ -106,3 +106,157 @@ CI retains npm caching and adds pip downloads plus Rust compiler/dependency cach
 ## Runner regression coverage
 
 `tests/unit/postgres-test-speedups-regressions.test.ts` runs the dependency-free Node suite in `tests/runner/postgres-test-speedups.test.mjs` as part of the regular frontend gate. The same cases can be run directly with `node --test tests/runner/postgres-test-speedups.test.mjs` while editing the harness. The suite checks executable mode selection, read-only plans, failure/cleanup propagation, timings, fail-fast fixtures, and the Make/CI entry points. These harness tests do not replace live PostgreSQL or browser verification.
+
+## CI reliability maintenance: decomposition boundary
+
+`scripts/verification-stages.mjs` defines the existing commands for both the
+unchanged local `make full` and independent CI owners: `ci-frontend` (all units,
+lint, typecheck), `ci-backend` (all Python tests and defense-engine smoke), and
+`ci-build` (Rust format/lint/tests, WASM and local build). PostgreSQL durability,
+regular browser verification and pinned visual/performance remain separate
+runner modes. Splitting durability and browsers gives each its own disposable
+stack; the full runner's intervening study isolation is replaced by separate
+volumes, while all product scenarios remain covered.
+
+`split complete verification matches the existing full command inventory`
+compares the split command union to full, with only report filenames normalized.
+Local proof on main `86daf005`: 12 test-plan regressions passed (5.99s, macOS
+ARM64, Node 26.3.0, Python 3.14.5). `make plan` retains its 13-stage inventory.
+This is inventory proof, not a completed runtime gate; final candidate CI owns
+complete verification. Selection changes follow in a separate commit.
+
+## CI verification tiers and reliability evidence
+
+The CI workflow preserves local `make full` and uses separate frontend,
+backend/engine, Rust/WASM/build, PostgreSQL durability, browser, and pinned
+visual/performance jobs. Every PR runs all units and build checks, all
+PostgreSQL durability scenarios, and seven critical browser cases covering
+review/reload, offline replay, fail-closed reads, Study grading, foreground
+contention and held drags. Each PostgreSQL/browser invocation owns fresh
+ports, credentials, volumes and containers and remains serial within its
+stack. GitHub's **Re-run failed jobs** repeats a failed layer and its aggregate,
+without repeating successful unrelated layers.
+
+`scripts/ci-verification-inventory.json` is the reviewed source-to-spec map.
+Mapped leaf edits add complete browser families; shared board/state/contracts,
+scheduling, migrations, fixtures, runner and dependency changes, unknown paths,
+or missing comparison history select every browser case and pinned checks.
+Both names of renamed/copied files and deleted paths are classified. All TSX
+rendering edits and rendering assets select pinned visual/performance.
+Documentation under `docs/` and the root README retain required core,
+durability and critical checks. Adding an unclassified browser spec fails
+planning. PR #50 is merged into main; its opening-segmentation spec belongs to
+the repertoire family and participates in current collection and selection.
+
+The plan job actually collects all regular and pinned cases. Its immutable
+plan and collection report record IDs, projects, titles, selection reasons,
+critical coverage, and complete nightly/release coverage. Layer result reports
+include commands, exits, durations, revision and environment. Units retain
+Vitest JSON and backend JUnit; browsers and pinned tests retain JSON results,
+available traces/screenshots, and timing artifacts. Disposable service logs
+are captured before cleanup even on success; artifact errors cannot prevent
+resource cleanup. Artifacts upload with `always()` and missing reports fail
+`quality`, which also runs with `always()`. Missing/cancelled/unexpectedly
+skipped jobs, absent commands, skipped tests and collection mismatches fail
+aggregation. Only plan-recorded inapplicability allows a skip.
+
+Complete verification runs nightly at **07:00 UTC**, on demand, for merge-group candidates when the owner enables a merge queue, and on main
+before practice-demo publishing. Scheduled runs and manual runs with the
+(default) **verification only** option cannot deploy. Publishing additionally
+requires complete scope and successful `quality` on main. Same-PR runs
+supersede each other; deployment concurrency remains non-cancelling. No
+repository settings were changed. Owner recommendation: require stable
+`quality`, require the branch to be current or use a merge queue, and retain
+complete verification on the actual merge candidate. Do not directly require
+optionally inapplicable `visual` or nonblocking `quarantine`; require their
+planned outcomes through `quality`. Inspection found no
+main protection (API 404) and no repository rulesets; record this as an
+observed baseline, not an assurance about future settings.
+
+CI pins demonstrated Node **22.23.3**, Python **3.12.14**, Rust **1.99.0** and
+host wasm-pack **0.15.0**. The existing pinned Playwright Linux ARM64 image and
+Docker build's explicit wasm-pack pin remain unchanged. These pins do not
+attribute historical failures to toolchain drift.
+
+Automatic retries are disabled. Manual diagnostic retry is optional and
+limited to one repeat of the failed command; the first failure remains in
+reports/artifacts and the mandatory job still fails. `scripts/ci-quarantine.json`
+is empty. A future entry must identify an individually confirmed harness
+defect, repair issue, owner, expiry and required replacement coverage. It
+continues in a visibly nonblocking job; critical cases cannot be quarantined.
+Missing quarantine reports still fail aggregation, and expiry fails planning.
+
+### Observed 25-run baseline
+
+The inspected recent sample has **13 successful runs, 11 failed runs and one
+cancellation**, each at attempt 1. These are run outcomes, not a false-failure
+rate. Preserve unresolved failures separately from confirmed repairs:
+
+| Signature | Failed runs | Evidence / disposition |
+| --- | --- | --- |
+| Study authoring captured the shell FEN before its exercise FEN | 36787451501, 36785256539, 36779563054, 36639783560, 36634425515, 36623248337 | Trace-backed synchronization repair `ec03b52`, already on main; waits for exact exercise FEN before capturing unchanged-input invariant. |
+| Background fixture consumer races (`NoneType`) | 36715216550, 36646129188 | Fixture isolation repair `0ac1e0f`, already on main; pauses/verifies consumers while synthetic workload owns its rows. |
+| Discovery second clock jump overlaps second feed response | 36871513621, 36706814147 | Retained PR #50 trace supports synchronization diagnosis; repair `e3856e7` is now on main through merged PR #50. Original exact local case passed; no deterministic local failure is claimed. |
+| Phone and Study initial visibility failures | 36792899240 | Unresolved; no quarantine and no assertion or timeout relaxation. |
+| Same-PR cancellation | 36791648011 | Supersession outcome; not classified as a test failure. |
+
+Run 36871513621 tested synthetic merge `1eb39f202ee0186594980b4083eda812b8597d79`
+(head `26bbf2a`), Linux ARM64, Node 22.23.3, Python 3.12.14, Rust 1.99.0:
+426 frontend cases, 728 backend cases and 8 Rust tests passed; 153/154 regular
+browser cases passed. The fail-fast runner did not reach visual/performance.
+Recorded stage seconds: capabilities 27.52, units 62.58, engine smoke 0.21,
+backend 77.17, Rust format 0.03/lint 14.00/tests 11.40, lint 17.58, typecheck
+11.73, WASM 14.91, local build 1.84, PostgreSQL 596.14 (failed). Nested
+PostgreSQL image build 105.22, browser 382.63 and cleanup 10.82 seconds are
+inside that PostgreSQL stage and must not be added again. Main's prior
+successful reference is run 36857716424. This failed baseline and successful
+focused repeats are not comparable complete throughput measurements. No
+speedup or learning claim follows from them.
+
+Before PR #50 merged, the maintenance measurements below used main-only sources
+without its discovery repair; those historical runs retain their original
+revision labels. PR #50 is now on main at `1151304261e59670847175b07680eb7a101f8211`
+and was integrated into PR #51 by merge `2f5521d`. Current candidate verification
+includes its segmentation, snapshot, migration and discovery regressions.
+
+### Maintenance implementation evidence
+
+Local environment: macOS ARM64, Node 26.3.0, Python 3.14.5, Rust 1.98.1;
+pinned browser image remains Linux ARM64. Measurements below are the maintenance
+patch dirty over decomposition commit `b5d046a`, based solely on main
+`86daf005`; no PR #50 feature or discovery repair was cherry-picked.
+
+- `npm run test:unit -- tests/unit/ci-reliability-regressions.test.ts tests/unit/test-plan-regressions.test.ts tests/unit/postgres-test-speedups-regressions.test.ts tests/unit/postgres-test-runner-regressions.test.ts`: 19 regular cases passed (5.46s). The CI wrapper invokes 14 named native Node regressions; they also pass directly with `node --test tests/runner/ci-reliability.test.mjs`.
+- `node scripts/ci-verification-plan.mjs --base origin/main`: actual maintenance diff selects complete 152-case regular browser inventory and 49 pinned cases. Unknown/missing-history fixtures select the same complete coverage; docs-only fixture selects exactly 7 critical cases.
+- `node scripts/ci-run-layer.mjs frontend`: 424 frontend cases passed in 54.84s, followed by passing lint/typecheck; 75.26s command time. Lint's unrelated existing warnings remain; extracted unused imports were subsequently removed and lint rerun.
+- Elevated `node scripts/ci-run-layer.mjs browser` on the explicitly labelled docs-only selection fixture: 7/7 critical cases passed, 73.95s including preflight/setup/cleanup. Executed IDs match selection; this is main-only critical proof, not the actual maintenance PR's complete browser gate.
+- Elevated `node scripts/ci-run-layer.mjs postgres`: all planned durability scenarios passed, 139.80s including preflight/setup/cleanup. Browser and durability stacks have different fresh resource names and volumes; available diagnostics and machine-readable reports were retained.
+- `node scripts/ci-verification-plan.mjs --complete`, then elevated `node scripts/ci-run-layer.mjs visual`: all 49 pinned visual/performance cases passed, 249.75s test execution / 269.39s including preflight and setup. Report IDs exactly match pinned collection. Baselines were not changed.
+- Typecheck, lint, YAML structure/aggregate dependency inspection and `git diff --check` passed. No local full gate was run: final candidate CI owns that boundary. These focused measurements alone did not validate core backend/Rust/build or complete regular browser runtime; later complete evidence is separately revision-labelled below and in the PR description.
+
+These command times do not project parallel-CI speedups and are not comparable
+to the earlier failed full-run timing. GitHub job reports provide candidate
+revision/toolchain timings and retain unrelated successes for a failed-layer
+rerun. Recovery: inspect the failing layer's result, log and trace; repair the
+specific cause, then run affected proof and current-candidate verification.
+Missing reports are failures. Do not use diagnostic success to release an
+initially failed candidate. Reverting the maintenance commits restores the
+existing complete runner; local `make full` remains available throughout.
+
+Final inventory audit: the initial directory filter could miss a collected `.test.ts`, `.spec.tsx` or nested spec, and basename normalization could incorrectly classify a nested file as its root namesake. The named collected-file regression failed before the fix. Validation now includes all filenames from actual regular/pinned collection and preserves relative paths. The historical 152/49-case collections and selected IDs were unchanged by this fix; new unclassified collected files fail planning. Prior complete run 36887697735 passed maintenance `decf5d6`, synthetic merge `8c088e38c56efb779b8e2dadafc38169634f2a54`, main-only 424 frontend/715 backend/152 browser/49 pinned cases and all Rust/build/durability jobs. Its success is not relabelled as validation of later heads.
+
+Complete browser work now runs without a focus filter. Partial selection retains project/file/title boundaries and permits collected tags at suite/test boundaries; executed IDs must still equal the plan. The inventory/tag regressions brought the native CI harness suite to 16 named cases. Current-main integration adds `current-main integration retains CI and segmentation regression registrations`, bringing it to 17. The existing wrapper keeps all native cases in the regular frontend gate.
+
+### Current-main integration repair
+
+Merge `2f5521d` integrated main `1151304261e59670847175b07680eb7a101f8211`
+without changing product behavior. The PostgreSQL runner retains both PR #50's
+segmentation check inside background workloads and PR #51's diagnostic cleanup.
+Its regression registry resolution dropped four CI registration paragraphs;
+the new named regression reproduces that loss and protects both CI and
+segmentation coverage, including all AS-01–AS-22 entries. Restore the CI entries
+additively rather than replacing either group. Schema 24 remains unchanged.
+Focused harness/collection and disposable durability proofs cover this boundary;
+the final PR description records current head/base/merge SHAs, CI run, collected
+counts, all layer outcomes and any remaining blockers. Older successful runs
+are historical evidence, not validation of the repaired head.
