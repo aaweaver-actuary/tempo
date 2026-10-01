@@ -755,3 +755,51 @@ PR #47 unrelated CI readiness repair: `tests/browser/studies.spec.ts::FEN-only s
 - The Study square-selection browser regression records the shell's initial FEN before the study runner publishes the authored position: `FEN-only study square exercise is authored enrolled and reviewed through the real workspace` in `tests/browser/studies.spec.ts` requires the authored FEN before capturing the baseline and retains the immediate unchanged-position assertion after Add. The CI trace showed the authored FEN arriving before Add, independently of answer selection.
 
 - An eligibility request from an earlier feed appearance blocks a returned discovery or authorizes it with obsolete state: `returned discovery starts fresh eligibility before obsolete request settles` and `obsolete eligibility settlement cannot overwrite replacement success` in `tests/unit/discoveries-tray-regressions.test.tsx` exercise both settlement orders with stale positive, negative, HTTP, malformed JSON/schema, and network outcomes. `obsolete eligibility cleanup preserves replacement request ownership` rejects duplicate requests after an old finally; `eligibility identity change away and back invalidates earlier requests` covers fingerprint/card-ID generations. `obsolete eligibility body decoding cannot publish validation diagnostics` covers schema/HTTP failures after removal during decoding. `obsolete command-time eligibility cannot cache authorization or submit Train` covers obsolete success/HTTP/network outcomes; `current eligibility failure remains observable and retryable` preserves genuine failures and recovery. Existing manual Recheck, Retry, and pre-command validation regressions remain in the same regular suite.
+
+
+## Adaptive opening segmentation (four-phase delivery)
+
+PR 1 preserves whole-card scheduling and presents advisory structural estimates.
+The existing fixed-prefix/cue-identity assertions are unchanged.
+
+| Acceptance | Named coverage / delivery state |
+| --- | --- |
+| AS-01 | `test_shared_trunk_preserves_coverage_with_20_tests_instead_of_48`; `test_legal_early_branch_retains_opponent_cue_and_ends_on_learner_move`; `AS-01 preview explains 48-to-20 savings and has no Apply action`; real PostgreSQL/browser preview. Actual adaptive queue coverage waits for PR 3. |
+| AS-02 | PR 3/4 pending: known not-due trunks omitted from tested decisions. |
+| AS-03 | `test_compatible_transposition_shares_suffix_but_preserves_incoming_bridges`; evidence sharing pending PR 2/3. |
+| AS-04 | `test_decision_identity_preserves_policy_color_turn_castling_and_legal_en_passant`. |
+| AS-05 | `test_duplicate_routes_and_existing_shared_cards_do_not_inflate_support`. |
+| AS-06 | `test_black_custom_root_and_opponent_start_count_actual_learner_decisions`. |
+| AS-07 | `test_cycle_preserves_bounded_occurrences_without_walk_enumeration`. |
+| AS-08 | PR 2 pending: clean predecessors, actual failure, unreached successor. |
+| AS-09 | PR 2 pending: revealed correction is assisted. |
+| AS-10 | PR 2/3 pending: concurrent evidence delivery and conflicting attempt reuse. PR 1 preferences use existing command receipts, rehearsed on PostgreSQL. |
+| AS-11 | PR 2 pending: legitimate same-day attempts and distinct-day count. |
+| AS-12 | PR 3 pending: partial exercise cannot complete longer card. |
+| AS-13 | Stable decision identity is already independent of presentation/generation; adaptive history preservation pending PR 3/4. |
+| AS-14 | `test_superseded_segmentation_generation_cannot_publish`; `AS-14 keep-current sends observed versions and only confirmed metadata removes advice`; stale preference rejection in disposable PostgreSQL. Executable apply pending PR 3. |
+| AS-15 | PR 2/3 pending: late/out-of-order decision evidence. |
+| AS-16 | PR 2/3 pending: old-client aggregate path during ownership cutover. |
+| AS-17 | PR 3/4 pending: active adaptive plan rebuild/invalidation. PR 1 never modifies active attempts. |
+| AS-18 | PR 3 pending: shared-target deduplication with quota/prerequisite/fairness protection. |
+| AS-19 | `test_advisory_service_never_writes_legacy_learning_or_queue_tables`; existing legacy graph suite; `AS-19 network failure stays actionable without demonstration recommendations`; PostgreSQL learning/queue snapshots during every advisory slice; real browser keep-current reload. |
+| AS-20 | PR 3 pending: activation/opt-out/recovery. PR 1 additive migration is included in current PostgreSQL upgrade/backup-restore gate. |
+| AS-21 | `test_segmentation_analysis_yields_restarts_and_replays_idempotently`; `test_group_preparation_reads_only_eight_indexed_occurrences_and_closes_connection`; `scripts/check_postgres_opening_segmentation.py` proves real foreground FSRS review while traversal is paused, durable cursors, stale lease replay, 50ms background sections and zero traversal on cached reads. |
+| AS-22 | `test_no_savings_or_insufficient_support_does_not_claim_improvement`; preview-only UI labels. Learner adaptation pending PR 4. |
+
+New pure tests: `backend/tests/test_opening_segmentation.py`.
+Worker tests: `backend/tests/test_postgres_opening_segmentation.py`.
+Client contracts: `tests/unit/opening-segmentation-regressions.test.tsx`.
+Real product browser: `tests/browser/opening-segmentation.spec.ts` (390px and 1280px).
+PostgreSQL rehearsal runs through the regular durability/full runner's isolated
+background workload stage; it never uses the live study database.
+
+PR #50 snapshot repair: `tests/unit/opening-segmentation-regressions.test.tsx` covers normal bound pagination, rebuilds between segment/route pages, stale/building/failed lists, removed/changed selections, late list/detail/command responses and preference idempotency. `backend/tests/test_opening_segmentation_snapshot_api.py` covers missing and superseded pagination bindings, all snapshot identity components and preference mismatch without writes. `scripts/check_postgres_opening_segmentation.py::test_preview_response_remains_consistent_during_concurrent_postgres_publication` changes the publication and route names during a real read; the response must retain the original complete snapshot.
+
+PR #50 discovery synchronization: `late removed preview cannot be reused when the discovery returns` retains its two-ready-discoveries and replacement-request assertions. The next polling interval waits for the previous response to finish and for the tray's feed count to reflect removal/return. CI run 36871513621 trace shows the second clock jump overlapping response 2; unchanged local `26bbf2a` passed the exact case (1 case, 1.9s), so the trace, rather than a local repeated failure, is the root-cause evidence. No sleeps, timeouts or preview validity assertions were relaxed.
+
+PR #50 empty-cursor boundary: `test_pagination_requires_snapshot_and_rejects_republication` also sends explicitly empty segment/route cursors; naming a pagination cursor requires a snapshot even when its value is empty. Initial requests without cursor parameters retain compatibility.
+
+PR #50 durable preference compatibility: `test_preference_dispatch_preserves_legacy_receipt_payload_and_new_snapshot` proves an old request/key reaches the gateway with its exact original payload (no newly inserted nullable snapshot field), while new requests preserve their snapshot. The legacy case failed before excluding absent optional fields from dispatch serialization; a null field would otherwise change the receipt fingerprint and reject an uncertain retry.
+
+PR #50 current-main migration reconciliation: `test_segmentation_migration_has_unique_number_and_matches_schema_readiness` rejects duplicate migration numbers, readiness drift and a segmentation filename/recorded-version mismatch. Main added migrations 21–23 while this unpublished preview migration still used 21; integration run 36897266117 failed readiness (`24 != 23`). The new regression reproduced the duplicate number locally. Segmentation now uses migration 24; existing startup-readiness and disposable upgrade/restore checks remain required.

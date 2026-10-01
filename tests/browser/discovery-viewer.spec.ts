@@ -212,10 +212,16 @@ test("late removed preview cannot be reused when the discovery returns", async (
   await page.route("**/api/discoveries/valid/recommendations", route => route.fulfill({ json: readyPreview("valid") }));
   await prepareUI(page);
   await expect.poll(() => Boolean(releaseRemovedPreview)).toBe(true);
+  const tray = page.locator(".tempo-discoveries-tray");
+  await expect(tray).toHaveAttribute("data-discovery-count", "2");
+  const removedFeed = page.waitForResponse(response => response.url().includes("/api/discoveries?") && response.status() === 200);
   await page.clock.fastForward(30_100);
-  await expect.poll(() => feedReads).toBeGreaterThanOrEqual(2);
+  await (await removedFeed).finished();
+  await expect(tray).toHaveAttribute("data-discovery-count", "1");
+  const returnedFeed = page.waitForResponse(response => response.url().includes("/api/discoveries?") && response.status() === 200);
   await page.clock.fastForward(30_100);
-  await expect.poll(() => feedReads).toBeGreaterThanOrEqual(3);
+  await (await returnedFeed).finished();
+  await expect(tray).toHaveAttribute("data-discovery-count", "2");
   releaseRemovedPreview?.();
   await page.getByRole("button", { name: "Discoveries" }).click();
   const viewer = page.getByRole("dialog", { name: "Discoveries" });

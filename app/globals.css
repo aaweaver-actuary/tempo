@@ -4030,3 +4030,9 @@ button {
   .repertoire-position-layout { grid-template-columns: 1fr; }
   .repertoire-position-list { max-height: 230px; }
 }
+
+/* Advisory boards live in their own repertoire surface, outside active practice. */
+.segmentation-positions { display: flex; flex-wrap: wrap; gap: 1rem; margin: 1rem 0; }
+.segmentation-positions > div { width: min(280px, 100%); }
+.opening-segmentation { max-width: 960px; }
+.opening-segmentation h3 { margin-top: 1.5rem; }
