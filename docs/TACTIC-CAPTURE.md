@@ -21,6 +21,12 @@ CI owns final current-candidate verification, including the complete browser
 and pinned coverage selected by migration/shared-contract changes. No live
 study database or product service is part of validation.
 
+Fixture boundary: product browser setup must deactivate any packs left by layout
+activation checks before archiving queued cards. Otherwise the active-card count
+correctly admits replacement tactics into the next test's mixed queue. Prove the
+activation/Study sequence first, then the affected Study and capture files; CI
+still owns the complete browser matrix.
+
 ## Intended behavior
 
 A capture is provenance; its card is the scheduled training object. New captures

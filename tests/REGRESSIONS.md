@@ -887,3 +887,13 @@ in `tests/unit/shared-board-shell-tactics-regressions.test.tsx`.
 missing capture route declaration from the first PR CI run. The route contract
 now classifies `POST /api/tactics/captures` as a staged foreground command;
 `test_staged_postgres_mutations_pass_the_runtime_write_guard` also covers it.
+
+Browser fixture isolation: the existing `FEN-only study square exercise is
+authored enrolled and reviewed through the real workspace` now also asserts
+that product fixtures start with no active automatic packs. Running it after
+`tactical catalog groups and activation controls remain reachable on phones`
+reproduced leaked activation before the fix. Product setup confirms pack
+deactivation before archiving cards; the source-neutral active-card quota can
+therefore never replenish another test's cards. Enrollment, real mixed Training,
+authored FEN, unchanged board during square selection, assessment and export
+assertions remain required. No test identity, CI selection, or timeout changed.

@@ -41,6 +41,8 @@ async function waitForPreparedPhoneShell(page: Page, localDate: string): Promise
 }
 
 test("FEN-only study square exercise is authored enrolled and reviewed through the real workspace", async ({ page, request }) => {
+  const catalog = await (await request.get(`${api}/tactics/catalog`)).json();
+  expect(catalog.packs.filter((pack: { active: boolean }) => pack.active)).toEqual([]);
   await page.goto("/");
   await nav(page, "Studies");
   await page.getByLabel("Title", { exact: true }).fill("Synthetic knight study");

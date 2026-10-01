@@ -162,6 +162,22 @@ const test = base.extend<{ disposableProduct: void }>({
     async ({ request }, use) => {
       const health = await request.get(`${api}/health`);
       assertDisposableTarget(health.ok() ? await health.json() : null);
+      // A layout test can activate a pack before this fixture runs. Stop its
+      // admission before archiving cards, or the active-card quota replaces them.
+      const catalog = await (await request.get(`${api}/tactics/catalog`)).json();
+      const activePackIds = catalog.packs
+        .filter((pack: { active: boolean }) => pack.active)
+        .map((pack: { id: string }) => pack.id);
+      if (activePackIds.length) {
+        const deactivated = await request.put(`${api}/tactics/activation`, {
+          data: { pack_ids: activePackIds, active: false },
+        });
+        expect(deactivated.ok(), await deactivated.text()).toBe(true);
+        await expect.poll(async () => {
+          const updatedCatalog = await (await request.get(`${api}/tactics/catalog`)).json();
+          return updatedCatalog.packs.filter((pack: { active: boolean }) => pack.active);
+        }).toEqual([]);
+      }
       const repertoires = (
         await (await request.get(`${api}/repertoires`)).json()
       ).repertoires;
