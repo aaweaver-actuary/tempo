@@ -184,3 +184,19 @@ test("CI and local runners preserve rejection of exclusive skipped and unfinishe
   } finally { rmSync(directory, { recursive: true, force: true }); }
   for (const file of ["scripts/test-all.mjs", "scripts/ci-run-layer.mjs", "scripts/ci-verification-plan.mjs"]) assert(readFileSync(file, "utf8").includes('protectRegressionSuite("tests")'));
 });
+
+test("collected browser filenames cannot bypass inventory through extensions or nested paths", () => {
+  for (const file of ["new-case.test.ts", "new-case.spec.tsx", "nested/discovery-viewer.spec.ts"]) {
+    assert.throws(() => plan({ cases: [...cases, { id: file, file, title: "unclassified", fullTitle: file, project: "chromium" }] }), /Unclassified/);
+  }
+});
+
+
+test("complete browser verification is unfiltered and tagged collection preserves selection", () => {
+  const full = plan({ complete: true });
+  assert(!layerCommands("browser", full).at(-1)[2].includes("--browser-grep"));
+  const tagged = collectCases({ suites: [{ title: "board-state.spec.ts", suites: [{ title: "orientation", specs: [{ id: "tagged", file: "board-state.spec.ts", title: "tagged case", tags: ["@orientation", "@critical"], tests: [{ projectName: "chromium" }] }] }] }] });
+  const expression = new RegExp(tagged[0].grep);
+  assert(expression.test("chromium board-state.spec.ts orientation @orientation tagged case @critical"));
+  assert(!expression.test("chromium another.spec.ts orientation @orientation tagged case @critical"));
+});

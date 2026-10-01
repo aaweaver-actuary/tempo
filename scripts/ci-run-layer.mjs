@@ -13,10 +13,11 @@ export function layerCommands(layer, plan) {
   if (stagesByTier[tier]) return stages.filter(([name]) => stagesByTier[tier].includes(name));
   if (layer === "postgres") return [["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--loopback", "--workspace-mount"]], ["durability", "node", ["scripts/test-postgres-docker.mjs", "--mode", "durability"]]];
   if (layer === "visual") return [["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--workspace-mount"]], ["visual", "npm", ["run", "test:visual"]]];
-  const grep = layer === "quarantine" ? plan.collection.filter(item => item.quarantined).map(item => `^${escapeRegex(item.fullTitle)}$`).join("|") : plan.browserGrep;
+  const grep = layer === "quarantine" ? plan.collection.filter(item => item.quarantined).map(item => item.grep ?? `^${escapeRegex(item.fullTitle)}$`).join("|") : plan.browserGrep;
   if (!grep) throw new Error("Selected browser collection cannot be empty");
+  const focus = layer === "browser" && plan.collection.every(item => item.selected) ? [] : ["--browser-grep", grep];
   return [["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--loopback", "--workspace-mount"]],
-    ["browser", "node", ["scripts/test-postgres-docker.mjs", "--mode", "browser", "--browser-grep", grep]]];
+    ["browser", "node", ["scripts/test-postgres-docker.mjs", "--mode", "browser", ...focus]]];
 }
 
 export function browserResults(report) {

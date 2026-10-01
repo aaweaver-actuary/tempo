@@ -2,7 +2,6 @@ import { protectRegressionSuite } from "./verification-stages.mjs";
 import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, mkdirSync, writeFileSync, appendFileSync } from "node:fs";
-import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
 export const mandatoryLayers = ["frontend", "backend", "build", "postgres", "browser"];
@@ -30,7 +29,7 @@ export function changedPathsFromNameStatus(output) {
 export function validateInventory(files, sourceInventory = inventory) {
   const classified = Object.values(sourceInventory.families).flat();
   if (new Set(classified).size !== classified.length) throw new Error("A browser spec belongs to multiple inventory families");
-  for (const file of files) if (!classified.includes(basename(file))) throw new Error(`Unclassified browser spec: ${file}. Register its complete family before planning.`);
+  for (const file of files) if (!classified.includes(file.startsWith("tests/browser/") ? file.slice("tests/browser/".length) : file)) throw new Error(`Unclassified browser spec: ${file}. Register its complete family before planning.`);
 }
 
 export function collectCases(report) {
@@ -39,8 +38,12 @@ export function collectCases(report) {
   function visit(suite, parents = []) {
     const titles = [...parents, suite.title];
     for (const spec of suite.specs ?? []) for (const test of spec.tests ?? []) {
-      cases.push({ id: `${spec.id}:${test.projectName}`, file: basename(spec.file), title: spec.title,
-        fullTitle: [test.projectName, ...titles, spec.title].join(" "), project: test.projectName });
+      const titleParts = [test.projectName, ...titles.filter(Boolean), spec.title];
+      const collectedTags = spec.tags ?? [];
+      const optionalTagPattern = collectedTags.length ? `(?: (?:${collectedTags.map(escapeRegex).join("|")}))*` : "";
+      const selectionPattern = `^${titleParts.map(escapeRegex).join(`${optionalTagPattern} `)}${optionalTagPattern}$`;
+      cases.push({ grep: selectionPattern, tags: collectedTags, id: `${spec.id}:${test.projectName}`, file: spec.file.replaceAll("\\", "/"), title: spec.title,
+        fullTitle: [...titleParts, ...collectedTags].join(" "), project: test.projectName });
     }
     for (const child of suite.suites ?? []) visit(child, titles);
   }
@@ -50,7 +53,7 @@ export function collectCases(report) {
 }
 
 export function verificationPlan({ paths, comparisonAvailable = true, complete = false, files, cases, pinnedCases = [], quarantine = [], sourceInventory = inventory }) {
-  validateInventory(files, sourceInventory);
+  validateInventory([...files, ...cases.map(item => item.file), ...pinnedCases.map(item => item.file)], sourceInventory);
   const reasons = [];
   const families = new Set();
   let broad = complete || !comparisonAvailable;
@@ -61,7 +64,7 @@ export function verificationPlan({ paths, comparisonAvailable = true, complete =
     // Only explicitly mapped leaf sources or test specs narrow integration coverage.
     // Every other executable/configuration path is deliberately conservative.
     const mapping = sourceInventory.sources.find(entry => entry.paths.includes(path));
-    const specFamily = Object.entries(sourceInventory.families).find(([, specs]) => specs.includes(basename(path)) && path.startsWith("tests/browser/"))?.[0];
+    const specFamily = Object.entries(sourceInventory.families).find(([, specs]) => path.startsWith("tests/browser/") && specs.includes(path.slice("tests/browser/".length)))?.[0];
     const rendering = /\.(css|scss|svg|png|jpe?g|webp)$/.test(path) || /(?:layout|chessboard|board-|visual|theme|pieces)/i.test(path);
     if (rendering || (path.startsWith("app/") && path.endsWith(".tsx"))) visual = true;
     if (mapping) { mapping.families.forEach(family => families.add(family)); reasons.push(`${path}: mapped leaf source`); }
@@ -86,9 +89,9 @@ export function verificationPlan({ paths, comparisonAvailable = true, complete =
     selected: !quarantined.has(item.id) && (critical.has(item.id) || selectedSpecs.has(item.file) || replacementCoverage.has(item.id)),
     nightly: true, release: true }));
   const selected = collection.filter(item => item.selected);
-  // Playwright grep sees project, file and complete title. Exact full-title matching
-  // makes duplicate titles in another spec/project impossible to select accidentally.
-  const browserGrep = selected.map(item => `^${escapeRegex(item.fullTitle)}$`).join("|");
+  // Partial selection binds project/file/title and permits only collected tags
+  // at suite/test boundaries. Complete selection runs the unfiltered inventory.
+  const browserGrep = selected.map(item => item.grep ?? `^${escapeRegex(item.fullTitle)}$`).join("|");
   const plan = { version: 1, scope: broad ? "complete" : "targeted", comparisonAvailable, paths, reasons,
     families: [...families].sort(), jobs: Object.fromEntries(allLayers.map(layer => [layer,
       { required: layer !== "quarantine" && (layer !== "visual" || visual), applicable: layer === "quarantine" ? quarantine.length > 0 : layer !== "visual" || visual,

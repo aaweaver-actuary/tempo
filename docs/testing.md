@@ -240,3 +240,7 @@ specific cause, then run affected proof and current-candidate verification.
 Missing reports are failures. Do not use diagnostic success to release an
 initially failed candidate. Reverting the maintenance commits restores the
 existing complete runner; local `make full` remains available throughout.
+
+Final inventory audit: the initial directory filter could miss a collected `.test.ts`, `.spec.tsx` or nested spec, and basename normalization could incorrectly classify a nested file as its root namesake. The named collected-file regression failed before the fix. Validation now includes all filenames from actual regular/pinned collection and preserves relative paths. Existing 152/49-case collections and selected IDs are unchanged; new unclassified collected files fail planning. A fresh current-candidate CI gate follows this hardening. Prior complete run 36887697735 passed maintenance `decf5d6`, synthetic merge `8c088e38c56efb779b8e2dadafc38169634f2a54`, main-only 424 frontend/715 backend/152 browser/49 pinned cases and all Rust/build/durability jobs. Its success is not relabelled as validation of the follow-up.
+
+Complete browser work now runs without a focus filter. Partial selection retains project/file/title boundaries and permits collected tags at suite/test boundaries; executed IDs must still equal the plan. The inventory/tag regressions bring the native CI harness suite to 16 named cases. The affected four-file frontend scope remains 19 regular cases.
