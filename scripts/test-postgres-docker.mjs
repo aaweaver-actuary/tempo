@@ -536,6 +536,8 @@ const actions = {
     const dirty = spawnSync("git", ["status", "--porcelain"], { encoding: "utf8" });
     assert.equal(revision.status, 0, revision.stderr);
     assert.equal(dirty.status, 0, dirty.stderr);
+    const sourceDirty = dirty.stdout.split("\n").some((line) =>
+      line.length > 0 && !/^\?\? \.tempo-pg-test-secrets-[^/]+\/$/.test(line));
     await executeIsolatedBackgroundWorkload({
       stopConsumers: () => {
         run("docker", [...compose, "stop", ...workloadConsumers]);
@@ -544,7 +546,7 @@ const actions = {
       measureWorkload: () => {
         run("docker", [...compose, "run", "--rm", "--no-deps",
           "-e", `TEMPO_PRIORITY_BENCHMARK_HEAD=${revision.stdout.trim()}`,
-          "-e", `TEMPO_PRIORITY_BENCHMARK_DIRTY=${dirty.stdout.trim() ? "true" : "false"}`,
+          "-e", `TEMPO_PRIORITY_BENCHMARK_DIRTY=${sourceDirty ? "true" : "false"}`,
           "schema", "python", "/source/scripts/benchmark_postgres_priority.py"]);
       },
       restoreConsumers: async () => {
