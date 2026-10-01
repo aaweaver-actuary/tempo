@@ -101,4 +101,8 @@ second-batch crash/reordered retry, source/scoring invalidation, and HTTP study
 durability. The schema upgrade stage took 1.68 seconds. Under its background
 backlog, the HTTP review completed in 124 ms and queue read in 4.8 ms; each is
 one sample. Complete candidate validation is owned by PR CI under the current
-testing policy.
+testing policy. The [quality CI run for code candidate
+`0070742838804817b424a199e2caff470168a5f2`](https://github.com/aaweaver-actuary/tempo/actions/runs/36867202179/job/110385555283)
+completed successfully on 2026-10-01, including the complete application
+test step. The [PR checks](https://github.com/aaweaver-actuary/tempo/pull/49/checks)
+show validation for the latest documentation commit.
