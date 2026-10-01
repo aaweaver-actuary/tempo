@@ -36,7 +36,7 @@ Keep coherent fixes in separate commits and preserve existing uncommitted work. 
 
 ## Testing policy: smallest proof first, complete gate at the boundary
 
-This section determines **what to test, how, and when**. `docs/testing.md` and `make plan` describe the executable scopes. Required regression coverage and the complete release/CI gate are unchanged; a smaller development run is not a weaker release gate.
+This section determines **what to test, how, and when**. `docs/testing.md` and `make plan` describe the executable scopes. Required regression coverage and the complete release gate are unchanged. CI uses explicit required core/integration and source-selected browser tiers documented in `docs/testing.md`; a smaller development run does not replace them.
 
 ### 1. Select the scope before running tests
 
@@ -71,11 +71,11 @@ For a new feature, cover the intended behavior, important boundary/error cases, 
 
 ### 3. Who runs the complete gate, and when
 
-`make full`, `npm test`, and `npm run test:full` are the **same complete gate**, not three checks. The current PR workflow already runs it. Default: the implementing agent supplies focused local evidence and **CI owns final full validation**. A full local run is not a prerequisite to opening a PR or requesting review. Mark pending or unavailable validation explicitly; never claim merge/release readiness until all required checks pass for the current candidate, including the applicable current-base/merge result.
+`make full`, `npm test`, and `npm run test:full` are the **same complete gate**, not three checks. CI separates its reusable stages; every PR runs all units/builds/durability and critical browser cases, plus conservatively selected complete families and pinned checks. Complete verification runs nightly, on demand and before publishing. Default: the implementing agent supplies focused local evidence and **CI owns final required candidate validation**. A full local run is not a prerequisite to opening a PR or requesting review. Mark pending or unavailable validation explicitly; never claim merge/release readiness until all required checks pass for the current candidate, including the applicable current-base/merge result.
 
 Run `make full` locally on the settled candidate when the user/task explicitly requires it, CI cannot supply the required evidence, a failure must be reproduced locally, or a local-only deployment needs validation. Explain that reason before launching it. When a local full run is necessary, do not first run broad overlapping scopes merely as a checklist. Existing CI still runs; this policy does not disable it or make a local pass a substitute for required status checks.
 
-Every merge/release retains complete gate coverage. Do not replace the full gate with a union of hand-picked successes, reuse passes from older source revisions, alter CI filters/required checks, or exclude a test family under this policy. A docs-only exemption is for **local development execution**, not for CI or branch protections. Local changes after full validation require affected checks and new complete candidate evidence before release. Record the tested commit and any dirty-tree changes; do not attribute an uncommitted result to clean `HEAD`.
+Every release retains complete gate coverage. Every merge must pass its explicit CI plan on the current candidate; uncertain paths select complete coverage. Do not replace a planned gate with hand-picked successes, reuse passes from older source revisions, or bypass its required checks. A docs-only exemption is for **local development execution**, not for CI or branch protections. Local changes after full validation require affected checks and new complete candidate evidence before release. Record the tested commit and any dirty-tree changes; do not attribute an uncommitted result to clean `HEAD`.
 
 ### 4. Keep tests cheap without weakening what they prove
 

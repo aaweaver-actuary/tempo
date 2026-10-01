@@ -49,6 +49,7 @@ const result = spawnSync(
     "-e", "TEMPO_DIAGNOSTIC_CONTAINER_LIMITS=no explicit per-container CPU/memory limits; shared Docker VM",
     ...(containerTimingDirectory ? ["-e", `TEMPO_TEST_TIMING_DIR=${containerTimingDirectory}`] : []),
     ...(process.env.CI ? ["-e", "CI=true"] : []),
+    ...(process.env.TEMPO_CI_REPORT ? ["-e", `TEMPO_CI_REPORT=${process.env.TEMPO_CI_REPORT}`] : []),
     "-v",
     `${process.cwd()}:/workspace`,
     "-v",

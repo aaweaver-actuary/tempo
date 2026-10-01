@@ -259,13 +259,16 @@ test("scenario dispatch builds once and all startup paths forbid implicit rebuil
   assert(source.includes('executePostgresTestPlan(stages, actions, measureScenario'));
 });
 
-test("CI isolates cancellation by PR or ref, caches dependencies, and retains the full gate", () => {
+test("CI isolates cancellation, caches dependencies and requires split complete verification", () => {
   const workflow = readFileSync(join(root, ".github/workflows/pages.yml"), "utf8");
   assert(workflow.includes("github.event.pull_request.number || github.ref"));
   assert(workflow.includes("cancel-in-progress: ${{ github.event_name == 'pull_request' }}"));
-  assert(workflow.includes("cache: pip"));
-  assert.equal(workflow.split("uses: Swatinem/rust-cache@v2").length - 1, 2);
-  assert(workflow.includes("- run: npm test"));
+  const layers = readFileSync(join(root, ".github/workflows/verify-layer.yml"), "utf8");
+  assert(layers.includes("cache: pip"));
+  assert.equal((workflow + layers).split("uses: Swatinem/rust-cache@v2").length - 1, 2);
+  assert(workflow.includes("needs: [plan, frontend, backend, build, postgres, browser, visual, quarantine]"));
+  assert(workflow.includes("node scripts/ci-quality.mjs"));
+  assert(workflow.includes("needs.plan.outputs.scope == 'complete'"));
   assert(workflow.includes("group: tempo-pages-deployment\n      cancel-in-progress: false"));
 });
 

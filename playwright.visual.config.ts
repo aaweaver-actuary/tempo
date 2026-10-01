@@ -4,6 +4,8 @@ if (process.env.TEMPO_VISUAL_RUNNER !== "linux-pinned")
     "Run npm run test:visual to use the pinned Linux browser environment.",
   );
 export default defineConfig({
+  retries: 0,
+  reporter: process.env.TEMPO_CI_REPORT ? [["line"], ["json", { outputFile: process.env.TEMPO_CI_REPORT }]] : undefined,
   outputDir: "test-results/visual",
   testDir: "tests/browser",
   testMatch: ["visual.spec.ts", "performance.spec.ts"],

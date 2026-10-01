@@ -4,11 +4,11 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createServer } from "node:net";
-import { chmodSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createIsolatedTestEnvironment } from "./test-environment.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
-import { executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages } from "./postgres-test-plan.mjs";
+import { executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages } from "./postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer } from "./test-scenario-timings.mjs";
@@ -602,7 +602,13 @@ const actions = {
   study_durability: async () => {
     await verifyForegroundAndStudyDurability();
   },
-  cleanup: async () => {
+  cleanup: async () => executeDiagnosticCleanup(() => {
+    if (process.env.TEMPO_CI_REPORT && resourcesCreated) {
+      const diagnostics = spawnSync("docker", [...compose, "logs", "--no-color", "--tail=200"], { encoding: "utf8", env: environment, maxBuffer: 10 * 1024 * 1024 });
+      mkdirSync("test-results/ci", { recursive: true });
+      writeFileSync(`test-results/ci/${options.mode}-${project}-services.log`, `${diagnostics.stdout ?? ""}\n${diagnostics.stderr ?? ""}`);
+    }
+  }, async () => {
     const cleanupErrors = [];
     try {
       if (resourcesCreated) {
@@ -620,7 +626,7 @@ const actions = {
       rmSync(secretsDirectory, { recursive: true, force: true });
     }
     if (cleanupErrors.length) throw new AggregateError(cleanupErrors, "PostgreSQL resource cleanup failed");
-  },
+  }),
 };
 
 let failed = false;

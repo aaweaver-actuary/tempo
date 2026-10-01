@@ -260,7 +260,7 @@ it("split complete verification matches the existing full command inventory", ()
   const split = ["ci-frontend", "ci-backend", "ci-build"].flatMap(plannedStages);
   expect(new Set(split.map(stage => stage.name)).size).toBe(split.length);
   const normalized = (stages: PlannedStage[]) => stages.map(stage => ({ ...stage,
-    args: stage.args.map(argument => argument.replace(/unit-files-[^/]+\.json$/, "unit-files-TIER.json")),
+    args: stage.args.filter(argument => !argument.startsWith("--junitxml=")).map(argument => argument.replace(/unit-files-[^/]+\.json$/, "unit-files-TIER.json")),
   })).sort((left, right) => left.name.localeCompare(right.name));
   expect(normalized(split)).toEqual(normalized(full));
 });

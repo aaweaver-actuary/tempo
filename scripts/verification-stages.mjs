@@ -1,4 +1,16 @@
+import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+
+export function protectRegressionSuite(directory) {
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const path = `${directory}/${entry.name}`;
+    if (entry.isDirectory() && entry.name !== "__pycache__") protectRegressionSuite(path);
+    else if (/\.(tsx?|py|mjs)$/.test(path) && /\b(?:test|it|describe)\.(?:skip|todo|only)\s*\(|pytest\.mark\.skip|@(?:unittest\.)?skip/.test(readFileSync(path, "utf8"))) {
+      throw new Error(`Regression suites cannot contain skipped, todo, or exclusive tests: ${path}`);
+    }
+  }
+}
+
 
 // Shared local/CI inventory: command definitions are identical across owners.
 export function verificationStages({ python, tier, outputDirectory }) {
@@ -7,7 +19,7 @@ const stages = [
   ["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--loopback", "--workspace-mount"]],
   ["unit", "npm", ["run", "test:unit", "--", "--reporter=default", "--reporter=json", `--outputFile.json=${unitProfilePath}`]],
   ["defense_engine", "node", ["scripts/test-defense-engine.mjs"]],
-  ["backend", python, ["-m", "pytest", "backend/tests", "-q", "-o", "cache_dir=.pytest_cache", "--rootdir=."]],
+  ["backend", python, ["-m", "pytest", "backend/tests", "-q", "-o", "cache_dir=.pytest_cache", "--rootdir=.", ...(tier === "ci-backend" ? ["--junitxml=test-results/ci/backend-tests.xml"] : [])]],
   ["rust_format", "cargo", ["fmt", "--all", "--", "--check"]],
   ["rust_lint", "cargo", ["clippy", "--all-targets", "--", "-D", "warnings"]],
   ["rust_test", "cargo", ["test", "--workspace"]],

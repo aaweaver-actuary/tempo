@@ -124,3 +124,119 @@ Local proof on main `86daf005`: 12 test-plan regressions passed (5.99s, macOS
 ARM64, Node 26.3.0, Python 3.14.5). `make plan` retains its 13-stage inventory.
 This is inventory proof, not a completed runtime gate; final candidate CI owns
 complete verification. Selection changes follow in a separate commit.
+
+## CI verification tiers and reliability evidence
+
+The CI workflow preserves local `make full` and uses separate frontend,
+backend/engine, Rust/WASM/build, PostgreSQL durability, browser, and pinned
+visual/performance jobs. Every PR runs all units and build checks, all
+PostgreSQL durability scenarios, and seven critical browser cases covering
+review/reload, offline replay, fail-closed reads, Study grading, foreground
+contention and held drags. Each PostgreSQL/browser invocation owns fresh
+ports, credentials, volumes and containers and remains serial within its
+stack. GitHub's **Re-run failed jobs** repeats a failed layer and its aggregate,
+without repeating successful unrelated layers.
+
+`scripts/ci-verification-inventory.json` is the reviewed source-to-spec map.
+Mapped leaf edits add complete browser families; shared board/state/contracts,
+scheduling, migrations, fixtures, runner and dependency changes, unknown paths,
+or missing comparison history select every browser case and pinned checks.
+Both names of renamed/copied files and deleted paths are classified. All TSX
+rendering edits and rendering assets select pinned visual/performance.
+Documentation under `docs/` and the root README retain required core,
+durability and critical checks. Adding an unclassified browser spec fails
+planning. The opening-segmentation spec is explicitly registered for pending
+PR #50; its absence on main does not manufacture test coverage.
+
+The plan job actually collects all regular and pinned cases. Its immutable
+plan and collection report record IDs, projects, titles, selection reasons,
+critical coverage, and complete nightly/release coverage. Layer result reports
+include commands, exits, durations, revision and environment. Units retain
+Vitest JSON and backend JUnit; browsers and pinned tests retain JSON results,
+available traces/screenshots, and timing artifacts. Disposable service logs
+are captured before cleanup even on success; artifact errors cannot prevent
+resource cleanup. Artifacts upload with `always()` and missing reports fail
+`quality`, which also runs with `always()`. Missing/cancelled/unexpectedly
+skipped jobs, absent commands, skipped tests and collection mismatches fail
+aggregation. Only plan-recorded inapplicability allows a skip.
+
+Complete verification runs nightly at **07:00 UTC**, on demand, for merge-group candidates when the owner enables a merge queue, and on main
+before practice-demo publishing. Scheduled runs and manual runs with the
+(default) **verification only** option cannot deploy. Publishing additionally
+requires complete scope and successful `quality` on main. Same-PR runs
+supersede each other; deployment concurrency remains non-cancelling. No
+repository settings were changed. Owner recommendation: require stable
+`quality`, require the branch to be current or use a merge queue, and retain
+complete verification on the actual merge candidate. Inspection found no
+main protection (API 404) and no repository rulesets; record this as an
+observed baseline, not an assurance about future settings.
+
+CI pins demonstrated Node **22.23.3**, Python **3.12.14**, Rust **1.99.0** and
+host wasm-pack **0.15.0**. The existing pinned Playwright Linux ARM64 image and
+Docker build's explicit wasm-pack pin remain unchanged. These pins do not
+attribute historical failures to toolchain drift.
+
+Automatic retries are disabled. Manual diagnostic retry is optional and
+limited to one repeat of the failed command; the first failure remains in
+reports/artifacts and the mandatory job still fails. `scripts/ci-quarantine.json`
+is empty. A future entry must identify an individually confirmed harness
+defect, repair issue, owner, expiry and required replacement coverage. It
+continues in a visibly nonblocking job; critical cases cannot be quarantined.
+Missing quarantine reports still fail aggregation, and expiry fails planning.
+
+### Observed 25-run baseline
+
+The inspected recent sample has **13 successful runs, 11 failed runs and one
+cancellation**, each at attempt 1. These are run outcomes, not a false-failure
+rate. Preserve unresolved failures separately from confirmed repairs:
+
+| Signature | Failed runs | Evidence / disposition |
+| --- | --- | --- |
+| Study authoring captured the shell FEN before its exercise FEN | 36787451501, 36785256539, 36779563054, 36639783560, 36634425515, 36623248337 | Trace-backed synchronization repair `ec03b52`, already on main; waits for exact exercise FEN before capturing unchanged-input invariant. |
+| Background fixture consumer races (`NoneType`) | 36715216550, 36646129188 | Fixture isolation repair `0ac1e0f`, already on main; pauses/verifies consumers while synthetic workload owns its rows. |
+| Discovery second clock jump overlaps second feed response | 36871513621, 36706814147 | Retained current PR #50 trace supports synchronization diagnosis; repair is separately delivered in PR #50 (`e3856e7`). Original exact local case passed; no deterministic local failure is claimed. |
+| Phone and Study initial visibility failures | 36792899240 | Unresolved; no quarantine and no assertion or timeout relaxation. |
+| Same-PR cancellation | 36791648011 | Supersession outcome; not classified as a test failure. |
+
+Run 36871513621 tested synthetic merge `1eb39f202ee0186594980b4083eda812b8597d79`
+(head `26bbf2a`), Linux ARM64, Node 22.23.3, Python 3.12.14, Rust 1.99.0:
+426 frontend cases, 728 backend cases and 8 Rust tests passed; 153/154 regular
+browser cases passed. The fail-fast runner did not reach visual/performance.
+Recorded stage seconds: capabilities 27.52, units 62.58, engine smoke 0.21,
+backend 77.17, Rust format 0.03/lint 14.00/tests 11.40, lint 17.58, typecheck
+11.73, WASM 14.91, local build 1.84, PostgreSQL 596.14 (failed). Nested
+PostgreSQL image build 105.22, browser 382.63 and cleanup 10.82 seconds are
+inside that PostgreSQL stage and must not be added again. Main's prior
+successful reference is run 36857716424. This failed baseline and successful
+focused repeats are not comparable complete throughput measurements. No
+speedup or learning claim follows from them.
+
+PR #50's discovery repair is not included in this CI-only branch. Main-only
+critical/durability tests and actual PR candidate CI are labelled separately;
+if a complete browser run fails its known discovery case before #50 merges,
+report that dependency and preserve the first failure. A temporary integration
+run, if needed, must be labelled and must not be presented as main-only proof.
+
+### Maintenance implementation evidence
+
+Local environment: macOS ARM64, Node 26.3.0, Python 3.14.5, Rust 1.98.1;
+pinned browser image remains Linux ARM64. Measurements below are the maintenance
+patch dirty over decomposition commit `b5d046a`, based solely on main
+`86daf005`; no PR #50 feature or discovery repair was cherry-picked.
+
+- `npm run test:unit -- tests/unit/ci-reliability-regressions.test.ts tests/unit/test-plan-regressions.test.ts tests/unit/postgres-test-speedups-regressions.test.ts tests/unit/postgres-test-runner-regressions.test.ts`: 19 regular cases passed (5.46s). The CI wrapper invokes 14 named native Node regressions; they also pass directly with `node --test tests/runner/ci-reliability.test.mjs`.
+- `node scripts/ci-verification-plan.mjs --base origin/main`: actual maintenance diff selects complete 152-case regular browser inventory and 49 pinned cases. Unknown/missing-history fixtures select the same complete coverage; docs-only fixture selects exactly 7 critical cases.
+- `node scripts/ci-run-layer.mjs frontend`: 424 frontend cases passed in 54.84s, followed by passing lint/typecheck; 75.26s command time. Lint's unrelated existing warnings remain; extracted unused imports were subsequently removed and lint rerun.
+- Elevated `node scripts/ci-run-layer.mjs browser` on the explicitly labelled docs-only selection fixture: 7/7 critical cases passed, 73.95s including preflight/setup/cleanup. Executed IDs match selection; this is main-only critical proof, not the actual maintenance PR's complete browser gate.
+- Elevated `node scripts/ci-run-layer.mjs postgres`: all planned durability scenarios passed, 139.80s including preflight/setup/cleanup. Browser and durability stacks have different fresh resource names and volumes; available diagnostics and machine-readable reports were retained.
+- `node scripts/ci-verification-plan.mjs --complete`, then elevated `node scripts/ci-run-layer.mjs visual`: all 49 pinned visual/performance cases passed, 249.75s test execution / 269.39s including preflight and setup. Report IDs exactly match pinned collection. Baselines were not changed.
+- Typecheck, lint, YAML structure/aggregate dependency inspection and `git diff --check` passed. No local full gate was run: final candidate CI owns that boundary. Core backend/Rust/build and complete regular browser runtime remain pending there; local split inventory proof is not a completed gate.
+
+These command times do not project parallel-CI speedups and are not comparable
+to the earlier failed full-run timing. GitHub job reports provide candidate
+revision/toolchain timings and retain unrelated successes for a failed-layer
+rerun. Recovery: inspect the failing layer's result, log and trace; repair the
+specific cause, then run affected proof and current-candidate verification.
+Missing reports are failures. Do not use diagnostic success to release an
+initially failed candidate. Reverting the maintenance commits restores the
+existing complete runner; local `make full` remains available throughout.

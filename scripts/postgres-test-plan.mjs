@@ -60,3 +60,14 @@ export async function executePostgresTestPlan(stages, actions, measure, onFailur
   }
   if (failure) throw failure;
 }
+
+// Artifact capture must never prevent test-owned resource cleanup.
+export async function executeDiagnosticCleanup(captureDiagnostics, cleanup) {
+  let diagnosticFailure;
+  try { await captureDiagnostics(); } catch (error) { diagnosticFailure = error; }
+  try { await cleanup(); } catch (error) {
+    if (diagnosticFailure) throw new AggregateError([diagnosticFailure, error], "Diagnostics and cleanup failed");
+    throw error;
+  }
+  if (diagnosticFailure) throw diagnosticFailure;
+}

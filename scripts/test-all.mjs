@@ -1,20 +1,11 @@
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { platform, release, arch } from "node:os";
 import { performance } from "node:perf_hooks";
-import { verificationStages } from "./verification-stages.mjs";
+import { protectRegressionSuite, verificationStages } from "./verification-stages.mjs";
 import { resolvePython } from "./resolve-python.mjs";
 
-function protectRegressionSuite(directory) {
-  for (const entry of readdirSync(directory, { withFileTypes: true })) {
-    const path = `${directory}/${entry.name}`;
-    if (entry.isDirectory() && entry.name !== "__pycache__") protectRegressionSuite(path);
-    else if (/\.(tsx?|py|mjs)$/.test(path) && /\b(?:test|it|describe)\.(?:skip|todo|only)\s*\(|pytest\.mark\.skip|@(?:unittest\.)?skip/.test(readFileSync(path, "utf8"))) {
-      throw new Error(`Regression suites cannot contain skipped, todo, or exclusive tests: ${path}`);
-    }
-  }
-}
 
 function version(command, args) {
   const result = spawnSync(command, args, { encoding: "utf8" });
