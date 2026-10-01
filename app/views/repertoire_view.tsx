@@ -26,6 +26,7 @@ import {
 } from "../domain/schemas";
 import type { z } from "zod";
 import { reportDebugError } from "../lib/debug-reporting";
+import { OpeningSegmentation } from "../components/opening-segmentation";
 import { RepertoireStatistics } from "../components/repertoire-statistics";
 import type { BoardTheme, PieceSet } from "../components/chessboard";
 
@@ -82,6 +83,7 @@ export default function RepertoireView({
   theme?: BoardTheme;
   pieceSet?: PieceSet;
 }) {
+  const [segmentationRepertoireId, setSegmentationRepertoireId] = useState<string | null>(null);
   const [backendItems, setBackendItems] = useState<RepertoireItem[]>([]);
   const [loaded, setLoaded] = useState(!usesLocalApi());
   const [libraryPage, setLibraryPage] = useState(0);
@@ -337,6 +339,12 @@ export default function RepertoireView({
     await requestOpportunityRefresh(repertoireId);
     setScoutingRepertoire(repertoireId);
   }
+  const segmentationRepertoire = backendItems.find(item => item.id === segmentationRepertoireId);
+  if (segmentationRepertoire) return <div>
+    <Button onClick={() => setSegmentationRepertoireId(null)}>← Repertoires</Button>
+    <h2>{segmentationRepertoire.title}</h2>
+    <OpeningSegmentation repertoireId={segmentationRepertoire.id} theme={theme} pieceSet={pieceSet} initiallyOpened />
+  </div>;
   const selectedStatisticsRepertoire = backendItems.find((item) => item.id === statisticsRepertoireId);
   if (selectedStatisticsRepertoire) {
     return <RepertoireStatistics repertoireId={selectedStatisticsRepertoire.id}
@@ -409,6 +417,7 @@ export default function RepertoireView({
                   <Button role="menuitem" onClick={() => void rename(item)}>
                     Rename
                   </Button>
+                  {item.backend && <Button role="menuitem" onClick={() => { setSegmentationRepertoireId(item.id); setOpenMenu(null); }}>Recommended segmentation</Button>}
                   <Button role="menuitem" onClick={() => exportPgn(item)}>
                     ⇩ Export PGN
                   </Button>
@@ -443,6 +452,7 @@ export default function RepertoireView({
                 </p>
               )}
               <small className="source-name">{item.sourceName}</small>
+
               {item.backend && coverageByRepertoire[item.id] && (
                 <div className="coverage-summary">
                   <div>

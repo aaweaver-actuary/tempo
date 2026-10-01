@@ -839,11 +839,16 @@ def test_postgres_repertoire_edit_invalidates_old_clean_integrity_in_same_transa
             statements.append((statement, parameters))
 
     invalidate_integrity_in_transaction(RecordingDatabase(), "opening-1")
-    assert len(statements) == 1
-    assert "status='unchecked'" in statements[0][0]
-    assert "scan_status='idle'" in statements[0][0]
-    assert "checked_at=NULL" in statements[0][0]
-    assert statements[0][1] == ("opening-1",)
+    integrity_statements = [item for item in statements if "INSERT INTO repertoire_integrity_state" in item[0]]
+    assert len(integrity_statements) == 1
+    assert "status='unchecked'" in integrity_statements[0][0]
+    assert "scan_status='idle'" in integrity_statements[0][0]
+    assert "checked_at=NULL" in integrity_statements[0][0]
+    assert integrity_statements[0][1] == ("opening-1",)
+    advisory_statements = [item for item in statements if "INSERT INTO opening_segmentation_state" in item[0]]
+    assert len(advisory_statements) == 1
+    assert "state='stale'" in advisory_statements[0][0]
+    assert advisory_statements[0][1] == ("opening-1",)
 
 
 def test_postgres_integrity_source_closes_read_transaction_before_chess_scan(monkeypatch):

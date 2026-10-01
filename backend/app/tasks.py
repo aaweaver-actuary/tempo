@@ -79,6 +79,7 @@ from .services.postgres_daily_statistics import execute_postgres_daily_statistic
 from .services.postgres_game_sync_windows import execute_game_sync_window_slice
 from .services.postgres_opening_graph import execute_postgres_opening_graph_slice
 from .services.postgres_integrity import execute_postgres_integrity_slice
+from .services.postgres_opening_segmentation import execute_segmentation_slice
 from .services.repertoire_opportunities import execute_opportunity_slice
 from .services.discovery_admission import (
     execute_admission_intent_slice, execute_recommendation_request_slice,
@@ -112,6 +113,7 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "game_sync_window",
     "opening_graph_rebuild",
     "integrity_scan",
+    "opening_segmentation",
     "repertoire_opportunity",
     "discovery_recommendation",
     "discovery_admission",
@@ -269,6 +271,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
         "game_sync_window": execute_game_sync_window_slice,
         "opening_graph_rebuild": execute_postgres_opening_graph_slice,
         "integrity_scan": execute_postgres_integrity_slice,
+        "opening_segmentation": execute_segmentation_slice,
         "repertoire_opportunity": execute_opportunity_slice,
         "discovery_recommendation": execute_recommendation_request_slice,
         "discovery_admission": execute_admission_intent_slice,
@@ -293,6 +296,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
                 "daily_statistics",
                 "opening_graph_rebuild",
                 "integrity_scan",
+                "opening_segmentation",
                 "coverage_seed",
                 "coverage_explorer",
                 "game_analysis_publish",
@@ -319,3 +323,5 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
         except BrokerUnavailable:
             _LOGGER.exception("Could not wake background work; periodic polling will retry")
     return more_work
+
+from . import opening_segmentation_api  # noqa: F401 - registers advisory commands

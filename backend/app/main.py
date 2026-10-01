@@ -631,6 +631,11 @@ async def prioritize_foreground_requests(request: Request, call_next):
         )
         card_validation = (path_parts == ["api", "cards", "validate"]
                            and request.method == "POST")
+        segmentation_command = (
+            request.method == "POST" and path_parts[:2] == ["api", "repertoires"]
+            and ((len(path_parts) == 5 and path_parts[3:] == ["segmentation", "refresh"])
+                 or (len(path_parts) == 6 and path_parts[3] == "segmentation" and path_parts[5] == "preference"))
+        )
         prefix_split_command = (
             len(path_parts) in {4, 5}
             and path_parts[:2] == ["api", "cards"]
@@ -673,7 +678,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     pgn_import_command,
                     analysis_paste_command,
                     integrity_resolution_command,
-                    card_validation, prefix_split_command)):
+                    card_validation, prefix_split_command, segmentation_command)):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
@@ -1617,6 +1622,8 @@ def _execute_daily_queue_task(task: dict) -> None:
 register_durable_task_handler("daily_queue", _execute_daily_queue_task)
 register_durable_task_handler("integrity_repair", execute_durable_integrity_repair)
 register_durable_task_handler("opening_graph_rebuild", execute_opening_graph_rebuild)
+from .services.postgres_opening_segmentation import execute_segmentation_slice
+register_durable_task_handler("opening_segmentation", execute_segmentation_slice)
 register_durable_task_handler("repertoire_opportunity", execute_opportunity_slice)
 register_durable_task_handler("priority_retention", execute_priority_retention_slice)
 register_durable_task_handler("repertoire_game_refresh", execute_repertoire_game_refresh_slice)
@@ -6244,3 +6251,7 @@ def attempt_guided_game_review(session_id: str, request: GuidedReviewAttemptRequ
         raise HTTPException(404, str(error)) from error
     except ValueError as error:
         raise HTTPException(422, str(error)) from error
+
+
+from .opening_segmentation_api import router as opening_segmentation_router
+app.include_router(opening_segmentation_router)

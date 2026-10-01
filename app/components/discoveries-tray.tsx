@@ -948,7 +948,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   };
 
   return (
-    <aside className="tempo-activity-tray tempo-discoveries-tray">
+    <aside className="tempo-activity-tray tempo-discoveries-tray" data-discovery-count={discoveries.length}>
       <Button
         ref={triggerRef}
         type="button"

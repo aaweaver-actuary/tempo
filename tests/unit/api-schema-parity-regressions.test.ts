@@ -53,3 +53,17 @@ print(json.dumps(payloads))
     inserted: 2, duplicates: 1, failed: 0,
   });
 });
+
+
+it("Python recommendation snapshots satisfy the frontend list and detail contract", async () => {
+  const { segmentationListSchema, segmentationDetailSchema } = await import("../../app/domain/opening-segmentation");
+  const raw = JSON.parse(execFileSync(resolvePython(), ["-c", `
+import json
+from app.opening_segmentation_api import recommendation_projection
+state = {'run_id':'publication', 'content_version':3, 'graph_generation':2}
+rec = recommendation_projection(state, {'run_id':'publication','id':'rec','repertoire_id':'rep','kind':'shared_trunk','source_fingerprint':'sources','decisions_before':48,'decisions_after':20,'decisions_avoided':28,'additional_starts':1,'segment_count':9})
+base = {'version':1,'preview_only':True,'content_version':3,'graph_generation':2}
+print(json.dumps({'list':{**base,'state':'ready','error':None,'invalidated_pins':0,'recommendations':[rec]},'detail':{**base,'snapshot_id':rec['snapshot_id'],'source_fingerprint':'sources','recommendation':rec,'rationale':'Shared opening','estimate_basis':'structural count','segments':[],'routes':[],'next_segment':None,'next_route':None}}))
+`], { env: { ...process.env, PYTHONPATH: "backend" }, encoding: "utf8" }));
+  expect(segmentationDetailSchema.parse(raw.detail).snapshot_id).toBe(segmentationListSchema.parse(raw.list).recommendations[0].snapshot_id);
+});
