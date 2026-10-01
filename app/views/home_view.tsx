@@ -274,9 +274,10 @@ export default function Home() {
   }, [serviceError]);
   const reviewPendingEntries = useRef(new Set<string>());
   const reviewTransitionGeneration = useRef(0);
-  const replyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
+  const pendingOpponentReply = useRef<{
+    timer: ReturnType<typeof setTimeout> | undefined;
+    finish: (failed?: boolean) => void;
+  } | undefined>(undefined);
   const completionTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -663,7 +664,9 @@ export default function Home() {
   }
 
   function resetLine(nextCard = card) {
-    clearTimeout(replyTimer.current);
+    const canceledReply = pendingOpponentReply.current;
+    clearTimeout(canceledReply?.timer);
+    canceledReply?.finish(true);
     clearTimeout(completionTimer.current);
     resetTrainingLine(nextCard);
   }
@@ -814,14 +817,24 @@ export default function Home() {
     setAttemptPhase("opponentReplyPending");
     const token = useTrainingStore.getState().attempt;
     const finishOpponentReply = measureTempoDragPhase("opponent-reply");
-    replyTimer.current = setTimeout(() => {
-      if (!isCurrentAttempt(useTrainingStore.getState().attempt, token)) { finishOpponentReply(true); return; }
+    const scheduledReply = {
+      timer: undefined as ReturnType<typeof setTimeout> | undefined,
+      finish: (failed = false) => {
+        finishOpponentReply(failed);
+        scheduledReply.timer = undefined;
+        if (pendingOpponentReply.current === scheduledReply)
+          pendingOpponentReply.current = undefined;
+      },
+    };
+    pendingOpponentReply.current = scheduledReply;
+    scheduledReply.timer = setTimeout(() => {
+      if (!isCurrentAttempt(useTrainingStore.getState().attempt, token)) { scheduledReply.finish(true); return; }
       const replyPosition = new Chess(position.fen());
       let reply: Move | null;
       try {
         reply = replyPosition.move(card.moves[opponentStep]);
       } catch {
-        finishOpponentReply(true);
+        scheduledReply.finish(true);
         setAttemptPhase("guided", token);
         setServiceError(
           "This line needs repair: its opponent reply is illegal.",
@@ -829,13 +842,13 @@ export default function Home() {
         return;
       }
       if (!reply) {
-        finishOpponentReply(true);
+        scheduledReply.finish(true);
         setAttemptPhase(
           useTrainingStore.getState().isAttemptFailed ? "guided" : "playerTurn",
         );
         return;
       }
-      finishOpponentReply();
+      scheduledReply.finish();
       const nextStep = opponentStep + 1;
       setCurrentFenString(asFenString(replyPosition.fen()));
       setLastMove([reply.from, reply.to]);
@@ -1064,7 +1077,9 @@ export default function Home() {
 
   useEffect(
     () => () => {
-      clearTimeout(replyTimer.current);
+      const canceledReply = pendingOpponentReply.current;
+      clearTimeout(canceledReply?.timer);
+      canceledReply?.finish(true);
       clearTimeout(completionTimer.current);
     },
     [],
