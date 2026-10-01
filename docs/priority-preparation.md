@@ -28,7 +28,7 @@ reviews. Settings and repertoire edits already request coverage refreshes,
 which in turn request priorities. The epoch fences prevent an in-flight
 calculation from publishing while those follow-ups are pending.
 
-Migrations 021 and 022 are required before deploying the worker. Migration 022
+Migrations 021–023 are required before deploying the worker. Migration 022
 marks preparations made by the corrected card-ID ordering rule. An older
 schema-21 preparation has a null ordering version and is replaced through the
 fenced priority enqueue path. Schema-20 tasks carrying `source_signature`, or
@@ -37,6 +37,22 @@ leaves the last published generation readable while an unverified generation
 is abandoned for bounded retention. A cursor-zero preparation without legacy
 state can retry after a partial write; a ready preparation resumes staging.
 Replayed old leases cannot request further replacements.
+
+Migration 023 repairs the source epoch for versioned game positions. The
+position-index worker writes an unpublished staged version in bounded slices;
+those writes do not invalidate priorities. Its final publication changes
+`game_derivation_jobs.published_position_version`, and the same transaction
+advances the shared priority epoch. Direct writes to legacy rows while the
+legacy index is selected, or to rows in an already published staged version,
+also advance it. Changes to `published_repertoire_version` remain covered.
+No-op selector updates do not advance the epoch, and rollback undoes both the
+selector and epoch update. The migration advances the shared epoch once to
+fence preparations created before this guarantee; rerunning the migration
+runner does not advance it again. Existing priority publications stay readable
+while affected work requests a fenced replacement. Priority writes lock the
+epoch before the priority job and task; position indexing locks its own task
+and game job before the epoch. These paths share only the epoch lock and do
+not hold it during move replay or priority calculation.
 
 Follow the stopped
 writer backup and migration procedure in
@@ -106,3 +122,14 @@ testing policy. The [quality CI run for code candidate
 completed successfully on 2026-10-01, including the complete application
 test step. The [PR checks](https://github.com/aaweaver-actuary/tempo/pull/49/checks)
 show validation for the latest documentation commit.
+
+The 64/1,000-card benchmark above predates migration 023. Its raw artifact and
+timings retain their original source revision; the R4 validation uses focused
+position-publication and durability checks rather than relabeling that run.
+The named `priority_position_publication_invalidates_prepared_generation`
+rehearsal first failed on reviewed head `8f6b2872b1c715c8ec1151bcb7142faf427616ec`:
+the view switched to `d7d5` while the shared epoch stayed at 2. With migration
+023, the same disposable PostgreSQL case passes. It also publishes between
+two personal-evidence read pages, checks that unpublished slices do not bump
+the epoch, and verifies rollback, visible backing-row edits, the repertoire
+publication signal, stale-delivery fencing, and changed published score.
