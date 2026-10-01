@@ -54,16 +54,17 @@ def test_normal_pagination_reads_one_consistent_preview_snapshot(prepared):
 
 
 @pytest.mark.parametrize('cursor', ['after_segment', 'after_route'])
-def test_pagination_requires_snapshot_and_rejects_republication(prepared, cursor):
+@pytest.mark.parametrize('cursor_value', ['', 'last'])
+def test_pagination_requires_snapshot_and_rejects_republication(prepared, cursor, cursor_value):
     state, _, _, statements = prepared
     snapshot = api.segmentation_list('rep')['recommendations'][0]['snapshot_id']
     statements.clear()
     with pytest.raises(HTTPException) as missing:
-        api.segmentation_detail('rep', 'rec', **{cursor: 'last'})
+        api.segmentation_detail('rep', 'rec', **{cursor: cursor_value})
     assert missing.value.status_code == 409 and not statements
     state['run_id'] = 'run-two'
     with pytest.raises(HTTPException) as changed:
-        api.segmentation_detail('rep', 'rec', snapshot_id=snapshot, **{cursor: 'last'})
+        api.segmentation_detail('rep', 'rec', snapshot_id=snapshot, **{cursor: cursor_value})
     assert changed.value.status_code == 409
     assert not any('SELECT segment_id' in sql or 'SELECT DISTINCT' in sql for sql, _ in statements)
 

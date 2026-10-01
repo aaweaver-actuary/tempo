@@ -96,9 +96,9 @@ def segmentation_list(identifier: str):
 
 
 @router.get('/api/repertoires/{identifier}/segmentation/{recommendation_id}')
-def segmentation_detail(identifier: str, recommendation_id: str, after_segment: str = '', after_route: str = '', snapshot_id: str | None = None):
+def segmentation_detail(identifier: str, recommendation_id: str, after_segment: str | None = None, after_route: str | None = None, snapshot_id: str | None = None):
     require_postgres()
-    if (after_segment or after_route) and not snapshot_id:
+    if (after_segment is not None or after_route is not None) and not snapshot_id:
         raise HTTPException(409, 'Pagination requires its preview snapshot. Refresh the recommendation and retry.')
     with read_connection() as database:
         consistent_preview_read(database)
@@ -116,14 +116,14 @@ def segmentation_detail(identifier: str, recommendation_id: str, after_segment: 
             raise HTTPException(409, 'This preview snapshot changed. Refresh the recommendation before continuing.')
         parts = database.execute_native(
             'SELECT segment_id,segment_json FROM opening_segmentation_parts WHERE run_id=%s AND recommendation_id=%s '
-            'AND segment_id>%s ORDER BY segment_id LIMIT 9', (state['run_id'], recommendation_id, after_segment),
+            'AND segment_id>%s ORDER BY segment_id LIMIT 9', (state['run_id'], recommendation_id, after_segment or ''),
         ).fetchall()
         routes = database.execute_native(
             "SELECT DISTINCT line.id,line.name FROM opening_segmentation_sources source "
             "JOIN opening_graph_steps step ON step.card_id=source.card_id AND step.repertoire_id=%s AND step.generation=%s "
             "JOIN repertoire_lines line ON line.id=step.line_id "
             "WHERE source.run_id=%s AND source.recommendation_id=%s AND line.id>%s ORDER BY line.id LIMIT 9",
-            (identifier, state['graph_generation'], state['run_id'], recommendation_id, after_route),
+            (identifier, state['graph_generation'], state['run_id'], recommendation_id, after_route or ''),
         ).fetchall()
         fingerprint = source_fingerprint(database, state['run_id'], recommendation_id)
     kind = recommendation['kind']
