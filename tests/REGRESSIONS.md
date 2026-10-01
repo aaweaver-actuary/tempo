@@ -882,3 +882,8 @@ protects the ownership boundary.
 in the demo`, `capture remains available from Packs`, and `capture remains
 available after a tactic pack is complete` protect access across workspace states
 in `tests/unit/shared-board-shell-tactics-regressions.test.tsx`.
+
+`test_postgres_route_contract_matches_registered_endpoints` reproduced the
+missing capture route declaration from the first PR CI run. The route contract
+now classifies `POST /api/tactics/captures` as a staged foreground command;
+`test_staged_postgres_mutations_pass_the_runtime_write_guard` also covers it.
