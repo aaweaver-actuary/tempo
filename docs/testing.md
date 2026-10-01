@@ -1,6 +1,6 @@
 # Test scopes and exact full coverage
 
-Use one Make target for the question you are answering. `make plan` prints the exact commands in the full plan without running them. `make full` is the release and CI-equivalent gate; `npm test` and `npm run test:full` use the same runner. Run the full gate once on the final checkout. Do not chain `fast`, `integration`, `ui`, and `full` in one invocation: the smaller scopes are subsets of full.
+Use one Make target for the question you are answering. `make plan` prints the exact commands in the full plan without running them. `make full` is the complete local gate; `npm test` and `npm run test:full` use the same runner. CI owns required final-candidate verification by default; run a local full gate only for the reasons in `AGENTS.md`. Do not chain `fast`, `integration`, `ui`, and `full` in one invocation: the smaller scopes are subsets of full.
 
 Lint checks project source and tests while excluding generated output and the Git-ignored `.dev-copies/` directory used for local checkout copies. Those copies contain bundled dependencies and are verified through their own checkout when needed. The named test-plan regression protects this exclusion so a nested copy cannot fail the full gate after earlier test stages have passed.
 
@@ -80,7 +80,7 @@ Use `node scripts/test-postgres-docker.mjs --list` or `node scripts/test-docker.
 
 ## PostgreSQL execution modes and timings
 
-The runner defaults to `--mode full`. This remains the mode used by `make full`, `npm test`, and CI. `make browser`, `make ui`, `make ui-file`, and `make view` explicitly use `--mode browser`. `make docker-durability` uses `--mode durability`; the old `--skip-browser` argument remains a supported alias. A browser-file or browser-grep argument without an explicit mode selects browser-only execution. Filters are rejected in explicit full or durability mode so a filtered run cannot masquerade as a full gate.
+The runner defaults to `--mode full`. This remains the mode used by `make full` and `npm test`; CI uses separate durability and browser modes. `make browser`, `make ui`, `make ui-file`, and `make view` explicitly use `--mode browser`. `make docker-durability` uses `--mode durability`; the old `--skip-browser` argument remains a supported alias. A browser-file or browser-grep argument without an explicit mode selects browser-only execution. Filters are rejected in explicit full or durability mode so a filtered run cannot masquerade as a full gate.
 
 ```sh
 node scripts/test-postgres-docker.mjs --list --mode browser
@@ -145,8 +145,8 @@ Both names of renamed/copied files and deleted paths are classified. All TSX
 rendering edits and rendering assets select pinned visual/performance.
 Documentation under `docs/` and the root README retain required core,
 durability and critical checks. Adding an unclassified browser spec fails
-planning. The opening-segmentation spec is explicitly registered for pending
-PR #50; its absence on main does not manufacture test coverage.
+planning. PR #50 is merged into main; its opening-segmentation spec belongs to
+the repertoire family and participates in current collection and selection.
 
 The plan job actually collects all regular and pinned cases. Its immutable
 plan and collection report record IDs, projects, titles, selection reasons,
@@ -167,7 +167,9 @@ requires complete scope and successful `quality` on main. Same-PR runs
 supersede each other; deployment concurrency remains non-cancelling. No
 repository settings were changed. Owner recommendation: require stable
 `quality`, require the branch to be current or use a merge queue, and retain
-complete verification on the actual merge candidate. Inspection found no
+complete verification on the actual merge candidate. Do not directly require
+optionally inapplicable `visual` or nonblocking `quarantine`; require their
+planned outcomes through `quality`. Inspection found no
 main protection (API 404) and no repository rulesets; record this as an
 observed baseline, not an assurance about future settings.
 
@@ -194,7 +196,7 @@ rate. Preserve unresolved failures separately from confirmed repairs:
 | --- | --- | --- |
 | Study authoring captured the shell FEN before its exercise FEN | 36787451501, 36785256539, 36779563054, 36639783560, 36634425515, 36623248337 | Trace-backed synchronization repair `ec03b52`, already on main; waits for exact exercise FEN before capturing unchanged-input invariant. |
 | Background fixture consumer races (`NoneType`) | 36715216550, 36646129188 | Fixture isolation repair `0ac1e0f`, already on main; pauses/verifies consumers while synthetic workload owns its rows. |
-| Discovery second clock jump overlaps second feed response | 36871513621, 36706814147 | Retained current PR #50 trace supports synchronization diagnosis; repair is separately delivered in PR #50 (`e3856e7`). Original exact local case passed; no deterministic local failure is claimed. |
+| Discovery second clock jump overlaps second feed response | 36871513621, 36706814147 | Retained PR #50 trace supports synchronization diagnosis; repair `e3856e7` is now on main through merged PR #50. Original exact local case passed; no deterministic local failure is claimed. |
 | Phone and Study initial visibility failures | 36792899240 | Unresolved; no quarantine and no assertion or timeout relaxation. |
 | Same-PR cancellation | 36791648011 | Supersession outcome; not classified as a test failure. |
 
@@ -211,11 +213,11 @@ successful reference is run 36857716424. This failed baseline and successful
 focused repeats are not comparable complete throughput measurements. No
 speedup or learning claim follows from them.
 
-PR #50's discovery repair is not included in this CI-only branch. Main-only
-critical/durability tests and actual PR candidate CI are labelled separately;
-if a complete browser run fails its known discovery case before #50 merges,
-report that dependency and preserve the first failure. A temporary integration
-run, if needed, must be labelled and must not be presented as main-only proof.
+Before PR #50 merged, the maintenance measurements below used main-only sources
+without its discovery repair; those historical runs retain their original
+revision labels. PR #50 is now on main at `1151304261e59670847175b07680eb7a101f8211`
+and was integrated into PR #51 by merge `2f5521d`. Current candidate verification
+includes its segmentation, snapshot, migration and discovery regressions.
 
 ### Maintenance implementation evidence
 
@@ -230,7 +232,7 @@ patch dirty over decomposition commit `b5d046a`, based solely on main
 - Elevated `node scripts/ci-run-layer.mjs browser` on the explicitly labelled docs-only selection fixture: 7/7 critical cases passed, 73.95s including preflight/setup/cleanup. Executed IDs match selection; this is main-only critical proof, not the actual maintenance PR's complete browser gate.
 - Elevated `node scripts/ci-run-layer.mjs postgres`: all planned durability scenarios passed, 139.80s including preflight/setup/cleanup. Browser and durability stacks have different fresh resource names and volumes; available diagnostics and machine-readable reports were retained.
 - `node scripts/ci-verification-plan.mjs --complete`, then elevated `node scripts/ci-run-layer.mjs visual`: all 49 pinned visual/performance cases passed, 249.75s test execution / 269.39s including preflight and setup. Report IDs exactly match pinned collection. Baselines were not changed.
-- Typecheck, lint, YAML structure/aggregate dependency inspection and `git diff --check` passed. No local full gate was run: final candidate CI owns that boundary. Core backend/Rust/build and complete regular browser runtime remain pending there; local split inventory proof is not a completed gate.
+- Typecheck, lint, YAML structure/aggregate dependency inspection and `git diff --check` passed. No local full gate was run: final candidate CI owns that boundary. These focused measurements alone did not validate core backend/Rust/build or complete regular browser runtime; later complete evidence is separately revision-labelled below and in the PR description.
 
 These command times do not project parallel-CI speedups and are not comparable
 to the earlier failed full-run timing. GitHub job reports provide candidate
@@ -241,6 +243,20 @@ Missing reports are failures. Do not use diagnostic success to release an
 initially failed candidate. Reverting the maintenance commits restores the
 existing complete runner; local `make full` remains available throughout.
 
-Final inventory audit: the initial directory filter could miss a collected `.test.ts`, `.spec.tsx` or nested spec, and basename normalization could incorrectly classify a nested file as its root namesake. The named collected-file regression failed before the fix. Validation now includes all filenames from actual regular/pinned collection and preserves relative paths. Existing 152/49-case collections and selected IDs are unchanged; new unclassified collected files fail planning. A fresh current-candidate CI gate follows this hardening. Prior complete run 36887697735 passed maintenance `decf5d6`, synthetic merge `8c088e38c56efb779b8e2dadafc38169634f2a54`, main-only 424 frontend/715 backend/152 browser/49 pinned cases and all Rust/build/durability jobs. Its success is not relabelled as validation of the follow-up.
+Final inventory audit: the initial directory filter could miss a collected `.test.ts`, `.spec.tsx` or nested spec, and basename normalization could incorrectly classify a nested file as its root namesake. The named collected-file regression failed before the fix. Validation now includes all filenames from actual regular/pinned collection and preserves relative paths. The historical 152/49-case collections and selected IDs were unchanged by this fix; new unclassified collected files fail planning. Prior complete run 36887697735 passed maintenance `decf5d6`, synthetic merge `8c088e38c56efb779b8e2dadafc38169634f2a54`, main-only 424 frontend/715 backend/152 browser/49 pinned cases and all Rust/build/durability jobs. Its success is not relabelled as validation of later heads.
 
-Complete browser work now runs without a focus filter. Partial selection retains project/file/title boundaries and permits collected tags at suite/test boundaries; executed IDs must still equal the plan. The inventory/tag regressions bring the native CI harness suite to 16 named cases. The affected four-file frontend scope remains 19 regular cases.
+Complete browser work now runs without a focus filter. Partial selection retains project/file/title boundaries and permits collected tags at suite/test boundaries; executed IDs must still equal the plan. The inventory/tag regressions brought the native CI harness suite to 16 named cases. Current-main integration adds `current-main integration retains CI and segmentation regression registrations`, bringing it to 17. The existing wrapper keeps all native cases in the regular frontend gate.
+
+### Current-main integration repair
+
+Merge `2f5521d` integrated main `1151304261e59670847175b07680eb7a101f8211`
+without changing product behavior. The PostgreSQL runner retains both PR #50's
+segmentation check inside background workloads and PR #51's diagnostic cleanup.
+Its regression registry resolution dropped four CI registration paragraphs;
+the new named regression reproduces that loss and protects both CI and
+segmentation coverage, including all AS-01–AS-22 entries. Restore the CI entries
+additively rather than replacing either group. Schema 24 remains unchanged.
+Focused harness/collection and disposable durability proofs cover this boundary;
+the final PR description records current head/base/merge SHAs, CI run, collected
+counts, all layer outcomes and any remaining blockers. Older successful runs
+are historical evidence, not validation of the repaired head.

@@ -200,3 +200,27 @@ test("complete browser verification is unfiltered and tagged collection preserve
   assert(expression.test("chromium board-state.spec.ts orientation @orientation tagged case @critical"));
   assert(!expression.test("chromium another.spec.ts orientation @orientation tagged case @critical"));
 });
+
+test("current-main integration retains CI and segmentation regression registrations", () => {
+  const regressionRegistry = readFileSync("tests/REGRESSIONS.md", "utf8");
+  const harnessSource = readFileSync(new URL(import.meta.url), "utf8");
+  const harnessTestNames = [...harnessSource.matchAll(/^test\("([^"]+)",/gm)].map(match => match[1]);
+  assert(harnessTestNames.length > 0);
+  for (const testName of harnessTestNames) {
+    assert(regressionRegistry.includes(testName), `Missing CI regression registration: ${testName}`);
+  }
+  for (const testName of [
+    "split complete verification matches the existing full command inventory",
+    "test_shared_trunk_preserves_coverage_with_20_tests_instead_of_48",
+    "test_pagination_requires_snapshot_and_rejects_republication",
+    "test_preview_response_remains_consistent_during_concurrent_postgres_publication",
+    "test_preference_dispatch_preserves_legacy_receipt_payload_and_new_snapshot",
+    "test_segmentation_migration_has_unique_number_and_matches_schema_readiness",
+  ]) {
+    assert(regressionRegistry.includes(testName), `Missing integration regression registration: ${testName}`);
+  }
+  for (let acceptanceNumber = 1; acceptanceNumber <= 22; acceptanceNumber++) {
+    const acceptanceId = `AS-${String(acceptanceNumber).padStart(2, "0")}`;
+    assert(regressionRegistry.includes(`| ${acceptanceId} |`), `Missing segmentation acceptance mapping: ${acceptanceId}`);
+  }
+});
