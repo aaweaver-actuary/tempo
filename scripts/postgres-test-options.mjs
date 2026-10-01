@@ -28,8 +28,8 @@ export function parsePostgresTestOptions(argumentsList, environment = process.en
   if (options.browserFile && options.browserGrep) {
     throw new Error("Choose one browser focus: --browser-file or --browser-grep");
   }
-  if (options.mode !== null && !["full", "browser", "durability"].includes(options.mode)) {
-    throw new Error("--mode must be full, browser, or durability");
+  if (options.mode !== null && !["full", "browser", "durability", "priority-benchmark"].includes(options.mode)) {
+    throw new Error("--mode must be full, browser, durability, or priority-benchmark");
   }
   if (options.skipBrowser && options.mode !== null && options.mode !== "durability") {
     throw new Error("--skip-browser cannot be combined with full or browser mode");
