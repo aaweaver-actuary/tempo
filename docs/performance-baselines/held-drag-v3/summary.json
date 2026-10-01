@@ -1,0 +1,1706 @@
+{
+  "schemaVersion": 1,
+  "timestamp": "2026-09-30T21:38:04.891Z",
+  "commit": "91cb391102dabe87a7fdb67170ef9df3985031dd",
+  "fixture": {
+    "name": "held-drag-v3-callback-cadence-blocked-sw",
+    "pointerMoves": 40,
+    "paceMs": 20,
+    "repetitions": 3,
+    "dataset": "Spanish five-ply card and one discovery",
+    "probe": "bounded-transform-probe-v1"
+  },
+  "environment": {
+    "browser": "chromium",
+    "browserVersion": "153.0.8010.12",
+    "buildMode": "production-local",
+    "runner": "linux-pinned",
+    "architecture": "arm64",
+    "viewport": {
+      "width": 1280,
+      "height": 800
+    },
+    "devicePixelRatio": 1,
+    "reducedMotion": "no-preference",
+    "serviceWorkers": "block",
+    "dockerCpus": "4",
+    "dockerMemoryBytes": "6198358016",
+    "host": "{\"platform\":\"darwin\",\"architecture\":\"arm64\",\"cpuModel\":\"Apple M3\",\"logicalCpus\":8,\"memoryBytes\":25769803776}",
+    "containerLimits": "no explicit per-container CPU/memory limits; shared Docker VM",
+    "gpu": "unavailable; headless pinned browser",
+    "physicalPresentation": "unavailable",
+    "liveBackendLoad": "unmeasured; routed synthetic API fixtures"
+  },
+  "measurement": "DOM transform at rAF; not presentation latency or INP; identical independent probe runs with capture on/off",
+  "summaries": [
+    {
+      "workload": "idle",
+      "enabled": true,
+      "count": 6,
+      "frameSampleCount": 882,
+      "displacementSampleCount": 868,
+      "interruptionCount": 0,
+      "frameGapMs": {
+        "p50": 16.875,
+        "p95": 27.210000038146973
+      },
+      "maximumFrameGapMs": 125.30500000715256,
+      "captureFrameCostMs": {
+        "p50": 0.010000050067901611,
+        "p95": 0.04000002145767212
+      },
+      "captureEventCostMs": {
+        "p50": 0.020000040531158447,
+        "p95": 0.050000011920928955
+      },
+      "displacementCssPx": {
+        "p50": 0.7852659249687611,
+        "p95": 10.44030650891055
+      }
+    },
+    {
+      "workload": "idle",
+      "enabled": false,
+      "count": 6,
+      "frameSampleCount": 796,
+      "displacementSampleCount": 788,
+      "interruptionCount": 0,
+      "frameGapMs": {
+        "p50": 16.735000014305115,
+        "p95": 23.689999997615814
+      },
+      "maximumFrameGapMs": 67.80500000715256,
+      "captureFrameCostMs": null,
+      "captureEventCostMs": null,
+      "displacementCssPx": {
+        "p50": 0.8001338836698286,
+        "p95": 10.44030650891055
+      }
+    },
+    {
+      "workload": "synthetic-worker",
+      "enabled": true,
+      "count": 6,
+      "frameSampleCount": 947,
+      "displacementSampleCount": 936,
+      "interruptionCount": 0,
+      "frameGapMs": {
+        "p50": 16.889999985694885,
+        "p95": 37.4099999666214
+      },
+      "maximumFrameGapMs": 125.73500001430511,
+      "captureFrameCostMs": {
+        "p50": 0.014999985694885254,
+        "p95": 0.05500000715255737
+      },
+      "captureEventCostMs": {
+        "p50": 0.020000040531158447,
+        "p95": 0.050000011920928955
+      },
+      "displacementCssPx": {
+        "p50": 0.7852426073399786,
+        "p95": 10.44030650891055
+      }
+    },
+    {
+      "workload": "synthetic-worker",
+      "enabled": false,
+      "count": 6,
+      "frameSampleCount": 915,
+      "displacementSampleCount": 904,
+      "interruptionCount": 0,
+      "frameGapMs": {
+        "p50": 16.790000021457672,
+        "p95": 29.360000014305115
+      },
+      "maximumFrameGapMs": 142.63499999046326,
+      "captureFrameCostMs": null,
+      "captureEventCostMs": null,
+      "displacementCssPx": {
+        "p50": 0.7852659249687611,
+        "p95": 10.44030650891055
+      }
+    },
+    {
+      "workload": "discovery-preparation",
+      "enabled": true,
+      "count": 6,
+      "frameSampleCount": 905,
+      "displacementSampleCount": 895,
+      "interruptionCount": 0,
+      "frameGapMs": {
+        "p50": 16.8299999833107,
+        "p95": 29.92500001192093
+      },
+      "maximumFrameGapMs": 286.44999998807907,
+      "captureFrameCostMs": {
+        "p50": 0.014999985694885254,
+        "p95": 0.050000011920928955
+      },
+      "captureEventCostMs": {
+        "p50": 0.020000040531158447,
+        "p95": 0.04999995231628418
+      },
+      "displacementCssPx": {
+        "p50": 0.7852659249687611,
+        "p95": 10.44030650891055
+      }
+    },
+    {
+      "workload": "discovery-preparation",
+      "enabled": false,
+      "count": 6,
+      "frameSampleCount": 915,
+      "displacementSampleCount": 902,
+      "interruptionCount": 0,
+      "frameGapMs": {
+        "p50": 16.865000009536743,
+        "p95": 32.40499997138977
+      },
+      "maximumFrameGapMs": 60.63000005483627,
+      "captureFrameCostMs": null,
+      "captureEventCostMs": null,
+      "displacementCssPx": {
+        "p50": 0.7852426073399786,
+        "p95": 10.44030650891055
+      }
+    },
+    {
+      "workload": "stockfish-worker",
+      "enabled": true,
+      "count": 6,
+      "frameSampleCount": 948,
+      "displacementSampleCount": 934,
+      "interruptionCount": 0,
+      "frameGapMs": {
+        "p50": 16.82499998807907,
+        "p95": 33.17500001192093
+      },
+      "maximumFrameGapMs": 70.13499999046326,
+      "captureFrameCostMs": {
+        "p50": 0.014999985694885254,
+        "p95": 0.059999942779541016
+      },
+      "captureEventCostMs": {
+        "p50": 0.020000040531158447,
+        "p95": 0.05500000715255737
+      },
+      "displacementCssPx": {
+        "p50": 0.7852426073399786,
+        "p95": 10.44030650891055
+      }
+    },
+    {
+      "workload": "stockfish-worker",
+      "enabled": false,
+      "count": 6,
+      "frameSampleCount": 894,
+      "displacementSampleCount": 879,
+      "interruptionCount": 0,
+      "frameGapMs": {
+        "p50": 16.84500002861023,
+        "p95": 33.49500000476837
+      },
+      "maximumFrameGapMs": 60.89500004053116,
+      "captureFrameCostMs": null,
+      "captureEventCostMs": null,
+      "displacementCssPx": {
+        "p50": 0.7852659249687611,
+        "p95": 10.44030650891055
+      }
+    },
+    {
+      "workload": "main-thread-stall",
+      "enabled": true,
+      "count": 6,
+      "frameSampleCount": 856,
+      "displacementSampleCount": 845,
+      "interruptionCount": 0,
+      "frameGapMs": {
+        "p50": 16.74500000476837,
+        "p95": 25.42500001192093
+      },
+      "maximumFrameGapMs": 95.92500001192093,
+      "captureFrameCostMs": {
+        "p50": 0.009999990463256836,
+        "p95": 0.0350000262260437
+      },
+      "captureEventCostMs": {
+        "p50": 0.020000040531158447,
+        "p95": 0.050000011920928955
+      },
+      "displacementCssPx": {
+        "p50": 0.7852659249687611,
+        "p95": 10.44030650891055
+      }
+    },
+    {
+      "workload": "main-thread-stall",
+      "enabled": false,
+      "count": 6,
+      "frameSampleCount": 921,
+      "displacementSampleCount": 907,
+      "interruptionCount": 0,
+      "frameGapMs": {
+        "p50": 16.839999973773956,
+        "p95": 31.930000007152557
+      },
+      "maximumFrameGapMs": 95.74000000953674,
+      "captureFrameCostMs": null,
+      "captureEventCostMs": null,
+      "displacementCssPx": {
+        "p50": 0.7852426073399786,
+        "p95": 10.44030650891055
+      }
+    }
+  ],
+  "rawArtifactSha256": "84b691928d120ddb94e75996783d7d804a6f6d687451acd058ab86f5360a3507",
+  "rawArtifact": "held-drag-chromium.json.gz",
+  "runSummaries": [
+    {
+      "repetition": 0,
+      "workload": "idle",
+      "enabled": true,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": null,
+        "endedAtMs": null,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 17.009999990463257,
+        "p95": 34.6700000166893,
+        "max": 125.30500000715256,
+        "count": 154
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.960000038146973,
+        "p95": 34.00999999046326,
+        "max": 125.33000004291534,
+        "count": 153
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 0,
+      "workload": "idle",
+      "enabled": true,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": null,
+        "endedAtMs": null,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.82499998807907,
+        "p95": 27.055000007152557,
+        "max": 38.67999994754791,
+        "count": 129
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.8400000333786,
+        "p95": 27.10999995470047,
+        "max": 38.780000030994415,
+        "count": 127
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 0,
+      "workload": "idle",
+      "enabled": false,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": null,
+        "endedAtMs": null,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.67500001192093,
+        "p95": 18.3850000500679,
+        "max": 33.00999999046326,
+        "count": 114
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 0,
+      "workload": "idle",
+      "enabled": false,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": null,
+        "endedAtMs": null,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.6599999666214,
+        "p95": 23.5349999666214,
+        "max": 36.84500002861023,
+        "count": 133
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 0,
+      "workload": "synthetic-worker",
+      "enabled": true,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 1487.6150000095367,
+        "endedAtMs": 2715.5849999785423,
+        "error": null,
+        "messages": 1
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.98499995470047,
+        "p95": 37.3400000333786,
+        "max": 60.344999969005585,
+        "count": 156
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 17.009999990463257,
+        "p95": 37.37999999523163,
+        "max": 60.439999997615814,
+        "count": 154
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 0,
+      "workload": "synthetic-worker",
+      "enabled": true,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 1228.5349999666214,
+        "endedAtMs": 2451.264999985695,
+        "error": null,
+        "messages": 1
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.87000000476837,
+        "p95": 55.11500000953674,
+        "max": 125.73500001430511,
+        "count": 169
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.814999997615814,
+        "p95": 55.189999997615814,
+        "max": 128.57500004768372,
+        "count": 169
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 0,
+      "workload": "synthetic-worker",
+      "enabled": false,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 1337.9700000286102,
+        "endedAtMs": 2551.399999976158,
+        "error": null,
+        "messages": 1
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.82499998807907,
+        "p95": 26.060000002384186,
+        "max": 44.235000014305115,
+        "count": 133
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 0,
+      "workload": "synthetic-worker",
+      "enabled": false,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 1768.6450000405312,
+        "endedAtMs": 2993.3300000429153,
+        "error": null,
+        "messages": 1
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.860000014305115,
+        "p95": 29.34500002861023,
+        "max": 69.71499997377396,
+        "count": 163
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 0,
+      "workload": "discovery-preparation",
+      "enabled": true,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 1604.3500000238419,
+        "endedAtMs": 4199.560000002384,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.735000014305115,
+        "p95": 43.4549999833107,
+        "max": 286.44999998807907,
+        "count": 168
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.80000001192093,
+        "p95": 43.69999998807907,
+        "max": 286.57499998807907,
+        "count": 166
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 0,
+      "workload": "discovery-preparation",
+      "enabled": true,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 867.0550000071526,
+        "endedAtMs": 2572,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.794999957084656,
+        "p95": 22,
+        "max": 48.64000004529953,
+        "count": 128
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.74500000476837,
+        "p95": 22.035000026226044,
+        "max": 48.69499999284744,
+        "count": 128
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 0,
+      "workload": "discovery-preparation",
+      "enabled": false,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 1882.9050000309944,
+        "endedAtMs": 3807.210000038147,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.939999997615814,
+        "p95": 30.580000042915344,
+        "max": 51.17500001192093,
+        "count": 156
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 0,
+      "workload": "discovery-preparation",
+      "enabled": false,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 1400.625,
+        "endedAtMs": 3158.400000035763,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.935000002384186,
+        "p95": 27.889999985694885,
+        "max": 41.33499997854233,
+        "count": 142
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 0,
+      "workload": "stockfish-worker",
+      "enabled": true,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 2608.860000014305,
+        "endedAtMs": 3110.039999961853,
+        "error": null,
+        "messages": 64
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 17.025000035762787,
+        "p95": 37.12000000476837,
+        "max": 61.62999999523163,
+        "count": 178
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.99500000476837,
+        "p95": 38.3400000333786,
+        "max": 61.5349999666214,
+        "count": 177
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 0,
+      "workload": "stockfish-worker",
+      "enabled": true,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 2987.185000002384,
+        "endedAtMs": 3318.4300000071526,
+        "error": null,
+        "messages": 64
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.865000009536743,
+        "p95": 36.58499997854233,
+        "max": 60.27499997615814,
+        "count": 155
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.814999997615814,
+        "p95": 36.67500001192093,
+        "max": 62.9650000333786,
+        "count": 152
+      },
+      "longTasks": [
+        {
+          "atMs": 2328.9950000047684,
+          "durationMs": 51
+        }
+      ]
+    },
+    {
+      "repetition": 0,
+      "workload": "stockfish-worker",
+      "enabled": false,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 2266.7049999833107,
+        "endedAtMs": 2706.449999988079,
+        "error": null,
+        "messages": 64
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 17.05000001192093,
+        "p95": 25.975000023841858,
+        "max": 52.75,
+        "count": 148
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 0,
+      "workload": "stockfish-worker",
+      "enabled": false,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 1856.6299999952316,
+        "endedAtMs": 2306.604999959469,
+        "error": null,
+        "messages": 64
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 17.085000038146973,
+        "p95": 36.33499997854233,
+        "max": 42.65000003576279,
+        "count": 138
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 0,
+      "workload": "main-thread-stall",
+      "enabled": true,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 1434.464999973774,
+        "endedAtMs": 1514.464999973774,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.790000021457672,
+        "p95": 24.27999997138977,
+        "max": 82.4099999666214,
+        "count": 143
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.764999985694885,
+        "p95": 24.005000054836273,
+        "max": 82.50999999046326,
+        "count": 142
+      },
+      "longTasks": [
+        {
+          "atMs": 1434.4150000214577,
+          "durationMs": 80
+        }
+      ]
+    },
+    {
+      "repetition": 0,
+      "workload": "main-thread-stall",
+      "enabled": true,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 1704.1949999928474,
+        "endedAtMs": 1784.199999988079,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.930000007152557,
+        "p95": 30.2849999666214,
+        "max": 95.92500001192093,
+        "count": 149
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.875,
+        "p95": 29.27999997138977,
+        "max": 95.91499996185303,
+        "count": 148
+      },
+      "longTasks": [
+        {
+          "atMs": 1704.1599999666214,
+          "durationMs": 81
+        }
+      ]
+    },
+    {
+      "repetition": 0,
+      "workload": "main-thread-stall",
+      "enabled": false,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 2035.5400000214577,
+        "endedAtMs": 2115.550000011921,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.92500001192093,
+        "p95": 31.464999973773956,
+        "max": 90.64500004053116,
+        "count": 165
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 0,
+      "workload": "main-thread-stall",
+      "enabled": false,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 2085.210000038147,
+        "endedAtMs": 2165.210000038147,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 17.219999969005585,
+        "p95": 34.74000000953674,
+        "max": 88.46999996900558,
+        "count": 165
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 1,
+      "workload": "idle",
+      "enabled": false,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": null,
+        "endedAtMs": null,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.8400000333786,
+        "p95": 30.975000023841858,
+        "max": 67.80500000715256,
+        "count": 145
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 1,
+      "workload": "idle",
+      "enabled": false,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": null,
+        "endedAtMs": null,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.94999998807907,
+        "p95": 28.319999992847443,
+        "max": 38.24500000476837,
+        "count": 154
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 1,
+      "workload": "idle",
+      "enabled": true,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": null,
+        "endedAtMs": null,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.844999969005585,
+        "p95": 27.055000007152557,
+        "max": 33.219999969005585,
+        "count": 149
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.875,
+        "p95": 27.30000001192093,
+        "max": 33.25499999523163,
+        "count": 147
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 1,
+      "workload": "idle",
+      "enabled": true,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": null,
+        "endedAtMs": null,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.875,
+        "p95": 31.4200000166893,
+        "max": 77.18000000715256,
+        "count": 151
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.87999999523163,
+        "p95": 31.310000002384186,
+        "max": 77.24000000953674,
+        "count": 147
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 1,
+      "workload": "synthetic-worker",
+      "enabled": false,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 2103.4300000071526,
+        "endedAtMs": 3323.889999985695,
+        "error": null,
+        "messages": 1
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.960000038146973,
+        "p95": 29.240000009536743,
+        "max": 142.63499999046326,
+        "count": 167
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 1,
+      "workload": "synthetic-worker",
+      "enabled": false,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 2015.9150000214577,
+        "endedAtMs": 3247.860000014305,
+        "error": null,
+        "messages": 1
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.855000019073486,
+        "p95": 33.464999973773956,
+        "max": 53.22499996423721,
+        "count": 170
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 1,
+      "workload": "synthetic-worker",
+      "enabled": true,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 1711.3100000023842,
+        "endedAtMs": 2942.854999959469,
+        "error": null,
+        "messages": 1
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 17.060000002384186,
+        "p95": 36.08499997854233,
+        "max": 66.38999998569489,
+        "count": 163
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.99500000476837,
+        "p95": 36.13499999046326,
+        "max": 65.77000004053116,
+        "count": 163
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 1,
+      "workload": "synthetic-worker",
+      "enabled": true,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 1747.6850000023842,
+        "endedAtMs": 2974.4800000190735,
+        "error": null,
+        "messages": 1
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.980000019073486,
+        "p95": 44.314999997615814,
+        "max": 79.84999996423721,
+        "count": 180
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.97000002861023,
+        "p95": 46.485000014305115,
+        "max": 79.87000000476837,
+        "count": 179
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 1,
+      "workload": "discovery-preparation",
+      "enabled": false,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 1822.2049999833107,
+        "endedAtMs": 4272.25,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 17.115000009536743,
+        "p95": 42.235000014305115,
+        "max": 60.63000005483627,
+        "count": 165
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 1,
+      "workload": "discovery-preparation",
+      "enabled": false,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 2143.2949999570847,
+        "endedAtMs": 4346.774999976158,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.9200000166893,
+        "p95": 35.97500002384186,
+        "max": 55.669999957084656,
+        "count": 175
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 1,
+      "workload": "discovery-preparation",
+      "enabled": true,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 1653.6500000357628,
+        "endedAtMs": 3881.4449999928474,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.92500001192093,
+        "p95": 33.285000026226044,
+        "max": 62.60499995946884,
+        "count": 161
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.87999999523163,
+        "p95": 33.33500003814697,
+        "max": 62.655000030994415,
+        "count": 159
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 1,
+      "workload": "discovery-preparation",
+      "enabled": true,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 1730.7950000166893,
+        "endedAtMs": 4048.6800000071526,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.9650000333786,
+        "p95": 30.90499997138977,
+        "max": 47.94500005245209,
+        "count": 166
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 17.055000007152557,
+        "p95": 30.944999992847443,
+        "max": 48.660000026226044,
+        "count": 166
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 1,
+      "workload": "stockfish-worker",
+      "enabled": false,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 2466.7900000214577,
+        "endedAtMs": 3201.1550000309944,
+        "error": null,
+        "messages": 64
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.8400000333786,
+        "p95": 40.810000002384186,
+        "max": 60.89500004053116,
+        "count": 172
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 1,
+      "workload": "stockfish-worker",
+      "enabled": false,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 2036.5649999976158,
+        "endedAtMs": 2641.9200000166893,
+        "error": null,
+        "messages": 64
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.910000026226044,
+        "p95": 42.99500000476837,
+        "max": 56.0450000166893,
+        "count": 165
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 1,
+      "workload": "stockfish-worker",
+      "enabled": true,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 2493.074999988079,
+        "endedAtMs": 3049.324999988079,
+        "error": null,
+        "messages": 64
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.8299999833107,
+        "p95": 34.74500000476837,
+        "max": 70.13499999046326,
+        "count": 161
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.850000023841858,
+        "p95": 34.82499998807907,
+        "max": 70.19499999284744,
+        "count": 160
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 1,
+      "workload": "stockfish-worker",
+      "enabled": true,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 2000.4550000429153,
+        "endedAtMs": 2392.7200000286102,
+        "error": null,
+        "messages": 64
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 17.00499999523163,
+        "p95": 33.17500001192093,
+        "max": 48.26500004529953,
+        "count": 171
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 17.024999976158142,
+        "p95": 30.610000014305115,
+        "max": 48.30500000715256,
+        "count": 170
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 1,
+      "workload": "main-thread-stall",
+      "enabled": false,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 1883.75,
+        "endedAtMs": 1963.760000050068,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.889999985694885,
+        "p95": 39.86500000953674,
+        "max": 95.74000000953674,
+        "count": 156
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 1,
+      "workload": "main-thread-stall",
+      "enabled": false,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 1475.8450000286102,
+        "endedAtMs": 1555.8500000238419,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.67500001192093,
+        "p95": 22.310000002384186,
+        "max": 80.68000000715256,
+        "count": 151
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 1,
+      "workload": "main-thread-stall",
+      "enabled": true,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 1713.3050000071526,
+        "endedAtMs": 1793.3100000023842,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.884999990463257,
+        "p95": 26.069999992847443,
+        "max": 83.13999998569489,
+        "count": 151
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.805000007152557,
+        "p95": 26.064999997615814,
+        "max": 83.01999998092651,
+        "count": 150
+      },
+      "longTasks": [
+        {
+          "atMs": 1713.2599999904633,
+          "durationMs": 81
+        }
+      ]
+    },
+    {
+      "repetition": 1,
+      "workload": "main-thread-stall",
+      "enabled": true,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 1520.839999973774,
+        "endedAtMs": 1600.8449999690056,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.669999957084656,
+        "p95": 24.125,
+        "max": 85.87000000476837,
+        "count": 148
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.655000030994415,
+        "p95": 23.144999980926514,
+        "max": 85.89999997615814,
+        "count": 145
+      },
+      "longTasks": [
+        {
+          "atMs": 1520.8100000023842,
+          "durationMs": 80
+        }
+      ]
+    },
+    {
+      "repetition": 2,
+      "workload": "idle",
+      "enabled": true,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": null,
+        "endedAtMs": null,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.810000002384186,
+        "p95": 21.62999999523163,
+        "max": 27.210000038146973,
+        "count": 147
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.780000030994415,
+        "p95": 21.769999980926514,
+        "max": 27.384999990463257,
+        "count": 145
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 2,
+      "workload": "idle",
+      "enabled": true,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": null,
+        "endedAtMs": null,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.735000014305115,
+        "p95": 30.485000014305115,
+        "max": 49.56999999284744,
+        "count": 152
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.775000035762787,
+        "p95": 30.415000021457672,
+        "max": 49.605000019073486,
+        "count": 149
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 2,
+      "workload": "idle",
+      "enabled": false,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": null,
+        "endedAtMs": null,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.600000023841858,
+        "p95": 19.07499998807907,
+        "max": 24.099999964237213,
+        "count": 130
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 2,
+      "workload": "idle",
+      "enabled": false,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": null,
+        "endedAtMs": null,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.6700000166893,
+        "p95": 18.030000030994415,
+        "max": 26.019999980926514,
+        "count": 120
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 2,
+      "workload": "synthetic-worker",
+      "enabled": true,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 1736.210000038147,
+        "endedAtMs": 2953.9449999928474,
+        "error": null,
+        "messages": 1
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.75,
+        "p95": 20.990000009536743,
+        "max": 25.360000014305115,
+        "count": 139
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.709999978542328,
+        "p95": 20.52999997138977,
+        "max": 23.719999969005585,
+        "count": 138
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 2,
+      "workload": "synthetic-worker",
+      "enabled": true,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 1412.0049999952316,
+        "endedAtMs": 2641.810000002384,
+        "error": null,
+        "messages": 1
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.730000019073486,
+        "p95": 29.069999992847443,
+        "max": 54.52499997615814,
+        "count": 140
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.740000009536743,
+        "p95": 30.50499999523163,
+        "max": 54.56999999284744,
+        "count": 139
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 2,
+      "workload": "synthetic-worker",
+      "enabled": false,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 1559.3699999451637,
+        "endedAtMs": 2769.810000002384,
+        "error": null,
+        "messages": 1
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.75,
+        "p95": 25.19999998807907,
+        "max": 37.7399999499321,
+        "count": 143
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 2,
+      "workload": "synthetic-worker",
+      "enabled": false,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 1333.0799999833107,
+        "endedAtMs": 2557.114999949932,
+        "error": null,
+        "messages": 1
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.75499999523163,
+        "p95": 23.150000035762787,
+        "max": 52.064999997615814,
+        "count": 139
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 2,
+      "workload": "discovery-preparation",
+      "enabled": true,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 980.9350000023842,
+        "endedAtMs": 2768.2200000286102,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.730000019073486,
+        "p95": 20.459999978542328,
+        "max": 49.814999997615814,
+        "count": 137
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.709999978542328,
+        "p95": 21.24500000476837,
+        "max": 49.85499995946884,
+        "count": 135
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 2,
+      "workload": "discovery-preparation",
+      "enabled": true,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 1403.0299999713898,
+        "endedAtMs": 3063.729999959469,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.769999980926514,
+        "p95": 23.105000019073486,
+        "max": 37.50999999046326,
+        "count": 145
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.75,
+        "p95": 23.12999999523163,
+        "max": 37.60000002384186,
+        "count": 145
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 2,
+      "workload": "discovery-preparation",
+      "enabled": false,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 1324.6099999547005,
+        "endedAtMs": 2932.064999997616,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.735000014305115,
+        "p95": 22.375,
+        "max": 28.560000002384186,
+        "count": 139
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 2,
+      "workload": "discovery-preparation",
+      "enabled": false,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 1133.2799999713898,
+        "endedAtMs": 2820.039999961853,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.69999998807907,
+        "p95": 21.469999969005585,
+        "max": 53.82499998807907,
+        "count": 138
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 2,
+      "workload": "stockfish-worker",
+      "enabled": true,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 1727.964999973774,
+        "endedAtMs": 2064.274999976158,
+        "error": null,
+        "messages": 64
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.735000014305115,
+        "p95": 24.12000000476837,
+        "max": 51.05500000715256,
+        "count": 140
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.725000023841858,
+        "p95": 24.15499997138977,
+        "max": 51.10999995470047,
+        "count": 139
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 2,
+      "workload": "stockfish-worker",
+      "enabled": true,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 1568.1100000143051,
+        "endedAtMs": 1882.8950000405312,
+        "error": null,
+        "messages": 64
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.814999997615814,
+        "p95": 23.394999980926514,
+        "max": 30.185000002384186,
+        "count": 143
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.77999997138977,
+        "p95": 23.480000019073486,
+        "max": 28.060000002384186,
+        "count": 141
+      },
+      "longTasks": []
+    },
+    {
+      "repetition": 2,
+      "workload": "stockfish-worker",
+      "enabled": false,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 1591.8149999976158,
+        "endedAtMs": 1831.6200000047684,
+        "error": null,
+        "messages": 64
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.75,
+        "p95": 18.819999992847443,
+        "max": 26.780000030994415,
+        "count": 134
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 2,
+      "workload": "stockfish-worker",
+      "enabled": false,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 1429.1200000047684,
+        "endedAtMs": 1697.7649999856949,
+        "error": null,
+        "messages": 64
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.689999997615814,
+        "p95": 22.05000001192093,
+        "max": 30.22000002861023,
+        "count": 137
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 2,
+      "workload": "main-thread-stall",
+      "enabled": true,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 1315,
+        "endedAtMs": 1395.010000050068,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.6700000166893,
+        "p95": 22.850000023841858,
+        "max": 88.14500004053116,
+        "count": 138
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.69999998807907,
+        "p95": 22.894999980926514,
+        "max": 88.1700000166893,
+        "count": 137
+      },
+      "longTasks": [
+        {
+          "atMs": 1314.960000038147,
+          "durationMs": 80
+        }
+      ]
+    },
+    {
+      "repetition": 2,
+      "workload": "main-thread-stall",
+      "enabled": true,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 1411.8899999856949,
+        "endedAtMs": 1491.8949999809265,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.73499995470047,
+        "p95": 18.285000026226044,
+        "max": 94.83500003814697,
+        "count": 127
+      },
+      "confirmedDragCallbackGapsMs": {
+        "p50": 16.72000002861023,
+        "p95": 18.25,
+        "max": 94.81499999761581,
+        "count": 125
+      },
+      "longTasks": [
+        {
+          "atMs": 1411.8650000095367,
+          "durationMs": 80
+        }
+      ]
+    },
+    {
+      "repetition": 2,
+      "workload": "main-thread-stall",
+      "enabled": false,
+      "cacheState": "cold-context",
+      "workloadEvidence": {
+        "startedAtMs": 1208.1650000214577,
+        "endedAtMs": 1288.175000011921,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.735000014305115,
+        "p95": 23.560000002384186,
+        "max": 83.33499997854233,
+        "count": 145
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    },
+    {
+      "repetition": 2,
+      "workload": "main-thread-stall",
+      "enabled": false,
+      "cacheState": "warm-context-reload",
+      "workloadEvidence": {
+        "startedAtMs": 1291.9099999666214,
+        "endedAtMs": 1371.914999961853,
+        "error": null,
+        "messages": 0
+      },
+      "interrupted": false,
+      "probeCallbackGapsMs": {
+        "p50": 16.700000047683716,
+        "p95": 21.069999992847443,
+        "max": 90.41499996185303,
+        "count": 139
+      },
+      "confirmedDragCallbackGapsMs": null,
+      "longTasks": []
+    }
+  ]
+}

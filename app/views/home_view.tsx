@@ -9,7 +9,7 @@ import {
 } from "../lib/validated-data";
 import * as z from "zod";
 import { localRepertoireSchema } from "../domain/schemas";
-import { measureTempoOperation } from "../lib/performance";
+import { measureTempoOperation, measureTempoDragPhase } from "../lib/performance";
 import { isCurrentAttempt } from "../domain/attempt";
 import { DataDiagnosticsNotice } from "../components/data-diagnostics-notice";
 import { useState, useCallback, useEffect, useRef } from "react";
@@ -274,9 +274,10 @@ export default function Home() {
   }, [serviceError]);
   const reviewPendingEntries = useRef(new Set<string>());
   const reviewTransitionGeneration = useRef(0);
-  const replyTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
-    undefined,
-  );
+  const pendingOpponentReply = useRef<{
+    timer: ReturnType<typeof setTimeout> | undefined;
+    finish: (failed?: boolean) => void;
+  } | undefined>(undefined);
   const completionTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -663,7 +664,9 @@ export default function Home() {
   }
 
   function resetLine(nextCard = card) {
-    clearTimeout(replyTimer.current);
+    const canceledReply = pendingOpponentReply.current;
+    clearTimeout(canceledReply?.timer);
+    canceledReply?.finish(true);
     clearTimeout(completionTimer.current);
     resetTrainingLine(nextCard);
   }
@@ -813,13 +816,25 @@ export default function Home() {
     }
     setAttemptPhase("opponentReplyPending");
     const token = useTrainingStore.getState().attempt;
-    replyTimer.current = setTimeout(() => {
-      if (!isCurrentAttempt(useTrainingStore.getState().attempt, token)) return;
+    const finishOpponentReply = measureTempoDragPhase("opponent-reply");
+    const scheduledReply = {
+      timer: undefined as ReturnType<typeof setTimeout> | undefined,
+      finish: (failed = false) => {
+        finishOpponentReply(failed);
+        scheduledReply.timer = undefined;
+        if (pendingOpponentReply.current === scheduledReply)
+          pendingOpponentReply.current = undefined;
+      },
+    };
+    pendingOpponentReply.current = scheduledReply;
+    scheduledReply.timer = setTimeout(() => {
+      if (!isCurrentAttempt(useTrainingStore.getState().attempt, token)) { scheduledReply.finish(true); return; }
       const replyPosition = new Chess(position.fen());
       let reply: Move | null;
       try {
         reply = replyPosition.move(card.moves[opponentStep]);
       } catch {
+        scheduledReply.finish(true);
         setAttemptPhase("guided", token);
         setServiceError(
           "This line needs repair: its opponent reply is illegal.",
@@ -827,11 +842,13 @@ export default function Home() {
         return;
       }
       if (!reply) {
+        scheduledReply.finish(true);
         setAttemptPhase(
           useTrainingStore.getState().isAttemptFailed ? "guided" : "playerTurn",
         );
         return;
       }
+      scheduledReply.finish();
       const nextStep = opponentStep + 1;
       setCurrentFenString(asFenString(replyPosition.fen()));
       setLastMove([reply.from, reply.to]);
@@ -929,10 +946,15 @@ export default function Home() {
                 useTrainingStore.getState().assistedThisAttempt,
             });
           }
+          const finishNextCard = measureTempoDragPhase("next-card-readiness");
           advancedFromCache = useTrainingStore.getState().advanceCachedQueue();
+          if (advancedFromCache) requestAnimationFrame(() => finishNextCard());
+          else finishNextCard(true);
           setReviewed((count) => count + 1);
         }
-        await flushPendingReviews();
+        const finishReviewPersistence = measureTempoDragPhase("review-persistence");
+        try { await flushPendingReviews(); finishReviewPersistence(); }
+        catch (error) { finishReviewPersistence(true); throw error; }
         if (transitionGeneration === reviewTransitionGeneration.current)
           setReviewPersistenceState("saved");
         setQueueNotice("");
@@ -943,15 +965,18 @@ export default function Home() {
           (!retryPending || retryNeedsAdvance)
         )
           setReviewPersistenceState("refreshingQueue");
+        const finishQueueReadiness = measureTempoDragPhase("next-card-readiness");
         void refreshDatabaseQueue(
           !advancedFromCache && (!retryPending || retryNeedsAdvance),
         )
           .then(() => {
+            requestAnimationFrame(() => finishQueueReadiness());
             if (transitionGeneration === reviewTransitionGeneration.current)
               setReviewPersistenceState("idle");
             setSafeBreakCounter((count) => count + 1);
           })
           .catch(() => {
+            finishQueueReadiness(true);
             if (transitionGeneration === reviewTransitionGeneration.current)
               setReviewPersistenceState("queueFailed");
             showTrainingNotice("Result saved. The queue could not be refreshed.", "warning");
@@ -1052,7 +1077,9 @@ export default function Home() {
 
   useEffect(
     () => () => {
-      clearTimeout(replyTimer.current);
+      const canceledReply = pendingOpponentReply.current;
+      clearTimeout(canceledReply?.timer);
+      canceledReply?.finish(true);
       clearTimeout(completionTimer.current);
     },
     [],

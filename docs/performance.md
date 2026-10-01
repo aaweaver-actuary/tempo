@@ -33,7 +33,7 @@ These are review targets for a comparable pinned runner, not merge-blocking budg
 | Operation | Observed p95 range | Provisional review target | Scope |
 | --- | ---: | ---: | --- |
 | Warm workspace switch | 29–81 ms across Builder, Games, Endgames, Tactics, and Train | 150 ms | Instrumented view switch through paint; existing sanity assertion is 300 ms. |
-| Board move to visible response | 16–31 ms | 100 ms | Builder board move through paint. |
+| Board after-move to rAF | 16–31 ms | 100 ms | Legacy `move-to-paint` scheduling proxy; starts after drop. |
 | Training card advance | 30–49 ms | 150 ms | Routed prepared cards, click through next visible paint; existing sanity assertion is 500 ms. |
 | Builder similarity worker reply | 14–32 ms | 100 ms | Compact warm query, including worker queue and transfer. |
 | Builder similarity query to paint | 45–116 ms | 200 ms | Warm query through visible result paint. |
@@ -163,6 +163,71 @@ The foreground repertoire statistics endpoint previously issued one review query
 
 Run `npm run bench:motifs` for seven raw samples at 13, 130, 1,300, and 5,200 positions. The benchmark repeats the 13 tactical parity fixtures, includes FEN parsing, and records parsing and detector time separately in `test-results/performance/motif-detection-benchmark.json`. The corpus concentrates on tactical edge cases and repeats positions, so it measures scaling and detector throughput rather than a normal game mix. Before the change, p50 total times were 6.8, 66.5, 675.1, and 2,700.1 ms. Profiling the 1,300-position case found 7,800 line replays because six detectors each replayed the same candidate. Sharing one replay per candidate kept all parity evidence stable and gave p50 totals of 5.5, 58.3, 521.6, and 1,450.9 ms; the profiled replay count fell to 1,300. This is a backend batch computation gain, not a measured browser or foreground API latency change.
 
+## Held-piece drag diagnostics (#31)
+
+Enable local, in-memory capture by loading `/?tempoPerformance=drag`. The default has no drag listeners, observers, or frame loop. In the browser console, `window.tempoPerformance.snapshot()` returns a copy, `reset()` clears capture and leaves the mounted observer ready for the next drag, and `disable()` ends active capture; reload with the flag to start a fresh diagnostic session. The existing copyable debug bundle includes this snapshot. No drag data is persisted or sent automatically.
+
+Capture retains at most ten sessions, 512 input samples and 512 frame samples per session, 64 long tasks, 128 board events, and 128 phase events per session, plus at most 128 active operations across capture. Each hold stops measurement after 30 seconds without cancelling the user's drag. Truncation is explicit. Hidden tabs, pointer cancellation, lost capture, unmount, disablement, and geometry changes terminate measurement with separate reasons. Geometry changes end measurement rather than interpreting cached coordinates as lag. Reset and repeated mounts do not leave duplicate frame loops.
+
+All timestamps use the browser performance time origin in milliseconds; viewport, pointer coordinates, piece centers, grab offsets, and displacement use CSS pixels. Device pixel ratio is retained separately. The first confirmed Chessground drag starts the session. Event samples retain event and receipt timestamps and the number of coalesced events; the last coalesced position is used. Frames retain both the nominal rAF timestamp (`atMs`) and the actual callback receipt time (`callbackAtMs`). `gapMs` is the difference between callback receipt times; `rAFGapMs` separately records the difference between nominal rAF timestamps. A nominal rAF gap can understate a main-thread stall, so the primary cadence summary uses callback gaps. Displacement is the distance from the most recent delivered pointer position to the dragged piece center reconstructed from its inline transform and cached board geometry. Chessground centers the piece under the pointer after dragging begins, so the initial grab offset is retained as context, not subtracted as though it persisted throughout the hold. Orientation is used when computing the origin square center.
+
+`eventAgeMs` means age of the latest delivered input when the frame callback actually executes. It increases while the mouse is stationary and is **not** an input-to-presentation latency. The diagnostic callback can run before Chessground's own callback, so displacement can include a frame of observer ordering. These are DOM-transform and scheduling proxies: neither rAF nor a double rAF proves pixels were presented. The retained legacy `move-to-paint` mark begins in the after-move callback and ends at rAF; call it after-move-to-rAF when interpreting reports. It cannot establish continuous drag smoothness or INP.
+
+Phase records use local operation IDs for drop handling, the intentional opponent-response wait, review persistence, cached/refresh next-card readiness, discovery previews, and Stockfish/Maia work. A phase begins only in opt-in mode; incomplete phases are not successful operations. Snapshot schema version 2 retains original starts in a bounded active-operation registry, including before the first drag. Each overlapping session inherits that start with its original timestamp and operation ID; completion is copied to every associated retained session. Starts after a drop remain associated with the latest session so replies, saves, and readiness remain observable. Deduplicate copied edges by operation ID and edge when aggregating across sessions. Session eviction prunes associations, but an in-flight start can still be inherited by a later session. Registry overflow rejects additional starts and marks `phaseTracking.truncated`; per-session event overflow marks `truncated.phases`. `phaseTracking.activeOperations` counts still-running operations. Reset/disable invalidate operations and late completions; repeated completion is inert. The retained version-1 baseline may have missing pre-drag starts or split phase intervals; its frame/displacement evidence remains historical and unchanged. Readiness endpoints are state/rAF proxies, not physical presentation. Session records contain no raw FENs, game payloads, credentials, or personal identifiers. Existing debug-bundle fields retain their existing redaction contract.
+
+### Repeatable isolated baseline
+
+`make ui-file FILE=held-drag.spec.ts` runs regular deterministic controls against a disposable PostgreSQL stack. An independent bounded DOM probe checks the entire held interval. The positive control flips the board while held and must report cancellation before pointer release; the uninterrupted control must remain active. Status and delayed-preview responses arrive through normal application paths while held. The normal status/preview fixture must stay uninterrupted, and the positive control must interrupt; both assertions inspect the held interval. Any separately reproduced production behavior defect belongs in #32.
+
+`make perf` uses the existing production-build, pinned Linux ARM64 Chromium harness. The held-drag case retains three independent contexts, each with cold and warm-reload holds, for idle, bounded synthetic worker load, discovery response preparation, actual single-thread Stockfish depth-12/MultiPV-5 work, and an injected 80 ms main-thread stall. Capture-on/off order alternates across repetitions; the independent transform probe runs in both. The same synthetic training card, discovery and 40-move pointer path are used. Service workers are blocked in these routed performance contexts so they cannot bypass the fixture responses. Discovery responses are routed fixtures, not measurements of server-side preparation. Stockfish is initialized before the hold and its search starts during it. A workload dispatch timestamp is not proof of uninterrupted CPU occupancy; retained worker messages and completion timestamps qualify actual overlap.
+
+Use `TEMPO_TEST_TIMING_DIR=test-results/performance/issue-31-repeat make perf` to preserve another run without overwriting the previous one. Docker targets require the elevated path described in AGENTS.md. Raw data and summaries are in `held-drag-chromium.json` and the `held-drag-performance` Playwright attachment, including partial results on failure. A `performance-run.json` manifest lets the existing summary reader validate standalone performance runs without claiming a full gate ran. Record commit, fixture/probe version, browser/build/architecture, viewport/DPR, animation preference, Docker capacity and container limits, sample counts, cache state, and workload. Cold means a new browser context and the first measured hold; warm means a reload in that context, not retained React/worker state. GPU/physical presentation and live-backend load remain explicitly unavailable.
+
+The existing performance report reader compares held-drag summaries only for matching fixture, environment, capture mode, workload, and repetition count, with the existing commit/run freshness checks. Its 25% advisory signal is a review prompt, not a merge budget. Frame/displacement sample counts accompany summaries; small repeated distributions do not justify percentile precision or universal latency claims. Capture-on/off frame-gap distributions measure detectable interaction overhead under this harness. Per-event and per-frame `captureCostMs` samples also measure synchronous recorder callback cost (excluding GC outside the callback and unrelated observer callbacks), not a universal overhead bound. The positive-control stall runs in a browser timer task, since DevTools evaluation work need not appear as a long task.
+
+### Diagnostic interpretation and live-capture runbook
+
+- Main-thread stalls: frame gaps overlapping long tasks and operation intervals support this mechanism. The injected stall is a positive control, not a production finding.
+- Board invalidation: disappearing drag state before pointer release, alongside `cancel-move` and changed configuration fields, provides direct interruption evidence even if a later click reaches the correct square.
+- Rendering/compositing: smooth JS/DOM-transform observations with visibly lagging pixels warrant an external browser rendering trace or video. These diagnostics alone cannot establish compositor/GPU latency.
+- Host contention: worker-load or engine scenarios with larger gaps but no corresponding main-thread long tasks support investigation of CPU scheduling. Confirm using host/VM profiling; worker overlap alone does not establish causality.
+
+For a manual capture, load the flagged URL, reset, hold and move a piece through many intermediate positions, release, then copy `JSON.stringify(window.tempoPerformance.snapshot())` through the console or the existing debug bundle. Retain browser/version, commit/build, viewport/DPR, active workload, foreground/hidden state and warm/cold context. Capture idle and loaded runs using the same position and motion. Do not pause/reset live services, expose tokens or publish personal game payloads. Use browser tracing/video separately if physical pixel lag is the concern. Live capture is optional and was not used for the isolated baseline.
+
+
+### Recorded baseline — September 30, 2026
+
+The complete baseline at `91cb391` is retained as [a per-run summary](performance-baselines/held-drag-v3/summary.json), [compressed raw samples](performance-baselines/held-drag-v3/held-drag-chromium.json.gz), and [its run manifest](performance-baselines/held-drag-v3/performance-run.json). The summary includes the decompressed raw artifact's SHA-256. It contains 60 holds: three independent repetitions × five workloads × capture on/off × cold/warm context. All observed holds remained uninterrupted. The regular suite separately detects the injected board-flip cancellation before release and verifies distinct drop/reply/review/readiness phases.
+
+Environment: Apple M3, eight logical host CPUs, 24 GiB host memory; shared ARM64 Docker VM with four CPUs and about 5.77 GiB memory; pinned headless Chromium 153.0.8010.12; production local build; 1280×800 viewport, DPR 1, normal animation preference. No exclusive CPU reservation was made, and the live study stack remained running. Container limits and unavailable GPU/presentation evidence are recorded in the artifact. These measurements do not establish production drag latency.
+
+| Workload | Independent probe callback-gap p95, capture on | Capture off | Recorder frame callback cost p95 | Recorder input callback cost p95 |
+| --- | ---: | ---: | ---: | ---: |
+| idle | 27.21 ms | 23.69 ms | 0.040 ms | 0.050 ms |
+| synthetic-worker | 37.41 ms | 29.36 ms | 0.055 ms | 0.050 ms |
+| discovery-preparation | 29.93 ms | 32.40 ms | 0.050 ms | 0.050 ms |
+| stockfish-worker | 33.18 ms | 33.50 ms | 0.060 ms | 0.055 ms |
+| main-thread-stall | 25.43 ms | 31.93 ms | 0.035 ms | 0.050 ms |
+
+Each row pools callback samples from six holds per capture mode. The independent probe is armed immediately before pointer press and stops before release, so it includes brief setup observations; the per-run summary separately reports strictly confirmed-drag callback gaps from the app recorder. Displacement is a DOM-transform proxy and includes callback ordering and driver granularity; it is not pixel presentation latency. The synchronous recorder cost was small (p95 at most 0.060 ms per frame and 0.055 ms per recorded input), but observable cadence varied across paired loaded runs. Synthetic-worker p95 was higher with capture on, while discovery and stall scenarios were lower; this small shared-host baseline cannot attribute those differences to instrumentation alone or support a hard budget.
+
+All six enabled main-thread-stall holds recorded an overlapping 80–81 ms long task and the independent receipt-cadence positive control passed for all twelve on/off holds. An earlier calibration failed when an 80 ms task yielded only a 66.7 ms nominal rAF gap; the final metric retains nominal timestamps separately and uses actual callback receipt cadence. Stockfish emitted real search messages while held. The normal status/preview regression and these workload holds provide no reproduced board invalidation or proven root cause for the user's live symptom. Longer gaps under load motivate host/main-thread profiling; physical rendering/compositing remains unmeasured.
+
+To compare a future matching run with this saved baseline:
+
+```sh
+mkdir -p test-results/performance/saved-held-drag-v3
+gzip -dc docs/performance-baselines/held-drag-v3/held-drag-chromium.json.gz > test-results/performance/saved-held-drag-v3/held-drag-chromium.json
+cp docs/performance-baselines/held-drag-v3/performance-run.json test-results/performance/saved-held-drag-v3/performance-run.json
+TEMPO_TEST_TIMING_DIR=test-results/performance/held-drag-repeat make perf
+node scripts/report-performance.mjs --directory test-results/performance/held-drag-repeat --baseline test-results/performance/saved-held-drag-v3
+```
+
+Comparisons retain the same dataset/workload and reject different browser, host/VM capacity, viewport/DPR, build mode, fixture/probe version, or incomplete repetition counts. Numerical signals remain advisory; never replace the deterministic cancellation, cleanup, and continuity regressions with a percentile threshold.
+
+Comparable held-drag interruption counters changing from zero to positive produce an advisory “new interrupted holds” signal with a null percentage. Zero-to-zero is unchanged. Incompatible or missing baselines and stale artifacts cannot produce a verdict. These signals do not impose a blocking budget.
+
+The summary reader selects the newest manifest with a valid run timestamp and commit; full-run manifests win timestamp ties. Nested pinned runs inherit their parent full-run timestamp and commit so the enclosing stage ledger remains authoritative. A later standalone performance run gets its own timestamp and excludes old full-stage timings. Artifact timestamps must still be at or after the selected run start and commits must match.
 
 ## Shared-board ownership and input preservation (#32)
 

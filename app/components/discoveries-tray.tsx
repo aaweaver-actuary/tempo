@@ -1,4 +1,5 @@
 "use client";
+import { measureTempoDragPhase } from "../lib/performance";
 import { Button } from "./buttons/BaseButton";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
@@ -504,6 +505,8 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
         (stalePreviewKeys.current.has(key) &&
           performance.now() < (nextPreflightRetryAt.current.get(key) ?? 0)) || !isCurrent()) return;
     requestedPreflights.current.add(key);
+    const finishPreview = measureTempoDragPhase("discovery-preview");
+    let previewFailed = false;
     try {
       const response = await backgroundFetch(`${API_URL}/api/discoveries/${item.id}/recommendations`);
       if (!isCurrent()) return;
@@ -540,6 +543,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
         nextPreflightRetryAt.current.set(key, performance.now() + previewRetryDelayMs);
       else nextPreflightRetryAt.current.delete(key);
     } catch (cause) {
+      previewFailed = true;
       if (!isCurrent()) return;
       stalePreviewKeys.current.delete(key);
       reportDebugError(cause, { kind: "api", source: "discovery preview",
@@ -548,6 +552,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
       setPreviewStatuses((current) => ({ ...current, [item.id]: "failed" }));
       nextPreflightRetryAt.current.set(key, performance.now() + previewRetryDelayMs);
     } finally {
+      finishPreview(previewFailed);
       requestedPreflights.current.delete(key);
       const replacement = currentFeedItems.current.get(item.id);
       if (replacement && !replacement.card_id &&

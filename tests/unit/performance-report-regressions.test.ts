@@ -39,12 +39,12 @@ it("performance summary flags measured regressions without repeating test stages
     expect(report.status, report.stderr).toBe(0);
     const summary = readFileSync(join(currentDirectory, "performance-summary.md"), "utf8");
     expect(summary).toContain("unit");
-    expect(summary).toContain("Builder move to paint p95");
+    expect(summary).toContain("Builder after-move to rAF p95 (legacy move-to-paint)");
     expect(summary).toContain("Builder query to paint p95");
     expect(summary).toContain("30.0% slower");
     const structured = JSON.parse(readFileSync(join(currentDirectory, "performance-summary.json"), "utf8"));
     expect(structured.regressions.map((regression: { metric: string }) => regression.metric))
-      .toEqual(["unit", "Builder move to paint p95"]);
+      .toEqual(["unit", "Builder after-move to rAF p95 (legacy move-to-paint)"]);
 
     const baselineStagePath = join(baselineDirectory, "test-stages-full.json");
     const baselineStage = JSON.parse(readFileSync(baselineStagePath, "utf8"));
@@ -210,4 +210,141 @@ it("performance summary flags newly observed long tasks on the same browser fixt
     rmSync(currentDirectory, { recursive: true, force: true });
     rmSync(baselineDirectory, { recursive: true, force: true });
   }
+});
+
+it("held_drag_reports_reject_stale_or_incomparable_baselines", () => {
+  const currentDirectory = mkdtempSync(join(tmpdir(), "tempo-held-current-"));
+  const baselineDirectory = mkdtempSync(join(tmpdir(), "tempo-held-baseline-"));
+  try {
+    const timestamp = "2026-09-30T12:00:00Z";
+    const fixture = { name: "held-v1", repetitions: 3 };
+    const environment = { browserVersion: "153", buildMode: "production", viewport: { width: 1280 }, devicePixelRatio: 1, dockerCpus: "4" };
+    const artifact = (commit: string, browserEnvironment = environment) => ({ commit, timestamp, environment: browserEnvironment, fixture,
+      summaries: [{ workload: "idle", enabled: true, count: 6, frameGapMs: { p95: commit === "current" ? 50 : 16 }, displacementCssPx: { p95: 5 }, interruptionCount: 0 }] });
+    for (const [directory, commit] of [[currentDirectory, "current"], [baselineDirectory, "baseline"]]) {
+      writeFileSync(join(directory, "test-stages-full.json"), JSON.stringify({ commit, timestamp, environment: { platform: "linux" }, stages: {} }));
+      writeFileSync(join(directory, "held-drag-chromium.json"), JSON.stringify(artifact(commit)));
+    }
+    const runSummary = () => {
+      const result = spawnSync(process.execPath, ["scripts/report-performance.mjs", "--directory", currentDirectory, "--baseline", baselineDirectory], { encoding: "utf8" });
+      expect(result.status, result.stderr).toBe(0);
+      return JSON.parse(readFileSync(join(currentDirectory, "performance-summary.json"), "utf8"));
+    };
+    expect(runSummary().regressions).toHaveLength(1);
+    // Standalone make perf runs have a manifest, not a fabricated full gate.
+    writeFileSync(join(currentDirectory, "performance-run.json"), readFileSync(join(currentDirectory, "test-stages-full.json")));
+    rmSync(join(currentDirectory, "test-stages-full.json"));
+    expect(runSummary().regressions).toHaveLength(1);
+    writeFileSync(join(baselineDirectory, "held-drag-chromium.json"), JSON.stringify(artifact("baseline", { ...environment, dockerCpus: "2" })));
+    expect(runSummary().regressions).toEqual([]);
+    writeFileSync(join(currentDirectory, "held-drag-chromium.json"), JSON.stringify(artifact("stale")));
+    const stale = runSummary();
+    expect(stale.staleArtifacts).toContain("held-drag-chromium.json");
+    expect(stale.metrics).toEqual([]);
+  } finally {
+    rmSync(currentDirectory, { recursive: true, force: true });
+    rmSync(baselineDirectory, { recursive: true, force: true });
+  }
+});
+
+it("held_drag_reports_flag_new_interruptions_without_inventing_percentages", () => {
+  const currentDirectory = mkdtempSync(join(tmpdir(), "tempo-interrupt-current-"));
+  const baselineDirectory = mkdtempSync(join(tmpdir(), "tempo-interrupt-baseline-"));
+  const timestamp = "2026-09-30T12:00:00Z";
+  const writeRun = (directory: string, commit: string, interruptionCount: number, fixture = "held-v3", artifactCommit = commit) => {
+    writeFileSync(join(directory, "performance-run.json"), JSON.stringify({ commit, timestamp, stages: {} }));
+    writeFileSync(join(directory, "held-drag-chromium.json"), JSON.stringify({
+      commit: artifactCommit, timestamp, environment: { browser: "153", architecture: "arm64" }, fixture,
+      summaries: [{ workload: "idle", enabled: true, count: 6, interruptionCount }],
+    }));
+  };
+  const report = (withBaseline = true) => {
+    const run = spawnSync(process.execPath, ["scripts/report-performance.mjs", "--directory", currentDirectory,
+      ...(withBaseline ? ["--baseline", baselineDirectory] : [])], { encoding: "utf8" });
+    expect(run.status, run.stderr).toBe(0);
+    return { markdown: readFileSync(join(currentDirectory, "performance-summary.md"), "utf8"),
+      json: JSON.parse(readFileSync(join(currentDirectory, "performance-summary.json"), "utf8")) };
+  };
+  try {
+    writeRun(baselineDirectory, "baseline", 0);
+    writeRun(currentDirectory, "current", 1);
+    const interrupted = report();
+    expect(interrupted.json.regressions).toEqual([{ metric: "Held drag idle.capture-on interrupted holds",
+      current: 1, baseline: 0, percentage: null, unit: "count" }]);
+    expect(interrupted.markdown).toContain("| 0.0 count | new interrupted holds |");
+    expect(interrupted.markdown).toContain("or new interrupted holds appeared");
+    writeRun(currentDirectory, "current", 0);
+    const unchanged = report();
+    expect(unchanged.json.regressions).toEqual([]);
+    expect(unchanged.markdown).toContain("| 0.0 count | no change |");
+    expect(unchanged.markdown).toContain("no new interrupted holds appeared");
+    writeRun(currentDirectory, "current", 1, "different-fixture");
+    expect(report().json.regressions).toEqual([]);
+    expect(report().markdown).toContain("not comparable");
+    writeRun(currentDirectory, "current", 1, "held-v3", "stale");
+    expect(report().json.staleArtifacts).toContain("held-drag-chromium.json");
+    expect(report().json.regressions).toEqual([]);
+    writeRun(currentDirectory, "current", 1);
+    expect(report(false).json.regressions).toEqual([]);
+    expect(report(false).markdown).toContain("no regression verdict");
+    writeRun(baselineDirectory, "baseline", 1);
+    writeRun(currentDirectory, "current", 2);
+    expect(report().json.regressions[0].percentage).toBe(100);
+  } finally {
+    rmSync(currentDirectory, { recursive: true, force: true });
+    rmSync(baselineDirectory, { recursive: true, force: true });
+  }
+});
+
+it("held_drag_reports_select_the_newest_valid_manifest_and_prefer_full_on_ties", () => {
+  const directory = mkdtempSync(join(tmpdir(), "tempo-manifests-"));
+  const fullTimestamp = "2026-09-30T12:00:00Z";
+  const perfTimestamp = "2026-09-30T13:00:00Z";
+  const writeManifest = (filename: string, commit: string, timestamp: string, full = false) => {
+    writeFileSync(join(directory, filename), JSON.stringify({ commit, timestamp, environment: { platform: "linux" },
+      stages: full ? { unit: { duration_seconds: 40, exit_code: 0 } } : {} }));
+  };
+  const writeArtifact = (commit: string, timestamp: string) => {
+    writeFileSync(join(directory, "held-drag-chromium.json"), JSON.stringify({ commit, timestamp,
+      fixture: "held-v3", environment: { browser: "153" },
+      summaries: [{ workload: "idle", enabled: false, count: 6, interruptionCount: 0 }] }));
+  };
+  const report = () => {
+    const run = spawnSync(process.execPath, ["scripts/report-performance.mjs", "--directory", directory], { encoding: "utf8" });
+    expect(run.status, run.stderr).toBe(0);
+    return { json: JSON.parse(readFileSync(join(directory, "performance-summary.json"), "utf8")),
+      markdown: readFileSync(join(directory, "performance-summary.md"), "utf8") };
+  };
+  try {
+    writeManifest("test-stages-full.json", "old-full", fullTimestamp, true);
+    writeManifest("performance-run.json", "new-perf", perfTimestamp);
+    writeArtifact("new-perf", perfTimestamp);
+    const newest = report();
+    expect(newest.json.commit).toBe("new-perf");
+    expect(newest.json.metrics.map((metric: { id: string }) => metric.id)).toEqual(["held-drag.idle.capture-off.interruptions"]);
+    expect(newest.markdown).toContain("Held drag idle.capture-off interrupted holds");
+    expect(newest.json.staleArtifacts).toEqual([]);
+    writeManifest("test-stages-full.json", "new-full", "2026-09-30T14:00:00Z", true);
+    writeArtifact("new-full", "2026-09-30T14:01:00Z");
+    expect(report().json.metrics).toHaveLength(2);
+    expect(report().json.commit).toBe("new-full");
+    writeManifest("performance-run.json", "nested-perf", "2026-09-30T14:00:00Z");
+    expect(report().json.commit).toBe("new-full");
+    writeManifest("test-stages-full.json", "invalid-full", "invalid", true);
+    writeArtifact("nested-perf", "2026-09-30T14:01:00Z");
+    expect(report().json.commit).toBe("nested-perf");
+    writeManifest("test-stages-full.json", "valid-full", fullTimestamp, true);
+    writeManifest("performance-run.json", "invalid-perf", "invalid");
+    writeArtifact("valid-full", fullTimestamp);
+    expect(report().json.commit).toBe("valid-full");
+    writeArtifact("old-full", fullTimestamp);
+    expect(report().json.staleArtifacts).toContain("held-drag-chromium.json");
+    writeArtifact("valid-full", "2026-09-30T11:59:59Z");
+    expect(report().json.staleArtifacts).toContain("held-drag-chromium.json");
+    writeManifest("test-stages-full.json", "invalid-full", "invalid", true);
+    const invalid = report();
+    expect(invalid.json.commit).toBeNull();
+    expect(invalid.json.metrics).toEqual([]);
+    expect(invalid.markdown).toContain("Commit: `unavailable`");
+  } finally { rmSync(directory, { recursive: true, force: true }); }
 });
