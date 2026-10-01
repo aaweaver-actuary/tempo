@@ -57,7 +57,7 @@ export function movePieceFromOneSquareToAnotherInFenString(
   from: Square,
   to: Square,
 ): string {
-  const chess = new Chess(fen);
+  const chess = new Chess(fen, { skipValidation: true });
   const piece = chess.get(from);
   if (!piece) return fen;
   const symbol = piece.color === "w" ? piece.type.toUpperCase() : piece.type;

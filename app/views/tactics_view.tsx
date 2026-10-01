@@ -1,3 +1,4 @@
+import { TacticCaptureDialog } from "../components/tactic-capture-dialog";
 import { Button } from "../components/buttons/BaseButton";
 import { BoardTools } from "../components/board/board-workspace";
 import { Chess, Square, Move } from "chess.js";
@@ -81,16 +82,34 @@ function TacticsSubHeader({
   );
 }
 
-export default function TacticsView({
+type TacticsViewProps = { theme: BoardTheme; pieceSet: PieceSet; onQueueChanged: () => void; useSharedBoard?: boolean };
+
+export default function TacticsView(props: TacticsViewProps) {
+  const [captureOpen, setCaptureOpen] = useState(false);
+  return <>
+    <div className="tactic-capture-launch"><Button onClick={(event) => {
+      // Safari pointer clicks do not focus buttons; the dialog restores this trigger.
+      event.currentTarget.focus();
+      setCaptureOpen(true);
+    }}>Capture tactic</Button></div>
+    <TacticsWorkspace {...props} captureOpen={captureOpen} />
+    {captureOpen && <TacticCaptureDialog theme={props.theme} pieceSet={props.pieceSet}
+      onQueueChanged={props.onQueueChanged} onClose={() => setCaptureOpen(false)} />}
+  </>;
+}
+
+function TacticsWorkspace({
   theme,
   pieceSet,
   onQueueChanged,
   useSharedBoard = false,
+  captureOpen,
 }: {
   theme: BoardTheme;
   pieceSet: PieceSet;
   onQueueChanged: () => void;
   useSharedBoard?: boolean;
+  captureOpen: boolean;
 }) {
   const [retry, setRetry] = useState(0);
   const [selectedPackId, setSelectedPackId] = useState(
@@ -289,6 +308,8 @@ export default function TacticsView({
         : "correct"
       : null;
 
+  const captureOpenRef = useRef(captureOpen);
+  useLayoutEffect(() => { captureOpenRef.current = captureOpen; }, [captureOpen]);
   const attemptRef = useRef(attempt);
   const entryKeyRef = useRef(entryKey);
   const fenRef = useRef(fen);
@@ -415,6 +436,7 @@ export default function TacticsView({
       const currentStep = stepRef.current;
       const currentPuzzleMoves = puzzleMovesRef.current;
       if (
+        captureOpenRef.current ||
         currentAttempt.phase === "feedbackPause" ||
         currentAttempt.entryKey !== currentEntryKey ||
         currentStep % 2 ||
@@ -473,7 +495,7 @@ export default function TacticsView({
     fen,
     expectedSan: puzzle.moves[step],
     interactionMode:
-      Boolean(outcome) || step >= puzzle.moves.length ? "readonly" : "legal",
+      captureOpen || Boolean(outcome) || step >= puzzle.moves.length ? "readonly" : "legal",
     showHint: hint,
     theme,
     pieceSet,
@@ -591,7 +613,7 @@ export default function TacticsView({
               positionRevision={boardAttempt}
               fen={fen}
               expectedSan={puzzle.moves[step]}
-              locked={Boolean(outcome) || step >= puzzle.moves.length}
+              locked={captureOpen || Boolean(outcome) || step >= puzzle.moves.length}
               showHint={hint}
               theme={theme}
               pieceSet={pieceSet}

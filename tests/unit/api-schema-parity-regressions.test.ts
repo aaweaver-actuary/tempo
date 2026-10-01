@@ -67,3 +67,12 @@ print(json.dumps({'list':{**base,'state':'ready','error':None,'invalidated_pins'
 `], { env: { ...process.env, PYTHONPATH: "backend" }, encoding: "utf8" }));
   expect(segmentationDetailSchema.parse(raw.detail).snapshot_id).toBe(segmentationListSchema.parse(raw.list).recommendations[0].snapshot_id);
 });
+
+
+it("Python tactic capture result satisfies the frontend durable capture contract", async () => {
+  const { tacticCaptureResultSchema } = await import("../../app/lib/tactic-capture-command");
+  const raw = JSON.parse(execFileSync(resolvePython(), ["-c", "from app.models import TacticCaptureResponse; print(TacticCaptureResponse(capture_id='11111111-1111-4111-8111-111111111111',card_id='synthetic',reused=False,queued=True,introduced=True).model_dump_json())"],
+    { env: { ...process.env, PYTHONPATH: "backend" }, encoding: "utf8" }));
+  expect(tacticCaptureResultSchema.parse(raw)).toEqual(raw);
+  expect(tacticCaptureResultSchema.safeParse({ ...raw, queued: "true" }).success).toBe(false);
+});

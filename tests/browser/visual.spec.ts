@@ -171,3 +171,12 @@ test("training-feedback-phone", async ({ page }) => {
     fullPage: true,
   });
 });
+
+for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 720 }]) {
+  test(`Capture tactic dialog ${viewport.width}`, async ({ page }) => {
+    await page.setViewportSize(viewport); await prepareVisualUI(page); await navigate(page, "Tactics");
+    await page.getByRole("button", { name: "Capture tactic", exact: true }).click();
+    await expect(page.getByRole("dialog")).toBeVisible();
+    await expect(page).toHaveScreenshot(`capture-tactic-${viewport.width}.png`, { animations: "disabled", fullPage: true });
+  });
+}

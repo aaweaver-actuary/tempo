@@ -1,14 +1,13 @@
-import { TextArea } from "../components/ui";
 import { TextInput } from "../components/inputs/TextInput";
 import { Button } from "../components/buttons/BaseButton";
 import { useRef as useDialogRef } from "react";
 import { useDialogFocus } from "../hooks/use-dialog-focus";
 import { reportDebugError } from "../lib/debug-reporting";
-import { Square, Chess } from "chess.js";
-import { useEffect, useMemo, useState } from "react";
-import { MoveNavigationControls } from "../components/board/MoveNavigationControls";
-import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
-import { pieceSymbols } from "../const";
+import { Chess } from "chess.js";
+import { useEffect, useState } from "react";
+import { usePositionSolutionEditor } from "../hooks/use-position-solution-editor";
+import { PositionSolutionTabs, PositionSolutionBoard, PositionFenField } from "../components/position-solution-editor";
+import { BoardTheme, PieceSet } from "../components/chessboard";
 import {
   BuilderSession,
   PracticeCard,
@@ -19,7 +18,6 @@ import {
 import { API_URL, assetUrl } from "../const";
 import { usesLocalApi } from "../utils/local";
 import { convertPackagedPuzzleRecordIntoPracticeCard } from "../utils/cards";
-import { editFenSquare, fenAfterMoves, moveFenPiece } from "../utils/fen";
 import CloseButton from "../components/buttons/CloseButton";
 import {
   packagedPuzzleSchema,
@@ -50,17 +48,14 @@ export default function CardEditor({
 }) {
   const dialogRef = useDialogRef<HTMLDivElement>(null);
   useDialogFocus(dialogRef, onClose);
-  const [currentFenString, setCurrentFenString] = useState<string>(
-    card.startingFen,
-  );
-  const [solutionSanMovesList, setSolutionSanMovesList] = useState(card.moves);
-  const [currentPositionInMoveList, setCurrentPositionInMoveList] = useState(0); // starts at index 0
-  const [tab, setTab] = useState<"position" | "solution">("position");
+  const editor = usePositionSolutionEditor(card.startingFen, card.moves);
+  const { startingFen: currentFenString, setStartingFen: setCurrentFenString,
+    moves: solutionSanMovesList, setMoves: setSolutionSanMovesList,
+    cursor: currentPositionInMoveList, setCursor: setCurrentPositionInMoveList,
+    error, setError } = editor;
   const [historyMode, setHistoryMode] = useState<"preserve" | "reset">(
     "preserve",
   );
-  const [piece, setPiece] = useState("B");
-  const [error, setError] = useState("");
   const [prefixSplitPreview, setPrefixSplitPreview] =
     useState<PrefixSplitPreview>();
 
@@ -108,19 +103,7 @@ export default function CardEditor({
     return () => {
       active = false;
     };
-  }, [card.backendId, card.editingIntent]);
-
-  const previewFen = useMemo(() => {
-    try {
-      return fenAfterMoves(
-        solutionSanMovesList,
-        currentPositionInMoveList,
-        currentFenString,
-      );
-    } catch {
-      return currentFenString;
-    }
-  }, [currentPositionInMoveList, currentFenString, solutionSanMovesList]);
+  }, [card.backendId, card.editingIntent, setCurrentFenString, setError, setSolutionSanMovesList]);
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -155,22 +138,7 @@ export default function CardEditor({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, solutionSanMovesList.length]);
-
-  function playSolution(from: Square, to: Square) {
-    const board = new Chess(previewFen);
-    try {
-      const move = board.move({ from, to, promotion: "q" });
-      setSolutionSanMovesList((moves) => [
-        ...moves.slice(0, currentPositionInMoveList),
-        asSanMove(move.san),
-      ]);
-      setCurrentPositionInMoveList((value) => value + 1);
-      setError("");
-    } catch {
-      setError("That move is not legal from this position.");
-    }
-  }
+  }, [onClose, solutionSanMovesList.length, setCurrentPositionInMoveList]);
 
   async function restoreOriginal() {
     try {
@@ -312,88 +280,14 @@ export default function CardEditor({
                 : `Edit ${card.title}`}
             </h2>
           </div>
-          {card.sourceUrl && (
+          {(card.repertoireId === "__tactics__" || card.id.startsWith("lichess-")) &&
+            card.sourceUrl?.startsWith("https://lichess.org/training/") && (
             <Button onClick={restoreOriginal}>Restore Lichess original</Button>
           )}
         </div>
-        <div className="editor-tabs">
-          <Button
-            className={tab === "position" ? "active" : ""}
-            onClick={() => setTab("position")}
-          >
-            Position
-          </Button>
-          <Button
-            className={tab === "solution" ? "active" : ""}
-            onClick={() => setTab("solution")}
-          >
-            Solution
-          </Button>
-        </div>
+        <PositionSolutionTabs editor={editor} />
         <div className="editor-layout">
-          <div className="editor-board-column">
-            {tab === "position" && (
-              <div className="piece-palette">
-                {Object.entries(pieceSymbols).map(([id, symbol]) => (
-                  <Button
-                    className={piece === id ? "active" : ""}
-                    key={id || "remove"}
-                    onClick={() => setPiece(id)}
-                    aria-label={id ? `Place ${id}` : "Remove piece"}
-                  >
-                    {symbol}
-                  </Button>
-                ))}
-              </div>
-            )}
-            <Chessboard
-              fen={tab === "position" ? currentFenString : previewFen}
-              locked={false}
-              showHint={false}
-              theme={theme}
-              pieceSet={pieceSet}
-              editMode={tab === "position"}
-              onSquareSelect={(square) => {
-                if (tab === "position")
-                  setCurrentFenString((current) =>
-                    editFenSquare(current, square, piece),
-                  );
-              }}
-              onFreeMove={(from, to) =>
-                setCurrentFenString((current) =>
-                  moveFenPiece(current, from, to),
-                )
-              }
-              onMove={playSolution}
-            />
-            {tab === "solution" && (
-              <>
-                <MoveNavigationControls
-                  cursor={currentPositionInMoveList}
-                  length={solutionSanMovesList.length}
-                  onChange={setCurrentPositionInMoveList}
-                />
-                <div className="solution-line">
-                  {solutionSanMovesList.length ? (
-                    solutionSanMovesList.map((move, index) => (
-                      <Button
-                        className={
-                          index < currentPositionInMoveList ? "shown" : ""
-                        }
-                        key={`${move}-${index}`}
-                        onClick={() => setCurrentPositionInMoveList(index + 1)}
-                      >
-                        {index % 2 === 0 ? `${Math.floor(index / 2) + 1}.` : ""}
-                        {move}
-                      </Button>
-                    ))
-                  ) : (
-                    <span>Play the solution on the board.</span>
-                  )}
-                </div>
-              </>
-            )}
-          </div>
+          <PositionSolutionBoard editor={editor} theme={theme} pieceSet={pieceSet} />
           <div className="editor-fields">
             {card.editingIntent === "shorten-prefix" && prefixSplitPreview && (
               <section
@@ -422,21 +316,7 @@ export default function CardEditor({
                 </small>
               </section>
             )}
-            <label>
-              FEN
-              <TextArea
-                value={currentFenString}
-                onChange={(event) => {
-                  try {
-                    setCurrentFenString(event.target.value);
-                    setError("");
-                  } catch {
-                    setError("Enter a valid FEN before saving.");
-                  }
-                  setCurrentPositionInMoveList(0);
-                }}
-              />
-            </label>
+            <PositionFenField editor={editor} />
             <p className="editor-key-help">
               ←/→ step · ↑ start · ↓ end · Esc close
             </p>

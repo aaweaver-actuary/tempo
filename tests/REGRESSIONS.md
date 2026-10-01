@@ -107,7 +107,7 @@
 | Completed-tactic tests waste real time on deterministic move and feedback timers | `completed tactic advances while the previous review save is still pending`; `failed earlier save blocks grading after a completed tactic until ordered retry succeeds`; `failed tactic review save keeps the next card visible but blocks grading until retry`; `failed next-card read leaves a completed tactic on its final board for retry` |
 | Opening graph step FEN keys must remain exact when reused from segment traversal for white and black routes | `test_graph_steps_reuse_exact_last_decision_fen_for_white_and_black_routes` |
 | PGN variation traversal must retain nested branches and annotation positions when copying without move history | `test_pgn_variation_copy_without_history_preserves_nested_lines_and_annotations` |
-| Tactic UI timer tests spend real wall-clock time waiting for predictable 800 ms callbacks | `tactic Show Move and Restart retain the guided attempt and classify the opponent reply sound` |
+| Tactic UI timer tests spend real wall-clock time waiting for predictable 800 ms callbacks | `tactic Show Move, capture dialog, and Restart retain the guided attempt and classify the opponent reply sound` |
 | Database writer logs merge queue, gate, lock, and transaction time into an opaque hold duration | `test_database_writer_logs_queue_gate_lock_and_transaction_phase_timings` |
 | Rapid Builder moves queue obsolete similarity searches behind an in-flight worker task | `rapid Builder positions coalesce queued matches to the latest FEN` |
 | Builder repeatedly clones the full repertoire position index for similarity queries | `worker position index retains parity and rejects stale revisions`; `worker index protocol accepts canonical lines and rejects raw lines`; `Builder position index replaces and releases revisions without leaking stale matches`; `Builder similarity worker messages keep the position index in the worker` |
@@ -146,7 +146,7 @@
 | Discovery saves with two 64-character hashes exceed the PostgreSQL operation limit, old failures stay stuck, and startup can falsely announce confirmation | `legacy rejected discovery saves recover with a bounded key after reload`; `uncertain discovery retries retain one operation key and the same choice`; `accepted discovery readmission after reload uses a new operation key`; `terminal discovery retry uses a new operation key for the same choice`; `failed discovery operation receipt requires a new key on explicit retry`; `discovery replay sends at most two due admissions and prioritizes the new choice`; `discovery confirmation waits for a queued admission`; `legacy long discovery save key recovers and queues the saved choice`; `test_postgres_discovery_terminal_readmission_requeues_existing_intent_once` |
 | Recurring discovery popup shows unavailable values for stale persisted analysis evidence | `refreshes stale discovery evidence once and displays the recalculated values`; `describes valid zero-sample analysis without requesting an evidence refresh`; `test_stale_discovery_evidence_refresh_persists_current_fields_and_feed_returns_them` |
 | GitHub issue #4: repertoire opportunities must promote a proven weak descendant without fabricating study, surface practical missing replies, and retain post-gap evidence | `test_issue4_strong_route_weak_target_promotes_without_reviews_or_parent_maturity`; `test_issue4_one_game_and_successful_unstudied_decision_do_not_promote`; `test_issue4_transposed_game_routes_aggregate_at_one_canonical_target`; `test_issue4_dismissed_unchanged_opportunity_stays_dismissed_until_material_games`; `test_issue4_personal_common_move_surfaces_without_masters_or_cohort_data`; `test_issue4_post_gap_finding_reuses_existing_card_and_api_lists_it`; `test_issue4_game_finding_records_canonical_opponent_gap_and_engine_consequence`; `test_issue4_covered_and_low_probability_replies_do_not_create_noise`; `test_issue4_background_scan_yields_to_foreground_and_replays_without_duplication`; `issue 4 opportunities explain promotion, degraded sources, and explicit actions` |
-| Played captures/checks sound differently by actor, or the checked king has no persistent board cue | `played moves use distinct move, capture, and check recordings and respect persisted sound settings`; `tactic Show Move and Restart retain the guided attempt and classify the opponent reply sound`; `checked king gets a persistent translucent red cue that clears when the position changes` |
+| Played captures/checks sound differently by actor, or the checked king has no persistent board cue | `played moves use distinct move, capture, and check recordings and respect persisted sound settings`; `tactic Show Move, capture dialog, and Restart retain the guided attempt and classify the opponent reply sound`; `checked king gets a persistent translucent red cue that clears when the position changes` |
 | Failed tactic advances before correction | `tactic failure remains interactive until the full guided solution is complete` |
 | Puzzle setup omitted / final move snaps back | `tactic setup is applied and the final mate remains during feedback` |
 | Motifs share counters or stale timers | `motif progress is independent and stale completion cannot advance another deck` |
@@ -816,10 +816,69 @@ CI collection also covers `complete browser verification is unfiltered and tagge
 
 Current-main integration: `current-main integration retains CI and segmentation regression registrations` checks every native CI harness test name, the full-command inventory test, segmentation structural/snapshot/preference/migration registrations and AS-01–AS-22 mappings. Merge `2f5521d` preserved executable coverage but replaced all four CI registration paragraphs with PR #50 entries; the new regression failed on that merged registry before restoring the CI entries additively. Both coverage groups remain required.
 
-## Editor board geometry
+## Tactic capture
+
+Backend capture regressions in `backend/tests/test_tactic_capture.py` cover:
+
+- `test_captured_tactic_create_queues_valid_tactic_today`
+- `test_captured_tactic_create_is_idempotent`
+- `test_captured_tactic_reuses_existing_tactic_without_erasing_history`
+- `test_captured_tactic_rejects_invalid_fen_and_illegal_solution`
+- `test_captured_tactics_consume_remaining_daily_tactic_introductions`
+- `test_capture_after_daily_tactic_allowance_still_queues_without_evicting_existing_tactics`
+- `test_recapturing_existing_tactic_does_not_consume_new_tactic_allowance`
+- `test_capture_reopens_finished_queue_even_with_zero_automatic_allowance`
+- `test_capture_conflict_does_not_relabel_or_resurrect_card`
+- `test_capture_places_after_four_cards_and_replay_does_not_move_it`
+- `test_game_tactic_migration_normalizes_only_known_plural_rows`
+- `test_capture_accepts_black_castling_en_passant_and_underpromotion`
+- `test_capture_api_uses_foreground_receipt_and_rejects_mismatched_key`
+- `test_game_tactic_import_repair_verifies_original_before_recorded_destination_changes`
+- `test_game_tactic_import_repair_never_mutates_after_failed_exact_verification`
+
+`test_game_tactical_miss_uses_shared_tactic_capture_path` in
+`backend/tests/test_tactical_opportunities.py` first failed against the plural
+`tactics` defect, then proves canonical cards, game ownership, provenance,
+accepted status, guided placement, and replay.
+
+`tests/unit/tactic-capture-regressions.test.tsx` covers empty/incomplete setup,
+free dragging, invalid FEN rendering, legal line replacement, confirmation,
+underpromotion and FEN state, minimal UCI requests, invalid-save prevention,
+queue invalidation, durable retry identity/bytes, reopened locked edits,
+terminal failure/new identity, completed receipt replay, and accurate source
+links. The named `Python tactic capture result satisfies the frontend durable
+capture contract` producer/consumer test runs in the ordinary unit gate.
+Existing CardEditor repair, revision history, prefix split, and Tactics guided
+attempt tests remain in the regular gate.
+
+Real-board `FEN capture records a real-board solution and is reviewed through
+ordinary Training` and `manual capture places and removes pieces and freely
+drags an incomplete setup on the real board` run in `tactic-capture.spec.ts`,
+registered in the training family. `capture modal keeps incomplete setup
+draggable and restores focus across browser engines` covers Chromium, Firefox,
+and WebKit. Pinned `Capture tactic dialog 390` and `Capture tactic dialog 1280`
+cover responsive rendering.
+
+The regular durability gate runs `scripts/check_postgres_tactic_capture.py`:
+real capture/automatic admission contention, publication-time quota recheck,
+connection restart and unchanged receipt replay, atomic invalid/collision
+rejections, and completed-queue reopening at zero allowance. The populated
+upgrade rehearsal verifies narrow plural normalization while preserving
+identifiers, reviews, archival state, and interval history. Backup comparison
+includes every table, including capture events and operation receipts.
 
 `editor mode transition refreshes geometry after the setup palette moves the
-board` in `tests/unit/board-drag-preservation-regressions.test.tsx` protects
-Chessground hit testing when setup controls move the board without resizing it.
-It failed before the geometry refresh. Existing held-drag regressions remain
-required.
+board` protects Chessground hit testing when switching setup/solution mode. It
+failed before the geometry refresh; the real FEN and manual browser cases also
+failed to record a move before that fix. Held-drag preservation remains covered
+by the affected unit file and existing cross-browser board workflow.
+
+`capture retries an unknown or unavailable receipt with the saved body and
+retains identity through 202` covers lost delivery and SQLite compatibility;
+`card repair offers Lichess restoration only for explicitly packaged tactics`
+protects the ownership boundary.
+
+`capture remains available while tactics load or fail and explains durable capture
+in the demo`, `capture remains available from Packs`, and `capture remains
+available after a tactic pack is complete` protect access across workspace states
+in `tests/unit/shared-board-shell-tactics-regressions.test.tsx`.

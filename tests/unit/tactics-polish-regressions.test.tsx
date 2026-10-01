@@ -96,7 +96,7 @@ it("legacy clean puzzle identities select the next unattempted deck position rat
   await waitFor(() => expect(screen.getByText("Puzzle 25 of 25")).toBeTruthy());
 });
 
-it("tactic Show Move and Restart retain the guided attempt and classify the opponent reply sound", async () => {
+it("tactic Show Move, capture dialog, and Restart retain the guided attempt and classify the opponent reply sound", async () => {
   const submissions: Record<string, unknown>[] = [];
   vi.stubGlobal(
     "fetch",
@@ -121,6 +121,13 @@ it("tactic Show Move and Restart retain the guided attempt and classify the oppo
   fireEvent.click(screen.getByRole("button", { name: /Show move/ }));
   await advanceTacticTimer();
   expect(screen.getByText("Puzzle 1 of 25")).toBeTruthy();
+  expect(screen.getByText("Follow the arrow")).toBeTruthy();
+  const guidedFenBeforeCapture = screen.getByTestId("board").getAttribute("data-fen");
+  fireEvent.click(screen.getByRole("button", { name: "Capture tactic" }));
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  expect((screen.getAllByText("a2e6")[0] as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button", { name: "Close window" }));
+  expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(guidedFenBeforeCapture);
   expect(screen.getByText("Follow the arrow")).toBeTruthy();
   fireEvent.click(screen.getByText("a2e6"));
   expect(playChessMoveSound).toHaveBeenCalledWith(
