@@ -94,3 +94,17 @@ def test_existing_preference_payload_retains_source_checks(prepared):
     _, _, database, _ = prepared
     assert api.save_preference(database, {'repertoire_id': 'rep', 'recommendation_id': 'rec', 'request': {
         'choice': 'keep_current', 'content_version': 3, 'graph_generation': 2, 'source_fingerprint': 'sources'}})['saved']
+
+@pytest.mark.parametrize('snapshot', [None, 'snapshot-one'])
+def test_preference_dispatch_preserves_legacy_receipt_payload_and_new_snapshot(monkeypatch, prepared, snapshot):
+    from app import command_dispatch
+    captured = []
+    def dispatch(kind, payload, *, idempotency_key):
+        captured.append((kind, payload, idempotency_key))
+        return {'saved': True}
+    monkeypatch.setattr(command_dispatch, 'dispatch_command', dispatch)
+    original = {'choice': 'keep_current', 'content_version': 3, 'graph_generation': 2, 'source_fingerprint': 'sources'}
+    if snapshot is not None: original['snapshot_id'] = snapshot
+    api.request_preference('rep', 'rec', api.SegmentationPreference.model_validate(original), idempotency_key='retained-key')
+    assert captured == [('opening.segmentation.preference', {
+        'repertoire_id': 'rep', 'recommendation_id': 'rec', 'request': original}, 'retained-key')]

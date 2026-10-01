@@ -196,7 +196,7 @@ def request_preference(identifier: str, recommendation_id: str, request: Segment
     require_postgres()
     from .command_dispatch import dispatch_command
     return dispatch_command('opening.segmentation.preference', {'repertoire_id': identifier,
-        'recommendation_id': recommendation_id, 'request': request.model_dump()}, idempotency_key=idempotency_key)
+        'recommendation_id': recommendation_id, 'request': request.model_dump(exclude_none=True)}, idempotency_key=idempotency_key)
 
 
 register_command('opening.segmentation.refresh', refresh_segmentation)
