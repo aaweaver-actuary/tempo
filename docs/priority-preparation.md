@@ -73,14 +73,15 @@ same 64-card fixture and cached Docker image/database process, alternating
 baseline and corrected observations twice. The baseline is the exact priority
 worker from main revision `86daf0053cdf7cf523956a723e5b309031ba09bd`
 (source blob `648abb9b7cf2eb74decc51b3aaeb6a9fd6f21909`). The corrected
-revision and environment are recorded in the JSON artifact.
+revision is `524335671dbc48671f5bc11cca9a603cec6fa645`, from a clean tree.
+The container ran Linux ARM64, Python 3.12.14, with four visible CPUs.
 
-At 64 cards the baseline completed in 3.18 and 3.08 seconds, with 65 loader
+At 64 cards the baseline completed in 3.341 and 3.119 seconds, with 65 loader
 and calculator calls and 520 input SQL reads per run. The corrected path
-completed in 0.108 and 0.091 seconds, with one loader and calculator call and
+completed in 0.114 and 0.083 seconds, with one loader and calculator call and
 eight input SQL reads per run. All four runs published identical row hashes,
 had no failures or retries, and committed all 64 rows. The corrected 1,000-card
-path completed in 0.898 seconds with one loader and calculator call, eight
+path completed in 0.885 seconds with one loader and calculator call, eight
 input SQL reads, 1,000 prepared and staged rows, and 65 bounded handler claims.
 
 The artifact records preparation, staging, publication, transaction and lock
@@ -91,3 +92,13 @@ not an isolated wait-time measurement. `tracemalloc` excludes native and
 PostgreSQL server allocations. Foreground samples measure review-row commits,
 not the full HTTP review workflow. The disposable durability check exercises
 the HTTP path under background backlog separately.
+
+For local acceptance, `make python-file FILE=backend/tests/test_postgres_priority_preparation.py`
+passed 15 tests, the game-completion file passed 6, and the focused retention
+test passed 1. The runner test file passed 35. `make docker-durability` passed
+its disposable PostgreSQL stages, including the schema-20/21 recovery rehearsal,
+second-batch crash/reordered retry, source/scoring invalidation, and HTTP study
+durability. The schema upgrade stage took 1.68 seconds. Under its background
+backlog, the HTTP review completed in 124 ms and queue read in 4.8 ms; each is
+one sample. Complete candidate validation is owned by PR CI under the current
+testing policy.
