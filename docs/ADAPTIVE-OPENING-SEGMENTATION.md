@@ -103,3 +103,43 @@ held-drag/opponent callbacks; AS-02–03,13,17–18,22.
 
 Acceptance coverage is recorded in `tests/REGRESSIONS.md`. Future criteria stay
 explicitly pending until the corresponding phase has executable coverage.
+
+## PR 1 validation record
+
+Code revision `73dab6c3f7146bb0cbf79c266a844a4512b6574d`, macOS host,
+isolated Docker PostgreSQL/Redis and Chromium. Python uses the clone's backend
+uv environment; no live study resources were used. Commands below ran at the
+clone root with `TEMPO_PYTHON=backend/.venv/bin/python` for Python targets.
+
+| Command | Result | Test duration |
+|---|---|---|
+| `make plan` | Coverage inspected | static |
+| `make python-file FILE=backend/tests/test_opening_graph.py` | 24 passed; legacy assertions preserved | 3.83s |
+| `make python-file FILE=backend/tests/test_opening_segmentation.py` | 9 passed | 0.06s |
+| `make python-file FILE=backend/tests/test_postgres_opening_segmentation.py` | 4 passed | 0.13s |
+| `make python-file FILE=backend/tests/test_postgres_opening_graph.py` | 12 passed | 0.57s |
+| `make python-file FILE=backend/tests/test_repertoire_integrity.py` | 15 passed | 3.92s |
+| `make python-file FILE=backend/tests/test_postgres_route_contract.py` | 3 passed | 0.55s |
+| `make python-file FILE=backend/tests/test_postgres_upgrade_regressions.py` | 3 passed | 0.40s |
+| `make python-file FILE=backend/tests/test_postgres_cutover.py` | 187 passed | 1.71s |
+| `make unit-file FILE=tests/unit/opening-segmentation-regressions.test.tsx` | 4 passed | 1.26s |
+| `npm run typecheck` | passed | unmeasured |
+| `npm run lint` | passed; six existing warnings | unmeasured |
+| elevated `make docker-durability` | passed all planned stages | per-stage artifact |
+| elevated `make ui-file FILE=opening-segmentation.spec.ts` | 2 passed, phone/desktop | 16.9s |
+
+The durability runner recorded the pre-commit HEAD `86daf005` with working changes
+that became `73dab6c`; the browser runner recorded clean `73dab6c`. Durability
+artifacts are `test-results/performance/postgres-scenarios-durability-tempo-pg-regressions-97966-fb2c6890.json`
+and `test-results/performance/postgres-scenarios-browser-tempo-pg-regressions-99407-9109d766.json`.
+The isolated legal three-route rehearsal used 26 bounded slices, performed zero
+traversals for three unchanged reads, and retained schedules/queue identities.
+An intentionally concurrent foreground FSRS review took 4.58ms while traversal
+was paused; this single observation is a concurrency proof, not a speedup claim.
+Background writes used the pre-existing 50ms transaction budget. An initial
+durability invocation selected a container without the source mount; the runner
+was corrected and the complete command subsequently passed.
+
+CI full validation remains required on the actual PR candidate. Local `make full`
+was not run because CI owns that gate. Decision evidence, executable exercises,
+activation/opt-out and adaptation are not delivered by PR 1.
