@@ -5,6 +5,7 @@ COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/migrations ./backend/migrations
 COPY backend/app/__init__.py backend/app/schema_version.py ./backend/app/
+COPY backend/app/services/tactic_capture_migration.py ./backend/app/services/
 COPY scripts ./scripts
 
 ENTRYPOINT ["python"]

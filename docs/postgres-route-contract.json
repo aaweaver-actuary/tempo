@@ -729,6 +729,13 @@
   },
   {
     "method": "POST",
+    "path": "/api/tactics/captures",
+    "handler": "create_tactic_capture",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
     "path": "/api/tactics/attempt",
     "handler": "tactic_attempt",
     "treatment": "foreground_command",

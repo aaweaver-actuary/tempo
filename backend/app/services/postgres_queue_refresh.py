@@ -20,6 +20,7 @@ from .durable_tasks import (
 from .pgn import ends_on_trained_move
 from .puzzles import validate_puzzle_record
 from .tactical_catalog import pack_records
+from .tactic_admission import DAILY_TACTIC_COUNT_SQL, count_daily_tactic_introductions, lock_daily_tactic_admission
 
 
 _ELIGIBILITY_PHASES = (
@@ -106,7 +107,7 @@ def _prepare_tactical_introduction(queue_date: str) -> dict[str, Any] | None:
 
     limit = _bounded_read("SELECT tactics_new_per_day FROM settings WHERE id=1")[0][0]
     reserved = _bounded_read(
-        "SELECT COUNT(*) FROM tactic_introductions WHERE introduction_date=?", (queue_date,),
+        DAILY_TACTIC_COUNT_SQL, (queue_date,),
     )[0][0]
     if reserved >= limit:
         return None
@@ -146,10 +147,9 @@ def _publish_tactical_introduction(database, queue_date: str,
 
     if prepared is None:
         return False
+    lock_daily_tactic_admission(database, queue_date)
     limit = database.execute_native("SELECT tactics_new_per_day FROM settings WHERE id=1").fetchone()[0]
-    reserved = database.execute_native(
-        "SELECT COUNT(*) FROM tactic_introductions WHERE introduction_date=%s", (queue_date,),
-    ).fetchone()[0]
+    reserved = count_daily_tactic_introductions(database, queue_date)
     if reserved >= limit:
         return False
     cursor = database.execute_native(
@@ -181,6 +181,7 @@ def _publish_tactical_introduction(database, queue_date: str,
         (prepared["card_id"], prepared["training_fen"], prepared["solution_json"],
          queue_date, prepared["puzzle_id"], prepared["source_fen"], queue_date),
     )
+    database.execute_native("SELECT id FROM cards WHERE id=%s FOR UPDATE", (prepared["card_id"],))
     database.execute_native(
         "INSERT INTO tactic_progress(puzzle_id,deck_id,card_id,admitted_at,admission_mode) "
         "VALUES(%s,%s,%s,%s,%s) ON CONFLICT(puzzle_id) DO UPDATE SET "

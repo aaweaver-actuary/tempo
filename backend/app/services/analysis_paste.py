@@ -130,7 +130,7 @@ def _position_moves(line: PastedLine) -> list[tuple[str, str]]:
 def _snapshot(database: sqlite3.Connection) -> tuple[list[dict], list[dict], str]:
     repertoires = [dict(row) for row in database.execute(
         """SELECT id,name FROM repertoires
-           WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__') ORDER BY id"""
+           WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__') ORDER BY id"""
     )]
     lines = [dict(row) for row in database.execute(
         "SELECT id,repertoire_id,trained_color,start_fen,moves_json FROM repertoire_lines ORDER BY id"

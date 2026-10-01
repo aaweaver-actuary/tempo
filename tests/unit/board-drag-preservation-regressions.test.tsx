@@ -232,3 +232,11 @@ it("Chessground drawing cannot mutate published annotations or shared defaults",
   expect(publishedShapes).toEqual([]);
   expect(defaultBoardState.drawnShapes).toEqual([]);
 });
+
+it("editor mode transition refreshes geometry after the setup palette moves the board", () => {
+  const view = render(<Chessboard {...boardProps} editMode />);
+  api.redrawAll.mockClear();
+  view.rerender(<Chessboard {...boardProps} editMode={false} />);
+  expect(api.redrawAll).toHaveBeenCalledOnce();
+  expect(api.set).toHaveBeenLastCalledWith(expect.objectContaining({ movable: expect.objectContaining({ free: false }) }));
+});

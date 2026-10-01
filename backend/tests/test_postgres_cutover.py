@@ -5138,7 +5138,7 @@ def test_postgres_tactical_queue_prepares_outside_database_and_retries_timed_out
                 if settings_attempts == 1:
                     raise TransactionTimeout("read exceeded its budget")
                 return QueryResult([(1,)])
-            if "tactic_introductions" in statement:
+            if "COUNT(*) FROM cards" in statement and "introduced_at" in statement:
                 return QueryResult([(0,)])
             if "tactic_pack_activation" in statement:
                 return QueryResult([("pack-a",)])

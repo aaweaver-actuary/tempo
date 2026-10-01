@@ -4036,3 +4036,23 @@ button {
 .segmentation-positions > div { width: min(280px, 100%); }
 .opening-segmentation { max-width: 960px; }
 .opening-segmentation h3 { margin-top: 1.5rem; }
+
+.tactic-capture-launch { display: flex; justify-content: flex-end; padding: 0 0 10px; }
+.tactic-capture { width: min(940px, 100%); }
+.tactic-capture .editor-layout { grid-template-columns: minmax(300px, 1fr) minmax(240px, .75fr); gap: 20px; }
+.capture-editor { padding: 0; margin: 0; border: 0; min-width: 0; }
+.tactic-capture .move-pieces { width: auto; padding-inline: 8px; font-size: 12px; }
+.tactic-capture .editor-fields { gap: 10px; }
+.capture-confirmation { border: 1px solid var(--line); border-radius: 8px; padding: 10px; }
+.capture-confirmation p { margin-top: 0; }
+@media (max-width: 720px) {
+  .tactic-capture .editor-layout { grid-template-columns: minmax(0, 1fr); }
+  .tactic-capture { padding: 20px 14px; }
+}
+
+.tactic-capture .editor-board-column .board-viewport { width: min(100%, 420px); margin: 0 auto; }
+.tactic-capture .editor-fields label { display: grid; gap: 4px; }
+.tactic-capture .editor-fields :is(input, select) { width: 100%; }
+.tactic-capture .editor-fields textarea { margin-top: 0; }
+.tactic-capture .editor-fields .editor-actions { margin-top: 0; }
+.tactic-capture > .editor-actions { margin-top: 16px; }

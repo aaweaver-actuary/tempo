@@ -263,6 +263,14 @@ def initialize() -> None:
         )
         """,
         "CREATE INDEX IF NOT EXISTS idx_repertoire_cards_card ON repertoire_cards(card_id, repertoire_id)",
+        """CREATE TABLE IF NOT EXISTS tactic_captures (
+            id TEXT PRIMARY KEY,
+            card_id TEXT NOT NULL REFERENCES cards(id) ON DELETE CASCADE,
+            source_kind TEXT NOT NULL CHECK(source_kind IN ('puzzle_rush','game','manual','other')),
+            source_ref TEXT, source_url TEXT, note TEXT NOT NULL DEFAULT '',
+            captured_at TEXT NOT NULL, request_json TEXT NOT NULL, result_json TEXT NOT NULL
+        )""",
+        "CREATE INDEX IF NOT EXISTS idx_tactic_captures_card ON tactic_captures(card_id)",
         """
         CREATE TABLE IF NOT EXISTS reviews (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -1424,6 +1432,11 @@ def initialize() -> None:
         database.execute(
             "CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_source ON reviews(source_kind,source_ref) WHERE source_ref IS NOT NULL"
         )
+        from .services.tactic_capture_migration import normalize_game_tactic_cards
+        if not database.execute("SELECT 1 FROM internal_migrations WHERE name='tactic-capture-v1'").fetchone():
+            normalize_game_tactic_cards(database)
+            database.execute("INSERT INTO internal_migrations(name,applied_at) VALUES('tactic-capture-v1',?)",
+                             (datetime.now(timezone.utc).isoformat(),))
         defensive_preview_migration = "defensive-recognition-preview-v3"
         if not database.execute(
             "SELECT 1 FROM internal_migrations WHERE name=?", (defensive_preview_migration,),
@@ -1469,7 +1482,7 @@ def initialize() -> None:
         ).fetchone():
             for repertoire in database.execute(
                 """SELECT id FROM repertoires
-                   WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__')"""
+                   WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')"""
             ).fetchall():
                 repertoire_id = repertoire["id"]
                 database.execute(
@@ -1597,7 +1610,7 @@ def initialize() -> None:
                       repertoire.id,1,40,'queued','queued',1,
                       json_object('repertoire_id',repertoire.id),0,5,?,?,?
                FROM repertoires repertoire
-               WHERE repertoire.id NOT IN ('__tactics__','__endgames__','__game_mistakes__')
+               WHERE repertoire.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')
                  AND NOT EXISTS(
                      SELECT 1 FROM opening_graph_publications publication
                      WHERE publication.repertoire_id=repertoire.id

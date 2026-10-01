@@ -479,7 +479,7 @@ const actions = {
   maintenance_cli: async () => {
     run("docker", ["build", "-f", "Dockerfile.postgres-maintenance", "-t", maintenanceImage, "."]);
     maintenanceImageCreated = true;
-    for (const script of ["apply_postgres_migrations.py", "migrate_sqlite_to_postgres.py"]) {
+    for (const script of ["apply_postgres_migrations.py", "migrate_sqlite_to_postgres.py", "repair_verified_game_tactics.py"]) {
       run("docker", ["run", "--rm", maintenanceImage, `scripts/${script}`, "--help"]);
     }
     console.log("PASS PostgreSQL maintenance image starts migration and import commands");
@@ -521,6 +521,8 @@ const actions = {
         verifyWorkloadConsumers("exited");
       },
       measureWorkload: () => {
+        run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+          "/source/scripts/check_postgres_tactic_capture.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
           "/source/scripts/check_postgres_background_workloads.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",

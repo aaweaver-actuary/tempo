@@ -109,3 +109,14 @@ it("cursed wins and blessed losses respect the fifty-move draw rule", () => {
     "draw",
   );
 });
+
+
+it("card repair offers Lichess restoration only for explicitly packaged tactics", () => {
+  const card = { id: asCardId("captured"), kind: "puzzle" as const, title: "Synthetic", subtitle: "Captured tactic",
+    startingFen: asFenString(new Chess().fen()), moves: [asSanMove("e4")], userMoveTarget: 1,
+    sourceUrl: "https://lichess.org/training/synthetic", repertoireId: asRepertoireId("__captured_tactics__") };
+  const view = render(<CardEditor practiceCard={card} boardTheme="brown" pieceSet="cburnett" onClose={vi.fn()} onSave={vi.fn()} />);
+  expect(screen.queryByRole("button", { name: "Restore Lichess original" })).toBeNull();
+  view.rerender(<CardEditor practiceCard={{ ...card, repertoireId: asRepertoireId("__tactics__") }} boardTheme="brown" pieceSet="cburnett" onClose={vi.fn()} onSave={vi.fn()} />);
+  expect(screen.getByRole("button", { name: "Restore Lichess original" })).toBeTruthy();
+});

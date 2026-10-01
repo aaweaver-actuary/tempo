@@ -1,8 +1,9 @@
-import { render, waitFor, screen } from "@testing-library/react";
+import { fireEvent, render, waitFor, screen } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import TacticsView from "../../app/views/tactics_view";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import { asCardId, asFenString } from "../../app/types";
+import { loadTacticsDeck } from "../../app/lib/workspace-data";
 
 vi.mock("../../app/components/chessboard", () => ({
   Chessboard: () => <div data-testid="board" />,
@@ -107,4 +108,35 @@ it("Tactics shared board publishes shell ownership and hides local board instanc
   expect(screen.queryByTestId("board")).toBeNull();
   view.unmount();
   expect(useBoardShellStore.getState().board.owner).toBe("train");
+});
+
+it("capture remains available while tactics load or fail and explains durable capture in the demo", async () => {
+  vi.mocked(loadTacticsDeck).mockRejectedValueOnce(new Error("Synthetic pack unavailable"));
+  render(<TacticsView theme="brown" pieceSet="cburnett" onQueueChanged={vi.fn()} />);
+  const launch = screen.getByRole("button", { name: "Capture tactic" });
+  expect(screen.getByText("Preparing puzzles…")).toBeTruthy();
+  await waitFor(() => expect(screen.getByText("Synthetic pack unavailable")).toBeTruthy());
+  fireEvent.click(launch);
+  expect(screen.getByText(/Durable tactic capture requires local Tempo/)).toBeTruthy();
+  expect(screen.queryByRole("button", { name: "Add to training" })).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Close window" }));
+  expect(launch).toBe(document.activeElement);
+});
+
+it("capture remains available from Packs", async () => {
+  render(<TacticsView theme="brown" pieceSet="cburnett" onQueueChanged={vi.fn()} />);
+  await waitFor(() => expect(screen.getByRole("tab", { name: "Packs" })).toBeTruthy());
+  fireEvent.click(screen.getByRole("tab", { name: "Packs" }));
+  fireEvent.click(screen.getByRole("button", { name: "Capture tactic" }));
+  expect(screen.getByRole("dialog")).toBeTruthy();
+});
+
+it("capture remains available after a tactic pack is complete", async () => {
+  localStorage.setItem("tempo-tactics-progress-v2", JSON.stringify({
+    "hangingPiece-easy-01": { clean: 1, index: 1, cleanIds: ["shared-tactics-1"] },
+  }));
+  render(<TacticsView theme="brown" pieceSet="cburnett" onQueueChanged={vi.fn()} />);
+  await waitFor(() => expect(screen.getByText(/This pack is complete/)).toBeTruthy());
+  fireEvent.click(screen.getByRole("button", { name: "Capture tactic" }));
+  expect(screen.getByRole("dialog")).toBeTruthy();
 });

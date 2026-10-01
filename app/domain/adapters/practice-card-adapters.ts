@@ -80,7 +80,8 @@ export function mapQueueCardToPracticeCard(
         : card.content_type === "defense"
         ? "From an analyzed game"
         : card.content_type === "tactic"
-        ? `Lichess puzzle ${card.source_ref ?? ""}`
+        ? card.repertoire_id === "__tactics__" ? `Lichess puzzle ${card.source_ref ?? ""}`
+          : card.repertoire_id === "__game_tactics__" ? "From an analyzed game" : "Captured tactic"
         : card.repertoire_source,
     startingFen,
     moves:
@@ -88,7 +89,7 @@ export function mapQueueCardToPracticeCard(
         ? []
         : movesToSanFormat(startingFen, validatedLine.moves).map(asSanMove),
     userMoveTarget: card.content_type === "defense" ? 1 : Math.ceil(card.moves.length / 2),
-    sourceUrl: card.content_type !== "defense" && card.source_ref
+    sourceUrl: card.content_type === "tactic" && card.repertoire_id === "__tactics__" && card.source_ref
       ? `https://lichess.org/training/${card.source_ref}`
       : undefined,
     orientation:
