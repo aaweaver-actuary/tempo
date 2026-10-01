@@ -88,7 +88,7 @@ def admit_pgn_import(database: PostgresConnection, raw_payload: dict[str, Any]) 
     existing_repertoire = database.execute_native(
         "SELECT repertoire.id FROM repertoires repertoire "
         "WHERE repertoire.source_name=%s "
-        "AND repertoire.id NOT IN ('__tactics__','__endgames__','__game_mistakes__') "
+        "AND repertoire.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__') "
         "AND EXISTS(SELECT 1 FROM repertoire_lines line "
         "WHERE line.repertoire_id=repertoire.id AND line.trained_color=%s) "
         "ORDER BY repertoire.created_at DESC LIMIT 1",
@@ -97,7 +97,7 @@ def admit_pgn_import(database: PostgresConnection, raw_payload: dict[str, Any]) 
     repertoire_id = existing_repertoire[0] if existing_repertoire else str(uuid.uuid4())
     database.execute_native(
         "UPDATE repertoires SET is_main=0 "
-        "WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__')"
+        "WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')"
     )
     database.execute_native(
         "INSERT INTO repertoires(id,name,source_name,created_at,is_main) "

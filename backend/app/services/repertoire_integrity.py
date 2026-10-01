@@ -18,7 +18,7 @@ from .database_executor import submit_background_write
 from .cards import card_id
 from .repertoire_comparison import canonical_fen
 
-SYSTEM_REPERTOIRES = {"__tactics__", "__endgames__", "__game_mistakes__"}
+SYSTEM_REPERTOIRES = {"__tactics__", "__endgames__", "__game_mistakes__", "__game_tactics__", "__captured_tactics__"}
 _LOGGER = logging.getLogger("tempo.background")
 
 
@@ -292,6 +292,7 @@ def enqueue_integrity_scans(
     """Queue integrity work without changing the last published result."""
 
     queued: list[str] = []
+    system_placeholders = ",".join("?" for _ in SYSTEM_REPERTOIRES)
     from ..database import connection
 
     with connection(background=background) as database:
@@ -301,9 +302,9 @@ def enqueue_integrity_scans(
             ids = [
                 row[0]
                 for row in database.execute(
-                    """SELECT r.id FROM repertoires r
+                    f"""SELECT r.id FROM repertoires r
                        LEFT JOIN repertoire_integrity_state s ON s.repertoire_id=r.id
-                       WHERE r.id NOT IN (?,?,?)
+                       WHERE r.id NOT IN ({system_placeholders})
                          AND (s.repertoire_id IS NULL OR s.status='unchecked' OR s.scan_status='failed')
                        ORDER BY r.id""",
                     tuple(SYSTEM_REPERTOIRES),
@@ -313,7 +314,7 @@ def enqueue_integrity_scans(
             ids = [
                 row[0]
                 for row in database.execute(
-                    "SELECT id FROM repertoires WHERE id NOT IN (?,?,?) ORDER BY id",
+                    f"SELECT id FROM repertoires WHERE id NOT IN ({system_placeholders}) ORDER BY id",
                     tuple(SYSTEM_REPERTOIRES),
                 )
             ]

@@ -10,11 +10,13 @@ import chess
 from fastapi import HTTPException
 
 from .command_gateway import register_command
-from .models import GameFindingCardRequest
+from .models import GameFindingCardRequest, TacticCaptureRequest
 from .postgres_store import PostgresConnection
 from .queue_position_lock import lock_queue_date_for_position
 from .services.cards import card_id
 from .services.review_service import ensure_card_queued_after
+from .services.tactic_capture import capture_tactic, game_capture_id, validate_tactic_line
+from .queue_commands import request_queue_refresh_in_transaction
 
 
 def _finding_card_inputs(database, finding_id: str, request: GameFindingCardRequest,
@@ -86,11 +88,17 @@ def _finding_card_inputs(database, finding_id: str, request: GameFindingCardRequ
     except ValueError as error:
         raise HTTPException(422, "The proposed study line contains an illegal move") from error
     normalized_fen = chess.Board(starting_fen).fen()
-    existing = database.execute(
-        "SELECT id FROM cards WHERE content_type=? AND source_fen=? AND moves_json=? AND archived=0",
-        ("tactics" if finding["kind"] == "tactical miss" else "middlegame",
-         normalized_fen, json.dumps(normalized_moves)),
-    ).fetchone()
+    if finding["kind"] == "tactical miss":
+        normalized_fen, normalized_moves, trained_color = validate_tactic_line(starting_fen, normalized_moves)
+        existing = database.execute(
+            "SELECT id FROM cards WHERE id=? AND content_type='tactic' AND archived=0 AND superseded_by IS NULL",
+            (card_id(normalized_fen, normalized_moves),),
+        ).fetchone()
+    else:
+        existing = database.execute(
+            "SELECT id FROM cards WHERE content_type='middlegame' AND source_fen=? AND moves_json=? AND archived=0",
+            (normalized_fen, json.dumps(normalized_moves)),
+        ).fetchone()
     existing_card_id = existing["id"] if existing else None
     preview = {
         "starting_fen": starting_fen, "moves": normalized_moves,
@@ -113,11 +121,24 @@ def save_finding_card(database: PostgresConnection, payload: dict[str, Any]) -> 
     if not request.save:
         raise HTTPException(422, "Save command requires save=true")
     finding, preview, normalized_fen, normalized_moves, existing_card_id = (
-        _finding_card_inputs(database, finding_id, request, lock=True)
+        _finding_card_inputs(database, finding_id, request, lock=hasattr(database, "execute_native"))
     )
     created_at = datetime.now(timezone.utc).isoformat()
-    repertoire_id = "__game_tactics__" if finding["kind"] == "tactical miss" else "__game_mistakes__"
-    repertoire_name = "Game tactics" if finding["kind"] == "tactical miss" else "Game mistakes"
+    if finding["kind"] == "tactical miss":
+        captured = capture_tactic(database, TacticCaptureRequest(
+            capture_id=game_capture_id(finding_id), starting_fen=preview["starting_fen"],
+            moves=normalized_moves, source_kind="game", source_ref=finding_id,
+        ), game_finding=True)
+        database.execute(
+            "UPDATE game_findings SET card_id=?,status='accepted',updated_at=? WHERE id=?",
+            (captured["card_id"], created_at, finding_id),
+        )
+        if hasattr(database, "execute_native"):
+            request_queue_refresh_in_transaction(database, date.today().isoformat())
+        return {"preview": {**preview, "existing_card_id": captured["card_id"]},
+                "saved": True, "card_id": captured["card_id"], "reused": captured["reused"]}
+    repertoire_id = "__game_mistakes__"
+    repertoire_name = "Game mistakes"
     database.execute(
         """INSERT OR IGNORE INTO repertoires(id,name,source_name,created_at,is_main)
            VALUES(?,?,?, ?,0)""",
@@ -132,7 +153,7 @@ def save_finding_card(database: PostgresConnection, payload: dict[str, Any]) -> 
                VALUES(?,?,?,?,?,'learning',?,?,?,?,?,?) ON CONFLICT(id) DO NOTHING""",
             (study_card_id, repertoire_id, "checkpoint", preview["starting_fen"],
              json.dumps(normalized_moves), date.today().isoformat(),
-             "tactics" if finding["kind"] == "tactical miss" else "middlegame",
+             "middlegame",
              finding_id, normalized_fen, preview["trained_color"], date.today().isoformat()),
         )
         reused = inserted_card.rowcount == 0
@@ -141,16 +162,18 @@ def save_finding_card(database: PostgresConnection, payload: dict[str, Any]) -> 
             (repertoire_id, study_card_id),
         )
     saved_card = database.execute(
-        "SELECT archived,content_type,source_fen,moves_json FROM cards WHERE id=? FOR UPDATE",
+        "SELECT archived,content_type,source_fen,moves_json FROM cards WHERE id=?"
+        + (" FOR UPDATE" if hasattr(database, "execute_native") else ""),
         (study_card_id,),
     ).fetchone()
-    expected_content_type = "tactics" if finding["kind"] == "tactical miss" else "middlegame"
+    expected_content_type = "middlegame"
     if (saved_card is None or saved_card["archived"]
             or saved_card["content_type"] != expected_content_type
             or saved_card["source_fen"] != normalized_fen
             or saved_card["moves_json"] != json.dumps(normalized_moves)):
         raise HTTPException(409, "The study card changed while this save was pending")
-    lock_queue_date_for_position(database, date.today().isoformat())
+    if hasattr(database, "execute_native"):
+        lock_queue_date_for_position(database, date.today().isoformat())
     ensure_card_queued_after(database, study_card_id, 4)
     database.execute(
         "UPDATE game_findings SET card_id=?,status='accepted',updated_at=? WHERE id=?",

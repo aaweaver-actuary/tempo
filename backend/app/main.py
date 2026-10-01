@@ -69,6 +69,8 @@ from .models import (
     ReviewRequest,
     Settings,
     TacticAttemptRequest,
+    TacticCaptureRequest,
+    TacticCaptureResponse,
     TeachingStateRequest,
     ThreatAnalysisSubmission,
     ThreatAnalysisFailureRequest,
@@ -544,6 +546,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     and path_parts[4] in {"report", "failure", "release", "retry"})
             )
         )
+        tactic_capture_command = (path_parts == ["api", "tactics", "captures"]
+                                  and request.method == "POST")
         tactic_attempt_command = (path_parts == ["api", "tactics", "attempt"]
                                   and request.method == "POST")
         tactic_activation_command = (path_parts == ["api", "tactics", "activation"]
@@ -657,7 +661,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     opportunity_refresh_command, coverage_refresh_command,
                     coverage_maia_command, coverage_explorer_session,
                     browser_activity, activity_control_command, activity_progress_command,
-                    task_retry_command, tactic_attempt_command,
+                    task_retry_command, tactic_attempt_command, tactic_capture_command,
                     statistics_refresh_command,
                     defensive_admin_command,
                     defensive_candidate_command,
@@ -961,7 +965,7 @@ def put_settings(s: Settings,
             for row in db.execute(
                 """SELECT r.id FROM repertoires r
                    JOIN repertoire_integrity_state state ON state.repertoire_id=r.id
-                   WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__')
+                   WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')
                      AND state.status='clean'"""
             )
         ] if coverage_changed or previous_settings["discovery_window_days"] != s.discovery_window_days else []
@@ -1981,12 +1985,12 @@ async def import_pgn(
     now = datetime.now(timezone.utc).isoformat()
     with connection() as db:
         existing_repertoire = db.execute(
-            "SELECT r.id FROM repertoires r WHERE source_name=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__') AND EXISTS(SELECT 1 FROM repertoire_lines l WHERE l.repertoire_id=r.id AND l.trained_color=?) ORDER BY created_at DESC LIMIT 1",
+            "SELECT r.id FROM repertoires r WHERE source_name=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__') AND EXISTS(SELECT 1 FROM repertoire_lines l WHERE l.repertoire_id=r.id AND l.trained_color=?) ORDER BY created_at DESC LIMIT 1",
             (file.filename, trained_color),
         ).fetchone()
         rid = existing_repertoire["id"] if existing_repertoire else str(uuid.uuid4())
         db.execute(
-            "UPDATE repertoires SET is_main=0 WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__')"
+            "UPDATE repertoires SET is_main=0 WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')"
         )
         db.execute(
             "INSERT INTO repertoires(id,name,source_name,created_at,is_main) VALUES(?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET is_main=1,source_name=excluded.source_name",
@@ -2197,7 +2201,7 @@ def list_repertoires():
             LEFT JOIN background_tasks graph_task
               ON graph_task.kind='opening_graph_rebuild'
              AND graph_task.deduplication_key=r.id
-            WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__')
+            WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')
             ORDER BY r.created_at DESC
         """,
             (date.today().isoformat(), date.today().isoformat()),
@@ -2220,7 +2224,7 @@ def repertoire_lines():
         rows = db.execute("""SELECT l.id,l.repertoire_id,l.name,l.trained_color,l.start_fen,l.moves_json,
                                   r.name repertoire_name,r.is_main
                            FROM repertoire_lines l JOIN repertoires r ON r.id=l.repertoire_id
-                           WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__') ORDER BY r.created_at,l.created_at""").fetchall()
+                           WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__') ORDER BY r.created_at,l.created_at""").fetchall()
     return {
         "lines": [{**dict(row), "moves": json.loads(row["moves_json"])} for row in rows]
     }
@@ -2477,6 +2481,7 @@ def migration_snapshot():
         "card_revisions",
         "prefix_splits",
         "tactic_progress",
+        "tactic_captures",
         "endgame_templates",
         "endgame_attempts",
         "game_accounts",
@@ -2563,12 +2568,12 @@ def make_main_repertoire(identifier: str,
         )
     with connection() as db:
         if not db.execute(
-            "SELECT 1 FROM repertoires WHERE id=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__')",
+            "SELECT 1 FROM repertoires WHERE id=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')",
             (identifier,),
         ).fetchone():
             raise HTTPException(404, "Repertoire not found")
         db.execute(
-            "UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__')",
+            "UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')",
             (identifier,),
         )
     return {"id": identifier, "is_main": True}
@@ -2583,7 +2588,7 @@ def delete_repertoire(identifier: str,
             "repertoires.delete", {"repertoire_id": identifier},
             idempotency_key=idempotency_key,
         )
-    if identifier in {"__tactics__", "__endgames__"}:
+    if identifier in {"__tactics__", "__endgames__", "__game_mistakes__", "__game_tactics__", "__captured_tactics__"}:
         raise HTTPException(400, "This system repertoire cannot be deleted")
     with connection() as db:
         if not db.execute(
@@ -2604,11 +2609,11 @@ def delete_repertoire(identifier: str,
             )
         db.execute("DELETE FROM repertoires WHERE id=?", (identifier,))
         replacement = db.execute(
-            "SELECT id FROM repertoires WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__') ORDER BY created_at DESC LIMIT 1"
+            "SELECT id FROM repertoires WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__') ORDER BY created_at DESC LIMIT 1"
         ).fetchone()
         if replacement:
             db.execute(
-                "UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__')",
+                "UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')",
                 (replacement[0],),
             )
     enqueue_repertoire_game_refresh(background=False)
@@ -3751,13 +3756,13 @@ def discoveries_feed(offset: int = 0, limit: int = 25):
                FROM repertoire_opportunities opportunity
                WHERE opportunity.status='active'
                  AND opportunity.repertoire_id NOT IN
-                     ('__tactics__','__endgames__','__game_mistakes__','__defense__')""",
+                     ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__')""",
             (datetime.now(timezone.utc).isoformat(),),
         ).fetchone()
         identifiers = [dict(row) for row in database.execute(
             """SELECT id,repertoire_id FROM repertoire_opportunities
                WHERE status='active' AND repertoire_id NOT IN
-                   ('__tactics__','__endgames__','__game_mistakes__','__defense__')
+                   ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__')
                ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?""",
             (limit, offset),
         )]
@@ -4134,6 +4139,25 @@ def tactics_activation(request: TacticActivationRequest,
     return result
 
 
+@app.post("/api/tactics/captures", response_model=TacticCaptureResponse)
+def create_tactic_capture(request: TacticCaptureRequest,
+                         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    capture_id = str(request.capture_id)
+    if idempotency_key and idempotency_key != capture_id:
+        raise HTTPException(422, "Idempotency-Key must match capture_id")
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "tactics.capture.create", {"request": request.model_dump(mode="json")},
+            idempotency_key=capture_id,
+        )
+    from .services.tactic_capture import capture_tactic
+    result = submit_foreground_write(lambda database: capture_tactic(database, request),
+                                     label="tactic-capture")
+    enqueue_daily_queue_refresh()
+    return result
+
+
 @app.post("/api/tactics/attempt")
 def tactic_attempt(request: TacticAttemptRequest,
                    idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
@@ -4196,7 +4220,7 @@ def tactic_attempt(request: TacticAttemptRequest,
             ),
         )
         db.execute(
-            "INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type,scheduling_mode,source_ref,source_fen,state) VALUES(?, '__tactics__','checkpoint',?,?,?,?,?,?,?,'learning')",
+            "INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type,scheduling_mode,source_ref,source_fen,state,introduced_at) VALUES(?, '__tactics__','checkpoint',?,?,?,?,?,?,?,'learning',?)",
             (
                 cid,
                 training_fen,
@@ -4210,6 +4234,7 @@ def tactic_attempt(request: TacticAttemptRequest,
                 "light" if request.correct and request.clean else "normal",
                 request.puzzle_id,
                 request.source_fen,
+                calendar_day.isoformat(),
             ),
         )
         if not request.correct or not request.clean:
@@ -5737,120 +5762,17 @@ def create_card_from_game_finding(finding_id: str, request: GameFindingCardReque
             {"finding_id": finding_id, "request": request.model_dump(mode="json")},
             idempotency_key=idempotency_key,
         )
-    with connection() as db:
-        finding = db.execute(
-            """SELECT f.*,g.color,g.adaptive_excluded,g.analysis_version AS game_analysis_version,
-                      o.active AS opportunity_active,o.analysis_version AS opportunity_analysis_version,
-                      o.accepted_moves_json,o.evidence_json AS opportunity_evidence_json
-               FROM game_findings f JOIN imported_games g ON g.id=f.game_id
-               LEFT JOIN tactical_opportunities o ON o.id=f.source_opportunity_id WHERE f.id=?""",
-            (finding_id,),
-        ).fetchone()
-        if not finding:
-            raise HTTPException(404, "Gameplay finding not found")
-        if finding["kind"] not in {"first big mistake", "repertoire gap", "tactical miss"}:
-            raise HTTPException(422, "This finding cannot create a study card")
-        if finding["adaptive_excluded"]:
-            raise HTTPException(409, "This game is excluded from adaptation")
-        evidence = json.loads(finding["evidence_json"])
-        if finding["kind"] == "tactical miss":
-            if not finding["source_opportunity_id"] or not finding["opportunity_active"] or finding["opportunity_analysis_version"] != finding["game_analysis_version"]:
-                raise HTTPException(409, "This tactical opportunity is stale and must be re-analyzed")
-            if float(finding["confidence"]) < 0.8:
-                raise HTTPException(422, "This tactical miss does not meet the confidence threshold")
-            opportunity_evidence = json.loads(finding["opportunity_evidence_json"] or "{}")
-            evidence = {**opportunity_evidence, **evidence}
-        starting_fen = request.starting_fen or evidence.get("fen")
-        default_line = evidence.get("principal_variation", [])
-        if not default_line:
-            default_line = (evidence.get("candidate_lines") or [{}])[0].get("pv", [])
-        moves = request.moves or default_line[:6]
-        if finding["kind"] == "tactical miss":
-            accepted_moves = set(json.loads(finding["accepted_moves_json"] or "[]"))
-            if not accepted_moves:
-                raise HTTPException(422, "The tactical opportunity has no accepted conversion")
-            if not moves or moves[0] not in accepted_moves:
-                raise HTTPException(422, "The solution must begin with an accepted tactical conversion")
-            if len(moves) < 2:
-                raise HTTPException(422, "The tactical solution is too short to demonstrate the payoff")
-        if not starting_fen or not moves:
-            raise HTTPException(422, "The finding has no legal study line")
-        try:
-            board = chess.Board(starting_fen)
-            trained_color = request.trained_color or finding["color"]
-            if finding["kind"] == "tactical miss" and (board.turn == chess.WHITE) != (trained_color == "white"):
-                raise ValueError("trained color is not on move")
-            normalized_moves = []
-            for move_uci in moves[:6]:
-                move = chess.Move.from_uci(move_uci)
-                if move not in board.legal_moves:
-                    raise ValueError
-                normalized_moves.append(move.uci())
-                board.push(move)
-        except ValueError as error:
-            raise HTTPException(
-                422, "The proposed study line contains an illegal move"
-            ) from error
-        trained_color = request.trained_color or finding["color"]
-        normalized_fen = chess.Board(starting_fen).fen()
-        existing = db.execute(
-            "SELECT id FROM cards WHERE content_type=? AND source_fen=? AND moves_json=? AND archived=0",
-            ("tactics" if finding["kind"] == "tactical miss" else "middlegame", normalized_fen, json.dumps(normalized_moves)),
-        ).fetchone()
-        preview = {
-            "starting_fen": starting_fen,
-            "moves": normalized_moves,
-            "best_move": normalized_moves[0],
-            "trained_color": trained_color,
-            "existing_card_id": existing["id"] if existing else None,
-        }
-        if not request.save:
-            return {"preview": preview, "saved": False}
-        created_at = datetime.now(timezone.utc).isoformat()
-        repertoire_id = "__game_tactics__" if finding["kind"] == "tactical miss" else "__game_mistakes__"
-        repertoire_name = "Game tactics" if finding["kind"] == "tactical miss" else "Game mistakes"
-        db.execute(
-            """INSERT OR IGNORE INTO repertoires(id,name,source_name,created_at,is_main)
-               VALUES(?,?,?, ?,0)""",
-            (repertoire_id, repertoire_name, "Accepted personal game findings", created_at),
-        )
-        study_card_id = (
-            existing["id"] if existing else card_id(starting_fen, normalized_moves)
-        )
-        if not existing:
-            db.execute(
-                """INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type,
-                   source_ref,source_fen,trained_color,introduced_at)
-                   VALUES(?,?,?,?,?,'learning',?,? ,?,?,?,?)""",
-                (
-                    study_card_id,
-                    repertoire_id,
-                    "checkpoint",
-                    starting_fen,
-                    json.dumps(normalized_moves),
-                    date.today().isoformat(),
-                    "tactics" if finding["kind"] == "tactical miss" else "middlegame",
-                    finding_id,
-                    normalized_fen,
-                    trained_color,
-                    date.today().isoformat(),
-                ),
-            )
-            db.execute(
-                "INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)",
-                (repertoire_id, study_card_id),
-            )
-        ensure_card_queued_after(db, study_card_id, 4)
-        db.execute(
-            "UPDATE game_findings SET card_id=?,status='accepted',updated_at=? WHERE id=?",
-            (study_card_id, created_at, finding_id),
-        )
-    return {
-        "preview": {**preview, "existing_card_id": study_card_id},
-        "saved": True,
-        "card_id": study_card_id,
-        "reused": bool(existing),
-    }
+    from .finding_card_commands import preview_finding_card, save_finding_card
+    if not request.save:
+        with read_connection() as database:
+            return preview_finding_card(database, finding_id, request)
+    result = submit_foreground_write(
+        lambda database: save_finding_card(database, {
+            "finding_id": finding_id, "request": request.model_dump(mode="json"),
+        }), label="finding-card-save",
+    )
+    enqueue_daily_queue_refresh()
+    return result
 
 
 @app.post("/api/games/{game_id:path}/exclusion")

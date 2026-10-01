@@ -193,3 +193,27 @@ in Compose variables, command arguments, or the repository.
    from a verified PostgreSQL backup and replay any accepted command receipts.
    Keep the old volume as historical evidence; use the recurring PostgreSQL
    backup volume and repeat the restore drill regularly.
+
+## Tactic capture schema 25
+
+Schema 25 adds capture provenance and narrowly repairs known game-created plural
+`tactics` cards and their queue buckets. Use the existing stopped-write upgrade
+procedure for an authoritative PostgreSQL database. Preserve the pre-upgrade
+backup and rehearsal evidence; do not start schema-25 services against schema 24.
+
+For a fresh import of an older SQLite snapshot, perform all exact source/import
+verification above before applying the destination-only repair. While writers
+remain stopped, run:
+
+```sh
+docker compose -f docker-compose.postgres.yml -f docker-compose.postgres-maintenance.yml --profile maintenance run --rm -v "$TEMPO_SQLITE_SNAPSHOT:/source/tempo.db:ro" migration scripts/repair_verified_game_tactics.py /source/tempo.db
+```
+
+The repair repeats exact verification before its first change, records the
+unchanged snapshot SHA-256 in `internal_migrations`, and is inert when replayed
+with the same bytes. Preserve the original comparison artifacts; repaired rows
+intentionally differ from the historical source. Take and restore a post-repair
+PostgreSQL backup, then compare every PostgreSQL table with
+`verify_postgres_backup.py`. Full behavior and quota semantics are documented in
+[TACTIC-CAPTURE.md](TACTIC-CAPTURE.md). No live upgrade is performed by development
+or test commands.

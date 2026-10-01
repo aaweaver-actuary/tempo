@@ -7,6 +7,7 @@ from pathlib import Path
 
 from .cards import card_id
 from .puzzles import validate_puzzle_record
+from .tactic_admission import count_daily_tactic_introductions, lock_daily_tactic_admission
 
 DATA_ROOT = Path(os.getenv('TEMPO_CATALOG_ROOT', str(Path(__file__).resolve().parents[3] / 'public')))
 
@@ -61,8 +62,9 @@ def activate(db, pack_ids, active):
 
 
 def seed_tactical_introductions(db, day):
+    lock_daily_tactic_admission(db, day)
     limit = db.execute('SELECT tactics_new_per_day FROM settings WHERE id=1').fetchone()[0]
-    reserved = db.execute('SELECT COUNT(*) FROM tactic_introductions WHERE introduction_date=?',(day,)).fetchone()[0]
+    reserved = count_daily_tactic_introductions(db, day)
     if reserved >= limit:
         return
     active = sorted(row[0] for row in db.execute('SELECT pack_id FROM tactic_pack_activation WHERE active=1'))
@@ -72,7 +74,7 @@ def seed_tactical_introductions(db, day):
     seen = {row[0] for row in db.execute('SELECT puzzle_id FROM tactic_progress WHERE admitted_at IS NOT NULL')}
     maximum = db.execute('SELECT COALESCE(MAX(position),-1) FROM daily_queue WHERE queue_date=?',(day,)).fetchone()[0]
     db.execute("INSERT OR IGNORE INTO repertoires(id,name,source_name,created_at) VALUES('__tactics__','Tactics','Lichess puzzle database',?)",(day,))
-    for _ in range(limit-reserved):
+    while count_daily_tactic_introductions(db, day) < limit:
         ordered = [pack for pack in active if pack > cursor] + [pack for pack in active if pack <= cursor]
         selection = next(((pack,record) for pack in ordered for record in pack_records(pack) if record['PuzzleId'] not in seen),None)
         if not selection:

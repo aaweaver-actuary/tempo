@@ -10,13 +10,24 @@ from typing import Any
 from fastapi import HTTPException
 
 from .command_gateway import register_command
-from .models import TacticAttemptRequest
+from .models import TacticAttemptRequest, TacticCaptureRequest
 from .postgres_store import PostgresConnection
 from .queue_position_lock import lock_queue_date_for_position
 from .queue_commands import request_queue_refresh_in_transaction
 from .services.cards import card_id
 from .services.review_service import ensure_card_queued_after
 from .services.tactical_catalog import activate
+from .services.tactic_capture import capture_tactic
+from .services.tactic_admission import lock_daily_tactic_admission
+
+
+def create_tactic_capture(database: PostgresConnection, payload: dict[str, Any]) -> dict:
+    result = capture_tactic(database, TacticCaptureRequest.model_validate(payload["request"]))
+    request_queue_refresh_in_transaction(database, date.today().isoformat())
+    return result
+
+
+register_command("tactics.capture.create", create_tactic_capture)
 
 
 def submit_tactic_attempt(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
@@ -25,6 +36,7 @@ def submit_tactic_attempt(database: PostgresConnection, payload: dict[str, Any])
     training_fen = str(payload["training_fen"])
     solution = [str(move) for move in payload["solution"]]
     tactic_card_id = card_id(training_fen, solution)
+    lock_daily_tactic_admission(database, date.today().isoformat())
     database.execute_native(
         "SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))",
         (f"tempo:tactic-puzzle:{request.puzzle_id}",),
@@ -58,13 +70,13 @@ def submit_tactic_attempt(database: PostgresConnection, payload: dict[str, Any])
     )
     database.execute(
         "INSERT OR IGNORE INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,"
-        "content_type,scheduling_mode,source_ref,source_fen,state) "
-        "VALUES(?, '__tactics__','checkpoint',?,?,?,?,?,?,?,'learning')",
+        "content_type,scheduling_mode,source_ref,source_fen,state,introduced_at) "
+        "VALUES(?, '__tactics__','checkpoint',?,?,?,?,?,?,?,'learning',?)",
         (tactic_card_id, training_fen, json.dumps(solution),
          (calendar_day + timedelta(days=light_days)
           if request.correct and request.clean else calendar_day).isoformat(),
          "tactic", "light" if request.correct and request.clean else "normal",
-         request.puzzle_id, request.source_fen),
+         request.puzzle_id, request.source_fen, calendar_day.isoformat()),
     )
     database.execute("SELECT id FROM cards WHERE id=? FOR UPDATE", (tactic_card_id,))
     if not request.correct or not request.clean:

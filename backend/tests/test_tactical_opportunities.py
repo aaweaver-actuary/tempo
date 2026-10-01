@@ -86,7 +86,7 @@ def test_tactical_queue_skip_keeps_finding_pending_and_ignore_removes_it(tmp_pat
         assert client.get("/api/game-findings/tactical-queue").json()["remaining"] == 0
 
 
-def test_tactical_card_preview_is_side_effect_free_and_save_admits_one_personal_tactics_card(tmp_path, monkeypatch):
+def test_game_tactical_miss_uses_shared_tactic_capture_path(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         with database.connection() as db:
@@ -99,6 +99,13 @@ def test_tactical_card_preview_is_side_effect_free_and_save_admits_one_personal_
         assert saved.status_code == 200
         with database.connection() as db:
             card = db.execute("SELECT content_type,repertoire_id FROM cards").fetchone()
-            assert tuple(card) == ("tactics", "__game_tactics__")
+            assert tuple(card) == ("tactic", "__game_tactics__")
             assert db.execute("SELECT status FROM game_findings WHERE id='tactical-finding'").fetchone()[0] == "accepted"
             assert db.execute("SELECT COUNT(*) FROM daily_queue").fetchone()[0] == 1
+            capture = db.execute("SELECT source_kind,source_ref FROM tactic_captures").fetchone()
+            assert tuple(capture) == ("game", "tactical-finding")
+            assert db.execute("SELECT attempt_state FROM daily_queue").fetchone()[0] == "guided"
+        replay = client.post("/api/game-findings/tactical-finding/card", json={"save": True})
+        assert replay.status_code == 200 and replay.json()["card_id"] == saved.json()["card_id"]
+        with database.connection() as db:
+            assert db.execute("SELECT COUNT(*) FROM tactic_captures").fetchone()[0] == 1

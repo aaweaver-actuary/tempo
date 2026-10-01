@@ -39,6 +39,12 @@ def main() -> None:
                 "response_json) VALUES('preserved-receipt','test.save','hash','complete',"
                 "'{\"saved\":true}')"
             )
+            database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('__game_tactics__','Game tactics','Synthetic','2026-01-01')")
+            for identifier, owner in [('known-plural','__game_tactics__'), ('unknown-plural','preserved-repertoire')]:
+                database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,content_type,due_date,archived,interval_days) "
+                                 "VALUES(%s,%s,'checkpoint','4k3/8/8/8/8/8/8/4K3 w - - 0 1','[\"e1d2\"]','tactics','2026-01-01',1,17)", (identifier,owner))
+                database.execute("INSERT INTO daily_queue(queue_date,card_id,position,card_bucket) VALUES('2026-01-01',%s,0,'tactics')", (identifier,))
+                database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES(%s,'correct','2026-01-02',1,17)", (identifier,))
             database.commit()
         apply_migrations(rehearsal_dsn)
         apply_migrations(rehearsal_dsn)
@@ -54,6 +60,12 @@ def main() -> None:
                 "SELECT state,response_json,attempt_count,cycle_attempt_count,retry_cycle "
                 "FROM operation_receipts WHERE operation_id='preserved-receipt'"
             ).fetchone() == ("complete", '{"saved":true}', 0, 0, 0)
+            assert database.execute("SELECT id,content_type,archived,interval_days FROM cards ORDER BY id").fetchall() == [
+                ("known-plural", "tactic", 1, 17), ("unknown-plural", "tactics", 1, 17)]
+            assert database.execute("SELECT card_id,card_bucket FROM daily_queue ORDER BY card_id").fetchall() == [
+                ("known-plural", "tactic"), ("unknown-plural", "tactics")]
+            assert database.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 2
+            assert database.execute("SELECT COUNT(*) FROM tactic_captures").fetchone()[0] == 0
             assert database.execute(
                 "SELECT COUNT(*) FROM pg_indexes WHERE indexname="
                 "'idx_threat_candidate_requests_request_role'"

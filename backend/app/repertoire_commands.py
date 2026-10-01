@@ -12,7 +12,7 @@ from .postgres_store import PostgresConnection
 from .services.durable_tasks import enqueue_task_in_transaction
 
 
-_SYSTEM_REPERTOIRES = ("__tactics__", "__endgames__", "__game_mistakes__")
+_SYSTEM_REPERTOIRES = ("__tactics__", "__endgames__", "__game_mistakes__", "__game_tactics__", "__captured_tactics__")
 
 
 def select_main_repertoire(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
@@ -23,15 +23,16 @@ def select_main_repertoire(database: PostgresConnection, payload: dict[str, Any]
     )
     # Every competing main-selection command locks the same eligible rows in
     # stable order before changing the single-main invariant.
+    system_placeholders = ",".join("?" for _ in _SYSTEM_REPERTOIRES)
     repertoire_ids = [row[0] for row in database.execute(
-        "SELECT id FROM repertoires WHERE id NOT IN (?,?,?) ORDER BY id FOR UPDATE",
+        f"SELECT id FROM repertoires WHERE id NOT IN ({system_placeholders}) ORDER BY id FOR UPDATE",
         _SYSTEM_REPERTOIRES,
     )]
     if repertoire_id not in repertoire_ids:
         raise HTTPException(404, "Repertoire not found")
     database.execute(
         "UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END "
-        "WHERE id NOT IN (?,?,?)",
+        f"WHERE id NOT IN ({system_placeholders})",
         (repertoire_id, *_SYSTEM_REPERTOIRES),
     )
     return {"id": repertoire_id, "is_main": True}
