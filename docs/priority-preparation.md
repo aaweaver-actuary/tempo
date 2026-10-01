@@ -28,7 +28,17 @@ reviews. Settings and repertoire edits already request coverage refreshes,
 which in turn request priorities. The epoch fences prevent an in-flight
 calculation from publishing while those follow-ups are pending.
 
-Migration 021 is required before deploying the worker. Follow the stopped
+Migrations 021 and 022 are required before deploying the worker. Migration 022
+marks preparations made by the corrected card-ID ordering rule. An older
+schema-21 preparation has a null ordering version and is replaced through the
+fenced priority enqueue path. Schema-20 tasks carrying `source_signature`, or
+nonzero cursors without a ready preparation, are replaced the same way. This
+leaves the last published generation readable while an unverified generation
+is abandoned for bounded retention. A cursor-zero preparation without legacy
+state can retry after a partial write; a ready preparation resumes staging.
+Replayed old leases cannot request further replacements.
+
+Follow the stopped
 writer backup and migration procedure in
 `docs/STARTUP-BACKGROUND-RECOVERY.md`; the schema version gate prevents an
 old worker from running against the new schema. Roll back code and database
@@ -46,6 +56,38 @@ the old per-card-slice calculation/hash loop made 101 calculator calls in
 2.295 seconds with 0.09 MiB peak traced allocations. One calculation/hash
 took 0.021 seconds with 0.06 MiB peak traced allocations. At 1,000 cards, one
 calculation/hash took 0.210 seconds and 0.73 MiB peak traced allocations.
-These figures isolate the redundant CPU work; input reads, PostgreSQL staged
-rows, transaction latency, and end-to-end speed were not measured because
-the disposable Docker stack was unavailable in the sandbox.
+These figures isolate the redundant CPU work. The disposable PostgreSQL
+measurement below includes input reads, staged rows, and publication.
+
+## Disposable PostgreSQL comparison
+
+The raw observations are in
+[`priority-preparation-2026-10-01.json`](benchmarks/priority-preparation-2026-10-01.json).
+Run `node scripts/test-postgres-docker.mjs --mode priority-benchmark` from the
+repository root to repeat the measurement. The runner uses a disposable Docker
+PostgreSQL stack and stops test-owned background consumers during measurement.
+The frozen calculation time is 2026-10-01 00:00 UTC. Each fixture contains two
+transposing repertoire lines, repeated shared/transposed cards, completed
+coverage evidence, and a personal game position. Both implementations use the
+same 64-card fixture and cached Docker image/database process, alternating
+baseline and corrected observations twice. The baseline is the exact priority
+worker from main revision `86daf0053cdf7cf523956a723e5b309031ba09bd`
+(source blob `648abb9b7cf2eb74decc51b3aaeb6a9fd6f21909`). The corrected
+revision and environment are recorded in the JSON artifact.
+
+At 64 cards the baseline completed in 3.18 and 3.08 seconds, with 65 loader
+and calculator calls and 520 input SQL reads per run. The corrected path
+completed in 0.108 and 0.091 seconds, with one loader and calculator call and
+eight input SQL reads per run. All four runs published identical row hashes,
+had no failures or retries, and committed all 64 rows. The corrected 1,000-card
+path completed in 0.898 seconds with one loader and calculator call, eight
+input SQL reads, 1,000 prepared and staged rows, and 65 bounded handler claims.
+
+The artifact records preparation, staging, publication, transaction and lock
+statement durations, committed progress, memory, and eight concurrent
+foreground review-row insertion samples per observation. No lock timeouts
+occurred. Lock statement time includes execution and possible waiting; it is
+not an isolated wait-time measurement. `tracemalloc` excludes native and
+PostgreSQL server allocations. Foreground samples measure review-row commits,
+not the full HTTP review workflow. The disposable durability check exercises
+the HTTP path under background backlog separately.

@@ -51,6 +51,15 @@ test("durability mode and legacy skip-browser retain study recovery while omitti
   assert.equal(parse(["--mode", "durability"]).skipBrowser, true);
 });
 
+test("priority benchmark mode runs only its isolated PostgreSQL measurement", () => {
+  const options = parse(["--mode", "priority-benchmark"]);
+  assert.deepEqual(postgresTestStages(options), [
+    "compose_config", "image_build", "startup", "service_health", "priority_benchmark", "cleanup",
+  ]);
+  assert.throws(() => parse(["--mode", "priority-benchmark", "--browser-grep", "Train"]),
+    /cannot be combined/);
+});
+
 test("valid opponent-branch durability and background fixtures prescribe one White response per position", () => {
   for (const [pgn, expectedGameCount, initialResponse] of [
     [studyDurabilityPgn, 3, "e2e4"], [backgroundPublicationPgn, 1, "c2c4"],
@@ -116,7 +125,7 @@ test("file focus is explicit, discrete, and restricted to an existing browser ba
   }
 });
 
-for (const mode of ["full", "browser", "durability"]) {
+for (const mode of ["full", "browser", "durability", "priority-benchmark"]) {
   test(`${mode} --list exposes the executable plan without Docker, ports, secrets, or timing files`, (context) => {
     const directory = temporaryDirectory(context);
     const result = spawnSync(process.execPath, [resolve(root, "scripts/test-postgres-docker.mjs"), "--list", "--mode", mode], {
@@ -131,8 +140,8 @@ for (const mode of ["full", "browser", "durability"]) {
 
   test(`${mode} executor invokes exactly its planned actions once, including cleanup`, async () => {
     const called = [];
-    const actions = Object.fromEntries(fullStages.map((name) => [name, async () => { called.push(name); }]));
     const stages = postgresTestStages({ mode });
+    const actions = Object.fromEntries(stages.map((name) => [name, async () => { called.push(name); }]));
     await executePostgresTestPlan(stages, actions, directMeasurement);
     assert.deepEqual(called, stages);
   });
