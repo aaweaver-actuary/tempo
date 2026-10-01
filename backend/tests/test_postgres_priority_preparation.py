@@ -1,9 +1,19 @@
 """Regressions for durable PostgreSQL priority preparation and publication."""
 
 from contextlib import contextmanager
+from pathlib import Path
 from types import SimpleNamespace
 
 from app.services import postgres_priority, priority_retention
+
+
+def test_priority_miss_source_triggers_target_tables_and_publication():
+    migration = (Path(__file__).parents[1] / "migrations"
+                 / "021_priority_preparations.sql").read_text()
+    assert "ON repertoire_decision_events\n" not in migration
+    assert "ON repertoire_decision_events_legacy\n" in migration
+    assert "ON repertoire_decision_events_staged\n" in migration
+    assert "ON game_derivation_jobs\n" in migration
 
 
 class Result:

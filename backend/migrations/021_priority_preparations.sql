@@ -178,9 +178,15 @@ CREATE TRIGGER priority_source_games AFTER INSERT OR DELETE OR UPDATE OF
 CREATE TRIGGER priority_source_positions AFTER INSERT OR DELETE OR UPDATE OF
     game_id,fen_key,move_uci ON game_position_occurrences
     FOR EACH STATEMENT EXECUTE FUNCTION bump_priority_source_epoch();
-CREATE TRIGGER priority_source_misses AFTER INSERT OR DELETE OR UPDATE OF
-    game_id,repertoire_id,card_id,outcome,played_at ON repertoire_decision_events
+CREATE TRIGGER priority_source_misses_legacy AFTER INSERT OR DELETE OR UPDATE OF
+    game_id,repertoire_id,card_id,outcome,played_at ON repertoire_decision_events_legacy
     FOR EACH ROW EXECUTE FUNCTION priority_repertoire_source_changed();
+CREATE TRIGGER priority_source_misses_staged AFTER INSERT OR DELETE OR UPDATE OF
+    game_id,repertoire_id,card_id,outcome,played_at ON repertoire_decision_events_staged
+    FOR EACH ROW EXECUTE FUNCTION priority_repertoire_source_changed();
+CREATE TRIGGER priority_source_game_publications AFTER UPDATE OF
+    published_repertoire_version ON game_derivation_jobs
+    FOR EACH STATEMENT EXECUTE FUNCTION bump_priority_source_epoch();
 CREATE TRIGGER priority_source_reviews AFTER INSERT OR DELETE OR UPDATE OF
     card_id,source_kind,reviewed_at ON reviews
     FOR EACH ROW EXECUTE FUNCTION priority_review_source_changed();
