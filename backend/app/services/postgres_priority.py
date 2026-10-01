@@ -91,8 +91,8 @@ def _prepare_priority_generation(task, repertoire_id, generation):
             database.execute(
                 """INSERT INTO repertoire_priority_preparations(
                    repertoire_id,generation,source_version,scoring_version,
-                   calculated_at,expected_count,status)
-                   VALUES(?,?,?,?,?,NULL,'preparing')""",
+                   calculated_at,ordering_version,expected_count,status)
+                   VALUES(?,?,?,?,?,1,NULL,'preparing')""",
                 (repertoire_id, generation, _priority_source_version(database, repertoire_id),
                  SCORING_VERSION, calculated_at),
             )
@@ -111,6 +111,8 @@ def _prepare_priority_generation(task, repertoire_id, generation):
             enqueue_priority_refresh_in_transaction(database, repertoire_id)
             return True
     records = calculate_priority_records(calculation_input)
+    # Ordinals are durable identities across a partially committed retry.
+    records.sort(key=lambda record: record.card_id)
     batch_size = _batch_size()
     for start in range(0, len(records), batch_size):
         batch = records[start:start + batch_size]
@@ -172,15 +174,30 @@ def execute_repertoire_priority_slice(task: dict[str, Any]) -> bool:
     payload = task["payload"]
     repertoire_id = str(payload["repertoire_id"])
     generation = int(payload["generation"])
-    if payload.get("cursor") is None:
+    cursor_value = payload.get("cursor")
+    with connection(background=True) as database:
+        if not _has_current_priority_lease(database, task, repertoire_id, generation):
+            return complete_task_slice_in_transaction(database, task)
+        manifest = _load_preparation_manifest(database, repertoire_id, generation)
+        unverifiable_stage = (
+            "source_signature" in payload
+            or (cursor_value is not None and int(cursor_value) > 0
+                and (manifest is None or manifest["status"] != "ready"))
+            or (manifest is not None and manifest["ordering_version"] != 1)
+        )
+        if unverifiable_stage:
+            # Advancing the fenced job/task generation leaves the last published
+            # generation readable and makes replay of this old lease inert.
+            enqueue_priority_refresh_in_transaction(database, repertoire_id)
+            return True
+        needs_preparation = (
+            cursor_value is None or manifest is None
+            or manifest["status"] == "preparing"
+        )
+    if needs_preparation:
         return _prepare_priority_generation(task, repertoire_id, generation)
-    if int(payload["cursor"]) == 0:
-        with connection(background=True) as database:
-            missing_manifest = _load_preparation_manifest(database, repertoire_id, generation) is None
-        if missing_manifest:
-            return _prepare_priority_generation(task, repertoire_id, generation)
 
-    cursor = int(payload["cursor"])
+    cursor = int(cursor_value)
     now = datetime.now(timezone.utc).isoformat()
     with connection(background=True) as database:
         if not _has_current_priority_lease(database, task, repertoire_id, generation):

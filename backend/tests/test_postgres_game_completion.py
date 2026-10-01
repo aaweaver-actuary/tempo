@@ -256,7 +256,7 @@ def test_postgres_priority_generation_stages_and_publishes_after_replay(monkeypa
                         lambda *_args: lease_current)
     monkeypatch.setattr(postgres_priority, "_load_preparation_manifest", lambda *_args: {
         "status": "ready", "scoring_version": postgres_priority.SCORING_VERSION,
-        "source_version": "0:0", "expected_count": 1,
+        "source_version": "0:0", "expected_count": 1, "ordering_version": 1,
     })
     monkeypatch.setattr(postgres_priority, "_priority_source_version",
                         lambda *_args, **_kwargs: "0:0")
