@@ -73,4 +73,4 @@ CREATE TABLE opening_segmentation_preferences (
     updated_at TEXT NOT NULL,
     PRIMARY KEY(repertoire_id,recommendation_id)
 );
-INSERT INTO tempo_schema_migrations(version) VALUES (21);
+INSERT INTO tempo_schema_migrations(version) VALUES (24);

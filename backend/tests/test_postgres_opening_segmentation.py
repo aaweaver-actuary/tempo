@@ -1,11 +1,30 @@
 """AS-14,19,21: advisory worker generation/transaction/lifecycle boundaries."""
 from contextlib import contextmanager
 import json
+from pathlib import Path
+import re
 
 import chess
 
 from app.services import postgres_opening_segmentation as worker
 from app.services import opening_segmentation
+
+
+def test_segmentation_migration_has_unique_number_and_matches_schema_readiness():
+    from app.schema_version import POSTGRES_SCHEMA_VERSION
+
+    migration_directory = Path(__file__).resolve().parents[1] / 'migrations'
+    migration_paths = sorted(migration_directory.glob('[0-9][0-9][0-9]_*.sql'))
+    migration_numbers = [int(path.name[:3]) for path in migration_paths]
+    assert len(migration_numbers) == len(set(migration_numbers))
+    assert max(migration_numbers) == POSTGRES_SCHEMA_VERSION
+    segmentation_migration, = migration_directory.glob('*_opening_segmentation.sql')
+    recorded_version = re.search(
+        r'INSERT INTO tempo_schema_migrations\(version\) VALUES \((\d+)\)',
+        segmentation_migration.read_text(),
+    )
+    assert recorded_version is not None
+    assert int(recorded_version.group(1)) == int(segmentation_migration.name[:3])
 
 
 def test_segmentation_analysis_yields_restarts_and_replays_idempotently(monkeypatch):
