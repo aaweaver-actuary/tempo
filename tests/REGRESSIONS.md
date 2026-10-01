@@ -815,3 +815,11 @@ CI collected-file boundary: `collected browser filenames cannot bypass inventory
 CI collection also covers `complete browser verification is unfiltered and tagged collection preserves selection`: complete browser work uses no focus filter, and partial selection accounts for tags reported by Playwright, including tags on enclosing suites. The executed-ID comparison remains authoritative.
 
 Current-main integration: `current-main integration retains CI and segmentation regression registrations` checks every native CI harness test name, the full-command inventory test, segmentation structural/snapshot/preference/migration registrations and AS-01–AS-22 mappings. Merge `2f5521d` preserved executable coverage but replaced all four CI registration paragraphs with PR #50 entries; the new regression failed on that merged registry before restoring the CI entries additively. Both coverage groups remain required.
+
+## Editor board geometry
+
+`editor mode transition refreshes geometry after the setup palette moves the
+board` in `tests/unit/board-drag-preservation-regressions.test.tsx` protects
+Chessground hit testing when setup controls move the board without resizing it.
+It failed before the geometry refresh. Existing held-drag regressions remain
+required.

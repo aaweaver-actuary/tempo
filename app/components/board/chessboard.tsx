@@ -327,6 +327,11 @@ export function Chessboard({
         selectable: { enabled: !locked },
       });
     }
+    if (previousPosition && modeChanged) {
+      // Setup controls can move the board without resizing it. Refresh the
+      // cached hit-test bounds before input uses the new layout.
+      apiRef.current?.redrawAll();
+    }
     if (previousPosition && mustRefreshInputConfiguration) {
       inputGeneration.current += 1;
       const inputEvents = createInputEvents();
