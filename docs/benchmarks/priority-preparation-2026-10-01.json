@@ -1,0 +1,355 @@
+{
+  "baseline_revision": "86daf0053cdf7cf523956a723e5b309031ba09bd",
+  "baseline_source_blob": "648abb9b7cf2eb74decc51b3aaeb6a9fd6f21909",
+  "corrected_head": "524335671dbc48671f5bc11cca9a603cec6fa645",
+  "corrected_head_dirty": false,
+  "frozen_calculation_time": "2026-10-01T00:00:00+00:00",
+  "fixture": "Two transposing move orders; shared and transposed cards repeated across 64 or 1000 cards; one completed coverage node, two reply candidates, one personal game position",
+  "cache_state": "One schema/image build, alternating 64-card observations after fixture creation; PostgreSQL and Python caches retained across repetitions; 1000-card corrected fixture freshly seeded",
+  "hardware": {
+    "platform": "Linux-6.8.0-64-generic-aarch64-with-glibc2.41",
+    "machine": "aarch64",
+    "processor": "",
+    "cpu_count_visible": 4,
+    "python": "3.12.14",
+    "memory_limit_cgroup": "max"
+  },
+  "limits": {
+    "background_transaction_ms": 250,
+    "background_lock_ms": 25,
+    "maximum_claims": "cards+4",
+    "peak_memory_method": "tracemalloc peak Python allocations across claim/handler and concurrent foreground review inserts"
+  },
+  "observations": [
+    {
+      "mode": "baseline",
+      "cards": 64,
+      "repertoire_lines": 2,
+      "prepared_rows": 0,
+      "staged_rows": 64,
+      "committed_progress": [
+        {
+          "handler_calls": 1,
+          "prepared": 0,
+          "staged": 1
+        },
+        {
+          "handler_calls": 16,
+          "prepared": 0,
+          "staged": 16
+        },
+        {
+          "handler_calls": 32,
+          "prepared": 0,
+          "staged": 32
+        },
+        {
+          "handler_calls": 48,
+          "prepared": 0,
+          "staged": 48
+        },
+        {
+          "handler_calls": 64,
+          "prepared": 0,
+          "staged": 64
+        },
+        {
+          "handler_calls": 65,
+          "prepared": 0,
+          "staged": 64
+        },
+        {
+          "handler_calls": 65,
+          "prepared": 0,
+          "staged": 64
+        }
+      ],
+      "handler_claims": 65,
+      "preparation_seconds": 0.0,
+      "staging_seconds": 3.254357,
+      "publication_seconds": 0.053291,
+      "claim_handler_seconds": 3.307648,
+      "wall_elapsed_seconds": 3.340916,
+      "peak_traced_python_bytes": 1127149,
+      "input_loader_calls": 65,
+      "calculator_calls": 65,
+      "sql_input_reads": 520,
+      "input_loader_seconds": 0.615545,
+      "calculator_seconds": 2.298638,
+      "transaction_count": 65,
+      "transaction_max_ms": 16.84,
+      "transaction_total_ms": 205.778,
+      "lock_statement_count": 130,
+      "lock_statement_max_ms": 0.908,
+      "lock_statement_total_ms": 18.016,
+      "lock_timeouts": 0,
+      "foreground_review_insert_samples_ms": [
+        26.515,
+        2.835,
+        1.923,
+        0.789,
+        5.649,
+        0.929,
+        4.043,
+        0.3
+      ],
+      "published_rows_sha256": "be7ba846c7d271a8c5d95fa18a4bc9f694f3e142890cffc52849db258a84f52f",
+      "failures": 0,
+      "retries": 0
+    },
+    {
+      "mode": "current",
+      "cards": 64,
+      "repertoire_lines": 2,
+      "prepared_rows": 64,
+      "staged_rows": 64,
+      "committed_progress": [
+        {
+          "handler_calls": 1,
+          "prepared": 64,
+          "staged": 0
+        },
+        {
+          "handler_calls": 6,
+          "prepared": 64,
+          "staged": 64
+        }
+      ],
+      "handler_claims": 6,
+      "preparation_seconds": 0.073964,
+      "staging_seconds": 0.027167,
+      "publication_seconds": 0.005844,
+      "claim_handler_seconds": 0.106975,
+      "wall_elapsed_seconds": 0.11387,
+      "peak_traced_python_bytes": 251575,
+      "input_loader_calls": 1,
+      "calculator_calls": 1,
+      "sql_input_reads": 8,
+      "input_loader_seconds": 0.008515,
+      "calculator_seconds": 0.032105,
+      "transaction_count": 18,
+      "transaction_max_ms": 7.914,
+      "transaction_total_ms": 57.074,
+      "lock_statement_count": 72,
+      "lock_statement_max_ms": 0.826,
+      "lock_statement_total_ms": 7.999,
+      "lock_timeouts": 0,
+      "foreground_review_insert_samples_ms": [
+        1.342,
+        2.532,
+        0.498,
+        0.705,
+        0.748,
+        0.529,
+        0.962,
+        2.919
+      ],
+      "published_rows_sha256": "be7ba846c7d271a8c5d95fa18a4bc9f694f3e142890cffc52849db258a84f52f",
+      "failures": 0,
+      "retries": 0
+    },
+    {
+      "mode": "current",
+      "cards": 64,
+      "repertoire_lines": 2,
+      "prepared_rows": 64,
+      "staged_rows": 64,
+      "committed_progress": [
+        {
+          "handler_calls": 1,
+          "prepared": 64,
+          "staged": 0
+        },
+        {
+          "handler_calls": 6,
+          "prepared": 64,
+          "staged": 64
+        }
+      ],
+      "handler_claims": 6,
+      "preparation_seconds": 0.054964,
+      "staging_seconds": 0.018001,
+      "publication_seconds": 0.004392,
+      "claim_handler_seconds": 0.077357,
+      "wall_elapsed_seconds": 0.083481,
+      "peak_traced_python_bytes": 179780,
+      "input_loader_calls": 1,
+      "calculator_calls": 1,
+      "sql_input_reads": 8,
+      "input_loader_seconds": 0.007846,
+      "calculator_seconds": 0.0322,
+      "transaction_count": 18,
+      "transaction_max_ms": 2.453,
+      "transaction_total_ms": 29.843,
+      "lock_statement_count": 72,
+      "lock_statement_max_ms": 0.128,
+      "lock_statement_total_ms": 5.538,
+      "lock_timeouts": 0,
+      "foreground_review_insert_samples_ms": [
+        1.188,
+        0.581,
+        0.333,
+        0.377,
+        0.278,
+        0.337,
+        0.261,
+        0.349
+      ],
+      "published_rows_sha256": "be7ba846c7d271a8c5d95fa18a4bc9f694f3e142890cffc52849db258a84f52f",
+      "failures": 0,
+      "retries": 0
+    },
+    {
+      "mode": "baseline",
+      "cards": 64,
+      "repertoire_lines": 2,
+      "prepared_rows": 0,
+      "staged_rows": 64,
+      "committed_progress": [
+        {
+          "handler_calls": 1,
+          "prepared": 0,
+          "staged": 1
+        },
+        {
+          "handler_calls": 16,
+          "prepared": 0,
+          "staged": 16
+        },
+        {
+          "handler_calls": 32,
+          "prepared": 0,
+          "staged": 32
+        },
+        {
+          "handler_calls": 48,
+          "prepared": 0,
+          "staged": 48
+        },
+        {
+          "handler_calls": 64,
+          "prepared": 0,
+          "staged": 64
+        },
+        {
+          "handler_calls": 65,
+          "prepared": 0,
+          "staged": 64
+        },
+        {
+          "handler_calls": 65,
+          "prepared": 0,
+          "staged": 64
+        }
+      ],
+      "handler_claims": 65,
+      "preparation_seconds": 0.0,
+      "staging_seconds": 3.046471,
+      "publication_seconds": 0.046843,
+      "claim_handler_seconds": 3.093315,
+      "wall_elapsed_seconds": 3.119316,
+      "peak_traced_python_bytes": 348721,
+      "input_loader_calls": 65,
+      "calculator_calls": 65,
+      "sql_input_reads": 520,
+      "input_loader_seconds": 0.578245,
+      "calculator_seconds": 2.246048,
+      "transaction_count": 65,
+      "transaction_max_ms": 5.13,
+      "transaction_total_ms": 130.106,
+      "lock_statement_count": 130,
+      "lock_statement_max_ms": 1.501,
+      "lock_statement_total_ms": 19.376,
+      "lock_timeouts": 0,
+      "foreground_review_insert_samples_ms": [
+        1.146,
+        0.61,
+        0.274,
+        0.311,
+        0.258,
+        0.294,
+        0.26,
+        0.264
+      ],
+      "published_rows_sha256": "be7ba846c7d271a8c5d95fa18a4bc9f694f3e142890cffc52849db258a84f52f",
+      "failures": 0,
+      "retries": 0
+    },
+    {
+      "mode": "current",
+      "cards": 1000,
+      "repertoire_lines": 2,
+      "prepared_rows": 1000,
+      "staged_rows": 1000,
+      "committed_progress": [
+        {
+          "handler_calls": 1,
+          "prepared": 1000,
+          "staged": 0
+        },
+        {
+          "handler_calls": 16,
+          "prepared": 1000,
+          "staged": 240
+        },
+        {
+          "handler_calls": 32,
+          "prepared": 1000,
+          "staged": 496
+        },
+        {
+          "handler_calls": 48,
+          "prepared": 1000,
+          "staged": 752
+        },
+        {
+          "handler_calls": 64,
+          "prepared": 1000,
+          "staged": 1000
+        },
+        {
+          "handler_calls": 65,
+          "prepared": 1000,
+          "staged": 1000
+        }
+      ],
+      "handler_claims": 65,
+      "preparation_seconds": 0.538422,
+      "staging_seconds": 0.321442,
+      "publication_seconds": 0.004784,
+      "claim_handler_seconds": 0.864648,
+      "wall_elapsed_seconds": 0.885372,
+      "peak_traced_python_bytes": 2546142,
+      "input_loader_calls": 1,
+      "calculator_calls": 1,
+      "sql_input_reads": 8,
+      "input_loader_seconds": 0.03053,
+      "calculator_seconds": 0.383992,
+      "transaction_count": 195,
+      "transaction_max_ms": 6.503,
+      "transaction_total_ms": 355.43,
+      "lock_statement_count": 780,
+      "lock_statement_max_ms": 1.235,
+      "lock_statement_total_ms": 59.948,
+      "lock_timeouts": 0,
+      "foreground_review_insert_samples_ms": [
+        1.389,
+        3.591,
+        1.327,
+        1.907,
+        0.508,
+        0.306,
+        0.261,
+        0.258
+      ],
+      "published_rows_sha256": "290a6130555c430901dd163cc08cf0833a2a9d66614372d64712815d931a6d99",
+      "failures": 0,
+      "retries": 0
+    }
+  ],
+  "limitations": [
+    "Foreground samples measure review-row commits, not the HTTP review workflow",
+    "Lock statement durations include execution and possible waiting; they do not isolate wait time",
+    "tracemalloc omits native allocator and PostgreSQL server memory"
+  ]
+}

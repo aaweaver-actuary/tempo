@@ -32,16 +32,52 @@ def execute_priority_retention_slice(task: dict) -> bool:
             "SELECT generation FROM repertoire_priority_publications WHERE repertoire_id=?",
             (repertoire_id,),
         ).fetchone()
-        if publication is None:
+        if publication is None and not postgres_store.configured():
             return False
         priority_job = database.execute(
-            "SELECT generation FROM repertoire_priority_jobs WHERE repertoire_id=?",
+            "SELECT generation,status FROM repertoire_priority_jobs WHERE repertoire_id=?",
             (repertoire_id,),
         ).fetchone()
-        published_generation = int(publication["generation"])
+        published_generation = int(publication["generation"]) if publication else -1
         active_generation = int(priority_job["generation"]) if priority_job else published_generation
         if postgres_store.configured():
-            stale_keys = [
+            keep_preparation = (
+                active_generation if priority_job and priority_job["status"] in {"queued", "running"}
+                else -1
+            )
+            prepared_keys = [
+                (row["generation"], row["ordinal"])
+                for row in database.execute(
+                    """SELECT generation,ordinal FROM repertoire_priority_prepared_rows
+                       WHERE repertoire_id=? AND generation<>?
+                       ORDER BY generation,ordinal LIMIT ? FOR UPDATE SKIP LOCKED""",
+                    (repertoire_id, keep_preparation, ROWS_PER_SLICE),
+                )
+            ]
+            database.executemany(
+                """DELETE FROM repertoire_priority_prepared_rows
+                   WHERE repertoire_id=? AND generation=? AND ordinal=?""",
+                [(repertoire_id, generation, ordinal)
+                 for generation, ordinal in prepared_keys],
+            )
+            removable_manifests = [
+                row["generation"] for row in database.execute(
+                    """SELECT manifest.generation FROM repertoire_priority_preparations manifest
+                       WHERE manifest.repertoire_id=? AND manifest.generation<>?
+                         AND NOT EXISTS(
+                           SELECT 1 FROM repertoire_priority_prepared_rows prepared
+                           WHERE prepared.repertoire_id=manifest.repertoire_id
+                             AND prepared.generation=manifest.generation)
+                       ORDER BY manifest.generation LIMIT ?""",
+                    (repertoire_id, keep_preparation, ROWS_PER_SLICE),
+                )
+            ]
+            database.executemany(
+                "DELETE FROM repertoire_priority_preparations "
+                "WHERE repertoire_id=? AND generation=?",
+                [(repertoire_id, generation) for generation in removable_manifests],
+            )
+            stale_keys = [] if prepared_keys else [
                 (row["generation"], row["card_id"])
                 for row in database.execute(
                     """SELECT generation,card_id FROM repertoire_card_priority_generations
@@ -75,6 +111,17 @@ def execute_priority_retention_slice(task: dict) -> bool:
                WHERE repertoire_id=? AND generation<>? AND generation<>? LIMIT 1""",
             (repertoire_id, published_generation, active_generation),
         ).fetchone() is not None
+        if postgres_store.configured():
+            more_stale_rows = more_stale_rows or database.execute(
+                """SELECT 1 FROM repertoire_priority_prepared_rows
+                   WHERE repertoire_id=? AND generation<>? LIMIT 1""",
+                (repertoire_id, keep_preparation),
+            ).fetchone() is not None
+            more_stale_rows = more_stale_rows or database.execute(
+                """SELECT 1 FROM repertoire_priority_preparations
+                   WHERE repertoire_id=? AND generation<>? LIMIT 1""",
+                (repertoire_id, keep_preparation),
+            ).fetchone() is not None
         if more_stale_rows:
             enqueue_task_in_transaction(
                 database,

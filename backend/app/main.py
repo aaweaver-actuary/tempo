@@ -2841,7 +2841,7 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
                     )
                     return confirmed
                 if request.attempt_id and request.attempt_id != recorded_attempt_id:
-                    return reconcile_completed_review(
+                    reconciled = reconcile_completed_review(
                         db, identifier, entry["id"], attempt_id=request.attempt_id,
                         outcome=request.outcome, guided=request.guided,
                         completed_at=now if request.recorded_at else None,
@@ -2850,6 +2850,10 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
                         competing_review={"outcome": recorded_request.get("outcome") if recorded_request else None,
                                           "completed_at": recorded_time},
                     )
+                    if postgres_store.configured() and content_row and content_row["content_type"] == "opening":
+                        for repertoire_id in owner_ids:
+                            enqueue_priority_refresh_in_transaction(db, repertoire_id)
+                    return reconciled
                 if recorded_request is not None and recorded_request != original_request:
                     raise HTTPException(409, "A different review already completed this queue attempt")
                 if request.recorded_at and recorded_time != now.isoformat():
@@ -2964,13 +2968,13 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
                            refresh_pending=1,last_error=NULL""",
                     (day,),
                 )
-            if entry["gameplay_priority_reason"] == MISS_REASON:
+            if content_row and content_row["content_type"] == "opening":
                 for repertoire_id in owner_ids:
                     enqueue_priority_refresh_in_transaction(db, repertoire_id)
     if not postgres_store.configured():
         if persisted_result["state"] == "mature":
             enqueue_daily_queue_refresh()
-        if entry["gameplay_priority_reason"] == MISS_REASON:
+        if content_row and content_row["content_type"] == "opening":
             for repertoire_id in owner_ids:
                 enqueue_priority_refresh(repertoire_id)
     return persisted_result
