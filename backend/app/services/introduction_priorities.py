@@ -254,8 +254,10 @@ def _personal_evidence(
 
 def _personal_evidence_from_rows(
     rows: list[dict],
+    *,
+    calculated_at: datetime | None = None,
 ) -> dict[str, dict[str, float]]:
-    now = datetime.now(timezone.utc)
+    now = calculated_at or datetime.now(timezone.utc)
     evidence: dict[str, dict[str, float]] = {}
     for row in rows:
         try:
@@ -563,7 +565,7 @@ def calculate_priority_records(
 
 
 def _load_priority_calculation_input(
-    repertoire_id: str, *, background: bool
+    repertoire_id: str, *, background: bool, calculated_at: datetime | None = None,
 ) -> PriorityCalculationInput:
     from ..database import background_read_connection, connection
     from .. import postgres_store
@@ -606,7 +608,7 @@ def _load_priority_calculation_input(
         lines,
         cards,
         coverage_evidence,
-        _personal_evidence_from_rows(personal_rows),
+        _personal_evidence_from_rows(personal_rows, calculated_at=calculated_at),
         int(settings["coverage_horizon_fullmoves"]),
         float(settings["coverage_path_floor"]),
         real_game_misses,
@@ -761,8 +763,12 @@ def enqueue_priority_refresh_in_transaction(
 
         enqueue_compact_postgres_task_in_transaction(
             database, "repertoire_priority", repertoire_id,
-            {"repertoire_id": repertoire_id, "generation": generation, "cursor": 0},
+            {"repertoire_id": repertoire_id, "generation": generation},
             priority=131, delay_seconds=quiet_seconds,
+        )
+        enqueue_compact_postgres_task_in_transaction(
+            database, "priority_retention", repertoire_id,
+            {"repertoire_id": repertoire_id}, priority=200,
         )
     return generation
 

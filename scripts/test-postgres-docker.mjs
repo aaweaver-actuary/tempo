@@ -511,6 +511,8 @@ const actions = {
   schema_upgrade: async () => {
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_upgrade.py"]);
+    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+      "/source/scripts/check_postgres_priority_recovery.py"]);
   },
   background_workloads: async () => {
     await executeIsolatedBackgroundWorkload({
@@ -523,6 +525,31 @@ const actions = {
           "/source/scripts/check_postgres_background_workloads.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_opening_segmentation.py"]);
+      },
+      restoreConsumers: async () => {
+        run("docker", [...compose, "start", ...workloadConsumers]);
+        await waitForReady();
+        verifyWorkloadConsumers("running");
+      },
+    });
+  },
+  priority_benchmark: async () => {
+    const revision = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
+    const dirty = spawnSync("git", ["status", "--porcelain"], { encoding: "utf8" });
+    assert.equal(revision.status, 0, revision.stderr);
+    assert.equal(dirty.status, 0, dirty.stderr);
+    const sourceDirty = dirty.stdout.split("\n").some((line) =>
+      line.length > 0 && !/^\?\? \.tempo-pg-test-secrets-[^/]+\/$/.test(line));
+    await executeIsolatedBackgroundWorkload({
+      stopConsumers: () => {
+        run("docker", [...compose, "stop", ...workloadConsumers]);
+        verifyWorkloadConsumers("exited");
+      },
+      measureWorkload: () => {
+        run("docker", [...compose, "run", "--rm", "--no-deps",
+          "-e", `TEMPO_PRIORITY_BENCHMARK_HEAD=${revision.stdout.trim()}`,
+          "-e", `TEMPO_PRIORITY_BENCHMARK_DIRTY=${sourceDirty ? "true" : "false"}`,
+          "schema", "python", "/source/scripts/benchmark_postgres_priority.py"]);
       },
       restoreConsumers: async () => {
         run("docker", [...compose, "start", ...workloadConsumers]);
