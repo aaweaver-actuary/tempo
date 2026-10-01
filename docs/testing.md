@@ -106,3 +106,21 @@ CI retains npm caching and adds pip downloads plus Rust compiler/dependency cach
 ## Runner regression coverage
 
 `tests/unit/postgres-test-speedups-regressions.test.ts` runs the dependency-free Node suite in `tests/runner/postgres-test-speedups.test.mjs` as part of the regular frontend gate. The same cases can be run directly with `node --test tests/runner/postgres-test-speedups.test.mjs` while editing the harness. The suite checks executable mode selection, read-only plans, failure/cleanup propagation, timings, fail-fast fixtures, and the Make/CI entry points. These harness tests do not replace live PostgreSQL or browser verification.
+
+## CI reliability maintenance: decomposition boundary
+
+`scripts/verification-stages.mjs` defines the existing commands for both the
+unchanged local `make full` and independent CI owners: `ci-frontend` (all units,
+lint, typecheck), `ci-backend` (all Python tests and defense-engine smoke), and
+`ci-build` (Rust format/lint/tests, WASM and local build). PostgreSQL durability,
+regular browser verification and pinned visual/performance remain separate
+runner modes. Splitting durability and browsers gives each its own disposable
+stack; the full runner's intervening study isolation is replaced by separate
+volumes, while all product scenarios remain covered.
+
+`split complete verification matches the existing full command inventory`
+compares the split command union to full, with only report filenames normalized.
+Local proof on main `86daf005`: 12 test-plan regressions passed (5.99s, macOS
+ARM64, Node 26.3.0, Python 3.14.5). `make plan` retains its 13-stage inventory.
+This is inventory proof, not a completed runtime gate; final candidate CI owns
+complete verification. Selection changes follow in a separate commit.

@@ -3,6 +3,7 @@ import { mkdirSync, readdirSync, readFileSync, rmSync, writeFileSync } from "nod
 import { join } from "node:path";
 import { platform, release, arch } from "node:os";
 import { performance } from "node:perf_hooks";
+import { verificationStages } from "./verification-stages.mjs";
 import { resolvePython } from "./resolve-python.mjs";
 
 function protectRegressionSuite(directory) {
@@ -27,32 +28,7 @@ const tier = (listOnly ? process.argv[3] : process.argv[2]) ?? "full";
 const outputDirectory = process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance";
 const unitProfilePath = join(outputDirectory, `unit-files-${tier}.json`);
 const python = resolvePython();
-const stages = [
-  ["capabilities", "node", ["scripts/check-test-capabilities.mjs", "--docker", "--loopback", "--workspace-mount"]],
-  ["unit", "npm", ["run", "test:unit", "--", "--reporter=default", "--reporter=json", `--outputFile.json=${unitProfilePath}`]],
-  ["defense_engine", "node", ["scripts/test-defense-engine.mjs"]],
-  ["backend", python, ["-m", "pytest", "backend/tests", "-q", "-o", "cache_dir=.pytest_cache", "--rootdir=."]],
-  ["rust_format", "cargo", ["fmt", "--all", "--", "--check"]],
-  ["rust_lint", "cargo", ["clippy", "--all-targets", "--", "-D", "warnings"]],
-  ["rust_test", "cargo", ["test", "--workspace"]],
-  ["lint", "npm", ["run", "lint"]],
-  ["typecheck", "npm", ["run", "typecheck"]],
-  ["wasm_build", "npm", ["run", "build:wasm"]],
-  ["local_build", "npm", ["run", "build:local"]],
-  // The PostgreSQL runner owns the single regular Playwright matrix.
-  ["postgres_docker", "node", ["scripts/test-postgres-docker.mjs"]],
-  ["visual", "npm", ["run", "test:visual"]],
-];
-const stagesByTier = {
-  fast: ["unit"],
-  python: ["backend"],
-  backend: ["defense_engine", "backend"],
-  rust: ["rust_format", "rust_lint", "rust_test"],
-  integration: ["defense_engine", "backend", "rust_format", "rust_lint", "rust_test"],
-  ui: ["capabilities", "postgres_docker", "visual"],
-  browser: ["capabilities", "postgres_docker"],
-  full: stages.map(([name]) => name),
-};
+const { stages, stagesByTier } = verificationStages({ python, tier, outputDirectory });
 const stageNames = stagesByTier[tier];
 const selectedStages = stageNames
   ? stages.filter(([name]) => stageNames.includes(name)).map(([name, command, args]) => [
