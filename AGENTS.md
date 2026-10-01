@@ -5,9 +5,9 @@
 - Do not make any changes on the main branch directly.
 - Always create a new branch for any changes, and ensure it is based on the latest main branch.
 - Clone the latest main branch before starting any work. You have been given a dev location inside the top-level `.dev-copies` directory. Please clone the repository into that location, create a new branch for your work, and start making changes there. You always have the main branch as your reference point.
-- After cloning, make sure that you build the python venv before testing (common cause of testing failures). We use `uv` for virtual environment management. Run `uv sync` to create the venv, and the standard `source .venv/bin/activate` to activate it. 
-- The clone’s Python project is under backend/, so root-level `uv sync` will find no pyproject.toml; Instead run `uv sync` from within the backend/ directory to properly set up the virtual environment for the project. You will need an elevated network path to install dependencies.
-- After setting up the virtual environment, make sure to install all required dependencies and verify that the environment is correctly configured before running any tests or starting development, and change your working directory back to the project root once you are done.
+- Set up only the dependencies required by the selected validation scope. Prose-only edits do not require a Python environment, Node install, Docker build, or runtime suite. Some Vitest contract tests invoke Python; inspect the selected tests rather than assuming all frontend tests are Node-only.
+- For Python tests, run `uv sync` from `backend/`, then `uv pip install --python .venv/bin/python -r requirements.txt` there; root-level `uv sync` has no `pyproject.toml`. Use the elevated network path when required. Return to the repository root before Make targets; they use `scripts/resolve-python.mjs` (or explicit `TEMPO_PYTHON`) rather than requiring shell activation.
+- Install Node dependencies with `npm ci` when required and absent or inconsistent with the lockfile. Verify prerequisites once per environment; do not recreate environments or reinstall unchanged dependencies after every edit.
 
 ## Tempo is actively used for study
 
@@ -34,9 +34,64 @@ Training, tactics, editing, and reads for the active workspace are foreground wo
 
 Keep coherent fixes in separate commits and preserve existing uncommitted work. Migrate deterministic logic toward Rust/WASM only after Python/Rust parity fixtures pass. Do not remove the Python compatibility path before parity.
 
-### Full test execution permissions
+## Testing policy: smallest proof first, complete gate at the boundary
 
-Run `make plan` to inspect coverage. When using Codex tools for `make full`, request `sandbox_permissions: "require_escalated"` on the **initial** `exec_command` call for the whole command. The full gate needs Docker daemon access, a `127.0.0.1` bind, and a checkout path visible through Docker's bind mount; starting it in the default sandbox can waste the unit, backend, Rust, lint, and build stages before Docker fails. Use the same elevated execution path for `make ui`, `make browser`, `make visual`, `make perf`, `make ui-file`, `make view`, and `make docker-durability`. The full, UI, visual, and performance targets check the Docker bind mount before tests, so an isolated checkout under a path Docker cannot share fails immediately. Browser and durability targets check their required Docker or loopback access before tests. Run the full gate once on the final checkout; focused targets remain available during development.
+This section determines **what to test, how, and when**. `docs/testing.md` and `make plan` describe the executable scopes. Required regression coverage and the complete release/CI gate are unchanged; a smaller development run is not a weaker release gate.
+
+### 1. Select the scope before running tests
+
+Before implementation, record a short test plan: changed behavior, plausible failure modes, affected callers/boundaries, smallest proving tests, and who owns final full validation (normally CI). Read existing tests and available timing artifacts first. Do not start with `npm test` or `make full` just to establish a baseline for an unrelated small edit; reproduce the relevant behavior instead.
+
+Use the union of applicable rows below. Select by behavior and dependencies, not merely by changed filename. Expand for shared infrastructure, public contracts, or an unclear impact boundary; briefly state why. Do not mechanically add a test at every layer when those tests would prove the same thing.
+
+| Change / risk | Required development evidence | Expand when / how |
+| --- | --- | --- |
+| Prose, comments, or agent instructions only | Review the diff, links, documented commands against their definitions, and `git diff --check`. | No local runtime suite. Generated docs, executable examples, test-consumed text, configuration, and dependency changes are not automatically prose-only. Run their consumers. CI still runs its configured checks. |
+| Pure TypeScript logic or bounded React state | Named unit/component regression and relevant existing file(s): `make unit-file FILE=<path>`. | Include callers for shared utilities; run `npm run typecheck` for TS/API-shape changes and `npm run lint` before handoff for changed JS/TS. Use `make fast` only when the affected frontend surface is broad. |
+| Board interaction, drag/drop, focus, browser events, or client/server workflow | Relevant unit/state regressions plus the affected real browser spec: `make ui-file FILE=<spec>`. | A mocked Chessground call is not proof of real piece placement or held-drag behavior. Shared board/browser changes also need applicable cross-browser coverage; use `make browser` for broad workflow impact. |
+| Layout, styling, responsive behavior, or rendering | Relevant interaction assertions and pinned `make visual` once the appearance is stable. | No visual run for a non-rendering logic change without a visual risk. Review intentional snapshot changes; never regenerate baselines merely to clear a failure. |
+| Python business rules or bounded service behavior | Named regression and relevant pytest file(s): `make python-file FILE=<path>`. | Use `make python` for broad backend impact; `make backend` adds the defense-engine smoke and is appropriate when that integration changes. |
+| API/schema/serialization changes | Producer and consumer contract tests, invalid/empty/error cases, and frontend typecheck where applicable. | Add a real integration/workflow test when the boundary can fail despite unit parity. Include compatibility and migration behavior when persisted shapes change. |
+| PostgreSQL queries, transactions, migrations, receipts, persistence, or recovery | Focused backend regressions plus `make docker-durability` on a settled candidate. | SQLite-only or mocked tests cannot prove PostgreSQL semantics. Add relevant browser specs when the user workflow changes. Keep legacy import/recovery tests; run `make legacy-sqlite` only for changes needing that optional full stack. |
+| Background jobs, cancellation, queues, scheduling, or concurrent state | Named bounded-work, foreground-contention, stale-result/cancellation, restart, and idempotent-replay tests as applicable. | New handlers must cover contention, restart, and replay. Include real PostgreSQL durability for database/worker boundaries and browser proof for foreground interaction risks. |
+| Rust/WASM or cross-language deterministic logic | Focused `make rust-case FILTER=<name>` and affected parity fixtures. | Run `make rust` once stable; check WASM build and JS consumers when bindings change. `make integration` includes backend/engine/Rust checks; do not also repeat its constituent scopes without a new reason. |
+| Test runners, fixtures, CI, dependencies, build config, or performance | Focused harness/fixture tests and scope/build checks; inspect `make plan`. For runner work, use `node --test tests/runner/postgres-test-speedups.test.mjs` where applicable. | Changed Docker orchestration needs real affected Docker modes, not only mocks. Broad dependency/build changes need the complete gate on the candidate. Performance claims need comparable before/after measurements, not merely functional passes. |
+
+**Scope traps:** `make fast` runs all Vitest files, not Python or the full gate. `make ui` includes regular browsers plus pinned visual/performance; `make visual` already includes `make perf` coverage. `npm run test:browser` currently invokes the PostgreSQL runner in its default **full** mode, including durability; use `make browser` or `make ui-file` for browser-only work. Do not infer cost or coverage from an npm script name.
+
+For a new feature, cover the intended behavior, important boundary/error cases, and relevant existing behavior. For a user-reported bug, first make the named regression fail for the actual defect where practical, then pass with the fix; explain any inability to demonstrate the failing baseline. Register it in `tests/REGRESSIONS.md` and keep it discoverable by the regular gate.
+
+### 2. Development cadence and stopping rules
+
+- **During iteration:** run the smallest relevant case/file after a meaningful change. Combine a file filter with a case filter, e.g. `npm run test:unit -- tests/unit/study-regressions.test.tsx -t 'matching test name'`; a name filter alone can still load unrelated files. Pytest node IDs work through `make python-file FILE=backend/tests/test_services.py::test_name` (replace the example name with a real test). Verify the intended cases actually ran; zero matches are not a pass. Never commit `.only`, `.skip`, or `.todo` to obtain a focused run.
+- **When the patch is coherent:** run the whole affected file(s), relevant callers, and applicable boundary checks from the table. Broaden only where new risk remains. A mandatory subsystem run need not be repeated locally if the immediately following complete gate will cover it; identify that pending evidence explicitly.
+- **At handoff:** stop rerunning passing checks on unchanged relevant inputs. Report the selected scope and remaining gate, rather than chaining `fast -> backend -> integration -> ui -> visual -> full`. These scopes overlap. Do not run multiple heavy suites concurrently in one checkout or against shared resources.
+- **After a failure:** diagnose the failing assertion/stage first. Iterate with its focused command, not repeated full gates. Once repaired, obtain a new complete successful gate for the final candidate from the designated owner; partial stage passes do not equal a full pass. Do not blindly retry failures, add arbitrary sleeps, raise timeouts, or label failures flaky without evidence.
+- **After additional edits or a rebase:** rerun checks whose source, dependencies, fixtures, schemas, build configuration, or shared setup changed. A successful old revision is not validation of a new one. Pure prose follow-ups do not require another local runtime sweep, but do not relabel old artifacts as a pass for the new commit.
+
+### 3. Who runs the complete gate, and when
+
+`make full`, `npm test`, and `npm run test:full` are the **same complete gate**, not three checks. The current PR workflow already runs it. Default: the implementing agent supplies focused local evidence and **CI owns final full validation**. A full local run is not a prerequisite to opening a PR or requesting review. Mark pending or unavailable validation explicitly; never claim merge/release readiness until all required checks pass for the current candidate, including the applicable current-base/merge result.
+
+Run `make full` locally on the settled candidate when the user/task explicitly requires it, CI cannot supply the required evidence, a failure must be reproduced locally, or a local-only deployment needs validation. Explain that reason before launching it. When a local full run is necessary, do not first run broad overlapping scopes merely as a checklist. Existing CI still runs; this policy does not disable it or make a local pass a substitute for required status checks.
+
+Every merge/release retains complete gate coverage. Do not replace the full gate with a union of hand-picked successes, reuse passes from older source revisions, alter CI filters/required checks, or exclude a test family under this policy. A docs-only exemption is for **local development execution**, not for CI or branch protections. Local changes after full validation require affected checks and new complete candidate evidence before release. Record the tested commit and any dirty-tree changes; do not attribute an uncommitted result to clean `HEAD`.
+
+### 4. Keep tests cheap without weakening what they prove
+
+Prefer small fixtures and tests at the lowest layer that observes the failure. Use controlled clocks/deferred promises for deterministic timing logic; retain real timers, browser events, processes, and databases where those are the behavior under test. Wait for meaningful state/version conditions with bounded deadlines and useful failure diagnostics, not wall-clock sleeps. Restore mocks, clocks, listeners, and resources after each test.
+
+Cache dependencies and build outputs with correct invalidation, never test outcomes or mutable application state. Preserve isolation, unique ports/credentials/volumes, and restart/recreation assertions. Do not increase global workers, remove isolation, or share disposable databases merely to gain speed. Do not run performance measurements alongside builds/tests that contaminate the measurement.
+
+When test wait dominates the task, inspect existing evidence before scheduling another broad run: `test-results/performance/test-stages-<tier>.json`, `unit-files-<tier>.json` via `make slow-tests [TIER=fast]`, and `postgres-scenarios-<mode>-<project>.json`. Record wall time and test counts; distinguish setup/build, execution, waiting, and teardown where measured. PostgreSQL scenario times are nested inside the full PostgreSQL stage; unit files may overlap. Do not sum either as additional suite wall time. Do not claim a speedup from a failed run or dissimilar fixtures/environments. Use `TEMPO_TEST_TIMING_DIR=test-results/performance/repeat-<label> make perf` for an independent pinned repeat without overwriting full-run evidence. Keep unrelated harness optimization separate from a product fix; track remaining measured work in issue #45 rather than expanding every PR.
+
+### 5. Test permissions and delivery evidence
+
+Run `make plan` to inspect coverage. When using Codex tools for `make full`, request `sandbox_permissions: "require_escalated"` on the **initial** `exec_command` call for the whole command. The full gate needs Docker daemon access, a `127.0.0.1` bind, and a checkout path visible through Docker's bind mount. Use the same elevated execution path for `make ui`, `make browser`, `make visual`, `make perf`, `make ui-file`, `make view`, and `make docker-durability`. These targets check their required capabilities before tests; do not start known-incompatible runs. Use `make preflight` to diagnose prerequisites, not as a redundant ritual before targets that already preflight.
+
+Use the disposable runners; never point tests at the live study instance or mark a real database disposable. Clean up only resources owned by the test invocation, and preserve reusable safe caches. If a capability is unavailable, report the missing capability and unrun checks rather than weakening the test.
+
+Every PR/handoff must state: risk/scope and why it is sufficient; named new/updated regressions; exact commands, results, and observed durations; tested revision/environment; and checks not run or pending with reasons and the CI run when available. Distinguish static inspection, focused execution, full-gate execution, and runtime/performance measurements. Never claim a full pass from focused tests, a dry run, or a previous checkout.
 
 ## YAGNI principle
 - Apply YAGNI to speculative requirements and premature abstraction, not to correctness, security, testing, maintainability, or explicitly requested product quality.
@@ -60,7 +115,7 @@ Apply SOLID principles only where they reduce real complexity, improve testabili
 ## Cleanup and Codebase Stewardship
 
 - Regularly remove unused code, dependencies, and configuration to keep the codebase lean and maintainable.
-- You are responsible for cleaning up after yourself, ensuring that any temporary files, experimental code, or obsolete configurations are removed promptly. Delete any unused docker containers, images, and volumes to prevent clutter and potential conflicts.
+- Clean up temporary files and test-owned disposable resources after your work. Never globally prune Docker containers, images, volumes, or build/dependency caches; do not remove live study resources or another checkout’s resources. Preserve safe reusable caches unless their invalidation or removal is specifically required.
 - Regularly review and refactor the codebase to remove technical debt, improve readability, and maintain consistency with project standards.
 - Document any significant changes, architectural decisions, or patterns introduced to help future maintainers understand the rationale behind them.
 - Encourage team members to follow these practices consistently to maintain a high-quality, manageable codebase.
