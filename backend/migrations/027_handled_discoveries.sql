@@ -13,4 +13,4 @@ WHERE admission_state='queued' AND admitted_card_id IS NOT NULL
 -- actionable without changing the historical intent, card, queue, or reviews.
 UPDATE repertoire_opportunities SET admission_state=NULL,admitted_card_id=NULL,seen_at=NULL
 WHERE admission_state='queued' AND handled_evidence_json IS NULL;
-INSERT INTO tempo_schema_migrations(version) VALUES (26);
+INSERT INTO tempo_schema_migrations(version) VALUES (27);

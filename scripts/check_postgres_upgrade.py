@@ -47,7 +47,7 @@ def test_postgres_handled_upgrade_requires_matching_queued_revision_and_card(dsn
         assert set(visible) == {_stable_id("preserved-repertoire", "weak_known_decision", DISCOVERY_FEN_KEY, target)
                                 for target in expected if target != "matching-queued"}
         assert tuple(database.execute("SELECT state,evidence_fingerprint,card_id FROM discovery_admission_intents WHERE id='legacy:mismatched-queued'").fetchone()) == ("queued", "A", "known-plural")
-    print("PASS revision-aware PostgreSQL 026 backfill: matching handled; mismatch, ambiguity, wrong card and unfinished intent remain actionable; preparing/failed unhandled")
+    print("PASS revision-aware PostgreSQL 027 backfill: matching handled; mismatch, ambiguity, wrong card and unfinished intent remain actionable; preparing/failed unhandled")
 
 
 def test_handled_discovery_postgres_upgrade_and_material_evidence_replay(dsn: str) -> None:
