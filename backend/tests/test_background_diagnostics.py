@@ -407,3 +407,34 @@ def test_background_runbook_snapshots_validate_without_private_fields():
         snapshot=BackgroundDiagnostics.model_validate(example['snapshot'])
         assert snapshot.available
         assert all(entry.kind in {'engine_game','repertoire_priority','game_analysis_publish'} for entry in snapshot.counters)
+
+
+def test_background_postgres_numeric_aggregates_preserve_strict_public_schema(diagnostic_database,monkeypatch):
+    from decimal import Decimal
+    from types import SimpleNamespace
+    from app.services.background_metrics import COUNT_NAMES
+    row=task()
+    with database.connection() as connection:
+        connection.execute('UPDATE background_tasks SET age_origin_estimated=1 WHERE id=?',(row['id'],))
+    original_read=background_diagnostics.read_connection
+    class NumericAggregates:
+        def __init__(self,connection):
+            self.connection=connection
+        def set_progress_handler(self,*arguments):
+            return self.connection.set_progress_handler(*arguments)
+        def execute(self,statement,parameters=()):
+            rows=self.connection.execute(statement,parameters).fetchall()
+            if 'SUM(' in statement:
+                rows=[{key:Decimal(value) if value is not None and (key in COUNT_NAMES or key=='estimated') else value
+                       for key,value in dict(result).items()} for result in rows]
+            return SimpleNamespace(fetchall=lambda:rows)
+    @contextmanager
+    def numeric_read():
+        with original_read() as connection:
+            yield NumericAggregates(connection)
+    monkeypatch.setattr(background_diagnostics,'read_connection',numeric_read)
+    result=background_diagnostics.snapshot()
+    assert result.available
+    assert result.queues[0].estimated_age_count==1
+    assert result.counters[0].counts.generations_started==1
+    assert type(result.counters[0].counts.generations_started) is int

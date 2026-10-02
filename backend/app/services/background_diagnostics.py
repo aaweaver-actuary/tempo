@@ -85,7 +85,7 @@ def snapshot() -> BackgroundDiagnostics:
                     oldest_pending_age_seconds=_age(row["pending_since"],now) if state not in ('complete','superseded') else None,
                     oldest_generation_age_seconds=_age(row["generation_started_at"],now) if state not in ('complete','superseded') else None,
                     next_eligibility_seconds=_until(row["next_attempt_at"],now) if state=='delayed' else None,
-                    estimated_age_count=row["estimated"] or 0))
+                    estimated_age_count=int(row["estimated"] or 0)))
             # Engine parent jobs and defensive requests are distinct queues; never sum them with durable jobs.
             for queue, table, identity, state_column, origin in (
                 ('engine_game','game_analysis_jobs','game_id','status','pending_since'),
@@ -106,11 +106,11 @@ def snapshot() -> BackgroundDiagnostics:
                     queue_rows.append(dict(queue=queue,state=row['diagnostic_state'],count=row['count'],
                         oldest_pending_age_seconds=_age(row['origin'],now) if row['diagnostic_state']!='complete' else None,
                         oldest_generation_age_seconds=_age(row['generation_started_at'],now) if queue=='engine_game' and row['diagnostic_state']!='complete' else None,
-                        estimated_age_count=(row['estimated'] or 0) if queue=='engine_game' else 0))
+                        estimated_age_count=int(row['estimated'] or 0) if queue=='engine_game' else 0))
             sums = ','.join(f'{"MAX" if name.endswith("_max_seconds") else "SUM"}({name}) AS {name}' for name in COUNT_NAMES + DURATION_NAMES)
             rows = query(f"SELECT kind,{sums} FROM background_metric_buckets WHERE bucket_start>=? AND bucket_start<=? GROUP BY kind",
                          (window_start.isoformat(),now.isoformat()))
-            result.update(queues=queue_rows,counters=[dict(kind=row['kind'],counts={name:row[name] for name in COUNT_NAMES + DURATION_NAMES},
+            result.update(queues=queue_rows,counters=[dict(kind=row['kind'],counts={name:(int(row[name]) if name in COUNT_NAMES else float(row[name])) for name in COUNT_NAMES + DURATION_NAMES},
                                                         useful_completion_unit={'engine_game':'accepted_position','engine_defense':'accepted_position','repertoire_priority':'published_priority_generation','game_analysis_publish':'published_game_analysis'}.get(row['kind']))
                                                     for row in rows if row['kind'] in KINDS])
     except (TimeoutError, PoolTimeout, psycopg.errors.QueryCanceled):

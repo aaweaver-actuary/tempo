@@ -204,9 +204,9 @@ working tree that contains this implementation, not a claimed clean HEAD.
 
 [Comparable measurement artifact](background-diagnostics-cost.json): 1,000
 current tasks, 30 snapshot samples per condition. Median/p95: no history
-**1.568/1.587 ms**, 100,000 events **1.558/1.575 ms**. Matched 100-transition
-median/p95: baseline **0.786/0.859 ms**, instrumented **0.977/1.115 ms**; added
-median **0.191 ms** in this SQLite compatibility environment. Measurements ran
+**2.725/2.929 ms**, 100,000 events **2.761/3.124 ms**. Matched 100-transition
+median/p95: baseline **1.359/1.520 ms**, instrumented **1.754/2.044 ms**; added
+median **0.395 ms** in this SQLite compatibility environment. Measurements ran
 without concurrent tests/builds. This does not establish PostgreSQL contention
 overhead; the CI-owned disposable runner emits comparable PG timings.
 
@@ -227,3 +227,17 @@ failed at engine container startup: its Dockerfile omitted the new diagnostics
 module. The named packaging regression reproduced this missing copy before the
 Dockerfile fix. The following candidate requires a fresh complete required CI
 result; these earlier passes are not attributed to it.
+
+The next PostgreSQL run reached migration/diagnostic execution and reproduced a
+strict schema rejection: SUM(bigint) returns Decimal. The producer now converts
+database integer aggregates explicitly, with a named failing-before/passing-after
+regression. The retention fixture reads only after buffered metrics commit.
+
+Final local follow-up: `PYTHONPATH=backend backend/.venv/bin/python -m pytest
+backend/tests/test_background_diagnostics.py -q --tb=short --rootdir=.` passed
+24 tests in 3.08 s after integer conversion; its Decimal regression failed before
+that conversion. The packaging unit file passed four tests in 1.36 s after its
+named regression failed before the Docker copy. Lint again passed with the same
+nine existing warnings. The adjacent compatibility measurement artifact was
+regenerated on this producer revision without concurrent tests/builds; its
+absolute timing differs from the earlier run, so no cross-run speedup is claimed.

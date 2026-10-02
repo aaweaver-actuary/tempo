@@ -4,27 +4,27 @@
   "current_queue_rows": 1000,
   "snapshot_empty_history": {
     "samples": 30,
-    "p50_seconds": 0.0015676454058848321,
-    "p95_seconds": 0.0015874169766902924,
-    "max_seconds": 0.0016029590042307973
+    "p50_seconds": 0.002724853460676968,
+    "p95_seconds": 0.0029285839991644025,
+    "max_seconds": 0.002942417049780488
   },
   "snapshot_100000_events": {
     "samples": 30,
-    "p50_seconds": 0.0015575829311273992,
-    "p95_seconds": 0.0015748749719932675,
-    "max_seconds": 0.001666791969910264
+    "p50_seconds": 0.002760561998002231,
+    "p95_seconds": 0.0031244169222190976,
+    "max_seconds": 0.0038307909853756428
   },
   "transition_baseline": {
     "samples": 100,
-    "p50_seconds": 0.0007862505153752863,
-    "p95_seconds": 0.000859249965287745,
-    "max_seconds": 0.001071083010174334
+    "p50_seconds": 0.0013589374721050262,
+    "p95_seconds": 0.001520249992609024,
+    "max_seconds": 0.0018784590065479279
   },
   "transition_instrumented": {
     "samples": 100,
-    "p50_seconds": 0.0009772294433787465,
-    "p95_seconds": 0.0011150420177727938,
-    "max_seconds": 0.0011968340259045362
+    "p50_seconds": 0.0017541454872116446,
+    "p95_seconds": 0.002044416032731533,
+    "max_seconds": 0.002702082972973585
   },
   "bucket_rows": 1,
   "state_count_query_plan": [

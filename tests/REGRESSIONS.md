@@ -987,3 +987,10 @@ module including diagnostic timing` in the regular background diagnostics unit
 file fails before copying the new helper into `Dockerfile.engine`. The initial PR
 PostgreSQL job reproduced the missing module by exiting at worker startup. The
 fixed candidate must pass the real disposable Docker startup and durability gate.
+
+`test_background_postgres_numeric_aggregates_preserve_strict_public_schema`
+reproduces PostgreSQL SUM(bigint)'s Decimal values, including estimated-age sums,
+before conversion to public integers. It failed before the producer conversion;
+strict consumer validation remains unchanged. The disposable ring-retention
+assertion reads after commit because PostgreSQL counter deltas flush at that
+boundary.

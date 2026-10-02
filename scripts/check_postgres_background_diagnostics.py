@@ -95,6 +95,8 @@ def main():
             assert connection.execute('SELECT COUNT(*) FROM background_task_events WHERE task_id=?',(row['id'],)).fetchone()[0]==100
             for offset in range(600):
                 increment(connection,'engine_defense','bounded',now=datetime(2026,10,2,tzinfo=timezone.utc)+timedelta(seconds=offset*300),claims=1)
+        # Buffered counters become visible after the outcome transaction commits.
+        with postgres_store.connection(read_only=True) as connection:
             assert connection.execute("SELECT COUNT(*) FROM background_metric_buckets WHERE kind='engine_defense'").fetchone()[0]==288
         def write_times(instrumented):
             samples=[]
