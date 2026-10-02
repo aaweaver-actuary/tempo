@@ -54,6 +54,7 @@ export function useGameSync() {
   const manualCommandPending = useRef(false);
   const invalidateStatusForCommand = useRef<() => void>(() => undefined);
   const requestStatusRecovery = useRef<() => void>(() => undefined);
+  const resumeStatusPolling = useRef<() => void>(() => undefined);
   const sync = useCallback(async (manual = false, repair = false) => {
     if (!usesLocalApi() || active.current || (!manual && document.visibilityState !== "visible")) return;
     if (!manual && Date.now() - lastStarted.current < interval.current) return;
@@ -66,6 +67,7 @@ export function useGameSync() {
     let failedEndpoint = `${API_URL}/api/settings`;
     let failedOperation = "load sync settings";
     let failedMethod = "GET";
+    let commandNeedsStatusReconciliation = false;
     try {
       const settingsResponse = await (manual ? fetch : backgroundFetch)(`${API_URL}/api/settings`);
       const settings = await readJsonResponse(settingsResponse, settingsResponseSchema, "game sync settings", { endpoint: failedEndpoint, reportHttpFailure: false });
@@ -81,10 +83,13 @@ export function useGameSync() {
       failedMethod = "POST";
       const response = await enqueueGameSyncCommand({ lichess_username: settings.lichess_username, chesscom_username: settings.chesscom_username, days: 90, speeds: ["blitz", "rapid", "classical"], rated_only: true, repair }, manual ? fetch : backgroundFetch);
       const result = await readJsonResponse(response, syncResultSchema, "game sync", { endpoint: failedEndpoint, reportHttpFailure: false });
+      commandNeedsStatusReconciliation = true;
       const providerResults = Object.values(result.providers);
       setState((current) => ({ ...current, syncing: result.status !== "complete" && result.status !== "failed", error: providerResults.filter((provider) => provider.error).map((provider) => `${provider.provider}: ${provider.error}`).join(" · "), imported: result.imported, providers: providerResults, jobStatus: result.status }));
     } catch (error) {
       if (error instanceof PendingOperationError) {
+        // Unresolved receipts keep durable command recovery; blocked receipts retain their actionable error.
+        commandNeedsStatusReconciliation = !error.blocked;
         setState((current) => ({ ...current, syncing: !error.blocked,
           error: error.blocked ? error.message : "" }));
         return;
@@ -101,7 +106,8 @@ export function useGameSync() {
       active.current = false;
       if (manual) {
         manualCommandPending.current = false;
-        requestStatusRecovery.current();
+        if (commandNeedsStatusReconciliation) requestStatusRecovery.current();
+        else resumeStatusPolling.current();
       }
     }
   }, []);
@@ -223,6 +229,10 @@ export function useGameSync() {
       pauseStatus();
     };
     requestStatusRecovery.current = recoverStatus;
+    resumeStatusPolling.current = () => {
+      // Resuming after a local command failure does not reconcile against an unrelated historical job.
+      if (!statusInFlight) scheduleStatus(nextStatusDelay);
+    };
     void refreshStatus();
     void runAutomaticSync();
     window.addEventListener("focus", recover);
@@ -233,6 +243,7 @@ export function useGameSync() {
       stopped = true;
       invalidateStatusForCommand.current = () => undefined;
       requestStatusRecovery.current = () => undefined;
+      resumeStatusPolling.current = () => undefined;
       if (automaticSyncTimer !== undefined) window.clearTimeout(automaticSyncTimer);
       if (statusTimer !== undefined) window.clearTimeout(statusTimer);
       window.removeEventListener("focus", recover);

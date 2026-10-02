@@ -404,6 +404,85 @@ it("sync_status_superseded_by_a_manual_command_cannot_publish_an_old_completion"
   await act(async () => nextStatus.resolve(Response.json({ providers: [], active_job: { ...activeJob, status: "queued" } })));
 });
 
+it.each([
+  { failure: "no_username", expectedError: "Add a Lichess or Chess.com username in Settings.", expectedPosts: 0 },
+  { failure: "settings_http", expectedError: "Settings unavailable", expectedPosts: 0 },
+  { failure: "settings_validation", expectedError: "Invalid game sync settings data", expectedPosts: 0 },
+  { failure: "enqueue_http", expectedError: "Sync enqueue unavailable", expectedPosts: 1 },
+  { failure: "enqueue_validation", expectedError: "Invalid game sync data", expectedPosts: 1 },
+  { failure: "blocked_receipt", expectedError: "is blocked: Writer unavailable", expectedPosts: 1 },
+])("manual_sync_precommand_error_is_not_erased_by_historical_completed_status_$failure", async ({ failure, expectedError, expectedPosts }) => {
+  const historicalStatus = { providers: [], active_job: { ...activeJob, status: "complete",
+    result: { imported: 3, synced_at: "2026-09-22T00:00:00Z", providers: {} } } };
+  let manualStarted = false; let statusCalls = 0; let syncPosts = 0;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const path = String(input);
+    if (path.endsWith("/sync/status")) { statusCalls++; return Response.json(historicalStatus); }
+    if (path.endsWith("/api/settings")) {
+      if (manualStarted && failure === "settings_http") return Response.json({ detail: "Settings unavailable" }, { status: 503 });
+      if (manualStarted && failure === "settings_validation") return Response.json({ initial_depth: "invalid" });
+      return Response.json({ ...syncSettings, lichess_username: manualStarted && failure !== "no_username" ? "player" : "" });
+    }
+    if (path.includes("/operations/")) return Response.json({ state: "blocked", last_error: { message: "Writer unavailable" } });
+    expect(path).toMatch(/\/api\/games\/sync$/);
+    expect(init?.method).toBe("POST");
+    syncPosts++;
+    if (failure === "enqueue_http") return Response.json({ detail: "Sync enqueue unavailable" }, { status: 503 });
+    if (failure === "enqueue_validation") return Response.json({ imported: "invalid" });
+    return Response.json({ operation_id: "failed-manual-receipt" }, { status: 202 });
+  }));
+  let value!: ReturnType<typeof useGameSync>;
+  function Probe() { value = useGameSync(); return null; }
+  const view = render(<Probe />); await settle();
+  expect(value.state.jobStatus).toBe("complete");
+  expect(value.state.imported).toBe(3);
+  manualStarted = true;
+  await act(async () => value.sync(true)); await settle();
+  expect(value.state.error).toContain(expectedError);
+  expect(syncPosts).toBe(expectedPosts);
+  expect(statusCalls).toBe(1); // No new job was established to reconcile against the historical result.
+  await advance(14_999); expect(statusCalls).toBe(1);
+  expect(value.state.error).toContain(expectedError);
+  await advance(1); expect(statusCalls).toBe(2); // Ordinary idle polling resumes with one completion-relative timer.
+  view.unmount(); await advance(30_000); expect(statusCalls).toBe(2);
+});
+
+it.each(["pending", "complete"])("manual_sync_%s_receipt_keeps_immediate_status_reconciliation", async receiptState => {
+  let manualStarted = false; let statusCalls = 0; let syncPosts = 0; let receiptCalls = 0;
+  const pendingKey = "tempo-pending-game-sync-command-v1";
+  const savedCommand = { operationId: "existing-sync-receipt", body: JSON.stringify({ lichess_username: "player", chesscom_username: "",
+    days: 90, speeds: ["blitz", "rapid", "classical"], rated_only: true, repair: false }) };
+  const syncResult = { imported: 0, job_id: activeJob.id, status: "queued", providers: {} };
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input);
+    if (path.endsWith("/sync/status")) {
+      statusCalls++;
+      return Response.json({ providers: [], active_job: manualStarted ? activeJob : { ...activeJob, status: "complete" } });
+    }
+    if (path.endsWith("/api/settings")) return Response.json({ ...syncSettings, lichess_username: manualStarted ? "player" : "" });
+    if (path.includes("/operations/")) {
+      receiptCalls++;
+      return Response.json(receiptState === "complete" ? { state: "complete", response: syncResult } : { state: "pending" });
+    }
+    syncPosts++;
+    return Response.json({ operation_id: savedCommand.operationId }, { status: 202 });
+  }));
+  let value!: ReturnType<typeof useGameSync>;
+  function Probe() { value = useGameSync(); return null; }
+  render(<Probe />); await settle();
+  localStorage.setItem(pendingKey, JSON.stringify(savedCommand));
+  manualStarted = true;
+  await act(async () => value.sync(true)); await settle();
+  expect(value.state.jobStatus).toBe("running");
+  expect(value.state.error).toBe("");
+  expect(statusCalls).toBe(2);
+  expect(syncPosts).toBe(receiptState === "complete" ? 0 : 1);
+  expect(receiptCalls).toBe(receiptState === "complete" ? 1 : 2);
+  expect(localStorage.getItem(pendingKey)).toBe(receiptState === "complete" ? null : JSON.stringify(savedCommand));
+  await advance(1_999); expect(statusCalls).toBe(2);
+  await advance(1); expect(statusCalls).toBe(3);
+});
+
 it("manual_sync_startup_suspends_passive_reads_until_command_state_and_then_reconciles", async () => {
   const commandSettings = deferred<Response>();
   const preCommandStatus = deferred<Response>();
