@@ -496,7 +496,20 @@ async function verifyStudyBurialRetainsQuota() {
 }
 
 async function verifyBlockedBurialRecovery() {
-  const before = await get("queue/today");
+  // The previous quota fixture restores settings asynchronously. Wait for its
+  // queue publication before selecting the original payload and order snapshot.
+  let before;
+  const deadline = performance.now() + 60_000;
+  while (performance.now() < deadline) {
+    const queue = await get("queue/today");
+    assert.notEqual(queue.projection?.state, "failed", queue.projection?.last_error);
+    if (queue.projection?.state === "ready" && !queue.projection.refresh_pending) {
+      before = queue;
+      break;
+    }
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  assert(before, "Queue settings restoration settles before blocked burial recovery");
   const selected = before.cards[0];
   assert(selected, "Blocked burial fixture has an authoritative active entry");
   const originalState = stableStudyState(await get("migration/snapshot"), selected.repertoire_id);
