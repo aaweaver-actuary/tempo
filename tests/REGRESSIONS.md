@@ -918,6 +918,18 @@ assertions remain required. No test identity, CI selection, or timeout changed.
 - `backend/tests/test_repertoire_settings.py::test_shared_card_integrity_change_does_not_refund_admitting_repertoire_allowance` — reviewed and unreviewed A-owned cards admitted under B retain B’s consumed allowance after A is blocked. Covers SQLite reseeding/legacy reconciliation and PostgreSQL planning/reviewed-count SQL; reproduced extra planned admission before the fix.
 - `tests/unit/repertoire-daily-limits.test.tsx::inherited custom input uses the current default and preserves an edited draft` — a 10→12 global default change initializes Custom to 12, while an edited 5 survives mode toggles and later global changes. Reproduced stale 10 before the fix.
 
+### PR #54 durability proof isolation
+
+`backend/tests/test_repertoire_limit_proof_isolation.py` protects the shared
+disposable environment. Portable SQL covers restoration; the existing Docker
+proof retains real production commands, receipt replay, PostgreSQL locks and
+generation invalidation.
+
+- `test_repertoire_limit_proof_finally_restores_queue_state_after_assertion_failure` — existing and absent singleton cases; both failed before the fix with leaked task, event and projection rows. Also verifies repertoire/card/link/review/queue/receipt cleanup and unrelated rows.
+- `test_repertoire_limit_proof_restores_pruned_history_both_dates_and_stale_cards` — exact task fields/ID, all 100 historical events including events pruned by enqueue, present/absent today projections, tomorrow projection, and unrelated rollover fields survive mutation and cleanup.
+- `test_repertoire_limit_proof_cleanup_failure_is_loud_and_atomic` — restoration failure surfaces with the original assertion as context and rolls back fixture deletion and partial queue restoration together.
+- `test_repertoire_limit_proof_reconciliation_preserves_unrelated_entries` — reconciliation publishes only fixture entries while advancing past unrelated candidates.
+
 ## Tactic capture orientation and typed SAN
 
 Capture now faces the accepted starting side and permits typed SAN without changing

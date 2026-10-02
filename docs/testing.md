@@ -389,3 +389,22 @@ CI owns the complete current-candidate gate. This patch is ready for another cod
 review, but neither the failed durability run nor historical visual passes establish
 merge/release readiness. Runtime inputs remained `df5b64e`; this documentation-only
 follow-up does not relabel those executions as tests of a later clean commit.
+
+## PR #54 durability isolation validation plan (2026-10-02)
+
+Changed behavior: the repertoire-limit proof must restore the shared disposable
+environment after both success and failure. Risks are lost historical events
+(enqueue prunes to 100), changed singleton identity/lease/generation, present vs
+absent date projections, global rollover changes to unrelated cards, unrelated
+reconciliation, incomplete fixture cascades, and partial cleanup failure.
+
+Smallest proof: named portable SQL regressions in
+`backend/tests/test_repertoire_limit_proof_isolation.py`, followed by
+`node --test tests/runner/postgres-test-speedups.test.mjs` and `git diff --check`.
+The settled candidate then runs elevated `make docker-durability` for PostgreSQL
+FKs/transactions, real command receipts, generation invalidation, and downstream
+threat-claim/recreation/backup/study workflows. The 250 ms threshold is unchanged;
+a persistent threat-claim failure requires a fresh equivalent main comparison.
+CI owns final required PR candidate validation; pinned visuals remain outside
+this harness fix. Identity-sequence gaps are retained rather than resetting
+shared sequences.

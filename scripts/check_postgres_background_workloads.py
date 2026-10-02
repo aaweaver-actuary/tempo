@@ -166,7 +166,7 @@ def measure() -> None:
             )
             claimed = claim_threat_analysis(database, {})
     except Exception as error:
-        error.add_note(f"Benchmark second claim failed; request_state={threat_request_state()}")
+        error.add_note(f"Benchmark second claim failed after {time.perf_counter()-started:.3f}s; request_state={threat_request_state()}")
         raise
     claim_elapsed = time.perf_counter() - started
     after_claim = threat_request_state()
