@@ -224,3 +224,47 @@ def test_shared_card_review_retries_do_not_consume_owners_new_card_allowance(wor
     with database.connection() as connection:
         main.seed_queue(connection, today)
         assert connection.execute("SELECT COUNT(*) FROM daily_queue WHERE queue_date=? AND card_id='first-01'", (today,)).fetchone()[0] == 1
+
+
+@pytest.mark.parametrize('reviewed', [False, True])
+def test_shared_card_integrity_change_does_not_refund_admitting_repertoire_allowance(workspace, monkeypatch, reviewed):
+    from app.services import postgres_queue_refresh as worker
+    today = date.today().isoformat()
+    with database.connection() as connection:
+        connection.execute("UPDATE repertoires SET new_cards_per_day=0 WHERE id='first'")
+        connection.execute("UPDATE repertoires SET new_cards_per_day=1 WHERE id='second'")
+        connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('second','first-00')")
+        connection.execute("UPDATE cards SET archived=1 WHERE id!='first-00'")
+        main.seed_queue(connection, today)
+        assert connection.execute("SELECT admission_repertoire_id FROM daily_queue WHERE card_id='first-00'").fetchone()[0] == 'second'
+        if reviewed:
+            complete_cards(connection, today, 'second', 1)
+        connection.execute("INSERT INTO repertoire_integrity_issues(id,repertoire_id,kind,signature,created_at,updated_at) VALUES('block','first','missing_response','shared',?,?)", (today, today))
+        connection.execute("INSERT INTO repertoire_integrity_card_blocks(repertoire_id,card_id,issue_id,scan_generation,published_at) VALUES('first','first-00','block','current',?)", (today,))
+        connection.execute("UPDATE cards SET archived=0 WHERE id='second-00'")
+
+        # Exercise the PostgreSQL planning reads against the same persisted fixture.
+        # Candidate pages are supplied explicitly; accounting SQL is executed unchanged
+        # except for PostgreSQL placeholders (real durability runs separately).
+        def bounded_read(statement, parameters=(), *, native=False):
+            if statement.startswith("SELECT DISTINCT event.card_id"):
+                return []
+            if statement.startswith("SELECT id FROM cards"):
+                return [('second-00',)] if parameters[0] == '' else []
+            if statement.startswith('WITH active_miss'):
+                return [{'id': 'second-00', 'repertoire_id': 'second', 'gameplay_priority_reason': 'test', 'priority_date': today}]
+            if 'q.id <> ALL' in statement:
+                return [{'id': 999, 'card_id': 'second-00', 'repertoire_id': 'second'}]
+            return connection.execute(statement.replace('%s', '?'), parameters).fetchall()
+        monkeypatch.setattr(worker, '_bounded_read', bounded_read)
+        assert worker._prepare_prioritized_openings(today) == []
+        if reviewed:
+            candidate, reviewed_count = worker._prepare_unseen_reconciliation(today, [], {})
+            assert candidate['repertoire_id'] == 'second'
+            assert reviewed_count == 1
+            # A legacy eager queue entry must also respect the reviewed introduction.
+            connection.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_repertoire_id) VALUES(?,'second-00',99,'second')", (today,))
+        main.seed_queue(connection, today)
+        assert connection.execute("SELECT introduced_at FROM cards WHERE id='first-00'").fetchone()[0] == today
+        assert connection.execute("SELECT introduced_at FROM cards WHERE id='second-00'").fetchone()[0] is None
+        assert connection.execute("SELECT COUNT(*) FROM cards WHERE introduced_at=?", (today,)).fetchone()[0] == 1

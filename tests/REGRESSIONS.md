@@ -915,3 +915,4 @@ assertions remain required. No test identity, CI selection, or timeout changed.
 
 - `backend/tests/test_postgres_route_contract.py::test_postgres_route_contract_matches_registered_endpoints` — repertoire settings is registered as a staged foreground command; reproduced the missing route before adding the contract entry.
 - `backend/tests/test_repertoire_settings.py::test_repertoire_override_rejects_missing_and_system_repertoires` — a persisted `__defense__` row rejects opening-limit writes and is absent from repertoire listing while normal openings remain. Reproduced HTTP 200 before the fix.
+- `backend/tests/test_repertoire_settings.py::test_shared_card_integrity_change_does_not_refund_admitting_repertoire_allowance` — reviewed and unreviewed A-owned cards admitted under B retain B’s consumed allowance after A is blocked. Covers SQLite reseeding/legacy reconciliation and PostgreSQL planning/reviewed-count SQL; reproduced extra planned admission before the fix.

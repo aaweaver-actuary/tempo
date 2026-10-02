@@ -238,13 +238,12 @@ def _prepare_unseen_reconciliation(queue_date: str, processed_ids: list[int],
     repertoire_id = candidate["repertoire_id"]
     if repertoire_id in introduced_counts:
         return candidate, introduced_counts[repertoire_id]
+    # Eligibility changes must not refund a reviewed historical introduction.
     reviewed_count = _bounded_read(
         """SELECT COUNT(DISTINCT c.id) FROM cards c
            LEFT JOIN daily_queue q ON q.card_id=c.id AND q.queue_date=c.introduced_at AND q.cycle=0
            WHERE COALESCE(q.admission_repertoire_id,c.repertoire_id)=%s AND c.content_type='opening' AND c.introduced_at=%s
-             AND EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)
-             AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
-                            WHERE block.repertoire_id=c.repertoire_id AND block.card_id=c.id)""",
+             AND EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)""",
         (repertoire_id, queue_date), native=True,
     )[0][0]
     return candidate, int(reviewed_count)
@@ -358,12 +357,11 @@ def _prepare_prioritized_openings(queue_date: str) -> list[dict[str, Any]]:
              queue_date, queue_date, queue_date), native=True,
         ))
         after_card_id = card_ids[-1]
+    # Count consumption independently from current candidate eligibility.
     counts = _bounded_read(
         """SELECT COALESCE(q.admission_repertoire_id,c.repertoire_id),COUNT(DISTINCT c.id)
            FROM daily_queue q JOIN cards c ON c.id=q.card_id
            WHERE q.queue_date=%s AND q.cycle=0 AND c.content_type='opening' AND c.introduced_at=%s
-             AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
-                            WHERE block.repertoire_id=c.repertoire_id AND block.card_id=c.id)
            GROUP BY COALESCE(q.admission_repertoire_id,c.repertoire_id)""",
         (queue_date, queue_date), native=True,
     )

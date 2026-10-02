@@ -1015,14 +1015,13 @@ def reconcile_unseen_queue(db, day, limit, repertoire_limits=None):
     """,
         (day, day),
     ).fetchall()
+    # Historical introductions consume allowance even if eligibility changes later.
     introduced_by_repertoire = dict(
         db.execute(
             """SELECT COALESCE(q.admission_repertoire_id,c.repertoire_id),COUNT(DISTINCT c.id) FROM cards c
                LEFT JOIN daily_queue q ON q.card_id=c.id AND q.queue_date=c.introduced_at AND q.cycle=0
                WHERE c.content_type='opening' AND c.introduced_at=?
                  AND EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)
-                 AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
-                                WHERE block.repertoire_id=c.repertoire_id AND block.card_id=c.id)
                GROUP BY COALESCE(q.admission_repertoire_id,c.repertoire_id)""",
             (day,),
         ).fetchall()
@@ -1174,13 +1173,12 @@ def admit_prioritized_opening_cards(db, day: str, limit: int | dict[str, int], m
         _PRIORITY_OPENING_CANDIDATES_SQL,
         (MISS_REASON, day, day, day, day),
     ).fetchall()
+    # Historical introductions consume allowance even if eligibility changes later.
     introduced_by_repertoire = dict(
         db.execute(
             """SELECT COALESCE(q.admission_repertoire_id,c.repertoire_id),COUNT(DISTINCT c.id)
                FROM daily_queue q JOIN cards c ON c.id=q.card_id
                WHERE q.queue_date=? AND q.cycle=0 AND c.content_type='opening' AND c.introduced_at=?
-                 AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
-                                WHERE block.repertoire_id=c.repertoire_id AND block.card_id=c.id)
                GROUP BY COALESCE(q.admission_repertoire_id,c.repertoire_id)""",
             (day, day),
         ).fetchall()
