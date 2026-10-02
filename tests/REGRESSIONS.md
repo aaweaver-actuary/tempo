@@ -1178,3 +1178,31 @@ Policy and before/after evidence: [Discoveries preview scheduling](../docs/disco
 - Issue #33 rejected-loader diagnostics: `discovery_rejected_loader_reenqueues_retry_with_consistent_diagnostics` proves rejected loads re-enqueue with consistent `enqueued`/`retriesScheduled` counters, one pending identity and timer, unchanged backoff, released capacity and timer cleanup. It failed before incrementing `enqueued` on rejection.
 - Issue #33 / PR #55 integration: `dismissal advances through undecided discoveries and clears the final item` failed after the initial rebase because a deferred ready-item addition could reinsert a removed item. The addition now checks the current authoritative feed object before publishing; PR #55's handled-evidence and PR #59's polling coverage remain intact.
 - Issue #33 concurrent ready-result reconciliation: `discovery_unchanged_refresh_preserves_a_concurrent_ready_preview` completes a valid preview and an inactive-item refresh in one React batch. It failed before retaining unchanged item ownership independently of lagging rendered-result refs. The existing browser `inactive discovery preview refreshes once without a retry notification and another discovery loads` reproduced this ordering in CI; its assertions and deadlines remain unchanged.
+
+## PR #66 review — current routes, SQLite parity and preview lifecycle
+
+`backend/tests/test_canonical_repertoire_prefix.py` adds:
+
+- `test_canonical_prefix_current_route_required_after_source_disappears_at_branch_boundary` (delete/change): actual branch admission rejects an expired route, historical continuations cannot self-certify, and a restored rooted line plus a fresh check permits admission. Both variants failed before the source fence.
+- `test_sqlite_unrestricted_zero_node_coverage_preserves_complete_empty_run`, paired with the existing `test_canonical_prefix_matching_stub_without_continuation_never_reports_complete`. The unrestricted case failed before the fix.
+- `test_sqlite_shared_card_edit_validates_all_memberships_before_study_mutation` (owner/link variants): valid edits succeed; either affected repertoire can reject the whole edit, with unchanged cards, revisions, reviews, queue, annotations and tasks. Both variants failed before the fix.
+- `test_sqlite_prefixed_pgn_reimport_validates_all_candidates_atomically`: a mixed matching/off-scope re-import leaves all study tables unchanged; a matching re-import succeeds. Failed before the fix.
+- `test_canonical_prefix_identical_previews_reuse_work_and_version_changes_create_new_scan`: duplicate checks reuse one scan; changed source and prefix versions require a new one. Failed before the fix.
+- `test_canonical_prefix_preview_retention_is_bounded_restartable_and_preserves_active_certificate`: interrupted leases, bounded child cleanup, replay fencing, active-preview preservation and stale-proof rejection.
+- `test_canonical_prefix_card_root_recertifies_connected_lines_but_cannot_resurrect_deleted_anchor`: card roots participate in multipass validation and deletion invalidates their certificates.
+- `test_sqlite_integrity_line_rewrite_cannot_escape_canonical_scope`.
+- `test_canonical_prefix_unverified_continuation_never_reports_partial_routes_as_complete`.
+- `test_canonical_prefix_admission_rechecks_source_version_before_inserting`.
+- `test_integrity_shared_card_replacement_belongs_only_to_validated_repertoire`.
+
+`backend/tests/test_postgres_cutover.py` adds
+`test_postgres_coverage_unverified_canonical_route_fails_actionably_without_publication`.
+The component regression `canonical prefix confirmed save followed by refresh failure remains committed without a stale retry` failed before the UI fix and protects the confirmed receipt and disabled stale save.
+
+The regular PostgreSQL `study_durability` scenario now independently requests the
+same prefix while its worker is stopped and proves one persisted scan survives
+restart. It also exercises real branch commands: deleting a source rejects a new
+arbitrary-FEN continuation; restoring and recertifying the route admits it again.
+Existing foreground-contention, interrupted command, history/schedule preservation,
+exact-order membership, shortening, Black scope and later transposition regressions
+remain in the regular gate.

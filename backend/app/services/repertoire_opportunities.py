@@ -16,7 +16,7 @@ from .. import postgres_store
 from .activity_gate import activity_gate
 from .durable_tasks import enqueue_task, enqueue_task_in_transaction, lock_current_slice
 from .discovery_admission import _full_history_request, _source_game
-from .canonical_prefix import read_prefix
+from .canonical_prefix import read_prefix, assumed_position_keys
 
 
 RECENT_DAYS = 90
@@ -162,10 +162,7 @@ def _resolve(database: sqlite3.Connection, opportunity_id: str) -> None:
 
 def _route_keys(database: sqlite3.Connection, repertoire_id: str, card_id: str) -> list[list[str]]:
     prefix = read_prefix(database, repertoire_id)
-    assumed_positions = {row["fen_key"] for row in database.execute(
-        "SELECT fen_key FROM canonical_prefix_positions WHERE preview_id=? AND in_scope=0 AND ply<?",
-        (prefix["preview_id"], len(prefix["moves"])),
-    )} if prefix["moves"] else set()
+    assumed_positions = assumed_position_keys(prefix["moves"])
     rows = database.execute(
         """SELECT step.line_id,step.card_id,step.decision_fen_keys_json,step.parent_card_id
            FROM opening_graph_steps step JOIN opening_graph_publications publication

@@ -71,6 +71,16 @@ def game_in_scope(starting_fen: str, moves: list[str], prefix_moves: list[str]) 
             and moves[:len(prefix_moves)] == prefix_moves)
 
 
+def assumed_position_keys(prefix_moves: list[str]) -> set[str]:
+    """Assumed positions come from current opening metadata, not source certificates."""
+    board = chess.Board()
+    positions = set()
+    for move_uci in prefix_moves:
+        positions.add(position_key(board.fen()))
+        board.push_uci(move_uci)
+    return positions
+
+
 def validate_scoped_line(starting_fen: str, moves: list[str], prefix_moves: list[str],
                          origin: list[str] | None) -> dict:
     """Validate one line from a verified route, keeping its original training start."""
@@ -118,8 +128,13 @@ def line_origin(database, preview_id: str | None, starting_fen: str) -> list[str
     if not preview_id:
         return None
     anchor = database.execute(
-        "SELECT route_json FROM canonical_prefix_positions WHERE preview_id=? AND fen_key=? "
-        "ORDER BY in_scope DESC,ply,route_json LIMIT 1", (preview_id, position_key(starting_fen)),
+        "SELECT position.route_json FROM canonical_prefix_positions position "
+        "JOIN canonical_prefix_previews preview ON preview.id=position.preview_id "
+        "JOIN repertoires repertoire ON repertoire.id=preview.repertoire_id "
+        "WHERE position.preview_id=? AND position.fen_key=? "
+        "AND position.source_revision=repertoire.scope_source_revision "
+        "ORDER BY position.in_scope DESC,position.ply,position.route_json LIMIT 1",
+        (preview_id, position_key(starting_fen)),
     ).fetchone()
     return json.loads(anchor["route_json"]) if anchor else None
 
@@ -133,9 +148,10 @@ def ensure_line_in_scope(database, repertoire_id: str, starting_fen: str,
                                   line_origin(database, prefix["preview_id"], starting_fen))
     if result["status"] != "valid":
         from fastapi import HTTPException
-        raise HTTPException(409, "This line is outside the repertoire's canonical prefix. " + result["reason"])
+        raise HTTPException(409, "This line is outside the repertoire's canonical prefix. " + result["reason"]
+                            + ". Check the canonical prefix again to verify current routes.")
     if remember and prefix["preview_id"]:
-        store_positions(database, prefix["preview_id"], result["positions"])
+        store_positions(database, prefix["preview_id"], result["positions"], source_revision=prefix["source_revision"])
     return result
 
 
@@ -148,7 +164,7 @@ def scope_line(database, repertoire_id: str, line: dict, prefix: dict | None = N
     # Stored lines passed the write boundary. Reconstruct their verified origin so
     # downstream opponent moves retain their probabilities and absolute horizon.
     if origin is None:
-        return {**line, "scope_start_ply": len(json.loads(line["moves_json"])) + 1}
+        return {**line, "scope_start_ply": len(json.loads(line["moves_json"])) + 1, "scope_pending": True}
     return {**line, "start_fen": chess.STARTING_FEN,
             "moves_json": json.dumps([*origin, *json.loads(line["moves_json"])]),
             "scope_start_ply": len(prefix["moves"])}
@@ -161,19 +177,24 @@ def scope_lines(database, repertoire_id: str, lines: list[dict]) -> list[dict]:
     return [scope_line(database, repertoire_id, line, prefix) for line in lines]
 
 
-def store_positions(database, preview_id: str, positions: list[dict]) -> None:
+def store_positions(database, preview_id: str, positions: list[dict], *, source_revision: int | None = None) -> None:
     if not positions:
         return
+    if source_revision is None:
+        source_revision = database.execute("SELECT source_revision FROM canonical_prefix_previews WHERE id=?", (preview_id,)).fetchone()[0]
     if hasattr(database, "execute_native"):
         database.execute_native(
-            "INSERT INTO canonical_prefix_positions(preview_id,fen_key,in_scope,fen,route_json,ply) "
-            "SELECT %s,fen_key,in_scope,fen,route_json,ply FROM jsonb_to_recordset(%s::jsonb) "
+            "INSERT INTO canonical_prefix_positions(preview_id,fen_key,in_scope,fen,route_json,ply,source_revision) "
+            "SELECT %s,fen_key,in_scope,fen,route_json,ply,%s FROM jsonb_to_recordset(%s::jsonb) "
             "AS position(fen_key text,in_scope bigint,fen text,route_json text,ply bigint) "
-            "ON CONFLICT(preview_id,fen_key,in_scope) DO NOTHING",
-            (preview_id, json.dumps(positions)),
+            "ON CONFLICT(preview_id,fen_key,in_scope) DO UPDATE SET fen=excluded.fen,route_json=excluded.route_json,"
+            "ply=excluded.ply,source_revision=excluded.source_revision",
+            (preview_id, source_revision, json.dumps(positions)),
         )
     else:
         database.executemany(
-            "INSERT OR IGNORE INTO canonical_prefix_positions(preview_id,fen_key,in_scope,fen,route_json,ply) VALUES(?,?,?,?,?,?)",
-            [(preview_id, item["fen_key"], item["in_scope"], item["fen"], item["route_json"], item["ply"]) for item in positions],
+            "INSERT INTO canonical_prefix_positions(preview_id,fen_key,in_scope,fen,route_json,ply,source_revision) VALUES(?,?,?,?,?,?,?) "
+            "ON CONFLICT(preview_id,fen_key,in_scope) DO UPDATE SET fen=excluded.fen,route_json=excluded.route_json,"
+            "ply=excluded.ply,source_revision=excluded.source_revision",
+            [(preview_id, item["fen_key"], item["in_scope"], item["fen"], item["route_json"], item["ply"], source_revision) for item in positions],
         )

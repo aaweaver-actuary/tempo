@@ -2002,6 +2002,9 @@ async def import_pgn(
             (file.filename, trained_color),
         ).fetchone()
         rid = existing_repertoire["id"] if existing_repertoire else str(uuid.uuid4())
+        if existing_repertoire:
+            for line in lines:
+                ensure_line_in_scope(db, rid, line.starting_fen, line.moves, remember=False)
         db.execute(
             "UPDATE repertoires SET is_main=0 WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')"
         )
@@ -3455,6 +3458,13 @@ def revise_card(identifier: str, request: CardRevisionRequest,
         old = db.execute("SELECT * FROM cards WHERE id=?", (identifier,)).fetchone()
         if not old:
             raise HTTPException(404, "Card not found")
+        affected_repertoire_ids = [row[0] for row in db.execute(
+            "SELECT repertoire_id FROM repertoire_cards WHERE card_id=? "
+            "UNION SELECT repertoire_id FROM cards WHERE id=? ORDER BY repertoire_id",
+            (identifier, identifier),
+        )]
+        for repertoire_id in affected_repertoire_ids:
+            ensure_line_in_scope(db, repertoire_id, request.starting_fen, moves, remember=False)
         existing = db.execute(
             "SELECT * FROM cards WHERE id=?", (replacement,)
         ).fetchone()
@@ -3550,12 +3560,7 @@ def revise_card(identifier: str, request: CardRevisionRequest,
                 (replacement, identifier),
             )
             db.execute("DELETE FROM repertoire_cards WHERE card_id=?", (identifier,))
-        repertoire_ids = [
-            row["repertoire_id"]
-            for row in db.execute(
-                "SELECT repertoire_id FROM repertoire_cards WHERE card_id=?", (replacement,)
-            )
-        ]
+        repertoire_ids = affected_repertoire_ids
         for repertoire_id in set(repertoire_ids):
             db.execute(
                 "UPDATE cards SET pending_validation=1 WHERE id=?",

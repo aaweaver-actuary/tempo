@@ -256,6 +256,7 @@ def enqueue_coverage_refresh(
     nodes = discover_opponent_positions(
         lines, int(settings["coverage_horizon_fullmoves"])
     )
+    scope_pending = any(line.get('scope_pending') for line in lines)
     run_id = str(uuid.uuid4())
     now = _now()
     settings_payload = {
@@ -290,12 +291,13 @@ def enqueue_coverage_refresh(
             (
                 run_id,
                 repertoire_id,
-                "queued" if nodes else "failed",
+                "failed" if scope_pending else "queued" if nodes else "failed" if prefix["moves"] else "complete",
                 json.dumps(settings_payload),
                 len(nodes),
                 now,
                 now,
-                None if nodes else "No opponent positions after the canonical prefix within the coverage horizon. Add a continuation or adjust the horizon.",
+                "Saved continuation routes need verification. Check the canonical prefix again before refreshing coverage." if scope_pending else
+                "No opponent positions after the canonical prefix within the coverage horizon. Add a continuation or adjust the horizon." if not nodes and prefix["moves"] else None,
             ),
         )
         for node in nodes:

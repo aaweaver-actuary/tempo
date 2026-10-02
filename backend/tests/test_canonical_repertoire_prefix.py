@@ -472,3 +472,231 @@ def test_canonical_prefix_opportunity_publication_locks_repertoire_before_task_t
     monkeypatch.setattr(repertoire_opportunities, "_advance_slice", lambda *_args: None)
     assert repertoire_opportunities.execute_opportunity_slice({"payload": {"repertoire_id": "italian", "phase": "cards", "cursor": ""}})
     assert locks == ["repertoire", "task"]
+
+
+@pytest.fixture
+def quiet_prefix_writes(monkeypatch):
+    from app import main
+    for name in ('enqueue_opening_graph_rebuild', 'enqueue_integrity_scans', 'enqueue_coverage_refresh'):
+        monkeypatch.setattr(main, name, lambda *args, **kwargs: None)
+    monkeypatch.setattr(main.coordinator, 'wake', lambda: None)
+
+
+@pytest.mark.parametrize('mutation', ['delete', 'change'])
+def test_canonical_prefix_current_route_required_after_source_disappears_at_branch_boundary(prefix_database, quiet_prefix_writes, mutation):
+    from app.main import branch
+    from app.models import BranchRequest
+    from fastapi import HTTPException
+    from app.services.canonical_prefix import line_origin, read_prefix
+    route = [*ITALIAN, 'f8c5', 'c2c3']
+    add_line(route, 'route-source')
+    apply_preview(prepare_prefix())
+    starting_fen = prefix_projection(route)['ending_fen']
+    request = BranchRequest(repertoire_id='italian', name='Anchored', trained_color='white', starting_fen=starting_fen, moves=['g8f6'])
+    assert branch(request)['id']
+    # Recertify the now-current source state before removing its only rooted route.
+    prepare_prefix()
+    with database.connection() as connection:
+        if mutation == 'delete':
+            connection.execute("DELETE FROM repertoire_lines WHERE id='route-source'")
+        else:
+            connection.execute("UPDATE repertoire_lines SET moves_json=? WHERE id='route-source'", (json.dumps([*ITALIAN, 'g8f6']),))
+    with database.read_connection() as connection:
+        assert line_origin(connection, read_prefix(connection, 'italian')['preview_id'], starting_fen) is None
+    with pytest.raises(HTTPException, match='outside the repertoire'):
+        branch(BranchRequest(**{**request.model_dump(), 'moves': ['d7d6']}))
+    # The old continuation must not self-certify through its historical origin.
+    assert prepare_prefix()['state'] == 'conflicts'
+    branch(BranchRequest(repertoire_id='italian', name='Restored route', trained_color='white', starting_fen=chess.STARTING_FEN, moves=route))
+    assert prepare_prefix()['state'] == 'ready'
+    assert branch(BranchRequest(**{**request.model_dump(), 'moves': ['d7d6']}))['id']
+
+
+def test_sqlite_unrestricted_zero_node_coverage_preserves_complete_empty_run(prefix_database):
+    from app.services.repertoire_coverage import enqueue_coverage_refresh
+    run_id = enqueue_coverage_refresh('italian')
+    with database.read_connection() as connection:
+        run = connection.execute('SELECT * FROM repertoire_coverage_runs WHERE id=?', (run_id,)).fetchone()
+    assert run['status'] == 'complete'
+    assert run['last_error'] is None and run['total_nodes'] == 0
+
+
+def study_snapshot():
+    with database.read_connection() as connection:
+        return {table: [tuple(row) for row in connection.execute(f'SELECT * FROM {table} ORDER BY 1')]
+                for table in ('repertoires', 'repertoire_lines', 'cards', 'repertoire_cards', 'card_revisions', 'reviews', 'daily_queue', 'position_annotations', 'background_tasks')}
+
+
+@pytest.mark.parametrize('linked_prefix', [ITALIAN, ['e2e4', 'e7e5', 'g1f3', 'd7d6']])
+def test_sqlite_shared_card_edit_validates_all_memberships_before_study_mutation(prefix_database, quiet_prefix_writes, linked_prefix):
+    from app.main import revise_card
+    from app.models import CardRevisionRequest
+    from fastapi import HTTPException
+    add_line(ITALIAN)
+    apply_preview(prepare_prefix())
+    with database.connection() as connection:
+        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at,canonical_prefix_moves_json) VALUES('other','Other','other.pgn','2026-10-02',?)", (json.dumps(linked_prefix),))
+        connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES('shared','other','prefix',?,?,'2026-10-02')", (chess.STARTING_FEN, json.dumps(['e2e4', 'e7e5', 'g1f3'])))
+        connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('italian','shared')")
+    before = study_snapshot()
+    invalid_moves = ['e2e4', 'e7e5', 'g1f3', 'd7d6'] if linked_prefix == ITALIAN else ITALIAN
+    with pytest.raises(HTTPException, match='outside the repertoire'):
+        revise_card('shared', CardRevisionRequest(starting_fen=chess.STARTING_FEN, moves=invalid_moves, history_mode='preserve', expected_revision=1))
+    assert study_snapshot() == before
+    valid_moves = ITALIAN if linked_prefix == ITALIAN else ['e2e4', 'e7e5', 'g1f3']
+    assert revise_card('shared', CardRevisionRequest(starting_fen=chess.STARTING_FEN, moves=valid_moves, history_mode='preserve', expected_revision=1))['card_id']
+
+
+def test_sqlite_prefixed_pgn_reimport_validates_all_candidates_atomically(prefix_database, quiet_prefix_writes):
+    import asyncio
+    from io import BytesIO
+    from fastapi import HTTPException, UploadFile
+    from app.main import import_pgn
+    add_line(ITALIAN)
+    apply_preview(prepare_prefix())
+    def run_import(text):
+        return asyncio.run(import_pgn(UploadFile(filename='italian.pgn', file=BytesIO(text.encode())), 'white', 3, None))
+    before = study_snapshot()
+    with pytest.raises(HTTPException, match='outside the repertoire'):
+        run_import('[Event "Matching"]\n\n1. e4 {new annotation} e5 2. Nf3 Nc6 3. Bc4 Bc5 *\n\n[Event "Off scope"]\n\n1. e4 e5 2. Nf3 d6 *')
+    assert study_snapshot() == before
+    result = run_import('[Event "Matching"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 *')
+    assert result.repertoire_id == 'italian'
+    assert len(study_snapshot()['repertoire_lines']) == 2
+
+
+def test_canonical_prefix_identical_previews_reuse_work_and_version_changes_create_new_scan(prefix_database):
+    with database.connection() as connection:
+        first = request_preview(connection, 'italian', ITALIAN)
+        second = request_preview(connection, 'italian', ITALIAN)
+        assert first['preview_id'] == second['preview_id']
+        assert connection.execute("SELECT COUNT(*) FROM background_tasks WHERE kind='canonical_prefix_preview'").fetchone()[0] == 1
+    ready = prepare_prefix()
+    assert ready['preview_id'] == first['preview_id']
+    add_line(ITALIAN)
+    changed_source = prepare_prefix()
+    assert changed_source['preview_id'] != first['preview_id']
+    apply_preview(changed_source)
+    changed_prefix_revision = prepare_prefix()
+    assert changed_prefix_revision['preview_id'] != changed_source['preview_id']
+
+
+def test_canonical_prefix_preview_retention_is_bounded_restartable_and_preserves_active_certificate(prefix_database):
+    from app.services.durable_tasks import requeue_interrupted_tasks
+    from app.services.canonical_prefix import line_origin, read_prefix
+    add_line([*ITALIAN, 'f8c5'])
+    apply_preview(prepare_prefix())
+    with database.read_connection() as connection:
+        active_id = read_prefix(connection, 'italian')['preview_id']
+    for length in range(1, 6):
+        with database.connection() as connection:
+            request_preview(connection, 'italian', ITALIAN[:min(length, 4)])
+            connection.execute('UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id=?', ('italian',))
+            request_preview(connection, 'italian', ITALIAN[:min(length, 4)])
+    # A lost lease resumes through normal restart recovery; no scan is reset by reuse.
+    claimed = claim_task('canonical_prefix_preview')
+    with database.connection() as connection:
+        connection.execute("UPDATE background_tasks SET lease_expires_at='2000-01-01' WHERE id=?", (claimed['id'],))
+    requeue_interrupted_tasks()
+    for _ in range(600):
+        task = claim_task('canonical_prefix_preview')
+        if not task:
+            break
+        assert execute_prefix_preview_slice(task)
+        # Replaying the same delivery cannot delete the next row or republish.
+        assert not execute_prefix_preview_slice(task)
+    else:
+        pytest.fail('Preview retention did not finish within its bounded fixture')
+    with database.read_connection() as connection:
+        assert connection.execute('SELECT COUNT(*) FROM canonical_prefix_previews').fetchone()[0] <= 9
+        assert connection.execute('SELECT 1 FROM canonical_prefix_previews WHERE id=?', (active_id,)).fetchone()
+        assert connection.execute("SELECT COUNT(*) FROM background_tasks WHERE kind='canonical_prefix_preview'").fetchone()[0] <= 9
+        assert not connection.execute('SELECT 1 FROM canonical_prefix_positions position LEFT JOIN canonical_prefix_previews preview ON preview.id=position.preview_id WHERE preview.id IS NULL').fetchone()
+        # Historical certificates remain retained for history, never authoritative.
+        assert line_origin(connection, active_id, prefix_projection([*ITALIAN, 'f8c5'])['ending_fen']) is None
+
+
+def test_canonical_prefix_card_root_recertifies_connected_lines_but_cannot_resurrect_deleted_anchor(prefix_database):
+    from app.services.canonical_prefix import line_origin, read_prefix
+    route = [*ITALIAN, 'f8c5', 'c2c3']
+    starting_fen = prefix_projection(route)['ending_fen']
+    add_line(['g8f6'], 'anchored', starting_fen)
+    with database.connection() as connection:
+        connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES('root-card','italian','prefix',?,?,'2026-10-02')", (chess.STARTING_FEN, json.dumps(route)))
+    preview = prepare_prefix()
+    assert preview['state'] == 'ready'
+    apply_preview(preview)
+    with database.connection() as connection:
+        prefix = read_prefix(connection, 'italian')
+        assert line_origin(connection, prefix['preview_id'], starting_fen) == route
+        connection.execute("DELETE FROM cards WHERE id='root-card'")
+        assert line_origin(connection, prefix['preview_id'], starting_fen) is None
+    assert prepare_prefix()['state'] == 'conflicts'
+
+
+def test_sqlite_integrity_line_rewrite_cannot_escape_canonical_scope(prefix_database):
+    from app.services.repertoire_integrity import _rewrite_line
+    from fastapi import HTTPException
+    add_line(ITALIAN)
+    apply_preview(prepare_prefix())
+    before = study_snapshot()
+    with pytest.raises(HTTPException, match='outside the repertoire'):
+        with database.connection() as connection:
+            line = connection.execute("SELECT * FROM repertoire_lines WHERE id='main'").fetchone()
+            _rewrite_line(connection, line, ['e2e4', 'e7e5', 'g1f3', 'd7d6'])
+    assert study_snapshot() == before
+
+
+def test_canonical_prefix_unverified_continuation_never_reports_partial_routes_as_complete(prefix_database):
+    from app.services.repertoire_coverage import enqueue_coverage_refresh, coverage_summary
+    route = [*ITALIAN, 'f8c5', 'c2c3']
+    add_line(route, 'root')
+    add_line(['g8f6'], 'anchored', prefix_projection(route)['ending_fen'])
+    apply_preview(prepare_prefix())
+    # An unrelated additive mutation also invalidates the old source certificate.
+    add_line([*ITALIAN, 'g8f6'], 'other')
+    enqueue_coverage_refresh('italian')
+    summary = coverage_summary('italian')
+    assert summary['status'] == 'failed' and not summary['is_complete']
+    assert 'verification' in summary['last_error']
+    assert prepare_prefix()['state'] == 'ready'
+
+
+def test_canonical_prefix_admission_rechecks_source_version_before_inserting(prefix_database, monkeypatch):
+    from app.services import discovery_admission
+    from app.services.durable_tasks import enqueue_task_in_transaction
+    from app.services.repertoire_opportunities import _publish
+    add_line(ITALIAN)
+    apply_preview(prepare_prefix())
+    with database.connection() as connection:
+        _publish(connection, repertoire_id='italian', kind='missing_response', fen_key=position_key_for_test(prefix_projection(ITALIAN)['ending_fen']), target='f8c5', card_id=None, opponent_move_uci='f8c5', score=1, evidence={})
+        opportunity_id = connection.execute('SELECT id FROM repertoire_opportunities').fetchone()[0]
+        connection.execute("INSERT INTO discovery_admission_intents(id,opportunity_id,repertoire_id,evidence_fingerprint,starting_fen,selected_move_uci,preview_moves_json,recommendation_json,line_id,created_at,updated_at) VALUES('race',?,'italian','evidence',?,'f8c5','[\"f8c5\"]','{}','race-line','2026-10-02','2026-10-02')", (opportunity_id, prefix_projection(ITALIAN)['ending_fen']))
+        enqueue_task_in_transaction(connection, 'discovery_admission', 'race', {'intent_id': 'race'})
+    original_validate = discovery_admission.validate_scoped_line
+    def mutate_after_validation(*args):
+        result = original_validate(*args)
+        add_line([*ITALIAN, 'g8f6'], 'concurrent-edit')
+        return result
+    monkeypatch.setattr(discovery_admission, 'validate_scoped_line', mutate_after_validation)
+    with pytest.raises(ValueError, match='routes changed'):
+        discovery_admission._materialize_admission_branch(claim_task('discovery_admission'))
+    with database.read_connection() as connection:
+        assert not connection.execute("SELECT 1 FROM repertoire_lines WHERE id='race-line'").fetchone()
+
+
+def test_integrity_shared_card_replacement_belongs_only_to_validated_repertoire(prefix_database):
+    from app.services.repertoire_integrity import _rewrite_card
+    add_line(ITALIAN)
+    apply_preview(prepare_prefix())
+    with database.connection() as connection:
+        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at,canonical_prefix_moves_json) VALUES('other','Philidor','other.pgn','2026-10-02',?)", (json.dumps(['e2e4', 'e7e5', 'g1f3', 'd7d6']),))
+        connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES('shared-stub','other','prefix',?,?,'2026-10-02')", (chess.STARTING_FEN, json.dumps(ITALIAN[:3])))
+        for repertoire_id in ('italian', 'other'):
+            connection.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)', (repertoire_id, 'shared-stub'))
+        source_card = connection.execute("SELECT * FROM cards WHERE id='shared-stub'").fetchone()
+        assert _rewrite_card(connection, 'italian', source_card, ITALIAN)
+        replacement = connection.execute("SELECT * FROM cards WHERE id<>'shared-stub'").fetchone()
+        assert replacement['repertoire_id'] == 'italian'
+        assert connection.execute("SELECT archived FROM cards WHERE id='shared-stub'").fetchone()[0] == 0
+        assert connection.execute("SELECT repertoire_id FROM repertoire_cards WHERE card_id=?", (replacement['id'],)).fetchone()[0] == 'italian'

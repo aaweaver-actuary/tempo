@@ -6485,3 +6485,26 @@ def test_postgres_legacy_train_payload_cannot_write_current_evidence(fingerprint
         opportunity_commands.train_opportunity(Database(), payload)
     assert failure.value.status_code == 409
     assert "Review the current evidence" in failure.value.detail
+
+
+def test_postgres_coverage_unverified_canonical_route_fails_actionably_without_publication(monkeypatch):
+    from app.services import postgres_coverage_seed
+    statements = []
+    task = {'id': 'seed', 'generation': 1, 'lease_token': 'lease',
+            'payload': {'repertoire_id': 'rep', 'run_id': 'run', 'horizon_fullmoves': 15}}
+    monkeypatch.setattr(postgres_coverage_seed, 'prepare_next_coverage_line',
+                        lambda *args: postgres_coverage_seed.PreparedCoverageLine('line', (), scope_pending=True))
+    class WriteDatabase:
+        def execute_native(self, statement, parameters):
+            statements.append((statement, parameters))
+    @contextmanager
+    def bounded_write(*, background):
+        assert background
+        yield WriteDatabase()
+    monkeypatch.setattr(postgres_coverage_seed, 'connection', bounded_write)
+    monkeypatch.setattr(postgres_coverage_seed, 'lock_current_slice', lambda *args: True)
+    monkeypatch.setattr(postgres_coverage_seed, 'complete_task_slice_in_transaction', lambda *args: True)
+    assert postgres_coverage_seed.execute_coverage_seed_slice(task)
+    assert len(statements) == 1
+    assert "status='failed'" in statements[0][0]
+    assert 'Check the canonical prefix again' in statements[0][1][0]

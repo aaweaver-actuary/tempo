@@ -658,6 +658,8 @@ def _transform_source(start_fen: str, moves: list[str], trained_color: str, targ
 
 
 def _rewrite_line(database: sqlite3.Connection, row: sqlite3.Row, moves: list[str]) -> bool:
+    from .canonical_prefix import ensure_line_in_scope
+    ensure_line_in_scope(database, row["repertoire_id"], row["start_fen"], moves, remember=False)
     new_id = hashlib.sha256(
         f"{row['repertoire_id']}\0{card_id(row['start_fen'], moves)}".encode()
     ).hexdigest()
@@ -682,7 +684,7 @@ def _rewrite_card(database: sqlite3.Connection, repertoire_id: str, row: sqlite3
     if not existing:
         columns = card_columns(database)
         values = dict(row)
-        values.update({"id": new_id, "moves_json": json.dumps(moves), "state": "new", "due_date": datetime.now(timezone.utc).date().isoformat(), "interval_days": 0, "repetitions": 0, "lapses": 0, "introduced_at": None, "archived": 0, "superseded_by": None})
+        values.update({"id": new_id, "repertoire_id": repertoire_id, "moves_json": json.dumps(moves), "state": "new", "due_date": datetime.now(timezone.utc).date().isoformat(), "interval_days": 0, "repetitions": 0, "lapses": 0, "introduced_at": None, "archived": 0, "superseded_by": None})
         database.execute(
             f"INSERT INTO cards({','.join(columns)}) VALUES({','.join('?' for _ in columns)})",
             tuple(values.get(column) for column in columns),

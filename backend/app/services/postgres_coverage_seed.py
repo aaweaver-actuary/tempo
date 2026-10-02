@@ -24,6 +24,7 @@ from .canonical_prefix import read_prefix, scope_line
 class PreparedCoverageLine:
     line_id: str
     positions: tuple[dict[str, Any], ...]
+    scope_pending: bool = False
 
 
 def _now() -> str:
@@ -38,7 +39,7 @@ def _source_fingerprint(database: PostgresConnection, repertoire_id: str) -> str
         (repertoire_id,),
     ).fetchone()
     prefix = read_prefix(database, repertoire_id)
-    return f"{row[0]}:{prefix['revision']}"
+    return f"{row[0]}:{prefix['revision']}:{prefix['source_revision']}:{prefix['preview_id']}"
 
 
 def request_coverage_seed_in_transaction(
@@ -118,6 +119,8 @@ def prepare_next_coverage_line(
         line = scope_line(database, repertoire_id, dict(row)) if row else None
     if line is None:
         return None
+    if line.get('scope_pending'):
+        return PreparedCoverageLine(str(line['id']), (), scope_pending=True)
     positions = discover_opponent_positions([line], horizon_fullmoves)
     return PreparedCoverageLine(str(line["id"]), tuple(positions))
 
@@ -213,6 +216,15 @@ def execute_coverage_seed_slice(task: dict[str, Any]) -> bool:
         str(payload["repertoire_id"]), str(payload.get("after_line_id", "")),
         int(payload["horizon_fullmoves"]),
     )
+    if prepared and prepared.scope_pending:
+        with connection(background=True) as database:
+            if not lock_current_slice(database, task):
+                return False
+            database.execute_native(
+                "UPDATE repertoire_coverage_runs SET status='failed',last_error=%s,updated_at=%s WHERE id=%s AND status='building'",
+                ('Saved continuation routes need verification. Check the canonical prefix again before refreshing coverage.', _now(), payload['run_id']),
+            )
+            return complete_task_slice_in_transaction(database, task)
     position_index = int(payload.get("position_index", 0))
     if prepared is None:
         with background_read_connection() as database:

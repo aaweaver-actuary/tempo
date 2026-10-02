@@ -48,9 +48,11 @@ def save_prefix(database, payload: dict) -> dict:
             or preview["source_revision"] != current["source_revision"]):
         raise HTTPException(409, "Resolve conflicting lines and check the current prefix again before saving.")
     moves = json.loads(preview["moves_json"])
-    if moves == current["moves"]:
+    if moves == current["moves"] and not moves:
+        database.execute("UPDATE repertoires SET canonical_prefix_preview_id=? WHERE id=?",
+                         (request.preview_id, repertoire_id))
         return prefix_projection(moves, current["revision"])
-    revision = current["revision"] + 1
+    revision = current["revision"] + int(moves != current["moves"])
     database.execute(
         "UPDATE repertoires SET canonical_prefix_moves_json=?,canonical_prefix_revision=?,canonical_prefix_preview_id=? WHERE id=?",
         (json.dumps(moves), revision, request.preview_id, repertoire_id),

@@ -606,8 +606,8 @@ def _materialize_admission_branch(task: dict) -> None:
             raise ValueError("The canonical prefix changed; refresh this discovery before adding it")
         if current_prefix["revision"] != prefix["revision"]:
             raise ValueError("The canonical prefix changed; refresh this discovery before adding it")
-        if current_prefix["moves"] and current_prefix["preview_id"]:
-            store_positions(database, current_prefix["preview_id"], scoped_line["positions"])
+        if current_prefix["source_revision"] != prefix["source_revision"]:
+            raise ValueError("The repertoire routes changed; refresh this discovery before adding it")
         inserted = database.execute(
             """INSERT OR IGNORE INTO repertoire_lines(
                  id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
@@ -616,6 +616,11 @@ def _materialize_admission_branch(task: dict) -> None:
              intent["starting_fen"], json.dumps(preview_moves), _now()),
         ).rowcount
         if inserted:
+            if current_prefix["moves"] and current_prefix["preview_id"]:
+                # The source check above precedes this additive write. Re-establish
+                # only the verified admitted route against its committed source version.
+                store_positions(database, current_prefix["preview_id"], scoped_line["positions"],
+                                source_revision=read_prefix(database, intent["repertoire_id"])["source_revision"])
             depth = database.execute(
                 "SELECT initial_depth FROM settings WHERE id=1",
             ).fetchone()[0]

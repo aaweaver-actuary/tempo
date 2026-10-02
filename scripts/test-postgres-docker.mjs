@@ -393,6 +393,11 @@ async function verifyForegroundAndStudyDurability() {
     movetext: "e4",
   }, { operationId: `pg-study-prefix-preview-${randomBytes(10).toString("hex")}` });
   assert.equal(prefixPreview.state, "checking");
+  const repeatedPrefixPreview = await postCommand(`repertoires/${importedStudy.repertoire_id}/canonical-prefix/preview`, {
+    movetext: "1. e4",
+  }, { operationId: `pg-study-prefix-preview-repeat-${randomBytes(10).toString("hex")}` });
+  assert.equal(repeatedPrefixPreview.preview_id, prefixPreview.preview_id,
+    "Equivalent independent preview commands reuse the stopped worker's original scan");
   assert((await get("system/tasks")).tasks.some(task => task.kind === "canonical_prefix_preview"
     && task.deduplication_key === prefixPreview.preview_id && ["queued", "retrying"].includes(task.state)),
   "Prefix compatibility remains durable while its worker is stopped");
@@ -463,6 +468,46 @@ async function verifyForegroundAndStudyDurability() {
     "Verified anchors persist across restart");
   console.log("PASS PostgreSQL study state, queue order, guided failure, canonical prefix, and command identities survive service recreation");
   activeStudyRepertoireId = null;
+}
+
+async function verifyCurrentCanonicalRouteAdmission() {
+  const imported = await importFixture("current-canonical-routes.pgn",
+    '[Event "Current route"]\n\n1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 4. c3 *');
+  const repertoireId = imported.repertoire_id;
+  await waitForStudyableImport(repertoireId);
+  const checkCurrentPrefix = async () => {
+    const admitted = await postCommand(`repertoires/${repertoireId}/canonical-prefix/preview`,
+      { movetext: "e4 e5 Nf3 Nc6 Bc4" });
+    const deadline = performance.now() + 30_000;
+    while (true) {
+      const preview = await get(`repertoires/${repertoireId}/canonical-prefix/preview/${admitted.preview_id}`);
+      if (preview.state === "ready") return preview;
+      assert.equal(preview.state, "checking", JSON.stringify(preview));
+      assert(performance.now() < deadline, "Current-source compatibility finishes");
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+  };
+  const preview = await checkCurrentPrefix();
+  await postCommand(`repertoires/${repertoireId}/canonical-prefix`,
+    { preview_id: preview.preview_id, expected_revision: preview.revision }, { method: "PUT" });
+  const startingFen = "r1bqk1nr/pppp1ppp/2n5/2b1p3/2B1P3/2P2N2/PP1P1PPP/RNBQK2R b KQkq - 0 4";
+  const continuation = { repertoire_id: repertoireId, name: "Anchored continuation",
+    trained_color: "white", starting_fen: startingFen, moves: ["g8f6", "d2d3"] };
+  await postCommand("repertoire/branches", continuation);
+  await postCommand("repertoire/branches/remove", { repertoire_id: repertoireId,
+    starting_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    moves: ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5", "c2c3"] });
+  await assert.rejects(() => postCommand("repertoire/branches",
+    { ...continuation, moves: ["d7d6", "d2d3"] }), /outside the repertoire.*canonical prefix/);
+  await postCommand("repertoire/branches", { ...continuation, name: "Restored current route",
+    starting_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+    moves: ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4", "f8c5", "c2c3"] });
+  await waitForStudyableImport(repertoireId);
+  const current = await checkCurrentPrefix();
+  assert.notEqual(current.preview_id, preview.preview_id,
+    "Changed source state requires a fresh computation");
+  await postCommand("repertoire/branches", { ...continuation, moves: ["d7d6", "d2d3"] });
+  console.log("PASS PostgreSQL deleted-route admission rejects stale proof and accepts a recertified current route");
 }
 
 const actions = {
@@ -668,6 +713,7 @@ const actions = {
   },
   study_durability: async () => {
     await verifyForegroundAndStudyDurability();
+    await verifyCurrentCanonicalRouteAdmission();
   },
   cleanup: async () => executeDiagnosticCleanup(() => {
     if (process.env.TEMPO_CI_REPORT && resourcesCreated) {
