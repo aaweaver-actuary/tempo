@@ -1,6 +1,6 @@
 {
-  "measurementRevision": "1496021f82bfddd1df8b4276fcc57f7e7dd853df",
-  "currentMainBase": "f054fbcb4b2bc22025bd4ceb2a7569675b3080ad",
+  "measurementRevision": "a570f95de216fc1d6d1989f9922dfcafc166e523",
+  "currentMainBase": "072f55048c7f0d3cccca1fcf9e01c32df514fd2f",
   "comparisonBase": "dfbb66d67b314357e55c2030ff794a15415f316c",
   "deterministic": {
     "before": {
@@ -313,12 +313,34 @@
   },
   "pairedHeldDragComparison": {
     "status": "complete",
-    "primaryRun": "https://github.com/aaweaver-actuary/tempo/actions/runs/36997589752",
-    "primaryEvidence": "ci-pair-36997589752/comparison.json",
-    "priorValidRun": "https://github.com/aaweaver-actuary/tempo/actions/runs/36996539621",
-    "priorEvidence": "ci-pair-36996539621/comparison.json",
-    "interpretation": "Request and validation counts fall substantially; controlled held-drag gaps/displacement are effectively unchanged. No drag-latency improvement is established.",
-    "limitations": "DOM/rAF proxies, routed fixtures; server/live-backend/personal-data/physical-display latency unmeasured."
+    "primaryRun": "https://github.com/aaweaver-actuary/tempo/actions/runs/36999113072",
+    "primaryEvidence": "ci-pair-36999113072/comparison.json",
+    "priorValidRuns": [
+      {
+        "run": "https://github.com/aaweaver-actuary/tempo/actions/runs/36996539621",
+        "evidence": "ci-pair-36996539621/comparison.json"
+      },
+      {
+        "run": "https://github.com/aaweaver-actuary/tempo/actions/runs/36997589752",
+        "evidence": "ci-pair-36997589752/comparison.json"
+      }
+    ],
+    "interpretation": "Request and validation counts fall substantially. Controlled frame-gap p95 stays near 17.4 ms; displacement differences also appear in idle controls. No drag-latency improvement is established.",
+    "limitations": "DOM/rAF proxies, routed fixtures; server/live-backend/personal-data/physical-display latency unmeasured.",
+    "dockerResources": {
+      "owningWorkflowCommit": "d57dfce599fa88b2fc4d55508791dbf71ed04db2",
+      "composeProject": null,
+      "cleanup": "Runner-owned containers use docker run --rm; no built development images",
+      "containerIds": [
+        "5c6241030b001f70e11d8f5f20de9f2fe4833993947e216546feca5956dc8da5",
+        "594ce7f0f33e434d184359faa4a600a03c4715b26823e62ddb37587a28fa9e43",
+        "53d1ad63aae1071e44fd37a8b6ea4b2d4d5870c8234c137f069faa8d2a3f177a",
+        "5e769c6d1bb46659641280d09defcc21b2b324eebe1d80cb4226df7b63c59898",
+        "580525c91dda47f2c2203b56248daedbd8cf23ac095c08f95f5c567850e14e49"
+      ],
+      "sharedImage": "mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27",
+      "remainingContainerIds": []
+    }
   },
   "correctnessRevision": "c06a9e1d98fac083e9d3cf632192042b5bca2300",
   "priorDedicatedSetupFailure": {

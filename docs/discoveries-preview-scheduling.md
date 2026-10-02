@@ -78,19 +78,19 @@ enter this scheduler.
 
 The final source measurement compares pre-#33 base
 `dfbb66d67b314357e55c2030ff794a15415f316c` against candidate
-`1496021f82bfddd1df8b4276fcc57f7e7dd853df`, rebased onto main
-`f054fbcb4b2bc22025bd4ceb2a7569675b3080ad` (merged PR #56).
+`a570f95de216fc1d6d1989f9922dfcafc166e523`, rebased onto main
+`072f55048c7f0d3cccca1fcf9e01c32df514fd2f` (including merged PRs #56, #60 and #61).
 Later evidence-only commits preserve these product, test and build inputs; their
 final head and required CI result are recorded in [PR #58](https://github.com/aaweaver-actuary/tempo/pull/58).
 
-[Dedicated paired run 36997589752](https://github.com/aaweaver-actuary/tempo/actions/runs/36997589752) passed on one
+[Dedicated paired run 36999113072](https://github.com/aaweaver-actuary/tempo/actions/runs/36999113072) passed on one
 `ubuntu-24.04-arm` job. Base and candidate ran sequentially, with no unrelated
 containers or test/build workloads on that runner. The base received only the
 [measurement-fixture patch](measurements/issue-33/base-measurement-harness.patch);
 no product changes were ported. Twelve harness inputs, including the full
 performance spec, fixture helpers, lockfile, configuration and launcher, matched
 byte-for-byte. The workflow and orchestrator are retained only on the temporary
-measurement branch at `9fd701d8cd19360491522e9aae5a3485f13e04bd`, outside this PR.
+measurement branch at `d57dfce599fa88b2fc4d55508791dbf71ed04db2`, outside this PR.
 
 The runner used Node v22.23.3, pinned Linux ARM64 Chromium 153.0.8010.12,
 production build, 1280×800, DPR 1, and blocked service workers. Host/Docker
@@ -132,16 +132,16 @@ only here; raw samples and full-precision summaries are retained.
 
 | Workload / capture | Frame / displacement samples, before→after | Before gap p50 / p95 / max | After gap p50 / p95 / max | Displacement p50 / p95, before→after | Interruptions |
 | --- | --- | --- | --- | --- | --- |
-| idle, capture on | 618→639 / 612→633 | 16.70 / 17.20 / 17.45 | 16.70 / 17.24 / 20.36 | 0.940 / 11.043→0.940 / 11.043 | 0→0 |
-| idle, capture off | 614→625 / 605→618 | 16.70 / 17.24 / 30.75 | 16.70 / 17.23 / 17.76 | 0.940 / 11.043→0.940 / 11.043 | 0→0 |
-| discovery-preparation, capture on | 655→654 / 645→650 | 16.70 / 17.30 / 22.77 | 16.70 / 17.26 / 20.96 | 0.895 / 11.043→0.895 / 11.043 | 0→0 |
-| discovery-preparation, capture off | 654→658 / 646→652 | 16.70 / 17.26 / 21.88 | 16.70 / 17.29 / 17.82 | 0.895 / 11.043→0.895 / 11.043 | 0→0 |
+| idle, capture on | 748→628 / 739→618 | 16.69 / 17.32 / 18.93 | 16.68 / 17.33 / 22.01 | 0.800 / 10.440→0.940 / 11.043 | 0→0 |
+| idle, capture off | 731→649 / 723→642 | 16.70 / 17.29 / 18.07 | 16.67 / 17.43 / 19.59 | 0.800 / 10.440→0.895 / 11.043 | 0→0 |
+| discovery-preparation, capture on | 731→685 / 729→683 | 16.70 / 17.36 / 19.91 | 16.68 / 17.44 / 19.53 | 0.800 / 10.440→0.895 / 11.043 | 0→0 |
+| discovery-preparation, capture off | 720→685 / 718→683 | 16.70 / 17.38 / 24.46 | 16.69 / 17.40 / 19.82 | 0.895 / 11.043→0.895 / 11.043 | 0→0 |
 
-Captured discovery frame cost p50/p95 was 0.010/0.025 ms on both revisions;
-event cost was 0.015/0.035 ms on both. Idle frame cost was also 0.010/0.025 ms;
-idle event cost was 0.015/0.035→0.015/0.040 ms. Capture-off runs have no recorder
-cost samples. These costs cover synchronous recorder callbacks, excluding GC
-outside those callbacks and other observer work.
+Captured discovery frame cost p50/p95 was 0.015/0.025 ms on both revisions;
+event cost was 0.020/0.045 ms on both. Idle frame cost was
+0.015/0.025→0.010/0.030 ms; idle event cost was 0.020/0.045→0.015/0.040 ms.
+Capture-off runs have no recorder cost samples. These costs cover synchronous
+recorder callbacks, excluding GC outside those callbacks and other observer work.
 
 Each revision retained six `discovery-preview` phase completions during captured
 discovery holds, with no buffer truncation. Supported long-task observation
@@ -151,8 +151,8 @@ measurements. The existing report reader produced no advisory signals or stale
 artifact exclusions.
 
 Request and validation volume falls substantially. Controlled single-preview
-held-drag gaps and displacement are effectively unchanged; no drag-latency
-improvement is established. These DOM/rAF proxies are not physical display
+frame-gap p95 remains near 17.4 ms. Displacement differences also appear in idle
+controls; no drag-latency improvement is established. These DOM/rAF proxies are not physical display
 latency or INP. Routed fixtures omit server computation, live network/backend
 load, the personal study dataset and physical GPU/presentation behavior.
 
@@ -162,30 +162,38 @@ From the respective isolated checkouts on the dedicated runner:
 
 ```sh
 TEMPO_TEST_TIMING_DIR=test-results/performance/issue-33-before TEMPO_FULL_TEST_RUN_COMMIT=dfbb66d67b314357e55c2030ff794a15415f316c TEMPO_CI_REPORT=test-results/performance/issue-33-before/playwright-results.json make perf
-TEMPO_TEST_TIMING_DIR=test-results/performance/issue-33-after TEMPO_FULL_TEST_RUN_COMMIT=1496021f82bfddd1df8b4276fcc57f7e7dd853df TEMPO_CI_REPORT=test-results/performance/issue-33-after/playwright-results.json make perf
+TEMPO_TEST_TIMING_DIR=test-results/performance/issue-33-after TEMPO_FULL_TEST_RUN_COMMIT=a570f95de216fc1d6d1989f9922dfcafc166e523 TEMPO_CI_REPORT=test-results/performance/issue-33-after/playwright-results.json make perf
 TEMPO_DISCOVERY_MEASUREMENT=<checkout>/test-results/performance/issue-33-<before-or-after>/deterministic-workload.json npm run test:unit -- tests/unit/discoveries-tray-regressions.test.tsx -t discovery_synthetic_workload_records_request_and_validation_counts --reporter=default --reporter=json --outputFile.json=<checkout>/test-results/performance/issue-33-<before-or-after>/unit-workload.json
 node scripts/report-performance.mjs --directory <candidate>/test-results/performance/issue-33-after --baseline <base>/test-results/performance/issue-33-before
 ```
 
 `TEMPO_FULL_TEST_RUN_COMMIT` is required; standalone `TEMPO_COMMIT` is overwritten.
-The [command receipt](measurements/issue-33/ci-pair-36997589752/run-evidence.json)
+The [command receipt](measurements/issue-33/ci-pair-36999113072/run-evidence.json)
 contains exact expanded paths, environments, timestamps, statuses and durations.
 `make plan` also passed before collection.
 
 | Command | Result | Command wall time |
 | --- | --- | --- |
-| Base `make perf` | 4/4 cases, 60/60 holds | 200.11 s |
-| Candidate `make perf` | 4/4 cases, 60/60 holds | 203.08 s |
-| Base named workload | 1 passed | 2.43 s |
+| Base `make perf` | 4/4 cases, 60/60 holds | 216.51 s |
+| Candidate `make perf` | 4/4 cases, 60/60 holds | 206.34 s |
+| Base named workload | 1 passed | 2.40 s |
 | Candidate named workload | 1 passed | 2.08 s |
 
 The raw compressed reports, run manifests, hashes, all ten held summaries,
 main-thread controls, deterministic counts and comparison checks are in
-[the final pair](measurements/issue-33/ci-pair-36997589752/comparison.json).
+[the final pair](measurements/issue-33/ci-pair-36999113072/comparison.json).
 The complete CI artifact additionally retains logs, all four browser reports and
-Playwright diagnostics. A prior valid pair against `89e6e09` is retained
-[separately](measurements/issue-33/ci-pair-36996539621/comparison.json);
-it is not presented as evidence for the rebased candidate.
+Playwright diagnostics. Prior valid pairs against `89e6e09` and `1496021` are retained
+[separately](measurements/issue-33/ci-pair-36996539621/comparison.json)
+[with their actual revisions](measurements/issue-33/ci-pair-36997589752/comparison.json);
+they are not presented as evidence for the final current-base candidate.
+
+The final job records all five owned container IDs and lifecycle timestamps in
+[its cleanup evidence](measurements/issue-33/ci-pair-36999113072/docker-events.json).
+Every container has create/start/die/destroy events, and the final inventory is
+empty. The unchanged runner uses `docker run --rm`; no development images were
+built, and the pinned base image/dependency cache were retained within the job.
+Local review and measurement checkouts remain because the PR is unmerged.
 
 Earlier local attempts remain historical evidence in
 [the evidence index](measurements/issue-33/evidence.json): a workspace assertion
