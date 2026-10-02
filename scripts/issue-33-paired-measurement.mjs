@@ -67,14 +67,14 @@ try {
     evidence.productTrees[label] = gitOutput(directory, ["ls-tree", "HEAD", "app", "backend", "public"]);
   save();
   await required("plan", "make", ["plan"], candidateDirectory);
+  // Create host-owned node_modules before Docker mounts anonymous dependencies.
+  for (const [label, directory] of [["before", baseDirectory], ["after", candidateDirectory]])
+    await required(`install-host-${label}`, "npm", ["ci", "--no-audit"], directory);
   await required("pull-pinned-image", "docker", ["pull", pinnedPlaywrightImage], candidateDirectory);
   await required("warm-container-dependencies", "docker", ["run", "--platform", "linux/arm64", "--rm", "--init",
     "-v", `${baseDirectory}:/workspace`, "-v", "/workspace/node_modules",
     "--mount", "type=volume,source=tempo-playwright-npm-cache,target=/root/.npm", "-w", "/workspace",
     pinnedPlaywrightImage, "bash", "-lc", "npm ci --no-audit"], baseDirectory);
-  for (const [label, directory] of [["before", baseDirectory], ["after", candidateDirectory]])
-    await required(`install-host-${label}`, "npm", ["ci", "--no-audit"], directory);
-
   const performanceDirectories = {};
   for (const [label, directory, commit] of [["before", baseDirectory, baseCommit], ["after", candidateDirectory, candidateCommit]]) {
     const containers = spawnSync("docker", ["ps", "--format", "{{.ID}} {{.Image}}"], { encoding: "utf8" });
