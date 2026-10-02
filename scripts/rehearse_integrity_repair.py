@@ -106,6 +106,7 @@ def guided_repair_postgres_contention_restart_replay_and_publication(observer):
     preview = recommendations.recommendation_status(repertoire_id, 'guided-issue', 'signature')
     assert preview['state'] == 'ready' and preview['suggested_move_uci'] == 'g1f3', preview
     assert observer.execute('SELECT COUNT(*) FROM threat_analysis_requests WHERE id=%s', (engine['id'],)).fetchone()[0] == 1
+    guided_repair_postgres_legacy_card_color_and_unavailable_recovery(observer, repertoire_id, position)
     observer.execute("UPDATE repertoire_lines SET moves_json='[]' WHERE id='guided-line-0'"); observer.commit()
     try: recommendations.recommendation_status(repertoire_id, 'guided-issue', 'signature')
     except HTTPException as error: assert error.status_code == 409
@@ -145,3 +146,51 @@ def guided_repair_postgres_contention_restart_replay_and_publication(observer):
     observer.commit()
     assert status()['state'] == 'complete'
     print('PASS guided_repair_postgres_contention_restart_replay_and_publication')
+
+
+def guided_repair_postgres_legacy_card_color_and_unavailable_recovery(observer, repertoire_id, position):
+    """Use the rehearsal's validated engine report for both legacy memberships."""
+    from app.database import connection
+    from app.services import durable_tasks, integrity_recommendations as recommendations, postgres_integrity
+    from app.services.activity_gate import activity_gate
+
+    observer.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('guided-card-owner','Owner','fixture','2026-10-02')")
+    observer.execute("INSERT INTO repertoire_lines VALUES('guided-owner-line','guided-card-owner','Owner','black',%s,'[\"e2e4\",\"e7e5\"]','2026-10-01')", (chess.STARTING_FEN,))
+    source_cursor = ''
+    for association in ('direct', 'linked'):
+        source_id, issue_id = f'guided-card-{association}', f'guided-card-issue-{association}'
+        descriptor = {'type': 'card', 'id': source_id, 'move_index': 2, 'move': 'g1f3'}
+        observer.execute('INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type,trained_color) VALUES(%s,%s,\'prefix\',%s,%s,\'2026-10-02\',\'opening\',\'black\')',
+            (source_id, repertoire_id if association == 'direct' else 'guided-card-owner', chess.STARTING_FEN, json.dumps(['e2e4', 'e7e5', 'g1f3'])))
+        if association == 'linked':
+            observer.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(%s,%s)', (repertoire_id, source_id))
+        observer.execute("INSERT INTO repertoire_integrity_issues(id,repertoire_id,kind,fen_key,fen,trained_color,signature,moves_json,sources_json,created_at,updated_at) VALUES(%s,%s,'multiple_responses',%s,%s,'white','signature',%s,%s,'2026-10-02','2026-10-02')",
+            (issue_id, repertoire_id, ' '.join(position.fen().split()[:4]), position.fen(), '["g1f3","f1c4"]', json.dumps([descriptor])))
+        observer.commit()
+        payload = {'repertoire_id': repertoire_id, 'issue_id': issue_id, 'signature': 'signature'}
+        def prepare_and_drain():
+            with connection() as database: admission = recommendations.admit_recommendation(database, payload)
+            for _ in range(12):
+                task = durable_tasks.claim_task(kind='integrity_recommendation')
+                if not task: break
+                with activity_gate.background_job(task['kind'], task['id']): recommendations.execute_integrity_recommendation_slice(task)
+            else: raise AssertionError('Legacy card recommendation failed to finish bounded slices')
+            return admission
+        first = prepare_and_drain()
+        assert recommendations.recommendation_status(repertoire_id, issue_id, 'signature')['state'] == 'unavailable'
+        prior_generation = observer.execute('SELECT generation FROM background_tasks WHERE id=%s', (first['task_id'],)).fetchone()[0]
+        observer.execute('UPDATE cards SET trained_color=NULL WHERE id=%s', (source_id,)); observer.commit()
+        scanned = postgres_integrity.prepare_next_integrity_source(repertoire_id, 'card', source_cursor)
+        assert scanned and scanned.source_id == source_id and not scanned.invalid
+        assert scanned.positions and all(item['trained_color'] == 'white' for item in scanned.positions)
+        second = prepare_and_drain()
+        assert observer.execute('SELECT generation FROM background_tasks WHERE id=%s', (second['task_id'],)).fetchone()[0] > prior_generation
+        result = recommendations.recommendation_status(repertoire_id, issue_id, 'signature')
+        assert result['state'] == 'ready' and result['trained_color'] == 'white' and result['suggested_move_uci'] == 'g1f3', result
+        assert all(item['source_type'] == 'card' and item['source_id'] == source_id for item in result['candidates'])
+        with connection() as database:
+            record = database.execute('SELECT * FROM integrity_recommendation_requests WHERE issue_id=?', (issue_id,)).fetchone()
+            assert json.loads(record['source_json'])['trained_color'] == 'white' and recommendations._source_current(database, record)
+        assert observer.execute('SELECT trained_color FROM cards WHERE id=%s', (source_id,)).fetchone()[0] is None
+        source_cursor = source_id
+    print('PASS guided_repair_postgres_legacy_card_color_and_unavailable_recovery')

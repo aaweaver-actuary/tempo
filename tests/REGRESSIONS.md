@@ -2,6 +2,11 @@
 
 Guided repertoire repair (October 2, 2026; related to issue #4, which also covers separate learning behavior):
 
+Legacy-card color review follow-up (PR #67):
+
+- `test_integrity_recommendations_infer_legacy_card_color_from_the_requested_repertoire` (direct/linked); `test_integrity_card_source_preserves_explicit_color_and_canonical_line_order` (null/explicit); `test_integrity_recommendations_do_not_guess_a_legacy_card_color_without_repertoire_lines`; `test_unavailable_integrity_recommendations_reprepare_a_now_valid_legacy_card` in `backend/tests/test_integrity_recommendations.py`. These exercise full-history preparation, canonical scanner agreement, ready candidates, normalized snapshot stability and stale effective-color rejection.
+- `guided_repair_postgres_legacy_card_color_and_unavailable_recovery` in `scripts/rehearse_integrity_repair.py`, called by the existing regular PostgreSQL durability rehearsal, proves direct and linked raw-null cards use the requested repertoire's color and recover cached unavailable previews against PostgreSQL.
+
 Asynchronous retry review follow-up (PR #67):
 - `blocked repair retry keeps old receipts pollable across reload until the original operation advances`; `task repair retry waits for its durable retry command across old failures and reload`; `an advanced blocked retry cycle is actionable even when no intermediate executing poll was observed`; `a task retry that completes then fails again is actionable without an intermediate waiting poll`; `a lost operation retry response replays the same retry identity after reload`; `a lost task retry response replays the same retry identity after reload`; `retry storage failure preserves the terminal choice before any retry POST`; `concurrent repair Retry clicks share one persisted retry identity and admission` in `tests/unit/integrity-repair-outbox-regressions.test.ts`. Existing source identity, fairness, successor-generation, and later-scan retry-key assertions remain covered.
 - `test_repair_status_does_not_report_a_cached_scan_failure_after_its_task_retry_commits` in `backend/tests/test_integrity_recommendations.py`; the actual PostgreSQL `guided_repair_postgres_contention_restart_replay_and_publication` rehearsal also proves queued scan retries override only their old cached failure.

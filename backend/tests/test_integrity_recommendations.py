@@ -69,6 +69,108 @@ def prepare(client):
     return response.json()
 
 
+def create_legacy_card_source(association, trained_color=None):
+    descriptor = {'type': 'card', 'id': 'legacy-card', 'move_index': 2, 'move': 'g1f3'}
+    with database.connection() as db:
+        if association == 'linked':
+            db.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('owner','Owner','fixture','2026-10-02')")
+            db.execute('INSERT INTO repertoire_lines VALUES(?,?,?,?,?,?,?)',
+                ('owner-line', 'owner', 'Owner', 'black', chess.STARTING_FEN, '["e2e4","e7e5"]', '2026-10-01'))
+        db.execute('INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,content_type,trained_color) VALUES(?,?,?,?,?,?,?,?)',
+            ('legacy-card', 'owner' if association == 'linked' else 'rep', 'prefix',
+             chess.STARTING_FEN, '["e2e4","e7e5","g1f3"]', '2026-10-02', 'opening', trained_color))
+        if association == 'linked':
+            db.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('rep','legacy-card')")
+        db.execute("UPDATE repertoire_integrity_issues SET sources_json=? WHERE id='issue'", (json.dumps([descriptor]),))
+    return descriptor
+
+
+@pytest.mark.parametrize('association', ['direct', 'linked'])
+def test_integrity_recommendations_infer_legacy_card_color_from_the_requested_repertoire(repair, monkeypatch, association):
+    descriptor = create_legacy_card_source(association)
+    original_prepare = service._full_history_request
+    prepared_colors = []
+    def checked_prepare(source):
+        prepared_colors.append(source['color'])
+        assert source['color'] == 'white'
+        return original_prepare(source)
+    monkeypatch.setattr(service, '_full_history_request', checked_prepare)
+    prepare(repair)
+    assert prepared_colors == ['white']
+    report()
+    while step(): pass
+    endpoint = '/api/repertoires/rep/integrity/issues/issue/recommendations?signature=signature'
+    result = repair.get(endpoint).json()
+    assert result['state'] == 'ready' and result['trained_color'] == 'white', result
+    assert result['suggested_move_uci'] == 'g1f3'
+    assert all(candidate['source_type'] == 'card' and candidate['source_id'] == 'legacy-card' for candidate in result['candidates'])
+    from app.services.repertoire_integrity import _source_rows
+    with database.read_connection() as db:
+        scanned_card = next(source for source in _source_rows(db, 'rep') if source['source_type'] == 'card')
+        assert service._source(db, 'rep', descriptor)['trained_color'] == scanned_card['trained_color'] == 'white'
+        assert db.execute("SELECT trained_color FROM cards WHERE id='legacy-card'").fetchone()[0] is None
+        record = dict(db.execute("SELECT * FROM integrity_recommendation_requests WHERE issue_id='issue'").fetchone())
+        assert json.loads(record['source_json'])['trained_color'] == 'white'
+        assert service._source_current(db, record)
+    assert repair.get(endpoint).json()['state'] == 'ready'
+    # Normalizing the legacy storage representation preserves its effective evidence.
+    with database.connection() as db:
+        db.execute("UPDATE cards SET trained_color='white' WHERE id='legacy-card'")
+    assert repair.get(endpoint).json()['state'] == 'ready'
+    with database.connection() as db:
+        db.execute("UPDATE cards SET trained_color=NULL WHERE id='legacy-card'")
+        db.execute("UPDATE repertoire_lines SET trained_color='black' WHERE id='one'")
+    assert repair.get(endpoint).status_code == 409
+
+
+@pytest.mark.parametrize('card_color', [None, 'black'])
+def test_integrity_card_source_preserves_explicit_color_and_canonical_line_order(repair, card_color):
+    descriptor = create_legacy_card_source('direct', card_color)
+    with database.connection() as db:
+        # Earlier creation outranks IDs, and IDs break creation-time ties.
+        db.execute("UPDATE repertoire_lines SET trained_color='black',created_at='2026-10-03' WHERE id='one'")
+        db.execute('INSERT INTO repertoire_lines VALUES(?,?,?,?,?,?,?)',
+            ('z-earliest', 'rep', 'Earliest', 'white', chess.STARTING_FEN, '[]', '2026-10-01'))
+        db.execute('INSERT INTO repertoire_lines VALUES(?,?,?,?,?,?,?)',
+            ('zz-tie', 'rep', 'Tie', 'black', chess.STARTING_FEN, '[]', '2026-10-01'))
+        assert service._source(db, 'rep', descriptor)['trained_color'] == (card_color or 'white')
+        assert service._source(db, 'rep', {'type': 'line', 'id': 'one'})['trained_color'] == 'black'
+
+
+def test_integrity_recommendations_do_not_guess_a_legacy_card_color_without_repertoire_lines(repair):
+    descriptor = create_legacy_card_source('direct')
+    with database.connection() as db:
+        db.execute("DELETE FROM repertoire_lines WHERE repertoire_id='rep'")
+        assert service._source(db, 'rep', descriptor)['trained_color'] is None
+    prepare(repair)
+    while step(): pass
+    result = repair.get('/api/repertoires/rep/integrity/issues/issue/recommendations?signature=signature').json()
+    assert result['state'] == 'unavailable' and 'No legal saved source' in result['reason']
+    assert claim_analysis_request() is None
+
+
+def test_unavailable_integrity_recommendations_reprepare_a_now_valid_legacy_card(repair):
+    create_legacy_card_source('direct', 'black')
+    first = prepare(repair)
+    while step(): pass
+    endpoint = '/api/repertoires/rep/integrity/issues/issue/recommendations?signature=signature'
+    assert repair.get(endpoint).json()['state'] == 'unavailable'
+    with database.connection() as db:
+        prior_generation = db.execute('SELECT generation FROM background_tasks WHERE id=?', (first['task_id'],)).fetchone()[0]
+        db.execute("UPDATE cards SET trained_color=NULL WHERE id='legacy-card'")
+    second = repair.post(endpoint.split('?')[0], json={'signature': 'signature'})
+    assert second.status_code == 200 and second.json()['state'] == 'waiting'
+    with database.read_connection() as db:
+        assert db.execute('SELECT generation FROM background_tasks WHERE id=?', (second.json()['task_id'],)).fetchone()[0] > prior_generation
+    assert step()
+    report()
+    while step(): pass
+    result = repair.get(endpoint).json()
+    assert result['state'] == 'ready' and result['trained_color'] == 'white', result
+    assert repair.post(endpoint.split('?')[0], json={'signature': 'signature'}).json()['state'] == 'ready'
+    assert step() is None
+
+
 def test_integrity_recommendations_match_discovery_ranking_without_selecting_a_response(repair):
     first = prepare(repair)
     assert repair.post('/api/repertoires/rep/integrity/issues/issue/recommendations',json={'signature':'signature'}).json()['task_id'] == first['task_id']

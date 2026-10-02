@@ -56,11 +56,15 @@ def _source(database, repertoire_id, descriptor):
         ).fetchone()
     else:
         row = database.execute(
-            """SELECT id,id name,start_fen,moves_json,trained_color FROM cards
-               WHERE id=? AND archived=0 AND content_type='opening'
-                 AND (repertoire_id=? OR EXISTS(SELECT 1 FROM repertoire_cards
-                     WHERE card_id=cards.id AND repertoire_id=?))""",
-            (descriptor['id'], repertoire_id, repertoire_id),
+            """SELECT card.id,card.id name,card.start_fen,card.moves_json,
+                      COALESCE(card.trained_color,(
+                          SELECT line.trained_color FROM repertoire_lines line
+                          WHERE line.repertoire_id=? ORDER BY line.created_at,line.id LIMIT 1
+                      )) trained_color
+               FROM cards card WHERE card.id=? AND card.archived=0 AND card.content_type='opening'
+                 AND (card.repertoire_id=? OR EXISTS(SELECT 1 FROM repertoire_cards
+                     WHERE card_id=card.id AND repertoire_id=?))""",
+            (repertoire_id, descriptor['id'], repertoire_id, repertoire_id),
         ).fetchone()
     return dict(row) if row else None
 
@@ -82,7 +86,7 @@ def admit_recommendation(database, payload):
         task = database.execute('SELECT state FROM background_tasks WHERE id=?', (prior['task_id'],)).fetchone()
         engine = database.execute('SELECT state FROM threat_analysis_requests WHERE id=?', (prior['request_id'],)).fetchone()
         if (task and task['state'] != 'failed' and (not engine or engine['state'] != 'failed')
-                and prior['state'] != 'failed'):
+                and prior['state'] not in {'failed', 'unavailable'}):
             return {'task_id': prior['task_id'], 'repertoire_id': repertoire_id,
                     'issue_id': issue_id, 'signature': signature, 'state': prior['state']}
     task = enqueue_task_in_transaction(database, 'integrity_recommendation', issue_id,

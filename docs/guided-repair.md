@@ -197,3 +197,53 @@ Main remains `92f9aea`; PR #66 is draft/unmerged at `d5212cf`, so migration 030 
 unchanged and no overlapping implementation is imported. Issue #4 remains an open
 umbrella; this follow-up supplies retry correctness rather than its other learning
 requirements. The final PR description will identify the new CI candidate/run.
+
+## Legacy-card color review follow-up
+
+Starting head `8fe54f0`, main `92f9aea`; PR #66 is still draft/unmerged.
+The selected scope is canonical effective card color and explicit re-preparation
+of cached unavailable recommendations. Risks are direct/linked membership,
+requested-versus-owning repertoire color, unknown colors, source-snapshot drift,
+and SQLite/PostgreSQL SQL translation. Retry logic and production schemas stay
+unchanged. First reproduce null-card and cached-result failures with actual
+recommendation workflow cases, then run the recommendation/scanner/backend files,
+schema parity and outbox regressions, typecheck/lint, and disposable PostgreSQL
+durability. Existing dependencies and measured runner costs are reused. CI owns
+the fresh complete final merge-candidate gate, including browser and pinned
+visual/performance coverage. No live study data or resources are used.
+
+The production change structurally matches SQLite's existing scalar `COALESCE`
+fallback and PostgreSQL's first-line lookup (`created_at,id`). It uses the request
+repertoire for linked cards, preserves explicit colors and unknown nulls, and
+normalizes both source snapshots and their later reloads. Unavailable previews are
+re-admitted only on another preparation request; current waiting/ready previews
+remain reusable. No retry, lease/publication fence, API, schema or migration edits.
+
+The three null-color/re-admission workflow regressions failed on reviewed head
+before the fix (2.61s pytest; 3.75s command wall). Focused final evidence on
+`8fe54f0a699d1826e2d64080b4cade2018ca1140` plus the card-color/schema-proof diff
+committed in this follow-up (macOS ARM64, Node 26.3, Python 3.14.5):
+
+| Command | Result / duration |
+| --- | --- |
+| `make python-file FILE=backend/tests/test_integrity_recommendations.py` | 14 passed; 2.10s pytest, 2.65s command wall |
+| `make python-file FILE=backend/tests/test_repertoire_integrity.py` | 15 passed; 4.40s pytest, 5.16s command wall |
+| `make python-file FILE=backend/tests/test_postgres_opening_graph.py` | 12 passed; 0.68s pytest, 1.30s command wall |
+| `npm run test:unit -- tests/unit/api-schema-parity-regressions.test.ts tests/unit/integrity-repair-outbox-regressions.test.ts` | 26 passed; 4.02s Vitest, 5.65s command wall; all 19 outbox cases retained |
+| `npm run typecheck` / `npm run lint` | Passed; 19.57s / 28.21s command wall; 9 existing lint warnings, no errors |
+| `/usr/bin/time -p make docker-durability` | All 14 planned stages passed; 202.00s command wall |
+| `git diff --check` | Passed |
+
+Waiting and failed recommendation payloads without `engine_lines` parse in the
+named schema cases, and malformed supplied values remain rejected. The automated
+required-field finding is a false positive: the extracted discovery schema field
+already carries its optional wrapper. Production Zod code is unchanged.
+
+PostgreSQL 18.6/Redis 7 durability owns project
+`tempo-pg-regressions-14842-49427db2`; cleanup passed (13.99s), using the runner's
+project-scoped `docker compose -p tempo-pg-regressions-14842-49427db2 -f docker-compose.postgres.test.yml down --rmi local -v`
+and separate maintenance-image removal. Logs, timing JSON and resource provenance
+are retained in ignored `test-results/guided-repair-color-evidence/`. Other active
+task and live study resources are preserved. Main and PR #66 remain unchanged;
+migration 030 is untouched. Fresh complete candidate CI follows these commits;
+no old run or local full-gate pass is claimed for the new candidate.
