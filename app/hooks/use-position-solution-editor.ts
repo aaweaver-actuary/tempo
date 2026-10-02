@@ -74,6 +74,34 @@ export function usePositionSolutionEditor(initialFen: string, initialMoves: SanM
       setError("");
     } catch { setError("That move is not legal from this position."); }
   }
+  function playSanSolution(text: string): boolean {
+    const tokens = text.trim().replace(/(^|\s)\d+\.(?:\.\.)?/g, "$1 ").trim().split(/\s+/);
+    if (!text.trim() || tokens.every(token => !token)) {
+      setError("Enter a SAN move or a sequence of SAN moves.");
+      return false;
+    }
+    if (positionError || pendingFen !== null) {
+      setError("Confirm a playable starting position before recording a solution.");
+      return false;
+    }
+    const board = new Chess(previewFen);
+    const enteredMoves: SanMove[] = [];
+    for (const [index, token] of tokens.entries()) {
+      try {
+        const move = board.move(token, { strict: true });
+        if (move.san === "--") throw new Error("Null moves are not valid tactic moves.");
+        enteredMoves.push(asSanMove(move.san));
+      }
+      catch {
+        setError(`Move ${index + 1} “${token}” is not legal SAN from this position.`);
+        return false;
+      }
+    }
+    setMoves([...moves.slice(0, cursor), ...enteredMoves]);
+    setCursor(cursor + enteredMoves.length);
+    setError("");
+    return true;
+  }
   return {
     startingFen, boardFen, setStartingFen, changeStartingFen, positionError,
     moves, setMoves, cursor, setCursor, tab, setTab, piece, setPiece,
@@ -82,7 +110,7 @@ export function usePositionSolutionEditor(initialFen: string, initialMoves: SanM
     cancelStartingChange() { setPendingFen(null); },
     placePiece(square: Square) { if (piece !== null) changeStartingFen(editFenSquare(boardFen, square, piece)); },
     moveSetupPiece(from: Square, to: Square) { changeStartingFen(moveFenPiece(boardFen, from, to)); },
-    playSolution,
+    playSolution, playSanSolution,
   };
 }
 

@@ -917,3 +917,39 @@ assertions remain required. No test identity, CI selection, or timeout changed.
 - `backend/tests/test_repertoire_settings.py::test_repertoire_override_rejects_missing_and_system_repertoires` — a persisted `__defense__` row rejects opening-limit writes and is absent from repertoire listing while normal openings remain. Reproduced HTTP 200 before the fix.
 - `backend/tests/test_repertoire_settings.py::test_shared_card_integrity_change_does_not_refund_admitting_repertoire_allowance` — reviewed and unreviewed A-owned cards admitted under B retain B’s consumed allowance after A is blocked. Covers SQLite reseeding/legacy reconciliation and PostgreSQL planning/reviewed-count SQL; reproduced extra planned admission before the fix.
 - `tests/unit/repertoire-daily-limits.test.tsx::inherited custom input uses the current default and preserves an edited draft` — a 10→12 global default change initializes Custom to 12, while an edited 5 survives mode toggles and later global changes. Reproduced stale 10 before the fix.
+
+## Tactic capture orientation and typed SAN
+
+Capture now faces the accepted starting side and permits typed SAN without changing
+its durable UCI command contract. Named regressions in
+`tests/unit/tactic-capture-regressions.test.tsx`:
+
+- `capture orients to the accepted starting side and stays fixed through moves and pending FEN changes`
+- `capture accepts numbered Black-first SAN lines and saves canonical UCI moves`
+- `capture rejects an invalid SAN line atomically and retains text for correction`
+- `capture SAN entry replaces the continuation at the cursor and mixes with board moves`
+- `capture SAN entry stays locked while saving and awaiting capture confirmation`
+- `capture rejects empty, ambiguous, and non-SAN input without changing an existing solution`
+- `capture SAN entry refuses invalid or unconfirmed starting positions`
+- `capture SAN entry preserves special moves and disambiguation from %s` (castling, en passant, underpromotion, and disambiguation fixtures)
+
+Real-board workflow coverage:
+`Black-first capture keeps its orientation while typed SAN and real-board moves save one solution`
+in `tests/browser/tactic-capture.spec.ts`.
+Cross-browser coverage:
+`capture accepts SAN from Black's perspective across browser engines`.
+The pinned `Capture tactic dialog 390` and `Capture tactic dialog 1280` cases also
+check SAN input visibility and width after switching to Solution.
+
+
+### PR #53: reject chess.js null moves during SAN entry
+
+Strict chess.js parsing accepts `--`, but a tactic solution must contain a real
+move. `playSanSolution` rejects the parsed null move before committing any state.
+`capture rejects empty, ambiguous, and non-SAN input without changing an existing solution`
+now includes `--` and `e5 --`, asserting false return and unchanged moves, cursor,
+and preview FEN. The named component regression
+`capture rejects null SAN moves inline and retains typed text without enabling a save`
+covers `--` and a valid prefix followed by `--`, proving atomic rejection, retained
+input, an inline error, disabled save, and no backend request. Both regressions
+failed against the original PR implementation before the guard was added.

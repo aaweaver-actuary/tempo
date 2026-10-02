@@ -182,5 +182,18 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 720 
     await page.getByRole("button", { name: "Capture tactic", exact: true }).click();
     await expect(page.getByRole("dialog")).toBeVisible();
     await expect(page).toHaveScreenshot(`capture-tactic-${viewport.width}.png`, { animations: "disabled", fullPage: true });
+    const dialog = page.getByRole("dialog");
+    await dialog.getByLabel("FEN", { exact: true }).fill("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1");
+    await dialog.getByRole("button", { name: "Solution", exact: true }).click();
+    const sanInput = dialog.getByLabel("SAN moves", { exact: true });
+    await sanInput.scrollIntoViewIfNeeded();
+    await expect(sanInput).toBeInViewport();
+    const bounds = await sanInput.boundingBox();
+    expect(bounds).not.toBeNull();
+    expect(bounds!.x).toBeGreaterThanOrEqual(0);
+    expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
+    await sanInput.fill("1...e5");
+    await dialog.getByRole("button", { name: "Add moves", exact: true }).click();
+    await expect(dialog.locator(".board-frame")).toHaveAttribute("data-orientation", "black");
   });
 }

@@ -6,8 +6,11 @@ async function point(board: Locator, square: string) {
   await board.scrollIntoViewIfNeeded();
   const bounds = await board.locator(".cg-wrap").boundingBox();
   if (!bounds) throw new Error("Capture board has no surface");
-  return { x: bounds.x + (square.charCodeAt(0) - 97 + .5) * bounds.width / 8,
-    y: bounds.y + (8 - Number(square[1]) + .5) * bounds.height / 8 };
+  const blackAtBottom = await board.getAttribute("data-orientation") === "black";
+  const fileIndex = square.charCodeAt(0) - 97;
+  const rankIndex = Number(square[1]) - 1;
+  return { x: bounds.x + ((blackAtBottom ? 7 - fileIndex : fileIndex) + .5) * bounds.width / 8,
+    y: bounds.y + ((blackAtBottom ? rankIndex : 7 - rankIndex) + .5) * bounds.height / 8 };
 }
 async function click(page: Page, board: Locator, square: string) {
   const location = await point(board, square); await page.mouse.click(location.x, location.y);
@@ -67,4 +70,33 @@ test("manual capture places and removes pieces and freely drags an incomplete se
   await expect(dialog.locator(".solution-line")).toContainText("Ra8+");
   await dialog.getByRole("button", { name: "Add to training" }).click();
   await expect(dialog).toHaveCount(0);
+});
+
+test("Black-first capture keeps its orientation while typed SAN and real-board moves save one solution", async ({ page }) => {
+  await prepareUI(page); await nav(page, "Tactics");
+  const studyBoard = page.locator(".persistent-board-shell .board-frame");
+  const originalFen = await studyBoard.getAttribute("data-fen");
+  await page.getByRole("button", { name: "Capture tactic", exact: true }).click();
+  const dialog = page.getByRole("dialog"), board = dialog.locator(".board-frame");
+  const startingFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 12";
+  await dialog.getByLabel("FEN", { exact: true }).fill(startingFen);
+  await expect(board).toHaveAttribute("data-orientation", "black");
+  await dialog.getByRole("button", { name: "Solution", exact: true }).click();
+  const sanInput = dialog.getByLabel("SAN moves", { exact: true });
+  await sanInput.fill("12...e5 13.Nf3 invalid");
+  await sanInput.press("Enter");
+  await expect(dialog.getByRole("alert")).toContainText("invalid");
+  await expect(board).toHaveAttribute("data-fen", startingFen);
+  await expect(sanInput).toHaveValue("12...e5 13.Nf3 invalid");
+  await sanInput.fill("12...e5 13.Nf3");
+  await sanInput.press("Enter");
+  await expect(sanInput).toHaveValue("");
+  await play(page, board, "b8", "c6");
+  await expect(board).toHaveAttribute("data-orientation", "black");
+  await expect(board).toHaveAttribute("data-fen", "r1bqkbnr/pppp1ppp/2n5/4p3/8/5N2/PPPPPPPP/RNBQKB1R w KQkq - 2 14");
+  const posted = page.waitForRequest(request => request.url().endsWith("/api/tactics/captures") && request.method() === "POST");
+  await dialog.getByRole("button", { name: "Add to training" }).click();
+  expect((await posted).postDataJSON()).toMatchObject({ starting_fen: startingFen, moves: ["e7e5", "g1f3", "b8c6"] });
+  await expect(dialog).toHaveCount(0);
+  await expect(studyBoard).toHaveAttribute("data-fen", originalFen!);
 });

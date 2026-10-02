@@ -4064,3 +4064,8 @@ button {
 .repertoire-limit-row > small { display: block; margin-block: 8px; }
 .repertoire-limit-row > p { font-size: 13px; overflow-wrap: anywhere; }
 .repertoire-limit-row [role="alert"] { color: var(--rust); }
+.tactic-capture .san-entry { display: grid; gap: 8px; margin: 12px 0; }
+.tactic-capture .san-entry label { display: grid; gap: 4px; }
+.tactic-capture .san-entry input { width: 100%; min-width: 0; }
+.tactic-capture .san-entry .editor-key-help { margin: 0; line-height: 1.5; }
+.tactic-capture .san-entry button { justify-self: start; }
