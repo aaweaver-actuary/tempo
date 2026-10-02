@@ -21,6 +21,7 @@ def diagnostic_database(tmp_path, monkeypatch):
     monkeypatch.delenv('TEMPO_DATABASE_WRITE_URL', raising=False)
     monkeypatch.delenv('TEMPO_DATABASE_READ_URL', raising=False)
     monkeypatch.delenv('TEMPO_REDIS_URL', raising=False)
+    monkeypatch.delenv('TEMPO_FOREGROUND_ACTIVITY_URL', raising=False)
     monkeypatch.setattr(database, 'DB_PATH', tmp_path/'observability.db')
     database.initialize()
     with database.connection() as connection:
@@ -29,7 +30,10 @@ def diagnostic_database(tmp_path, monkeypatch):
         with database.connection() as connection:
             return operation(connection)
     monkeypatch.setattr(durable_tasks,'submit_foreground_write',submit)
-    monkeypatch.setattr(durable_tasks,'submit_background_write',submit)
+    def submit_background(operation, **kwargs):
+        with database.background_connection() as connection:
+            return operation(connection)
+    monkeypatch.setattr(durable_tasks,'submit_background_write',submit_background)
     return database.DB_PATH
 
 
@@ -438,3 +442,90 @@ def test_background_postgres_numeric_aggregates_preserve_strict_public_schema(di
     assert result.queues[0].estimated_age_count==1
     assert result.counters[0].counts.generations_started==1
     assert type(result.counters[0].counts.generations_started) is int
+
+
+def test_background_delivery_preflight_is_classified_and_measured_before_handler(diagnostic_database,monkeypatch):
+    from app import tasks
+    task()
+    claimed=durable_tasks.claim_task('daily_queue')
+    observed=[]
+    def preflight(delivery):
+        assert tasks.activity_gate.in_background
+        assert tasks.activity_gate.current_job==('daily_queue',claimed['id'])
+        assert background_runtime._current.get() is not None
+        observed.append('preflight')
+        return True
+    def handler(delivery):
+        assert tasks.activity_gate.in_background
+        observed.append('handler')
+        return False
+    monkeypatch.setattr(tasks,'current_delivery',preflight)
+    monkeypatch.setattr(tasks,'execute_postgres_queue_refresh_slice',handler)
+    assert tasks.execute_background_slice.run(claimed) is False
+    assert observed==['preflight','handler']
+
+
+def test_background_delivery_preflight_uses_primary_and_read_only_transaction(diagnostic_database,monkeypatch):
+    from app import postgres_store
+    from types import SimpleNamespace
+    task()
+    claimed=durable_tasks.claim_task('daily_queue')
+    pools=[]
+    statements=[]
+    class Primary:
+        def execute(self,statement,parameters=()):
+            statements.append(statement)
+            assert database.activity_gate.active_background_sections==1
+            assert database.activity_gate.in_background
+            return SimpleNamespace(fetchone=lambda:claimed)
+    class Pool:
+        @contextmanager
+        def connection(self,**kwargs):
+            yield Primary()
+    def select_pool(read_only):
+        pools.append(read_only)
+        assert not read_only, 'preflight must never consult a replica'
+        return Pool()
+    monkeypatch.setattr(postgres_store,'configured',lambda:True)
+    monkeypatch.setattr(postgres_store,'_pool',select_pool)
+    with database.activity_gate.background_job('daily_queue',claimed['id']):
+        assert durable_tasks.current_delivery(claimed)
+    assert pools==[False]
+    assert 'SET TRANSACTION READ ONLY' in statements
+    assert any('transaction_timeout' in statement for statement in statements)
+
+
+def test_background_delivery_preflight_waits_for_foreground_admission(diagnostic_database,monkeypatch):
+    task()
+    claimed=durable_tasks.claim_task('daily_queue')
+    started=threading.Event()
+    query_opened=threading.Event()
+    finished=threading.Event()
+    observed=[]
+    original_read=database.read_connection
+    @contextmanager
+    def observed_read():
+        query_opened.set()
+        with original_read() as connection:
+            yield connection
+    monkeypatch.setattr(database,'read_connection',observed_read)
+    monkeypatch.setattr(durable_tasks,'read_connection',observed_read)
+    def worker():
+        try:
+            with background_runtime.measure_handler('daily_queue') as measurement, database.activity_gate.background_job('daily_queue',claimed['id']):
+                started.set()
+                observed.append(durable_tasks.current_delivery(claimed))
+                observed.append(measurement.sample().admission_wait_seconds)
+        finally:
+            finished.set()
+    thread=threading.Thread(target=worker)
+    try:
+        with database.activity_gate.foreground():
+            thread.start()
+            assert started.wait(1)
+            assert not query_opened.wait(0.05), 'preflight bypassed foreground admission'
+        assert finished.wait(1)
+    finally:
+        thread.join(1)
+    assert observed[0] is True
+    assert observed[1]>0

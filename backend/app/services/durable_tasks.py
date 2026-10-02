@@ -8,7 +8,7 @@ import random
 import sqlite3
 import uuid
 
-from ..database import read_connection
+from ..database import read_connection, background_read_connection
 from .. import postgres_store
 from .database_executor import submit_background_write, submit_foreground_write
 from .background_activity import claimable, control_order
@@ -524,8 +524,8 @@ def list_tasks() -> list[dict]:
 
 
 def current_delivery(task: dict) -> bool:
-    """Read-only preflight; publication fences still decide whether effects commit."""
-    with read_connection() as database:
+    """Admitted primary read; transactional publication fences remain authoritative."""
+    with background_read_connection(authoritative=True) as database:
         row = database.execute(
             "SELECT generation,lease_token,state FROM background_tasks WHERE id=?", (task["id"],),
         ).fetchone()

@@ -287,12 +287,12 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
     handler = background_handlers.get(claimed_task["kind"])
     if handler is None:
         raise ValueError(f"Unported background handler: {claimed_task['kind']}")
-    if not current_delivery(claimed_task):
-        record_stale_delivery(claimed_task)
-        return False
     with measure_handler(claimed_task["kind"], (self.request.headers or {}).get("submitted_at")), \
             activity_gate.background_job(claimed_task["kind"], claimed_task["id"]):
         try:
+            if not current_delivery(claimed_task):
+                record_stale_delivery(claimed_task)
+                return False
             more_work = handler(claimed_task)
             if claimed_task["kind"] not in {
                 "daily_queue", "game_sync_record", "game_sync_window", "game_derivation_positions",

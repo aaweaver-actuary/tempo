@@ -994,3 +994,11 @@ before conversion to public integers. It failed before the producer conversion;
 strict consumer validation remains unchanged. The disposable ring-retention
 assertion reads after commit because PostgreSQL counter deltas flush at that
 boundary.
+
+PR #56 review correction: stale-delivery preflight must not bypass admission or
+consult lagging replica state. In `backend/tests/test_background_diagnostics.py`,
+`test_background_delivery_preflight_is_classified_and_measured_before_handler`,
+`test_background_delivery_preflight_uses_primary_and_read_only_transaction`, and
+`test_background_delivery_preflight_waits_for_foreground_admission` all failed on
+the reviewed head before the fix. Existing stale-handler-skip, duplicate-delivery,
+and stale-publication regressions retain the final authoritative fences.

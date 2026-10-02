@@ -154,13 +154,14 @@ def read_connection() -> Iterator[sqlite3.Connection]:
 
 
 @contextmanager
-def background_read_connection() -> Iterator[sqlite3.Connection]:
+def background_read_connection(*, authoritative: bool = False) -> Iterator[sqlite3.Connection]:
     """Admit a bounded background read only while foreground work is idle."""
 
     if postgres_store.configured():
         with activity_gate.background_database_section():
             from .services.background_runtime import database_stage
-            with database_stage(), postgres_store.connection(read_only=True, background=True) as database:
+            options = {"authoritative": True} if authoritative else {}
+            with database_stage(), postgres_store.connection(read_only=True, background=True, **options) as database:
                 yield database
         return
     with activity_gate.background_database_section():
