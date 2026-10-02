@@ -1,4 +1,5 @@
 "use client";
+import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Chess, type Square } from "chess.js";
@@ -129,9 +130,19 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
   })), [selectedSquares]);
   const selectionMode = exercise?.type === "square_set" || exercise?.type === "knight_path";
   const studyPositionKey = `${studyId}:${exerciseId}:${exercise?.revision ?? 0}:${card?.queueEntryId ?? ""}`;
+  const revealedReference = feedback ? studySpecificationSchema.safeParse(feedback) : null;
+  const revealedMoves = revealedReference?.success && revealedReference.data.type === "move_line" ? revealedReference.data.accepted_lines[0] : undefined;
+  const visiblePositions = useMemo(() => exercise ? positionsFromMoves(exercise.fen, revealedMoves ?? (exercise.type === "move_line" ? moveSequence : [])) : [currentFen], [exercise, revealedMoves, moveSequence, currentFen]);
+  const boardHistory = useBoardHistory(studyPositionKey, visiblePositions, currentFen);
+  const keyboard = { ...boardHistory.keyboard,
+    reset: () => { boardHistory.keyboard.reset(); setOrientation("white"); },
+    hint: !reply && exercise?.hint && !boardHistory.viewingHistory && !blocked ? () => setHintSeen(true) : undefined,
+    nextItem: reply && !reply.pending_self_assessment && onAdvance && !busy && !blocked ? () => { void onAdvance(); } : undefined,
+  };
   useBoardPublisher("train", useSharedBoard && exercise?.id === exerciseId ? {
+    keyboard,
     positionKey: studyPositionKey,
-    fen: currentFen, orientation, interactionMode: blocked || reply ? "readonly" : selectionMode ? "select" : exercise.type === "move_line" ? "legal" : "readonly",
+    fen: boardHistory.fen, orientation, interactionMode: boardHistory.viewingHistory || blocked || reply ? "readonly" : selectionMode ? "select" : exercise.type === "move_line" ? "legal" : "readonly",
     showHint: false, theme: boardTheme, pieceSet, shapes: answerShapes,
     lastMove: undefined, onMove, onSquareSelect: selectSquare,
   } : null);
@@ -272,7 +283,7 @@ export default function StudyExerciseRunner({ studyId, exerciseId, card, boardTh
     <p>{exercise.prompt}</p>
     {exercise.type === "square_set" && <p>{exercise.criterion}</p>}
     {exercise.type === "knight_path" && <p>Static, non-capturing knight route from {exercise.start_square} attacking {exercise.target_squares?.join(", ")}. {exercise.hop_rule === "exact" ? "Exactly" : "At most"} {exercise.maximum_hops} hops. Other pieces stay fixed.</p>}
-    {!useSharedBoard && <Chessboard positionKey={studyPositionKey} fen={currentFen} locked={blocked || Boolean(reply) || !selectionMode && exercise.type !== "move_line"}
+    {!useSharedBoard && <Chessboard keyboard={keyboard} positionKey={studyPositionKey} fen={boardHistory.fen} locked={boardHistory.viewingHistory || blocked || Boolean(reply) || !selectionMode && exercise.type !== "move_line"}
       selectOnly={selectionMode && !reply} onMove={onMove} onSquareSelect={selectSquare}
       showHint={false} theme={boardTheme} pieceSet={pieceSet} shapes={answerShapes}
       orientation={orientation} onFlip={() => setOrientation((value) => value === "white" ? "black" : "white")} />}

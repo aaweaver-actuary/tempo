@@ -11,11 +11,11 @@ import {
   asSanMove,
 } from "../../app/types";
 
-vi.mock("../../app/components/chessboard", () => ({
-  Chessboard: (props: { fen: string }) => (
-    <div data-testid="repair-board" data-fen={props.fen} />
-  ),
-}));
+vi.mock("../../app/components/chessboard", async () => {
+  const { KeyboardTestBoard } = await import("./keyboard-board-fixture");
+  return { Chessboard: (props: React.ComponentProps<typeof KeyboardTestBoard>) => <KeyboardTestBoard {...props} testId="repair-board" /> };
+});
+
 it("repair uses the shared board and arrows navigate the complete solution; Escape closes", () => {
   const onClose = vi.fn();
   render(

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "commit": "dfbb66d67b314357e55c2030ff794a15415f316c",
+  "timestamp": "2026-10-02T09:34:36.667Z",
+  "stages": {},
+  "environment": {
+    "platform": "darwin",
+    "architecture": "arm64",
+    "dockerCpus": "4",
+    "dockerMemoryBytes": "6198358016",
+    "host": {
+      "platform": "darwin",
+      "architecture": "arm64",
+      "cpuModel": "Apple M3",
+      "logicalCpus": 8,
+      "memoryBytes": 25769803776
+    },
+    "runner": "linux-pinned",
+    "buildMode": "production-local"
+  }
+}

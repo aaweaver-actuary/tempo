@@ -37,6 +37,17 @@ test("four comparison boards retain distinct routes and independent ply navigati
     .toHaveAttribute("data-fen", sourceFen!);
   await expect(page.locator(".comparison-tile").nth(1).locator(".board-frame"))
     .toHaveAttribute("data-fen", startingFen);
+  const activeBoard = page.locator(".comparison-tile").nth(1).locator(".board-frame");
+  await page.keyboard.press("f");
+  await expect(activeBoard).toHaveAttribute("data-orientation", "black");
+  await expect(page.locator(".comparison-tile").first().locator(".board-frame")).toHaveAttribute("data-orientation", "white");
+  await page.keyboard.press("ArrowRight");
+  const firstMove = new Chess(); firstMove.move("d4");
+  await expect(activeBoard).toHaveAttribute("data-fen", firstMove.fen());
+  await page.keyboard.press("r");
+  const pinnedPosition = new Chess(); for (const uci of screenshotMoves.slice(0, 8)) pinnedPosition.move(uci);
+  await expect(activeBoard).toHaveAttribute("data-fen", pinnedPosition.fen());
+  await expect(activeBoard).toHaveAttribute("data-orientation", "white");
   await page.setViewportSize({ width: 390, height: 844 });
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth))
     .toBeLessThanOrEqual(1);

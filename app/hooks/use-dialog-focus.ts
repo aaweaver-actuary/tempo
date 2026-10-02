@@ -1,12 +1,10 @@
-import { useEffect, useRef, type RefObject } from "react";
+import { useEffect, type RefObject } from "react";
+import { usePopupKeyboard } from "../lib/keyboard-shortcuts";
 export function useDialogFocus(
   dialogRef: RefObject<HTMLElement | null>,
   onClose: () => void,
 ) {
-  const closeRef = useRef(onClose);
-  useEffect(() => {
-    closeRef.current = onClose;
-  }, [onClose]);
+  usePopupKeyboard(dialogRef, onClose);
   useEffect(() => {
     const dialog = dialogRef.current;
     if (!dialog) return;
@@ -19,11 +17,6 @@ export function useDialogFocus(
       ].filter((element) => element.getClientRects().length > 0);
     (focusable()[0] ?? dialog).focus();
     const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        event.stopPropagation();
-        closeRef.current();
-      }
       if (event.key !== "Tab") return;
       const controls = focusable();
       const first = controls[0],

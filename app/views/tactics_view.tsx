@@ -1,3 +1,4 @@
+import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history";
 import { TacticCaptureDialog } from "../components/tactic-capture-dialog";
 import { Button } from "../components/buttons/BaseButton";
 import { BoardTools } from "../components/board/board-workspace";
@@ -5,6 +6,7 @@ import { Chess, Square, Move } from "chess.js";
 import {
   useState,
   useRef,
+  useMemo,
   useEffect,
   useLayoutEffect,
   useCallback,
@@ -486,17 +488,20 @@ function TacticsWorkspace({
     [finish, guideAttempt],
   );
 
+  const visiblePositions = useMemo(() => positionsFromMoves(puzzle.startingFen, puzzle.moves, step), [puzzle.startingFen, puzzle.moves, step]);
+  const boardHistory = useBoardHistory(entryKey, visiblePositions, fen);
   useBoardPublisher("tactics", useSharedBoard ? {
+    keyboard: boardHistory.keyboard,
     positionKey: entryKey,
     unavailable:
       !progressReady || !deckReady || !selectedPuzzle
         ? saveError || "Preparing puzzles…"
         : undefined,
-    fen,
+    fen: boardHistory.fen,
     expectedSan: puzzle.moves[step],
     interactionMode:
-      captureOpen || Boolean(outcome) || step >= puzzle.moves.length ? "readonly" : "legal",
-    showHint: hint,
+      boardHistory.viewingHistory || captureOpen || Boolean(outcome) || step >= puzzle.moves.length ? "readonly" : "legal",
+    showHint: !boardHistory.viewingHistory && hint,
     theme,
     pieceSet,
     orientation: puzzleSide,
@@ -611,10 +616,11 @@ function TacticsWorkspace({
             <Chessboard
               key={entryKey}
               positionRevision={boardAttempt}
-              fen={fen}
+              keyboard={boardHistory.keyboard}
+              fen={boardHistory.fen}
               expectedSan={puzzle.moves[step]}
-              locked={captureOpen || Boolean(outcome) || step >= puzzle.moves.length}
-              showHint={hint}
+              locked={boardHistory.viewingHistory || captureOpen || Boolean(outcome) || step >= puzzle.moves.length}
+              showHint={!boardHistory.viewingHistory && hint}
               theme={theme}
               pieceSet={pieceSet}
               onMove={movePiece}

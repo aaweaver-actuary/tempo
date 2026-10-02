@@ -1,7 +1,9 @@
 import { Button } from "./buttons/BaseButton";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { View } from "@/app/types";
 import { preloadView } from "../lib/workspace-data";
+
+import { usePopupKeyboard } from "../lib/keyboard-shortcuts";
 
 export const WORKSPACES: { id: View; label: string }[] = [
   { id: "train", label: "Train" },
@@ -23,6 +25,13 @@ export default function Navbar({
   setView: (view: View) => void;
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const navRef = useRef<HTMLElement>(null);
+  usePopupKeyboard(menuRef, () => {
+    setMenuOpen(false);
+    [...(navRef.current?.querySelectorAll<HTMLButtonElement>('[aria-expanded="true"]') ?? [])]
+      .find(button => button.getClientRects().length > 0)?.focus();
+  }, menuOpen);
   const select = (next: View) => {
     setMenuOpen(false);
     setView(next);
@@ -47,20 +56,7 @@ export default function Navbar({
     <nav
       className="nav"
       aria-label="Primary navigation"
-      onKeyDown={(event) => {
-        if (event.key === "Escape" && menuOpen) {
-          event.preventDefault();
-          event.stopPropagation();
-          setMenuOpen(false);
-          [
-            ...event.currentTarget.querySelectorAll<HTMLButtonElement>(
-              '[aria-expanded="true"]',
-            ),
-          ]
-            .find((button) => button.getClientRects().length > 0)
-            ?.focus();
-        }
-      }}
+      ref={navRef}
     >
       <div className="desktop-navigation">
         {WORKSPACES.map((item) => destination(item))}
@@ -88,6 +84,7 @@ export default function Navbar({
       </Button>
       {menuOpen && (
         <div
+          ref={menuRef}
           id="workspace-menu"
           className="workspace-menu"
           aria-label="All sections"

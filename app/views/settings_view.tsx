@@ -1,4 +1,5 @@
 "use client";
+import { setLetterShortcutsEnabled, useLetterShortcutsEnabled } from "../lib/keyboard-shortcuts";
 import { TabList } from "../components/ui";
 import { RepertoireDailyLimits } from "../components/repertoire-daily-limits";
 import { SelectInput } from "../components/inputs/SelectInput";
@@ -72,6 +73,7 @@ export default function SettingsView({
   onPieces: (value: PieceSet) => void;
   onSound: (value: boolean) => void;
 }) {
+  const letterKeysEnabled = useLetterShortcutsEnabled();
   const [values, setValues] = useState<SettingsValues>({
     initial_depth: 6,
     timezone: "local",
@@ -486,6 +488,10 @@ export default function SettingsView({
         </section>
         <section id="settings-section-board" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-board" hidden={activeSection !== "board"}>
           <h2>Board</h2>
+          <label className="setting-row">
+            <span>Letter keyboard shortcuts<small>F, R, H and N. Arrow navigation, ? and Escape stay available.</small></span>
+            <input type="checkbox" checked={letterKeysEnabled} onChange={event => setLetterShortcutsEnabled(event.target.checked)} />
+          </label>
           <label>
             <span>Board colors</span>
             <SelectInput

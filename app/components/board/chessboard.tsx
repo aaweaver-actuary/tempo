@@ -5,7 +5,11 @@ import type { Api } from "@lichess-org/chessground/api";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import { Chess, type Square } from "chess.js";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { Dialog } from "../dialog";
+import { Button } from "../buttons/BaseButton";
+import { useBoardKeyboard, useLetterShortcutsEnabled, type BoardKeyboardActions } from "../../lib/keyboard-shortcuts";
 import { useBoardViewport } from "../../hooks/use-board-viewport";
 import { sameLastMove, sameBoardShapes } from "../../state/board-shell-store";
 import { recordBoardEvent } from "../../lib/board-diagnostics";
@@ -24,6 +28,8 @@ const DRAW_BRUSHES = {
 };
 
 type ChessboardProps = {
+  showShortcutButton?: boolean;
+  keyboard?: BoardKeyboardActions;
   owner?: string;
   fen: string;
   expectedSan?: string;
@@ -47,7 +53,9 @@ type ChessboardProps = {
 };
 
 export function Chessboard({
+  showShortcutButton = true,
   fen,
+  keyboard,
   owner,
   expectedSan,
   lastMove,
@@ -69,11 +77,12 @@ export function Chessboard({
   positionKey,
 }: ChessboardProps) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const keyboardContainerRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const apiRef = useRef<Api | null>(null);
   const captureRef = useRef<ReturnType<typeof installTempoDragCapture> | null>(null);
   const appliedPosition = useRef<{
-    fen: string; owner?: string; positionKey?: string; positionRevision: number;
+    fen: string; owner?: string; positionKey?: string; positionRevision: number; keyboardResetRevision: number;
     orientation: "white" | "black"; locked: boolean; editMode: boolean; selectOnly: boolean;
     lastMove?: readonly [string, string];
   } | undefined>(undefined);
@@ -159,39 +168,20 @@ export function Chessboard({
       ? preparedHint.shape
       : undefined;
 
-  useEffect(() => {
-    const flip = (event: Event) => {
-      if (
-        !surfaceRef.current?.getClientRects().length ||
-        hostRef.current?.closest('[data-unavailable="true"]')
-      )
-        return;
-      const target = event.target as HTMLElement | null;
-      if (
-        event instanceof KeyboardEvent &&
-        (event.key.toLowerCase() !== "f" ||
-          target?.matches('input,textarea,select,[contenteditable="true"]'))
-      )
-        return;
-      if (
-        document.querySelector('[role="dialog"]') &&
-        !surfaceRef.current?.closest('[role="dialog"]')
-      )
-        return;
-      event.preventDefault();
-      if (onFlip) onFlip();
-      else
-        setFlippedOwner((current) =>
-          current === (owner ?? "embedded") ? null : (owner ?? "embedded"),
-        );
-    };
-    window.addEventListener("keydown", flip);
-    window.addEventListener("tempo:flip-board", flip);
-    return () => {
-      window.removeEventListener("keydown", flip);
-      window.removeEventListener("tempo:flip-board", flip);
-    };
-  }, [onFlip, owner]);
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false);
+  const shortcutTitleId = useId();
+  const [keyboardResetRevision, setKeyboardResetRevision] = useState(0);
+  const letterKeysEnabled = useLetterShortcutsEnabled();
+  const flipBoard = () => {
+    if (onFlip) onFlip();
+    else setFlippedOwner(current => current === (owner ?? "embedded") ? null : (owner ?? "embedded"));
+  };
+  const resetBoard = () => {
+    setFlippedOwner(null);
+    setKeyboardResetRevision(revision => revision + 1);
+    keyboard?.reset?.();
+  };
+  useBoardKeyboard(keyboardContainerRef, { ...keyboard, flip: flipBoard, reset: resetBoard, help: () => setShortcutHelpOpen(true) });
 
   // Chessground defers events by a timer. A callback queued before genuine
   // invalidation must not grade a replacement card or change its annotations.
@@ -283,10 +273,11 @@ export function Chessboard({
   useLayoutEffect(() => {
     const configuration: Parameters<Api["set"]>[0] = {};
     const previousPosition = appliedPosition.current;
-    const nextPosition = { fen, owner, positionKey, positionRevision, orientation: visualOrientation,
+    const nextPosition = { fen, owner, positionKey, positionRevision, keyboardResetRevision, orientation: visualOrientation,
       locked, editMode, selectOnly, lastMove };
     const positionChanged = !previousPosition || previousPosition.fen !== fen || previousPosition.owner !== owner ||
-      previousPosition.positionKey !== positionKey || previousPosition.positionRevision !== positionRevision;
+      previousPosition.positionKey !== positionKey || previousPosition.positionRevision !== positionRevision ||
+      previousPosition.keyboardResetRevision !== keyboardResetRevision;
     const modeChanged = !previousPosition || previousPosition.editMode !== editMode || previousPosition.selectOnly !== selectOnly;
     const lockChanged = !previousPosition || previousPosition.locked !== locked;
     const orientationChanged = !previousPosition || previousPosition.orientation !== visualOrientation;
@@ -390,7 +381,8 @@ export function Chessboard({
   }, [surfaceSize]);
 
   return (
-    <div className="board-viewport" ref={hostRef}>
+    <div className="board-keyboard-container" ref={keyboardContainerRef}>
+    <div className="board-viewport" ref={hostRef} tabIndex={0}>
       <div
         className="board-frame"
         aria-label="Interactive chessboard"
@@ -415,6 +407,21 @@ export function Chessboard({
           <div className="cg-wrap" ref={surfaceRef} />
         </div>
       </div>
+    </div>
+      {showShortcutButton && <div className="board-shortcut-controls"><Button type="button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)"
+        onClick={event => { event.currentTarget.focus(); setShortcutHelpOpen(true); }}>? Keys</Button></div>}
+      {shortcutHelpOpen && createPortal(<Dialog titleId={shortcutTitleId} onClose={() => setShortcutHelpOpen(false)} className="keyboard-help">
+        <h2 id={shortcutTitleId}>Keyboard shortcuts</h2>
+        <p>Navigation stops at the furthest revealed move. R returns to your decision without restarting.</p>
+        <dl>{([
+          ["←", "Previous move", Boolean(keyboard?.previous)], ["→", "Next revealed move", Boolean(keyboard?.next)],
+          ["↑ / Home", "Beginning of line", Boolean(keyboard?.start)], ["↓ / End", "Furthest revealed position", Boolean(keyboard?.end)],
+          ["F", "Flip board", letterKeysEnabled], ["R", "Return to decision and orientation", letterKeysEnabled],
+          ["H", "Hint", letterKeysEnabled && Boolean(keyboard?.hint)], ["N", "Next / Continue", letterKeysEnabled && Boolean(keyboard?.nextItem)],
+          ["?", "Keyboard shortcuts", true], ["Esc", "Close the topmost popup", true],
+        ] as const).map(([key, description, available]) => <div key={key} aria-disabled={!available}><dt><kbd>{key}</kbd></dt><dd>{description}{!available && " (unavailable)"}</dd></div>)}</dl>
+        <button type="button" onClick={() => setShortcutHelpOpen(false)}>Close</button>
+      </Dialog>, document.body)}
     </div>
   );
 }

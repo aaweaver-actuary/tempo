@@ -1,6 +1,7 @@
 "use client";
+import { historyKeyboardActions } from "../lib/keyboard-shortcuts";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Chess, type Square } from "chess.js";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import { Button } from "../components/buttons/BaseButton";
@@ -60,6 +61,7 @@ export default function ComparisonView({
   onReturn: () => void;
 }) {
   const [boards, setBoards] = useState<ComparisonBoard[]>(() => savedBoards(launch));
+  const workingPositions = useRef(Object.fromEntries(boards.map(board => [board.id, board.cursor])));
   const [selectedBoardId, setSelectedBoardId] = useState(boards[0].id);
   const [cards, setCards] = useState<ComparisonCard[]>([]);
   const [revision, setRevision] = useState<number>();
@@ -173,6 +175,7 @@ export default function ComparisonView({
       try {
         const move = position.move({ from, to, promotion: "q" });
         const uci = `${move.from}${move.to}${move.promotion ?? ""}`;
+        workingPositions.current[id] = board.cursor + 1;
         return {
           ...board,
           history: [...board.history.slice(0, board.cursor), { uci, san: move.san, fen: position.fen() }],
@@ -193,6 +196,7 @@ export default function ComparisonView({
         cardId: card.id, orientation: card.trained_color === "black" ? "black" : "white",
         startingFen: card.start_fen, history, cursor: position.ply,
       };
+      workingPositions.current[board.id] = position.ply;
       if (!boards.some((pinned) => pinned.id === board.id)) setBoards((current) => [...current, board]);
     } catch { setMatchError({ key: queryKey, message: "That card has an invalid move route. Refresh or repair the card." }); }
   }
@@ -216,7 +220,7 @@ export default function ComparisonView({
             .every((move, index) => move.uci === card.moves[index]) ? card.moves[board.cursor] : undefined;
           const differenceSquares = board.id === selectedBoard.id ? [] : comparisonPieceDifferences(selectedFen, fen);
           const shapes: DrawShape[] = differenceSquares.map((square) => ({ orig: square as Square, brush: "yellow" }));
-          return <article key={board.id} className={`comparison-tile${board.id === selectedBoard.id ? " selected" : ""}`}>
+          return <article key={board.id} data-board-keyboard-scope className={`comparison-tile${board.id === selectedBoard.id ? " selected" : ""}`}>
             <div className="comparison-tile-heading">
               <div><strong>{board.label}</strong><small>{board.id === selectedBoard.id ? "Search source" : differenceSquares.length ? `Different squares: ${differenceSquares.join(", ")}` : "Same board position"}</small></div>
               <div>
@@ -228,9 +232,17 @@ export default function ComparisonView({
               </div>
             </div>
             <Chessboard
+              keyboard={{ ...historyKeyboardActions(board.cursor, board.history.length, cursor => changeBoard(board.id, current => ({ ...current, cursor }))),
+                defaultActive: board.id === selectedBoard.id,
+                reset: () => {
+                  changeBoard(board.id, current => ({ ...current, cursor: Math.min(workingPositions.current[board.id] ?? 0, current.history.length) }));
+                  setOrientationByBoard(current => ({ ...current, [board.id]: board.orientation ?? "white" }));
+                },
+              }}
               owner={`compare:${board.id}`} fen={fen} locked={false} showHint={false}
               theme={theme} pieceSet={pieceSet} shapes={shapes}
               orientation={orientationByBoard[board.id] ?? board.orientation ?? "white"}
+              onFlip={() => setOrientationByBoard(current => ({ ...current, [board.id]: (current[board.id] ?? board.orientation ?? "white") === "white" ? "black" : "white" }))}
               onMove={(from, to) => playMove(board.id, from, to)}
             />
             <div className="comparison-tile-controls">

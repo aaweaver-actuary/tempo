@@ -1,0 +1,85 @@
+diff --git a/tests/browser/performance.spec.ts b/tests/browser/performance.spec.ts
+index 04d720e..82e92b2 100644
+--- a/tests/browser/performance.spec.ts
++++ b/tests/browser/performance.spec.ts
+@@ -453,7 +453,11 @@ test("held-piece drag baseline separates workloads and capture overhead", async
+                 await experimentPage.reload();
+               }
+               await expect(experimentPage.locator(".board-frame")).toHaveAttribute("data-input-enabled", "true");
++              // #33 defers closed-tray training work. Explicit demand starts
++              // this controlled in-flight workload before returning to the board.
++              await experimentPage.getByRole("button", { name: "Discoveries", exact: true }).click();
+               await expect.poll(discovery.started).toBe(true);
++              await experimentPage.getByRole("button", { name: "Back to work", exact: true }).click();
+               if (workload !== "discovery-preparation") {
+                 discovery.release(); await expect.poll(discovery.completed).toBe(true);
+                 // Settle the routed response before the idle/control measurements.
+diff --git a/tests/unit/discoveries-tray-regressions.test.tsx b/tests/unit/discoveries-tray-regressions.test.tsx
+index c9a7a36..2ed1a08 100644
+--- a/tests/unit/discoveries-tray-regressions.test.tsx
++++ b/tests/unit/discoveries-tray-regressions.test.tsx
+@@ -1,3 +1,4 @@
++import { writeFileSync } from "node:fs";
+ import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+ import { beforeEach, expect, it, vi } from "vitest";
+ import { DiscoveriesTray } from "../../app/components/discoveries-tray";
+@@ -817,3 +818,59 @@ it.each(obsoleteEligibilityOutcomes.slice(2))("current eligibility failure remai
+     expect(fixture.train().disabled).toBe(false);
+   } finally { await fixture.dispose(); }
+ });
++
++function schedulerDiscovery(id: string, fingerprint = `${id}-v1`) {
++  return { id, repertoire_id: "rep", kind: "weak_known_decision", status: "active",
++    fen_key: startFen.split(" ").slice(0, 4).join(" "), fen: startFen,
++    card_id: null, opponent_move_uci: null, trained_color: "white", score: 1,
++    evidence: { supporting_games: 4 }, evidence_fingerprint: fingerprint,
++    seen_at: "2026-09-24T00:00:00Z", snoozed_until: null, admission_state: null,
++    admitted_card_id: null, unread: false, source_games: [], routes: [id],
++    created_at: "2026-09-24T00:00:00Z", updated_at: "2026-09-24T00:00:00Z" };
++}
++
++function schedulerRecommendation(id: string, fingerprint = `${id}-v1`) {
++  return { state: "ready", opportunity_id: id, evidence_fingerprint: fingerprint,
++    starting_fen: startFen, candidates: [{ move_uci: "g1f3", score: { cp: 20, mate: null },
++      loss_cp: 0, similarity: "no supported similarity", example_line_id: null,
++      repertoire_line_count: 0, exact_transposition: false, example_line_name: null,
++      preview_moves_uci: ["g1f3"], engine_version: "fixture", network_version: "fixture",
++      depth: 14, report_id: "fixture", source_game_id: `coverage:${id}`, source_ply: 2 }],
++    accepted_moves_uci: [] };
++}
++
++it("discovery_synthetic_workload_records_request_and_validation_counts", async () => {
++  vi.useFakeTimers();
++  vi.spyOn(performance, "now").mockImplementation(() => Date.now());
++  const feed = Array.from({ length: 100 }, (_, index) => schedulerDiscovery(`finding-${index}`));
++  let previews = 0, active = 0, maximumActive = 0, validations = 0;
++  const originalMoves = Chess.prototype.moves;
++  vi.spyOn(Chess.prototype, "moves").mockImplementation(function(this: Chess, ...args: Parameters<Chess["moves"]>) {
++    if (new Error().stack?.includes("previewMatchesDecision")) validations++;
++    return originalMoves.apply(this, args);
++  } as Chess["moves"]);
++  backgroundFetch.mockReset(); backgroundFetch.mockImplementation(async () => Response.json({
++    discoveries: feed, total: 100, next_offset: null, unread_count: 0,
++  }));
++  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
++    const id = String(input).match(/discoveries\/([^/]+)\/recommendations/)?.[1];
++    if (!id) return Response.json({ acknowledged: true });
++    previews++; active++; maximumActive = Math.max(maximumActive, active);
++    await Promise.resolve(); active--;
++    return Response.json(schedulerRecommendation(id));
++  }));
++  const props = { interactionBlocked: true, safeToOpen: false, safeBreakCounter: 0, onQueueChanged: async () => {} };
++  const view = render(<DiscoveriesTray {...props} />);
++  await act(async () => { await vi.advanceTimersByTimeAsync(60_001); });
++  const closedTraining = { previews, maximumActive, feedPages: backgroundFetch.mock.calls.length, validations };
++  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
++  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
++  for (let update = 0; update < 20; update++) view.rerender(<DiscoveriesTray {...props} safeBreakCounter={update} />);
++  await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
++  const viewerOpen = { previews, maximumActive, feedPages: backgroundFetch.mock.calls.length, validations };
++  if (process.env.TEMPO_DISCOVERY_MEASUREMENT)
++    writeFileSync(process.env.TEMPO_DISCOVERY_MEASUREMENT, JSON.stringify({ closedTraining, viewerOpen }, null, 2) + "\n");
++  expect(previews).toBeGreaterThan(0); expect(maximumActive).toBeLessThanOrEqual(2);
++  view.unmount();
++});
++

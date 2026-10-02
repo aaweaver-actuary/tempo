@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "./buttons/BaseButton";
 import {
   buildNotificationExport, clearAllNotifications, clearNotificationGroup, hideNotificationToast, hydrateNotifications,
@@ -9,6 +9,8 @@ import {
   type NotificationRecord, type NotificationGroup, type NotificationToast as ToastState,
 } from "../lib/notifications";
 import { buildDebugBundle, copyDebugBundle, debugErrors } from "../lib/debug-reporting";
+
+import { usePopupKeyboard } from "../lib/keyboard-shortcuts";
 
 type Threshold = "info" | "warning" | "error";
 const emptyNotificationRecords: readonly NotificationRecord[] = [];
@@ -33,6 +35,8 @@ function NotificationDetails({ record }: { record: NotificationRecord }) {
 export function NotificationCenter() {
   const records = useNotifications();
   const [open, setOpen] = useState(false);
+  const popupRef = useRef<HTMLElement>(null);
+  usePopupKeyboard(popupRef, () => setOpen(false), open);
   const [filter, setFilter] = useState<"attention" | "all" | NotificationRecord["severity"]>("attention");
   const [threshold, setThreshold] = useState<Threshold>("info");
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
@@ -55,14 +59,15 @@ export function NotificationCenter() {
 
   return <div className="notification-center">
     <Button type="button" className="notification-trigger" aria-label="Notifications"
-      aria-expanded={open} aria-controls="notification-tray" onClick={() => {
+      aria-expanded={open} aria-controls="notification-tray" onClick={event => {
+        event.currentTarget.focus();
         if (!open) setFilter("attention");
         setOpen((value) => !value);
       }}>
       <span aria-hidden="true">🔔</span><span className="notification-trigger-label">Notifications</span>
       {needsAttention > 0 && <span className="notification-count">{needsAttention}</span>}
     </Button>
-    {open && <section id="notification-tray" className="notification-tray" aria-label="Notifications">
+    {open && <section ref={popupRef} id="notification-tray" className="notification-tray" aria-label="Notifications">
       <header><strong>Notifications</strong><div className="notification-header-actions">
         <Button type="button" disabled={!records.some((record) => !record.clearedAt)}
           onClick={clearAllNotifications}>Clear all</Button>
@@ -120,15 +125,17 @@ export function NotificationCenter() {
   </div>;
 }
 
-function NotificationToast({ group, toastId }: { group: NotificationGroup; toastId: string }) {
+function NotificationToast({ group, toastId, order }: { group: NotificationGroup; toastId: string; order: number }) {
   const { record, occurrenceCount } = group;
   const [exiting, setExiting] = useState(false);
+  const toastRef = useRef<HTMLDivElement>(null);
+  usePopupKeyboard(toastRef, () => hideNotificationToast(toastId), !exiting, true, order);
   useEffect(() => {
     const fadeTimer = window.setTimeout(() => setExiting(true), 7_000);
     const hideTimer = window.setTimeout(() => hideNotificationToast(toastId), 7_250);
     return () => { window.clearTimeout(fadeTimer); window.clearTimeout(hideTimer); };
   }, [toastId]);
-  return <div className={`notification-toast notification-${record.severity}${exiting ? " is-exiting" : ""}`}
+  return <div ref={toastRef} className={`notification-toast notification-${record.severity}${exiting ? " is-exiting" : ""}`}
     role={record.severity === "error" ? "alert" : "status"}
     aria-hidden={exiting}
     inert={exiting}>
@@ -143,9 +150,9 @@ export function NotificationViewport() {
   const visibleToasts = useSyncExternalStore(subscribeNotifications, notificationToasts, () => emptyToasts);
   const groups = groupNotifications(records);
   return <div className="notification-viewport">
-    {visibleToasts.map((toast) => {
+    {visibleToasts.map((toast, order) => {
       const group = groups.find((candidate) => candidate.key === toast.groupKey);
-      return group && <NotificationToast key={toast.id} group={group} toastId={toast.id} />;
+      return group && <NotificationToast key={toast.id} group={group} toastId={toast.id} order={order} />;
     })}
   </div>;
 }
