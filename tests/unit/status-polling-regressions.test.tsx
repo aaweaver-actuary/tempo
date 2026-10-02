@@ -442,6 +442,35 @@ it("manual_sync_startup_suspends_passive_reads_until_command_state_and_then_reco
   await advance(1); expect(statusCalls).toBe(3);
 });
 
+it("manual_sync_post_command_status_reconciles_before_react_commits", async () => {
+  const postCommandParsed = deferred<void>();
+  let manualStarted = false;
+  const immediateResponse = (body: unknown, parsed?: () => void) => {
+    const response = Response.json(body);
+    vi.spyOn(response, "json").mockImplementation(async () => { parsed?.(); return body; });
+    return response;
+  };
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input);
+    if (path.endsWith("/sync/status")) return immediateResponse({ providers: [], active_job: { ...activeJob, status: "complete" } },
+      manualStarted ? () => postCommandParsed.resolve() : undefined);
+    if (path.endsWith("/api/settings")) return immediateResponse({ ...syncSettings, lichess_username: manualStarted ? "player" : "" });
+    return immediateResponse({ imported: 0, job_id: activeJob.id, status: "queued", providers: {} });
+  }));
+  let value!: ReturnType<typeof useGameSync>;
+  function Probe() { value = useGameSync(); return null; }
+  render(<Probe />); await settle();
+  expect(value.state.jobStatus).toBe("complete");
+  manualStarted = true;
+  await act(async () => {
+    await value.sync(true);
+    await postCommandParsed.promise;
+  });
+  // The authoritative read equals the bootstrap snapshot, but supersedes the queued command update.
+  expect(value.state.jobStatus).toBe("complete");
+  expect(value.state.syncing).toBe(false);
+});
+
 const trainingCard = { id: asCardId("polling-training"), kind: "opening" as const, title: "Polling training", subtitle: "",
   startingFen: asFenString(STANDARD_FEN), moves: [asSanMove("e4")], userMoveTarget: 1, orientation: "white" as const };
 const trainingProps = { dateLabel: "Today", serviceError: "", refreshDatabaseQueue: vi.fn(), cardsLeft: 1,
