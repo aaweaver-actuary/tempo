@@ -507,7 +507,32 @@ async function verifyCurrentCanonicalRouteAdmission() {
   assert.notEqual(current.preview_id, preview.preview_id,
     "Changed source state requires a fresh computation");
   await postCommand("repertoire/branches", { ...continuation, moves: ["d7d6", "d2d3"] });
+  await waitForStudyableImport(repertoireId);
+  const candidates = ["", "e4", "e4 e5", "e4 e5 Nf3", "e4 e5 Nf3 Nc6",
+    "e4 e5 Nf3 Nc6 Bc4", "e4 e5 Nf3 Nc6 Bc4 Bc5", "e4 e5 Nf3 Nc6 Bc4 Bc5 c3",
+    "e4 e5 Nf3 Nc6 Bc4 Bc5 c3 Nf6", "e4 e5 Nf3 Nc6 Bc4 Bc5 c3 Nf6 d3"];
+  const requestedPreviewIds = new Set();
+  for (const movetext of candidates) {
+    const admitted = await postCommand(`repertoires/${repertoireId}/canonical-prefix/preview`, { movetext });
+    requestedPreviewIds.add(admitted.preview_id);
+  }
+  const retentionDeadline = performance.now() + 30_000;
+  while (true) {
+    const snapshot = await get("migration/snapshot");
+    const previews = snapshot.tables.canonical_prefix_previews.filter(row => row.repertoire_id === repertoireId);
+    const pending = (await get("system/tasks")).tasks.some(task => task.kind === "canonical_prefix_preview"
+      && requestedPreviewIds.has(task.deduplication_key) && ["queued", "leased", "retrying"].includes(task.state));
+    if (previews.length <= 9 && !pending) {
+      const repertoire = snapshot.tables.repertoires.find(row => row.id === repertoireId);
+      assert(previews.some(row => row.id === repertoire.canonical_prefix_preview_id),
+        "Retention preserves the active current certificate");
+      break;
+    }
+    assert(performance.now() < retentionDeadline, "Bounded preview retention finishes and removes abandoned scans");
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
   console.log("PASS PostgreSQL deleted-route admission rejects stale proof and accepts a recertified current route");
+  console.log("PASS PostgreSQL compatibility retention bounds previews, children, and scan tasks");
 }
 
 const actions = {

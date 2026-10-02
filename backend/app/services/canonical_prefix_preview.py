@@ -84,6 +84,8 @@ def _execute_retention_slice(task: dict) -> bool:
         if victim['id'] != current['preview_id']:
             if deletion[0] == 'retire':
                 database.execute("UPDATE background_tasks SET state='superseded',generation=generation+1,lease_token=NULL,lease_expires_at=NULL WHERE id=? AND state<>'superseded'", (deletion[1],))
+                database.execute("UPDATE canonical_prefix_previews SET state='stale',last_error=? WHERE id=?",
+                                 ('This compatibility preview expired. Check the prefix again before saving.', victim['id']))
             elif deletion[0] == 'preview':
                 database.execute("DELETE FROM background_tasks WHERE kind='canonical_prefix_preview' AND deduplication_key=?", (deletion[1],))
                 database.execute("DELETE FROM canonical_prefix_previews WHERE id=?", (deletion[1],))

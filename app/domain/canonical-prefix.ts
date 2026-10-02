@@ -8,7 +8,7 @@ export const canonicalPrefixSchema = z.strictObject({
 export type CanonicalPrefix = z.infer<typeof canonicalPrefixSchema>;
 
 export const canonicalPrefixPreviewAdmissionSchema = canonicalPrefixSchema.extend({
-  preview_id: z.string().min(1), state: z.literal("checking"),
+  preview_id: z.string().min(1), state: z.enum(["checking", "ready", "conflicts"]),
 });
 export const canonicalPrefixPreviewSchema = canonicalPrefixSchema.extend({
   preview_id: z.string().min(1),

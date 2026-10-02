@@ -127,3 +127,7 @@ then fails, it says **Prefix saved. Reload the repertoire to see the updated
 analysis.** and disables a stale save. General refresh coalescing (#40) and the
 Discoveries feed scheduler (#33, now merged through #58) remain separate work;
 no latency improvement is claimed here.
+Retirement invalidates the token before deleting any child, fencing a concurrent
+save from activating an incomplete certificate. The real PostgreSQL durability
+scenario also submits ten distinct checks and verifies the retained-preview bound.
+Reused ready/conflicting admissions are accepted by the typed frontend contract.

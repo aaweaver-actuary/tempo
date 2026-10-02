@@ -171,3 +171,9 @@ it("canonical prefix confirmed save followed by refresh failure remains committe
   expect(localStorage.getItem("tempo-canonical-prefix-save-v1:rep")).toBeNull();
   expect(vi.mocked(fetch).mock.calls.filter(([, options]) => options?.method === "PUT")).toHaveLength(1);
 });
+
+it.each(["ready", "conflicts"])("canonical prefix command accepts a reused %s compatibility result", async (state) => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ ...italian, preview_id: "reused", state })));
+  expect((await requestCanonicalPrefixPreview("rep", italian.san)).preview_id).toBe("reused");
+  expect(localStorage.getItem("tempo-canonical-prefix-preview-v1:rep")).toBeNull();
+});

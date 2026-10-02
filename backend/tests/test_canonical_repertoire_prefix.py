@@ -700,3 +700,27 @@ def test_integrity_shared_card_replacement_belongs_only_to_validated_repertoire(
         assert replacement['repertoire_id'] == 'italian'
         assert connection.execute("SELECT archived FROM cards WHERE id='shared-stub'").fetchone()[0] == 0
         assert connection.execute("SELECT repertoire_id FROM repertoire_cards WHERE card_id=?", (replacement['id'],)).fetchone()[0] == 'italian'
+
+
+def test_canonical_prefix_retired_preview_cannot_save_during_bounded_cleanup(prefix_database):
+    from fastapi import HTTPException
+    route = [*ITALIAN, 'f8c5', 'c2c3', 'g8f6', 'd2d3']
+    add_line(route)
+    old = prepare_prefix()
+    with database.connection() as connection:
+        for length in range(len(route) + 1):
+            if length != len(ITALIAN):
+                request_preview(connection, 'italian', route[:length])
+    for _ in range(150):
+        task = claim_task('canonical_prefix_preview')
+        assert task is not None
+        execute_prefix_preview_slice(task)
+        with database.read_connection() as connection:
+            state = connection.execute('SELECT state FROM canonical_prefix_previews WHERE id=?', (old['preview_id'],)).fetchone()
+        if state and state['state'] == 'stale':
+            break
+    else:
+        pytest.fail('Old preview was not retired by bounded retention')
+    # Its source tuple is still current, but its certificate is being dismantled.
+    with pytest.raises(HTTPException, match='check the current prefix again'):
+        apply_preview(old)

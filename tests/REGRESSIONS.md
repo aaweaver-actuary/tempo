@@ -1209,3 +1209,12 @@ remain in the regular gate.
 `test_postgres_coverage_fingerprint_tracks_route_certificates_only_for_scoped_repertoires`
 retains unrestricted coverage identity across derived card/link changes while
 scoped source mutations invalidate route-dependent calculations.
+`test_canonical_prefix_retired_preview_cannot_save_during_bounded_cleanup`
+protects the save/retention race: a preview is invalidated before its first child
+is removed, so an otherwise-current token cannot become an incomplete active
+certificate. `canonical prefix command accepts a reused %s compatibility result`
+covers ready/conflicting producer responses (both failed against the previous
+checking-only frontend contract). The real browser workflow repeats Check prefix
+and asserts that the task identities remain unchanged.
+The same PostgreSQL scenario submits ten distinct candidates and waits for durable
+retention to settle at at most nine previews while preserving the active pointer.

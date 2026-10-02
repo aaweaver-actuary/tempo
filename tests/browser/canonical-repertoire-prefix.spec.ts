@@ -38,6 +38,13 @@ for (const width of [390, 1280]) {
     await dialog.getByLabel("Assumed SAN moves").fill("e4 e5 Nf3 Nc6 Bc4");
     await dialog.getByRole("button", { name: "Check prefix" }).click();
     await expect(dialog.getByText("Compatible. Discoveries start after this opening.")).toBeVisible({ timeout: 30_000 });
+    const scansBeforeRepeat = (await (await request.get(`${api}/system/tasks`)).json()).tasks
+      .filter((task: { kind: string }) => task.kind === "canonical_prefix_preview").map((task: { id: string }) => task.id).sort();
+    await dialog.getByRole("button", { name: "Check prefix" }).click();
+    await expect(dialog.getByText("Compatible. Discoveries start after this opening.")).toBeVisible({ timeout: 30_000 });
+    const scansAfterRepeat = (await (await request.get(`${api}/system/tasks`)).json()).tasks
+      .filter((task: { kind: string }) => task.kind === "canonical_prefix_preview").map((task: { id: string }) => task.id).sort();
+    expect(scansAfterRepeat).toEqual(scansBeforeRepeat);
     await expect(dialog.locator(".board-frame")).toHaveAttribute("data-fen", /2B1P3\/5N2/);
     await page.screenshot({ path: testInfo.outputPath("canonical-prefix.png") });
     await dialog.getByRole("button", { name: "Save prefix" }).click();
