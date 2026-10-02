@@ -9,7 +9,7 @@ import { Chess } from "chess.js";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "../../scripts/postgres-test-options.mjs";
 import { executePostgresTestPlan, postgresTestStages } from "../../scripts/postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
-  studyDurabilityPgn } from "../../scripts/postgres-test-fixture.mjs";
+  repertoireLimitRecreationPgn, studyDurabilityPgn } from "../../scripts/postgres-test-fixture.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -86,6 +86,14 @@ test("valid opponent-branch durability and background fixtures prescribe one Whi
     }
     assert.equal(prescribedResponses.get(new Chess().fen().split(" ").slice(0, 4).join(" ")), initialResponse);
   }
+});
+
+test("repertoire limit recreation fixture includes its final White response", () => {
+  const board = new Chess();
+  board.loadPgn(repertoireLimitRecreationPgn);
+  assert.equal(board.turn(), "b", "Recreation must reach study admission without a missing White response");
+  const runnerSource = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  assert.match(runnerSource, /importFixture\("repertoire-limit-recreation\.pgn", repertoireLimitRecreationPgn\)/);
 });
 
 test("full browser coverage creates a fresh durability database before study commands", () => {

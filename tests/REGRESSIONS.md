@@ -929,6 +929,7 @@ generation invalidation.
 - `test_repertoire_limit_proof_restores_pruned_history_both_dates_and_stale_cards` — exact task fields/ID, all 100 historical events including events pruned by enqueue, present/absent today projections, tomorrow projection, and unrelated rollover fields survive mutation and cleanup. Also restores present/absent priority source epochs for owners and shared links after card-update triggers; the trigger-enabled fixture reproduced that additional leak before epoch restoration.
 - `test_repertoire_limit_proof_cleanup_failure_is_loud_and_atomic` — restoration failure surfaces with the original assertion as context and rolls back fixture deletion and partial queue restoration together.
 - `test_repertoire_limit_proof_reconciliation_preserves_unrelated_entries` — reconciliation publishes only fixture entries while advancing past unrelated candidates.
+- `tests/runner/postgres-test-speedups.test.mjs::repertoire limit recreation fixture includes its final White response` — the PR's recreation PGN ends after White's prescribed move so integrity validation permits study admission. Reproduced `w !== b` on `1. e4 e5 *` after the isolated Docker run exposed `missing_response`; fixed with `2. Nf3`, without bypassing integrity checks or extending waits.
 
 ## Tactic capture orientation and typed SAN
 

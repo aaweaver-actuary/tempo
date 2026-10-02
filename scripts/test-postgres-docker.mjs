@@ -10,7 +10,7 @@ import { createIsolatedTestEnvironment } from "./test-environment.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
 import { executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages } from "./postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
-  studyDurabilityPgn } from "./postgres-test-fixture.mjs";
+  repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer } from "./test-scenario-timings.mjs";
 
 const options = parsePostgresTestOptions(process.argv.slice(2));
@@ -568,7 +568,7 @@ const actions = {
   },
   command_recreation: async () => {
     const settings = await get("settings");
-    const importedLimit = await importFixture("repertoire-limit-recreation.pgn", '[Event "Limit recreation"]\n\n1. e4 e5 *');
+    const importedLimit = await importFixture("repertoire-limit-recreation.pgn", repertoireLimitRecreationPgn);
     await waitForStudyableImport(importedLimit.repertoire_id);
     const before = await get("queue/today");
     const operationId = `pg-durability-${randomBytes(12).toString("hex")}`;
