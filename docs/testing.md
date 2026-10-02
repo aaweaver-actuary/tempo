@@ -270,9 +270,9 @@ Changes refresh today's remaining automatic introductions. Completed work and du
 reviews remain. Unused allowance does not accumulate: seven learned out of ten
 still permits up to ten new cards tomorrow.
 
-PostgreSQL migration 26 adds the nullable column. Upgrade with the normal
+PostgreSQL migration 27 adds the nullable column. Upgrade with the normal
 stopped-writer migration procedure before starting the API/workers requiring schema
-26. SQLite compatibility initialization adds the same nullable field. Settings
+27. SQLite compatibility initialization adds the same nullable field. Settings
 writes and their queue-refresh generation commit together on PostgreSQL; old worker
 checkpoints cannot publish after that generation changes. Publication rechecks the
 current limit and admissions without reversing the foreground settings/task lock

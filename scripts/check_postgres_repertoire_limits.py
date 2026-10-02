@@ -31,6 +31,12 @@ def snapshot_queue_environment(database, queue_dates):
         'SELECT * FROM queue_projections WHERE queue_date IN (?,?) ORDER BY queue_date',
         queue_dates,
     ).fetchall()
+    # Migration 26 adds bounded diagnostic buckets. Queue commands update these
+    # even with consumers stopped; preserve every daily_queue shard/slot because
+    # a newly created singleton has a new task ID and therefore a new shard.
+    metrics = database.execute(
+        "SELECT * FROM background_metric_buckets WHERE kind='daily_queue' ORDER BY shard,slot",
+    ).fetchall()
     stale_introductions = database.execute(
         """SELECT id,state,introduced_at FROM cards
            WHERE content_type='opening' AND state='learning' AND introduced_at<?
@@ -60,6 +66,7 @@ def snapshot_queue_environment(database, queue_dates):
         'task': dict(task) if task else None,
         'events': [dict(event) for event in events],
         'projections': [dict(projection) for projection in projections],
+        'metrics': [dict(metric) for metric in metrics],
         'stale_introductions': [dict(card) for card in stale_introductions],
         'priority_epochs': [dict(epoch) for epoch in priority_epochs],
     }
@@ -71,13 +78,15 @@ def restore_queue_environment(database, snapshot):
         "DELETE FROM background_tasks WHERE kind='daily_queue' AND deduplication_key='current'",
     )  # The task FK cascades its events; no other table references this task.
     database.execute('DELETE FROM queue_projections WHERE queue_date IN (?,?)', snapshot['queue_dates'])
+    database.execute("DELETE FROM background_metric_buckets WHERE kind='daily_queue'")
     for table_name, saved_rows in (
         ('background_tasks', [snapshot['task']] if snapshot['task'] else []),
         ('background_task_events', snapshot['events']),
         ('queue_projections', snapshot['projections']),
+        ('background_metric_buckets', snapshot['metrics']),
     ):
         for saved_row in saved_rows:
-            # Column names come from SELECT * on these three internal tables.
+            # Column names come from SELECT * on these internal tables.
             column_names = ','.join(saved_row)
             placeholders = ','.join('?' for _ in saved_row)
             database.execute(

@@ -921,6 +921,13 @@ assertions remain required. No test identity, CI selection, or timeout changed.
 
 ### PR #54 durability proof isolation
 
+Current-main integration also preserves `background_metric_buckets` for the
+`daily_queue` kind in both restoration regressions below. Before restoring those
+rows, all four present/absent cases failed with leaked diagnostic counters.
+`test_repertoire_limit_migration_has_unique_number_and_matches_schema_readiness`
+failed on the duplicate migration 26 introduced by merging background diagnostics;
+the repertoire migration is now 27, with a matching ledger and readiness version.
+
 `backend/tests/test_tactical_catalog.py::test_tactical_pack_migration_preserves_reviews_scheduling_and_completion`
 also protects the additive repertoire schema: the old five-value positional insert
 failed against the new six-column table. Fixtures now name their columns rather

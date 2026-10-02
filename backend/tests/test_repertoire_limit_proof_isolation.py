@@ -12,6 +12,7 @@ import pytest
 
 from app import database, postgres_store, repertoire_commands
 from app.queue_commands import request_queue_refresh_in_transaction
+from app.services.background_metrics import increment
 
 
 proof_spec = importlib.util.spec_from_file_location(
@@ -70,6 +71,7 @@ def proof_environment(tmp_path, monkeypatch):
         unrelated_task = request_queue_refresh_in_transaction(stored, '2099-01-01')
         stored.execute("UPDATE background_tasks SET kind='unrelated',deduplication_key='other' WHERE id=?", (unrelated_task['id'],))
         stored.execute("UPDATE queue_projections SET state='failed',last_error='preserve' WHERE queue_date='2099-01-01'")
+        increment(stored, 'other', 'unrelated-metric', claims=17)
 
     def execute_command(operation_id, command_name, payload):
         assert command_name == 'repertoires.settings.update'
@@ -87,8 +89,10 @@ def proof_environment(tmp_path, monkeypatch):
 def environment_rows(connection):
     with connection() as stored:
         return {
-            table: [dict(row) for row in stored.execute(f'SELECT * FROM {table} ORDER BY 1')]
-            for table in ('background_tasks', 'background_task_events', 'queue_projections',
+            table: [dict(row) for row in stored.execute(
+                f'SELECT * FROM {table} ORDER BY ' + ('kind,shard,slot' if table == 'background_metric_buckets' else '1'),
+            )]
+            for table in ('background_tasks', 'background_task_events', 'background_metric_buckets', 'queue_projections',
                           'repertoires', 'cards', 'repertoire_cards', 'reviews',
                           'daily_queue', 'operation_receipts',
                           'priority_repertoire_source_epochs', 'priority_source_epoch')
@@ -125,6 +129,7 @@ def test_repertoire_limit_proof_finally_restores_queue_state_after_assertion_fai
         assert changed_rows['background_tasks'] != original_rows['background_tasks']
         assert changed_rows['queue_projections'] != original_rows['queue_projections']
         assert changed_rows['background_task_events'] != original_rows['background_task_events']
+        assert changed_rows['background_metric_buckets'] != original_rows['background_metric_buckets']
         raise AssertionError('injected proof failure after durable queue mutation')
 
     monkeypatch.setattr(proof, 'execute_command', fail_after_settings_mutation)
