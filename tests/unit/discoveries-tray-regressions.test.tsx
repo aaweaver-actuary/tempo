@@ -1,3 +1,4 @@
+import { writeFileSync } from "node:fs";
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import { DiscoveriesTray } from "../../app/components/discoveries-tray";
@@ -258,14 +259,16 @@ it("shows only ready discoveries in feed order and does not acknowledge hidden i
   render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
   fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
   expect(await screen.findByText("Preparing review-ready discoveries.")).toBeTruthy();
-  await waitFor(() => expect(screen.getByText("1 of 3 · white to move")).toBeTruthy());
-  expect(screen.getByText("Example route: slow-ready")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  // Incremental readiness exposes the saved card immediately and preserves
+  // that active item as earlier feed entries finish preparing.
+  await waitFor(() => expect(screen.getByText("3 of 3 · white to move")).toBeTruthy());
+  expect(screen.getByText("Example route: saved-card")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Previous" }));
   expect(screen.getByText("2 of 3 · white to move")).toBeTruthy();
   expect(screen.getByText("Example route: fast-ready")).toBeTruthy();
-  fireEvent.click(screen.getByRole("button", { name: "Next" }));
-  expect(screen.getByText("3 of 3 · white to move")).toBeTruthy();
-  expect(screen.getByText("Example route: saved-card")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Previous" }));
+  expect(screen.getByText("1 of 3 · white to move")).toBeTruthy();
+  expect(screen.getByText("Example route: slow-ready")).toBeTruthy();
   expect(screen.getAllByRole("status").some((status) =>
     status.textContent?.includes("Lichess: Loading") && status.textContent.includes("Masters: Loading"))).toBe(true);
   expect(fetcher.mock.calls.some(([url]) => String(url).includes("/acknowledge"))).toBe(false);
@@ -816,4 +819,347 @@ it.each(obsoleteEligibilityOutcomes.slice(2))("current eligibility failure remai
     await act(async () => fixture.requests[1].resolve(Response.json({ eligible: true, reason: null })));
     expect(fixture.train().disabled).toBe(false);
   } finally { await fixture.dispose(); }
+});
+
+function schedulerDiscovery(id: string, fingerprint = `${id}-v1`) {
+  return { id, repertoire_id: "rep", kind: "weak_known_decision", status: "active",
+    fen_key: startFen.split(" ").slice(0, 4).join(" "), fen: startFen,
+    card_id: null, opponent_move_uci: null, trained_color: "white", score: 1,
+    evidence: { supporting_games: 4 }, evidence_fingerprint: fingerprint,
+    seen_at: "2026-09-24T00:00:00Z", snoozed_until: null, admission_state: null,
+    admitted_card_id: null, unread: false, source_games: [], routes: [id],
+    created_at: "2026-09-24T00:00:00Z", updated_at: "2026-09-24T00:00:00Z" };
+}
+
+function schedulerRecommendation(id: string, fingerprint = `${id}-v1`) {
+  return { state: "ready", opportunity_id: id, evidence_fingerprint: fingerprint,
+    starting_fen: startFen, candidates: [{ move_uci: "g1f3", score: { cp: 20, mate: null },
+      loss_cp: 0, similarity: "no supported similarity", example_line_id: null,
+      repertoire_line_count: 0, exact_transposition: false, example_line_name: null,
+      preview_moves_uci: ["g1f3"], engine_version: "fixture", network_version: "fixture",
+      depth: 14, report_id: "fixture", source_game_id: `coverage:${id}`, source_ply: 2 }],
+    accepted_moves_uci: [] };
+}
+
+async function schedulerMicrotasks() {
+  await act(async () => { for (let step = 0; step < 25; step++) await Promise.resolve(); });
+}
+
+it("discovery_closed_training_defers_preview_and_feed_work", async () => {
+  vi.useFakeTimers();
+  const feed = Array.from({ length: 100 }, (_, index) => schedulerDiscovery(`finding-${index}`));
+  let previews = 0, active = 0, maximumActive = 0;
+  backgroundFetch.mockReset();
+  backgroundFetch.mockResolvedValue(Response.json({ discoveries: feed, total: 100, next_offset: null, unread_count: 0 }));
+  // Responses must be fresh objects; parsing consumes their bodies.
+  backgroundFetch.mockImplementation(async () => Response.json({ discoveries: feed, total: 100, next_offset: null, unread_count: 0 }));
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const id = String(input).match(/discoveries\/([^/]+)\/recommendations/)?.[1];
+    if (!id) return Response.json({ acknowledged: true });
+    previews++; active++; maximumActive = Math.max(maximumActive, active);
+    await Promise.resolve(); active--;
+    return Response.json({ state: "waiting", opportunity_id: id, candidates: [] });
+  }));
+  const view = render(<DiscoveriesTray interactionBlocked safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(60_001); });
+  console.info("issue-33 closed-training workload", { previews, maximumActive, feedPages: backgroundFetch.mock.calls.length });
+  expect(previews).toBe(0);
+  expect(backgroundFetch).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+  await schedulerMicrotasks();
+  expect(backgroundFetch).toHaveBeenCalledTimes(1);
+  expect(previews).toBeGreaterThan(0);
+  view.unmount();
+});
+
+it("discovery_ready_item_does_not_wait_for_feed_preflight", async () => {
+  const feed = [schedulerDiscovery("ready"), schedulerDiscovery("waiting")];
+  backgroundFetch.mockReset();
+  backgroundFetch.mockImplementation(async () => Response.json({ discoveries: feed, total: 2, next_offset: null, unread_count: 0 }));
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const id = String(input).match(/discoveries\/([^/]+)\/recommendations/)?.[1];
+    if (id === "waiting") return new Promise<Response>(() => {});
+    return Response.json(schedulerRecommendation("ready"));
+  }));
+  render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+  await waitFor(() => expect(screen.getByText("Example route: ready")).toBeTruthy(), { timeout: 1000 });
+});
+
+it("discovery_preview_global_concurrency_survives_overlapping_triggers", async () => {
+  vi.useFakeTimers();
+  let feed = Array.from({ length: 100 }, (_, index) => schedulerDiscovery(`finding-${index}`));
+  let delay = false, active = 0, maximumActive = 0;
+  const requests: Array<ReturnType<typeof deferredEligibility<Response>>> = [];
+  backgroundFetch.mockReset();
+  backgroundFetch.mockImplementation(async () => Response.json({ discoveries: feed, total: 100, next_offset: null, unread_count: 0 }));
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const id = String(input).match(/discoveries\/([^/]+)\/recommendations/)?.[1];
+    if (!id) return Response.json({ acknowledged: true });
+    if (!delay) return Response.json(schedulerRecommendation(id));
+    active++; maximumActive = Math.max(maximumActive, active);
+    const request = deferredEligibility<Response>(); requests.push(request);
+    try { return await request.promise; } finally { active--; }
+  }));
+  const view = render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  delay = true;
+  feed = feed.map((item, index) => index < 50 ? { ...item, evidence_fingerprint: `${item.id}-v2` } : item);
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+  feed = feed.map((item, index) => index >= 50 ? { ...item, evidence_fingerprint: `${item.id}-v2` } : item);
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+  console.info("issue-33 overlapping workload", { maximumActive, requests: requests.length });
+  expect(maximumActive).toBeLessThanOrEqual(2);
+  view.unmount();
+});
+
+function previewDiagnostics() {
+  return (document.querySelector(".tempo-discoveries-tray") as HTMLElement & {
+    discoveryPreviewDiagnostics: () => import("../../app/lib/discovery-preview-scheduler").DiscoveryPreviewDiagnostics;
+  }).discoveryPreviewDiagnostics();
+}
+
+it("discovery_visibility_return_coalesces_refresh_and_drain", async () => {
+  vi.useFakeTimers();
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  const feed = Array.from({ length: 100 }, (_, index) => schedulerDiscovery(`finding-${index}`));
+  const page = deferredEligibility<Response>();
+  backgroundFetch.mockReset(); backgroundFetch.mockImplementation(() => page.promise);
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+    const id = String(input).match(/discoveries\/([^/]+)\/recommendations/)?.[1];
+    return Response.json({ state: "waiting", opportunity_id: id, candidates: [] });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const view = render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+  expect(backgroundFetch).not.toHaveBeenCalled(); expect(fetcher).not.toHaveBeenCalled();
+  visibility.mockReturnValue("visible");
+  act(() => { for (let wake = 0; wake < 10; wake++) document.dispatchEvent(new Event("visibilitychange")); });
+  expect(backgroundFetch).toHaveBeenCalledTimes(1);
+  await act(async () => page.resolve(Response.json({ discoveries: feed, total: 100, next_offset: null, unread_count: 0 })));
+  await schedulerMicrotasks();
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  visibility.mockReturnValue("hidden"); act(() => document.dispatchEvent(new Event("visibilitychange")));
+  await act(async () => { await vi.advanceTimersByTimeAsync(90_000); });
+  expect(fetcher).toHaveBeenCalledTimes(2); expect(backgroundFetch).toHaveBeenCalledTimes(1);
+  view.unmount(); visibility.mockRestore();
+});
+
+it("discovery_admission_confirmation_is_independent_of_preview_pause", async () => {
+  vi.useFakeTimers();
+  localStorage.setItem("tempo-pending-discovery-admissions-v1", JSON.stringify([{
+    opportunityId: "saved", selectedMoveUci: "g1f3", evidenceFingerprint: "saved-v1",
+    operationId: "admission-operation", state: "pending",
+  }]));
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+  backgroundFetch.mockReset(); backgroundFetch.mockImplementation(async () => Response.json({
+    discoveries: [], total: 0, next_offset: null, unread_count: 0,
+  }));
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => String(input).endsWith("/accept")
+    ? Response.json({ intent_id: "confirmed-intent" }) : Response.json({ state: "queued" }));
+  vi.stubGlobal("fetch", fetcher); const changed = vi.fn(async () => {});
+  const view = render(<DiscoveriesTray interactionBlocked safeToOpen={false} safeBreakCounter={0} onQueueChanged={changed} />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(9_000); });
+  expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("/accept"))).toHaveLength(1);
+  expect(fetcher.mock.calls.filter(([url]) => String(url).endsWith("/confirmed-intent"))).toHaveLength(1);
+  expect(changed).toHaveBeenCalledTimes(1); expect(pendingDiscoveryAdmissions()).toEqual([]);
+  expect(backgroundFetch).toHaveBeenCalledTimes(1);
+  expect(previewDiagnostics().started).toBe(0);
+  view.unmount(); visibility.mockRestore();
+});
+
+it("discovery_replaced_and_returned_component_preview_cannot_publish_obsolete_results", async () => {
+  vi.useFakeTimers();
+  let feed = [schedulerDiscovery("finding")];
+  const requests: Array<ReturnType<typeof deferredEligibility<Response>>> = [];
+  backgroundFetch.mockReset(); backgroundFetch.mockImplementation(async () => Response.json({
+    discoveries: feed, total: feed.length, next_offset: null, unread_count: 0,
+  }));
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    if (!String(input).endsWith("/recommendations")) return Promise.resolve(Response.json({ acknowledged: true }));
+    const request = deferredEligibility<Response>(); requests.push(request); return request.promise;
+  }));
+  const view = render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(requests).toHaveLength(1);
+  feed = [schedulerDiscovery("finding", "replacement")];
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+  expect(requests).toHaveLength(2);
+  await act(async () => requests[0].resolve(Response.json(schedulerRecommendation("finding"))));
+  expect(screen.queryByText("Example route: finding")).toBeNull();
+  await act(async () => requests[1].resolve(Response.json(schedulerRecommendation("finding", "replacement"))));
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(screen.getByText("Example route: finding")).toBeTruthy();
+  expect(previewDiagnostics()).toMatchObject({ staleResultsIgnored: 1, maximumActive: 2, validationInvocations: 1 });
+  feed = [];
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+  feed = [schedulerDiscovery("finding", "replacement")];
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+  expect(requests).toHaveLength(3);
+  expect(screen.queryByText("Example route: finding")).toBeNull();
+  await act(async () => requests[2].resolve(Response.json(schedulerRecommendation("finding", "replacement"))));
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(screen.getByText("Example route: finding")).toBeTruthy();
+  view.unmount();
+});
+
+it("discovery_component_unmount_aborts_and_ignores_old_preview", async () => {
+  vi.useFakeTimers();
+  const feed = [schedulerDiscovery("finding")];
+  backgroundFetch.mockReset(); backgroundFetch.mockImplementation(async () => Response.json({
+    discoveries: feed, total: 1, next_offset: null, unread_count: 0,
+  }));
+  const requests: Array<{ response: ReturnType<typeof deferredEligibility<Response>>; signal?: AbortSignal | null }> = [];
+  vi.stubGlobal("fetch", vi.fn((_input: RequestInfo | URL, init?: RequestInit) => {
+    const response = deferredEligibility<Response>(); requests.push({ response, signal: init?.signal }); return response.promise;
+  }));
+  const props = { safeToOpen: false, safeBreakCounter: 0, onQueueChanged: async () => {} };
+  const first = render(<DiscoveriesTray {...props} />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  first.unmount(); expect(requests[0].signal?.aborted).toBe(true);
+  const second = render(<DiscoveriesTray {...props} />);
+  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  await act(async () => requests[0].response.resolve(Response.json(schedulerRecommendation("finding"))));
+  expect(screen.queryByText("Example route: finding")).toBeNull();
+  expect(previewDiagnostics().validationInvocations).toBe(0);
+  await act(async () => requests[1].response.resolve(Response.json(schedulerRecommendation("finding"))));
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(screen.getByText("Example route: finding")).toBeTruthy();
+  second.unmount(); expect(vi.getTimerCount()).toBe(0);
+});
+
+it("discovery_same_fingerprint_position_replacement_invalidates_validation", async () => {
+  vi.useFakeTimers();
+  let feed = [schedulerDiscovery("finding")];
+  backgroundFetch.mockReset(); backgroundFetch.mockImplementation(async () => Response.json({
+    discoveries: feed, total: 1, next_offset: null, unread_count: 0,
+  }));
+  const fetcher = vi.fn(async () => Response.json(schedulerRecommendation("finding")));
+  vi.stubGlobal("fetch", fetcher);
+  const props = { safeToOpen: false, safeBreakCounter: 0, onQueueChanged: async () => {} };
+  const view = render(<DiscoveriesTray {...props} />);
+  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(previewDiagnostics().validationInvocations).toBe(1);
+  for (let update = 0; update < 10; update++) view.rerender(<DiscoveriesTray {...props} safeBreakCounter={update} />);
+  expect(previewDiagnostics().validationInvocations).toBe(1);
+  expect(previewDiagnostics().validationCacheHits).toBeGreaterThan(0);
+  feed = [{ ...feed[0], fen: new Chess().move("e4").after }];
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(previewDiagnostics().validationInvocations).toBe(2);
+  expect((screen.getByRole("button", { name: "Add and train" }) as HTMLButtonElement).disabled).toBe(true);
+  view.unmount();
+});
+
+it("discovery_open_request_elevates_existing_demand_during_training", async () => {
+  vi.useFakeTimers();
+  const feed = Array.from({ length: 100 }, (_, index) => schedulerDiscovery(`finding-${index}`));
+  const requests: Array<{ id: string; response: ReturnType<typeof deferredEligibility<Response>> }> = [];
+  backgroundFetch.mockReset(); backgroundFetch.mockImplementation(async () => Response.json({
+    discoveries: feed, total: 100, next_offset: null, unread_count: 0,
+  }));
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    const id = String(input).match(/discoveries\/([^/]+)\/recommendations/)?.[1];
+    if (!id) return Promise.resolve(Response.json({ acknowledged: true }));
+    const response = deferredEligibility<Response>(); requests.push({ id, response }); return response.promise;
+  }));
+  const props = { safeToOpen: false, safeBreakCounter: 0, onQueueChanged: async () => {} };
+  const view = render(<DiscoveriesTray {...props} />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(requests.map(request => request.id)).toEqual(["finding-0", "finding-1"]);
+  view.rerender(<DiscoveriesTray {...props} interactionBlocked openRequest={{ id: "finding-99", token: 1 }} />);
+  await schedulerMicrotasks();
+  await act(async () => requests[0].response.resolve(Response.json(schedulerRecommendation("finding-0"))));
+  expect(requests.map(request => request.id)).toEqual(["finding-0", "finding-1", "finding-99"]);
+  expect(previewDiagnostics().maximumActive).toBe(2);
+  await act(async () => requests[2].response.resolve(Response.json(schedulerRecommendation("finding-99"))));
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(screen.getByText("Example route: finding-99")).toBeTruthy();
+  view.unmount();
+});
+
+it("discovery_synthetic_workload_records_request_and_validation_counts", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(performance, "now").mockImplementation(() => Date.now());
+  const feed = Array.from({ length: 100 }, (_, index) => schedulerDiscovery(`finding-${index}`));
+  let previews = 0, active = 0, maximumActive = 0, validations = 0;
+  const originalMoves = Chess.prototype.moves;
+  vi.spyOn(Chess.prototype, "moves").mockImplementation(function(this: Chess, ...args: Parameters<Chess["moves"]>) {
+    if (new Error().stack?.includes("previewMatchesDecision")) validations++;
+    return originalMoves.apply(this, args);
+  } as Chess["moves"]);
+  backgroundFetch.mockReset(); backgroundFetch.mockImplementation(async () => Response.json({
+    discoveries: feed, total: 100, next_offset: null, unread_count: 0,
+  }));
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const id = String(input).match(/discoveries\/([^/]+)\/recommendations/)?.[1];
+    if (!id) return Response.json({ acknowledged: true });
+    previews++; active++; maximumActive = Math.max(maximumActive, active);
+    await Promise.resolve(); active--;
+    return Response.json(schedulerRecommendation(id));
+  }));
+  const props = { interactionBlocked: true, safeToOpen: false, safeBreakCounter: 0, onQueueChanged: async () => {} };
+  const view = render(<DiscoveriesTray {...props} />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(60_001); });
+  const closedTraining = { previews, maximumActive, feedPages: backgroundFetch.mock.calls.length, validations };
+  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  for (let update = 0; update < 20; update++) view.rerender(<DiscoveriesTray {...props} safeBreakCounter={update} />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+  const viewerOpen = { previews, maximumActive, feedPages: backgroundFetch.mock.calls.length, validations };
+  if (process.env.TEMPO_DISCOVERY_MEASUREMENT)
+    writeFileSync(process.env.TEMPO_DISCOVERY_MEASUREMENT, JSON.stringify({ closedTraining, viewerOpen }, null, 2) + "\n");
+  expect(previews).toBeGreaterThan(0); expect(maximumActive).toBeLessThanOrEqual(2);
+  view.unmount();
+});
+
+it("discovery_offline_recovery_defers_reads_and_preserves_full_pagination", async () => {
+  vi.useFakeTimers();
+  const online = vi.spyOn(navigator, "onLine", "get").mockReturnValue(false);
+  backgroundFetch.mockReset(); backgroundFetch.mockImplementation(async (input: RequestInfo | URL) => Response.json(
+    String(input).includes("offset=100")
+      ? { discoveries: [{ ...schedulerDiscovery("second"), card_id: "card-second" }], total: 2, next_offset: null, unread_count: 0 }
+      : { discoveries: [{ ...schedulerDiscovery("first"), card_id: "card-first" }], total: 2, next_offset: 100, unread_count: 0 }));
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ eligible: true, reason: null })));
+  const view = render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
+  expect(backgroundFetch).not.toHaveBeenCalled();
+  online.mockReturnValue(true);
+  act(() => { for (let wake = 0; wake < 10; wake++) window.dispatchEvent(new Event("online")); });
+  await schedulerMicrotasks();
+  expect(backgroundFetch).toHaveBeenCalledTimes(2);
+  expect(document.querySelector("aside.tempo-discoveries-tray")?.getAttribute("data-discovery-count")).toBe("2");
+  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+  expect(screen.getByText("1 of 2 · white to move")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Next" }));
+  expect(screen.getByText("2 of 2 · white to move")).toBeTruthy();
+  view.unmount(); online.mockRestore();
+});
+
+it("discovery_hidden_mid_pagination_never_publishes_a_partial_feed", async () => {
+  vi.useFakeTimers();
+  const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+  const firstPage = deferredEligibility<Response>();
+  backgroundFetch.mockReset(); backgroundFetch.mockImplementationOnce(() => firstPage.promise);
+  backgroundFetch.mockImplementation(async (input: RequestInfo | URL) => Response.json(
+    String(input).includes("offset=100")
+      ? { discoveries: [schedulerDiscovery("second")], total: 2, next_offset: null, unread_count: 0 }
+      : { discoveries: [schedulerDiscovery("first")], total: 2, next_offset: 100, unread_count: 0 }));
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => Response.json(schedulerRecommendation(
+    String(input).includes("first") ? "first" : "second"))));
+  const view = render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  visibility.mockReturnValue("hidden"); act(() => document.dispatchEvent(new Event("visibilitychange")));
+  await act(async () => firstPage.resolve(Response.json({ discoveries: [schedulerDiscovery("first")], total: 2, next_offset: 100, unread_count: 0 })));
+  expect(backgroundFetch).toHaveBeenCalledTimes(1);
+  expect(document.querySelector("aside.tempo-discoveries-tray")?.getAttribute("data-discovery-count")).toBe("0");
+  visibility.mockReturnValue("visible"); act(() => document.dispatchEvent(new Event("visibilitychange")));
+  await schedulerMicrotasks();
+  expect(backgroundFetch).toHaveBeenCalledTimes(3);
+  expect(document.querySelector("aside.tempo-discoveries-tray")?.getAttribute("data-discovery-count")).toBe("2");
+  view.unmount(); visibility.mockRestore();
 });

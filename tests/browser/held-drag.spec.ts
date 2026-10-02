@@ -49,7 +49,10 @@ test("held_drag_status_and_preview_scenario_observes_continuity_before_drop", as
   });
   try {
     await page.reload();
+    // Start explicit work, then return to training before holding the piece.
+    await page.getByRole("button", { name: "Discoveries", exact: true }).click();
     await expect.poll(() => !!releasePreview && !!releaseStatus).toBe(true);
+    await page.getByRole("button", { name: "Back to work", exact: true }).click();
     const result = await heldDrag(page, async step => {
       if (step === 10) { releasePreview?.(); releaseStatus?.(); }
     });
