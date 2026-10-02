@@ -251,7 +251,7 @@ it("capture rejects empty, ambiguous, and non-SAN input without changing an exis
   act(() => result.current.setCursor(1));
   const originalMoves = result.current.moves;
   const originalPreview = result.current.previewFen;
-  for (const text of ["", "  ", "12...", "e7e5", "e5 {comment}", "e5 1-0", "e5 (Nc3)"]) {
+  for (const text of ["", "  ", "12...", "--", "e5 --", "e7e5", "e5 {comment}", "e5 1-0", "e5 (Nc3)"]) {
     act(() => { expect(result.current.playSanSolution(text)).toBe(false); });
     expect(result.current.moves).toEqual(originalMoves);
     expect(result.current.cursor).toBe(1);
@@ -272,4 +272,19 @@ it("capture SAN entry refuses invalid or unconfirmed starting positions", () => 
   act(() => { expect(result.current.playSanSolution("e5")).toBe(false); });
   expect(result.current.moves).toEqual(["e4"]);
   expect(result.current.cursor).toBe(1);
+});
+
+
+it("capture rejects null SAN moves inline and retains typed text without enabling a save", () => {
+  const fetcher = vi.fn();
+  vi.stubGlobal("fetch", fetcher);
+  openCaptureSolution();
+  for (const text of ["--", "e4 e5 --"]) {
+    enterSan(text);
+    expect(screen.getByRole("alert").textContent).toContain("“--” is not legal SAN");
+    expect(screen.getByTestId("capture-board").getAttribute("data-fen")).toBe(new Chess().fen());
+    expect((screen.getByLabelText("SAN moves") as HTMLInputElement).value).toBe(text);
+    expect((screen.getByRole("button", { name: "Add to training" }) as HTMLButtonElement).disabled).toBe(true);
+  }
+  expect(fetcher).not.toHaveBeenCalled();
 });

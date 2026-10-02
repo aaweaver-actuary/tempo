@@ -87,7 +87,11 @@ export function usePositionSolutionEditor(initialFen: string, initialMoves: SanM
     const board = new Chess(previewFen);
     const enteredMoves: SanMove[] = [];
     for (const [index, token] of tokens.entries()) {
-      try { enteredMoves.push(asSanMove(board.move(token, { strict: true }).san)); }
+      try {
+        const move = board.move(token, { strict: true });
+        if (move.san === "--") throw new Error("Null moves are not valid tactic moves.");
+        enteredMoves.push(asSanMove(move.san));
+      }
       catch {
         setError(`Move ${index + 1} “${token}” is not legal SAN from this position.`);
         return false;

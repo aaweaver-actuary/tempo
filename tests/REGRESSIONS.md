@@ -921,3 +921,16 @@ Cross-browser coverage:
 `capture accepts SAN from Black's perspective across browser engines`.
 The pinned `Capture tactic dialog 390` and `Capture tactic dialog 1280` cases also
 check SAN input visibility and width after switching to Solution.
+
+
+### PR #53: reject chess.js null moves during SAN entry
+
+Strict chess.js parsing accepts `--`, but a tactic solution must contain a real
+move. `playSanSolution` rejects the parsed null move before committing any state.
+`capture rejects empty, ambiguous, and non-SAN input without changing an existing solution`
+now includes `--` and `e5 --`, asserting false return and unchanged moves, cursor,
+and preview FEN. The named component regression
+`capture rejects null SAN moves inline and retains typed text without enabling a save`
+covers `--` and a valid prefix followed by `--`, proving atomic rejection, retained
+input, an inline error, disabled save, and no backend request. Both regressions
+failed against the original PR implementation before the guard was added.
