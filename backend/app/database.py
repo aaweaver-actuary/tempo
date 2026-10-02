@@ -768,6 +768,7 @@ def initialize() -> None:
             evidence_json TEXT NOT NULL,
             evidence_fingerprint TEXT NOT NULL,
             dismissed_evidence_json TEXT,
+            handled_evidence_json TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
             resolved_at TEXT
