@@ -55,6 +55,8 @@ from .game_analysis_publication import (
 )
 from . import integrity_repair_commands  # noqa: F401 - registers guided integrity repairs
 from .services.activity_gate import activity_gate
+from .services.background_runtime import measure_handler
+from .services.durable_tasks import current_delivery, record_stale_delivery
 from .services.durable_tasks import claim_task, complete_task, defer_task_for_contention, fail_task
 from .services.priority_retention import execute_priority_retention_slice
 from .services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
@@ -182,7 +184,8 @@ def execute_background_command(
 ) -> Any:
     """Execute an external worker callback in a bounded background section."""
 
-    with activity_gate.background_job(command_name, operation_id):
+    with measure_handler("other", (self.request.headers or {}).get("submitted_at")), \
+            activity_gate.background_job(command_name, operation_id):
         should_execute, saved_payload, attempt_token, attempt_number = record_operation_attempt(
             operation_id, command_name, payload, background=True,
             expected_retry_cycle=expected_retry_cycle,
@@ -236,6 +239,7 @@ def poll_background_tasks() -> bool:
         "app.tasks.execute_background_slice",
         args=[claimed_task],
         queue="background",
+        headers={"submitted_at": time.time()},
     )
     return True
 
@@ -283,8 +287,12 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
     handler = background_handlers.get(claimed_task["kind"])
     if handler is None:
         raise ValueError(f"Unported background handler: {claimed_task['kind']}")
-    with activity_gate.background_job(claimed_task["kind"], claimed_task["id"]):
+    with measure_handler(claimed_task["kind"], (self.request.headers or {}).get("submitted_at")), \
+            activity_gate.background_job(claimed_task["kind"], claimed_task["id"]):
         try:
+            if not current_delivery(claimed_task):
+                record_stale_delivery(claimed_task)
+                return False
             more_work = handler(claimed_task)
             if claimed_task["kind"] not in {
                 "daily_queue", "game_sync_record", "game_sync_window", "game_derivation_positions",
@@ -305,11 +313,13 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
                 "defensive_threat_backfill",
             }:
                 complete_task(
-                    claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"]
+                    claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"],
+                    kind=claimed_task["kind"],
                 )
         except (DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout):
             defer_task_for_contention(
-                claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"]
+                claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"],
+                kind=claimed_task["kind"],
             )
             more_work = True
         except Exception as error:

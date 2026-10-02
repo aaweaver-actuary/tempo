@@ -43,16 +43,21 @@ function deferred<T>() {
   const promise = new Promise<T>(complete => { resolve = complete; });
   return { promise, resolve };
 }
+// Count activity/sync requests separately from main's independently throttled diagnostic read.
+function mockPollingFetch(requester: typeof fetch) {
+  vi.stubGlobal("fetch", (input: RequestInfo | URL, init?: RequestInit) =>
+    String(input).endsWith("/background-diagnostics") ? Promise.resolve(Response.json(null)) : requester(input, init));
+}
 function mockSyncFetch(status: () => Response | Promise<Response>) {
   const fetchMock = vi.fn((input: RequestInfo | URL) => String(input).endsWith("/sync/status")
     ? Promise.resolve(status()) : new Promise<Response>(() => undefined));
-  vi.stubGlobal("fetch", fetchMock);
+  mockPollingFetch(fetchMock);
   return fetchMock;
 }
 
 it("activity_polling_matches_open_visible_online_policy", async () => {
   const fetchMock = vi.fn(async () => Response.json(activeActivity));
-  vi.stubGlobal("fetch", fetchMock);
+  mockPollingFetch(fetchMock);
   render(<ServiceStatusPanel />); await settle();
   await advance(29_999); expect(fetchMock).toHaveBeenCalledTimes(1);
   await advance(1); expect(fetchMock).toHaveBeenCalledTimes(2);
@@ -64,6 +69,32 @@ it("activity_polling_matches_open_visible_online_policy", async () => {
   visibility = "visible"; online = false; await wake(); await advance(60_000);
   expect(fetchMock).toHaveBeenCalledTimes(4);
   online = true; await wake(); expect(fetchMock).toHaveBeenCalledTimes(5);
+});
+
+it("activity_polling_preserves_current_main_diagnostics_throttle", async () => {
+  let diagnosticsRequests = 0; let activityRequests = 0;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).endsWith("/background-diagnostics")) {
+      diagnosticsRequests++;
+      return Response.json(null);
+    }
+    activityRequests++;
+    return Response.json(activeActivity);
+  }));
+  render(<ServiceStatusPanel />); await settle();
+  expect(diagnosticsRequests).toBe(1);
+  fireEvent.click(screen.getByRole("button", { name: "Analysis activity" })); await settle();
+  expect(diagnosticsRequests).toBe(1);
+  for (let tick = 0; tick < 7; tick++) await advance(2_000);
+  expect(activityRequests).toBe(9);
+  expect(diagnosticsRequests).toBe(1);
+  await advance(2_000); expect(diagnosticsRequests).toBe(2);
+  online = false; await act(async () => window.dispatchEvent(new Event("offline")));
+  await advance(60_000); expect(diagnosticsRequests).toBe(2);
+  expect(activityRequests).toBe(10);
+  online = true; await wake();
+  expect(activityRequests).toBe(11);
+  expect(diagnosticsRequests).toBe(3);
 });
 
 it("sync_status_equivalent_responses_preserve_consumer_identity", async () => {
@@ -110,7 +141,7 @@ it("activity_refresh_events_coalesce_without_parallel_requests", async () => {
   const first = deferred<Response>(); const second = deferred<Response>();
   const fetchMock = vi.fn().mockImplementationOnce(() => first.promise).mockImplementationOnce(() => second.promise)
     .mockImplementation(async () => Response.json(activeActivity));
-  vi.stubGlobal("fetch", fetchMock);
+  mockPollingFetch(fetchMock);
   const view = render(<ServiceStatusPanel />); await settle();
   fireEvent.click(screen.getByRole("button", { name: "Analysis activity" }));
   await wake(); expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -132,7 +163,7 @@ it("activity_coalesced_success_clears_failure_before_react_commits", async () =>
   });
   const fetchMock = vi.fn().mockImplementationOnce(() => failedRequest.promise)
     .mockImplementation(async () => immediateSuccess);
-  vi.stubGlobal("fetch", fetchMock);
+  mockPollingFetch(fetchMock);
   // Retained incidents must recover even when this session's transient failure is batched away.
   const incidentId = publishNotification({ key: "analysis-activity-error", source: "analysis activity",
     severity: "error", message: "Activity was unavailable in the previous session." });
@@ -161,7 +192,7 @@ it("activity_obsolete_offsets_and_unmounted_sessions_cannot_publish", async () =
     .mockImplementationOnce(() => oldPage.promise)
     .mockImplementation(async () => Response.json({ ...activeActivity, next_offset: null,
       items: [{ ...activeActivity.items[0], id: "page-50", title: "Current page" }] }));
-  vi.stubGlobal("fetch", fetchMock);
+  mockPollingFetch(fetchMock);
   const view = render(<ServiceStatusPanel />); await settle();
   // Opening starts a page-zero refresh; pagination supersedes that in-flight result.
   fireEvent.click(screen.getByRole("button", { name: "Analysis activity" })); await settle();
@@ -173,7 +204,7 @@ it("activity_obsolete_offsets_and_unmounted_sessions_cannot_publish", async () =
   view.unmount();
   const snapshot = serviceStatusSnapshot();
   const late = deferred<Response>();
-  vi.stubGlobal("fetch", vi.fn(() => late.promise));
+  mockPollingFetch(vi.fn(() => late.promise));
   const remounted = render(<ServiceStatusPanel />); await settle(); remounted.unmount();
   await act(async () => late.resolve(Response.json({ ...activeActivity, counts: { ...activeActivity.counts, running: 99 } })));
   expect(serviceStatusSnapshot()).toBe(snapshot);
@@ -184,7 +215,7 @@ it.each(["success", "error"])("activity_offset_changes_ignore_late_%s_and_preser
   const fetchMock = vi.fn().mockImplementation(async (input: RequestInfo | URL) => String(input).includes("offset=50")
     ? Response.json({ ...activeActivity, next_offset: null, items: [{ ...activeActivity.items[0], title: "Current page" }] })
     : Response.json({ ...activeActivity, next_offset: 50 }));
-  vi.stubGlobal("fetch", fetchMock);
+  mockPollingFetch(fetchMock);
   render(<ServiceStatusPanel />); await settle();
   fireEvent.click(screen.getByRole("button", { name: "Analysis activity" })); await settle();
   fetchMock.mockImplementationOnce(() => late.promise);
@@ -204,7 +235,7 @@ it.each(["success", "error"])("activity_offset_changes_ignore_late_%s_and_preser
 it("activity_equivalent_responses_preserve_render_identity", async () => {
   let queueDepth = 0;
   const fetchMock = vi.fn(async () => Response.json({ ...activeActivity, writer: { ...activeActivity.writer, background: ++queueDepth } }));
-  vi.stubGlobal("fetch", fetchMock);
+  mockPollingFetch(fetchMock);
   let commits = 0;
   render(<Profiler id="activity" onRender={() => commits++}><ServiceStatusPanel /></Profiler>); await settle();
   fireEvent.click(screen.getByRole("button", { name: "Analysis activity" })); await settle();
@@ -216,7 +247,7 @@ it("activity_equivalent_responses_preserve_render_identity", async () => {
 
 it("activity_writer_failure_and_recovery_remain_actionable", async () => {
   let healthy = false;
-  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ ...activeActivity, writer: { ...activeActivity.writer, healthy } })));
+  mockPollingFetch(vi.fn(async () => Response.json({ ...activeActivity, writer: { ...activeActivity.writer, healthy } })));
   render(<ServiceStatusPanel />); await settle();
   expect(screen.getByLabelText("needs attention")).toBeTruthy();
   await advance(30_000);
@@ -231,7 +262,7 @@ it("activity_writer_failure_and_recovery_remain_actionable", async () => {
 it.each([true, false])("activity_failure_backoff_and_recovery_match_policy_open_%s", async open => {
   let failing = true;
   const fetchMock = vi.fn(async () => failing ? new Response("unavailable", { status: 503 }) : Response.json(activeActivity));
-  vi.stubGlobal("fetch", fetchMock);
+  mockPollingFetch(fetchMock);
   render(<ServiceStatusPanel />); await settle();
   if (open) { fireEvent.click(screen.getByRole("button", { name: "Analysis activity" })); await settle(); }
   const baseline = fetchMock.mock.calls.length;
@@ -246,7 +277,7 @@ it.each([true, false])("activity_failure_backoff_and_recovery_match_policy_open_
 
 it("activity_idle_polling_and_real_progress_match_policy", async () => {
   let completed = 1; let running = 0;
-  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ ...activeActivity,
+  mockPollingFetch(vi.fn(async () => Response.json({ ...activeActivity,
     counts: { ...activeActivity.counts, running }, items: [{ ...activeActivity.items[0], completed }] })));
   render(<ServiceStatusPanel />); await settle();
   fireEvent.click(screen.getByRole("button", { name: "Analysis activity" })); await settle();
@@ -323,7 +354,7 @@ it("passive_status_throttling_preserves_game_acquisition_and_pending_commands", 
     if (path.endsWith("/api/settings")) return Response.json(syncSettings);
     return Response.json({ providers: [] });
   });
-  vi.stubGlobal("fetch", fetchMock);
+  mockPollingFetch(fetchMock);
   let sync!: ReturnType<typeof useGameSync>["sync"];
   function Probe() { sync = useGameSync().sync; return null; }
   render(<Probe />); await settle();
@@ -346,7 +377,7 @@ it("passive_status_throttling_preserves_game_acquisition_and_pending_commands", 
 it("activity_controls_remain_prompt_while_passive_reads_are_suspended", async () => {
   const fetchMock = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => init?.method === "POST"
     ? Response.json({ ok: true }) : Response.json(activeActivity));
-  vi.stubGlobal("fetch", fetchMock);
+  mockPollingFetch(fetchMock);
   render(<ServiceStatusPanel />); await settle();
   fireEvent.click(screen.getByRole("button", { name: "Analysis activity" })); await settle();
   visibility = "hidden"; await wake();
@@ -383,7 +414,7 @@ it("sync_status_equal_provider_counts_retain_identity_and_changed_counts_publish
 it("sync_status_superseded_by_a_manual_command_cannot_publish_an_old_completion", async () => {
   const lateStatus = deferred<Response>(); const nextStatus = deferred<Response>();
   let statusCalls = 0;
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+  mockPollingFetch(vi.fn(async (input: RequestInfo | URL) => {
     if (String(input).endsWith("/sync/status")) return ++statusCalls === 1 ? lateStatus.promise : nextStatus.promise;
     if (String(input).endsWith("/api/settings")) return Response.json({ ...syncSettings, lichess_username: statusCalls > 1 ? "player" : "" });
     return Response.json({ imported: 0, job_id: activeJob.id, status: "queued", providers: {} });
@@ -392,7 +423,7 @@ it("sync_status_superseded_by_a_manual_command_cannot_publish_an_old_completion"
   function Probe() { value = useGameSync(); return null; }
   render(<Probe />); await settle();
   // Use configured settings for the explicit command; startup acquisition has already returned.
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+  mockPollingFetch(vi.fn(async (input: RequestInfo | URL) => {
     if (String(input).endsWith("/sync/status")) { statusCalls++; return nextStatus.promise; }
     if (String(input).endsWith("/api/settings")) return Response.json(syncSettings);
     return Response.json({ imported: 0, job_id: activeJob.id, status: "queued", providers: {} });
@@ -415,7 +446,7 @@ it.each([
   const historicalStatus = { providers: [], active_job: { ...activeJob, status: "complete",
     result: { imported: 3, synced_at: "2026-09-22T00:00:00Z", providers: {} } } };
   let manualStarted = false; let statusCalls = 0; let syncPosts = 0;
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+  mockPollingFetch(vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const path = String(input);
     if (path.endsWith("/sync/status")) { statusCalls++; return Response.json(historicalStatus); }
     if (path.endsWith("/api/settings")) {
@@ -455,7 +486,7 @@ it("successful_manual_sync_supersedes_prior_manual_error", async () => {
   let username = ""; let commandEstablished = false; let statusCalls = 0; let syncPosts = 0;
   let passiveJob = { ...activeJob, status: "complete", error: null as string | null,
     result: { imported: 3, synced_at: "2026-09-22T00:00:00Z", providers: {} } as object | null };
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+  mockPollingFetch(vi.fn(async (input: RequestInfo | URL) => {
     const path = String(input);
     if (path.endsWith("/sync/status")) {
       statusCalls++;
@@ -500,7 +531,7 @@ it.each(["pending", "complete"])("manual_sync_%s_receipt_keeps_immediate_status_
   const savedCommand = { operationId: "existing-sync-receipt", body: JSON.stringify({ lichess_username: "player", chesscom_username: "",
     days: 90, speeds: ["blitz", "rapid", "classical"], rated_only: true, repair: false }) };
   const syncResult = { imported: 0, job_id: activeJob.id, status: "queued", providers: {} };
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+  mockPollingFetch(vi.fn(async (input: RequestInfo | URL) => {
     const path = String(input);
     if (path.endsWith("/sync/status")) {
       statusCalls++;
@@ -535,7 +566,7 @@ it("manual_sync_startup_suspends_passive_reads_until_command_state_and_then_reco
   const preCommandStatus = deferred<Response>();
   const postCommandStatus = deferred<Response>();
   let manualStarted = false; let commandEstablished = false; let statusCalls = 0;
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+  mockPollingFetch(vi.fn(async (input: RequestInfo | URL) => {
     const path = String(input);
     if (path.endsWith("/sync/status")) {
       statusCalls++;
@@ -576,7 +607,7 @@ it("manual_sync_post_command_status_reconciles_before_react_commits", async () =
     vi.spyOn(response, "json").mockImplementation(async () => { parsed?.(); return body; });
     return response;
   };
-  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+  mockPollingFetch(vi.fn(async (input: RequestInfo | URL) => {
     const path = String(input);
     if (path.endsWith("/sync/status")) return immediateResponse({ providers: [], active_job: { ...activeJob, status: "complete" } },
       manualStarted ? () => postCommandParsed.resolve() : undefined);
@@ -610,7 +641,7 @@ it("equivalent_status_during_actual_training_avoids_parent_commits_and_board_pub
   const fetchMock = vi.fn((input: RequestInfo | URL) => String(input).endsWith("/sync/status")
     ? Promise.resolve(statusMock()) : String(input).includes("/system/activity")
       ? Promise.resolve(Response.json(activeActivity)) : new Promise<Response>(() => undefined));
-  vi.stubGlobal("fetch", fetchMock);
+  mockPollingFetch(fetchMock);
   let trainingCommits = 0;
   function TrainingConsumer() {
     useGameSync();
@@ -638,7 +669,7 @@ it.each([
 ])("status_request_counts_match_the_sixty_second_window_$name", async scenario => {
   visibility = scenario.hidden ? "hidden" : "visible"; online = !scenario.offline;
   let activityRequests = 0; let syncRequests = 0;
-  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+  mockPollingFetch(vi.fn((input: RequestInfo | URL) => {
     if (String(input).includes("/system/activity")) {
       activityRequests++;
       return Promise.resolve(Response.json({ ...activeActivity, counts: { ...activeActivity.counts, running: scenario.active ? 1 : 0 } }));
@@ -664,7 +695,7 @@ it("activity_initial_offline_mount_reports_unavailable_not_empty", async () => {
   online = false;
   const fetchMock = vi.fn(async () => Response.json({ ...activeActivity, items: [], total: 0,
     counts: { running: 0, queued: 0, paused: 0, failed: 0 } }));
-  vi.stubGlobal("fetch", fetchMock);
+  mockPollingFetch(fetchMock);
   render(<ServiceStatusPanel />); await settle();
   fireEvent.click(screen.getByRole("button", { name: "Analysis activity" })); await settle();
   expect(fetchMock).not.toHaveBeenCalled();
@@ -683,7 +714,7 @@ it("activity_initial_offline_mount_reports_unavailable_not_empty", async () => {
 it("activity_offline_after_success_preserves_last_known_empty_status", async () => {
   const fetchMock = vi.fn(async () => Response.json({ ...activeActivity, items: [], total: 0,
     counts: { running: 0, queued: 0, paused: 0, failed: 0 } }));
-  vi.stubGlobal("fetch", fetchMock);
+  mockPollingFetch(fetchMock);
   render(<ServiceStatusPanel />); await settle();
   online = false; await act(async () => window.dispatchEvent(new Event("offline")));
   await advance(60_000); expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -697,7 +728,7 @@ it("activity_offline_after_success_preserves_last_known_empty_status", async () 
 it("activity_offline_after_success_preserves_last_known_items_and_writer_health", async () => {
   const fetchMock = vi.fn(async () => Response.json({ ...activeActivity,
     writer: { ...activeActivity.writer, healthy: false } }));
-  vi.stubGlobal("fetch", fetchMock);
+  mockPollingFetch(fetchMock);
   render(<ServiceStatusPanel />); await settle();
   online = false; await act(async () => window.dispatchEvent(new Event("offline")));
   await advance(60_000); expect(fetchMock).toHaveBeenCalledTimes(1);
@@ -711,13 +742,13 @@ it("activity_offline_after_success_preserves_last_known_items_and_writer_health"
 });
 
 it("activity_remount_offline_does_not_claim_service_recovery", async () => {
-  vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
+  mockPollingFetch(vi.fn(async () => new Response("unavailable", { status: 503 })));
   const first = render(<ServiceStatusPanel />); await settle(); first.unmount();
   online = false;
   render(<ServiceStatusPanel />); await settle();
   expect(notifications().find(record => record.key === "analysis-activity-error")?.resolvedAt).toBeNull();
   online = true;
-  vi.stubGlobal("fetch", vi.fn(async () => Response.json(activeActivity)));
+  mockPollingFetch(vi.fn(async () => Response.json(activeActivity)));
   await wake();
   expect(notifications().find(record => record.key === "analysis-activity-error")?.resolvedAt).toBeTruthy();
 });
@@ -725,7 +756,7 @@ it("activity_remount_offline_does_not_claim_service_recovery", async () => {
 it("activity_invalid_payload_and_explicit_retry_preserve_actionable_errors", async () => {
   let valid = false;
   const fetchMock = vi.fn(async () => Response.json(valid ? activeActivity : { items: [] }));
-  vi.stubGlobal("fetch", fetchMock);
+  mockPollingFetch(fetchMock);
   render(<ServiceStatusPanel />); await settle();
   fireEvent.click(screen.getByRole("button", { name: "Analysis activity" })); await settle();
   expect(screen.getByRole("alert").textContent).toContain("unexpected format");
@@ -749,7 +780,7 @@ it("sync_status_invalid_payload_does_not_publish_false_success_and_recovers", as
 
 it("activity_rapid_open_close_preserves_a_single_closed_timer", async () => {
   const fetchMock = vi.fn(async () => Response.json(activeActivity));
-  vi.stubGlobal("fetch", fetchMock);
+  mockPollingFetch(fetchMock);
   render(<ServiceStatusPanel />); await settle();
   for (let toggle = 0; toggle < 3; toggle++) {
     fireEvent.click(screen.getByRole("button", { name: "Analysis activity" })); await settle();

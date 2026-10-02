@@ -8,10 +8,11 @@ import random
 import sqlite3
 import uuid
 
-from ..database import read_connection
+from ..database import read_connection, background_read_connection
 from .. import postgres_store
 from .database_executor import submit_background_write, submit_foreground_write
 from .background_activity import claimable, control_order
+from .background_metrics import increment, record_event_counts
 
 
 ACTIVE_STATES = ("queued", "leased", "retrying")
@@ -73,11 +74,14 @@ def _record_event(
     event: str,
     phase: str | None = None,
     detail: str | None = None,
+    *,
+    kind: str | None = None,
 ) -> None:
     database.execute(
         _EVENT_INSERT_SQL,
         (task_id, generation, event, phase, detail, _iso()),
     )
+    record_event_counts(database, task_id, event, kind=kind)
     database.execute(
         _EVENT_PRUNE_SQL,
         (task_id,),
@@ -147,10 +151,11 @@ def enqueue_task_in_transaction(
                 _iso(now),
             ),
     )
-    _record_event(database, task_id, generation, "enqueued", "queued")
-    return dict(
-        database.execute(_TASK_BY_ID_SQL, (task_id,)).fetchone()
-    )
+    _record_event(database, task_id, generation, "enqueued", "queued", kind=kind)
+    queued_row = database.execute(_TASK_BY_ID_SQL, (task_id,)).fetchone()
+    if queued_row["replaced_pending_generation"]:
+        _record_event(database, task_id, generation, "generation_replaced", "queued", kind=kind)
+    return dict(queued_row)
 
 
 def enqueue_compact_postgres_task_in_transaction(
@@ -184,6 +189,10 @@ def enqueue_compact_postgres_task_in_transaction(
          _iso(now + timedelta(seconds=delay_seconds)),
          _iso(now), _iso(now), _iso(now)),
     )
+    queued = database.execute(_TASK_BY_KIND_SQL, (kind, deduplication_key)).fetchone()
+    increment(database, kind, queued["id"], generations_started=1,
+              generation_replacements=int(queued["replaced_pending_generation"]))
+    database.execute(_EVENT_PRUNE_SQL, (queued["id"],))
 
 
 def claim_task(
@@ -198,13 +207,21 @@ def claim_task(
     def operation(database: sqlite3.Connection) -> dict | None:
         now = _iso()
         reclaimed_phase = "" if postgres_store.configured() else ",phase='reclaimed'"
-        database.execute(
+        reclaimed = database.execute(
             f"""UPDATE background_tasks
                SET state='queued'{reclaimed_phase},lease_token=NULL,lease_expires_at=NULL,
                    updated_at=?
-               WHERE state='leased' AND lease_expires_at<=?""",
+               WHERE state='leased' AND lease_expires_at<=? RETURNING id,kind,generation""",
             (now, now),
-        )
+        ).fetchall()
+        # Reuse bounded aggregate shards rather than add one query/write per expired lease.
+        from collections import Counter
+        from .background_metrics import metric_shard
+        reclaimed_groups = Counter((task["kind"],metric_shard(task["id"])) for task in reclaimed)
+        for (reclaimed_kind, shard), reclaimed_count in reclaimed_groups.items():
+            increment(database, reclaimed_kind, "", shard_override=shard,
+                      lease_expiries=reclaimed_count, lease_reclaims=reclaimed_count,
+                      generation_restarts=reclaimed_count)
         parameters: list[str] = [now]
         kind_clause = ""
         if kind is not None:
@@ -234,7 +251,7 @@ def claim_task(
         ).rowcount
         if not changed:
             return None
-        _record_event(database, row["id"], row["generation"], "claimed", "claimed")
+        _record_event(database, row["id"], row["generation"], "claimed", "claimed", kind=row["kind"])
         claimed = dict(database.execute("SELECT * FROM background_tasks WHERE id=?", (row["id"],)).fetchone())
         claimed["payload"] = json.loads(claimed.pop("payload_json"))
         return claimed
@@ -245,7 +262,7 @@ def claim_task(
     )
 
 
-def complete_task(task_id: str, generation: int, lease_token: str) -> bool:
+def complete_task(task_id: str, generation: int, lease_token: str, *, kind: str | None = None) -> bool:
     def operation(database: sqlite3.Connection) -> bool:
         now = _iso()
         changed = database.execute(
@@ -255,13 +272,10 @@ def complete_task(task_id: str, generation: int, lease_token: str) -> bool:
                WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
             (now, now, task_id, generation, lease_token),
         ).rowcount
-        _record_event(
-            database,
-            task_id,
-            generation,
-            "published" if changed else "stale_generation_discarded",
-            "published" if changed else "discarded",
-        )
+        if changed:
+            _record_event(database, task_id, generation, "published", "published", kind=kind)
+        else:
+            _record_stale_result(database, task_id, generation, kind or "other")
         return bool(changed)
 
     return submit_background_write(operation, label=f"complete:{task_id}")
@@ -274,10 +288,13 @@ def lock_current_slice(database, task: dict) -> bool:
         "SELECT generation,lease_token,state FROM background_tasks WHERE id=? FOR UPDATE",
         (task["id"],),
     ).fetchone()
-    return bool(
+    current = bool(
         row and row["generation"] == task["generation"]
         and row["lease_token"] == task["lease_token"] and row["state"] == "leased"
     )
+    if not current:
+        increment(database, task.get("kind", "other"), task["id"], stale_results=1)
+    return current
 
 
 def advance_task_slice_in_transaction(
@@ -295,7 +312,7 @@ def advance_task_slice_in_transaction(
          task["id"], task["generation"], task["lease_token"]),
     ).rowcount
     if changed:
-        _record_event(database, task["id"], task["generation"], "slice_complete", next_phase)
+        _record_event(database, task["id"], task["generation"], "slice_complete", next_phase, kind=task.get("kind"))
     return bool(changed)
 
 
@@ -308,7 +325,9 @@ def complete_task_slice_in_transaction(database, task: dict) -> bool:
         (now, now, task["id"], task["generation"], task["lease_token"]),
     ).rowcount
     if changed:
-        _record_event(database, task["id"], task["generation"], "published", "published")
+        _record_event(database, task["id"], task["generation"], "published", "published", kind=task.get("kind"))
+    else:
+        _record_stale_result(database, task["id"], task["generation"], task.get("kind", "other"))
     return bool(changed)
 
 
@@ -395,13 +414,13 @@ def fail_task(task_id: str, generation: int, lease_token: str, error: Exception)
                 "UPDATE imported_games SET analysis_state='failed' WHERE id=?",
                 (game_id,),
             )
-        _record_event(database, task_id, generation, state, state, sanitized_error)
+        _record_event(database, task_id, generation, state, state, sanitized_error, kind=row["kind"])
         return {"state": state, "next_attempt_at": _iso(now + timedelta(seconds=delay))}
 
     return submit_background_write(operation, label=f"fail:{task_id}")
 
 
-def defer_task_for_contention(task_id: str, generation: int, lease_token: str) -> bool:
+def defer_task_for_contention(task_id: str, generation: int, lease_token: str, *, kind: str | None = None) -> bool:
     """Yield an expected PostgreSQL lock timeout without spending a retry."""
 
     def operation(database: sqlite3.Connection) -> bool:
@@ -416,7 +435,7 @@ def defer_task_for_contention(task_id: str, generation: int, lease_token: str) -
             (next_attempt_at, _iso(), task_id, generation, lease_token),
         ).rowcount
         if changed:
-            _record_event(database, task_id, generation, "yielded", "yielded")
+            _record_event(database, task_id, generation, "yielded", "yielded", kind=kind)
         return bool(changed)
 
     return submit_background_write(operation, label=f"yield:{task_id}")
@@ -442,7 +461,7 @@ def retry_task(task_id: str) -> dict | None:
                total_units=NULL,updated_at=? WHERE source='durable' AND work_id=?""",
             (now, task_id),
         )
-        _record_event(database, task_id, row["generation"], "manual_retry", "queued")
+        _record_event(database, task_id, row["generation"], "manual_retry", "queued", kind=row["kind"])
         return serialize_task(
             database.execute("SELECT * FROM background_tasks WHERE id=?", (task_id,)).fetchone()
         )
@@ -454,7 +473,7 @@ def requeue_interrupted_tasks() -> None:
     def operation(database: sqlite3.Connection) -> None:
         now = _iso()
         interrupted = database.execute(
-            "SELECT id,generation FROM background_tasks WHERE state='leased'"
+            "SELECT id,generation,kind FROM background_tasks WHERE state='leased'"
         ).fetchall()
         interrupted_phase = "" if postgres_store.configured() else ",phase='reclaimed'"
         database.execute(
@@ -463,7 +482,8 @@ def requeue_interrupted_tasks() -> None:
             (now,),
         )
         for row in interrupted:
-            _record_event(database, row["id"], row["generation"], "reclaimed", "queued")
+            _record_event(database, row["id"], row["generation"], "reclaimed", "queued", kind=row["kind"])
+            _record_event(database, row["id"], row["generation"], "restarted", "queued", kind=row["kind"])
 
     submit_foreground_write(operation, label="requeue-interrupted-tasks")
 
@@ -503,3 +523,32 @@ def list_tasks() -> list[dict]:
                         priority,created_at"""
         ).fetchall()
     return [serialize_task(row) for row in rows]
+
+
+def current_delivery(task: dict) -> bool:
+    """Admitted primary read; transactional publication fences remain authoritative."""
+    with background_read_connection(authoritative=True) as database:
+        row = database.execute(
+            "SELECT generation,lease_token,state FROM background_tasks WHERE id=?", (task["id"],),
+        ).fetchone()
+    return bool(row and row["generation"] == task["generation"]
+                and row["lease_token"] == task["lease_token"] and row["state"] == "leased")
+
+
+def record_stale_delivery(task: dict) -> None:
+    def operation(database):
+        exists = database.execute("SELECT 1 FROM background_tasks WHERE id=?", (task["id"],)).fetchone()
+        if exists:
+            _record_event(database, task["id"], task["generation"], "stale_delivery", "discarded", kind=task["kind"])
+        else:
+            increment(database, task["kind"], task["id"], stale_deliveries=1)
+    submit_background_write(operation, label="diagnostics:stale-delivery")
+
+
+def _record_stale_result(database, task_id: str, generation: int, kind: str = "other") -> None:
+    """A removed task has no raw-event foreign key, but its rejected result still counts."""
+    row = database.execute("SELECT kind FROM background_tasks WHERE id=?", (task_id,)).fetchone()
+    if row:
+        _record_event(database, task_id, generation, "stale_generation_discarded", "discarded", kind=row["kind"])
+    else:
+        increment(database, kind, task_id, stale_results=1)

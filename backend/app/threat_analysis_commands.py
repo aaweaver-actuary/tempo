@@ -10,6 +10,8 @@ from typing import Any
 from fastapi import HTTPException
 
 from .command_gateway import register_command
+from .services.engine_diagnostics import record_engine_outcome
+from .services.background_metrics import increment
 from .postgres_store import PostgresConnection
 from .services.durable_tasks import enqueue_compact_postgres_task_in_transaction
 from .services.threat_pipeline import (
@@ -48,14 +50,17 @@ _ELIGIBLE_THREAT_REQUEST = (
 
 def claim_threat_analysis(database: PostgresConnection, _payload: dict[str, Any]) -> dict:
     now = _now()
-    database.execute_native(
+    reclaimed = database.execute_native(
         "UPDATE threat_analysis_requests SET state='queued',lease_id=NULL,"
         "lease_expires_at=NULL,updated_at=%s "
         "WHERE id=(SELECT id FROM threat_analysis_requests "
         "WHERE state='leased' AND lease_expires_at<=%s "
-        "ORDER BY lease_expires_at,id LIMIT 1 FOR UPDATE SKIP LOCKED)",
+        "ORDER BY lease_expires_at,id LIMIT 1 FOR UPDATE SKIP LOCKED) RETURNING id",
         (now, now),
-    )
+    ).fetchone()
+    if reclaimed:
+        increment(database, "engine_defense", reclaimed["id"],
+                  lease_expiries=1, lease_reclaims=1, generation_restarts=1)
     # Keep foreground attempts, promoted work, ordinary work, and negative
     # legacy promotion values in their existing priority order. The common
     # case can stop at the first eligible request in created order.
@@ -90,6 +95,7 @@ def claim_threat_analysis(database: PostgresConnection, _payload: dict[str, Any]
         (lease_id, (datetime.now(timezone.utc) + timedelta(minutes=2)).isoformat(),
          now, row["id"]),
     )
+    increment(database, "engine_defense", row["id"], claims=1)
     return {"job": {"id": row["id"], "request": json.loads(row["request_json"]),
                     "lease_id": lease_id}}
 
@@ -122,6 +128,7 @@ def submit_threat_report(database: PostgresConnection, payload: dict[str, Any]) 
         "lease_id=NULL,lease_expires_at=NULL,last_error=NULL,updated_at=%s WHERE id=%s",
         (json.dumps(raw_report), _now(), request_id),
     )
+    record_engine_outcome(database, "engine_defense", request_id, payload, completed=True)
     candidate_ids = [row[0] for row in database.execute_native(
         "SELECT DISTINCT candidate_id FROM threat_candidate_requests WHERE request_id=%s",
         (request_id,),
@@ -145,6 +152,7 @@ def fail_threat_analysis(database: PostgresConnection, payload: dict[str, Any]) 
     ).fetchone()
     if changed is None:
         raise HTTPException(409, "Analysis lease is no longer active")
+    record_engine_outcome(database, "engine_defense", str(payload["request_id"]), payload)
     return {"status": "retrying" if changed[0] == "queued" else changed[0]}
 
 
@@ -155,6 +163,8 @@ def release_threat_analysis(database: PostgresConnection, payload: dict[str, Any
         "WHERE id=%s AND state='leased' AND lease_id=%s RETURNING id",
         (_now(), str(payload["request_id"]), str(payload["lease_id"])),
     ).fetchone()
+    if changed:
+        record_engine_outcome(database, "engine_defense", str(payload["request_id"]), payload)
     return {"status": "queued" if changed else "stale"}
 
 

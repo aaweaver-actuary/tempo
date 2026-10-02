@@ -6,7 +6,7 @@ import { API_URL } from "../const";
 import { backgroundFetch } from "../lib/background-fetch";
 import { requestActivityControl } from "../lib/activity-control-command";
 import { browserActivitySnapshot, subscribeBrowserActivity } from "../lib/browser-activity";
-import { setLatestServiceStatus, type ActivityItem, type ActivityResponse } from "../lib/service-status";
+import { setBackgroundDiagnostics, setLatestServiceStatus, type ActivityItem, type ActivityResponse } from "../lib/service-status";
 import { usesLocalApi } from "../utils/local";
 import { notifications, publishNotification, resolveNotification } from "../lib/notifications";
 
@@ -68,6 +68,7 @@ function sameActivitySummary(left: ActivityResponse | null, right: ActivityRespo
 const groupOrder = ["Running", "Queued", "Paused", "Needs attention", "Recently completed"];
 
 export function ServiceStatusPanel() {
+  const lastDiagnosticsRequest = useRef(Number.NEGATIVE_INFINITY);
   const [open, setOpen] = useState(false);
   // Null means this mounted panel has never successfully loaded activity; paused reads retain known status.
   const [status, setStatus] = useState<ActivityResponse | null>(null);
@@ -103,6 +104,7 @@ export function ServiceStatusPanel() {
       if (previous) resolveNotification(previous.id, { severity: "success", message: "The database writer is available again." });
     }
   }, [status?.writer?.healthy]);
+
 
   useEffect(() => {
     if (!usesLocalApi()) return;
@@ -170,6 +172,18 @@ export function ServiceStatusPanel() {
               latest = value;
               failureCount = 0;
               publish(value);
+              // Retain current main's activity-triggered diagnostics read and 15-second minimum.
+              if (eligible() && performance.now() - lastDiagnosticsRequest.current >= 15_000) {
+                lastDiagnosticsRequest.current = performance.now();
+                try {
+                  const diagnosticsResponse = await backgroundFetch(`${API_URL}/api/system/background-diagnostics`);
+                  if (!diagnosticsResponse.ok) throw new Error("Background diagnostics unavailable");
+                  const diagnostics: unknown = await diagnosticsResponse.json();
+                  if (!stopped) setBackgroundDiagnostics(diagnostics);
+                } catch {
+                  if (!stopped) setBackgroundDiagnostics(null);
+                }
+              }
             }
           } catch (cause) {
             if (!stopped && requestGeneration === offsetGeneration) {

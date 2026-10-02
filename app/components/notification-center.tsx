@@ -3,7 +3,8 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Button } from "./buttons/BaseButton";
 import {
-  buildNotificationExport, hideNotificationToast, hydrateNotifications,
+  buildNotificationExport, clearAllNotifications, clearNotification, hideNotificationToast, hydrateNotifications,
+  notificationNeedsAttention,
   notificationToastIds, notifications,
   subscribeNotifications, NOTIFICATION_HISTORY_LIMIT,
   type NotificationRecord,
@@ -40,8 +41,7 @@ export function NotificationCenter() {
   const [debugCopyState, setDebugCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const shown = filter === "all" ? records : records.filter((record) => record.severity === filter);
   const exportText = buildNotificationExport(threshold);
-  const needsAttention = records.filter((record) => !record.resolvedAt &&
-    (record.severity === "warning" || record.severity === "error")).length;
+  const needsAttention = records.filter(notificationNeedsAttention).length;
 
   async function copySelected() {
     try {
@@ -59,7 +59,11 @@ export function NotificationCenter() {
       {needsAttention > 0 && <span className="notification-count">{needsAttention}</span>}
     </Button>
     {open && <section id="notification-tray" className="notification-tray" aria-label="Notifications">
-      <header><strong>Notifications</strong><Button type="button" onClick={() => setOpen(false)}>Close</Button></header>
+      <header><strong>Notifications</strong><div className="notification-header-actions">
+        <Button type="button" disabled={!records.some((record) => !record.clearedAt)}
+          onClick={clearAllNotifications}>Clear all</Button>
+        <Button type="button" onClick={() => setOpen(false)}>Close</Button>
+      </div></header>
       <p className="notification-retention">Newest first · latest {NOTIFICATION_HISTORY_LIMIT} kept on this device</p>
       <div className="notification-filters" aria-label="Filter notifications">
         {(["all", "error", "warning", "success", "info"] as const).map((severity) =>
@@ -86,6 +90,12 @@ export function NotificationCenter() {
           <div className="notification-item-meta"><span className="notification-severity">{record.severity}</span>
             <time dateTime={record.updatedAt}>{new Date(record.updatedAt).toLocaleString()}</time></div>
           <strong>{record.source}</strong><p>{record.message}</p><NotificationDetails record={record} />
+          <div className="notification-clear-actions">
+            {record.clearedAt ? <span>Cleared</span> : <>
+              {notificationNeedsAttention(record) && <span className="notification-new-label">New</span>}
+              <Button type="button" onClick={() => clearNotification(record.id)}>Clear</Button>
+            </>}
+          </div>
           {typeof record.details?.debugRecordId === "string" &&
             debugErrors().some((debugRecord) => debugRecord.id === record.details?.debugRecordId) && <div className="notification-debug-actions">
             <Button type="button" onClick={() => {

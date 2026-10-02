@@ -1,3 +1,5 @@
+import { backgroundDiagnosticsSchema, type BackgroundDiagnostics } from "../domain/schemas/background-diagnostics";
+
 export type ActivityItem = {
   source: string;
   id: string;
@@ -28,4 +30,14 @@ export function setLatestServiceStatus(status: ActivityResponse) {
 
 export function serviceStatusSnapshot() {
   return latestStatus;
+}
+
+let latestBackgroundDiagnostics: BackgroundDiagnostics | null = null;
+
+export function setBackgroundDiagnostics(value: unknown) {
+  latestBackgroundDiagnostics = value === null ? null : backgroundDiagnosticsSchema.parse(value);
+}
+
+export function backgroundDiagnosticsSnapshot() {
+  return latestBackgroundDiagnostics;
 }
