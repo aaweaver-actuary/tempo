@@ -270,9 +270,13 @@ export default function DefenseTrainingView({
     return revealedLine.length ? positionsFromMoves(card.startingFen, revealedLine) : [boardFen];
   }, [card.startingFen, grade, recognitionResult, definitive, boardFen]);
   const boardHistory = useBoardHistory(defensePositionKey, visiblePositions, boardFen);
+  const continueToDefense = () => {
+    boardHistory.keyboard.reset();
+    setDefenseReady(true);
+  };
   const keyboard = { ...boardHistory.keyboard,
     hint: recognitionStage && !recognitionDone && !hintRevealed && !blocked && !boardHistory.viewingHistory ? () => setHintRevealed(true) : undefined,
-    nextItem: !busy && !blocked && recognitionDone && !definitive && !defenseReady ? () => setDefenseReady(true)
+    nextItem: !busy && !blocked && recognitionDone && !definitive && !defenseReady ? continueToDefense
       : definitive && !busy && !blocked ? () => { void onAdvance().catch(() => setSaveError("Result saved, but the next card could not load. Retry Continue.")); } : undefined,
   };
   useBoardPublisher("train", useSharedBoard ? {
@@ -348,7 +352,7 @@ export default function DefenseTrainingView({
             {recognitionResult?.feedback?.control_explanation ? <p>{recognitionResult.feedback.control_explanation}</p>
               : recognitionResult?.feedback?.fork_geometry ? <p>After {proposedMoveLabel}, {exercise?.fork_move_san ?? "the knight move"} checks the king on {recognitionResult.feedback.fork_geometry.king.square} and attacks the {recognitionResult.feedback.fork_geometry.major.piece} on {recognitionResult.feedback.fork_geometry.major.square}. The verified line continues {continuationNotation(card.startingFen, recognitionResult.feedback.refutation_uci.slice(0, 4))}.</p> : null}
           </div></div>}
-        {recognitionDone && !definitive && !defenseReady && <Button type="button" onClick={() => setDefenseReady(true)}>Continue to defense</Button>}
+        {recognitionDone && !definitive && !defenseReady && <Button type="button" onClick={continueToDefense}>Continue to defense</Button>}
         {recognitionDone && !definitive && defenseReady && <p className="defense-stage-prompt">Back at your original turn, play a move that avoids this danger. More than one sound defense may work.</p>}
         {loadError && <p role="alert">{loadError}</p>}
         {saveError && <p role="alert">{saveError} {/reload|refresh/i.test(saveError) && <Button type="button" onClick={() => void loadExercise()}>Reload exercise</Button>}</p>}

@@ -21,10 +21,11 @@ vi.mock("../../app/components/board-workspace", () => ({
 }));
 vi.mock("../../app/components/chessboard", async () => {
   const { KeyboardTestBoard } = await import("./keyboard-board-fixture");
-  return { Chessboard: ({ fen, onSquareSelect, shapes, keyboard }: { fen: string; onSquareSelect?: (square: string) => void; shapes?: unknown[]; keyboard?: BoardKeyboardActions }) =>
-    <div><KeyboardTestBoard testId="recognition-board" fen={fen} shapes={shapes} keyboard={keyboard} />
+  return { Chessboard: ({ fen, onSquareSelect, shapes, keyboard, locked, editMode, onMove }: { fen: string; onSquareSelect?: (square: string) => void; shapes?: unknown[]; keyboard?: BoardKeyboardActions; locked?: boolean; editMode?: boolean; onMove?: (from: string, to: string) => void }) =>
+    <div data-testid="defense-board-interaction" data-mode={locked ? "readonly" : editMode ? "free" : "legal"}><KeyboardTestBoard testId="recognition-board" fen={fen} shapes={shapes} keyboard={keyboard} />
       {["b4", "c2", "e1", "a1", "f5", "e3", "g2", "c4"].map((square) =>
         <button key={square} onClick={() => onSquareSelect?.(square)}>Board square {square}</button>)}
+      <button disabled={locked || editMode} onClick={() => onMove?.("a2", "a4")}>Play defensive a4</button>
     </div>,
   };
 });
@@ -36,6 +37,58 @@ const card = {
   lastEncounteredAt: "2026-09-24T00:00:00Z",
 } as unknown as PracticeCard;
 const previewFen = "4k3/8/8/8/1n6/P7/8/R3K3 b Q - 0 1";
+
+it.each(["button", "N"])("continuing to defense resets browsed refutation history and preserves recognition via %s", async (transition) => {
+  const recognitionWrites: Record<string, unknown>[] = [];
+  const moveWrites: Record<string, unknown>[] = [];
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.endsWith("/recognition")) {
+      recognitionWrites.push(JSON.parse(String(init?.body)));
+      return Response.json({ status: "ready_for_move", recognition_correct: true, feedback: {
+        knight_route: [{ from_square: "b4", to_square: "c2" }],
+        fork_geometry: { knight_to: "c2", king: { square: "e1" }, major: { square: "a1", piece: "rook" } },
+        sound_moves: [], refutation_uci: ["a2a3", "b4c2", "e1d2", "c2a1"],
+      } });
+    }
+    if (url.endsWith("/attempt")) {
+      moveWrites.push(JSON.parse(String(init?.body)));
+      return Response.json({ status: "correct" });
+    }
+    return Response.json({ candidate_id: "candidate", card_id: "defense-card", exercise_revision: 2,
+      rubric_version: 3, recognition_required: true, proposed_move_uci: "a2a3",
+      proposed_move_san: "a3", preview_fen: previewFen, fork_move_san: "Nc2+" });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const advance = vi.fn(async () => undefined);
+  render(<DefenseTrainingView card={card} boardTheme="brown" pieceSet="cburnett" useSharedBoard={false} onAdvance={advance} />);
+  await screen.findByText("Select the piece that could create the danger.");
+  fireEvent.keyDown(window, { key: "h" });
+  for (const square of ["b4", "c2", "e1", "a1"]) fireEvent.click(screen.getByRole("button", { name: `Board square ${square}` }));
+  fireEvent.change(screen.getByLabelText("Consequence"), { target: { value: "checking_fork" } });
+  fireEvent.click(screen.getByRole("button", { name: "Submit assessment" }));
+  await screen.findByRole("button", { name: "Continue to defense" });
+  const savedRecognition = structuredClone(recognitionWrites[0]);
+  expect(savedRecognition).toMatchObject({ hinted: true, dangerous_piece_square: "b4", destination_square: "c2", consequence: "checking_fork" });
+  fireEvent.keyDown(window, { key: "End" });
+  expect(screen.getByTestId("recognition-board").getAttribute("data-fen")).not.toBe(card.startingFen);
+  expect(screen.getByTestId("recognition-board").getAttribute("data-fen")).not.toBe(previewFen);
+  expect(screen.getByTestId("defense-board-interaction").getAttribute("data-mode")).toBe("readonly");
+  if (transition === "button") fireEvent.click(screen.getByRole("button", { name: "Continue to defense" }));
+  else fireEvent.keyDown(window, { key: "n" });
+  expect(screen.getByTestId("recognition-board").getAttribute("data-fen")).toBe(card.startingFen);
+  expect(screen.getByTestId("defense-board-interaction").getAttribute("data-mode")).toBe("legal");
+  expect(screen.getByText(/Back at your original turn/)).toBeTruthy();
+  expect(screen.getByText("Danger assessed")).toBeTruthy();
+  expect(recognitionWrites).toEqual([savedRecognition]);
+  expect(moveWrites).toEqual([]);
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(advance).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Play defensive a4" }));
+  await waitFor(() => expect(moveWrites).toHaveLength(1));
+  expect(moveWrites[0]).toMatchObject({ move_uci: "a2a4", recognition_attempt_id: savedRecognition.attempt_id });
+  expect(recognitionWrites).toEqual([savedRecognition]);
+});
 
 it("defensive shortcuts preserve recognition selections and hint consequences without uncovering an answer", async () => {
   const fetcher = vi.fn(async () => Response.json({ candidate_id: "candidate", card_id: "defense-card",
