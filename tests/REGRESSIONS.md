@@ -946,6 +946,7 @@ failed against the original PR implementation before the guard was added.
 - `test_canonical_prefix_durable_preview_resolves_continuations_in_a_later_pass`.
 - `test_canonical_prefix_reports_first_conflict_and_disconnected_lines_without_deleting`.
 - `test_canonical_prefix_stale_preview_cannot_save_after_a_source_edit`.
+- `test_canonical_prefix_preview_rejects_owned_card_changes_without_a_link` (the preview source fingerprint covers owned and shared cards).
 - `test_canonical_prefix_rejects_off_scope_additions_and_clearing_restores_analysis`.
 - `test_canonical_prefix_preview_yields_to_foreground_restarts_and_replays_idempotently`.
 - `test_matching_game_feedback_starts_after_prefix_while_training_routes_remain_intact`.
@@ -975,6 +976,8 @@ interrupted preview, and the workspace/coverage transport contracts.
 in `tests/browser/canonical-repertoire-prefix.spec.ts` exercises the real
 PostgreSQL workflow at phone and desktop sizes. `Canonical prefix dialog` in
 `tests/browser/visual.spec.ts` pins the preview and controls at both sizes.
+Its header placement assertions failed before the scoped close-button layout:
+the desktop close button sat outside the dialog and the phone name crowded it.
 The regular PostgreSQL durability scenario verifies a preview queued while the
 worker is stopped, resumption, unchanged cards/reviews/scheduling, persistence of
 verified anchors after service recreation, and replay of the original save

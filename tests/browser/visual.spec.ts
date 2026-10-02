@@ -219,7 +219,12 @@ for (const width of [390, 1280]) {
     const dialog = page.getByRole("dialog", { name: "Canonical prefix" });
     await expect(dialog.getByText("Compatible. Discoveries start after this opening.")).toBeVisible();
     await expect(dialog.locator(".board-frame")).toHaveAttribute("data-fen", prefix.ending_fen);
-    await expect(dialog.getByRole("button", { name: "Save prefix" })).toBeInViewport();
+    await expect(dialog.getByRole("button", { name: "Save prefix" })).toBeInViewport({ ratio: 1 });
+    const dialogBounds = (await dialog.boundingBox())!;
+    const nameBounds = (await dialog.locator(".dialog-header p").boundingBox())!;
+    const closeBounds = (await dialog.getByRole("button", { name: "Close window" }).boundingBox())!;
+    expect(closeBounds.x + closeBounds.width).toBeLessThanOrEqual(dialogBounds.x + dialogBounds.width);
+    expect(nameBounds.x + nameBounds.width).toBeLessThanOrEqual(closeBounds.x);
     await expect(page).toHaveScreenshot(`canonical-prefix-${width}.png`, { animations: "disabled", fullPage: true });
   });
 }

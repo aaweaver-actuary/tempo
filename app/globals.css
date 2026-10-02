@@ -4074,10 +4074,15 @@ button {
   background: var(--panel, #fff);
 }
 .canonical-prefix-dialog .dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.canonical-prefix-dialog .dialog-header > div { min-width: 0; overflow-wrap: anywhere; }
+.canonical-prefix-dialog .close-button { position: static; flex: 0 0 auto; }
 .canonical-prefix-dialog p { margin: 0; }
 .canonical-prefix-dialog .ui-input { width: 100%; min-width: 0; }
 .canonical-prefix-board { width: min(280px, 100%); margin: 0 auto; }
 .canonical-prefix-actions { display: flex; flex-wrap: wrap; gap: 8px; }
 .canonical-prefix-summary { font-size: 0.9rem; }
 .canonical-prefix-notation { font-weight: 600; }
-@media (max-width: 480px) { .canonical-prefix-dialog { padding: 16px; } }
+@media (max-width: 480px) {
+  .canonical-prefix-dialog { padding: 16px; gap: 8px; }
+  .canonical-prefix-board { width: min(240px, 100%); }
+}
