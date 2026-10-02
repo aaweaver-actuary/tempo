@@ -8,15 +8,91 @@ import os
 import sys
 import uuid
 from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import patch
+import json
 
+from celery.exceptions import TimeoutError as CeleryTimeout
+from fastapi import HTTPException
 from psycopg.errors import TransactionTimeout
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
-from app import postgres_store, tasks
+from app import command_dispatch, postgres_store, tasks
 from app.command_gateway import (
     CommandConflict, MAX_BACKGROUND_CYCLE_ATTEMPTS, claim_recoverable_operation,
     execute_command, read_operation, record_operation_attempt, register_command, request_digest,
 )
+
+
+def test_postgres_command_receipt_preserves_http_detail_and_failed_handler_rollback() -> None:
+    def reject_after_write(database, payload):
+        database.raw.execute(
+            "INSERT INTO internal_migrations(name,applied_at) VALUES(%s,NOW()::TEXT)",
+            (payload["marker"],),
+        )
+        raise HTTPException(409, payload["detail"])
+
+    command_name = "test.recovery.http_failure"
+    register_command(command_name, reject_after_write)
+    for code in ("opening_evidence_conflict", "opening_evidence_unavailable"):
+        for deferred in (False, True):
+            operation_id = f"http-detail-{uuid.uuid4().hex}"
+            detail = {"code": code, "message": "example conflict", "aggregate_review_allowed": True}
+            payload = {"marker": operation_id, "detail": detail}
+
+            def finish_worker():
+                claimed, saved_payload, attempt_token, _ = record_operation_attempt(
+                    operation_id, command_name, payload, background=False,
+                )
+                if claimed:
+                    execute_command(operation_id, command_name, saved_payload, attempt_token=attempt_token)
+
+            def get_task_result(**options):
+                assert options["propagate"] is False
+                if deferred:
+                    raise CeleryTimeout()
+                finish_worker()
+
+            with patch.object(command_dispatch.celery_app, "send_task",
+                              return_value=SimpleNamespace(get=get_task_result)):
+                if deferred:
+                    pending = command_dispatch.dispatch_command(
+                        command_name, payload, idempotency_key=operation_id,
+                    )
+                    assert pending.status_code == 202
+                    assert json.loads(pending.body)["operation_id"] == operation_id
+                    finish_worker()
+                else:
+                    try:
+                        command_dispatch.dispatch_command(command_name, payload, idempotency_key=operation_id)
+                    except HTTPException as failure:
+                        assert failure.status_code == 409 and failure.detail == detail
+                    else:
+                        raise AssertionError("Immediate failed receipt did not reconstruct its HTTP error")
+                receipt = read_operation(operation_id)
+                assert receipt["state"] == "failed"
+                assert receipt["error"] == {
+                    "status_code": 409, "message": str(HTTPException(409, detail)), "detail": detail,
+                }
+                # Redelivery must reconstruct the persisted error without another
+                # handler execution or changing its immutable failure receipt.
+                deferred = False
+                try:
+                    command_dispatch.dispatch_command(command_name, payload, idempotency_key=operation_id)
+                except HTTPException as failure:
+                    assert failure.status_code == 409 and failure.detail == detail
+                else:
+                    raise AssertionError("Failed receipt replay lost HTTP detail")
+                assert read_operation(operation_id) == receipt
+            with postgres_store.connection(read_only=True) as database:
+                error_json = database.raw.execute(
+                    "SELECT error_json FROM operation_receipts WHERE operation_id=%s", (operation_id,),
+                ).fetchone()[0]
+                assert json.loads(error_json) == receipt["error"]
+                assert database.raw.execute(
+                    "SELECT COUNT(*) FROM internal_migrations WHERE name=%s", (operation_id,),
+                ).fetchone()[0] == 0
+    print("PASS test_postgres_command_receipt_preserves_http_detail_and_failed_handler_rollback")
 
 
 def main() -> None:
@@ -178,6 +254,7 @@ def main() -> None:
         )
     assert "matching journal or outbox" in read_operation(legacy_id)["message"]
 
+    test_postgres_command_receipt_preserves_http_detail_and_failed_handler_rollback()
     postgres_store.close_pools()
     print("PASS finite retries, restart, conflict states and race, explicit cycle, stale lease, and one business effect")
 

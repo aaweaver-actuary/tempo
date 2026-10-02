@@ -7,6 +7,7 @@ import { saveEvidenceAwareReview } from "../../app/lib/opening-evidence-review";
 import { useTrainingStore } from "../../app/state/training-store";
 import { asCardId, asFenString, asQueueEntryId, asSanMove } from "../../app/types";
 import { mapQueueCardToPracticeCard } from "../../app/domain/adapters/practice-card-adapters";
+import { FailedOperationError, PendingOperationError } from "../../app/lib/operation-status";
 
 const manifest = openingDecisionManifestSchema.parse(manifestFixture);
 const header = { attempt_id: "logical-attempt", manifest, origin_queue_entry_id: 101, queue_entry_id: 101,
@@ -111,19 +112,101 @@ describe("evidence aware aggregate review", () => {
   const completion = openingEvidenceCheckpointSchema.parse({ ...header, events: [], terminal: {
     state: "complete", final_sequence: 0, ended_at: "2026-09-30T12:01:00Z" } });
   const body = { attempt_id: header.attempt_id, outcome: "correct", guided: false, queue_entry_id: 101 };
-  it("AS-16 definitive evidence rejection retains diagnostics before aggregate-only delivery", async () => {
+  it.each([
+    ["immediate", "opening_evidence_conflict"], ["immediate", "opening_evidence_unavailable"],
+    ["deferred", "opening_evidence_conflict"], ["deferred", "opening_evidence_unavailable"],
+  ] as const)("AS-16 %s %s retains diagnostics before aggregate-only delivery", async (timing, code) => {
     const requests: RequestInit[] = [];
-    const rejected = vi.fn(() => { expect(requests).toHaveLength(1); });
-    const response = await saveEvidenceAwareReview({ endpoint: "/review", operationKey: "original", body, completion,
+    const originalInputs = structuredClone({ body, completion });
+    const detail = { code, message: "Immutable manifest rejected", aggregate_review_allowed: true };
+    const message = `409: {'code': '${code}', 'message': 'Immutable manifest rejected', 'aggregate_review_allowed': True}`;
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ state: "failed",
+      error: { status_code: 409, message, detail } })));
+    let commitArchive: (() => void) | undefined;
+    const archiveCommitted = new Promise<void>(resolve => { commitArchive = resolve; });
+    let retainedRejection: { message: string; completion: typeof completion } | undefined;
+    const rejected = vi.fn(async (reason: string) => {
+      expect(requests).toHaveLength(1);
+      await archiveCommitted;
+      retainedRejection = { message: reason, completion: structuredClone(completion) };
+    });
+    const saving = saveEvidenceAwareReview({ endpoint: "/review", operationKey: "original", body, completion,
       onEvidenceRejected: rejected, request: async (_url, options) => {
         requests.push(options);
-        return requests.length === 1 ? Response.json({ detail: { code: "opening_evidence_conflict",
-          message: "Immutable manifest rejected", aggregate_review_allowed: true } }, { status: 409 })
-          : Response.json({ persisted: true });
+        if (requests.length === 1) return timing === "immediate" ? Response.json({ detail }, { status: 409 })
+          : Response.json({ operation_id: "original", state: "pending" }, { status: 202 });
+        expect(retainedRejection?.completion).toEqual(originalInputs.completion);
+        return Response.json({ persisted: true });
       } });
+    await vi.waitFor(() => expect(rejected).toHaveBeenCalledOnce());
+    expect(requests).toHaveLength(1);
+    commitArchive!();
+    const response = await saving;
     expect(response.ok).toBe(true); expect(rejected).toHaveBeenCalledOnce();
+    expect(retainedRejection?.message).toBe(timing === "immediate" ? detail.message : message);
+    expect(JSON.parse(requests[0].body as string)).toEqual({ ...body, opening_evidence_completion: completion });
     expect(JSON.parse(requests[1].body as string)).toEqual(body);
+    expect(new Headers(requests[0].headers).get("Idempotency-Key")).toBe("original");
     expect(new Headers(requests[1].headers).get("Idempotency-Key")).toBe("original:aggregate-only");
+    expect({ body, completion }).toEqual(originalInputs);
+  });
+  it("AS-16 legacy deferred failed receipt still delivers the aggregate-only review", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ state: "failed",
+      error: { message: "409: opening_evidence_conflict legacy receipt" } })));
+    const request = vi.fn().mockResolvedValueOnce(Response.json({ operation_id: "legacy", state: "pending" }, { status: 202 }))
+      .mockResolvedValueOnce(Response.json({ persisted: true }));
+    const rejected = vi.fn();
+    const response = await saveEvidenceAwareReview({ endpoint: "/review", operationKey: "legacy", body, completion,
+      onEvidenceRejected: rejected, request });
+    expect(response.ok).toBe(true);
+    expect(rejected).toHaveBeenCalledOnce();
+    expect(JSON.parse(request.mock.calls[1][1].body)).toEqual(body);
+    expect(new Headers(request.mock.calls[1][1].headers).get("Idempotency-Key")).toBe("legacy:aggregate-only");
+  });
+  it.each([409, 422, 500])("AS-16 unrelated immediate %s does not trigger evidence fallback", async status => {
+    const request = vi.fn().mockResolvedValue(Response.json({ detail: {
+      code: "review_revision_conflict", message: "Unrelated failure", aggregate_review_allowed: true,
+    } }, { status }));
+    const rejected = vi.fn();
+    const response = await saveEvidenceAwareReview({ endpoint: "/review", operationKey: "original", body, completion,
+      onEvidenceRejected: rejected, request });
+    expect(response.status).toBe(status);
+    expect(request).toHaveBeenCalledOnce();
+    expect(rejected).not.toHaveBeenCalled();
+  });
+  it.each([409, 422, 500])("AS-16 unrelated deferred %s does not trigger evidence fallback", async status => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ state: "failed", error: {
+      status_code: status, message: `${status}: unrelated review failure`,
+      detail: { code: "review_revision_conflict", message: "Unrelated failure" },
+    } })));
+    const request = vi.fn().mockResolvedValue(Response.json({ operation_id: "original", state: "pending" }, { status: 202 }));
+    const rejected = vi.fn();
+    await expect(saveEvidenceAwareReview({ endpoint: "/review", operationKey: "original", body, completion,
+      onEvidenceRejected: rejected, request })).rejects.toBeInstanceOf(FailedOperationError);
+    expect(request).toHaveBeenCalledOnce();
+    expect(rejected).not.toHaveBeenCalled();
+  });
+  it("AS-16 evidence conflict without aggregate permission does not trigger immediate fallback", async () => {
+    const request = vi.fn().mockResolvedValue(Response.json({ detail: {
+      code: "opening_evidence_conflict", message: "No aggregate fallback", aggregate_review_allowed: false,
+    } }, { status: 409 }));
+    const rejected = vi.fn();
+    const response = await saveEvidenceAwareReview({ endpoint: "/review", operationKey: "original", body, completion,
+      onEvidenceRejected: rejected, request });
+    expect(response.status).toBe(409);
+    expect(request).toHaveBeenCalledOnce();
+    expect(rejected).not.toHaveBeenCalled();
+  });
+  it("AS-15 pending evidence receipt retries the original payload and key without fallback", async () => {
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue(Response.json({ state: "pending" })));
+    const request = vi.fn().mockResolvedValueOnce(Response.json({ operation_id: "original", state: "pending" }, { status: 202 }))
+      .mockResolvedValueOnce(Response.json({ persisted: true }));
+    const rejected = vi.fn();
+    const options = { endpoint: "/review", operationKey: "original", body, completion, onEvidenceRejected: rejected, request };
+    await expect(saveEvidenceAwareReview(options)).rejects.toBeInstanceOf(PendingOperationError);
+    await saveEvidenceAwareReview(options);
+    expect(request.mock.calls[0][1]).toEqual(request.mock.calls[1][1]);
+    expect(rejected).not.toHaveBeenCalled();
   });
   it("AS-15 ambiguous delivery retries its original payload and key without fallback", async () => {
     const request = vi.fn().mockRejectedValueOnce(new TypeError("Lost response"))

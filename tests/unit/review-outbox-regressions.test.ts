@@ -10,7 +10,10 @@ beforeEach(() => {
 });
 
 describe("optimistic training review outbox", () => {
-  it("AS-16 confirmed aggregate-only fallback retains rejected journal even when IndexedDB is unavailable", async () => {
+  it.each([
+    ["immediate", "opening_evidence_conflict"], ["immediate", "opening_evidence_unavailable"],
+    ["deferred", "opening_evidence_conflict"], ["deferred", "opening_evidence_unavailable"],
+  ] as const)("AS-16 %s %s archives rejected journal before confirmed aggregate-only save", async (timing, code) => {
     vi.stubGlobal("indexedDB", undefined);
     const completion=openingEvidenceCheckpointSchema.parse({ attempt_id:"rejected-journal", manifest,
       origin_queue_entry_id:101,queue_entry_id:101,started_at:"2026-09-30T12:00:00Z",study_timezone:"UTC",
@@ -20,14 +23,32 @@ describe("optimistic training review outbox", () => {
     enqueuePendingReview({backendId:"shadow-card",queueEntryId:101,outcome:"correct",guided:false,
       attemptId:completion.attempt_id,openingEvidenceCompletion:completion});
     const original=pendingReviews()[0];
-    vi.stubGlobal("fetch",vi.fn().mockResolvedValueOnce(Response.json({detail:{code:"opening_evidence_conflict",
-      message:"Rejected immutable evidence",aggregate_review_allowed:true}},{status:409}))
-      .mockResolvedValueOnce(Response.json({persisted:true})));
+    const detail={code,message:"Rejected immutable evidence",aggregate_review_allowed:true};
+    const storedMessage=`409: {'code': '${code}', 'message': 'Rejected immutable evidence', 'aggregate_review_allowed': True}`;
+    const rejection=timing==="immediate"?detail.message:storedMessage;
+    const posts: RequestInit[]=[];
+    vi.stubGlobal("fetch",vi.fn(async (_url,options?:RequestInit) => {
+      if (options?.method!=="POST") return Response.json({state:"failed",error:{status_code:409,message:storedMessage,detail}});
+      posts.push(options);
+      if (posts.length===1) return timing==="immediate"?Response.json({detail},{status:409})
+        :Response.json({operation_id:"review-attempt:rejected-journal",state:"pending"},{status:202});
+      expect(JSON.parse(localStorage.getItem("tempo-rejected-opening-reviews-v1") ?? "[]")).toEqual([
+        {...original,evidenceRejected:rejection},
+      ]);
+      return Response.json({persisted:true});
+    }));
     await flushPendingReviews();
     expect(pendingReviews()).toEqual([]);
     expect(JSON.parse(localStorage.getItem("tempo-rejected-opening-reviews-v1") ?? "[]")).toEqual([
-      {...original,evidenceRejected:"Rejected immutable evidence"},
+      {...original,evidenceRejected:rejection},
     ]);
+    expect(posts).toHaveLength(2);
+    const firstBody=JSON.parse(posts[0].body as string);
+    expect(firstBody.opening_evidence_completion).toEqual(completion);
+    const aggregateBody={...firstBody};delete aggregateBody.opening_evidence_completion;
+    expect(JSON.parse(posts[1].body as string)).toEqual(aggregateBody);
+    const firstKey=new Headers(posts[0].headers).get("Idempotency-Key");
+    expect(new Headers(posts[1].headers).get("Idempotency-Key")).toBe(`${firstKey}:aggregate-only`);
   });
 
   it("confirmed guided review clears its earlier failure marker", async () => {

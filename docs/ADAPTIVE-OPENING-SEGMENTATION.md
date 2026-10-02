@@ -2,6 +2,15 @@
 
 ## PR 2 implementation and validation scope
 
+PR #69's command transport follow-up preserves optional JSON-native HTTP failure
+detail in durable receipts (at most 16 KiB of serialized JSON), while retaining
+the existing status and message for deferred operation-status callers. Immediate
+dispatch reconstructs that detail; old receipts continue using their message.
+Unsafe or oversized detail retains the legacy envelope. Named backend transport,
+PostgreSQL rollback/replay and frontend immediate/deferred archival regressions
+prove the two timings converge without changing scheduling ownership. Current
+main includes PR #67's migration 30; shadow evidence is additive migration 31.
+
 Phase 2 starts from main `92f9aeacdf07bd1b61931ec1ca90be40c3a1619d` in the
 isolated `opening-decision-shadow-evidence` checkout. Existing unfinished work
 and live study resources are preserved. This change captures shadow observations
