@@ -1,8 +1,8 @@
-import { fireEvent, render, waitFor, screen } from "@testing-library/react";
+import { act, fireEvent, render, waitFor, screen } from "@testing-library/react";
 import { beforeEach, expect, it, vi } from "vitest";
 import TacticsView from "../../app/views/tactics_view";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
-import { asCardId, asFenString } from "../../app/types";
+import { asCardId, asFenString, asSanMove } from "../../app/types";
 import { loadTacticsDeck } from "../../app/lib/workspace-data";
 
 vi.mock("../../app/components/chessboard", () => ({
@@ -108,6 +108,24 @@ it("Tactics shared board publishes shell ownership and hides local board instanc
   expect(screen.queryByTestId("board")).toBeNull();
   view.unmount();
   expect(useBoardShellStore.getState().board.owner).toBe("train");
+});
+
+it("tactics shortcuts stop before the unanswered solution and restore the live attempt", async () => {
+  const preparedDeck = await loadTacticsDeck("hangingPiece", "easy-01");
+  vi.mocked(loadTacticsDeck).mockResolvedValueOnce([{ ...preparedDeck[0], card: {
+    ...preparedDeck[0].card, moves: [asSanMove("a3"), asSanMove("Nf6"), asSanMove("b3")],
+  } }]);
+  render(<TacticsView theme="brown" pieceSet="cburnett" onQueueChanged={vi.fn()} useSharedBoard />);
+  await waitFor(() => expect(useBoardShellStore.getState().board.owner).toBe("tactics"));
+  await waitFor(() => expect(useBoardShellStore.getState().board.interactionMode).toBe("legal"));
+  const original = useBoardShellStore.getState().board;
+  act(() => original.keyboard?.end?.());
+  expect(useBoardShellStore.getState().board.fen).toBe(original.fen);
+  expect(useBoardShellStore.getState().board.keyboard?.next).toBeUndefined();
+  act(() => useBoardShellStore.getState().board.keyboard?.reset?.());
+  expect(useBoardShellStore.getState().board.fen).toBe(original.fen);
+  expect(useBoardShellStore.getState().board.interactionMode).toBe("legal");
+  expect(screen.queryByText(/That was not the continuation/)).toBeNull();
 });
 
 it("capture remains available while tactics load or fail and explains durable capture in the demo", async () => {

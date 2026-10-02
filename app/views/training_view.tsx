@@ -1,3 +1,4 @@
+import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history";
 import { Button } from "../components/buttons/BaseButton";
 import { BoardTools } from "../components/board/board-workspace";
 import type { DrawShape } from "@lichess-org/chessground/draw";
@@ -172,7 +173,10 @@ function StandardTrainingView({
   );
 
   const trainingPositionKey = `${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${card.revision ?? 1}:${attemptGeneration}`;
+  const visiblePositions = useMemo(() => positionsFromMoves(card.startingFen, card.moves, feedback === "complete" ? card.moves.length : step), [card.startingFen, card.moves, feedback, step]);
+  const boardHistory = useBoardHistory(trainingPositionKey, visiblePositions, currentFenString);
   useBoardPublisher("train", useSharedBoard && !isEndgame ? {
+    keyboard: boardHistory.keyboard,
     positionKey: trainingPositionKey,
     unavailable:
       cardsLeft <= 0
@@ -182,22 +186,22 @@ function StandardTrainingView({
             ? "Prepared exercises require the computer. Reconnect to continue."
             : "No cards due. Your next session will appear here."
         : undefined,
-    fen: currentFenString,
+    fen: boardHistory.fen,
     expectedSan: card.moves[step],
-    lastMove,
+    lastMove: boardHistory.viewingHistory ? undefined : lastMove,
     interactionMode:
-      isLocked ||
+      boardHistory.viewingHistory || isLocked ||
       liveQueueBlocked ||
       reviewBlocked ||
       step >= card.moves.length ||
       cardsLeft === 0
         ? "readonly"
         : "legal",
-    showHint: cardsLeft > 0 && showTeachingArrow,
+    showHint: cardsLeft > 0 && !boardHistory.viewingHistory && showTeachingArrow,
     theme: boardTheme,
     pieceSet,
     orientation: card.orientation === "black" ? "black" : "white",
-    shapes: trainingShapes,
+    shapes: boardHistory.viewingHistory ? [] : trainingShapes,
     positionRevision: boardAttempt,
     onMove,
     onSquareSelect: undefined,
@@ -282,18 +286,19 @@ function StandardTrainingView({
                 key={`${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${card.revision ?? 1}`}
                 positionRevision={boardAttempt}
                 positionKey={trainingPositionKey}
-                fen={currentFenString}
+                keyboard={boardHistory.keyboard}
+                fen={boardHistory.fen}
                 expectedSan={card.moves[step]}
-                lastMove={lastMove}
+                lastMove={boardHistory.viewingHistory ? undefined : lastMove}
                 locked={
-                  isLocked ||
+                  boardHistory.viewingHistory || isLocked ||
                   liveQueueBlocked ||
                   reviewBlocked ||
                   step >= card.moves.length ||
                   cardsLeft === 0
                 }
-                showHint={showTeachingArrow}
-                shapes={trainingShapes}
+                showHint={!boardHistory.viewingHistory && showTeachingArrow}
+                shapes={boardHistory.viewingHistory ? [] : trainingShapes}
                 theme={boardTheme}
                 pieceSet={pieceSet}
                 onMove={onMove}

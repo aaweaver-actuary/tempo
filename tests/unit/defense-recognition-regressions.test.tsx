@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { expect, it, vi } from "vitest";
 import DefenseTrainingView from "../../app/views/defense_training_view";
 import type { PracticeCard } from "../../app/types";
+import type { BoardKeyboardActions } from "../../app/lib/keyboard-shortcuts";
 
 it("Docker owns defensive engine claims while the browser remains passive", () => {
   const homeSource = readFileSync(resolve(process.cwd(), "app/views/home_view.tsx"), "utf8");
@@ -18,13 +19,15 @@ vi.mock("../../app/hooks/use-board-publisher", () => ({
 vi.mock("../../app/components/board-workspace", () => ({
   BoardTools: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
-vi.mock("../../app/components/chessboard", () => ({
-  Chessboard: ({ fen, onSquareSelect, shapes }: { fen: string; onSquareSelect?: (square: string) => void; shapes?: unknown[] }) =>
-    <div data-testid="recognition-board" data-fen={fen} data-shapes={JSON.stringify(shapes)}>
+vi.mock("../../app/components/chessboard", async () => {
+  const { KeyboardTestBoard } = await import("./keyboard-board-fixture");
+  return { Chessboard: ({ fen, onSquareSelect, shapes, keyboard }: { fen: string; onSquareSelect?: (square: string) => void; shapes?: unknown[]; keyboard?: BoardKeyboardActions }) =>
+    <div><KeyboardTestBoard testId="recognition-board" fen={fen} shapes={shapes} keyboard={keyboard} />
       {["b4", "c2", "e1", "a1", "f5", "e3", "g2", "c4"].map((square) =>
         <button key={square} onClick={() => onSquareSelect?.(square)}>Board square {square}</button>)}
     </div>,
-}));
+  };
+});
 
 const card = {
   id: "defense-card", backendId: "defense-card", defenseCandidateId: "candidate",
@@ -33,6 +36,25 @@ const card = {
   lastEncounteredAt: "2026-09-24T00:00:00Z",
 } as unknown as PracticeCard;
 const previewFen = "4k3/8/8/8/1n6/P7/8/R3K3 b Q - 0 1";
+
+it("defensive shortcuts preserve recognition selections and hint consequences without uncovering an answer", async () => {
+  const fetcher = vi.fn(async () => Response.json({ candidate_id: "candidate", card_id: "defense-card",
+    exercise_revision: 2, prompt: "Recognize the danger", recognition_required: true,
+    rubric_version: 3, proposed_move_uci: "a2a3", proposed_move_san: "a3", preview_fen: previewFen }));
+  vi.stubGlobal("fetch", fetcher);
+  const advance = vi.fn(async () => undefined);
+  render(<DefenseTrainingView card={card} boardTheme="brown" pieceSet="cburnett" useSharedBoard={false} onAdvance={advance} />);
+  await screen.findByText("Select the piece that could create the danger.");
+  fireEvent.keyDown(window, { key: "End" }); fireEvent.keyDown(window, { key: "ArrowRight" });
+  expect(screen.getByTestId("recognition-board").getAttribute("data-fen")).toBe(previewFen);
+  fireEvent.keyDown(window, { key: "h" });
+  expect(screen.getByText(/A revealed hint requires reinforcement/)).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Board square b4" }));
+  fireEvent.keyDown(window, { key: "r" }); fireEvent.keyDown(window, { key: "n" });
+  expect(screen.getByRole("button", { name: "Change dangerous piece" })).toBeTruthy();
+  expect(screen.getByText(/A revealed hint requires reinforcement/)).toBeTruthy();
+  expect(fetcher).toHaveBeenCalledOnce(); expect(advance).not.toHaveBeenCalled();
+});
 
 it("defensive training can bury before loading or grading the exercise", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => Response.json({ candidate_id: "candidate", card_id: "defense-card",

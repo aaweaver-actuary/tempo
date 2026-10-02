@@ -1,7 +1,7 @@
 import type { Api } from "@lichess-org/chessground/api";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
-import { act, render } from "@testing-library/react";
+import { act, fireEvent, render } from "@testing-library/react";
 import { Chess, type Square } from "chess.js";
 import { useState } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -28,6 +28,7 @@ beforeEach(() => {
   vi.stubGlobal("ResizeObserver", class { observe() {} disconnect() {} });
   vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({ x: 0, y: 0,
     top: 0, left: 0, right: 640, bottom: 640, width: 640, height: 640, toJSON: () => ({}) });
+  vi.spyOn(HTMLElement.prototype, "getClientRects").mockReturnValue([{ width: 640 }] as unknown as DOMRectList);
   // Exercise real move/configuration behavior without jsdom animation frames.
   vi.stubGlobal("matchMedia", () => ({ matches: true }));
 });
@@ -63,6 +64,18 @@ function expectAuthoritativePosition(fen: string, lastMove?: readonly [string, s
     ? chess.findPiece({ type: "k", color: chess.turn() })[0] : undefined);
   expect(board.state.lastMove).toEqual(lastMove);
 }
+
+it("R restores an applied same-FEN move and rejects its delayed callback without restarting", () => {
+  const onMove = vi.fn(); const reset = vi.fn();
+  render(<Chessboard {...boardProps} onMove={onMove} keyboard={{ reset }} />);
+  userMove("e2", "e4");
+  expect(actualBoard().getFen()).not.toBe(STANDARD_FEN.split(" ")[0]);
+  fireEvent.keyDown(window, { key: "r" });
+  expectAuthoritativePosition(STANDARD_FEN);
+  deliverDeferredEvents();
+  expect(onMove).not.toHaveBeenCalled();
+  expect(reset).toHaveBeenCalledOnce();
+});
 
 it("same-FEN locking restores an applied move and fences its deferred callback", () => {
   const oldHandler = vi.fn();

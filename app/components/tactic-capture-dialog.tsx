@@ -60,15 +60,7 @@ export function TacticCaptureDialog({ theme, pieceSet, onClose, onQueueChanged }
     <div className="editor-heading"><div><p className="eyebrow">Today’s training</p><h2 id="capture-tactic-title">Capture tactic</h2></div></div>
     {!usesLocalApi() ? <p>Durable tactic capture requires local Tempo. Open your local Tempo workspace to add a position to training.</p> : <>
       {pending && <p role="status">A capture is awaiting confirmation. Check its result before editing or creating another capture.</p>}
-      <fieldset disabled={locked} className="capture-editor" onKeyDown={event => {
-        if (event.target instanceof HTMLInputElement || event.target instanceof HTMLTextAreaElement || event.target instanceof HTMLSelectElement) return;
-        if (event.key === "ArrowLeft") editor.setCursor(Math.max(0, editor.cursor - 1));
-        else if (event.key === "ArrowRight") editor.setCursor(Math.min(editor.moves.length, editor.cursor + 1));
-        else if (event.key === "ArrowUp") editor.setCursor(0);
-        else if (event.key === "ArrowDown") editor.setCursor(editor.moves.length);
-        else return;
-        event.preventDefault(); event.stopPropagation();
-      }}>
+      <fieldset disabled={locked} className="capture-editor">
         <PositionSolutionTabs editor={editor} requirePlayable />
         <div className="editor-layout">
           <PositionSolutionBoard editor={editor} theme={theme} pieceSet={pieceSet} setupControls locked={locked}

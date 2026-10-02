@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "./buttons/BaseButton";
 import {
   buildNotificationExport, hideNotificationToast, hydrateNotifications,
@@ -9,6 +9,8 @@ import {
   type NotificationRecord,
 } from "../lib/notifications";
 import { buildDebugBundle, copyDebugBundle, debugErrors } from "../lib/debug-reporting";
+
+import { usePopupKeyboard } from "../lib/keyboard-shortcuts";
 
 type Threshold = "info" | "warning" | "error";
 const emptyNotificationRecords: readonly NotificationRecord[] = [];
@@ -33,6 +35,8 @@ function NotificationDetails({ record }: { record: NotificationRecord }) {
 export function NotificationCenter() {
   const records = useNotifications();
   const [open, setOpen] = useState(false);
+  const popupRef = useRef<HTMLElement>(null);
+  usePopupKeyboard(popupRef, () => setOpen(false), open);
   const [filter, setFilter] = useState<"all" | NotificationRecord["severity"]>("all");
   const [threshold, setThreshold] = useState<Threshold>("info");
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
@@ -54,11 +58,11 @@ export function NotificationCenter() {
 
   return <div className="notification-center">
     <Button type="button" className="notification-trigger" aria-label="Notifications"
-      aria-expanded={open} aria-controls="notification-tray" onClick={() => setOpen((value) => !value)}>
+      aria-expanded={open} aria-controls="notification-tray" onClick={event => { event.currentTarget.focus(); setOpen((value) => !value); }}>
       <span aria-hidden="true">🔔</span><span className="notification-trigger-label">Notifications</span>
       {needsAttention > 0 && <span className="notification-count">{needsAttention}</span>}
     </Button>
-    {open && <section id="notification-tray" className="notification-tray" aria-label="Notifications">
+    {open && <section ref={popupRef} id="notification-tray" className="notification-tray" aria-label="Notifications">
       <header><strong>Notifications</strong><Button type="button" onClick={() => setOpen(false)}>Close</Button></header>
       <p className="notification-retention">Newest first · latest {NOTIFICATION_HISTORY_LIMIT} kept on this device</p>
       <div className="notification-filters" aria-label="Filter notifications">
@@ -105,8 +109,10 @@ export function NotificationCenter() {
   </div>;
 }
 
-function NotificationToast({ record }: { record: NotificationRecord }) {
+function NotificationToast({ record, order }: { record: NotificationRecord; order: number }) {
   const [exiting, setExiting] = useState(false);
+  const toastRef = useRef<HTMLDivElement>(null);
+  usePopupKeyboard(toastRef, () => hideNotificationToast(record.id), !exiting, true, order);
   useEffect(() => {
     if (record.active) return;
     const duration = record.severity === "error" || record.severity === "warning" ? 7_000 : 4_000;
@@ -114,7 +120,7 @@ function NotificationToast({ record }: { record: NotificationRecord }) {
     const hideTimer = window.setTimeout(() => hideNotificationToast(record.id), duration + 250);
     return () => { window.clearTimeout(fadeTimer); window.clearTimeout(hideTimer); };
   }, [record.active, record.id, record.severity, record.updatedAt]);
-  return <div className={`notification-toast notification-${record.severity}${exiting ? " is-exiting" : ""}`}
+  return <div ref={toastRef} className={`notification-toast notification-${record.severity}${exiting ? " is-exiting" : ""}`}
     role={record.severity === "error" ? "alert" : "status"}
     aria-hidden={exiting}
     inert={exiting}
@@ -129,6 +135,6 @@ export function NotificationViewport() {
   const visibleIds = useSyncExternalStore(subscribeNotifications, notificationToastIds, () => emptyToastIds);
   const visible = visibleIds.map((id) => records.find((record) => record.id === id)).filter((record): record is NotificationRecord => Boolean(record));
   return <div className="notification-viewport">
-    {visible.map((record) => <NotificationToast key={`${record.id}:${record.active}:${record.severity}:${record.message}`} record={record} />)}
+    {visible.map((record, order) => <NotificationToast key={`${record.id}:${record.active}:${record.severity}:${record.message}`} record={record} order={order} />)}
   </div>;
 }

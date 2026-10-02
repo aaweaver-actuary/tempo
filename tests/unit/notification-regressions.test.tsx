@@ -10,6 +10,19 @@ beforeEach(() => { clearNotificationHistory(); vi.useRealTimers(); });
 afterEach(() => { vi.useRealTimers(); });
 
 describe("notification regressions", () => {
+  it("Escape dismisses only the newest visible toast and retains notification history", () => {
+    const older = publishNotification({ severity: "info", source: "queue", message: "Older", active: true });
+    const newer = publishNotification({ severity: "warning", source: "sync", message: "Newer", active: true });
+    render(<NotificationViewport />);
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(notificationToastIds()).toEqual([older]);
+    expect(notifications().map(record => record.id)).toContain(newer);
+    const newest = publishNotification({ severity: "error", source: "service", message: "Newest", active: true });
+    act(() => updateNotification(newest, { message: "Newest updated" }));
+    fireEvent.keyDown(window, { key: "Escape" });
+    expect(notificationToastIds()).toEqual([older]);
+    expect(notifications()).toHaveLength(3);
+  });
   it("new notifications and updates remain newest first with severity thresholds", () => {
     const first = publishNotification({ severity: "info", source: "queue", message: "First" });
     publishNotification({ severity: "error", source: "sync", message: "Second" });

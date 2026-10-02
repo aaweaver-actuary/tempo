@@ -18,6 +18,8 @@ export function PersistentBoardShell() {
     <div className="persistent-board-shell" data-board-owner={board.owner} data-unavailable={Boolean(board.unavailable)}>
       {board.unavailable && <div className="board-unavailable" role="status">{board.unavailable}</div>}
       <Chessboard
+        showShortcutButton={false}
+        keyboard={board.keyboard}
         fen={board.fen}
         expectedSan={board.expectedSan}
         lastMove={board.lastMove}

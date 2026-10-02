@@ -1,4 +1,6 @@
 "use client";
+import { historyKeyboardActions } from "../lib/keyboard-shortcuts";
+import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history";
 import { ActionLink } from "../components/ui";
 import { SelectInput } from "../components/inputs/SelectInput";
 import { TextInput } from "../components/inputs/TextInput";
@@ -280,7 +282,9 @@ export default function GamesView({
   const selectedDetailsReady = Boolean(
     selected && (!local || loadedGameIds.has(selected.id)),
   );
+  const [workingPositions, setWorkingPositions] = useState<Record<string, number>>({ ...(savedSession ? { [savedSession.id]: savedSession.cursor } : {}) });
   const selectGame = (gameId: GameId, ply: number) => {
+    setWorkingPositions(positions => ({ ...positions, [gameId]: ply }));
     setSelectedId(gameId);
     setCursor(ply);
     setBoardMode("game");
@@ -793,42 +797,6 @@ export default function GamesView({
       window.clearTimeout(debounceTimer);
     };
   }, [engineOn, displayedFen, selectedDetailsReady]);
-  useEffect(() => {
-    const onKey = (event: KeyboardEvent) => {
-      if (boardMode !== "game" || !selectedDetailsReady) return;
-      if (
-        (event.target as HTMLElement)?.matches(
-          'input,textarea,select,[contenteditable="true"]',
-        ) ||
-        document.querySelector('[role="dialog"]')
-      )
-        return;
-      const length = selected?.moves.length ?? 0;
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        setCursor((value) => Math.max(0, value - 1));
-      }
-      if (event.key === "ArrowRight") {
-        event.preventDefault();
-        advanceGameOnePly();
-      }
-      if (["Home", "ArrowUp"].includes(event.key)) {
-        event.preventDefault();
-        setCursor(0);
-      }
-      if (["End", "ArrowDown"].includes(event.key)) {
-        event.preventDefault();
-        setCursor(length);
-      }
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [
-    advanceGameOnePly,
-    boardMode,
-    selected?.moves.length,
-    selectedDetailsReady,
-  ]);
   const matchedDecisions = games.reduce(
     (total, game) => total + (game.matchedPlayerDecisions ?? 0),
     0,
@@ -843,8 +811,23 @@ export default function GamesView({
       finding.kind !== "defensive tactical threat",
   );
 
-  const gamePositionKey = `${selected?.id ?? "none"}:${boardMode}`;
+  const gamePositionKey = `${selected?.id ?? "none"}:${boardMode}:${boardMode === "guided" ? guidedReview?.current?.finding_id ?? guidedReveal?.revealed?.finding_id ?? "" : tacticalQueue.item?.id ?? ""}`;
+  const reviewPositions = useMemo(() => {
+    const revealedLine = boardMode === "guided" ? guidedReveal?.revealed?.answer.principal_variation ?? []
+      : tacticalReveal ? tacticalQueue.item?.evidence.candidate_lines?.[0]?.pv ?? [] : [];
+    return positionsFromMoves(displayedFen, revealedLine);
+  }, [displayedFen, boardMode, guidedReveal, tacticalReveal, tacticalQueue.item]);
+  const reviewHistory = useBoardHistory(gamePositionKey, reviewPositions, displayedFen);
+  const keyboard = boardMode === "game"
+    ? { ...historyKeyboardActions(cursor, selected?.moves.length ?? 0, navigateGameToPly),
+        reset: () => setCursor(Math.min(workingPositions[selected?.id ?? ""] ?? 0, selected?.moves.length ?? 0)),
+      }
+    : { ...reviewHistory.keyboard,
+        nextItem: boardMode === "guided" && guidedReveal ? () => { setGuidedReview(guidedReveal.session); setGuidedReveal(null); } : undefined,
+      };
+  const keyboardFen = boardMode === "game" ? displayedFen : reviewHistory.fen;
   useBoardPublisher("games", useSharedBoard ? {
+    keyboard,
     positionKey: gamePositionKey,
     unavailable: !selected
       ? error
@@ -857,7 +840,7 @@ export default function GamesView({
           ? "Could not load the selected game. Retry the local service."
           : "Loading selected game…"
         : undefined,
-    fen: displayedFen,
+    fen: keyboardFen,
     lastMove: displayedLastMove
       ? ([
           displayedLastMove.slice(0, 2),
@@ -866,8 +849,8 @@ export default function GamesView({
       : undefined,
     shapes: displayedShapes,
     interactionMode:
-      (boardMode === "guided" && guidedReview?.current && !guidedReveal) ||
-      (boardMode === "tactical" && tacticalQueue.item && !tacticalReveal)
+      !reviewHistory.viewingHistory && ((boardMode === "guided" && guidedReview?.current && !guidedReveal) ||
+      (boardMode === "tactical" && tacticalQueue.item && !tacticalReveal))
         ? "legal"
         : "readonly",
     showHint: false,
@@ -994,7 +977,8 @@ export default function GamesView({
             {!useSharedBoard && (
               <Chessboard
                 positionKey={gamePositionKey}
-                fen={displayedFen}
+                keyboard={keyboard}
+                fen={keyboardFen}
                 lastMove={
                   displayedLastMove
                     ? [
@@ -1004,7 +988,7 @@ export default function GamesView({
                     : undefined
                 }
                 shapes={displayedShapes}
-                locked={
+                locked={reviewHistory.viewingHistory ||
                   !selectedDetailsReady ||
                   boardMode === "game" ||
                   (boardMode === "guided" &&

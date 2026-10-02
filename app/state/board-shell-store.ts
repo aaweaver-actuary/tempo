@@ -1,3 +1,4 @@
+import type { BoardKeyboardActions } from "../lib/keyboard-shortcuts";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Square } from "chess.js";
 import { create } from "zustand";
@@ -10,6 +11,7 @@ export type BoardShellOwner = View | "modal-tree" | "modal-editor";
 export type BoardInteractionMode = "readonly" | "legal" | "free" | "select";
 
 export type BoardShellSnapshot = {
+  keyboard?: BoardKeyboardActions;
   owner: BoardShellOwner;
   fen: string;
   expectedSan?: string;
@@ -78,11 +80,16 @@ export function sameBoardShapes(left: DrawShape[], right: DrawShape[]) {
   }));
 }
 
+function sameKeyboardActions(left?: BoardKeyboardActions, right?: BoardKeyboardActions) {
+  const keys = new Set([...Object.keys(left ?? {}), ...Object.keys(right ?? {})] as (keyof BoardKeyboardActions)[]);
+  return [...keys].every(key => left?.[key] === right?.[key]);
+}
+
 function equivalentSnapshot(left: BoardShellSnapshot, right: BoardShellSnapshot) {
   const keys = new Set([...Object.keys(left), ...Object.keys(right)] as (keyof BoardShellSnapshot)[]);
   return [...keys].every((key) => key === "lastMove" ? sameLastMove(left.lastMove, right.lastMove)
     : key === "shapes" || key === "drawnShapes" ? sameBoardShapes(left[key], right[key])
-    : left[key] === right[key]);
+    : key === "keyboard" ? sameKeyboardActions(left.keyboard, right.keyboard) : left[key] === right[key]);
 }
 
 function publishSnapshot(current: BoardShellStore, board: BoardShellSnapshot) {

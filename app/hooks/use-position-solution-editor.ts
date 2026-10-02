@@ -40,6 +40,7 @@ export function usePositionSolutionEditor(initialFen: string, initialMoves: SanM
   const [boardFen, setBoardFen] = useState(renderableSetup(initialFen) ? initialFen : EMPTY_SETUP_FEN);
   const [moves, setMoves] = useState(initialMoves);
   const [cursor, setCursor] = useState(0);
+  const [workingCursor, setWorkingCursor] = useState(0);
   const [tab, setTab] = useState<"position" | "solution">("position");
   const [piece, setPiece] = useState<string | null>(confirmReset ? null : "B");
   const [promotion, setPromotion] = useState("q");
@@ -49,6 +50,7 @@ export function usePositionSolutionEditor(initialFen: string, initialMoves: SanM
     setFenText(fen);
     if (renderableSetup(fen)) setBoardFen(fen);
     setCursor(0);
+    setWorkingCursor(0);
   }, []);
   function applyStartingFen(fen: string) {
     setStartingFen(fen);
@@ -71,6 +73,7 @@ export function usePositionSolutionEditor(initialFen: string, initialMoves: SanM
       const move = board.move({ from, to, promotion });
       setMoves([...moves.slice(0, cursor), asSanMove(move.san)]);
       setCursor(cursor + 1);
+      setWorkingCursor(cursor + 1);
       setError("");
     } catch { setError("That move is not legal from this position."); }
   }
@@ -99,12 +102,13 @@ export function usePositionSolutionEditor(initialFen: string, initialMoves: SanM
     }
     setMoves([...moves.slice(0, cursor), ...enteredMoves]);
     setCursor(cursor + enteredMoves.length);
+    setWorkingCursor(cursor + enteredMoves.length);
     setError("");
     return true;
   }
   return {
     startingFen, boardFen, setStartingFen, changeStartingFen, positionError,
-    moves, setMoves, cursor, setCursor, tab, setTab, piece, setPiece,
+    moves, setMoves, cursor, setCursor, workingCursor, tab, setTab, piece, setPiece,
     promotion, setPromotion, error, setError, previewFen, pendingFen,
     confirmStartingChange() { if (pendingFen !== null) applyStartingFen(pendingFen); setPendingFen(null); },
     cancelStartingChange() { setPendingFen(null); },

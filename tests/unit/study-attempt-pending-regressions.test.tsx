@@ -1,9 +1,33 @@
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
 import StudyExerciseRunner from "../../app/views/study_exercise_runner";
+import { useBoardShellStore } from "../../app/state/board-shell-store";
 
 afterEach(() => vi.unstubAllGlobals());
+
+it("study shortcuts preserve submitted moves and hints without revealing or submitting an unanswered line", async () => {
+  const fetcher = vi.fn(async () => Response.json({ id: "exercise", revision: 1, type: "move_line",
+    prompt: "Find the continuation", hint: "Develop a piece", fen: new Chess().fen() }));
+  vi.stubGlobal("fetch", fetcher);
+  const advance = vi.fn(async () => undefined);
+  render(<StudyExerciseRunner studyId="study" exerciseId="exercise" boardTheme="brown" pieceSet="cburnett" useSharedBoard onAdvance={advance} />);
+  await screen.findByText("Find the continuation");
+  const original = useBoardShellStore.getState().board;
+  act(() => original.keyboard?.end?.());
+  expect(useBoardShellStore.getState().board.fen).toBe(new Chess().fen());
+  expect(useBoardShellStore.getState().board.keyboard?.nextItem).toBeUndefined();
+  act(() => useBoardShellStore.getState().board.onMove?.("e2", "e4"));
+  const played = new Chess(); played.move("e4");
+  act(() => useBoardShellStore.getState().board.keyboard?.hint?.());
+  expect(screen.getByText("Develop a piece")).toBeTruthy();
+  act(() => useBoardShellStore.getState().board.keyboard?.start?.());
+  expect(useBoardShellStore.getState().board.interactionMode).toBe("readonly");
+  act(() => useBoardShellStore.getState().board.keyboard?.reset?.());
+  expect(useBoardShellStore.getState().board.fen).toBe(played.fen());
+  expect(screen.getByText("Develop a piece")).toBeTruthy();
+  expect(fetcher).toHaveBeenCalledOnce(); expect(advance).not.toHaveBeenCalled();
+});
 
 it("Study attempt and self-assessment retry pending Celery operations with the same IDs", async () => {
   const attemptWrites: Array<{ id: string; key: string }> = [];

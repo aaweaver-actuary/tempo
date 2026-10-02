@@ -16,11 +16,10 @@ vi.mock("../../app/lib/background-fetch", () => ({
       ? fetch(input, init)
       : backgroundFetch(input, init),
 }));
-vi.mock("../../app/components/board/chessboard", () => ({
-  Chessboard: ({ fen, shapes, lastMove }: { fen: string; shapes: unknown[]; lastMove?: readonly string[] }) =>
-    <div data-testid="discovery-board" data-fen={fen} data-shapes={JSON.stringify(shapes)}
-      data-last-move={JSON.stringify(lastMove)} />,
-}));
+vi.mock("../../app/components/board/chessboard", async () => {
+  const { KeyboardTestBoard } = await import("./keyboard-board-fixture");
+  return { Chessboard: (props: React.ComponentProps<typeof KeyboardTestBoard>) => <KeyboardTestBoard {...props} testId="discovery-board" /> };
+});
 vi.mock("../../app/lib/engine-broker", () => ({ requestInteractiveAnalysis: async () => [] }));
 vi.mock("../../app/lib/lichess-explorer", () => ({ loadExplorer: () => new Promise(() => {}) }));
 

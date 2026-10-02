@@ -70,6 +70,9 @@ for (const candidate of [
     await expect(page.locator(".guided-game-review")).toContainText("Play it on the board.");
     await expect(board).toHaveAttribute("data-input-enabled", "true");
     await expect.poll(() => renderedPieces(page)).toEqual(expectedPieces(findingFen));
+    await page.keyboard.press("ArrowRight"); await page.keyboard.press("End");
+    await expect.poll(() => renderedPieces(page)).toEqual(expectedPieces(findingFen));
+    expect(submissions).toEqual([]);
     try {
       await clickSquare(page, candidate.move.slice(0, 2) as Square);
       await clickSquare(page, candidate.move.slice(2, 4) as Square);
@@ -83,6 +86,11 @@ for (const candidate of [
     }
     await expect(page.locator(".guided-game-review")).toContainText(candidate.feedback);
     await expect(board).toHaveAttribute("data-input-enabled", "false");
+    await expect.poll(() => renderedPieces(page)).toEqual(expectedPieces(findingFen));
+    await page.keyboard.press("End");
+    const revealedEnd = new Chess(findingFen); revealedEnd.move("e4"); revealedEnd.move("e5");
+    await expect.poll(() => renderedPieces(page)).toEqual(expectedPieces(revealedEnd.fen()));
+    await page.keyboard.press("r");
     await expect.poll(() => renderedPieces(page)).toEqual(expectedPieces(findingFen));
     expect(submissions).toEqual([{ move_uci: candidate.move }]);
   });

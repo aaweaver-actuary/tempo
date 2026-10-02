@@ -1,4 +1,5 @@
 "use client";
+import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history";
 import { SelectInput } from "../components/inputs/SelectInput";
 import { TextInput } from "../components/inputs/TextInput";
 import { Button } from "../components/buttons/BaseButton";
@@ -262,14 +263,26 @@ export default function DefenseTrainingView({
       }), [recognitionDone, showingPreview, shownFeedback, selectedSquares]);
   const locked = blocked || !exercise || busy || Boolean(pending) || recognitionStage
     || (recognitionDone && !defenseReady) || grade?.status === "correct" || grade?.status === "incorrect";
+  const definitive = grade?.status === "correct" || grade?.status === "incorrect";
   const defensePositionKey = `${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${card.revision ?? 1}`;
+  const visiblePositions = useMemo(() => {
+    const revealedLine = definitive ? grade?.feedback?.refutation_uci ?? [] : recognitionResult?.feedback?.refutation_uci.slice(0, 4) ?? [];
+    return revealedLine.length ? positionsFromMoves(card.startingFen, revealedLine) : [boardFen];
+  }, [card.startingFen, grade, recognitionResult, definitive, boardFen]);
+  const boardHistory = useBoardHistory(defensePositionKey, visiblePositions, boardFen);
+  const keyboard = { ...boardHistory.keyboard,
+    hint: recognitionStage && !recognitionDone && !hintRevealed && !blocked && !boardHistory.viewingHistory ? () => setHintRevealed(true) : undefined,
+    nextItem: !busy && !blocked && recognitionDone && !definitive && !defenseReady ? () => setDefenseReady(true)
+      : definitive && !busy && !blocked ? () => { void onAdvance().catch(() => setSaveError("Result saved, but the next card could not load. Retry Continue.")); } : undefined,
+  };
   useBoardPublisher("train", useSharedBoard ? {
+    keyboard,
     positionKey: defensePositionKey,
     unavailable: loadError || undefined,
-    fen: boardFen,
+    fen: boardHistory.fen,
     expectedSan: undefined,
     lastMove: undefined,
-    interactionMode: blocked ? "readonly" : recognitionStage && !assessmentDone ? "free" : locked ? "readonly" : "legal",
+    interactionMode: blocked || boardHistory.viewingHistory ? "readonly" : recognitionStage && !assessmentDone ? "free" : locked ? "readonly" : "legal",
     showHint: false,
     theme: boardTheme,
     pieceSet,
@@ -283,11 +296,11 @@ export default function DefenseTrainingView({
     onFlip: undefined,
   } : null);
 
-  const definitive = grade?.status === "correct" || grade?.status === "incorrect";
+
   return (
     <section className={`training-grid${useSharedBoard ? " training-grid-shared" : ""}`} aria-label="Defensive decision exercise">
       <div className="board-column">
-        {!useSharedBoard && <Chessboard positionKey={defensePositionKey} fen={boardFen} locked={blocked || Boolean(locked && (!recognitionStage || assessmentDone))} showHint={false}
+        {!useSharedBoard && <Chessboard keyboard={keyboard} positionKey={defensePositionKey} fen={boardHistory.fen} locked={boardHistory.viewingHistory || blocked || Boolean(locked && (!recognitionStage || assessmentDone))} showHint={false}
           theme={boardTheme} pieceSet={pieceSet} orientation={card.orientation} onMove={onMove} shapes={recognitionShapes}
           editMode={recognitionStage && !assessmentDone} onSquareSelect={recognitionStage && !assessmentDone ? selectSquare : undefined}
           onFreeMove={recognitionStage && !assessmentDone ? (from, to) => { selectSquare(from); selectSquare(to); } : undefined} />}
