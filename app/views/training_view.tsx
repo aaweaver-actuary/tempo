@@ -64,6 +64,8 @@ interface TrainingViewProps {
   useSharedBoard?: boolean;
   onDefenseGraded?: () => Promise<void>;
   onBury?: () => Promise<void>;
+  burialPending?: boolean;
+  burialRecoveryError?: string;
 }
 
 function StandardTrainingView({
@@ -88,10 +90,10 @@ function StandardTrainingView({
   onMove,
   onOpenPosition = () => undefined,
   onBury = async () => undefined,
+  burialPending = false,
   useSharedBoard = false,
 }: TrainingViewProps) {
   const [burying, setBurying] = useState(false);
-  const [buryError, setBuryError] = useState("");
   const [prefixSplitPendingAction, setPrefixSplitPendingAction] = useState<"accept" | "reject" | null>(null);
   const [rejectedPrefixOfferKey, setRejectedPrefixOfferKey] = useState("");
   const [prefixSplitError, setPrefixSplitError] = useState<{ key: string; message: string }>();
@@ -140,6 +142,7 @@ function StandardTrainingView({
     }
   }, [card.id, card.queueEntryId, reviewPersistenceState, reviewSaveError]);
   const liveQueueBlocked = Boolean(serviceError && !offlineQueue);
+  const trainingMutationBlocked = liveQueueBlocked || reviewBlocked || burialPending;
   const isEndgame = card.kind === "endgame";
   const feedbackCopy = getFeedbackCopy(attemptFailed, card)[feedback];
   const playerName = trainedColor(card) === "white" ? "White" : "Black";
@@ -191,8 +194,7 @@ function StandardTrainingView({
     lastMove: boardHistory.viewingHistory ? undefined : lastMove,
     interactionMode:
       boardHistory.viewingHistory || isLocked ||
-      liveQueueBlocked ||
-      reviewBlocked ||
+      trainingMutationBlocked ||
       step >= card.moves.length ||
       cardsLeft === 0
         ? "readonly"
@@ -211,7 +213,7 @@ function StandardTrainingView({
   } : null);
 
   function handleAnalyzeOnLichessClick() {
-    if (!attemptFailed && !reviewBlocked && !liveQueueBlocked) void rateCard("again");
+    if (!attemptFailed && !trainingMutationBlocked) void rateCard("again");
   }
 
   return (
@@ -250,19 +252,6 @@ function StandardTrainingView({
           </Button>
         </div>
       )}
-      {buryError && (
-        <div role="alert">
-          {buryError}{" "}
-          <Button
-            onClick={() => {
-              setBuryError("");
-              void runBury();
-            }}
-          >
-            Retry bury
-          </Button>
-        </div>
-      )}
       {cardsLeft > 0 && isEndgame && (
         <EndgamesView
           key={card.queueEntryId}
@@ -272,6 +261,7 @@ function StandardTrainingView({
           pieceSet={pieceSet}
           onQueueChanged={() => void refreshDatabaseQueue()}
           onBury={onBury}
+          blocked={trainingMutationBlocked}
           useSharedBoard={useSharedBoard}
         />
       )}
@@ -292,8 +282,7 @@ function StandardTrainingView({
                 lastMove={boardHistory.viewingHistory ? undefined : lastMove}
                 locked={
                   boardHistory.viewingHistory || isLocked ||
-                  liveQueueBlocked ||
-                  reviewBlocked ||
+                  trainingMutationBlocked ||
                   step >= card.moves.length ||
                   cardsLeft === 0
                 }
@@ -316,9 +305,9 @@ function StandardTrainingView({
                 type="button"
                 disabled={
                   burying ||
-                  liveQueueBlocked ||
+                  isLocked ||
+                  trainingMutationBlocked ||
                   feedback === "complete" ||
-                  reviewBlocked ||
                   reviewPersistenceState === "saving" ||
                   reviewPersistenceState === "refreshingQueue"
                 }
@@ -331,11 +320,11 @@ function StandardTrainingView({
                 isAttemptFailed={attemptFailed}
                 isFeedbackComplete={feedback === "complete"}
                 hasNoCardsLeft={cardsLeft === 0}
-                isReviewBlocked={reviewBlocked || liveQueueBlocked}
+                isReviewBlocked={trainingMutationBlocked}
               />
               <RestartButton
                 handleRestart={resetCardAttempt}
-                disabled={reviewBlocked || liveQueueBlocked}
+                disabled={trainingMutationBlocked}
               />
               <AnalyzeOnLichessButton
                 moves={card.moves.slice(0, step)}
@@ -343,6 +332,7 @@ function StandardTrainingView({
                 onClick={handleAnalyzeOnLichessClick}
               />
               <EditCardButton
+                disabled={burialPending}
                 card={card}
                 setEditorCard={(value) => setEditorCard(value)}
               />
@@ -418,8 +408,8 @@ function StandardTrainingView({
                 <div className="shorten-suggestion" aria-label="Shorten prefix suggestion">
                   <strong>This prefix may be carrying too much at once. Shorten it by one of your moves?</strong>
                   <div className="shorten-suggestion-actions">
-                    <Button disabled={prefixSplitPendingAction !== null || reviewBlocked} onClick={() => void decidePrefixSplit("reject")}>Reject</Button>
-                    <Button variant="primary" disabled={prefixSplitPendingAction !== null || reviewBlocked} onClick={() => void decidePrefixSplit("accept")}>
+                    <Button disabled={prefixSplitPendingAction !== null || trainingMutationBlocked} onClick={() => void decidePrefixSplit("reject")}>Reject</Button>
+                    <Button variant="primary" disabled={prefixSplitPendingAction !== null || trainingMutationBlocked} onClick={() => void decidePrefixSplit("accept")}>
                       {prefixSplitPendingAction === "accept" ? "Saving…" : "Accept"}
                     </Button>
                   </div>
@@ -429,7 +419,7 @@ function StandardTrainingView({
               )}
             <div className="ratings binary">
               <Button
-                disabled={isLocked || reviewBlocked || liveQueueBlocked}
+                disabled={isLocked || trainingMutationBlocked}
                 onClick={handleAttemptFailure}
               >
                 <strong>Again</strong>
@@ -437,7 +427,7 @@ function StandardTrainingView({
               <Button
                 variant="primary"
                 className="primary"
-                disabled={attemptFailed || isLocked || reviewBlocked || liveQueueBlocked}
+                disabled={attemptFailed || isLocked || trainingMutationBlocked}
                 onClick={() => void rateCard("correct")}
               >
                 <strong>
@@ -464,18 +454,9 @@ function StandardTrainingView({
   );
 
   async function runBury() {
-    if (burying) return;
+    if (burying || burialPending) return;
     setBurying(true);
-    setBuryError("");
-    try {
-      await onBury();
-    } catch (error) {
-      setBuryError(
-        `Could not bury this card. ${error instanceof Error ? error.message : "Retry the action."}`,
-      );
-    } finally {
-      setBurying(false);
-    }
+    try { await onBury(); } finally { setBurying(false); }
   }
 
   async function decidePrefixSplit(action: "accept" | "reject") {
@@ -502,24 +483,43 @@ function StandardTrainingView({
 }
 
 export default function TrainingView(props: TrainingViewProps) {
+  const [buryError, setBuryError] = useState("");
+  const [burying, setBurying] = useState(false);
+  async function runBury() {
+    if (burying) return;
+    setBurying(true);
+    setBuryError("");
+    try { await props.onBury?.(); }
+    catch (error) {
+      setBuryError(`Could not bury this card. ${error instanceof Error ? error.message : "Retry the action."}`);
+    } finally { setBurying(false); }
+  }
+  return <>
+    {(buryError || props.burialRecoveryError || props.burialPending) && <div role="alert">{buryError || props.burialRecoveryError || "Burial is unresolved. Retry to check its result."} {props.burialPending && <Button disabled={burying} onClick={() => void runBury()}>Retry bury</Button>}</div>}
+    <TrainingContent {...props} onBury={runBury} burialPending={props.burialPending || burying} />
+  </>;
+}
+
+function TrainingContent(props: TrainingViewProps) {
   const liveQueueBlocked = Boolean(props.serviceError && !props.offlineQueue);
+  const mutationBlocked = liveQueueBlocked || Boolean(props.burialPending);
   if (props.card.kind === "study" && props.card.studyId && props.card.studyExerciseId) {
-    return <>{liveQueueBlocked && <div role="alert">{props.serviceError} <RetryButton onRetry={() => props.refreshDatabaseQueue()} /></div>}<div inert={liveQueueBlocked}><StudyExerciseRunner
+    return <>{liveQueueBlocked && <div role="alert">{props.serviceError} <RetryButton onRetry={() => props.refreshDatabaseQueue()} /></div>}<div inert={mutationBlocked}><StudyExerciseRunner
       key={`${props.card.queueEntryId ?? props.card.id}:${props.card.revision ?? 1}`}
       studyId={props.card.studyId} exerciseId={props.card.studyExerciseId}
       card={props.card} boardTheme={props.boardTheme} pieceSet={props.pieceSet}
-      useSharedBoard={props.useSharedBoard ?? false} blocked={liveQueueBlocked}
+      useSharedBoard={props.useSharedBoard ?? false} blocked={mutationBlocked}
       onAdvance={async () => { props.refreshDatabaseQueue(); }} /></div></>;
   }
   if (props.card.kind === "defense") {
     return (
-      <>{liveQueueBlocked && <div role="alert">{props.serviceError} <RetryButton onRetry={() => props.refreshDatabaseQueue()} /></div>}<div inert={liveQueueBlocked}><DefenseTrainingView
+      <>{liveQueueBlocked && <div role="alert">{props.serviceError} <RetryButton onRetry={() => props.refreshDatabaseQueue()} /></div>}<div inert={mutationBlocked}><DefenseTrainingView
         key={`${props.card.queueEntryId ?? props.card.id}:${props.card.revision ?? 1}`}
         card={props.card}
         boardTheme={props.boardTheme}
         pieceSet={props.pieceSet}
         useSharedBoard={props.useSharedBoard ?? false}
-        blocked={liveQueueBlocked}
+        blocked={mutationBlocked}
         onAdvance={
           props.onDefenseGraded ??
           (async () => {

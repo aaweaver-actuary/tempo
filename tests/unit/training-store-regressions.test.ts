@@ -10,14 +10,12 @@ import {
 } from "../../app/types";
 
 describe("training store", () => {
-  it("bury advances the active card while retaining it later without changing queue size", () => {
-    const queue = [4, 8, 12, 16];
-    const buriedQueue = buryQueuedCard(queue, 4, 0);
-    expect(buriedQueue).toEqual([8, 4, 12, 16]);
-    expect(buriedQueue).toHaveLength(queue.length);
-    expect([...buriedQueue].sort()).toEqual([...queue].sort());
-    expect(queue).toEqual([4, 8, 12, 16]);
-    expect(buryQueuedCard([4], 4, 0)).toEqual([4]);
+  it("bury removes every occurrence of the active card and allows burying the last card", () => {
+    const queue = [4, 8, 4, 12, 16];
+    expect(buryQueuedCard(queue, 4)).toEqual([8, 12, 16]);
+    expect(queue).toEqual([4, 8, 4, 12, 16]);
+    expect(buryQueuedCard([4], 4)).toEqual([]);
+    expect(buryQueuedCard(queue, 99)).toBe(queue);
   });
 
   it("resets the current card to the correct opening start state", () => {

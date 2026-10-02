@@ -53,6 +53,8 @@ import { IndexedPosition } from "../lib/position-similarity";
 import { usesLocalApi, localDayKey } from "../utils/local";
 import { trainedColor } from "../utils/cards";
 import { buryQueuedCard } from "../domain/training-session";
+import { rememberBrowserTrainingBurial, restoreBrowserTrainingBurials } from "../lib/browser-training-burials";
+import { buryTrainingEntry, finishTrainingBurial, hasPendingTrainingBurial, pendingTrainingBurialEntry, recoverTrainingBurial } from "../lib/training-bury-command";
 import BuilderView from "./analysis_view";
 import ComparisonView from "./comparison_view";
 import type { ComparisonBoard, ComparisonLaunch } from "../lib/comparison";
@@ -274,6 +276,12 @@ export default function Home() {
     }
   }, [serviceError]);
   const reviewPendingEntries = useRef(new Set<string>());
+  const [pendingBurialEntryState, setPendingBurialEntryId] = useState<number | undefined>(() => usesLocalApi() ? pendingTrainingBurialEntry() : undefined);
+  const pendingBurialEntryId = pendingBurialEntryState ?? (databaseQueue && !offlineQueue
+    ? pendingTrainingBurialEntry(practiceCards.flatMap(card => card.queueEntryId ? [card.queueEntryId] : []))
+    : undefined);
+  const [burialRecoveryError, setBurialRecoveryError] = useState("");
+  const burialRecoveryStarted = useRef(false);
   const reviewTransitionGeneration = useRef(0);
   const pendingOpponentReply = useRef<{
     timer: ReturnType<typeof setTimeout> | undefined;
@@ -340,6 +348,24 @@ export default function Home() {
     },
     [checkPendingIntegrity],
   );
+  useEffect(() => {
+    if (!databaseQueue || offlineQueue || burialRecoveryStarted.current) return;
+    burialRecoveryStarted.current = true;
+    const entryId = pendingBurialEntryId;
+    if (entryId === undefined) return;
+    void (async () => {
+      try {
+        await recoverTrainingBurial(entryId);
+        await refreshDatabaseQueue(true);
+        finishTrainingBurial(entryId);
+        setPendingBurialEntryId(undefined);
+      } catch (error) {
+        if (!hasPendingTrainingBurial(entryId)) setPendingBurialEntryId(undefined);
+        setBurialRecoveryError(error instanceof Error ? error.message : "Could not resolve burial. Retry to check its result.");
+      }
+    })();
+  }, [databaseQueue, offlineQueue, pendingBurialEntryId, practiceCards, refreshDatabaseQueue]);
+
   const refreshQueueOnly = useCallback(async () => {
     invalidateWorkspaceData();
     await fetchAndInitializeQueue(false);
@@ -541,12 +567,15 @@ export default function Home() {
       ];
       const loadedCards = [...demoCards, ...savedCards];
       setPracticeCards(loadedCards);
-      const storedQueue = JSON.parse(
+      const savedQueue = JSON.parse(
         localStorage.getItem("tempo-daily-queue") ??
           JSON.stringify(
             Array.from({ length: 12 }, (_, index) => index % demoCards.length),
           ),
       ) as number[];
+      const storedQueue = restoreBrowserTrainingBurials(savedQueue, loadedCards);
+      localStorage.setItem("tempo-daily-queue", JSON.stringify(storedQueue));
+      localStorage.setItem("tempo-cards-left", String(storedQueue.length));
       setDailyQueue(storedQueue);
       setCardsLeft(storedQueue.length);
       setActiveCardIndex(storedQueue[0] ?? 0);
@@ -602,7 +631,7 @@ export default function Home() {
     const addedIndexes = additions.map((item) =>
       cards.findIndex((cardItem) => cardItem.id === item.id),
     );
-    const queue = [...dailyQueue, ...addedIndexes];
+    const queue = restoreBrowserTrainingBurials([...dailyQueue, ...addedIndexes], cards);
     setDailyQueue(queue);
     setCardsLeft(queue.length);
     localStorage.setItem("tempo-daily-queue", JSON.stringify(queue));
@@ -690,32 +719,31 @@ export default function Home() {
   }
 
   async function buryCurrentCard() {
-    if (serviceError && !offlineQueue) throw new Error("Refresh the live queue before burying this card.");
+    setBurialRecoveryError("");
+    if (serviceError && !offlineQueue && pendingBurialEntryId === undefined)
+      throw new Error("Refresh the live queue before burying this card.");
     if (offlineQueue) throw new Error("Burying needs the computer. Continue reviewing or reconnect.");
     if (databaseQueue) {
-      if (!card.queueEntryId)
-        throw new Error(
-          "The active queue entry is unavailable. Refresh the queue.",
-        );
-      const response = await fetch(
-        `${API_URL}/api/queue/entries/${card.queueEntryId}/bury`,
-        { method: "POST" },
-      );
-      if (!response.ok) {
-        const detail = (await response.json().catch(() => ({}))) as {
-          detail?: string;
-        };
-        throw new Error(
-          detail.detail ?? `Local service returned HTTP ${response.status}.`,
-        );
+      const queueEntryId = pendingBurialEntryId ?? card.queueEntryId;
+      if (!queueEntryId)
+        throw new Error("The active queue entry is unavailable. Refresh the queue.");
+      setPendingBurialEntryId(queueEntryId);
+      try {
+        await buryTrainingEntry(queueEntryId, pendingBurialEntryId !== undefined);
+        await refreshDatabaseQueue(true);
+        finishTrainingBurial(queueEntryId);
+        setPendingBurialEntryId(undefined);
+      } catch (error) {
+        if (!hasPendingTrainingBurial(queueEntryId)) setPendingBurialEntryId(undefined);
+        throw error;
       }
-      await refreshDatabaseQueue(true);
       setSafeBreakCounter((count) => count + 1);
       return;
     }
     const remainingQueue = buryQueuedCard(dailyQueue, activeCardIndex);
     if (remainingQueue === dailyQueue)
-      throw new Error("There are no other cards to move this card behind.");
+      throw new Error("The active card is no longer in today’s queue. Refresh training.");
+    rememberBrowserTrainingBurial(card.id);
     setDailyQueue(remainingQueue);
     setActiveCardIndex(remainingQueue[0] ?? 0);
     setCardsLeft(remainingQueue.length);
@@ -726,7 +754,7 @@ export default function Home() {
   }
 
   const tryMove = useCommittedCallback((from: Square, to: Square) => {
-    if (serviceError && !offlineQueue) return;
+    if (pendingBurialEntryId !== undefined || (serviceError && !offlineQueue)) return;
     const currentTurn =
       new Chess(currentFenString).turn() === "b" ? "black" : "white";
     if (
@@ -885,7 +913,7 @@ export default function Home() {
     outcome: "again" | "correct",
     options: { recordedAtCompletion?: boolean; retryPending?: boolean } = {},
   ) {
-    if (serviceError && !offlineQueue) return;
+    if (pendingBurialEntryId !== undefined || (serviceError && !offlineQueue)) return;
     const entryKey = String(card.queueEntryId ?? card.id);
     if (reviewPendingEntries.current.has(entryKey) || cardsLeft === 0) return;
     const pendingBeforeReview = databaseQueue && !offlineQueue ? pendingReviews() : [];
@@ -1249,7 +1277,7 @@ export default function Home() {
   ].includes(currentView);
 
   function handleAttemptFailure() {
-    if (serviceError && !offlineQueue) return;
+    if (pendingBurialEntryId !== undefined || (serviceError && !offlineQueue)) return;
     if (!attemptFailed) {
       setAttemptFailed(true);
       setQueueNotice("Again recorded · finish with guidance");
@@ -1261,7 +1289,7 @@ export default function Home() {
   }
 
   function resetCardAttempt() {
-    if (serviceError && !offlineQueue) return;
+    if (pendingBurialEntryId !== undefined || (serviceError && !offlineQueue)) return;
     resetLine();
     setAttemptFailed(true);
     setFeedback("wrong");
@@ -1505,6 +1533,8 @@ export default function Home() {
               pieceSet={pieceSet}
               rateCard={rateCard}
               onBury={buryCurrentCard}
+              burialPending={pendingBurialEntryId !== undefined}
+              burialRecoveryError={burialRecoveryError}
               onDefenseGraded={async () => {
                 await refreshDatabaseQueue(true);
                 setReviewed((count) => count + 1);

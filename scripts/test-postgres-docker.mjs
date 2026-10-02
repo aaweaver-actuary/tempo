@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createServer } from "node:net";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createIsolatedTestEnvironment } from "./test-environment.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
@@ -401,11 +401,30 @@ async function verifyForegroundAndStudyDurability() {
   const reinforcement = reinforcementQueue.cards.find((card) => card.id === reviewCard.id);
   assert.equal(reinforcement?.attempt_state, "reinforcement");
 
+  const beforeBuryQueue = await get("queue/today");
+  const buriedCard = beforeBuryQueue.cards[0];
+  assert(buriedCard, "Durability fixture includes an active card to bury");
+  const beforeBuryState = stableStudyState(await get("migration/snapshot"), buriedCard.repertoire_id);
+  const buryOperationId = `pg-study-bury-${randomBytes(12).toString("hex")}`;
+  const burial = await postCommand(`queue/entries/${buriedCard.queue_entry_id}/bury`, {}, {
+    operationId: buryOperationId, label: "foreground POST bury until tomorrow",
+  });
+  assert.deepEqual(burial, { buried: true, queue_entry_id: buriedCard.queue_entry_id });
+  const afterBuryQueue = await get("queue/today");
+  assert.deepEqual(afterBuryQueue.cards.map(card => card.queue_entry_id),
+    beforeBuryQueue.cards.filter(card => card.id !== buriedCard.id).map(card => card.queue_entry_id),
+    "Bury excludes all active occurrences and preserves other cards' order");
+
   const studySnapshot = await get("migration/snapshot");
   assert.equal(studySnapshot.source, "tempo-postgres");
   assert(studySnapshot.counts.reviews > 0 && studySnapshot.counts.teaching_states > 0
     && studySnapshot.counts.position_annotations > 0 && studySnapshot.counts.prefix_splits > 0);
   const beforeRestartState = stableStudyState(studySnapshot, importedStudy.repertoire_id);
+  const afterBuryState = stableStudyState(studySnapshot, buriedCard.repertoire_id);
+  assert.deepEqual(afterBuryState.cards, beforeBuryState.cards, "Bury leaves scheduling unchanged");
+  assert.deepEqual(afterBuryState.reviews, beforeBuryState.reviews, "Bury records no review");
+  const savedBuriedEntry = studySnapshot.tables.daily_queue.find(row => row.id === buriedCard.queue_entry_id);
+  assert.equal(savedBuriedEntry?.status, "buried");
   assert(beforeRestartState.reviews.some((row) => row.card_id === reviewCard.id));
   assert(beforeRestartState.queue.some((row) => row.card_id === guidedCard.id
     && (row.attempt_failed === 1 || row.attempt_state === "failed" || row.attempt_state === "guided")));
@@ -427,8 +446,100 @@ async function verifyForegroundAndStudyDurability() {
   const afterReplaySnapshot = await get("migration/snapshot");
   assert.equal(stableStudyState(afterReplaySnapshot, importedStudy.repertoire_id).reviews.length,
     savedReviewCount, "Confirmed review replay does not create a duplicate business effect");
+  assert.deepEqual(afterRestartSnapshot.tables.daily_queue.find(row => row.id === buriedCard.queue_entry_id),
+    savedBuriedEntry, "Buried queue entry survives service recreation");
+  const afterRestartQueue = await get("queue/today");
+  assert(!afterRestartQueue.cards.some(card => card.id === buriedCard.id), "Buried card stays absent after service recreation and refresh");
+  const replayedBurial = await postCommand(`queue/entries/${buriedCard.queue_entry_id}/bury`, {}, {
+    operationId: buryOperationId, label: "foreground replay confirmed bury after recreation",
+  });
+  assert.deepEqual(replayedBurial, burial, "Confirmed burial replays its original receipt");
+  assert.deepEqual((await get("queue/today")).cards.map(card => card.queue_entry_id),
+    afterRestartQueue.cards.map(card => card.queue_entry_id), "Burial replay cannot bury the next card");
+  console.log("PASS PostgreSQL bury until tomorrow survives recreation and idempotent replay without grading");
   console.log("PASS PostgreSQL study state, queue order, guided failure, and command identity survive service recreation");
   activeStudyRepertoireId = null;
+}
+
+async function verifyStudyBurialRetainsQuota() {
+  const settingsBeforeFixture = await get("settings");
+  // stdin keeps this test fixture outside the product image. It runs only
+  // against the unique disposable compose project created by this runner.
+  const regression = spawnSync("docker", [...compose, "exec", "-T", "foreground-worker", "python", "-"], {
+    input: readFileSync("tests/fixtures/postgres-study-burial-quota.py", "utf8"), encoding: "utf8", env: environment,
+  });
+  assert.equal(regression.status, 0, regression.stderr);
+  const { unrelated_order: unrelatedOrder, queue_date: queueDate } = JSON.parse(regression.stdout.trim());
+  const beforeRefresh = await get("queue/today");
+  await postCommand("settings", { ...settingsBeforeFixture, study_new_per_day: 1 }, { method: "PUT" });
+  let refreshedQueue;
+  const deadline = performance.now() + 60_000;
+  while (performance.now() < deadline) {
+    const queue = await get("queue/today");
+    assert.notEqual(queue.projection?.state, "failed", queue.projection?.last_error);
+    if (queue.projection?.state === "ready" && !queue.projection.refresh_pending &&
+        queue.projection.generation > beforeRefresh.projection.generation) {
+      refreshedQueue = queue;
+      break;
+    }
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  assert(refreshedQueue, "Study burial quota refresh publishes a new generation before its deadline");
+  assert.deepEqual(refreshedQueue.cards.map(card => card.queue_entry_id), unrelatedOrder,
+    "Refreshing after Study burial neither admits a replacement nor reorders unrelated cards");
+  const recorded = readScopedPostgresRows(`SELECT COALESCE(json_agg(row_to_json(q)),'[]'::json)
+    FROM (SELECT card_id,status FROM daily_queue WHERE queue_date='${queueDate}'
+      AND card_id IN ('pg-bury-quota-a','pg-bury-quota-b')) q`);
+  assert.deepEqual(recorded, [{ card_id: "pg-bury-quota-a", status: "buried" }]);
+  await postCommand("settings", settingsBeforeFixture, { method: "PUT" });
+  console.log("PASS PostgreSQL buried Study admission retains quota through materialization and locked candidate replay");
+}
+
+async function verifyBlockedBurialRecovery() {
+  // The previous quota fixture restores settings asynchronously. Wait for its
+  // queue publication before selecting the original payload and order snapshot.
+  let before;
+  const deadline = performance.now() + 60_000;
+  while (performance.now() < deadline) {
+    const queue = await get("queue/today");
+    assert.notEqual(queue.projection?.state, "failed", queue.projection?.last_error);
+    if (queue.projection?.state === "ready" && !queue.projection.refresh_pending) {
+      before = queue;
+      break;
+    }
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  assert(before, "Queue settings restoration settles before blocked burial recovery");
+  const selected = before.cards[0];
+  assert(selected, "Blocked burial fixture has an authoritative active entry");
+  const originalState = stableStudyState(await get("migration/snapshot"), selected.repertoire_id);
+  const operationId = "pg-study-blocked-bury";
+  const prepared = spawnSync("docker", [...compose, "exec", "-T", "foreground-worker", "python", "-",
+    String(selected.queue_entry_id), operationId], {
+    input: readFileSync("tests/fixtures/postgres-blocked-burial.py", "utf8"), encoding: "utf8", env: environment,
+  });
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const replay = await apiRequest(`queue/entries/${selected.queue_entry_id}/bury`, {
+    method: "POST", headers: { "Idempotency-Key": operationId },
+  });
+  assert.equal(replay.status, 202);
+  assert.equal((await replay.json()).state, "blocked", "Ordinary command replay cannot resume a blocked receipt");
+  const result = await postCommand(`operations/${operationId}/retry`, {});
+  assert.deepEqual(result, { buried: true, queue_entry_id: selected.queue_entry_id });
+  const receipt = await get(`operations/${operationId}`);
+  assert.equal(receipt.state, "complete");
+  assert.equal(receipt.retry_cycle, 1);
+  assert.equal(receipt.attempt_count, 2);
+  const after = await get("queue/today");
+  assert.deepEqual(after.cards.map(card => card.queue_entry_id),
+    before.cards.filter(card => card.id !== selected.id).map(card => card.queue_entry_id));
+  const afterState = stableStudyState(await get("migration/snapshot"), selected.repertoire_id);
+  assert.deepEqual(afterState.cards, originalState.cards, "Blocked recovery leaves scheduling unchanged");
+  assert.deepEqual(afterState.reviews, originalState.reviews, "Blocked recovery creates no review");
+  assert.deepEqual(await postCommand(`queue/entries/${selected.queue_entry_id}/bury`, {}, { operationId }), result);
+  assert.deepEqual((await get("queue/today")).cards.map(card => card.queue_entry_id),
+    after.cards.map(card => card.queue_entry_id), "Recovered receipt replay never buries the next card");
+  console.log("PASS PostgreSQL blocked burial resumes original payload through retry endpoint without duplicate effects");
 }
 
 const actions = {
@@ -634,6 +745,8 @@ const actions = {
   },
   study_durability: async () => {
     await verifyForegroundAndStudyDurability();
+    await verifyStudyBurialRetainsQuota();
+    await verifyBlockedBurialRecovery();
   },
   cleanup: async () => executeDiagnosticCleanup(() => {
     if (process.env.TEMPO_CI_REPORT && resourcesCreated) {
