@@ -2,39 +2,271 @@ import { afterEach, expect, it, vi } from "vitest";
 import { savePgnImportCommand } from "../../app/lib/pgn-import-command";
 import { PendingOperationError } from "../../app/lib/operation-status";
 
-afterEach(() => {
-  localStorage.clear();
-  vi.unstubAllGlobals();
-});
+const pendingKey = "tempo-pending-pgn-import-v1";
+const importResult = {
+  repertoire_id: "rep", source_name: "opening.pgn", games_found: 1,
+  unique_lines: 1, cards_created: 1, duplicates_merged: 0,
+  cards_admitted_today: 0, integrity: { status: "unchecked", issue_count: 0, first_issue_id: null },
+  decision_cards_created: 1, shared_decisions_reused: 0,
+  prefix_cards_created: 0, shared_prefixes_reused: 0,
+  descendant_decision_cards_created: 1, graph_state: "refreshing",
+};
+const openingFile = () => new File(['[Event "Test"]\n\n1. e4 e5 *'], "opening.pgn");
 
-it("a pending PGN import reuses its operation ID and does not report a save", async () => {
-  const keys: string[] = [];
-  let receiptReads = 0;
-  const file = new File(["[Event \"Test\"]\n\n1. e4 e5 *"], "opening.pgn");
+afterEach(() => { localStorage.clear(); vi.unstubAllGlobals(); });
+
+// Receipt contract: complete/failed clear identity; blocked/active/ambiguous
+// retain it. Only an explicitly unknown, fingerprint-matched receipt replays.
+it("unknown PGN receipt replays the exact file and settings with its original operation ID", async () => {
+  const file = openingFile();
+  const createId = vi.spyOn(crypto, "randomUUID");
+  const submissions: RequestInit[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
-    if (String(input).includes("/api/operations/")) {
-      receiptReads += 1;
-      return Response.json(receiptReads < 3 ? { state: "pending" } : {
-        state: "complete", response: {
-          repertoire_id: "rep", source_name: "opening.pgn", games_found: 1,
-          unique_lines: 1, cards_created: 1, duplicates_merged: 0,
-          cards_admitted_today: 0, integrity: {
-            status: "unchecked", issue_count: 0, first_issue_id: null,
-          },
-          decision_cards_created: 1, shared_decisions_reused: 0,
-          prefix_cards_created: 0, shared_prefixes_reused: 0,
-          descendant_decision_cards_created: 1, graph_state: "refreshing",
-        },
-      });
+    if (String(input).includes("/api/operations/"))
+      return Response.json({ state: "unknown" });
+    submissions.push(init!);
+    if (submissions.length === 1) {
+      const operationId = (init!.headers as Record<string, string>)["Idempotency-Key"];
+      return Response.json({ operation_id: operationId, state: "unknown" }, { status: 202 });
     }
-    const key = String((init?.headers as Record<string, string>)["Idempotency-Key"]);
-    keys.push(key);
-    return Response.json({ operation_id: key, state: "pending" }, { status: 202 });
+    return Response.json(importResult);
   }));
   await expect(savePgnImportCommand(file, "white", 4)).rejects.toBeInstanceOf(PendingOperationError);
-  expect(localStorage.getItem("tempo-pending-pgn-import-v1")).not.toBeNull();
-  expect((await savePgnImportCommand(file, "white", 4)).repertoire_id).toBe("rep");
-  expect(keys).toHaveLength(2);
-  expect(keys[0]).toBe(keys[1]);
-  expect(localStorage.getItem("tempo-pending-pgn-import-v1")).toBeNull();
+  const pending = JSON.parse(localStorage.getItem(pendingKey)!);
+  await expect(savePgnImportCommand(file, "white", 4)).resolves.toEqual(importResult);
+  expect(createId).toHaveBeenCalledTimes(1);
+  expect(submissions).toHaveLength(2);
+  for (const request of submissions) {
+    expect(request.headers).toEqual({ "Idempotency-Key": pending.operationId });
+    const form = request.body as FormData;
+    expect(form.get("file")).toBe(file);
+    expect(form.get("trained_color")).toBe("white");
+    expect(form.get("initial_depth")).toBe("4");
+  }
+  expect(localStorage.getItem(pendingKey)).toBeNull();
+});
+
+async function rememberImport(file = openingFile(), trainedColor = "white", initialDepth = 4) {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  const fingerprint = [file.name, trainedColor, initialDepth,
+    Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("")].join(":");
+  localStorage.setItem(pendingKey, JSON.stringify({ operationId: "original-import", fingerprint }));
+  return file;
+}
+function receiptFetcher(receipt: unknown) {
+  const fetcher = vi.fn(async () => Response.json(receipt));
+  vi.stubGlobal("fetch", fetcher);
+  return fetcher;
+}
+
+it.each(["pending", "queued", "executing", "retrying"])("durably %s PGN import polls the same operation without a POST or new UUID", async (state) => {
+  const file = await rememberImport();
+  vi.useFakeTimers();
+  const createId = vi.spyOn(crypto, "randomUUID");
+  let reads = 0;
+  const fetcher = vi.fn(async () => Response.json(++reads === 1 ? { state } : { state: "complete", response: importResult }));
+  vi.stubGlobal("fetch", fetcher);
+  const saving = savePgnImportCommand(file, "white", 4);
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(1));
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(await saving).toEqual(importResult);
+  expect(createId).not.toHaveBeenCalled();
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  for (const [url, options] of fetcher.mock.calls as unknown as [string, RequestInit][])
+    expect([url.endsWith("/api/operations/original-import"), options.method]).toEqual([true, undefined]);
+  expect(localStorage.getItem(pendingKey)).toBeNull();
+});
+
+it("completed stored PGN import returns its validated receipt without POST and clears identity", async () => {
+  const file = await rememberImport();
+  const createId = vi.spyOn(crypto, "randomUUID");
+  const fetcher = receiptFetcher({ state: "complete", response: importResult });
+  expect(await savePgnImportCommand(file, "white", 4)).toEqual(importResult);
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(createId).not.toHaveBeenCalled();
+  expect(localStorage.getItem(pendingKey)).toBeNull();
+});
+
+it("failed stored PGN import clears identity and surfaces the backend failure without resending", async () => {
+  const file = await rememberImport();
+  const fetcher = receiptFetcher({ state: "failed", error: { message: "Source admission rejected" } });
+  await expect(savePgnImportCommand(file, "white", 4)).rejects.toThrow("Source admission rejected");
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(localStorage.getItem(pendingKey)).toBeNull();
+});
+
+it("blocked PGN import preserves identity and surfaces the actual diagnostic without automatic retry", async () => {
+  const file = await rememberImport();
+  const createId = vi.spyOn(crypto, "randomUUID");
+  const fetcher = receiptFetcher({ state: "blocked", last_error: { message: "Write connection unavailable" } });
+  await expect(savePgnImportCommand(file, "white", 4)).rejects.toMatchObject({ blocked: true, message: expect.stringContaining("Write connection unavailable") });
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(createId).not.toHaveBeenCalled();
+  expect(localStorage.getItem(pendingKey)).not.toBeNull();
+});
+
+it.each(["unknown", "queued", "executing", "retrying", "pending", "blocked"])("different PGN fingerprint cannot replace an unresolved %s import", async (state) => {
+  await rememberImport();
+  const stored = localStorage.getItem(pendingKey);
+  const createId = vi.spyOn(crypto, "randomUUID");
+  const fetcher = receiptFetcher({ state });
+  await expect(savePgnImportCommand(new File(["1. d4 *"], "other.pgn"), "black", 6)).rejects.toThrow("original file and settings");
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(createId).not.toHaveBeenCalled();
+  expect(localStorage.getItem(pendingKey)).toBe(stored);
+});
+
+it("terminal previous PGN import permits a different file after resolving its receipt", async () => {
+  await rememberImport();
+  const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ state: "complete", response: importResult }))
+    .mockResolvedValueOnce(Response.json({ ...importResult, source_name: "other.pgn" }));
+  vi.stubGlobal("fetch", fetcher);
+  expect((await savePgnImportCommand(new File(["1. d4 *"], "other.pgn"), "black", 6)).source_name).toBe("other.pgn");
+  expect(fetcher.mock.calls[1][1].headers["Idempotency-Key"]).not.toBe("original-import");
+  expect(localStorage.getItem(pendingKey)).toBeNull();
+});
+
+it("failed previous PGN import reports its failure before a different deliberate import can start", async () => {
+  await rememberImport();
+  const otherFile = new File(["1. d4 *"], "other.pgn");
+  const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ state: "failed", error: { message: "Previous source rejected" } }))
+    .mockResolvedValueOnce(Response.json({ ...importResult, source_name: "other.pgn" }));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(savePgnImportCommand(otherFile, "black", 6)).rejects.toThrow("Previous source rejected");
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(localStorage.getItem(pendingKey)).toBeNull();
+  expect((await savePgnImportCommand(otherFile, "black", 6)).source_name).toBe("other.pgn");
+  expect(fetcher.mock.calls[1][1].headers["Idempotency-Key"]).not.toBe("original-import");
+});
+
+it("lost PGN POST and unavailable status preserve identity for later same-ID replay", async () => {
+  const file = openingFile();
+  const fetcher = vi.fn().mockRejectedValueOnce(new Error("Lost delivery response"))
+    .mockRejectedValueOnce(new Error("Status offline"))
+    .mockResolvedValueOnce(Response.json({ state: "unknown" }))
+    .mockResolvedValueOnce(Response.json(importResult));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(savePgnImportCommand(file, "white", 4)).rejects.toThrow("confirmation is unavailable");
+  const original = JSON.parse(localStorage.getItem(pendingKey)!);
+  expect(await savePgnImportCommand(file, "white", 4)).toEqual(importResult);
+  expect(fetcher.mock.calls[3][1].headers["Idempotency-Key"]).toBe(original.operationId);
+});
+
+it.each(["transport", "http", "malformed", "unsupported"])("%s status failure preserves PGN identity without guessing unknown or resending", async (failure) => {
+  const file = await rememberImport();
+  const stored = localStorage.getItem(pendingKey);
+  const fetcher = vi.fn(async () => {
+    if (failure === "transport") throw new Error("Offline");
+    if (failure === "http") return Response.json({ detail: "Offline" }, { status: 503 });
+    if (failure === "malformed") return new Response("{");
+    return Response.json({ state: "new-unrecognised-state" });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  await expect(savePgnImportCommand(file, "white", 4)).rejects.toBeInstanceOf(PendingOperationError);
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(localStorage.getItem(pendingKey)).toBe(stored);
+});
+
+it("invalid complete PGN result retains recovery identity instead of claiming success", async () => {
+  const file = await rememberImport();
+  receiptFetcher({ state: "complete", response: {} });
+  await expect(savePgnImportCommand(file, "white", 4)).rejects.toThrow();
+  expect(localStorage.getItem(pendingKey)).not.toBeNull();
+});
+
+it("active PGN polling expires after thirty seconds and a later check uses the same operation", async () => {
+  const file = await rememberImport();
+  vi.useFakeTimers();
+  let complete = false;
+  const fetcher = vi.fn(async () => Response.json(complete ? { state: "complete", response: importResult } : { state: "executing" }));
+  vi.stubGlobal("fetch", fetcher);
+  const result = expect(savePgnImportCommand(file, "white", 4)).rejects.toThrow("still processing");
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+  await vi.advanceTimersByTimeAsync(30_000);
+  await result;
+  expect(localStorage.getItem(pendingKey)).not.toBeNull();
+  complete = true;
+  expect(await savePgnImportCommand(file, "white", 4)).toEqual(importResult);
+  expect((fetcher.mock.calls as unknown as [string][]).every(([url]) => url.endsWith("/api/operations/original-import"))).toBe(true);
+  await vi.advanceTimersByTimeAsync(0);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("hung PGN status transport respects the budget and late completion cannot erase identity", async () => {
+  const file = await rememberImport();
+  vi.useFakeTimers();
+  let release!: (response: Response) => void;
+  const fetcher = vi.fn(() => new Promise<Response>((resolve) => { release = resolve; }));
+  vi.stubGlobal("fetch", fetcher);
+  const result = expect(savePgnImportCommand(file, "white", 4)).rejects.toThrow("confirmation is unavailable");
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+  await vi.advanceTimersByTimeAsync(30_000);
+  await result;
+  release(Response.json({ state: "complete", response: importResult }));
+  await Promise.resolve(); await Promise.resolve();
+  expect(localStorage.getItem(pendingKey)).not.toBeNull();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it("cancelling PGN confirmation stops polling and preserves its pending identity", async () => {
+  const file = await rememberImport();
+  vi.useFakeTimers();
+  const fetcher = receiptFetcher({ state: "queued" });
+  const controller = new AbortController();
+  const result = expect(savePgnImportCommand(file, "white", 4, { signal: controller.signal })).rejects.toMatchObject({ name: "AbortError" });
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+  controller.abort();
+  await result;
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(localStorage.getItem(pendingKey)).not.toBeNull();
+  await vi.advanceTimersByTimeAsync(0);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it.each([false, true])("explicit blocked PGN retry keeps identity and waits beyond its acknowledgement (lost response: %s)", async (lostResponse) => {
+  const file = await rememberImport();
+  vi.useFakeTimers();
+  let reads = 0;
+  const fetcher = vi.fn(async (url: string, options?: RequestInit) => {
+    if (url.endsWith("/retry")) {
+      expect(options?.method).toBe("POST");
+      if (lostResponse) throw new Error("Lost retry acknowledgement");
+      return Response.json({ state: "blocked", operation_id: "original-import" }, { status: 202 });
+    }
+    return Response.json(++reads <= 2 ? { state: "blocked", last_error: { message: "Connection lost" } }
+      : reads === 3 ? { state: "executing" } : { state: "complete", response: importResult });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  const saving = savePgnImportCommand(file, "white", 4, { retryBlocked: true });
+  await vi.waitFor(() => expect(reads).toBe(2));
+  await vi.advanceTimersByTimeAsync(2000);
+  expect(await saving).toEqual(importResult);
+  expect(fetcher.mock.calls.filter(([url]) => url.endsWith("/retry"))).toHaveLength(1);
+  expect(fetcher.mock.calls.every(([url]) => url.includes("/api/operations/original-import"))).toBe(true);
+  expect(localStorage.getItem(pendingKey)).toBeNull();
+});
+
+it.each([400, 422])("pre-admission HTTP %s validation rejection clears PGN identity and surfaces backend detail", async (status) => {
+  const fetcher = vi.fn(async () => Response.json({ detail: "No playable lines were found" }, { status }));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(savePgnImportCommand(openingFile(), "white", 4)).rejects.toThrow("No playable lines were found");
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(localStorage.getItem(pendingKey)).toBeNull();
+});
+
+it("HTTP 500 PGN admission resolves its durable failed receipt before clearing identity", async () => {
+  const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ detail: "Save failed" }, { status: 500 }))
+    .mockResolvedValueOnce(Response.json({ state: "failed", error: { message: "Invalid source" } }));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(savePgnImportCommand(openingFile(), "white", 4)).rejects.toThrow("Invalid source");
+  expect(localStorage.getItem(pendingKey)).toBeNull();
+});
+
+it("normal immediate PGN success retains existing import result behavior", async () => {
+  const fetcher = receiptFetcher(importResult);
+  expect(await savePgnImportCommand(openingFile(), "white", 4)).toEqual(importResult);
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(localStorage.getItem(pendingKey)).toBeNull();
 });
