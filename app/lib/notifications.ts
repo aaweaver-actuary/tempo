@@ -7,6 +7,7 @@ export type NotificationRecord = {
   updatedAt: string;
   occurrenceCount?: number;
   resolvedAt: string | null;
+  clearedAt: string | null;
   active: boolean;
   severity: NotificationSeverity;
   source: string;
@@ -77,6 +78,15 @@ function safeDetails(details: NotificationInput["details"]): NotificationRecord[
   ]));
 }
 
+function notificationContentChanged(previous: NotificationRecord, next: NotificationRecord): boolean {
+  const meaningfulDetails = (details: NotificationRecord["details"]) => Object.entries(details ?? {})
+    .filter(([name]) => name !== "debugRecordId" && name !== "stack")
+    .sort(([firstName], [secondName]) => firstName.localeCompare(secondName));
+  return previous.message !== next.message || previous.severity !== next.severity ||
+    previous.source !== next.source ||
+    JSON.stringify(meaningfulDetails(previous.details)) !== JSON.stringify(meaningfulDetails(next.details));
+}
+
 function persist() {
   if (typeof localStorage === "undefined") return;
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(history)); } catch {
@@ -100,6 +110,8 @@ export function hydrateNotifications() {
           `notification-${opaqueKey(item.id)}`,
         key: typeof item.key === "string" ? safeKey(item.key) : undefined,
         source: sanitizeNotificationText(item.source),
+        clearedAt: typeof item.clearedAt === "string" && Number.isFinite(Date.parse(item.clearedAt))
+          ? new Date(item.clearedAt).toISOString() : null,
         active: false, occurrenceCount: item.occurrenceCount ?? 1,
         message: sanitizeNotificationText(item.message), details: safeDetails(item.details) }));
     history = [...history, ...restored.filter((item) => !history.some((current) => current.id === item.id))]
@@ -141,11 +153,14 @@ export function publishNotification(input: NotificationInput): string {
   const existing = key && history.find((record) => record.key === key && !record.resolvedAt);
   if (existing && existing.message === message && existing.severity === input.severity) {
     const observed = { ...existing, occurrenceCount: (existing.occurrenceCount ?? 1) + 1,
+      source: sanitizeNotificationText(input.source),
       updatedAt: new Date().toISOString(), details: safeDetails(input.details) ?? existing.details };
+    if (notificationContentChanged(existing, observed)) observed.clearedAt = null;
     history = [observed, ...history.filter((record) => record.id !== existing.id)]
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
     persist();
-    notifySubscribers();
+    if (existing.clearedAt && !observed.clearedAt) showToast(existing.id);
+    else notifySubscribers();
     return existing.id;
   }
   if (existing) {
@@ -161,6 +176,7 @@ export function publishNotification(input: NotificationInput): string {
     updatedAt: now,
     occurrenceCount: 1,
     resolvedAt: null,
+    clearedAt: null,
     active: input.active ?? false,
     severity: input.severity,
     source: sanitizeNotificationText(input.source),
@@ -186,10 +202,12 @@ export function updateNotification(id: string, changes: Partial<NotificationInpu
     details: changes.details === undefined ? existing.details : safeDetails(changes.details),
     updatedAt: now,
   };
+  if (notificationContentChanged(existing, updated)) updated.clearedAt = null;
   history = [updated, ...history.filter((record) => record.id !== id)]
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   persist();
-  showToast(id);
+  if (!updated.clearedAt || updated.active) showToast(id);
+  else notifySubscribers();
 }
 
 export function resolveNotification(id: string, changes: Partial<NotificationInput> = {}): void {
@@ -202,6 +220,37 @@ export function resolveNotification(id: string, changes: Partial<NotificationInp
 
 export function notificationsAtOrAbove(threshold: "info" | "warning" | "error") {
   return history.filter((record) => severityRank[record.severity] >= severityRank[threshold]);
+}
+
+export function notificationNeedsAttention(record: NotificationRecord): boolean {
+  return !record.clearedAt && !record.resolvedAt &&
+    (record.severity === "warning" || record.severity === "error");
+}
+
+function clearSelectedNotifications(notificationIds: ReadonlySet<string>) {
+  const clearedAt = new Date().toISOString();
+  let changed = false;
+  const clearedHistory = history.map((record) => {
+    if (!notificationIds.has(record.id) || record.clearedAt) return record;
+    changed = true;
+    return { ...record, clearedAt };
+  });
+  if (!changed) return;
+  history = clearedHistory;
+  visibleToastIds = visibleToastIds.filter((notificationId) => !notificationIds.has(notificationId) ||
+    history.some((record) => record.id === notificationId && record.active));
+  persist();
+  notifySubscribers();
+}
+
+export function clearNotification(notificationId: string): void {
+  hydrateNotifications();
+  clearSelectedNotifications(new Set([notificationId]));
+}
+
+export function clearAllNotifications(): void {
+  hydrateNotifications();
+  clearSelectedNotifications(new Set(history.map((record) => record.id)));
 }
 
 export function buildNotificationExport(threshold: "info" | "warning" | "error"): string {

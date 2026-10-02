@@ -133,6 +133,7 @@ from .services.database_executor import (
 )
 from .services.durable_tasks import enqueue_task, enqueue_task_in_transaction, list_tasks, retry_task
 from .services.background_activity import claimable, control_order, list_activity, report_progress, set_control
+from .services.background_metrics import BackgroundDiagnostics
 from .services.repertoire_conflicts import (
     find_repertoire_conflicts,
     trained_move_index,
@@ -813,6 +814,12 @@ def system_tasks():
         status["writer"] = {"healthy": database_writer.healthy,
                             **database_writer.queued_counts}
     return status
+
+
+@app.get("/api/system/background-diagnostics", response_model=BackgroundDiagnostics)
+def system_background_diagnostics() -> BackgroundDiagnostics:
+    from .services.background_diagnostics import snapshot
+    return snapshot()
 
 
 @app.get("/api/system/activity")
@@ -4748,7 +4755,7 @@ def submit_game_analysis_position(
         return dispatch_command(
             "games.analysis.position.report",
             {"report_id": report_id, "lease_id": request.lease_id,
-             "request_json": request_json, "report": request.report},
+             "request_json": request_json, "report": request.report, "diagnostics": request.diagnostics.model_dump() if request.diagnostics else None},
             idempotency_key=idempotency_key, background=True,
         )
     try:
@@ -4768,7 +4775,7 @@ def release_game_analysis_position(
         from .command_dispatch import dispatch_command
         return dispatch_command(
             "games.analysis.position.release",
-            {"report_id": report_id, "lease_id": request.lease_id},
+            {"report_id": report_id, "lease_id": request.lease_id, "diagnostics": request.diagnostics.model_dump() if request.diagnostics else None},
             idempotency_key=idempotency_key, background=True,
         )
     return {"status": release_position(report_id, request.lease_id)}
@@ -4785,7 +4792,7 @@ def fail_game_analysis_position(
         from .command_dispatch import dispatch_command
         return dispatch_command(
             "games.analysis.position.release",
-            {"report_id": report_id, "lease_id": request.lease_id, "error": request.error},
+            {"report_id": report_id, "lease_id": request.lease_id, "error": request.error, "diagnostics": request.diagnostics.model_dump() if request.diagnostics else None},
             idempotency_key=idempotency_key, background=True,
         )
     return {"status": release_position(report_id, request.lease_id, request.error)}
@@ -5299,7 +5306,7 @@ def submit_defensive_threat_analysis(
         return dispatch_command(
             "threat.analysis.report",
             {"request_id": request_id, "lease_id": request.lease_id,
-             "report": request.report},
+             "report": request.report, "diagnostics": request.diagnostics.model_dump() if request.diagnostics else None},
             idempotency_key=idempotency_key, background=True,
         )
     try:
@@ -5326,7 +5333,7 @@ def fail_defensive_threat_analysis(
         return dispatch_command(
             "threat.analysis.failure",
             {"request_id": request_id, "lease_id": request.lease_id,
-             "error": request.error},
+             "error": request.error, "diagnostics": request.diagnostics.model_dump() if request.diagnostics else None},
             idempotency_key=idempotency_key, background=True,
         )
     with connection(background=activity_gate.in_background) as database:
@@ -5357,7 +5364,7 @@ def release_defensive_threat_analysis(
 
         return dispatch_command(
             "threat.analysis.release",
-            {"request_id": request_id, "lease_id": request.lease_id},
+            {"request_id": request_id, "lease_id": request.lease_id, "diagnostics": request.diagnostics.model_dump() if request.diagnostics else None},
             idempotency_key=idempotency_key, background=True,
         )
     with connection(background=activity_gate.in_background) as database:

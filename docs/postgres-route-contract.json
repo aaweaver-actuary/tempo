@@ -225,6 +225,13 @@
   },
   {
     "method": "GET",
+    "path": "/api/system/background-diagnostics",
+    "handler": "system_background_diagnostics",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
     "path": "/api/system/foreground-active",
     "handler": "foreground_active",
     "treatment": "reader",

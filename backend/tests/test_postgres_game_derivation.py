@@ -160,6 +160,7 @@ def test_postgres_game_position_index_retains_final_legal_position_on_bad_move()
 
 
 def test_postgres_derivation_lock_conflicts_yield_without_failing_task(monkeypatch):
+    monkeypatch.setattr(tasks, "current_delivery", lambda _task: True)
     from contextlib import nullcontext
 
     claimed = {"kind": "game_derivation_positions", "id": "index-task",
@@ -167,7 +168,7 @@ def test_postgres_derivation_lock_conflicts_yield_without_failing_task(monkeypat
     deferred = []
     monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_args: nullcontext())
     monkeypatch.setattr(tasks, "defer_task_for_contention",
-                        lambda task_id, generation, lease_token:
+                        lambda task_id, generation, lease_token, *, kind:
                         deferred.append((task_id, generation, lease_token)))
     monkeypatch.setattr(tasks, "fail_task",
                         lambda *_arguments: (_ for _ in ()).throw(

@@ -23,6 +23,7 @@ from app import command_dispatch
 from app.command_gateway import CommandConflict, request_digest
 from app.postgres_store import TempoRow, postgres_sql
 from app.services import redis_admission_gate
+from app.services.background_metrics_schema import SCHEMA as BACKGROUND_METRIC_SCHEMA
 
 
 def test_postgres_game_exclusion_uses_foreground_receipt_and_atomic_followup(monkeypatch):
@@ -3096,6 +3097,7 @@ def test_postgres_queue_projection_and_task_completion_commit_together(monkeypat
 
     database_path = tmp_path / "queue-projection.db"
     with sqlite3.connect(database_path) as database:
+        database.executescript(BACKGROUND_METRIC_SCHEMA)
         database.executescript("""
             CREATE TABLE background_tasks(id TEXT PRIMARY KEY,generation INTEGER,
                 lease_token TEXT,state TEXT,phase TEXT,lease_expires_at TEXT,
@@ -3110,6 +3112,7 @@ def test_postgres_queue_projection_and_task_completion_commit_together(monkeypat
             INSERT INTO queue_projections(queue_date,state,generation,refresh_pending)
                 VALUES('2026-09-27','refreshing',5,1);
         """)
+        database.execute("ALTER TABLE background_tasks ADD COLUMN kind TEXT DEFAULT 'daily_queue'")
 
     class NativeSqlite:
         def __init__(self, database):
@@ -3153,6 +3156,7 @@ def test_postgres_queue_projection_and_task_completion_commit_together(monkeypat
 
 def test_postgres_queue_celery_dispatch_keeps_atomic_slice_receipt(monkeypatch):
     from app import tasks
+    monkeypatch.setattr(tasks, "current_delivery", lambda _task: True)
 
     claimed = {"kind": "daily_queue", "id": "queue-job", "generation": 3,
                "lease_token": "current", "payload": {"queue_date": "2026-09-27"}}
@@ -3842,10 +3846,12 @@ def test_postgres_exercise_train_now_replay_keeps_one_explicit_queue_entry(monke
 def test_postgres_queue_contention_yields_without_spending_retry_or_replaying_stale_lease(monkeypatch, tmp_path):
     from psycopg.errors import LockNotAvailable, TransactionTimeout
     from app import tasks
+    monkeypatch.setattr(tasks, "current_delivery", lambda _task: True)
     from app.services import durable_tasks
 
     database_path = tmp_path / "queue-contention.db"
     with sqlite3.connect(database_path) as database:
+        database.executescript(BACKGROUND_METRIC_SCHEMA)
         database.executescript("""
             CREATE TABLE background_tasks(id TEXT PRIMARY KEY,generation INTEGER,state TEXT,
                 phase TEXT,attempt_count INTEGER,next_attempt_at TEXT,lease_token TEXT,
@@ -3855,6 +3861,7 @@ def test_postgres_queue_contention_yields_without_spending_retry_or_replaying_st
             INSERT INTO background_tasks VALUES('queue-job',2,'leased','claimed',1,NULL,
                 'current',NULL,NULL,NULL);
         """)
+        database.execute("ALTER TABLE background_tasks ADD COLUMN kind TEXT DEFAULT 'daily_queue'")
 
     def write_background(operation, *, label):
         with sqlite3.connect(database_path) as database:
@@ -4195,7 +4202,7 @@ def test_postgres_cutover_background_slice_restarts_only_with_current_lease(monk
                 return Cursor(row={"generation": 3, "lease_token": "lease-current", "state": "leased"})
             return Cursor(rowcount=int(parameters[-2:] == (3, "lease-current")))
 
-    monkeypatch.setattr(durable_tasks, "_record_event", lambda *arguments: events.append(arguments))
+    monkeypatch.setattr(durable_tasks, "_record_event", lambda *arguments, kind=None: events.append(arguments))
     database = Database()
     assert durable_tasks.lock_current_slice(database, active_task)
     assert not durable_tasks.lock_current_slice(database, {**active_task, "generation": 2})
@@ -4404,9 +4411,10 @@ def test_postgres_cutover_background_claim_orders_supported_kinds_by_priority(mo
 
     with sqlite3.connect(":memory:") as database:
         database.row_factory = sqlite3.Row
+        database.executescript(BACKGROUND_METRIC_SCHEMA)
         database.executescript("""
             CREATE TABLE background_tasks(
-                id TEXT PRIMARY KEY,kind TEXT,deduplication_key TEXT,
+                id TEXT PRIMARY KEY,kind TEXT,deduplication_key TEXT,replaced_pending_generation INTEGER DEFAULT 0,
                 generation INTEGER,priority INTEGER,state TEXT,phase TEXT,
                 payload_version INTEGER,payload_json TEXT,attempt_count INTEGER,
                 max_attempts INTEGER,next_attempt_at TEXT,lease_token TEXT,
@@ -5244,6 +5252,7 @@ def test_postgres_tactical_queue_foreground_contention_and_stale_replay(monkeypa
 
 def test_postgres_cutover_game_refresh_waits_for_foreground_and_discards_stale_replay(monkeypatch):
     from app import tasks
+    monkeypatch.setattr(tasks, "current_delivery", lambda _task: True)
     from app.services import repertoire_game_refresh
 
     foreground_finished = threading.Event()
@@ -5325,7 +5334,7 @@ def test_postgres_cutover_game_refresh_waits_for_foreground_and_discards_stale_r
     monkeypatch.setattr(tasks, "execute_repertoire_game_refresh_slice", lambda _task: False)
     monkeypatch.setattr(
         tasks, "complete_task",
-        lambda task_id, _generation, _lease: completed_tasks.append(task_id),
+        lambda task_id, _generation, _lease, *, kind: completed_tasks.append(task_id),
     )
     monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_arguments: nullcontext())
     assert tasks.execute_background_slice.run(claimed_task) is False
@@ -5970,6 +5979,8 @@ def test_postgres_maia_submit_publishes_candidates_in_bounded_sets(remaining_nod
             return SimpleNamespace(fetchone=lambda: None)
 
         def execute(self, statement, parameters=()):
+            if statement.startswith("SELECT * FROM background_tasks"):
+                return SimpleNamespace(fetchone=lambda: {"id": "priority-task", "kind": "repertoire_priority", "state": "complete", "replaced_pending_generation": 0})
             statements.append((statement, parameters))
             if statement.startswith("SELECT generation FROM repertoire_priority_jobs"):
                 return SimpleNamespace(fetchone=lambda: (3,))
@@ -6335,7 +6346,7 @@ def test_postgres_explorer_terminal_failure_marks_run_failed(monkeypatch):
 
     monkeypatch.setattr(durable_tasks, "submit_background_write",
                         lambda operation, *, label: operation(Database()))
-    monkeypatch.setattr(durable_tasks, "_record_event", lambda *_args: None)
+    monkeypatch.setattr(durable_tasks, "_record_event", lambda *_args, kind=None: None)
     assert durable_tasks.fail_task("task", 1, "lease", RuntimeError("Explorer unavailable"))["state"] == "failed"
     assert any("UPDATE repertoire_coverage_runs SET status='failed'" in statement
                and parameters[2] == "run-one" for statement, parameters in statements)
@@ -6389,7 +6400,7 @@ def test_postgres_coverage_seed_terminal_failure_marks_run_failed(monkeypatch):
 
     monkeypatch.setattr(durable_tasks, "submit_background_write",
                         lambda operation, *, label: operation(RecordingDatabase()))
-    monkeypatch.setattr(durable_tasks, "_record_event", lambda *_args: None)
+    monkeypatch.setattr(durable_tasks, "_record_event", lambda *_args, kind=None: None)
     assert durable_tasks.fail_task("task", 1, "lease", RuntimeError("bad position"))["state"] == "failed"
     assert any("UPDATE repertoire_coverage_runs SET status='failed'" in statement
                and parameters[2] == "run-one" for statement, parameters in statements)

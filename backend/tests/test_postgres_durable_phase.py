@@ -9,6 +9,9 @@ class Cursor:
         self.row = row
         self.rowcount = rowcount
 
+    def fetchall(self):
+        return []
+
     def fetchone(self):
         return self.row
 

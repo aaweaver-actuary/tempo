@@ -11,6 +11,8 @@ from typing import Any
 from fastapi import HTTPException
 
 from .command_gateway import register_command
+from .services.engine_diagnostics import record_engine_outcome
+from .services.background_metrics import increment
 from .database import background_read_connection
 from .postgres_store import PostgresConnection
 from .services.game_analysis_worker import _confirmed_indices, _positions
@@ -170,6 +172,9 @@ def claim_game_analysis_position(database: PostgresConnection, plan: dict[str, A
     database.execute_native(
         "UPDATE imported_games SET analysis_state='analyzing' WHERE id=%s", (plan["game_id"],),
     )
+    increment(database, "engine_game", plan["game_id"], claims=1,
+              **({"lease_expiries": 1, "lease_reclaims": 1, "generation_restarts": 1}
+                 if parent["status"] == "leased" else {}))
     if plan["kind"] == "finalize":
         return {"job": {"kind": "finalize", "game_id": plan["game_id"],
                         "lease_id": parent_lease_id}}
@@ -256,6 +261,7 @@ def publish_position_report(database: PostgresConnection, payload: dict[str, Any
         "lease_id=NULL,parent_lease_id=NULL,lease_expires_at=NULL,last_error=NULL,updated_at=%s "
         "WHERE id=%s", (report_json, now, report_id),
     )
+    record_engine_outcome(database, "engine_game", report_id, payload, completed=True)
     released = database.execute_native(
         "UPDATE game_analysis_jobs SET status='queued',lease_id=NULL,lease_expires_at=NULL,"
         "last_error=NULL,updated_at=%s WHERE game_id=%s AND status='leased' AND lease_id=%s "
@@ -286,6 +292,7 @@ def release_position_report(database: PostgresConnection, payload: dict[str, Any
         "lease_expires_at=NULL,last_error=%s,updated_at=%s WHERE id=%s",
         ("failed" if failed else "queued", error, now, report_id),
     )
+    record_engine_outcome(database, "engine_game", report_id, payload)
     if error:
         database.execute_native(
             "INSERT INTO game_analysis_position_errors(report_id,game_id,error,recorded_at) "

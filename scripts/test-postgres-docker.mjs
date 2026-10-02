@@ -514,6 +514,8 @@ const actions = {
       "/source/scripts/check_postgres_upgrade.py"]);
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_priority_recovery.py"]);
+    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+      "/source/scripts/check_postgres_background_diagnostics.py"]);
   },
   background_workloads: async () => {
     await executeIsolatedBackgroundWorkload({
