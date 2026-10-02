@@ -1,4 +1,6 @@
 // @vitest-environment node
+import { readFileSync } from "node:fs";
+import { posix } from "node:path";
 import { execFileSync } from "node:child_process";
 import { expect, it } from "vitest";
 import { resolvePython } from "../../scripts/resolve-python.mjs";
@@ -52,4 +54,17 @@ it("engine preemption monotonic seconds are separate from successful work and ea
   expect(success("success")).toEqual({ outcome: "success", elapsed_seconds: 2 });
   expect(logs).toHaveLength(2);
   expect(logs.join()).not.toMatch(/request|position|lease|token/);
+});
+
+
+it("engine Docker image includes every relative worker module including diagnostic timing", () => {
+  const dockerfile = readFileSync("Dockerfile.engine", "utf8");
+  const copiedSources = dockerfile.split("\n").filter(line => line.startsWith("COPY "))
+    .flatMap(line => line.split(/\s+/).slice(1, -1));
+  const worker = readFileSync("scripts/defense-engine-worker.mjs", "utf8");
+  for (const imported of worker.matchAll(/^import .*?from ["']([^"']+)["']/gm)) {
+    if (imported[1].startsWith(".")) {
+      expect(copiedSources, `missing runtime module ${imported[1]}`).toContain(posix.join("scripts", imported[1]));
+    }
+  }
 });

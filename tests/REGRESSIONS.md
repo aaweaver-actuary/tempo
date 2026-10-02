@@ -981,3 +981,9 @@ real migration/replay/concurrent counters/lease reclaim/rollback and query cost.
 These are new instrumentation contracts; there was no prior snapshot endpoint
 against which to demonstrate an equivalent failing baseline. Existing scheduling
 and callback contract tests remain in the regular suite.
+
+CI #37 packaging regression: `engine Docker image includes every relative worker
+module including diagnostic timing` in the regular background diagnostics unit
+file fails before copying the new helper into `Dockerfile.engine`. The initial PR
+PostgreSQL job reproduced the missing module by exiting at worker startup. The
+fixed candidate must pass the real disposable Docker startup and durability gate.

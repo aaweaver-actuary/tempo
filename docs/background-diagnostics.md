@@ -220,3 +220,10 @@ policy. The user subsequently authorized publishing through GitHub. See the PR
 for the published candidate and final CI result; local checks do not imply CI
 success. No runtime changes followed the implementation evidence except removal
 of trailing blank lines.
+
+First published CI candidate `b90258b52be7d5791fabeec252bbe16990ac9261` passed
+backend (808 tests in 86.28 s), frontend, build and pinned visual layers. PostgreSQL
+failed at engine container startup: its Dockerfile omitted the new diagnostics
+module. The named packaging regression reproduced this missing copy before the
+Dockerfile fix. The following candidate requires a fresh complete required CI
+result; these earlier passes are not attributed to it.
