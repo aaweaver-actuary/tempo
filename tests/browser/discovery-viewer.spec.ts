@@ -461,7 +461,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1470, height: 836 
   });
 }
 
-test("Add and train opens the next discovery before the save responds", async ({ page }) => {
+test("confirmed Add and train clears the completed item after advancing before the save responds", async ({ page }) => {
   await page.setViewportSize({ width: 1470, height: 836 });
   const discovery = (id: string) => ({ id, repertoire_id: "rep", kind: "missing_response",
     status: "active", fen_key: beforeReply.split(" ").slice(0, 4).join(" "),
@@ -508,6 +508,7 @@ test("Add and train opens the next discovery before the save responds", async ({
   await expect(viewer.getByText("2 of 2 · white to move")).toBeVisible();
   await expect.poll(() => Boolean(finishSave)).toBe(true);
   finishSave?.();
-  await viewer.getByRole("button", { name: "Previous", exact: true }).click();
-  await expect(viewer.getByRole("button", { name: "Add and train" })).toBeDisabled();
+  await expect(viewer.getByText("1 of 1 · white to move")).toBeVisible();
+  await expect(viewer.getByRole("button", { name: "Previous", exact: true })).toBeDisabled();
+  await expect(viewer.getByRole("button", { name: "Add and train" })).toBeEnabled();
 });

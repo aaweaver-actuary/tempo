@@ -1333,6 +1333,7 @@ def initialize() -> None:
                 "snoozed_until": "TEXT",
                 "admission_state": "TEXT",
                 "admitted_card_id": "TEXT",
+                "handled_evidence_json": "TEXT",
             },
             "threat_training_candidates": {
                 "paused_at": "TEXT",
@@ -1435,6 +1436,11 @@ def initialize() -> None:
                     database.execute(
                         f"ALTER TABLE {table} ADD COLUMN {name} {definition}"
                     )
+                    if table == "repertoire_opportunities" and name == "handled_evidence_json":
+                        database.execute(
+                            "UPDATE repertoire_opportunities SET handled_evidence_json=evidence_json "
+                            "WHERE admission_state='queued' AND admitted_card_id IS NOT NULL"
+                        )
         from .services.background_metrics_schema import install as install_background_metrics
         install_background_metrics(database)
         # Materialize the default in existing rows before a later VACUUM. Older

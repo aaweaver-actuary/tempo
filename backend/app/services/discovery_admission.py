@@ -713,8 +713,9 @@ def execute_admission_intent_slice(task: dict) -> bool:
                 )
                 database.execute(
                     """UPDATE repertoire_opportunities SET admission_state='queued',
+                         handled_evidence_json=evidence_json,card_id=COALESCE(card_id,?),
                          admitted_card_id=?,updated_at=? WHERE id=?""",
-                    (card_id_value, _now(), current["opportunity_id"]),
+                    (card_id_value, card_id_value, _now(), current["opportunity_id"]),
                 )
                 if postgres_store.configured():
                     complete_task_slice_in_transaction(database, task)

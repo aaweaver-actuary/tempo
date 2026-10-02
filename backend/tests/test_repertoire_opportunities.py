@@ -583,6 +583,12 @@ def test_discovery_accepted_engine_branch_survives_publication_restart(tmp_path,
         assert db.execute("SELECT state FROM discovery_admission_intents WHERE id=?", (intent_id,)).fetchone()[0] == "queued"
         assert db.execute("SELECT admission_kind FROM daily_queue WHERE card_id=?", (target_card_id,)).fetchone()[0] == "explicit"
         assert db.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 0
+        completed_discovery = db.execute("SELECT * FROM repertoire_opportunities WHERE id=?",
+                                        (intent["opportunity_id"],)).fetchone()
+        assert completed_discovery["handled_evidence_json"] == completed_discovery["evidence_json"]
+        assert completed_discovery["card_id"] == target_card_id
+    assert all(item["id"] != intent["opportunity_id"]
+               for item in TestClient(app).get("/api/discoveries").json()["discoveries"])
 
 
 def test_discovery_admission_replay_promotes_stalled_save_ahead_of_recurring_refresh(tmp_path, monkeypatch):
@@ -1137,3 +1143,76 @@ def test_issue4_background_scan_yields_to_foreground_and_replays_without_duplica
         ).fetchone()
         assert root_summary["encounter_count"] == root_summary["success_count"] == 5
         assert target_summary["miss_count"] == target_summary["route_success_count"] == 5
+
+
+def test_handled_discovery_clears_feed_persists_and_resurfaces_only_with_material_evidence(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as db:
+        _, target_key = _seed_decision_route(db)
+        def publish(evidence):
+            repertoire_opportunities._publish(db, repertoire_id="rep", kind="weak_known_decision",
+                fen_key=target_key, target="g1f3", card_id="target", opponent_move_uci=None,
+                score=1, evidence=evidence)
+        publish({"supporting_games": 5})
+        opportunity_id = list_opportunities(db, "rep")[0]["id"]
+        repertoire_opportunities.admit_existing_decision(db, "rep", opportunity_id)
+    client = TestClient(app)
+    assert client.get("/api/discoveries?limit=1").json() == {
+        "discoveries": [], "total": 0, "next_offset": None, "unread_count": 0}
+    database.initialize()
+    with database.connection() as db:
+        publish({"supporting_games": 7})
+        assert list_opportunities(db, "rep") == []
+        publish({"supporting_games": 8})
+        assert [item["id"] for item in list_opportunities(db, "rep")] == [opportunity_id]
+        item = db.execute("SELECT * FROM repertoire_opportunities WHERE id=?", (opportunity_id,)).fetchone()
+        assert item["admission_state"] is None
+        assert item["admitted_card_id"] is None
+        assert item["seen_at"] is None
+        assert repertoire_opportunities.admit_existing_decision(db, "rep", opportunity_id)["idempotent"] is False
+        assert repertoire_opportunities.admit_existing_decision(db, "rep", opportunity_id)["idempotent"] is True
+        assert db.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id='target'").fetchone()[0] == 1
+        publish({"supporting_games": 8, "validated_recommendation": "new recommendation"})
+        assert len(list_opportunities(db, "rep")) == 1
+
+
+def test_handled_discovery_sqlite_upgrade_backfills_only_confirmed_admissions(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as db:
+        _, target_key = _seed_decision_route(db)
+        for admission_state in ("queued", "preparing", "failed"):
+            repertoire_opportunities._publish(db, repertoire_id="rep", kind="weak_known_decision",
+                fen_key=target_key, target=admission_state, card_id="target", opponent_move_uci=None,
+                score=1, evidence={"supporting_games": 5})
+            opportunity_id = repertoire_opportunities._stable_id("rep", "weak_known_decision", target_key, admission_state)
+            db.execute("UPDATE repertoire_opportunities SET admission_state=?,admitted_card_id='target' WHERE id=?",
+                       (admission_state, opportunity_id))
+        db.execute("ALTER TABLE repertoire_opportunities DROP COLUMN handled_evidence_json")
+    database.initialize()
+    with database.connection() as db:
+        assert len(list_opportunities(db, "rep")) == 2
+        assert db.execute("SELECT COUNT(*) FROM repertoire_opportunities WHERE handled_evidence_json IS NOT NULL").fetchone()[0] == 1
+
+
+def test_handled_discovery_feed_counts_and_pagination_exclude_completed_items(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as db:
+        _, target_key = _seed_decision_route(db)
+        for target in ("handled", "pending-one", "pending-two"):
+            repertoire_opportunities._publish(db, repertoire_id="rep", kind="weak_known_decision",
+                fen_key=target_key, target=target, card_id="target", opponent_move_uci=None,
+                score=1, evidence={"supporting_games": 5})
+        handled_id = repertoire_opportunities._stable_id("rep", "weak_known_decision", target_key, "handled")
+        repertoire_opportunities.admit_existing_decision(db, "rep", handled_id)
+    client = TestClient(app)
+    first = client.get("/api/discoveries?limit=1").json()
+    second = client.get("/api/discoveries?offset=1&limit=1").json()
+    assert first["total"] == second["total"] == 2
+    assert first["unread_count"] == second["unread_count"] == 2
+    assert first["next_offset"] == 1 and second["next_offset"] is None
+    assert len(first["discoveries"]) == len(second["discoveries"]) == 1
+    assert first["discoveries"][0]["id"] != second["discoveries"][0]["id"]
+    assert handled_id not in {first["discoveries"][0]["id"], second["discoveries"][0]["id"]}

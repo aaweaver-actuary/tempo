@@ -101,34 +101,43 @@ def _publish(database: sqlite3.Connection, *, repertoire_id: str, kind: str,
              opponent_move_uci: str | None, score: float, evidence: dict) -> None:
     opportunity_id = _stable_id(repertoire_id, kind, fen_key, target)
     previous = database.execute(
-        "SELECT status,dismissed_evidence_json FROM repertoire_opportunities WHERE id=?",
+        "SELECT status,dismissed_evidence_json,handled_evidence_json FROM repertoire_opportunities WHERE id=?",
         (opportunity_id,),
     ).fetchone()
     previous_dismissal = (
         json.loads(previous["dismissed_evidence_json"])
         if previous and previous["dismissed_evidence_json"] else {}
     )
+    handled_evidence = (json.loads(previous["handled_evidence_json"])
+                        if previous and previous["handled_evidence_json"] else None)
+    reopened = handled_evidence is not None and _materially_new(evidence, handled_evidence)
+    handled_snapshot = None if reopened or handled_evidence is None else previous["handled_evidence_json"]
     status = "dismissed" if previous and previous["status"] == "dismissed" and not _materially_new(evidence, previous_dismissal) else "active"
     database.execute(
         """INSERT INTO repertoire_opportunities(
              id,repertoire_id,kind,fen_key,card_id,opponent_move_uci,status,score,
-             evidence_json,evidence_fingerprint,dismissed_evidence_json,created_at,updated_at,resolved_at
-           ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)
-           ON CONFLICT(id) DO UPDATE SET card_id=excluded.card_id,
+             evidence_json,evidence_fingerprint,dismissed_evidence_json,handled_evidence_json,created_at,updated_at,resolved_at
+           ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)
+           ON CONFLICT(id) DO UPDATE SET card_id=COALESCE(excluded.card_id,
+               repertoire_opportunities.card_id,repertoire_opportunities.admitted_card_id),
              opponent_move_uci=excluded.opponent_move_uci,status=excluded.status,
              score=excluded.score,evidence_json=excluded.evidence_json,
              evidence_fingerprint=excluded.evidence_fingerprint,
              dismissed_evidence_json=CASE WHEN excluded.status='active' THEN NULL
                ELSE repertoire_opportunities.dismissed_evidence_json END,
-             seen_at=CASE WHEN repertoire_opportunities.status='dismissed'
-                AND excluded.status='active' THEN NULL ELSE repertoire_opportunities.seen_at END,
+             handled_evidence_json=excluded.handled_evidence_json,
+             admission_state=CASE WHEN ? THEN NULL ELSE repertoire_opportunities.admission_state END,
+             admitted_card_id=CASE WHEN ? THEN NULL ELSE repertoire_opportunities.admitted_card_id END,
+             snoozed_until=CASE WHEN ? THEN NULL ELSE repertoire_opportunities.snoozed_until END,
+             seen_at=CASE WHEN ? OR (repertoire_opportunities.status='dismissed'
+                AND excluded.status='active') THEN NULL ELSE repertoire_opportunities.seen_at END,
              updated_at=excluded.updated_at,resolved_at=NULL""",
         (opportunity_id, repertoire_id, kind, fen_key, card_id,
          opponent_move_uci, status, score, json.dumps(evidence, sort_keys=True),
          _fingerprint(evidence), json.dumps(previous_dismissal) if previous_dismissal else None,
-         _now(), _now()),
+         handled_snapshot, _now(), _now(), reopened, reopened, reopened, reopened),
     )
-    if kind in {"post_gap_weakness", "missing_response"} and card_id is None and status == "active":
+    if kind in {"post_gap_weakness", "missing_response"} and card_id is None and status == "active" and handled_snapshot is None:
         enqueue_task_in_transaction(
             database, "discovery_recommendation", opportunity_id,
             {"opportunity_id": opportunity_id}, priority=128,
@@ -896,6 +905,7 @@ def list_opportunities(database: sqlite3.Connection, repertoire_id: str,
                    FROM repertoire_opportunities opportunity
                    LEFT JOIN cards card ON card.id=opportunity.card_id
                    WHERE opportunity.repertoire_id=? AND opportunity.status='active'
+                     AND opportunity.handled_evidence_json IS NULL
                    {identifier_clause}
                    ORDER BY opportunity.score DESC,opportunity.id{limit_clause}""",
                 (repertoire_id, *(opportunity_ids or [])),
@@ -1166,7 +1176,7 @@ def admit_existing_decision(database: sqlite3.Connection, repertoire_id: str,
     )
     database.execute(
         """UPDATE repertoire_opportunities SET admission_state='queued',
-             admitted_card_id=?,seen_at=COALESCE(seen_at,?),updated_at=? WHERE id=?""",
+             handled_evidence_json=evidence_json,admitted_card_id=?,seen_at=COALESCE(seen_at,?),updated_at=? WHERE id=?""",
         (target_card_id, _now(), _now(), opportunity_id),
     )
     return {"card_id": target_card_id, "queued": True, "idempotent": False}

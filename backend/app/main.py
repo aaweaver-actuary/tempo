@@ -3761,14 +3761,14 @@ def discoveries_feed(offset: int = 0, limit: int = 25):
                        AND opportunity.snoozed_until IS NULL
                        OR opportunity.snoozed_until<=? THEN 1 ELSE 0 END)
                FROM repertoire_opportunities opportunity
-               WHERE opportunity.status='active'
+               WHERE opportunity.status='active' AND opportunity.handled_evidence_json IS NULL
                  AND opportunity.repertoire_id NOT IN
                      ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__')""",
             (datetime.now(timezone.utc).isoformat(),),
         ).fetchone()
         identifiers = [dict(row) for row in database.execute(
             """SELECT id,repertoire_id FROM repertoire_opportunities
-               WHERE status='active' AND repertoire_id NOT IN
+               WHERE status='active' AND handled_evidence_json IS NULL AND repertoire_id NOT IN
                    ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__')
                ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?""",
             (limit, offset),

@@ -42,7 +42,13 @@ Discoveries opens at a safe study break as a board-sized dialog with one decisio
 time. Its board and comparison table appear side by side on desktop and in one scrollable
 column on phones. Selecting a table move highlights its arrow; Builder opens at the
 same decision with its available move route and a visible return control. A closed
-batch does not repeatedly interrupt study. Defensive recognition uses one board
+batch does not repeatedly interrupt study. Confirmed Add and train or Train this decision
+removes the item from the pending list and advances to another undecided discovery.
+The final completion leaves the dialog open with its empty state. Failed or unconfirmed
+saves remain recoverable; merely viewing a discovery does not complete it. Completed
+decisions persist across reloads and return only for three additional supporting games
+or a changed validated recommendation. Prior study cards and history are preserved.
+Defensive recognition uses one board
 selection step at a time, keeps solution marks hidden until assessment submission,
 then shows recognition and move feedback separately.
 When recognition concerns a proposed move, the board displays and labels the position
