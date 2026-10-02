@@ -135,3 +135,32 @@ Only evidence/docs/cost artifacts follow the tested code revision. CI owns the
 complete final candidate, including public contract, frontend, engine, browser
 and pinned performance validation. No local `make full` was run. No live queue
 was paused, reset or cleaned.
+
+Fresh CI run `36993152711` passed backend (817 tests), frontend (474), build/Rust,
+typecheck/lint, visual/performance (51) and all PostgreSQL scenarios, including the
+unchanged 50 ms segmentation rehearsal (foreground review 9.0 ms). Browser ran
+163 cases: 162 passed, one failed, so quality failed. The inherited main regression
+`Black-first capture keeps its orientation while typed SAN and real-board moves save one solution`
+read the startup shared-board FEN before tactic readiness, then expected that
+startup value after saving. CI's assertion log showed initial chess FEN versus
+the loaded puzzle FEN at line 101. The downloaded-artifact URL was unavailable
+over HTTP; the complete failing assertion/call log was inspected directly.
+
+Test-only repair scope selected before editing: wait for the existing shared-board
+`data-input-enabled=true` readiness signal before storing the comparison FEN.
+That signal requires loaded deck/progress and is published with the puzzle board.
+Keep all SAN/orientation/real-board/persistence and unchanged-board assertions.
+Run the entire affected browser spec through the disposable runner and lint; CI
+owns new complete candidate verification. No frontend product behavior changes.
+
+Focused repair verification:
+`TEMPO_PYTHON=backend/.venv/bin/python make ui-file FILE=tactic-capture.spec.ts`
+passed all **three real-browser cases in 26.6 s** on disposable PostgreSQL.
+This ran with the readiness repair uncommitted on `474081f2b0a6c3d5cdec7ae603d4942bfdaf6919`;
+it is not evidence for the clean old head. Runner stage times: compose 0.69 s,
+build 121.75 s, startup 58.58 s, health 0.81 s, browser 31.03 s (includes the
+26.6 s test execution), teardown 18.43 s. All owned resources cleaned up.
+Only the browser test and evidence/registry changed after the tested product code.
+Fresh complete CI evidence for the resulting published candidate remains required.
+`npm run lint` also passed (59.146 s wall, existing warnings only), and
+`git diff --check` passed. No unchanged runtime scope was rerun as a checklist.

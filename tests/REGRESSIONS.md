@@ -1015,3 +1015,10 @@ and fails on extra kind-only reads (12 on the reviewed lifecycle baseline).
 `test_background_id_only_event_keeps_single_kind_lookup` preserves exceptional
 ID-only accounting. Both run in `backend/tests/test_background_diagnostics.py`;
 the disposable PostgreSQL proof also traces the full known-kind event hook.
+
+PR #56 main integration exposed a readiness race in the inherited browser case
+`Black-first capture keeps its orientation while typed SAN and real-board moves save one solution`.
+CI reproduced a startup-FEN comparison after the actual puzzle had loaded. The
+case now waits for the shared board's existing input-ready signal before taking
+its baseline; all SAN/orientation/persisted-UCI and unchanged-board assertions
+remain. No product code, timeout, CI selection or retry policy changed.
