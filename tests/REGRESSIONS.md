@@ -787,24 +787,24 @@ The existing fixed-prefix/cue-identity assertions are unchanged.
 | --- | --- |
 | AS-01 | `test_shared_trunk_preserves_coverage_with_20_tests_instead_of_48`; `test_legal_early_branch_retains_opponent_cue_and_ends_on_learner_move`; `AS-01 preview explains 48-to-20 savings and has no Apply action`; real PostgreSQL/browser preview. Actual adaptive queue coverage waits for PR 3. |
 | AS-02 | PR 3/4 pending: known not-due trunks omitted from tested decisions. |
-| AS-03 | `test_compatible_transposition_shares_suffix_but_preserves_incoming_bridges`; evidence sharing pending PR 2/3. |
+| AS-03 | `test_compatible_transposition_shares_suffix_but_preserves_incoming_bridges`; `test_transposed_presentations_share_decision_identity_with_separate_provenance`; PostgreSQL shared decision summaries. Adaptive scheduling sharing remains PR 3. |
 | AS-04 | `test_decision_identity_preserves_policy_color_turn_castling_and_legal_en_passant`. |
 | AS-05 | `test_duplicate_routes_and_existing_shared_cards_do_not_inflate_support`. |
 | AS-06 | `test_black_custom_root_and_opponent_start_count_actual_learner_decisions`. |
 | AS-07 | `test_cycle_preserves_bounded_occurrences_without_walk_enumeration`. |
-| AS-08 | PR 2 pending: clean predecessors, actual failure, unreached successor. |
-| AS-09 | PR 2 pending: revealed correction is assisted. |
-| AS-10 | PR 2/3 pending: concurrent evidence delivery and conflicting attempt reuse. PR 1 preferences use existing command receipts, rehearsed on PostgreSQL. |
-| AS-11 | PR 2 pending: legitimate same-day attempts and distinct-day count. |
+| AS-08 | `test_three_clean_first_responses_are_three_observations`; `test_shadow_six_decision_failure_preserves_clean_predecessors_and_unreached_successor`; `AS-08 appends before advancing without awaiting deferred local persistence`; browser `AS-08 deferred evidence persistence leaves rendered moves and aggregate review responsive`; real PostgreSQL retained partial attempt. |
+| AS-09 | `test_assistance_before_response_stays_assisted_and_later_assistance_does_not_rewrite_recall`; `test_manual_again_has_no_fabricated_first_response_and_correction_is_not_clean`; journal category/deduplication regression; browser `AS-09 actual teaching arrows manual Again and revealed correction retain first response context`. |
+| AS-10 | `test_postgres_shadow_replay_atomicity_and_scheduling_invariance` (regular durability runner): concurrent exact replay, conflicting events/context/terminal seals and combined-review rollback. PR 3 scheduling ownership cutover remains pending. |
+| AS-11 | PostgreSQL rehearsal retains two genuine same-day attempts and two distinct clean study days; `AS-11 queue refresh preserves logical identity while restart and reinforcement replace it`; offline browser retains independent parent/repeat IDs. |
 | AS-12 | PR 3 pending: partial exercise cannot complete longer card. |
 | AS-13 | Stable decision identity is already independent of presentation/generation; adaptive history preservation pending PR 3/4. |
 | AS-14 | `test_superseded_segmentation_generation_cannot_publish`; `AS-14 keep-current sends observed versions and only confirmed metadata removes advice`; stale preference rejection in disposable PostgreSQL. Executable apply pending PR 3. |
-| AS-15 | PR 2/3 pending: late/out-of-order decision evidence. |
-| AS-16 | PR 2/3 pending: old-client aggregate path during ownership cutover. |
+| AS-15 | PostgreSQL rehearsal accepts out-of-order terminal gaps and late historical replay without replacing newer facts; browser exact ambiguous checkpoint retry and orphan recovery regressions; journal storage-gap regression. Adaptive ownership replay remains PR 3. |
+| AS-16 | `test_legacy_review_dispatch_preserves_exact_payload_and_command_fingerprint`; optional invalid manifest compatibility; legacy outbox tests; browser full offline capture/repeat/parent reconciliation; PostgreSQL competing phone history-only review; definitive rejection aggregate-only fallback and ambiguous original-key retry. Ownership cutover remains PR 3. |
 | AS-17 | PR 3/4 pending: active adaptive plan rebuild/invalidation. PR 1 never modifies active attempts. |
 | AS-18 | PR 3 pending: shared-target deduplication with quota/prerequisite/fairness protection. |
-| AS-19 | `test_advisory_service_never_writes_legacy_learning_or_queue_tables`; existing legacy graph suite; `AS-19 network failure stays actionable without demonstration recommendations`; PostgreSQL learning/queue snapshots during every advisory slice; real browser keep-current reload. |
-| AS-20 | PR 3 pending: activation/opt-out/recovery. PR 1 additive migration is included in current PostgreSQL upgrade/backup-restore gate. |
+| AS-19 | Existing PR 1 advisory invariance tests retained. `test_postgres_shadow_replay_atomicity_and_scheduling_invariance` compares five evidence-enabled/absent reviews under identical fixtures/clocks: FSRS/card state, due dates, intervals, queue/requeue/admission fields, locked descendants and prefix-split previews. Checkpoints leave scheduling tables unchanged. |
+| AS-20 | PR 3 activation/opt-out remains pending. Additive migration 30 seeds actual saved revisions without inferred observations; regular PostgreSQL upgrade, service recreation and every-table backup/restore retain shadow provenance and summaries. |
 | AS-21 | `test_segmentation_analysis_yields_restarts_and_replays_idempotently`; `test_group_preparation_reads_only_eight_indexed_occurrences_and_closes_connection`; `scripts/check_postgres_opening_segmentation.py` proves real foreground FSRS review while traversal is paused, durable cursors, stale lease replay, 50ms background sections and zero traversal on cached reads. |
 | AS-22 | `test_no_savings_or_insufficient_support_does_not_claim_improvement`; preview-only UI labels. Learner adaptation pending PR 4. |
 

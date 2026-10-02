@@ -90,6 +90,8 @@ import {
 } from "../lib/review-outbox";
 import { describeOfflineQueue, markOfflineAttemptFailed, recordOfflineAttempt, requiresConnectedGrading } from "../lib/offline-training";
 import { enqueueTrainingFailure, flushTrainingFailures } from "../lib/training-failure-outbox";
+import { beginOpeningAttempt, completeOpeningAttempt, partialOpeningAttempt, recoverOpeningEvidence } from "../lib/opening-evidence-journal";
+import type { AssistanceKind } from "../domain/opening-evidence";
 import { Settings } from "../utils/settings";
 import { TreeBrowser } from "./tree_browser";
 import { useShallow } from "zustand/react/shallow";
@@ -292,6 +294,24 @@ export default function Home() {
   );
   const activeQueueEntry = useRef<number | undefined>(undefined);
   const card = practiceCards[activeCardIndex] ?? demoCards[0];
+  const openingJournal = useCommittedCallback(() => beginOpeningAttempt(card, useTrainingStore.getState().attempt.attemptId,
+    { offline: offlineQueue, studyTimezone: card.openingEvidenceStudyTimezone }));
+  const observeAssistance = useCommittedCallback((moveOffset: number, kind: AssistanceKind) => {
+    openingJournal()?.assistance(moveOffset, kind);
+  });
+  useEffect(() => {
+    if (currentView === "train" && cardsLeft > 0) openingJournal();
+  }, [currentView, cardsLeft, attempt.attemptId, openingJournal]);
+  useEffect(() => {
+    if (!usesLocalApi()) return;
+    const recover = () => { void recoverOpeningEvidence().catch((error) => publishNotification({
+      severity: "warning", source: "opening evidence", key: "opening-evidence-recovery",
+      message: `Opening evidence recovery is pending. Normal training continues. ${String(error)}`,
+    })); };
+    recover();
+    window.addEventListener("online", recover);
+    return () => window.removeEventListener("online", recover);
+  }, []);
   const repertoireLine = card.moves;
 
   useEffect(() => {
@@ -769,6 +789,8 @@ export default function Home() {
     try {
       move = position.move({ from, to, promotion: "q" });
     } catch {
+      const promotion = position.get(from)?.type === "p" && /[18]$/.test(to) ? "q" : "";
+      openingJournal()?.response(step, `${from}${to}${promotion}`, "illegal");
       setBoardAttempt((value) => value + 1);
       setFeedback("wrong");
       setShowHint(true);
@@ -779,7 +801,9 @@ export default function Home() {
       return;
     }
     if (!move) return;
+    const responseUci = `${move.from}${move.to}${move.promotion ?? ""}`;
     if (position.isCheckmate()) {
+      openingJournal()?.response(step, responseUci, move.san === card.moves[step] ? "expected" : "wrong");
       setLastMove([move.from, move.to]);
       setOpponentLastMove(undefined);
       setStep(card.moves.length);
@@ -788,6 +812,7 @@ export default function Home() {
     }
     if (move.san !== card.moves[step]) {
       if (usesLocalApi() && !offlineQueue && branchPositions.current === null) {
+        openingJournal()?.response(step, responseUci, "unverified");
         setBoardAttempt((value) => value + 1);
         setQueueNotice(
           "Cannot verify another repertoire move until lines load. Retry loading lines, then try again.",
@@ -813,6 +838,7 @@ export default function Home() {
               other.moves[step] === move?.san,
           );
       if (alternateBranch) {
+        openingJournal()?.response(step, responseUci, "alternate");
         setBoardAttempt((value) => value + 1);
         setFeedback("branch");
         setShowHint(true);
@@ -821,6 +847,7 @@ export default function Home() {
         );
         return;
       }
+      openingJournal()?.response(step, responseUci, "wrong");
       setFeedback("wrong");
       setBoardAttempt((value) => value + 1);
       setShowHint(true);
@@ -830,6 +857,7 @@ export default function Home() {
       persistExplicitAttemptFailure();
       return;
     }
+    openingJournal()?.response(step, responseUci, "expected");
     markMoveSeen(step);
     setCurrentFenString(asFenString(position.fen()));
     setLastMove([move.from, move.to]);
@@ -934,9 +962,13 @@ export default function Home() {
     if (!retryPending) setAttemptPhase("feedbackPause");
     if (offlineQueue && card.queueEntryId) {
       try {
+        openingJournal();
+        const attemptId = useTrainingStore.getState().attempt.attemptId;
+        const completion = completeOpeningAttempt(attemptId);
         const saved = await recordOfflineAttempt(
           card.queueEntryId, outcome,
           attemptFailed || useTrainingStore.getState().assistedThisAttempt,
+          undefined, { attemptId: attemptId ?? crypto.randomUUID(), completion },
         );
         const availableCards = saved.cards.filter((queuedCard) => !requiresConnectedGrading(queuedCard));
         const nextCards = await runStudyTask<typeof practiceCards>({
@@ -966,7 +998,11 @@ export default function Home() {
               "The active queue entry is unavailable. Refresh the queue.",
             );
           if (!recordedAtCompletion) {
+            openingJournal();
+            const attemptId = useTrainingStore.getState().attempt.attemptId;
+            const completion = completeOpeningAttempt(attemptId);
             enqueuePendingReview({
+              attemptId, openingEvidenceCompletion: completion, completedAt: completion?.terminal?.ended_at,
               backendId: card.backendId,
               queueEntryId: card.queueEntryId,
               outcome,
@@ -1072,7 +1108,10 @@ export default function Home() {
     setCurrentFenString(asFenString(finalFen));
     setAttemptPhase("feedbackPause");
     setFeedback("complete");
+    openingJournal();
     const token = useTrainingStore.getState().attempt;
+    const completedAt = new Date().toISOString();
+    const completion = completeOpeningAttempt(token.attemptId, completedAt);
     const outcome = useTrainingStore.getState().isAttemptFailed
       ? "again"
       : "correct";
@@ -1080,6 +1119,7 @@ export default function Home() {
     if (databaseQueue && !offlineQueue && card.backendId && card.queueEntryId) {
       try {
         enqueuePendingReview({
+          attemptId: token.attemptId, completedAt, openingEvidenceCompletion: completion,
           backendId: card.backendId,
           queueEntryId: card.queueEntryId,
           outcome,
@@ -1106,6 +1146,7 @@ export default function Home() {
 
   useEffect(
     () => () => {
+      partialOpeningAttempt(useTrainingStore.getState().attempt.attemptId);
       const canceledReply = pendingOpponentReply.current;
       clearTimeout(canceledReply?.timer);
       canceledReply?.finish(true);
@@ -1278,6 +1319,7 @@ export default function Home() {
 
   function handleAttemptFailure() {
     if (pendingBurialEntryId !== undefined || (serviceError && !offlineQueue)) return;
+    openingJournal()?.manualFailure(step);
     if (!attemptFailed) {
       setAttemptFailed(true);
       setQueueNotice("Again recorded · finish with guidance");
@@ -1586,6 +1628,7 @@ export default function Home() {
                 invalidateTrainingQueueCache();
                 void fetchAndInitializeQueue().catch(() => undefined);
               }}
+              onOpeningAssistance={observeAssistance}
               onMove={tryMove}
               onOpenPosition={openReviewPosition}
               useSharedBoard

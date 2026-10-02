@@ -2,6 +2,10 @@ import { API_URL } from "../const";
 import { confirmOperationResponse } from "./operation-status";
 import { publishNotification } from "./notifications";
 import { clearTrainingFailureAfterReview } from "./training-failure-outbox";
+import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
+import { openingEvidenceCheckpointSchema } from "../domain/opening-evidence";
+import { saveEvidenceAwareReview } from "./opening-evidence-review";
+import { acknowledgeOpeningReview } from "./opening-evidence-journal";
 
 export type PendingReview = {
   backendId: string;
@@ -10,6 +14,8 @@ export type PendingReview = {
   guided: boolean;
   attemptId?: string;
   completedAt?: string;
+  openingEvidenceCompletion?: OpeningEvidenceCheckpoint;
+  evidenceRejected?: string;
 };
 
 const storageKey = "tempo-pending-training-reviews-v1";
@@ -34,6 +40,8 @@ export function pendingReviews(): PendingReview[] {
     !["again", "correct"].includes(item.outcome) ||
     typeof item.guided !== "boolean" ||
     (item.attemptId !== undefined && typeof item.attemptId !== "string") ||
+    (item.openingEvidenceCompletion !== undefined && !openingEvidenceCheckpointSchema.safeParse(item.openingEvidenceCompletion).success) ||
+    (item.evidenceRejected !== undefined && typeof item.evidenceRejected !== "string") ||
     (item.completedAt !== undefined && typeof item.completedAt !== "string"))) {
     throw new Error("The saved training review is invalid. Restore your data before continuing.");
   }
@@ -76,17 +84,21 @@ async function savePendingReviews(): Promise<void> {
     }
     const reviewEndpoint = `${API_URL}/api/cards/${review.backendId}/review`;
     const attemptId = review.attemptId ?? `legacy-online:${review.queueEntryId}`;
-    const reviewResponse = await confirmOperationResponse(await requestReviewSave(reviewEndpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Idempotency-Key": `review-attempt:${attemptId}` },
-      body: JSON.stringify({
+    const reviewResponse = await saveEvidenceAwareReview({
+      endpoint: reviewEndpoint, operationKey: `review-attempt:${attemptId}`, request: requestReviewSave,
+      completion: review.openingEvidenceCompletion, evidenceRejected: review.evidenceRejected,
+      onEvidenceRejected: (message) => {
+        localStorage.setItem(storageKey, JSON.stringify(pendingReviews().map((item) =>
+          item.attemptId === attemptId ? { ...item, evidenceRejected: message } : item)));
+      },
+      body: {
         outcome: review.outcome,
         guided: review.guided,
         queue_entry_id: review.queueEntryId,
         attempt_id: attemptId,
         ...(review.completedAt ? { recorded_at: review.completedAt } : {}),
-      }),
-    }));
+      },
+    });
     if (!reviewResponse.ok)
       throw new ReviewReplayError(await responseDetail(reviewResponse), reviewEndpoint);
     const result = await reviewResponse.clone().json() as { persisted?: boolean; warning?: string;
@@ -98,6 +110,8 @@ async function savePendingReviews(): Promise<void> {
       remaining.filter((item) => item.queueEntryId !== review.queueEntryId),
     ));
     clearTrainingFailureAfterReview(review.queueEntryId);
+    if (review.openingEvidenceCompletion)
+      void acknowledgeOpeningReview(attemptId).catch(() => undefined);
     if (result.warning) {
       publishNotification({ severity: "warning", source: "training review", key: `review-reconciliation:${attemptId}`,
         message: `${result.warning} Saved result: ${review.outcome} at ${review.completedAt ?? "unknown"}. ` +

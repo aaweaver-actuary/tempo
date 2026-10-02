@@ -1,0 +1,99 @@
+"""Compatibility and authoritative preparation seams in the regular suite."""
+from contextlib import contextmanager
+import hashlib
+import json
+from pathlib import Path
+from types import SimpleNamespace
+
+
+def test_shadow_manifest_fixture_matches_backend_producer_and_prescribed_revision():
+    from app.services.opening_decision_evidence import decision_manifest
+    fixture = json.loads((Path(__file__).resolve().parents[2]/'tests/fixtures/opening-evidence-manifest.json').read_text())
+    snapshot = {'id':1,'card_id':'shadow-card','revision':3,'start_fen':fixture['decisions'][0]['fen'],
+                'moves_json':'["e2e4","e7e5","g1f3","b8c6","f1b5"]','trained_color':'white'}
+    assert decision_manifest(snapshot,'shadow-repertoire') == fixture
+    changed={**snapshot,'revision':4}
+    assert decision_manifest(changed,'shadow-repertoire')['manifest_id'] != fixture['manifest_id']
+
+
+def test_legacy_review_dispatch_preserves_exact_payload_and_command_fingerprint(monkeypatch):
+    from app import main, command_dispatch
+    from app.models import ReviewRequest
+    from app.command_gateway import request_digest
+    requests=[]
+    monkeypatch.setattr(main.postgres_store,'configured',lambda:True)
+    monkeypatch.setattr(command_dispatch,'dispatch_command',lambda name,payload,**options:requests.append((name,payload)) or {'persisted':True})
+    request=ReviewRequest(outcome='correct',guided=False,queue_entry_id=101,attempt_id='legacy-id')
+    main.review('card',request,idempotency_key='legacy-key')
+    expected={'card_id':'card','review':request.model_dump(mode='json',exclude={'opening_evidence_completion'})}
+    assert requests==[('cards.review',expected)]
+    digest=hashlib.sha256(json.dumps(['cards.review',expected],sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    assert request_digest('cards.review',expected)==digest
+    assert request_digest('cards.review',{**expected,'prepared_manifest':{'derived':True}})==digest
+
+
+def test_shadow_chess_validation_closes_read_connection_before_traversal(monkeypatch):
+    from app.services import postgres_opening_evidence as service
+    from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
+    fixture=json.loads((Path(__file__).resolve().parents[2]/'tests/fixtures/opening-evidence-manifest.json').read_text())
+    request=OpeningEvidenceCheckpoint(attempt_id='attempt',manifest=fixture,origin_queue_entry_id=101,
+        started_at='2026-09-30T12:00:00Z',study_timezone='UTC')
+    active=False
+    @contextmanager
+    def read(**options):
+        nonlocal active
+        active=True
+        yield SimpleNamespace(execute_native=lambda *args:SimpleNamespace(fetchone=lambda:{'saved':True}))
+        active=False
+    def derive(*args):
+        assert not active,'Chess traversal held its database read connection'
+        return fixture
+    monkeypatch.setattr(service.postgres_store,'configured',lambda:True)
+    monkeypatch.setattr(service.postgres_store,'connection',read)
+    monkeypatch.setattr(service,'decision_manifest',derive)
+    assert service.prepare_checkpoint(request)==fixture
+
+
+def test_evidence_migration_is_unique_additive_and_matches_readiness():
+    from app.schema_version import POSTGRES_SCHEMA_VERSION
+    directory=Path(__file__).resolve().parents[1]/'migrations'
+    migrations=sorted(directory.glob('[0-9][0-9][0-9]_*.sql'))
+    assert [int(path.name[:3]) for path in migrations]==list(range(1,POSTGRES_SCHEMA_VERSION+1))
+    migration=next(path for path in migrations if path.name.endswith('_opening_decision_evidence.sql'))
+    source=migration.read_text()
+    assert 'INSERT INTO tempo_schema_migrations(version) VALUES(30)' in source
+    assert 'UPDATE cards SET' not in source and 'UPDATE daily_queue SET' not in source
+    assert 'REFERENCES cards' not in source and 'REFERENCES repertoires' not in source
+
+
+def test_queue_evidence_is_explicitly_negotiated_for_live_window_and_prepared_clients(monkeypatch):
+    from app import main
+    calls=[]
+    def payload(limit=None, *, include_opening_evidence=False):
+        calls.append((limit,include_opening_evidence))
+        return {'cards':[], 'count':0, **({'opening_evidence_study_timezone':'UTC'} if include_opening_evidence else {})}
+    monkeypatch.setattr(main,'_queue_payload',payload)
+    for route in (main.queue_today,main.queue_window,main.prepared_queue):
+        legacy=route()
+        assert 'opening_evidence_study_timezone' not in legacy
+        enabled=route(include_opening_evidence=True)
+        assert enabled['opening_evidence_study_timezone']=='UTC'
+    assert calls==[(None,False),(None,True),(20,False),(20,True),(None,False),(None,True)]
+
+
+def test_sqlite_reports_unsupported_evidence_without_claiming_shadow_persistence(monkeypatch):
+    import pytest
+    from fastapi import HTTPException
+    from app import main
+    from app.models import ReviewRequest
+    fixture=json.loads((Path(__file__).resolve().parents[2]/'tests/fixtures/opening-evidence-manifest.json').read_text())
+    monkeypatch.setattr(main.postgres_store,'configured',lambda:False)
+    monkeypatch.setattr(main,'_apply_review',lambda *args,**kwargs:{'persisted':True})
+    assert main.review('shadow-card',ReviewRequest(outcome='correct'))=={'persisted':True}
+    request=ReviewRequest(outcome='correct',attempt_id='shadow-attempt',queue_entry_id=101,
+      opening_evidence_completion={'attempt_id':'shadow-attempt','manifest':fixture,'origin_queue_entry_id':101,
+        'queue_entry_id':101,'started_at':'2026-09-30T12:00:00Z','study_timezone':'UTC',
+        'terminal':{'state':'complete','final_sequence':0,'ended_at':'2026-09-30T12:01:00Z'}})
+    with pytest.raises(HTTPException) as rejected:main.review('shadow-card',request)
+    assert rejected.value.detail['code']=='opening_evidence_unavailable'
+    assert rejected.value.detail['aggregate_review_allowed'] is True

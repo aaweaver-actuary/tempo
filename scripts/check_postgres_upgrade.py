@@ -257,6 +257,9 @@ def main() -> None:
                     intent_id = "legacy-admission" if target == "matching-queued" else f"legacy:{target}"
                     database.execute("INSERT INTO discovery_admission_intents(id,opportunity_id,repertoire_id,evidence_fingerprint,starting_fen,selected_move_uci,preview_moves_json,recommendation_json,line_id,state,card_id,created_at,updated_at) VALUES(%s,%s,'preserved-repertoire',%s,'4k3/8/8/8/8/8/8/4K3 w - - 0 1','e1d2','[\"e1d2\"]','{}','legacy-line',%s,%s,'2026-01-01','2026-01-01')",
                                      (intent_id, opportunity_id, accepted_fingerprint, intent_state, intent_card))
+            database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,revision,due_date) VALUES('opening-upgrade','preserved-repertoire','prefix','rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1','[\"e2e4\"]','white',7,'2026-01-01')")
+            database.execute("INSERT INTO daily_queue(queue_date,card_id,position,card_bucket) VALUES('2026-01-01','opening-upgrade',99,'opening')")
+            database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES('opening-upgrade','correct','2026-01-02',1,17)")
             database.commit()
         apply_migrations(rehearsal_dsn)
         apply_migrations(rehearsal_dsn)
@@ -274,10 +277,14 @@ def main() -> None:
                 "FROM operation_receipts WHERE operation_id='preserved-receipt'"
             ).fetchone() == ("complete", '{"saved":true}', 0, 0, 0)
             assert database.execute("SELECT id,content_type,archived,interval_days FROM cards ORDER BY id").fetchall() == [
-                ("known-plural", "tactic", 1, 17), ("unknown-plural", "tactics", 1, 17)]
+                ("known-plural", "tactic", 1, 17), ("opening-upgrade", "opening", 0, 0), ("unknown-plural", "tactics", 1, 17)]
             assert database.execute("SELECT card_id,card_bucket FROM daily_queue ORDER BY card_id").fetchall() == [
-                ("known-plural", "tactic"), ("unknown-plural", "tactics")]
-            assert database.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 2
+                ("known-plural", "tactic"), ("opening-upgrade", "opening"), ("unknown-plural", "tactics")]
+            assert database.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 3
+            assert database.execute("SELECT card_id,revision,trained_color FROM opening_evidence_presentations").fetchall() == [('opening-upgrade',7,'white')]
+            assert database.execute("SELECT COUNT(*) FROM opening_evidence_queue_contexts WHERE repertoire_id='preserved-repertoire'").fetchone()[0] == 1
+            assert database.execute("SELECT COUNT(*) FROM opening_evidence_observations").fetchone()[0] == 0
+            assert database.execute("SELECT COUNT(*) FROM opening_evidence_attempts").fetchone()[0] == 0
             assert database.execute("SELECT COUNT(*) FROM tactic_captures").fetchone()[0] == 0
             assert database.execute(
                 "SELECT COUNT(*) FROM pg_indexes WHERE indexname="

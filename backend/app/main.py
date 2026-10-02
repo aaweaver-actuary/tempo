@@ -470,6 +470,8 @@ async def prioritize_foreground_requests(request: Request, call_next):
                                and path_parts[4] in {"fail", "bury"} and request.method == "POST")
         card_review_command = (len(path_parts) == 4 and path_parts[:2] == ["api", "cards"]
                                and path_parts[3] == "review" and request.method == "POST")
+        opening_evidence_command = (path_parts == ["api", "opening-evidence", "checkpoints"]
+                                    and request.method == "POST")
         card_revision_command = (len(path_parts) == 3 and path_parts[:2] == ["api", "cards"]
                                  and request.method == "PUT")
         card_archive_command = (len(path_parts) == 3 and path_parts[:2] == ["api", "cards"]
@@ -688,7 +690,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     pgn_import_command,
                     analysis_paste_command,
                     integrity_resolution_command,
-                    card_validation, prefix_split_command, segmentation_command)):
+                    card_validation, prefix_split_command, segmentation_command, opening_evidence_command)):
             return JSONResponse(
                 status_code=503,
                 content={"detail": "This write route is awaiting its Celery cutover; use the current local Docker service."},
@@ -1730,9 +1732,10 @@ def enqueue_daily_queue_refresh(*, foreground: bool = True) -> dict:
     return task
 
 
-def _queue_payload(limit: int | None = None):
+def _queue_payload(limit: int | None = None, *, include_opening_evidence: bool = False):
     day = date.today().isoformat()
     with read_connection() as db:
+        evidence_timezone = db.execute("SELECT timezone FROM settings WHERE id=1").fetchone()[0] if include_opening_evidence and postgres_store.configured() else None
         projection_row = db.execute(
             "SELECT * FROM queue_projections WHERE queue_date=?", (day,)
         ).fetchone()
@@ -1891,6 +1894,12 @@ def _queue_payload(limit: int | None = None):
     for card in cards:
         card.pop("moves_json", None)
         card["trained_color"] = card.pop("effective_trained_color")
+    if include_opening_evidence and postgres_store.configured():
+        from .services.postgres_opening_evidence import queue_manifests
+        queue_manifests(cards)
+        for card in cards:
+            if "opening_decision_manifest" in card:
+                card["opening_evidence_study_timezone"] = evidence_timezone or "local"
     return {
         "local_date": day,
         "cards": cards,
@@ -1912,13 +1921,13 @@ def _queue_payload(limit: int | None = None):
 
 
 @app.get("/api/queue/today")
-def queue_today():
-    return _queue_payload()
+def queue_today(include_opening_evidence: bool = False):
+    return _queue_payload(include_opening_evidence=include_opening_evidence)
 
 
 @app.get("/api/queue/prepared")
-def prepared_queue():
-    payload = _queue_payload()
+def prepared_queue(include_opening_evidence: bool = False):
+    payload = _queue_payload(include_opening_evidence=include_opening_evidence)
     study_cards = [card for card in payload["cards"] if card["content_type"] == "study_exercise"]
     if study_cards:
         with read_connection() as database:
@@ -1942,10 +1951,10 @@ def prepared_queue():
 
 
 @app.get("/api/queue/window")
-def queue_window(limit: int = 20):
+def queue_window(limit: int = 20, include_opening_evidence: bool = False):
     if not 1 <= limit <= 20:
         raise HTTPException(422, "Queue window limit must be between 1 and 20")
-    return _queue_payload(limit)
+    return _queue_payload(limit, include_opening_evidence=include_opening_evidence)
 
 
 @app.post("/api/imports/pgn", response_model=ImportResult)
@@ -2772,10 +2781,21 @@ def review(identifier: str, request: ReviewRequest,
            idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     if postgres_store.configured():
         from .command_dispatch import dispatch_command
+        # Preserve the exact legacy dispatch shape and existing durable receipt hash.
+        review_payload = request.model_dump(mode="json", exclude={"opening_evidence_completion"}
+                                            if request.opening_evidence_completion is None else set())
+        command_payload = {"card_id": identifier, "review": review_payload}
+        if request.opening_evidence_completion:
+            from .services.postgres_opening_evidence import prepare_checkpoint
+            command_payload["prepared_manifest"] = prepare_checkpoint(request.opening_evidence_completion)
         return dispatch_command(
-            "cards.review", {"card_id": identifier, "review": request.model_dump(mode="json")},
+            "cards.review", command_payload,
             idempotency_key=idempotency_key,
         )
+    if request.opening_evidence_completion:
+        from .services.postgres_opening_evidence import evidence_error
+        raise evidence_error("Opening shadow evidence requires PostgreSQL; save the aggregate review through the compatible path",
+                             "opening_evidence_unavailable")
     return _apply_review(identifier, request)
 
 
@@ -6209,3 +6229,5 @@ def attempt_guided_game_review(session_id: str, request: GuidedReviewAttemptRequ
 
 from .opening_segmentation_api import router as opening_segmentation_router
 app.include_router(opening_segmentation_router)
+from .opening_evidence_api import router as opening_evidence_router
+app.include_router(opening_evidence_router)
