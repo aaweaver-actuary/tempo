@@ -1195,5 +1195,26 @@
     "handler": "repair_status",
     "treatment": "reader",
     "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/opening-evidence/checkpoints",
+    "handler": "opening_evidence_checkpoint",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/opening-evidence/decisions/{decision_id}",
+    "handler": "opening_decision_evidence",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/opening-evidence/attempts/{attempt_id}",
+    "handler": "opening_attempt_evidence",
+    "treatment": "reader",
+    "state": "staged"
   }
 ]

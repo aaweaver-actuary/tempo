@@ -70,7 +70,7 @@ test("WebKit desktop prepared queue outage preserves the position and blocks gra
     repertoire_source: "PGN", trained_color: "black" };
   let liveRequestFails = false;
   let preparedRequests = 0;
-  await page.route("**/api/queue/prepared", (route) => {
+  await page.route("**/api/queue/prepared?**", (route) => {
     preparedRequests += 1;
     return route.fulfill({ status: 500, body: "Desktop must not prepare a phone queue" });
   });
@@ -85,7 +85,7 @@ test("WebKit desktop prepared queue outage preserves the position and blocks gra
   await expect(page.getByRole("heading", { name: "WebKit live card" })).toBeVisible();
   await page.evaluate(async (savedCard) => {
     await new Promise<void>((resolve, reject) => {
-      const opened = indexedDB.open("tempo-offline-training", 1);
+      const opened = indexedDB.open("tempo-offline-training", 2);
       opened.onupgradeneeded = () => opened.result.createObjectStore("training");
       opened.onerror = () => reject(opened.error);
       opened.onsuccess = () => {

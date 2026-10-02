@@ -677,6 +677,8 @@ const actions = {
           "/source/scripts/check_postgres_background_workloads.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_opening_segmentation.py"]);
+        run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+          "/source/scripts/check_postgres_opening_evidence.py"]);
       },
       restoreConsumers: async () => {
         run("docker", [...compose, "start", ...workloadConsumers]);
@@ -761,6 +763,8 @@ const actions = {
     const after = await get("queue/today");
     assert.deepEqual(after.cards.map(card => card.queue_entry_id),
       before.cards.map(card => card.queue_entry_id));
+    run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+      "/source/scripts/check_postgres_opening_evidence.py", "--verify-persisted"]);
     console.log("PASS PostgreSQL lost-response receipt replay, settings, and queue order survive container recreation");
   },
   backup_restore: async () => {

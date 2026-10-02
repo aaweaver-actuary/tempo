@@ -1,9 +1,14 @@
 import { API_URL } from "../const";
 import { confirmOperationResponse } from "./operation-status";
+import { queueRecordWithCompatibleOpeningEvidence } from "../domain/adapters/practice-card-adapters";
 import { queueCardSchema, queueEnvelopeSchema } from "../domain/schemas";
 import type { BackendQueueCard } from "../domain/transport";
 import { evaluateStudyAnswer, studyAnswerSchema, studySnapshotSchema, type StudyAnswer, type StudyAssessment } from "../domain/study-exercises";
 import { localDayKey } from "../utils/local";
+import { offlineTrainingDatabase as database } from "./offline-training-storage";
+import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
+import { saveEvidenceAwareReview } from "./opening-evidence-review";
+import { acknowledgeOpeningReview } from "./opening-evidence-journal";
 
 export type OfflineAttempt = {
   localEntryId: number;
@@ -24,6 +29,8 @@ export type OfflineAttempt = {
   studyId?: string;
   exerciseId?: string;
   attemptId?: string;
+  openingEvidenceCompletion?: OpeningEvidenceCheckpoint;
+  openingEvidenceRejected?: string;
   answer?: StudyAnswer;
   assessment?: StudyAssessment;
   selfRating?: "correct" | "again";
@@ -58,24 +65,12 @@ export function describeOfflineQueue(prepared: PreparedTraining): string {
     ". The live count may differ until you reconnect.";
 }
 
-const DATABASE_NAME = "tempo-offline-training";
 const RECORD_KEY = "prepared-daily-queue";
-let databasePromise: Promise<IDBDatabase> | undefined;
 
 export function requiresConnectedGrading(card: Pick<BackendQueueCard, "content_type">): boolean {
   if (card.content_type === "defense") return true;
   if (card.content_type !== "study_exercise") return false;
   return !studySnapshotSchema.safeParse((card as BackendQueueCard).study_snapshot).success;
-}
-
-function database(): Promise<IDBDatabase> {
-  databasePromise ??= new Promise((resolve, reject) => {
-    const request = indexedDB.open(DATABASE_NAME, 1);
-    request.onupgradeneeded = () => request.result.createObjectStore("training");
-    request.onsuccess = () => resolve(request.result);
-    request.onerror = () => reject(request.error);
-  });
-  return databasePromise;
 }
 
 export async function readPreparedTraining(): Promise<PreparedTraining | null> {
@@ -128,7 +123,7 @@ export async function savePreparedTraining(raw: unknown): Promise<PreparedTraini
   const envelope = queueEnvelopeSchema.parse(queuePayload);
   if (!envelope.local_date || envelope.projection?.state !== "ready" || envelope.count !== envelope.cards.length)
     throw new Error("The daily queue is not fully prepared yet");
-  const cards = envelope.cards.map((card) => queueCardSchema.parse(card));
+  const cards = envelope.cards.map((card) => queueCardSchema.parse(queueRecordWithCompatibleOpeningEvidence(card)));
   const preparedAt = (raw as { prepared_at: string }).prepared_at;
   return updatePreparedTraining((current) => {
     if (current?.attempts.some((attempt) => !attempt.serverReviewId && !attempt.serverAcknowledged && !attempt.conflict))
@@ -138,7 +133,7 @@ export async function savePreparedTraining(raw: unknown): Promise<PreparedTraini
       return current;
     return {
       localDate: envelope.local_date!, preparedAt, cards,
-      attempts: current?.attempts.filter((attempt) => attempt.conflict || attempt.syncWarning) ?? [],
+      attempts: current?.attempts.filter((attempt) => attempt.conflict || attempt.syncWarning || attempt.openingEvidenceRejected) ?? [],
       nextTemporaryId: 1_000_000_000_000,
     };
   });
@@ -170,6 +165,7 @@ export async function recordOfflineAttempt(
   guided: boolean,
   studyResponse?: { studyId: string; exerciseId: string; attemptId: string; answer: StudyAnswer;
     assessment: StudyAssessment; selfRating?: "correct" | "again" },
+  openingResponse?: { attemptId: string; completion?: OpeningEvidenceCheckpoint },
 ): Promise<PreparedTraining> {
   return updatePreparedTraining((current) => {
     if (!current || current.localDate !== localDayKey())
@@ -195,11 +191,12 @@ export async function recordOfflineAttempt(
     const parent = current.attempts.find((attempt) => attempt.localEntryId === card.parent_local_entry_id);
     const attempt: OfflineAttempt = {
       localEntryId, parentLocalEntryId: card.parent_local_entry_id,
-      cardId: card.id, outcome, guided, completedAt: new Date().toISOString(),
+      cardId: card.id, outcome, guided, completedAt: openingResponse?.completion?.terminal?.ended_at ?? new Date().toISOString(),
       expectedReviewId: parent?.serverReviewId ?? card.latest_review_id ?? 0,
       expectedRevision: card.revision ?? 1,
       queueCycle: card.cycle ?? 0,
       ...(studyResponse ?? {}),
+      ...(openingResponse ? { attemptId: openingResponse.attemptId, openingEvidenceCompletion: openingResponse.completion } : {}),
     };
     const remaining = current.cards.filter((_, index) => index !== cardIndex);
     let nextTemporaryId = current.nextTemporaryId;
@@ -214,6 +211,10 @@ export async function recordOfflineAttempt(
         first_correct_at: scheduledOutcome === "correct" ? attempt.completedAt : card.first_correct_at,
         recent_attempts_json: JSON.stringify(recentOutcomes),
         scheduling_mode: nextSchedulingMode,
+        ...(card.opening_decision_manifest ? {
+          opening_evidence_origin_queue_entry_id: card.opening_evidence_origin_queue_entry_id ?? card.queue_entry_id,
+          opening_evidence_parent_attempt_id: attempt.attemptId,
+        } : {}),
       } as BackendQueueCard;
       remaining.splice(Math.min(repeatPosition, remaining.length), 0, repeatedCard);
     }
@@ -281,16 +282,22 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
             expected_review_id: expectedReviewId, hint_seen: attempt.guided }),
         });
       } else {
-        const reviewAttemptId = `phone:${attempt.localEntryId}:${attempt.completedAt}`;
-        response = await fetch(reviewEndpoint, {
-          method: "POST", headers: { "Content-Type": "application/json",
-            "Idempotency-Key": `phone-reconcile:${reviewAttemptId}` }, signal: controller.signal,
-          body: JSON.stringify({
+        const reviewAttemptId = attempt.attemptId ?? `phone:${attempt.localEntryId}:${attempt.completedAt}`;
+        const completion = attempt.openingEvidenceCompletion
+          ? { ...attempt.openingEvidenceCompletion, queue_entry_id: serverEntryId } : undefined;
+        response = await saveEvidenceAwareReview({
+          endpoint: reviewEndpoint, operationKey: `phone-reconcile:${reviewAttemptId}`, signal: controller.signal,
+          completion, evidenceRejected: attempt.openingEvidenceRejected,
+          onEvidenceRejected: async (message) => {
+            await updatePreparedTraining((saved) => ({ ...saved!, attempts: saved!.attempts.map((item) =>
+              item.localEntryId === attempt.localEntryId ? { ...item, openingEvidenceRejected: message } : item) }));
+          },
+          body: {
             queue_entry_id: serverEntryId, outcome: attempt.outcome, guided: attempt.guided,
             recorded_at: attempt.completedAt, expected_review_id: expectedReviewId,
             expected_revision: attempt.expectedRevision,
             attempt_id: reviewAttemptId,
-          }),
+          },
         });
       }
       response = await confirmOperationResponse(response);
@@ -337,6 +344,8 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
     if (result.review) result = { ...result.review };
     if (!Number.isInteger(result.review_id) && !(result.persisted && result.reconciliation === "history_only"))
       throw new Error("Review sync did not confirm a saved review");
+    if (attempt.openingEvidenceCompletion && attempt.attemptId)
+      void acknowledgeOpeningReview(attempt.attemptId).catch(() => undefined);
     current = await updatePreparedTraining((saved) => ({
       ...saved!, attempts: saved!.attempts.map((item) => item.localEntryId === attempt.localEntryId
         ? { ...item, serverEntryId, serverReviewId: result.review_id ?? undefined,

@@ -35,7 +35,10 @@ def request_digest(command_name: str, payload: dict[str, Any]) -> str:
     # A paste preview is derived from the current repertoire snapshot. After a
     # successful save that snapshot changes, but replaying the same user save
     # must still resolve to its original receipt.
-    if command_name == "analysis.paste.commit":
+    if command_name in {"opening_evidence.checkpoint", "cards.review"}:
+        # Preparation is authoritative derived data; retries bind the original envelope.
+        identity_payload = {key: value for key, value in payload.items() if key != "prepared_manifest"}
+    elif command_name == "analysis.paste.commit":
         identity_payload = payload["request"]
     elif command_name == "discovery.accept":
         # Recommendation preparation can change during a retry. The accepted

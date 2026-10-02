@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { enqueuePendingReview, flushPendingReviews, pendingReviews } from "../../app/lib/review-outbox";
 import { enqueueTrainingFailure, pendingTrainingFailures } from "../../app/lib/training-failure-outbox";
+import manifest from "../fixtures/opening-evidence-manifest.json";
+import { openingEvidenceCheckpointSchema } from "../../app/domain/opening-evidence";
 
 beforeEach(() => {
   localStorage.clear();
@@ -8,6 +10,26 @@ beforeEach(() => {
 });
 
 describe("optimistic training review outbox", () => {
+  it("AS-16 confirmed aggregate-only fallback retains rejected journal even when IndexedDB is unavailable", async () => {
+    vi.stubGlobal("indexedDB", undefined);
+    const completion=openingEvidenceCheckpointSchema.parse({ attempt_id:"rejected-journal", manifest,
+      origin_queue_entry_id:101,queue_entry_id:101,started_at:"2026-09-30T12:00:00Z",study_timezone:"UTC",
+      events:[{sequence:1,decision_index:0,decision_id:manifest.decisions[0].decision_id,
+        expected_uci:"e2e4",kind:"first_response",response_uci:"e2e4",observed_at:"2026-09-30T12:00:01Z",disposition:"expected"}],
+      terminal:{state:"complete",final_sequence:1,ended_at:"2026-09-30T12:01:00Z"} });
+    enqueuePendingReview({backendId:"shadow-card",queueEntryId:101,outcome:"correct",guided:false,
+      attemptId:completion.attempt_id,openingEvidenceCompletion:completion});
+    const original=pendingReviews()[0];
+    vi.stubGlobal("fetch",vi.fn().mockResolvedValueOnce(Response.json({detail:{code:"opening_evidence_conflict",
+      message:"Rejected immutable evidence",aggregate_review_allowed:true}},{status:409}))
+      .mockResolvedValueOnce(Response.json({persisted:true})));
+    await flushPendingReviews();
+    expect(pendingReviews()).toEqual([]);
+    expect(JSON.parse(localStorage.getItem("tempo-rejected-opening-reviews-v1") ?? "[]")).toEqual([
+      {...original,evidenceRejected:"Rejected immutable evidence"},
+    ]);
+  });
+
   it("confirmed guided review clears its earlier failure marker", async () => {
     enqueueTrainingFailure(17);
     enqueuePendingReview({ backendId: "card-a", queueEntryId: 17,

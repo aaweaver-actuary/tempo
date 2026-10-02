@@ -36,6 +36,7 @@ type ChessboardProps = {
   lastMove?: readonly [string, string];
   locked: boolean;
   showHint: boolean;
+  onHintExposure?: (fen: string) => void;
   theme: BoardTheme;
   pieceSet: PieceSet;
   shapes?: DrawShape[];
@@ -61,6 +62,7 @@ export function Chessboard({
   lastMove,
   locked,
   showHint,
+  onHintExposure,
   theme,
   pieceSet,
   shapes = EMPTY_SHAPES,
@@ -342,12 +344,14 @@ export function Chessboard({
 
   useLayoutEffect(() => {
     const autoShapes = hint ? [...shapes, hint] : shapes;
-    if (appliedAutoShapes.current?.version === resetVersion.current &&
-      sameBoardShapes(appliedAutoShapes.current.shapes, autoShapes)) return;
-    // Chessground may mutate drawing arrays; keep published snapshots immutable.
-    captureRef.current?.boardEvent("annotations");
-    apiRef.current?.setAutoShapes([...autoShapes]);
-    appliedAutoShapes.current = { shapes: autoShapes, version: resetVersion.current };
+    if (appliedAutoShapes.current?.version !== resetVersion.current ||
+      !sameBoardShapes(appliedAutoShapes.current.shapes, autoShapes)) {
+      // Chessground may mutate drawing arrays; keep published snapshots immutable.
+      captureRef.current?.boardEvent("annotations");
+      apiRef.current?.setAutoShapes([...autoShapes]);
+      appliedAutoShapes.current = { shapes: autoShapes, version: resetVersion.current };
+    }
+    if (hint && apiRef.current) onHintExposure?.(fen);
   });
   useLayoutEffect(() => {
     if (appliedDrawnShapes.current?.version === resetVersion.current &&
