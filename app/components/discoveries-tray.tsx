@@ -266,17 +266,22 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   const outboxRecoveryStarted = useRef(false);
   const readyDiscoveries = useMemo(() => discoveries.filter((item) => {
     if (!initialPreflightComplete) return false;
-    if (item.admission_state === "preparing") return false;
+    if (item.admission_state === "preparing" || item.admission_state === "queued" ||
+        completedAdmissions.includes(`${item.id}:${item.evidence_fingerprint}`)) return false;
     if (item.card_id) return true;
     const recommendation = previews[item.id];
     return previewFingerprints[item.id] === item.evidence_fingerprint &&
       recommendation?.state === "ready" &&
       recommendation.evidence_fingerprint === item.evidence_fingerprint &&
       previewMatchesDecision(item, recommendation);
-  }), [discoveries, initialPreflightComplete, previews, previewFingerprints]);
-  const visibleDiscoveries = readyDiscoveries.filter((item) => !item.snoozed_until ||
-    new Date(item.snoozed_until).getTime() <= currentTime);
-  const reviewItems = sessionItems.length ? sessionItems : visibleDiscoveries;
+  }), [discoveries, initialPreflightComplete, previews, previewFingerprints, completedAdmissions]);
+  const visibleDiscoveries = useMemo(() => readyDiscoveries.filter((item) => !item.snoozed_until ||
+    new Date(item.snoozed_until).getTime() <= currentTime), [readyDiscoveries, currentTime]);
+  const reviewItems = useMemo(() => sessionItems.length ? sessionItems.filter((item) =>
+    item.admission_state !== "queued" &&
+    !completedAdmissions.includes(`${item.id}:${item.evidence_fingerprint}`) &&
+    (!item.snoozed_until || new Date(item.snoozed_until).getTime() <= currentTime)) : visibleDiscoveries,
+  [sessionItems, visibleDiscoveries, completedAdmissions, currentTime]);
   const activeIndex =
     activeId === null
       ? -1
@@ -288,9 +293,18 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
       activeSnapshot)
     : undefined;
   useEffect(() => {
-    if (open && activeId && !currentFeedItems.current.has(activeId) && reviewItems.length)
-      setActiveId(reviewItems[0].id);
-  }, [open, activeId, reviewItems]);
+    const activeWasHandled = (!currentFeedItems.current.has(activeId ?? "") &&
+      completedAdmissions.some((key) => key.startsWith(`${activeId}:`))) || sessionItems.some((item) => item.id === activeId &&
+      (item.admission_state === "queued" ||
+        completedAdmissions.includes(`${item.id}:${item.evidence_fingerprint}`)));
+    if (open && activeId && !reviewItems.some((item) => item.id === activeId) &&
+        (activeWasHandled || (!currentFeedItems.current.has(activeId) && reviewItems.length > 0))) {
+      const handledIndex = sessionItems.findIndex((item) => item.id === activeId);
+      const nextItem = sessionItems.slice(handledIndex + 1).find((item) =>
+        reviewItems.some((remaining) => remaining.id === item.id));
+      setActiveId(nextItem?.id ?? reviewItems[0]?.id ?? null);
+    }
+  }, [open, activeId, reviewItems, sessionItems, completedAdmissions]);
   const fen = active ? decisionFen(active) : "";
   const legalDecisionMoves = useMemo(() => fen ? decisionMoves(fen) : new Set<string>(), [fen]);
   const savedPreview = active ? previews[active.id] : undefined;
@@ -619,15 +633,21 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
       catch { /* updatePending reports malformed or unavailable browser storage below. */ }
     }
     const onQueued = (event: Event) => {
-      const opportunityId = (event as CustomEvent<{ opportunityId: string }>)
-        .detail.opportunityId;
+      const { opportunityId, evidenceFingerprint } = (event as CustomEvent<{
+        opportunityId: string; evidenceFingerprint?: string;
+      }>).detail;
       const notificationKey = `discovery-save:${opportunityId}`;
       const priorSaveNotice = notifications().find((record) =>
         record.key === notificationKey && !record.resolvedAt);
       if (priorSaveNotice) resolveNotification(priorSaveNotice.id,
         { severity: "success", message: "Discovery save confirmed." });
-      setCompletedAdmissions((current) => current.includes(opportunityId)
-        ? current : [...current, opportunityId]);
+      const confirmedItem = currentFeedItems.current.get(opportunityId);
+      const confirmedFingerprint = evidenceFingerprint ?? confirmedItem?.evidence_fingerprint;
+      if (confirmedFingerprint) {
+        const completionKey = `${opportunityId}:${confirmedFingerprint}`;
+        setCompletedAdmissions((current) => current.includes(completionKey)
+          ? current : [...current, completionKey]);
+      }
       void onQueueChanged().catch((cause) =>
         setError(
           cause instanceof Error
@@ -900,10 +920,22 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
         if (!currentEligibility.eligible) return;
       }
       commandSubmitted = true;
-      await applyOpportunityCommand(item.repertoire_id, item.id, action);
-      if (action === "train") await onQueueChanged();
+      if (action === "train")
+        await applyOpportunityCommand(item.repertoire_id, item.id, "train", item.evidence_fingerprint);
+      else
+        await applyOpportunityCommand(item.repertoire_id, item.id, action);
+      if (action === "train") {
+        const completionKey = `${item.id}:${item.evidence_fingerprint}`;
+        setCompletedAdmissions((current) => current.includes(completionKey)
+          ? current : [...current, completionKey]);
+        await onQueueChanged();
+      }
       await refresh(true);
-      if (action !== "train") setActiveId(null);
+      if (action !== "train") {
+        const nextItem = reviewItems.slice(activeIndex + 1).find((candidate) => candidate.id !== item.id)
+          ?? reviewItems.find((candidate) => candidate.id !== item.id);
+        setActiveId(nextItem?.id ?? null);
+      }
     } catch (cause) {
       if (action !== "train" || commandSubmitted || isCurrent())
         setError(cause instanceof Error ? cause.message : `Could not ${action} discovery`);
@@ -925,7 +957,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
             !pendingDiscoveryAdmissions().some(
               (pending) => pending.opportunityId === candidate.id,
             ) &&
-            !completedAdmissions.includes(candidate.id) &&
+            !completedAdmissions.includes(`${candidate.id}:${candidate.evidence_fingerprint}`) &&
             candidate.admission_state !== "preparing" &&
             candidate.admission_state !== "queued",
         );
@@ -1142,7 +1174,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
                           pendingAdmissions.some(
                             (item) => item.opportunityId === active.id,
                           ) ||
-                          completedAdmissions.includes(active.id)
+                          completedAdmissions.includes(`${active.id}:${active.evidence_fingerprint}`)
                         }
                         onClick={() => {
                           if (soundSelection)

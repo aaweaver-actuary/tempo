@@ -76,7 +76,7 @@ from .models import (
     ThreatAnalysisFailureRequest,
     DefenseAttemptRequest,
     DefenseRecognitionRequest,
-    DiscoveryAcceptanceRequest,
+    DiscoveryAcceptanceRequest, DiscoveryTrainingRequest,
 )
 from .services.analysis import AnalysisCapabilities
 from .services.analysis_paste import (
@@ -3761,14 +3761,14 @@ def discoveries_feed(offset: int = 0, limit: int = 25):
                        AND opportunity.snoozed_until IS NULL
                        OR opportunity.snoozed_until<=? THEN 1 ELSE 0 END)
                FROM repertoire_opportunities opportunity
-               WHERE opportunity.status='active'
+               WHERE opportunity.status='active' AND opportunity.handled_evidence_json IS NULL
                  AND opportunity.repertoire_id NOT IN
                      ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__')""",
             (datetime.now(timezone.utc).isoformat(),),
         ).fetchone()
         identifiers = [dict(row) for row in database.execute(
             """SELECT id,repertoire_id FROM repertoire_opportunities
-               WHERE status='active' AND repertoire_id NOT IN
+               WHERE status='active' AND handled_evidence_json IS NULL AND repertoire_id NOT IN
                    ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__')
                ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?""",
             (limit, offset),
@@ -3917,16 +3917,19 @@ def repertoire_opportunity_training_eligibility(identifier: str, opportunity_id:
 
 @app.post("/api/repertoires/{identifier}/opportunities/{opportunity_id}/train")
 def train_repertoire_opportunity(identifier: str, opportunity_id: str,
+                                 request: DiscoveryTrainingRequest,
                                  idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    expected_fingerprint = request.evidence_fingerprint
     if postgres_store.configured():
         from .command_dispatch import dispatch_command
         return dispatch_command(
-            "opportunities.train", {"repertoire_id": identifier, "opportunity_id": opportunity_id},
+            "opportunities.train", {"repertoire_id": identifier, "opportunity_id": opportunity_id,
+                                    "evidence_fingerprint": expected_fingerprint},
             idempotency_key=idempotency_key,
         )
     with connection() as database:
         try:
-            return admit_existing_decision(database, identifier, opportunity_id)
+            return admit_existing_decision(database, identifier, opportunity_id, expected_fingerprint)
         except KeyError as error:
             raise HTTPException(404, str(error)) from error
         except ValueError as error:
