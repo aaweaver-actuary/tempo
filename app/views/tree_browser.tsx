@@ -1,4 +1,5 @@
 "use client";
+import { historyKeyboardActions } from "../lib/keyboard-shortcuts";
 import { Button } from "../components/buttons/BaseButton";
 import { useRef as useDialogRef } from "react";
 import { useDialogFocus } from "../hooks/use-dialog-focus";
@@ -50,6 +51,7 @@ export function TreeBrowser({
         <div className="tree-layout">
           <div className="tree-board">
             <Chessboard
+              keyboard={{ ...historyKeyboardActions(ply, line.length, setPly), reset: () => setPly(0) }}
               fen={fenAfterMoves(line, ply)}
               locked
               showHint={false}

@@ -1,6 +1,7 @@
 import { test, expect } from "./observability";
 import { navigate, noPageOverflow } from "./ui-fixtures";
 import { prepareVisualUI } from "./visual-fixtures";
+import { expectedPieces, renderedPieces, playMove } from "./keyboard-fixtures";
 
 // API route interception must remain deterministic after the app registers its shell worker.
 test.use({ serviceWorkers: "block" });
@@ -151,4 +152,39 @@ test("capture accepts SAN from Black's perspective across browser engines", asyn
   await dialog.getByRole("button", { name: "Add moves", exact: true }).click();
   await expect(board).toHaveAttribute("data-fen", "rnbqkbnr/pppp1ppp/8/4p3/8/5N2/PPPPPPPP/RNBQKB1R b KQkq - 1 2");
   await expect(board).toHaveAttribute("data-orientation", "black");
+});
+
+test("contextual board keys and nested popup Escape work across browser engines", async ({ page }) => {
+  await prepareVisualUI(page); await navigate(page, "Builder");
+  const board = page.locator(".board-frame");
+  const root = await board.getAttribute("data-fen");
+  await playMove(page, board, "e2", "e4");
+  await expect(board).not.toHaveAttribute("data-fen", root!);
+  const decision = await board.getAttribute("data-fen");
+  await page.keyboard.press("ArrowLeft"); await expect(board).toHaveAttribute("data-fen", root!);
+  await page.keyboard.press("End"); await expect(board).toHaveAttribute("data-fen", decision!);
+  await page.keyboard.press("f"); await expect(board).toHaveAttribute("data-orientation", "black");
+  await page.keyboard.press("Home"); await page.keyboard.press("r");
+  await expect(board).toHaveAttribute("data-orientation", "white");
+  await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(decision!));
+  await page.getByRole("tab", { name: "Repertoire", exact: true }).click();
+  const search = page.getByRole("button", { name: /Position search/ });
+  await search.click(); await page.keyboard.press("Escape"); await expect(search).toBeFocused();
+  await navigate(page, "Tactics");
+  const launch = page.getByRole("button", { name: "Capture tactic", exact: true });
+  await launch.click();
+  const capture = page.getByRole("dialog", { name: "Capture tactic" });
+  const background = page.locator(".persistent-board-shell .board-frame");
+  const backgroundOrientation = await background.getAttribute("data-orientation");
+  const popupBoard = capture.locator(".board-frame");
+  const helpButton = capture.getByRole("button", { name: "Keyboard shortcuts", exact: true });
+  await popupBoard.locator("..").focus();
+  await page.keyboard.press("f");
+  await expect(popupBoard).toHaveAttribute("data-orientation", "black");
+  await expect(background).toHaveAttribute("data-orientation", backgroundOrientation!);
+  await helpButton.click();
+  const help = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+  await expect(help).toBeVisible(); await page.keyboard.press("Escape");
+  await expect(help).toHaveCount(0); await expect(capture).toBeVisible(); await expect(helpButton).toBeFocused();
+  await page.keyboard.press("Escape"); await expect(capture).toHaveCount(0); await expect(launch).toBeFocused();
 });

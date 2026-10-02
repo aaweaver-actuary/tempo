@@ -13,6 +13,7 @@ import { PersistentBoardShell } from "./persistent-board-shell";
 import { useBoardShellStore } from "../../state/board-shell-store";
 import { ResetBoardSizeButton } from "./ResetBoardSizeButton";
 import { FlipBoardButton } from "./FlipBoardButton";
+import { Button } from "../buttons/BaseButton";
 
 export const DEFAULT_BOARD_SPLIT = 46;
 const BoardToolbarTarget = createContext<HTMLDivElement | null>(null);
@@ -151,6 +152,8 @@ export function BoardWorkspace({
                 onFlip: board.onFlip,
               }}
             />
+            <Button aria-label="Keyboard shortcuts" title="Keyboard shortcuts (?)" disabled={Boolean(board.unavailable)}
+              onClick={event => { event.currentTarget.focus(); window.dispatchEvent(new Event("tempo:board-help")); }}>? Keys</Button>
             <div className="workspace-board-actions" ref={setToolbarTarget} />
           </div>
         </div>

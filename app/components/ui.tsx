@@ -1,4 +1,6 @@
+import { usePopupKeyboard } from "../lib/keyboard-shortcuts";
 import {
+  useRef,
   forwardRef,
   cloneElement,
   useId,
@@ -95,17 +97,14 @@ export function TabList({
 export function ActionMenu({
   label, summaryAriaLabel, menuRole, children, className = "", ...props
 }: DetailsHTMLAttributes<HTMLDetailsElement> & { label: string; summaryAriaLabel?: string; menuRole?: "menu" }) {
+  const menuRef = useRef<HTMLDetailsElement>(null);
+  usePopupKeyboard(menuRef, () => { if (menuRef.current) menuRef.current.open = false; menuRef.current?.querySelector("summary")?.focus(); });
   return (
     <details
+      ref={menuRef}
       {...props}
       className={["ui-menu", className].filter(Boolean).join(" ")}
-      onKeyDown={(event) => {
-        if (event.key !== "Escape" || !event.currentTarget.open) return;
-        event.preventDefault();
-        event.stopPropagation();
-        event.currentTarget.open = false;
-        event.currentTarget.querySelector("summary")?.focus();
-      }}
+
     >
       <summary aria-label={summaryAriaLabel}>{label}</summary>
       <div className="ui-menu-content" role={menuRole}>{children}</div>

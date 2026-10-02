@@ -52,6 +52,7 @@ export default function CardEditor({
   const { startingFen: currentFenString, setStartingFen: setCurrentFenString,
     moves: solutionSanMovesList, setMoves: setSolutionSanMovesList,
     cursor: currentPositionInMoveList, setCursor: setCurrentPositionInMoveList,
+
     error, setError } = editor;
   const [historyMode, setHistoryMode] = useState<"preserve" | "reset">(
     "preserve",
@@ -105,40 +106,6 @@ export default function CardEditor({
     };
   }, [card.backendId, card.editingIntent, setCurrentFenString, setError, setSolutionSanMovesList]);
 
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        onClose();
-        return;
-      }
-      if (
-        event.target instanceof HTMLTextAreaElement ||
-        event.target instanceof HTMLInputElement
-      )
-        return;
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        setCurrentPositionInMoveList((value) => Math.max(0, value - 1));
-      }
-      if (event.key === "ArrowRight") {
-        event.preventDefault();
-        setCurrentPositionInMoveList((value) =>
-          Math.min(solutionSanMovesList.length, value + 1),
-        );
-      }
-      if (event.key === "ArrowUp") {
-        event.preventDefault();
-        setCurrentPositionInMoveList(0);
-      }
-      if (event.key === "ArrowDown") {
-        event.preventDefault();
-        setCurrentPositionInMoveList(solutionSanMovesList.length);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose, solutionSanMovesList.length, setCurrentPositionInMoveList]);
 
   async function restoreOriginal() {
     try {
