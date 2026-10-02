@@ -330,3 +330,62 @@ passed in the final focused backend run. PostgreSQL durability/recreation, the n
 real browser spec, pinned rendering (including intentional Settings baseline review),
 production builds, and final CI candidate checks remain pending. No CI run was
 started from this local branch and no deployment was performed.
+
+Review-fix evidence (2026-10-02): pulled the reviewed head `b3fe4f4`, which had
+no newer branch commits. Added the staged settings route contract, reused the
+settings system-ID tuple for repertoire listing (including `__defense__`), removed
+owner-integrity exclusions only from four historical consumption queries, and
+initialized Custom from the current global default unless a custom draft exists.
+Named regressions and failing-before evidence are recorded in `tests/REGRESSIONS.md`.
+Candidate eligibility checks, cycle-zero accounting, publication rechecks, and
+queue-generation invalidation remain intact. Older system exclusions in import,
+main selection, comparison, and integrity scanning were inspected but left outside
+this settings/listing fix to avoid changing unrelated repertoire behavior.
+
+Current main `937aee7` was merged into the PR branch, preserving both appended CSS
+sections and both regression inventories. The post-merge executable candidate was
+clean `df5b64ec738972ed58bc01fe19aad61603465324` in the same isolated macOS checkout;
+Python remained CPython 3.14.5. Docker tests used disposable PostgreSQL with Python
+3.12 and the production Compose image build. Test-owned temporary secrets, databases,
+containers and volumes were cleaned by the runners; live study was untouched.
+
+| Post-merge command | Result and observed duration |
+| --- | --- |
+| `PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_repertoire_settings.py backend/tests/test_postgres_route_contract.py backend/tests/test_postgres_opening_candidate_pages.py backend/tests/test_new_cards_per_repertoire.py backend/tests/test_regressions.py backend/tests/test_introduction_priorities.py backend/tests/test_postgres_cutover.py::test_postgres_priority_opening_publication_translates_opportunity_json backend/tests/test_postgres_cutover.py::test_postgres_queue_unseen_reconciliation_matches_sqlite_and_survives_reordering -q -o cache_dir=.pytest_cache --rootdir=.` | 59 passed; 36.37 s pytest duration. Includes all 20 repertoire-settings cases, route-contract matching, and existing publication/reconciliation invariants. |
+| `TEMPO_PYTHON=backend/.venv/bin/python npm run test:unit -- tests/unit/repertoire-daily-limits.test.tsx tests/unit/api-schema-parity-regressions.test.ts tests/unit/tactic-capture-regressions.test.tsx` | 32 passed across 3 files; 15.45 s Vitest duration. Includes 6 repertoire cases, 5 schema cases, and preservation of incoming SAN-entry behavior. |
+| `npm run typecheck` and `npm run lint` | Passed; lint retains 9 existing warnings. Individual durations not captured. |
+| `make docker-durability` (elevated) | Incomplete/failing: repertoire-limit proof, capture contention, schema upgrade, background budgets, and operation recovery passed. Existing `check_postgres_background_workloads.py` second threat claim exceeded its 250 ms transaction budget. Background-workload stage 99.82 s; image build 70.41 s; cleanup 16.38 s. These are stage timings, not a full-gate pass or summed suite wall time. Later threat-upsert, recreation, backup/restore and study-durability stages were not reached. |
+| `make ui-file FILE=settings-repertoire-limits.spec.ts` (elevated) | Passed: 1 Chromium workflow, 31.9 s Playwright duration (30.3 s case). Docker stages: build 19.59 s, startup 33.94 s, browser 34.43 s, cleanup 37.56 s. Proves current-day queue changes, reload persistence, inheritance reset, and failed-save receipt recovery. |
+| `make plan` and `git diff --check` | Coverage inspected; diff clean. Static inspection only. |
+
+Before merging main, `make visual` (elevated, clean `a6eb4bb`) ran the pinned
+Linux ARM64 Playwright 1.63.0 image: 47 passed, 4 Settings screenshots failed,
+11.1 min Playwright duration. All four actual/expected Settings images were
+visually inspected at 390, 768, 1280 and 1920 px. Differences at the first three
+sizes are the intended default label, repertoire controls and resulting page height.
+The 1920 baseline also predates the notification button: its last update is
+`16a845b` (2026-09-26), before notification introduction `a11eed6` (2026-09-27).
+That separate header difference is not approved by this feature request. Performance
+cases passed, but this run overlapped a focused Python check and is not comparative
+performance evidence. Its results are historical pre-merge evidence, not validation
+of the merged candidate.
+
+Post-merge pinned attempts used the same image/config without changing tests.
+The first focused filter was incorrectly anchored against short titles; collection
+returned zero tests and no snapshots changed (not a pass). The corrected attempt
+was killed with exit 137 during `npm ci`, before tests or updates. Docker diagnostics
+showed a shared 6 GB / 4 CPU VM with live Tempo services and another test project;
+no services were stopped, limits increased, or caches pruned. A cache-first install
+with a 512 MB npm heap and bounded download concurrency was selected to reduce setup
+pressure; this does not change browser assertions or performance thresholds.
+
+The bounded/cache-first install was also killed with exit 137 before collection or
+browser execution. No baseline updates occurred in any post-merge attempt. All
+Settings baselines remain unchanged; the reviewed feature additions and separate
+1920 notification-header discrepancy remain visible validation blockers. Stop retrying
+on the loaded shared VM rather than disrupting live study or weakening assertions.
+Post-merge pinned capture/SAN assertions are unrun. `make full` was not run locally:
+CI owns the complete current-candidate gate. This patch is ready for another code
+review, but neither the failed durability run nor historical visual passes establish
+merge/release readiness. Runtime inputs remained `df5b64e`; this documentation-only
+follow-up does not relabel those executions as tests of a later clean commit.
