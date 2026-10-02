@@ -599,7 +599,7 @@ def claim_analysis_request() -> dict | None:
                      JOIN repertoire_integrity_state integrity ON integrity.repertoire_id=issue.repertoire_id
                      WHERE recommendation.request_id=request.id AND issue.signature=recommendation.signature
                        AND integrity.scan_status='idle'
-                       AND integrity.scan_generation=recommendation.scan_generation))
+                       AND integrity.scan_generation IS recommendation.scan_generation))
                ORDER BY CASE WHEN EXISTS(SELECT 1 FROM threat_candidate_requests foreground
                    WHERE foreground.request_id=request.id AND foreground.role='attempt')
                    THEN 0 ELSE 1 END,

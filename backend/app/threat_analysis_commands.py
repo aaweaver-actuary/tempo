@@ -49,7 +49,8 @@ _ELIGIBLE_THREAT_REQUEST = (
     "JOIN repertoire_integrity_issues issue ON issue.id=recommendation.issue_id "
     "JOIN repertoire_integrity_state integrity ON integrity.repertoire_id=issue.repertoire_id "
     "WHERE recommendation.request_id=request.id AND issue.signature=recommendation.signature "
-    "AND integrity.scan_status='idle' AND integrity.scan_generation=recommendation.scan_generation "
+    "AND integrity.scan_status='idle' "
+    "AND integrity.scan_generation IS NOT DISTINCT FROM recommendation.scan_generation "
     "LIMIT 1 OFFSET 0)) "
 )
 

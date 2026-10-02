@@ -116,3 +116,19 @@ explicitly noted in the PR description for merge ordering.
 - `make python-file FILE=backend/tests/test_postgres_threat_analysis_commands.py`:
   5 passed (0.54s pytest execution; 1.11s command wall), after the focused
   callback failure was reproduced (0.89s pytest execution).
+
+Final compatibility check preserves current historical idle scans whose generation
+is null, using each database's null-safe equality without relaxing changed-scan
+fences. `test_integrity_recommendations_support_current_legacy_scan_without_a_generation`
+first failed at the actual engine claim (0.71s pytest); the recommendation, engine
+callback, and validation caller files then passed all 28 cases (1.12s pytest).
+Exact command: `PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_integrity_recommendations.py backend/tests/test_postgres_threat_analysis_commands.py backend/tests/test_defensive_threat_validation.py backend/tests/test_postgres_threat_validation.py -q -o cache_dir=.pytest_cache --rootdir=.`
+
+Fresh `/usr/bin/time -p make docker-durability` passed all 14 planned stages
+(161.36s command wall) on `414bff0` plus the recorded compatibility diff. The real
+PostgreSQL repair rehearsal now starts with a historical null scan generation.
+Owning project: `tempo-pg-regressions-36245-1d2cea6e`; cleanup passed (13.97s),
+using `docker compose -p tempo-pg-regressions-36245-1d2cea6e -f docker-compose.postgres.test.yml down --rmi local -v`
+and explicit removal of its separately built maintenance image. Logs and timing
+JSON retain resource identifiers. Fresh current-candidate CI follows this patch;
+previous-head passes are not final candidate evidence.

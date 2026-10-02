@@ -104,6 +104,16 @@ def test_integrity_recommendations_reject_stale_issue_source_and_scan(repair):
     assert claim_analysis_request() is None
 
 
+def test_integrity_recommendations_support_current_legacy_scan_without_a_generation(repair):
+    with database.connection() as db:
+        db.execute("UPDATE repertoire_integrity_state SET scan_generation=NULL WHERE repertoire_id='rep'")
+    prepare(repair)
+    report()
+    while step(): pass
+    result = repair.get('/api/repertoires/rep/integrity/issues/issue/recommendations?signature=signature').json()
+    assert result['state'] == 'ready' and result['suggested_move_uci'] == 'g1f3', result
+
+
 def test_integrity_recommendations_close_reads_yield_to_foreground_and_replay_after_restart(repair, monkeypatch):
     repair.post('/api/repertoires/rep/integrity/issues/issue/recommendations',json={'signature':'signature'})
     task = claim_task(allowed_kinds=('integrity_recommendation',))

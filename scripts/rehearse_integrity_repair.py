@@ -29,7 +29,9 @@ def guided_repair_postgres_contention_restart_replay_and_publication(observer):
         sources.append({'type': 'line', 'id': source_id, 'move_index': 2, 'move': response})
         observer.execute("INSERT INTO repertoire_lines VALUES(%s,%s,%s,'white',%s,%s,'2026-10-02')",
                          (source_id, repertoire_id, source_id, chess.STARTING_FEN, json.dumps(['e2e4', 'e7e5', response])))
-    observer.execute("INSERT INTO repertoire_integrity_state(repertoire_id,status,scan_status,scan_generation) VALUES(%s,'needs_repair','idle','initial:1')", (repertoire_id,))
+    # Historical idle scans can predate generation tracking. They remain bound
+    # to their current null generation until a real scan supersedes them.
+    observer.execute("INSERT INTO repertoire_integrity_state(repertoire_id,status,scan_status,scan_generation) VALUES(%s,'needs_repair','idle',NULL)", (repertoire_id,))
     observer.execute("INSERT INTO repertoire_integrity_issues(id,repertoire_id,kind,fen_key,fen,trained_color,signature,moves_json,sources_json,created_at,updated_at) VALUES('guided-issue',%s,'multiple_responses',%s,%s,'white','signature',%s,%s,'2026-10-02','2026-10-02')",
                      (repertoire_id, ' '.join(position.fen().split()[:4]), position.fen(), json.dumps(['g1f3', 'f1c4']), json.dumps(sources)))
     observer.commit()
