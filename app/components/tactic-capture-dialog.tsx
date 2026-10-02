@@ -71,7 +71,8 @@ export function TacticCaptureDialog({ theme, pieceSet, onClose, onQueueChanged }
       }}>
         <PositionSolutionTabs editor={editor} requirePlayable />
         <div className="editor-layout">
-          <PositionSolutionBoard editor={editor} theme={theme} pieceSet={pieceSet} setupControls locked={locked} />
+          <PositionSolutionBoard editor={editor} theme={theme} pieceSet={pieceSet} setupControls locked={locked}
+            orientation={editor.boardFen.trim().split(/\s+/)[1] === "b" ? "black" : "white"} enableSanEntry />
           <div className="editor-fields">
             <PositionFenField editor={editor} setupControls locked={locked} />
             <label>Source<SelectInput value={source} onChange={event => setSource(event.target.value as typeof source)}>

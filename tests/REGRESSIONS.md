@@ -897,3 +897,27 @@ deactivation before archiving cards; the source-neutral active-card quota can
 therefore never replenish another test's cards. Enrollment, real mixed Training,
 authored FEN, unchanged board during square selection, assessment and export
 assertions remain required. No test identity, CI selection, or timeout changed.
+
+
+## Tactic capture orientation and typed SAN
+
+Capture now faces the accepted starting side and permits typed SAN without changing
+its durable UCI command contract. Named regressions in
+`tests/unit/tactic-capture-regressions.test.tsx`:
+
+- `capture orients to the accepted starting side and stays fixed through moves and pending FEN changes`
+- `capture accepts numbered Black-first SAN lines and saves canonical UCI moves`
+- `capture rejects an invalid SAN line atomically and retains text for correction`
+- `capture SAN entry replaces the continuation at the cursor and mixes with board moves`
+- `capture SAN entry stays locked while saving and awaiting capture confirmation`
+- `capture rejects empty, ambiguous, and non-SAN input without changing an existing solution`
+- `capture SAN entry refuses invalid or unconfirmed starting positions`
+- `capture SAN entry preserves special moves and disambiguation from %s` (castling, en passant, underpromotion, and disambiguation fixtures)
+
+Real-board workflow coverage:
+`Black-first capture keeps its orientation while typed SAN and real-board moves save one solution`
+in `tests/browser/tactic-capture.spec.ts`.
+Cross-browser coverage:
+`capture accepts SAN from Black's perspective across browser engines`.
+The pinned `Capture tactic dialog 390` and `Capture tactic dialog 1280` cases also
+check SAN input visibility and width after switching to Solution.

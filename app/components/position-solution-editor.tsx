@@ -1,3 +1,5 @@
+import { useState } from "react";
+import { TextInput } from "./inputs/TextInput";
 import { Button } from "./buttons/BaseButton";
 import { TextArea } from "./ui";
 import { SelectInput } from "./inputs/SelectInput";
@@ -14,9 +16,15 @@ export function PositionSolutionTabs({ editor, requirePlayable = false }: { edit
   </div>;
 }
 
-export function PositionSolutionBoard({ editor, theme, pieceSet, setupControls = false, locked = false }: {
+export function PositionSolutionBoard({ editor, theme, pieceSet, setupControls = false, locked = false, orientation, enableSanEntry = false }: {
   editor: PositionSolutionState; theme: BoardTheme; pieceSet: PieceSet; setupControls?: boolean; locked?: boolean;
+  orientation?: "white" | "black"; enableSanEntry?: boolean;
 }) {
+  const [sanText, setSanText] = useState("");
+  const inputLocked = locked || editor.pendingFen !== null;
+  function addSanMoves() {
+    if (!inputLocked && editor.playSanSolution(sanText)) setSanText("");
+  }
   return <div className="editor-board-column">
     {editor.tab === "position" && <div className="piece-palette">
       {setupControls && <Button className={editor.piece === null ? "active move-pieces" : "move-pieces"}
@@ -25,7 +33,7 @@ export function PositionSolutionBoard({ editor, theme, pieceSet, setupControls =
         disabled={locked} className={editor.piece === id ? "active" : ""}
         onClick={() => editor.setPiece(id)} aria-label={id ? `Place ${id}` : "Remove piece"}>{symbol}</Button>)}
     </div>}
-    <Chessboard fen={editor.tab === "position" ? editor.boardFen : editor.previewFen}
+    <Chessboard orientation={orientation} fen={editor.tab === "position" ? editor.boardFen : editor.previewFen}
       locked={locked || editor.pendingFen !== null} showHint={false} theme={theme} pieceSet={pieceSet}
       editMode={editor.tab === "position"} onSquareSelect={editor.placePiece}
       onFreeMove={editor.moveSetupPiece} onMove={editor.playSolution} />
@@ -34,7 +42,19 @@ export function PositionSolutionBoard({ editor, theme, pieceSet, setupControls =
       <div className="solution-line">{editor.moves.length ? editor.moves.map((move, index) =>
         <Button className={index < editor.cursor ? "shown" : ""} key={`${move}-${index}`}
           onClick={() => editor.setCursor(index + 1)}>{index % 2 === 0 ? `${Math.floor(index / 2) + 1}.` : ""}{move}</Button>)
-        : <span>Play the solution on the board.</span>}</div>
+        : <span>{enableSanEntry ? "Play the solution on the board or enter SAN moves." : "Play the solution on the board."}</span>}</div>
+      {enableSanEntry && <div className="san-entry">
+        <label>SAN moves<TextInput value={sanText} disabled={inputLocked} autoComplete="off" spellCheck={false}
+          aria-describedby="capture-san-help" placeholder="e4 e5 Nf3"
+          onChange={event => setSanText(event.target.value)} onKeyDown={event => {
+            if (event.key === "Enter" && !event.nativeEvent.isComposing) {
+              event.preventDefault(); event.stopPropagation(); addSanMoves();
+            }
+          }} /></label>
+        <p id="capture-san-help" className="editor-key-help">Enter one move or a line, with optional move numbers.
+          Moves start at the selected position and replace any continuation.</p>
+        <Button disabled={inputLocked || !sanText.trim()} onClick={addSanMoves}>Add moves</Button>
+      </div>}
       <label>Promotion <SelectInput value={editor.promotion} disabled={locked} onChange={event => editor.setPromotion(event.target.value)}>
         <option value="q">Queen</option><option value="r">Rook</option><option value="b">Bishop</option><option value="n">Knight</option>
       </SelectInput></label>
