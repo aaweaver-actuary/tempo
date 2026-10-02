@@ -1007,3 +1007,24 @@ def test_canonical_preview_checks_authored_membership_of_a_generated_shared_card
     preview = prepare_prefix()
     assert preview["state"] == "conflicts"
     assert any(conflict["item_id"] == "card:generated-shared" for conflict in preview["conflicts"])
+
+
+def test_canonical_introduction_scores_hide_after_another_repertoire_scope_changes(prefix_database):
+    from app.services.opening_graph import enqueue_opening_graph_rebuild, execute_opening_graph_rebuild
+    from app.services.introduction_priorities import rebuild_introduction_priorities
+    from app.services.canonical_prefix import read_prefix
+    add_line([*ITALIAN, "f8c5", "c2c3"])
+    with database.connection() as connection:
+        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('other','Other','other.pgn','2026-10-02')")
+    apply_preview(prepare_prefix())
+    enqueue_opening_graph_rebuild("italian")
+    execute_opening_graph_rebuild(claim_task("opening_graph_rebuild"))
+    with database.connection() as connection:
+        rebuild_introduction_priorities(connection, "italian")
+        source_revision = read_prefix(connection, "italian")["source_revision"]
+        assert connection.execute("SELECT 1 FROM current_repertoire_card_introduction_priorities").fetchone()
+    _set_other_prefix("other", ITALIAN)
+    with database.read_connection() as connection:
+        assert read_prefix(connection, "italian")["source_revision"] == source_revision
+        assert connection.execute("SELECT 1 FROM repertoire_card_introduction_priorities").fetchone()
+        assert not connection.execute("SELECT 1 FROM current_repertoire_card_introduction_priorities").fetchone()

@@ -172,6 +172,9 @@ older coverage and priority publications, prevents active-run reuse and claims,
 and fences Explorer/Maia commits. Unrestricted coverage retains its compatibility
 behavior because it does not reconstruct canonical certificates. Missing scoped
 route data still fails actionably; a refresh never recertifies removed routes.
+Priority evidence also records the global game generation, so primary game miss
+bonuses cannot survive another repertoire's scope change. Existing priority rows
+are stamped with the initial migration generation before that fence activates.
 
 A game comparison publishes the global scope generation atomically with all
 matches, its primary comparison (including NULL), and decisions. Current views

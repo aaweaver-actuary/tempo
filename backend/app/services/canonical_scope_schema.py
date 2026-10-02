@@ -28,6 +28,8 @@ def initialize_scope_schema(database) -> None:
     # Repeated startup never reclassifies a card promoted by an explicit edit.
     migrated = database.execute("SELECT 1 FROM sqlite_master WHERE type='trigger' AND name='canonical_card_promote'").fetchone()
     if not migrated:
+        for table in ('repertoire_card_priority_generations', 'repertoire_card_introduction_priorities'):
+            database.execute(f"UPDATE {table} SET evidence_json=json_set(evidence_json,'$.game_scope_generation',0)")
         database.execute("UPDATE cards SET canonical_route_source=0 WHERE EXISTS(SELECT 1 FROM opening_graph_steps step WHERE step.card_id=cards.id AND step.starting_fen=cards.start_fen AND step.moves_json=cards.moves_json)")
         database.execute("UPDATE repertoire_cards SET canonical_route_source=0 WHERE EXISTS(SELECT 1 FROM opening_graph_steps step JOIN cards card ON card.id=step.card_id WHERE step.card_id=repertoire_cards.card_id AND step.repertoire_id=repertoire_cards.repertoire_id AND card.canonical_route_source=0)")
     for table in ('repertoire_lines', 'repertoire_cards'):
@@ -62,4 +64,5 @@ def initialize_scope_schema(database) -> None:
     database.execute(f'CREATE VIEW IF NOT EXISTS current_repertoire_opportunities AS SELECT opportunity.* FROM repertoire_opportunities opportunity WHERE {opportunity_scope_predicate()}')
     for table in ('repertoire_card_priority_generations','repertoire_card_introduction_priorities'):
         predicate = coverage_scope_predicate(database, settings='publication.evidence_json', repertoire_id='publication.repertoire_id')
+        predicate += " AND COALESCE(CAST(json_extract(publication.evidence_json,'$.game_scope_generation') AS BIGINT),0)=(SELECT generation FROM repertoire_game_scope WHERE id=1)"
         database.execute(f'CREATE VIEW IF NOT EXISTS current_{table} AS SELECT publication.* FROM {table} publication WHERE {predicate}')

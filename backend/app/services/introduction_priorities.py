@@ -20,7 +20,7 @@ import chess
 from .repertoire_comparison import canonical_fen
 from .repertoire_coverage import blend_probabilities
 from .activity_gate import activity_gate
-from .canonical_scope_freshness import coverage_run_is_current, coverage_scope_predicate, scope_identity
+from .canonical_scope_freshness import coverage_run_is_current, coverage_scope_predicate, scope_identity, game_scope_generation
 from .canonical_prefix import scope_lines, read_prefix
 
 
@@ -590,7 +590,7 @@ def _load_priority_calculation_input(
         ]
         line_rows = scope_lines(database, repertoire_id, line_rows)
         has_prefix = bool(read_prefix(database, repertoire_id)["moves"])
-        canonical_scope = scope_identity(database, repertoire_id)
+        canonical_scope = {**scope_identity(database, repertoire_id), "game_scope_generation": game_scope_generation(database)}
         cards = tuple(
             dict(row)
             for row in database.execute(
@@ -730,7 +730,7 @@ def rebuild_introduction_priorities(
         int(settings["coverage_horizon_fullmoves"]),
         float(settings["coverage_path_floor"]),
         _real_game_miss_evidence(database, repertoire_id),
-        scope_identity(database, repertoire_id),
+        {**scope_identity(database, repertoire_id), "game_scope_generation": game_scope_generation(database)},
     )
     _replace_priority_records(
         database,

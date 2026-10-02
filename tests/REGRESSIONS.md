@@ -1314,6 +1314,7 @@ The quota, terminal-ID, stale browser marker, and Home refresh-retry regressions
 | `test_canonical_published_introduction_priorities_hide_after_source_edit` | Same backend file | Already published introduction scores surviving a scoped source change. |
 | `test_canonical_discovery_feed_counts_and_foreground_admission_hide_stale_source` | Same backend file | A stale discovery retaining feed counts or accepting a new foreground admission. |
 | `test_canonical_preview_checks_authored_membership_of_a_generated_shared_card` | Same backend file | An explicitly saved membership bypassing compatibility checks because the shared card was originally graph-generated. |
+| `test_canonical_introduction_scores_hide_after_another_repertoire_scope_changes` | Same backend file | Published scores retaining primary game evidence after another repertoire changes the classification universe. |
 | CF-1 through CF-4 | `scripts/check_postgres_canonical_freshness.py`, invoked by the regular PostgreSQL durability `background_workloads` stage | Real branch → graph stage/link/classify/cleanup → already requested coverage; source invalidation and stale Explorer/Maia heartbeats, failures and submissions; opportunity compute/publication race; full-set game classification including another primary, NULL, newly eligible/ineligible and no-op saves. Pools close between durable slices to prove restartable cursors. |
 
 Existing foreground-contention, task-lease replay, accepted discovery, shared-card,

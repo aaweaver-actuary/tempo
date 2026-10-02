@@ -22,6 +22,7 @@ from app.services.postgres_coverage_seed import execute_coverage_seed_slice, req
 from app.services.postgres_coverage_explorer import _publish_node
 from app.services.postgres_game_repertoire import execute_game_repertoire_comparison_slice
 from app.services.repertoire_coverage import coverage_summary, coverage_gaps
+from app.services.introduction_priorities import rebuild_introduction_priorities
 
 ITALIAN = ['e2e4','e7e5','g1f3','b8c6','f1c4']
 NOW = datetime.now(timezone.utc).isoformat()
@@ -194,11 +195,15 @@ def main():
             database.execute('INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,\'white\',?,?,?)',(baseline_repertoire_id+'-line',baseline_repertoire_id,'Baseline stub',chess.STARTING_FEN,json.dumps(ITALIAN[:1]),NOW))
             database.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES(?,'lichess','fixture',?,'rapid',1,'white','1-0',?,?)",(game_id,NOW,chess.STARTING_FEN,json.dumps(['e2e4','e7e5','g1f3','d7d6','f1c4'])))
         publish_game_comparison(game_id,1)
+        with postgres_store.connection() as database:
+            rebuild_introduction_priorities(database,repertoire_id)
+            assert database.execute('SELECT 1 FROM current_repertoire_card_introduction_priorities WHERE repertoire_id=?',(repertoire_id,)).fetchone()
         with postgres_store.connection(read_only=True) as database:
             assert database.execute('SELECT repertoire_id FROM repertoire_comparisons WHERE game_id=?',(game_id,)).fetchone()[0] == baseline_repertoire_id
         set_prefix(other_repertoire_id,[])
         with postgres_store.connection(read_only=True) as database:
             assert not database.execute('SELECT 1 FROM repertoire_comparisons WHERE game_id=?',(game_id,)).fetchone()
+            assert not database.execute('SELECT 1 FROM current_repertoire_card_introduction_priorities WHERE repertoire_id=?',(repertoire_id,)).fetchone()
         publish_game_comparison(game_id,2)
         with postgres_store.connection(read_only=True) as database:
             assert database.execute('SELECT repertoire_id FROM repertoire_comparisons WHERE game_id=?',(game_id,)).fetchone()[0] == other_repertoire_id
