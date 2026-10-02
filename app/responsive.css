@@ -597,6 +597,7 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
 .notification-toast.notification-warning { border-left-color: #ac752c; }
 .notification-toast.notification-error { border-left-color: #b87960; }
 .notification-toast button { margin-left: auto; padding: 0 0.3rem; border: 0; background: transparent; cursor: pointer; }
+.notification-repeat-count { display: block; margin-top: 0.25rem; color: var(--muted); }
 .notification-toast.is-exiting { animation: notification-exit 250ms ease-in forwards; }
 @keyframes notification-enter { from { transform: translateY(8px); } to { transform: translateY(0); } }
 @keyframes notification-exit { to { opacity: 0; transform: translateY(8px); } }

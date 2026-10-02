@@ -8,7 +8,7 @@ import { flushPendingReviews, pendingReviews, ReviewReplayError } from "../lib/r
 import { describeOfflineQueue, OfflineReplayError, readPreparedTraining, replayOfflineAttempts, requiresConnectedGrading, savePreparedTraining } from "../lib/offline-training";
 import { waitForOfflineShell } from "../lib/offline-shell";
 import { flushTrainingFailures, pendingTrainingFailures } from "../lib/training-failure-outbox";
-import { notifications, publishNotification, resolveNotification, type NotificationSeverity } from "../lib/notifications";
+import { hydrateNotifications, notifications, publishNotification, resolveNotification, updateNotification, type NotificationSeverity } from "../lib/notifications";
 
 let requestGeneration = 0;
 let activeQueueController: AbortController | null = null;
@@ -17,6 +17,25 @@ const queueCacheKey = "tempo-training-queue-window-v2";
 function showQueueNotice(message: string, severity: NotificationSeverity = "info") {
   useTrainingStore.getState().setQueueNotice(message);
   if (message) publishNotification({ severity, source: "training queue", message });
+}
+
+function showGuidedAttemptSaveNotice(error?: string | null) {
+  hydrateNotifications();
+  if (pendingTrainingFailures().length) {
+    const message = error ?? "Guided attempt save pending. Tempo will retry.";
+    useTrainingStore.getState().setQueueNotice(message);
+    publishNotification({ severity: "warning", source: "training queue", key: "guided-attempt-save", message });
+    return;
+  }
+  for (const record of notifications()) {
+    const legacySaveNotice = !record.key && record.source === "training queue" &&
+      (record.message.startsWith("Guided attempt save pending.") || record.message.startsWith("Could not confirm a guided attempt."));
+    if (!record.resolvedAt && (record.key === "guided-attempt-save" || legacySaveNotice)) {
+      if (useTrainingStore.getState().queueNotice === record.message)
+        useTrainingStore.getState().setQueueNotice("");
+      resolveNotification(record.id, { severity: "success", message: "Guided attempts confirmed." });
+    }
+  }
 }
 
 export function invalidateTrainingQueueCache(): void {
@@ -165,9 +184,12 @@ export async function fetchAndInitializeQueue(
             message: "Syncing reviews saved on this phone with the computer." });
         replayed = await replayOfflineAttempts();
         const syncing = notifications().find((record) => record.key === "phone-review-syncing" && !record.resolvedAt);
-        if (syncing) resolveNotification(syncing.id, replayed?.attempts.some((attempt) => attempt.conflict)
-          ? { severity: "warning", message: "Phone review sync needs attention. The unresolved attempts remain saved on this phone." }
-          : { severity: "success", message: "Phone review sync finished." });
+        if (syncing) {
+          if (replayed?.attempts.some((attempt) => attempt.conflict))
+            updateNotification(syncing.id, { severity: "warning", active: false,
+              message: "Phone review sync needs attention. The unresolved attempts remain saved on this phone." });
+          else resolveNotification(syncing.id, { severity: "success", message: "Phone review sync finished." });
+        }
         for (const attempt of replayed?.attempts ?? []) {
           const previouslySaved = savedPreparedQueue?.attempts.find((item) => item.localEntryId === attempt.localEntryId);
           if (!previouslySaved || previouslySaved.serverReviewId || previouslySaved.serverAcknowledged || attempt.conflict ||
@@ -181,7 +203,7 @@ export async function fetchAndInitializeQueue(
       } catch (error) {
         pendingReviewError = error instanceof Error ? error.message : String(error);
         const syncing = notifications().find((record) => record.key === "phone-review-syncing" && !record.resolvedAt);
-        if (syncing) resolveNotification(syncing.id, { severity: "warning",
+        if (syncing) updateNotification(syncing.id, { severity: "warning", active: false,
           message: "Phone review sync paused. The saved attempts remain on this phone; reconnect and retry sync." });
         if (generation === requestGeneration) reportDebugError(error, {
           kind: "api", source: "training-offline-review-replay", operation: "replay saved offline reviews",
@@ -207,9 +229,11 @@ export async function fetchAndInitializeQueue(
       }
     }
     if (pendingFailureEntries.size)
-      void flushTrainingFailures().catch((error) => {
+      void flushTrainingFailures().then(() => {
+        if (generation === requestGeneration) showGuidedAttemptSaveNotice();
+      }).catch((error) => {
         failureSaveError = `Could not confirm a guided attempt. Refresh the training queue. ${String(error)}`;
-        showQueueNotice(failureSaveError, "warning");
+        if (generation === requestGeneration) showGuidedAttemptSaveNotice(failureSaveError);
       });
     let raw: QueuePayload;
     try {
@@ -243,6 +267,7 @@ export async function fetchAndInitializeQueue(
         details: { cardId: attempt.cardId, outcome: attempt.outcome, completedAt: attempt.completedAt },
       });
     }
+    showGuidedAttemptSaveNotice(failureSaveError);
     if (conflicts.length) {
       publishNotification({ severity: "warning", source: "phone review sync", key: "phone-review-conflicts",
         message: `${conflicts.length} ${isIPhoneHomeScreen() ? "phone" : "offline"} review(s) remain saved ${isIPhoneHomeScreen() ? "on this phone" : "in this browser"} and need attention. Open details for each result and reason, then reconnect and retry sync.`,
@@ -254,8 +279,7 @@ export async function fetchAndInitializeQueue(
     } else {
       const priorConflict = notifications().find((record) => record.key === "phone-review-conflicts" && !record.resolvedAt);
       if (priorConflict) resolveNotification(priorConflict.id, { severity: "success", message: "Phone review conflicts cleared." });
-      showQueueNotice(failureSaveError ??
-        (pendingTrainingFailures().length ? "Guided attempt save pending. Tempo will retry." : ""), "warning");
+      if (!pendingTrainingFailures().length) useTrainingStore.getState().setQueueNotice("");
     }
     const hasConflicts = Boolean(replayed?.attempts.some((attempt) => attempt.conflict));
     if (isIPhoneHomeScreen() && typeof indexedDB !== "undefined" && options.preparePhoneQueue !== false) void fetch(`${API_URL}/api/queue/prepared`, { signal: controller.signal })

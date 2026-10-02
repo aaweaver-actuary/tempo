@@ -13,10 +13,13 @@ test("defensive daily stack setting persists across navigation and reload", asyn
     await expect(toggle).toBeChecked();
     await toggle.uncheck();
     await saveButton.click();
-    await expect(page.locator(".notification-viewport")).toContainText("Saved.");
     await expect.poll(async () =>
       (await (await request.get(`${api}/settings`)).json()).include_defensive_cards_in_daily_stack,
     ).toBe(false);
+    await expect(page.locator(".notification-toast.notification-info, .notification-toast.notification-success")).toHaveCount(0);
+    await page.getByRole("button", { name: "Notifications" }).click();
+    await page.getByRole("button", { name: "All", exact: true }).click();
+    await expect(page.locator(".notification-list")).toContainText("Saved.");
     await page.reload();
     await page.getByRole("button", { name: "Settings", exact: true }).click();
     await expect(toggle).not.toBeChecked();

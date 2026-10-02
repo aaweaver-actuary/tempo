@@ -19,7 +19,7 @@ import FeedbackIcon from "../components/feedback/FeedbackIcon";
 import FeedbackText from "../components/feedback/FeedbackText";
 import OpeningTitle from "../components/OpeningTitle";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { publishNotification, resolveNotification } from "../lib/notifications";
+import { publishNotification, resolveNotification, updateNotification } from "../lib/notifications";
 import { usesLocalApi } from "../utils/local";
 import { Square } from "chess.js";
 import { getFeedbackCopy } from "./getFeedbackCopy";
@@ -120,8 +120,8 @@ function StandardTrainingView({
       reviewNotificationId.current = publishNotification({ severity: "info", source,
         key: `review-save:${card.queueEntryId ?? card.id}`, message: "Saving result…", active: true });
     } else if (reviewPersistenceState === "saveFailed") {
-      if (reviewNotificationId.current) resolveNotification(reviewNotificationId.current, { severity: "error", message: reviewSaveError });
-      else publishNotification({ severity: "error", source, message: reviewSaveError });
+      if (reviewNotificationId.current) updateNotification(reviewNotificationId.current, { severity: "error", active: false, message: reviewSaveError });
+      else publishNotification({ severity: "error", source, key: `review-save:${card.queueEntryId ?? card.id}`, message: reviewSaveError });
       reviewNotificationId.current = undefined;
     } else if (reviewPersistenceState === "saved") {
       if (reviewNotificationId.current) resolveNotification(reviewNotificationId.current, { severity: "success", message: "Result saved." });
@@ -130,8 +130,8 @@ function StandardTrainingView({
       reviewNotificationId.current = publishNotification({ severity: "info", source,
         key: `review-queue:${card.queueEntryId ?? card.id}`, message: "Result saved. Loading the next card…", active: true });
     } else if (reviewPersistenceState === "queueFailed") {
-      if (reviewNotificationId.current) resolveNotification(reviewNotificationId.current, { severity: "warning", message: "Result saved; the next card could not be loaded." });
-      else publishNotification({ severity: "warning", source, message: "Result saved; the next card could not be loaded." });
+      if (reviewNotificationId.current) updateNotification(reviewNotificationId.current, { severity: "warning", active: false, message: "Result saved; the next card could not be loaded." });
+      else publishNotification({ severity: "warning", source, key: `review-queue:${card.queueEntryId ?? card.id}`, message: "Result saved; the next card could not be loaded." });
       reviewNotificationId.current = undefined;
     } else if (reviewNotificationId.current) {
       resolveNotification(reviewNotificationId.current, { severity: "success", message: "Result saved. Next card loaded." });

@@ -1,9 +1,29 @@
 import { test, expect, type Page } from "@playwright/test";
+import type { PreparedTraining } from "../../app/lib/offline-training";
 
 test.use({ userAgent: "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1" });
 test.beforeEach(async ({ context }) => {
   await context.addInitScript(() => Object.defineProperty(navigator, "standalone", { value: true, configurable: true }));
 });
+
+async function readSavedPhoneQueue(page: Page): Promise<PreparedTraining | null> {
+  return page.evaluate(() => new Promise<PreparedTraining | null>((resolve, reject) => {
+    const request = indexedDB.open("tempo-offline-training", 1);
+    request.onupgradeneeded = () => request.transaction?.abort();
+    request.onerror = () => resolve(null);
+    request.onsuccess = () => {
+      const database = request.result;
+      const read = database.transaction("training").objectStore("training").get("prepared-daily-queue");
+      read.onsuccess = () => { database.close(); resolve(read.result ?? null); };
+      read.onerror = () => { database.close(); reject(read.error); };
+    };
+  }));
+}
+
+async function expectPhoneQueuePrepared(page: Page) {
+  await expect.poll(async () => (await readSavedPhoneQueue(page))?.localDate).toBe(localDate);
+  await expect(page.locator(".notification-toast.notification-info, .notification-toast.notification-success")).toHaveCount(0);
+}
 
 async function playBoardSquare(page: Page, square: string) {
   const board = page.locator(".cg-wrap");
@@ -49,7 +69,7 @@ test("prepared phone queue survives API outage reload and syncs its review", asy
       refresh_pending: 0, last_error: null, blocked_count: 0 },
   } }));
   await page.goto("/");
-  await expect(page.getByText(`Phone queue prepared for ${localDate}.`)).toBeVisible();
+  await expectPhoneQueuePrepared(page);
   expect(await page.evaluate(() => ({ userAgent: navigator.userAgent, standalone: (navigator as Navigator & { standalone?: boolean }).standalone }))).toMatchObject({ standalone: true });
   await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
   await expect.poll(() => page.evaluate(async () => {
@@ -112,7 +132,7 @@ test("phone 225-card offline queue reconciles to the desktop 241-card count and 
     ? route.fulfill({ json: { ...queuePayload(authoritativeCards), prepared_at: new Date().toISOString() } })
     : route.abort("internetdisconnected"));
   await page.goto("/");
-  await expect(page.getByText(`Phone queue prepared for ${localDate}.`)).toBeVisible();
+  await expectPhoneQueuePrepared(page);
   phoneConnected = false;
   await page.reload();
   await expect(page.getByText("Offline queue", { exact: true })).toBeVisible();
@@ -156,7 +176,7 @@ test("pending phone review remains saved while live training opens and a conflic
     ...payload(), prepared_at: new Date().toISOString(),
   } }));
   await page.goto("/");
-  await expect(page.getByText(`Phone queue prepared for ${localDate}.`)).toBeVisible();
+  await expectPhoneQueuePrepared(page);
   await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
   await page.reload();
   await expect(page.getByText("Offline queue", { exact: true })).toBeVisible();
@@ -208,7 +228,7 @@ test("competing computer review credits the saved phone result and explains the 
     ...payload, prepared_at: new Date().toISOString(),
   } }));
   await page.goto("/");
-  await expect(page.getByText(`Phone queue prepared for ${localDate}.`)).toBeVisible();
+  await expectPhoneQueuePrepared(page);
   await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
   await page.reload();
   await expect(page.getByText("Offline queue", { exact: true })).toBeVisible();
@@ -242,7 +262,7 @@ test("nine phone conflicts can be inspected and discarded individually without c
   await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: payload }));
   await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: { ...payload, prepared_at: new Date().toISOString() } }));
   await page.goto("/");
-  await expect(page.getByText(`Phone queue prepared for ${localDate}.`)).toBeVisible();
+  await expectPhoneQueuePrepared(page);
   const board = page.locator(".unified-board-shell-panel");
   const before = (await board.boundingBox())!;
   const cardIds = Array.from({ length: 9 }, (_, index) => `${index}`.repeat(64));
@@ -354,7 +374,7 @@ test("an older prepared response cannot replace a newer saved phone queue", asyn
       refresh_pending: 0, last_error: null, blocked_count: 0 },
   } }));
   await page.goto("/");
-  await expect(page.getByText(`Phone queue prepared for ${localDate}.`)).toBeVisible();
+  await expectPhoneQueuePrepared(page);
   serveOlderSnapshot = true;
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
   await expect(page.getByText(/A newer phone queue is already saved/)).toBeVisible();
@@ -419,7 +439,7 @@ test("prepared phone queue validates study metadata beyond the live window and k
       refresh_pending: 0, last_error: null, blocked_count: 0 },
   } }));
   await page.goto("/");
-  await expect(page.getByText(`Phone queue prepared for ${localDate}.`)).toBeVisible();
+  await expectPhoneQueuePrepared(page);
   await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
   await page.reload();
   await expect(page.getByText("First phone card")).toBeVisible();
@@ -435,7 +455,7 @@ test("yesterday's prepared phone queue never becomes today's training", async ({
       refresh_pending: 0, last_error: null, blocked_count: 0 },
   } }));
   await page.goto("/");
-  await expect(page.getByText(`Phone queue prepared for ${localDate}.`)).toBeVisible();
+  await expectPhoneQueuePrepared(page);
   await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
   await page.clock.setFixedTime(new Date(Date.now() + 24 * 60 * 60 * 1000));
   await page.reload();
@@ -452,13 +472,20 @@ test("offline guided failure stays guided after reopening the phone app", async 
       refresh_pending: 0, last_error: null, blocked_count: 0 },
   } }));
   await page.goto("/");
-  await expect(page.getByText(`Phone queue prepared for ${localDate}.`)).toBeVisible();
+  await expectPhoneQueuePrepared(page);
   await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
   await page.reload();
   await expect(page.getByText("First phone card")).toBeVisible();
+  await expect(page.getByText("Offline queue", { exact: true })).toBeVisible();
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", startFen);
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-input-enabled", "true");
   await playBoardSquare(page, "g2");
   await playBoardSquare(page, "g4");
-  await expect(page.locator(".notification-viewport").getByText("Guided attempt saved on phone.")).toBeVisible();
+  await expect.poll(async () => (await readSavedPhoneQueue(page))?.cards.find((card) => card.queue_entry_id === 501)?.attempt_failed).toBe(true);
+  await expect(page.locator(".notification-toast.notification-info, .notification-toast.notification-success")).toHaveCount(0);
+  await page.getByRole("button", { name: "Notifications" }).click();
+  await page.getByRole("button", { name: "All", exact: true }).click();
+  await expect(page.locator(".notification-list")).toContainText("Guided attempt saved on phone.");
   await page.reload();
   await expect(page.getByText("First phone card")).toBeVisible();
   await expect(page.getByRole("button", { name: "Finish on the board" })).toBeVisible();
