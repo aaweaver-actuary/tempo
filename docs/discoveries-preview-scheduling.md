@@ -11,8 +11,10 @@ Closed, visible, idle trays prepare at most two selected items per successful
 complete feed refresh. Newly ready items enter navigation immediately in feed
 order without replacing the active item. Saved-card items do not need previews.
 The open viewer has a rolling two-item look-ahead, filling unused slots from the
-nearest preceding entries so returned items become navigable; unavailable items do not occupy
-that buffer. There is no all-feed preparation requirement.
+nearest preceding entries so returned items become navigable. Waiting and failed
+items retain retry demand at look-ahead priority, with their existing scheduler
+deadlines, but do not occupy its two productive preparation slots. Unavailable
+items neither occupy that buffer nor acquire automatic retry demand. There is no all-feed preparation requirement.
 
 Home supplies `speculativePreparationPaused` from its existing workspace and
 attempt state. Player/guided/opponent-reply training phases and the tactics,
@@ -76,14 +78,21 @@ enter this scheduler.
 
 ## Reproducible evidence
 
-The final source measurement compares pre-#33 base
+The subsequent review fix separates stalled retry demand from productive viewer
+capacity and corrects rejected-loader enqueue accounting. It does not change the
+100-item measurement fixture or held-drag harness. The paired results below remain
+attributed to their measured source; they do not measure the new starvation case
+or the later main integration. Focused regressions and fresh complete CI validate
+those follow-up changes; no new drag-latency claim is made.
+
+The retained paired source measurement compares pre-#33 base
 `dfbb66d67b314357e55c2030ff794a15415f316c` against candidate
 `a570f95de216fc1d6d1989f9922dfcafc166e523`, rebased onto main
 `072f55048c7f0d3cccca1fcf9e01c32df514fd2f` (including merged PRs #56, #60 and #61).
-Later evidence-only commits preserve these product, test and build inputs.
-The publication rebase onto main `60d2ddeb9b3f1b2396df5a01dac1b9825c6a5337`
+The earlier evidence-only commits preserved those product, test and build inputs.
+That publication rebase onto main `60d2ddeb9b3f1b2396df5a01dac1b9825c6a5337`
 adds only PR-completion instructions; all product, test, dependency and measurement
-inputs remain identical to the measured source. The final head and required CI
+inputs were identical to the measured source at that publication. The current head and required CI
 result are recorded in [PR #58](https://github.com/aaweaver-actuary/tempo/pull/58).
 
 [Dedicated paired run 36999113072](https://github.com/aaweaver-actuary/tempo/actions/runs/36999113072) passed on one

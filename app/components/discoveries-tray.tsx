@@ -353,7 +353,9 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     const timer = window.setTimeout(() => {
       setSessionItems((current) => {
         const ids = new Set(current.map(item => item.id));
-        const additions = visibleDiscoveries.filter(item => !ids.has(item.id) && !completedAdmissions.includes(item.id));
+        // A command refresh can replace the feed before this timer runs.
+        const additions = visibleDiscoveries.filter(item => currentFeedItems.current.get(item.id) === item &&
+          !ids.has(item.id) && !completedAdmissions.includes(`${item.id}:${item.evidence_fingerprint}`));
         if (!additions.length) return current;
         return [...current, ...additions].sort((left, right) =>
           discoveries.findIndex(item => item.id === left.id) - discoveries.findIndex(item => item.id === right.id));
@@ -678,7 +680,8 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     const online = navigator.onLine !== false;
     const visible = document.visibilityState === "visible";
     const add = (item: DiscoveryItem | undefined, priority: DiscoveryPreviewWork["priority"]) => {
-      if (!item || item.card_id || item.admission_state === "preparing") return;
+      if (!item || item.card_id || item.admission_state === "preparing" || item.admission_state === "queued" ||
+          completedAdmissions.includes(`${item.id}:${item.evidence_fingerprint}`)) return;
       const identity = previewIdentity(item);
       if (demand.some(work => work.identity === identity)) return;
       demand.push({ identity, discoveryId: item.id, priority,
@@ -689,15 +692,19 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
         const requested = currentItems.find(item => item.id === activeId);
         add(requested, "explicit");
         if (visible) {
-          const candidates = currentItems.filter(item => !completedAdmissions.includes(item.id) &&
-            item.admission_state !== "preparing" && previewStatuses[item.id] !== "unavailable" &&
+          const candidates = currentItems.filter(item => !completedAdmissions.includes(`${item.id}:${item.evidence_fingerprint}`) &&
+            item.admission_state !== "preparing" && item.admission_state !== "queued" && previewStatuses[item.id] !== "unavailable" &&
             (!item.snoozed_until || new Date(item.snoozed_until).getTime() <= currentTime));
           const index = candidates.findIndex(item => item.id === activeId);
-          const lookAhead = candidates.slice(index < 0 ? 0 : index + 1, index < 0 ? 2 : index + 3);
-          // Fill unused look-ahead slots from preceding entries so a returned
-          // item before the current position can become navigable as well.
-          const nearby = [...lookAhead, ...candidates.slice(Math.max(0, index - 2), Math.max(0, index)).reverse()].slice(0, 2);
-          for (const item of nearby) add(item, "look-ahead");
+          const isStalled = (item: DiscoveryItem) => previewStatuses[item.id] === "waiting" ||
+            previewStatuses[item.id] === "failed";
+          // Keep retry demand without consuming productive preparation slots.
+          // The scheduler owns each identity's existing backoff deadline.
+          for (const item of candidates.filter(isStalled)) add(item, "look-ahead");
+          const lookAhead = candidates.slice(index < 0 ? 0 : index + 1).filter(item => !isStalled(item));
+          // Fill unused slots from productive preceding entries as well.
+          const preceding = candidates.slice(0, Math.max(0, index)).reverse().filter(item => !isStalled(item));
+          for (const item of [...lookAhead, ...preceding].slice(0, 2)) add(item, "look-ahead");
         }
       } else if (visible && !interactionBlocked && !speculativePreparationPaused) {
         const candidates = currentItems.filter(item => closedPreparationIds.current.includes(item.id) && !item.card_id &&

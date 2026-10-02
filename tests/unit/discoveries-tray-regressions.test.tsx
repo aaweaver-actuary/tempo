@@ -1245,3 +1245,66 @@ it("discovery_viewer_prepares_new_items_before_current_feed_position", async () 
   expect(screen.getByText("Example route: earlier")).toBeTruthy();
   view.unmount();
 });
+
+
+it("discovery_waiting_previews_do_not_starve_later_viewer_candidates", async () => {
+  vi.useFakeTimers();
+  vi.spyOn(performance, "now").mockImplementation(() => Date.now());
+  const saved = { ...schedulerDiscovery("saved"), card_id: "saved-card" };
+  const feed = [saved, schedulerDiscovery("waiting"), schedulerDiscovery("failed"), schedulerDiscovery("later")];
+  backgroundFetch.mockReset();
+  backgroundFetch.mockImplementation(async () => Response.json({
+    discoveries: feed, total: feed.length, next_offset: null, unread_count: 0,
+  }));
+  const requests: Array<{ id: string; response: ReturnType<typeof deferredEligibility<Response>> }> = [];
+  let active = 0, maximumActive = 0;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const id = String(input).match(/discoveries\/([^/]+)\/recommendations/)?.[1];
+    if (!id) return Response.json({ eligible: true, reason: null });
+    active++; maximumActive = Math.max(maximumActive, active);
+    const response = deferredEligibility<Response>(); requests.push({ id, response });
+    try { return await response.promise; } finally { active--; }
+  }));
+  const props = { interactionBlocked: true, safeToOpen: false, safeBreakCounter: 0, onQueueChanged: async () => {} };
+  const view = render(<DiscoveriesTray {...props} />);
+  try {
+    fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(requests.map(request => request.id)).toEqual(["waiting", "failed"]);
+    const retryDeadline = Date.now() + 30_000;
+    await act(async () => {
+      requests[0].response.resolve(Response.json({ state: "waiting", opportunity_id: "waiting", candidates: [] }));
+      requests[1].response.resolve(Response.json({ detail: "Preview fixture failure" }, { status: 503 }));
+    });
+    await schedulerMicrotasks();
+    expect(previewDiagnostics()).toMatchObject({ retriesScheduled: 2, maximumActive: 2 });
+    expect(requests.map(request => request.id)).toEqual(["waiting", "failed", "later"]);
+    await act(async () => requests[2].response.resolve(Response.json(schedulerRecommendation("later"))));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(screen.getByText("Example route: saved")).toBeTruthy();
+    expect(screen.getByText("1 of 2 · white to move")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^Next$/ }));
+    expect(screen.getByText("Example route: later")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: /^Previous$/ }));
+    for (let update = 1; update <= 20; update++) {
+      view.rerender(<DiscoveriesTray {...props} safeBreakCounter={update} />);
+      act(() => document.dispatchEvent(new Event("visibilitychange")));
+    }
+    await act(async () => { await vi.advanceTimersByTimeAsync(retryDeadline - Date.now() - 1); });
+    expect(requests.map(request => request.id)).toEqual(["waiting", "failed", "later"]);
+    expect(previewDiagnostics()).toMatchObject({ active: 0, queued: 2, retriesScheduled: 2 });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(requests.map(request => request.id)).toEqual(["waiting", "failed", "later", "waiting", "failed"]);
+    for (let wake = 0; wake < 20; wake++) act(() => document.dispatchEvent(new Event("visibilitychange")));
+    await schedulerMicrotasks();
+    expect(requests).toHaveLength(5);
+    expect(previewDiagnostics()).toMatchObject({ active: 2, queued: 0, maximumActive: 2 });
+    expect(maximumActive).toBe(2);
+    expect(screen.getByText("Example route: saved")).toBeTruthy();
+  } finally {
+    view.unmount();
+    for (const request of requests) request.response.resolve(Response.json({ state: "waiting", opportunity_id: request.id, candidates: [] }));
+    await schedulerMicrotasks();
+  }
+});
