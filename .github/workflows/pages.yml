@@ -1,206 +1,51 @@
-name: Deploy Tempo to GitHub Pages
+name: Issue 33 paired performance evidence
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-  merge_group:
-    types: [checks_requested]
-  schedule:
-    - cron: '0 7 * * *'
   workflow_dispatch:
-    inputs:
-      verification_only:
-        description: 'Complete verification without publishing the practice demo'
-        type: boolean
-        default: true
-      diagnostic_retry:
-        description: 'One diagnostic repeat after failure; original failure still blocks quality'
-        type: boolean
-        default: false
 
 permissions:
   contents: read
-  actions: read
-  pages: write
-  id-token: write
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
-  # Supersede only the same PR; never abort a running main deployment.
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: issue-33-paired-measurement
+  cancel-in-progress: false
 
 jobs:
-  plan:
+  paired-measurement:
     runs-on: ubuntu-24.04-arm
-    outputs:
-      visual: ${{ steps.inventory.outputs.visual }}
-      quarantine: ${{ steps.inventory.outputs.quarantine }}
-      scope: ${{ steps.inventory.outputs.scope }}
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22.23.3'
-          cache: npm
-      - run: npm ci
-      - name: Collect complete inventory and select required work
-        id: inventory
-        env:
-          TEMPO_EVENT: ${{ github.event_name }}
-          TEMPO_BASE: ${{ github.event.pull_request.base.sha }}
-        run: |
-          if [ "$TEMPO_EVENT" = pull_request ]; then
-            node scripts/ci-verification-plan.mjs --base "$TEMPO_BASE"
-          else
-            node scripts/ci-verification-plan.mjs --complete
-          fi
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: ci-plan
-          path: test-results/ci/
-          if-no-files-found: error
-          overwrite: true
-  frontend:
-    needs: plan
-    uses: ./.github/workflows/verify-layer.yml
-    with:
-      layer: frontend
-      diagnostic_retry: ${{ inputs.diagnostic_retry == true }}
-  backend:
-    needs: plan
-    uses: ./.github/workflows/verify-layer.yml
-    with:
-      layer: backend
-      diagnostic_retry: ${{ inputs.diagnostic_retry == true }}
-  build:
-    needs: plan
-    uses: ./.github/workflows/verify-layer.yml
-    with:
-      layer: build
-      diagnostic_retry: ${{ inputs.diagnostic_retry == true }}
-  postgres:
-    needs: plan
-    uses: ./.github/workflows/verify-layer.yml
-    with:
-      layer: postgres
-      diagnostic_retry: ${{ inputs.diagnostic_retry == true }}
-  browser:
-    needs: plan
-    uses: ./.github/workflows/verify-layer.yml
-    with:
-      layer: browser
-      diagnostic_retry: ${{ inputs.diagnostic_retry == true }}
-  visual:
-    needs: plan
-    if: needs.plan.outputs.visual == 'true'
-    uses: ./.github/workflows/verify-layer.yml
-    with:
-      layer: visual
-      diagnostic_retry: ${{ inputs.diagnostic_retry == true }}
-  quarantine:
-    needs: plan
-    if: needs.plan.outputs.quarantine == 'true'
-    uses: ./.github/workflows/verify-layer.yml
-    with:
-      layer: quarantine
-  quality:
-    if: always()
-    needs: [plan, frontend, backend, build, postgres, browser, visual, quarantine]
-    runs-on: ubuntu-24.04-arm
-    steps:
+          path: benchmark/control
+          persist-credentials: false
       - uses: actions/checkout@v4
+        with:
+          ref: dfbb66d67b314357e55c2030ff794a15415f316c
+          path: benchmark/base
+          persist-credentials: false
+      - uses: actions/checkout@v4
+        with:
+          ref: 89e6e09d95c151cf2538442c04258e4b512c1f76
+          path: benchmark/candidate
+          persist-credentials: false
       - uses: actions/setup-node@v4
         with:
           node-version: '22.23.3'
-      - name: Download immutable plan
-        uses: actions/download-artifact@v4
-        with:
-          name: ci-plan
-          path: test-results/ci
-      - name: Download available layer reports
-        if: always()
-        uses: actions/download-artifact@v4
-        with:
-          pattern: ci-result-*
-          path: test-results
-          merge-multiple: true
-      - name: Require every planned mandatory result
-        if: always()
+      - name: Collect sequential evidence on this runner
         env:
-          TEMPO_CI_NEEDS: ${{ toJSON(needs) }}
-        run: node scripts/ci-quality.mjs
-      - name: Download latest successful main performance reference
-        if: always() && github.event_name == 'pull_request' && needs.plan.outputs.visual == 'true'
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          baseline_run_id=$(gh run list --workflow pages.yml --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId' || true)
-          if [ -n "$baseline_run_id" ]; then
-            gh run download "$baseline_run_id" --name tempo-test-results --dir "$RUNNER_TEMP/tempo-performance-baseline" || echo 'Performance reference unavailable; do not claim a comparison.'
-          fi
-      - name: Summarize available pinned performance
-        if: always() && needs.plan.outputs.visual == 'true'
-        run: |
-          baseline_dir="$RUNNER_TEMP/tempo-performance-baseline/performance"
-          if [ -f "$baseline_dir/performance-run.json" ] || [ -f "$baseline_dir/test-stages-full.json" ]; then
-            node scripts/report-performance.mjs --baseline "$baseline_dir"
-          else
-            node scripts/report-performance.mjs
-          fi
-      - name: Retain aggregate reports
+          BASE_CHECKOUT: ${{ github.workspace }}/benchmark/base
+          CANDIDATE_CHECKOUT: ${{ github.workspace }}/benchmark/candidate
+        working-directory: benchmark/control
+        run: node scripts/issue-33-paired-measurement.mjs
+      - name: Retain complete evidence and failure diagnostics
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: tempo-test-results
-          path: test-results/
+          name: issue-33-paired-evidence
+          retention-days: 90
           if-no-files-found: error
-          overwrite: true
-  pages-build:
-    if: >-
-      needs.quality.result == 'success' && needs.plan.outputs.scope == 'complete' &&
-      github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.verification_only == false))
-    needs: [quality, plan]
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/configure-pages@v5
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '22.23.3'
-          cache: npm
-      - uses: dtolnay/rust-toolchain@1.99.0
-        with:
-          targets: wasm32-unknown-unknown
-      - uses: Swatinem/rust-cache@v2
-        with:
-          cache-on-failure: true
-      - uses: taiki-e/install-action@v2
-        with:
-          tool: wasm-pack@0.15.0
-      - run: npm ci
-      - run: npm run build:static
-      - run: npm run verify:static
-      - uses: actions/upload-pages-artifact@v3
-        with:
-          path: pages-dist
-  deploy:
-    concurrency:
-      group: tempo-pages-deployment
-      cancel-in-progress: false
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    needs: pages-build
-    if: >-
-      needs.pages-build.result == 'success' && github.ref == 'refs/heads/main' &&
-      (github.event_name == 'push' || (github.event_name == 'workflow_dispatch' && inputs.verification_only == false))
-    runs-on: ubuntu-24.04-arm
-    steps:
-      - name: Deploy
-        id: deployment
-        uses: actions/deploy-pages@v4
+          path: |
+            benchmark/control/test-results/
+            benchmark/base/test-results/
+            benchmark/candidate/test-results/
