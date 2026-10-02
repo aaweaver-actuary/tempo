@@ -926,7 +926,7 @@ proof retains real production commands, receipt replay, PostgreSQL locks and
 generation invalidation.
 
 - `test_repertoire_limit_proof_finally_restores_queue_state_after_assertion_failure` — existing and absent singleton cases; both failed before the fix with leaked task, event and projection rows. Also verifies repertoire/card/link/review/queue/receipt cleanup and unrelated rows.
-- `test_repertoire_limit_proof_restores_pruned_history_both_dates_and_stale_cards` — exact task fields/ID, all 100 historical events including events pruned by enqueue, present/absent today projections, tomorrow projection, and unrelated rollover fields survive mutation and cleanup.
+- `test_repertoire_limit_proof_restores_pruned_history_both_dates_and_stale_cards` — exact task fields/ID, all 100 historical events including events pruned by enqueue, present/absent today projections, tomorrow projection, and unrelated rollover fields survive mutation and cleanup. Also restores present/absent priority source epochs for owners and shared links after card-update triggers; the trigger-enabled fixture reproduced that additional leak before epoch restoration.
 - `test_repertoire_limit_proof_cleanup_failure_is_loud_and_atomic` — restoration failure surfaces with the original assertion as context and rolls back fixture deletion and partial queue restoration together.
 - `test_repertoire_limit_proof_reconciliation_preserves_unrelated_entries` — reconciliation publishes only fixture entries while advancing past unrelated candidates.
 

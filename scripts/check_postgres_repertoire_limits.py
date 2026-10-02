@@ -40,12 +40,28 @@ def snapshot_queue_environment(database, queue_dates):
            ORDER BY id""",
         (queue_dates[1], queue_dates[1]),
     ).fetchall()
+    stale_card_ids = [card['id'] for card in stale_introductions]
+    priority_epochs = []
+    if stale_card_ids:
+        card_placeholders = ','.join('?' for _ in stale_card_ids)
+        # Migration 21 bumps owners AND shared repertoire links on card updates.
+        # A NULL version records an absent epoch, which restoration must delete.
+        priority_epochs = database.execute(
+            'SELECT repertoire.id AS repertoire_id,epoch.version FROM repertoires repertoire '
+            'LEFT JOIN priority_repertoire_source_epochs epoch ON epoch.repertoire_id=repertoire.id '
+            'WHERE repertoire.id IN ('
+            f'SELECT repertoire_id FROM cards WHERE id IN ({card_placeholders}) UNION '
+            f'SELECT repertoire_id FROM repertoire_cards WHERE card_id IN ({card_placeholders})) '
+            'ORDER BY repertoire.id',
+            (*stale_card_ids, *stale_card_ids),
+        ).fetchall()
     return {
         'queue_dates': tuple(queue_dates),
         'task': dict(task) if task else None,
         'events': [dict(event) for event in events],
         'projections': [dict(projection) for projection in projections],
         'stale_introductions': [dict(card) for card in stale_introductions],
+        'priority_epochs': [dict(epoch) for epoch in priority_epochs],
     }
 
 
@@ -71,6 +87,13 @@ def restore_queue_environment(database, snapshot):
     for saved_card in snapshot['stale_introductions']:
         database.execute('UPDATE cards SET state=?,introduced_at=? WHERE id=?',
                          (saved_card['state'], saved_card['introduced_at'], saved_card['id']))
+    # Restore after card updates: those updates themselves fire the epoch trigger.
+    for saved_epoch in snapshot['priority_epochs']:
+        database.execute('DELETE FROM priority_repertoire_source_epochs WHERE repertoire_id=?',
+                         (saved_epoch['repertoire_id'],))
+        if saved_epoch['version'] is not None:
+            database.execute('INSERT INTO priority_repertoire_source_epochs(repertoire_id,version) VALUES(?,?)',
+                             (saved_epoch['repertoire_id'], saved_epoch['version']))
 
 
 def reconcile_fixture_entries(queue_date, repertoire_ids):

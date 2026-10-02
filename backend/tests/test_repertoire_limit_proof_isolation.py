@@ -51,8 +51,22 @@ def proof_environment(tmp_path, monkeypatch):
     with connection() as stored:
         stored.execute('CREATE TABLE operation_receipts(operation_id TEXT PRIMARY KEY)')
         stored.execute("INSERT INTO operation_receipts VALUES('unrelated-receipt')")
+        # Model migration 21's audited card-update trigger. Real PostgreSQL is
+        # covered by make docker-durability; SQLite's optional schema lacks it.
+        stored.execute('CREATE TABLE priority_repertoire_source_epochs(repertoire_id TEXT PRIMARY KEY REFERENCES repertoires(id) ON DELETE CASCADE,version INTEGER NOT NULL)')
+        stored.execute('CREATE TABLE priority_source_epoch(id INTEGER PRIMARY KEY,version INTEGER NOT NULL)')
+        stored.execute('INSERT INTO priority_source_epoch VALUES(1,55)')
         stored.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('unrelated','Unrelated','synthetic',?)", (today,))
+        stored.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('shared','Shared','synthetic',?)", (today,))
         stored.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at) VALUES('unrelated-card','unrelated','prefix',?,'[]','learning',?,?)", (proof.chess.STARTING_FEN, today, today))
+        stored.execute("INSERT INTO repertoire_cards VALUES('shared','unrelated-card')")
+        stored.execute("INSERT INTO priority_repertoire_source_epochs VALUES('unrelated',37)")
+        stored.execute("""CREATE TRIGGER priority_card_updated AFTER UPDATE OF state,introduced_at ON cards
+            BEGIN INSERT INTO priority_repertoire_source_epochs(repertoire_id,version)
+                SELECT id,1 FROM repertoires WHERE id=NEW.repertoire_id
+                  OR EXISTS(SELECT 1 FROM repertoire_cards link WHERE link.card_id=NEW.id AND link.repertoire_id=repertoires.id)
+                ON CONFLICT(repertoire_id) DO UPDATE SET version=version+1;
+            END""")
         unrelated_task = request_queue_refresh_in_transaction(stored, '2099-01-01')
         stored.execute("UPDATE background_tasks SET kind='unrelated',deduplication_key='other' WHERE id=?", (unrelated_task['id'],))
         stored.execute("UPDATE queue_projections SET state='failed',last_error='preserve' WHERE queue_date='2099-01-01'")
@@ -76,7 +90,8 @@ def environment_rows(connection):
             table: [dict(row) for row in stored.execute(f'SELECT * FROM {table} ORDER BY 1')]
             for table in ('background_tasks', 'background_task_events', 'queue_projections',
                           'repertoires', 'cards', 'repertoire_cards', 'reviews',
-                          'daily_queue', 'operation_receipts')
+                          'daily_queue', 'operation_receipts',
+                          'priority_repertoire_source_epochs', 'priority_source_epoch')
         }
 
 
