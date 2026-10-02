@@ -1,0 +1,643 @@
+{
+  "schemaVersion": 1,
+  "runUrl": "https://github.com/aaweaver-actuary/tempo/actions/runs/36996539621",
+  "baseCommit": "dfbb66d67b314357e55c2030ff794a15415f316c",
+  "candidateCommit": "89e6e09d95c151cf2538442c04258e4b512c1f76",
+  "workflowCommit": "f6001fa0b8c0d8499b5bc7f73aa84e478e9be78d",
+  "comparisonChecks": {
+    "matchingEnvironment": true,
+    "matchingFixture": true,
+    "completeHolds": true,
+    "heldDragSha256": {
+      "before": "40e9ff00f8f460d615846574ad67b562495b102235ae782ccc68ed8f9379e971",
+      "after": "0973f731e3e4d468d2053cb4cb3f0d507dcd51fd93c3ae98c669174d76e7d24c"
+    }
+  },
+  "results": {
+    "before": {
+      "commit": "dfbb66d67b314357e55c2030ff794a15415f316c",
+      "environment": {
+        "browser": "chromium",
+        "browserVersion": "153.0.8010.12",
+        "buildMode": "production-local",
+        "runner": "linux-pinned",
+        "architecture": "arm64",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "devicePixelRatio": 1,
+        "reducedMotion": "no-preference",
+        "serviceWorkers": "block",
+        "dockerCpus": "4",
+        "dockerMemoryBytes": "16722042880",
+        "host": "{\"platform\":\"linux\",\"architecture\":\"arm64\",\"cpuModel\":\"unknown\",\"logicalCpus\":4,\"memoryBytes\":16722042880}",
+        "containerLimits": "no explicit per-container CPU/memory limits; shared Docker VM",
+        "gpu": "unavailable; headless pinned browser",
+        "physicalPresentation": "unavailable",
+        "liveBackendLoad": "unmeasured; routed synthetic API fixtures"
+      },
+      "fixture": {
+        "name": "held-drag-v3-callback-cadence-blocked-sw",
+        "pointerMoves": 40,
+        "paceMs": 20,
+        "repetitions": 3,
+        "dataset": "Spanish five-ply card and one discovery",
+        "probe": "bounded-transform-probe-v1"
+      },
+      "rawSha256": "40e9ff00f8f460d615846574ad67b562495b102235ae782ccc68ed8f9379e971",
+      "heldDragSummaries": [
+        {
+          "workload": "idle",
+          "enabled": true,
+          "count": 6,
+          "frameSampleCount": 557,
+          "displacementSampleCount": 551,
+          "interruptionCount": 0,
+          "frameGapMs": {
+            "p50": 16.66500000000815,
+            "p95": 17.179999999993015
+          },
+          "maximumFrameGapMs": 18.005000000004657,
+          "captureFrameCostMs": {
+            "p50": 0.010000000009313226,
+            "p95": 0.024999999994179234
+          },
+          "captureEventCostMs": {
+            "p50": 0.014999999984866008,
+            "p95": 0.029999999998835847
+          },
+          "displacementCssPx": {
+            "p50": 0.9468979446382026,
+            "p95": 11.043026291841022
+          }
+        },
+        {
+          "workload": "idle",
+          "enabled": false,
+          "count": 6,
+          "frameSampleCount": 563,
+          "displacementSampleCount": 556,
+          "interruptionCount": 0,
+          "frameGapMs": {
+            "p50": 16.689999999973224,
+            "p95": 17.150000000023283
+          },
+          "maximumFrameGapMs": 21.894999999989523,
+          "captureFrameCostMs": null,
+          "captureEventCostMs": null,
+          "displacementCssPx": {
+            "p50": 0.9468979446382026,
+            "p95": 11.043026291841022
+          }
+        },
+        {
+          "workload": "synthetic-worker",
+          "enabled": true,
+          "count": 6,
+          "frameSampleCount": 607,
+          "displacementSampleCount": 601,
+          "interruptionCount": 0,
+          "frameGapMs": {
+            "p50": 16.69000000000233,
+            "p95": 17.204999999987194
+          },
+          "maximumFrameGapMs": 18.480000000010477,
+          "captureFrameCostMs": {
+            "p50": 0.010000000009313226,
+            "p95": 0.024999999994179234
+          },
+          "captureEventCostMs": {
+            "p50": 0.014999999984866008,
+            "p95": 0.029999999998835847
+          },
+          "displacementCssPx": {
+            "p50": 0.9399106999125251,
+            "p95": 11.043026291841022
+          }
+        },
+        {
+          "workload": "synthetic-worker",
+          "enabled": false,
+          "count": 6,
+          "frameSampleCount": 639,
+          "displacementSampleCount": 633,
+          "interruptionCount": 0,
+          "frameGapMs": {
+            "p50": 16.69000000000233,
+            "p95": 17.26500000001397
+          },
+          "maximumFrameGapMs": 21.339999999996508,
+          "captureFrameCostMs": null,
+          "captureEventCostMs": null,
+          "displacementCssPx": {
+            "p50": 0.8950010392463367,
+            "p95": 11.043026291841022
+          }
+        },
+        {
+          "workload": "discovery-preparation",
+          "enabled": true,
+          "count": 6,
+          "frameSampleCount": 594,
+          "displacementSampleCount": 588,
+          "interruptionCount": 0,
+          "frameGapMs": {
+            "p50": 16.70000000001164,
+            "p95": 17.19000000000233
+          },
+          "maximumFrameGapMs": 20.00999999998021,
+          "captureFrameCostMs": {
+            "p50": 0.010000000009313226,
+            "p95": 0.024999999994179234
+          },
+          "captureEventCostMs": {
+            "p50": 0.014999999984866008,
+            "p95": 0.029999999998835847
+          },
+          "displacementCssPx": {
+            "p50": 0.9399106999125251,
+            "p95": 11.043026291841022
+          }
+        },
+        {
+          "workload": "discovery-preparation",
+          "enabled": false,
+          "count": 6,
+          "frameSampleCount": 581,
+          "displacementSampleCount": 573,
+          "interruptionCount": 0,
+          "frameGapMs": {
+            "p50": 16.68499999999767,
+            "p95": 17.14000000001397
+          },
+          "maximumFrameGapMs": 17.705000000016298,
+          "captureFrameCostMs": null,
+          "captureEventCostMs": null,
+          "displacementCssPx": {
+            "p50": 0.9468979446382026,
+            "p95": 11.043026291841022
+          }
+        },
+        {
+          "workload": "stockfish-worker",
+          "enabled": true,
+          "count": 6,
+          "frameSampleCount": 604,
+          "displacementSampleCount": 597,
+          "interruptionCount": 0,
+          "frameGapMs": {
+            "p50": 16.69000000000233,
+            "p95": 17.23499999998603
+          },
+          "maximumFrameGapMs": 19.050000000017462,
+          "captureFrameCostMs": {
+            "p50": 0.010000000009313226,
+            "p95": 0.024999999965075403
+          },
+          "captureEventCostMs": {
+            "p50": 0.014999999984866008,
+            "p95": 0.029999999998835847
+          },
+          "displacementCssPx": {
+            "p50": 0.9399106999125251,
+            "p95": 11.043026291841022
+          }
+        },
+        {
+          "workload": "stockfish-worker",
+          "enabled": false,
+          "count": 6,
+          "frameSampleCount": 598,
+          "displacementSampleCount": 588,
+          "interruptionCount": 0,
+          "frameGapMs": {
+            "p50": 16.67499999998836,
+            "p95": 17.255000000004657
+          },
+          "maximumFrameGapMs": 19.804999999993015,
+          "captureFrameCostMs": null,
+          "captureEventCostMs": null,
+          "displacementCssPx": {
+            "p50": 0.9399106999125251,
+            "p95": 11.043026291841022
+          }
+        },
+        {
+          "workload": "main-thread-stall",
+          "enabled": true,
+          "count": 6,
+          "frameSampleCount": 606,
+          "displacementSampleCount": 600,
+          "interruptionCount": 0,
+          "frameGapMs": {
+            "p50": 16.67499999998836,
+            "p95": 17.260000000009313
+          },
+          "maximumFrameGapMs": 96.94500000000698,
+          "captureFrameCostMs": {
+            "p50": 0.010000000009313226,
+            "p95": 0.024999999994179234
+          },
+          "captureEventCostMs": {
+            "p50": 0.014999999984866008,
+            "p95": 0.030000000027939677
+          },
+          "displacementCssPx": {
+            "p50": 0.9399106999125251,
+            "p95": 11.043026291841022
+          }
+        },
+        {
+          "workload": "main-thread-stall",
+          "enabled": false,
+          "count": 6,
+          "frameSampleCount": 593,
+          "displacementSampleCount": 586,
+          "interruptionCount": 0,
+          "frameGapMs": {
+            "p50": 16.675000000046566,
+            "p95": 17.220000000001164
+          },
+          "maximumFrameGapMs": 96.4549999999872,
+          "captureFrameCostMs": null,
+          "captureEventCostMs": null,
+          "displacementCssPx": {
+            "p50": 0.9399106999125251,
+            "p95": 11.043026291841022
+          }
+        }
+      ],
+      "phaseChecks": {
+        "idle": {
+          "capturedSessions": 6,
+          "longTasksSupported": true,
+          "longTaskCount": 0,
+          "longTaskDurationMs": null,
+          "discoveryPreviewPhaseEnds": 0,
+          "truncated": false
+        },
+        "discovery-preparation": {
+          "capturedSessions": 6,
+          "longTasksSupported": true,
+          "longTaskCount": 0,
+          "longTaskDurationMs": null,
+          "discoveryPreviewPhaseEnds": 6,
+          "truncated": false
+        },
+        "main-thread-stall": {
+          "capturedSessions": 6,
+          "longTasksSupported": true,
+          "longTaskCount": 6,
+          "longTaskDurationMs": {
+            "p50": 80,
+            "p95": 80,
+            "max": 80
+          },
+          "discoveryPreviewPhaseEnds": 0,
+          "truncated": false
+        }
+      },
+      "deterministic": {
+        "closedTraining": {
+          "previews": 100,
+          "maximumActive": 2,
+          "feedPages": 3,
+          "validations": 200
+        },
+        "viewerOpen": {
+          "previews": 100,
+          "maximumActive": 2,
+          "feedPages": 5,
+          "validations": 323
+        }
+      },
+      "playwrightStats": {
+        "startTime": "2026-10-02T10:39:45.777Z",
+        "duration": 173366.148,
+        "expected": 4,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "unitStats": {
+        "numPassedTests": 1,
+        "numFailedTests": 0
+      }
+    },
+    "after": {
+      "commit": "89e6e09d95c151cf2538442c04258e4b512c1f76",
+      "environment": {
+        "browser": "chromium",
+        "browserVersion": "153.0.8010.12",
+        "buildMode": "production-local",
+        "runner": "linux-pinned",
+        "architecture": "arm64",
+        "viewport": {
+          "width": 1280,
+          "height": 800
+        },
+        "devicePixelRatio": 1,
+        "reducedMotion": "no-preference",
+        "serviceWorkers": "block",
+        "dockerCpus": "4",
+        "dockerMemoryBytes": "16722042880",
+        "host": "{\"platform\":\"linux\",\"architecture\":\"arm64\",\"cpuModel\":\"unknown\",\"logicalCpus\":4,\"memoryBytes\":16722042880}",
+        "containerLimits": "no explicit per-container CPU/memory limits; shared Docker VM",
+        "gpu": "unavailable; headless pinned browser",
+        "physicalPresentation": "unavailable",
+        "liveBackendLoad": "unmeasured; routed synthetic API fixtures"
+      },
+      "fixture": {
+        "name": "held-drag-v3-callback-cadence-blocked-sw",
+        "pointerMoves": 40,
+        "paceMs": 20,
+        "repetitions": 3,
+        "dataset": "Spanish five-ply card and one discovery",
+        "probe": "bounded-transform-probe-v1"
+      },
+      "rawSha256": "0973f731e3e4d468d2053cb4cb3f0d507dcd51fd93c3ae98c669174d76e7d24c",
+      "heldDragSummaries": [
+        {
+          "workload": "idle",
+          "enabled": true,
+          "count": 6,
+          "frameSampleCount": 530,
+          "displacementSampleCount": 524,
+          "interruptionCount": 0,
+          "frameGapMs": {
+            "p50": 16.625,
+            "p95": 17.169999999983702
+          },
+          "maximumFrameGapMs": 19.45000000001164,
+          "captureFrameCostMs": {
+            "p50": 0.010000000009313226,
+            "p95": 0.025000000023283064
+          },
+          "captureEventCostMs": {
+            "p50": 0.010000000009313226,
+            "p95": 0.030000000027939677
+          },
+          "displacementCssPx": {
+            "p50": 1.0048184077622249,
+            "p95": 11.043026291841022
+          }
+        },
+        {
+          "workload": "idle",
+          "enabled": false,
+          "count": 6,
+          "frameSampleCount": 534,
+          "displacementSampleCount": 528,
+          "interruptionCount": 0,
+          "frameGapMs": {
+            "p50": 16.654999999969732,
+            "p95": 17.14000000001397
+          },
+          "maximumFrameGapMs": 19.46500000002561,
+          "captureFrameCostMs": null,
+          "captureEventCostMs": null,
+          "displacementCssPx": {
+            "p50": 1.0048184077622249,
+            "p95": 11.043026291841022
+          }
+        },
+        {
+          "workload": "synthetic-worker",
+          "enabled": true,
+          "count": 6,
+          "frameSampleCount": 588,
+          "displacementSampleCount": 582,
+          "interruptionCount": 0,
+          "frameGapMs": {
+            "p50": 16.669999999983702,
+            "p95": 17.229999999981374
+          },
+          "maximumFrameGapMs": 18.09499999997206,
+          "captureFrameCostMs": {
+            "p50": 0.010000000009313226,
+            "p95": 0.02000000001862645
+          },
+          "captureEventCostMs": {
+            "p50": 0.014999999955762178,
+            "p95": 0.025000000023283064
+          },
+          "displacementCssPx": {
+            "p50": 0.9468979446382026,
+            "p95": 11.043026291841022
+          }
+        },
+        {
+          "workload": "synthetic-worker",
+          "enabled": false,
+          "count": 6,
+          "frameSampleCount": 600,
+          "displacementSampleCount": 594,
+          "interruptionCount": 0,
+          "frameGapMs": {
+            "p50": 16.67000000004191,
+            "p95": 17.239999999990687
+          },
+          "maximumFrameGapMs": 22.009999999951106,
+          "captureFrameCostMs": null,
+          "captureEventCostMs": null,
+          "displacementCssPx": {
+            "p50": 0.9399106999125251,
+            "p95": 11.043026291841022
+          }
+        },
+        {
+          "workload": "discovery-preparation",
+          "enabled": true,
+          "count": 6,
+          "frameSampleCount": 559,
+          "displacementSampleCount": 549,
+          "interruptionCount": 0,
+          "frameGapMs": {
+            "p50": 16.665000000037253,
+            "p95": 17.21999999997206
+          },
+          "maximumFrameGapMs": 21.26500000001397,
+          "captureFrameCostMs": {
+            "p50": 0.010000000009313226,
+            "p95": 0.025000000023283064
+          },
+          "captureEventCostMs": {
+            "p50": 0.010000000009313226,
+            "p95": 0.030000000027939677
+          },
+          "displacementCssPx": {
+            "p50": 0.9468979446382026,
+            "p95": 11.043026291841022
+          }
+        },
+        {
+          "workload": "discovery-preparation",
+          "enabled": false,
+          "count": 6,
+          "frameSampleCount": 551,
+          "displacementSampleCount": 541,
+          "interruptionCount": 0,
+          "frameGapMs": {
+            "p50": 16.679999999993015,
+            "p95": 17.17000000004191
+          },
+          "maximumFrameGapMs": 19.09499999997206,
+          "captureFrameCostMs": null,
+          "captureEventCostMs": null,
+          "displacementCssPx": {
+            "p50": 1.0048184077622249,
+            "p95": 11.043026291841022
+          }
+        },
+        {
+          "workload": "stockfish-worker",
+          "enabled": true,
+          "count": 6,
+          "frameSampleCount": 575,
+          "displacementSampleCount": 569,
+          "interruptionCount": 0,
+          "frameGapMs": {
+            "p50": 16.679999999993015,
+            "p95": 17.25
+          },
+          "maximumFrameGapMs": 23.46500000002561,
+          "captureFrameCostMs": {
+            "p50": 0.010000000009313226,
+            "p95": 0.029999999969732016
+          },
+          "captureEventCostMs": {
+            "p50": 0.014999999955762178,
+            "p95": 0.025000000023283064
+          },
+          "displacementCssPx": {
+            "p50": 0.9468979446382026,
+            "p95": 11.043026291841022
+          }
+        },
+        {
+          "workload": "stockfish-worker",
+          "enabled": false,
+          "count": 6,
+          "frameSampleCount": 578,
+          "displacementSampleCount": 571,
+          "interruptionCount": 0,
+          "frameGapMs": {
+            "p50": 16.67499999998836,
+            "p95": 17.25
+          },
+          "maximumFrameGapMs": 25.70499999995809,
+          "captureFrameCostMs": null,
+          "captureEventCostMs": null,
+          "displacementCssPx": {
+            "p50": 0.9399106999125251,
+            "p95": 11.043026291841022
+          }
+        },
+        {
+          "workload": "main-thread-stall",
+          "enabled": true,
+          "count": 6,
+          "frameSampleCount": 565,
+          "displacementSampleCount": 559,
+          "interruptionCount": 0,
+          "frameGapMs": {
+            "p50": 16.625,
+            "p95": 17.209999999962747
+          },
+          "maximumFrameGapMs": 96.96000000002095,
+          "captureFrameCostMs": {
+            "p50": 0.010000000009313226,
+            "p95": 0.025000000023283064
+          },
+          "captureEventCostMs": {
+            "p50": 0.010000000009313226,
+            "p95": 0.029999999969732016
+          },
+          "displacementCssPx": {
+            "p50": 0.9468979446382026,
+            "p95": 11.043026291841022
+          }
+        },
+        {
+          "workload": "main-thread-stall",
+          "enabled": false,
+          "count": 6,
+          "frameSampleCount": 554,
+          "displacementSampleCount": 548,
+          "interruptionCount": 0,
+          "frameGapMs": {
+            "p50": 16.630000000004657,
+            "p95": 17.180000000051223
+          },
+          "maximumFrameGapMs": 96.46500000002561,
+          "captureFrameCostMs": null,
+          "captureEventCostMs": null,
+          "displacementCssPx": {
+            "p50": 0.9468979446382026,
+            "p95": 11.043026291841022
+          }
+        }
+      ],
+      "phaseChecks": {
+        "idle": {
+          "capturedSessions": 6,
+          "longTasksSupported": true,
+          "longTaskCount": 0,
+          "longTaskDurationMs": null,
+          "discoveryPreviewPhaseEnds": 0,
+          "truncated": false
+        },
+        "discovery-preparation": {
+          "capturedSessions": 6,
+          "longTasksSupported": true,
+          "longTaskCount": 0,
+          "longTaskDurationMs": null,
+          "discoveryPreviewPhaseEnds": 6,
+          "truncated": false
+        },
+        "main-thread-stall": {
+          "capturedSessions": 6,
+          "longTasksSupported": true,
+          "longTaskCount": 6,
+          "longTaskDurationMs": {
+            "p50": 80,
+            "p95": 80,
+            "max": 80
+          },
+          "discoveryPreviewPhaseEnds": 0,
+          "truncated": false
+        }
+      },
+      "deterministic": {
+        "closedTraining": {
+          "previews": 0,
+          "maximumActive": 0,
+          "feedPages": 0,
+          "validations": 0
+        },
+        "viewerOpen": {
+          "previews": 3,
+          "maximumActive": 2,
+          "feedPages": 3,
+          "validations": 3,
+          "validationInvocations": 3,
+          "validationCacheHits": 0
+        }
+      },
+      "playwrightStats": {
+        "startTime": "2026-10-02T10:42:52.328Z",
+        "duration": 167562.77,
+        "expected": 4,
+        "skipped": 0,
+        "unexpected": 0,
+        "flaky": 0
+      },
+      "unitStats": {
+        "numPassedTests": 1,
+        "numFailedTests": 0
+      }
+    }
+  },
+  "advisorySignals": []
+}
