@@ -46,12 +46,12 @@ def main():
         with database.connection() as connection:
             connection.execute('DELETE FROM background_task_events')
             for _ in range(100):
-                durable_tasks._record_event(connection,'job-0',1,'slice_complete')
+                durable_tasks._record_event(connection,'job-0',1,'slice_complete',kind='daily_queue')
         def transition(instrumented):
             with database.connection() as connection:
                 connection.execute("UPDATE background_tasks SET updated_at=? WHERE id='job-0'",(now,))
                 if instrumented:
-                    durable_tasks._record_event(connection,'job-0',1,'slice_complete')
+                    durable_tasks._record_event(connection,'job-0',1,'slice_complete',kind='daily_queue')
                 else:
                     connection.execute(durable_tasks._EVENT_INSERT_SQL,('job-0',1,'slice_complete',None,None,now))
                     connection.execute(durable_tasks._EVENT_PRUNE_SQL,('job-0',))

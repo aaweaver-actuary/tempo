@@ -96,12 +96,16 @@ def write_metric_delta(database, key: tuple, counts: dict) -> None:
         database.execute(sql, parameters)
 
 
-def record_event_counts(database, task_id: str, event: str) -> None:
+def record_event_counts(database, task_id: str, event: str, *, kind: str | None = None) -> None:
     metric = EVENT_COUNTS.get(event)
     if metric:
-        row = database.execute("SELECT kind FROM background_tasks WHERE id=?", (task_id,)).fetchone()
-        if row:
-            increment(database, row["kind"], task_id, **{metric: 1})
+        if kind is None:
+            # Compatibility for exceptional ID-only callers; lifecycle owners know kind.
+            row = database.execute("SELECT kind FROM background_tasks WHERE id=?", (task_id,)).fetchone()
+            if not row:
+                return
+            kind = row["kind"]
+        increment(database, kind, task_id, **{metric: 1})
 
 
 class QueueDiagnostic(BaseModel):

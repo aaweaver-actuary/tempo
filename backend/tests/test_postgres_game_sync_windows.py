@@ -169,7 +169,7 @@ def test_game_sync_terminal_task_failure_marks_job_failed(monkeypatch):
     statements = []
     monkeypatch.setattr(durable_tasks, "submit_background_write",
                         lambda operation, *, label: operation(Database()))
-    monkeypatch.setattr(durable_tasks, "_record_event", lambda *args: None)
+    monkeypatch.setattr(durable_tasks, "_record_event", lambda *args, kind=None: None)
 
     class Database:
         def execute(self, statement, parameters=()):

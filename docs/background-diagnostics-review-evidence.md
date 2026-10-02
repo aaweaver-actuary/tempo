@@ -37,3 +37,18 @@ preflight/admission/reservation selection: seven passed in 2.61 s. Stage samples
 are throttled; lifecycle start/end remain forced outside reservations. Network
 publication precedes the admission clock, and suppression lasts through shared
 lease release. No admission policy changed.
+
+Kind-lookup baseline: the named lifecycle trace failed with 12 redundant kind
+SELECTs in 1.82 s. Lifecycle owners now pass known kind to the single counter
+implementation; completion/deferral accept an optional kind from the worker.
+Interrupted-task selection adds kind to its existing projection. Stale-result
+existence checking reuses its row rather than repeating the lookup. ID-only
+compatibility retains one fallback read. The full diagnostic file passed 32
+cases in 15.32 s before the final completion/deferral trace extension.
+
+The PostgreSQL proof now distinguishes ordinary read-pool state from the primary,
+checks SQL read-only enforcement and actual admitted preflight, and instruments
+Redis calls during real PG reads. Its transition timing includes the entire
+known-kind raw-event/counter hook and commit flush, instead of calling increment
+alone. It excludes runtime Redis and preflight latency; no total-instrumentation
+overhead claim follows from this measurement.

@@ -48,6 +48,56 @@ def counts(kind='daily_queue'):
     return matches[0].counts if matches else None
 
 
+def test_background_known_kind_lifecycle_has_no_redundant_kind_select(diagnostic_database, monkeypatch):
+    statements = []
+    original_connection = database.connection
+
+    @contextmanager
+    def traced_connection(**options):
+        with original_connection(**options) as connection:
+            connection.set_trace_callback(statements.append)
+            yield connection
+
+    monkeypatch.setattr(database, 'connection', traced_connection)
+    task(max_attempts=1)
+    task(max_attempts=1)  # replacement event
+    claimed = durable_tasks.claim_task('daily_queue')
+    durable_tasks.fail_task(claimed['id'], claimed['generation'], claimed['lease_token'], RuntimeError('synthetic'))
+    durable_tasks.retry_task(claimed['id'])
+    claimed = durable_tasks.claim_task('daily_queue')
+    with database.background_connection() as connection:
+        assert durable_tasks.advance_task_slice_in_transaction(connection, claimed, next_phase='synthetic', next_payload={})
+    durable_tasks.claim_task('daily_queue')
+    durable_tasks.requeue_interrupted_tasks()
+    claimed = durable_tasks.claim_task('daily_queue')
+    with database.background_connection() as connection:
+        assert durable_tasks.complete_task_slice_in_transaction(connection, claimed)
+    task('complete')
+    claimed = durable_tasks.claim_task('daily_queue')
+    assert durable_tasks.complete_task(claimed['id'], claimed['generation'], claimed['lease_token'], kind=claimed['kind'])
+    task('defer')
+    claimed = durable_tasks.claim_task('daily_queue')
+    assert durable_tasks.defer_task_for_contention(claimed['id'], claimed['generation'], claimed['lease_token'], kind=claimed['kind'])
+    assert counts().completed_generations == 2
+    assert counts().slices == 1
+    assert counts().generation_restarts == 2  # manual retry and interrupted lease
+    assert counts().contention_deferrals == 1
+    redundant = [statement for statement in statements
+                 if statement.strip().lower().startswith('select kind from background_tasks where id=')]
+    assert redundant == []
+
+
+def test_background_id_only_event_keeps_single_kind_lookup(diagnostic_database):
+    row = task()
+    statements = []
+    with database.background_connection() as connection:
+        connection.set_trace_callback(statements.append)
+        durable_tasks._record_event(connection, row['id'], row['generation'], 'slice_complete')
+    assert counts().slices == 1
+    assert sum(statement.lower().startswith('select kind from background_tasks where id=')
+               for statement in statements) == 1
+
+
 def test_background_diagnostics_classifies_queue_states_and_eligibility(diagnostic_database):
     states=['queued','leased','retrying','failed','complete']
     for state in states:

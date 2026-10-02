@@ -1008,3 +1008,10 @@ checks actual diagnostic Redis calls against both local and shared lease state,
 including exception cleanup. `test_background_admission_timing_excludes_diagnostic_publication`
 uses a controlled clock to prove telemetry latency is excluded from admission wait.
 Both are regular cases in `backend/tests/test_background_diagnostics.py`.
+
+PR #56 event-accounting correction: `test_background_known_kind_lifecycle_has_no_redundant_kind_select`
+traces enqueue/replacement/claim/failure/retry/slice/restart/completion/deferral
+and fails on extra kind-only reads (12 on the reviewed lifecycle baseline).
+`test_background_id_only_event_keeps_single_kind_lookup` preserves exceptional
+ID-only accounting. Both run in `backend/tests/test_background_diagnostics.py`;
+the disposable PostgreSQL proof also traces the full known-kind event hook.

@@ -4198,7 +4198,7 @@ def test_postgres_cutover_background_slice_restarts_only_with_current_lease(monk
                 return Cursor(row={"generation": 3, "lease_token": "lease-current", "state": "leased"})
             return Cursor(rowcount=int(parameters[-2:] == (3, "lease-current")))
 
-    monkeypatch.setattr(durable_tasks, "_record_event", lambda *arguments: events.append(arguments))
+    monkeypatch.setattr(durable_tasks, "_record_event", lambda *arguments, kind=None: events.append(arguments))
     database = Database()
     assert durable_tasks.lock_current_slice(database, active_task)
     assert not durable_tasks.lock_current_slice(database, {**active_task, "generation": 2})
@@ -5328,7 +5328,7 @@ def test_postgres_cutover_game_refresh_waits_for_foreground_and_discards_stale_r
     monkeypatch.setattr(tasks, "execute_repertoire_game_refresh_slice", lambda _task: False)
     monkeypatch.setattr(
         tasks, "complete_task",
-        lambda task_id, _generation, _lease: completed_tasks.append(task_id),
+        lambda task_id, _generation, _lease, *, kind: completed_tasks.append(task_id),
     )
     monkeypatch.setattr(tasks.activity_gate, "background_job", lambda *_arguments: nullcontext())
     assert tasks.execute_background_slice.run(claimed_task) is False
@@ -6340,7 +6340,7 @@ def test_postgres_explorer_terminal_failure_marks_run_failed(monkeypatch):
 
     monkeypatch.setattr(durable_tasks, "submit_background_write",
                         lambda operation, *, label: operation(Database()))
-    monkeypatch.setattr(durable_tasks, "_record_event", lambda *_args: None)
+    monkeypatch.setattr(durable_tasks, "_record_event", lambda *_args, kind=None: None)
     assert durable_tasks.fail_task("task", 1, "lease", RuntimeError("Explorer unavailable"))["state"] == "failed"
     assert any("UPDATE repertoire_coverage_runs SET status='failed'" in statement
                and parameters[2] == "run-one" for statement, parameters in statements)
@@ -6394,7 +6394,7 @@ def test_postgres_coverage_seed_terminal_failure_marks_run_failed(monkeypatch):
 
     monkeypatch.setattr(durable_tasks, "submit_background_write",
                         lambda operation, *, label: operation(RecordingDatabase()))
-    monkeypatch.setattr(durable_tasks, "_record_event", lambda *_args: None)
+    monkeypatch.setattr(durable_tasks, "_record_event", lambda *_args, kind=None: None)
     assert durable_tasks.fail_task("task", 1, "lease", RuntimeError("bad position"))["state"] == "failed"
     assert any("UPDATE repertoire_coverage_runs SET status='failed'" in statement
                and parameters[2] == "run-one" for statement, parameters in statements)

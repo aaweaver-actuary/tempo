@@ -313,11 +313,13 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
                 "defensive_threat_backfill",
             }:
                 complete_task(
-                    claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"]
+                    claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"],
+                    kind=claimed_task["kind"],
                 )
         except (DeadlockDetected, LockNotAvailable, SerializationFailure, TransactionTimeout):
             defer_task_for_contention(
-                claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"]
+                claimed_task["id"], claimed_task["generation"], claimed_task["lease_token"],
+                kind=claimed_task["kind"],
             )
             more_work = True
         except Exception as error:
