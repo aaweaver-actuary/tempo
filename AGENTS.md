@@ -93,6 +93,14 @@ Use the disposable runners; never point tests at the live study instance or mark
 
 Every PR/handoff must state: risk/scope and why it is sufficient; named new/updated regressions; exact commands, results, and observed durations; tested revision/environment; and checks not run or pending with reasons and the CI run when available. Distinguish static inspection, focused execution, full-gate execution, and runtime/performance measurements. Never claim a full pass from focused tests, a dry run, or a previous checkout.
 
+## Pull request delivery and completion
+
+- After implementation and focused local validation, commit and push the task branch to the verified GitHub repository and create a draft PR, or update the existing PR for that task. Include the problem, resulting behavior, scope, regression coverage, and validation evidence. Opening or pushing a PR is an intermediate step, not completion.
+- Poll CI for the current PR head until every required check and every mandatory job in its selected CI plan passes, including the applicable current-base/merge candidate. Expected optional skips are allowed only when the plan excludes that work; missing, pending, failed, or cancelled required checks are not a clean result. Do not use results from an older commit or a different checkout as proof.
+- If CI fails, inspect the failed assertion, stage, and logs; reproduce with the smallest relevant check where practical, fix the cause, add or update named regressions when applicable, and push the repair. Continue monitoring the new candidate until its required CI passes. Do not bypass checks, weaken coverage, or blindly retry a failure to obtain green status.
+- Resolve merge conflicts and obtain fresh required candidate validation after relevant edits or rebases. Once CI is clean, mark the PR ready for review and verify that GitHub reports it mergeable with no outstanding required-check or merge blockers. Do not merge the PR unless the user explicitly requests it.
+- No work is considered done until a clean-CI, ready-for-review, mergeable PR is available. The final handoff must link the PR and successful CI evidence and identify the verified head commit. If permissions, infrastructure, required review, or another external condition prevents this, report the work as incomplete with the precise blocker; do not claim completion or abandon monitoring while useful authorized progress remains possible.
+
 ## YAGNI principle
 - Apply YAGNI to speculative requirements and premature abstraction, not to correctness, security, testing, maintainability, or explicitly requested product quality.
 
