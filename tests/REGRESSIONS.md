@@ -2,6 +2,11 @@
 
 Guided repertoire repair (October 2, 2026; related to issue #4, which also covers separate learning behavior):
 
+- `guided_repair_postgres_report_attachment_cannot_lose_wakeup` and `guided_repair_postgres_attachment_contention_yields_without_spending_retry` in the regular PostgreSQL repair rehearsal force independent-transaction commit visibility and engine-first contention, then prove ready publication, restart/replay and engine reuse.
+- `guided_repair_postgres_stranded_report_repreparation_coalesces` proves two independent preparation transactions and a delayed report wake admit one effective ranking generation from already-completed evidence.
+- `test_integrity_recommendation_delayed_wake_rejects_changed_evidence` protects source, signature, scan and graph fencing against a late report wake.
+- `test_integrity_recommendations_reprepare_stranded_completed_engine` and `test_integrity_recommendation_wake_and_reprepare_coalesce_ranking` in `backend/tests/test_integrity_recommendations.py` protect existing stranded-state recovery and coalescing with leased/ready ranking work.
+
 Legacy-card color review follow-up (PR #67):
 
 - `test_integrity_recommendations_infer_legacy_card_color_from_the_requested_repertoire` (direct/linked); `test_integrity_card_source_preserves_explicit_color_and_canonical_line_order` (null/explicit); `test_integrity_recommendations_do_not_guess_a_legacy_card_color_without_repertoire_lines`; `test_unavailable_integrity_recommendations_reprepare_a_now_valid_legacy_card` in `backend/tests/test_integrity_recommendations.py`. These exercise full-history preparation, canonical scanner agreement, ready candidates, normalized snapshot stability and stale effective-color rejection.

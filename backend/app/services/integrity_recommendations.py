@@ -78,6 +78,37 @@ def _source_current(database, record):
         for field in ('start_fen', 'moves_json', 'trained_color'))
 
 
+def _queue_completed_report_ranking(database, expected):
+    """Coalesce a report wake and explicit recovery under the target task lock."""
+    task_query = 'SELECT * FROM background_tasks WHERE id=?'
+    if postgres_store.configured():
+        task_query += ' FOR UPDATE'
+    task = database.execute(task_query, (expected['task_id'],)).fetchone()
+    record = database.execute('SELECT * FROM integrity_recommendation_requests WHERE issue_id=?',
+        (expected['issue_id'],)).fetchone()
+    if (not task or not record or task['kind'] != 'integrity_recommendation'
+            or task['deduplication_key'] != expected['issue_id']
+            or any(record[field] != expected[field] for field in
+                   ('repertoire_id', 'signature', 'scan_generation', 'graph_generation', 'task_id', 'request_id'))
+            or record['state'] != 'waiting' or record['preview_json']
+            or not _current(database, record) or not _source_current(database, record)):
+        return None
+    engine = database.execute('SELECT state,report_json FROM threat_analysis_requests WHERE id=?',
+        (record['request_id'],)).fetchone()
+    if not engine or engine['state'] != 'complete' or not engine['report_json']:
+        return None
+    if task['state'] in {'queued', 'leased', 'retrying'}:
+        return dict(task)
+    if task['state'] != 'complete':
+        return None
+    queued = enqueue_task_in_transaction(database, 'integrity_recommendation', record['issue_id'],
+        {**{key: record[key] for key in ('repertoire_id', 'issue_id', 'signature')},
+         'phase': 'rank', 'after_line_id': ''}, priority=85)
+    database.execute('UPDATE integrity_recommendation_requests SET task_id=?,accumulation_json=NULL,updated_at=? WHERE issue_id=?',
+        (queued['id'], _now(), record['issue_id']))
+    return queued
+
+
 def admit_recommendation(database, payload):
     repertoire_id, issue_id, signature = (payload[key] for key in ('repertoire_id', 'issue_id', 'signature'))
     issue = issue_snapshot(database, repertoire_id, issue_id, signature)
@@ -85,6 +116,11 @@ def admit_recommendation(database, payload):
     if prior and _current(database, prior) and _source_current(database, prior):
         task = database.execute('SELECT state FROM background_tasks WHERE id=?', (prior['task_id'],)).fetchone()
         engine = database.execute('SELECT state FROM threat_analysis_requests WHERE id=?', (prior['request_id'],)).fetchone()
+        if prior['state'] == 'waiting' and engine and engine['state'] == 'complete':
+            recovered = _queue_completed_report_ranking(database, prior)
+            if recovered:
+                return {'task_id': recovered['id'], 'repertoire_id': repertoire_id,
+                        'issue_id': issue_id, 'signature': signature, 'state': 'waiting'}
         if (task and task['state'] != 'failed' and (not engine or engine['state'] != 'failed')
                 and prior['state'] not in {'failed', 'unavailable'}):
             return {'task_id': prior['task_id'], 'repertoire_id': repertoire_id,
@@ -180,11 +216,7 @@ def execute_integrity_recommendation_slice(task):
             if record is None:
                 complete_task_slice_in_transaction(database, task)
                 return False
-            if _current(database, record) and _source_current(database, record):
-                queued = enqueue_task_in_transaction(database, 'integrity_recommendation', record['issue_id'],
-                    {**{key: record[key] for key in ('repertoire_id', 'issue_id', 'signature')},
-                     'phase': 'rank', 'after_line_id': ''}, priority=85)
-                database.execute('UPDATE integrity_recommendation_requests SET task_id=? WHERE issue_id=?', (queued['id'], record['issue_id']))
+            _queue_completed_report_ranking(database, record)
             advance_task_slice_in_transaction(database, task, next_phase='wake',
                 next_payload={**payload, 'after_issue_id': record['issue_id']})
         return True
@@ -243,6 +275,12 @@ def execute_integrity_recommendation_slice(task):
                 return False
             database.execute('INSERT OR IGNORE INTO threat_analysis_requests(id,request_json,created_at,updated_at) VALUES(?,?,?,?)',
                 (request.request_id, json.dumps(asdict(request)), _now(), _now()))
+            if postgres_store.configured():
+                # Report completion locks this same row. NOWAIT avoids a cycle
+                # through report -> wake task -> target task -> engine request.
+                # The worker rolls back and durably defers lock contention.
+                database.execute('SELECT id FROM threat_analysis_requests WHERE id=? FOR UPDATE NOWAIT',
+                    (request.request_id,)).fetchone()
             # This path is entered only after an explicit preparation/retry request.
             database.execute("UPDATE threat_analysis_requests SET state='queued',attempts=0,last_error=NULL WHERE id=? AND state='failed'", (request.request_id,))
             database.execute('UPDATE integrity_recommendation_requests SET request_id=?,source_json=?,updated_at=? WHERE issue_id=?',

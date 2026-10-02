@@ -247,3 +247,91 @@ are retained in ignored `test-results/guided-repair-color-evidence/`. Other acti
 task and live study resources are preserved. Main and PR #66 remain unchanged;
 migration 030 is untouched. Fresh complete candidate CI follows these commits;
 no old run or local full-gate pass is claimed for the new candidate.
+
+## Report-attachment concurrency review follow-up
+
+Starting head `8712902`, current main `5976bce`; main is schema 29 and this PR
+retains migration 030. PR #66 is draft/unmerged and its work is not imported.
+The actual base-to-head diff excludes the PGN import changes already on main.
+
+Selected scope: serialize engine subscription with report completion, and recover
+already-stranded waiting recommendations from completed engine evidence. Risks
+are commit visibility, engine/wake/task lock cycles, duplicate rank generations,
+stale source/scan/graph/task leases, and restart after contention. First reproduce
+both defects with named regular-suite tests before editing production code.
+Use independently controlled PostgreSQL transactions in the existing durability
+rehearsal; SQLite remains a sequential compatibility/recovery proof. Then run
+full recommendation/scanner, report/command/validation and discovery files, all
+repair outbox/pending/dialogue/study/schema cases, browser recovery, typecheck,
+lint, diff checks, and disposable Docker durability. Existing dependencies and
+safe build caches are reused; no live study resources are used. CI owns complete
+fresh head/current-main merge-candidate validation, including pinned checks.
+
+The baseline reproduction clarified the two report paths: the atomic PostgreSQL
+`submit_threat_report` command already takes `FOR UPDATE`, which conflicts with
+an initial association's foreign-key key-share lock. That first probe therefore
+passed; no failing atomic-command baseline is claimed. The shared
+`save_analysis_report` path uses a non-key state update, compatible with that
+key-share lock. Its real PostgreSQL interleaving reproduced the lost wake:
+A associated but did not commit and observed leased; B saved the report, saw no
+subscriber and committed; A completed routing; no durable ranking remained.
+The new regression exercises both paths without changing either callback.
+
+Routing now takes an explicit engine `FOR UPDATE NOWAIT` before attaching or
+resetting failed evidence. If routing owns the engine, report completion cannot
+pass it until the subscriber is committed. If completion owns the engine first,
+routing rolls back and uses the existing contention defer (unchanged generation,
+cursor and retry budget); its later delivery sees the completed report and
+advances to rank. The existing lock relationships are target task -> engine,
+engine -> report wake task, and wake task -> target task. The new engine
+acquisition never waits, so it cannot close that lock cycle. Database work stays
+bounded; source traversal, engine validation and ranking stay outside publication
+transactions. Production timeouts and callback fan-out are unchanged.
+
+Wake delivery and explicit preparation share a target-task-locked transition.
+It reloads the recommendation and checks request/source/signature/scan/graph
+identity; active ranking and published results are retained. A current waiting
+record with completed evidence and a completed task gets one fresh rank
+generation with cleared accumulation, without re-running Stockfish. Real
+PostgreSQL concurrent preparations and late wake delivery prove coalescing,
+restart/replay, one effective publication and unchanged engine attempts.
+
+
+Local evidence uses parent `8712902` plus this committed concurrency patch in
+`.dev-copies/guided-repertoire-repair` (macOS ARM64, Node 26.3, Python 3.14.5;
+disposable PostgreSQL 18.6/Redis 7). No previous checkout's pass is attributed to
+this candidate. Raw logs, dirty source diff, commands and resource provenance are
+retained in `test-results/guided-repair-concurrency-evidence/`.
+
+| Command / scope | Result / observed time |
+| --- | --- |
+| `make python-file FILE=backend/tests/test_integrity_recommendations.py::test_integrity_recommendations_reprepare_stranded_completed_engine` before fix | 1 failed as intended; 2.49s pytest, 3.70s wall |
+| `make docker-durability` before fix, both report paths | Failed at shared-save permanent waiting assertion; 129.68s wall, including coordinator pause. Initial atomic-only probe passed because of the FK lock; no failed atomic baseline is claimed. |
+| `make python-file FILE=backend/tests/test_integrity_recommendations.py` after fix | 20 passed; 3.01s pytest, 3.95s wall |
+| Affected backend command below | 138 passed; 12.34s pytest, 12.97s wall |
+| Repair unit command below | 59 passed, including all 19 outbox cases; 11.25s Vitest, 11.94s wall |
+| `npm run typecheck` / `npm run lint` | Passed; 7.10s / 14.24s wall; 8 existing warnings, 0 errors |
+| `make docker-durability` after fix | All 14 stages passed; 171.15s wall; new report race/coalescing/contention plus existing legacy-card/retry/publication proof |
+| `make ui-file FILE=recovery.spec.ts` | 22 passed, no retries/skips; 45.4s Playwright, 90.38s wall |
+| `git diff --check` | Passed |
+
+Exact affected backend and repair-unit commands (each timed with `/usr/bin/time -p`):
+
+```sh
+PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_integrity_recommendations.py backend/tests/test_repertoire_integrity.py backend/tests/test_postgres_opening_graph.py backend/tests/test_postgres_threat_analysis_commands.py backend/tests/test_defensive_threat_persistence.py backend/tests/test_postgres_threat_validation.py backend/tests/test_repertoire_opportunities.py backend/tests/test_postgres_discovery_admission.py backend/tests/test_postgres_discovery_acceptance.py backend/tests/test_background_priority.py -q -o cache_dir=.pytest_cache --rootdir=.
+npm run test:unit -- tests/unit/integrity-repair-outbox-regressions.test.ts tests/unit/integrity-repair-pending-regressions.test.ts tests/unit/repertoire-integrity-dialog-regressions.test.tsx tests/unit/study-regressions.test.tsx tests/unit/api-schema-parity-regressions.test.ts
+```
+
+The durability runner owned `tempo-pg-regressions-30007-1ce9c717`; its
+`docker compose -p tempo-pg-regressions-30007-1ce9c717 -f docker-compose.postgres.test.yml down --rmi local -v`
+and separate maintenance-image removal completed in 14.30s. Browser runner
+`tempo-pg-regressions-31916-829706e4` used the same project-scoped teardown and
+maintenance removal (12.31s). Inspection confirms neither project has remaining
+containers, test-specific images or volumes. Initial reproduction projects
+`tempo-pg-regressions-27732-a3879b9e` and `tempo-pg-regressions-28768-6b5baadc`
+also cleaned up. Live study resources and shared caches remain untouched.
+
+Main is still `5976bce` (schema 29); PR #66 remains draft/unmerged at `d5212cf`.
+This follow-up changes no schema/migration/API/UI or unrelated PGN import code.
+Issue #4 remains open. CI owns the final clean head/merge-candidate gate and
+pinned visual/performance validation; no local full-gate pass or speedup is claimed.

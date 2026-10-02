@@ -331,3 +331,93 @@ def test_repair_status_does_not_report_a_cached_scan_failure_after_its_task_retr
     graph['state'] = 'complete'
     scan.update(state='queued', generation=3)
     assert integrity_api.repair_status('rep', 'graph', 'issue', 2)['state'] == 'failed'
+
+
+def completed_engine_without_preview(client):
+    """Persist the lost-notification outcome without fabricating engine evidence."""
+    admission = prepare(client)
+    evidence = report()
+    with database.connection() as db:
+        db.execute("UPDATE background_tasks SET state='complete',lease_token=NULL,lease_expires_at=NULL WHERE deduplication_key=?",
+            ('report:' + evidence.request.request_id,))
+        record = dict(db.execute("SELECT * FROM integrity_recommendation_requests WHERE issue_id='issue'").fetchone())
+        assert record['state'] == 'waiting' and record['preview_json'] is None
+        assert db.execute('SELECT state FROM background_tasks WHERE id=?', (record['task_id'],)).fetchone()[0] == 'complete'
+        assert db.execute('SELECT state FROM threat_analysis_requests WHERE id=?', (record['request_id'],)).fetchone()[0] == 'complete'
+        generation = db.execute('SELECT generation FROM background_tasks WHERE id=?', (record['task_id'],)).fetchone()[0]
+    return admission, evidence, generation
+
+
+def test_integrity_recommendations_reprepare_stranded_completed_engine(repair):
+    admission, evidence, generation = completed_engine_without_preview(repair)
+    response = repair.post('/api/repertoires/rep/integrity/issues/issue/recommendations', json={'signature': 'signature'})
+    assert response.status_code == 200, response.text
+    assert response.json()['task_id'] == admission['task_id']
+    with database.read_connection() as db:
+        task = db.execute('SELECT * FROM background_tasks WHERE id=?', (admission['task_id'],)).fetchone()
+        assert task['generation'] == generation + 1 and json.loads(task['payload_json'])['phase'] == 'rank'
+    while step(): pass
+    result = repair.get('/api/repertoires/rep/integrity/issues/issue/recommendations?signature=signature').json()
+    assert result['state'] == 'ready', result
+    with database.read_connection() as db:
+        assert db.execute('SELECT COUNT(*) FROM integrity_recommendation_requests').fetchone()[0] == 1
+        engines = db.execute('SELECT id,state,attempts FROM threat_analysis_requests').fetchall()
+        assert [(row['id'], row['state'], row['attempts']) for row in engines] == [(evidence.request.request_id, 'complete', 1)]
+        assert db.execute("SELECT COUNT(*) FROM background_task_events WHERE task_id=? AND generation=? AND event='published'",
+            (admission['task_id'], generation + 1)).fetchone()[0] == 1
+
+
+def test_integrity_recommendation_wake_and_reprepare_coalesce_ranking(repair):
+    admission, evidence, generation = completed_engine_without_preview(repair)
+    with database.connection() as db:
+        service.wake_report_previews(db, evidence.request.request_id)
+    delayed_wake = claim_task(kind='integrity_recommendation')
+    assert delayed_wake and delayed_wake['payload']['phase'] == 'wake'
+    endpoint = '/api/repertoires/rep/integrity/issues/issue/recommendations'
+    assert repair.post(endpoint, json={'signature': 'signature'}).status_code == 200
+    rank = claim_task(kind='integrity_recommendation')
+    assert rank and rank['payload']['phase'] == 'rank'
+    assert rank['generation'] == generation + 1
+    # Both a leased rank slice and its eventual ready result must survive late wakes.
+    assert service.execute_integrity_recommendation_slice(delayed_wake)
+    assert repair.post(endpoint, json={'signature': 'signature'}).status_code == 200
+    with database.read_connection() as db:
+        current = db.execute('SELECT generation,state,lease_token FROM background_tasks WHERE id=?', (rank['id'],)).fetchone()
+        assert (current['generation'], current['state'], current['lease_token']) == (rank['generation'], 'leased', rank['lease_token'])
+    assert service.execute_integrity_recommendation_slice(rank)
+    while step(): pass
+    before = repair.get(endpoint + '?signature=signature').json()
+    assert before['state'] == 'ready'
+    with database.connection() as db:
+        service.wake_report_previews(db, evidence.request.request_id)
+    while step(): pass
+    assert repair.get(endpoint + '?signature=signature').json() == before
+    assert repair.post(endpoint, json={'signature': 'signature'}).status_code == 200
+    with database.read_connection() as db:
+        assert db.execute('SELECT generation FROM background_tasks WHERE id=?', (admission['task_id'],)).fetchone()[0] == generation + 1
+        assert db.execute("SELECT COUNT(*) FROM background_task_events WHERE task_id=? AND generation=? AND event='published'",
+            (admission['task_id'], generation + 1)).fetchone()[0] == 1
+
+
+@pytest.mark.parametrize('changed_evidence', ['source', 'signature', 'scan', 'graph'])
+def test_integrity_recommendation_delayed_wake_rejects_changed_evidence(repair, changed_evidence):
+    admission, evidence, generation = completed_engine_without_preview(repair)
+    with database.connection() as db:
+        service.wake_report_previews(db, evidence.request.request_id)
+    wake = claim_task(kind='integrity_recommendation')
+    assert wake and wake['payload']['phase'] == 'wake'
+    with database.connection() as db:
+        if changed_evidence == 'source':
+            db.execute("UPDATE repertoire_lines SET moves_json='[]' WHERE id='one'")
+        elif changed_evidence == 'signature':
+            db.execute("UPDATE repertoire_integrity_issues SET signature='changed' WHERE id='issue'")
+        elif changed_evidence == 'scan':
+            db.execute("UPDATE repertoire_integrity_state SET scan_generation='scan:2' WHERE repertoire_id='rep'")
+        else:
+            from app.services.durable_tasks import enqueue_task_in_transaction
+            enqueue_task_in_transaction(db, 'opening_graph_rebuild', 'rep', {'repertoire_id': 'rep'})
+    assert service.execute_integrity_recommendation_slice(wake)
+    while step(): pass
+    with database.read_connection() as db:
+        assert db.execute('SELECT generation FROM background_tasks WHERE id=?', (admission['task_id'],)).fetchone()[0] == generation
+        assert db.execute("SELECT preview_json FROM integrity_recommendation_requests WHERE issue_id='issue'").fetchone()[0] is None
