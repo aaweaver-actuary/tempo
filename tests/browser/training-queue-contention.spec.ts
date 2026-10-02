@@ -64,9 +64,14 @@ test("discovery preview backlog leaves a prompt foreground training queue refres
     expect(Date.now() - refreshStartedAt).toBeLessThan(2_000);
 
     releasePreviews?.();
-    await expect.poll(() => startedPreviews).toBe(6);
+    await expect.poll(() => activePreviews).toBe(0);
+    // Closed idle preparation deliberately selects only two entries per feed
+    // refresh; foreground queue reads must not depend on draining all six.
     await page.waitForTimeout(3_500);
-    expect(startedPreviews).toBe(6);
+    expect(startedPreviews).toBe(2);
+    await page.getByRole("button", { name: "Discoveries", exact: true }).click();
+    await expect.poll(() => startedPreviews).toBeGreaterThan(2);
+    expect(maximumActivePreviews).toBeLessThanOrEqual(2);
   } finally {
     releasePreviews?.();
   }
