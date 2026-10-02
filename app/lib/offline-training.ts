@@ -133,7 +133,7 @@ export async function savePreparedTraining(raw: unknown): Promise<PreparedTraini
       return current;
     return {
       localDate: envelope.local_date!, preparedAt, cards,
-      attempts: current?.attempts.filter((attempt) => attempt.conflict || attempt.syncWarning) ?? [],
+      attempts: current?.attempts.filter((attempt) => attempt.conflict || attempt.syncWarning || attempt.openingEvidenceRejected) ?? [],
       nextTemporaryId: 1_000_000_000_000,
     };
   });

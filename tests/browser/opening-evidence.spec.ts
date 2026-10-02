@@ -187,7 +187,10 @@ test("AS-15 orphaned completion without an aggregate outbox retains partial work
   expect(aggregateReviews).toBe(0);
 });
 
-test("AS-16 offline repeats retain independent attempts and reconcile their parent before completion", async ({ page, context }) => {
+for (const rejectParentEvidence of [false, true]) {
+test(rejectParentEvidence
+  ? "AS-16 offline parent fallback retains rejected journal after queue refresh and reconciles repeat evidence"
+  : "AS-16 offline repeats retain independent attempts and reconcile their parent before completion", async ({ page, context }) => {
   await context.addInitScript(() => {
     Object.defineProperty(navigator, "standalone", { value: true, configurable: true });
     Object.defineProperty(navigator, "userAgent", { value: "Mozilla/5.0 (iPhone) AppleWebKit/605.1.15", configurable: true });
@@ -232,11 +235,19 @@ test("AS-16 offline repeats retain independent attempts and reconcile their pare
   expect(saved.attempts[1].openingEvidenceCompletion.parent_attempt_id).toBe(saved.attempts[0].attemptId);
   expect(saved.attempts[0].openingEvidenceCompletion.events.filter(event => event.kind === "first_response")).toHaveLength(3);
   expect(saved.attempts[1].openingEvidenceCompletion.events).toEqual([]);
-  const reviews: { attempt_id: string; queue_entry_id: number; recorded_at: string; opening_evidence_completion: OpeningEvidenceCheckpoint }[] = [];
+  const reviews: { attempt_id: string; queue_entry_id: number; recorded_at: string; opening_evidence_completion?: OpeningEvidenceCheckpoint }[] = [];
+  const deliveryKeys: string[] = [];
   await page.route("**/api/cards/shadow-card/review", async route => {
     reviews.push(route.request().postDataJSON());
-    await route.fulfill({ json: { persisted: true, review_id: 800 + reviews.length,
-      requeue_entry_id: reviews.length === 1 ? 102 : null } });
+    deliveryKeys.push(route.request().headers()["idempotency-key"]);
+    if (rejectParentEvidence && reviews.length === 1) {
+      await route.fulfill({ status: 409, json: { detail: { code: "opening_evidence_conflict",
+        message: "Parent evidence was rejected", aggregate_review_allowed: true } } });
+      return;
+    }
+    const savedReviewCount = reviews.length - Number(rejectParentEvidence);
+    await route.fulfill({ json: { persisted: true, review_id: 800 + savedReviewCount,
+      requeue_entry_id: savedReviewCount === 1 ? 102 : null } });
   });
   await page.route("**/api/opening-evidence/checkpoints", async route => {
     const checkpoint = route.request().postDataJSON() as OpeningEvidenceCheckpoint;
@@ -244,10 +255,41 @@ test("AS-16 offline repeats retain independent attempts and reconcile their pare
       received_sequences: checkpoint.events.map(event => event.sequence), contiguous_sequence: checkpoint.events.at(-1)?.sequence ?? 0 } });
   });
   await page.unroute("**/api/**"); await page.reload();
-  await expect.poll(() => reviews.length).toBe(2);
-  expect(reviews.map(review => review.queue_entry_id)).toEqual([101, 102]);
-  expect(reviews.map(review => review.attempt_id)).toEqual(saved.attempts.map(attempt => attempt.attemptId));
-  expect(reviews[1].opening_evidence_completion.queue_entry_id).toBe(102);
+  await expect.poll(() => reviews.length).toBe(rejectParentEvidence ? 3 : 2);
+  const acceptedReviews = rejectParentEvidence ? reviews.slice(1) : reviews;
+  expect(acceptedReviews.map(review => review.queue_entry_id)).toEqual([101, 102]);
+  expect(acceptedReviews.map(review => review.attempt_id)).toEqual(saved.attempts.map(attempt => attempt.attemptId));
+  expect(acceptedReviews[1].opening_evidence_completion?.queue_entry_id).toBe(102);
   expect(reviews[0].recorded_at).toBe(saved.attempts[0].completedAt);
   expect(reviews[0].opening_evidence_completion).toEqual(saved.attempts[0].openingEvidenceCompletion);
+  if (rejectParentEvidence) {
+    expect(acceptedReviews[0].opening_evidence_completion).toBeUndefined();
+    expect(deliveryKeys[1]).toBe(`${deliveryKeys[0]}:aggregate-only`);
+    await expect.poll(() => page.evaluate(() => new Promise<boolean>(resolve => {
+      const open = indexedDB.open("tempo-offline-training", 2);
+      open.onsuccess = () => {
+        const database = open.result;
+        const read = database.transaction("training").objectStore("training").get("prepared-daily-queue");
+        read.onsuccess = () => {
+          database.close();
+          resolve(Boolean(read.result.attempts.find((attempt: { openingEvidenceRejected?: string; serverAcknowledged?: boolean }) =>
+            attempt.serverAcknowledged && attempt.openingEvidenceRejected === "Parent evidence was rejected")));
+        };
+      };
+    }))).toBe(true);
+    await page.reload();
+    await expect.poll(() => page.evaluate(() => new Promise<boolean>(resolve => {
+      const open = indexedDB.open("tempo-offline-training", 2);
+      open.onsuccess = () => {
+        const database = open.result;
+        const read = database.transaction("training").objectStore("training").get("prepared-daily-queue");
+        read.onsuccess = () => {
+          database.close();
+          resolve(Boolean(read.result.attempts.find((attempt: { openingEvidenceRejected?: string }) =>
+            attempt.openingEvidenceRejected === "Parent evidence was rejected")));
+        };
+      };
+    }))).toBe(true);
+  }
 });
+}

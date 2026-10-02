@@ -303,3 +303,16 @@ PostgreSQL rehearsal passed on a fresh disposable 18.6 container in 2.10s of exe
 (`bash /private/tmp/tempo-shadow-run-focused.sh`, logs retained); the focused manifest,
 contract and route files passed 23 cases in 0.62s. This backend follow-up requires fresh
 current-candidate CI durability; the earlier local Docker artifact is not relabelled.
+
+PR 2 rejected-journal retention audit: `AS-16 confirmed aggregate-only fallback
+retains rejected journal even when IndexedDB is unavailable` failed on the prior
+implementation (0.99s). The online outbox now archives the full rejected completion
+and diagnostic before using its separate fallback key. A later prepared-phone queue
+refresh retains rejected offline attempts instead of discarding them as ordinary
+acknowledged records. The four affected journal/outbox/lifecycle/offline unit files
+passed 23 cases in 1.88s; typecheck and lint passed (same nine existing warnings).
+Elevated `make ui-file FILE=opening-evidence.spec.ts` passed all seven final cases,
+including both successful and parent-rejected offline replay; original move/context,
+independent repeat IDs, separate fallback key and post-refresh diagnostics are
+asserted. The complete final candidate still requires fresh CI; run 37065687058
+passed all required jobs on the earlier `7fd6042` and is not evidence for these repairs.

@@ -19,6 +19,7 @@ export type PendingReview = {
 };
 
 const storageKey = "tempo-pending-training-reviews-v1";
+const rejectedOpeningReviewStorageKey = "tempo-rejected-opening-reviews-v1";
 const reviewRequestTimeoutMs = 15_000;
 let activeFlush: Promise<void> | undefined;
 
@@ -30,7 +31,11 @@ export class ReviewReplayError extends Error {
 }
 
 export function pendingReviews(): PendingReview[] {
-  const stored = localStorage.getItem(storageKey);
+  return readStoredReviews(storageKey);
+}
+
+function readStoredReviews(key: string): PendingReview[] {
+  const stored = localStorage.getItem(key);
   if (!stored) return [];
   const parsed: unknown = JSON.parse(stored);
   if (!Array.isArray(parsed) || parsed.some((item) =>
@@ -88,8 +93,15 @@ async function savePendingReviews(): Promise<void> {
       endpoint: reviewEndpoint, operationKey: `review-attempt:${attemptId}`, request: requestReviewSave,
       completion: review.openingEvidenceCompletion, evidenceRejected: review.evidenceRejected,
       onEvidenceRejected: (message) => {
-        localStorage.setItem(storageKey, JSON.stringify(pendingReviews().map((item) =>
-          item.attemptId === attemptId ? { ...item, evidenceRejected: message } : item)));
+        const updated = pendingReviews().map((item) =>
+          item.attemptId === attemptId ? { ...item, evidenceRejected: message } : item);
+        const rejected = updated.find((item) => item.attemptId === attemptId);
+        const archived = readStoredReviews(rejectedOpeningReviewStorageKey);
+        // Keep the full rejected envelope after the aggregate outbox is drained,
+        // even when the separate IndexedDB journal is unavailable.
+        if (rejected && !archived.some((item) => item.attemptId === attemptId))
+          localStorage.setItem(rejectedOpeningReviewStorageKey, JSON.stringify([...archived, rejected]));
+        localStorage.setItem(storageKey, JSON.stringify(updated));
       },
       body: {
         outcome: review.outcome,
