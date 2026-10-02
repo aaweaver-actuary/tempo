@@ -947,3 +947,5 @@ Passive status reads pause while hidden/offline. Visible closed activity counts 
 - `tests/browser/activity-tray.spec.ts::status_recovery_during_training_preserves_held_drag_and_command_execution` holds a real piece across a delayed status response and coalesced recovery burst, then checks explicit activity control. The existing navigation-growth case explicitly wakes the closed trigger before assessing geometry.
 
 These count/identity assertions establish reduced polling and React work, not a drag-latency improvement. Existing held-drag preservation and diagnostics specs remain independent boundary coverage.
+
+`manual_sync_startup_suspends_passive_reads_until_command_state_and_then_reconciles` covers a completed bootstrap read followed by delayed manual settings, wake/timer events during startup, queued command publication, rejected pre-command status, and one legitimate post-command reconciliation. It failed on PR #59 before separating command invalidation from status recovery. The existing in-flight supersession regression remains in the suite.

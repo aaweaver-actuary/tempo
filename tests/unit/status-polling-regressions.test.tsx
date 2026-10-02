@@ -371,6 +371,44 @@ it("sync_status_superseded_by_a_manual_command_cannot_publish_an_old_completion"
   await act(async () => nextStatus.resolve(Response.json({ providers: [], active_job: { ...activeJob, status: "queued" } })));
 });
 
+it("manual_sync_startup_suspends_passive_reads_until_command_state_and_then_reconciles", async () => {
+  const commandSettings = deferred<Response>();
+  const preCommandStatus = deferred<Response>();
+  const postCommandStatus = deferred<Response>();
+  let manualStarted = false; let commandEstablished = false; let statusCalls = 0;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input);
+    if (path.endsWith("/sync/status")) {
+      statusCalls++;
+      if (!manualStarted) return Response.json({ providers: [], active_job: { ...activeJob, status: "complete" } });
+      return commandEstablished ? postCommandStatus.promise : preCommandStatus.promise;
+    }
+    if (path.endsWith("/api/settings")) return manualStarted ? commandSettings.promise
+      : Response.json({ ...syncSettings, lichess_username: "" });
+    commandEstablished = true;
+    return Response.json({ imported: 0, job_id: activeJob.id, status: "queued", providers: {} });
+  }));
+  let value!: ReturnType<typeof useGameSync>;
+  function Probe() { value = useGameSync(); return null; }
+  render(<Probe />); await settle();
+  expect(value.state.jobStatus).toBe("complete"); // The bootstrap read has finished; no request is in flight.
+  manualStarted = true;
+  let command!: Promise<void>;
+  await act(async () => { command = value.sync(true); });
+  await wake(); await advance(15_000);
+  await act(async () => { commandSettings.resolve(Response.json(syncSettings)); await command; });
+  expect(value.state.jobStatus).toBe("queued");
+  // The old implementation launches this read during settings loading, then accepts it after the POST.
+  await act(async () => preCommandStatus.resolve(Response.json({ providers: [], active_job: { ...activeJob, status: "complete" } })));
+  expect(value.state.jobStatus).toBe("queued");
+  expect(value.state.syncing).toBe(true);
+  expect(statusCalls).toBe(2); // Bootstrap plus one legitimate post-command refresh.
+  await act(async () => postCommandStatus.resolve(Response.json({ providers: [], active_job: activeJob })));
+  expect(value.state.jobStatus).toBe("running");
+  await advance(1_999); expect(statusCalls).toBe(2);
+  await advance(1); expect(statusCalls).toBe(3);
+});
+
 const trainingCard = { id: asCardId("polling-training"), kind: "opening" as const, title: "Polling training", subtitle: "",
   startingFen: asFenString(STANDARD_FEN), moves: [asSanMove("e4")], userMoveTarget: 1, orientation: "white" as const };
 const trainingProps = { dateLabel: "Today", serviceError: "", refreshDatabaseQueue: vi.fn(), cardsLeft: 1,

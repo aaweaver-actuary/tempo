@@ -51,14 +51,17 @@ export function useGameSync() {
   const lastStarted = useRef(0);
   const statusFailureCount = useRef(0);
   const lastReportedStatusFailure = useRef("");
-  const recoverStatus = useRef<() => void>(() => undefined);
+  const manualCommandPending = useRef(false);
+  const invalidateStatusForCommand = useRef<() => void>(() => undefined);
+  const requestStatusRecovery = useRef<() => void>(() => undefined);
   const sync = useCallback(async (manual = false, repair = false) => {
     if (!usesLocalApi() || active.current || (!manual && document.visibilityState !== "visible")) return;
     if (!manual && Date.now() - lastStarted.current < interval.current) return;
     active.current = true;
     if (manual) {
+      manualCommandPending.current = true;
       statusFailureCount.current = 0;
-      recoverStatus.current();
+      invalidateStatusForCommand.current();
     }
     let failedEndpoint = `${API_URL}/api/settings`;
     let failedOperation = "load sync settings";
@@ -94,7 +97,13 @@ export function useGameSync() {
         method: failedMethod,
       });
       setState((current) => ({ ...current, syncing: false, error: error instanceof Error ? error.message : "Could not sync games." }));
-    } finally { active.current = false; }
+    } finally {
+      active.current = false;
+      if (manual) {
+        manualCommandPending.current = false;
+        requestStatusRecovery.current();
+      }
+    }
   }, []);
   useEffect(() => {
     if (!usesLocalApi()) return;
@@ -106,7 +115,8 @@ export function useGameSync() {
     let statusRefreshPending = false;
     let statusWakeQueued = false;
     let nextStatusDelay = 15_000;
-    const statusEligible = () => !stopped && document.visibilityState === "visible" && navigator.onLine;
+    const statusEligible = () => !stopped && !manualCommandPending.current
+      && document.visibilityState === "visible" && navigator.onLine;
     const scheduleStatus = (delay: number) => {
       if (statusTimer !== undefined) window.clearTimeout(statusTimer);
       if (statusEligible()) statusTimer = window.setTimeout(refreshStatus, delay);
@@ -188,7 +198,7 @@ export function useGameSync() {
       await sync();
       scheduleAutomaticSync();
     };
-    const recover = () => {
+    const recoverStatus = () => {
       statusFailureCount.current = 0;
       if (statusTimer !== undefined) window.clearTimeout(statusTimer);
       if (statusEligible()) {
@@ -197,6 +207,9 @@ export function useGameSync() {
           queueMicrotask(() => { statusWakeQueued = false; if (statusEligible()) void refreshStatus(); });
         }
       } else statusRefreshPending = false;
+    };
+    const recover = () => {
+      recoverStatus();
       // Acquisition/recovery retains its existing visibility and cadence rules.
       void sync();
     };
@@ -204,11 +217,12 @@ export function useGameSync() {
       if (statusTimer !== undefined) window.clearTimeout(statusTimer);
       statusRefreshPending = false;
     };
-    recoverStatus.current = () => {
-      // A passive response begun before this explicit command cannot undo its state.
+    invalidateStatusForCommand.current = () => {
+      // Fence existing reads and suspend timers until the command establishes its state.
       statusGeneration += 1;
-      recover();
+      pauseStatus();
     };
+    requestStatusRecovery.current = recoverStatus;
     void refreshStatus();
     void runAutomaticSync();
     window.addEventListener("focus", recover);
@@ -217,7 +231,8 @@ export function useGameSync() {
     document.addEventListener("visibilitychange", recover);
     return () => {
       stopped = true;
-      recoverStatus.current = () => undefined;
+      invalidateStatusForCommand.current = () => undefined;
+      requestStatusRecovery.current = () => undefined;
       if (automaticSyncTimer !== undefined) window.clearTimeout(automaticSyncTimer);
       if (statusTimer !== undefined) window.clearTimeout(statusTimer);
       window.removeEventListener("focus", recover);
