@@ -258,6 +258,8 @@ export const repertoiresResponseSchema = z.strictObject({
       canonical_prefix: canonicalPrefixSchema.optional(),
       created_at: isoDateSchema.optional(),
       is_main: sqliteBooleanSchema.optional(),
+      new_cards_per_day: z.number().int().min(0).max(100).nullable().optional(),
+      effective_new_cards_per_day: z.number().int().min(0).max(100).optional(),
       line_count: integer,
       card_count: integer,
       active_prefix_count: integer.optional(),

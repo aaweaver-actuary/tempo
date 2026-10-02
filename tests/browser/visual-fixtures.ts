@@ -78,6 +78,8 @@ export async function prepareVisualUI(page: Page, fixedClock = true, trainingCar
           {
             id: "visual-repertoire",
             name: "Spanish opening — tournament preparation",
+            new_cards_per_day: null,
+            effective_new_cards_per_day: 10,
             source_name: "Spanish.pgn",
             line_count: repertoireLines?.length ?? 3,
             card_count: 8,

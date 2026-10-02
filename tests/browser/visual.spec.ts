@@ -32,6 +32,10 @@ for (const viewport of [
           "data-fen",
           "8/8/8/7R/K7/8/8/6k1 w - - 0 1",
         );
+      if (workspace === "Settings") {
+        await expect(page.getByRole("group", { name: "Spanish opening — tournament preparation daily limit" })).toBeVisible();
+        await expect(page.getByText("Current limit: 10/day")).toBeVisible();
+      }
       await page.evaluate(() => document.fonts.ready);
       if (workspace === "Train") {
         await expect(

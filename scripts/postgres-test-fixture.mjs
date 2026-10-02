@@ -22,3 +22,5 @@ export const backgroundPublicationPgn = [
   '[Event "Queued background publication"]', "",
   "1. c4 e5 2. Nc3 Nf6 3. g3 d5 4. cxd5 Nxd5 5. Bg2 *", "",
 ].join("\n");
+
+export const repertoireLimitRecreationPgn = '[Event "Limit recreation"]\n\n1. e4 e5 2. Nf3 *';

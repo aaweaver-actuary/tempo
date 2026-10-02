@@ -260,3 +260,306 @@ Focused harness/collection and disposable durability proofs cover this boundary;
 the final PR description records current head/base/merge SHAs, CI run, collected
 counts, all layer outcomes and any remaining blockers. Older successful runs
 are historical evidence, not validation of the repaired head.
+
+## Repertoire daily-limit validation
+
+The daily opening limit now has an optional repertoire override. Settings → Training
+shows the global default and separately saved repertoire limits. A null override
+inherits the default; integers 0–100 override it, with zero pausing only new cards.
+Changes refresh today's remaining automatic introductions. Completed work and due
+reviews remain. Unused allowance does not accumulate: seven learned out of ten
+still permits up to ten new cards tomorrow.
+
+PostgreSQL migration 29 adds the nullable column. Upgrade with the normal
+stopped-writer migration procedure before starting the API/workers requiring schema
+29. SQLite compatibility initialization adds the same nullable field. Settings
+writes and their queue-refresh generation commit together on PostgreSQL; old worker
+checkpoints cannot publish after that generation changes. Publication rechecks the
+current limit and admissions without reversing the foreground settings/task lock
+order. No new background handler is introduced.
+
+Selected development scope: queue admission/reconciliation, repertoire persistence,
+strict request/response contracts, Settings controls, operation-receipt recovery,
+and the complete Settings/queue browser boundary. Start with
+`make python-file FILE=backend/tests/test_repertoire_settings.py` and
+`make unit-file FILE=tests/unit/repertoire-daily-limits.test.tsx`; then run the existing
+queue regressions, PostgreSQL cutover/candidate-page tests, API schema parity,
+typecheck, lint, and CI/Docker-runner contract tests. These exercise override
+precedence, invalid/zero/null values, attribution of shared cards, day rollover,
+completed reviews, stale publication, persistence, and replay without duplicating
+broad suites.
+
+On a settled candidate, run
+`make ui-file FILE=settings-repertoire-limits.spec.ts`, `make docker-durability`,
+and `make visual` in a Docker/loopback-capable environment. The new durability proof
+is part of `background_workloads`; the existing recreation stage now imports its
+own repertoire and checks override persistence and receipt replay. The pinned
+Settings fixtures include inherited repertoire limits and wait for their controls
+before capture. Review their intentional screenshot changes; do not accept new
+baselines just to clear failures. CI owns final required current-candidate validation.
+
+Implementation evidence (2026-10-02): all executions used the dirty implementation
+checkout `.dev-copies/repertoire-daily-limits`, based on verified remote main
+`dfbb66d67b314357e55c2030ff794a15415f316c`, on branch
+`codex/repertoire-daily-limits`. They were not runs against clean base HEAD. The
+primary checkout and live study service were untouched. Node dependencies were
+installed with `npm ci --offline --ignore-scripts`. Python used an isolated CPython
+3.14.5 environment populated from existing cached project dependencies;
+`uv sync --offline --inexact` succeeded, but the offline requirements install could
+not resolve uncached `python-dotenv`. Container runtime installation is still part
+of CI; these local results are focused evidence only.
+
+| Executed command | Result and observed duration |
+| --- | --- |
+| `PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_repertoire_settings.py backend/tests/test_postgres_cutover.py backend/tests/test_postgres_opening_candidate_pages.py backend/tests/test_new_cards_per_repertoire.py backend/tests/test_regressions.py backend/tests/test_introduction_priorities.py -q -o cache_dir=.pytest_cache --rootdir=.` | 239 passed; 8.21 s reported by pytest on final backend sources. |
+| `make unit-file FILE=tests/unit/repertoire-daily-limits.test.tsx` | 5 passed; 1.09 s Vitest duration. |
+| `TEMPO_PYTHON=backend/.venv/bin/python make unit-file FILE=tests/unit/api-schema-parity-regressions.test.ts` | 5 passed; 1.31 s Vitest duration. |
+| `make unit-file FILE=tests/unit/validated-data-regressions.test.ts` | 16 passed; 0.791 s Vitest duration. |
+| `make unit-file FILE=tests/unit/settings-save-pending-regressions.test.ts` | 2 passed; 0.545 s Vitest duration. |
+| `node --test tests/runner/ci-reliability.test.mjs tests/runner/postgres-test-speedups.test.mjs` | 52 passed; 1.983 s runner duration. Browser collection here is static discovery, not browser execution. |
+| `npm run typecheck` | Passed; duration not captured. |
+| `npm run lint` | Passed with 9 pre-existing warnings; duration not captured. |
+| `node --check scripts/test-postgres-docker.mjs` and `PYTHONPATH=backend backend/.venv/bin/python -m py_compile scripts/check_postgres_repertoire_limits.py scripts/check_postgres_upgrade.py` | Static syntax checks passed; duration not captured. |
+| `make plan` and `git diff --check` | Plan inspected and diff clean; no runtime evidence. |
+| `make preflight` | Blocked: Docker socket permission denied and loopback bind EPERM; no Docker/browser tests ran. |
+
+The feature regressions initially failed against the baseline because the override
+endpoint did not exist. The shared-card retry regression separately failed before
+restricting introduction counts to cycle zero. The original no-rollover regression
+passed in the final focused backend run. PostgreSQL durability/recreation, the new
+real browser spec, pinned rendering (including intentional Settings baseline review),
+production builds, and final CI candidate checks remain pending. No CI run was
+started from this local branch and no deployment was performed.
+
+Review-fix evidence (2026-10-02): pulled the reviewed head `b3fe4f4`, which had
+no newer branch commits. Added the staged settings route contract, reused the
+settings system-ID tuple for repertoire listing (including `__defense__`), removed
+owner-integrity exclusions only from four historical consumption queries, and
+initialized Custom from the current global default unless a custom draft exists.
+Named regressions and failing-before evidence are recorded in `tests/REGRESSIONS.md`.
+Candidate eligibility checks, cycle-zero accounting, publication rechecks, and
+queue-generation invalidation remain intact. Older system exclusions in import,
+main selection, comparison, and integrity scanning were inspected but left outside
+this settings/listing fix to avoid changing unrelated repertoire behavior.
+
+Current main `937aee7` was merged into the PR branch, preserving both appended CSS
+sections and both regression inventories. The post-merge executable candidate was
+clean `df5b64ec738972ed58bc01fe19aad61603465324` in the same isolated macOS checkout;
+Python remained CPython 3.14.5. Docker tests used disposable PostgreSQL with Python
+3.12 and the production Compose image build. Test-owned temporary secrets, databases,
+containers and volumes were cleaned by the runners; live study was untouched.
+
+| Post-merge command | Result and observed duration |
+| --- | --- |
+| `PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_repertoire_settings.py backend/tests/test_postgres_route_contract.py backend/tests/test_postgres_opening_candidate_pages.py backend/tests/test_new_cards_per_repertoire.py backend/tests/test_regressions.py backend/tests/test_introduction_priorities.py backend/tests/test_postgres_cutover.py::test_postgres_priority_opening_publication_translates_opportunity_json backend/tests/test_postgres_cutover.py::test_postgres_queue_unseen_reconciliation_matches_sqlite_and_survives_reordering -q -o cache_dir=.pytest_cache --rootdir=.` | 59 passed; 36.37 s pytest duration. Includes all 20 repertoire-settings cases, route-contract matching, and existing publication/reconciliation invariants. |
+| `TEMPO_PYTHON=backend/.venv/bin/python npm run test:unit -- tests/unit/repertoire-daily-limits.test.tsx tests/unit/api-schema-parity-regressions.test.ts tests/unit/tactic-capture-regressions.test.tsx` | 32 passed across 3 files; 15.45 s Vitest duration. Includes 6 repertoire cases, 5 schema cases, and preservation of incoming SAN-entry behavior. |
+| `npm run typecheck` and `npm run lint` | Passed; lint retains 9 existing warnings. Individual durations not captured. |
+| `make docker-durability` (elevated) | Incomplete/failing: repertoire-limit proof, capture contention, schema upgrade, background budgets, and operation recovery passed. Existing `check_postgres_background_workloads.py` second threat claim exceeded its 250 ms transaction budget. Background-workload stage 99.82 s; image build 70.41 s; cleanup 16.38 s. These are stage timings, not a full-gate pass or summed suite wall time. Later threat-upsert, recreation, backup/restore and study-durability stages were not reached. |
+| `make ui-file FILE=settings-repertoire-limits.spec.ts` (elevated) | Passed: 1 Chromium workflow, 31.9 s Playwright duration (30.3 s case). Docker stages: build 19.59 s, startup 33.94 s, browser 34.43 s, cleanup 37.56 s. Proves current-day queue changes, reload persistence, inheritance reset, and failed-save receipt recovery. |
+| `make plan` and `git diff --check` | Coverage inspected; diff clean. Static inspection only. |
+
+Before merging main, `make visual` (elevated, clean `a6eb4bb`) ran the pinned
+Linux ARM64 Playwright 1.63.0 image: 47 passed, 4 Settings screenshots failed,
+11.1 min Playwright duration. All four actual/expected Settings images were
+visually inspected at 390, 768, 1280 and 1920 px. Differences at the first three
+sizes are the intended default label, repertoire controls and resulting page height.
+The 1920 baseline also predates the notification button: its last update is
+`16a845b` (2026-09-26), before notification introduction `a11eed6` (2026-09-27).
+That separate header difference is not approved by this feature request. Performance
+cases passed, but this run overlapped a focused Python check and is not comparative
+performance evidence. Its results are historical pre-merge evidence, not validation
+of the merged candidate.
+
+Post-merge pinned attempts used the same image/config without changing tests.
+The first focused filter was incorrectly anchored against short titles; collection
+returned zero tests and no snapshots changed (not a pass). The corrected attempt
+was killed with exit 137 during `npm ci`, before tests or updates. Docker diagnostics
+showed a shared 6 GB / 4 CPU VM with live Tempo services and another test project;
+no services were stopped, limits increased, or caches pruned. A cache-first install
+with a 512 MB npm heap and bounded download concurrency was selected to reduce setup
+pressure; this does not change browser assertions or performance thresholds.
+
+The bounded/cache-first install was also killed with exit 137 before collection or
+browser execution. No baseline updates occurred in any post-merge attempt. All
+Settings baselines remain unchanged; the reviewed feature additions and separate
+1920 notification-header discrepancy remain visible validation blockers. Stop retrying
+on the loaded shared VM rather than disrupting live study or weakening assertions.
+Post-merge pinned capture/SAN assertions are unrun. `make full` was not run locally:
+CI owns the complete current-candidate gate. This patch is ready for another code
+review, but neither the failed durability run nor historical visual passes establish
+merge/release readiness. Runtime inputs remained `df5b64e`; this documentation-only
+follow-up does not relabel those executions as tests of a later clean commit.
+
+## PR #54 durability isolation validation plan (2026-10-02)
+
+Changed behavior: the repertoire-limit proof must restore the shared disposable
+environment after both success and failure. Risks are lost historical events
+(enqueue prunes to 100), changed singleton identity/lease/generation, present vs
+absent date projections, global rollover changes to unrelated cards, unrelated
+reconciliation, incomplete fixture cascades, and partial cleanup failure.
+
+Smallest proof: named portable SQL regressions in
+`backend/tests/test_repertoire_limit_proof_isolation.py`, followed by
+`node --test tests/runner/postgres-test-speedups.test.mjs` and `git diff --check`.
+The settled candidate then runs elevated `make docker-durability` for PostgreSQL
+FKs/transactions, real command receipts, generation invalidation, and downstream
+threat-claim/recreation/backup/study workflows. The 250 ms threshold is unchanged;
+a persistent threat-claim failure requires a fresh equivalent main comparison.
+CI owns final required PR candidate validation; pinned visuals remain outside
+this harness fix. Identity-sequence gaps are retained rather than resetting
+shared sequences.
+
+## PR #54 durability isolation results (2026-10-02)
+
+Root cause: the real settings command increments/requeues `daily_queue/current`,
+rewrites today's projection and appends/prunes task events. The proof deleted
+only its repertoires and operation receipts. Its global rollover helper also
+changed unrelated learning cards, whose PostgreSQL card-update triggers advance
+owner/shared repertoire priority epochs; its reconciliation could mutate unrelated
+tomorrow entries.
+
+The proof now snapshots every column of the singleton `background_tasks` row,
+its complete `background_task_events` history (an event-ID boundary cannot recover
+pruned events), and `queue_projections` for today/tomorrow. It also snapshots the
+affected unrelated cards' `state`/`introduced_at` and present/absent
+`priority_repertoire_source_epochs` for their owners and shared links. Cleanup in
+`finally` deletes exact fixture repertoire/receipt IDs, restores task/event IDs
+and rows or their original absence, restores card fields then trigger-owned
+epochs, and verifies the snapshot plus zero fixture card/link/review/queue rows
+in one transaction. A cleanup failure rolls back and propagates. Reconciliation
+publishes only fixture entries. Real settings commands, receipt replay and an
+explicit older-checkpoint generation invalidation assertion remain enabled.
+
+Audit: cards, repertoire links, reviews and queue entries cascade from the two
+synthetic repertoires; fixture priority epochs also cascade. Admission's opportunity
+update is restricted to synthetic repertoire/card IDs, which have no opportunity
+rows. Settings and `priority_source_epoch` are read-only in this proof; no other
+task FK exists beyond cascading events. Shared identity sequences are not reset.
+No production implementation or performance threshold changed.
+
+Two later PR-fixture defects surfaced once the threat benchmark passed. The
+recreation PGN `1. e4 e5 *` failed integrity with `missing_response`; adding
+`2. Nf3` supplies the required White move. That fixture then remained at the
+front of the queue and blocked guided failure with HTTP 409. The runner now
+retains the override through recreation/replay and backup comparison, then
+deletes only the owned repertoire through the production command before study
+durability. A runner regression executes those real scenario bodies with I/O
+seams and verifies replay, backup ordering and preservation of unrelated fixtures.
+
+Focused evidence (macOS, Node 26.3.0, CPython 3.14.5):
+
+- `make plan`: inspected the complete scope; no full gate launched locally.
+- `TEMPO_PYTHON=backend/.venv/bin/python make python-file FILE=backend/tests/test_repertoire_limit_proof_isolation.py`: original existing/absent-task cases failed (2 cases, 2.70 s); initial restoration passed. Adding the migration-21 trigger fixture then reproduced four epoch leaks (2.89 s). Final six cases passed in 4.06 s on the `032c68e` working tree with the script/test/registry changes committed as `b12895d`; these Python inputs are unchanged in the final executable candidate.
+- `node --test --test-name-pattern='repertoire limit recreation fixture' tests/runner/postgres-test-speedups.test.mjs`: PGN regression failed (`w !== b`, 0.186 s).
+- `node --test --test-name-pattern='repertoire limit recreation fixture survives' tests/runner/postgres-test-speedups.test.mjs`: lifecycle regression failed on the leftover owned fixture (1.000 s).
+- `/usr/bin/time -p node --test tests/runner/postgres-test-speedups.test.mjs`: 37 passed, 1.12 s wall (1.036 s runner), on `3de1bf6` plus the runner/test/registry changes subsequently committed as `28a3483`.
+- `/usr/bin/time -p npm run lint`: zero errors, nine existing warnings, 20.95 s on that same working tree.
+- `git diff --check`: passed before each candidate commit and the documentation follow-up.
+
+Elevated disposable `make docker-durability` runs:
+
+1. `032c68e`: repertoire/capture proofs passed; 250 ms threat claim committed in
+   129 ms (50 ms baseline timed out and rolled back in 60 ms). Failed at recreation
+   integrity (`missing_response`); backup/study not reached. Its recorded stages
+   total 179.52 s; this is not an independently instrumented command wall time.
+2. `/usr/bin/time -p make docker-durability`, clean `3de1bf6`: repertoire/capture,
+   134 ms threat claim, recreation and backup passed; study failed at guided
+   failure with HTTP 409. 166.54 s wall. Stage times: background workloads 28.61 s,
+   recreation 47.39 s, backup 23.34 s, failed study 8.37 s, cleanup 13.32 s.
+3. `/usr/bin/time -p make docker-durability`, clean executable candidate
+   `28a348354c187a71bb28f53208f0a9a6fcdcba33`: **all 14 stages passed**, 196.36 s
+   wall. PostgreSQL 18.6 disposable project `tempo-pg-regressions-12259-a760b092`.
+   Real 10/5 limits, seven-of-ten daily reset without rollover, stale publication,
+   inheritance, receipt replay, generation invalidation, restoration and capture
+   contention all passed. Threat claim: 20,000 queued requests, one eligible,
+   committed in **65 ms** with transaction=250 ms and lock=25 ms. The 50 ms
+   baseline timed out/rolled back in 52 ms with no persisted lease. No A/B run
+   against main was needed because the benchmark passed after isolation; these
+   runs do not prove that the original timeout was independently pre-existing.
+
+| Final durability stage | Result | Seconds |
+| --- | --- | ---: |
+| compose_config | pass | 0.13 |
+| image_build | pass | 8.23 |
+| maintenance_cli | pass | 3.24 |
+| startup | pass | 14.60 |
+| service_health | pass | 0.41 |
+| background_budget | pass | 3.01 |
+| operation_recovery | pass | 5.91 |
+| schema_upgrade | pass | 13.03 |
+| background_workloads | pass | 28.00 |
+| threat_candidate_upsert | pass | 1.19 |
+| command_recreation | pass | 31.53 |
+| backup_restore | pass | 27.47 |
+| study_durability | pass | 46.19 |
+| cleanup | pass | 12.56 |
+
+Durability timings are in
+`test-results/performance/postgres-scenarios-durability-tempo-pg-regressions-12259-a760b092.json`.
+Raw local logs are retained under `test-results/pr54-isolation/`. Stage sums omit
+some orchestration/preflight overhead; the measured wall time is authoritative.
+The documentation-only follow-up does not relabel runtime evidence as a clean
+pass on a newer commit. Every disposable invocation cleaned its resources; the
+primary checkout and live study services remained untouched.
+
+Remaining gate: this is a complete **durability** pass, not `make full`. Required
+current-candidate CI and post-merge pinned validation remain pending. Historical
+Settings differences, the 1920 notification-header discrepancy and pinned
+installation exit 137 are not resolved by this harness work. No visual baseline,
+timeout or assertion was weakened. PR #54 remains draft and unmerged.
+
+### PR #54 CI repair and current-main integration (2026-10-02)
+
+The tactical migration fixture's five-value positional repertoire insert failed
+against the six-column schema. Its named regression failed before the explicit
+column-list repair, then passed (1.40 s pytest); the whole tactical file passed
+(7 tests, 3.62 s). The audit found six positional repertoire inserts, all in tests;
+each now names the columns of its intentional current, miniature or legacy schema.
+
+Main `072f550` uses migration 26 for background diagnostics. That integration
+renumbers the repertoire migration and schema readiness to 27. The named migration
+regression reproduced the collision. The proof's present/absent restoration cases
+also reproduced leaked diagnostic buckets; restoration now preserves bounded
+`daily_queue` buckets while retaining unrelated kinds. No production queue or
+diagnostic behavior changed. The 32 focused integration cases passed in 7.32 s;
+the final observer additionally verifies an unrelated metric kind and stable order.
+
+Main subsequently advanced to `5dd0815`, introducing handled-discovery migrations
+27 and 28. Both remain intact; the repertoire migration, ledger and schema
+readiness now use 29. The same named numbering regression reproduced the duplicate
+27 before this repair. Current-base CI owns the final combined candidate gate.
+
+`TEMPO_PYTHON=backend/.venv/bin/python make python` passed **844 tests** in
+106.18 s pytest / 108.29 s wall, on `ea74d0f` plus the migration/counter patch
+subsequently committed as `9341eb6`, macOS arm64, CPython 3.14.5. All 37
+`node --test tests/runner/postgres-test-speedups.test.mjs` cases passed in 1.34 s.
+These are backend/runner results, not the complete release gate.
+
+The 1920 Settings baseline independently predates the Notifications header.
+A tracked-source export of current main `072f550` was rendered with the normal
+Playwright 1.63 pinned arm64 image and visual configuration. The single Settings
+1920 probe asserts the Notifications button and captures the page; no product
+source changed. Against the old baseline, raw pixel differences are confined to
+`(1352,13)–(1633,57)` in the header; the complete page body is identical.
+The replacement is committed separately from the repertoire UI snapshots.
+The exact filtered pinned command uses `visual.spec.ts --grep 'Settings 1920'
+--update-snapshots=all`; it passed one test in 6.0 s / 14.49 s wall. The original
+anchored filter matched zero cases and is not passing evidence; a second run
+accepted the old image within tolerance without writing a replacement, so the
+final probe explicitly captured it. Screenshot thresholds remain unchanged.
+The temporary source export was removed after verifying preserved screenshot and
+probe-source hashes. Source, logs, raw comparison and resource records are preserved
+outside the clone in the root checkout's `test-results/2026-10-02-pr54-ci-repair/`;
+the clone's `test-results/pr54-isolation/` also retains local logs.
+
+Expected, Actual and Diff from CI run `36997007615` were manually reviewed for
+all four Settings widths. The accepted feature snapshots add the default-limit
+wording, no-rollover explanation, repertoire heading/row, allowance selector,
+current-limit status and disabled clean Save button. At 390 and 768, the long
+repertoire title wraps within the existing card; the numeric current-limit status
+remains readable below the native selector. At 1280 and 1920, the row fits on
+one line. Existing downstream Training settings and footer move down; typography,
+navigation, alignment and horizontal bounds remain consistent. Only these four
+Settings images change; the independent 1920 header correction is the preceding
+commit. The complete pinned visual/performance gate and required current-candidate
+CI remain separate validation requirements, reported in the PR description.

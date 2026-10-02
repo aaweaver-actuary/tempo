@@ -1335,6 +1335,7 @@ def initialize() -> None:
                 "canonical_prefix_revision": "INTEGER NOT NULL DEFAULT 0",
                 "canonical_prefix_preview_id": "TEXT",
                 "scope_source_revision": "INTEGER NOT NULL DEFAULT 0",
+                "new_cards_per_day": "INTEGER CHECK(new_cards_per_day BETWEEN 0 AND 100)",
             },
             "repertoire_opportunities": {
                 "canonical_prefix_revision": "INTEGER NOT NULL DEFAULT 0",

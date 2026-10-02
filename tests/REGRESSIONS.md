@@ -360,7 +360,7 @@ Append every new reported issue and its test names here. All listed tests belong
 | Endgames shared-board shell leaks ownership or remounts embedded board during migration | `Endgames shared board publishes shell ownership and hides local board instance` |
 | Training shared-board shell leaks ownership or remounts embedded board during migration | `Training shared board publishes shell ownership and hides local board instance` |
 | Persistent shell remounts Chessground while board ownership changes across workspaces | `persistent board shell reuses one Chessground instance across board owner switches` |
-| Burying a training card grades or loses it instead of deferring it | `bury advances the active card while retaining it later without changing queue size`; `test_bury_moves_active_entry_later_without_review_or_count_change`; `training Bury defers the active card and reports a failed defer`; `defensive training can bury before loading or grading the exercise` |
+| Burying a training card reshuffles it today instead of hiding it until tomorrow | `bury removes every occurrence of the active card and allows burying the last card`; `test_bury_excludes_card_until_next_day_without_review_or_schedule_change`; `test_bury_removes_all_queued_cycles_and_can_finish_the_daily_queue`; `test_postgres_bury_handler_excludes_all_cycles_without_reordering_and_rejects_stale_entry`; `training Bury hides the card for today across reload and reports a failed bury`; `defensive training can bury before loading or grading the exercise` |
 | Defensive card grades a future rook square while showing the earlier board (reported 36.Rc4? Ne3+) | `test_reported_rc4_fork_requires_preview_with_rook_on_c4`; `test_defensive_recognition_holds_forks_beyond_the_immediate_reply`; `test_reported_rc4_preview_grades_c4_only_after_proposed_move`; `test_reported_rc4_audit_preserves_attempts_and_removes_invalid_review_effect`; `test_defensive_preview_queue_blocks_unteachable_card_without_erasing_history`; `test_defensive_rubric_audit_yields_to_foreground_and_replays_after_restart`; `test_defensive_auto_admission_holds_legacy_fork_without_immediate_preview`; `reported Rc4 recognition uses the after-move rook square with keyboard and touch`; `reported Rc4 defensive preview stays readable and returns to the decision at 390px` and `1440px` |
 | Ready continuation preview rejects the API's engine report provenance | `continuation preview accepts report provenance and rejects unknown candidate fields`; `missing-response viewer shows the learner board after the reply and selects one move`; `discovery viewer compares one learner decision and returns from Builder 390` and `1470` |
 | Shared shell layout drifts between desktop and mobile across board workspaces | `shared board shell keeps board region fixed left on desktop and top on mobile across board workspaces` |
@@ -919,6 +919,59 @@ therefore never replenish another test's cards. Enrollment, real mixed Training,
 authored FEN, unchanged board during square selection, assessment and export
 assertions remain required. No test identity, CI selection, or timeout changed.
 
+## Per-repertoire daily new-card overrides
+
+- `backend/tests/test_repertoire_settings.py::test_repertoire_daily_overrides_apply_independently_and_reset_to_default` — independent 10/5 limits and resetting to the default.
+- `test_global_daily_limit_changes_only_inheriting_repertoires` — global changes preserve explicit overrides.
+- `test_repertoire_limit_changes_today_preserve_completed_work_and_due_reviews` — lowering today's limit or setting zero removes only remaining automatic introductions.
+- `test_seven_of_ten_learned_allows_ten_new_tomorrow_without_rollover` — exactly seven learned out of ten produces ten new cards tomorrow, with repeat refreshes remaining idempotent. Existing `test_unfinished_unreviewed_cards_do_not_bypass_tomorrows_new_card_limit` remains in the regular suite.
+- `test_shared_card_review_retries_do_not_consume_owners_new_card_allowance` — a reviewed shared card's retry never spends the owner repertoire's separate introduction allowance (reproduced failing before the fix).
+- `test_shared_card_is_deduplicated_and_charged_to_admitting_repertoire` — shared cards are introduced once and charged to the admitting repertoire.
+- `test_repertoire_override_rejects_invalid_payloads`; `test_repertoire_override_rejects_missing_and_system_repertoires`; `test_existing_repertoire_migrates_to_inherited_limit` — validated API boundaries and historical SQLite compatibility.
+- `test_postgres_opening_publication_rechecks_lowered_limit_and_current_admissions`; `test_postgres_repertoire_settings_write_invalidates_old_queue_checkpoint`; `test_postgres_repertoire_settings_endpoint_dispatches_durable_command` — publication rechecks, generation invalidation, restart, and durable routing. Portable SQL fixtures prove behavior, not real PostgreSQL semantics.
+- `tests/unit/repertoire-daily-limits.test.tsx` — zero/reset controls, validation, failed loads, demo availability, pending save locking, lost transport, reload, exact identity/body replay, and completed receipt validation.
+- `tests/unit/api-schema-parity-regressions.test.ts::Python repertoire limit response matches the frontend contract for inherited, zero, and custom limits` — producer/consumer compatibility.
+- `tests/browser/settings-repertoire-limits.spec.ts::repertoire limits update today's queue, persist after reload, and reset to default` — real Settings/queue workflow with save failure recovery; registered in the complete repertoire browser family.
+- `scripts/check_postgres_repertoire_limits.py` — real PostgreSQL 10/5 limits, seven-of-ten reset, zero reconciliation, stale plan rejection, inheritance, and operation replay in the regular durability runner. The runner's command-recreation scenario preserves and replays an override across container recreation; schema-upgrade coverage verifies existing repertoires inherit after migration 29.
+
+- `backend/tests/test_postgres_route_contract.py::test_postgres_route_contract_matches_registered_endpoints` — repertoire settings is registered as a staged foreground command; reproduced the missing route before adding the contract entry.
+- `backend/tests/test_repertoire_settings.py::test_repertoire_override_rejects_missing_and_system_repertoires` — a persisted `__defense__` row rejects opening-limit writes and is absent from repertoire listing while normal openings remain. Reproduced HTTP 200 before the fix.
+- `backend/tests/test_repertoire_settings.py::test_shared_card_integrity_change_does_not_refund_admitting_repertoire_allowance` — reviewed and unreviewed A-owned cards admitted under B retain B’s consumed allowance after A is blocked. Covers SQLite reseeding/legacy reconciliation and PostgreSQL planning/reviewed-count SQL; reproduced extra planned admission before the fix.
+- `tests/unit/repertoire-daily-limits.test.tsx::inherited custom input uses the current default and preserves an edited draft` — a 10→12 global default change initializes Custom to 12, while an edited 5 survives mode toggles and later global changes. Reproduced stale 10 before the fix.
+- `tests/unit/repertoire-daily-limits.test.tsx::inherited repertoire uses API effective limit when page default is stale` — an inherited API value of 12 wins over a stale page default of 10 for current status, Custom initialization and the exact saved request. Reproduced displaying 10 before consuming the backend effective value.
+- `tests/unit/repertoire-daily-limits.test.tsx::reset to inheritance uses effective limit returned by save` — a reset response with inherited effective 12 updates the row immediately and clears the previously saved custom 5 as a draft. Reproduced displaying 10 after reset.
+- `tests/unit/repertoire-daily-limits.test.tsx::refreshed custom override replaces a clean row without becoming an unsaved draft`; `newer repertoire refresh ignores older in-flight data` — reused rows consume newly confirmed backend values; older requests cannot overwrite a newer response. The page default remains a global preview for custom repertoires. Both failed before the refresh/state repair.
+- `tests/unit/repertoire-daily-limits.test.tsx::repertoire editing requires backend %s instead of guessing a default` — missing override/effective fields produce the explicit upgrade error; the shared listing schema remains optional for compatibility with other consumers. The missing-effective case reproduced silently displaying the page default.
+- The existing `inherited custom input uses the current default and preserves an edited draft` and `repertoire pending saves retain exact bytes and identity through lost transport and reload` now refresh backend values independently of the page default. Unsaved custom 5 and locked pending bytes/identity survive; confirmed status follows the backend. Both extended cases failed on the stale frontend before the fix.
+
+### PR #54 durability proof isolation
+
+Current-main integration also preserves `background_metric_buckets` for the
+`daily_queue` kind in both restoration regressions below. Before restoring those
+rows, all four present/absent cases failed with leaked diagnostic counters.
+`test_repertoire_limit_migration_has_unique_number_and_matches_schema_readiness`
+failed on duplicate migration 26 when merging background diagnostics and again on
+duplicate 27 when handled discoveries introduced migrations 27 and 28. The
+repertoire migration now uses 29, with a matching ledger and readiness version.
+
+`backend/tests/test_tactical_catalog.py::test_tactical_pack_migration_preserves_reviews_scheduling_and_completion`
+also protects the additive repertoire schema: the old five-value positional insert
+failed against the new six-column table. Fixtures now name their columns rather
+than appending NULL. The repository audit found six positional repertoire inserts,
+all in tests; all six now use explicit lists, preserving the intentional miniature
+and historical schemas in the other fixtures.
+
+`backend/tests/test_repertoire_limit_proof_isolation.py` protects the shared
+disposable environment. Portable SQL covers restoration; the existing Docker
+proof retains real production commands, receipt replay, PostgreSQL locks and
+generation invalidation.
+
+- `test_repertoire_limit_proof_finally_restores_queue_state_after_assertion_failure` — existing and absent singleton cases; both failed before the fix with leaked task, event and projection rows. Also verifies repertoire/card/link/review/queue/receipt cleanup and unrelated rows.
+- `test_repertoire_limit_proof_restores_pruned_history_both_dates_and_stale_cards` — exact task fields/ID, all 100 historical events including events pruned by enqueue, present/absent today projections, tomorrow projection, and unrelated rollover fields survive mutation and cleanup. Also restores present/absent priority source epochs for owners and shared links after card-update triggers; the trigger-enabled fixture reproduced that additional leak before epoch restoration.
+- `test_repertoire_limit_proof_cleanup_failure_is_loud_and_atomic` — restoration failure surfaces with the original assertion as context and rolls back fixture deletion and partial queue restoration together.
+- `test_repertoire_limit_proof_reconciliation_preserves_unrelated_entries` — reconciliation publishes only fixture entries while advancing past unrelated candidates.
+- `tests/runner/postgres-test-speedups.test.mjs::repertoire limit recreation fixture includes its final White response` — the PR's recreation PGN ends after White's prescribed move so integrity validation permits study admission. Reproduced `w !== b` on `1. e4 e5 *` after the isolated Docker run exposed `missing_response`; fixed with `2. Nf3`, without bypassing integrity checks or extending waits.
+- `tests/runner/postgres-test-speedups.test.mjs::repertoire limit recreation fixture survives backup then leaves unrelated study state intact` — executes the real recreation/backup action bodies with I/O seams, verifies override replay and backup before cleanup, and preserves unrelated fixtures. Reproduced the leftover recreation entry after Docker study durability rejected guided failure with HTTP 409; production deletion now removes that owned repertoire before the next foreground workflow.
 
 ## Tactic capture orientation and typed SAN
 
@@ -1218,3 +1271,22 @@ checking-only frontend contract). The real browser workflow repeats Check prefix
 and asserts that the task identities remain unchanged.
 The same PostgreSQL scenario submits ten distinct candidates and waits for durable
 retention to settle at at most nine previews while preserving the active pointer.
+### Training burial until tomorrow
+
+Bury retains today's unfinished queue rows as `buried`, preserving scheduling and completed cycles. Those rows exclude the card from same-day materialization and still consume its new Study admission quota. Active queue reads remain `queued` only; next-day eligibility follows normal admission. PostgreSQL supplies durable command receipts; the SQLite compatibility route intentionally does not provide receipt replay.
+
+- Study quota retention: `backend/tests/test_daily_queue_randomization.py::test_buried_new_study_card_consumes_daily_quota_without_replacement` proves SQLite materialization excludes the buried card, admits no replacement, and retains unrelated order. `tests/fixtures/postgres-study-burial-quota.py`, invoked by the regular `study_durability` scenario, executes real PostgreSQL preparation, locked stale-candidate admission, burial receipts, and queue refresh. Its named proof is `PASS PostgreSQL buried Study admission retains quota through materialization and locked candidate replay`.
+- Terminal command cleanup: `terminal 409 burial clears its identity so a later legitimate head attempt gets a new command`; `durable failed burial receipt clears its identity for a fresh independent attempt`; `definitive HTTP %s burial rejection clears its identity` in `tests/unit/training-burial-regressions.test.ts`. These complement retained identities for transport ambiguity, pending/blocked receipts, retriable HTTP 408/429/503, and ambiguous successful bodies.
+- Confirmed command with failed refresh: `Home burial retry after failed queue refresh replays the selected entry even if the active card changes` in `tests/unit/training-burial-caller-regressions.test.tsx` exercises the real Home callback and proves it replays the original selected entry and clears identity only after refresh succeeds.
+- Browser daily reset: `stale imported-card burial never appends a card to the independently generated next-day queue` proves stale markers clear and never add yesterday's imported card. Existing same-day exclusion and empty-queue coverage remain; `browser burial can empty the queue and clears deleted identities tomorrow` covers deleted identities.
+- Real workflow and durability: `training Bury hides the card for today across reload and reports a failed bury` in `tests/browser/workspace-flows.spec.ts`; `PASS PostgreSQL bury until tomorrow survives recreation and idempotent replay without grading` in the regular durability runner. These cover PostgreSQL queue exclusion/order, unchanged scheduling/reviews, service recreation, and receipt replay.
+
+The quota, terminal-ID, stale browser marker, and Home refresh-retry regressions reproduced failures against reviewed commit `5a4163a` before their respective fixes. Validation results belong to the current PR candidate; a previous revision's passes are not evidence for an updated candidate.
+
+- Final retry-state coverage: `direct 500 durable failed burial clears identity for a fresh command`, `direct 500 completed receipt confirms original burial until queue refresh`, `direct 500 with %s receipt retains burial identity`, and `direct 500 mismatched completed receipt rejects and retains identity` resolve server errors only through durable receipts. Unknown, queued, pending, executing, retrying, blocked, and unavailable receipts retain identity.
+- `Home %s burial controls block mutations until a definitive outcome` covers lost response, pending receipt, and terminal rejection with the real Training component: board moves, grading, Again, restart, editing, and normal Bury lock while explicit Retry bury stays available. The existing failed-refresh regression also asserts reactive pending state, read-only shared board, replacement-card controls, original-entry replay, and successful cleanup. The real browser burial workflow verifies disabled controls and blocked board input before retry.
+
+- Recovery: `blocked burial retry uses durable endpoint and preserves identity through %s` covers complete, failed, nonterminal, conflicting retry acceptance, and mismatched results. `Home unresolved burial survives remount and resolves %s on its original entry` covers transport/pending/blocked recovery, already-completed and failed receipts, and failed refresh after recovered completion. A single pending-entry marker restores the mutation lock before paint; operation identity clears only after terminal failure or confirmed refresh.
+- The browser burial workflow reloads while unresolved and verifies the board/control lock, explicit retry, original entry/operation identity, and cleanup. `PASS PostgreSQL blocked burial resumes original payload through retry endpoint without duplicate effects` uses the production receipt lifecycle and real HTTP retry endpoint in the regular durability scenario, preserving scheduling, reviews, and unrelated queue order.
+
+- Terminal burial recovery cannot leave a Retry control that starts a new burial on the replacement card: `Home unresolved burial survives remount and resolves failed on its original entry` verifies entry 42 cleanup, interactive replacement 43, no Retry bury and no replacement request; `Home terminal burial controls block mutations until a definitive outcome` covers ordinary terminal rejection. The `training Bury hides the card for today across reload and reports a failed bury` browser workflow also verifies terminal recovery removes Retry while restoring normal controls without issuing a new burial.

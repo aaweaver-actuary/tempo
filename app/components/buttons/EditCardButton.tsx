@@ -3,15 +3,17 @@ import { PracticeCard } from "../../types";
 
 interface EditCardButtonProps {
   card: PracticeCard;
+  disabled?: boolean;
   setEditorCard: (card: PracticeCard) => void;
 }
 
 export default function EditCardButton({
   card,
   setEditorCard,
+  disabled = false,
 }: EditCardButtonProps) {
   return (
-    <Button onClick={() => setEditorCard(card)}>
+    <Button disabled={disabled} onClick={() => setEditorCard(card)}>
       ✎ <span>Edit card</span>
     </Button>
   );

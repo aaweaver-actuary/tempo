@@ -19,7 +19,7 @@ development services may connect to the live study instance.
 
 ## Persistence and boundaries
 
-Migration 029 stores UCI moves, a monotonically increasing prefix revision, and
+Migration 030 stores UCI moves, a monotonically increasing prefix revision, and
 an active compatibility preview per repertoire. Empty moves mean unrestricted
 analysis. SAN and the endpoint FEN are derived from legal moves from the standard
 starting position. Saving the same prefix preserves its revision and refreshes
@@ -88,7 +88,7 @@ history and the live instance; do not merge the PR.
 
 ## Review fixes and boundary audit
 
-Migration 030 ties each position certificate to `scope_source_revision`. Unknown
+Migration 031 ties each position certificate to `scope_source_revision`. Unknown
 legacy certificates default to -1 and fail closed until checked. Every origin
 lookup joins the certificate to the current repertoire revision. Historical result
 origins are reusable for prefix shortening only while their source revision is

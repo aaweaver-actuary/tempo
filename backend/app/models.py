@@ -136,6 +136,18 @@ class PrefixSplitResponse(BaseModel):
     shared_repertoire_count: int = Field(default=1, ge=1)
 
 
+class RepertoireSettingsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    new_cards_per_day: int | None = Field(ge=0, le=100, strict=True)
+
+
+class RepertoireSettingsResponse(BaseModel):
+    repertoire_id: str
+    new_cards_per_day: int | None = Field(ge=0, le=100)
+    effective_new_cards_per_day: int = Field(ge=0, le=100)
+
+
 class RepertoireRenameRequest(BaseModel):
     """Request model for renaming a repertoire."""
 

@@ -8,7 +8,7 @@ import {
   move,
 } from "./product-fixtures";
 
-test("training Bury defers the active card and reports a failed defer", async ({ page, request }) => {
+test("training Bury hides the card for today across reload and reports a failed bury", async ({ page, request }) => {
   const settings = await (await request.get(`${api}/settings`)).json();
   await request.put(`${api}/settings`, { data: { ...settings, new_cards_per_day: 10 } });
   const imported = await request.post(`${api}/imports/pgn`, {
@@ -32,19 +32,79 @@ test("training Bury defers the active card and reports a failed defer", async ({
   await expect(page.getByRole("button", { name: "Bury", exact: true })).toBeVisible();
   await page.route("**/api/queue/entries/*/bury", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Queue defer unavailable" }) }));
   await page.getByRole("button", { name: "Bury", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("Queue defer unavailable");
+  await expect(page.getByRole("alert")).toContainText("still pending");
+  for (const name of ["Bury", "Correct", "Again"]) {
+    await expect(page.getByRole("button", { name, exact: true })).toBeDisabled();
+  }
+  await expect(page.getByRole("button", { name: /Restart/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Retry bury", exact: true })).toBeEnabled();
+  const board = page.locator(".board-frame").first();
+  await expect(board).toHaveAttribute("data-input-enabled", "false");
+  const fenBeforeBlockedMove = await board.getAttribute("data-fen");
+  const box = (await board.locator(".cg-wrap").boundingBox())!;
+  for (const rank of [6.5, 4.5])
+    await page.mouse.click(box.x + box.width * 4.5 / 8, box.y + box.height * rank / 8);
+  await expect(board).toHaveAttribute("data-fen", fenBeforeBlockedMove!);
+  const storedBurial = await page.evaluate(() => {
+    const entryId = localStorage.getItem("tempo-pending-burial-entry");
+    return { entryId, operationId: localStorage.getItem(`tempo-bury-operation-${entryId}`) };
+  });
+  expect(storedBurial.entryId).toBeTruthy();
+  expect(storedBurial.operationId).toBeTruthy();
+  await page.reload();
+  await nav(page, "Train");
+  await expect(page.getByRole("button", { name: "Retry bury", exact: true })).toBeEnabled();
+  for (const name of ["Bury", "Correct", "Again"])
+    await expect(page.getByRole("button", { name, exact: true })).toBeDisabled();
+  await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "false");
+  expect(await page.evaluate(() => localStorage.getItem(`tempo-bury-operation-${localStorage.getItem("tempo-pending-burial-entry")}`))).toBe(storedBurial.operationId);
   await page.unroute("**/api/queue/entries/*/bury");
+  const retriedBurial = page.waitForRequest(request => request.method() === "POST" && request.url().endsWith("/bury"));
   const before = (await (await request.get(`${api}/queue/today`)).json()).cards;
   await page.getByRole("button", { name: "Retry bury" }).click();
+  const retryRequest = await retriedBurial;
+  expect(retryRequest.url()).toContain(`/entries/${storedBurial.entryId}/bury`);
+  expect(retryRequest.headers()["idempotency-key"]).toBe(storedBurial.operationId);
   await expect.poll(async () => {
     const after = (await (await request.get(`${api}/queue/today`)).json()).cards;
     return after[0]?.queue_entry_id;
   }).not.toBe(before[0]?.queue_entry_id);
   const after = (await (await request.get(`${api}/queue/today`)).json()).cards;
-  expect(after).toHaveLength(before.length);
+  expect(after).toHaveLength(before.length - 1);
+  expect(after.some((card: { id: string }) => card.id === before[0].id)).toBe(false);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("tempo-pending-burial-entry"))).toBeNull();
   await page.reload();
   await nav(page, "Train");
   await expect(page.getByRole("button", { name: "Bury", exact: true })).toBeVisible();
+  const reloaded = await (await request.get(`${api}/queue/today`)).json();
+  expect(reloaded.cards.some((card: { id: string }) => card.id === before[0].id)).toBe(false);
+  expect(reloaded.count).toBe(before.length - 1);
+  const terminalRecoveryRequests: string[] = [];
+  page.on("request", request => {
+    if (request.method() === "POST" && request.url().endsWith("/bury"))
+      terminalRecoveryRequests.push(request.url());
+  });
+  await page.evaluate(({ entryId, operationId }) => {
+    localStorage.setItem("tempo-pending-burial-entry", entryId!);
+    localStorage.setItem(`tempo-bury-operation-${entryId}`, operationId!);
+  }, storedBurial);
+  await page.route(`**/api/operations/${storedBurial.operationId}`, route => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ state: "failed", error: { message: "Recovered terminal burial failure" } }),
+  }));
+  await page.reload();
+  await nav(page, "Train");
+  await expect(page.getByRole("alert")).toContainText("Recovered terminal burial failure");
+  await expect(page.getByRole("button", { name: "Retry bury", exact: true })).toHaveCount(0);
+  for (const name of ["Bury", "Correct", "Again"])
+    await expect(page.getByRole("button", { name, exact: true })).toBeEnabled();
+  await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
+  expect(await page.evaluate(() => localStorage.getItem("tempo-pending-burial-entry"))).toBeNull();
+  expect(await page.evaluate(entryId => localStorage.getItem(`tempo-bury-operation-${entryId}`), storedBurial.entryId)).toBeNull();
+  expect(await page.evaluate(entryId => localStorage.getItem(`tempo-bury-operation-${entryId}`), reloaded.cards[0].queue_entry_id)).toBeNull();
+  expect(terminalRecoveryRequests).toEqual([]);
+  const terminalQueue = await (await request.get(`${api}/queue/today`)).json();
+  expect(terminalQueue.cards[0].queue_entry_id).toBe(reloaded.cards[0].queue_entry_id);
 });
 test("sample deletion uses repertoire identity and does not delete its same-filename sibling", async ({
   page,

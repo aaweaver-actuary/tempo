@@ -265,6 +265,7 @@ def main() -> None:
                 "SELECT version FROM tempo_schema_migrations ORDER BY version"
             ).fetchall()]
             assert versions == list(range(1, POSTGRES_SCHEMA_VERSION + 1))
+            assert database.execute("SELECT new_cards_per_day FROM repertoires WHERE id='preserved-repertoire'").fetchone()[0] is None
             assert database.execute(
                 "SELECT name FROM repertoires WHERE id='preserved-repertoire'"
             ).fetchone()[0] == "Preserved"
