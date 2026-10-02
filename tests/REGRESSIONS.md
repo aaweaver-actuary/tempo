@@ -1039,7 +1039,7 @@ The regular frontend suite includes the following named regressions:
 | Retry wakes create duplicate pools/backlogs | `discovery_due_retries_do_not_duplicate_queue_entries` exercises 100 waiting entries, one earliest wake, repeated updates and paused demand |
 | Unmount leaks work into another instance | `discovery_unmount_disposes_work_and_fences_remount`; `discovery_component_unmount_aborts_and_ignores_old_preview` |
 | Speculative pause blocks admission confirmation | `discovery_admission_confirmation_is_independent_of_preview_pause` verifies one submit, one confirmation, one queue refresh and a required feed refresh during hidden training |
-| Validation repeats or accepts replaced positions/results | `discovery_validation_cache_reuses_only_current_authoritative_identity`; `discovery_same_fingerprint_position_replacement_invalidates_validation`; `discovery_synthetic_workload_records_request_and_validation_counts` |
+| Validation repeats, accepts replaced positions/results, or counts React metadata reuse as cache hits | `discovery_validation_cache_reuses_only_current_authoritative_identity`; `discovery_same_fingerprint_position_replacement_invalidates_validation`; `discovery_synthetic_workload_records_request_and_validation_counts` |
 
 Browser: `hidden discovery speculation stays paused and viewer demand starts bounded look-ahead`
 in `discovery-viewer.spec.ts` verifies real Home training wiring, visibility wakes,
@@ -1050,3 +1050,6 @@ release real in-flight Discoveries responses during dragging; explicit viewer de
 now starts that work before returning to the training board.
 
 Policy and before/after evidence: [Discoveries preview scheduling](../docs/discoveries-preview-scheduling.md).
+
+- Issue #33 viewer look-ahead leaves a newly returned earlier item unnavigable: `discovery_viewer_prepares_new_items_before_current_feed_position`; browser `late removed preview cannot be reused when the discovery returns` preserves the current item while the earlier result prepares. Look-ahead remains limited to two neighbors.
+- Issue #33 foreground queue independence with bounded closed preparation: browser `discovery preview backlog leaves a prompt foreground training queue refresh` retains its queue latency and active request cap assertions, checks that closed preparation stops at two, and proves explicit viewer demand resumes work.

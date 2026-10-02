@@ -294,9 +294,6 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
       validatedPreviews[item.id]?.recommendation === recommendation &&
       validatedPreviews[item.id]?.decision === previewDecisionIdentity(item);
   }), [discoveries, previews, previewFingerprints, validatedPreviews]);
-  useEffect(() => {
-    for (const item of readyDiscoveries) if (!item.card_id) schedulerRef.current?.recordValidation(true);
-  }, [readyDiscoveries]);
   const visibleDiscoveries = readyDiscoveries.filter((item) => !item.snoozed_until ||
     new Date(item.snoozed_until).getTime() <= currentTime);
   const reviewItems = sessionItems.length ? sessionItems : visibleDiscoveries;
@@ -683,7 +680,10 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
             (!item.snoozed_until || new Date(item.snoozed_until).getTime() <= currentTime));
           const index = candidates.findIndex(item => item.id === activeId);
           const lookAhead = candidates.slice(index < 0 ? 0 : index + 1, index < 0 ? 2 : index + 3);
-          for (const item of lookAhead) add(item, "look-ahead");
+          // Fill unused look-ahead slots from preceding entries so a returned
+          // item before the current position can become navigable as well.
+          const nearby = [...lookAhead, ...candidates.slice(Math.max(0, index - 2), Math.max(0, index)).reverse()].slice(0, 2);
+          for (const item of nearby) add(item, "look-ahead");
         }
       } else if (visible && !interactionBlocked && !speculativePreparationPaused) {
         const candidates = currentItems.filter(item => closedPreparationIds.current.includes(item.id) && !item.card_id &&
