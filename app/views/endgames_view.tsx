@@ -471,10 +471,7 @@ export default function EndgamesView({
           {outcome && <OutcomeFlash outcome={outcome} />}
           {buryError && (
             <p role="alert">
-              {buryError}{" "}
-              <Button type="button" onClick={() => void runBury()}>
-                Retry bury
-              </Button>
+              {buryError}
             </p>
           )}
         </div>

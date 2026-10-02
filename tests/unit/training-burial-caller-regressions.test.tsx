@@ -103,14 +103,15 @@ it.each(["transport", "pending", "terminal"])("Home %s burial controls block mut
   render(<Home />);
   await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(42));
   fireEvent.click(screen.getByRole("button", { name: "Bury" }));
-  await screen.findByRole("button", { name: "Retry bury" });
+  await screen.findByText(/Could not bury this card/);
   const pending = outcome !== "terminal";
   expect(burialPending).toBe(pending);
   for (const name of ["Bury", "Again", "Show move", "Restart", "Correct", "Edit card"]) {
     const button = screen.getByRole("button", { name: new RegExp(name) });
     expect((button as HTMLButtonElement).disabled).toBe(pending);
   }
-  expect((screen.getByRole("button", { name: "Retry bury" }) as HTMLButtonElement).disabled).toBe(false);
+  if (pending) expect((screen.getByRole("button", { name: "Retry bury" }) as HTMLButtonElement).disabled).toBe(false);
+  else expect(screen.queryByRole("button", { name: "Retry bury" })).toBeNull();
   expect(useBoardShellStore.getState().board.interactionMode).toBe(pending ? "readonly" : "legal");
   const generation = useTrainingStore.getState().attempt.generation;
   if (pending) {
@@ -183,6 +184,16 @@ it.each(["transport", "pending", "blocked", "complete", "failed", "refresh-faile
     if (outcome === "complete" || outcome === "failed") {
       await waitFor(() => expect(burialPending).toBe(false));
       expect(postedEntries).toHaveLength(1);
+      if (outcome === "failed") {
+        await screen.findByText(/Recovered terminal failure/);
+        expect(screen.queryByRole("button", { name: "Retry bury" })).toBeNull();
+        expect(useTrainingStore.getState().getCard().queueEntryId).toBe(43);
+        for (const name of ["Bury", "Correct", "Again"])
+          expect((screen.getByRole("button", { name }) as HTMLButtonElement).disabled).toBe(false);
+        expect((screen.getByRole("button", { name: /Restart/ }) as HTMLButtonElement).disabled).toBe(false);
+        expect(useBoardShellStore.getState().board.interactionMode).toBe("legal");
+        expect(postedEntries.every(url => url.includes("/entries/42/bury"))).toBe(true);
+      }
     } else {
       await waitFor(() => expect(burialPending).toBe(true));
       expect((screen.getByRole("button", { name: "Correct" }) as HTMLButtonElement).disabled).toBe(true);

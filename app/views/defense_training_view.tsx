@@ -356,7 +356,7 @@ export default function DefenseTrainingView({
         {recognitionDone && !definitive && defenseReady && <p className="defense-stage-prompt">Back at your original turn, play a move that avoids this danger. More than one sound defense may work.</p>}
         {loadError && <p role="alert">{loadError}</p>}
         {saveError && <p role="alert">{saveError} {/reload|refresh/i.test(saveError) && <Button type="button" onClick={() => void loadExercise()}>Reload exercise</Button>}</p>}
-        {buryError && <p role="alert">{buryError} <Button type="button" onClick={() => void runBury()}>Retry bury</Button></p>}
+        {buryError && <p role="alert">{buryError}</p>}
         {grade?.status === "needs_analysis" && <p role="status">Analyzing this legal defense. Your study result has not been recorded yet.</p>}
         {grade?.status === "ambiguous" && <p role="status">This move is too close to the grading threshold. No review was recorded; choose another move.</p>}
         {grade?.status === "illegal" && <p role="alert">The submitted move is illegal. No review was recorded.</p>}

@@ -79,6 +79,32 @@ test("training Bury hides the card for today across reload and reports a failed 
   const reloaded = await (await request.get(`${api}/queue/today`)).json();
   expect(reloaded.cards.some((card: { id: string }) => card.id === before[0].id)).toBe(false);
   expect(reloaded.count).toBe(before.length - 1);
+  const terminalRecoveryRequests: string[] = [];
+  page.on("request", request => {
+    if (request.method() === "POST" && request.url().endsWith("/bury"))
+      terminalRecoveryRequests.push(request.url());
+  });
+  await page.evaluate(({ entryId, operationId }) => {
+    localStorage.setItem("tempo-pending-burial-entry", entryId!);
+    localStorage.setItem(`tempo-bury-operation-${entryId}`, operationId!);
+  }, storedBurial);
+  await page.route(`**/api/operations/${storedBurial.operationId}`, route => route.fulfill({
+    status: 200, contentType: "application/json",
+    body: JSON.stringify({ state: "failed", error: { message: "Recovered terminal burial failure" } }),
+  }));
+  await page.reload();
+  await nav(page, "Train");
+  await expect(page.getByRole("alert")).toContainText("Recovered terminal burial failure");
+  await expect(page.getByRole("button", { name: "Retry bury", exact: true })).toHaveCount(0);
+  for (const name of ["Bury", "Correct", "Again"])
+    await expect(page.getByRole("button", { name, exact: true })).toBeEnabled();
+  await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "true");
+  expect(await page.evaluate(() => localStorage.getItem("tempo-pending-burial-entry"))).toBeNull();
+  expect(await page.evaluate(entryId => localStorage.getItem(`tempo-bury-operation-${entryId}`), storedBurial.entryId)).toBeNull();
+  expect(await page.evaluate(entryId => localStorage.getItem(`tempo-bury-operation-${entryId}`), reloaded.cards[0].queue_entry_id)).toBeNull();
+  expect(terminalRecoveryRequests).toEqual([]);
+  const terminalQueue = await (await request.get(`${api}/queue/today`)).json();
+  expect(terminalQueue.cards[0].queue_entry_id).toBe(reloaded.cards[0].queue_entry_id);
 });
 test("sample deletion uses repertoire identity and does not delete its same-filename sibling", async ({
   page,
