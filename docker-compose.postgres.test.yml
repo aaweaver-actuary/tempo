@@ -39,6 +39,8 @@ services:
     environment:
       PGPASSFILE: /run/secrets/admin_pgpass
       TEMPO_TEST_INSTANCE: disposable
+      # The guided repair rehearsal invokes the real graph admission gate.
+      TEMPO_REDIS_URL: redis://redis:6379/0
     secrets:
       - source: admin_pgpass
         mode: 0400

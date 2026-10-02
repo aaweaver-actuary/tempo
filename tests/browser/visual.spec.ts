@@ -1,6 +1,22 @@
 import { test, expect } from "./observability";
 import { navigate } from "./ui-fixtures";
 import { prepareVisualUI } from "./visual-fixtures";
+import { prepareRepairUI } from "./repair-fixtures";
+
+for (const width of [390, 1280]) {
+  test(`repair-dialog-${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: width === 390 ? 844 : 900 });
+    await prepareRepairUI(page);
+    await page.getByRole("button", { name: "Resume repair" }).click();
+    await expect(page.getByText("Suggested response: e4")).toBeVisible();
+    await page.getByRole("button", { name: "Use suggested response" }).click();
+    const dialog = page.getByRole("dialog");
+    expect(await dialog.evaluate(element => element.scrollWidth <= element.clientWidth + 1)).toBe(true);
+    await dialog.evaluate(element => { element.scrollTop = 0; });
+    await page.evaluate(() => document.fonts.ready);
+    await expect(page).toHaveScreenshot(`repair-dialog-${width}.png`, { animations: "disabled", fullPage: true });
+  });
+}
 import type { ActivityResponse } from "../../app/lib/service-status";
 for (const viewport of [
   { width: 390, height: 844 },

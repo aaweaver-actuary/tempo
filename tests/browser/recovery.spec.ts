@@ -1,5 +1,63 @@
 import { test, expect, navigate, prepareUI } from "./ui-fixtures";
 import { prepareVisualUI } from "./visual-fixtures";
+import { prepareRepairUI, repairStartFen } from "./repair-fixtures";
+import { expectedPieces, renderedPieces, playMove, squareCenter } from "./keyboard-fixtures";
+import { Chess } from "chess.js";
+
+test("guided repair previews real arrows and pieces, saves durably, and preserves study through reload and confirmation", async ({ page }) => {
+  const repair = await prepareRepairUI(page);
+  await page.getByRole("button", { name: "Resume repair" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("Suggested response: e4")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Keep this response" })).toBeDisabled();
+  const response = dialog.getByRole("button", { name: "e4", exact: true });
+  await response.hover();
+  const previewBoard = dialog.locator(".board-frame");
+  await expect(previewBoard.locator("svg.cg-shapes > g > g[cgHash]")).toHaveCount(1);
+  await response.click();
+  await expect(response.locator("xpath=ancestor::tr")).toHaveAttribute("aria-selected", "true");
+  expect(await response.locator("xpath=ancestor::tr").evaluate(element => getComputedStyle(element).backgroundColor))
+    .not.toBe(await dialog.getByRole("button", { name: "d4", exact: true }).locator("xpath=ancestor::tr").evaluate(element => getComputedStyle(element).backgroundColor));
+  await dialog.getByRole("button", { name: "Next move" }).click();
+  const previewPosition = new Chess(repairStartFen); previewPosition.move("e2e4");
+  await expect.poll(() => renderedPieces(previewBoard)).toEqual(expectedPieces(previewPosition.fen()));
+  await dialog.getByRole("button", { name: "Decision position" }).click();
+  await expect.poll(() => renderedPieces(previewBoard)).toEqual(expectedPieces(repairStartFen));
+  await dialog.getByRole("button", { name: "Keep this response" }).click();
+  await expect(dialog).toHaveCount(0);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-integrity-repairs-v2")!)[0]);
+  expect(saved.selectedMoveUci).toBe("e2e4");
+  await expect.poll(() => repair.operationIds.length).toBe(1);
+  expect(repair.operationIds[0]).toBe(saved.operationId);
+  const studyBoard = page.locator(".persistent-board-shell .board-frame");
+  await playMove(page, studyBoard, "e2", "e4");
+  await page.getByRole("button", { name: "Correct", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Second study card" })).toBeVisible();
+  // Advance the fixture's fixed wall clock beyond the durable retry deadline.
+  await page.clock.setFixedTime(new Date("2026-09-18T16:00:10Z"));
+  await page.reload();
+  await expect(page.getByText("Repair validating", { exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(repair.operationIds).toEqual([saved.operationId]);
+  expect(repair.receiptIds).toContain(saved.operationId);
+  const from = await squareCenter(studyBoard, "d2"), to = await squareCenter(studyBoard, "d4");
+  const studyFocus = page.locator(".persistent-board-shell .board-viewport");
+  await studyFocus.focus();
+  await page.mouse.move(from.x, from.y); await page.mouse.down(); await page.mouse.move(to.x, to.y);
+  await expect(studyBoard.locator("piece.dragging")).toHaveCount(1);
+  await studyBoard.evaluate(element => element.setAttribute("data-preserved-board", "true"));
+  const beforeFen = await studyBoard.getAttribute("data-fen");
+  repair.confirmed = true;
+  await expect(page.getByText("Repair validating", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Resume repair" })).toHaveCount(0);
+  await expect(studyBoard).toHaveAttribute("data-preserved-board", "true");
+  await expect(studyBoard).toHaveAttribute("data-fen", beforeFen!);
+  await expect(studyBoard.locator("piece.dragging")).toHaveCount(1);
+  await expect(studyFocus).toBeFocused();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.mouse.up();
+  await expect.poll(() => studyBoard.getAttribute("data-fen")).not.toBe(beforeFen);
+});
 
 const startFen =
   "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";

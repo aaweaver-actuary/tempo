@@ -593,7 +593,13 @@ def claim_analysis_request() -> dict | None:
                      JOIN repertoire_opportunities opportunity
                        ON opportunity.id=recommendation.opportunity_id
                      WHERE recommendation.request_id=request.id
-                       AND opportunity.status='active' AND opportunity.card_id IS NULL))
+                       AND opportunity.status='active' AND opportunity.card_id IS NULL)
+                   OR EXISTS(SELECT 1 FROM integrity_recommendation_requests recommendation
+                     JOIN repertoire_integrity_issues issue ON issue.id=recommendation.issue_id
+                     JOIN repertoire_integrity_state integrity ON integrity.repertoire_id=issue.repertoire_id
+                     WHERE recommendation.request_id=request.id AND issue.signature=recommendation.signature
+                       AND integrity.scan_status='idle'
+                       AND integrity.scan_generation=recommendation.scan_generation))
                ORDER BY CASE WHEN EXISTS(SELECT 1 FROM threat_candidate_requests foreground
                    WHERE foreground.request_id=request.id AND foreground.role='attempt')
                    THEN 0 ELSE 1 END,
@@ -642,6 +648,8 @@ def save_analysis_report(request_id: str, lease_id: str, raw_report: dict) -> tu
                   lease_id=NULL,lease_expires_at=NULL,last_error=NULL,updated_at=? WHERE id=?""",
             (json.dumps(raw_report), _now(), request_id),
         )
+        from .integrity_recommendations import wake_report_previews
+        wake_report_previews(database, request_id)
         candidate_ids = tuple(item[0] for item in database.execute(
             "SELECT DISTINCT candidate_id FROM threat_candidate_requests WHERE request_id=?",
             (request_id,),

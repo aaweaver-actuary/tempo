@@ -1174,5 +1174,26 @@
     "handler": "request_preference",
     "treatment": "foreground_command",
     "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/repertoires/{identifier}/integrity/issues/{issue_id}/recommendations",
+    "handler": "prepare_repair_recommendation",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoires/{identifier}/integrity/issues/{issue_id}/recommendations",
+    "handler": "read_repair_recommendation",
+    "treatment": "reader",
+    "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/repertoires/{identifier}/integrity/repairs/{task_id}",
+    "handler": "repair_status",
+    "treatment": "reader",
+    "state": "staged"
   }
 ]
