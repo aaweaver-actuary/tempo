@@ -1,6 +1,6 @@
 {
-  "measurementRevision": "c06a9e1d98fac083e9d3cf632192042b5bca2300",
-  "currentMainBase": "937aee78a7fe6c399c9d3a665d7d7d2aa8fd08f1",
+  "measurementRevision": "1496021f82bfddd1df8b4276fcc57f7e7dd853df",
+  "currentMainBase": "f054fbcb4b2bc22025bd4ceb2a7569675b3080ad",
   "comparisonBase": "dfbb66d67b314357e55c2030ff794a15415f316c",
   "deterministic": {
     "before": {
@@ -311,5 +311,19 @@
     "heldCasePassed": true,
     "fullPerfFailure": "warm workspace and Builder move responsiveness: longTasks expected [], observed [133]"
   },
-  "pairedHeldDragComparison": "unavailable: candidate run stopped when unrelated durability and visual runners were observed in the shared Docker VM; incomplete candidate samples are not used for a comparison"
+  "pairedHeldDragComparison": {
+    "status": "complete",
+    "primaryRun": "https://github.com/aaweaver-actuary/tempo/actions/runs/36997589752",
+    "primaryEvidence": "ci-pair-36997589752/comparison.json",
+    "priorValidRun": "https://github.com/aaweaver-actuary/tempo/actions/runs/36996539621",
+    "priorEvidence": "ci-pair-36996539621/comparison.json",
+    "interpretation": "Request and validation counts fall substantially; controlled held-drag gaps/displacement are effectively unchanged. No drag-latency improvement is established.",
+    "limitations": "DOM/rAF proxies, routed fixtures; server/live-backend/personal-data/physical-display latency unmeasured."
+  },
+  "correctnessRevision": "c06a9e1d98fac083e9d3cf632192042b5bca2300",
+  "priorDedicatedSetupFailure": {
+    "run": "https://github.com/aaweaver-actuary/tempo/actions/runs/36996282414",
+    "samplesCollected": false,
+    "reason": "Docker dependency warm-up created a root-owned host mount before host npm ci; host installation now precedes Docker warm-up."
+  }
 }
