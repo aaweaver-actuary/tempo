@@ -260,3 +260,73 @@ Focused harness/collection and disposable durability proofs cover this boundary;
 the final PR description records current head/base/merge SHAs, CI run, collected
 counts, all layer outcomes and any remaining blockers. Older successful runs
 are historical evidence, not validation of the repaired head.
+
+## Repertoire daily-limit validation
+
+The daily opening limit now has an optional repertoire override. Settings → Training
+shows the global default and separately saved repertoire limits. A null override
+inherits the default; integers 0–100 override it, with zero pausing only new cards.
+Changes refresh today's remaining automatic introductions. Completed work and due
+reviews remain. Unused allowance does not accumulate: seven learned out of ten
+still permits up to ten new cards tomorrow.
+
+PostgreSQL migration 26 adds the nullable column. Upgrade with the normal
+stopped-writer migration procedure before starting the API/workers requiring schema
+26. SQLite compatibility initialization adds the same nullable field. Settings
+writes and their queue-refresh generation commit together on PostgreSQL; old worker
+checkpoints cannot publish after that generation changes. Publication rechecks the
+current limit and admissions without reversing the foreground settings/task lock
+order. No new background handler is introduced.
+
+Selected development scope: queue admission/reconciliation, repertoire persistence,
+strict request/response contracts, Settings controls, operation-receipt recovery,
+and the complete Settings/queue browser boundary. Start with
+`make python-file FILE=backend/tests/test_repertoire_settings.py` and
+`make unit-file FILE=tests/unit/repertoire-daily-limits.test.tsx`; then run the existing
+queue regressions, PostgreSQL cutover/candidate-page tests, API schema parity,
+typecheck, lint, and CI/Docker-runner contract tests. These exercise override
+precedence, invalid/zero/null values, attribution of shared cards, day rollover,
+completed reviews, stale publication, persistence, and replay without duplicating
+broad suites.
+
+On a settled candidate, run
+`make ui-file FILE=settings-repertoire-limits.spec.ts`, `make docker-durability`,
+and `make visual` in a Docker/loopback-capable environment. The new durability proof
+is part of `background_workloads`; the existing recreation stage now imports its
+own repertoire and checks override persistence and receipt replay. The pinned
+Settings fixtures include inherited repertoire limits and wait for their controls
+before capture. Review their intentional screenshot changes; do not accept new
+baselines just to clear failures. CI owns final required current-candidate validation.
+
+Implementation evidence (2026-10-02): all executions used the dirty implementation
+checkout `.dev-copies/repertoire-daily-limits`, based on verified remote main
+`dfbb66d67b314357e55c2030ff794a15415f316c`, on branch
+`codex/repertoire-daily-limits`. They were not runs against clean base HEAD. The
+primary checkout and live study service were untouched. Node dependencies were
+installed with `npm ci --offline --ignore-scripts`. Python used an isolated CPython
+3.14.5 environment populated from existing cached project dependencies;
+`uv sync --offline --inexact` succeeded, but the offline requirements install could
+not resolve uncached `python-dotenv`. Container runtime installation is still part
+of CI; these local results are focused evidence only.
+
+| Executed command | Result and observed duration |
+| --- | --- |
+| `PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_repertoire_settings.py backend/tests/test_postgres_cutover.py backend/tests/test_postgres_opening_candidate_pages.py backend/tests/test_new_cards_per_repertoire.py backend/tests/test_regressions.py backend/tests/test_introduction_priorities.py -q -o cache_dir=.pytest_cache --rootdir=.` | 239 passed; 8.21 s reported by pytest on final backend sources. |
+| `make unit-file FILE=tests/unit/repertoire-daily-limits.test.tsx` | 5 passed; 1.09 s Vitest duration. |
+| `TEMPO_PYTHON=backend/.venv/bin/python make unit-file FILE=tests/unit/api-schema-parity-regressions.test.ts` | 5 passed; 1.31 s Vitest duration. |
+| `make unit-file FILE=tests/unit/validated-data-regressions.test.ts` | 16 passed; 0.791 s Vitest duration. |
+| `make unit-file FILE=tests/unit/settings-save-pending-regressions.test.ts` | 2 passed; 0.545 s Vitest duration. |
+| `node --test tests/runner/ci-reliability.test.mjs tests/runner/postgres-test-speedups.test.mjs` | 52 passed; 1.983 s runner duration. Browser collection here is static discovery, not browser execution. |
+| `npm run typecheck` | Passed; duration not captured. |
+| `npm run lint` | Passed with 9 pre-existing warnings; duration not captured. |
+| `node --check scripts/test-postgres-docker.mjs` and `PYTHONPATH=backend backend/.venv/bin/python -m py_compile scripts/check_postgres_repertoire_limits.py scripts/check_postgres_upgrade.py` | Static syntax checks passed; duration not captured. |
+| `make plan` and `git diff --check` | Plan inspected and diff clean; no runtime evidence. |
+| `make preflight` | Blocked: Docker socket permission denied and loopback bind EPERM; no Docker/browser tests ran. |
+
+The feature regressions initially failed against the baseline because the override
+endpoint did not exist. The shared-card retry regression separately failed before
+restricting introduction counts to cycle zero. The original no-rollover regression
+passed in the final focused backend run. PostgreSQL durability/recreation, the new
+real browser spec, pinned rendering (including intentional Settings baseline review),
+production builds, and final CI candidate checks remain pending. No CI run was
+started from this local branch and no deployment was performed.

@@ -897,3 +897,18 @@ deactivation before archiving cards; the source-neutral active-card quota can
 therefore never replenish another test's cards. Enrollment, real mixed Training,
 authored FEN, unchanged board during square selection, assessment and export
 assertions remain required. No test identity, CI selection, or timeout changed.
+
+## Per-repertoire daily new-card overrides
+
+- `backend/tests/test_repertoire_settings.py::test_repertoire_daily_overrides_apply_independently_and_reset_to_default` — independent 10/5 limits and resetting to the default.
+- `test_global_daily_limit_changes_only_inheriting_repertoires` — global changes preserve explicit overrides.
+- `test_repertoire_limit_changes_today_preserve_completed_work_and_due_reviews` — lowering today's limit or setting zero removes only remaining automatic introductions.
+- `test_seven_of_ten_learned_allows_ten_new_tomorrow_without_rollover` — exactly seven learned out of ten produces ten new cards tomorrow, with repeat refreshes remaining idempotent. Existing `test_unfinished_unreviewed_cards_do_not_bypass_tomorrows_new_card_limit` remains in the regular suite.
+- `test_shared_card_review_retries_do_not_consume_owners_new_card_allowance` — a reviewed shared card's retry never spends the owner repertoire's separate introduction allowance (reproduced failing before the fix).
+- `test_shared_card_is_deduplicated_and_charged_to_admitting_repertoire` — shared cards are introduced once and charged to the admitting repertoire.
+- `test_repertoire_override_rejects_invalid_payloads`; `test_repertoire_override_rejects_missing_and_system_repertoires`; `test_existing_repertoire_migrates_to_inherited_limit` — validated API boundaries and historical SQLite compatibility.
+- `test_postgres_opening_publication_rechecks_lowered_limit_and_current_admissions`; `test_postgres_repertoire_settings_write_invalidates_old_queue_checkpoint`; `test_postgres_repertoire_settings_endpoint_dispatches_durable_command` — publication rechecks, generation invalidation, restart, and durable routing. Portable SQL fixtures prove behavior, not real PostgreSQL semantics.
+- `tests/unit/repertoire-daily-limits.test.tsx` — zero/reset controls, validation, failed loads, demo availability, pending save locking, lost transport, reload, exact identity/body replay, and completed receipt validation.
+- `tests/unit/api-schema-parity-regressions.test.ts::Python repertoire limit response matches the frontend contract for inherited, zero, and custom limits` — producer/consumer compatibility.
+- `tests/browser/settings-repertoire-limits.spec.ts::repertoire limits update today's queue, persist after reload, and reset to default` — real Settings/queue workflow with save failure recovery; registered in the complete repertoire browser family.
+- `scripts/check_postgres_repertoire_limits.py` — real PostgreSQL 10/5 limits, seven-of-ten reset, zero reconciliation, stale plan rejection, inheritance, and operation replay in the regular durability runner. The runner's command-recreation scenario preserves and replays an override across container recreation; schema-upgrade coverage verifies existing repertoires inherit after migration 26.

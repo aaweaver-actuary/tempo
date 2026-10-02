@@ -1,5 +1,6 @@
 "use client";
 import { TabList } from "../components/ui";
+import { RepertoireDailyLimits } from "../components/repertoire-daily-limits";
 import { SelectInput } from "../components/inputs/SelectInput";
 import { TextInput } from "../components/inputs/TextInput";
 import { Button } from "../components/buttons/BaseButton";
@@ -115,6 +116,7 @@ export default function SettingsView({
       statusNotificationId.current = undefined;
     } else publishNotification({ severity, source: "settings", message });
   }
+  const [savedDailyLimit, setSavedDailyLimit] = useState(10);
   const [dirty, setDirty] = useState(false);
   const [activeSection, setActiveSection] = useState("training");
   const [settingsLoaded, setSettingsLoaded] = useState(!usesLocalApi());
@@ -128,6 +130,7 @@ export default function SettingsView({
       if (!saved || typeof saved.initial_depth !== "number")
         throw new Error("Malformed settings response");
       setValues((current) => ({ ...current, ...saved }));
+      setSavedDailyLimit(saved.new_cards_per_day ?? 10);
       setSettingsLoaded(true);
       setLoadError("");
     } catch (error) {
@@ -246,6 +249,7 @@ export default function SettingsView({
       };
       try {
         await saveLocalSettings(backend);
+        setSavedDailyLimit(values.new_cards_per_day);
         invalidateWorkspaceData();
         setStatus("Saved.");
         setDirty(false);
@@ -389,9 +393,9 @@ export default function SettingsView({
           </label>
           <label>
             <span>
-              New cards per repertoire per day
+              Default new cards per repertoire per day
               <small>
-                Reviews are always shown; only unseen cards are limited
+                Reviews are always shown; unused new-card allowance does not carry over
               </small>
             </span>
             <TextInput
@@ -404,6 +408,7 @@ export default function SettingsView({
               }
             />
           </label>
+          <RepertoireDailyLimits defaultLimit={savedDailyLimit} enabled={settingsLoaded} local={usesLocalApi()} />
           <label>
             <span>New study exercises per day<small>Independent of opening cards; due study reviews still appear</small></span>
             <TextInput type="number" min="0" max="100" value={values.study_new_per_day}
