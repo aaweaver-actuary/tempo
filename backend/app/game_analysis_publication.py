@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from .services.background_metrics import increment
+
 from datetime import datetime, timezone
 import json
 from typing import Any
@@ -357,7 +359,10 @@ def _switch_published_generation(
         {"game_id": game_id, "analysis_version": version, "phase": "derivation", "cursor": ""},
         priority=120,
     )
-    return complete_task_slice_in_transaction(database, task)
+    completed = complete_task_slice_in_transaction(database, task)
+    if completed:
+        increment(database, "game_analysis_publish", task["id"], useful_completions=1)
+    return completed
 
 
 def execute_game_analysis_followup_slice(task: dict[str, Any]) -> bool:

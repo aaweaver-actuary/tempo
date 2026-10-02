@@ -7,7 +7,7 @@ import { API_URL } from "../const";
 import { backgroundFetch } from "../lib/background-fetch";
 import { requestActivityControl } from "../lib/activity-control-command";
 import { browserActivitySnapshot, subscribeBrowserActivity } from "../lib/browser-activity";
-import { setLatestServiceStatus, type ActivityItem, type ActivityResponse } from "../lib/service-status";
+import { setBackgroundDiagnostics, setLatestServiceStatus, type ActivityItem, type ActivityResponse } from "../lib/service-status";
 import { usesLocalApi } from "../utils/local";
 import { notifications, publishNotification, resolveNotification } from "../lib/notifications";
 
@@ -52,6 +52,7 @@ function activityGroup(state: string) {
 const groupOrder = ["Running", "Queued", "Paused", "Needs attention", "Recently completed"];
 
 export function ServiceStatusPanel() {
+  const lastDiagnosticsRequest = useRef(Number.NEGATIVE_INFINITY);
   const [open, setOpen] = useState(false);
   const popupRef = useRef<HTMLElement>(null);
   usePopupKeyboard(popupRef, () => setOpen(false), open);
@@ -92,6 +93,16 @@ export function ServiceStatusPanel() {
       setItems(value.items);
       setNextOffset(value.next_offset);
       setError(null);
+      if (performance.now() - lastDiagnosticsRequest.current >= 15_000) {
+        lastDiagnosticsRequest.current = performance.now();
+        try {
+          const diagnosticsResponse = await backgroundFetch(`${API_URL}/api/system/background-diagnostics`);
+          if (!diagnosticsResponse.ok) throw new Error("Background diagnostics unavailable");
+          setBackgroundDiagnostics(await diagnosticsResponse.json());
+        } catch {
+          setBackgroundDiagnostics(null);
+        }
+      }
       return value;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not load activity status");

@@ -1,3 +1,4 @@
+import { startEngineAttempt, engineWaitingStage } from "./engine-attempt-diagnostics.mjs";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import StockfishFactory from "../public/engines/sf_19_smallnet.js";
@@ -33,7 +34,9 @@ async function request(path, options = {}) {
   });
 }
 
-function evaluate(job) {
+function evaluate(job, kind = "engine_defense") {
+  engineWaitingStage(kind, "execution");
+  const finishDiagnostic = startEngineAttempt(kind);
   return new Promise((resolveReport, rejectReport) => {
     const { request: specification } = job;
     const lines = new Map();
@@ -47,7 +50,9 @@ function evaluate(job) {
       engine.uci("stop");
       stopWatchdog = setTimeout(() => {
         fatalEngineError = true;
-        rejectReport(new Error("Stockfish did not drain after cancellation"));
+        const error = new Error("Stockfish did not drain after cancellation");
+        error.diagnostics = finishDiagnostic(stopReason === "preempted" ? "preempted" : "timeout");
+        rejectReport(error);
       }, 5_000);
     };
     const position = specification.position_prefix_uci ?? [];
@@ -91,13 +96,21 @@ function evaluate(job) {
         clearTimeout(timeout);
         clearInterval(foregroundPoll);
         clearTimeout(stopWatchdog);
-        if (preempted) return rejectReport(new Error(stopReason));
+        if (preempted) {
+          const error = new Error(stopReason);
+          error.diagnostics = finishDiagnostic(stopReason === "preempted" ? "preempted" : "timeout");
+          return rejectReport(error);
+        }
         const completeLines = [...lines.entries()]
           .sort(([left], [right]) => left - right)
           .map(([, line]) => line)
           .filter((line) => line.depth >= specification.depth);
-        if (!completeLines.length) return rejectReport(new Error("Engine did not reach the requested depth"));
-        resolveReport({ request: specification, complete: true, lines: completeLines });
+        if (!completeLines.length) {
+          const error = new Error("Engine did not reach the requested depth");
+          error.diagnostics = finishDiagnostic("failure");
+          return rejectReport(error);
+        }
+        resolveReport({ report: { request: specification, complete: true, lines: completeLines }, diagnostics: finishDiagnostic("success") });
       }
     };
     engine.onError = (message) => {
@@ -107,7 +120,9 @@ function evaluate(job) {
         clearTimeout(timeout);
         clearInterval(foregroundPoll);
         clearTimeout(stopWatchdog);
-        rejectReport(new Error(String(message)));
+        const error = new Error(String(message));
+        error.diagnostics = finishDiagnostic("failure");
+        rejectReport(error);
       }
     };
     engine.uci(`setoption name MultiPV value ${Math.max(1, Math.min(5, specification.multipv))}`);
@@ -117,7 +132,7 @@ function evaluate(job) {
 }
 
 if (process.env.TEMPO_ENGINE_SMOKE === "1") {
-  const report = await evaluate({ request: {
+  const { report } = await evaluate({ request: {
     position_start_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
     position_prefix_uci: [], root_move_uci: "a2a3", multipv: 1, depth: 4,
     engine_version: "Stockfish 19 WASM", network_version: "nn-61e7af4bb97d.nnue",
@@ -136,7 +151,7 @@ while (true) {
     let { defenseClaimUnresolved } = recovered;
     if (!job) {
       const available = await request("/api/system/foreground-active");
-      if (available.active) { await sleep(2_000); continue; }
+      if (available.active) { engineWaitingStage("engine", "foreground_admission"); await sleep(2_000); continue; }
       if (!defenseClaimUnresolved) {
         try {
           job = (await request("/api/defensive-threats/analysis/claim", { method: "POST" })).job;
@@ -154,7 +169,7 @@ while (true) {
         jobKind = "game";
       }
     }
-    if (!job) { await sleep(2_000); continue; }
+    if (!job) { engineWaitingStage("engine", "idle"); await sleep(2_000); continue; }
     if (job.kind === "finalize") {
       await request("/api/games/analysis/position/finalize", {
         method: "POST", body: JSON.stringify({ lease_id: job.lease_id }),
@@ -162,11 +177,11 @@ while (true) {
       job = undefined;
       continue;
     }
-    const report = await evaluate(job);
+    const { report, diagnostics } = await evaluate(job, jobKind === "defense" ? "engine_defense" : "engine_game");
     await request(jobKind === "defense"
       ? `/api/defensive-threats/analysis/${job.id}/report`
       : `/api/games/analysis/position/${job.id}/report`, {
-      method: "POST", body: JSON.stringify({ lease_id: job.lease_id, report }),
+      method: "POST", body: JSON.stringify({ lease_id: job.lease_id, report, diagnostics }),
     });
   } catch (error) {
     if (error.operationId) {
@@ -188,8 +203,8 @@ while (true) {
         const prefix = jobKind === "defense" ? "/api/defensive-threats/analysis" : "/api/games/analysis/position";
         await request(`${prefix}/${job.id}/${preempted ? "release" : "failure"}`, {
           method: "POST", body: JSON.stringify(preempted
-            ? { lease_id: job.lease_id }
-            : { lease_id: job.lease_id, error: error.message.slice(0, 1000) }),
+            ? { lease_id: job.lease_id, diagnostics: error.diagnostics }
+            : { lease_id: job.lease_id, error: error.message.slice(0, 1000), diagnostics: error.diagnostics }),
         });
       } catch (reportingError) { console.error("Could not update engine request:", reportingError); }
     } else console.error("Could not claim engine request:", error);

@@ -4,7 +4,7 @@
 
 - Do not make any changes on the main branch directly.
 - Always create a new branch for any changes, and ensure it is based on the latest main branch.
-- Clone the latest main branch before starting any work. You have been given a dev location inside the top-level `.dev-copies` directory. Please clone the repository into that location, create a new branch for your work, and start making changes there. You always have the main branch as your reference point.
+- Work in an isolated checkout inside the top-level `.dev-copies` directory. Before creating another clone, inspect existing checkouts and reuse one only when it is clean, idle, no longer owned by another task, and contains no work awaiting preservation or review. Fetch the latest remote main and create a new task branch from it; otherwise clone the latest main into a new development directory. Keep main as the reference point and never change the live study checkout for development.
 - Set up only the dependencies required by the selected validation scope. Prose-only edits do not require a Python environment, Node install, Docker build, or runtime suite. Some Vitest contract tests invoke Python; inspect the selected tests rather than assuming all frontend tests are Node-only.
 - For Python tests, run `uv sync` from `backend/`, then `uv pip install --python .venv/bin/python -r requirements.txt` there; root-level `uv sync` has no `pyproject.toml`. Use the elevated network path when required. Return to the repository root before Make targets; they use `scripts/resolve-python.mjs` (or explicit `TEMPO_PYTHON`) rather than requiring shell activation.
 - Install Node dependencies with `npm ci` when required and absent or inconsistent with the lockfile. Verify prerequisites once per environment; do not recreate environments or reinstall unchanged dependencies after every edit.
@@ -93,6 +93,14 @@ Use the disposable runners; never point tests at the live study instance or mark
 
 Every PR/handoff must state: risk/scope and why it is sufficient; named new/updated regressions; exact commands, results, and observed durations; tested revision/environment; and checks not run or pending with reasons and the CI run when available. Distinguish static inspection, focused execution, full-gate execution, and runtime/performance measurements. Never claim a full pass from focused tests, a dry run, or a previous checkout.
 
+## Pull request delivery and completion
+
+- After implementation and focused local validation, commit and push the task branch to the verified GitHub repository and create a draft PR, or update the existing PR for that task. Include the problem, resulting behavior, scope, regression coverage, and validation evidence. Opening or pushing a PR is an intermediate step, not completion.
+- Poll CI for the current PR head until every required check and every mandatory job in its selected CI plan passes, including the applicable current-base/merge candidate. Expected optional skips are allowed only when the plan excludes that work; missing, pending, failed, or cancelled required checks are not a clean result. Do not use results from an older commit or a different checkout as proof.
+- If CI fails, inspect the failed assertion, stage, and logs; reproduce with the smallest relevant check where practical, fix the cause, add or update named regressions when applicable, and push the repair. Continue monitoring the new candidate until its required CI passes. Do not bypass checks, weaken coverage, or blindly retry a failure to obtain green status.
+- Resolve merge conflicts and obtain fresh required candidate validation after relevant edits or rebases. Once CI is clean, mark the PR ready for review and verify that GitHub reports it mergeable with no outstanding required-check or merge blockers. Do not merge the PR unless the user explicitly requests it.
+- No work is considered done until a clean-CI, ready-for-review, mergeable PR is available. The final handoff must link the PR and successful CI evidence and identify the verified head commit. If permissions, infrastructure, required review, or another external condition prevents this, report the work as incomplete with the precise blocker; do not claim completion or abandon monitoring while useful authorized progress remains possible.
+
 ## YAGNI principle
 - Apply YAGNI to speculative requirements and premature abstraction, not to correctness, security, testing, maintainability, or explicitly requested product quality.
 
@@ -115,7 +123,22 @@ Apply SOLID principles only where they reduce real complexity, improve testabili
 ## Cleanup and Codebase Stewardship
 
 - Regularly remove unused code, dependencies, and configuration to keep the codebase lean and maintainable.
-- Clean up temporary files and test-owned disposable resources after your work. Never globally prune Docker containers, images, volumes, or build/dependency caches; do not remove live study resources or another checkout’s resources. Preserve safe reusable caches unless their invalidation or removal is specifically required.
+- Clean up temporary files and task-owned disposable resources after your work. Never globally prune Docker containers, images, volumes, or build/dependency caches. Protect live study resources and resources owned by active tasks; preserve shared base images and safe reusable caches.
 - Regularly review and refactor the codebase to remove technical debt, improve readability, and maintain consistency with project standards.
 - Document any significant changes, architectural decisions, or patterns introduced to help future maintainers understand the rationale behind them.
 - Encourage team members to follow these practices consistently to maintain a high-quality, manageable codebase.
+
+### Docker resource reuse and cleanup
+
+- Inspect existing containers and images before building or starting another development stack. Reuse an idle development container only when its owner has released it and its checkout, source inputs, configuration, mounts, ports, credentials, and database isolation remain compatible. Do not repurpose the main study stack or another active task's stack.
+- Preserve the disposable runners' isolation contract: each test invocation owns fresh project-scoped containers, databases, volumes, credentials, and ports. Reuse built images within a run and safe build caches across runs; never reuse mutable test state across invocations or bypass restart/recreation assertions to save resources.
+- Record the owning checkout, branch and revision, Compose project, exact container/image identifiers, creation and meaningful activity times, and exact teardown command in local test evidence. Record no secret values. Include separately built maintenance or migration images that Compose teardown may not remove.
+- On completion or failure, capture diagnostics first, then run the owning runner's teardown and remove its containers and development/test-specific images once no container or active task references them. Verify cleanup succeeded and report any leftovers. Remove volumes only when their identity is verified as task-owned and disposable; retain shared base images, live data, and BuildKit caches. Use explicit project names or resource identifiers, never forced image removal or global pruning.
+- For an explicitly requested cleanup across tasks, refresh ownership, processes, mounts, container references, and available activity evidence immediately before removal. Use a 12-hour inactivity window with corroborating completed-run or task records. Health checks and periodic housekeeping alone do not establish meaningful use; creation/tag timestamps and absence from Docker's bounded event history alone do not prove inactivity. Retain resources with uncertain ownership or recent use and report why.
+
+### Development checkout reuse and cleanup
+
+- Keep a checkout while its work is unmerged, under review, or actively used. Reuse a released checkout only under the preservation rules above; do not accumulate parallel copies merely to repeat validation of unchanged inputs.
+- Once the work is merged into the latest remote main and no task, process, or container uses the checkout, remove its clone from `.dev-copies`. Verify the current revision and every local branch are merged, including GitHub merge records for squash/rebase merges, and that there are no stashes, uncommitted changes, untracked work, or ignored user data to preserve. A closed but unmerged PR, or a merged PR followed by new local commits, is not sufficient evidence for removal.
+- Preserve reports, logs, traces, screenshots, and diagnostic bundles outside the clone in a dated directory under the root checkout's `test-results/`, retaining checkout and tested-revision provenance. Verify the copied evidence before deleting the clone. Generated application builds, reproducible fixture copies, and clone-local dependency caches may be discarded; do not follow symlinks outside the clone or remove another checkout's shared files.
+- Recheck eligibility immediately before deleting each exact clone path. Report removed and retained resources, preserved evidence locations, and measured disk recovery at handoff. Retain the current task's checkout until its own work is merged or otherwise safely preserved.

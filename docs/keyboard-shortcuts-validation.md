@@ -178,5 +178,41 @@ The complete gate was not run locally: this change has focused local evidence,
 and the approved plan assigns final candidate validation to CI. All configured
 core/integration, builds, durability, source-selected browser families and
 pinned checks must pass for the current candidate, including the applicable
-current-base merge result, before merge or release. No CI run is claimed by
-this local-only implementation.
+current-base merge result, before merge or release. No CI run was claimed at the
+initial local-only implementation handoff.
+
+## PR preparation against updated main
+
+Main advanced to `60d2dde` before PR preparation. Integrate its notification
+acknowledgment controls and background activity diagnostics while retaining
+keyboard popup registration, Escape focus restoration, toast history, and every
+regression from both branches. Conflicts are limited to the notification tray,
+activity imports and appended regression sections.
+
+The proving local scope is the existing notification, activity and debug callers,
+the dispatcher/Escape files, typecheck, lint and diff checks. The current-base CI
+plan owns fresh full required validation, including browser, durability and
+pinned checks; the pre-integration results above remain historical evidence.
+The PR remains a draft at the user's request, even after CI passes.
+
+After conflict resolution, the dirty merge candidate (parents `561baa7` and
+`60d2dde`) passed the following checks on the same macOS ARM64 environment:
+
+```sh
+npm run test:unit -- \
+  tests/unit/notification-regressions.test.tsx \
+  tests/unit/service-status-panel-regressions.test.tsx \
+  tests/unit/debug-reporting-regressions.test.tsx \
+  tests/unit/popup-shortcuts-regressions.test.tsx \
+  tests/unit/board-shortcuts-regressions.test.tsx
+npm run typecheck
+npm run lint
+git diff --check
+make plan
+```
+
+The five unit files passed all 43 tests (Vitest 3.89s; command wall time 4.38s).
+Typecheck passed in 6.37s; lint passed in 10.65s with zero errors and the same
+nine existing warnings. No unchanged dependencies were reinstalled. The PR body
+records the pushed head and current CI evidence; no older result is relabeled
+as a current candidate gate pass.

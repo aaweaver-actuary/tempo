@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from contextlib import nullcontext
+from contextlib import nullcontext, ExitStack
 from contextvars import ContextVar
 import threading
 import time
@@ -110,21 +110,28 @@ class ApplicationActivityGate:
             redis_admission_gate.background_lease()
             if redis_admission_gate.configured() else nullcontext()
         )
-        with shared_lease:
-            self.wait_for_foreground()
-            with self._condition:
-                self._condition.wait_for(
-                    lambda: self._foreground_requests == 0
-                    and self._active_background_sections == 0
-                )
-                self._active_background_sections += 1
-                self._condition.notify_all()
+        from .background_runtime import admission_wait, reserved_database_telemetry, heartbeat
+        # Acquire before suppressing so admission-wait heartbeats remain visible.
+        # Exit leases before telemetry suppression, including error cleanup.
+        with ExitStack() as telemetry, ExitStack() as leases:
+            with admission_wait():
+                leases.enter_context(shared_lease)
+                telemetry.enter_context(reserved_database_telemetry())
+                self.wait_for_foreground()
+                with self._condition:
+                    self._condition.wait_for(
+                        lambda: self._foreground_requests == 0
+                        and self._active_background_sections == 0
+                    )
+                    self._active_background_sections += 1
+                    self._condition.notify_all()
             try:
                 yield
             finally:
                 with self._condition:
                     self._active_background_sections -= 1
                     self._condition.notify_all()
+        heartbeat()
 
     @contextmanager
     def background_job(self, job_type: str, job_id: str):

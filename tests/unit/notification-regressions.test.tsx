@@ -1,7 +1,8 @@
-import { act, fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
-  buildNotificationExport, clearNotificationHistory, notificationToastIds, notifications,
+  buildNotificationExport, clearAllNotifications, clearNotification, clearNotificationHistory,
+  notificationNeedsAttention, notificationToastIds, notifications,
   notificationsAtOrAbove, publishNotification, resolveNotification, updateNotification,
 } from "../../app/lib/notifications";
 import { NotificationCenter, NotificationViewport } from "../../app/components/notification-center";
@@ -23,6 +24,120 @@ describe("notification regressions", () => {
     expect(notificationToastIds()).toEqual([older]);
     expect(notifications()).toHaveLength(3);
   });
+  it("clearing one notification removes only its badge contribution and retains exported history", () => {
+    const clearedId = publishNotification({ severity: "warning", source: "sync", key: "sync-conflict",
+      message: "Saved conflict", details: { cardIds: ["card-1"] } });
+    publishNotification({ severity: "error", source: "service", message: "Service unavailable" });
+    publishNotification({ severity: "info", source: "queue", message: "Queue ready" });
+    const originalHistory = notifications();
+    const { container } = render(<><NotificationCenter /><NotificationViewport /></>);
+    expect(container.querySelector(".notification-count")?.textContent).toBe("2");
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss sync notification" }));
+    expect(container.querySelector(".notification-count")?.textContent).toBe("2");
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    const conflictEntry = screen.getByText("Saved conflict").closest("article")!;
+    fireEvent.click(within(conflictEntry).getByRole("button", { name: "Clear" }));
+    expect(container.querySelector(".notification-count")?.textContent).toBe("1");
+    expect(within(conflictEntry).getByText("Cleared")).toBeTruthy();
+    expect(notifications().map((record) => record.id)).toEqual(originalHistory.map((record) => record.id));
+    const clearedRecord = notifications().find((record) => record.id === clearedId)!;
+    expect(clearedRecord).toEqual({ ...originalHistory.find((record) => record.id === clearedId)!,
+      clearedAt: expect.any(String) });
+    expect(clearedRecord.clearedAt).toEqual(expect.any(String));
+    expect(JSON.parse(buildNotificationExport("warning")).notifications).toContainEqual(clearedRecord);
+  });
+
+  it("clear all acknowledges every retained notification regardless of severity filter", () => {
+    const activeId = publishNotification({ severity: "info", source: "review", message: "Saving result…", active: true });
+    const resolvedId = publishNotification({ severity: "error", source: "old service", message: "Old failure" });
+    resolveNotification(resolvedId);
+    publishNotification({ severity: "error", source: "service", message: "Current failure" });
+    publishNotification({ severity: "warning", source: "sync", message: "Current conflict" });
+    const originalHistory = notifications();
+    const { container } = render(<><NotificationCenter /><NotificationViewport /></>);
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    fireEvent.click(screen.getByRole("button", { name: "error" }));
+    expect(container.querySelector(".notification-count")?.textContent).toBe("2");
+    fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
+    expect(container.querySelector(".notification-count")).toBeNull();
+    expect(notifications()).toEqual(originalHistory.map((record) => ({ ...record, clearedAt: expect.any(String) })));
+    expect(notificationToastIds()).toEqual([activeId]);
+    expect(screen.getByRole("button", { name: "Clear all" }).hasAttribute("disabled")).toBe(true);
+    const clearedHistory = notifications();
+    act(() => { clearAllNotifications(); clearNotification("missing-notification"); });
+    expect(notifications()).toBe(clearedHistory);
+    act(() => { publishNotification({ severity: "warning", source: "new sync", message: "New conflict" }); });
+    expect(container.querySelector(".notification-count")?.textContent).toBe("1");
+    expect(screen.getByRole("button", { name: "Clear all" }).hasAttribute("disabled")).toBe(false);
+    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    const newEntry = within(within(screen.getByRole("region", { name: "Notifications" }))
+      .getByText("New conflict").closest("article")!);
+    expect(newEntry.getByText("New", { exact: true })).toBeTruthy();
+  });
+
+  it("unchanged cleared incidents stay cleared while changed and recurring incidents count again", () => {
+    const incident = { severity: "error" as const, source: "sync status", key: "sync-incident", message: "Invalid status",
+      details: { debugRecordId: "debug-1", stack: "first stack", status: 503, cardIds: ["card-1"] } };
+    const incidentId = publishNotification(incident);
+    clearNotification(incidentId);
+    const firstSeen = notifications()[0].occurredAt;
+    const acknowledgedAt = notifications()[0].clearedAt;
+    publishNotification({ ...incident, details: { cardIds: ["card-1"], status: 503,
+      stack: "second stack", debugRecordId: "debug-2" } });
+    expect(notifications()[0]).toMatchObject({ id: incidentId, clearedAt: acknowledgedAt, occurrenceCount: 2,
+      occurredAt: firstSeen, resolvedAt: null, details: { debugRecordId: "debug-2" } });
+    expect(notifications().filter(notificationNeedsAttention)).toHaveLength(0);
+    expect(notificationToastIds()).not.toContain(incidentId);
+    updateNotification(incidentId, { details: { ...incident.details, debugRecordId: "debug-3", stack: "third stack" } });
+    expect(notifications()[0].clearedAt).toBe(acknowledgedAt);
+    expect(notificationToastIds()).not.toContain(incidentId);
+    publishNotification({ ...incident, details: { ...incident.details, cardIds: ["card-2"] } });
+    expect(notifications()[0]).toMatchObject({ id: incidentId, clearedAt: null });
+    expect(notifications().filter(notificationNeedsAttention)).toHaveLength(1);
+    expect(notificationToastIds()).toContain(incidentId);
+    clearNotification(incidentId);
+    updateNotification(incidentId, { message: "Changed failure" });
+    expect(notifications()[0].clearedAt).toBeNull();
+    clearNotification(incidentId);
+    updateNotification(incidentId, { severity: "warning" });
+    expect(notifications()[0].clearedAt).toBeNull();
+    clearNotification(incidentId);
+    publishNotification({ ...incident, severity: "warning", message: "Changed failure", source: "other sync" });
+    expect(notifications()[0].clearedAt).toBeNull();
+    clearNotification(incidentId);
+    resolveNotification(incidentId);
+    const recurrenceId = publishNotification(incident);
+    expect(recurrenceId).not.toBe(incidentId);
+    expect(notifications().find((record) => record.id === recurrenceId)?.clearedAt).toBeNull();
+    expect(notifications().filter(notificationNeedsAttention)).toHaveLength(1);
+    expect(notifications().find((record) => record.id === incidentId)?.resolvedAt).not.toBeNull();
+  });
+
+  it("cleared notifications survive reload and remain usable when storage writes fail", async () => {
+    const incident = { severity: "warning" as const, source: "sync", key: "persistent-conflict", message: "Stored conflict" };
+    const clearedId = publishNotification(incident);
+    clearNotification(clearedId);
+    const clearedRecord = notifications()[0];
+    const legacyRecord = { id: "legacy-notification", severity: "error", source: "legacy", message: "Legacy failure",
+      occurredAt: "2026-09-28T12:00:00.000Z", updatedAt: "2026-09-28T12:00:00.000Z", resolvedAt: null, active: false };
+    localStorage.setItem("tempo-notifications-v1", JSON.stringify([clearedRecord, legacyRecord]));
+    vi.resetModules();
+    const fresh = await import("../../app/lib/notifications");
+    fresh.hydrateNotifications();
+    expect(fresh.notifications().find((record) => record.id === clearedId)).toEqual(clearedRecord);
+    expect(fresh.notifications().find((record) => record.id === legacyRecord.id)?.clearedAt).toBeNull();
+    expect(fresh.publishNotification(incident)).toBe(clearedId);
+    expect(fresh.notifications().filter(fresh.notificationNeedsAttention)).toHaveLength(1);
+    const blockedStorage = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("quota"); });
+    expect(() => fresh.clearAllNotifications()).not.toThrow();
+    expect(fresh.notifications().filter(fresh.notificationNeedsAttention)).toHaveLength(0);
+    fresh.publishNotification({ severity: "error", source: "new service", message: "New failure" });
+    expect(fresh.notifications().filter(fresh.notificationNeedsAttention)).toHaveLength(1);
+    expect(() => fresh.clearNotification(fresh.notifications()[0].id)).not.toThrow();
+    expect(fresh.notifications().filter(fresh.notificationNeedsAttention)).toHaveLength(0);
+    blockedStorage.mockRestore();
+  });
+
   it("new notifications and updates remain newest first with severity thresholds", () => {
     const first = publishNotification({ severity: "info", source: "queue", message: "First" });
     publishNotification({ severity: "error", source: "sync", message: "Second" });
