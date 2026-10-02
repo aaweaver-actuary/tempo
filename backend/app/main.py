@@ -1392,7 +1392,7 @@ def seed_queue(db, day):
     admitted_studies = db.execute(
         """SELECT COUNT(*) FROM daily_queue q JOIN cards c ON c.id=q.card_id
            WHERE q.queue_date=? AND c.content_type='study_exercise' AND c.state='new'
-             AND q.status IN ('queued','complete')""", (day,),
+             AND q.status IN ('queued','complete','buried')""", (day,),
     ).fetchone()[0]
     remaining_studies = max(0, study_allowance - admitted_studies)
     if remaining_studies:

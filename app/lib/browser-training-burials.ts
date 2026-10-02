@@ -19,15 +19,9 @@ export function restoreBrowserTrainingBurials(
     const buriedIds = new Set(burials.cardIds);
     return queue.filter((cardIndex) => !buriedIds.has(cards[cardIndex]?.id));
   }
-  const restoredQueue = [...queue];
-  for (const cardId of burials.cardIds) {
-    const cardIndex = cards.findIndex((card) => card.id === cardId);
-    if (cardIndex >= 0 && !restoredQueue.includes(cardIndex)) restoredQueue.push(cardIndex);
-  }
-  // Save the restored queue before clearing its durable return markers.
-  localStorage.setItem("tempo-daily-queue", JSON.stringify(restoredQueue));
+  // Tomorrow's normal reset owns admission; burial only excludes today.
   localStorage.removeItem(STORAGE_KEY);
-  return restoredQueue;
+  return queue;
 }
 
 export function rememberBrowserTrainingBurial(cardId: string, day = localDayKey()): void {

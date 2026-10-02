@@ -304,3 +304,40 @@ def test_postgres_bury_handler_excludes_all_cycles_without_reordering_and_reject
             assert stale.value.status_code == 409
         assert [card["id"] for card in client.get("/api/queue/today").json()["cards"]] == [card["id"] for card in before[1:]]
         assert lock_requests == [(f"tempo:daily-queue-position:{date.today().isoformat()}",)] * 2
+
+
+def test_buried_new_study_card_consumes_daily_quota_without_replacement(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    today = date.today().isoformat()
+    with TestClient(app) as client:
+        _seed_cards()
+        with database.connection() as db:
+            db.execute("UPDATE settings SET study_new_per_day=1 WHERE id=1")
+            db.execute("INSERT INTO studies(id,title,created_at,updated_at) VALUES('burial-study','Burial quota',?,?)", (today, today))
+            db.execute("INSERT INTO study_chapters(id,study_id,title,position) VALUES('burial-chapter','burial-study','Chapter',0)")
+            db.execute("""INSERT INTO study_sources(id,chapter_id,source_group_id,version,raw_pgn,sha256,filename,record_index,headers_json,diagnostics_json,valid,created_at)
+                          VALUES('burial-source','burial-chapter','burial-group',1,'','hash','burial.pgn',0,'{}','[]',1,?)""", (today,))
+            db.execute("INSERT INTO study_positions(id,source_id,child_index,fen,history_json,node_path) VALUES('burial-position','burial-source',0,?,'[]','0')", (START_FEN,))
+            for exercise_id in ("quota-a", "quota-b"):
+                db.execute("INSERT INTO study_exercises(id,study_id,position_id,status,created_at,updated_at) VALUES(?,'burial-study','burial-position','published',?,?)", (exercise_id, today, today))
+                db.execute("""INSERT INTO study_exercise_revisions(exercise_id,revision,specification_json,specification_hash,created_at)
+                              VALUES(?,1,'{"type":"choice","prompt":"Choose","hint":"","explanation":"","options":[{"id":"a","text":"A"}],"correct_option_ids":["a"]}','hash',?)""", (exercise_id, today))
+                db.execute("""INSERT INTO cards(id,kind,start_fen,moves_json,state,due_date,content_type,study_exercise_id)
+                              VALUES(?,'exercise',?,'[]','new',?,'study_exercise',?)""", (exercise_id, START_FEN, today, exercise_id))
+        submit_foreground_write(lambda db: materialize_daily_queue(db, today), label="test-study-bury-quota")
+        initial_queue = client.get("/api/queue/today").json()["cards"]
+        admitted_studies = [card for card in initial_queue if card["content_type"] == "study_exercise"]
+        assert len(admitted_studies) == 1
+        selected_card = admitted_studies[0]
+        with database.connection() as db:
+            db.execute("UPDATE daily_queue SET position=-1 WHERE id=?", (selected_card["queue_entry_id"],))
+        before_burial = client.get("/api/queue/today").json()["cards"]
+        assert client.post(f"/api/queue/entries/{selected_card['queue_entry_id']}/bury").status_code == 200
+        submit_foreground_write(lambda db: materialize_daily_queue(db, today), label="test-study-bury-quota-refresh")
+        refreshed_queue = client.get("/api/queue/today").json()["cards"]
+        assert not any(card["content_type"] == "study_exercise" for card in refreshed_queue)
+        assert [card["queue_entry_id"] for card in refreshed_queue] == [card["queue_entry_id"] for card in before_burial if card["id"] != selected_card["id"]]
+        with database.read_connection() as db:
+            consumed_admissions = db.execute("""SELECT card_id,status FROM daily_queue
+                WHERE queue_date=? AND card_id IN ('quota-a','quota-b')""", (today,)).fetchall()
+            assert [(row["card_id"], row["status"]) for row in consumed_admissions] == [(selected_card["id"], "buried")]

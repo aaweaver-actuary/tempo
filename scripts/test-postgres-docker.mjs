@@ -4,7 +4,7 @@ import assert from "node:assert/strict";
 import { randomBytes } from "node:crypto";
 import { spawnSync } from "node:child_process";
 import { createServer } from "node:net";
-import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createIsolatedTestEnvironment } from "./test-environment.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
@@ -461,6 +461,40 @@ async function verifyForegroundAndStudyDurability() {
   activeStudyRepertoireId = null;
 }
 
+async function verifyStudyBurialRetainsQuota() {
+  const settingsBeforeFixture = await get("settings");
+  // stdin keeps this test fixture outside the product image. It runs only
+  // against the unique disposable compose project created by this runner.
+  const regression = spawnSync("docker", [...compose, "exec", "-T", "foreground-worker", "python", "-"], {
+    input: readFileSync("tests/fixtures/postgres-study-burial-quota.py", "utf8"), encoding: "utf8", env: environment,
+  });
+  assert.equal(regression.status, 0, regression.stderr);
+  const { unrelated_order: unrelatedOrder, queue_date: queueDate } = JSON.parse(regression.stdout.trim());
+  const beforeRefresh = await get("queue/today");
+  await postCommand("settings", { ...settingsBeforeFixture, study_new_per_day: 1 }, { method: "PUT" });
+  let refreshedQueue;
+  const deadline = performance.now() + 60_000;
+  while (performance.now() < deadline) {
+    const queue = await get("queue/today");
+    assert.notEqual(queue.projection?.state, "failed", queue.projection?.last_error);
+    if (queue.projection?.state === "ready" && !queue.projection.refresh_pending &&
+        queue.projection.generation > beforeRefresh.projection.generation) {
+      refreshedQueue = queue;
+      break;
+    }
+    await new Promise(resolve => setTimeout(resolve, 250));
+  }
+  assert(refreshedQueue, "Study burial quota refresh publishes a new generation before its deadline");
+  assert.deepEqual(refreshedQueue.cards.map(card => card.queue_entry_id), unrelatedOrder,
+    "Refreshing after Study burial neither admits a replacement nor reorders unrelated cards");
+  const recorded = readScopedPostgresRows(`SELECT COALESCE(json_agg(row_to_json(q)),'[]'::json)
+    FROM (SELECT card_id,status FROM daily_queue WHERE queue_date='${queueDate}'
+      AND card_id IN ('pg-bury-quota-a','pg-bury-quota-b')) q`);
+  assert.deepEqual(recorded, [{ card_id: "pg-bury-quota-a", status: "buried" }]);
+  await postCommand("settings", settingsBeforeFixture, { method: "PUT" });
+  console.log("PASS PostgreSQL buried Study admission retains quota through materialization and locked candidate replay");
+}
+
 const actions = {
   compose_config: async () => {
     const config = spawnSync("docker", [...compose, "config", "--format", "json"],
@@ -664,6 +698,7 @@ const actions = {
   },
   study_durability: async () => {
     await verifyForegroundAndStudyDurability();
+    await verifyStudyBurialRetainsQuota();
   },
   cleanup: async () => executeDiagnosticCleanup(() => {
     if (process.env.TEMPO_CI_REPORT && resourcesCreated) {

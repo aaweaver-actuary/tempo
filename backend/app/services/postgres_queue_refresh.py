@@ -434,7 +434,7 @@ def _prepare_study_admission(queue_date: str) -> str | None:
     admitted = int(_bounded_read(
         """SELECT COUNT(*) FROM daily_queue queue JOIN cards card ON card.id=queue.card_id
            WHERE queue.queue_date=%s AND card.content_type='study_exercise'
-             AND card.state='new' AND queue.status IN ('queued','complete')""",
+             AND card.state='new' AND queue.status IN ('queued','complete','buried')""",
         (queue_date,), native=True,
     )[0][0])
     if admitted >= allowance:
@@ -462,7 +462,7 @@ def _admit_one_study_card(database, queue_date: str, study_card_id: str) -> bool
     admitted = database.execute_native(
         """SELECT COUNT(*) FROM daily_queue queue JOIN cards card ON card.id=queue.card_id
            WHERE queue.queue_date=%s AND card.content_type='study_exercise'
-             AND card.state='new' AND queue.status IN ('queued','complete')""",
+             AND card.state='new' AND queue.status IN ('queued','complete','buried')""",
         (queue_date,),
     ).fetchone()[0]
     if admitted >= allowance:

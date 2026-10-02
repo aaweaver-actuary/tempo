@@ -54,7 +54,7 @@ import { usesLocalApi, localDayKey } from "../utils/local";
 import { trainedColor } from "../utils/cards";
 import { buryQueuedCard } from "../domain/training-session";
 import { rememberBrowserTrainingBurial, restoreBrowserTrainingBurials } from "../lib/browser-training-burials";
-import { buryTrainingEntry, finishTrainingBurial } from "../lib/training-bury-command";
+import { buryTrainingEntry, finishTrainingBurial, hasPendingTrainingBurial } from "../lib/training-bury-command";
 import BuilderView from "./analysis_view";
 import ComparisonView from "./comparison_view";
 import type { ComparisonBoard, ComparisonLaunch } from "../lib/comparison";
@@ -276,6 +276,7 @@ export default function Home() {
     }
   }, [serviceError]);
   const reviewPendingEntries = useRef(new Set<string>());
+  const pendingBurialEntryId = useRef<number | undefined>(undefined);
   const reviewTransitionGeneration = useRef(0);
   const pendingOpponentReply = useRef<{
     timer: ReturnType<typeof setTimeout> | undefined;
@@ -695,17 +696,23 @@ export default function Home() {
   }
 
   async function buryCurrentCard() {
-    if (serviceError && !offlineQueue) throw new Error("Refresh the live queue before burying this card.");
+    if (serviceError && !offlineQueue && pendingBurialEntryId.current === undefined)
+      throw new Error("Refresh the live queue before burying this card.");
     if (offlineQueue) throw new Error("Burying needs the computer. Continue reviewing or reconnect.");
     if (databaseQueue) {
-      if (!card.queueEntryId)
-        throw new Error(
-          "The active queue entry is unavailable. Refresh the queue.",
-        );
-      const queueEntryId = card.queueEntryId;
-      await buryTrainingEntry(queueEntryId);
-      await refreshDatabaseQueue(true);
-      finishTrainingBurial(queueEntryId);
+      const queueEntryId = pendingBurialEntryId.current ?? card.queueEntryId;
+      if (!queueEntryId)
+        throw new Error("The active queue entry is unavailable. Refresh the queue.");
+      pendingBurialEntryId.current = queueEntryId;
+      try {
+        await buryTrainingEntry(queueEntryId);
+        await refreshDatabaseQueue(true);
+        finishTrainingBurial(queueEntryId);
+        pendingBurialEntryId.current = undefined;
+      } catch (error) {
+        if (!hasPendingTrainingBurial(queueEntryId)) pendingBurialEntryId.current = undefined;
+        throw error;
+      }
       setSafeBreakCounter((count) => count + 1);
       return;
     }
