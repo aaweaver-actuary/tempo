@@ -542,15 +542,17 @@ The exact filtered pinned command uses `visual.spec.ts --grep 'Settings 1920'
 anchored filter matched zero cases and is not passing evidence; a second run
 accepted the old image within tolerance without writing a replacement, so the
 final probe explicitly captured it. Screenshot thresholds remain unchanged.
-Source, logs, raw comparison and task-owned container events are retained under
-`test-results/pr54-main-visual-reference/` and `test-results/pr54-isolation/`.
+The temporary source export was removed after verifying preserved screenshot and
+probe-source hashes. Source, logs, raw comparison and resource records are preserved
+outside the clone in the root checkout's `test-results/2026-10-02-pr54-ci-repair/`;
+the clone's `test-results/pr54-isolation/` also retains local logs.
 
 Expected, Actual and Diff from CI run `36997007615` were manually reviewed for
 all four Settings widths. The accepted feature snapshots add the default-limit
 wording, no-rollover explanation, repertoire heading/row, allowance selector,
 current-limit status and disabled clean Save button. At 390 and 768, the long
 repertoire title wraps within the existing card; the numeric current-limit status
-remains readable beside the native selector. At 1280 and 1920, the row fits on
+remains readable below the native selector. At 1280 and 1920, the row fits on
 one line. Existing downstream Training settings and footer move down; typography,
 navigation, alignment and horizontal bounds remain consistent. Only these four
 Settings images change; the independent 1920 header correction is the preceding
