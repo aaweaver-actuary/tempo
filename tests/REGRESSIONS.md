@@ -912,3 +912,5 @@ assertions remain required. No test identity, CI selection, or timeout changed.
 - `tests/unit/api-schema-parity-regressions.test.ts::Python repertoire limit response matches the frontend contract for inherited, zero, and custom limits` — producer/consumer compatibility.
 - `tests/browser/settings-repertoire-limits.spec.ts::repertoire limits update today's queue, persist after reload, and reset to default` — real Settings/queue workflow with save failure recovery; registered in the complete repertoire browser family.
 - `scripts/check_postgres_repertoire_limits.py` — real PostgreSQL 10/5 limits, seven-of-ten reset, zero reconciliation, stale plan rejection, inheritance, and operation replay in the regular durability runner. The runner's command-recreation scenario preserves and replays an override across container recreation; schema-upgrade coverage verifies existing repertoires inherit after migration 26.
+
+- `backend/tests/test_postgres_route_contract.py::test_postgres_route_contract_matches_registered_endpoints` — repertoire settings is registered as a staged foreground command; reproduced the missing route before adding the contract entry.
