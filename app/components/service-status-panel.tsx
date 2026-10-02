@@ -1,7 +1,7 @@
 "use client";
 import { Button } from "./buttons/BaseButton";
 
-import { Fragment, useCallback, useEffect, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { API_URL } from "../const";
 import { backgroundFetch } from "../lib/background-fetch";
 import { requestActivityControl } from "../lib/activity-control-command";
@@ -48,26 +48,53 @@ function activityGroup(state: string) {
   return "Recently completed";
 }
 
+function sameActivityItems(left: ActivityItem[], right: ActivityItem[]) {
+  return left.length === right.length && left.every((item, index) => {
+    const other = right[index];
+    return item.source === other.source && item.id === other.id && item.title === other.title
+      && item.state === other.state && item.phase === other.phase && item.completed === other.completed
+      && item.total === other.total && item.updated_at === other.updated_at && item.error === other.error
+      && item.paused === other.paused && item.promoted === other.promoted;
+  });
+}
+
+// Queue depths remain in the diagnostic snapshot; only health and counts render here.
+function sameActivitySummary(left: ActivityResponse | null, right: ActivityResponse) {
+  return left !== null && left.counts.running === right.counts.running && left.counts.queued === right.counts.queued
+    && left.counts.paused === right.counts.paused && left.counts.failed === right.counts.failed
+    && left.writer?.healthy === right.writer?.healthy;
+}
+
 const groupOrder = ["Running", "Queued", "Paused", "Needs attention", "Recently completed"];
 
 export function ServiceStatusPanel() {
   const lastDiagnosticsRequest = useRef(Number.NEGATIVE_INFINITY);
   const [open, setOpen] = useState(false);
+  // Null means this mounted panel has never successfully loaded activity; paused reads retain known status.
   const [status, setStatus] = useState<ActivityResponse | null>(null);
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const requestedError = useRef<string | null>(null);
+  const publishError = useCallback((message: string | null) => {
+    if (requestedError.current === message) return;
+    requestedError.current = message;
+    setError(message);
+  }, []);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
+  const refreshActivity = useRef<() => Promise<ActivityResponse | null>>(async () => null);
+  const updatePollingDemand = useRef<(open: boolean, offset: number) => void>(() => undefined);
+  const refresh = () => refreshActivity.current();
   const browserItems = useSyncExternalStore(subscribeBrowserActivity, browserActivitySnapshot, () => emptyBrowserActivity);
   useEffect(() => {
     const key = "analysis-activity-error";
     if (error) publishNotification({ severity: "error", source: "analysis activity", key, message: error });
-    else {
+    else if (status !== null) {
       const previous = notifications().find((record) => record.key === key && !record.resolvedAt);
       if (previous) resolveNotification(previous.id, { severity: "success", message: "Analysis activity is available again." });
     }
-  }, [error]);
+  }, [error, status]);
   useEffect(() => {
     const key = "database-writer-health";
     if (status?.writer?.healthy === false) publishNotification({ severity: "error", source: "database writer", key,
@@ -78,46 +105,138 @@ export function ServiceStatusPanel() {
     }
   }, [status?.writer?.healthy]);
 
-  const refresh = useCallback(async () => {
-    if (!usesLocalApi()) return null;
-    try {
-      const response = await backgroundFetch(`${API_URL}/api/system/activity?offset=${offset}&limit=50`);
-      if (!response.ok) throw new Error(`Activity status failed: HTTP ${response.status}`);
-      const value: unknown = await response.json();
-      if (!isActivityResponse(value)) throw new Error("Activity status has an unexpected format");
-      setStatus(value);
-      setLatestServiceStatus(value);
-      setItems(value.items);
-      setNextOffset(value.next_offset);
-      setError(null);
-      if (performance.now() - lastDiagnosticsRequest.current >= 15_000) {
-        lastDiagnosticsRequest.current = performance.now();
-        try {
-          const diagnosticsResponse = await backgroundFetch(`${API_URL}/api/system/background-diagnostics`);
-          if (!diagnosticsResponse.ok) throw new Error("Background diagnostics unavailable");
-          setBackgroundDiagnostics(await diagnosticsResponse.json());
-        } catch {
-          setBackgroundDiagnostics(null);
-        }
-      }
-      return value;
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not load activity status");
-      return null;
-    }
-  }, [offset]);
 
   useEffect(() => {
     if (!usesLocalApi()) return;
-    let cancelled = false;
-    let timer: ReturnType<typeof setTimeout>;
-    const poll = async () => {
-      const current = await refresh();
-      if (!cancelled) timer = setTimeout(poll, current && current.counts.running + current.counts.queued > 0 ? 2_000 : 15_000);
+    let stopped = false;
+    let panelOpen = false;
+    let currentOffset = 0;
+    let offsetGeneration = 0;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    let inFlight: Promise<ActivityResponse | null> | null = null;
+    let refreshPending = false;
+    let wakeQueued = false;
+    let failureCount = 0;
+    let latest: ActivityResponse | null = null;
+    let displayedSummary: ActivityResponse | null = null;
+    let displayedItems: ActivityItem[] = [];
+    let displayedNextOffset: number | null = null;
+    const eligible = () => !stopped && document.visibilityState === "visible" && navigator.onLine;
+    const clearTimer = () => { clearTimeout(timer); timer = undefined; };
+    const delay = () => {
+      if (failureCount) {
+        const backoff = [5_000, 10_000, 20_000, 60_000][Math.min(failureCount - 1, 3)];
+        return panelOpen ? backoff : Math.max(30_000, backoff);
+      }
+      // Closed counts/health are at most 30 seconds old plus request duration on success.
+      return !panelOpen ? 30_000 : latest && latest.counts.running + latest.counts.queued > 0 ? 2_000 : 15_000;
+    };
+    const schedule = () => {
+      clearTimer();
+      if (eligible()) timer = setTimeout(() => void poll(), delay());
+    };
+    const publishItems = (value: ActivityResponse) => {
+      if (!sameActivityItems(displayedItems, value.items)) {
+        displayedItems = value.items;
+        setItems(value.items);
+      }
+      if (displayedNextOffset !== value.next_offset) {
+        displayedNextOffset = value.next_offset;
+        setNextOffset(value.next_offset);
+      }
+    };
+    const publish = (value: ActivityResponse) => {
+      setLatestServiceStatus(value);
+      if (!sameActivitySummary(displayedSummary, value)) {
+        displayedSummary = value;
+        setStatus(value);
+      }
+      if (panelOpen) publishItems(value);
+      publishError(null);
+    };
+    // All timer, wake and command refreshes share this component-owned flight.
+    const poll = (): Promise<ActivityResponse | null> => {
+      clearTimer();
+      if (!eligible()) return Promise.resolve(null);
+      if (inFlight) { refreshPending = true; return inFlight; }
+      inFlight = (async () => {
+        do {
+          refreshPending = false;
+          const requestGeneration = offsetGeneration;
+          try {
+            const response = await backgroundFetch(`${API_URL}/api/system/activity?offset=${currentOffset}&limit=50`);
+            if (!response.ok) throw new Error(`Activity status failed: HTTP ${response.status}`);
+            const value: unknown = await response.json();
+            if (!isActivityResponse(value)) throw new Error("Activity status has an unexpected format");
+            if (!stopped && requestGeneration === offsetGeneration) {
+              latest = value;
+              failureCount = 0;
+              publish(value);
+              // Retain current main's activity-triggered diagnostics read and 15-second minimum.
+              if (eligible() && performance.now() - lastDiagnosticsRequest.current >= 15_000) {
+                lastDiagnosticsRequest.current = performance.now();
+                try {
+                  const diagnosticsResponse = await backgroundFetch(`${API_URL}/api/system/background-diagnostics`);
+                  if (!diagnosticsResponse.ok) throw new Error("Background diagnostics unavailable");
+                  const diagnostics: unknown = await diagnosticsResponse.json();
+                  if (!stopped) setBackgroundDiagnostics(diagnostics);
+                } catch {
+                  if (!stopped) setBackgroundDiagnostics(null);
+                }
+              }
+            }
+          } catch (cause) {
+            if (!stopped && requestGeneration === offsetGeneration) {
+              failureCount += 1;
+              const message = cause instanceof Error ? cause.message : "Could not load activity status";
+              publishError(message);
+            }
+          }
+        } while (refreshPending && eligible());
+        return latest;
+      })().finally(() => { inFlight = null; schedule(); });
+      return inFlight;
+    };
+    const recover = () => {
+      clearTimer();
+      if (eligible()) {
+        failureCount = 0;
+        if (!wakeQueued) {
+          wakeQueued = true;
+          queueMicrotask(() => { wakeQueued = false; if (eligible()) void poll(); });
+        }
+      } else refreshPending = false;
+    };
+    refreshActivity.current = async () => { failureCount = 0; return poll(); };
+    updatePollingDemand.current = (nextOpen, nextOffset) => {
+      const opened = nextOpen && !panelOpen;
+      const offsetChanged = nextOffset !== currentOffset;
+      panelOpen = nextOpen;
+      currentOffset = nextOffset;
+      if (offsetChanged) { offsetGeneration += 1; latest = null; }
+      // Opening while suspended can display cached details without claiming fresh service recovery.
+      if (opened && latest && !eligible()) publishItems(latest);
+      if (opened || offsetChanged) { failureCount = 0; void poll(); }
+      else if (!inFlight) schedule();
     };
     void poll();
-    return () => { cancelled = true; clearTimeout(timer); };
-  }, [refresh]);
+    window.addEventListener("focus", recover);
+    window.addEventListener("online", recover);
+    window.addEventListener("offline", recover);
+    document.addEventListener("visibilitychange", recover);
+    return () => {
+      stopped = true;
+      refreshPending = false;
+      clearTimer();
+      refreshActivity.current = async () => null;
+      updatePollingDemand.current = () => undefined;
+      window.removeEventListener("focus", recover);
+      window.removeEventListener("online", recover);
+      window.removeEventListener("offline", recover);
+      document.removeEventListener("visibilitychange", recover);
+    };
+  }, [publishError]);
+  useEffect(() => { updatePollingDemand.current(open, offset); }, [open, offset]);
 
   const control = async (item: ActivityItem, action: string) => {
     const key = `${item.source}:${item.id}`;
@@ -127,7 +246,7 @@ export function ServiceStatusPanel() {
       window.dispatchEvent(new CustomEvent("tempo:background-control", { detail: { source: item.source, id: item.id, action } }));
       await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Activity control failed");
+      publishError(cause instanceof Error ? cause.message : "Activity control failed");
     } finally { setBusyKey(null); }
   };
 
@@ -141,20 +260,23 @@ export function ServiceStatusPanel() {
       if (!response.ok) throw new Error(`Retry failed: HTTP ${response.status}`);
       await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Retry failed");
+      publishError(cause instanceof Error ? cause.message : "Retry failed");
     } finally { setBusyKey(null); }
   };
 
-  const localItems: ActivityItem[] = browserItems.map(item => ({
-    source: "study", id: item.id, title: item.title, state: item.state,
-    phase: item.phase, completed: null, total: null, updated_at: item.updated_at,
-    error: item.error ?? null, paused: false, promoted: false,
-  }));
-  const visibleItems = [...items, ...localItems].sort((left, right) =>
-    groupOrder.indexOf(activityGroup(left.state)) - groupOrder.indexOf(activityGroup(right.state))
-    || right.updated_at.localeCompare(left.updated_at));
+  const visibleItems = useMemo(() => {
+    if (!open) return [];
+    const localItems: ActivityItem[] = browserItems.map(item => ({
+      source: "study", id: item.id, title: item.title, state: item.state,
+      phase: item.phase, completed: null, total: null, updated_at: item.updated_at,
+      error: item.error ?? null, paused: false, promoted: false,
+    }));
+    return [...items, ...localItems].sort((left, right) =>
+      groupOrder.indexOf(activityGroup(left.state)) - groupOrder.indexOf(activityGroup(right.state))
+      || right.updated_at.localeCompare(left.updated_at));
+  }, [open, items, browserItems]);
   const activeCount = (status?.counts.running ?? 0) + (status?.counts.queued ?? 0)
-    + localItems.filter(item => item.state === "running" || item.state === "queued").length;
+    + browserItems.filter(item => item.state === "running" || item.state === "queued").length;
 
   return <aside className="tempo-activity-tray">
     <Button type="button" className="tempo-activity-trigger" aria-label="Analysis activity" aria-expanded={open} aria-controls="tempo-activity-content"
@@ -170,7 +292,8 @@ export function ServiceStatusPanel() {
       {error && <p role="alert">{error} <Button type="button" onClick={() => void refresh()}>Retry status</Button></p>}
       {status?.writer?.healthy === false && <p role="alert">The database writer is unavailable. Restart Tempo before making changes.</p>}
       {status && <p>{status.counts.running} running · {status.counts.queued} queued · {status.counts.paused} paused · {status.counts.failed} failed</p>}
-      {!error && visibleItems.length === 0 && <p>No background activity yet.</p>}
+      {!error && status === null && usesLocalApi() && <p>Activity status has not been loaded yet.</p>}
+      {!error && status !== null && visibleItems.length === 0 && <p>No background activity yet.</p>}
       <div className="tempo-activity-list">
         {visibleItems.map((item, index) => {
           const key = `${item.source}:${item.id}`;
