@@ -113,6 +113,55 @@ Related issue bodies/discussion #13 and #14 were reviewed. This repairs their
 defensive UI transition only; UX-policy reconciliation and recurring-pack
 requirements remain outside this PR and those issues remain open.
 
+### Integration with current main's grouped notifications
+
+Main advanced to `5c0d929` during review. The merge candidate combines its
+attention-only, grouped notification policy and stable toast IDs with this PR's
+popup registration, newest-toast ordering and opener focus restoration. The
+existing Escape test now uses a warning for its older visible toast because
+informational records no longer produce toasts; all dismissal/history assertions
+are retained. Both conflicting files preserve incoming regression coverage.
+
+The dirty merge candidate based on `42ae2a65d269d4fd37cfe804f41c78cebef210b4`
+passed the changed notification/training/Settings callers and keyboard routing:
+
+```sh
+npm run test:unit -- \
+  tests/unit/notification-regressions.test.tsx \
+  tests/unit/popup-shortcuts-regressions.test.tsx \
+  tests/unit/board-shortcuts-regressions.test.tsx \
+  tests/unit/shared-board-shell-training-regressions.test.tsx \
+  tests/unit/settings-notification-regressions.test.tsx \
+  tests/unit/desktop-queue-regressions.test.ts
+npm run typecheck
+npm run lint
+make ui-file FILE=keyboard-context.spec.ts
+git diff --check
+node scripts/ci-verification-plan.mjs --base origin/main
+```
+
+Units: **47 passed in six files**, Vitest 2.70s / command wall 3.15s.
+Typecheck passed in 5.59s. Lint passed in 9.59s with zero errors and the same nine
+existing warnings. The elevated browser command passed all **five** cases,
+Playwright 6.3s / browser stage 6.98s / command wall 42.67s. Its fresh project
+`tempo-pg-regressions-44168-a7e11244` was created at
+`2026-10-02T12:56:17.657Z`; reports record stage activity and the pre-merge HEAD
+identifier above, not a clean-HEAD pass. Containers used that exact project prefix
+and `-{schema,postgres,redis,api,web,foreground-worker,background-worker,background-scheduler,maia-worker,defense-engine}-1`
+suffixes; project image tags were removed by the owning runner's teardown.
+Browser-only mode did not build a maintenance image. Cleanup exited zero and exact project
+container/image inspection was empty afterward. Protected live services and
+safe build caches were preserved. Logs are
+`test-results/pr64-review-main-integration-*.log`; the project timing report is
+under `test-results/performance/`.
+
+Diff checks passed; the fresh planner selects **176/176 regular browser cases**
+and pinned visual/performance. The full required CI plan will rerun all layers,
+including the pre-integration defense/cross-browser proof, on the committed
+candidate and current-base merge. No visual baseline was regenerated during
+these review repairs. Current CI results belong in the PR description so
+recording the run does not itself create another unvalidated candidate.
+
 ## Candidate and scope
 
 Work is isolated in `.dev-copies/contextual-keybindings` on

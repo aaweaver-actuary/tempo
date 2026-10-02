@@ -20,7 +20,7 @@ import { migrateSqliteToBrowser } from "../lib/sqlite-migration";
 import { reportDebugError } from "../lib/debug-reporting";
 import { saveLocalSettings } from "../lib/settings-save";
 import { PendingOperationError } from "../lib/operation-status";
-import { publishNotification, resolveNotification } from "../lib/notifications";
+import { publishNotification, resolveNotification, updateNotification } from "../lib/notifications";
 
 import { Notice } from "../components/task-tabs";
 
@@ -113,7 +113,9 @@ export default function SettingsView({
       statusNotificationId.current = publishNotification({ severity: "info", source: "settings",
         key: "settings-data-transfer", message, active: true });
     } else if (statusNotificationId.current) {
-      resolveNotification(statusNotificationId.current, { severity, message });
+      if (severity === "warning" || severity === "error")
+        updateNotification(statusNotificationId.current, { severity, message, active: false });
+      else resolveNotification(statusNotificationId.current, { severity, message });
       statusNotificationId.current = undefined;
     } else publishNotification({ severity, source: "settings", message });
   }
