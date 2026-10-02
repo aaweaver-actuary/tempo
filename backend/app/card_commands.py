@@ -128,7 +128,7 @@ def revise_card(database: PostgresConnection, payload: dict[str, Any]) -> dict[s
         copied_fields.update({
             "id": replacement_id, "start_fen": request.starting_fen,
             "moves_json": json.dumps(moves), "source_fen": request.source_fen,
-            "revision": revision, "archived": 0, "superseded_by": None,
+            "revision": revision, "archived": 0, "superseded_by": None, "canonical_route_source": 1,
         })
         if request.history_mode == "reset":
             copied_fields.update({

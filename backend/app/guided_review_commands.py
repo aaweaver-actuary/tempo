@@ -31,7 +31,7 @@ def start_review(database: PostgresConnection, payload: dict[str, Any]) -> dict:
     if existing:
         return read_session_from_database(database, existing["id"])
     findings = database.execute(
-        """SELECT * FROM game_findings WHERE game_id=?
+        """SELECT * FROM current_game_findings game_findings WHERE game_id=?
            AND analysis_version=? AND kind!='defensive tactical threat'
            AND status NOT IN ('ignored','excluded') ORDER BY ply""",
         (game_id, game["analysis_version"]),
@@ -68,7 +68,7 @@ def submit_review_attempt(database: PostgresConnection, payload: dict[str, Any])
     if current_index >= len(finding_ids):
         raise HTTPException(404, "Guided review is complete")
     finding = database.execute(
-        "SELECT * FROM game_findings WHERE id=?", (finding_ids[current_index],),
+        "SELECT * FROM current_game_findings game_findings WHERE id=?", (finding_ids[current_index],),
     ).fetchone()
     if finding is None:
         raise HTTPException(409, "Guided review finding is unavailable")

@@ -13,6 +13,8 @@ import chess
 from ..database import background_read_connection, connection, read_connection
 from .. import postgres_store
 from .activity_gate import activity_gate
+from . import canonical_scope_freshness
+from .canonical_scope_freshness import opportunity_is_current, coverage_run_is_current, coverage_scope_predicate
 from .canonical_prefix import read_prefix, game_in_scope, line_origin, position_key, validate_scoped_line, store_positions
 from .cards import card_id
 from .durable_tasks import (
@@ -106,10 +108,10 @@ def _source_game(database, opportunity) -> dict | None:
     if opportunity["kind"] == "missing_response" and opportunity["opponent_move_uci"]:
         node_id = evidence.get("coverage_node_id")
         node = database.execute(
-            "SELECT fen_key,routes_json FROM repertoire_coverage_nodes WHERE id=? AND repertoire_id=?",
+            "SELECT node.fen_key,node.routes_json,run.settings_json FROM repertoire_coverage_nodes node JOIN repertoire_coverage_runs run ON run.id=node.run_id WHERE node.id=? AND node.repertoire_id=?",
             (node_id, opportunity["repertoire_id"]),
         ).fetchone()
-        if not node:
+        if not coverage_run_is_current(database, node, opportunity["repertoire_id"]):
             return None
         routes = json.loads(node["routes_json"])
         lines = database.execute(
@@ -167,11 +169,14 @@ def _background_source_game(opportunity) -> dict | None:
     node_id = evidence.get("coverage_node_id")
     with background_read_connection() as database:
         node = database.execute(
-            "SELECT fen_key,routes_json FROM repertoire_coverage_nodes WHERE id=? AND repertoire_id=?",
+            "SELECT node.fen_key,node.routes_json,run.settings_json FROM repertoire_coverage_nodes node JOIN repertoire_coverage_runs run ON run.id=node.run_id WHERE node.id=? AND node.repertoire_id=?",
             (node_id, opportunity["repertoire_id"]),
         ).fetchone()
     if node is None:
         return None
+    with background_read_connection() as database:
+        if not coverage_run_is_current(database, node, opportunity["repertoire_id"]):
+            return None
     with background_read_connection() as database:
         lines = database.execute(
             "SELECT start_fen,moves_json,trained_color FROM repertoire_lines WHERE repertoire_id=? ORDER BY id",
@@ -207,7 +212,7 @@ def execute_recommendation_request_slice(task: dict) -> None:
                AND kind IN ('post_gap_weakness','missing_response') AND card_id IS NULL""",
             (task["payload"]["opportunity_id"],),
         ).fetchone()
-        if opportunity and dict(opportunity).get("canonical_prefix_revision", 0) != read_prefix(database, opportunity["repertoire_id"])["revision"]:
+        if opportunity and not opportunity_is_current(database, opportunity):
             return
         game = _source_game(database, opportunity) if opportunity and not postgres_store.configured() else None
     if opportunity and postgres_store.configured():
@@ -220,6 +225,9 @@ def execute_recommendation_request_slice(task: dict) -> None:
         return
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
+        if opportunity:
+            read_prefix(database, opportunity["repertoire_id"], lock=True)
+            canonical_scope_freshness.game_scope_generation(database, lock=True)
         if "id" in task:
             if postgres_store.configured():
                 if not lock_current_slice(database, task):
@@ -232,11 +240,11 @@ def execute_recommendation_request_slice(task: dict) -> None:
                         or lease["lease_token"] != task["lease_token"]):
                     return
         current = database.execute(
-            "SELECT status,card_id,canonical_prefix_revision FROM repertoire_opportunities WHERE id=?",
+            "SELECT * FROM repertoire_opportunities WHERE id=?",
             (task["payload"]["opportunity_id"],),
         ).fetchone()
         if (not current or current["status"] != "active" or current["card_id"]
-                or dict(current).get("canonical_prefix_revision", 0) != read_prefix(database, opportunity["repertoire_id"], lock=True)["revision"]):
+                or not opportunity_is_current(database, current, lock=True)):
             return
         database.execute(
             """INSERT OR IGNORE INTO threat_analysis_requests(
@@ -308,7 +316,7 @@ def recommend_missing_continuations(opportunity_id: str) -> dict:
             """SELECT * FROM repertoire_opportunities WHERE id=? AND status='active'""",
             (opportunity_id,),
         ).fetchone()
-        if not opportunity or dict(opportunity).get("canonical_prefix_revision", 0) != read_prefix(database, opportunity["repertoire_id"])["revision"]:
+        if not opportunity or not opportunity_is_current(database, opportunity):
             raise KeyError("Active discovery not found")
         if opportunity["card_id"]:
             raise ValueError("This discovery already has a saved decision card")
@@ -518,9 +526,9 @@ def create_admission_intent(opportunity_id: str, selected_move_uci: str,
     with connection() as database:
         database.execute("BEGIN IMMEDIATE")
         current_opportunity = database.execute(
-            "SELECT status,evidence_fingerprint FROM repertoire_opportunities WHERE id=?", (opportunity_id,),
+            "SELECT * FROM repertoire_opportunities WHERE id=?", (opportunity_id,),
         ).fetchone()
-        if (not current_opportunity or current_opportunity["status"] != "active"
+        if (not current_opportunity or not opportunity_is_current(database, current_opportunity) or current_opportunity["status"] != "active"
                 or current_opportunity["evidence_fingerprint"] != expected_fingerprint):
             raise ValueError("Discovery evidence changed; refresh the preview")
         inserted = database.execute(
@@ -570,6 +578,8 @@ def _materialize_admission_branch(task: dict) -> None:
         prefix = read_prefix(database, intent["repertoire_id"])
         origin = line_origin(database, prefix["preview_id"], intent["starting_fen"]) if prefix["moves"] else None
         opportunity_snapshot = database.execute("SELECT * FROM repertoire_opportunities WHERE id=?", (intent["opportunity_id"],)).fetchone() if prefix["moves"] and "opportunity_id" in dict(intent) else None
+        if opportunity_snapshot and opportunity_snapshot["canonical_prefix_revision"] != prefix["revision"]:
+            raise ValueError("The canonical prefix changed; refresh this discovery before adding it")
     if prefix["moves"] and origin is None and opportunity_snapshot:
         source = _background_source_game(opportunity_snapshot)
         if source:
@@ -590,6 +600,8 @@ def _materialize_admission_branch(task: dict) -> None:
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
         if postgres_store.configured():
+            read_prefix(database, intent["repertoire_id"], lock=True)
+            canonical_scope_freshness.game_scope_generation(database, lock=True)
             if not lock_current_slice(database, task):
                 return
         else:
@@ -601,13 +613,13 @@ def _materialize_admission_branch(task: dict) -> None:
                     or lease["lease_token"] != task["lease_token"]):
                 return
         current_prefix = read_prefix(database, intent["repertoire_id"], lock=True)
-        opportunity = database.execute("SELECT canonical_prefix_revision FROM repertoire_opportunities WHERE id=?", (intent["opportunity_id"],)).fetchone() if "opportunity_id" in dict(intent) else None
-        if opportunity and opportunity["canonical_prefix_revision"] != current_prefix["revision"]:
-            raise ValueError("The canonical prefix changed; refresh this discovery before adding it")
         if current_prefix["revision"] != prefix["revision"]:
             raise ValueError("The canonical prefix changed; refresh this discovery before adding it")
         if current_prefix["source_revision"] != prefix["source_revision"]:
             raise ValueError("The repertoire routes changed; refresh this discovery before adding it")
+        opportunity = database.execute("SELECT * FROM repertoire_opportunities WHERE id=?", (intent["opportunity_id"],)).fetchone() if "opportunity_id" in dict(intent) else None
+        if opportunity and not opportunity_is_current(database, opportunity):
+            raise ValueError("Opening routes or game scope changed; refresh this discovery before adding it")
         inserted = database.execute(
             """INSERT OR IGNORE INTO repertoire_lines(
                  id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
@@ -654,8 +666,8 @@ def _ensure_admission_coverage_refresh(task: dict) -> None:
         if not line:
             return
         run = database.execute(
-            """SELECT 1 FROM repertoire_coverage_runs
-               WHERE repertoire_id=? AND created_at>=? LIMIT 1""",
+            f"""SELECT 1 FROM repertoire_coverage_runs r
+               WHERE repertoire_id=? AND created_at>=? AND {coverage_scope_predicate(database, repertoire_id="r.repertoire_id")} LIMIT 1""",
             (intent["repertoire_id"], line["created_at"]),
         ).fetchone()
         lease = None if postgres_store.configured() else database.execute(

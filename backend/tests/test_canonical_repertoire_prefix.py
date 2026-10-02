@@ -458,9 +458,10 @@ def test_canonical_prefix_opportunity_publication_locks_repertoire_before_task_t
     def scoped_metadata(_database, _repertoire_id, *, lock=False):
         if lock:
             locks.append("repertoire")
-        return {"revision": 1}
+        return {"canonical_prefix_revision": 1, "canonical_scope_source_revision": 2, "canonical_scope_preview_id": "checked"}
+    monkeypatch.setattr(repertoire_opportunities, "game_scope_generation", lambda *_args, **_kwargs: 1)
     monkeypatch.setattr(repertoire_opportunities.postgres_store, "configured", lambda: True)
-    monkeypatch.setattr(repertoire_opportunities, "read_prefix", scoped_metadata)
+    monkeypatch.setattr(repertoire_opportunities, "scope_identity", scoped_metadata)
     monkeypatch.setattr(repertoire_opportunities, "background_read_connection", lambda: nullcontext(Database()))
     monkeypatch.setattr(repertoire_opportunities, "connection", lambda **_kwargs: nullcontext(Database()))
     monkeypatch.setattr(repertoire_opportunities, "lock_current_slice", lambda *_args: locks.append("task") or True)
@@ -724,3 +725,285 @@ def test_canonical_prefix_retired_preview_cannot_save_during_bounded_cleanup(pre
     # Its source tuple is still current, but its certificate is being dismantled.
     with pytest.raises(HTTPException, match='check the current prefix again'):
         apply_preview(old)
+
+
+def test_canonical_coverage_source_change_hides_complete_run_and_stale_maia(prefix_database):
+    from app.services import repertoire_coverage as coverage
+    add_line([*ITALIAN, "f8c5", "c2c3", "g8f6"])
+    apply_preview(prepare_prefix())
+    run_id = coverage.enqueue_coverage_refresh("italian")
+    with database.connection() as connection:
+        connection.execute("UPDATE repertoire_coverage_runs SET status='complete' WHERE id=?", (run_id,))
+        connection.execute("UPDATE repertoire_coverage_nodes SET explorer_status='complete',explorer_games=1000 WHERE run_id=?", (run_id,))
+        connection.execute("INSERT INTO repertoire_coverage_candidates(node_id,move_uci,required,covered,blended_probability,source_state) SELECT id,'f8c5',1,1,1,'explorer-only' FROM repertoire_coverage_nodes WHERE run_id=?", (run_id,))
+    assert coverage.coverage_summary("italian")["is_complete"]
+    lease = coverage.claim_maia_coverage_node()
+    assert lease is not None
+    with database.connection() as connection:
+        connection.execute("UPDATE repertoire_lines SET moves_json=? WHERE id='main'", (json.dumps([*ITALIAN, "g8f6", "d2d3"]),))
+    assert coverage.coverage_summary("italian")["run_id"] is None
+    assert coverage.coverage_gaps("italian") == []
+    assert coverage.claim_maia_coverage_node() is None
+    with pytest.raises(RuntimeError, match="no longer active"):
+        coverage.submit_maia_coverage(lease["node_id"], lease["lease_id"], [{"move_uci": "f8c5", "probability": 1}])
+    apply_preview(prepare_prefix())
+    fresh_run = coverage.enqueue_coverage_refresh("italian")
+    assert fresh_run != run_id
+    assert coverage.coverage_summary("italian")["run_id"] == fresh_run
+
+
+def test_canonical_graph_materialization_preserves_authoritative_source_revision(prefix_database):
+    from app.services.opening_graph import enqueue_opening_graph_rebuild, execute_opening_graph_rebuild
+    from app.services.canonical_prefix import read_prefix
+    add_line([*ITALIAN, "f8c5", "c2c3"])
+    apply_preview(prepare_prefix())
+    with database.read_connection() as connection:
+        source_revision = read_prefix(connection, "italian")["source_revision"]
+    enqueue_opening_graph_rebuild("italian")
+    task = claim_task("opening_graph_rebuild")
+    assert task is not None
+    execute_opening_graph_rebuild(task)
+    with database.read_connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM cards WHERE content_type='opening'").fetchone()[0] > 0
+        assert read_prefix(connection, "italian")["source_revision"] == source_revision
+
+
+def _set_other_prefix(identifier, moves):
+    with database.connection() as connection:
+        preview = request_preview(connection, identifier, moves)
+    for _ in range(100):
+        task = claim_task("canonical_prefix_preview")
+        if task is None:
+            break
+        execute_prefix_preview_slice(task)
+    with database.connection() as connection:
+        save_prefix(connection, {"repertoire_id": identifier, "request": {
+            "preview_id": preview["preview_id"], "expected_revision": preview["revision"]}})
+
+
+@pytest.mark.parametrize("change", ["newly-eligible", "newly-ineligible", "null-primary", "same-prefix"])
+def test_canonical_global_game_scope_hides_other_primary_and_null_comparisons(prefix_database, change):
+    from app.services.repertoire_comparison import compare_all_games
+    from app.services.repertoire_statistics import repertoire_statistics
+    from app.services.canonical_scope_freshness import game_scope_generation
+    add_line(ITALIAN[:1])
+    with database.connection() as connection:
+        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('other','Other','other.pgn','2026-10-02')")
+        connection.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES('other-line','other','Other','white',?,?,'2026-10-02')", (chess.STARTING_FEN, json.dumps(ITALIAN[:3])))
+    if change != "newly-ineligible":
+        _set_other_prefix("other", ITALIAN)
+    if change in {"null-primary", "same-prefix"}:
+        apply_preview(prepare_prefix())
+    moves = ITALIAN if change == "same-prefix" else ["e2e4", "e7e5", "g1f3", "d7d6", "f1c4"]
+    with database.connection() as connection:
+        connection.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json) VALUES('scope-game','lichess','TempoPlayer','2026-10-02T12:00:00+00:00','rapid',1,'white','1-0',?,?)", (chess.STARTING_FEN, json.dumps(moves)))
+    compare_all_games()
+    from app.services.statistics import refresh_game_features, statistics_breakdown
+    refresh_game_features("scope-game")
+    assert statistics_breakdown("repertoire", 3650)["segments"]
+    from app.services.game_findings import _upsert_finding
+    with database.connection() as connection:
+        _upsert_finding(connection, game_id="scope-game", analysis_version=1, ply=0, kind="first big mistake", confidence=1, evidence={})
+        if change != "null-primary":
+            _upsert_finding(connection, game_id="scope-game", analysis_version=1, ply=1, kind="repertoire gap", confidence=1, evidence={}, repertoire_id="italian")
+    with database.read_connection() as connection:
+        generation = game_scope_generation(connection)
+        before = connection.execute("SELECT * FROM current_repertoire_comparisons WHERE game_id='scope-game'").fetchone()
+        assert before is not None
+    _set_other_prefix("other", ITALIAN if change in {"newly-ineligible", "same-prefix"} else [])
+    if change == "same-prefix":
+        with database.read_connection() as connection:
+            assert game_scope_generation(connection) == generation
+            assert connection.execute("SELECT 1 FROM current_repertoire_comparisons WHERE game_id='scope-game'").fetchone()
+        return
+    assert repertoire_statistics("italian", "all")["games"]["matched"] == 0
+    assert statistics_breakdown("repertoire", 3650)["segments"] == []
+    assert statistics_breakdown("color", 3650)["segments"][0]["games"] == 1
+    with database.read_connection() as connection:
+        assert game_scope_generation(connection) > generation
+        for table in ("game_repertoire_matches", "repertoire_comparisons", "repertoire_decision_events"):
+            assert not connection.execute(f"SELECT 1 FROM current_{table} WHERE game_id='scope-game'").fetchone()
+        assert connection.execute("SELECT 1 FROM imported_games WHERE id='scope-game'").fetchone()
+        assert [row["kind"] for row in connection.execute("SELECT kind FROM current_game_findings WHERE game_id='scope-game'")] == ["first big mistake"]
+    compare_all_games()
+    with database.read_connection() as connection:
+        primary = connection.execute("SELECT repertoire_id FROM current_repertoire_comparisons WHERE game_id='scope-game'").fetchone()[0]
+        assert primary == ("italian" if change == "newly-ineligible" else "other")
+
+
+def _complete_gap_run():
+    from app.services.repertoire_coverage import enqueue_coverage_refresh
+    run_id = enqueue_coverage_refresh("italian")
+    with database.connection() as connection:
+        connection.execute("UPDATE repertoire_coverage_runs SET status='complete' WHERE id=?", (run_id,))
+        connection.execute("UPDATE repertoire_coverage_nodes SET explorer_status='complete',explorer_games=1000 WHERE run_id=?", (run_id,))
+        connection.execute("INSERT INTO repertoire_coverage_candidates(node_id,move_uci,explorer_probability,required,covered,blended_probability,source_state) SELECT id,'a7a6',0.5,1,0,0.5,'explorer-only' FROM repertoire_coverage_nodes WHERE run_id=? AND ply=5", (run_id,))
+    return run_id
+
+
+def test_canonical_opportunity_compute_source_race_discards_then_rebuilds(prefix_database, monkeypatch):
+    from app.services import repertoire_opportunities as opportunities
+    from app.services.durable_tasks import enqueue_task_in_transaction
+    add_line([*ITALIAN, "f8c5"])
+    apply_preview(prepare_prefix())
+    _complete_gap_run()
+    with database.connection() as connection:
+        enqueue_task_in_transaction(connection, "repertoire_opportunity", "italian", {"repertoire_id": "italian", "phase": "nodes", "cursor": ""})
+    task = claim_task("repertoire_opportunity")
+    original_calculate = opportunities._calculate_node_opportunities
+    def mutate_after_compute(inputs):
+        decisions = original_calculate(inputs)
+        assert any(decision["active"] for decision in decisions)
+        add_line([*ITALIAN, "g8f6"], "concurrent-route")
+        return decisions
+    monkeypatch.setattr(opportunities, "_calculate_node_opportunities", mutate_after_compute)
+    assert opportunities.execute_opportunity_slice(task)
+    with database.read_connection() as connection:
+        assert connection.execute("SELECT COUNT(*) FROM repertoire_opportunities").fetchone()[0] == 0
+    monkeypatch.setattr(opportunities, "_calculate_node_opportunities", original_calculate)
+    apply_preview(prepare_prefix())
+    _complete_gap_run()
+    next_task = claim_task("repertoire_opportunity")
+    assert next_task is not None
+    for _ in range(20):
+        if not opportunities.execute_opportunity_slice(next_task):
+            break
+        with database.read_connection() as connection:
+            if opportunities.list_opportunities(connection, "italian"):
+                break
+        next_task = claim_task("repertoire_opportunity")
+        assert next_task is not None
+    with database.read_connection() as connection:
+        assert opportunities.list_opportunities(connection, "italian")
+
+
+def test_canonical_explorer_source_race_cannot_publish_and_priority_ignores_old_run(prefix_database, monkeypatch):
+    from app.services import repertoire_coverage as coverage
+    from app.services.introduction_priorities import _coverage_evidence
+    add_line([*ITALIAN, "f8c5", "c2c3"])
+    apply_preview(prepare_prefix())
+    run_id = coverage.enqueue_coverage_refresh("italian")
+    monkeypatch.setattr(coverage, "get_explorer_session_token", lambda: "fixture-token")
+    node = coverage.claim_coverage_node()
+    assert node is not None
+    monkeypatch.setattr(coverage, "_cached_explorer_payload", lambda *_args: (None, "fixture-cache"))
+    def fetch_then_change_source(*_args):
+        add_line([*ITALIAN, "g8f6"], "new-route")
+        return {"moves": [{"uci": "a7a6", "white": 1000}]}
+    monkeypatch.setattr(coverage, "_fetch_explorer", fetch_then_change_source)
+    coverage.execute_coverage_node(node)
+    with database.read_connection() as connection:
+        assert not connection.execute("SELECT 1 FROM repertoire_coverage_candidates WHERE node_id=?", (node["id"],)).fetchone()
+        assert _coverage_evidence(connection, "italian") == {}
+    assert coverage.coverage_summary("italian")["run_id"] is None
+    assert coverage.enqueue_coverage_refresh("italian") != run_id
+
+
+def test_canonical_coverage_scope_predicate_survives_postgres_compatibility_translation():
+    from types import SimpleNamespace
+    from app.postgres_store import postgres_sql
+    from app.services.canonical_scope_freshness import coverage_scope_predicate
+    postgres_database = SimpleNamespace(execute_native=lambda: None)
+    compatibility_sql = postgres_sql("SELECT n.id FROM repertoire_coverage_nodes n JOIN repertoire_coverage_runs r ON r.id=n.run_id WHERE " + coverage_scope_predicate(postgres_database))
+    assert "JSON_EXTRACT_PATH_TEXT(r.settings_json," in compatibility_sql
+    assert "JSONB" not in compatibility_sql
+    assert "canonical_scope_source_revision" in compatibility_sql
+    native_sql = coverage_scope_predicate(postgres_database, native=True)
+    assert "settings_json::jsonb->>'canonical_scope_source_revision'" in native_sql
+
+
+def test_canonical_explicit_generated_card_edit_promotes_source_and_clearing_revokes_route(prefix_database):
+    from app.services.opening_graph import enqueue_opening_graph_rebuild, execute_opening_graph_rebuild
+    from app.services.canonical_prefix import read_prefix
+    add_line([*ITALIAN, "f8c5", "c2c3"])
+    apply_preview(prepare_prefix())
+    enqueue_opening_graph_rebuild("italian")
+    execute_opening_graph_rebuild(claim_task("opening_graph_rebuild"))
+    with database.connection() as connection:
+        generated_card = connection.execute("SELECT * FROM cards WHERE canonical_route_source=0 LIMIT 1").fetchone()
+        before_edit = read_prefix(connection, "italian")["source_revision"]
+        connection.execute("UPDATE cards SET moves_json='[]' WHERE id=?", (generated_card["id"],))
+        assert connection.execute("SELECT canonical_route_source FROM cards WHERE id=?", (generated_card["id"],)).fetchone()[0] == 1
+        assert connection.execute("SELECT canonical_route_source FROM repertoire_cards WHERE card_id=?", (generated_card["id"],)).fetchone()[0] == 1
+        assert read_prefix(connection, "italian")["source_revision"] > before_edit
+        before_unlink = read_prefix(connection, "italian")["source_revision"]
+        connection.execute("DELETE FROM repertoire_cards WHERE card_id=?", (generated_card["id"],))
+        assert read_prefix(connection, "italian")["source_revision"] > before_unlink
+
+
+def test_canonical_graph_cleanup_preserves_independently_authored_cards(prefix_database):
+    from app.services.opening_graph import enqueue_opening_graph_rebuild, execute_opening_graph_rebuild
+    from app.services.canonical_prefix import read_prefix
+    add_line([*ITALIAN, "f8c5"])
+    with database.connection() as connection:
+        connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES('authored','italian','response',?,?,'2026-10-02')", (chess.STARTING_FEN, json.dumps(ITALIAN[:3])))
+        connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('italian','authored')")
+    apply_preview(prepare_prefix())
+    enqueue_opening_graph_rebuild("italian")
+    with database.read_connection() as connection:
+        before_graph = read_prefix(connection, "italian")["source_revision"]
+    execute_opening_graph_rebuild(claim_task("opening_graph_rebuild"))
+    with database.read_connection() as connection:
+        assert read_prefix(connection, "italian")["source_revision"] == before_graph
+        assert connection.execute("SELECT archived FROM cards WHERE id='authored'").fetchone()[0] == 0
+        assert connection.execute("SELECT 1 FROM repertoire_cards WHERE card_id='authored'").fetchone()
+
+
+def test_canonical_published_introduction_priorities_hide_after_source_edit(prefix_database):
+    from app.services.opening_graph import enqueue_opening_graph_rebuild, execute_opening_graph_rebuild
+    from app.services.introduction_priorities import rebuild_introduction_priorities, priority_status
+    add_line([*ITALIAN, "f8c5", "c2c3"])
+    apply_preview(prepare_prefix())
+    enqueue_opening_graph_rebuild("italian")
+    execute_opening_graph_rebuild(claim_task("opening_graph_rebuild"))
+    with database.connection() as connection:
+        rebuild_introduction_priorities(connection, "italian")
+        assert connection.execute("SELECT 1 FROM current_repertoire_card_introduction_priorities").fetchone()
+        assert priority_status(connection, "italian")["updated_at"] is not None
+    add_line([*ITALIAN, "g8f6"], "new-route")
+    with database.read_connection() as connection:
+        assert connection.execute("SELECT 1 FROM repertoire_card_introduction_priorities").fetchone()
+        assert not connection.execute("SELECT 1 FROM current_repertoire_card_introduction_priorities").fetchone()
+        assert priority_status(connection, "italian")["updated_at"] is None
+
+
+def test_canonical_discovery_feed_counts_and_foreground_admission_hide_stale_source(prefix_database):
+    from fastapi import HTTPException
+    from app import discovery_commands, main
+    from app.services.repertoire_opportunities import _publish
+    add_line([*ITALIAN, "f8c5"])
+    apply_preview(prepare_prefix())
+    with database.connection() as connection:
+        _publish(connection, repertoire_id="italian", kind="missing_response",
+                 fen_key=position_key_for_test(prefix_projection(ITALIAN)["ending_fen"]),
+                 target="a7a6", card_id=None, opponent_move_uci="a7a6", score=1, evidence={})
+        saved_opportunity = dict(connection.execute("SELECT * FROM repertoire_opportunities").fetchone())
+    assert main.discoveries_feed()["total"] == 1
+    add_line([*ITALIAN, "g8f6"], "new-route")
+    assert main.discoveries_feed() == {"discoveries": [], "total": 0, "next_offset": None, "unread_count": 0}
+    class PostgreSQLCommandDatabase:
+        def __init__(self, connection):
+            self.connection = connection
+        def execute_native(self, statement, parameters=()):
+            return self.connection.execute(statement.replace("%s", "?").replace(" FOR UPDATE", ""), parameters)
+        def execute(self, statement, parameters=()):
+            return self.execute_native(statement, parameters)
+    with database.connection() as connection:
+        with pytest.raises(HTTPException) as rejection:
+            discovery_commands.accept_discovery(PostgreSQLCommandDatabase(connection), {
+                "opportunity_id": saved_opportunity["id"], "selected_move_uci": "a7a6",
+                "evidence_fingerprint": saved_opportunity["evidence_fingerprint"], "repertoire_id": "italian"})
+        assert rejection.value.status_code == 404
+        assert not connection.execute("SELECT 1 FROM discovery_admission_intents").fetchone()
+
+
+def test_canonical_preview_checks_authored_membership_of_a_generated_shared_card(prefix_database):
+    add_line(ITALIAN)
+    with database.connection() as connection:
+        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('other','Other','other.pgn','2026-10-02')")
+        connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,canonical_route_source) VALUES('generated-shared','other','response',?,?,'2026-10-02',0)",
+                           (chess.STARTING_FEN, json.dumps(["e2e4", "e7e5", "g1f3", "d7d6"])))
+        connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('italian','generated-shared',1)")
+    preview = prepare_prefix()
+    assert preview["state"] == "conflicts"
+    assert any(conflict["item_id"] == "card:generated-shared" for conflict in preview["conflicts"])

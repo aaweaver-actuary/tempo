@@ -1298,3 +1298,26 @@ The quota, terminal-ID, stale browser marker, and Home refresh-retry regressions
 - The browser burial workflow reloads while unresolved and verifies the board/control lock, explicit retry, original entry/operation identity, and cleanup. `PASS PostgreSQL blocked burial resumes original payload through retry endpoint without duplicate effects` uses the production receipt lifecycle and real HTTP retry endpoint in the regular durability scenario, preserving scheduling, reviews, and unrelated queue order.
 
 - Terminal burial recovery cannot leave a Retry control that starts a new burial on the replacement card: `Home unresolved burial survives remount and resolves failed on its original entry` verifies entry 42 cleanup, interactive replacement 43, no Retry bury and no replacement request; `Home terminal burial controls block mutations until a definitive outcome` covers ordinary terminal rejection. The `training Bury hides the card for today across reload and reports a failed bury` browser workflow also verifies terminal recovery removes Retry while restoring normal controls without issuing a new burial.
+
+## Canonical prefix derived freshness (PR #66 follow-up)
+
+| Regression | Regular coverage | Failure prevented |
+| --- | --- | --- |
+| `test_canonical_coverage_source_change_hides_complete_run_and_stale_maia` | `backend/tests/test_canonical_repertoire_prefix.py` | Complete coverage and leased Maia results surviving an authoritative source change; current recertification restores analysis. |
+| `test_canonical_graph_materialization_preserves_authoritative_source_revision` | Same backend file | Graph-generated cards and links invalidating the route source they materialize. |
+| `test_canonical_global_game_scope_hides_other_primary_and_null_comparisons` (newly eligible, newly ineligible, NULL primary, same prefix) | Same backend file | Another repertoire's scope change leaving matches, comparisons, decisions or primary findings current; unchanged saves invalidating game classifications. General game analysis remains visible. |
+| `test_canonical_opportunity_compute_source_race_discards_then_rebuilds` | Same backend file | Publishing discovery calculations made before a source edit. |
+| `test_canonical_explorer_source_race_cannot_publish_and_priority_ignores_old_run` | Same backend file | Stale Explorer candidates and coverage evidence entering discovery or priority calculations. |
+| `test_canonical_coverage_scope_predicate_survives_postgres_compatibility_translation` | Same backend file | Feeding native PostgreSQL JSON operators through the SQLite SQL translator. |
+| `test_canonical_explicit_generated_card_edit_promotes_source_and_clearing_revokes_route` | Same backend file | An explicit edit or clearing moves leaving generated provenance and old route certificates valid. |
+| `test_canonical_graph_cleanup_preserves_independently_authored_cards` | Same backend file | Graph cleanup removing an independently saved card or its membership. |
+| `test_canonical_published_introduction_priorities_hide_after_source_edit` | Same backend file | Already published introduction scores surviving a scoped source change. |
+| `test_canonical_discovery_feed_counts_and_foreground_admission_hide_stale_source` | Same backend file | A stale discovery retaining feed counts or accepting a new foreground admission. |
+| `test_canonical_preview_checks_authored_membership_of_a_generated_shared_card` | Same backend file | An explicitly saved membership bypassing compatibility checks because the shared card was originally graph-generated. |
+| CF-1 through CF-4 | `scripts/check_postgres_canonical_freshness.py`, invoked by the regular PostgreSQL durability `background_workloads` stage | Real branch → graph stage/link/classify/cleanup → already requested coverage; source invalidation and stale Explorer/Maia heartbeats, failures and submissions; opportunity compute/publication race; full-set game classification including another primary, NULL, newly eligible/ineligible and no-op saves. Pools close between durable slices to prove restartable cursors. |
+
+Existing foreground-contention, task-lease replay, accepted discovery, shared-card,
+training-history, prefix idempotency, compatibility migration and browser cases
+remain in the regular gate. These fixes do not close the broader scheduling and
+fan-out work in issues #40/#41, dismissal lifecycle work in #7, or partial-run
+selection policy in #8.

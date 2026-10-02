@@ -617,8 +617,8 @@ def publish_opening_graph_rebuild(
             database.executemany(
                 """INSERT OR IGNORE INTO cards(
                        id,repertoire_id,kind,start_fen,moves_json,state,due_date,
-                       content_type,trained_color,pending_validation
-                   ) VALUES(?,?,?,?,?,?,?,'opening',?,0)""",
+                       content_type,trained_color,pending_validation,canonical_route_source
+                   ) VALUES(?,?,?,?,?,?,?,'opening',?,0,0)""",
                 [
                     (
                         step.card_id,
@@ -714,8 +714,8 @@ def publish_opening_graph_rebuild(
             (repertoire_id, generation, now),
         )
         database.execute(
-            """INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id)
-               SELECT repertoire_id,card_id FROM opening_graph_steps
+            """INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id,canonical_route_source)
+               SELECT repertoire_id,card_id,0 FROM opening_graph_steps
                WHERE repertoire_id=? AND generation=?""",
             (repertoire_id, generation),
         )
@@ -729,7 +729,7 @@ def publish_opening_graph_rebuild(
                        WHERE prefix_step.card_id=cards.id
                          AND prefix_step.segment_kind='prefix'
                    ) THEN 'prefix' ELSE 'response' END
-               WHERE id IN (
+               WHERE canonical_route_source=0 AND id IN (
                    SELECT card_id FROM opening_graph_steps
                    WHERE repertoire_id=? AND generation=?
                )""",
@@ -777,7 +777,7 @@ def publish_opening_graph_rebuild(
                WHERE status='queued' AND card_id IN (
                    SELECT link.card_id FROM repertoire_cards link
                    JOIN cards legacy ON legacy.id=link.card_id
-                   WHERE link.repertoire_id=? AND legacy.content_type='opening'
+                   WHERE link.repertoire_id=? AND legacy.content_type='opening' AND link.canonical_route_source=0 AND legacy.canonical_route_source=0
                      AND NOT EXISTS(
                          SELECT 1 FROM opening_graph_steps step
                          WHERE step.repertoire_id=? AND step.generation=?
@@ -788,8 +788,8 @@ def publish_opening_graph_rebuild(
         )
         database.execute(
             """DELETE FROM repertoire_cards
-               WHERE repertoire_id=? AND card_id IN (
-                   SELECT card.id FROM cards card WHERE card.content_type='opening'
+               WHERE repertoire_id=? AND canonical_route_source=0 AND card_id IN (
+                   SELECT card.id FROM cards card WHERE card.content_type='opening' AND card.canonical_route_source=0
                      AND NOT EXISTS(
                          SELECT 1 FROM opening_graph_steps step
                          WHERE step.repertoire_id=? AND step.generation=?
@@ -803,7 +803,7 @@ def publish_opening_graph_rebuild(
                    SELECT MIN(link.repertoire_id) FROM repertoire_cards link
                    WHERE link.card_id=cards.id
                )
-               WHERE repertoire_id=? AND EXISTS(
+               WHERE repertoire_id=? AND canonical_route_source=0 AND EXISTS(
                    SELECT 1 FROM repertoire_cards link WHERE link.card_id=cards.id
                ) AND NOT EXISTS(
                    SELECT 1 FROM repertoire_cards former
@@ -813,7 +813,7 @@ def publish_opening_graph_rebuild(
         )
         database.execute(
             """UPDATE cards SET archived=1
-               WHERE content_type='opening' AND archived=0
+               WHERE content_type='opening' AND archived=0 AND canonical_route_source=0
                  AND NOT EXISTS(
                      SELECT 1 FROM repertoire_cards link WHERE link.card_id=cards.id
                  )"""

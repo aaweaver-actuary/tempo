@@ -278,6 +278,7 @@ def test_postgres_graph_finalization_checkpoints_integrity_scan_and_completion(m
         lambda _database, _task: events.append(("complete", None)) or True,
     )
     task = {"generation": 9, "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"}}
+    monkeypatch.setattr("app.services.durable_tasks.enqueue_compact_postgres_task_in_transaction", lambda *_args, **_kwargs: None)
     assert postgres_opening_graph.finalize_graph_in_transaction(object(), task) is False
     assert events == [("integrity", "rep", 9, "2026-09-27"), ("complete", None)]
 

@@ -14,6 +14,7 @@ from ..database import background_read_connection, connection
 from .. import postgres_store
 from .activity_gate import activity_gate
 from .canonical_prefix import game_in_scope
+from .canonical_scope_freshness import game_scope_generation
 
 
 _index_lock = threading.Lock()
@@ -303,6 +304,8 @@ def compare_games(
     game_ids: list[str] | None = None, *, background: bool = False
 ) -> None:
     now = datetime.now(timezone.utc).isoformat()
+    with connection(background=background) as database:
+        scope_generation = game_scope_generation(database)
     repertoires, graphs_by_repertoire, colors_by_repertoire, card_positions = _load_repertoire_index(background=background)
     with connection(background=background) as database:
         where = "" if game_ids is None else f" WHERE id IN ({','.join('?' for _ in game_ids)})"
@@ -328,7 +331,11 @@ def compare_games(
     if background:
         activity_gate.wait_for_foreground()
     with connection(background=background) as database:
+        database.execute("BEGIN IMMEDIATE")
+        if game_scope_generation(database, lock=True) != scope_generation:
+            raise RuntimeError("Repertoire membership changed during game comparison; retry")
         for game, matches in computed:
+            database.execute("UPDATE imported_games SET repertoire_scope_generation=? WHERE id=?", (scope_generation, game["id"]))
             database.execute("DELETE FROM game_repertoire_matches WHERE game_id=?", (game["id"],))
             database.execute("DELETE FROM repertoire_decision_events WHERE game_id=?", (game["id"],))
             for index, match in enumerate(matches):

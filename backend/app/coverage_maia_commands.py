@@ -13,6 +13,7 @@ from .command_gateway import register_command
 from .postgres_store import PostgresConnection
 from .services.postgres_coverage_candidates import recalculate_coverage_node
 from .services.canonical_prefix import read_prefix
+from .services.canonical_scope_freshness import coverage_run_is_current, coverage_scope_predicate
 from .services.durable_tasks import enqueue_compact_postgres_task_in_transaction
 from .services.introduction_priorities import enqueue_priority_refresh_in_transaction
 
@@ -26,6 +27,9 @@ def _lease(database: PostgresConnection, payload: dict[str, Any]):
     lease_id = str(payload.get("lease_id", ""))
     if not node_id or not lease_id:
         raise HTTPException(422, "Invalid coverage lease")
+    owner = database.execute_native("SELECT repertoire_id FROM repertoire_coverage_nodes WHERE id=%s", (node_id,)).fetchone()
+    if owner:
+        read_prefix(database, owner[0], lock=True)
     row = database.execute_native(
         "SELECT n.*,r.settings_json,r.status AS run_status FROM repertoire_coverage_nodes n "
         "JOIN repertoire_coverage_runs r ON r.id=n.run_id "
@@ -33,7 +37,7 @@ def _lease(database: PostgresConnection, payload: dict[str, Any]):
     ).fetchone()
     if row is None or row["maia_status"] != "leased" or row["lease_id"] != lease_id:
         raise HTTPException(409, "Coverage lease is no longer active")
-    if (row["run_status"] in {"failed", "building"} or json.loads(row["settings_json"]).get("canonical_prefix_revision", 0) != read_prefix(database, row["repertoire_id"])["revision"]):
+    if (row["run_status"] in {"failed", "building"} or not coverage_run_is_current(database, row, row["repertoire_id"])):
         raise HTTPException(409, "Coverage run is no longer active")
     return row
 
@@ -41,18 +45,22 @@ def _lease(database: PostgresConnection, payload: dict[str, Any]):
 def claim_maia_node(database: PostgresConnection, _payload: dict[str, Any]) -> dict[str, Any]:
     now = _now()
     row = database.execute_native(
-        "SELECT n.id,n.run_id,n.fen,r.settings_json FROM repertoire_coverage_nodes n "
+        "SELECT n.id,n.run_id,n.repertoire_id,n.fen,r.settings_json FROM repertoire_coverage_nodes n "
         "JOIN repertoire_coverage_runs r ON r.id=n.run_id "
         "LEFT JOIN background_activity control ON control.source='coverage' "
         "AND control.work_id=n.run_id "
         "WHERE n.explorer_status='complete' AND r.status IN ('queued','running','complete') "
         "AND (n.maia_status='queued' OR (n.maia_status='leased' AND n.lease_expires_at<%s)) "
         "AND COALESCE(control.paused,0)=0 "
-        "AND COALESCE((r.settings_json::jsonb->>'canonical_prefix_revision')::bigint,0)=(SELECT canonical_prefix_revision FROM repertoires WHERE id=n.repertoire_id) "
+        f"AND {coverage_scope_predicate(database, native=True)} "
         "ORDER BY COALESCE(control.promoted,0) DESC,r.created_at,n.ply,n.id "
-        "LIMIT 1 FOR UPDATE OF n SKIP LOCKED", (now,),
+        "LIMIT 1", (now,),
     ).fetchone()
     if row is None:
+        return {"job": None}
+    read_prefix(database, row["repertoire_id"], lock=True)
+    current = database.execute_native("SELECT maia_status,lease_expires_at FROM repertoire_coverage_nodes WHERE id=%s FOR UPDATE SKIP LOCKED", (row["id"],)).fetchone()
+    if current is None or (current["maia_status"] != "queued" and not (current["maia_status"] == "leased" and current["lease_expires_at"] < now)) or not coverage_run_is_current(database, row, row["repertoire_id"]):
         return {"job": None}
     lease_id = str(uuid.uuid4())
     database.execute_native(

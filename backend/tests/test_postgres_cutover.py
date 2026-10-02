@@ -34,8 +34,11 @@ def unscoped_canonical_prefix(monkeypatch):
     Scope validation and version races have real-store coverage in
     test_canonical_repertoire_prefix.py and the PostgreSQL browser/durability gate.
     """
-    from app.services import canonical_prefix, repertoire_opportunities, discovery_admission, postgres_coverage_seed, repertoire_coverage
-    for module in (canonical_prefix, repertoire_opportunities, discovery_admission, postgres_coverage_seed, repertoire_coverage):
+    from app import coverage_maia_commands
+    from app.services import canonical_prefix, canonical_scope_freshness, repertoire_opportunities, discovery_admission, postgres_coverage_seed, postgres_coverage_explorer, repertoire_coverage
+    monkeypatch.setattr(canonical_scope_freshness, "game_scope_generation", lambda *_args, **_kwargs: 0)
+    monkeypatch.setattr(repertoire_opportunities, "game_scope_generation", lambda *_args, **_kwargs: 0)
+    for module in (canonical_prefix, canonical_scope_freshness, repertoire_opportunities, discovery_admission, postgres_coverage_seed, postgres_coverage_explorer, repertoire_coverage, coverage_maia_commands):
         if hasattr(module, "read_prefix"):
             monkeypatch.setattr(module, "read_prefix", lambda *_args, **_kwargs: {
                 "moves": [], "revision": 0, "preview_id": None, "source_revision": 0,
@@ -80,7 +83,7 @@ def test_postgres_game_exclusion_uses_foreground_receipt_and_atomic_followup(mon
                 return Cursor([{"id": "provider:one"}])
             if "SELECT derivation_version FROM game_derivation_jobs" in statement:
                 return Cursor([{"derivation_version": 2}])
-            if "SELECT repertoire_id FROM game_repertoire_matches" in statement:
+            if "SELECT repertoire_id FROM current_game_repertoire_matches" in statement:
                 return Cursor([("repertoire-a",), ("repertoire-a",)])
             return Cursor([])
 
@@ -1065,6 +1068,7 @@ def test_postgres_graph_finalization_requests_integrity_before_queue_refresh(mon
     task = {"generation": 7, "payload": {
         "repertoire_id": "opening-1", "local_day": "2026-09-27",
     }}
+    monkeypatch.setattr("app.services.durable_tasks.enqueue_compact_postgres_task_in_transaction", lambda *_args, **_kwargs: None)
     assert not postgres_opening_graph.finalize_graph_in_transaction(object(), task)
     assert requested == [("opening-1", 7, "2026-09-27")]
 
@@ -1793,7 +1797,7 @@ def test_postgres_opportunity_state_actions_dispatch_idempotent_commands(monkeyp
     }, f"discovery-1-{action}")]
 
 
-def test_postgres_discovery_training_checkpoints_prefix_graph_intent(monkeypatch):
+def test_postgres_discovery_training_checkpoints_prefix_graph_intent(monkeypatch, unscoped_canonical_prefix):
     from app import opportunity_commands
 
     events = []
@@ -4194,6 +4198,7 @@ def test_postgres_cutover_main_repertoire_selection_uses_one_locked_command(monk
             self.queries.append((statement, parameters))
             return QueryResult([("opening-1",), ("opening-2",)])
 
+    monkeypatch.setattr("app.repertoire_commands.enqueue_task_in_transaction", lambda *_args, **_kwargs: None)
     database = LockedRepertoires()
     assert select_main_repertoire(database, {"repertoire_id": "opening-1"}) == {
         "id": "opening-1", "is_main": True,
@@ -5618,7 +5623,7 @@ def test_postgres_discovery_recommendation_yields_to_foreground_and_discards_res
     class WriteDatabase:
         def execute(self, statement, _parameters):
             if "FROM repertoire_opportunities" in statement:
-                return Cursor({"status": "active", "card_id": None})
+                return Cursor({"status": "active", "card_id": None, "repertoire_id": "rep"})
             if statement.startswith("INSERT"):
                 published_requests.append(statement)
             return Cursor()
@@ -5951,7 +5956,7 @@ def test_blocked_operation_retry_reuses_durable_identity_and_payload(monkeypatch
     })]
 
 
-def test_postgres_maia_claim_respects_pause_and_uses_row_lease(monkeypatch):
+def test_postgres_maia_claim_respects_pause_and_uses_row_lease(monkeypatch, unscoped_canonical_prefix):
     from app import coverage_maia_commands
 
     statements = []
@@ -5961,16 +5966,18 @@ def test_postgres_maia_claim_respects_pause_and_uses_row_lease(monkeypatch):
             statements.append((statement, parameters))
             if statement.startswith("SELECT n.id,n.run_id"):
                 return SimpleNamespace(fetchone=lambda: {
-                    "id": "node", "run_id": "run", "fen": chess.STARTING_FEN,
+                    "id": "node", "run_id": "run", "repertoire_id": "rep", "fen": chess.STARTING_FEN,
                     "settings_json": '{"maia_elo":1500}',
                 })
+            if "SELECT maia_status,lease_expires_at" in statement:
+                return SimpleNamespace(fetchone=lambda: {"maia_status": "queued", "lease_expires_at": None})
             return SimpleNamespace(fetchone=lambda: None)
 
     monkeypatch.setattr(coverage_maia_commands.uuid, "uuid4", lambda: "lease-one")
     result = coverage_maia_commands.claim_maia_node(Database(), {})
     assert result["job"]["lease_id"] == "lease-one"
     assert "COALESCE(control.paused,0)=0" in statements[0][0]
-    assert "FOR UPDATE OF n SKIP LOCKED" in statements[0][0]
+    assert any("FOR UPDATE SKIP LOCKED" in statement for statement, _ in statements)
     assert any("maia_status='leased'" in statement for statement, _ in statements)
 
 
@@ -6043,8 +6050,8 @@ def test_postgres_coverage_seed_supersedes_active_generation_after_branch_edit(m
             statements.append((statement, parameters))
             if "SELECT 1 FROM repertoires" in statement:
                 return SimpleNamespace(fetchone=lambda: (1,))
-            if "SELECT id FROM repertoire_coverage_runs" in statement:
-                return SimpleNamespace(fetchone=lambda: ("old-run",))
+            if "SELECT * FROM repertoire_coverage_runs" in statement:
+                return SimpleNamespace(fetchone=lambda: {"id": "old-run", "settings_json": "{}"})
             if "SELECT * FROM settings" in statement:
                 return SimpleNamespace(fetchone=lambda: {
                     "coverage_maia_elo": 1500, "coverage_reply_denominator": 2,
@@ -6109,9 +6116,11 @@ def test_postgres_coverage_seed_yields_to_foreground_and_discards_restart_replay
     def bounded_write(*, background):
         assert background
         class BuildingRun:
+            def execute(self, statement, _parameters):
+                return SimpleNamespace(fetchone=lambda: {"id": "run-one", "settings_json": "{}", "status": "building"})
             def execute_native(self, statement, _parameters):
                 assert "FROM repertoire_coverage_runs" in statement
-                return SimpleNamespace(fetchone=lambda: ("building",))
+                return SimpleNamespace(fetchone=lambda: {"status": "building", "settings_json": "{}"})
         yield BuildingRun()
 
     monkeypatch.setattr(postgres_coverage_seed, "background_read_connection", bounded_read)
@@ -6139,7 +6148,7 @@ def test_postgres_coverage_seed_yields_to_foreground_and_discards_restart_replay
     assert "coverage_seed" in tasks._SUPPORTED_BACKGROUND_KINDS
 
 
-def test_postgres_coverage_seed_rejects_source_change_before_activation(monkeypatch):
+def test_postgres_coverage_seed_rejects_source_change_before_activation(monkeypatch, unscoped_canonical_prefix):
     from app.services import postgres_coverage_seed
 
     updates = []
@@ -6155,6 +6164,8 @@ def test_postgres_coverage_seed_rejects_source_change_before_activation(monkeypa
         yield object()
 
     class WriteDatabase:
+        def execute(self, statement, parameters=()):
+            return SimpleNamespace(fetchone=lambda: {"id": "run", "settings_json": "{}", "status": "building"})
         def execute_native(self, statement, parameters):
             updates.append((statement, parameters))
 
@@ -6175,7 +6186,7 @@ def test_postgres_coverage_seed_rejects_source_change_before_activation(monkeypa
     assert updates[0][1][2] == "run"
 
 
-def test_postgres_coverage_seed_queues_explorer_after_verified_activation(monkeypatch):
+def test_postgres_coverage_seed_queues_explorer_after_verified_activation(monkeypatch, unscoped_canonical_prefix):
     from app.services import postgres_coverage_seed
 
     queued = []
@@ -6187,6 +6198,8 @@ def test_postgres_coverage_seed_queues_explorer_after_verified_activation(monkey
     }
 
     class Database:
+        def execute(self, statement, parameters=()):
+            return SimpleNamespace(fetchone=lambda: {"id": "run", "settings_json": "{}", "status": "building"})
         def execute_native(self, statement, parameters=()):
             statements.append(statement)
             if "SELECT id FROM repertoire_coverage_nodes" in statement:
@@ -6251,7 +6264,7 @@ def test_postgres_explorer_closes_read_before_network_fetch(monkeypatch):
     assert fetched[0][-1] == "registered-token"
 
 
-def test_postgres_explorer_yields_node_read_to_foreground(monkeypatch):
+def test_postgres_explorer_yields_node_read_to_foreground(monkeypatch, unscoped_canonical_prefix):
     from app.services import postgres_coverage_explorer
 
     foreground_finished = threading.Event()
@@ -6266,7 +6279,7 @@ def test_postgres_explorer_yields_node_read_to_foreground(monkeypatch):
                     "generation": 1, "lease_token": "lease", "state": "leased",
                 })
             return SimpleNamespace(fetchone=lambda: {
-                "id": "node", "run_id": "run", "fen": chess.STARTING_FEN,
+                "id": "node", "run_id": "run", "repertoire_id": "rep", "fen": chess.STARTING_FEN, "settings_json": "{}",
             })
 
     @contextmanager
@@ -6291,7 +6304,7 @@ def test_postgres_explorer_yields_node_read_to_foreground(monkeypatch):
     assert "COALESCE(control.paused,0)=0" in observed[1]
 
 
-def test_postgres_explorer_discards_stale_lease_before_publication(monkeypatch):
+def test_postgres_explorer_discards_stale_lease_before_publication(monkeypatch, unscoped_canonical_prefix):
     from app.services import postgres_coverage_explorer
 
     writes = []
@@ -6304,7 +6317,7 @@ def test_postgres_explorer_discards_stale_lease_before_publication(monkeypatch):
     monkeypatch.setattr(postgres_coverage_explorer, "lock_current_slice", lambda *_args: False)
     assert postgres_coverage_explorer._publish_node(
         Database(), {"id": "task", "generation": 2, "lease_token": "old"},
-        {"id": "node"}, {"moves": []}, "cache", "rapid:1.000000", "1600",
+        {"id": "node", "repertoire_id": "rep"}, {"moves": []}, "cache", "rapid:1.000000", "1600",
     ) is False
     assert writes == []
 
@@ -6331,7 +6344,7 @@ def test_postgres_explorer_restart_skips_fetch_for_expired_lease(monkeypatch):
     assert "FROM background_tasks" in statements[0]
 
 
-def test_postgres_explorer_missing_token_fails_run_with_actionable_error(monkeypatch):
+def test_postgres_explorer_missing_token_fails_run_with_actionable_error(monkeypatch, unscoped_canonical_prefix):
     from app.services import postgres_coverage_explorer
 
     statements = []
@@ -6347,7 +6360,7 @@ def test_postgres_explorer_missing_token_fails_run_with_actionable_error(monkeyp
                         lambda *_args: True)
     assert postgres_coverage_explorer._fail_for_missing_token(
         {"id": "task", "generation": 1, "lease_token": "lease"},
-        {"id": "node", "run_id": "run"},
+        {"id": "node", "run_id": "run", "repertoire_id": "rep", "settings_json": "{}"},
     ) is True
     assert any("UPDATE repertoire_coverage_runs SET status='failed'" in statement
                and "Explorer token" in parameters[0]
@@ -6493,7 +6506,7 @@ def test_postgres_legacy_train_payload_cannot_write_current_evidence(fingerprint
     assert "Review the current evidence" in failure.value.detail
 
 
-def test_postgres_coverage_unverified_canonical_route_fails_actionably_without_publication(monkeypatch):
+def test_postgres_coverage_unverified_canonical_route_fails_actionably_without_publication(monkeypatch, unscoped_canonical_prefix):
     from app.services import postgres_coverage_seed
     statements = []
     task = {'id': 'seed', 'generation': 1, 'lease_token': 'lease',
@@ -6501,6 +6514,8 @@ def test_postgres_coverage_unverified_canonical_route_fails_actionably_without_p
     monkeypatch.setattr(postgres_coverage_seed, 'prepare_next_coverage_line',
                         lambda *args: postgres_coverage_seed.PreparedCoverageLine('line', (), scope_pending=True))
     class WriteDatabase:
+        def execute(self, statement, parameters=()):
+            return SimpleNamespace(fetchone=lambda: {"id": "run", "settings_json": "{}", "status": "building"})
         def execute_native(self, statement, parameters):
             statements.append((statement, parameters))
     @contextmanager

@@ -1618,8 +1618,8 @@ def initialize() -> None:
                  )""",
             (now,),
         )
-        database.execute("""INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id)
-                            SELECT card.repertoire_id,card.id FROM cards card
+        database.execute("""INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id,canonical_route_source)
+                            SELECT card.repertoire_id,card.id,card.canonical_route_source FROM cards card
                             WHERE card.content_type='opening' AND card.archived=0
                               AND NOT EXISTS(
                                   SELECT 1 FROM repertoire_cards link WHERE link.card_id=card.id

@@ -131,3 +131,65 @@ Retirement invalidates the token before deleting any child, fencing a concurrent
 save from activating an incomplete certificate. The real PostgreSQL durability
 scenario also submits ten distinct checks and verifies the retained-preview bound.
 Reused ready/conflicting admissions are accepted by the typed frontend contract.
+
+## Derived freshness remediation plan
+
+Keep membership revision, authoritative route-source revision, global game scope
+generation, and derived graph generation distinct. Reproduce stale coverage and
+opportunity publication races, graph-induced source churn, and newly eligible /
+ineligible global game classification with named regressions first. Audit source
+versus materialization writes before narrowing trigger semantics. Use focused
+canonical, coverage, comparison/game-derivation, opportunity and PostgreSQL files;
+then static checks and actual branch → graph → coverage, game scope, and opportunity
+publication proofs in disposable PostgreSQL. Preserve the canonical browser and
+durability workflow. CI owns complete final-head/current-base validation. Keep
+the existing scope/admission, SQLite atomicity, preview retention/recovery, and
+study history protections. Do not merge PR #66 or touch the live study instance.
+
+## Derived publication identity (migration 032)
+
+Four versions serve different purposes:
+
+- `canonical_prefix_revision` changes when normalized assumed moves change.
+- `scope_source_revision` changes for authoritative line contents/color, authored
+  opening card contents/starts/archival/ownership, and authored card memberships.
+- `repertoire_game_scope.generation` changes for those classification inputs across
+  the repertoire set, repertoire creation/deletion, main selection, and changed
+  prefix moves. Rechecking/saving unchanged moves does not advance it.
+- Existing opening-graph task/publication generations describe materialization.
+
+`canonical_route_source=0` identifies generated graph cards and links. Migration
+marks only existing cards whose full starting position and moves match a graph
+step; uncertain cards remain authored. Stage/link/classify/cleanup writes on
+those generated rows leave authoritative source and game-scope versions intact.
+Explicit content edits promote generated cards to authored sources, including
+replacement cards and shared memberships. Graph cleanup preserves authored
+cards/links. Reviews, FSRS state and accepted admissions are preserved.
+
+Coverage settings and priority evidence carry the prefix revision, scoped source
+revision and active certificate identifier. The shared freshness predicate hides
+older coverage and priority publications, prevents active-run reuse and claims,
+and fences Explorer/Maia commits. Unrestricted coverage retains its compatibility
+behavior because it does not reconstruct canonical certificates. Missing scoped
+route data still fails actionably; a refresh never recertifies removed routes.
+
+A game comparison publishes the global scope generation atomically with all
+matches, its primary comparison (including NULL), and decisions. Current views
+hide stale classification publications throughout the product. Primary repertoire
+findings and their gameplay priorities have the same fence; engine/game findings
+independent of repertoire classification remain visible. Existing durable
+one-game refresh work rebuilds them after scope or graph changes.
+
+Opportunities store the full scoped identity plus the global game generation.
+Each slice snapshots both before computation, closes its read connection, and
+rechecks under repertoire metadata then global scope then task-lease locks before
+publication. Recommendation and admission boundaries recheck those identities.
+Old discoveries disappear while refresh is pending; handled/dismissed snapshots
+and accepted admissions remain stored. Migration and snapshot copy preserve
+versions and provenance rather than treating restoration as a new source edit.
+
+The four reviewed failures were reproduced with focused regressions (the
+opportunity race also uses a controlled pre-fix publication fence). Real PostgreSQL
+proofs run through regular durable handlers, with pool recreation between slices;
+graph scheduling and graph writes are not mocked. CI owns the final complete
+candidate validation. The live study instance is outside every development runner.

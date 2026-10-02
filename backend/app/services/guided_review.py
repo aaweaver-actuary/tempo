@@ -46,7 +46,7 @@ def create_or_resume_session(game_id: str) -> dict:
         if existing:
             return read_session(existing["id"])
         findings = database.execute(
-            """SELECT * FROM game_findings WHERE game_id=?
+            """SELECT * FROM current_game_findings game_findings WHERE game_id=?
                  AND analysis_version=? AND kind!='defensive tactical threat'
                  AND status NOT IN ('ignored','excluded') ORDER BY ply""",
             (game_id, game["analysis_version"]),
@@ -106,7 +106,7 @@ def read_session_from_database(database, session_id: str) -> dict:
     finding_ids = json.loads(session["finding_ids_json"])
     findings = []
     for finding_id in finding_ids:
-        finding = database.execute("SELECT * FROM game_findings WHERE id=?", (finding_id,)).fetchone()
+        finding = database.execute("SELECT * FROM current_game_findings game_findings WHERE id=?", (finding_id,)).fetchone()
         if finding:
             findings.append(finding)
     current_index = int(session["current_index"])
@@ -135,7 +135,7 @@ def submit_attempt(session_id: str, move_uci: str) -> dict:
         if current_index >= len(finding_ids):
             raise LookupError("Guided review is complete")
         finding = database.execute(
-            "SELECT * FROM game_findings WHERE id=?", (finding_ids[current_index],)
+            "SELECT * FROM current_game_findings game_findings WHERE id=?", (finding_ids[current_index],)
         ).fetchone()
         evidence = json.loads(finding["evidence_json"])
         fen = evidence.get("fen")

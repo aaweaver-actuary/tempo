@@ -60,17 +60,17 @@ JOIN LATERAL (
     UNION SELECT link.repertoire_id FROM repertoire_cards link WHERE link.card_id=c.id
 ) linked_ids ON TRUE
 JOIN repertoires linked ON linked.id=linked_ids.repertoire_id
-LEFT JOIN gameplay_card_priorities priority ON priority.card_id=c.id
+LEFT JOIN current_gameplay_card_priorities priority ON priority.card_id=c.id
     AND priority.priority_date<=%s
 LEFT JOIN active_miss ON active_miss.card_id=c.id
-LEFT JOIN repertoire_opportunities opportunity ON opportunity.repertoire_id=linked.id
+LEFT JOIN current_repertoire_opportunities opportunity ON opportunity.repertoire_id=linked.id
     AND opportunity.card_id=c.id AND opportunity.kind='weak_known_decision'
     AND opportunity.status='active'
     AND (opportunity.evidence_json::jsonb ->> 'analysis_based') IS NULL
 LEFT JOIN repertoire_priority_publications publication ON publication.repertoire_id=linked.id
-LEFT JOIN repertoire_card_priority_generations published ON published.card_id=c.id
+LEFT JOIN current_repertoire_card_priority_generations published ON published.card_id=c.id
     AND published.repertoire_id=linked.id AND published.generation=publication.generation
-LEFT JOIN repertoire_card_introduction_priorities legacy ON legacy.card_id=c.id
+LEFT JOIN current_repertoire_card_introduction_priorities legacy ON legacy.card_id=c.id
     AND legacy.repertoire_id=linked.id
 WHERE c.content_type='opening'
   AND (c.due_date<=%s OR priority.card_id IS NOT NULL OR active_miss.card_id IS NOT NULL

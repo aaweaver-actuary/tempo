@@ -47,7 +47,7 @@ def test_postgres_guided_review_start_locks_game_before_creating_session(monkeyp
                 return SimpleNamespace(fetchone=lambda: {"id": "game-one", "analysis_version": 1})
             if "SELECT id FROM guided_review_sessions" in statement:
                 return SimpleNamespace(fetchone=lambda: None)
-            if "SELECT * FROM game_findings" in statement:
+            if "SELECT * FROM current_game_findings" in statement:
                 return SimpleNamespace(fetchall=lambda: [finding])
             return SimpleNamespace()
 
@@ -80,7 +80,7 @@ def test_postgres_guided_review_attempt_locks_session_before_advancing(monkeypat
                     "id": "session-one", "status": "active", "current_index": 0,
                     "finding_ids_json": '["finding-one"]',
                 })
-            if "SELECT * FROM game_findings" in statement:
+            if "SELECT * FROM current_game_findings" in statement:
                 return SimpleNamespace(fetchone=lambda: finding)
             return SimpleNamespace()
 

@@ -8,6 +8,7 @@ import json
 from typing import Any
 
 from ..database import background_read_connection, connection
+from .canonical_scope_freshness import game_scope_generation
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
     enqueue_compact_postgres_task_in_transaction, lock_current_slice,
@@ -104,6 +105,7 @@ def _stage_primary_event(database, game: dict, version: int, primary: dict,
 def _publish_comparison(database, task: dict, game: dict, version: int,
                         matches: list[dict]) -> bool:
     game_id = game["id"]
+    database.execute("UPDATE imported_games SET repertoire_scope_generation=? WHERE id=?", (game_scope_generation(database), game_id))
     primary = matches[0] if matches else None
     expected_events = len(primary["decision_events"]) if primary else 0
     saved_matches = database.execute(
@@ -157,9 +159,12 @@ def execute_game_repertoire_comparison_slice(task: dict[str, Any]) -> bool:
     version = int(payload["derivation_version"])
     phase = str(payload.get("phase", "matches"))
     cursor = int(payload.get("cursor", 0))
+    with background_read_connection() as database:
+        scope_generation = game_scope_generation(database)
     game, signature, matches = _prepared_comparison(game_id)
     primary_events = matches[0]["decision_events"] if matches else []
     with connection(background=True) as database:
+        current_scope_generation = game_scope_generation(database, lock=True)
         if not lock_current_slice(database, task):
             return False
         job = database.execute(
@@ -171,7 +176,9 @@ def execute_game_repertoire_comparison_slice(task: dict[str, Any]) -> bool:
                 or job["status"] not in {"queued", "running"}):
             return complete_task_slice_in_transaction(database, task)
         expected_signature = payload.get("source_signature")
-        if expected_signature is not None and expected_signature != signature:
+        if (current_scope_generation != scope_generation
+                or payload.get("game_scope_generation", scope_generation) != scope_generation
+                or (expected_signature is not None and expected_signature != signature)):
             new_version = version + 1
             database.execute(
                 "UPDATE game_derivation_jobs SET derivation_version=?,"
@@ -184,7 +191,7 @@ def execute_game_repertoire_comparison_slice(task: dict[str, Any]) -> bool:
                  "phase": "matches", "cursor": 0}, priority=127,
             )
             return True
-        next_payload = {**payload, "source_signature": signature}
+        next_payload = {**payload, "source_signature": signature, "game_scope_generation": scope_generation}
         if phase == "matches":
             if cursor < len(matches):
                 _stage_match(database, game_id, version, cursor, matches[cursor])

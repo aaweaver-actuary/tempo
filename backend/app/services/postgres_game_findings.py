@@ -8,6 +8,7 @@ import json
 from typing import Any
 
 from ..database import background_read_connection, connection
+from .canonical_scope_freshness import game_scope_generation
 from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
     enqueue_compact_postgres_task_in_transaction, lock_current_slice,
@@ -70,13 +71,13 @@ def _publish_items(database, task: dict, game_id: str, version: int,
     database.execute_native(
         "INSERT INTO game_findings "
         "SELECT (jsonb_populate_record(NULL::game_findings, "
-        "staged.payload_json::jsonb)).* "
+        "staged.payload_json::jsonb || jsonb_build_object('game_scope_generation',(SELECT generation FROM repertoire_game_scope WHERE id=1)))).* "
         "FROM game_finding_publication_items staged "
         "WHERE staged.game_id=%s AND staged.derivation_version=%s "
         "AND staged.item_kind='finding' "
         "ON CONFLICT(id) DO UPDATE SET "
         "confidence=excluded.confidence,evidence_json=excluded.evidence_json,"
-        "repertoire_id=excluded.repertoire_id,"
+        "repertoire_id=excluded.repertoire_id,game_scope_generation=excluded.game_scope_generation,"
         "card_id=CASE WHEN excluded.kind='repertoire lapse' THEN excluded.card_id "
         "ELSE COALESCE(excluded.card_id,game_findings.card_id) END,"
         "motif=excluded.motif,source_opportunity_id=excluded.source_opportunity_id,"
@@ -136,6 +137,8 @@ def execute_game_findings_slice(task: dict[str, Any]) -> bool:
     version = int(payload["derivation_version"])
     cursor = int(payload.get("cursor", 0))
     with background_read_connection() as database:
+        scope_generation = game_scope_generation(database)
+        comparison_generation = database.execute("SELECT repertoire_scope_generation FROM imported_games WHERE id=?", (game_id,)).fetchone()
         preparation = database.execute_native(
             "SELECT source_signature,item_count,items_json -> %s AS item "
             "FROM game_finding_preparations "
@@ -147,6 +150,7 @@ def execute_game_findings_slice(task: dict[str, Any]) -> bool:
     else:
         signature, items = preparation["source_signature"], None
     with connection(background=True) as database:
+        current_scope_generation = game_scope_generation(database, lock=True)
         if not lock_current_slice(database, task):
             return False
         job = database.execute(
@@ -156,6 +160,10 @@ def execute_game_findings_slice(task: dict[str, Any]) -> bool:
         if (job is None or int(job["derivation_version"]) != version
                 or int(job["completed_phases"]) != 2
                 or job["status"] not in {"queued", "running"}):
+            return complete_task_slice_in_transaction(database, task)
+        if (current_scope_generation != scope_generation or comparison_generation is None
+                or comparison_generation[0] != scope_generation
+                or payload.get("game_scope_generation", scope_generation) != scope_generation):
             return complete_task_slice_in_transaction(database, task)
         if preparation is None:
             assert items is not None
@@ -167,7 +175,7 @@ def execute_game_findings_slice(task: dict[str, Any]) -> bool:
             )
             return advance_task_slice_in_transaction(
                 database, task, next_phase="stage",
-                next_payload={**payload, "phase": "stage", "cursor": 0},
+                next_payload={**payload, "phase": "stage", "cursor": 0, "game_scope_generation": scope_generation},
             )
         if cursor >= int(preparation["item_count"]) and signature != preparation["source_signature"]:
             next_version = version + 1
@@ -179,7 +187,7 @@ def execute_game_findings_slice(task: dict[str, Any]) -> bool:
             enqueue_compact_postgres_task_in_transaction(
                 database, "game_derivation_findings", game_id,
                 {"game_id": game_id, "derivation_version": next_version,
-                 "phase": "stage", "cursor": 0}, priority=126,
+                 "phase": "stage", "cursor": 0, "game_scope_generation": scope_generation}, priority=126,
             )
             return True
         if cursor < int(preparation["item_count"]):

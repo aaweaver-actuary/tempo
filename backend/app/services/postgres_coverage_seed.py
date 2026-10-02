@@ -17,6 +17,7 @@ from .durable_tasks import (
     lock_current_slice,
 )
 from .repertoire_coverage import discover_opponent_positions, recent_player_cohort
+from .canonical_scope_freshness import coverage_run_is_current, scope_identity
 from .canonical_prefix import read_prefix, scope_line
 
 
@@ -59,23 +60,23 @@ def request_coverage_seed_in_transaction(
     if exists is None:
         raise KeyError("Repertoire not found")
     active = database.execute_native(
-        "SELECT id FROM repertoire_coverage_runs WHERE repertoire_id=%s "
+        "SELECT * FROM repertoire_coverage_runs WHERE repertoire_id=%s "
         "AND status IN ('building','queued','running') ORDER BY created_at DESC LIMIT 1",
         (repertoire_id,),
     ).fetchone()
-    if active and not supersede_active:
-        return {"run_id": str(active[0]), "status": "queued"}
+    if active and not supersede_active and coverage_run_is_current(database, active, repertoire_id):
+        return {"run_id": str(active["id"]), "status": "queued"}
     if active:
         database.execute_native(
             "UPDATE repertoire_coverage_runs SET status='failed',last_error=%s,updated_at=%s "
             "WHERE id=%s",
-            ("Repertoire lines changed; a new coverage run was queued", _now(), active[0]),
+            ("Repertoire lines changed; a new coverage run was queued", _now(), active["id"]),
         )
     settings = dict(database.execute_native("SELECT * FROM settings WHERE id=1").fetchone())
     cohort = recent_player_cohort(database, int(settings["coverage_maia_elo"]))
     settings_payload = {
         "automatic_priority": automatic,
-        "canonical_prefix_revision": read_prefix(database, repertoire_id)["revision"],
+        **scope_identity(database, repertoire_id, lock=True),
         "reply_denominator": settings["coverage_reply_denominator"],
         "cumulative_target": settings["coverage_cumulative_target"] / 100,
         "horizon_fullmoves": settings["coverage_horizon_fullmoves"],
@@ -161,6 +162,21 @@ def _stage_position(database: PostgresConnection, task: dict[str, Any],
     )
 
 
+def _lock_current_coverage_slice(database, task: dict) -> bool:
+    payload = task["payload"]
+    read_prefix(database, str(payload["repertoire_id"]), lock=True)
+    if not lock_current_slice(database, task):
+        return False
+    run = database.execute("SELECT * FROM repertoire_coverage_runs WHERE id=? FOR UPDATE", (payload["run_id"],)).fetchone()
+    if not coverage_run_is_current(database, run, str(payload["repertoire_id"])):
+        if run:
+            database.execute("UPDATE repertoire_coverage_runs SET status='failed',last_error=?,updated_at=? WHERE id=?",
+                             ("Opening routes changed; check the canonical prefix and refresh coverage", _now(), payload["run_id"]))
+        complete_task_slice_in_transaction(database, task)
+        return False
+    return True
+
+
 def execute_coverage_seed_slice(task: dict[str, Any]) -> bool:
     """Publish one node and its cursor, or activate a completed generation."""
 
@@ -175,7 +191,7 @@ def execute_coverage_seed_slice(task: dict[str, Any]) -> bool:
             ).fetchone()
         if row is not None:
             with connection(background=True) as database:
-                if not lock_current_slice(database, task):
+                if not _lock_current_coverage_slice(database, task):
                     return False
                 database.execute_native(
                     "UPDATE repertoire_coverage_nodes SET explorer_status='queued',"
@@ -187,16 +203,14 @@ def execute_coverage_seed_slice(task: dict[str, Any]) -> bool:
                     database, task, next_phase="activate",
                     next_payload={**payload, "after_node_id": row[0]},
                 )
-        with background_read_connection() as database:
-            source_fingerprint = _source_fingerprint(database, str(payload["repertoire_id"]))
         with connection(background=True) as database:
-            if not lock_current_slice(database, task):
+            if not _lock_current_coverage_slice(database, task):
                 return False
             total_nodes = database.execute_native(
                 "SELECT COUNT(*) FROM repertoire_coverage_nodes WHERE run_id=%s",
                 (payload["run_id"],),
             ).fetchone()[0]
-            changed = source_fingerprint != payload["source_fingerprint"]
+            changed = _source_fingerprint(database, str(payload["repertoire_id"])) != payload["source_fingerprint"]
             empty_scope = not total_nodes and bool(read_prefix(database, str(payload["repertoire_id"]))["moves"])
             database.execute_native(
                 "UPDATE repertoire_coverage_runs SET total_nodes=%s,status=%s,"
@@ -219,7 +233,7 @@ def execute_coverage_seed_slice(task: dict[str, Any]) -> bool:
     )
     if prepared and prepared.scope_pending:
         with connection(background=True) as database:
-            if not lock_current_slice(database, task):
+            if not _lock_current_coverage_slice(database, task):
                 return False
             database.execute_native(
                 "UPDATE repertoire_coverage_runs SET status='failed',last_error=%s,updated_at=%s WHERE id=%s AND status='building'",
@@ -228,12 +242,10 @@ def execute_coverage_seed_slice(task: dict[str, Any]) -> bool:
             return complete_task_slice_in_transaction(database, task)
     position_index = int(payload.get("position_index", 0))
     if prepared is None:
-        with background_read_connection() as database:
-            source_fingerprint = _source_fingerprint(database, str(payload["repertoire_id"]))
         with connection(background=True) as database:
-            if not lock_current_slice(database, task):
+            if not _lock_current_coverage_slice(database, task):
                 return False
-            if source_fingerprint != payload["source_fingerprint"]:
+            if _source_fingerprint(database, str(payload["repertoire_id"])) != payload["source_fingerprint"]:
                 database.execute_native(
                     "UPDATE repertoire_coverage_runs SET status='failed',last_error=%s,updated_at=%s "
                     "WHERE id=%s AND status='building'",
@@ -246,20 +258,20 @@ def execute_coverage_seed_slice(task: dict[str, Any]) -> bool:
             )
     if position_index >= len(prepared.positions):
         with connection(background=True) as database:
-            if not lock_current_slice(database, task):
+            if not _lock_current_coverage_slice(database, task):
                 return False
             return advance_task_slice_in_transaction(
                 database, task, next_phase="building",
                 next_payload={**payload, "after_line_id": prepared.line_id, "position_index": 0},
             )
     with connection(background=True) as database:
-        if not lock_current_slice(database, task):
+        if not _lock_current_coverage_slice(database, task):
             return False
         run = database.execute_native(
-            "SELECT status FROM repertoire_coverage_runs WHERE id=%s FOR UPDATE",
+            "SELECT * FROM repertoire_coverage_runs WHERE id=%s FOR UPDATE",
             (payload["run_id"],),
         ).fetchone()
-        if run is None or run[0] != "building":
+        if run is None or run["status"] != "building" or not coverage_run_is_current(database, run, str(payload["repertoire_id"])):
             return complete_task_slice_in_transaction(database, task)
         _stage_position(database, task, prepared.positions[position_index])
         return advance_task_slice_in_transaction(

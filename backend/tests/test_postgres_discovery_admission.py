@@ -30,6 +30,8 @@ def test_postgres_discovery_branch_rebuild_is_admitted_once_under_lease(monkeypa
 
     class Database:
         def execute(self, statement, parameters=()):
+            if "SELECT generation FROM repertoire_game_scope" in statement:
+                return Cursor((0,))
             if "FROM discovery_admission_intents" in statement:
                 return Cursor(intent)
             if "FROM repertoire_lines" in statement:

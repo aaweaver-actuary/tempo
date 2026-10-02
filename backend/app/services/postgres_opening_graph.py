@@ -129,8 +129,8 @@ def stage_graph_line_in_transaction(
         )
         cursor.executemany(
             "INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,"
-            "due_date,content_type,trained_color,pending_validation) "
-            "VALUES(%s,%s,%s,%s,%s,%s,%s,'opening',%s,0) ON CONFLICT(id) DO NOTHING",
+            "due_date,content_type,trained_color,pending_validation,canonical_route_source) "
+            "VALUES(%s,%s,%s,%s,%s,%s,%s,'opening',%s,0,0) ON CONFLICT(id) DO NOTHING",
             [
                 (step.card_id, step.repertoire_id,
                  "prefix" if step.segment_kind == "prefix" else "response",
@@ -196,8 +196,8 @@ def link_graph_cards_in_transaction(
     generation = int(task["generation"])
     with database.raw.cursor() as cursor:
         cursor.executemany(
-            "INSERT INTO repertoire_cards(repertoire_id,card_id) "
-            "SELECT %s,%s WHERE EXISTS(SELECT 1 FROM opening_graph_steps "
+            "INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) "
+            "SELECT %s,%s,0 WHERE EXISTS(SELECT 1 FROM opening_graph_steps "
             "WHERE repertoire_id=%s AND generation=%s AND card_id=%s) "
             "ON CONFLICT(repertoire_id,card_id) DO NOTHING",
             [(repertoire_id, card_id, repertoire_id, generation, card_id)
@@ -299,7 +299,7 @@ def classify_graph_cards_in_transaction(
             "due_date=CASE WHEN %s='new' AND state='locked' "
             "AND introduced_at IS NULL "
             "AND NOT EXISTS(SELECT 1 FROM reviews WHERE card_id=cards.id) "
-            "THEN %s ELSE due_date END WHERE id=%s",
+            "THEN %s ELSE due_date END WHERE id=%s AND canonical_route_source=0",
             (kind, next_state, next_state, study_day, card_id),
         )
     return advance_task_slice_in_transaction(
@@ -388,7 +388,7 @@ def prepare_obsolete_graph_cards(
             "SELECT link.card_id FROM repertoire_cards link "
             "JOIN cards card ON card.id=link.card_id "
             "WHERE link.repertoire_id=%s AND link.card_id>%s "
-            "AND card.content_type='opening' "
+            "AND card.content_type='opening' AND link.canonical_route_source=0 AND card.canonical_route_source=0 "
             "AND NOT EXISTS(SELECT 1 FROM opening_graph_steps step "
             "WHERE step.repertoire_id=%s AND step.generation=%s "
             "AND step.card_id=link.card_id) "
@@ -477,6 +477,8 @@ def finalize_graph_in_transaction(
         database, str(task["payload"]["repertoire_id"]),
         int(task["generation"]), str(task["payload"]["local_day"]),
     )
+    from .durable_tasks import enqueue_compact_postgres_task_in_transaction
+    enqueue_compact_postgres_task_in_transaction(database, "repertoire_game_refresh", "all", {"after_game_id": ""}, priority=90)
     if not complete_task_slice_in_transaction(database, task):
         raise RuntimeError("Opening graph lease changed before finalization")
     return False

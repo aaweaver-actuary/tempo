@@ -1066,7 +1066,7 @@ def _priority_frontier_depth(priority_row) -> int:
 
 
 _ACTIVE_OPENING_MISS_SQL = """SELECT DISTINCT event.card_id
-               FROM repertoire_decision_events event
+               FROM current_repertoire_decision_events event
                JOIN imported_games game ON game.id=event.game_id
                WHERE event.outcome='miss' AND game.adaptive_excluded=0
                  AND NOT EXISTS(
@@ -1091,19 +1091,19 @@ _PRIORITY_OPENING_CANDIDATE_BODY = """SELECT DISTINCT c.id,linked.id repertoire_
                      AND candidate_link.repertoire_id=linked.id
                )
            )
-           LEFT JOIN gameplay_card_priorities p ON p.card_id=c.id AND p.priority_date<=?
+           LEFT JOIN current_gameplay_card_priorities p ON p.card_id=c.id AND p.priority_date<=?
            LEFT JOIN active_miss ON active_miss.card_id=c.id
-           LEFT JOIN repertoire_opportunities opportunity ON opportunity.repertoire_id=linked.id
+           LEFT JOIN current_repertoire_opportunities opportunity ON opportunity.repertoire_id=linked.id
              AND opportunity.card_id=c.id AND opportunity.kind='weak_known_decision'
              AND opportunity.status='active'
              AND json_extract(opportunity.evidence_json,'$.analysis_based') IS NULL
            LEFT JOIN repertoire_priority_publications publication
              ON publication.repertoire_id=linked.id
-           LEFT JOIN repertoire_card_priority_generations published_priority
+           LEFT JOIN current_repertoire_card_priority_generations published_priority
              ON published_priority.card_id=c.id
             AND published_priority.repertoire_id=linked.id
             AND published_priority.generation=publication.generation
-           LEFT JOIN repertoire_card_introduction_priorities legacy_priority
+           LEFT JOIN current_repertoire_card_introduction_priorities legacy_priority
              ON legacy_priority.card_id=c.id AND legacy_priority.repertoire_id=linked.id
            WHERE c.content_type='opening' AND (c.due_date<=? OR p.card_id IS NOT NULL OR active_miss.card_id IS NOT NULL OR opportunity.id IS NOT NULL)
              AND (c.state='new' OR (c.state='locked' AND opportunity.id IS NOT NULL))
@@ -2525,6 +2525,7 @@ def migration_snapshot():
         "game_analysis_jobs",
         "game_sync_jobs",
         "game_derivation_jobs",
+        "repertoire_game_scope",
         "game_position_occurrences",
         "gameplay_card_priorities",
         "repertoire_comparisons",
@@ -2610,6 +2611,7 @@ def make_main_repertoire(identifier: str,
             "UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')",
             (identifier,),
         )
+    enqueue_repertoire_game_refresh(background=False)
     return {"id": identifier, "is_main": True}
 
 
@@ -3515,6 +3517,7 @@ def revise_card(identifier: str, request: CardRevisionRequest,
                     "moves_json": json.dumps(moves),
                     "source_fen": request.source_fen,
                     "revision": revision,
+                    "canonical_route_source": 1,
                     "archived": 0,
                     "superseded_by": None,
                 }
@@ -3800,7 +3803,7 @@ def discoveries_feed(offset: int = 0, limit: int = 25):
             """SELECT COUNT(*), SUM(CASE WHEN opportunity.seen_at IS NULL
                        AND opportunity.snoozed_until IS NULL
                        OR opportunity.snoozed_until<=? THEN 1 ELSE 0 END)
-               FROM repertoire_opportunities opportunity
+               FROM current_repertoire_opportunities opportunity
                WHERE opportunity.status='active'
                  AND opportunity.canonical_prefix_revision=(SELECT canonical_prefix_revision FROM repertoires WHERE id=opportunity.repertoire_id)
                  AND opportunity.handled_evidence_json IS NULL
@@ -3809,8 +3812,8 @@ def discoveries_feed(offset: int = 0, limit: int = 25):
             (datetime.now(timezone.utc).isoformat(),),
         ).fetchone()
         identifiers = [dict(row) for row in database.execute(
-            """SELECT id,repertoire_id FROM repertoire_opportunities
-               WHERE status='active' AND canonical_prefix_revision=(SELECT canonical_prefix_revision FROM repertoires WHERE id=repertoire_opportunities.repertoire_id)
+            """SELECT id,repertoire_id FROM current_repertoire_opportunities
+               WHERE status='active'
                  AND handled_evidence_json IS NULL
                  AND repertoire_id NOT IN
                    ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__')
@@ -4700,7 +4703,7 @@ def _claim_game_analysis():
                       c.divergence_ply
                FROM game_analysis_jobs j
                JOIN imported_games g ON g.id=j.game_id
-               LEFT JOIN repertoire_comparisons c ON c.game_id=g.id
+               LEFT JOIN current_repertoire_comparisons c ON c.game_id=g.id
                WHERE j.status='queued' AND g.rated=1 AND g.speed IN ('blitz','rapid','classical')
                  AND {claimable('game_analysis', 'j.game_id')}
                ORDER BY {control_order('game_analysis', 'j.game_id')}g.played_at DESC LIMIT 1"""
@@ -4826,7 +4829,7 @@ def finalize_game_analysis_position(
             """SELECT j.game_id,j.analysis_version,j.analysis_evidence_version,
                       j.lease_id,g.color,g.start_fen,g.moves_json,c.divergence_ply
                FROM game_analysis_jobs j JOIN imported_games g ON g.id=j.game_id
-               LEFT JOIN repertoire_comparisons c ON c.game_id=j.game_id
+               LEFT JOIN current_repertoire_comparisons c ON c.game_id=j.game_id
                WHERE j.status='leased' AND j.lease_id=?""", (request.lease_id,),
         ).fetchone()
     if not row:
@@ -5253,7 +5256,7 @@ def save_game_analysis(
     enqueue_threat_scan(game_id, threat_analysis_version, background=background)
     with read_connection() as database:
         affected_repertoires = [row[0] for row in database.execute(
-            "SELECT repertoire_id FROM game_repertoire_matches WHERE game_id=?", (game_id,),
+            "SELECT repertoire_id FROM current_game_repertoire_matches game_repertoire_matches WHERE game_id=?", (game_id,),
         )]
     for repertoire_id in affected_repertoires:
         enqueue_opportunity_refresh(repertoire_id, background=True)
@@ -5649,12 +5652,12 @@ def list_game_findings(
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     with connection() as db:
         total = db.execute(
-            f"SELECT COUNT(*) FROM game_findings f JOIN imported_games g ON g.id=f.game_id {where}",
+            f"SELECT COUNT(*) FROM current_game_findings f JOIN imported_games g ON g.id=f.game_id {where}",
             parameters,
         ).fetchone()[0]
         rows = db.execute(
             f"""SELECT f.*,g.played_at,g.provider,g.opening_name,g.adaptive_excluded
-                 FROM game_findings f JOIN imported_games g ON g.id=f.game_id
+                 FROM current_game_findings f JOIN imported_games g ON g.id=f.game_id
                  {where} ORDER BY g.played_at DESC,f.ply,f.kind,f.id
                  LIMIT ? OFFSET ?""",
             [*parameters, page_limit, offset],
@@ -5681,7 +5684,7 @@ def next_tactical_finding(motif: str | None = None):
         parameters.append(motif)
     with connection() as db:
         remaining = db.execute(
-            f"""SELECT COUNT(*) FROM game_findings f
+            f"""SELECT COUNT(*) FROM current_game_findings f
                 JOIN imported_games g ON g.id=f.game_id
                 JOIN tactical_opportunities o ON o.id=f.source_opportunity_id
                 WHERE {' AND '.join(clauses)}""", parameters,
@@ -5690,7 +5693,7 @@ def next_tactical_finding(motif: str | None = None):
             f"""SELECT f.*,g.played_at,g.provider,g.speed,g.color,g.opening_name,
                        o.outcome,o.opportunity_value_cp,o.evaluation_loss_cp,o.accepted_moves_json,
                        o.evidence_json AS opportunity_evidence
-                FROM game_findings f
+                FROM current_game_findings f
                 JOIN imported_games g ON g.id=f.game_id
                 JOIN tactical_opportunities o ON o.id=f.source_opportunity_id
                 WHERE {' AND '.join(clauses)}
@@ -5720,7 +5723,7 @@ def curate_tactical_finding(finding_id: str, request: GameFindingCurationRequest
     now = datetime.now(timezone.utc)
     with connection() as db:
         finding = db.execute(
-            "SELECT f.*,g.adaptive_excluded FROM game_findings f JOIN imported_games g ON g.id=f.game_id WHERE f.id=?",
+            "SELECT f.*,g.adaptive_excluded FROM current_game_findings f JOIN imported_games g ON g.id=f.game_id WHERE f.id=?",
             (finding_id,),
         ).fetchone()
         if not finding or finding["kind"] != "tactical miss":
@@ -5768,7 +5771,7 @@ def decide_game_finding(finding_id: str, request: GameFindingDecisionRequest,
         )
     with connection() as db:
         finding = db.execute(
-            """SELECT f.*,g.adaptive_excluded FROM game_findings f
+            """SELECT f.*,g.adaptive_excluded FROM current_game_findings f
                JOIN imported_games g ON g.id=f.game_id WHERE f.id=?""",
             (finding_id,),
         ).fetchone()
@@ -5783,7 +5786,7 @@ def decide_game_finding(finding_id: str, request: GameFindingDecisionRequest,
                     422, "This repertoire lapse is not linked to a study card"
                 )
             linked_event = db.execute(
-                """SELECT id FROM repertoire_decision_events
+                """SELECT id FROM current_repertoire_decision_events repertoire_decision_events
                    WHERE game_id=? AND repertoire_id=? AND ply=? AND card_id=? AND outcome='miss'""",
                 (finding["game_id"], finding["repertoire_id"], finding["ply"], finding["card_id"]),
             ).fetchone()
@@ -5862,7 +5865,7 @@ def exclude_game_from_adaptation(
     enqueue_game_derivation(game_id)
     with read_connection() as database:
         affected_repertoires = [row[0] for row in database.execute(
-            "SELECT repertoire_id FROM game_repertoire_matches WHERE game_id=?", (game_id,),
+            "SELECT repertoire_id FROM current_game_repertoire_matches game_repertoire_matches WHERE game_id=?", (game_id,),
         )]
     for repertoire_id in affected_repertoires:
         enqueue_opportunity_refresh(repertoire_id, background=True)
@@ -5992,7 +5995,7 @@ def summary(
         rows = db.execute(
             f"""SELECT {GAME_SUMMARY_SELECT}
                FROM imported_games g
-               LEFT JOIN game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
+               LEFT JOIN current_game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
                WHERE {where}
                ORDER BY g.played_at DESC,g.id DESC LIMIT ?""",
             (*parameters, limit + 1),
@@ -6001,14 +6004,14 @@ def summary(
         count_parameters = parameters[:-3] if cursor_played_at and cursor_id else parameters
         total = db.execute(
             f"""SELECT COUNT(*) FROM imported_games g
-                 LEFT JOIN game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
+                 LEFT JOIN current_game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
                  WHERE {' AND '.join(count_clauses) if count_clauses else '1=1'}""",
             count_parameters,
         ).fetchone()[0]
         position_plies = {
             row["id"]: db.execute(
                 """SELECT COALESCE(
-                     (SELECT MIN(event.ply) FROM repertoire_decision_events event
+                     (SELECT MIN(event.ply) FROM current_repertoire_decision_events event
                       WHERE event.game_id=? AND event.repertoire_id=? AND event.fen_key=?),
                      (SELECT MIN(occurrence.ply) FROM game_position_occurrences occurrence
                       WHERE occurrence.game_id=? AND occurrence.fen_key=?))""",
@@ -6060,7 +6063,7 @@ def game_position_summary(fen: str, repertoire_id: str | None = None):
                       a.loss_cp,a.label
                FROM game_position_occurrences p
                JOIN imported_games g ON g.id=p.game_id
-               LEFT JOIN game_repertoire_matches match ON match.game_id=g.id AND match.is_primary=1
+               LEFT JOIN current_game_repertoire_matches match ON match.game_id=g.id AND match.is_primary=1
                LEFT JOIN game_move_analysis a ON a.game_id=p.game_id AND a.ply=p.ply
                WHERE p.fen_key={'%s' if postgres_mode else '?'}
                  AND {repertoire_filter}
@@ -6129,7 +6132,7 @@ def game_detail(game_id: str):
     with connection() as db:
         row = db.execute(
             f"""SELECT {GAME_PUBLIC_SELECT}
-               FROM imported_games g LEFT JOIN game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
+               FROM imported_games g LEFT JOIN current_game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
                WHERE g.id=?""",
             (game_id,),
         ).fetchone()

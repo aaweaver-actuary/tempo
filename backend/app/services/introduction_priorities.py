@@ -20,6 +20,7 @@ import chess
 from .repertoire_comparison import canonical_fen
 from .repertoire_coverage import blend_probabilities
 from .activity_gate import activity_gate
+from .canonical_scope_freshness import coverage_run_is_current, coverage_scope_predicate, scope_identity
 from .canonical_prefix import scope_lines, read_prefix
 
 
@@ -64,6 +65,7 @@ class PriorityCalculationInput:
     horizon_fullmoves: int
     path_floor: float
     real_game_misses: dict[str, dict] = field(default_factory=dict)
+    canonical_scope_identity: dict = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -218,7 +220,7 @@ def _coverage_evidence(
                     created_at DESC LIMIT 1""",
         (repertoire_id,),
     ).fetchone()
-    if not run or json.loads(run["settings_json"]).get("canonical_prefix_revision", 0) != read_prefix(database, repertoire_id)["revision"]:
+    if not coverage_run_is_current(database, run, repertoire_id):
         return {}
     nodes = database.execute(
         """SELECT * FROM repertoire_coverage_nodes WHERE run_id=?""", (run["id"],)
@@ -284,7 +286,7 @@ def _real_game_miss_evidence(database: sqlite3.Connection, repertoire_id: str) -
     """Select one unstudied, non-excluded miss per card for a fixed bonus."""
     rows = database.execute(
         """SELECT event.id,event.card_id,event.game_id,event.played_at
-           FROM repertoire_decision_events event
+           FROM current_repertoire_decision_events event
            JOIN imported_games game ON game.id=event.game_id
            WHERE event.repertoire_id=? AND event.outcome='miss'
              AND event.card_id IS NOT NULL AND game.adaptive_excluded=0
@@ -520,7 +522,7 @@ def calculate_priority_records(
 
     # Edge provenance is used while scoring but is not read from persisted
     # priorities. Repeating it for every card multiplied the database by ~88 GB.
-    shared_evidence = aggregate
+    shared_evidence = {**aggregate, **calculation_input.canonical_scope_identity}
     records: list[PriorityRecord] = []
     for card in cards:
         card_routes = routes_by_card[card["id"]]
@@ -588,6 +590,7 @@ def _load_priority_calculation_input(
         ]
         line_rows = scope_lines(database, repertoire_id, line_rows)
         has_prefix = bool(read_prefix(database, repertoire_id)["moves"])
+        canonical_scope = scope_identity(database, repertoire_id)
         cards = tuple(
             dict(row)
             for row in database.execute(
@@ -621,6 +624,7 @@ def _load_priority_calculation_input(
         int(settings["coverage_horizon_fullmoves"]),
         float(settings["coverage_path_floor"]),
         real_game_misses,
+        canonical_scope,
     )
 
 
@@ -632,7 +636,7 @@ def _read_personal_evidence_rows(read_section, fen_keys: list[str], trained_colo
         last_position: tuple[str, str, int] | None = None
         while True:
             cursor_clause = " AND (p.fen_key,p.game_id,p.ply)>(?,?,?)" if last_position else ""
-            scope_clause = " AND EXISTS(SELECT 1 FROM game_repertoire_matches match WHERE match.game_id=p.game_id AND match.repertoire_id=?)" if repertoire_id else ""
+            scope_clause = " AND EXISTS(SELECT 1 FROM current_game_repertoire_matches match WHERE match.game_id=p.game_id AND match.repertoire_id=?)" if repertoire_id else ""
             with read_section() as database:
                 page = [dict(row) for row in database.execute(
                     f"""SELECT p.fen_key,p.game_id,p.ply,p.move_uci,g.played_at
@@ -726,6 +730,7 @@ def rebuild_introduction_priorities(
         int(settings["coverage_horizon_fullmoves"]),
         float(settings["coverage_path_floor"]),
         _real_game_miss_evidence(database, repertoire_id),
+        scope_identity(database, repertoire_id),
     )
     _replace_priority_records(
         database,
@@ -1019,7 +1024,7 @@ def publish_priority_records(job: dict, records: list[PriorityRecord]) -> bool:
 
 def priority_status(database: sqlite3.Connection, repertoire_id: str) -> dict:
     row = database.execute(
-        """SELECT evidence_json,updated_at FROM repertoire_card_priority_generations generated
+        """SELECT evidence_json,updated_at FROM current_repertoire_card_priority_generations generated
            WHERE generated.repertoire_id=? AND generated.generation=(
                SELECT generation FROM repertoire_priority_publications WHERE repertoire_id=?
            ) ORDER BY updated_at DESC LIMIT 1""",
@@ -1027,7 +1032,7 @@ def priority_status(database: sqlite3.Connection, repertoire_id: str) -> dict:
     ).fetchone()
     if not row:
         row = database.execute(
-            """SELECT evidence_json,updated_at FROM repertoire_card_introduction_priorities
+            """SELECT evidence_json,updated_at FROM current_repertoire_card_introduction_priorities
                WHERE repertoire_id=? ORDER BY updated_at DESC LIMIT 1""",
             (repertoire_id,),
         ).fetchone()
@@ -1051,7 +1056,8 @@ def priority_status(database: sqlite3.Connection, repertoire_id: str) -> dict:
         else "fallback"
     )
     coverage_error = database.execute(
-        """SELECT last_error FROM repertoire_coverage_runs WHERE repertoire_id=?
+        f"""SELECT last_error FROM repertoire_coverage_runs r WHERE r.repertoire_id=?
+           AND {coverage_scope_predicate(database, repertoire_id='r.repertoire_id')}
            ORDER BY created_at DESC LIMIT 1""",
         (repertoire_id,),
     ).fetchone()

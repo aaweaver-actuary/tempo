@@ -57,14 +57,12 @@ def save_prefix(database, payload: dict) -> dict:
         "UPDATE repertoires SET canonical_prefix_moves_json=?,canonical_prefix_revision=?,canonical_prefix_preview_id=? WHERE id=?",
         (json.dumps(moves), revision, request.preview_id, repertoire_id),
     )
-    enqueue_task_in_transaction(database, "repertoire_game_refresh", "all", {"after_game_id": ""}, priority=90)
+    if moves != current["moves"]:
+        enqueue_task_in_transaction(database, "repertoire_game_refresh", "all", {"after_game_id": ""}, priority=90)
     enqueue_task_in_transaction(database, "repertoire_opportunity", repertoire_id,
                                 {"repertoire_id": repertoire_id, "phase": "summaries", "cursor": ""}, priority=130)
     if not postgres_store.configured():
         database.execute("UPDATE repertoire_coverage_runs SET status='failed',last_error='Opening scope changed; refresh coverage' WHERE repertoire_id=? AND status IN ('queued','running')", (repertoire_id,))
-        database.execute("DELETE FROM repertoire_decision_events WHERE repertoire_id=?", (repertoire_id,))
-        database.execute("DELETE FROM game_repertoire_matches WHERE repertoire_id=?", (repertoire_id,))
-        database.execute("DELETE FROM repertoire_comparisons WHERE repertoire_id=?", (repertoire_id,))
     if postgres_store.configured():
         from .services.postgres_coverage_seed import request_coverage_seed_in_transaction
         from .services.introduction_priorities import enqueue_priority_refresh_in_transaction

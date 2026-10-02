@@ -101,27 +101,8 @@ def initialize_sqlite_schema(database) -> None:
     if 'source_revision' not in {row[1] for row in database.execute('PRAGMA table_info(canonical_prefix_positions)')}:
         database.execute('ALTER TABLE canonical_prefix_positions ADD COLUMN source_revision BIGINT NOT NULL DEFAULT -1')
     database.execute('CREATE INDEX IF NOT EXISTS canonical_prefix_preview_versions ON canonical_prefix_previews(repertoire_id,expected_revision,source_revision,created_at DESC)')
-    for event in ("INSERT", "UPDATE", "DELETE"):
-        source = "OLD" if event == "DELETE" else "NEW"
-        affected_repertoires = "id IN (OLD.repertoire_id,NEW.repertoire_id)" if event == "UPDATE" else f"id={source}.repertoire_id"
-        for table in ("repertoire_lines", "repertoire_cards"):
-            database.execute(
-                f"CREATE TRIGGER IF NOT EXISTS canonical_source_{table}_{event.lower()} AFTER {event} ON {table} "
-                f"BEGIN UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE {affected_repertoires}; END"
-            )
-    database.execute(
-        "CREATE TRIGGER IF NOT EXISTS canonical_source_card_update AFTER UPDATE ON cards "
-        "WHEN OLD.start_fen IS NOT NEW.start_fen OR OLD.moves_json IS NOT NEW.moves_json OR OLD.archived IS NOT NEW.archived "
-        "OR OLD.repertoire_id IS NOT NEW.repertoire_id OR OLD.content_type IS NOT NEW.content_type "
-        "BEGIN UPDATE repertoires SET scope_source_revision=scope_source_revision+1 "
-        "WHERE id IN (OLD.repertoire_id,NEW.repertoire_id) OR id IN (SELECT repertoire_id FROM repertoire_cards WHERE card_id=NEW.id); END"
-    )
-    for event, source in (("INSERT", "NEW"), ("DELETE", "OLD")):
-        database.execute(
-            f"CREATE TRIGGER IF NOT EXISTS canonical_source_card_{event.lower()} AFTER {event} ON cards "
-            f"BEGIN UPDATE repertoires SET scope_source_revision=scope_source_revision+1 "
-            f"WHERE id={source}.repertoire_id OR id IN (SELECT repertoire_id FROM repertoire_cards WHERE card_id={source}.id); END"
-        )
+    from .canonical_scope_schema import initialize_scope_schema
+    initialize_scope_schema(database)
 
 
 def request_preview(database, repertoire_id: str, moves: list[str]) -> dict:
@@ -192,8 +173,9 @@ def _next_item(database, preview: dict, payload: dict) -> dict | None:
             "SELECT card.id,card.start_fen,card.moves_json,card.kind name FROM cards card "
             "LEFT JOIN canonical_prefix_results result ON result.preview_id=? AND result.item_id='card:' || card.id "
             "WHERE (card.repertoire_id=? OR EXISTS(SELECT 1 FROM repertoire_cards link WHERE link.card_id=card.id AND link.repertoire_id=?)) AND card.content_type='opening' AND card.archived=0 "
+            "AND (card.canonical_route_source=1 OR EXISTS(SELECT 1 FROM repertoire_cards source_link WHERE source_link.card_id=card.id AND source_link.repertoire_id=? AND source_link.canonical_route_source=1)) "
             "AND card.id>? AND (result.status IS NULL OR result.status='pending') ORDER BY card.id LIMIT 1",
-            (preview["id"], preview["repertoire_id"], preview["repertoire_id"], cursor),
+            (preview["id"], preview["repertoire_id"], preview["repertoire_id"], preview["repertoire_id"], cursor),
         ).fetchone()
     else:
         row = database.execute(
