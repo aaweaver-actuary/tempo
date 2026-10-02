@@ -49,7 +49,10 @@ def initialize_scope_schema(database) -> None:
     for event, source in (('INSERT', 'NEW'), ('DELETE', 'OLD')):
         database.execute(f'CREATE TRIGGER canonical_source_card_{event.lower()} AFTER {event} ON cards WHEN {source}.canonical_route_source=1 AND {source}.content_type=\'opening\' AND {source}.moves_json<>\'[]\' BEGIN UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id={source}.repertoire_id OR id IN (SELECT repertoire_id FROM repertoire_cards WHERE card_id={source}.id); END')
     for event in ('INSERT', 'DELETE', 'UPDATE'):
-        condition = (' WHEN OLD.canonical_prefix_moves_json IS NOT NEW.canonical_prefix_moves_json OR OLD.scope_source_revision IS NOT NEW.scope_source_revision OR OLD.is_main IS NOT NEW.is_main' if event == 'UPDATE' else '')
+        source = 'OLD' if event == 'DELETE' else 'NEW'
+        condition = f" WHEN {source}.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')"
+        if event == 'UPDATE':
+            condition += ' AND (OLD.canonical_prefix_moves_json IS NOT NEW.canonical_prefix_moves_json OR OLD.scope_source_revision IS NOT NEW.scope_source_revision OR OLD.is_main IS NOT NEW.is_main)'
         database.execute(f'CREATE TRIGGER IF NOT EXISTS canonical_game_scope_{event.lower()} AFTER {event} ON repertoires{condition} BEGIN UPDATE repertoire_game_scope SET generation=generation+1 WHERE id=1; END')
     database.execute('CREATE TRIGGER IF NOT EXISTS canonical_game_insert AFTER INSERT ON imported_games BEGIN UPDATE imported_games SET repertoire_scope_generation=(SELECT generation FROM repertoire_game_scope WHERE id=1) WHERE id=NEW.id; END')
     for table in ('game_repertoire_matches', 'repertoire_comparisons', 'repertoire_decision_events'):

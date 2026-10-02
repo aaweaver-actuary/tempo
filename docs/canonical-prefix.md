@@ -156,6 +156,8 @@ Four versions serve different purposes:
 - `repertoire_game_scope.generation` changes for those classification inputs across
   the repertoire set, repertoire creation/deletion, main selection, and changed
   prefix moves. Rechecking/saving unchanged moves does not advance it.
+  Internal tactic/endgame repertoires excluded by game comparison and ordinary
+  reviews or schedule updates also leave it unchanged.
 - Existing opening-graph task/publication generations describe materialization.
 
 `canonical_route_source=0` identifies generated graph cards and links. Migration

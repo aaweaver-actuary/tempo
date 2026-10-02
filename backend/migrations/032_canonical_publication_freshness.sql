@@ -64,6 +64,7 @@ CREATE TRIGGER canonical_card_insert_source AFTER INSERT ON cards FOR EACH ROW E
 CREATE TRIGGER canonical_card_delete_source AFTER DELETE ON cards FOR EACH ROW EXECUTE FUNCTION advance_canonical_prefix_source();
 CREATE FUNCTION advance_repertoire_game_scope() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
+    IF (CASE WHEN TG_OP='DELETE' THEN OLD.id ELSE NEW.id END) IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__') THEN RETURN NULL; END IF;
     IF TG_OP='UPDATE' AND ROW(OLD.canonical_prefix_moves_json,OLD.scope_source_revision,OLD.is_main) IS NOT DISTINCT FROM ROW(NEW.canonical_prefix_moves_json,NEW.scope_source_revision,NEW.is_main) THEN RETURN NULL; END IF;
     UPDATE repertoire_game_scope SET generation=generation+1 WHERE id=1;
     -- Existing priority generations also consume repertoire classification evidence.

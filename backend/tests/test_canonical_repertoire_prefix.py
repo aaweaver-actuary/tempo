@@ -1028,3 +1028,15 @@ def test_canonical_introduction_scores_hide_after_another_repertoire_scope_chang
         assert read_prefix(connection, "italian")["source_revision"] == source_revision
         assert connection.execute("SELECT 1 FROM repertoire_card_introduction_priorities").fetchone()
         assert not connection.execute("SELECT 1 FROM current_repertoire_card_introduction_priorities").fetchone()
+
+
+def test_canonical_global_scope_ignores_internal_tactics_and_study_schedule_changes(prefix_database):
+    from app.services.canonical_scope_freshness import game_scope_generation
+    add_line(ITALIAN)
+    with database.connection() as connection:
+        connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES('scheduled','italian','prefix',?,?,'2026-10-02')", (chess.STARTING_FEN, json.dumps(ITALIAN)))
+        before_study = game_scope_generation(connection)
+        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('__captured_tactics__','Captured tactics','internal','2026-10-02')")
+        connection.execute("UPDATE cards SET state='learning',due_date='2026-10-03',stability=5 WHERE id='scheduled'")
+        connection.execute("DELETE FROM repertoires WHERE id='__captured_tactics__'")
+        assert game_scope_generation(connection) == before_study
