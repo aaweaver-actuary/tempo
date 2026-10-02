@@ -140,14 +140,18 @@ def ensure_line_in_scope(database, repertoire_id: str, starting_fen: str,
 
 
 def scope_line(database, repertoire_id: str, line: dict, prefix: dict | None = None) -> dict:
+    """Build an analysis route without changing the saved training start or moves."""
     prefix = prefix if prefix is not None else read_prefix(database, repertoire_id)
     if not prefix["moves"]:
         return {**line, "scope_start_ply": 0}
     origin = line_origin(database, prefix["preview_id"], line["start_fen"])
-    # Stored lines passed the write boundary; this read only attaches their offset.
+    # Stored lines passed the write boundary. Reconstruct their verified origin so
+    # downstream opponent moves retain their probabilities and absolute horizon.
     if origin is None:
         return {**line, "scope_start_ply": len(json.loads(line["moves_json"])) + 1}
-    return {**line, "scope_start_ply": max(0, len(prefix["moves"]) - len(origin))}
+    return {**line, "start_fen": chess.STARTING_FEN,
+            "moves_json": json.dumps([*origin, *json.loads(line["moves_json"])]),
+            "scope_start_ply": len(prefix["moves"])}
 
 
 def scope_lines(database, repertoire_id: str, lines: list[dict]) -> list[dict]:

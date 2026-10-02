@@ -41,7 +41,9 @@ Shared-card edits check every affected repertoire. Cards, reviews, scheduling,
 and prefix-training routes are never rewritten by a prefix change.
 
 Coverage excludes positions before the boundary, retaining the configured
-absolute horizon. Assumed opponent edges have probability one. Missing data
+absolute horizon. Analysis reconstructs verified origins of FEN continuations;
+only the assumed prefix has probability one, including after shortening it.
+Saved training starts and moves remain intact. Missing data
 remains unknown. A prefix with no opponent positions within the horizon reports
 an actionable failure rather than complete coverage. Exact-order, complete
 membership filters games before position-based matching resumes after the

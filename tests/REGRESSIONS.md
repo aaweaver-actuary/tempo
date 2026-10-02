@@ -950,6 +950,7 @@ failed against the original PR implementation before the guard was added.
 - `test_canonical_prefix_preview_yields_to_foreground_restarts_and_replays_idempotently`.
 - `test_matching_game_feedback_starts_after_prefix_while_training_routes_remain_intact`.
 - `test_canonical_prefix_probabilities_condition_on_assumed_opponent_moves`.
+- `test_canonical_prefix_anchored_continuation_retains_downstream_probabilities_and_absolute_horizon` (shortening a prefix restores downstream reach probabilities without changing saved training lines).
 - `test_canonical_prefix_black_boundary_preserves_later_position_transpositions`.
 - `test_canonical_prefix_revisions_are_independent_and_stale_coverage_is_unknown`.
 - `test_canonical_prefix_matching_stub_without_continuation_never_reports_complete`.

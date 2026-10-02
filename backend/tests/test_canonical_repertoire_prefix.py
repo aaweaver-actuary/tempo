@@ -223,6 +223,36 @@ def test_canonical_prefix_probabilities_condition_on_assumed_opponent_moves():
     assert [value[1]["explorer"] for value in edges.values()][:2] == ["assumed", "assumed"]
 
 
+def test_canonical_prefix_anchored_continuation_retains_downstream_probabilities_and_absolute_horizon(prefix_database):
+    from app.services.canonical_prefix import scope_lines
+    from app.services.introduction_priorities import _maximal_intended_lines, _line_probabilities
+    add_line(ITALIAN[:3], "opening-stub")
+    add_line(["f8c5", "c2c3"], "continuation", prefix_projection(ITALIAN)["ending_fen"])
+    apply_preview(prepare_prefix())
+    # Shortening the assumption must restore the probability of reaching Bc4.
+    apply_preview(prepare_prefix(ITALIAN[:3]))
+    with database.read_connection() as connection:
+        original_lines = [dict(row) for row in connection.execute("SELECT * FROM repertoire_lines")]
+        analysis_lines = scope_lines(connection, "italian", original_lines)
+    nodes = discover_opponent_positions(analysis_lines, 3)
+    assert [node["ply"] for node in nodes] == [3, 5]
+    assert nodes[0]["routes"] == [ITALIAN[:3]]
+    assert nodes[0]["covered_replies"] == ["b8c6"]
+    intended_lines = _maximal_intended_lines(analysis_lines)
+    public = {
+        position_key_for_test(prefix_projection(route)["ending_fen"]): {
+            "moves": {move: {"explorer_probability": probability}},
+            "explorer_status": "complete", "explorer_games": 100,
+            "maia_status": "failed",
+        }
+        for route, move, probability in ((ITALIAN[:3], "b8c6", 0.25), (ITALIAN, "f8c5", 0.5))
+    }
+    probabilities, _, _ = _line_probabilities(intended_lines, public, {}, 15, 0.0005)
+    assert probabilities == {"continuation": 0.125}
+    with database.read_connection() as connection:
+        assert [dict(row) for row in connection.execute("SELECT * FROM repertoire_lines")] == original_lines
+
+
 def test_canonical_prefix_black_boundary_preserves_later_position_transpositions():
     from app.services.repertoire_comparison import _compare_game_to_repertoire, _position_graph
     opening = [*ITALIAN, "f8c5", "c2c3", "g8f6", "d2d4"]
