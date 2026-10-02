@@ -39,7 +39,8 @@ def _source_fingerprint(database: PostgresConnection, repertoire_id: str) -> str
         (repertoire_id,),
     ).fetchone()
     prefix = read_prefix(database, repertoire_id)
-    return f"{row[0]}:{prefix['revision']}:{prefix['source_revision']}:{prefix['preview_id']}"
+    scope_fingerprint = f":{prefix['source_revision']}:{prefix['preview_id']}" if prefix['moves'] else ''
+    return f"{row[0]}:{prefix['revision']}{scope_fingerprint}"
 
 
 def request_coverage_seed_in_transaction(

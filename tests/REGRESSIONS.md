@@ -1206,3 +1206,6 @@ arbitrary-FEN continuation; restoring and recertifying the route admits it again
 Existing foreground-contention, interrupted command, history/schedule preservation,
 exact-order membership, shortening, Black scope and later transposition regressions
 remain in the regular gate.
+`test_postgres_coverage_fingerprint_tracks_route_certificates_only_for_scoped_repertoires`
+retains unrestricted coverage identity across derived card/link changes while
+scoped source mutations invalidate route-dependent calculations.

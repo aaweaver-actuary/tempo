@@ -6508,3 +6508,19 @@ def test_postgres_coverage_unverified_canonical_route_fails_actionably_without_p
     assert len(statements) == 1
     assert "status='failed'" in statements[0][0]
     assert 'Check the canonical prefix again' in statements[0][1][0]
+
+
+def test_postgres_coverage_fingerprint_tracks_route_certificates_only_for_scoped_repertoires(monkeypatch):
+    from app.services import postgres_coverage_seed
+    prefix = {'moves': [], 'revision': 0, 'source_revision': 1, 'preview_id': None}
+    monkeypatch.setattr(postgres_coverage_seed, 'read_prefix', lambda *args: prefix)
+    class Database:
+        def execute_native(self, *args):
+            return SimpleNamespace(fetchone=lambda: ('line-hash',))
+    original = postgres_coverage_seed._source_fingerprint(Database(), 'rep')
+    prefix['source_revision'] += 1
+    assert postgres_coverage_seed._source_fingerprint(Database(), 'rep') == original
+    prefix.update(moves=['e2e4'], revision=1, preview_id='current')
+    scoped = postgres_coverage_seed._source_fingerprint(Database(), 'rep')
+    prefix['source_revision'] += 1
+    assert postgres_coverage_seed._source_fingerprint(Database(), 'rep') != scoped
