@@ -2,13 +2,16 @@
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException
 
 from .command_gateway import register_command
 from .postgres_store import PostgresConnection
+from .models import RepertoireSettingsRequest
+from .repertoire_settings import repertoire_settings_response
+from .queue_commands import request_queue_refresh_in_transaction
 from .services.durable_tasks import enqueue_task_in_transaction
 
 
@@ -106,3 +109,16 @@ def delete_repertoire(database: PostgresConnection, payload: dict[str, Any]) -> 
 register_command("repertoires.main.select", select_main_repertoire)
 register_command("repertoires.rename", rename_repertoire)
 register_command("repertoires.delete", delete_repertoire)
+
+
+def update_repertoire_settings(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    repertoire_id = str(payload["repertoire_id"])
+    settings = RepertoireSettingsRequest.model_validate(payload["settings"])
+    repertoire_settings_response(database, repertoire_id)
+    database.execute("UPDATE repertoires SET new_cards_per_day=? WHERE id=?",
+                     (settings.new_cards_per_day, repertoire_id))
+    request_queue_refresh_in_transaction(database, date.today().isoformat())
+    return repertoire_settings_response(database, repertoire_id)
+
+
+register_command("repertoires.settings.update", update_repertoire_settings)

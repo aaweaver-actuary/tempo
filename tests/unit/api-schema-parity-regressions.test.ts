@@ -76,3 +76,13 @@ it("Python tactic capture result satisfies the frontend durable capture contract
   expect(tacticCaptureResultSchema.parse(raw)).toEqual(raw);
   expect(tacticCaptureResultSchema.safeParse({ ...raw, queued: "true" }).success).toBe(false);
 });
+
+it("Python repertoire limit response matches the frontend contract for inherited, zero, and custom limits", async () => {
+  const { repertoireSettingsResponseSchema } = await import("../../app/lib/repertoire-settings-save");
+  const output = execFileSync(resolvePython(), ["-c", `
+import json
+from app.models import RepertoireSettingsResponse
+print(json.dumps([RepertoireSettingsResponse(repertoire_id='rep',new_cards_per_day=value,effective_new_cards_per_day=value if value is not None else 10).model_dump(mode='json') for value in [None,0,5]]))
+`], { env: { ...process.env, PYTHONPATH: "backend" }, encoding: "utf8" });
+  for (const raw of JSON.parse(output)) expect(repertoireSettingsResponseSchema.parse(raw)).toEqual(raw);
+});

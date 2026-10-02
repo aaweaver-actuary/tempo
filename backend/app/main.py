@@ -65,6 +65,7 @@ from .models import (
     PrefixSplitRequest,
     PrefixSplitResponse,
     RepertoireRenameRequest,
+    RepertoireSettingsRequest,
     RemoveBranchRequest,
     ReviewRequest,
     Settings,
@@ -485,6 +486,9 @@ async def prioritize_foreground_requests(request: Request, call_next):
         annotation_command = (len(path_parts) == 4
                               and path_parts[:2] == ["api", "repertoires"]
                               and path_parts[3] == "annotations" and request.method == "PUT")
+        repertoire_settings_command = (len(path_parts) == 4
+                                       and path_parts[:2] == ["api", "repertoires"]
+                                       and path_parts[3] == "settings" and request.method == "PUT")
         repertoire_rename_command = (len(path_parts) == 3
                                      and path_parts[:2] == ["api", "repertoires"]
                                      and request.method == "PATCH")
@@ -658,6 +662,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
                     card_revision_command, card_archive_command,
                     card_teaching_command, defense_answer_command,
                     main_repertoire_command, annotation_command, repertoire_rename_command,
+                    repertoire_settings_command,
                     repertoire_delete_command, opportunity_state_command,
                     opportunity_refresh_command, coverage_refresh_command,
                     coverage_maia_command, coverage_explorer_session,
@@ -1003,7 +1008,7 @@ def put_settings(s: Settings,
     return get_settings()
 
 
-def reconcile_unseen_queue(db, day, limit):
+def reconcile_unseen_queue(db, day, limit, repertoire_limits=None):
     """Trim legacy queues that eagerly admitted every unseen card."""
     rows = db.execute(
         """
@@ -1017,21 +1022,22 @@ def reconcile_unseen_queue(db, day, limit):
     """,
         (day, day),
     ).fetchall()
+    # Historical introductions consume allowance even if eligibility changes later.
     introduced_by_repertoire = dict(
         db.execute(
-            """SELECT c.repertoire_id,COUNT(*) FROM cards c
+            """SELECT COALESCE(q.admission_repertoire_id,c.repertoire_id),COUNT(DISTINCT c.id) FROM cards c
+               LEFT JOIN daily_queue q ON q.card_id=c.id AND q.queue_date=c.introduced_at AND q.cycle=0
                WHERE c.content_type='opening' AND c.introduced_at=?
                  AND EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)
-                 AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
-                                WHERE block.repertoire_id=c.repertoire_id AND block.card_id=c.id)
-               GROUP BY c.repertoire_id""",
+               GROUP BY COALESCE(q.admission_repertoire_id,c.repertoire_id)""",
             (day,),
         ).fetchall()
     )
     for row in rows:
         repertoire_id = row["repertoire_id"]
         introduced = introduced_by_repertoire.get(repertoire_id, 0)
-        if introduced < limit:
+        daily_limit = repertoire_limits.get(repertoire_id, limit) if repertoire_limits is not None else limit
+        if introduced < daily_limit:
             db.execute(
                 "UPDATE cards SET introduced_at=?,state='learning' WHERE id=?",
                 (day, row["card_id"]),
@@ -1110,7 +1116,7 @@ _PRIORITY_OPENING_CANDIDATES_SQL = (
 
 
 def _plan_prioritized_opening_admissions(candidates, introduced_by_repertoire,
-                                         day: str, limit: int) -> list[tuple[str, dict]]:
+                                         day: str, limit: int | dict[str, int]) -> list[tuple[str, dict]]:
     """Preserve gameplay, breadth, and global-card ordering outside a transaction."""
 
     by_repertoire: dict[str, list] = {}
@@ -1119,7 +1125,8 @@ def _plan_prioritized_opening_admissions(candidates, introduced_by_repertoire,
     globally_selected_ids: set[str] = set()
     planned: list[tuple[str, dict]] = []
     for repertoire_id, rows in by_repertoire.items():
-        remaining = max(0, limit - introduced_by_repertoire.get(repertoire_id, 0))
+        daily_limit = limit.get(repertoire_id, 0) if isinstance(limit, dict) else limit
+        remaining = max(0, daily_limit - introduced_by_repertoire.get(repertoire_id, 0))
         selected_ids: set[str] = set()
         breadth_line_ids: set[str] = set()
         while remaining:
@@ -1166,20 +1173,19 @@ def _plan_prioritized_opening_admissions(candidates, introduced_by_repertoire,
     return planned
 
 
-def admit_prioritized_opening_cards(db, day: str, limit: int, maximum: int) -> int:
+def admit_prioritized_opening_cards(db, day: str, limit: int | dict[str, int], maximum: int) -> int:
     """Admit unseen opening cards by impact without changing the active queue."""
 
     candidates = db.execute(
         _PRIORITY_OPENING_CANDIDATES_SQL,
         (MISS_REASON, day, day, day, day),
     ).fetchall()
+    # Historical introductions consume allowance even if eligibility changes later.
     introduced_by_repertoire = dict(
         db.execute(
             """SELECT COALESCE(q.admission_repertoire_id,c.repertoire_id),COUNT(DISTINCT c.id)
                FROM daily_queue q JOIN cards c ON c.id=q.card_id
-               WHERE q.queue_date=? AND c.content_type='opening' AND c.introduced_at=?
-                 AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
-                                WHERE block.repertoire_id=c.repertoire_id AND block.card_id=c.id)
+               WHERE q.queue_date=? AND q.cycle=0 AND c.content_type='opening' AND c.introduced_at=?
                GROUP BY COALESCE(q.admission_repertoire_id,c.repertoire_id)""",
             (day, day),
         ).fetchall()
@@ -1363,7 +1369,9 @@ def seed_queue(db, day):
     limit = db.execute("SELECT new_cards_per_day FROM settings WHERE id=1").fetchone()[
         0
     ]
-    reconcile_unseen_queue(db, day, limit)
+    from .repertoire_settings import effective_opening_limits
+    repertoire_limits = effective_opening_limits(db)
+    reconcile_unseen_queue(db, day, limit, repertoire_limits)
     maximum = db.execute(
         "SELECT COALESCE(MAX(position),-1) FROM daily_queue WHERE queue_date=?", (day,)
     ).fetchone()[0]
@@ -1387,7 +1395,7 @@ def seed_queue(db, day):
             (day, row[0], maximum + offset),
         )
     maximum += len(rows)
-    admit_prioritized_opening_cards(db, day, limit, maximum)
+    admit_prioritized_opening_cards(db, day, repertoire_limits, maximum)
     study_allowance = db.execute("SELECT study_new_per_day FROM settings WHERE id=1").fetchone()[0]
     admitted_studies = db.execute(
         """SELECT COUNT(*) FROM daily_queue q JOIN cards c ON c.id=q.card_id
@@ -2129,9 +2137,11 @@ async def import_pgn(
 
 @app.get("/api/repertoires")
 def list_repertoires():
+    from .repertoire_settings import SYSTEM_REPERTOIRES
+    system_placeholders = ",".join("?" for _ in SYSTEM_REPERTOIRES)
     with read_connection() as db:
         rows = db.execute(
-            """
+            f"""
             WITH line_counts AS (
                 SELECT repertoire_id,COUNT(*) AS line_count
                 FROM repertoire_lines
@@ -2175,7 +2185,9 @@ def list_repertoires():
                 FROM repertoire_integrity_issues
                 GROUP BY repertoire_id
             )
-            SELECT r.id,r.name,r.source_name,r.created_at,r.is_main,COALESCE(rs.status,'unchecked') integrity_status,
+            SELECT r.id,r.name,r.source_name,r.created_at,r.is_main,r.new_cards_per_day,
+                   COALESCE(r.new_cards_per_day,(SELECT new_cards_per_day FROM settings WHERE id=1)) effective_new_cards_per_day,
+                   COALESCE(rs.status,'unchecked') integrity_status,
                    COALESCE(rs.scan_status,'idle') integrity_scan_status,rs.scan_error integrity_scan_error,
                    (SELECT ii.id FROM repertoire_integrity_issues ii WHERE ii.repertoire_id=r.id ORDER BY ii.updated_at,ii.id LIMIT 1) integrity_first_issue_id,
                    COALESCE(lc.line_count,0) AS line_count,
@@ -2208,10 +2220,10 @@ def list_repertoires():
             LEFT JOIN background_tasks graph_task
               ON graph_task.kind='opening_graph_rebuild'
              AND graph_task.deduplication_key=r.id
-            WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')
+            WHERE r.id NOT IN ({system_placeholders})
             ORDER BY r.created_at DESC
         """,
-            (date.today().isoformat(), date.today().isoformat()),
+            (date.today().isoformat(), date.today().isoformat(), *SYSTEM_REPERTOIRES),
         ).fetchall()
         repertoire_items = [
             {
@@ -3585,6 +3597,26 @@ def archive_card(identifier: str,
             continue
     coordinator.wake()
     return {"archived": True, "integrity": integrity}
+
+
+@app.put("/api/repertoires/{identifier}/settings", response_model=None)
+def update_repertoire_settings(identifier: str, request: RepertoireSettingsRequest,
+                               idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command(
+            "repertoires.settings.update",
+            {"repertoire_id": identifier, "settings": request.model_dump(mode="json")},
+            idempotency_key=idempotency_key,
+        )
+    from .repertoire_settings import repertoire_settings_response
+    with connection() as db:
+        repertoire_settings_response(db, identifier)
+        db.execute("UPDATE repertoires SET new_cards_per_day=? WHERE id=?",
+                   (request.new_cards_per_day, identifier))
+        result = repertoire_settings_response(db, identifier)
+    enqueue_daily_queue_refresh(foreground=True)
+    return result
 
 
 @app.patch("/api/repertoires/{identifier}")

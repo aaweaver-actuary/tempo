@@ -1409,7 +1409,8 @@ def initialize() -> None:
                 "analysis_evidence_version": "INTEGER NOT NULL DEFAULT 1"
             },
             "game_findings": {"source_opportunity_id": "TEXT", "review_after": "TEXT"},
-            "repertoires": {"is_main": "INTEGER NOT NULL DEFAULT 0"},
+            "repertoires": {"is_main": "INTEGER NOT NULL DEFAULT 0",
+                            "new_cards_per_day": "INTEGER CHECK(new_cards_per_day BETWEEN 0 AND 100)"},
             "repertoire_integrity_state": {
                 "scan_status": "TEXT NOT NULL DEFAULT 'idle'",
                 "scan_generation": "TEXT",

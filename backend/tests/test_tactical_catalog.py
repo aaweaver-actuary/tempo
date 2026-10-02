@@ -75,7 +75,7 @@ def test_tactical_pack_migration_preserves_reviews_scheduling_and_completion(tmp
     monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'tempo.db')
     with TestClient(app):
         with database.connection() as db:
-            db.execute("INSERT OR IGNORE INTO repertoires VALUES('__tactics__','Tactics','Lichess','2026-09-01',0)")
+            db.execute("INSERT OR IGNORE INTO repertoires(id,name,source_name,created_at,is_main) VALUES('__tactics__','Tactics','Lichess','2026-09-01',0)")
             db.execute("INSERT INTO tactic_progress(puzzle_id,deck_id,clean_pass_at) VALUES('00sHx','hangingPiece-easy','2026-09-02')")
         review_count = 0
         with database.connection() as db:

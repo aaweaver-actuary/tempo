@@ -238,12 +238,12 @@ def _prepare_unseen_reconciliation(queue_date: str, processed_ids: list[int],
     repertoire_id = candidate["repertoire_id"]
     if repertoire_id in introduced_counts:
         return candidate, introduced_counts[repertoire_id]
+    # Eligibility changes must not refund a reviewed historical introduction.
     reviewed_count = _bounded_read(
-        """SELECT COUNT(*) FROM cards c
-           WHERE c.repertoire_id=%s AND c.content_type='opening' AND c.introduced_at=%s
-             AND EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)
-             AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
-                            WHERE block.repertoire_id=c.repertoire_id AND block.card_id=c.id)""",
+        """SELECT COUNT(DISTINCT c.id) FROM cards c
+           LEFT JOIN daily_queue q ON q.card_id=c.id AND q.queue_date=c.introduced_at AND q.cycle=0
+           WHERE COALESCE(q.admission_repertoire_id,c.repertoire_id)=%s AND c.content_type='opening' AND c.introduced_at=%s
+             AND EXISTS(SELECT 1 FROM reviews r WHERE r.card_id=c.id)""",
         (repertoire_id, queue_date), native=True,
     )[0][0]
     return candidate, int(reviewed_count)
@@ -264,7 +264,9 @@ def _reconcile_one_unseen_entry(database, queue_date: str, candidate: dict,
     ).fetchone()
     if current is None:
         return False
-    limit = database.execute_native("SELECT new_cards_per_day FROM settings WHERE id=1").fetchone()[0]
+    limit = _current_opening_limit(database, candidate["repertoire_id"])
+    if limit is None:
+        return False
     if introduced_count < limit:
         database.execute_native(
             "UPDATE cards SET introduced_at=%s,state='learning' WHERE id=%s",
@@ -355,22 +357,37 @@ def _prepare_prioritized_openings(queue_date: str) -> list[dict[str, Any]]:
              queue_date, queue_date, queue_date), native=True,
         ))
         after_card_id = card_ids[-1]
+    # Count consumption independently from current candidate eligibility.
     counts = _bounded_read(
         """SELECT COALESCE(q.admission_repertoire_id,c.repertoire_id),COUNT(DISTINCT c.id)
            FROM daily_queue q JOIN cards c ON c.id=q.card_id
-           WHERE q.queue_date=%s AND c.content_type='opening' AND c.introduced_at=%s
-             AND NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
-                            WHERE block.repertoire_id=c.repertoire_id AND block.card_id=c.id)
+           WHERE q.queue_date=%s AND q.cycle=0 AND c.content_type='opening' AND c.introduced_at=%s
            GROUP BY COALESCE(q.admission_repertoire_id,c.repertoire_id)""",
         (queue_date, queue_date), native=True,
     )
-    daily_limit = int(_bounded_read("SELECT new_cards_per_day FROM settings WHERE id=1")[0][0])
+    daily_limit = dict(_bounded_read(
+        "SELECT r.id,COALESCE(r.new_cards_per_day,s.new_cards_per_day) "
+        "FROM repertoires r CROSS JOIN settings s WHERE s.id=1",
+    ))
     plan = main._plan_prioritized_opening_admissions(
         candidates, dict(counts), queue_date, daily_limit,
     )
     return [{"repertoire_id": repertoire_id, "card_id": candidate["id"],
              "reason": candidate["gameplay_priority_reason"]}
             for repertoire_id, candidate in plan]
+
+
+def _current_opening_limit(database, repertoire_id: str) -> int | None:
+    # The slice holds the task lease row. Settings changes enqueue a fresh
+    # generation in their write transaction, invalidating any old checkpoint.
+    # Do not lock settings rows here: foreground writes take them before the
+    # task row, and reversing that order would deadlock the two workers.
+    row = database.execute_native(
+        "SELECT COALESCE(r.new_cards_per_day,s.new_cards_per_day) "
+        "FROM repertoires r CROSS JOIN settings s WHERE r.id=%s AND s.id=1",
+        (repertoire_id,),
+    ).fetchone()
+    return int(row[0]) if row else None
 
 
 def _admit_one_prioritized_opening(database, queue_date: str, planned: dict) -> None:
@@ -395,6 +412,17 @@ def _admit_one_prioritized_opening(database, queue_date: str, planned: dict) -> 
         "SELECT 1 FROM daily_queue WHERE queue_date=%s AND card_id=%s",
         (queue_date, card_id),
     ).fetchone():
+        return
+    # Recheck inside publication: a foreground settings write may have changed
+    # the limit after planning, and another slice may have used the allowance.
+    daily_limit = _current_opening_limit(database, planned["repertoire_id"])
+    admitted_count = database.execute_native(
+        """SELECT COUNT(DISTINCT c.id) FROM daily_queue q JOIN cards c ON c.id=q.card_id
+           WHERE q.queue_date=%s AND q.cycle=0 AND c.content_type='opening' AND c.introduced_at=%s
+             AND COALESCE(q.admission_repertoire_id,c.repertoire_id)=%s""",
+        (queue_date, queue_date, planned["repertoire_id"]),
+    ).fetchone()[0]
+    if daily_limit is None or admitted_count >= daily_limit:
         return
     position = database.execute_native(
         "SELECT COALESCE(MAX(position),-1)+1 FROM daily_queue WHERE queue_date=%s",

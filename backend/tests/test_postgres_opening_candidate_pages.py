@@ -23,8 +23,8 @@ def test_postgres_opening_candidates_read_small_pages_before_planning(monkeypatc
                      "gameplay_priority_reason": None} for card_id in parameters[1]]
         if statement.startswith("SELECT COALESCE(q.admission_repertoire_id"):
             return []
-        if statement.startswith("SELECT new_cards_per_day"):
-            return [(2,)]
+        if statement.startswith("SELECT r.id,COALESCE"):
+            return [("rep", 2)]
         raise AssertionError(statement[:100])
 
     monkeypatch.setattr(postgres_queue_refresh, "_bounded_read", read_page)

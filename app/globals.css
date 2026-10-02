@@ -4057,6 +4057,13 @@ button {
 .tactic-capture .editor-fields .editor-actions { margin-top: 0; }
 .tactic-capture > .editor-actions { margin-top: 16px; }
 
+.repertoire-daily-limits { margin-block: 18px; }
+.repertoire-daily-limits > p { font-size: 13px; color: var(--muted); }
+.repertoire-limit-row { border-top: 1px solid var(--line); padding-block: 14px; min-width: 0; }
+.repertoire-limit-row > strong { display: block; overflow-wrap: anywhere; }
+.repertoire-limit-row > small { display: block; margin-block: 8px; }
+.repertoire-limit-row > p { font-size: 13px; overflow-wrap: anywhere; }
+.repertoire-limit-row [role="alert"] { color: var(--rust); }
 .tactic-capture .san-entry { display: grid; gap: 8px; margin: 12px 0; }
 .tactic-capture .san-entry label { display: grid; gap: 4px; }
 .tactic-capture .san-entry input { width: 100%; min-width: 0; }

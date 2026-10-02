@@ -919,6 +919,59 @@ therefore never replenish another test's cards. Enrollment, real mixed Training,
 authored FEN, unchanged board during square selection, assessment and export
 assertions remain required. No test identity, CI selection, or timeout changed.
 
+## Per-repertoire daily new-card overrides
+
+- `backend/tests/test_repertoire_settings.py::test_repertoire_daily_overrides_apply_independently_and_reset_to_default` — independent 10/5 limits and resetting to the default.
+- `test_global_daily_limit_changes_only_inheriting_repertoires` — global changes preserve explicit overrides.
+- `test_repertoire_limit_changes_today_preserve_completed_work_and_due_reviews` — lowering today's limit or setting zero removes only remaining automatic introductions.
+- `test_seven_of_ten_learned_allows_ten_new_tomorrow_without_rollover` — exactly seven learned out of ten produces ten new cards tomorrow, with repeat refreshes remaining idempotent. Existing `test_unfinished_unreviewed_cards_do_not_bypass_tomorrows_new_card_limit` remains in the regular suite.
+- `test_shared_card_review_retries_do_not_consume_owners_new_card_allowance` — a reviewed shared card's retry never spends the owner repertoire's separate introduction allowance (reproduced failing before the fix).
+- `test_shared_card_is_deduplicated_and_charged_to_admitting_repertoire` — shared cards are introduced once and charged to the admitting repertoire.
+- `test_repertoire_override_rejects_invalid_payloads`; `test_repertoire_override_rejects_missing_and_system_repertoires`; `test_existing_repertoire_migrates_to_inherited_limit` — validated API boundaries and historical SQLite compatibility.
+- `test_postgres_opening_publication_rechecks_lowered_limit_and_current_admissions`; `test_postgres_repertoire_settings_write_invalidates_old_queue_checkpoint`; `test_postgres_repertoire_settings_endpoint_dispatches_durable_command` — publication rechecks, generation invalidation, restart, and durable routing. Portable SQL fixtures prove behavior, not real PostgreSQL semantics.
+- `tests/unit/repertoire-daily-limits.test.tsx` — zero/reset controls, validation, failed loads, demo availability, pending save locking, lost transport, reload, exact identity/body replay, and completed receipt validation.
+- `tests/unit/api-schema-parity-regressions.test.ts::Python repertoire limit response matches the frontend contract for inherited, zero, and custom limits` — producer/consumer compatibility.
+- `tests/browser/settings-repertoire-limits.spec.ts::repertoire limits update today's queue, persist after reload, and reset to default` — real Settings/queue workflow with save failure recovery; registered in the complete repertoire browser family.
+- `scripts/check_postgres_repertoire_limits.py` — real PostgreSQL 10/5 limits, seven-of-ten reset, zero reconciliation, stale plan rejection, inheritance, and operation replay in the regular durability runner. The runner's command-recreation scenario preserves and replays an override across container recreation; schema-upgrade coverage verifies existing repertoires inherit after migration 29.
+
+- `backend/tests/test_postgres_route_contract.py::test_postgres_route_contract_matches_registered_endpoints` — repertoire settings is registered as a staged foreground command; reproduced the missing route before adding the contract entry.
+- `backend/tests/test_repertoire_settings.py::test_repertoire_override_rejects_missing_and_system_repertoires` — a persisted `__defense__` row rejects opening-limit writes and is absent from repertoire listing while normal openings remain. Reproduced HTTP 200 before the fix.
+- `backend/tests/test_repertoire_settings.py::test_shared_card_integrity_change_does_not_refund_admitting_repertoire_allowance` — reviewed and unreviewed A-owned cards admitted under B retain B’s consumed allowance after A is blocked. Covers SQLite reseeding/legacy reconciliation and PostgreSQL planning/reviewed-count SQL; reproduced extra planned admission before the fix.
+- `tests/unit/repertoire-daily-limits.test.tsx::inherited custom input uses the current default and preserves an edited draft` — a 10→12 global default change initializes Custom to 12, while an edited 5 survives mode toggles and later global changes. Reproduced stale 10 before the fix.
+- `tests/unit/repertoire-daily-limits.test.tsx::inherited repertoire uses API effective limit when page default is stale` — an inherited API value of 12 wins over a stale page default of 10 for current status, Custom initialization and the exact saved request. Reproduced displaying 10 before consuming the backend effective value.
+- `tests/unit/repertoire-daily-limits.test.tsx::reset to inheritance uses effective limit returned by save` — a reset response with inherited effective 12 updates the row immediately and clears the previously saved custom 5 as a draft. Reproduced displaying 10 after reset.
+- `tests/unit/repertoire-daily-limits.test.tsx::refreshed custom override replaces a clean row without becoming an unsaved draft`; `newer repertoire refresh ignores older in-flight data` — reused rows consume newly confirmed backend values; older requests cannot overwrite a newer response. The page default remains a global preview for custom repertoires. Both failed before the refresh/state repair.
+- `tests/unit/repertoire-daily-limits.test.tsx::repertoire editing requires backend %s instead of guessing a default` — missing override/effective fields produce the explicit upgrade error; the shared listing schema remains optional for compatibility with other consumers. The missing-effective case reproduced silently displaying the page default.
+- The existing `inherited custom input uses the current default and preserves an edited draft` and `repertoire pending saves retain exact bytes and identity through lost transport and reload` now refresh backend values independently of the page default. Unsaved custom 5 and locked pending bytes/identity survive; confirmed status follows the backend. Both extended cases failed on the stale frontend before the fix.
+
+### PR #54 durability proof isolation
+
+Current-main integration also preserves `background_metric_buckets` for the
+`daily_queue` kind in both restoration regressions below. Before restoring those
+rows, all four present/absent cases failed with leaked diagnostic counters.
+`test_repertoire_limit_migration_has_unique_number_and_matches_schema_readiness`
+failed on duplicate migration 26 when merging background diagnostics and again on
+duplicate 27 when handled discoveries introduced migrations 27 and 28. The
+repertoire migration now uses 29, with a matching ledger and readiness version.
+
+`backend/tests/test_tactical_catalog.py::test_tactical_pack_migration_preserves_reviews_scheduling_and_completion`
+also protects the additive repertoire schema: the old five-value positional insert
+failed against the new six-column table. Fixtures now name their columns rather
+than appending NULL. The repository audit found six positional repertoire inserts,
+all in tests; all six now use explicit lists, preserving the intentional miniature
+and historical schemas in the other fixtures.
+
+`backend/tests/test_repertoire_limit_proof_isolation.py` protects the shared
+disposable environment. Portable SQL covers restoration; the existing Docker
+proof retains real production commands, receipt replay, PostgreSQL locks and
+generation invalidation.
+
+- `test_repertoire_limit_proof_finally_restores_queue_state_after_assertion_failure` — existing and absent singleton cases; both failed before the fix with leaked task, event and projection rows. Also verifies repertoire/card/link/review/queue/receipt cleanup and unrelated rows.
+- `test_repertoire_limit_proof_restores_pruned_history_both_dates_and_stale_cards` — exact task fields/ID, all 100 historical events including events pruned by enqueue, present/absent today projections, tomorrow projection, and unrelated rollover fields survive mutation and cleanup. Also restores present/absent priority source epochs for owners and shared links after card-update triggers; the trigger-enabled fixture reproduced that additional leak before epoch restoration.
+- `test_repertoire_limit_proof_cleanup_failure_is_loud_and_atomic` — restoration failure surfaces with the original assertion as context and rolls back fixture deletion and partial queue restoration together.
+- `test_repertoire_limit_proof_reconciliation_preserves_unrelated_entries` — reconciliation publishes only fixture entries while advancing past unrelated candidates.
+- `tests/runner/postgres-test-speedups.test.mjs::repertoire limit recreation fixture includes its final White response` — the PR's recreation PGN ends after White's prescribed move so integrity validation permits study admission. Reproduced `w !== b` on `1. e4 e5 *` after the isolated Docker run exposed `missing_response`; fixed with `2. Nf3`, without bypassing integrity checks or extending waits.
+- `tests/runner/postgres-test-speedups.test.mjs::repertoire limit recreation fixture survives backup then leaves unrelated study state intact` — executes the real recreation/backup action bodies with I/O seams, verifies override replay and backup before cleanup, and preserves unrelated fixtures. Reproduced the leftover recreation entry after Docker study durability rejected guided failure with HTTP 409; production deletion now removes that owned repertoire before the next foreground workflow.
 
 ## Tactic capture orientation and typed SAN
 

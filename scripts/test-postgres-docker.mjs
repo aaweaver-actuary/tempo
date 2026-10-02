@@ -10,7 +10,7 @@ import { createIsolatedTestEnvironment } from "./test-environment.mjs";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "./postgres-test-options.mjs";
 import { executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePostgresTestPlan, postgresTestStages } from "./postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
-  studyDurabilityPgn } from "./postgres-test-fixture.mjs";
+  repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer } from "./test-scenario-timings.mjs";
 
 const options = parsePostgresTestOptions(process.argv.slice(2));
@@ -74,6 +74,7 @@ const measureScenario = createScenarioTimer(timingPath, {
 console.log(`PostgreSQL ${options.mode} timings: ${timingPath}`);
 const measuredHttpRequests = [];
 let activeStudyRepertoireId = null;
+let limitRecreationRepertoireId = null;
 
 async function apiRequest(path, options = {}, label = null) {
   const startedAt = performance.now();
@@ -635,6 +636,8 @@ const actions = {
       },
       measureWorkload: () => {
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+          "/source/scripts/check_postgres_repertoire_limits.py"]);
+        run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
           "/source/scripts/check_postgres_tactic_capture.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
           "/source/scripts/check_postgres_background_workloads.py"]);
@@ -679,6 +682,9 @@ const actions = {
   },
   command_recreation: async () => {
     const settings = await get("settings");
+    const importedLimit = await importFixture("repertoire-limit-recreation.pgn", repertoireLimitRecreationPgn);
+    limitRecreationRepertoireId = importedLimit.repertoire_id;
+    await waitForStudyableImport(importedLimit.repertoire_id);
     const before = await get("queue/today");
     const operationId = `pg-durability-${randomBytes(12).toString("hex")}`;
     const updatedSettings = { ...settings, new_cards_per_day: settings.new_cards_per_day + 1 };
@@ -687,6 +693,12 @@ const actions = {
       headers: { "Content-Type": "application/json", "Idempotency-Key": operationId },
       body: JSON.stringify(updatedSettings),
     });
+    const limitRepertoire = (await get("repertoires")).repertoires.find(item => item.id === importedLimit.repertoire_id);
+    assert(limitRepertoire, "Recreation fixture must exist before testing its override");
+    const overridePayload = { new_cards_per_day: updatedSettings.new_cards_per_day };
+    const overrideOperationId = `pg-limit-${randomBytes(12).toString("hex")}`;
+    await postCommand(`repertoires/${limitRepertoire.id}/settings`, overridePayload,
+      { method: "PUT", operationId: overrideOperationId });
     const uncertainResponse = await sendSettings();
     assert(uncertainResponse.ok, `Settings command accepted before simulating a lost response: ${uncertainResponse.status}`);
     await uncertainResponse.body?.cancel();
@@ -704,6 +716,12 @@ const actions = {
     await waitForReady();
     assert.equal((await get("settings")).new_cards_per_day, updatedSettings.new_cards_per_day);
     await confirm(await sendSettings());
+    const restored = (await get("repertoires")).repertoires.find(item => item.id === limitRepertoire.id);
+    assert.equal(restored.new_cards_per_day, overridePayload.new_cards_per_day);
+    assert.equal(restored.effective_new_cards_per_day, overridePayload.new_cards_per_day);
+    await postCommand(`repertoires/${limitRepertoire.id}/settings`, overridePayload,
+      { method: "PUT", operationId: overrideOperationId });
+    assert.equal((await get(`operations/${overrideOperationId}`)).state, "complete");
     const receipt = await get(`operations/${operationId}`);
     assert.equal(receipt.state, "complete");
     const after = await get("queue/today");
@@ -728,6 +746,12 @@ const actions = {
     console.log("PASS every PostgreSQL table matches after backup restoration");
     run("docker", [...compose, "up", "--no-build", "-d"]);
     await waitForReady();
+    if (limitRecreationRepertoireId !== null) {
+      await postCommand(`repertoires/${limitRecreationRepertoireId}`, {}, {
+        method: "DELETE", label: "foreground DELETE recreation fixture after verified backup",
+      });
+      limitRecreationRepertoireId = null;
+    }
   },
   browser: async () => {
       const browserArguments = buildPostgresPlaywrightArguments(options);

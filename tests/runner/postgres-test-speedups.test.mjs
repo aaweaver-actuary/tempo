@@ -4,12 +4,13 @@ import { mkdtempSync, readFileSync, readdirSync, rmSync, mkdirSync, writeFileSyn
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { runInNewContext } from "node:vm";
 import { test } from "node:test";
 import { Chess } from "chess.js";
 import { buildPostgresPlaywrightArguments, parsePostgresTestOptions } from "../../scripts/postgres-test-options.mjs";
 import { executePostgresTestPlan, postgresTestStages } from "../../scripts/postgres-test-plan.mjs";
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
-  studyDurabilityPgn } from "../../scripts/postgres-test-fixture.mjs";
+  repertoireLimitRecreationPgn, studyDurabilityPgn } from "../../scripts/postgres-test-fixture.mjs";
 import { createScenarioTimer } from "../../scripts/test-scenario-timings.mjs";
 
 const root = fileURLToPath(new URL("../../", import.meta.url));
@@ -86,6 +87,77 @@ test("valid opponent-branch durability and background fixtures prescribe one Whi
     }
     assert.equal(prescribedResponses.get(new Chess().fen().split(" ").slice(0, 4).join(" ")), initialResponse);
   }
+});
+
+test("repertoire limit recreation fixture includes its final White response", () => {
+  const board = new Chess();
+  board.loadPgn(repertoireLimitRecreationPgn);
+  assert.equal(board.turn(), "b", "Recreation must reach study admission without a missing White response");
+  const runnerSource = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  assert.match(runnerSource, /importFixture\("repertoire-limit-recreation\.pgn", repertoireLimitRecreationPgn\)/);
+});
+
+test("repertoire limit recreation fixture survives backup then leaves unrelated study state intact", async () => {
+  const runnerSource = readFileSync(join(root, "scripts/test-postgres-docker.mjs"), "utf8");
+  const scenarioStart = runnerSource.indexOf('  command_recreation: async () => {');
+  const scenarioEnd = runnerSource.indexOf('  browser: async () => {', scenarioStart);
+  assert(scenarioStart > 0 && scenarioEnd > scenarioStart);
+  const fixtureRows = new Map([['unrelated', { id: 'unrelated', new_cards_per_day: null }]]);
+  let settings = { new_cards_per_day: 10 };
+  let backupVerified = false;
+  let overrideReplayed = false;
+  const context = {
+    assert, compose: ['compose'], randomBytes: () => Buffer.from('fixture'),
+    repertoireLimitRecreationPgn, limitRecreationRepertoireId: null,
+    console: { log() {} },
+    importFixture: async () => {
+      fixtureRows.set('recreation', { id: 'recreation', new_cards_per_day: null });
+      return { repertoire_id: 'recreation' };
+    },
+    waitForStudyableImport: async () => {}, waitForReady: async () => {},
+    get: async (path) => {
+      if (path === 'settings') return { ...settings };
+      if (path === 'repertoires') return { repertoires: [...fixtureRows.values()] };
+      if (path === 'queue/today') return { cards: [...fixtureRows.keys()].map(id => ({ queue_entry_id: id })) };
+      if (path.startsWith('operations/')) return { state: 'complete' };
+      throw new Error(`Unexpected read: ${path}`);
+    },
+    apiRequest: async (path, options) => {
+      assert.equal(path, 'settings');
+      settings = JSON.parse(options.body);
+      return { ok: true, body: { cancel: async () => {} } };
+    },
+    confirm: async () => ({}),
+    postCommand: async (path, payload, options) => {
+      if (options.method === 'DELETE') {
+        assert(backupVerified, 'Persisted override must be present when backup is verified');
+        assert.equal(path, 'repertoires/recreation');
+        fixtureRows.delete('recreation');
+        return {};
+      }
+      assert.equal(path, 'repertoires/recreation/settings');
+      const repertoire = fixtureRows.get('recreation');
+      overrideReplayed = repertoire.new_cards_per_day !== null;
+      repertoire.new_cards_per_day = payload.new_cards_per_day;
+      repertoire.effective_new_cards_per_day = payload.new_cards_per_day;
+      return {};
+    },
+    run: (command, argumentsList) => {
+      if (argumentsList.includes('/source/scripts/verify_postgres_backup.py')) {
+        assert.equal(fixtureRows.get('recreation').new_cards_per_day, 11);
+        backupVerified = true;
+      }
+    },
+  };
+  // Execute the real scenario bodies with only I/O replaced. This protects the
+  // fixture lifecycle, including replay and backup ordering, without Docker.
+  const actions = runInNewContext(`({${runnerSource.slice(scenarioStart, scenarioEnd)}})`, context);
+  await actions.command_recreation();
+  assert(overrideReplayed);
+  assert(fixtureRows.has('recreation'), 'Keep the fixture for backup verification');
+  await actions.backup_restore();
+  assert(backupVerified);
+  assert.deepEqual([...fixtureRows.keys()], ['unrelated'], 'Owned recreation entries cannot precede the next study workflow');
 });
 
 test("full browser coverage creates a fresh durability database before study commands", () => {
