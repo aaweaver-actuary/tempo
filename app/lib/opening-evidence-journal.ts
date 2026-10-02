@@ -124,6 +124,8 @@ async function storeAppend(journal: OpeningAttemptJournal, event?: OpeningDecisi
     for (const pendingEvent of pendingEvents) journal.uncommittedEvents.delete(pendingEvent.sequence);
     if (!journal.uncommittedEvents.size) journal.storageError = undefined;
     if (snapshot.terminal) releaseLeases.get(snapshot.attempt_id)?.();
+    if (snapshot.terminal?.state === "partial" && captures.get(snapshot.attempt_id) === journal)
+      captures.delete(snapshot.attempt_id);
     if (attempt.delivery_state === "pending") scheduleOpeningEvidenceFlush();
   });
   writeTail = writing;
@@ -158,7 +160,8 @@ export function partialOpeningAttempt(attemptId: string | undefined): void {
   if (!attemptId) return;
   const journal = captures.get(attemptId);
   if (journal && !journal.terminal && journal.events.length) journal.finish("partial");
-  captures.delete(attemptId);
+  // Keep failed partial appends reachable until their local transaction commits.
+  if (!journal?.events.length || journal.terminal?.state === "complete") captures.delete(attemptId);
   if (!journal?.events.length) releaseLeases.get(attemptId)?.();
 }
 
@@ -319,7 +322,7 @@ export async function recoverOpeningEvidence(): Promise<void> {
   if (typeof indexedDB === "undefined" || typeof navigator === "undefined" || !navigator.locks) return;
   await writeTail.catch(() => undefined);
   for (const journal of captures.values()) {
-    if (journal.storageError && journal.uncommittedEvents.size) await storeAppend(journal);
+    if (journal.storageError) await storeAppend(journal);
   }
   const database = await offlineTrainingDatabase();
   const attempts = await new Promise<SavedAttempt[]>((resolve, reject) => {

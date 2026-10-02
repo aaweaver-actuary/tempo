@@ -316,3 +316,24 @@ including both successful and parent-rejected offline replay; original move/cont
 independent repeat IDs, separate fallback key and post-refresh diagnostics are
 asserted. The complete final candidate still requires fresh CI; run 37065687058
 passed all required jobs on the earlier `7fd6042` and is not evidence for these repairs.
+
+PR 2 storage-recovery follow-up: `AS-15 restart retains an uncommitted partial
+journal for storage recovery` reproduced lost in-memory partial work before the
+repair (1.37s). A partial journal remains reachable until its local transaction
+commits; recovery retries failed terminal writes even when all event rows were
+already committed. `AS-15 denied IndexedDB open can retry after access is restored
+without reloading unsaved work` reproduced a cached synchronous denied-open failure
+(1.58s). Failed opens now release their cached promise. The four affected unit files
+passed 25 cases in 2.64s; typecheck and lint passed. Elevated
+`make view VIEW='AS-15 crash recovery|AS-15 orphaned completion'` passed both real
+browser recovery paths in 4.7s before the synchronous-open guard; that error branch
+is proved by the named unit. Fresh CI owns the final committed candidate.
+
+Run 37067036437 passed the complete plan for `7b78187` on synthetic merge
+`126785f1e95c0bd4152366741d7997dc8b060095`, whose parents are main
+`5976bce6e782b8fb22ec1bd79a8ed8bacd35dac9` (merged PR #68) and the PR head.
+The plan required frontend, backend, build, PostgreSQL, all 189 browser cases and
+53 pinned visual/performance cases; only the inapplicable quarantine and PR
+publishing jobs skipped. This successful older run is not relabelled as validation
+of the subsequent storage-recovery patch. PR #66/#67 remain unmerged dependencies
+that this work does not consume.

@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import manifestFixture from "../fixtures/opening-evidence-manifest.json";
 import { openingDecisionManifestSchema, openingEvidenceCheckpointSchema } from "../../app/domain/opening-evidence";
-import { OpeningAttemptJournal } from "../../app/lib/opening-evidence-journal";
+import { OpeningAttemptJournal, beginOpeningAttempt, partialOpeningAttempt } from "../../app/lib/opening-evidence-journal";
+import * as openingStorage from "../../app/lib/offline-training-storage";
 import { saveEvidenceAwareReview } from "../../app/lib/opening-evidence-review";
 import { useTrainingStore } from "../../app/state/training-store";
 import { asCardId, asFenString, asQueueEntryId, asSanMove } from "../../app/types";
@@ -49,6 +50,36 @@ describe("shadow opening journal", () => {
     expect(journal.uncommittedEvents.get(1)).toEqual(original);
     expect(journal.finish("partial").events).toEqual([original, journal.events[1]]);
     expect(journal.terminal?.final_sequence).toBe(2);
+  });
+
+  it("AS-15 restart retains an uncommitted partial journal for storage recovery", async () => {
+    vi.stubGlobal("indexedDB", {});
+    const storage = vi.spyOn(openingStorage, "offlineTrainingDatabase").mockRejectedValue(new Error("Storage is denied"));
+    const card=mapQueueCardToPracticeCard({id:"shadow-card",queue_entry_id:101,start_fen:manifest.decisions[0].fen,
+      moves:["e2e4","e7e5","g1f3","b8c6","f1b5"],content_type:"opening",repertoire_name:"Shadow",
+      repertoire_source:"PGN",opening_decision_manifest:manifest});
+    const journal=beginOpeningAttempt(card,"uncommitted-partial")!;
+    journal.response(0,"e2e4","expected");
+    await vi.waitFor(() => expect(journal.storageError).toContain("Storage is denied"));
+    partialOpeningAttempt("uncommitted-partial");
+    expect(beginOpeningAttempt(card,"uncommitted-partial")).toBe(journal);
+    expect(journal.snapshot()).toMatchObject({terminal:{state:"partial",final_sequence:1},
+      events:[{sequence:1,response_uci:"e2e4"}]});
+    await vi.waitFor(() => expect(storage).toHaveBeenCalledTimes(2));
+  });
+
+  it("AS-15 denied IndexedDB open can retry after access is restored without reloading unsaved work", async () => {
+    const database={close:vi.fn(),onversionchange:undefined} as unknown as IDBDatabase;
+    const request={result:database} as IDBOpenDBRequest;
+    const open=vi.fn().mockImplementationOnce(() => {throw new Error("Storage is denied");}).mockReturnValue(request);
+    vi.stubGlobal("indexedDB",{open});
+    await expect(openingStorage.offlineTrainingDatabase()).rejects.toThrow("Storage is denied");
+    const retry=openingStorage.offlineTrainingDatabase();
+    expect(open).toHaveBeenCalledTimes(2);
+    request.onsuccess?.call(request,new Event("success"));
+    await expect(retry).resolves.toBe(database);
+    database.onversionchange?.call(database,new Event("versionchange") as IDBVersionChangeEvent);
+    expect(database.close).toHaveBeenCalledOnce();
   });
 
   it("AS-11 queue refresh preserves logical identity while restart and reinforcement replace it", () => {

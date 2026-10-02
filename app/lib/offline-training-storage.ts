@@ -4,7 +4,7 @@ export const offlineTrainingDatabaseVersion = 2;
 let databasePromise: Promise<IDBDatabase> | undefined;
 
 export function offlineTrainingDatabase(): Promise<IDBDatabase> {
-  databasePromise ??= new Promise((resolve, reject) => {
+  databasePromise ??= new Promise<IDBDatabase>((resolve, reject) => {
     let blocked = false;
     const request = indexedDB.open(offlineTrainingDatabaseName, offlineTrainingDatabaseVersion);
     request.onupgradeneeded = () => {
@@ -27,6 +27,6 @@ export function offlineTrainingDatabase(): Promise<IDBDatabase> {
     };
     request.onerror = () => { databasePromise = undefined; reject(request.error); };
     request.onblocked = () => { blocked = true; databasePromise = undefined; reject(new Error("Close older Tempo tabs to upgrade offline evidence storage.")); };
-  });
+  }).catch((error) => { databasePromise = undefined; throw error; });
   return databasePromise;
 }
