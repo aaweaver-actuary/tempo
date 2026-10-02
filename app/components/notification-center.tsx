@@ -3,17 +3,16 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import { Button } from "./buttons/BaseButton";
 import {
-  buildNotificationExport, clearAllNotifications, clearNotification, hideNotificationToast, hydrateNotifications,
-  notificationNeedsAttention,
-  notificationToastIds, notifications,
+  buildNotificationExport, clearAllNotifications, clearNotificationGroup, hideNotificationToast, hydrateNotifications,
+  groupNotifications, notificationNeedsAttention, notificationToasts, notifications,
   subscribeNotifications, NOTIFICATION_HISTORY_LIMIT,
-  type NotificationRecord,
+  type NotificationRecord, type NotificationGroup, type NotificationToast as ToastState,
 } from "../lib/notifications";
 import { buildDebugBundle, copyDebugBundle, debugErrors } from "../lib/debug-reporting";
 
 type Threshold = "info" | "warning" | "error";
 const emptyNotificationRecords: readonly NotificationRecord[] = [];
-const emptyToastIds: readonly string[] = [];
+const emptyToasts: readonly ToastState[] = [];
 
 function useNotifications() {
   const records = useSyncExternalStore(subscribeNotifications, notifications, () => emptyNotificationRecords);
@@ -34,14 +33,16 @@ function NotificationDetails({ record }: { record: NotificationRecord }) {
 export function NotificationCenter() {
   const records = useNotifications();
   const [open, setOpen] = useState(false);
-  const [filter, setFilter] = useState<"all" | NotificationRecord["severity"]>("all");
+  const [filter, setFilter] = useState<"attention" | "all" | NotificationRecord["severity"]>("attention");
   const [threshold, setThreshold] = useState<Threshold>("info");
   const [copyState, setCopyState] = useState<"idle" | "copied" | "failed">("idle");
   const [debugCopyId, setDebugCopyId] = useState<string>();
   const [debugCopyState, setDebugCopyState] = useState<"idle" | "copied" | "failed">("idle");
-  const shown = filter === "all" ? records : records.filter((record) => record.severity === filter);
+  const groups = groupNotifications(records);
+  const shown = groups.filter(({ record }) => filter === "all" ||
+    (filter === "attention" ? notificationNeedsAttention(record) : record.severity === filter));
   const exportText = buildNotificationExport(threshold);
-  const needsAttention = records.filter(notificationNeedsAttention).length;
+  const needsAttention = groups.filter(({ record }) => notificationNeedsAttention(record)).length;
 
   async function copySelected() {
     try {
@@ -54,7 +55,10 @@ export function NotificationCenter() {
 
   return <div className="notification-center">
     <Button type="button" className="notification-trigger" aria-label="Notifications"
-      aria-expanded={open} aria-controls="notification-tray" onClick={() => setOpen((value) => !value)}>
+      aria-expanded={open} aria-controls="notification-tray" onClick={() => {
+        if (!open) setFilter("attention");
+        setOpen((value) => !value);
+      }}>
       <span aria-hidden="true">🔔</span><span className="notification-trigger-label">Notifications</span>
       {needsAttention > 0 && <span className="notification-count">{needsAttention}</span>}
     </Button>
@@ -66,9 +70,9 @@ export function NotificationCenter() {
       </div></header>
       <p className="notification-retention">Newest first · latest {NOTIFICATION_HISTORY_LIMIT} kept on this device</p>
       <div className="notification-filters" aria-label="Filter notifications">
-        {(["all", "error", "warning", "success", "info"] as const).map((severity) =>
+        {(["attention", "all", "error", "warning", "success", "info"] as const).map((severity) =>
           <Button type="button" key={severity} aria-pressed={filter === severity}
-            onClick={() => setFilter(severity)}>{severity === "all" ? "All" : severity}</Button>)}
+            onClick={() => setFilter(severity)}>{severity === "attention" ? "Needs attention" : severity === "all" ? "All" : severity}</Button>)}
       </div>
       <div className="notification-export">
         <label htmlFor="notification-export-threshold">Copy severity</label>
@@ -86,14 +90,15 @@ export function NotificationCenter() {
       </div>}
       <div className="notification-list">
         {shown.length === 0 && <p>No notifications in this filter.</p>}
-        {shown.map((record) => <article key={record.id} className={`notification-item notification-${record.severity}`}>
+        {shown.map(({ key, record, occurrenceCount }) => <article key={key} className={`notification-item notification-${record.severity}`}>
           <div className="notification-item-meta"><span className="notification-severity">{record.severity}</span>
             <time dateTime={record.updatedAt}>{new Date(record.updatedAt).toLocaleString()}</time></div>
+          {occurrenceCount > 1 && <p className="notification-retention">Repeated {occurrenceCount} times</p>}
           <strong>{record.source}</strong><p>{record.message}</p><NotificationDetails record={record} />
           <div className="notification-clear-actions">
             {record.clearedAt ? <span>Cleared</span> : <>
               {notificationNeedsAttention(record) && <span className="notification-new-label">New</span>}
-              <Button type="button" onClick={() => clearNotification(record.id)}>Clear</Button>
+              <Button type="button" onClick={() => clearNotificationGroup(key)}>Clear</Button>
             </>}
           </div>
           {typeof record.details?.debugRecordId === "string" &&
@@ -115,30 +120,32 @@ export function NotificationCenter() {
   </div>;
 }
 
-function NotificationToast({ record }: { record: NotificationRecord }) {
+function NotificationToast({ group, toastId }: { group: NotificationGroup; toastId: string }) {
+  const { record, occurrenceCount } = group;
   const [exiting, setExiting] = useState(false);
   useEffect(() => {
-    if (record.active) return;
-    const duration = record.severity === "error" || record.severity === "warning" ? 7_000 : 4_000;
-    const fadeTimer = window.setTimeout(() => setExiting(true), duration);
-    const hideTimer = window.setTimeout(() => hideNotificationToast(record.id), duration + 250);
+    const fadeTimer = window.setTimeout(() => setExiting(true), 7_000);
+    const hideTimer = window.setTimeout(() => hideNotificationToast(toastId), 7_250);
     return () => { window.clearTimeout(fadeTimer); window.clearTimeout(hideTimer); };
-  }, [record.active, record.id, record.severity, record.updatedAt]);
+  }, [toastId]);
   return <div className={`notification-toast notification-${record.severity}${exiting ? " is-exiting" : ""}`}
     role={record.severity === "error" ? "alert" : "status"}
     aria-hidden={exiting}
-    inert={exiting}
-    aria-label={record.message === "Saving result…" ? "Saving result" : undefined}>
-    <span className="notification-severity">{record.severity}</span><span>{record.message}</span>
-    <Button type="button" aria-label={`Dismiss ${record.source} notification`} onClick={() => hideNotificationToast(record.id)}>×</Button>
+    inert={exiting}>
+    <span className="notification-severity">{record.severity}</span><span>{record.message}
+      {occurrenceCount > 1 && <small className="notification-repeat-count">Repeated {occurrenceCount} times</small>}</span>
+    <Button type="button" aria-label={`Dismiss ${record.source} notification`} onClick={() => hideNotificationToast(toastId)}>×</Button>
   </div>;
 }
 
 export function NotificationViewport() {
   const records = useNotifications();
-  const visibleIds = useSyncExternalStore(subscribeNotifications, notificationToastIds, () => emptyToastIds);
-  const visible = visibleIds.map((id) => records.find((record) => record.id === id)).filter((record): record is NotificationRecord => Boolean(record));
+  const visibleToasts = useSyncExternalStore(subscribeNotifications, notificationToasts, () => emptyToasts);
+  const groups = groupNotifications(records);
   return <div className="notification-viewport">
-    {visible.map((record) => <NotificationToast key={`${record.id}:${record.active}:${record.severity}:${record.message}`} record={record} />)}
+    {visibleToasts.map((toast) => {
+      const group = groups.find((candidate) => candidate.key === toast.groupKey);
+      return group && <NotificationToast key={toast.id} group={group} toastId={toast.id} />;
+    })}
   </div>;
 }

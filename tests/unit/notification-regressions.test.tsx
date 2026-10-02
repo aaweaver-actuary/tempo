@@ -2,7 +2,7 @@ import { act, fireEvent, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   buildNotificationExport, clearAllNotifications, clearNotification, clearNotificationHistory,
-  notificationNeedsAttention, notificationToastIds, notifications,
+  groupNotifications, notificationNeedsAttention, notificationToastIds, notifications,
   notificationsAtOrAbove, publishNotification, resolveNotification, updateNotification,
 } from "../../app/lib/notifications";
 import { NotificationCenter, NotificationViewport } from "../../app/components/notification-center";
@@ -25,7 +25,9 @@ describe("notification regressions", () => {
     const conflictEntry = screen.getByText("Saved conflict").closest("article")!;
     fireEvent.click(within(conflictEntry).getByRole("button", { name: "Clear" }));
     expect(container.querySelector(".notification-count")?.textContent).toBe("1");
-    expect(within(conflictEntry).getByText("Cleared")).toBeTruthy();
+    expect(screen.queryByText("Saved conflict")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    expect(within(screen.getByText("Saved conflict").closest("article")!).getByText("Cleared")).toBeTruthy();
     expect(notifications().map((record) => record.id)).toEqual(originalHistory.map((record) => record.id));
     const clearedRecord = notifications().find((record) => record.id === clearedId)!;
     expect(clearedRecord).toEqual({ ...originalHistory.find((record) => record.id === clearedId)!,
@@ -48,7 +50,8 @@ describe("notification regressions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Clear all" }));
     expect(container.querySelector(".notification-count")).toBeNull();
     expect(notifications()).toEqual(originalHistory.map((record) => ({ ...record, clearedAt: expect.any(String) })));
-    expect(notificationToastIds()).toEqual([activeId]);
+    expect(notificationToastIds()).toEqual([]);
+    expect(notifications().find((record) => record.id === activeId)?.active).toBe(true);
     expect(screen.getByRole("button", { name: "Clear all" }).hasAttribute("disabled")).toBe(true);
     const clearedHistory = notifications();
     act(() => { clearAllNotifications(); clearNotification("missing-notification"); });
@@ -125,6 +128,173 @@ describe("notification regressions", () => {
     blockedStorage.mockRestore();
   });
 
+  it("routine review saves never show popups", () => {
+    const saving = publishNotification({ severity: "info", source: "review", key: "save:quiet", message: "Saving result…", active: true });
+    const view = render(<><NotificationCenter /><NotificationViewport /></>);
+    expect(view.container.querySelectorAll(".notification-toast")).toHaveLength(0);
+    act(() => resolveNotification(saving, { severity: "success", message: "Result saved." }));
+    expect(view.container.querySelectorAll(".notification-toast")).toHaveLength(0);
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    expect(screen.getByText("Result saved.")).toBeTruthy();
+  });
+
+  it("clearing grouped notifications preserves independent operations and new arrivals", () => {
+    const notice = { severity: "warning" as const, source: "discovery save", message: "Save pending" };
+    const first = publishNotification({ ...notice, key: "discovery:first" });
+    const second = publishNotification({ ...notice, key: "discovery:second" });
+    const view = render(<><NotificationCenter /><NotificationViewport /></>);
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    expect(view.container.querySelectorAll(".notification-item")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Clear" }));
+    expect(view.container.querySelectorAll(".notification-item")).toHaveLength(0);
+    expect(view.container.querySelectorAll(".notification-toast")).toHaveLength(0);
+    expect(notifications()).toHaveLength(2);
+    expect(notifications().every((record) => record.clearedAt && !record.resolvedAt)).toBe(true);
+    act(() => publishNotification({ ...notice, key: "discovery:first" }));
+    expect(view.container.querySelectorAll(".notification-toast")).toHaveLength(0);
+    act(() => publishNotification({ ...notice, key: "discovery:third" }));
+    expect(view.container.querySelector(".notification-count")?.textContent).toBe("1");
+    expect(view.container.querySelectorAll(".notification-item")).toHaveLength(1);
+    expect(view.container.querySelectorAll(".notification-toast")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    expect(view.container.querySelectorAll(".notification-item")).toHaveLength(2);
+    const exportedRecords = JSON.parse(buildNotificationExport("warning")).notifications;
+    expect(exportedRecords).toHaveLength(3);
+    expect(exportedRecords.map((record: { key: string }) => record.key).sort())
+      .toEqual(["discovery:first", "discovery:second", "discovery:third"]);
+    expect(exportedRecords.filter((record: { clearedAt: string | null }) => record.clearedAt)).toHaveLength(2);
+    act(() => resolveNotification(first, { severity: "success", message: "Save confirmed" }));
+    expect(notifications().find((record) => record.id === second)?.resolvedAt).toBeNull();
+    expect(view.container.querySelector(".notification-count")?.textContent).toBe("1");
+  });
+
+  it("identical retries share one entry without reopening or extending the popup", () => {
+    vi.useFakeTimers();
+    const notice = { severity: "warning" as const, source: "training queue", message: "Guided attempt save pending. Tempo will retry." };
+    publishNotification(notice);
+    const view = render(<><NotificationCenter /><NotificationViewport /></>);
+    act(() => vi.advanceTimersByTime(2_000));
+    act(() => { publishNotification(notice); publishNotification({ ...notice, key: "guided:other" }); });
+    expect(view.container.querySelectorAll(".notification-toast")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    expect(view.container.querySelectorAll(".notification-item")).toHaveLength(1);
+    expect(view.container.querySelector(".notification-item")?.textContent).toContain("Repeated 3 times");
+    expect(view.container.querySelector(".notification-count")?.textContent).toBe("1");
+    act(() => vi.advanceTimersByTime(5_300));
+    expect(view.container.querySelectorAll(".notification-toast")).toHaveLength(0);
+    act(() => publishNotification(notice));
+    expect(view.container.querySelectorAll(".notification-toast")).toHaveLength(0);
+    act(() => publishNotification({ ...notice, message: "Reconnect to retry." }));
+    fireEvent.click(screen.getByRole("button", { name: "Dismiss training queue notification" }));
+    act(() => publishNotification({ ...notice, message: "Reconnect to retry." }));
+    expect(view.container.querySelectorAll(".notification-toast")).toHaveLength(0);
+  });
+
+  it("grouped discovery warnings resolve independently", () => {
+    const notice = { severity: "warning" as const, source: "discovery save", message: "Discovery save unconfirmed; Tempo will retry." };
+    const first = publishNotification({ ...notice, key: "discovery-save:first" });
+    const second = publishNotification({ ...notice, key: "discovery-save:second" });
+    const view = render(<NotificationCenter />);
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    expect(view.container.querySelectorAll(".notification-item")).toHaveLength(1);
+    act(() => resolveNotification(first, { severity: "success", message: "Discovery save confirmed." }));
+    expect(view.container.querySelectorAll(".notification-item")).toHaveLength(1);
+    expect(screen.queryByText("Discovery save confirmed.")).toBeNull();
+    expect(notifications().find((record) => record.id === second)?.resolvedAt).toBeNull();
+    expect(JSON.parse(buildNotificationExport("info")).notifications).toHaveLength(2);
+    act(() => resolveNotification(second, { severity: "success", message: "Discovery save confirmed." }));
+    expect(view.container.querySelectorAll(".notification-item")).toHaveLength(0);
+    expect(view.container.querySelector(".notification-count")).toBeNull();
+  });
+
+  it("notification history opens to unresolved warnings and errors", () => {
+    publishNotification({ severity: "info", source: "review", message: "Saving quietly" });
+    publishNotification({ severity: "success", source: "settings", message: "Settings saved" });
+    const resolved = publishNotification({ severity: "error", source: "service", message: "Old failure" });
+    resolveNotification(resolved);
+    publishNotification({ severity: "warning", source: "sync", message: "Reconnect" });
+    publishNotification({ severity: "error", source: "review", message: "Retry save" });
+    const view = render(<NotificationCenter />);
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    expect(screen.getByRole("button", { name: "Needs attention" }).getAttribute("aria-pressed")).toBe("true");
+    expect(view.container.querySelectorAll(".notification-item")).toHaveLength(2);
+    expect(screen.queryByText("Old failure")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "All" }));
+    expect(view.container.querySelectorAll(".notification-item")).toHaveLength(5);
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    expect(screen.getByRole("button", { name: "Needs attention" }).getAttribute("aria-pressed")).toBe("true");
+    expect(view.container.querySelectorAll(".notification-item")).toHaveLength(2);
+  });
+
+  it("keyed diagnostic repeats keep their popup deadline when details change", () => {
+    vi.useFakeTimers();
+    const incident = { severity: "error" as const, source: "sync", key: "incident:sync", message: "Invalid status" };
+    publishNotification({ ...incident, details: { debugRecordId: "first" } });
+    const view = render(<NotificationViewport />);
+    act(() => vi.advanceTimersByTime(2_000));
+    act(() => publishNotification({ ...incident, details: { debugRecordId: "second" } }));
+    expect(view.container.querySelectorAll(".notification-toast")).toHaveLength(1);
+    act(() => vi.advanceTimersByTime(5_300));
+    expect(view.container.querySelectorAll(".notification-toast")).toHaveLength(0);
+    act(() => publishNotification({ ...incident, details: { debugRecordId: "third" } }));
+    expect(view.container.querySelectorAll(".notification-toast")).toHaveLength(0);
+  });
+
+  it("confirming one grouped save does not restart the remaining warning popup", () => {
+    vi.useFakeTimers();
+    const notice = { severity: "warning" as const, source: "discovery save", message: "Still pending" };
+    const first = publishNotification({ ...notice, key: "discovery:first" });
+    publishNotification({ ...notice, key: "discovery:second" });
+    const view = render(<NotificationViewport />);
+    act(() => vi.advanceTimersByTime(2_000));
+    act(() => resolveNotification(first, { severity: "success", message: "Confirmed" }));
+    expect(view.container.querySelectorAll(".notification-toast")).toHaveLength(1);
+    act(() => vi.advanceTimersByTime(5_300));
+    expect(view.container.querySelectorAll(".notification-toast")).toHaveLength(0);
+  });
+
+  it("grouping keeps different sources severities details and resolution states separate", () => {
+    const notice = { severity: "warning" as const, source: "sync", message: "Retry", details: { cardId: "one", endpointPath: "/one" } };
+    publishNotification(notice);
+    publishNotification({ ...notice, details: { endpointPath: "/one", cardId: "one" } });
+    publishNotification({ ...notice, source: "review" });
+    publishNotification({ ...notice, severity: "error" });
+    publishNotification({ ...notice, details: { ...notice.details, endpointPath: "/two" } });
+    const resolved = publishNotification(notice);
+    resolveNotification(resolved);
+    expect(groupNotifications(notifications())).toHaveLength(5);
+    expect(groupNotifications(notifications()).find((group) => group.occurrenceCount === 2)).toBeTruthy();
+    expect(JSON.parse(buildNotificationExport("warning")).notifications).toHaveLength(6);
+  });
+
+  it("stored duplicate warnings group after reload without losing operation identities", async () => {
+    const notice = { severity: "warning" as const, source: "discovery save", message: "Still pending", details: { selectedMove: "e2e4" } };
+    publishNotification({ ...notice, key: "discovery:first" });
+    publishNotification({ ...notice, key: "discovery:first" });
+    publishNotification({ ...notice, key: "discovery:second" });
+    vi.resetModules();
+    const fresh = await import("../../app/lib/notifications");
+    fresh.hydrateNotifications();
+    expect(fresh.groupNotifications(fresh.notifications())).toMatchObject([{ occurrenceCount: 3 }]);
+    expect(fresh.notificationToastIds()).toHaveLength(0);
+    const exported = JSON.parse(fresh.buildNotificationExport("warning"));
+    expect(exported.notifications.map((record: { key: string }) => record.key).sort()).toEqual(["discovery:first", "discovery:second"]);
+    expect(exported.notifications.every((record: { details: unknown }) => JSON.stringify(record.details) === JSON.stringify(notice.details))).toBe(true);
+  });
+
+  it("warning popups stay bounded and expire even while work remains active", () => {
+    vi.useFakeTimers();
+    for (let index = 0; index < 4; index += 1)
+      publishNotification({ severity: "warning", source: "review", message: `Pending ${index}`, active: true });
+    const view = render(<NotificationViewport />);
+    expect(view.container.querySelectorAll(".notification-toast")).toHaveLength(3);
+    act(() => vi.advanceTimersByTime(7_300));
+    expect(view.container.querySelectorAll(".notification-toast")).toHaveLength(0);
+    expect(notifications()).toHaveLength(4);
+  });
+
   it("new notifications and updates remain newest first with severity thresholds", () => {
     const first = publishNotification({ severity: "info", source: "queue", message: "First" });
     publishNotification({ severity: "error", source: "sync", message: "Second" });
@@ -157,12 +327,13 @@ describe("notification regressions", () => {
     expect(screen.getByText("Conflict saved")).toBeTruthy();
   });
 
-  it("active work stays visible until resolved and history keeps the latest 500", () => {
+  it("active work stays in history without a popup and history keeps the latest 500", () => {
     vi.useFakeTimers();
     const activeId = publishNotification({ severity: "info", source: "review", message: "Saving result…", active: true });
     render(<NotificationViewport />);
     act(() => { vi.advanceTimersByTime(30_000); });
-    expect(notificationToastIds()).toContain(activeId);
+    expect(notificationToastIds()).not.toContain(activeId);
+    expect(notifications().find((record) => record.id === activeId)?.active).toBe(true);
     act(() => { resolveNotification(activeId, { severity: "success", message: "Result saved." }); });
     act(() => { vi.advanceTimersByTime(4_300); });
     expect(notificationToastIds()).not.toContain(activeId);

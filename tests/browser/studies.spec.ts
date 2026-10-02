@@ -9,6 +9,14 @@ test.beforeEach(async ({ context }) => {
 const fen = "4k3/8/8/8/8/8/8/4K1N1 w - - 0 1";
 const originalPgn = `[Event "Original synthetic study"]\n[SetUp "1"]\n[FEN "${fen}"]\n\n*\n`;
 
+async function expectStudyNoticeInHistory(page: Page, message: string) {
+  await expect(page.locator(".notification-toast.notification-info, .notification-toast.notification-success")).toHaveCount(0);
+  await page.getByRole("button", { name: "Notifications" }).click();
+  await page.getByRole("button", { name: "All", exact: true }).click();
+  await expect(page.locator(".notification-list").getByText(message, { exact: true })).toBeVisible();
+  await page.locator(".notification-tray").getByRole("button", { name: "Close", exact: true }).click();
+}
+
 async function waitForPreparedPhoneShell(page: Page, localDate: string): Promise<void> {
   await expect.poll(() => page.evaluate(async (expectedDate) => {
     const controller = navigator.serviceWorker.controller;
@@ -47,7 +55,7 @@ test("FEN-only study square exercise is authored enrolled and reviewed through t
   await nav(page, "Studies");
   await page.getByLabel("Title", { exact: true }).fill("Synthetic knight study");
   await page.getByRole("button", { name: "Create study" }).press("Enter");
-  await expect(page.getByText("Study created")).toBeVisible();
+  await expectStudyNoticeInHistory(page, "Study created");
   await page.getByLabel("New chapter").fill("Geometry");
   await page.getByRole("button", { name: "Add chapter" }).press("Enter");
   await page.getByLabel("Or paste PGN").fill(originalPgn);
@@ -59,12 +67,12 @@ test("FEN-only study square exercise is authored enrolled and reviewed through t
   await page.getByLabel("Authored criterion").fill("The square occupied by the white knight");
   await page.getByLabel("Required squares").fill("g1");
   await page.getByRole("button", { name: "Create draft exercise" }).press("Enter");
-  await expect(page.getByText("Draft exercise created; enroll it when ready")).toBeVisible();
+  await expectStudyNoticeInHistory(page, "Draft exercise created; enroll it when ready");
   await page.getByRole("button", { name: /Select the white knight square.*draft/ }).click();
   await page.getByRole("button", { name: "Preview learner prompt" }).press("Enter");
   await expect(page.getByLabel("Learner preview")).toContainText("Select the white knight square");
   await page.getByRole("button", { name: "Enroll in daily queue" }).press("Enter");
-  await expect(page.getByText("Exercise enrolled")).toBeVisible();
+  await expectStudyNoticeInHistory(page, "Exercise enrolled");
   await expect.poll(async () => {
     const queue = await (await request.get(`${api}/queue/today`)).json();
     return queue.cards.find((card: { content_type: string }) => card.content_type === "study_exercise")?.queue_entry_id;

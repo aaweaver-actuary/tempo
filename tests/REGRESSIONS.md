@@ -1,5 +1,14 @@
 # Reported issues and regression coverage
 
+Quiet notifications (October 2, 2026):
+
+- Routine saves interrupt study: `routine review saves never show popups`; `active work stays in history without a popup and history keeps the latest 500`; browser `review saves stay quiet without moving the board or card`.
+- Grouped Clear controls acknowledge all represented notices without resolving independent saves or hiding new arrivals: `clearing grouped notifications preserves independent operations and new arrivals`; the retained notification-clear browser cases inspect cleared history under All after reopening Needs attention.
+- Retry warnings flood the window or keep popups alive: `identical retries share one entry without reopening or extending the popup`; `keyed diagnostic repeats keep their popup deadline when details change`; `warning popups stay bounded and expire even while work remains active`.
+- Grouping loses independent saves or diagnostic details: `grouped discovery warnings resolve independently`; `confirming one grouped save does not restart the remaining warning popup`; `grouping keeps different sources severities details and resolution states separate`; `stored duplicate warnings group after reload without losing operation identities`.
+- Routine and recovered notices obscure actionable failures: `notification history opens to unresolved warnings and errors`; `failed saves remain actionable after saving progress ends`; `guided attempt warnings clear quietly only after pending saves are confirmed`; `guided attempt recovery clears its warning while phone conflicts remain`; browser `phone notification history groups retries and opens to needs attention`.
+- The existing settings and offline-phone browser regressions now verify persisted changes and retained history instead of requiring success popups. Existing JSON export, storage-failure and independent discovery-confirmation regressions remain required.
+
 | Issue | Required regression |
 | --- | --- |
 | Tactic capture restoration test reads the placeholder board before the underlying puzzle loads | `Black-first capture keeps its orientation while typed SAN and real-board moves save one solution` waits for the loaded puzzle before recording the restored FEN |

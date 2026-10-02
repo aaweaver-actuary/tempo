@@ -56,7 +56,7 @@ test("next training card paints before the previous review finishes saving", asy
   releaseReview?.();
 });
 
-test("saving result notification does not move the board or card", async ({ page }) => {
+test("review saves stay quiet without moving the board or card", async ({ page }) => {
   await prepareVisualUI(page);
   await page.route("**/api/queue/window?**", route => route.fulfill({ json: {
     local_date: "2026-09-18", count: 2, cards: [
@@ -73,11 +73,17 @@ test("saving result notification does not move the board or card", async ({ page
   const board = page.locator(".unified-board-shell-panel");
   const before = (await board.boundingBox())!;
   await page.getByRole("button", { name: "Correct" }).click();
-  await expect(page.getByRole("status", { name: "Saving result" })).toBeVisible();
+  await expect.poll(() => Boolean(releaseReview)).toBe(true);
+  await expect(page.locator(".notification-toast.notification-info, .notification-toast.notification-success")).toHaveCount(0);
   const during = (await board.boundingBox())!;
   expect(Math.abs(during.y - before.y)).toBeLessThanOrEqual(1);
   expect(Math.abs(during.x - before.x)).toBeLessThanOrEqual(1);
   releaseReview?.();
+  await expect(page.getByText("Second card", { exact: true })).toBeVisible();
+  await expect(page.locator(".notification-toast.notification-info, .notification-toast.notification-success")).toHaveCount(0);
+  await page.getByRole("button", { name: "Notifications" }).click();
+  await page.getByRole("button", { name: "All", exact: true }).click();
+  await expect(page.locator(".notification-list")).toContainText("Result saved.");
 });
 
 test("completed tactic advances while an earlier review save is still pending", async ({ page }) => {
