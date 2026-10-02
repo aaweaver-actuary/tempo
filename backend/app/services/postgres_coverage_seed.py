@@ -17,6 +17,7 @@ from .durable_tasks import (
     lock_current_slice,
 )
 from .repertoire_coverage import discover_opponent_positions, recent_player_cohort
+from .canonical_prefix import read_prefix, scope_line
 
 
 @dataclass(frozen=True)
@@ -36,7 +37,8 @@ def _source_fingerprint(database: PostgresConnection, repertoire_id: str) -> str
         "FROM repertoire_lines WHERE repertoire_id=%s",
         (repertoire_id,),
     ).fetchone()
-    return str(row[0])
+    prefix = read_prefix(database, repertoire_id)
+    return f"{row[0]}:{prefix['revision']}"
 
 
 def request_coverage_seed_in_transaction(
@@ -71,6 +73,7 @@ def request_coverage_seed_in_transaction(
     cohort = recent_player_cohort(database, int(settings["coverage_maia_elo"]))
     settings_payload = {
         "automatic_priority": automatic,
+        "canonical_prefix_revision": read_prefix(database, repertoire_id)["revision"],
         "reply_denominator": settings["coverage_reply_denominator"],
         "cumulative_target": settings["coverage_cumulative_target"] / 100,
         "horizon_fullmoves": settings["coverage_horizon_fullmoves"],
@@ -112,7 +115,7 @@ def prepare_next_coverage_line(
             "FROM repertoire_lines WHERE repertoire_id=%s AND id>%s "
             "ORDER BY id LIMIT 1", (repertoire_id, after_line_id),
         ).fetchone()
-        line = dict(row) if row else None
+        line = scope_line(database, repertoire_id, dict(row)) if row else None
     if line is None:
         return None
     positions = discover_opponent_positions([line], horizon_fullmoves)
@@ -190,11 +193,13 @@ def execute_coverage_seed_slice(task: dict[str, Any]) -> bool:
                 (payload["run_id"],),
             ).fetchone()[0]
             changed = source_fingerprint != payload["source_fingerprint"]
+            empty_scope = not total_nodes and bool(read_prefix(database, str(payload["repertoire_id"]))["moves"])
             database.execute_native(
                 "UPDATE repertoire_coverage_runs SET total_nodes=%s,status=%s,"
                 "last_error=%s,updated_at=%s WHERE id=%s AND status='building'",
-                (total_nodes, "failed" if changed else "queued" if total_nodes else "complete",
-                 "Repertoire lines changed during coverage build; refresh again" if changed else None,
+                (total_nodes, "failed" if changed or empty_scope else "queued" if total_nodes else "complete",
+                 "Repertoire lines changed during coverage build; refresh again" if changed else
+                 "No opponent positions after the canonical prefix within the coverage horizon. Add a continuation or adjust the horizon." if empty_scope else None,
                  _now(), payload["run_id"]),
             )
             if not changed and total_nodes:

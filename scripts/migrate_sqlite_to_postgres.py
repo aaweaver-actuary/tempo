@@ -131,11 +131,20 @@ def copy_table(
     count = 0
     with destination.transaction():
         with destination.cursor() as cursor:
+            scope_trigger = {"repertoire_lines": "canonical_line_source", "repertoire_cards": "canonical_link_source"}.get(table_name)
+            if scope_trigger:
+                # Copy the snapshot's source revision verbatim. Trigger state is
+                # transactional, so a failed copy also restores its protection.
+                cursor.execute(sql.SQL("ALTER TABLE {} DISABLE TRIGGER {}").format(
+                    sql.Identifier(table_name), sql.Identifier(scope_trigger)))
             with cursor.copy(statement) as copy:
                 for row in source_rows(source, table_name, primary_key_columns):
                     copy.write_row(row)
                     update_row_digest(digest, row)
                     count += 1
+            if scope_trigger:
+                cursor.execute(sql.SQL("ALTER TABLE {} ENABLE TRIGGER {}").format(
+                    sql.Identifier(table_name), sql.Identifier(scope_trigger)))
             cursor.execute(
                 "INSERT INTO tempo_migration_progress(table_name,source_count,source_sha256) "
                 "VALUES (%s,%s,%s)",

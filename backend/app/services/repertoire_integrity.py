@@ -673,6 +673,8 @@ def _rewrite_line(database: sqlite3.Connection, row: sqlite3.Row, moves: list[st
 
 
 def _rewrite_card(database: sqlite3.Connection, repertoire_id: str, row: sqlite3.Row, moves: list[str]) -> bool:
+    from .canonical_prefix import ensure_line_in_scope
+    ensure_line_in_scope(database, repertoire_id, row["start_fen"], moves)
     new_id = card_id(row["start_fen"], moves)
     if new_id == row["id"]:
         return False

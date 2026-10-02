@@ -20,6 +20,7 @@ import chess
 from .repertoire_comparison import canonical_fen
 from .repertoire_coverage import blend_probabilities
 from .activity_gate import activity_gate
+from .canonical_prefix import scope_lines, read_prefix
 
 
 SCORING_VERSION = 2
@@ -41,6 +42,7 @@ class IntendedLine:
     trained_color: str
     moves: tuple[str, ...]
     signature: tuple[tuple[str, str], ...]
+    scope_start_ply: int = 0
 
 
 @dataclass(frozen=True)
@@ -106,6 +108,7 @@ def _route_signature(
 
 
 def _maximal_intended_lines(rows: list[sqlite3.Row]) -> list[IntendedLine]:
+    scope_offsets = {row["id"]: int(dict(row).get("scope_start_ply", 0)) for row in rows}
     candidates: list[
         tuple[str, str, str, tuple[str, ...], tuple[tuple[str, str], ...]]
     ] = []
@@ -139,7 +142,8 @@ def _maximal_intended_lines(rows: list[sqlite3.Row]) -> list[IntendedLine]:
     for identifier, start_fen, color, moves, signature in maximal:
         unique.setdefault(
             signature,
-            IntendedLine(identifier, start_fen, color, moves, signature),
+            IntendedLine(identifier, start_fen, color, moves, signature,
+                         scope_offsets[identifier]),
         )
     return list(unique.values())
 
@@ -209,12 +213,12 @@ def _coverage_evidence(
     database: sqlite3.Connection, repertoire_id: str
 ) -> dict[str, dict]:
     run = database.execute(
-        """SELECT id FROM repertoire_coverage_runs WHERE repertoire_id=?
+        """SELECT id,settings_json FROM repertoire_coverage_runs WHERE repertoire_id=?
            ORDER BY CASE WHEN status='complete' THEN 0 ELSE 1 END,
                     created_at DESC LIMIT 1""",
         (repertoire_id,),
     ).fetchone()
-    if not run:
+    if not run or json.loads(run["settings_json"]).get("canonical_prefix_revision", 0) != read_prefix(database, repertoire_id)["revision"]:
         return {}
     nodes = database.execute(
         """SELECT * FROM repertoire_coverage_nodes WHERE run_id=?""", (run["id"],)
@@ -392,6 +396,8 @@ def _line_probabilities(
             key = _board_fen_key(board)
             if board.turn != trained_color:
                 edge_key = (key, move_uci)
+                if ply < line.scope_start_ply:
+                    edge_evidence[edge_key] = (1.0, {"personal_total": 0, "explorer": "assumed", "maia": "assumed"})
                 if edge_key not in edge_evidence:
                     edge_evidence[edge_key] = _move_probability(
                         move_uci,
@@ -580,6 +586,8 @@ def _load_priority_calculation_input(
                 (repertoire_id,),
             )
         ]
+        line_rows = scope_lines(database, repertoire_id, line_rows)
+        has_prefix = bool(read_prefix(database, repertoire_id)["moves"])
         cards = tuple(
             dict(row)
             for row in database.execute(
@@ -602,6 +610,7 @@ def _load_priority_calculation_input(
     if lines and reply_moves:
         personal_rows = _read_personal_evidence_rows(
             read_section, sorted(reply_moves), lines[0].trained_color,
+            repertoire_id=repertoire_id if has_prefix else None,
         )
     return PriorityCalculationInput(
         repertoire_id,
@@ -615,7 +624,7 @@ def _load_priority_calculation_input(
     )
 
 
-def _read_personal_evidence_rows(read_section, fen_keys: list[str], trained_color: str) -> list[dict]:
+def _read_personal_evidence_rows(read_section, fen_keys: list[str], trained_color: str, *, repertoire_id: str | None = None) -> list[dict]:
     rows: list[dict] = []
     for start in range(0, len(fen_keys), PERSONAL_EVIDENCE_KEYS_PER_READ):
         selected_keys = fen_keys[start:start + PERSONAL_EVIDENCE_KEYS_PER_READ]
@@ -623,6 +632,7 @@ def _read_personal_evidence_rows(read_section, fen_keys: list[str], trained_colo
         last_position: tuple[str, str, int] | None = None
         while True:
             cursor_clause = " AND (p.fen_key,p.game_id,p.ply)>(?,?,?)" if last_position else ""
+            scope_clause = " AND EXISTS(SELECT 1 FROM game_repertoire_matches match WHERE match.game_id=p.game_id AND match.repertoire_id=?)" if repertoire_id else ""
             with read_section() as database:
                 page = [dict(row) for row in database.execute(
                     f"""SELECT p.fen_key,p.game_id,p.ply,p.move_uci,g.played_at
@@ -631,10 +641,10 @@ def _read_personal_evidence_rows(read_section, fen_keys: list[str], trained_colo
                     WHERE p.fen_key IN ({placeholders}) AND p.move_uci IS NOT NULL
                       AND g.color=? AND g.adaptive_excluded=0
                       AND g.speed IN ({','.join('?' for _ in SUPPORTED_PERSONAL_SPEEDS)})
-                      {cursor_clause}
+                      {scope_clause} {cursor_clause}
                     ORDER BY p.fen_key,p.game_id,p.ply LIMIT ?""",
                     (*selected_keys, trained_color, *SUPPORTED_PERSONAL_SPEEDS,
-                     *(last_position or ()), PERSONAL_EVIDENCE_ROWS_PER_READ),
+                     *([repertoire_id] if repertoire_id else []), *(last_position or ()), PERSONAL_EVIDENCE_ROWS_PER_READ),
                 ).fetchall()]
             rows.extend(page)
             if len(page) < PERSONAL_EVIDENCE_ROWS_PER_READ:
@@ -690,7 +700,7 @@ def rebuild_introduction_priorities(
             (repertoire_id,),
         )
     ]
-    lines = tuple(_maximal_intended_lines(line_rows))
+    lines = tuple(_maximal_intended_lines(scope_lines(database, repertoire_id, line_rows)))
     cards = tuple(
         dict(row)
         for row in database.execute(

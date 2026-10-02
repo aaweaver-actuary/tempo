@@ -144,6 +144,7 @@ from .services.repertoire_integrity import (
 )
 from .services.puzzles import validate_puzzle_record
 from .services.prefix_split import apply_prefix_split, preview_prefix_split
+from .services.canonical_prefix import prefix_projection, ensure_line_in_scope
 from .services.repertoire_coverage import (
     claim_maia_coverage_node,
     coverage_gaps,
@@ -647,7 +648,10 @@ async def prioritize_foreground_requests(request: Request, call_next):
             and (len(path_parts) == 4 or path_parts[4] == "reject")
             and request.method == "POST"
         )
-        if not read_only_post and not any((study_create, study_update, study_archive,
+        canonical_prefix_command = (path_parts[:2] == ["api", "repertoires"]
+            and len(path_parts) in {4, 5} and path_parts[3] == "canonical-prefix"
+            and request.method in {"POST", "PUT"})
+        if not read_only_post and not any((canonical_prefix_command, study_create, study_update, study_archive,
                     study_import_commit, study_bundle_import,
                     exercise_create, exercise_revise,
                     exercise_enroll, exercise_attempt, exercise_self_assess,
@@ -1628,6 +1632,8 @@ register_durable_task_handler("integrity_repair", execute_durable_integrity_repa
 register_durable_task_handler("opening_graph_rebuild", execute_opening_graph_rebuild)
 from .services.postgres_opening_segmentation import execute_segmentation_slice
 register_durable_task_handler("opening_segmentation", execute_segmentation_slice)
+from .services.canonical_prefix_preview import execute_prefix_preview_slice
+register_durable_task_handler("canonical_prefix_preview", execute_prefix_preview_slice)
 register_durable_task_handler("repertoire_opportunity", execute_opportunity_slice)
 register_durable_task_handler("priority_retention", execute_priority_retention_slice)
 register_durable_task_handler("repertoire_game_refresh", execute_repertoire_game_refresh_slice)
@@ -2010,7 +2016,7 @@ async def import_pgn(
                 ).hexdigest()
             )
             db.execute(
-                "INSERT OR IGNORE INTO repertoire_lines VALUES(?,?,?,?,?,?,?)",
+                "INSERT OR IGNORE INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,?,?,?,?)",
                 (
                     line_id,
                     rid,
@@ -2168,7 +2174,9 @@ def list_repertoires():
                 FROM repertoire_integrity_issues
                 GROUP BY repertoire_id
             )
-            SELECT r.id,r.name,r.source_name,r.created_at,r.is_main,COALESCE(rs.status,'unchecked') integrity_status,
+            SELECT r.id,r.name,r.source_name,r.created_at,r.is_main,
+                   r.canonical_prefix_moves_json,r.canonical_prefix_revision,
+                   COALESCE(rs.status,'unchecked') integrity_status,
                    COALESCE(rs.scan_status,'idle') integrity_scan_status,rs.scan_error integrity_scan_error,
                    (SELECT ii.id FROM repertoire_integrity_issues ii WHERE ii.repertoire_id=r.id ORDER BY ii.updated_at,ii.id LIMIT 1) integrity_first_issue_id,
                    COALESCE(lc.line_count,0) AS line_count,
@@ -2208,8 +2216,10 @@ def list_repertoires():
         ).fetchall()
         repertoire_items = [
             {
-                **dict(row),
+                **{key: value for key, value in dict(row).items() if key not in {"canonical_prefix_moves_json", "canonical_prefix_revision"}},
                 "introduction_priority": priority_status(db, row["id"]),
+                "canonical_prefix": prefix_projection(
+                    json.loads(row["canonical_prefix_moves_json"]), int(row["canonical_prefix_revision"])),
             }
             for row in rows
         ]
@@ -2470,6 +2480,9 @@ def migration_snapshot():
     table_names = [
         "settings",
         "repertoires",
+        "canonical_prefix_previews",
+        "canonical_prefix_results",
+        "canonical_prefix_positions",
         "repertoire_lines",
         "repertoire_cards",
         "cards",
@@ -3090,12 +3103,13 @@ def branch(request: BranchRequest,
             "SELECT 1 FROM repertoires WHERE id=?", (request.repertoire_id,)
         ).fetchone():
             raise HTTPException(404, "Repertoire not found")
+        ensure_line_in_scope(db, request.repertoire_id, request.starting_fen, moves)
         duplicate = (
             db.execute("SELECT 1 FROM repertoire_lines WHERE id=?", (lid,)).fetchone()
             is not None
         )
         db.execute(
-            "INSERT OR IGNORE INTO repertoire_lines VALUES(?,?,?,?,?,?,?)",
+            "INSERT OR IGNORE INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,?,?,?,?)",
             (
                 lid,
                 request.repertoire_id,
@@ -3755,13 +3769,15 @@ def discoveries_feed(offset: int = 0, limit: int = 25):
                        OR opportunity.snoozed_until<=? THEN 1 ELSE 0 END)
                FROM repertoire_opportunities opportunity
                WHERE opportunity.status='active'
+                 AND opportunity.canonical_prefix_revision=(SELECT canonical_prefix_revision FROM repertoires WHERE id=opportunity.repertoire_id)
                  AND opportunity.repertoire_id NOT IN
                      ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__')""",
             (datetime.now(timezone.utc).isoformat(),),
         ).fetchone()
         identifiers = [dict(row) for row in database.execute(
             """SELECT id,repertoire_id FROM repertoire_opportunities
-               WHERE status='active' AND repertoire_id NOT IN
+               WHERE status='active' AND canonical_prefix_revision=(SELECT canonical_prefix_revision FROM repertoires WHERE id=repertoire_opportunities.repertoire_id)
+                 AND repertoire_id NOT IN
                    ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__')
                ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?""",
             (limit, offset),
@@ -6177,3 +6193,5 @@ def attempt_guided_game_review(session_id: str, request: GuidedReviewAttemptRequ
 
 from .opening_segmentation_api import router as opening_segmentation_router
 app.include_router(opening_segmentation_router)
+from .canonical_prefix_api import router as canonical_prefix_router
+app.include_router(canonical_prefix_router)

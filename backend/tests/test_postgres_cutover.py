@@ -25,6 +25,21 @@ from app.postgres_store import TempoRow, postgres_sql
 from app.services import redis_admission_gate
 
 
+
+@pytest.fixture
+def unscoped_canonical_prefix(monkeypatch):
+    """Existing isolated cutover doubles represent repertoires with no opening scope.
+
+    Scope validation and version races have real-store coverage in
+    test_canonical_repertoire_prefix.py and the PostgreSQL browser/durability gate.
+    """
+    from app.services import canonical_prefix, repertoire_opportunities, discovery_admission, postgres_coverage_seed, repertoire_coverage
+    for module in (canonical_prefix, repertoire_opportunities, discovery_admission, postgres_coverage_seed, repertoire_coverage):
+        if hasattr(module, "read_prefix"):
+            monkeypatch.setattr(module, "read_prefix", lambda *_args, **_kwargs: {
+                "moves": [], "revision": 0, "preview_id": None, "source_revision": 0,
+            })
+
 def test_postgres_game_exclusion_uses_foreground_receipt_and_atomic_followup(monkeypatch):
     from fastapi.testclient import TestClient
     from app import game_commands, main
@@ -811,7 +826,7 @@ def test_postgres_integrity_repair_rejects_stale_issue_signature(monkeypatch):
     assert "FROM repertoires" in observed[1]
 
 
-def test_postgres_integrity_repair_copies_line_training_depth_before_delete():
+def test_postgres_integrity_repair_copies_line_training_depth_before_delete(unscoped_canonical_prefix):
     from app.integrity_repair_commands import _replace_repertoire_line
 
     statements = []
@@ -1632,6 +1647,10 @@ def test_postgres_card_revision_rejects_stale_edit_before_mutating_cards(
     statements = []
 
     class Database:
+        def execute(self, statement, parameters=()):
+            assert "FROM repertoire_cards" in statement
+            return []
+
         def execute_native(self, statement, parameters=()):
             statements.append(statement)
             if statement.startswith("SELECT * FROM cards WHERE id=%s FOR UPDATE"):
@@ -1666,6 +1685,10 @@ def test_postgres_card_revision_reports_existing_target_revision():
             return iter(())
 
     class Database:
+        def execute(self, statement, parameters=()):
+            assert "FROM repertoire_cards" in statement
+            return []
+
         def execute_native(self, statement, parameters=()):
             statements.append(statement)
             if statement.startswith("SELECT * FROM cards WHERE id=%s FOR UPDATE"):
@@ -1993,7 +2016,7 @@ def test_postgres_branch_edit_dispatches_foreground_command_with_idempotency(mon
     assert dispatched[0][2] == "branch-1"
 
 
-def test_postgres_branch_edit_checkpoints_graph_and_coverage_with_line(monkeypatch):
+def test_postgres_branch_edit_checkpoints_graph_and_coverage_with_line(monkeypatch, unscoped_canonical_prefix):
     from app import branch_commands
 
     events = []
@@ -5364,7 +5387,7 @@ def test_postgres_opportunity_refresh_dispatches_idempotent_command(monkeypatch)
                        {"repertoire_id": "rep", "phase": "summaries", "cursor": ""}, 130)]
 
 
-def test_postgres_opportunity_refresh_yields_to_foreground_and_discards_restart_replay(monkeypatch):
+def test_postgres_opportunity_refresh_yields_to_foreground_and_discards_restart_replay(monkeypatch, unscoped_canonical_prefix):
     from app import tasks
     from app.services import repertoire_opportunities
 
@@ -5546,7 +5569,7 @@ def test_postgres_cutover_threat_report_audit_yields_and_replays_once(monkeypatc
     assert sent_tasks == ["app.tasks.execute_background_slice"]
 
 
-def test_postgres_discovery_recommendation_yields_to_foreground_and_discards_restart_replay(monkeypatch):
+def test_postgres_discovery_recommendation_yields_to_foreground_and_discards_restart_replay(monkeypatch, unscoped_canonical_prefix):
     from app import tasks
     from app.services import discovery_admission
 
@@ -5573,7 +5596,7 @@ def test_postgres_discovery_recommendation_yields_to_foreground_and_discards_res
     class ReadDatabase:
         def execute(self, statement, _parameters):
             assert "FROM repertoire_opportunities" in statement
-            return Cursor({"id": "opportunity-1"})
+            return Cursor({"id": "opportunity-1", "repertoire_id": "rep"})
 
     class WriteDatabase:
         def execute(self, statement, _parameters):
@@ -5991,7 +6014,7 @@ def test_postgres_maia_submit_publishes_candidates_in_bounded_sets(remaining_nod
     )
 
 
-def test_postgres_coverage_seed_supersedes_active_generation_after_branch_edit(monkeypatch):
+def test_postgres_coverage_seed_supersedes_active_generation_after_branch_edit(monkeypatch, unscoped_canonical_prefix):
     from app.services import postgres_coverage_seed
 
     statements = []
@@ -6031,7 +6054,7 @@ def test_postgres_coverage_seed_supersedes_active_generation_after_branch_edit(m
     assert enqueued[0][2]["source_fingerprint"] == "new-fingerprint"
 
 
-def test_postgres_coverage_seed_yields_to_foreground_and_discards_restart_replay(monkeypatch):
+def test_postgres_coverage_seed_yields_to_foreground_and_discards_restart_replay(monkeypatch, unscoped_canonical_prefix):
     from app import tasks
     from app.services import postgres_coverage_seed
 
@@ -6389,7 +6412,7 @@ def test_postgres_coverage_seed_terminal_failure_marks_run_failed(monkeypatch):
                and parameters[2] == "run-one" for statement, parameters in statements)
 
 
-def test_postgres_coverage_building_summary_remains_queued(monkeypatch):
+def test_postgres_coverage_building_summary_remains_queued(monkeypatch, unscoped_canonical_prefix):
     from app.services import repertoire_coverage
 
     class Cursor:

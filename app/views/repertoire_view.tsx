@@ -28,6 +28,8 @@ import type { z } from "zod";
 import { reportDebugError } from "../lib/debug-reporting";
 import { OpeningSegmentation } from "../components/opening-segmentation";
 import { RepertoireStatistics } from "../components/repertoire-statistics";
+import { CanonicalPrefixDialog } from "../components/canonical-prefix-dialog";
+import { canonicalPrefixSchema, type CanonicalPrefix } from "../domain/canonical-prefix";
 import type { BoardTheme, PieceSet } from "../components/chessboard";
 
 import { Notice } from "../components/task-tabs";
@@ -84,6 +86,7 @@ export default function RepertoireView({
   pieceSet?: PieceSet;
 }) {
   const [segmentationRepertoireId, setSegmentationRepertoireId] = useState<string | null>(null);
+  const [prefixRepertoireId, setPrefixRepertoireId] = useState<string | null>(null);
   const [backendItems, setBackendItems] = useState<RepertoireItem[]>([]);
   const [loaded, setLoaded] = useState(!usesLocalApi());
   const [libraryPage, setLibraryPage] = useState(0);
@@ -131,6 +134,7 @@ export default function RepertoireView({
           integrity_issue_count?: number;
           trained_color?: PieceColor;
           introduction_priority?: IntroductionPriorityStatus;
+          canonical_prefix?: CanonicalPrefix;
         }[];
       };
       setBackendItems(
@@ -155,6 +159,7 @@ export default function RepertoireView({
             backend: true,
             integrityStatus: item.integrity_status,
             integrityIssueCount: item.integrity_issue_count ?? 0,
+            canonicalPrefix: item.canonical_prefix ? canonicalPrefixSchema.parse(item.canonical_prefix) : undefined,
           };
         }),
       );
@@ -354,6 +359,12 @@ export default function RepertoireView({
   }
   return (
     <section className="library-page" id="repertoire">
+      {backendItems.filter(item => item.id === prefixRepertoireId).map(item => <CanonicalPrefixDialog key={item.id}
+        repertoireId={item.id} repertoireName={item.title} side={item.side} theme={theme} pieceSet={pieceSet}
+        onClose={() => setPrefixRepertoireId(null)} onSaved={async () => {
+          invalidateWorkspaceData(); setCoverageByRepertoire({}); setGapsByRepertoire({}); setOpportunitiesByRepertoire({});
+          await loadBackend(); await onQueueChanged();
+        }} />)}
       {error && (
         <Notice
           error
@@ -418,6 +429,7 @@ export default function RepertoireView({
                     Rename
                   </Button>
                   {item.backend && <Button role="menuitem" onClick={() => { setSegmentationRepertoireId(item.id); setOpenMenu(null); }}>Recommended segmentation</Button>}
+                  {item.backend && <Button role="menuitem" onClick={() => { setPrefixRepertoireId(item.id); setOpenMenu(null); }}>Canonical prefix…</Button>}
                   <Button role="menuitem" onClick={() => exportPgn(item)}>
                     ⇩ Export PGN
                   </Button>
@@ -432,6 +444,9 @@ export default function RepertoireView({
                 </ActionMenu>
               </div>
               <p>{item.detail}</p>
+              {Boolean(item.canonicalPrefix?.moves_uci.length) && <p className="canonical-prefix-summary">
+                <strong>Canonical prefix: {item.canonicalPrefix?.san}</strong><br />Discoveries start after this opening.
+              </p>}
               {item.integrityStatus === "needs_repair" && (
                 <>
                   <p className="warning-text">
@@ -472,11 +487,14 @@ export default function RepertoireView({
                     </strong>
                   </div>
                   <small>
-                    {coverageByRepertoire[item.id].status}
+                    {coverageByRepertoire[item.id].status === "queued" && (item.canonicalPrefix?.revision ?? 0) > 0
+                      ? "Refreshing analysis for the current opening…"
+                      : coverageByRepertoire[item.id].status}
                     {coverageByRepertoire[item.id].unknown_nodes
                       ? ` · ${coverageByRepertoire[item.id].unknown_nodes} positions awaiting data`
                       : ""}
                   </small>
+                  {coverageByRepertoire[item.id].last_error && <p role="alert">{coverageByRepertoire[item.id].last_error}</p>}
                   {gapsByRepertoire[item.id]?.slice(0, 3).map((gap) => (
                     <span key={gap.gap_id}>
                       <Button onClick={() => onResolveGap(item.id, gap)}>

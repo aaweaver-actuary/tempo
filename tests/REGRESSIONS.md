@@ -934,3 +934,53 @@ and preview FEN. The named component regression
 covers `--` and a valid prefix followed by `--`, proving atomic rejection, retained
 input, an inline error, disabled save, and no backend request. Both regressions
 failed against the original PR implementation before the guard was added.
+
+## Repertoire-wide canonical prefix
+
+`backend/tests/test_canonical_repertoire_prefix.py` covers:
+
+- `test_italian_prefix_suppresses_sicilian_and_philidor_coverage_nodes` (failed before the scope boundary: opponent nodes included plies 1 and 3; now only 5 and 7).
+- `test_canonical_prefix_parses_one_legal_san_sequence_and_rejects_nulls`.
+- `test_canonical_prefix_requires_exact_complete_game_history` (incomplete games and alternative initial move orders are excluded).
+- `test_canonical_prefix_accepts_matching_stubs_and_verified_continuations`.
+- `test_canonical_prefix_durable_preview_resolves_continuations_in_a_later_pass`.
+- `test_canonical_prefix_reports_first_conflict_and_disconnected_lines_without_deleting`.
+- `test_canonical_prefix_stale_preview_cannot_save_after_a_source_edit`.
+- `test_canonical_prefix_rejects_off_scope_additions_and_clearing_restores_analysis`.
+- `test_canonical_prefix_preview_yields_to_foreground_restarts_and_replays_idempotently`.
+- `test_matching_game_feedback_starts_after_prefix_while_training_routes_remain_intact`.
+- `test_canonical_prefix_probabilities_condition_on_assumed_opponent_moves`.
+- `test_canonical_prefix_black_boundary_preserves_later_position_transpositions`.
+- `test_canonical_prefix_revisions_are_independent_and_stale_coverage_is_unknown`.
+- `test_canonical_prefix_matching_stub_without_continuation_never_reports_complete`.
+- `test_canonical_prefix_shared_card_edit_cannot_escape_any_linked_repertoire`.
+- `test_canonical_prefix_stale_recommendation_worker_cannot_publish`.
+- `test_canonical_prefix_game_matches_and_statistics_exclude_sicilian_philidor_and_incomplete_games` (all imported games remain available).
+- `test_canonical_prefix_repertoire_api_exposes_only_normalized_typed_metadata`.
+- `test_canonical_prefix_discovery_admits_verified_new_gap_routes_and_rejects_stale_queued_work`.
+- `test_canonical_prefix_opportunity_publication_locks_repertoire_before_task_to_avoid_foreground_deadlock`.
+
+`test_canonical_prefix_discovery_acceptance_requires_current_scope_revision` in
+`backend/tests/test_postgres_discovery_acceptance.py` protects the publication
+revision contract for both current and obsolete discoveries.
+
+`tests/unit/canonical-prefix-regressions.test.tsx` covers explicit suggestion
+acceptance, conflicts blocking saves, clearing only after explicit save, recovery
+of a lost save acknowledgement, retention of a pending operation's identity,
+replay of undelivered commands, server-error receipt recovery, reopening an
+interrupted preview, and the workspace/coverage transport contracts.
+
+`canonical Italian prefix persists without changing training and rejects Philidor additions`
+in `tests/browser/canonical-repertoire-prefix.spec.ts` exercises the real
+PostgreSQL workflow at phone and desktop sizes. `Canonical prefix dialog` in
+`tests/browser/visual.spec.ts` pins the preview and controls at both sizes.
+The regular PostgreSQL durability scenario verifies a preview queued while the
+worker is stopped, resumption, unchanged cards/reviews/scheduling, persistence of
+verified anchors after service recreation, and replay of the original save
+receipt without a second revision.
+
+`test_canonical_prefix_snapshot_copy_preserves_source_revision_and_restores_trigger`
+in `backend/tests/test_postgres_import_verification.py` protects exact legacy
+snapshot recovery: copy does not advance imported source revisions, and the
+trigger is restored within the same transaction. Real PostgreSQL import/verify
+and service recreation remain part of the durability gate.

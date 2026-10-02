@@ -16,6 +16,7 @@ from .. import postgres_store
 from .activity_gate import activity_gate
 from .durable_tasks import enqueue_task, enqueue_task_in_transaction, lock_current_slice
 from .discovery_admission import _full_history_request, _source_game
+from .canonical_prefix import read_prefix
 
 
 RECENT_DAYS = 90
@@ -99,6 +100,7 @@ def _materially_new(evidence: dict, dismissed: dict) -> bool:
 def _publish(database: sqlite3.Connection, *, repertoire_id: str, kind: str,
              fen_key: str, target: str, card_id: str | None,
              opponent_move_uci: str | None, score: float, evidence: dict) -> None:
+    prefix_revision = read_prefix(database, repertoire_id)["revision"]
     opportunity_id = _stable_id(repertoire_id, kind, fen_key, target)
     previous = database.execute(
         "SELECT status,dismissed_evidence_json FROM repertoire_opportunities WHERE id=?",
@@ -112,11 +114,11 @@ def _publish(database: sqlite3.Connection, *, repertoire_id: str, kind: str,
     database.execute(
         """INSERT INTO repertoire_opportunities(
              id,repertoire_id,kind,fen_key,card_id,opponent_move_uci,status,score,
-             evidence_json,evidence_fingerprint,dismissed_evidence_json,created_at,updated_at,resolved_at
-           ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)
+             evidence_json,evidence_fingerprint,dismissed_evidence_json,created_at,updated_at,resolved_at,canonical_prefix_revision
+           ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,NULL,?)
            ON CONFLICT(id) DO UPDATE SET card_id=excluded.card_id,
              opponent_move_uci=excluded.opponent_move_uci,status=excluded.status,
-             score=excluded.score,evidence_json=excluded.evidence_json,
+             score=excluded.score,evidence_json=excluded.evidence_json,canonical_prefix_revision=excluded.canonical_prefix_revision,
              evidence_fingerprint=excluded.evidence_fingerprint,
              dismissed_evidence_json=CASE WHEN excluded.status='active' THEN NULL
                ELSE repertoire_opportunities.dismissed_evidence_json END,
@@ -126,7 +128,7 @@ def _publish(database: sqlite3.Connection, *, repertoire_id: str, kind: str,
         (opportunity_id, repertoire_id, kind, fen_key, card_id,
          opponent_move_uci, status, score, json.dumps(evidence, sort_keys=True),
          _fingerprint(evidence), json.dumps(previous_dismissal) if previous_dismissal else None,
-         _now(), _now()),
+         _now(), _now(), prefix_revision),
     )
     if kind in {"post_gap_weakness", "missing_response"} and card_id is None and status == "active":
         enqueue_task_in_transaction(
@@ -144,6 +146,11 @@ def _resolve(database: sqlite3.Connection, opportunity_id: str) -> None:
 
 
 def _route_keys(database: sqlite3.Connection, repertoire_id: str, card_id: str) -> list[list[str]]:
+    prefix = read_prefix(database, repertoire_id)
+    assumed_positions = {row["fen_key"] for row in database.execute(
+        "SELECT fen_key FROM canonical_prefix_positions WHERE preview_id=? AND in_scope=0 AND ply<?",
+        (prefix["preview_id"], len(prefix["moves"])),
+    )} if prefix["moves"] else set()
     rows = database.execute(
         """SELECT step.line_id,step.card_id,step.decision_fen_keys_json,step.parent_card_id
            FROM opening_graph_steps step JOIN opening_graph_publications publication
@@ -178,7 +185,7 @@ def _route_keys(database: sqlite3.Connection, repertoire_id: str, card_id: str) 
                 break
             parent_id = parent["parent_card_id"]
         if complete and not parent_id and keys:
-            routes.append(keys)
+            routes.append([key for key in keys if key not in assumed_positions])
     return routes
 
 
@@ -217,7 +224,8 @@ def _load_card_inputs(database: sqlite3.Connection, repertoire_id: str, card_id:
             ORDER BY event.game_id,event.ply""",
         (repertoire_id, *game_ids),
     ).fetchall()]
-    return {"card_id": card_id, "card_state": card["state"], "routes": routes, "events": events}
+    return {"card_id": card_id, "card_state": card["state"], "routes": routes, "events": events,
+            "has_assumed_history": bool(read_prefix(database, repertoire_id)["moves"])}
 
 
 def _calculate_card_evidence(inputs: dict) -> dict:
@@ -238,7 +246,7 @@ def _calculate_card_evidence(inputs: dict) -> dict:
         }
         earlier_events = [event for event in game_events if event["ply"] < target["ply"]]
         exact_route_success = any(
-            route and set(route).issubset(earlier_success_keys)
+            (route or inputs.get("has_assumed_history")) and set(route).issubset(earlier_success_keys)
             and all(event["outcome"] == "success" for event in earlier_events)
             for route in inputs["routes"]
         )
@@ -474,7 +482,7 @@ def _load_node_inputs(database: sqlite3.Connection, repertoire_id: str, node_id:
            JOIN repertoire_coverage_runs r ON r.id=n.run_id WHERE n.id=? AND n.repertoire_id=?""",
         (node_id, repertoire_id),
     ).fetchone()
-    if not node:
+    if not node or json.loads(node["settings_json"]).get("canonical_prefix_revision", 0) != read_prefix(database, repertoire_id)["revision"]:
         return None
     cutoff = (datetime.now(timezone.utc) - timedelta(days=_window_days(database))).isoformat()
     personal = database.execute(
@@ -603,16 +611,22 @@ def _load_post_gap_inputs(database: sqlite3.Connection, repertoire_id: str, find
     ).fetchone()
     if not finding:
         return None
+    if read_prefix(database, repertoire_id)["revision"] and not database.execute(
+        "SELECT 1 FROM game_repertoire_matches WHERE game_id=? AND repertoire_id=?", (finding["game_id"], repertoire_id),
+    ).fetchone():
+        return None
     evidence = json.loads(finding["evidence_json"])
     fen_key = evidence.get("opponent_gap_fen_key")
     move_uci = evidence.get("opponent_gap_move_uci")
     if not fen_key or not move_uci:
         return None
+    scoped_findings = (" AND EXISTS(SELECT 1 FROM game_repertoire_matches scoped_match WHERE scoped_match.game_id=game_findings.game_id AND scoped_match.repertoire_id=game_findings.repertoire_id)"
+                       if read_prefix(database, repertoire_id)["revision"] else "")
     findings = [dict(row) for row in database.execute(
-        """SELECT id,game_id,analysis_version,card_id,evidence_json FROM game_findings
+        f"""SELECT id,game_id,analysis_version,card_id,evidence_json FROM game_findings
            WHERE repertoire_id=? AND kind='repertoire gap' AND status!='ignored'
              AND json_extract(evidence_json,'$.opponent_gap_fen_key')=?
-             AND json_extract(evidence_json,'$.opponent_gap_move_uci')=?
+             AND json_extract(evidence_json,'$.opponent_gap_move_uci')=? {scoped_findings}
            ORDER BY updated_at DESC,id LIMIT 200""",
         (repertoire_id, fen_key, move_uci),
     ).fetchall()]
@@ -737,6 +751,7 @@ def execute_opportunity_slice(task: dict) -> bool:
     activity_gate.wait_for_foreground()
     read_section = background_read_connection if postgres_store.configured() else read_connection
     with read_section() as database:
+        prefix_revision = read_prefix(database, repertoire_id)["revision"]
         if phase == "summaries":
             fen_cursor, _, move_cursor = cursor.partition("\0")
             item = database.execute(
@@ -813,6 +828,11 @@ def execute_opportunity_slice(task: dict) -> bool:
     post_gap_decision = _calculate_post_gap_opportunity(inputs) if phase == "findings" and inputs else None
     activity_gate.wait_for_foreground()
     with connection(background=True) as database:
+        # Prefix saves lock repertoire metadata before admitting refresh tasks.
+        # Keep the same order so publication cannot hold a task while waiting
+        # for the repertoire that a foreground save already holds.
+        if read_prefix(database, repertoire_id, lock=True)["revision"] != prefix_revision:
+            return True
         if postgres_store.configured():
             current_slice = lock_current_slice(database, task)
         else:
@@ -896,6 +916,7 @@ def list_opportunities(database: sqlite3.Connection, repertoire_id: str,
                    FROM repertoire_opportunities opportunity
                    LEFT JOIN cards card ON card.id=opportunity.card_id
                    WHERE opportunity.repertoire_id=? AND opportunity.status='active'
+                     AND opportunity.canonical_prefix_revision=(SELECT canonical_prefix_revision FROM repertoires WHERE id=opportunity.repertoire_id)
                    {identifier_clause}
                    ORDER BY opportunity.score DESC,opportunity.id{limit_clause}""",
                 (repertoire_id, *(opportunity_ids or [])),

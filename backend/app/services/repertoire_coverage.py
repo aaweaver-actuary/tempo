@@ -18,6 +18,7 @@ from ..database import connection
 from .. import postgres_store
 from .redis_admission_gate import client as redis_client
 from .repertoire_comparison import canonical_fen
+from .canonical_prefix import read_prefix, scope_line
 from .activity_gate import activity_gate
 
 
@@ -135,7 +136,7 @@ def discover_opponent_positions(
         moves = json.loads(line["moves_json"])
         route: list[str] = []
         for ply in range(min(len(moves), maximum_plies) + 1):
-            if board.turn != trained_color:
+            if board.turn != trained_color and ply >= int(line.get("scope_start_ply", 0)):
                 key = fen_key(board.fen())
                 position = positions.setdefault(
                     key,
@@ -243,8 +244,9 @@ def enqueue_coverage_refresh(
             return active["id"]
         settings = dict(database.execute("SELECT * FROM settings WHERE id=1").fetchone())
         cohort = recent_player_cohort(database, int(settings["coverage_maia_elo"]))
+        prefix = read_prefix(database, repertoire_id)
         lines = [
-            dict(row)
+            scope_line(database, repertoire_id, dict(row))
             for row in database.execute(
                 "SELECT * FROM repertoire_lines WHERE repertoire_id=?",
                 (repertoire_id,),
@@ -258,6 +260,7 @@ def enqueue_coverage_refresh(
     now = _now()
     settings_payload = {
         "automatic_priority": automatic,
+        "canonical_prefix_revision": prefix["revision"],
         "reply_denominator": settings["coverage_reply_denominator"],
         "cumulative_target": settings["coverage_cumulative_target"] / 100,
         "horizon_fullmoves": settings["coverage_horizon_fullmoves"],
@@ -282,16 +285,17 @@ def enqueue_coverage_refresh(
             return active["id"]
         database.execute(
             """INSERT INTO repertoire_coverage_runs(
-                   id,repertoire_id,status,settings_json,total_nodes,created_at,updated_at
-               ) VALUES(?,?,?, ?,?,?,?)""",
+                   id,repertoire_id,status,settings_json,total_nodes,created_at,updated_at,last_error
+               ) VALUES(?,?,?, ?,?,?,?,?)""",
             (
                 run_id,
                 repertoire_id,
-                "queued" if nodes else "complete",
+                "queued" if nodes else "failed",
                 json.dumps(settings_payload),
                 len(nodes),
                 now,
                 now,
+                None if nodes else "No opponent positions after the canonical prefix within the coverage horizon. Add a continuation or adjust the horizon.",
             ),
         )
         for node in nodes:
@@ -648,10 +652,11 @@ def coverage_summary(repertoire_id: str) -> dict:
             "SELECT * FROM repertoire_coverage_runs WHERE repertoire_id=? ORDER BY created_at DESC LIMIT 1",
             (repertoire_id,),
         ).fetchone()
-        if not run:
+        prefix = read_prefix(database, repertoire_id)
+        if not run or json.loads(run["settings_json"]).get("canonical_prefix_revision", 0) != prefix["revision"]:
             return {
                 "run_id": None,
-                "status": "not-started",
+                "status": "queued" if prefix["revision"] else "not-started",
                 "required_branches": 0,
                 "covered_branches": 0,
                 "probability_coverage": None,
@@ -700,10 +705,10 @@ def coverage_summary(repertoire_id: str) -> dict:
 def coverage_gaps(repertoire_id: str) -> list[dict]:
     with connection() as database:
         run = database.execute(
-            "SELECT id FROM repertoire_coverage_runs WHERE repertoire_id=? ORDER BY created_at DESC LIMIT 1",
+            "SELECT id,settings_json FROM repertoire_coverage_runs WHERE repertoire_id=? ORDER BY created_at DESC LIMIT 1",
             (repertoire_id,),
         ).fetchone()
-        if not run:
+        if not run or json.loads(run["settings_json"]).get("canonical_prefix_revision", 0) != read_prefix(database, repertoire_id)["revision"]:
             return []
         return [
             {
@@ -743,6 +748,7 @@ def claim_maia_coverage_node() -> dict | None:
             f"""SELECT n.*,r.settings_json FROM repertoire_coverage_nodes n
                JOIN repertoire_coverage_runs r ON r.id=n.run_id
                WHERE n.explorer_status='complete' AND n.maia_status='queued'
+               AND COALESCE(json_extract(r.settings_json,'$.canonical_prefix_revision'),0)=(SELECT canonical_prefix_revision FROM repertoires WHERE id=n.repertoire_id)
                AND {claimable('coverage', 'n.run_id')}
                ORDER BY {control_order('coverage', 'n.run_id')}r.created_at,n.ply,n.id LIMIT 1"""
         ).fetchone()

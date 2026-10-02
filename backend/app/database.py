@@ -1313,7 +1313,15 @@ def initialize() -> None:
                 "include_defensive_cards_in_daily_stack": "INTEGER NOT NULL DEFAULT 1",
                 "discovery_window_days": "INTEGER NOT NULL DEFAULT 90",
             },
+            "repertoires": {
+                "is_main": "INTEGER NOT NULL DEFAULT 0",
+                "canonical_prefix_moves_json": "TEXT NOT NULL DEFAULT '[]'",
+                "canonical_prefix_revision": "INTEGER NOT NULL DEFAULT 0",
+                "canonical_prefix_preview_id": "TEXT",
+                "scope_source_revision": "INTEGER NOT NULL DEFAULT 0",
+            },
             "repertoire_opportunities": {
+                "canonical_prefix_revision": "INTEGER NOT NULL DEFAULT 0",
                 "seen_at": "TEXT",
                 "snoozed_until": "TEXT",
                 "admission_state": "TEXT",
@@ -1389,7 +1397,6 @@ def initialize() -> None:
                 "analysis_evidence_version": "INTEGER NOT NULL DEFAULT 1"
             },
             "game_findings": {"source_opportunity_id": "TEXT", "review_after": "TEXT"},
-            "repertoires": {"is_main": "INTEGER NOT NULL DEFAULT 0"},
             "repertoire_integrity_state": {
                 "scan_status": "TEXT NOT NULL DEFAULT 'idle'",
                 "scan_generation": "TEXT",
@@ -1417,6 +1424,8 @@ def initialize() -> None:
                     database.execute(
                         f"ALTER TABLE {table} ADD COLUMN {name} {definition}"
                     )
+        from .services.canonical_prefix_preview import initialize_sqlite_schema
+        initialize_sqlite_schema(database)
         # Materialize the default in existing rows before a later VACUUM. Older
         # SQLite builds can report a virtual NOT NULL default as NULL afterward.
         database.execute(

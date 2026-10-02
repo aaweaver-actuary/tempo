@@ -75,6 +75,11 @@ def revise_card(database: PostgresConnection, payload: dict[str, Any]) -> dict[s
     if request.expected_revision is None:
         raise HTTPException(422, "expected_revision is required for card edits")
     moves = _validated_moves(request.starting_fen, request.moves)
+    from .services.canonical_prefix import ensure_line_in_scope
+    repertoire_ids = [row[0] for row in database.execute(
+        "SELECT repertoire_id FROM repertoire_cards WHERE card_id=? UNION SELECT repertoire_id FROM cards WHERE id=? ORDER BY repertoire_id", (identifier, identifier))]
+    for repertoire_id in repertoire_ids:
+        ensure_line_in_scope(database, repertoire_id, request.starting_fen, moves)
     replacement_id = card_id(request.starting_fen, moves)
     for locked_id in sorted({identifier, replacement_id}):
         database.execute_native(

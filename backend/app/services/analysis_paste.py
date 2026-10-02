@@ -294,6 +294,9 @@ def commit_pasted_lines(
                 batch_responses[key] = (move, index)
     if any(not by_index[index].get("acknowledge_conflict") for index in batch_conflict_indices):
         raise PasteInputError("Confirm conflicting trained moves between pasted lines before saving")
+    from .canonical_prefix import ensure_line_in_scope
+    for index, selection in by_index.items():
+        ensure_line_in_scope(database, selection["repertoire_id"], parsed[index].starting_fen, list(parsed[index].moves))
     now = datetime.now(timezone.utc).isoformat()
     saved: list[dict] = []
     affected: set[str] = set()

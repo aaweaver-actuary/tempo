@@ -1,5 +1,6 @@
 import type { PracticeCard } from "./cards";
 import type { PieceColor, RepertoireId } from "./shared";
+import type { CanonicalPrefix } from "./canonical-prefix";
 
 export enum RepertoireSourceKind {
   LocalPgn = "local-pgn",
@@ -28,6 +29,7 @@ export type RepertoireItem = {
   integrityIssueCount?: number;
   blockedDueCount?: number;
   blockedCardCount?: number;
+  canonicalPrefix?: CanonicalPrefix;
 };
 
 export type LocalRepertoire = {

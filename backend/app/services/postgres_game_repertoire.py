@@ -12,6 +12,7 @@ from .durable_tasks import (
     advance_task_slice_in_transaction, complete_task_slice_in_transaction,
     enqueue_compact_postgres_task_in_transaction, lock_current_slice,
 )
+from .canonical_prefix import game_in_scope
 from .repertoire_comparison import (
     _compare_game_to_repertoire, _load_repertoire_index_snapshot,
 )
@@ -35,6 +36,7 @@ def _prepared_comparison(game_id: str) -> tuple[dict | None, str, list[dict]]:
         )
         for repertoire in repertoires
         if game["color"] in colors.get(repertoire["id"], set())
+        and game_in_scope(game["start_fen"], game["moves"], json.loads(repertoire.get("canonical_prefix_moves_json", "[]")))
     ]
     matches.sort(key=lambda match: (
         -match["matched"], -match["deepest"], -match["is_main"], match["repertoire_id"],
@@ -51,8 +53,8 @@ def _stage_match(database, game_id: str, version: int, index: int, match: dict) 
              first_player_deviation_ply,first_player_deviation_fen,
              first_player_deviation_expected_json,first_player_deviation_actual_uci,
              deviation_card_id,first_opponent_gap_ply,out_of_book_ply,
-             timeline_json,updated_at)
-           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+             timeline_json,updated_at,canonical_prefix_revision)
+           VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
            ON CONFLICT(game_id,derivation_version,repertoire_id) DO UPDATE SET
              is_primary=excluded.is_primary,classification=excluded.classification,
              matched_player_decisions=excluded.matched_player_decisions,
@@ -65,7 +67,8 @@ def _stage_match(database, game_id: str, version: int, index: int, match: dict) 
              deviation_card_id=excluded.deviation_card_id,
              first_opponent_gap_ply=excluded.first_opponent_gap_ply,
              out_of_book_ply=excluded.out_of_book_ply,
-             timeline_json=excluded.timeline_json,updated_at=excluded.updated_at""",
+             timeline_json=excluded.timeline_json,updated_at=excluded.updated_at,
+             canonical_prefix_revision=excluded.canonical_prefix_revision""",
         (game_id, version, match["repertoire_id"], int(index == 0),
          match["classification"], match["matched"], match["opportunities"],
          match["deepest"], deviation["ply"] if deviation else None,
@@ -73,7 +76,7 @@ def _stage_match(database, game_id: str, version: int, index: int, match: dict) 
          json.dumps(deviation["expected"] if deviation else []),
          deviation["actual"] if deviation else None, match["deviation_card_id"],
          match["opponent_gap"], match["out_of_book"],
-         json.dumps(match["timeline"]), datetime.now(timezone.utc).isoformat()),
+         json.dumps(match["timeline"]), datetime.now(timezone.utc).isoformat(), match.get("canonical_prefix_revision", 0)),
     )
 
 

@@ -4062,3 +4062,22 @@ button {
 .tactic-capture .san-entry input { width: 100%; min-width: 0; }
 .tactic-capture .san-entry .editor-key-help { margin: 0; line-height: 1.5; }
 .tactic-capture .san-entry button { justify-self: start; }
+.canonical-prefix-dialog {
+  width: min(580px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 24px;
+  border-radius: 12px;
+  background: var(--panel, #fff);
+}
+.canonical-prefix-dialog .dialog-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.canonical-prefix-dialog p { margin: 0; }
+.canonical-prefix-dialog .ui-input { width: 100%; min-width: 0; }
+.canonical-prefix-board { width: min(280px, 100%); margin: 0 auto; }
+.canonical-prefix-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.canonical-prefix-summary { font-size: 0.9rem; }
+.canonical-prefix-notation { font-weight: 600; }
+@media (max-width: 480px) { .canonical-prefix-dialog { padding: 16px; } }

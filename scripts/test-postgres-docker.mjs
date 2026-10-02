@@ -389,6 +389,13 @@ async function verifyForegroundAndStudyDurability() {
   run("docker", [...compose, "exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo",
     "-Atqc", "SELECT count(*) FROM reviews; SELECT count(*) FROM queue_projections;"]);
   console.log(`PostgreSQL direct SQL probe: ${Math.round((performance.now() - sqlStartedAt) * 10) / 10}ms (review and queue-projection counts)`);
+  const prefixPreview = await postCommand(`repertoires/${importedStudy.repertoire_id}/canonical-prefix/preview`, {
+    movetext: "e4",
+  }, { operationId: `pg-study-prefix-preview-${randomBytes(10).toString("hex")}` });
+  assert.equal(prefixPreview.state, "checking");
+  assert((await get("system/tasks")).tasks.some(task => task.kind === "canonical_prefix_preview"
+    && task.deduplication_key === prefixPreview.preview_id && ["queued", "retrying"].includes(task.state)),
+  "Prefix compatibility remains durable while its worker is stopped");
   run("docker", [...compose, "start", "background-worker"]);
   await waitForStudyableImport(importedStudy.repertoire_id);
   await waitForStudyableImport(importedBackground.repertoire_id);
@@ -401,7 +408,26 @@ async function verifyForegroundAndStudyDurability() {
   const reinforcement = reinforcementQueue.cards.find((card) => card.id === reviewCard.id);
   assert.equal(reinforcement?.attempt_state, "reinforcement");
 
+  const prefixDeadline = performance.now() + 30_000;
+  let compatibility;
+  do {
+    compatibility = await get(`repertoires/${importedStudy.repertoire_id}/canonical-prefix/preview/${prefixPreview.preview_id}`);
+    if (compatibility.state === "ready") break;
+    assert.equal(compatibility.state, "checking", JSON.stringify(compatibility));
+    assert(performance.now() < prefixDeadline, "Prefix compatibility completes after worker restart");
+    await new Promise(resolve => setTimeout(resolve, 100));
+  } while (true);
+  const prefixBody = { preview_id: prefixPreview.preview_id, expected_revision: 0 };
+  const prefixOperationId = `pg-study-prefix-save-${randomBytes(10).toString("hex")}`;
+  const beforePrefixStudy = stableStudyState(await get("migration/snapshot"), importedStudy.repertoire_id);
+  const savedPrefix = await postCommand(`repertoires/${importedStudy.repertoire_id}/canonical-prefix`, prefixBody,
+    { method: "PUT", operationId: prefixOperationId });
+  assert.deepEqual(savedPrefix.moves_uci, ["e2e4"]);
+  assert.equal(savedPrefix.revision, 1);
   const studySnapshot = await get("migration/snapshot");
+  const afterPrefixStudy = stableStudyState(studySnapshot, importedStudy.repertoire_id);
+  for (const field of ["cards", "reviews", "teaching", "annotations", "prefixSplits"])
+    assert.deepEqual(afterPrefixStudy[field], beforePrefixStudy[field], `Prefix save preserves ${field}`);
   assert.equal(studySnapshot.source, "tempo-postgres");
   assert(studySnapshot.counts.reviews > 0 && studySnapshot.counts.teaching_states > 0
     && studySnapshot.counts.position_annotations > 0 && studySnapshot.counts.prefix_splits > 0);
@@ -427,7 +453,15 @@ async function verifyForegroundAndStudyDurability() {
   const afterReplaySnapshot = await get("migration/snapshot");
   assert.equal(stableStudyState(afterReplaySnapshot, importedStudy.repertoire_id).reviews.length,
     savedReviewCount, "Confirmed review replay does not create a duplicate business effect");
-  console.log("PASS PostgreSQL study state, queue order, guided failure, and command identity survive service recreation");
+  assert.deepEqual(await get(`repertoires/${importedStudy.repertoire_id}/canonical-prefix`), savedPrefix,
+    "Canonical prefix persists across service recreation");
+  const replayedPrefix = await postCommand(`repertoires/${importedStudy.repertoire_id}/canonical-prefix`, prefixBody,
+    { method: "PUT", operationId: prefixOperationId });
+  assert.deepEqual(replayedPrefix, savedPrefix, "Lost prefix-save acknowledgement replays the original receipt");
+  assert.equal((await get(`repertoires/${importedStudy.repertoire_id}/canonical-prefix`)).revision, 1);
+  assert((await get("migration/snapshot")).tables.canonical_prefix_positions.some(row => row.preview_id === prefixPreview.preview_id),
+    "Verified anchors persist across restart");
+  console.log("PASS PostgreSQL study state, queue order, guided failure, canonical prefix, and command identities survive service recreation");
   activeStudyRepertoireId = null;
 }
 

@@ -75,10 +75,11 @@ def accept_discovery(database: PostgresConnection, payload: dict[str, Any]) -> d
         return {"status": "preparing", "intent_id": prior["id"]}
 
     opportunity = database.execute_native(
-        "SELECT id,repertoire_id,evidence_fingerprint,card_id,status "
+        "SELECT id,repertoire_id,evidence_fingerprint,card_id,status,canonical_prefix_revision "
         "FROM repertoire_opportunities WHERE id=%s FOR UPDATE", (opportunity_id,),
     ).fetchone()
-    if opportunity is None or opportunity["status"] != "active":
+    from .services.canonical_prefix import read_prefix
+    if opportunity is None or opportunity["status"] != "active" or dict(opportunity).get("canonical_prefix_revision", 0) != read_prefix(database, opportunity["repertoire_id"], lock=True)["revision"]:
         raise HTTPException(404, "Active discovery not found")
     if opportunity["card_id"]:
         raise HTTPException(409, "This discovery already has a saved decision card")

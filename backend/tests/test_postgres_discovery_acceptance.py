@@ -23,6 +23,9 @@ class Database:
         self.task = task
         self.statements = []
 
+    def execute(self, statement, parameters=()):
+        return self.execute_native(statement.replace("?", "%s"), parameters)
+
     def execute_native(self, statement, parameters=()):
         self.statements.append((statement, parameters))
         if statement.startswith("SELECT id,evidence_fingerprint,state"):
@@ -57,7 +60,8 @@ def test_postgres_discovery_acceptance_creates_one_intent_and_durable_task(monke
     assert queued[0][:3] == ("discovery_admission", response["intent_id"],
                              {"intent_id": response["intent_id"]})
     assert "FOR UPDATE" in database.statements[1][0]
-    assert "INSERT INTO discovery_admission_intents" in database.statements[3][0]
+    assert any("INSERT INTO discovery_admission_intents" in statement for statement, _ in database.statements)
+    assert any("canonical_prefix_revision" in statement for statement, _ in database.statements)
 
 
 def test_postgres_discovery_acceptance_replays_prior_without_duplicate_task(monkeypatch):
@@ -97,7 +101,7 @@ def test_postgres_discovery_acceptance_rejects_stale_evidence_before_write():
     with pytest.raises(HTTPException) as error:
         discovery_commands.accept_discovery(database, prepared())
     assert error.value.status_code == 409
-    assert len(database.statements) == 2
+    assert all(not statement.startswith("INSERT") for statement, _ in database.statements)
 
 
 def test_postgres_discovery_acceptance_route_keeps_idempotency_key(monkeypatch):
@@ -120,3 +124,20 @@ def test_postgres_discovery_acceptance_route_keeps_idempotency_key(monkeypatch):
     assert request_digest("discovery.accept", prepared()) == request_digest(
         "discovery.accept", changed_preparation,
     )
+
+
+@pytest.mark.parametrize("opportunity_revision,expected_status", [(1, None), (0, 404)])
+def test_canonical_prefix_discovery_acceptance_requires_current_scope_revision(monkeypatch, opportunity_revision, expected_status):
+    from app.services import canonical_prefix
+    monkeypatch.setattr(canonical_prefix, "read_prefix", lambda *_args, **_kwargs: {"revision": 1})
+    monkeypatch.setattr(discovery_commands, "enqueue_compact_postgres_task_in_transaction", lambda *_args, **_kwargs: None)
+    database = Database(opportunity={"id": "opening-one", "repertoire_id": "white-openings",
+        "canonical_prefix_revision": opportunity_revision, "evidence_fingerprint": "revision-one", "card_id": None, "status": "active"})
+    if expected_status:
+        with pytest.raises(HTTPException) as error:
+            discovery_commands.accept_discovery(database, prepared())
+        assert error.value.status_code == expected_status
+        assert all(not statement.startswith("INSERT") for statement, _ in database.statements)
+    else:
+        assert discovery_commands.accept_discovery(database, prepared())["status"] == "preparing"
+    assert "canonical_prefix_revision" in database.statements[1][0]

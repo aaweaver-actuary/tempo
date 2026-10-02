@@ -26,6 +26,7 @@ from . import queue_commands  # noqa: F401 - registers foreground queue commands
 from . import review_commands  # noqa: F401 - registers foreground review command
 from . import teaching_commands  # noqa: F401 - registers foreground teaching command
 from . import repertoire_commands  # noqa: F401 - registers foreground repertoire command
+from . import canonical_prefix_api  # noqa: F401 - registers canonical opening commands
 from . import account_commands  # noqa: F401 - registers foreground account command
 from . import settings_commands  # noqa: F401 - registers foreground settings command
 from . import game_sync_commands  # noqa: F401 - registers foreground sync admission
@@ -85,6 +86,7 @@ from .services.discovery_admission import (
     execute_admission_intent_slice, execute_recommendation_request_slice,
 )
 from .services.postgres_coverage_seed import execute_coverage_seed_slice
+from .services.canonical_prefix_preview import execute_prefix_preview_slice
 from .services.postgres_coverage_explorer import execute_coverage_explorer_slice
 from .services.postgres_coverage_recovery import recover_one_explorer_run
 
@@ -118,6 +120,7 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "discovery_recommendation",
     "discovery_admission",
     "coverage_seed",
+    "canonical_prefix_preview",
     "coverage_explorer",
     "game_analysis_publish",
     "game_analysis_followup",
@@ -276,6 +279,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
         "discovery_recommendation": execute_recommendation_request_slice,
         "discovery_admission": execute_admission_intent_slice,
         "coverage_seed": execute_coverage_seed_slice,
+        "canonical_prefix_preview": execute_prefix_preview_slice,
         "coverage_explorer": execute_coverage_explorer_slice,
         "game_analysis_publish": execute_game_analysis_publication_slice,
         "game_analysis_followup": execute_game_analysis_followup_slice,
@@ -298,6 +302,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
                 "integrity_scan",
                 "opening_segmentation",
                 "coverage_seed",
+                "canonical_prefix_preview",
                 "coverage_explorer",
                 "game_analysis_publish",
                 "game_analysis_followup",

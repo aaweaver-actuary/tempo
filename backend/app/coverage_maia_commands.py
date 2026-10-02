@@ -12,6 +12,7 @@ from fastapi import HTTPException
 from .command_gateway import register_command
 from .postgres_store import PostgresConnection
 from .services.postgres_coverage_candidates import recalculate_coverage_node
+from .services.canonical_prefix import read_prefix
 from .services.durable_tasks import enqueue_compact_postgres_task_in_transaction
 from .services.introduction_priorities import enqueue_priority_refresh_in_transaction
 
@@ -32,7 +33,7 @@ def _lease(database: PostgresConnection, payload: dict[str, Any]):
     ).fetchone()
     if row is None or row["maia_status"] != "leased" or row["lease_id"] != lease_id:
         raise HTTPException(409, "Coverage lease is no longer active")
-    if row["run_status"] in {"failed", "building"}:
+    if (row["run_status"] in {"failed", "building"} or json.loads(row["settings_json"]).get("canonical_prefix_revision", 0) != read_prefix(database, row["repertoire_id"])["revision"]):
         raise HTTPException(409, "Coverage run is no longer active")
     return row
 
@@ -47,6 +48,7 @@ def claim_maia_node(database: PostgresConnection, _payload: dict[str, Any]) -> d
         "WHERE n.explorer_status='complete' AND r.status IN ('queued','running','complete') "
         "AND (n.maia_status='queued' OR (n.maia_status='leased' AND n.lease_expires_at<%s)) "
         "AND COALESCE(control.paused,0)=0 "
+        "AND COALESCE((r.settings_json::jsonb->>'canonical_prefix_revision')::bigint,0)=(SELECT canonical_prefix_revision FROM repertoires WHERE id=n.repertoire_id) "
         "ORDER BY COALESCE(control.promoted,0) DESC,r.created_at,n.ply,n.id "
         "LIMIT 1 FOR UPDATE OF n SKIP LOCKED", (now,),
     ).fetchone()

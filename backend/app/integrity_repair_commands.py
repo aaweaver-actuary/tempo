@@ -32,6 +32,8 @@ class PreparedIntegrityRepair(BaseModel):
 def _replace_repertoire_line(
     database: PostgresConnection, source_line: Any, moves: list[str],
 ) -> bool:
+    from .services.canonical_prefix import ensure_line_in_scope
+    ensure_line_in_scope(database, source_line["repertoire_id"], source_line["start_fen"], moves)
     new_line_id = hashlib.sha256(
         f"{source_line['repertoire_id']}\0{card_id(source_line['start_fen'], moves)}".encode(),
     ).hexdigest()

@@ -14,6 +14,7 @@ from .command_gateway import register_command
 from .models import BranchRequest, RemoveBranchRequest
 from .postgres_store import PostgresConnection
 from .services.cards import card_id
+from .services.canonical_prefix import ensure_line_in_scope
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
 from .services.postgres_integrity import invalidate_integrity_in_transaction
 from .services.postgres_coverage_seed import request_coverage_seed_in_transaction
@@ -41,6 +42,7 @@ def add_repertoire_branch(database: PostgresConnection, payload: dict[str, Any])
         "SELECT 1 FROM repertoires WHERE id=%s FOR UPDATE", (repertoire_id,),
     ).fetchone() is None:
         raise HTTPException(404, "Repertoire not found")
+    ensure_line_in_scope(database, repertoire_id, request.starting_fen, moves)
     inserted = database.execute_native(
         "INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) "
         "VALUES(%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(id) DO NOTHING RETURNING id",

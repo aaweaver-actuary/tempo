@@ -14,6 +14,7 @@ from pydantic import BaseModel, Field
 from .command_gateway import register_command
 from .postgres_store import PostgresConnection
 from .services.cards import card_id
+from .services.canonical_prefix import ensure_line_in_scope
 from .services.opening_graph import decision_segments
 from .services.pgn import ParsedLine
 from .services.postgres_opening_graph import request_graph_rebuild_in_transaction
@@ -116,6 +117,7 @@ def admit_pgn_import(database: PostgresConnection, raw_payload: dict[str, Any]) 
     depths_to_upsert = []
     annotations_to_upsert = []
     for line in payload.lines:
+        ensure_line_in_scope(database, repertoire_id, line.starting_fen, line.moves)
         moves_json = json.dumps(line.moves)
         line_id = existing_lines.get((line.starting_fen, moves_json)) or hashlib.sha256(
             f"{repertoire_id}\0{card_id(line.starting_fen, line.moves)}".encode()
