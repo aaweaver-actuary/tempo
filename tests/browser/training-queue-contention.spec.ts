@@ -33,7 +33,14 @@ test("discovery preview backlog leaves a prompt foreground training queue refres
     previewWorkClasses.push(route.request().headers()["x-tempo-work-class"] ?? "");
     try {
       await previewHold;
-      await route.fulfill({ json: { state: "waiting", opportunity_id: "preview" } });
+      const discovery = discoveries.find(item => route.request().url().includes(`/${item.id}/`))!;
+      await route.fulfill({ json: { state: "ready", opportunity_id: discovery.id,
+        evidence_fingerprint: discovery.evidence_fingerprint, starting_fen: startFen,
+        candidates: [{ move_uci: "e2e4", score: { cp: 20, mate: null }, loss_cp: 0,
+          similarity: "fixture", repertoire_line_count: 0, exact_transposition: false,
+          example_line_id: null, example_line_name: null, preview_moves_uci: ["e2e4"],
+          engine_version: "fixture", network_version: "fixture", depth: 14,
+          report_id: "fixture", source_game_id: "fixture", source_ply: 0 }] } });
     } finally {
       activePreviews -= 1;
     }
