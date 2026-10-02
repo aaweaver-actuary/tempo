@@ -76,7 +76,7 @@ from .models import (
     ThreatAnalysisFailureRequest,
     DefenseAttemptRequest,
     DefenseRecognitionRequest,
-    DiscoveryAcceptanceRequest,
+    DiscoveryAcceptanceRequest, DiscoveryTrainingRequest,
 )
 from .services.analysis import AnalysisCapabilities
 from .services.analysis_paste import (
@@ -3917,16 +3917,19 @@ def repertoire_opportunity_training_eligibility(identifier: str, opportunity_id:
 
 @app.post("/api/repertoires/{identifier}/opportunities/{opportunity_id}/train")
 def train_repertoire_opportunity(identifier: str, opportunity_id: str,
-                                 idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+                                 idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+                                 request: DiscoveryTrainingRequest | None = None):
+    expected_fingerprint = request.evidence_fingerprint if request else None
     if postgres_store.configured():
         from .command_dispatch import dispatch_command
         return dispatch_command(
-            "opportunities.train", {"repertoire_id": identifier, "opportunity_id": opportunity_id},
+            "opportunities.train", {"repertoire_id": identifier, "opportunity_id": opportunity_id,
+                                    **({"evidence_fingerprint": expected_fingerprint} if expected_fingerprint else {})},
             idempotency_key=idempotency_key,
         )
     with connection() as database:
         try:
-            return admit_existing_decision(database, identifier, opportunity_id)
+            return admit_existing_decision(database, identifier, opportunity_id, expected_fingerprint)
         except KeyError as error:
             raise HTTPException(404, str(error)) from error
         except ValueError as error:

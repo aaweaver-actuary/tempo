@@ -788,7 +788,7 @@ def initialize() -> None:
             last_error TEXT,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL,
-            UNIQUE(opportunity_id,selected_move_uci)
+            UNIQUE(opportunity_id,selected_move_uci,evidence_fingerprint)
         )""",
         """CREATE TABLE IF NOT EXISTS defense_recognition_submissions (
             attempt_id TEXT PRIMARY KEY,
@@ -1441,6 +1441,21 @@ def initialize() -> None:
                             "UPDATE repertoire_opportunities SET handled_evidence_json=evidence_json "
                             "WHERE admission_state='queued' AND admitted_card_id IS NOT NULL"
                         )
+        # SQLite cannot drop an inline UNIQUE constraint. There are no child
+        # foreign keys to this table; copy every column and preserve legacy IDs.
+        legacy_intent_uniqueness = any(
+            index[2] and tuple(row[2] for row in database.execute(
+                'PRAGMA index_info("' + index[1].replace('"', '""') + '")'
+            )) == ("opportunity_id", "selected_move_uci")
+            for index in database.execute("PRAGMA index_list(discovery_admission_intents)")
+        )
+        if legacy_intent_uniqueness:
+            intent_definition = next(statement for statement in statements
+                                     if "CREATE TABLE IF NOT EXISTS discovery_admission_intents (" in statement)
+            database.execute(intent_definition.replace("discovery_admission_intents (", "discovery_admission_intents_revisioned (", 1))
+            database.execute("INSERT INTO discovery_admission_intents_revisioned SELECT * FROM discovery_admission_intents")
+            database.execute("DROP TABLE discovery_admission_intents")
+            database.execute("ALTER TABLE discovery_admission_intents_revisioned RENAME TO discovery_admission_intents")
         from .services.background_metrics_schema import install as install_background_metrics
         install_background_metrics(database)
         # Materialize the default in existing rows before a later VACUUM. Older

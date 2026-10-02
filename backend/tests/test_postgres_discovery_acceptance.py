@@ -120,3 +120,28 @@ def test_postgres_discovery_acceptance_route_keeps_idempotency_key(monkeypatch):
     assert request_digest("discovery.accept", prepared()) == request_digest(
         "discovery.accept", changed_preparation,
     )
+
+
+def test_postgres_resurfaced_acceptance_keeps_revision_identity_and_same_choice_retries(monkeypatch):
+    queued = []
+    monkeypatch.setattr(discovery_commands, "enqueue_compact_postgres_task_in_transaction",
+                        lambda _db, _kind, key, _payload, **_kwargs: queued.append(key))
+    class RevisionDatabase(Database):
+        def __init__(self):
+            super().__init__(opportunity={"id": "opening-one", "repertoire_id": "white-openings",
+                "evidence_fingerprint": "revision-two", "card_id": None, "status": "active"})
+            self.intents = {"revision-one": {"id": "legacy-intent", "evidence_fingerprint": "revision-one", "state": "queued"}}
+        def execute_native(self, statement, parameters=()):
+            if statement.startswith("SELECT id,evidence_fingerprint,state"):
+                self.statements.append((statement, parameters))
+                return Cursor(self.intents.get(parameters[2] if len(parameters) == 3 else "revision-one"))
+            if statement.startswith("INSERT INTO discovery_admission_intents"):
+                self.intents[parameters[3]] = {"id": parameters[0], "evidence_fingerprint": parameters[3], "state": "queued"}
+            return super().execute_native(statement, parameters)
+    db = RevisionDatabase()
+    payload = {**prepared(), "evidence_fingerprint": "revision-two"}
+    accepted = discovery_commands.accept_discovery(db, payload)
+    assert accepted["intent_id"] != "legacy-intent"
+    assert discovery_commands.accept_discovery(db, payload) == accepted
+    assert queued == [accepted["intent_id"]]
+    assert db.intents["revision-one"]["id"] == "legacy-intent"

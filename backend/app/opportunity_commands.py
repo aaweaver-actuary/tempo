@@ -77,7 +77,7 @@ def train_opportunity(database: PostgresConnection, payload: dict[str, Any]) -> 
     local_day = date.today().isoformat()
     lock_queue_date_for_position(database, local_day)
     try:
-        result = admit_existing_decision(database, repertoire_id, opportunity_id)
+        result = admit_existing_decision(database, repertoire_id, opportunity_id, payload.get("evidence_fingerprint"))
     except KeyError as error:
         raise HTTPException(404, str(error)) from error
     except ValueError as error:

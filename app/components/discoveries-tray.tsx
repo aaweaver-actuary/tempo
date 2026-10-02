@@ -920,7 +920,8 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
         if (!currentEligibility.eligible) return;
       }
       commandSubmitted = true;
-      await applyOpportunityCommand(item.repertoire_id, item.id, action);
+      await applyOpportunityCommand(item.repertoire_id, item.id, action,
+        action === "train" ? item.evidence_fingerprint : undefined);
       if (action === "train") {
         const completionKey = `${item.id}:${item.evidence_fingerprint}`;
         setCompletedAdmissions((current) => current.includes(completionKey)

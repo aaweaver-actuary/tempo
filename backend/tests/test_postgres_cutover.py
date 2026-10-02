@@ -1800,8 +1800,8 @@ def test_postgres_discovery_training_checkpoints_prefix_graph_intent(monkeypatch
     monkeypatch.setattr(opportunity_commands, "lock_queue_date_for_position",
                         lambda db, day: events.append(("queue-lock", db, day)))
     monkeypatch.setattr(opportunity_commands, "admit_existing_decision",
-                        lambda db, repertoire_id, opportunity_id:
-                        events.append(("admit", db, repertoire_id, opportunity_id)) or
+                        lambda db, repertoire_id, opportunity_id, evidence_fingerprint:
+                        events.append(("admit", db, repertoire_id, opportunity_id, evidence_fingerprint)) or
                         {"card_id": "continuation", "queued": True, "idempotent": False})
     monkeypatch.setattr(opportunity_commands, "invalidate_integrity_in_transaction",
                         lambda db, repertoire_id:
@@ -1810,11 +1810,11 @@ def test_postgres_discovery_training_checkpoints_prefix_graph_intent(monkeypatch
                         lambda db, repertoire_id, day:
                         events.append(("graph", db, repertoire_id, day)))
     result = opportunity_commands.train_opportunity(database, {
-        "repertoire_id": "white", "opportunity_id": "discovery-1",
+        "repertoire_id": "white", "opportunity_id": "discovery-1", "evidence_fingerprint": "revision-B",
     })
     assert result["card_id"] == "continuation"
     assert events[0][0] == "queue-lock" and events[1] == (
-        "admit", database, "white", "discovery-1",
+        "admit", database, "white", "discovery-1", "revision-B",
     )
     assert [(event[0], event[2]) for event in events[2:]] == [
         ("invalidate", "black"), ("graph", "black"),

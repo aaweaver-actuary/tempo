@@ -52,3 +52,17 @@ it("training a saved discovery waits for a confirmed queue receipt", async () =>
   expect(keys).toHaveLength(1);
   expect(localStorage.getItem("tempo-pending-opportunity-v1:discovery-2")).toBeNull();
 });
+
+
+it("a completed training receipt for older evidence cannot confirm the current revision", async () => {
+  localStorage.setItem("tempo-pending-opportunity-v1:discovery-3", JSON.stringify({
+    operationId: "old-training", repertoireId: "white", action: "train", evidenceFingerprint: "A",
+  }));
+  const fetcher = vi.fn<(input: RequestInfo | URL, init?: RequestInit) => Promise<Response>>(async (input) => String(input).includes("/api/operations/")
+    ? Response.json({ state: "complete", response: { card_id: "card", queued: true, idempotent: false } })
+    : Response.json({ card_id: "card", queued: true, idempotent: false }));
+  vi.stubGlobal("fetch", fetcher);
+  await applyOpportunityCommand("white", "discovery-3", "train", "B");
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(fetcher.mock.calls[1]).toEqual(expect.arrayContaining([expect.objectContaining({ body: JSON.stringify({ evidence_fingerprint: "B" }) })]));
+});

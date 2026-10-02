@@ -6,6 +6,9 @@ import os
 from pathlib import Path
 import sys
 import uuid
+import json
+from datetime import date, datetime, timezone
+from unittest.mock import patch
 
 import psycopg
 from psycopg import sql
@@ -15,7 +18,9 @@ from scripts.apply_postgres_migrations import MIGRATIONS, apply_migrations
 from backend.app.schema_version import POSTGRES_SCHEMA_VERSION
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 from app.postgres_store import PostgresConnection, tempo_row_factory
-from app.services.repertoire_opportunities import _publish, _stable_id
+from app.services.repertoire_opportunities import _publish, _stable_id, list_opportunities
+from app import postgres_store, discovery_commands
+from app.services import discovery_admission
 
 
 DISCOVERY_FEN_KEY = "4k3/8/8/8/8/8/8/4K3 w - -"
@@ -49,6 +54,94 @@ def test_handled_discovery_postgres_upgrade_and_material_evidence_replay(dsn: st
         assert database.execute("SELECT handled_evidence_json,admission_state FROM repertoire_opportunities WHERE id=%s",
                                 (opportunity_id,)).fetchone() == (None, None)
     print("PASS handled discovery PostgreSQL upgrade and material-evidence replay")
+
+
+def test_postgres_stale_admission_and_revisioned_same_move_replay(dsn: str) -> None:
+    """Use real transactions, leases, unique constraints, and queue persistence."""
+    from app.main import discoveries_feed
+    repertoire_id = "revision-lifecycle"
+    starting_fen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    fen_key = " ".join(starting_fen.split()[:4])
+    opportunity_id = _stable_id(repertoire_id, "weak_known_decision", fen_key, "e2e4")
+    original_urls = {name: os.environ.get(name) for name in ("TEMPO_DATABASE_WRITE_URL", "TEMPO_DATABASE_READ_URL")}
+    postgres_store.close_pools()
+    for name in original_urls:
+        os.environ[name] = dsn
+    try:
+        with postgres_store.connection() as database:
+            now = datetime.now(timezone.utc).isoformat()
+            database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)",
+                             (repertoire_id, "Revision lifecycle", "regression", now))
+            _publish(database, repertoire_id=repertoire_id, kind="weak_known_decision", fen_key=fen_key,
+                     target="e2e4", card_id=None, opponent_move_uci=None, score=1, evidence={"supporting_games": 5})
+            fingerprint_a = database.execute("SELECT evidence_fingerprint FROM repertoire_opportunities WHERE id=?",
+                                             (opportunity_id,)).fetchone()[0]
+            payload = {"opportunity_id": opportunity_id, "selected_move_uci": "e2e4",
+                       "evidence_fingerprint": fingerprint_a, "repertoire_id": repertoire_id,
+                       "starting_fen": starting_fen, "preview_moves_uci": ["e2e4"],
+                       "recommendation": {"move_uci": "e2e4", "preview_moves_uci": ["e2e4"]}}
+            intent_a = discovery_commands.accept_discovery(database, payload)["intent_id"]
+            line_id = database.execute("SELECT line_id FROM discovery_admission_intents WHERE id=?", (intent_a,)).fetchone()[0]
+            database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,'Accepted','white',?,'[\"e2e4\"]',?)",
+                             (line_id, repertoire_id, starting_fen, now))
+            database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,content_type,trained_color) VALUES('revision-card',?,'response',?,'[\"e2e4\"]','new',?,'opening','white')",
+                             (repertoire_id, starting_fen, date.today().isoformat()))
+            database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,'revision-card')", (repertoire_id,))
+            database.execute("INSERT INTO opening_graph_publications(repertoire_id,generation,published_at) VALUES(?,1,?)", (repertoire_id, now))
+            database.execute("INSERT INTO opening_graph_steps(repertoire_id,generation,line_id,decision_index,segment_kind,first_decision_index,last_decision_index,decision_fen_keys_json,card_id,decision_fen_key,starting_fen,moves_json,trained_color) VALUES(?,1,?,0,'decision',0,0,?,'revision-card',?,?,'[\"e2e4\"]','white')",
+                             (repertoire_id, line_id, json.dumps([fen_key]), fen_key, starting_fen))
+            database.execute("INSERT INTO repertoire_integrity_state(repertoire_id,status,checked_at,scan_status) VALUES(?,'clean',?,'idle')",
+                             (repertoire_id, datetime.now(timezone.utc).isoformat()))
+        def lease(intent_id):
+            with postgres_store.connection() as database:
+                row = database.execute("UPDATE background_tasks SET state='leased',lease_token=? WHERE kind='discovery_admission' AND deduplication_key=? RETURNING *",
+                                       (f"lease:{intent_id}", intent_id)).fetchone()
+                return {**dict(row), "payload": {"intent_id": intent_id}}
+        task_a = lease(intent_a)
+        with postgres_store.connection() as database:
+            _publish(database, repertoire_id=repertoire_id, kind="weak_known_decision", fen_key=fen_key,
+                     target="e2e4", card_id=None, opponent_move_uci=None, score=1, evidence={"supporting_games": 8})
+            fingerprint_b = database.execute("SELECT evidence_fingerprint FROM repertoire_opportunities WHERE id=?", (opportunity_id,)).fetchone()[0]
+            assert fingerprint_b != fingerprint_a
+        # Engine/graph work is already published. Only the actual bounded admission
+        # transaction is under test; no network or derived-work sweep is required.
+        with patch.object(discovery_admission, "_materialize_admission_branch"), patch.object(discovery_admission, "_ensure_admission_coverage_refresh"):
+            assert discovery_admission.execute_admission_intent_slice(task_a) is False
+            assert discovery_admission.execute_admission_intent_slice(task_a) is False
+            postgres_store.close_pools()  # Verify through newly opened connections.
+            with postgres_store.connection() as database:
+                assert database.execute("SELECT state FROM discovery_admission_intents WHERE id=?", (intent_a,)).fetchone()[0] == "queued"
+                current = database.execute("SELECT * FROM repertoire_opportunities WHERE id=?", (opportunity_id,)).fetchone()
+                assert current["evidence_fingerprint"] == fingerprint_b
+                assert current["handled_evidence_json"] is None and current["admission_state"] is None
+                assert current["card_id"] is None
+                assert [item["id"] for item in list_opportunities(database, repertoire_id)] == [opportunity_id]
+                payload_b = {**payload, "evidence_fingerprint": fingerprint_b}
+                intent_b = discovery_commands.accept_discovery(database, payload_b)["intent_id"]
+                assert intent_b != intent_a
+                assert discovery_commands.accept_discovery(database, payload_b)["intent_id"] == intent_b
+                assert database.execute("SELECT COUNT(*) FROM discovery_admission_intents WHERE opportunity_id=?", (opportunity_id,)).fetchone()[0] == 2
+                database.execute("UPDATE repertoire_integrity_state SET checked_at=? WHERE repertoire_id=?",
+                                 (datetime.now(timezone.utc).isoformat(), repertoire_id))
+            assert opportunity_id in {item["id"] for item in discoveries_feed()["discoveries"]}
+            task_b = lease(intent_b)
+            assert discovery_admission.execute_admission_intent_slice(task_b) is False
+            assert discovery_admission.execute_admission_intent_slice(task_b) is False
+        postgres_store.close_pools()
+        with postgres_store.connection() as database:
+            assert database.execute("SELECT handled_evidence_json=evidence_json FROM repertoire_opportunities WHERE id=?", (opportunity_id,)).fetchone()[0]
+            assert database.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id='revision-card'").fetchone()[0] == 1
+            assert database.execute("SELECT COUNT(*) FROM reviews WHERE card_id='revision-card'").fetchone()[0] == 0
+            assert database.execute("SELECT state FROM discovery_admission_intents WHERE id=?", (intent_a,)).fetchone()[0] == "queued"
+        assert opportunity_id not in {item["id"] for item in discoveries_feed()["discoveries"]}
+    finally:
+        postgres_store.close_pools()
+        for name, value in original_urls.items():
+            if value is None:
+                os.environ.pop(name, None)
+            else:
+                os.environ[name] = value
+    print("PASS real PostgreSQL stale admission, revisioned same-move acceptance, reconnect, and replay")
 
 
 def main() -> None:
@@ -88,6 +181,8 @@ def main() -> None:
                     "VALUES(%s,'preserved-repertoire','weak_known_decision',%s,'known-plural','active',1,'{\"supporting_games\":5}','revision','2026-01-01','2026-01-01',%s,'known-plural','2026-01-01')",
                     (opportunity_id, DISCOVERY_FEN_KEY, admission_state),
                 )
+            database.execute("INSERT INTO discovery_admission_intents(id,opportunity_id,repertoire_id,evidence_fingerprint,starting_fen,selected_move_uci,preview_moves_json,recommendation_json,line_id,state,created_at,updated_at) VALUES('legacy-admission',%s,'preserved-repertoire','A','4k3/8/8/8/8/8/8/4K3 w - - 0 1','e1d2','[\"e1d2\"]','{}','legacy-line','queued','2026-01-01','2026-01-01')",
+                             (_stable_id("preserved-repertoire", "weak_known_decision", DISCOVERY_FEN_KEY, "queued"),))
             database.commit()
         apply_migrations(rehearsal_dsn)
         apply_migrations(rehearsal_dsn)
@@ -118,7 +213,12 @@ def main() -> None:
                 "'idx_threat_candidate_requests_role_request',"
                 "'idx_threat_analysis_requests_state_created')"
             ).fetchone()[0] == 2
+        with psycopg.connect(rehearsal_dsn) as database:
+            assert database.execute("SELECT state,evidence_fingerprint FROM discovery_admission_intents WHERE id='legacy-admission'").fetchone() == ("queued", "A")
+            database.execute("INSERT INTO discovery_admission_intents SELECT 'resurfaced-admission',opportunity_id,repertoire_id,'B',starting_fen,selected_move_uci,preview_moves_json,recommendation_json,line_id,state,card_id,last_error,created_at,updated_at FROM discovery_admission_intents WHERE id='legacy-admission' ON CONFLICT DO NOTHING")
+            assert database.execute("SELECT COUNT(*) FROM discovery_admission_intents WHERE selected_move_uci='e1d2'").fetchone()[0] == 2
         test_handled_discovery_postgres_upgrade_and_material_evidence_replay(rehearsal_dsn)
+        test_postgres_stale_admission_and_revisioned_same_move_replay(rehearsal_dsn)
     finally:
         with psycopg.connect(admin_dsn, autocommit=True) as admin:
             admin.execute(sql.SQL("DROP DATABASE {} WITH (FORCE)").format(
