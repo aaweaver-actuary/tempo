@@ -1,4 +1,5 @@
 "use client";
+import { setLetterShortcutsEnabled, useLetterShortcutsEnabled } from "../lib/keyboard-shortcuts";
 import { TabList } from "../components/ui";
 import { SelectInput } from "../components/inputs/SelectInput";
 import { TextInput } from "../components/inputs/TextInput";
@@ -19,7 +20,7 @@ import { migrateSqliteToBrowser } from "../lib/sqlite-migration";
 import { reportDebugError } from "../lib/debug-reporting";
 import { saveLocalSettings } from "../lib/settings-save";
 import { PendingOperationError } from "../lib/operation-status";
-import { publishNotification, resolveNotification } from "../lib/notifications";
+import { publishNotification, resolveNotification, updateNotification } from "../lib/notifications";
 
 import { Notice } from "../components/task-tabs";
 
@@ -71,6 +72,7 @@ export default function SettingsView({
   onPieces: (value: PieceSet) => void;
   onSound: (value: boolean) => void;
 }) {
+  const letterKeysEnabled = useLetterShortcutsEnabled();
   const [values, setValues] = useState<SettingsValues>({
     initial_depth: 6,
     timezone: "local",
@@ -111,7 +113,9 @@ export default function SettingsView({
       statusNotificationId.current = publishNotification({ severity: "info", source: "settings",
         key: "settings-data-transfer", message, active: true });
     } else if (statusNotificationId.current) {
-      resolveNotification(statusNotificationId.current, { severity, message });
+      if (severity === "warning" || severity === "error")
+        updateNotification(statusNotificationId.current, { severity, message, active: false });
+      else resolveNotification(statusNotificationId.current, { severity, message });
       statusNotificationId.current = undefined;
     } else publishNotification({ severity, source: "settings", message });
   }
@@ -479,6 +483,10 @@ export default function SettingsView({
         </section>
         <section id="settings-section-board" className="settings-card" role="tabpanel" aria-labelledby="settings-tab-board" hidden={activeSection !== "board"}>
           <h2>Board</h2>
+          <label className="setting-row">
+            <span>Letter keyboard shortcuts<small>F, R, H and N. Arrow navigation, ? and Escape stay available.</small></span>
+            <input type="checkbox" checked={letterKeysEnabled} onChange={event => setLetterShortcutsEnabled(event.target.checked)} />
+          </label>
           <label>
             <span>Board colors</span>
             <SelectInput

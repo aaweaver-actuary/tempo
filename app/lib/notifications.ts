@@ -18,6 +18,9 @@ export type NotificationRecord = {
 export type NotificationInput = Pick<NotificationRecord, "severity" | "source" | "message"> &
   Partial<Pick<NotificationRecord, "key" | "active" | "details">>;
 
+export type NotificationGroup = { key: string; record: NotificationRecord; occurrenceCount: number };
+export type NotificationToast = { id: string; groupKey: string };
+
 export const NOTIFICATION_HISTORY_LIMIT = 500;
 const STORAGE_KEY = "tempo-notifications-v1";
 const severityRank: Record<NotificationSeverity, number> = {
@@ -25,7 +28,8 @@ const severityRank: Record<NotificationSeverity, number> = {
 };
 const subscribers = new Set<() => void>();
 let history: readonly NotificationRecord[] = [];
-let visibleToastIds: readonly string[] = [];
+let visibleToasts: readonly NotificationToast[] = [];
+let nextToastId = 1;
 let nextId = 1;
 let loaded = false;
 
@@ -130,19 +134,64 @@ export function subscribeNotifications(subscriber: () => void) {
 }
 
 export function notifications() { return history; }
-export function notificationToastIds() { return visibleToastIds; }
+export function notificationToasts() { return visibleToasts; }
+export function notificationToastIds() {
+  const groups = groupNotifications(history);
+  return visibleToasts.flatMap((toast) => {
+    const group = groups.find((candidate) => candidate.key === toast.groupKey);
+    return group ? [group.record.id] : [];
+  });
+}
 
-function showToast(id: string) {
-  const newest = [id, ...visibleToastIds.filter((visibleId) => visibleId !== id)];
-  const active = newest.filter((visibleId) => history.find((record) => record.id === visibleId)?.active);
-  const selected = new Set([...active, ...newest.filter((visibleId) => !active.includes(visibleId))].slice(0, 3));
-  visibleToastIds = newest.filter((visibleId) => selected.has(visibleId));
+export function notificationNeedsAttention(record: NotificationRecord): boolean {
+  return !record.clearedAt && !record.resolvedAt &&
+    (record.severity === "warning" || record.severity === "error");
+}
+
+function notificationGroupKey(record: NotificationRecord): string {
+  const details = Object.entries(record.details ?? {}).sort(([firstName], [secondName]) => firstName.localeCompare(secondName));
+  return JSON.stringify([record.source, record.severity, record.message, details,
+    Boolean(record.resolvedAt), Boolean(record.clearedAt)]);
+}
+
+export function groupNotifications(records: readonly NotificationRecord[]): NotificationGroup[] {
+  const groups = new Map<string, NotificationGroup>();
+  for (const record of [...records].sort((first, second) => second.updatedAt.localeCompare(first.updatedAt))) {
+    const groupKey = notificationGroupKey(record);
+    const existingGroup = groups.get(groupKey);
+    if (existingGroup) existingGroup.occurrenceCount += record.occurrenceCount ?? 1;
+    else groups.set(groupKey, { key: groupKey, record, occurrenceCount: record.occurrenceCount ?? 1 });
+  }
+  return [...groups.values()];
+}
+
+function finishNotificationChange(previousHistory: readonly NotificationRecord[], repeatedRecordId?: string) {
+  const attentionGroups = groupNotifications(history).filter((group) => notificationNeedsAttention(group.record));
+  const previousGroupKeys = new Set(previousHistory.filter(notificationNeedsAttention).map(notificationGroupKey));
+  const previousObservation = previousHistory.find((record) => record.id === repeatedRecordId);
+  const updatedObservation = history.find((record) => record.id === repeatedRecordId);
+  const updatedGroupKey = updatedObservation && notificationGroupKey(updatedObservation);
+  const retainedToasts = visibleToasts.flatMap((toast) => {
+    // A keyed repeat can refresh diagnostic details without restarting its popup.
+    const groupKey = previousObservation && toast.groupKey === notificationGroupKey(previousObservation)
+      ? updatedGroupKey : toast.groupKey;
+    return groupKey && attentionGroups.some((group) => group.key === groupKey)
+      ? [{ ...toast, groupKey }] : [];
+  }).filter((toast, index, toasts) => toasts.findIndex((candidate) => candidate.groupKey === toast.groupKey) === index);
+  const newToasts = attentionGroups.filter((group) => !previousGroupKeys.has(group.key) &&
+    group.key !== updatedGroupKey && !retainedToasts.some((toast) => toast.groupKey === group.key))
+    .map((group) => ({ id: `notification-toast-${nextToastId++}`, groupKey: group.key }));
+  visibleToasts = [...newToasts, ...retainedToasts].slice(0, 3);
+  persist();
   notifySubscribers();
 }
 
 export function hideNotificationToast(id: string) {
-  if (!visibleToastIds.includes(id)) return;
-  visibleToastIds = visibleToastIds.filter((visibleId) => visibleId !== id);
+  const groups = groupNotifications(history);
+  const matchingToast = visibleToasts.find((toast) => toast.id === id ||
+    groups.some((group) => group.key === toast.groupKey && group.record.id === id));
+  if (!matchingToast) return;
+  visibleToasts = visibleToasts.filter((toast) => toast.id !== matchingToast.id);
   notifySubscribers();
 }
 
@@ -152,15 +201,14 @@ export function publishNotification(input: NotificationInput): string {
   const key = safeKey(input.key);
   const existing = key && history.find((record) => record.key === key && !record.resolvedAt);
   if (existing && existing.message === message && existing.severity === input.severity) {
+    const previousHistory = history;
     const observed = { ...existing, occurrenceCount: (existing.occurrenceCount ?? 1) + 1,
       source: sanitizeNotificationText(input.source),
       updatedAt: new Date().toISOString(), details: safeDetails(input.details) ?? existing.details };
     if (notificationContentChanged(existing, observed)) observed.clearedAt = null;
     history = [observed, ...history.filter((record) => record.id !== existing.id)]
       .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-    persist();
-    if (existing.clearedAt && !observed.clearedAt) showToast(existing.id);
-    else notifySubscribers();
+    finishNotificationChange(previousHistory, existing.clearedAt && !observed.clearedAt ? undefined : existing.id);
     return existing.id;
   }
   if (existing) {
@@ -168,6 +216,7 @@ export function publishNotification(input: NotificationInput): string {
     return existing.id;
   }
   const now = new Date().toISOString();
+  const previousHistory = history;
   const record: NotificationRecord = {
     id: typeof crypto !== "undefined" && "randomUUID" in crypto
       ? `notification-${crypto.randomUUID()}` : `notification-${Date.now()}-${nextId++}`,
@@ -184,15 +233,15 @@ export function publishNotification(input: NotificationInput): string {
     details: safeDetails(input.details),
   };
   history = [record, ...history].slice(0, NOTIFICATION_HISTORY_LIMIT);
-  persist();
-  showToast(record.id);
+  finishNotificationChange(previousHistory);
   return record.id;
 }
 
-export function updateNotification(id: string, changes: Partial<NotificationInput>): void {
+function changeNotification(id: string, changes: Partial<NotificationInput>, resolvedAt?: string): void {
   const existing = history.find((record) => record.id === id);
   if (!existing) return;
   const now = new Date().toISOString();
+  const previousHistory = history;
   const updated: NotificationRecord = {
     ...existing,
     ...changes,
@@ -201,30 +250,27 @@ export function updateNotification(id: string, changes: Partial<NotificationInpu
     source: changes.source === undefined ? existing.source : sanitizeNotificationText(changes.source),
     details: changes.details === undefined ? existing.details : safeDetails(changes.details),
     updatedAt: now,
+    resolvedAt: resolvedAt ?? existing.resolvedAt,
   };
   if (notificationContentChanged(existing, updated)) updated.clearedAt = null;
   history = [updated, ...history.filter((record) => record.id !== id)]
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  persist();
-  if (!updated.clearedAt || updated.active) showToast(id);
-  else notifySubscribers();
+  const repeated = !existing.resolvedAt && !updated.resolvedAt && existing.source === updated.source &&
+    existing.severity === updated.severity && existing.message === updated.message &&
+    Boolean(existing.clearedAt) === Boolean(updated.clearedAt);
+  finishNotificationChange(previousHistory, repeated ? id : undefined);
+}
+
+export function updateNotification(id: string, changes: Partial<NotificationInput>): void {
+  changeNotification(id, changes);
 }
 
 export function resolveNotification(id: string, changes: Partial<NotificationInput> = {}): void {
-  updateNotification(id, { ...changes, active: false });
-  const now = new Date().toISOString();
-  history = history.map((record) => record.id === id ? { ...record, resolvedAt: now } : record);
-  persist();
-  notifySubscribers();
+  changeNotification(id, { ...changes, active: false }, new Date().toISOString());
 }
 
 export function notificationsAtOrAbove(threshold: "info" | "warning" | "error") {
   return history.filter((record) => severityRank[record.severity] >= severityRank[threshold]);
-}
-
-export function notificationNeedsAttention(record: NotificationRecord): boolean {
-  return !record.clearedAt && !record.resolvedAt &&
-    (record.severity === "warning" || record.severity === "error");
 }
 
 function clearSelectedNotifications(notificationIds: ReadonlySet<string>) {
@@ -236,16 +282,20 @@ function clearSelectedNotifications(notificationIds: ReadonlySet<string>) {
     return { ...record, clearedAt };
   });
   if (!changed) return;
+  const previousHistory = history;
   history = clearedHistory;
-  visibleToastIds = visibleToastIds.filter((notificationId) => !notificationIds.has(notificationId) ||
-    history.some((record) => record.id === notificationId && record.active));
-  persist();
-  notifySubscribers();
+  finishNotificationChange(previousHistory);
 }
 
 export function clearNotification(notificationId: string): void {
   hydrateNotifications();
   clearSelectedNotifications(new Set([notificationId]));
+}
+
+export function clearNotificationGroup(groupKey: string): void {
+  hydrateNotifications();
+  clearSelectedNotifications(new Set(history.filter((record) => notificationGroupKey(record) === groupKey)
+    .map((record) => record.id)));
 }
 
 export function clearAllNotifications(): void {
@@ -267,7 +317,7 @@ export function buildNotificationExport(threshold: "info" | "warning" | "error")
 
 export function clearNotificationHistory() {
   history = [];
-  visibleToastIds = [];
+  visibleToasts = [];
   persist();
   notifySubscribers();
 }

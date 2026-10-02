@@ -23,6 +23,8 @@ import {
   type SetStateAction,
 } from "react";
 import { BoardTheme, PieceSet, Chessboard } from "../components/chessboard";
+import { historyKeyboardActions } from "../lib/keyboard-shortcuts";
+import { Dialog } from "../components/dialog";
 import { useBoardPublisher } from "../hooks/use-board-publisher";
 import { playChessMoveSound } from "../lib/move-sound";
 import CandidateMovesTable from "../CandidateMovesTable";
@@ -199,6 +201,7 @@ export default function BuilderView({
   const initialSession = useMemo(readBuilderSession, []);
   const [history, setHistory] = useState(initialSession?.history ?? []);
   const [cursor, setCursor] = useState(initialSession?.cursor ?? 0);
+  const [workingCursor, setWorkingCursor] = useState(initialSession?.cursor ?? 0);
   const [startingFen, setStartingFen] = useState(
     initialSession?.startingFen ?? STANDARD_FEN,
   );
@@ -675,65 +678,6 @@ export default function BuilderView({
   }, []);
 
   useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (document.querySelector('[role="dialog"]')) return;
-      if (
-        event.target instanceof HTMLInputElement ||
-        event.target instanceof HTMLSelectElement ||
-        event.target instanceof HTMLTextAreaElement
-      )
-        return;
-      if (event.key === "ArrowLeft") {
-        event.preventDefault();
-        setCursor((value) => Math.max(0, value - 1));
-      }
-      if (event.key === "ArrowRight") {
-        event.preventDefault();
-        advanceHistoryOnePly();
-      }
-      if (event.key === "Home") {
-        event.preventDefault();
-        setCursor(0);
-      }
-      if (event.key === "End") {
-        event.preventDefault();
-        setCursor(history.length);
-      }
-      if (event.key === "Escape" && isSearchOpen) {
-        event.preventDefault();
-        setIsSearchOpen(false);
-      }
-      if (event.key === "ArrowDown" && isSearchOpen) {
-        event.preventDefault();
-        setCurrentSearchIndex((value) =>
-          Math.min(Math.max(0, lineMatches.length - 1), value + 1),
-        );
-      }
-      if (event.key === "ArrowUp" && isSearchOpen) {
-        event.preventDefault();
-        setCurrentSearchIndex((value) => Math.max(0, value - 1));
-      }
-      if (
-        event.key === "Enter" &&
-        isSearchOpen &&
-        lineMatches[currentSearchIndex]
-      ) {
-        event.preventDefault();
-        setIsSearchOpen(false);
-      }
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [
-    advanceHistoryOnePly,
-    flipBuilder,
-    history.length,
-    lineMatches,
-    currentSearchIndex,
-    isSearchOpen,
-  ]);
-
-  useEffect(() => {
     let active = true;
     queueMicrotask(() => {
       if (!active) return;
@@ -926,6 +870,7 @@ export default function BuilderView({
           { san: asSanMove(move.san), uci, fen: asFenString(chess.fen()) },
         ]);
         setCursor((value) => value + 1);
+        setWorkingCursor(cursor + 1);
       } catch {
         /* Chessground only offers legal destinations. */
       }
@@ -1180,7 +1125,13 @@ export default function BuilderView({
     [annotation],
   );
 
+  const defaultOrientation = selectedRepertoire?.side ?? initialSession?.orientation ?? "white";
+  const keyboard = { ...historyKeyboardActions(cursor, history.length, navigateHistoryToPly),
+    defaultOrientation,
+    reset: () => { setCursor(Math.min(workingCursor, history.length)); setOrientation(defaultOrientation); },
+  };
   useBoardPublisher("builder", useSharedBoard ? {
+    keyboard,
     positionKey: selectedRepertoireId,
     fen,
     lastMove,
@@ -1202,6 +1153,7 @@ export default function BuilderView({
   function reset() {
     setHistory([]);
     setCursor(0);
+    setWorkingCursor(0);
     const nextStart = availableLines.find(
       (line) => line.repertoireId === selectedRepertoire?.id,
     )?.startingFen;
@@ -1351,6 +1303,7 @@ export default function BuilderView({
           {!useSharedBoard && (
             <Chessboard
               positionKey={selectedRepertoireId}
+              keyboard={keyboard}
               fen={fen}
               lastMove={lastMove}
               locked={false}
@@ -1769,7 +1722,8 @@ export default function BuilderView({
             <Button
               className="analysis-panel repertoire-results position-preview"
               data-task="Repertoire"
-              onClick={() => {
+              onClick={event => {
+                event.currentTarget.focus();
                 setCurrentSearchIndex(0);
                 setIsSearchOpen(true);
               }}
@@ -1857,23 +1811,18 @@ export default function BuilderView({
           </div>
         </aside>
       </div>
-      {isSearchOpen && (
-        <div
-          className="modal-backdrop"
-          onMouseDown={() => setIsSearchOpen(false)}
-        >
-          <section
-            className="ui-dialog position-search-modal"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Position search"
-            onMouseDown={(event) => event.stopPropagation()}
-          >
+      {isSearchOpen && <Dialog titleId="position-search-title" onClose={() => setIsSearchOpen(false)} className="position-search-modal">
+        <div onKeyDown={event => {
+          if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+            event.preventDefault(); event.stopPropagation();
+            setCurrentSearchIndex(value => Math.max(0, Math.min(lineMatches.length - 1, value + (event.key === "ArrowDown" ? 1 : -1))));
+          }
+        }}>
             <CloseButton
               onClose={() => setIsSearchOpen(false)}
               ariaLabel="Close position search"
             />
-            <h2>Position search</h2>
+            <h2 id="position-search-title">Position search</h2>
             <p>{lineMatches.length} matching branches</p>
             <div className="position-search-list">
               {lineMatches.map((line, index) => (
@@ -1894,9 +1843,8 @@ export default function BuilderView({
                 </Button>
               ))}
             </div>
-          </section>
         </div>
-      )}
+      </Dialog>}
     </section>
   );
 }

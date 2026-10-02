@@ -1,3 +1,4 @@
+import { historyKeyboardActions } from "../lib/keyboard-shortcuts";
 import { useState } from "react";
 import { TextInput } from "./inputs/TextInput";
 import { Button } from "./buttons/BaseButton";
@@ -25,7 +26,7 @@ export function PositionSolutionBoard({ editor, theme, pieceSet, setupControls =
   function addSanMoves() {
     if (!inputLocked && editor.playSanSolution(sanText)) setSanText("");
   }
-  return <div className="editor-board-column">
+  return <div className="editor-board-column" data-board-keyboard-scope>
     {editor.tab === "position" && <div className="piece-palette">
       {setupControls && <Button className={editor.piece === null ? "active move-pieces" : "move-pieces"}
         disabled={locked} onClick={() => editor.setPiece(null)}>Move pieces</Button>}
@@ -33,7 +34,10 @@ export function PositionSolutionBoard({ editor, theme, pieceSet, setupControls =
         disabled={locked} className={editor.piece === id ? "active" : ""}
         onClick={() => editor.setPiece(id)} aria-label={id ? `Place ${id}` : "Remove piece"}>{symbol}</Button>)}
     </div>}
-    <Chessboard orientation={orientation} fen={editor.tab === "position" ? editor.boardFen : editor.previewFen}
+    <Chessboard keyboard={{
+      ...(editor.tab === "solution" && !inputLocked ? historyKeyboardActions(editor.cursor, editor.moves.length, editor.setCursor) : {}),
+      reset: () => { if (editor.tab === "solution") editor.setCursor(Math.min(editor.workingCursor, editor.moves.length)); },
+    }} orientation={orientation} fen={editor.tab === "position" ? editor.boardFen : editor.previewFen}
       locked={locked || editor.pendingFen !== null} showHint={false} theme={theme} pieceSet={pieceSet}
       editMode={editor.tab === "position"} onSquareSelect={editor.placePiece}
       onFreeMove={editor.moveSetupPiece} onMove={editor.playSolution} />

@@ -1,7 +1,14 @@
+import { usePopupKeyboard } from "../lib/keyboard-shortcuts";
 import { DataTable } from "./ui";
 import { Button } from "./buttons/BaseButton";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import type { CandidateMove } from "../domain";
+
+function DatabaseDetail({ children, onClose, label }: { children: React.ReactNode; onClose: () => void; label: string }) {
+  const popupRef = useRef<HTMLDivElement>(null);
+  usePopupKeyboard(popupRef, onClose);
+  return <div ref={popupRef} className="database-detail" role="group" aria-label={label}>{children}</div>;
+}
 
 type Column =
   | "Move"
@@ -141,25 +148,16 @@ export function MoveComparisonTable({
         <Button
           aria-label={`${source} details for ${candidate.san ?? candidate.uci}`}
           aria-expanded={expanded}
-          onClick={() =>
-            setDetail(expanded ? undefined : { source, uci: candidate.uci })
-          }
-          onKeyDown={(event) => {
-            if (event.key === "Escape") {
-              event.stopPropagation();
-              setDetail(undefined);
-            }
+          onClick={event => {
+            event.currentTarget.focus();
+            setDetail(expanded ? undefined : { source, uci: candidate.uci });
           }}
         >
           <span>{games.toLocaleString()}</span>
           <small>{percent(score)}</small>
         </Button>
         {expanded && (
-          <div
-            className="database-detail"
-            role="group"
-            aria-label={`${source} results`}
-          >
+          <DatabaseDetail label={`${source} results`} onClose={() => setDetail(undefined)}>
             <strong>
               {games.toLocaleString()} games · {percent(score)} {turn} score
             </strong>
@@ -176,7 +174,7 @@ export function MoveComparisonTable({
             >
               ×
             </Button>
-          </div>
+          </DatabaseDetail>
         )}
       </div>
     );

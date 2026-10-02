@@ -101,6 +101,13 @@ Every PR/handoff must state: risk/scope and why it is sufficient; named new/upda
 - Resolve merge conflicts and obtain fresh required candidate validation after relevant edits or rebases. Once CI is clean, mark the PR ready for review and verify that GitHub reports it mergeable with no outstanding required-check or merge blockers. Do not merge the PR unless the user explicitly requests it.
 - No work is considered done until a clean-CI, ready-for-review, mergeable PR is available. The final handoff must link the PR and successful CI evidence and identify the verified head commit. If permissions, infrastructure, required review, or another external condition prevents this, report the work as incomplete with the precise blocker; do not claim completion or abandon monitoring while useful authorized progress remains possible.
 
+## Issue review and freshness
+
+- Review open GitHub issues when planning work and again before the final PR handoff. Compare relevant issue bodies, acceptance criteria, and discussion with recently merged and open PRs, current main, and recorded regression/CI evidence. Do not rely on titles, issue age, or an old implementation report alone.
+- Connect related issues and PRs explicitly. Use closing keywords only when the PR will satisfy the entire issue after merge; use ordinary references for partial implementation, dependencies, or related work. Keep the issue's remaining requirements and blockers clear, and avoid duplicate status notes when nothing has changed.
+- After related PRs merge, check for issues left open despite completed work and for partial work whose status is outdated. Close an issue as completed only when the merged implementation, required named regressions, and successful candidate validation support all acceptance criteria. Keep umbrella roadmaps and partially completed issues open, updating their links, completed items, remaining work, and next action.
+- Do not automatically close, relabel, or discard an issue merely because it is old or inactive. If completion cannot be verified, state the uncertainty and the concrete evidence or follow-up needed. Report issue-to-PR links, status changes, unresolved gaps, and reviewed scope at handoff so issues do not silently become stale.
+
 ## YAGNI principle
 - Apply YAGNI to speculative requirements and premature abstraction, not to correctness, security, testing, maintainability, or explicitly requested product quality.
 

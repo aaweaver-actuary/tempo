@@ -1,0 +1,353 @@
+{
+  "measurementRevision": "a570f95de216fc1d6d1989f9922dfcafc166e523",
+  "currentMainBase": "60d2ddeb9b3f1b2396df5a01dac1b9825c6a5337",
+  "comparisonBase": "dfbb66d67b314357e55c2030ff794a15415f316c",
+  "deterministic": {
+    "before": {
+      "closedTraining": {
+        "previews": 100,
+        "maximumActive": 2,
+        "feedPages": 3,
+        "validations": 200
+      },
+      "viewerOpen": {
+        "previews": 100,
+        "maximumActive": 2,
+        "feedPages": 5,
+        "validations": 323
+      }
+    },
+    "after": {
+      "closedTraining": {
+        "previews": 0,
+        "maximumActive": 0,
+        "feedPages": 0,
+        "validations": 0
+      },
+      "viewerOpen": {
+        "previews": 3,
+        "maximumActive": 2,
+        "feedPages": 3,
+        "validations": 3,
+        "validationInvocations": 3,
+        "validationCacheHits": 0
+      }
+    }
+  },
+  "correctness": [
+    {
+      "command": "make unit-file FILE=tests/unit/discovery-preview-scheduler-regressions.test.ts",
+      "exitCode": 0,
+      "seconds": 3.46
+    },
+    {
+      "command": "make unit-file FILE=tests/unit/discoveries-tray-regressions.test.tsx",
+      "exitCode": 0,
+      "seconds": 8.13
+    },
+    {
+      "command": "npm run typecheck",
+      "exitCode": 0,
+      "seconds": 12.35
+    },
+    {
+      "command": "npm run lint",
+      "exitCode": 0,
+      "seconds": 27.89
+    },
+    {
+      "command": "git diff --check",
+      "exitCode": 0,
+      "seconds": 0.08
+    }
+  ],
+  "baselineHeldDrag": {
+    "rawSha256": "ac545ebe36970f38139d8bb472b0ab08098e2e7a307a56e1ad80b4594471ce69",
+    "environment": {
+      "browser": "chromium",
+      "browserVersion": "153.0.8010.12",
+      "buildMode": "production-local",
+      "runner": "linux-pinned",
+      "architecture": "arm64",
+      "viewport": {
+        "width": 1280,
+        "height": 800
+      },
+      "devicePixelRatio": 1,
+      "reducedMotion": "no-preference",
+      "serviceWorkers": "block",
+      "dockerCpus": "4",
+      "dockerMemoryBytes": "6198358016",
+      "host": "{\"platform\":\"darwin\",\"architecture\":\"arm64\",\"cpuModel\":\"Apple M3\",\"logicalCpus\":8,\"memoryBytes\":25769803776}",
+      "containerLimits": "no explicit per-container CPU/memory limits; shared Docker VM",
+      "gpu": "unavailable; headless pinned browser",
+      "physicalPresentation": "unavailable",
+      "liveBackendLoad": "unmeasured; routed synthetic API fixtures"
+    },
+    "summaries": [
+      {
+        "workload": "idle",
+        "enabled": true,
+        "count": 6,
+        "frameSampleCount": 1158,
+        "displacementSampleCount": 1136,
+        "interruptionCount": 0,
+        "frameGapMs": {
+          "p50": 17.044999957084656,
+          "p95": 50.480000019073486
+        },
+        "maximumFrameGapMs": 301.39999997615814,
+        "captureFrameCostMs": {
+          "p50": 0.015000104904174805,
+          "p95": 0.10500001907348633
+        },
+        "captureEventCostMs": {
+          "p50": 0.029999971389770508,
+          "p95": 0.09500002861022949
+        },
+        "displacementCssPx": {
+          "p50": 0.7768262219872886,
+          "p95": 10.369878459792046
+        }
+      },
+      {
+        "workload": "idle",
+        "enabled": false,
+        "count": 6,
+        "frameSampleCount": 1126,
+        "displacementSampleCount": 1110,
+        "interruptionCount": 0,
+        "frameGapMs": {
+          "p50": 17.045000076293945,
+          "p95": 49.299999952316284
+        },
+        "maximumFrameGapMs": 252.14999997615814,
+        "captureFrameCostMs": null,
+        "captureEventCostMs": null,
+        "displacementCssPx": {
+          "p50": 0.7768262219872886,
+          "p95": 10.369878459792046
+        }
+      },
+      {
+        "workload": "synthetic-worker",
+        "enabled": true,
+        "count": 6,
+        "frameSampleCount": 1226,
+        "displacementSampleCount": 1203,
+        "interruptionCount": 0,
+        "frameGapMs": {
+          "p50": 17.06499993801117,
+          "p95": 52.34500002861023
+        },
+        "maximumFrameGapMs": 184.0900000333786,
+        "captureFrameCostMs": {
+          "p50": 0.019999980926513672,
+          "p95": 0.09000003337860107
+        },
+        "captureEventCostMs": {
+          "p50": 0.029999971389770508,
+          "p95": 0.08500003814697266
+        },
+        "displacementCssPx": {
+          "p50": 0.7768262219872886,
+          "p95": 9.843009247657932
+        }
+      },
+      {
+        "workload": "synthetic-worker",
+        "enabled": false,
+        "count": 6,
+        "frameSampleCount": 1249,
+        "displacementSampleCount": 1234,
+        "interruptionCount": 0,
+        "frameGapMs": {
+          "p50": 17.009999990463257,
+          "p95": 57.0900000333786
+        },
+        "maximumFrameGapMs": 268.2999999523163,
+        "captureFrameCostMs": null,
+        "captureEventCostMs": null,
+        "displacementCssPx": {
+          "p50": 0.7752513484159655,
+          "p95": 9.843009247657932
+        }
+      },
+      {
+        "workload": "discovery-preparation",
+        "enabled": true,
+        "count": 6,
+        "frameSampleCount": 1414,
+        "displacementSampleCount": 1387,
+        "interruptionCount": 0,
+        "frameGapMs": {
+          "p50": 16.950000047683716,
+          "p95": 64.0349999666214
+        },
+        "maximumFrameGapMs": 294.1750000715256,
+        "captureFrameCostMs": {
+          "p50": 0.019999980926513672,
+          "p95": 0.13999998569488525
+        },
+        "captureEventCostMs": {
+          "p50": 0.029999971389770508,
+          "p95": 0.08000004291534424
+        },
+        "displacementCssPx": {
+          "p50": 0.7752513484159655,
+          "p95": 9.843009247657932
+        }
+      },
+      {
+        "workload": "discovery-preparation",
+        "enabled": false,
+        "count": 6,
+        "frameSampleCount": 1132,
+        "displacementSampleCount": 1117,
+        "interruptionCount": 0,
+        "frameGapMs": {
+          "p50": 16.93999993801117,
+          "p95": 44.5
+        },
+        "maximumFrameGapMs": 226.4800000190735,
+        "captureFrameCostMs": null,
+        "captureEventCostMs": null,
+        "displacementCssPx": {
+          "p50": 0.7768262219872886,
+          "p95": 10.369878459792046
+        }
+      },
+      {
+        "workload": "stockfish-worker",
+        "enabled": true,
+        "count": 6,
+        "frameSampleCount": 1058,
+        "displacementSampleCount": 1045,
+        "interruptionCount": 0,
+        "frameGapMs": {
+          "p50": 16.884999990463257,
+          "p95": 44.644999980926514
+        },
+        "maximumFrameGapMs": 132.9299999475479,
+        "captureFrameCostMs": {
+          "p50": 0.014999985694885254,
+          "p95": 0.08500003814697266
+        },
+        "captureEventCostMs": {
+          "p50": 0.02499997615814209,
+          "p95": 0.10000002384185791
+        },
+        "displacementCssPx": {
+          "p50": 0.7852426073399786,
+          "p95": 10.369878459792046
+        }
+      },
+      {
+        "workload": "stockfish-worker",
+        "enabled": false,
+        "count": 6,
+        "frameSampleCount": 1146,
+        "displacementSampleCount": 1123,
+        "interruptionCount": 0,
+        "frameGapMs": {
+          "p50": 16.9099999666214,
+          "p95": 51.47500002384186
+        },
+        "maximumFrameGapMs": 435.59500002861023,
+        "captureFrameCostMs": null,
+        "captureEventCostMs": null,
+        "displacementCssPx": {
+          "p50": 0.7768262219872886,
+          "p95": 10.369878459792046
+        }
+      },
+      {
+        "workload": "main-thread-stall",
+        "enabled": true,
+        "count": 6,
+        "frameSampleCount": 1528,
+        "displacementSampleCount": 1509,
+        "interruptionCount": 0,
+        "frameGapMs": {
+          "p50": 17.070000052452087,
+          "p95": 82.16999995708466
+        },
+        "maximumFrameGapMs": 436.03000009059906,
+        "captureFrameCostMs": {
+          "p50": 0.019999980926513672,
+          "p95": 0.14500010013580322
+        },
+        "captureEventCostMs": {
+          "p50": 0.029999971389770508,
+          "p95": 0.0700000524520874
+        },
+        "displacementCssPx": {
+          "p50": 0.7752513484159655,
+          "p95": 9.410895700417697
+        }
+      },
+      {
+        "workload": "main-thread-stall",
+        "enabled": false,
+        "count": 6,
+        "frameSampleCount": 1181,
+        "displacementSampleCount": 1154,
+        "interruptionCount": 0,
+        "frameGapMs": {
+          "p50": 16.91000008583069,
+          "p95": 57.66499996185303
+        },
+        "maximumFrameGapMs": 476.00999999046326,
+        "captureFrameCostMs": null,
+        "captureEventCostMs": null,
+        "displacementCssPx": {
+          "p50": 0.7768262219872886,
+          "p95": 10.369878459792046
+        }
+      }
+    ],
+    "fullPerfExitCode": 2,
+    "fullPerfSeconds": 615.96,
+    "heldCasePassed": true,
+    "fullPerfFailure": "warm workspace and Builder move responsiveness: longTasks expected [], observed [133]"
+  },
+  "pairedHeldDragComparison": {
+    "status": "complete",
+    "primaryRun": "https://github.com/aaweaver-actuary/tempo/actions/runs/36999113072",
+    "primaryEvidence": "ci-pair-36999113072/comparison.json",
+    "priorValidRuns": [
+      {
+        "run": "https://github.com/aaweaver-actuary/tempo/actions/runs/36996539621",
+        "evidence": "ci-pair-36996539621/comparison.json"
+      },
+      {
+        "run": "https://github.com/aaweaver-actuary/tempo/actions/runs/36997589752",
+        "evidence": "ci-pair-36997589752/comparison.json"
+      }
+    ],
+    "interpretation": "Request and validation counts fall substantially. Controlled frame-gap p95 stays near 17.4 ms; displacement differences also appear in idle controls. No drag-latency improvement is established.",
+    "limitations": "DOM/rAF proxies, routed fixtures; server/live-backend/personal-data/physical-display latency unmeasured.",
+    "dockerResources": {
+      "owningWorkflowCommit": "d57dfce599fa88b2fc4d55508791dbf71ed04db2",
+      "composeProject": null,
+      "cleanup": "Runner-owned containers use docker run --rm; no built development images",
+      "containerIds": [
+        "5c6241030b001f70e11d8f5f20de9f2fe4833993947e216546feca5956dc8da5",
+        "594ce7f0f33e434d184359faa4a600a03c4715b26823e62ddb37587a28fa9e43",
+        "53d1ad63aae1071e44fd37a8b6ea4b2d4d5870c8234c137f069faa8d2a3f177a",
+        "5e769c6d1bb46659641280d09defcc21b2b324eebe1d80cb4226df7b63c59898",
+        "580525c91dda47f2c2203b56248daedbd8cf23ac095c08f95f5c567850e14e49"
+      ],
+      "sharedImage": "mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27",
+      "remainingContainerIds": []
+    }
+  },
+  "correctnessRevision": "c06a9e1d98fac083e9d3cf632192042b5bca2300",
+  "priorDedicatedSetupFailure": {
+    "run": "https://github.com/aaweaver-actuary/tempo/actions/runs/36996282414",
+    "samplesCollected": false,
+    "reason": "Docker dependency warm-up created a root-owned host mount before host npm ci; host installation now precedes Docker warm-up."
+  },
+  "measurementMainBase": "072f55048c7f0d3cccca1fcf9e01c32df514fd2f",
+  "publicationRebase": "Only AGENTS.md changed after the measured main base; product, tests, dependencies and measurement inputs are unchanged."
+}

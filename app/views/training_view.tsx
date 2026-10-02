@@ -1,3 +1,4 @@
+import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history";
 import { Button } from "../components/buttons/BaseButton";
 import { BoardTools } from "../components/board/board-workspace";
 import type { DrawShape } from "@lichess-org/chessground/draw";
@@ -19,7 +20,7 @@ import FeedbackIcon from "../components/feedback/FeedbackIcon";
 import FeedbackText from "../components/feedback/FeedbackText";
 import OpeningTitle from "../components/OpeningTitle";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { publishNotification, resolveNotification } from "../lib/notifications";
+import { publishNotification, resolveNotification, updateNotification } from "../lib/notifications";
 import { usesLocalApi } from "../utils/local";
 import { Square } from "chess.js";
 import { getFeedbackCopy } from "./getFeedbackCopy";
@@ -120,8 +121,8 @@ function StandardTrainingView({
       reviewNotificationId.current = publishNotification({ severity: "info", source,
         key: `review-save:${card.queueEntryId ?? card.id}`, message: "Saving result…", active: true });
     } else if (reviewPersistenceState === "saveFailed") {
-      if (reviewNotificationId.current) resolveNotification(reviewNotificationId.current, { severity: "error", message: reviewSaveError });
-      else publishNotification({ severity: "error", source, message: reviewSaveError });
+      if (reviewNotificationId.current) updateNotification(reviewNotificationId.current, { severity: "error", active: false, message: reviewSaveError });
+      else publishNotification({ severity: "error", source, key: `review-save:${card.queueEntryId ?? card.id}`, message: reviewSaveError });
       reviewNotificationId.current = undefined;
     } else if (reviewPersistenceState === "saved") {
       if (reviewNotificationId.current) resolveNotification(reviewNotificationId.current, { severity: "success", message: "Result saved." });
@@ -130,8 +131,8 @@ function StandardTrainingView({
       reviewNotificationId.current = publishNotification({ severity: "info", source,
         key: `review-queue:${card.queueEntryId ?? card.id}`, message: "Result saved. Loading the next card…", active: true });
     } else if (reviewPersistenceState === "queueFailed") {
-      if (reviewNotificationId.current) resolveNotification(reviewNotificationId.current, { severity: "warning", message: "Result saved; the next card could not be loaded." });
-      else publishNotification({ severity: "warning", source, message: "Result saved; the next card could not be loaded." });
+      if (reviewNotificationId.current) updateNotification(reviewNotificationId.current, { severity: "warning", active: false, message: "Result saved; the next card could not be loaded." });
+      else publishNotification({ severity: "warning", source, key: `review-queue:${card.queueEntryId ?? card.id}`, message: "Result saved; the next card could not be loaded." });
       reviewNotificationId.current = undefined;
     } else if (reviewNotificationId.current) {
       resolveNotification(reviewNotificationId.current, { severity: "success", message: "Result saved. Next card loaded." });
@@ -172,7 +173,10 @@ function StandardTrainingView({
   );
 
   const trainingPositionKey = `${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${card.revision ?? 1}:${attemptGeneration}`;
+  const visiblePositions = useMemo(() => positionsFromMoves(card.startingFen, card.moves, feedback === "complete" ? card.moves.length : step), [card.startingFen, card.moves, feedback, step]);
+  const boardHistory = useBoardHistory(trainingPositionKey, visiblePositions, currentFenString);
   useBoardPublisher("train", useSharedBoard && !isEndgame ? {
+    keyboard: boardHistory.keyboard,
     positionKey: trainingPositionKey,
     unavailable:
       cardsLeft <= 0
@@ -182,22 +186,22 @@ function StandardTrainingView({
             ? "Prepared exercises require the computer. Reconnect to continue."
             : "No cards due. Your next session will appear here."
         : undefined,
-    fen: currentFenString,
+    fen: boardHistory.fen,
     expectedSan: card.moves[step],
-    lastMove,
+    lastMove: boardHistory.viewingHistory ? undefined : lastMove,
     interactionMode:
-      isLocked ||
+      boardHistory.viewingHistory || isLocked ||
       liveQueueBlocked ||
       reviewBlocked ||
       step >= card.moves.length ||
       cardsLeft === 0
         ? "readonly"
         : "legal",
-    showHint: cardsLeft > 0 && showTeachingArrow,
+    showHint: cardsLeft > 0 && !boardHistory.viewingHistory && showTeachingArrow,
     theme: boardTheme,
     pieceSet,
     orientation: card.orientation === "black" ? "black" : "white",
-    shapes: trainingShapes,
+    shapes: boardHistory.viewingHistory ? [] : trainingShapes,
     positionRevision: boardAttempt,
     onMove,
     onSquareSelect: undefined,
@@ -282,18 +286,19 @@ function StandardTrainingView({
                 key={`${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${card.revision ?? 1}`}
                 positionRevision={boardAttempt}
                 positionKey={trainingPositionKey}
-                fen={currentFenString}
+                keyboard={boardHistory.keyboard}
+                fen={boardHistory.fen}
                 expectedSan={card.moves[step]}
-                lastMove={lastMove}
+                lastMove={boardHistory.viewingHistory ? undefined : lastMove}
                 locked={
-                  isLocked ||
+                  boardHistory.viewingHistory || isLocked ||
                   liveQueueBlocked ||
                   reviewBlocked ||
                   step >= card.moves.length ||
                   cardsLeft === 0
                 }
-                showHint={showTeachingArrow}
-                shapes={trainingShapes}
+                showHint={!boardHistory.viewingHistory && showTeachingArrow}
+                shapes={boardHistory.viewingHistory ? [] : trainingShapes}
                 theme={boardTheme}
                 pieceSet={pieceSet}
                 onMove={onMove}

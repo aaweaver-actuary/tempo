@@ -33,7 +33,14 @@ test("discovery preview backlog leaves a prompt foreground training queue refres
     previewWorkClasses.push(route.request().headers()["x-tempo-work-class"] ?? "");
     try {
       await previewHold;
-      await route.fulfill({ json: { state: "waiting", opportunity_id: "preview" } });
+      const discovery = discoveries.find(item => route.request().url().includes(`/${item.id}/`))!;
+      await route.fulfill({ json: { state: "ready", opportunity_id: discovery.id,
+        evidence_fingerprint: discovery.evidence_fingerprint, starting_fen: startFen,
+        candidates: [{ move_uci: "e2e4", score: { cp: 20, mate: null }, loss_cp: 0,
+          similarity: "fixture", repertoire_line_count: 0, exact_transposition: false,
+          example_line_id: null, example_line_name: null, preview_moves_uci: ["e2e4"],
+          engine_version: "fixture", network_version: "fixture", depth: 14,
+          report_id: "fixture", source_game_id: "fixture", source_ply: 0 }] } });
     } finally {
       activePreviews -= 1;
     }
@@ -64,9 +71,14 @@ test("discovery preview backlog leaves a prompt foreground training queue refres
     expect(Date.now() - refreshStartedAt).toBeLessThan(2_000);
 
     releasePreviews?.();
-    await expect.poll(() => startedPreviews).toBe(6);
+    await expect.poll(() => activePreviews).toBe(0);
+    // Closed idle preparation deliberately selects only two entries per feed
+    // refresh; foreground queue reads must not depend on draining all six.
     await page.waitForTimeout(3_500);
-    expect(startedPreviews).toBe(6);
+    expect(startedPreviews).toBe(2);
+    await page.getByRole("button", { name: "Discoveries", exact: true }).click();
+    await expect.poll(() => startedPreviews).toBeGreaterThan(2);
+    expect(maximumActivePreviews).toBeLessThanOrEqual(2);
   } finally {
     releasePreviews?.();
   }
