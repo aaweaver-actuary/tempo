@@ -154,3 +154,20 @@ it("canonical prefix reopening recovers an undelivered preview using its origina
   expect(writes[0].headers).toEqual({ "Content-Type": "application/json", "Idempotency-Key": "lost-preview" });
   expect(JSON.parse(String(writes[0].body)).movetext).toBe("e4 e5 Nf3 Nc6 Bc4");
 });
+
+it("canonical prefix confirmed save followed by refresh failure remains committed without a stale retry", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (url: string, options?: RequestInit) => Response.json(
+    options?.method === "PUT" ? { ...italian, revision: 1 } :
+      options?.method === "POST" ? { ...italian, preview_id: "preview", state: "checking" } :
+        url.includes("/preview/") ? projection(italian) : italian,
+  )));
+  const props = { ...properties(), onSaved: vi.fn(async () => { throw new Error("Workspace refresh failed"); }) };
+  render(<CanonicalPrefixDialog {...props} />);
+  await waitFor(() => expect(screen.getByText("Compatible. Discoveries start after this opening.")).toBeTruthy());
+  fireEvent.click(screen.getByRole("button", { name: "Save prefix" }));
+  await waitFor(() => expect(screen.getByText(/Prefix saved.*Reload/)).toBeTruthy());
+  expect(screen.queryByText(/Could not save/)).toBeNull();
+  expect((screen.getByRole("button", { name: "Save prefix" }) as HTMLButtonElement).disabled).toBe(true);
+  expect(localStorage.getItem("tempo-canonical-prefix-save-v1:rep")).toBeNull();
+  expect(vi.mocked(fetch).mock.calls.filter(([, options]) => options?.method === "PUT")).toHaveLength(1);
+});

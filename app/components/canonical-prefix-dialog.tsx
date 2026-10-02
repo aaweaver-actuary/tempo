@@ -23,6 +23,8 @@ export function CanonicalPrefixDialog({ repertoireId, repertoireName, side, them
   const [revision, setRevision] = useState(0);
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
+  const [committed, setCommitted] = useState(false);
+  const [refreshError, setRefreshError] = useState("");
   const [suggestion, setSuggestion] = useState("");
   const [fen, setFen] = useState(new Chess().fen());
   const [conflictCursor, setConflictCursor] = useState<string | null>(null);
@@ -88,11 +90,13 @@ export function CanonicalPrefixDialog({ repertoireId, repertoireName, side, them
   }, [previewId, repertoireId, previewState]);
 
   async function save() {
-    if (!preview || preview.state !== "ready") return;
+    if (committed || !preview || preview.state !== "ready") return;
     setWorking(true); setError("");
     try {
       await saveCanonicalPrefixCommand(repertoireId, preview.preview_id, revision);
-      await onSaved(); onClose();
+      setCommitted(true);
+      try { await onSaved(); onClose(); }
+      catch { setRefreshError("Prefix saved. Reload the repertoire to see the updated analysis."); }
     } catch (failure) { setError(failure instanceof Error ? failure.message : "Could not save the prefix"); }
     finally { setWorking(false); }
   }
@@ -107,11 +111,11 @@ export function CanonicalPrefixDialog({ repertoireId, repertoireName, side, them
     <header className="dialog-header"><div><h2 id="canonical-prefix-title">Canonical prefix</h2><p>{repertoireName}</p></div><CloseButton onClose={onClose} /></header>
     <p>Only this exact opening move order belongs to this repertoire. Discoveries and game feedback begin after it; training still practices these moves.</p>
     <label htmlFor="canonical-prefix-moves">Assumed SAN moves</label>
-    <TextInput id="canonical-prefix-moves" value={movetext} disabled={working} placeholder="e4 e5 Nf3 Nc6 Bc4" autoComplete="off" spellCheck={false}
+    <TextInput id="canonical-prefix-moves" value={movetext} disabled={working || committed} placeholder="e4 e5 Nf3 Nc6 Bc4" autoComplete="off" spellCheck={false}
       onChange={event => { generation.current++; setMovetext(event.target.value); setPreview(undefined); setPreviewId(undefined); setError(""); }} />
-    <div className="canonical-prefix-actions"><Button disabled={working} onClick={() => void checkPrefix(movetext)}>Check prefix</Button>
-      {suggestion && <Button disabled={working} onClick={() => { setMovetext(suggestion); void checkPrefix(suggestion); }}>Use shared opening</Button>}
-      <Button disabled={working} onClick={() => { setMovetext(""); void checkPrefix(""); }}>Clear prefix</Button></div>
+    <div className="canonical-prefix-actions"><Button disabled={working || committed} onClick={() => void checkPrefix(movetext)}>Check prefix</Button>
+      {suggestion && <Button disabled={working || committed} onClick={() => { setMovetext(suggestion); void checkPrefix(suggestion); }}>Use shared opening</Button>}
+      <Button disabled={working || committed} onClick={() => { setMovetext(""); void checkPrefix(""); }}>Clear prefix</Button></div>
     <div className="canonical-prefix-board"><Chessboard owner={`canonical-prefix:${repertoireId}`} fen={fen} orientation={side} theme={theme} pieceSet={pieceSet} locked showHint={false} onMove={() => {}} /></div>
     {preview?.san && <p className="canonical-prefix-notation">{preview.san}</p>}
     {(previewId && !preview || preview?.state === "checking") && <p role="status">Checking saved lines and cards…</p>}
@@ -121,6 +125,7 @@ export function CanonicalPrefixDialog({ repertoireId, repertoireName, side, them
       {conflictCursor && <Button onClick={() => void moreConflicts()}>Show more conflicts</Button>}</div>}
     {preview?.error && <p role="alert">{preview.error}</p>}
     {error && <div role="alert"><p>{error}</p><Button disabled={working} onClick={() => void load()}>Retry operation</Button></div>}
-    <footer className="canonical-prefix-actions"><Button disabled={working || preview?.state !== "ready"} onClick={() => void save()}>{working ? "Working…" : "Save prefix"}</Button><Button onClick={onClose}>Cancel</Button></footer>
+    {refreshError && <p role="alert">{refreshError}</p>}
+    <footer className="canonical-prefix-actions"><Button disabled={working || committed || preview?.state !== "ready"} onClick={() => void save()}>{working ? "Working…" : "Save prefix"}</Button><Button onClick={onClose}>{committed ? "Close" : "Cancel"}</Button></footer>
   </div></div>;
 }
