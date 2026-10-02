@@ -540,6 +540,51 @@ test("unknown PGN receipt recovers the same operation after reload and matching 
   expect(await page.evaluate(() => localStorage.getItem("tempo-pending-pgn-import-v1"))).toBeNull();
 });
 
+test("legacy pending PGN import promptly shows its diagnostic and Check again only inspects the original operation", async ({ page }) => {
+  await page.clock.install();
+  await prepareVisualUI(page, false);
+  const diagnostic = "Legacy receipt has no saved payload. Recover only from matching journal or outbox evidence; automatic replay is unavailable.";
+  const storedIdentity = await page.evaluate(async () => {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("1. e4 e5 2. Nf3 *"));
+    const fingerprint = ["legacy.pgn", "white", 6,
+      Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("")].join(":");
+    const stored = JSON.stringify({ operationId: "original-import", fingerprint });
+    localStorage.setItem("tempo-pending-pgn-import-v1", stored);
+    return stored;
+  });
+  const inspectedOperations: string[] = [];
+  let posts = 0;
+  await page.route("**/api/imports/pgn", route => {
+    posts += 1;
+    return route.abort();
+  });
+  await page.route("**/api/operations/**", route => {
+    expect(route.request().method()).toBe("GET");
+    inspectedOperations.push(new URL(route.request().url()).pathname);
+    return route.fulfill({ json: { operation_id: "original-import", state: "pending", message: diagnostic } });
+  });
+  await navigate(page, "Repertoire");
+  await page.getByRole("button", { name: /Import PGN/ }).click();
+  await page.locator('input[type="file"]').setInputFiles({ name: "legacy.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from("1. e4 e5 2. Nf3 *") });
+  await expect(page.getByRole("button", { name: "Import repertoire", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Import repertoire", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  // No deadline advancement: the backend diagnostic must finish checking promptly.
+  await expect(dialog.getByRole("status")).toHaveText(`Import confirmation is unavailable. ${diagnostic}`);
+  await expect(page.getByRole("button", { name: "Check again", exact: true })).toBeEnabled();
+  expect(inspectedOperations).toEqual(["/api/operations/original-import"]);
+  await page.getByRole("button", { name: "Check again", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Check again", exact: true })).toBeEnabled();
+  await expect(dialog.getByRole("status")).toHaveText(`Import confirmation is unavailable. ${diagnostic}`);
+  expect(inspectedOperations).toEqual(["/api/operations/original-import", "/api/operations/original-import"]);
+  expect(posts).toBe(0);
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Imported", exact: true })).toHaveCount(0);
+  await expect(page.locator('input[type="file"]')).toHaveJSProperty("value", "C:\\fakepath\\legacy.pgn");
+  await expect(dialog.getByText("6 user moves", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("tempo-pending-pgn-import-v1"))).toBe(storedIdentity);
+});
+
 for (const state of ["executing", "retrying"]) {
   test(`durably ${state} PGN import waits informationally and Check again never resends`, async ({ page }) => {
     await page.setViewportSize({ width: 320, height: 844 });

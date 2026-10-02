@@ -51,6 +51,8 @@ async function inspectReceipt(pending: PendingImport, signal: AbortSignal): Prom
   const receipt = parsedReceipt.data;
   if (receipt.operation_id && receipt.operation_id !== pending.operationId)
     throw new Error("The service returned a different import operation identity. Check the local service before retrying.");
+  if (receipt.state === "pending" && receipt.message?.startsWith("Legacy receipt has no saved payload."))
+    throw new PendingOperationError(pending.operationId, `Import confirmation is unavailable. ${receipt.message}`);
   return receipt;
 }
 function resolveTerminal(pending: PendingImport, receipt: ImportReceipt, signal: AbortSignal): ImportResult | null {

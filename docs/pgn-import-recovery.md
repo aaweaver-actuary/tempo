@@ -21,7 +21,9 @@ why the original production message was not delivered.
 | complete | Validate the result before clearing browser state; return it without POST. Invalid completion retains recovery identity and reports a diagnostic. |
 | failed | Clear browser state and report the backend error. A subsequent deliberate action may start a new import. |
 | blocked | Retain identity and show the last backend error. Only Retry blocked import calls the existing retry endpoint with the original identity. |
-| queued, executing, retrying, pending | Sequentially poll the original operation without sending another PGN. |
+| queued, executing, retrying | Sequentially poll the original operation without sending another PGN. |
+| Compatibility pending without the legacy marker | Keep bounded polling of the original operation without sending another PGN. Attempt counters or missing metadata do not establish legacy status. |
+| Legacy no-payload pending: message starts with `Legacy receipt has no saved payload.` | Immediately show the backend diagnostic as informational confirmation unavailable, retaining the original identity. Do not poll, send PGN, or call retry. Check again only inspects that identity. |
 | unknown | Resubmit matching file/settings once per action using the original Idempotency-Key. A still unresolved response remains recoverable on another action. |
 | Unreadable / unavailable status | Retain identity and show informational confirmation guidance; never infer unknown from a failed read. |
 
@@ -46,6 +48,15 @@ reselecting the same file name, bytes, color, and depth. Clearing storage loses
 that client identity. An unreadable record or malformed complete result needs
 service/browser diagnosis; the client does not discard it to manufacture a
 new import. This PR adds no API or persistence-schema change.
+
+Legacy no-payload receipts cannot be automatically recovered by the server.
+Rechecking only inspects the retained identity until underlying journal/outbox
+recovery evidence or service state changes; it does not recreate the missing
+payload or promise completion. The public receipt has no payload-presence flag,
+so this distinction uses the exact current backend diagnostic marker after
+schema and operation-identity validation. The named legacy-pending regression
+failed on reviewed head `7d59152e23760bccc057028a19fc3e9e0ab9e0ca`: the command
+kept waiting and hid that diagnostic behind its ordinary polling timeout.
 
 ## Payload diagnostic
 
@@ -121,3 +132,9 @@ gate. Exact commands and durations are retained in the PR validation record;
 the affected recovery browser file, PostgreSQL durability, pinned visual checks,
 units, typecheck, lint, and diff checks are required before handoff. No live
 study database or stack is used for validation.
+
+The narrow legacy-pending follow-up changes only client receipt inspection and
+its documentation/regressions. Local validation covers both PGN unit files,
+typecheck, lint, diff checks, and the recovery browser spec. Backend durability
+and pinned visual suites are not repeated locally for unchanged backend/layout
+behavior; CI owns the new candidate's complete required validation.

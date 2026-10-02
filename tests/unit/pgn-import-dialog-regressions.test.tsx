@@ -70,6 +70,34 @@ it("ambiguous PGN delivery offers informational recovery without claiming a fail
   expect(reportDebugError).not.toHaveBeenCalled();
 });
 
+it("legacy pending PGN dialog retains its diagnostic and selection across Check again", async () => {
+  const diagnostic = "Import confirmation is unavailable. Legacy receipt has no saved payload. Recover only from matching journal or outbox evidence; automatic replay is unavailable.";
+  vi.mocked(savePgnImportCommand).mockRejectedValue(new PendingOperationError("original-import", diagnostic));
+  const dialog = await openDialog();
+  const fileInput = dialog.container.querySelector<HTMLInputElement>('input[type="file"]')!;
+  const selectedFile = fileInput.files![0];
+  fireEvent.click(screen.getByRole("button", { name: "Black" }));
+  fireEvent.click(dialog.container.querySelectorAll<HTMLButtonElement>(".stepper button")[1]);
+  fireEvent.click(screen.getByRole("button", { name: "Import repertoire" }));
+  expect((await screen.findByRole("status")).textContent).toBe(diagnostic);
+  fireEvent.click(screen.getByRole("button", { name: "Check again" }));
+  await waitFor(() => expect(savePgnImportCommand).toHaveBeenCalledTimes(2));
+  await screen.findByRole("button", { name: "Check again" });
+  expect(screen.getByRole("status").textContent).toBe(diagnostic);
+  expect(fileInput.files![0]).toBe(selectedFile);
+  expect(screen.getByRole("button", { name: "Black" }).classList.contains("active")).toBe(true);
+  expect(screen.getByText("7 user moves")).toBeTruthy();
+  for (const argumentsUsed of vi.mocked(savePgnImportCommand).mock.calls) {
+    expect(argumentsUsed.slice(0, 3)).toEqual([selectedFile, "black", 7]);
+    expect(argumentsUsed[3]?.retryBlocked).toBe(false);
+  }
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.queryByRole("heading", { name: "Imported" })).toBeNull();
+  expect(screen.queryByRole("button", { name: "Retry blocked import" })).toBeNull();
+  expect(reportDebugError).not.toHaveBeenCalled();
+  expect(dialog.databaseUpdated).not.toHaveBeenCalled();
+});
+
 it("blocked PGN dialog shows its diagnostic and explicitly retries the original operation", async () => {
   vi.mocked(savePgnImportCommand).mockRejectedValueOnce(new PendingOperationError("original-import", "Import is blocked: Write connection unavailable", true))
     .mockResolvedValueOnce(result);

@@ -59,6 +59,79 @@ function receiptFetcher(receipt: unknown) {
   return fetcher;
 }
 
+const legacyPendingDiagnostic = "Legacy receipt has no saved payload. Recover only from matching journal or outbox evidence; automatic replay is unavailable.";
+
+it("legacy pending PGN receipt returns its diagnostic without polling or replay", async () => {
+  const file = await rememberImport();
+  const storedIdentity = localStorage.getItem(pendingKey);
+  vi.useFakeTimers();
+  const createId = vi.spyOn(crypto, "randomUUID");
+  const fetcher = receiptFetcher({ operation_id: "original-import", state: "pending", message: legacyPendingDiagnostic });
+  const controller = new AbortController();
+  let rejection: unknown;
+  const saving = savePgnImportCommand(file, "white", 4, { signal: controller.signal })
+    .catch((error: unknown) => { rejection = error; });
+  try {
+    await vi.waitFor(() => expect(rejection).toMatchObject({
+      name: "PendingOperationError", operationId: "original-import", blocked: false,
+      message: `Import confirmation is unavailable. ${legacyPendingDiagnostic}`,
+    }), { timeout: 250, interval: 10 });
+    await saving;
+    expect(fetcher).toHaveBeenCalledOnce();
+    const [url, options] = fetcher.mock.calls[0] as unknown as [string, RequestInit];
+    expect([url.endsWith("/api/operations/original-import"), options.method]).toEqual([true, undefined]);
+    expect(createId).not.toHaveBeenCalled();
+    expect(localStorage.getItem(pendingKey)).toBe(storedIdentity);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    controller.abort();
+    await saving;
+  }
+});
+
+it("rechecking legacy pending PGN import only reads its original operation", async () => {
+  const file = await rememberImport();
+  const storedIdentity = localStorage.getItem(pendingKey);
+  const createId = vi.spyOn(crypto, "randomUUID");
+  const fetcher = receiptFetcher({ operation_id: "original-import", state: "pending", message: legacyPendingDiagnostic });
+  for (let action = 0; action < 2; action += 1)
+    await expect(savePgnImportCommand(file, "white", 4)).rejects.toMatchObject({
+      operationId: "original-import", blocked: false,
+      message: `Import confirmation is unavailable. ${legacyPendingDiagnostic}`,
+    });
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  for (const [url, options] of fetcher.mock.calls as unknown as [string, RequestInit][])
+    expect([url.endsWith("/api/operations/original-import"), options.method]).toEqual([true, undefined]);
+  expect(createId).not.toHaveBeenCalled();
+  expect(localStorage.getItem(pendingKey)).toBe(storedIdentity);
+});
+
+it("PGN polling stops when a legacy no-payload pending receipt appears", async () => {
+  const file = await rememberImport();
+  const storedIdentity = localStorage.getItem(pendingKey);
+  vi.useFakeTimers();
+  const createId = vi.spyOn(crypto, "randomUUID");
+  const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ state: "queued" }))
+    .mockResolvedValueOnce(Response.json({ operation_id: "original-import", state: "pending", message: legacyPendingDiagnostic }));
+  vi.stubGlobal("fetch", fetcher);
+  const saving = savePgnImportCommand(file, "white", 4);
+  const rejected = expect(saving).rejects.toMatchObject({
+    operationId: "original-import", blocked: false,
+    message: `Import confirmation is unavailable. ${legacyPendingDiagnostic}`,
+  });
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledOnce());
+  await vi.advanceTimersByTimeAsync(1000);
+  await rejected;
+  await vi.advanceTimersByTimeAsync(30_000);
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  for (const [url, options] of fetcher.mock.calls as [string, RequestInit][])
+    expect([url.endsWith("/api/operations/original-import"), options.method]).toEqual([true, undefined]);
+  expect(createId).not.toHaveBeenCalled();
+  expect(localStorage.getItem(pendingKey)).toBe(storedIdentity);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
 it.each(["pending", "queued", "executing", "retrying"])("durably %s PGN import polls the same operation without a POST or new UUID", async (state) => {
   const file = await rememberImport();
   vi.useFakeTimers();
