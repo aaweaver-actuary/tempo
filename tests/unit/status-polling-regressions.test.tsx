@@ -660,6 +660,56 @@ it.each([
   expect(activityRequests).toBe(scenario.activity); expect(syncRequests).toBe(scenario.sync);
 });
 
+it("activity_initial_offline_mount_reports_unavailable_not_empty", async () => {
+  online = false;
+  const fetchMock = vi.fn(async () => Response.json({ ...activeActivity, items: [], total: 0,
+    counts: { running: 0, queued: 0, paused: 0, failed: 0 } }));
+  vi.stubGlobal("fetch", fetchMock);
+  render(<ServiceStatusPanel />); await settle();
+  fireEvent.click(screen.getByRole("button", { name: "Analysis activity" })); await settle();
+  expect(fetchMock).not.toHaveBeenCalled();
+  expect(screen.queryByText("No background activity yet.")).toBeNull();
+  expect(screen.getByText("Activity status has not been loaded yet.")).toBeTruthy();
+  expect(notifications().some(record => record.key === "analysis-activity-error")).toBe(false);
+  await advance(60_000); expect(fetchMock).not.toHaveBeenCalled();
+  online = true; await wake();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText("Activity status has not been loaded yet.")).toBeNull();
+  expect(screen.getByText("No background activity yet.")).toBeTruthy();
+  await advance(14_999); expect(fetchMock).toHaveBeenCalledTimes(1);
+  await advance(1); expect(fetchMock).toHaveBeenCalledTimes(2);
+});
+
+it("activity_offline_after_success_preserves_last_known_empty_status", async () => {
+  const fetchMock = vi.fn(async () => Response.json({ ...activeActivity, items: [], total: 0,
+    counts: { running: 0, queued: 0, paused: 0, failed: 0 } }));
+  vi.stubGlobal("fetch", fetchMock);
+  render(<ServiceStatusPanel />); await settle();
+  online = false; await act(async () => window.dispatchEvent(new Event("offline")));
+  await advance(60_000); expect(fetchMock).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Analysis activity" })); await settle();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(screen.getByText("No background activity yet.")).toBeTruthy();
+  expect(screen.queryByText("Activity status has not been loaded yet.")).toBeNull();
+  expect(screen.getByText("0 running · 0 queued · 0 paused · 0 failed")).toBeTruthy();
+});
+
+it("activity_offline_after_success_preserves_last_known_items_and_writer_health", async () => {
+  const fetchMock = vi.fn(async () => Response.json({ ...activeActivity,
+    writer: { ...activeActivity.writer, healthy: false } }));
+  vi.stubGlobal("fetch", fetchMock);
+  render(<ServiceStatusPanel />); await settle();
+  online = false; await act(async () => window.dispatchEvent(new Event("offline")));
+  await advance(60_000); expect(fetchMock).toHaveBeenCalledTimes(1);
+  fireEvent.click(screen.getByRole("button", { name: "Analysis activity" })); await settle();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  expect(screen.getByText("Polling task")).toBeTruthy();
+  expect(screen.getByText("1 running · 0 queued · 0 paused · 0 failed")).toBeTruthy();
+  expect(screen.getByRole("alert").textContent).toContain("Restart Tempo");
+  expect(screen.queryByText("No background activity yet.")).toBeNull();
+  expect(notifications().find(record => record.key === "database-writer-health")?.resolvedAt).toBeNull();
+});
+
 it("activity_remount_offline_does_not_claim_service_recovery", async () => {
   vi.stubGlobal("fetch", vi.fn(async () => new Response("unavailable", { status: 503 })));
   const first = render(<ServiceStatusPanel />); await settle(); first.unmount();

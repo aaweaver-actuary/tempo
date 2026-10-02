@@ -69,6 +69,7 @@ const groupOrder = ["Running", "Queued", "Paused", "Needs attention", "Recently 
 
 export function ServiceStatusPanel() {
   const [open, setOpen] = useState(false);
+  // Null means this mounted panel has never successfully loaded activity; paused reads retain known status.
   const [status, setStatus] = useState<ActivityResponse | null>(null);
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -132,22 +133,23 @@ export function ServiceStatusPanel() {
       clearTimer();
       if (eligible()) timer = setTimeout(() => void poll(), delay());
     };
+    const publishItems = (value: ActivityResponse) => {
+      if (!sameActivityItems(displayedItems, value.items)) {
+        displayedItems = value.items;
+        setItems(value.items);
+      }
+      if (displayedNextOffset !== value.next_offset) {
+        displayedNextOffset = value.next_offset;
+        setNextOffset(value.next_offset);
+      }
+    };
     const publish = (value: ActivityResponse) => {
       setLatestServiceStatus(value);
       if (!sameActivitySummary(displayedSummary, value)) {
         displayedSummary = value;
         setStatus(value);
       }
-      if (panelOpen) {
-        if (!sameActivityItems(displayedItems, value.items)) {
-          displayedItems = value.items;
-          setItems(value.items);
-        }
-        if (displayedNextOffset !== value.next_offset) {
-          displayedNextOffset = value.next_offset;
-          setNextOffset(value.next_offset);
-        }
-      }
+      if (panelOpen) publishItems(value);
       publishError(null);
     };
     // All timer, wake and command refreshes share this component-owned flight.
@@ -198,6 +200,8 @@ export function ServiceStatusPanel() {
       panelOpen = nextOpen;
       currentOffset = nextOffset;
       if (offsetChanged) { offsetGeneration += 1; latest = null; }
+      // Opening while suspended can display cached details without claiming fresh service recovery.
+      if (opened && latest && !eligible()) publishItems(latest);
       if (opened || offsetChanged) { failureCount = 0; void poll(); }
       else if (!inFlight) schedule();
     };
@@ -274,7 +278,8 @@ export function ServiceStatusPanel() {
       {error && <p role="alert">{error} <Button type="button" onClick={() => void refresh()}>Retry status</Button></p>}
       {status?.writer?.healthy === false && <p role="alert">The database writer is unavailable. Restart Tempo before making changes.</p>}
       {status && <p>{status.counts.running} running · {status.counts.queued} queued · {status.counts.paused} paused · {status.counts.failed} failed</p>}
-      {!error && visibleItems.length === 0 && <p>No background activity yet.</p>}
+      {!error && status === null && usesLocalApi() && <p>Activity status has not been loaded yet.</p>}
+      {!error && status !== null && visibleItems.length === 0 && <p>No background activity yet.</p>}
       <div className="tempo-activity-list">
         {visibleItems.map((item, index) => {
           const key = `${item.source}:${item.id}`;
