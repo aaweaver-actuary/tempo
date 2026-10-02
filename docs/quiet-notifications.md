@@ -4,7 +4,9 @@ Routine info and success notices stay in device history without interrupting stu
 
 The notification tray opens to **Needs attention** each time. Its badge counts distinct groups of unresolved warnings and errors. **All** and the severity filters retain access to routine and recovered notices.
 
-Grouping is a display projection over the existing records. Source, severity, message, canonical details and resolution state define a group. The latest record supplies its timestamp and details; the displayed repeat count sums the individual occurrence counts. Operation keys and record identities remain separate, so confirming one discovery never clears another. The storage format, 500-record retention limit and redacted JSON export remain unchanged. Keyed diagnostic repeats may refresh their details while retaining the original popup timer.
+Grouping is a display projection over the existing records. Source, severity, message, canonical details, resolution state and acknowledgement state define a group. The latest record supplies its timestamp and details; the displayed repeat count sums the individual occurrence counts. Operation keys and record identities remain separate, so confirming one discovery never clears another. The storage format, 500-record retention limit and redacted JSON export remain unchanged. Keyed diagnostic repeats may refresh their details while retaining the original popup timer.
+
+The Clear controls from main remain available. Clearing a grouped row acknowledges all its represented records without resolving any saves. Cleared notices stay under All and cannot hide a new unacknowledged operation. Identical observations of a cleared incident remain quiet; meaningful content changes can make it actionable again, preserving main's acknowledgement behavior.
 
 A failed save ends its progress state without resolving its warning or error. Guided-attempt notices resolve only when the durable pending-attempt list is empty, including legacy repeated notices. Phone conflicts are tracked independently. Actual save/retry behavior, PostgreSQL persistence and worker scheduling are outside this change.
 
@@ -14,11 +16,11 @@ The relevant risks are hiding actionable failures, merging different operations/
 
 The smallest proof uses notification and training-component regressions, followed by existing notification, debug-reporting, validation, discovery and queue consumers. Global presentation changes require the complete regular browser matrix and pinned visual checks. CI owns the final required candidate gate; these local scopes do not constitute a full gate or release approval.
 
-Source candidate: `8c7d595177fe2ecc38fb84c44062cbe1dd50f4c9` (notification fix `3be86f78ec517a033e79ea938ba4d36969df6449`), based on main `937aee78a7fe6c399c9d3a665d7d7d2aa8fd08f1`, branch `codex/quiet-notifications`. Local checks use the isolated `.dev-copies/quiet-notifications` checkout on macOS ARM64, Node 26.3.0. Docker browser tests use unique disposable PostgreSQL stacks. Pinned checks use the repository's Linux ARM64 runner. No live study instance or data was modified.
+Initial source candidate before integration with newer main: `8c7d595177fe2ecc38fb84c44062cbe1dd50f4c9` (notification fix `3be86f78ec517a033e79ea938ba4d36969df6449`), based on main `937aee78a7fe6c399c9d3a665d7d7d2aa8fd08f1`, branch `codex/quiet-notifications`. Local checks use the isolated `.dev-copies/quiet-notifications` checkout on macOS ARM64, Node 26.3.0. Docker browser tests use unique disposable PostgreSQL stacks. Pinned checks use the repository's Linux ARM64 runner. No live study instance or data was modified.
 
 The focused unit, typecheck and lint results were obtained with the final relevant files still uncommitted, before the two source commits. Candidate browser and pinned checks ran after those commits, with only this untracked evidence document present. The documentation follow-up changes no runtime/test inputs and does not turn a failed browser result into a pass.
 
-## Commands and evidence
+## Initial commands and evidence
 
 | Command | Result | Observed duration |
 | --- | --- | --- |
@@ -44,4 +46,15 @@ Timing reports and browser traces/screenshots remain under `test-results/`. Scen
 
 ## Remaining boundary
 
-Final candidate CI validation is pending; no CI run has been initiated from this local implementation. The Study queue-publication failure must be addressed or receive passing current-candidate evidence before claiming browser readiness. A local `make full` was not run because CI owns that boundary. Backend, Rust/WASM and standalone PostgreSQL durability suites are not local development scopes for this presentation/lifecycle change; they remain required in CI. No merge, release or live deployment is claimed.
+The PR candidate was rebased onto main `072f55048c7f0d3cccca1fcf9e01c32df514fd2f`, including its persistent notification clearing and backend observability changes. The named `clearing grouped notifications preserves independent operations and new arrivals` regression proves the integration. Existing Clear browser cases now inspect retained entries under All after reopening Needs attention.
+
+Rebased checks ran on clean source candidate `5e7155348ad6cb80652ba32e04cd3fe9ec802717` in the same macOS ARM64/Node 26.3.0 environment. This documentation follow-up changes no runtime inputs.
+
+| Command | Result | Observed duration |
+| --- | --- | --- |
+| The same six-file `npm run test:unit -- ...` command above | 99 passed across 6 files | 4.38 seconds wall time; 3.87 seconds Vitest execution |
+| `npm run typecheck` | Passed | 6.50 seconds wall time |
+| `npm run lint` | Passed; nine existing warnings outside changed files | 10.68 seconds wall time |
+| `git diff origin/main..HEAD --check` | Passed | Static inspection |
+
+CI owns all required validation of the rebased candidate, including browser, pinned visual, backend/Rust/build and PostgreSQL durability layers. The earlier browser and visual runs remain historical evidence and are not attributed to the rebased candidate. The Study queue-publication failure must be addressed or receive passing current-candidate evidence before claiming browser readiness. A local `make full` was not run because CI owns that boundary. No merge, release or live deployment is claimed.
