@@ -148,28 +148,71 @@ def test_daily_queue_uses_a_different_seed_for_the_next_day(tmp_path, monkeypatc
         assert today_order != tomorrow_order
 
 
-def test_bury_moves_active_entry_later_without_review_or_count_change(tmp_path, monkeypatch):
+def test_bury_excludes_card_until_next_day_without_review_or_schedule_change(tmp_path, monkeypatch):
+    from datetime import timedelta
+    from app import main
+
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    today = date.today()
+    with TestClient(app) as client:
+        _seed_cards()
+        before = client.get("/api/queue/today").json()
+        buried = before["cards"][0]
+        assert client.post(f"/api/queue/entries/{before['cards'][1]['queue_entry_id']}/bury").status_code == 409
+        assert client.post("/api/queue/entries/999999/bury").status_code == 409
+        with database.read_connection() as db:
+            original_card = dict(db.execute("SELECT * FROM cards WHERE id=?", (buried["id"],)).fetchone())
+            original_reviews = [dict(row) for row in db.execute("SELECT * FROM reviews ORDER BY id")]
+        result = client.post(f"/api/queue/entries/{buried['queue_entry_id']}/bury")
+        assert result.status_code == 200, result.text
+        assert result.json() == {"buried": True, "queue_entry_id": buried["queue_entry_id"]}
+        after = client.get("/api/queue/today").json()
+        assert after["count"] == before["count"] - 1
+        assert [card["queue_entry_id"] for card in after["cards"]] == [
+            card["queue_entry_id"] for card in before["cards"][1:]
+        ]
+        assert client.post(f"/api/queue/entries/{buried['queue_entry_id']}/bury").status_code == 409
+        submit_foreground_write(lambda db: materialize_daily_queue(db, today.isoformat()), label="test-refresh-buried")
+        refreshed = client.get("/api/queue/today").json()["cards"]
+        assert [card["queue_entry_id"] for card in refreshed] == [card["queue_entry_id"] for card in after["cards"]]
+        with database.read_connection() as db:
+            assert dict(db.execute("SELECT * FROM cards WHERE id=?", (buried["id"],)).fetchone()) == original_card
+            assert [dict(row) for row in db.execute("SELECT * FROM reviews ORDER BY id")] == original_reviews
+            assert db.execute("SELECT status FROM daily_queue WHERE id=?", (buried["queue_entry_id"],)).fetchone()[0] == "buried"
+    # Reopen the application against the same database to prove persistence.
+    with TestClient(app) as client:
+        assert buried["id"] not in {card["id"] for card in client.get("/api/queue/today").json()["cards"]}
+        tomorrow = today + timedelta(days=1)
+
+        class Tomorrow(date):
+            @classmethod
+            def today(cls):
+                return tomorrow
+
+        monkeypatch.setattr(main, "date", Tomorrow)
+        submit_foreground_write(lambda db: materialize_daily_queue(db, tomorrow.isoformat()), label="test-next-day-buried")
+        assert buried["id"] in {card["id"] for card in client.get("/api/queue/today").json()["cards"]}
+
+
+def test_bury_removes_all_queued_cycles_and_can_finish_the_daily_queue(tmp_path, monkeypatch):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     with TestClient(app) as client:
         _seed_cards()
         before = client.get("/api/queue/today").json()["cards"]
-        assert len(before) > 2
         buried = before[0]
-        other_ids = [card["queue_entry_id"] for card in before[1:]]
-        result = client.post(f"/api/queue/entries/{buried['queue_entry_id']}/bury")
-        assert result.status_code == 200
-        after = client.get("/api/queue/today").json()["cards"]
-        after_ids = [card["queue_entry_id"] for card in after]
-        assert len(after) == len(before)
-        assert set(after_ids) == {card["queue_entry_id"] for card in before}
-        assert after_ids.index(buried["queue_entry_id"]) >= 1
-        assert [entry_id for entry_id in after_ids if entry_id != buried["queue_entry_id"]] == other_ids
         with database.connection() as db:
-            reviews = db.execute("SELECT COUNT(*) FROM reviews").fetchone()[0]
-            queued = db.execute("SELECT COUNT(*) FROM daily_queue WHERE queue_date=? AND status='queued'", (date.today().isoformat(),)).fetchone()[0]
-        assert reviews == 8
-        assert queued == len(before)
-        assert client.post(f"/api/queue/entries/{buried['queue_entry_id']}/bury").status_code == 409
+            db.execute("DELETE FROM daily_queue WHERE card_id!=?", (buried["id"],))
+            db.execute("INSERT INTO daily_queue(queue_date,card_id,cycle,position) VALUES(?,?,1,100)",
+                       (date.today().isoformat(), buried["id"]))
+            db.execute("INSERT INTO daily_queue(queue_date,card_id,cycle,position,status) VALUES(?,?,2,101,'complete')",
+                       (date.today().isoformat(), buried["id"]))
+        response = client.post(f"/api/queue/entries/{buried['queue_entry_id']}/bury")
+        assert response.status_code == 200, response.text
+        queue = client.get("/api/queue/today").json()
+        assert queue["count"] == 0
+        assert queue["cards"] == []
+        with database.read_connection() as db:
+            assert [row[0] for row in db.execute("SELECT status FROM daily_queue WHERE card_id=?", (buried["id"],))] == ["buried", "buried", "complete"]
 
 
 def test_defensive_stack_toggle_hides_today_without_erasing_reviews_or_queue_entries(tmp_path, monkeypatch):
@@ -218,3 +261,46 @@ def test_defensive_stack_toggle_hides_today_without_erasing_reviews_or_queue_ent
         assert response.status_code == 200
         restored = client.get("/api/queue/today").json()
         assert entry_id in {card["queue_entry_id"] for card in restored["cards"]}
+
+
+def test_postgres_bury_handler_excludes_all_cycles_without_reordering_and_rejects_stale_entry(tmp_path, monkeypatch):
+    from app import queue_commands
+    from fastapi import HTTPException
+    import pytest
+
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    lock_requests = []
+
+    class CommandDatabase:
+        # SQL compatibility proof only; real PostgreSQL locks/receipts are
+        # covered by the disposable durability runner.
+        def __init__(self, db):
+            self.db = db
+
+        def execute(self, statement, parameters=()):
+            return self.db.execute(statement.replace(" FOR UPDATE OF q", ""), parameters)
+
+        def execute_native(self, statement, parameters=()):
+            assert "pg_advisory_xact_lock" in statement
+            lock_requests.append(parameters)
+
+    with TestClient(app) as client:
+        _seed_cards()
+        before = client.get("/api/queue/today").json()["cards"]
+        buried = before[0]
+        with database.connection() as db:
+            original_positions = [(row["id"], row["position"]) for row in db.execute(
+                "SELECT id,position FROM daily_queue ORDER BY id")]
+            db.execute("INSERT INTO daily_queue(queue_date,card_id,cycle,position) VALUES(?,?,1,100)",
+                       (date.today().isoformat(), buried["id"]))
+            assert queue_commands.bury_queue_entry(CommandDatabase(db), {"entry_id": buried["queue_entry_id"]}) == {
+                "buried": True, "queue_entry_id": buried["queue_entry_id"],
+            }
+            assert [(row["id"], row["position"]) for row in db.execute(
+                "SELECT id,position FROM daily_queue WHERE cycle=0 ORDER BY id")] == original_positions
+            assert [row[0] for row in db.execute("SELECT status FROM daily_queue WHERE card_id=?", (buried["id"],))] == ["buried", "buried"]
+            with pytest.raises(HTTPException) as stale:
+                queue_commands.bury_queue_entry(CommandDatabase(db), {"entry_id": buried["queue_entry_id"]})
+            assert stale.value.status_code == 409
+        assert [card["id"] for card in client.get("/api/queue/today").json()["cards"]] == [card["id"] for card in before[1:]]
+        assert lock_requests == [(f"tempo:daily-queue-position:{date.today().isoformat()}",)] * 2

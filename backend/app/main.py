@@ -2735,33 +2735,23 @@ def bury_queue_entry(entry_id: int,
                                 idempotency_key=idempotency_key)
     day = date.today().isoformat()
     with connection() as db:
-        rows = db.execute(
+        active_entry = db.execute(
             """SELECT q.id FROM daily_queue q JOIN cards c ON c.id=q.card_id
                WHERE q.queue_date=? AND q.status='queued'
                  AND (c.content_type!='defense' OR (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)
-               ORDER BY q.position,q.id""",
+               ORDER BY q.position,q.id LIMIT 1""",
             (day,),
-        ).fetchall()
-        entry_ids = [row["id"] for row in rows]
-        if not entry_ids or entry_ids[0] != entry_id:
+        ).fetchone()
+        if active_entry is None or active_entry["id"] != entry_id:
             raise HTTPException(409, "This queue entry is no longer active")
-        if len(entry_ids) < 2:
-            raise HTTPException(409, "There are no other cards to move this card behind")
-        entry_ids.remove(entry_id)
-        # Index zero is the next card. Choose a uniformly random later position.
-        insertion_index = random.randint(1, len(entry_ids))
-        entry_ids.insert(insertion_index, entry_id)
-        # Rewrite all queued positions together to avoid collisions and retain
-        # the relative order of every other entry.
+        # Retained rows prevent same-day refreshes from readmitting the card.
         db.execute(
-            "UPDATE daily_queue SET position=position+1000000000 WHERE queue_date=? AND status='queued'",
-            (day,),
+            """UPDATE daily_queue SET status='buried'
+               WHERE queue_date=? AND status!='complete'
+                 AND card_id=(SELECT card_id FROM daily_queue WHERE id=?)""",
+            (day, entry_id),
         )
-        for position, queued_entry_id in enumerate(entry_ids):
-            db.execute(
-                "UPDATE daily_queue SET position=? WHERE id=? AND queue_date=? AND status='queued'",
-                (position, queued_entry_id, day),
-            )
+        preserve_daily_queue_order(db, day)
     return {"buried": True, "queue_entry_id": entry_id}
 
 

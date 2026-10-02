@@ -8,7 +8,7 @@ import {
   move,
 } from "./product-fixtures";
 
-test("training Bury defers the active card and reports a failed defer", async ({ page, request }) => {
+test("training Bury hides the card for today across reload and reports a failed bury", async ({ page, request }) => {
   const settings = await (await request.get(`${api}/settings`)).json();
   await request.put(`${api}/settings`, { data: { ...settings, new_cards_per_day: 10 } });
   const imported = await request.post(`${api}/imports/pgn`, {
@@ -41,10 +41,14 @@ test("training Bury defers the active card and reports a failed defer", async ({
     return after[0]?.queue_entry_id;
   }).not.toBe(before[0]?.queue_entry_id);
   const after = (await (await request.get(`${api}/queue/today`)).json()).cards;
-  expect(after).toHaveLength(before.length);
+  expect(after).toHaveLength(before.length - 1);
+  expect(after.some((card: { id: string }) => card.id === before[0].id)).toBe(false);
   await page.reload();
   await nav(page, "Train");
   await expect(page.getByRole("button", { name: "Bury", exact: true })).toBeVisible();
+  const reloaded = await (await request.get(`${api}/queue/today`)).json();
+  expect(reloaded.cards.some((card: { id: string }) => card.id === before[0].id)).toBe(false);
+  expect(reloaded.count).toBe(before.length - 1);
 });
 test("sample deletion uses repertoire identity and does not delete its same-filename sibling", async ({
   page,

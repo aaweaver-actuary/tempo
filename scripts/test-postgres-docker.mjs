@@ -401,11 +401,30 @@ async function verifyForegroundAndStudyDurability() {
   const reinforcement = reinforcementQueue.cards.find((card) => card.id === reviewCard.id);
   assert.equal(reinforcement?.attempt_state, "reinforcement");
 
+  const beforeBuryQueue = await get("queue/today");
+  const buriedCard = beforeBuryQueue.cards[0];
+  assert(buriedCard, "Durability fixture includes an active card to bury");
+  const beforeBuryState = stableStudyState(await get("migration/snapshot"), buriedCard.repertoire_id);
+  const buryOperationId = `pg-study-bury-${randomBytes(12).toString("hex")}`;
+  const burial = await postCommand(`queue/entries/${buriedCard.queue_entry_id}/bury`, {}, {
+    operationId: buryOperationId, label: "foreground POST bury until tomorrow",
+  });
+  assert.deepEqual(burial, { buried: true, queue_entry_id: buriedCard.queue_entry_id });
+  const afterBuryQueue = await get("queue/today");
+  assert.deepEqual(afterBuryQueue.cards.map(card => card.queue_entry_id),
+    beforeBuryQueue.cards.filter(card => card.id !== buriedCard.id).map(card => card.queue_entry_id),
+    "Bury excludes all active occurrences and preserves other cards' order");
+
   const studySnapshot = await get("migration/snapshot");
   assert.equal(studySnapshot.source, "tempo-postgres");
   assert(studySnapshot.counts.reviews > 0 && studySnapshot.counts.teaching_states > 0
     && studySnapshot.counts.position_annotations > 0 && studySnapshot.counts.prefix_splits > 0);
   const beforeRestartState = stableStudyState(studySnapshot, importedStudy.repertoire_id);
+  const afterBuryState = stableStudyState(studySnapshot, buriedCard.repertoire_id);
+  assert.deepEqual(afterBuryState.cards, beforeBuryState.cards, "Bury leaves scheduling unchanged");
+  assert.deepEqual(afterBuryState.reviews, beforeBuryState.reviews, "Bury records no review");
+  const savedBuriedEntry = studySnapshot.tables.daily_queue.find(row => row.id === buriedCard.queue_entry_id);
+  assert.equal(savedBuriedEntry?.status, "buried");
   assert(beforeRestartState.reviews.some((row) => row.card_id === reviewCard.id));
   assert(beforeRestartState.queue.some((row) => row.card_id === guidedCard.id
     && (row.attempt_failed === 1 || row.attempt_state === "failed" || row.attempt_state === "guided")));
@@ -427,6 +446,17 @@ async function verifyForegroundAndStudyDurability() {
   const afterReplaySnapshot = await get("migration/snapshot");
   assert.equal(stableStudyState(afterReplaySnapshot, importedStudy.repertoire_id).reviews.length,
     savedReviewCount, "Confirmed review replay does not create a duplicate business effect");
+  assert.deepEqual(afterRestartSnapshot.tables.daily_queue.find(row => row.id === buriedCard.queue_entry_id),
+    savedBuriedEntry, "Buried queue entry survives service recreation");
+  const afterRestartQueue = await get("queue/today");
+  assert(!afterRestartQueue.cards.some(card => card.id === buriedCard.id), "Buried card stays absent after service recreation and refresh");
+  const replayedBurial = await postCommand(`queue/entries/${buriedCard.queue_entry_id}/bury`, {}, {
+    operationId: buryOperationId, label: "foreground replay confirmed bury after recreation",
+  });
+  assert.deepEqual(replayedBurial, burial, "Confirmed burial replays its original receipt");
+  assert.deepEqual((await get("queue/today")).cards.map(card => card.queue_entry_id),
+    afterRestartQueue.cards.map(card => card.queue_entry_id), "Burial replay cannot bury the next card");
+  console.log("PASS PostgreSQL bury until tomorrow survives recreation and idempotent replay without grading");
   console.log("PASS PostgreSQL study state, queue order, guided failure, and command identity survive service recreation");
   activeStudyRepertoireId = null;
 }

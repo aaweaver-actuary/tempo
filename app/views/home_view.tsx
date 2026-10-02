@@ -53,6 +53,8 @@ import { IndexedPosition } from "../lib/position-similarity";
 import { usesLocalApi, localDayKey } from "../utils/local";
 import { trainedColor } from "../utils/cards";
 import { buryQueuedCard } from "../domain/training-session";
+import { rememberBrowserTrainingBurial, restoreBrowserTrainingBurials } from "../lib/browser-training-burials";
+import { buryTrainingEntry, finishTrainingBurial } from "../lib/training-bury-command";
 import BuilderView from "./analysis_view";
 import ComparisonView from "./comparison_view";
 import type { ComparisonBoard, ComparisonLaunch } from "../lib/comparison";
@@ -541,12 +543,15 @@ export default function Home() {
       ];
       const loadedCards = [...demoCards, ...savedCards];
       setPracticeCards(loadedCards);
-      const storedQueue = JSON.parse(
+      const savedQueue = JSON.parse(
         localStorage.getItem("tempo-daily-queue") ??
           JSON.stringify(
             Array.from({ length: 12 }, (_, index) => index % demoCards.length),
           ),
       ) as number[];
+      const storedQueue = restoreBrowserTrainingBurials(savedQueue, loadedCards);
+      localStorage.setItem("tempo-daily-queue", JSON.stringify(storedQueue));
+      localStorage.setItem("tempo-cards-left", String(storedQueue.length));
       setDailyQueue(storedQueue);
       setCardsLeft(storedQueue.length);
       setActiveCardIndex(storedQueue[0] ?? 0);
@@ -602,7 +607,7 @@ export default function Home() {
     const addedIndexes = additions.map((item) =>
       cards.findIndex((cardItem) => cardItem.id === item.id),
     );
-    const queue = [...dailyQueue, ...addedIndexes];
+    const queue = restoreBrowserTrainingBurials([...dailyQueue, ...addedIndexes], cards);
     setDailyQueue(queue);
     setCardsLeft(queue.length);
     localStorage.setItem("tempo-daily-queue", JSON.stringify(queue));
@@ -697,25 +702,17 @@ export default function Home() {
         throw new Error(
           "The active queue entry is unavailable. Refresh the queue.",
         );
-      const response = await fetch(
-        `${API_URL}/api/queue/entries/${card.queueEntryId}/bury`,
-        { method: "POST" },
-      );
-      if (!response.ok) {
-        const detail = (await response.json().catch(() => ({}))) as {
-          detail?: string;
-        };
-        throw new Error(
-          detail.detail ?? `Local service returned HTTP ${response.status}.`,
-        );
-      }
+      const queueEntryId = card.queueEntryId;
+      await buryTrainingEntry(queueEntryId);
       await refreshDatabaseQueue(true);
+      finishTrainingBurial(queueEntryId);
       setSafeBreakCounter((count) => count + 1);
       return;
     }
     const remainingQueue = buryQueuedCard(dailyQueue, activeCardIndex);
     if (remainingQueue === dailyQueue)
-      throw new Error("There are no other cards to move this card behind.");
+      throw new Error("The active card is no longer in today’s queue. Refresh training.");
+    rememberBrowserTrainingBurial(card.id);
     setDailyQueue(remainingQueue);
     setActiveCardIndex(remainingQueue[0] ?? 0);
     setCardsLeft(remainingQueue.length);

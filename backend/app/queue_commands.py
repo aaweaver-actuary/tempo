@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from datetime import date
 import json
-import random
 from typing import Any
 
 from fastapi import HTTPException
@@ -13,6 +12,7 @@ from .command_gateway import register_command
 from .postgres_store import PostgresConnection
 from .queue_position_lock import lock_queue_date_for_position
 from .services.durable_tasks import enqueue_task_in_transaction
+from .services.review_service import preserve_daily_queue_order
 
 
 _QUEUE_REFRESH_PROJECTION_SQL = """INSERT INTO queue_projections(queue_date,state,generation,refresh_pending)
@@ -57,24 +57,20 @@ def bury_queue_entry(database: PostgresConnection, payload: dict[str, Any]) -> d
     entry_id = int(payload["entry_id"])
     queue_date = date.today().isoformat()
     lock_queue_date_for_position(database, queue_date)
-    entry_ids = [row["id"] for row in database.execute(
-        f"{_ACTIVE_QUEUE_SQL} FOR UPDATE OF q", (queue_date,),
-    )]
-    if not entry_ids or entry_ids[0] != entry_id:
+    active_entry = database.execute(
+        f"{_ACTIVE_QUEUE_SQL} LIMIT 1 FOR UPDATE OF q", (queue_date,),
+    ).fetchone()
+    if active_entry is None or active_entry["id"] != entry_id:
         raise HTTPException(409, "This queue entry is no longer active")
-    if len(entry_ids) < 2:
-        raise HTTPException(409, "There are no other cards to move this card behind")
-    entry_ids.remove(entry_id)
-    entry_ids.insert(random.randint(1, len(entry_ids)), entry_id)
+    # Keep today's rows as durable exclusion markers. Tomorrow's queue is
+    # admitted normally, without changing the card's scheduling or reviews.
     database.execute(
-        "UPDATE daily_queue SET position=position+1000000000 WHERE queue_date=? AND status='queued'",
-        (queue_date,),
+        """UPDATE daily_queue SET status='buried'
+           WHERE queue_date=? AND status!='complete'
+             AND card_id=(SELECT card_id FROM daily_queue WHERE id=?)""",
+        (queue_date, entry_id),
     )
-    for position, queued_entry_id in enumerate(entry_ids):
-        database.execute(
-            "UPDATE daily_queue SET position=? WHERE id=? AND queue_date=? AND status='queued'",
-            (position, queued_entry_id, queue_date),
-        )
+    preserve_daily_queue_order(database, queue_date)
     return {"buried": True, "queue_entry_id": entry_id}
 
 
