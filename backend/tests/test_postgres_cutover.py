@@ -2633,7 +2633,7 @@ def test_postgres_priority_opening_publication_translates_opportunity_json(tmp_p
         database.executescript("""
             CREATE TABLE repertoires(id TEXT PRIMARY KEY,new_cards_per_day INTEGER);
             CREATE TABLE settings(id INTEGER PRIMARY KEY,new_cards_per_day INTEGER);
-            INSERT INTO repertoires VALUES('rep',NULL);
+            INSERT INTO repertoires(id,new_cards_per_day) VALUES('rep',NULL);
             INSERT INTO settings VALUES(1,10);
             CREATE TABLE cards(id TEXT PRIMARY KEY,state TEXT,introduced_at TEXT,
                                archived INTEGER,pending_validation INTEGER,content_type TEXT,repertoire_id TEXT);
@@ -2980,7 +2980,7 @@ def test_postgres_opening_quarantine_validates_outside_database_and_replays_once
             CREATE TABLE daily_queue(id INTEGER PRIMARY KEY,queue_date TEXT,card_id TEXT,status TEXT);
             CREATE TABLE queue_projection_diagnostics(queue_date TEXT,card_id TEXT,
                                                        message TEXT,PRIMARY KEY(queue_date,card_id));
-            INSERT INTO repertoires VALUES('rep');
+            INSERT INTO repertoires(id) VALUES('rep');
         """)
         database.executemany(
             "INSERT INTO cards VALUES(?,?,?,?,?,0,'opening','learning')",
@@ -4925,7 +4925,7 @@ def test_postgres_queue_unseen_reconciliation_matches_sqlite_and_survives_reorde
                                  position INTEGER,cycle INTEGER DEFAULT 0);
         CREATE TABLE settings(id INTEGER PRIMARY KEY,new_cards_per_day INTEGER);
         CREATE TABLE repertoires(id TEXT PRIMARY KEY,new_cards_per_day INTEGER);
-        INSERT INTO repertoires VALUES('r1',NULL),('r2',NULL);
+        INSERT INTO repertoires(id,new_cards_per_day) VALUES('r1',NULL),('r2',NULL);
         CREATE TABLE repertoire_integrity_card_blocks(repertoire_id TEXT,card_id TEXT);
         INSERT INTO settings VALUES(1,2);
         INSERT INTO cards VALUES('reviewed','r1','opening','learning','2026-09-27');
@@ -5074,7 +5074,7 @@ def test_postgres_due_queue_slices_admit_only_eligible_cards_in_order(monkeypatc
             CREATE TABLE studies(id TEXT PRIMARY KEY,archived INTEGER);
             CREATE TABLE study_sibling_burials(exercise_id TEXT,study_day TEXT);
             CREATE TABLE daily_queue(queue_date TEXT,card_id TEXT,position INTEGER);
-            INSERT INTO repertoires VALUES('r1');
+            INSERT INTO repertoires(id) VALUES('r1');
             INSERT INTO studies VALUES('study',0);
             INSERT INTO study_exercises VALUES('published','study','published');
             INSERT INTO study_exercises VALUES('draft','study','draft');

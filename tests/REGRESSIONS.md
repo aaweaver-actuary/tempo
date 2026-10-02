@@ -920,6 +920,13 @@ assertions remain required. No test identity, CI selection, or timeout changed.
 
 ### PR #54 durability proof isolation
 
+`backend/tests/test_tactical_catalog.py::test_tactical_pack_migration_preserves_reviews_scheduling_and_completion`
+also protects the additive repertoire schema: the old five-value positional insert
+failed against the new six-column table. Fixtures now name their columns rather
+than appending NULL. The repository audit found six positional repertoire inserts,
+all in tests; all six now use explicit lists, preserving the intentional miniature
+and historical schemas in the other fixtures.
+
 `backend/tests/test_repertoire_limit_proof_isolation.py` protects the shared
 disposable environment. Portable SQL covers restoration; the existing Docker
 proof retains real production commands, receipt replay, PostgreSQL locks and

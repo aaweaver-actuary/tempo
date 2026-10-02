@@ -192,7 +192,7 @@ def test_existing_repertoire_migrates_to_inherited_limit(tmp_path, monkeypatch):
     monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'old.db')
     with sqlite3.connect(database.DB_PATH) as connection:
         connection.execute('CREATE TABLE repertoires(id TEXT PRIMARY KEY,name TEXT NOT NULL,source_name TEXT NOT NULL,created_at TEXT NOT NULL)')
-        connection.execute("INSERT INTO repertoires VALUES('old','Old','synthetic','2026-10-01')")
+        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('old','Old','synthetic','2026-10-01')")
     database.initialize()
     database.initialize()
     with database.connection() as connection:
