@@ -264,6 +264,24 @@ it("HTTP 500 PGN admission resolves its durable failed receipt before clearing i
   expect(localStorage.getItem(pendingKey)).toBeNull();
 });
 
+it.each(["invalid JSON", "missing identity", "invalid identity"])("unreadable PGN admission acknowledgement (%s) resolves the original receipt without another POST", async (failure) => {
+  let originalOperationId = "";
+  const fetcher = vi.fn(async (url: string, options?: RequestInit) => {
+    if (options?.method === "POST") {
+      originalOperationId = (options.headers as Record<string, string>)["Idempotency-Key"];
+      expect(JSON.parse(localStorage.getItem(pendingKey)!).operationId).toBe(originalOperationId);
+      if (failure === "invalid JSON") return new Response("{", { status: 202 });
+      return Response.json(failure === "missing identity" ? { state: "queued" } : { operation_id: 123 }, { status: 202 });
+    }
+    expect(url.endsWith(`/api/operations/${originalOperationId}`)).toBe(true);
+    return Response.json({ state: "complete", response: importResult });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  expect(await savePgnImportCommand(openingFile(), "white", 4)).toEqual(importResult);
+  expect(fetcher.mock.calls.filter(([, options]) => options?.method === "POST")).toHaveLength(1);
+  expect(localStorage.getItem(pendingKey)).toBeNull();
+});
+
 it("normal immediate PGN success retains existing import result behavior", async () => {
   const fetcher = receiptFetcher(importResult);
   expect(await savePgnImportCommand(openingFile(), "white", 4)).toEqual(importResult);

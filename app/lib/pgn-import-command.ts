@@ -89,9 +89,13 @@ async function submitImport(pending: PendingImport, file: File, trainedColor: "w
   }
   signal.throwIfAborted();
   if (response.status === 202) {
-    const accepted = z.object({ operation_id: z.string() }).parse(await response.json());
+    let acknowledgement: unknown;
+    try { acknowledgement = await response.json(); }
+    catch { signal.throwIfAborted(); return null; }
     signal.throwIfAborted();
-    if (accepted.operation_id !== pending.operationId)
+    const accepted = z.object({ operation_id: z.string().min(1) }).safeParse(acknowledgement);
+    if (!accepted.success) return null; // Unreadable admission still needs durable confirmation.
+    if (accepted.data.operation_id !== pending.operationId)
       throw new Error("The service returned a different import operation identity. Check the local service before retrying.");
     return null;
   }
