@@ -68,8 +68,14 @@ def test_postgres_threat_report_validates_lease_and_queues_candidates_atomically
     writes = []
     validations = []
     enqueued = []
+    repair_subscription_reads = []
 
     class Database:
+        def execute(self, statement, parameters=()):
+            assert statement == 'SELECT 1 FROM integrity_recommendation_requests WHERE request_id=? LIMIT 1'
+            repair_subscription_reads.append(parameters)
+            return Cursor()  # This defensive report has no repair subscribers.
+
         def execute_native(self, statement, parameters=()):
             if statement.startswith("SELECT state,lease_id,request_json"):
                 return Cursor({"state": state["status"], "lease_id": state["lease_id"],
@@ -97,6 +103,7 @@ def test_postgres_threat_report_validates_lease_and_queues_candidates_atomically
     assert len(writes) == 2
     assert sum("INSERT INTO background_metric_buckets" in statement for statement, _ in writes) == 1
     assert [item[1] for item in enqueued] == ["candidate-one", "candidate-two"]
+    assert repair_subscription_reads == [("request-one",)]
 
     state["lease_id"] = "replacement"
     with pytest.raises(HTTPException) as error:
@@ -105,6 +112,7 @@ def test_postgres_threat_report_validates_lease_and_queues_candidates_atomically
     assert len(writes) == 2
     assert sum("INSERT INTO background_metric_buckets" in statement for statement, _ in writes) == 1
     assert len(enqueued) == 2
+    assert repair_subscription_reads == [("request-one",)]
 
 
 def test_postgres_threat_failure_release_retry_preserve_http_contract():

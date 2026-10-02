@@ -10,6 +10,8 @@ Guided repertoire repair (October 2, 2026; related to issue #4, which also cover
 - PostgreSQL durability: `guided_repair_postgres_contention_restart_replay_and_publication` in `scripts/rehearse_integrity_repair.py`, invoked by the regular disposable durability runner through `scripts/check_postgres_priority_recovery.py`. It proves closed reads during computation, foreground admission, expired-lease fencing, persisted restart cursors, idempotent replay, source fencing, the real atomic edit, and confirmation following a successor graph's completed integrity scan.
 - Browser: `guided repair previews real arrows and pieces, saves durably, and preserves study through reload and confirmation` in `tests/browser/recovery.spec.ts`. This uses real Chessground pieces/arrows and browser events with controlled HTTP responses; PostgreSQL semantics are covered by the durability rehearsal. Pinned `repair-dialog-390` and `repair-dialog-1280` rendering checks cover the new dialog.
 
+The existing `test_postgres_threat_report_validates_lease_and_queues_candidates_atomically` also verifies that a defensive-only report reads repair subscriptions without scheduling repair work, and that stale leases never read/wake those subscribers.
+
 The original two component failures were reproduced on main before implementation: no hover arrow and saving kept the dialog open while awaiting processing. See `docs/guided-repair.md` for scope and delivery evidence.
 
 Quiet notifications (October 2, 2026):

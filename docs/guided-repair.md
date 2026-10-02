@@ -95,3 +95,24 @@ generated, then inspected; existing baselines were not regenerated.
 
 Detailed development logs and runner timing JSON remain under the isolated
 checkout's `test-results/guided-repair-evidence/` and `test-results/performance/`.
+
+Settled product source is committed as `65b970eba6ab466fa4f08535ede106ebb8deccfb`.
+- Fresh `make visual`: 55 passed (4.5m Playwright; 281.73s command wall), with
+  no overlapping local builds/tests. Its manifest records the source-equivalent
+  dirty main revision before the commit; the product source did not change.
+- Final `make ui-file FILE=recovery.spec.ts`: 17 passed (18.7s Playwright;
+  19.55s browser stage; 55.82s command wall), on clean committed product source.
+- CI run 37038266083 caught an engine callback test double missing the compatibility
+  read used to check repair subscriptions. The actual PostgreSQL rehearsal had
+  passed. The focused existing regression reproduced that fixture failure; its
+  adapter now verifies the bounded empty-subscription read while retaining all
+  prior lease, validation, write-count, and candidate-queue assertions. Final
+  current-head CI is required after this test-only repair.
+
+PR: https://github.com/aaweaver-actuary/tempo/pull/67 . No merge or deployment was
+performed. PR #66 remains draft/open on unchanged main; its migration overlap is
+explicitly noted in the PR description for merge ordering.
+
+- `make python-file FILE=backend/tests/test_postgres_threat_analysis_commands.py`:
+  5 passed (0.54s pytest execution; 1.11s command wall), after the focused
+  callback failure was reproduced (0.89s pytest execution).
