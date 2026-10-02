@@ -1,5 +1,145 @@
 import { test, expect, navigate, prepareUI } from "./ui-fixtures";
 import { prepareVisualUI } from "./visual-fixtures";
+import { prepareRepairUI, repairStartFen } from "./repair-fixtures";
+import { expectedPieces, renderedPieces, playMove, squareCenter } from "./keyboard-fixtures";
+import { Chess } from "chess.js";
+
+test("repair retries survive delayed operation and task transitions after reload without another source edit", async ({ page }) => {
+  const repair = await prepareRepairUI(page);
+  const reviewedCards: string[] = [];
+  page.on("request", request => {
+    const match = new URL(request.url()).pathname.match(/^\/api\/cards\/([^/]+)\/review$/);
+    if (request.method() === "POST" && match) reviewedCards.push(match[1]);
+  });
+  let operationAdvanced = false, operationRetryPosts = 0, oldReceiptPolls = 0;
+  let taskRetryId = "", taskRetryPosts = 0, pendingTaskPolls = 0, taskRetryApplied = false;
+  let validation: "waiting" | "failed" | "complete" = "waiting";
+  await page.route("**/api/operations/*", route => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-1)!;
+    if (id === taskRetryId) {
+      pendingTaskPolls++;
+      return route.fulfill({ json: taskRetryApplied ? { state: "complete",
+        response: { id: "repair-graph", generation: 2, state: "queued" } } : { state: "queued" } });
+    }
+    if (id !== repair.operationIds[0]) return route.fulfill({ json: { state: "unknown" } });
+    if (!repair.accepted) return route.fulfill({ json: { state: "unknown" } });
+    if (!operationAdvanced) {
+      if (operationRetryPosts) oldReceiptPolls++;
+      return route.fulfill({ json: { state: "blocked", retry_cycle: 1, attempt_count: 5, cycle_attempt_count: 5,
+        last_error: { message: "Retryable save failure" } } });
+    }
+    return route.fulfill({ json: { state: "complete", retry_cycle: 2, attempt_count: 6,
+      response: { task_id: "repair-graph", task_generation: 2, repertoire_id: "repair-repertoire",
+        issue_id: "repair-issue", state: "queued" } } });
+  });
+  await page.route("**/api/operations/*/retry", route => {
+    operationRetryPosts++;
+    return route.fulfill({ status: 202, json: { state: "blocked" } });
+  });
+  await page.route("**/api/system/tasks/repair-graph/retry", route => {
+    taskRetryPosts++; taskRetryId = route.request().headers()["idempotency-key"];
+    return route.fulfill({ status: 202, json: { operation_id: taskRetryId, state: "queued" } });
+  });
+  await page.route("**/api/repertoires/repair-repertoire/integrity/repairs/repair-graph?**", route =>
+    route.fulfill({ json: { task_id: "repair-graph", task_generation: taskRetryApplied ? 3 : 2, state: validation,
+      issue_count: validation === "complete" ? 0 : 1, reason: validation === "failed" ? "Retryable graph failure" : null,
+      retry_task_id: validation === "failed" ? "repair-graph" : null } }));
+  await page.getByRole("button", { name: "Resume repair" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "e4", exact: true }).click();
+  await page.getByRole("button", { name: "Keep this response" }).click();
+  await expect.poll(() => repair.operationIds.length).toBe(1);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-integrity-repairs-v2")!)[0]?.attempts ?? 0)).toBeGreaterThan(0);
+  await page.clock.setFixedTime(new Date("2026-09-18T16:00:10Z"));
+  await page.reload();
+  const retryButton = page.getByRole("button", { name: "Retry repair", exact: true });
+  await expect(retryButton).toBeVisible();
+  await retryButton.click();
+  await expect(page.getByText("Repair saving", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect.poll(() => oldReceiptPolls).toBeGreaterThanOrEqual(2);
+  await expect(page.getByText("Repair saving", { exact: true })).toBeVisible();
+  operationAdvanced = true;
+  await expect(page.getByText("Repair validating", { exact: true })).toBeVisible();
+  validation = "failed";
+  await expect(retryButton).toBeVisible(); await retryButton.click();
+  await expect.poll(() => taskRetryPosts).toBe(1);
+  await page.reload();
+  await expect.poll(() => pendingTaskPolls).toBeGreaterThanOrEqual(2);
+  await expect(page.getByText("Repair validating", { exact: true })).toBeVisible();
+  taskRetryApplied = true; validation = "waiting";
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-integrity-repairs-v2")!)[0]?.taskGeneration)).toBe(3);
+  const studyBoard = page.locator(".persistent-board-shell .board-frame");
+  await playMove(page, studyBoard, "e2", "e4");
+  // Completing this one-move card grades it automatically. An additional click
+  // can arrive after that advancement and incorrectly grade the next card.
+  await expect(page.getByRole("heading", { name: "Second study card" })).toBeVisible();
+  const positionBeforeConfirmation = await studyBoard.getAttribute("data-fen");
+  validation = "complete"; repair.confirmed = true;
+  await expect(page.getByText("Repair validating", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(studyBoard).toHaveAttribute("data-fen", positionBeforeConfirmation!);
+  await expect(page.getByRole("heading", { name: "Second study card" })).toBeVisible();
+  expect(operationRetryPosts).toBe(1); expect(taskRetryPosts).toBe(1);
+  expect(repair.operationIds).toHaveLength(1);
+  expect(reviewedCards).toEqual(["study-one"]);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-integrity-repairs-v2")!))).toEqual([]);
+});
+
+test("guided repair previews real arrows and pieces, saves durably, and preserves study through reload and confirmation", async ({ page }) => {
+  const repair = await prepareRepairUI(page);
+  await page.getByRole("button", { name: "Resume repair" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("Suggested response: e4")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Keep this response" })).toBeDisabled();
+  const response = dialog.getByRole("button", { name: "e4", exact: true });
+  await response.hover();
+  const previewBoard = dialog.locator(".board-frame");
+  await expect(previewBoard.locator("svg.cg-shapes > g > g[cgHash]")).toHaveCount(1);
+  await response.click();
+  await expect(response.locator("xpath=ancestor::tr")).toHaveAttribute("aria-selected", "true");
+  expect(await response.locator("xpath=ancestor::tr").evaluate(element => getComputedStyle(element).backgroundColor))
+    .not.toBe(await dialog.getByRole("button", { name: "d4", exact: true }).locator("xpath=ancestor::tr").evaluate(element => getComputedStyle(element).backgroundColor));
+  await dialog.getByRole("button", { name: "Next move" }).click();
+  const previewPosition = new Chess(repairStartFen); previewPosition.move("e2e4");
+  await expect.poll(() => renderedPieces(previewBoard)).toEqual(expectedPieces(previewPosition.fen()));
+  await dialog.getByRole("button", { name: "Decision position" }).click();
+  await expect.poll(() => renderedPieces(previewBoard)).toEqual(expectedPieces(repairStartFen));
+  await dialog.getByRole("button", { name: "Keep this response" }).click();
+  await expect(dialog).toHaveCount(0);
+  const saved = await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-integrity-repairs-v2")!)[0]);
+  expect(saved.selectedMoveUci).toBe("e2e4");
+  await expect.poll(() => repair.operationIds.length).toBe(1);
+  expect(repair.operationIds[0]).toBe(saved.operationId);
+  const studyBoard = page.locator(".persistent-board-shell .board-frame");
+  await playMove(page, studyBoard, "e2", "e4");
+  await page.getByRole("button", { name: "Correct", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Second study card" })).toBeVisible();
+  // Advance the fixture's fixed wall clock beyond the durable retry deadline.
+  await page.clock.setFixedTime(new Date("2026-09-18T16:00:10Z"));
+  await page.reload();
+  await expect(page.getByText("Repair validating", { exact: true })).toBeVisible();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  expect(repair.operationIds).toEqual([saved.operationId]);
+  expect(repair.receiptIds).toContain(saved.operationId);
+  const from = await squareCenter(studyBoard, "d2"), to = await squareCenter(studyBoard, "d4");
+  const studyFocus = page.locator(".persistent-board-shell .board-viewport");
+  await studyFocus.focus();
+  await page.mouse.move(from.x, from.y); await page.mouse.down(); await page.mouse.move(to.x, to.y);
+  await expect(studyBoard.locator("piece.dragging")).toHaveCount(1);
+  await studyBoard.evaluate(element => element.setAttribute("data-preserved-board", "true"));
+  const beforeFen = await studyBoard.getAttribute("data-fen");
+  repair.confirmed = true;
+  await expect(page.getByText("Repair validating", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Resume repair" })).toHaveCount(0);
+  await expect(studyBoard).toHaveAttribute("data-preserved-board", "true");
+  await expect(studyBoard).toHaveAttribute("data-fen", beforeFen!);
+  await expect(studyBoard.locator("piece.dragging")).toHaveCount(1);
+  await expect(studyFocus).toBeFocused();
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await page.mouse.up();
+  await expect.poll(() => studyBoard.getAttribute("data-fen")).not.toBe(beforeFen);
+});
+import type { Page } from "@playwright/test";
 
 const startFen =
   "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -485,3 +625,145 @@ test('import waits for saved settings before writing a repertoire', async ({page
   await expect(page.getByRole('button',{name:'Import repertoire',exact:true})).toBeEnabled();
   await expect(page.getByText('2 user moves',{exact:true})).toBeVisible();
 });
+
+async function preparePgnReceiptCompletion(page: Page) {
+  await page.route("**/api/repertoires", route => route.fulfill({ json: { repertoires: [{
+    id: "visual-repertoire", name: "Spanish opening", source_name: "Spanish.pgn", line_count: 1,
+    card_count: 1, due_count: 1, trained_color: "white", integrity_status: "clean",
+    graph_state: "ready", graph_updated_at: "2026-09-18T12:00:00Z",
+  }] } }));
+  await page.route("**/api/queue/window?**", route => route.fulfill({ json: { cards: [], projection: {
+    state: "ready", generation: 1, updated_at: "2026-09-18T12:00:01Z", refresh_pending: false, last_error: null,
+  } } }));
+}
+
+test("unknown PGN receipt recovers the same operation after reload and matching file reselection", async ({ page }) => {
+  await prepareVisualUI(page);
+  await preparePgnReceiptCompletion(page);
+  const postedKeys: string[] = [];
+  const postedBodies: string[] = [];
+  const completedImport = { repertoire_id: "visual-repertoire", source_name: "recovery.pgn", games_found: 1, unique_lines: 1, cards_created: 1, duplicates_merged: 0, cards_admitted_today: 0 };
+  await page.route("**/api/imports/pgn", async route => {
+    postedKeys.push(route.request().headers()["idempotency-key"]);
+    postedBodies.push(route.request().postData() ?? "");
+    await route.fulfill(postedKeys.length === 1
+      ? { status: 202, json: { operation_id: postedKeys[0], state: "unknown" } }
+      : { json: completedImport });
+  });
+  await page.route("**/api/operations/*", route => route.fulfill({ json: { operation_id: postedKeys[0], state: "unknown", message: "No durable receipt exists yet" } }));
+  await navigate(page, "Repertoire");
+  await page.getByRole("button", { name: /Import PGN/ }).click();
+  await page.locator('input[type="file"]').setInputFiles({ name: "recovery.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from("1. e4 e5 2. Nf3 *") });
+  await expect(page.getByRole("button", { name: "Import repertoire", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Import repertoire", exact: true }).click();
+  await expect(page.getByRole("dialog").getByRole("status")).toContainText("confirmation is unavailable");
+  await expect(page.getByRole("dialog").getByRole("alert")).toHaveCount(0);
+  const remembered = await page.evaluate(() => localStorage.getItem("tempo-pending-pgn-import-v1"));
+  expect(JSON.parse(remembered!).operationId).toBe(postedKeys[0]);
+  await page.getByRole("button", { name: "Close import dialog", exact: true }).click();
+  await page.reload();
+  await navigate(page, "Repertoire");
+  await page.getByRole("button", { name: /Import PGN/ }).click();
+  await page.locator('input[type="file"]').setInputFiles({ name: "recovery.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from("1. e4 e5 2. Nf3 *") });
+  await expect(page.getByRole("button", { name: "Import repertoire", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Import repertoire", exact: true }).click();
+  await expect(page.getByRole("heading", { name: "Imported", exact: true })).toBeVisible();
+  expect(postedKeys).toHaveLength(2);
+  expect(postedKeys[1]).toBe(postedKeys[0]);
+  for (const body of postedBodies) {
+    expect(body).toContain('filename="recovery.pgn"');
+    expect(body).toContain("1. e4 e5 2. Nf3 *");
+    expect(body).toContain('name="trained_color"\r\n\r\nwhite');
+    expect(body).toContain('name="initial_depth"\r\n\r\n6');
+  }
+  expect(await page.evaluate(() => localStorage.getItem("tempo-pending-pgn-import-v1"))).toBeNull();
+});
+
+test("legacy pending PGN import promptly shows its diagnostic and Check again only inspects the original operation", async ({ page }) => {
+  await page.clock.install();
+  await prepareVisualUI(page, false);
+  const diagnostic = "Legacy receipt has no saved payload. Recover only from matching journal or outbox evidence; automatic replay is unavailable.";
+  const storedIdentity = await page.evaluate(async () => {
+    const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode("1. e4 e5 2. Nf3 *"));
+    const fingerprint = ["legacy.pgn", "white", 6,
+      Array.from(new Uint8Array(digest), byte => byte.toString(16).padStart(2, "0")).join("")].join(":");
+    const stored = JSON.stringify({ operationId: "original-import", fingerprint });
+    localStorage.setItem("tempo-pending-pgn-import-v1", stored);
+    return stored;
+  });
+  const inspectedOperations: string[] = [];
+  let posts = 0;
+  await page.route("**/api/imports/pgn", route => {
+    posts += 1;
+    return route.abort();
+  });
+  await page.route("**/api/operations/**", route => {
+    expect(route.request().method()).toBe("GET");
+    inspectedOperations.push(new URL(route.request().url()).pathname);
+    return route.fulfill({ json: { operation_id: "original-import", state: "pending", message: diagnostic } });
+  });
+  await navigate(page, "Repertoire");
+  await page.getByRole("button", { name: /Import PGN/ }).click();
+  await page.locator('input[type="file"]').setInputFiles({ name: "legacy.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from("1. e4 e5 2. Nf3 *") });
+  await expect(page.getByRole("button", { name: "Import repertoire", exact: true })).toBeEnabled();
+  await page.getByRole("button", { name: "Import repertoire", exact: true }).click();
+  const dialog = page.getByRole("dialog");
+  // No deadline advancement: the backend diagnostic must finish checking promptly.
+  await expect(dialog.getByRole("status")).toHaveText(`Import confirmation is unavailable. ${diagnostic}`);
+  await expect(page.getByRole("button", { name: "Check again", exact: true })).toBeEnabled();
+  expect(inspectedOperations).toEqual(["/api/operations/original-import"]);
+  await page.getByRole("button", { name: "Check again", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Check again", exact: true })).toBeEnabled();
+  await expect(dialog.getByRole("status")).toHaveText(`Import confirmation is unavailable. ${diagnostic}`);
+  expect(inspectedOperations).toEqual(["/api/operations/original-import", "/api/operations/original-import"]);
+  expect(posts).toBe(0);
+  await expect(dialog.getByRole("alert")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Imported", exact: true })).toHaveCount(0);
+  await expect(page.locator('input[type="file"]')).toHaveJSProperty("value", "C:\\fakepath\\legacy.pgn");
+  await expect(dialog.getByText("6 user moves", { exact: true })).toBeVisible();
+  expect(await page.evaluate(() => localStorage.getItem("tempo-pending-pgn-import-v1"))).toBe(storedIdentity);
+});
+
+for (const state of ["executing", "retrying"]) {
+  test(`durably ${state} PGN import waits informationally and Check again never resends`, async ({ page }) => {
+    await page.setViewportSize({ width: 320, height: 844 });
+    await page.clock.install();
+    await prepareVisualUI(page, false);
+    await preparePgnReceiptCompletion(page);
+    let operationId = "";
+    let complete = false;
+    let posts = 0;
+    let receiptReads = 0;
+    await page.route("**/api/imports/pgn", route => {
+      posts += 1;
+      operationId = route.request().headers()["idempotency-key"];
+      return route.fulfill({ status: 202, json: { operation_id: operationId, state } });
+    });
+    await page.route("**/api/operations/*", route => {
+      receiptReads += 1;
+      expect(new URL(route.request().url()).pathname).toBe(`/api/operations/${operationId}`);
+      return route.fulfill({ json: complete ? { operation_id: operationId, state: "complete", response: { repertoire_id: "visual-repertoire", source_name: "active.pgn", games_found: 1, unique_lines: 1, cards_created: 1, duplicates_merged: 0, cards_admitted_today: 0 } } : { operation_id: operationId, state } });
+    });
+    await navigate(page, "Repertoire");
+    await page.getByRole("button", { name: /Import PGN/ }).click();
+    await page.locator('input[type="file"]').setInputFiles({ name: "active.pgn", mimeType: "application/x-chess-pgn", buffer: Buffer.from("1. e4 e5 2. Nf3 *") });
+    await expect(page.getByRole("button", { name: "Import repertoire", exact: true })).toBeEnabled();
+    await page.getByRole("button", { name: "Import repertoire", exact: true }).click();
+    await expect.poll(() => receiptReads).toBeGreaterThan(0);
+    await expect(page.getByRole("button", { name: "Importing…" })).toBeDisabled();
+    await expect(page.locator('input[type="file"]')).toBeDisabled();
+    await expect(page.getByRole("dialog").getByRole("alert")).toHaveCount(0);
+    await page.clock.runFor(30_000);
+    await expect(page.getByRole("button", { name: "Check again", exact: true })).toBeVisible();
+    await expect(page.getByRole("dialog").getByRole("status")).toContainText("still processing");
+    await expect(page.getByRole("dialog").getByRole("alert")).toHaveCount(0);
+    expect(posts).toBe(1);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1)).toBe(true);
+    await page.screenshot({ path: `test-results/pgn-import-recovery/pending-${state}-320.png` });
+    complete = true;
+    await page.getByRole("button", { name: "Check again", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Imported", exact: true })).toBeVisible();
+    expect(posts).toBe(1);
+    expect(await page.evaluate(() => localStorage.getItem("tempo-pending-pgn-import-v1"))).toBeNull();
+  });
+}

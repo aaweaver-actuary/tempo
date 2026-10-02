@@ -738,6 +738,7 @@ def test_postgres_pgn_import_dispatches_parsed_payload_with_idempotency(monkeypa
     from app import main
 
     observed = []
+    pgn_source = b'[Event "Test"]\n\n{Shared plan [%cal Ge2e4]} 1. e4 e5 (1... c5) *'
 
     class SettingsDatabase:
         def execute(self, *_args):
@@ -757,7 +758,7 @@ def test_postgres_pgn_import_dispatches_parsed_payload_with_idempotency(monkeypa
     response = TestClient(main.app).post(
         "/api/imports/pgn",
         headers={"Idempotency-Key": "import-one"},
-        files={"file": ("opening.pgn", b"[Event \"Test\"]\n\n1. e4 e5 *", "application/x-chess-pgn")},
+        files={"file": ("opening.pgn", pgn_source, "application/x-chess-pgn")},
         data={"trained_color": "white", "initial_depth": "4"},
     )
     assert response.status_code == 202, response.text
@@ -765,7 +766,20 @@ def test_postgres_pgn_import_dispatches_parsed_payload_with_idempotency(monkeypa
     assert observed[0][1]["source_name"] == "opening.pgn"
     assert observed[0][1]["depth"] == 4
     assert observed[0][1]["lines"][0]["moves"] == ["e2e4", "e7e5"]
+    assert observed[0][1]["lines"][1]["moves"] == ["e2e4", "c7c5"]
+    assert all(line["annotations"] for line in observed[0][1]["lines"])
     assert observed[0][2] == "import-one"
+    # Rebuilding FormData must preserve the worker's logical request digest,
+    # including annotations and segment IDs. Real replay effects are covered
+    # by verifyPgnImportReplayWithoutDuplicates in the PostgreSQL runner.
+    replay = TestClient(main.app).post(
+        "/api/imports/pgn",
+        headers={"Idempotency-Key": "import-one"},
+        files={"file": ("opening.pgn", pgn_source, "application/x-chess-pgn")},
+        data={"trained_color": "white", "initial_depth": "4"},
+    )
+    assert replay.status_code == 202, replay.text
+    assert observed == [observed[0], observed[0]]
 
 
 def test_postgres_integrity_repair_dispatches_prepared_plan_with_idempotency(monkeypatch):
@@ -6545,3 +6559,37 @@ def test_postgres_coverage_fingerprint_tracks_route_certificates_only_for_scoped
     scoped = postgres_coverage_seed._source_fingerprint(Database(), 'rep')
     prefix['source_revision'] += 1
     assert postgres_coverage_seed._source_fingerprint(Database(), 'rep') != scoped
+def test_pgn_payload_diagnostic_counts_branches_moves_annotations_and_serializer_bytes():
+    from benchmarks.pgn_payload import branching_fixture, measure_payload
+    from app.pgn_import_commands import prepare_import_payload
+    from app.services.pgn import parse_pgn
+    from kombu.serialization import dumps
+    from app.celery_app import celery_app
+
+    source = branching_fixture(4)
+    report = measure_payload(source, "small.pgn", "white", 2)
+    assert report["raw_pgn_bytes"] == len(source)
+    assert report["games"] == 1
+    assert report["source_move_nodes"] == 8
+    assert report["expanded_leaf_lines"] == 5
+    assert report["total_expanded_moves"] == 14
+    assert report["annotation_occurrences"] == 5
+    assert report["unique_segment_ids"] >= report["unique_prefix_segment_ids"] > 0
+    games, lines = parse_pgn(source.decode())
+    payload = prepare_import_payload("small.pgn", "white", 2, games, lines)
+    _, encoding, serialized = dumps(payload, serializer=celery_app.conf.task_serializer)
+    assert report["prepared_payload_bytes"] == len(serialized.encode(encoding))
+    assert report["celery_task_body_bytes"] > report["prepared_payload_bytes"]
+    assert report["serialized_raw_ratio"] == report["prepared_payload_bytes"] / len(source)
+
+
+def test_branching_pgn_source_grows_linearly_while_expanded_moves_grow_quadratically():
+    from benchmarks.pgn_payload import branching_fixture, measure_payload
+
+    small = measure_payload(branching_fixture(16), "comb.pgn", "white", 6)
+    large = measure_payload(branching_fixture(32), "comb.pgn", "white", 6)
+    assert large["source_move_nodes"] == 2 * small["source_move_nodes"]
+    assert large["total_expanded_moves"] == 32 * 35 // 2
+    assert small["total_expanded_moves"] == 16 * 19 // 2
+    assert large["total_expanded_moves"] > 3.5 * small["total_expanded_moves"]
+    assert large["prepared_payload_bytes"] > small["prepared_payload_bytes"]

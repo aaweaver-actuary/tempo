@@ -44,7 +44,14 @@ _ELIGIBLE_THREAT_REQUEST = (
     "OR EXISTS(SELECT 1 FROM coverage_discovery_recommendation_requests recommendation "
     "JOIN current_repertoire_opportunities opportunity ON opportunity.id=recommendation.opportunity_id "
     "WHERE recommendation.request_id=request.id AND opportunity.status='active' "
-    "AND opportunity.card_id IS NULL LIMIT 1 OFFSET 0)) "
+    "AND opportunity.card_id IS NULL LIMIT 1 OFFSET 0) "
+    "OR EXISTS(SELECT 1 FROM integrity_recommendation_requests recommendation "
+    "JOIN repertoire_integrity_issues issue ON issue.id=recommendation.issue_id "
+    "JOIN repertoire_integrity_state integrity ON integrity.repertoire_id=issue.repertoire_id "
+    "WHERE recommendation.request_id=request.id AND issue.signature=recommendation.signature "
+    "AND integrity.scan_status='idle' "
+    "AND integrity.scan_generation IS NOT DISTINCT FROM recommendation.scan_generation "
+    "LIMIT 1 OFFSET 0)) "
 )
 
 
@@ -128,6 +135,8 @@ def submit_threat_report(database: PostgresConnection, payload: dict[str, Any]) 
         "lease_id=NULL,lease_expires_at=NULL,last_error=NULL,updated_at=%s WHERE id=%s",
         (json.dumps(raw_report), _now(), request_id),
     )
+    from .services.integrity_recommendations import wake_report_previews
+    wake_report_previews(database, request_id)
     record_engine_outcome(database, "engine_defense", request_id, payload, completed=True)
     candidate_ids = [row[0] for row in database.execute_native(
         "SELECT DISTINCT candidate_id FROM threat_candidate_requests WHERE request_id=%s",

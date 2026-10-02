@@ -637,7 +637,7 @@ async def prioritize_foreground_requests(request: Request, call_next):
         integrity_resolution_command = (
             len(path_parts) == 7 and path_parts[:2] == ["api", "repertoires"]
             and path_parts[3:5] == ["integrity", "issues"]
-            and path_parts[6] == "resolve" and request.method == "POST"
+            and path_parts[6] in {"resolve", "recommendations"} and request.method == "POST"
         )
         card_validation = (path_parts == ["api", "cards", "validate"]
                            and request.method == "POST")
@@ -1644,6 +1644,8 @@ def _execute_daily_queue_task(task: dict) -> None:
 
 register_durable_task_handler("daily_queue", _execute_daily_queue_task)
 register_durable_task_handler("integrity_repair", execute_durable_integrity_repair)
+from .services.integrity_recommendations import execute_integrity_recommendation_slice
+register_durable_task_handler("integrity_recommendation", execute_integrity_recommendation_slice)
 register_durable_task_handler("opening_graph_rebuild", execute_opening_graph_rebuild)
 from .services.postgres_opening_segmentation import execute_segmentation_slice
 register_durable_task_handler("opening_segmentation", execute_segmentation_slice)
@@ -2354,6 +2356,7 @@ def resolve_repertoire_integrity(
         status_code=202,
         content={
             "task_id": task["id"],
+            "task_generation": task["generation"],
             "repertoire_id": identifier,
             "issue_id": issue_id,
             "state": task["state"],
@@ -6236,3 +6239,6 @@ from .opening_segmentation_api import router as opening_segmentation_router
 app.include_router(opening_segmentation_router)
 from .canonical_prefix_api import router as canonical_prefix_router
 app.include_router(canonical_prefix_router)
+
+from .integrity_api import router as integrity_router
+app.include_router(integrity_router)

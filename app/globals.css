@@ -2421,8 +2421,21 @@ button {
   margin-top: 20px;
 }
 .integrity-board { min-width: 0; }
+.repair-preview-controls { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
+.repair-suggestion { padding: 12px; border: 1px solid var(--sage); border-radius: 10px; background: color-mix(in srgb, var(--sage) 12%, transparent); }
+.repair-suggestion p { margin: 6px 0; }
 .integrity-evidence { min-width: 0; display: grid; gap: 12px; align-content: start; }
 .integrity-evidence .move-comparison-scroll { max-height: 310px; overflow: auto; }
+.integrity-evidence tr[aria-selected="true"] {
+  background: var(--sage);
+  box-shadow: inset 3px 0 var(--green);
+}
+@media (max-width: 700px) {
+  .integrity-dialog { padding: 20px; }
+  .integrity-layout { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .integrity-train-notice { flex-wrap: wrap; }
+  .integrity-train-notice span { overflow-wrap: anywhere; }
+}
 .close-button {
   position: absolute;
   top: 14px;

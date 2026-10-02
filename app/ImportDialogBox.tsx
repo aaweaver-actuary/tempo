@@ -14,13 +14,13 @@ import { usesLocalApi } from "./utils/local";
 import CloseButton from "./components/buttons/CloseButton";
 import {
   settingsResponseSchema,
-  importResultSchema,
   repertoiresResponseSchema,
   queueEnvelopeSchema,
 } from "./domain/schemas";
 import { readJsonResponse } from "./lib/validated-data";
 import { reportDebugError } from "./lib/debug-reporting";
 import { savePgnImportCommand } from "./lib/pgn-import-command";
+import { PendingOperationError } from "./lib/operation-status";
 
 export function ImportDialogBox({
   onClose,
@@ -50,6 +50,9 @@ export function ImportDialogBox({
   });
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
+  const [pendingImport, setPendingImport] = useState<PendingOperationError | null>(null);
+  const importController = useDialogRef<AbortController | null>(null);
+  useEffect(() => () => importController.current?.abort(), [importController]);
   const [settingsLoaded, setSettingsLoaded] = useState(!usesLocalApi());
   const [settingsError, setSettingsError] = useState("");
   const loadImportSettings = useCallback(async () => {
@@ -77,9 +80,11 @@ export function ImportDialogBox({
 
   async function waitForPublishedAdmission(
     repertoireId: string,
+    signal: AbortSignal,
   ): Promise<number> {
     for (let attempt = 0; attempt < 200; attempt += 1) {
-      const response = await fetch(`${API_URL}/api/repertoires`);
+      signal.throwIfAborted();
+      const response = await fetch(`${API_URL}/api/repertoires`, { signal });
       if (response.ok) {
         const result = await readJsonResponse(
           response,
@@ -93,14 +98,14 @@ export function ImportDialogBox({
         if (repertoire?.integrity_scan_status === "failed")
           throw new Error(`Repertoire integrity scan failed after import: ${repertoire.integrity_scan_error ?? "Check Activity and retry the failed task."}`);
         if (repertoire?.integrity_status === "clean" && repertoire.graph_state === "ready" && repertoire.graph_updated_at) {
-          const queueResponse = await fetch(`${API_URL}/api/queue/window?limit=1`);
+          const queueResponse = await fetch(`${API_URL}/api/queue/window?limit=1`, { signal });
           if (queueResponse.ok) {
             const queue = await readJsonResponse(queueResponse, queueEnvelopeSchema, "imported repertoire queue");
             const projection = queue.projection;
             if (projection?.state === "failed") throw new Error("Daily queue failed after import. Retry the failed task in Settings → Service status.");
             if (projection?.state === "ready" && !projection.refresh_pending && projection.updated_at &&
                 Date.parse(projection.updated_at) >= Date.parse(repertoire.graph_updated_at)) {
-              const refreshedResponse = await fetch(`${API_URL}/api/repertoires`);
+              const refreshedResponse = await fetch(`${API_URL}/api/repertoires`, { signal });
               if (refreshedResponse.ok) {
                 const refreshed = await readJsonResponse(refreshedResponse, repertoiresResponseSchema, "published repertoire admission");
                 const refreshedRepertoire = refreshed.repertoires.find((candidate) => candidate.id === repertoireId);
@@ -116,10 +121,13 @@ export function ImportDialogBox({
     throw new Error("Repertoire imported, but today's queue is still preparing. Check Activity before starting training.");
   }
 
-  async function importFile() {
-    if (!file || !settingsLoaded) return;
+  async function importFile(retryBlocked = false) {
+    if (!file || !settingsLoaded || importController.current) return;
+    const controller = new AbortController();
+    importController.current = controller;
     setWorking(true);
     setError("");
+    setPendingImport(null);
     try {
       const parsed = parsePgnImport(
         file.name,
@@ -136,7 +144,9 @@ export function ImportDialogBox({
       let sharedPrefixes = parsed.sharedPrefixes;
       let integrityRepertoireId: string | undefined;
       if (usesLocalApi()) {
-        const result = await savePgnImportCommand(file, trainedColor, initialDepth);
+        const result = await savePgnImportCommand(file, trainedColor, initialDepth, {
+          signal: controller.signal, retryBlocked,
+        });
         backend = true;
         if (backend) {
           admitted = result.cards_admitted_today ?? 0;
@@ -147,11 +157,13 @@ export function ImportDialogBox({
           sharedPrefixes = result.shared_prefixes_reused ?? 0;
           if (result.integrity?.status === "needs_repair") integrityRepertoireId = result.repertoire_id;
           admitted = await waitForPublishedAdmission(
-            result.repertoire_id,
+            result.repertoire_id, controller.signal,
           );
+          controller.signal.throwIfAborted();
           await onDatabaseUpdated();
         }
       } else onImported(parsed.repertoire);
+      if (controller.signal.aborted) return;
       setSummary({
         lines,
         duplicates,
@@ -166,6 +178,11 @@ export function ImportDialogBox({
         window.setTimeout(() => window.dispatchEvent(new CustomEvent("tempo:integrity", { detail: { repertoireId: integrityRepertoireId } })), 0);
       }
     } catch (reason) {
+      if (controller.signal.aborted) return;
+      if (reason instanceof PendingOperationError) {
+        setPendingImport(reason);
+        if (!reason.blocked) return;
+      }
       reportDebugError(reason, {
         kind: "ui",
         source: "pgn-import",
@@ -173,13 +190,14 @@ export function ImportDialogBox({
         endpoint: usesLocalApi() ? `${API_URL}/api/imports/pgn` : undefined,
         method: usesLocalApi() ? "POST" : undefined,
       });
-      setError(
+      if (!(reason instanceof PendingOperationError)) setError(
         reason instanceof Error
           ? reason.message
           : "Tempo could not read this PGN.",
       );
     } finally {
-      setWorking(false);
+      importController.current = null;
+      if (!controller.signal.aborted) setWorking(false);
     }
   }
 
@@ -235,6 +253,7 @@ export function ImportDialogBox({
               <TextInput
                 type="file"
                 accept=".pgn"
+                disabled={working}
                 onChange={(event) => {
                   setFile(event.target.files?.[0] ?? null);
                   setError("");
@@ -252,12 +271,14 @@ export function ImportDialogBox({
               <span className="color-toggle">
                 <Button
                   className={trainedColor === "white" ? "active" : ""}
+                  disabled={working}
                   onClick={() => setTrainedColor("white")}
                 >
                   White
                 </Button>
                 <Button
                   className={trainedColor === "black" ? "active" : ""}
+                  disabled={working}
                   onClick={() => setTrainedColor("black")}
                 >
                   Black
@@ -271,12 +292,14 @@ export function ImportDialogBox({
               </span>
               <span className="stepper">
                 <Button
+                  disabled={working}
                   onClick={() => setInitialDepth(Math.max(2, initialDepth - 1))}
                 >
                   −
                 </Button>
                 <b>{initialDepth} user moves</b>
                 <Button
+                  disabled={working}
                   onClick={() =>
                     setInitialDepth(Math.min(20, initialDepth + 1))
                   }
@@ -288,6 +311,7 @@ export function ImportDialogBox({
             {!settingsLoaded && !settingsError && <Notice>Loading import settings…</Notice>}
             {settingsError && <Notice error onRetry={() => { invalidateWorkspaceData(); void loadImportSettings(); }}>{settingsError}</Notice>}
             {error && <p className="editor-error" role="alert">{error}</p>}
+            {pendingImport && <Notice error={pendingImport.blocked}>{pendingImport.message}</Notice>}
             <div className="dialog-footer">
               <span>
                 <i className="status-dot" /> Stored locally
@@ -295,9 +319,9 @@ export function ImportDialogBox({
               <Button
                 variant="primary" className="primary-button"
                 disabled={!file || working || !settingsLoaded}
-                onClick={() => void importFile()}
+                onClick={() => void importFile(pendingImport?.blocked ?? false)}
               >
-                {working ? "Importing…" : "Import repertoire"}
+                {working ? "Importing…" : pendingImport?.blocked ? "Retry blocked import" : pendingImport ? "Check again" : "Import repertoire"}
               </Button>
             </div>
           </>

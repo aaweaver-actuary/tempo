@@ -87,6 +87,8 @@ from .services.repertoire_opportunities import execute_opportunity_slice
 from .services.discovery_admission import (
     execute_admission_intent_slice, execute_recommendation_request_slice,
 )
+from . import integrity_api  # noqa: F401 - registers repair recommendation commands
+from .services.integrity_recommendations import execute_integrity_recommendation_slice
 from .services.postgres_coverage_seed import execute_coverage_seed_slice
 from .services.canonical_prefix_preview import execute_prefix_preview_slice
 from .services.postgres_coverage_explorer import execute_coverage_explorer_slice
@@ -120,6 +122,7 @@ _SUPPORTED_BACKGROUND_KINDS = (
     "opening_segmentation",
     "repertoire_opportunity",
     "discovery_recommendation",
+    "integrity_recommendation",
     "discovery_admission",
     "coverage_seed",
     "canonical_prefix_preview",
@@ -281,6 +284,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
         "opening_segmentation": execute_segmentation_slice,
         "repertoire_opportunity": execute_opportunity_slice,
         "discovery_recommendation": execute_recommendation_request_slice,
+        "integrity_recommendation": execute_integrity_recommendation_slice,
         "discovery_admission": execute_admission_intent_slice,
         "coverage_seed": execute_coverage_seed_slice,
         "canonical_prefix_preview": execute_prefix_preview_slice,
@@ -309,6 +313,7 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
                 "opening_graph_rebuild",
                 "integrity_scan",
                 "opening_segmentation",
+                "integrity_recommendation",
                 "coverage_seed",
                 "canonical_prefix_preview",
                 "coverage_explorer",

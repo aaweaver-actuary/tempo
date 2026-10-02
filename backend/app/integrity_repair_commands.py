@@ -114,7 +114,7 @@ def resolve_integrity_issue(
         _archive_unsupported_card(database, repertoire_id, card_identifier)
     invalidate_integrity_in_transaction(database, repertoire_id)
     return {
-        "task_id": graph_task["id"], "repertoire_id": repertoire_id,
+        "task_id": graph_task["id"], "task_generation": graph_task["generation"], "repertoire_id": repertoire_id,
         "issue_id": prepared.issue_id, "state": graph_task["state"],
     }
 

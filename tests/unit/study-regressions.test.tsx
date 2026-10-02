@@ -13,6 +13,7 @@ import { advanceTacticProgress } from "../../app/lib/tactics-progress";
 import { useTrainingStore } from "../../app/state/training-store";
 import { fetchAndInitializeQueue } from "../../app/views/fetchAndInitializeQueue";
 import { pendingReviews } from "../../app/lib/review-outbox";
+import { INTEGRITY_REPAIR_CONFIRMED } from "../../app/lib/integrity-repair-outbox";
 
 vi.mock("../../app/components/board/chessboard", () => ({
   Chessboard: (props: {
@@ -166,6 +167,47 @@ async function pause(ms = 751) {
 afterEach(() => vi.useRealTimers());
 
 describe("reported study regressions", () => {
+  it("repair confirmation refreshes paused counts without reopening or replacing the active attempt and pending reply", async () => {
+    let confirmed = false; let queueReads = 0;
+    const queueCard = { id: "active-repair-study", queue_entry_id: 1001, start_fen: new Chess().fen(),
+      moves: ["e2e4", "e7e5", "g1f3"], content_type: "opening", repertoire_name: "Active study",
+      repertoire_source: "study.pgn", trained_color: "white" };
+    vi.stubGlobal("fetch", vi.fn(async input => {
+      const url = String(input);
+      if (url.includes("/api/queue/window")) { queueReads++; return Response.json({ cards: [queueCard], count: 1 }); }
+      if (url.endsWith("/api/repertoires")) return Response.json({ repertoires: [{ id: "rep", name: "Repair",
+        source_name: "repair.pgn", trained_color: "white", line_count: 2, card_count: 3,
+        active_prefix_count: 3, new_cards_per_day: null, effective_new_cards_per_day: 10, due_count: 2,
+        integrity_status: confirmed ? "clean" : "needs_repair", integrity_issue_count: confirmed ? 0 : 1,
+        blocked_due_count: confirmed ? 0 : 1 }] });
+      return Response.json({ providers: [], states: [], lines: [] });
+    }));
+    render(<Home />);
+    await screen.findByText("1 opening card paused by repertoire repair.");
+    await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(1001));
+    vi.useFakeTimers();
+    fireEvent.click(screen.getByText("e2e4"));
+    const active = useTrainingStore.getState();
+    const attempt = { ...active.attempt }, fen = active.currentFenString;
+    const readsBefore = queueReads;
+    const boardFocus = screen.getByTestId("board");
+    boardFocus.setAttribute("tabindex", "0"); boardFocus.focus();
+    confirmed = true;
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(INTEGRITY_REPAIR_CONFIRMED, { detail: { repertoireId: "rep" } }));
+      await Promise.resolve(); await Promise.resolve();
+    });
+    expect(screen.queryByText("1 opening card paused by repertoire repair.")).toBeNull();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    expect(document.activeElement).toBe(boardFocus);
+    expect(useTrainingStore.getState().attempt).toEqual(attempt);
+    expect(useTrainingStore.getState().currentFenString).toBe(fen);
+    expect(useTrainingStore.getState().getCard().queueEntryId).toBe(1001);
+    expect(queueReads).toBe(readsBefore);
+    await pause(430);
+    const afterReply = new Chess(); afterReply.move("e4"); afterReply.move("e5");
+    expect(useTrainingStore.getState().currentFenString).toBe(afterReply.fen());
+  });
   it("completed tactic advances while the previous review save is still pending", async () => {
     const first = {
       id: "first-overlap", queue_entry_id: 901, start_fen: new Chess().fen(),

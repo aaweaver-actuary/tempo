@@ -516,7 +516,7 @@ class GameSyncCoordinator:
                                 )
                             else:
                                 advanced = await asyncio.to_thread(handler, item)
-                            if item["kind"] not in {"repertoire_opportunity", "defensive_threat_scan", "priority_retention", "defensive_rubric_audit", "repertoire_game_refresh"} or not advanced:
+                            if item["kind"] not in {"repertoire_opportunity", "defensive_threat_scan", "priority_retention", "defensive_rubric_audit", "repertoire_game_refresh", "integrity_recommendation"} or not advanced:
                                 await asyncio.to_thread(
                                     complete_task,
                                     item["id"],

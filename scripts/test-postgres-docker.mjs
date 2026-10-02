@@ -227,15 +227,46 @@ function stableStudyState(snapshot, repertoireId) {
   };
 }
 
-async function importFixture(sourceName, pgn) {
+async function importFixture(sourceName, pgn, operationId) {
   const form = new FormData();
   form.set("file", new Blob([pgn], { type: "application/x-chess-pgn" }), sourceName);
   form.set("trained_color", "white");
   form.set("initial_depth", "6");
-  const imported = await confirm(await apiRequest("imports/pgn", { method: "POST", body: form },
+  const imported = await confirm(await apiRequest("imports/pgn", {
+    method: "POST", body: form, ...(operationId ? { headers: { "Idempotency-Key": operationId } } : {}),
+  },
     `foreground POST imports/pgn (${sourceName})`));
   assert(imported.repertoire_id, "PGN import returns the persisted repertoire identity");
   return imported;
+}
+
+async function verifyPgnImportReplayWithoutDuplicates(operationId, originalResult, phase) {
+  const before = await get("migration/snapshot");
+  const beforeReceipt = await get(`operations/${operationId}`);
+  assert.equal(beforeReceipt.state, "complete");
+  const replay = await importFixture("recovery-study.pgn", studyDurabilityPgn, operationId);
+  assert.deepEqual(replay, originalResult, "PGN replay returns the original logical command result");
+  const after = await get("migration/snapshot");
+  const importIdentities = (snapshot) => {
+    const tables = snapshot.tables;
+    const links = tables.repertoire_cards.filter(row => row.repertoire_id === originalResult.repertoire_id);
+    const cardIds = new Set(links.map(row => row.card_id));
+    return {
+      repertoires: tables.repertoires.filter(row => row.source_name === "recovery-study.pgn").map(row => row.id).sort(),
+      lines: tables.repertoire_lines.filter(row => row.repertoire_id === originalResult.repertoire_id)
+        .map(row => [row.id, row.start_fen, row.moves_json]).sort(),
+      links: links.map(row => row.card_id).sort(),
+      cards: tables.cards.filter(row => cardIds.has(row.id) || row.repertoire_id === originalResult.repertoire_id)
+        .map(row => row.id).sort(),
+    };
+  };
+  assert(importIdentities(before).lines.length > 0 && importIdentities(before).cards.length > 0,
+    "Replay proof includes persisted source lines and materialized cards");
+  assert.deepEqual(importIdentities(after), importIdentities(before),
+    "PGN replay cannot duplicate repertoire, lines, card links, or cards");
+  assert.deepEqual(await get(`operations/${operationId}`), beforeReceipt,
+    "Completed PGN replay cannot execute another handler attempt");
+  console.log(`PASS verifyPgnImportReplayWithoutDuplicates ${phase}: one receipt/result and unchanged lines/cards`);
 }
 
 async function waitForStudyQueue(repertoireId, minimumCardCount) {
@@ -318,7 +349,8 @@ async function verifyForegroundAndStudyDurability() {
   await postCommand("settings", { ...studySettings, new_cards_per_day: 100, study_new_per_day: 100 }, {
     method: "PUT", label: "foreground PUT study queue allowance",
   });
-  const importedStudy = await importFixture("recovery-study.pgn", studyDurabilityPgn);
+  const pgnImportOperationId = `pg-study-pgn-${randomBytes(12).toString("hex")}`;
+  const importedStudy = await importFixture("recovery-study.pgn", studyDurabilityPgn, pgnImportOperationId);
   activeStudyRepertoireId = importedStudy.repertoire_id;
   const coverageRefreshResponse = await apiRequest(
     `repertoires/${importedStudy.repertoire_id}/coverage/refresh`, {
@@ -331,6 +363,7 @@ async function verifyForegroundAndStudyDurability() {
     method: "PUT", label: "foreground PUT initial study queue refresh",
   });
   await waitForStudyableImport(importedStudy.repertoire_id);
+  await verifyPgnImportReplayWithoutDuplicates(pgnImportOperationId, importedStudy, "before recreation");
   const { cards: studyCards } = await waitForStudyQueue(importedStudy.repertoire_id, 3);
   const reviewCard = studyCards[0];
   const guidedCard = studyCards[1];
@@ -469,6 +502,7 @@ async function verifyForegroundAndStudyDurability() {
   await waitForStudyableImport(importedStudy.repertoire_id);
   await waitForStudyableImport(importedBackground.repertoire_id);
   const afterRestartSnapshot = await get("migration/snapshot");
+  await verifyPgnImportReplayWithoutDuplicates(pgnImportOperationId, importedStudy, "after recreation");
   assert.deepEqual(stableStudyState(afterRestartSnapshot, importedStudy.repertoire_id), beforeRestartState,
     "Authoritative study identities, values, scheduling, annotation, queue, and split survive service recreation");
   const replayedReview = await postCommand(`cards/${reviewCard.id}/review`, reviewBody, {

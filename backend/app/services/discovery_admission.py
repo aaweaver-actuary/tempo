@@ -369,17 +369,28 @@ def recommend_missing_continuations(opportunity_id: str) -> dict:
         return {"state": "unavailable", "opportunity_id": opportunity_id,
                 "reason": "Saved engine evidence is invalid; repair analysis and retry this discovery",
                 "candidates": []}
-    target_key = _position_key(board)
-    best = report.lines[0]
     fields = ("id", "name", "start_fen", "moves_json", "trained_color")
     line_snapshot = tuple(tuple(line[field] for field in fields) for line in lines)
     examples, _ = _cached_repertoire_positions(line_snapshot, game["color"])
+    return {"opportunity_id": opportunity_id, "repertoire_id": repertoire_id,
+            "evidence_fingerprint": fingerprint,
+            **continuation_recommendation(board, request, report, examples, game["color"],
+                {"source_game_id": game["id"], "source_ply": game["ply"]})}
+
+
+def continuation_recommendation(
+    board: chess.Board, request: AnalysisRequest, report, examples: list[dict],
+    learner_color: str, source: dict, *, rank: bool = True,
+) -> dict:
+    """Shared engine-quality, familiarity and legal continuation policy."""
+    target_key = _position_key(board)
+    best = report.lines[0]
     accepted = sorted({example["next_move"] for example in examples
                        if example["position_key"] == target_key and example["learner_turn"]
                        and example["next_move"]})
     example_positions = {example["position_key"] for example in examples}
     sound_candidates = []
-    learner_sign = 1 if game["color"] == "white" else -1
+    learner_sign = 1 if learner_color == "white" else -1
     for line in report.lines[:5]:
         try:
             root_move = chess.Move.from_uci(line.root_move_uci)
@@ -405,7 +416,7 @@ def recommend_missing_continuations(opportunity_id: str) -> dict:
             if move not in continuation.legal_moves:
                 legal = False
                 break
-            if continuation.turn == (game["color"] == "white"):
+            if continuation.turn == (learner_color == "white"):
                 learner_decisions += 1
             preview_moves.append(move_uci)
             continuation.push(move)
@@ -427,7 +438,7 @@ def recommend_missing_continuations(opportunity_id: str) -> dict:
         ))
         nearest = ranked_examples[0] if ranked_examples else None
         comparable_examples = _comparable_move_examples(
-            examples, board, game["color"], line.root_move_uci)
+            examples, board, learner_color, line.root_move_uci)
         same_move_example = comparable_examples[0] if comparable_examples else None
         transposition = nearest if nearest and nearest["position_key"] == after_key else None
         familiar_example = transposition or same_move_example
@@ -444,11 +455,12 @@ def recommend_missing_continuations(opportunity_id: str) -> dict:
             "preview_moves_uci": preview_moves,
             "engine_version": request.engine_version, "network_version": request.network_version,
             "depth": line.depth, "report_id": report.report_id,
-            "source_game_id": game["id"], "source_ply": game["ply"],
+            **source,
         })
-    sound_candidates = _rank_candidates(sound_candidates)
-    for candidate in sound_candidates:
-        del candidate["familiar"]
+    if rank:
+        sound_candidates = _rank_candidates(sound_candidates)
+        for candidate in sound_candidates:
+            del candidate["familiar"]
     engine_lines = []
     for line in report.lines[:5]:
         loss_cp = (learner_sign * (best.score.cp - line.score.cp)
@@ -457,8 +469,7 @@ def recommend_missing_continuations(opportunity_id: str) -> dict:
                              "score": asdict(line.score), "loss_cp": loss_cp,
                              "depth": line.depth})
     return {"state": "ready" if sound_candidates else "unavailable",
-            "opportunity_id": opportunity_id, "repertoire_id": repertoire_id,
-            "evidence_fingerprint": fingerprint, "starting_fen": board.fen(),
+            "starting_fen": board.fen(),
             "accepted_moves_uci": accepted, "candidates": sound_candidates,
             "suggested_move_uci": sound_candidates[0]["move_uci"] if sound_candidates else None,
             "suggestion_reason": (sound_candidates[0]["similarity"] if sound_candidates else None),

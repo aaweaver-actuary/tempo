@@ -19,7 +19,7 @@ development services may connect to the live study instance.
 
 ## Persistence and boundaries
 
-Migration 030 stores UCI moves, a monotonically increasing prefix revision, and
+Migration 031 stores UCI moves, a monotonically increasing prefix revision, and
 an active compatibility preview per repertoire. Empty moves mean unrestricted
 analysis. SAN and the endpoint FEN are derived from legal moves from the standard
 starting position. Saving the same prefix preserves its revision and refreshes
@@ -88,7 +88,7 @@ history and the live instance; do not merge the PR.
 
 ## Review fixes and boundary audit
 
-Migration 031 ties each position certificate to `scope_source_revision`. Unknown
+Migration 032 ties each position certificate to `scope_source_revision`. Unknown
 legacy certificates default to -1 and fail closed until checked. Every origin
 lookup joins the certificate to the current repertoire revision. Historical result
 origins are reusable for prefix shortening only while their source revision is
@@ -146,7 +146,7 @@ durability workflow. CI owns complete final-head/current-base validation. Keep
 the existing scope/admission, SQLite atomicity, preview retention/recovery, and
 study history protections. Do not merge PR #66 or touch the live study instance.
 
-## Derived publication identity (migration 032)
+## Derived publication identity (migration 033)
 
 Four versions serve different purposes:
 
@@ -198,3 +198,14 @@ opportunity race also uses a controlled pre-fix publication fence). Real Postgre
 proofs run through regular durable handlers, with pool recreation between slices;
 graph scheduling and graph writes are not mocked. CI owns the final complete
 candidate validation. The live study instance is outside every development runner.
+
+## Current-main integration
+
+Main's migration 030 now belongs to guided integrity recommendations (PR #67).
+The unpublished canonical migrations therefore occupy 031–033, preserving the
+already merged migration and a contiguous upgrade path. Both router/task
+registrations and route contracts remain available. Main's durable PGN import
+recovery (PR #68) keeps its original receipt semantics. After integrating these
+changes, run focused schema/route, canonical scope, repair/discovery and import
+contract cases first; the new complete CI candidate supplies PostgreSQL durability,
+all browser workflows, pinned checks and final current-base validation.

@@ -383,6 +383,7 @@ export const integrityResolutionSchema = z.strictObject({
 });
 export const integrityRepairSubmissionSchema = z.strictObject({
   task_id: z.string(),
+  task_generation: z.number().int().positive().optional(),
   repertoire_id: repertoireIdSchema,
   issue_id: z.string(),
   state: z.enum(["queued", "leased", "retrying", "complete", "failed"]),
@@ -966,6 +967,18 @@ export const discoveryRecommendationSchema = z.strictObject({
     report_id: z.string(),
     source_game_id: z.string(), source_ply: integer,
   })),
+});
+export const integrityRecommendationSchema = z.strictObject({
+  state: z.enum(["ready", "waiting", "unavailable", "failed"]),
+  repertoire_id: z.string(), issue_id: z.string(), signature: z.string(),
+  starting_fen: fenStringSchema.optional(), trained_color: colorSchema.optional(),
+  route_start_fen: fenStringSchema.optional(), route_uci: z.array(uciMoveSchema).optional(),
+  reason: z.string().nullable().optional(),
+  accepted_moves_uci: z.array(uciMoveSchema).optional(),
+  suggested_move_uci: uciMoveSchema.nullable().optional(), suggestion_reason: z.string().nullable().optional(),
+  engine_lines: discoveryRecommendationSchema.shape.engine_lines,
+  candidates: z.array(discoveryRecommendationSchema.shape.candidates.element
+    .omit({ source_game_id: true }).extend({ source_type: z.enum(["line", "card"]), source_id: z.string() })),
 });
 export const progressResponseSchema = z.strictObject({
   states: z.record(z.string(), integer),
