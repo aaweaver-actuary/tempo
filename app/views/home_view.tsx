@@ -193,6 +193,7 @@ export default function Home() {
     currentFenString,
     currentStepIndex: step,
     isViewLocked: isLocked,
+    attempt,
     cardsLeft,
     reviewed,
     showImport,
@@ -1392,6 +1393,10 @@ export default function Home() {
             interactionBlocked={Boolean(
               editorCard || showImport || pasteContext || repairRepertoireId,
             )}
+            speculativePreparationPaused={
+              (currentView === "train" && !["feedbackPause", "complete"].includes(attempt.phase)) ||
+              (["tactics", "endgames", "builder"] as View[]).includes(currentView)
+            }
             safeBreakCounter={safeBreakCounter}
             onOpenRepertoire={() => changeWorkspace("repertoire")}
             onOpenBuilder={openDiscoveryInBuilder}

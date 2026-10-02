@@ -1,4 +1,5 @@
 "use client";
+import { DiscoveryPreviewScheduler, DiscoveryPreviewValidationCache, type DiscoveryPreviewWork } from "../lib/discovery-preview-scheduler";
 import { historyKeyboardActions, usePopupKeyboard } from "../lib/keyboard-shortcuts";
 import { measureTempoDragPhase } from "../lib/performance";
 import { Button } from "./buttons/BaseButton";
@@ -40,17 +41,12 @@ export type DiscoveryItem = z.infer<typeof discoveriesFeedSchema>["discoveries"]
 type Recommendation = z.infer<typeof discoveryRecommendationSchema>;
 type TrainingEligibility = z.infer<typeof discoveryTrainingEligibilitySchema>;
 type PreviewStatus = "waiting" | "unavailable" | "failed";
-const previewRetryDelayMs = 30_000;
 const previewConcurrency = 2;
+const feedRefreshDelayMs = 30_000;
 
-async function withConcurrency<T>(items: T[], limit: number, visit: (item: T) => Promise<void>) {
-  let nextIndex = 0;
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, async () => {
-    while (nextIndex < items.length) {
-      const item = items[nextIndex++];
-      if (item !== undefined) await visit(item);
-    }
-  }));
+function previewDecisionIdentity(item: DiscoveryItem): string {
+  return JSON.stringify([item.evidence_fingerprint, item.fen, item.decision_fen,
+    item.kind, item.opponent_move_uci, item.trained_color]);
 }
 
 async function inactiveDiscoveryPreview(response: Response): Promise<boolean> {
@@ -204,9 +200,11 @@ function recommendationMoves(fen: string, preview?: Recommendation): CandidateMo
 }
 
 export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlocked = false,
+  speculativePreparationPaused = false,
   onOpenRepertoire, onOpenBuilder, onQueueChanged, boardTheme = "brown", pieceSet = "cburnett",
   openRequest }: {
   safeToOpen: boolean; safeBreakCounter: number; interactionBlocked?: boolean;
+  speculativePreparationPaused?: boolean;
   onOpenRepertoire?: () => void;
   onOpenBuilder?: (discovery: DiscoveryItem, selectedMove: string | null) => void;
   onQueueChanged: () => Promise<void>;
@@ -231,12 +229,14 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   const [error, setError] = useState<string | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [previews, setPreviews] = useState<Record<string, Recommendation>>({});
+  const [validatedPreviews, setValidatedPreviews] = useState<Record<string, {
+    decision: string; recommendation: Recommendation;
+  }>>({});
   const [previewFingerprints, setPreviewFingerprints] = useState<Record<string, string>>({});
   const [previewStatuses, setPreviewStatuses] = useState<Record<string, PreviewStatus>>({});
   const [trainingEligibility, setTrainingEligibility] = useState<Record<string, TrainingEligibility>>({});
   const [eligibilityErrors, setEligibilityErrors] = useState<Record<string, string>>({});
   const [feedLoaded, setFeedLoaded] = useState(() => !usesLocalApi());
-  const [initialPreflightComplete, setInitialPreflightComplete] = useState(() => !usesLocalApi());
   const [initialAdmissionFlushFinished, setInitialAdmissionFlushFinished] = useState(() => !usesLocalApi());
   const [explorer, setExplorer] = useState<ExplorerResult | null>(null);
   const [engine, setEngine] = useState<CandidateMove[]>([]);
@@ -246,17 +246,37 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   const openedIds = useRef(new Set<string>());
   const suppressedIds = useRef(new Set<string>());
   const requestedEvidenceRefreshes = useRef(new Set<string>());
-  const requestedPreflights = useRef(new Set<string>());
-  const nextPreflightRetryAt = useRef(new Map<string, number>());
   const stalePreviewKeys = useRef(new Set<string>());
   const currentFeedItems = useRef(new Map<string, DiscoveryItem>());
   const previewGenerations = useRef(new Map<string, number>());
   const eligibilityGenerations = useRef(new Map<string, number>());
   const eligibilityRequests = useRef(new Map<string, { key: string; generation: number }>());
-  const initialPreflightStarted = useRef(false);
   const pendingSafeBreak = useRef(false);
-  const preflightState = useRef({ discoveries, previewFingerprints, previewStatuses });
+  const closedPreparationIds = useRef<string[]>([]);
+  const previewResultState = useRef({ previews, previewStatuses });
+  useEffect(() => { previewResultState.current = { previews, previewStatuses }; }, [previews, previewStatuses]);
+  const schedulerRef = useRef<DiscoveryPreviewScheduler | null>(null);
+  const lifetime = useRef(0);
+  const trailingRefresh = useRef<Promise<void> | null>(null);
+  const lastFeedRefreshAt = useRef<number | null>(null);
+  const deferredFeedRefresh = useRef(false);
+  const feedController = useRef<AbortController | null>(null);
+  const demandState = useRef({ open, paused: interactionBlocked || speculativePreparationPaused });
+  useEffect(() => { demandState.current = { open, paused: interactionBlocked || speculativePreparationPaused }; },
+    [open, interactionBlocked, speculativePreparationPaused]);
+  const [browserDemand, setBrowserDemand] = useState(0);
+  const validationCache = useRef<DiscoveryPreviewValidationCache | null>(null);
+  const previewIdentity = useCallback((item: DiscoveryItem) => JSON.stringify([
+    item.id, item.evidence_fingerprint, previewGenerations.current.get(item.id) ?? 0,
+  ]), []);
+  const matchesPreview = useCallback((item: DiscoveryItem, recommendation: Recommendation) =>
+    validationCache.current!.matches(previewIdentity(item), previewDecisionIdentity(item), recommendation,
+      () => previewMatchesDecision(item, recommendation)), [previewIdentity]);
+  const automaticFeedAllowed = useCallback(() => document.visibilityState === "visible" &&
+    navigator.onLine !== false && (demandState.current.open || !demandState.current.paused), []);
   const refreshInFlight = useRef<Promise<void> | null>(null);
+  const previewFingerprintState = useRef(previewFingerprints);
+  useEffect(() => { previewFingerprintState.current = previewFingerprints; }, [previewFingerprints]);
   const staleRefreshInFlight = useRef<Promise<void> | null>(null);
   const lastSafeBreak = useRef(safeBreakCounter);
   const lastOpenRequestToken = useRef(openRequest?.token);
@@ -266,7 +286,6 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   const [completedAdmissions, setCompletedAdmissions] = useState<string[]>([]);
   const outboxRecoveryStarted = useRef(false);
   const readyDiscoveries = useMemo(() => discoveries.filter((item) => {
-    if (!initialPreflightComplete) return false;
     if (item.admission_state === "preparing" || item.admission_state === "queued" ||
         completedAdmissions.includes(`${item.id}:${item.evidence_fingerprint}`)) return false;
     if (item.card_id) return true;
@@ -274,8 +293,9 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     return previewFingerprints[item.id] === item.evidence_fingerprint &&
       recommendation?.state === "ready" &&
       recommendation.evidence_fingerprint === item.evidence_fingerprint &&
-      previewMatchesDecision(item, recommendation);
-  }), [discoveries, initialPreflightComplete, previews, previewFingerprints, completedAdmissions]);
+      validatedPreviews[item.id]?.recommendation === recommendation &&
+      validatedPreviews[item.id]?.decision === previewDecisionIdentity(item);
+  }), [discoveries, previews, previewFingerprints, validatedPreviews, completedAdmissions]);
   const visibleDiscoveries = useMemo(() => readyDiscoveries.filter((item) => !item.snoozed_until ||
     new Date(item.snoozed_until).getTime() <= currentTime), [readyDiscoveries, currentTime]);
   const reviewItems = useMemo(() => sessionItems.length ? sessionItems.filter((item) =>
@@ -309,7 +329,9 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   const fen = active ? decisionFen(active) : "";
   const legalDecisionMoves = useMemo(() => fen ? decisionMoves(fen) : new Set<string>(), [fen]);
   const savedPreview = active ? previews[active.id] : undefined;
-  const preview = active && savedPreview?.state === "ready" && !previewMatchesDecision(active, savedPreview)
+  const preview = active && savedPreview?.state === "ready" &&
+    (validatedPreviews[active.id]?.recommendation !== savedPreview ||
+      validatedPreviews[active.id]?.decision !== previewDecisionIdentity(active))
     ? undefined : savedPreview;
   const selectedMove = active
     ? (manualSelections[active.id] ??
@@ -328,32 +350,42 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   );
 
   useEffect(() => {
-    if (!open || sessionItems.length || !visibleDiscoveries.length) return;
+    if (!open || !visibleDiscoveries.length) return;
     const timer = window.setTimeout(() => {
-      setSessionItems(visibleDiscoveries);
+      setSessionItems((current) => {
+        const ids = new Set(current.map(item => item.id));
+        // A command refresh can replace the feed before this timer runs.
+        const additions = visibleDiscoveries.filter(item => currentFeedItems.current.get(item.id) === item &&
+          !ids.has(item.id) && !completedAdmissions.includes(`${item.id}:${item.evidence_fingerprint}`));
+        if (!additions.length) return current;
+        return [...current, ...additions].sort((left, right) =>
+          discoveries.findIndex(item => item.id === left.id) - discoveries.findIndex(item => item.id === right.id));
+      });
       if (activeId === null) setActiveId(visibleDiscoveries[0].id);
     }, 0);
     return () => window.clearTimeout(timer);
-  }, [open, sessionItems.length, visibleDiscoveries, activeId]);
+  }, [open, visibleDiscoveries, activeId, completedAdmissions, discoveries]);
 
-
-  useEffect(() => {
-    preflightState.current = { discoveries, previewFingerprints, previewStatuses };
-  }, [discoveries, previewFingerprints, previewStatuses]);
-
-  const loadFeed = useCallback(async (): Promise<void> => {
+  const loadFeed = useCallback(async (force = false): Promise<void> => {
+    const requestLifetime = lifetime.current;
+    const controller = new AbortController();
+    feedController.current = controller;
+    const isCurrent = () => requestLifetime === lifetime.current && !controller.signal.aborted;
     try {
       const pages: Array<z.infer<typeof discoveriesFeedSchema>> = [];
       let offset: number | null = 0;
       while (offset !== null) {
-        const response = await backgroundFetch(`${API_URL}/api/discoveries?offset=${offset}&limit=100`);
+        if (!isCurrent()) return;
+        if (!force && !automaticFeedAllowed()) { deferredFeedRefresh.current = true; return; }
+        const response = await backgroundFetch(`${API_URL}/api/discoveries?offset=${offset}&limit=100`, { signal: controller.signal });
         const page = await readJsonResponse(response, discoveriesFeedSchema, "discoveries");
+        if (!isCurrent()) return;
         pages.push(page);
         offset = page.next_offset;
       }
       const byId = new Map(pages.flatMap((page) => page.discoveries).map((item) => [item.id, item]));
-      const currentPreviewKeys = new Set([...byId.values()].map((item) =>
-        `${item.id}:${item.evidence_fingerprint}`));
+
+      const changedPreviewIds = new Set<string>();
       for (const id of new Set([...currentFeedItems.current.keys(), ...byId.keys()])) {
         const previousItem = currentFeedItems.current.get(id);
         const nextItem = byId.get(id);
@@ -362,30 +394,46 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
           eligibilityGenerations.current.set(id, (eligibilityGenerations.current.get(id) ?? 0) + 1);
           eligibilityRequests.current.delete(id);
         }
-        const previousFingerprint = previousItem?.evidence_fingerprint;
-        const nextFingerprint = byId.get(id)?.evidence_fingerprint;
-        if (previousFingerprint !== nextFingerprint)
-          previewGenerations.current.set(id, (previewGenerations.current.get(id) ?? 0) + 1);
+        if ((previousItem ? previewDecisionIdentity(previousItem) : undefined) !==
+            (nextItem ? previewDecisionIdentity(nextItem) : undefined))
+          {
+            previewGenerations.current.set(id, (previewGenerations.current.get(id) ?? 0) + 1);
+            changedPreviewIds.add(id);
+          }
       }
       currentFeedItems.current = byId;
-      for (const key of nextPreflightRetryAt.current.keys())
-        if (!currentPreviewKeys.has(key)) nextPreflightRetryAt.current.delete(key);
+      const currentIdentities = new Set([...byId.values()].map(previewIdentity));
+      validationCache.current!.retain(currentIdentities);
+      // Fence obsolete responses immediately, before React commits the new feed.
+      schedulerRef.current?.update(currentIdentities, []);
       for (const key of stalePreviewKeys.current)
-        if (!currentPreviewKeys.has(key)) stalePreviewKeys.current.delete(key);
-      const currentPreviewIds = new Set(Object.entries(preflightState.current.previewFingerprints)
-        .filter(([id, fingerprint]) => byId.get(id)?.evidence_fingerprint === fingerprint)
-        .map(([id]) => id));
+        if (!currentIdentities.has(key)) stalePreviewKeys.current.delete(key);
+      // Result writes may share this React batch with the refresh. Preserve
+      // unchanged ownership directly; the rendered-result ref can lag those writes.
+      const currentPreviewIds = new Set([...byId.keys()].filter(id => !changedPreviewIds.has(id)));
       setPreviews((current) => Object.fromEntries(Object.entries(current).filter(
         ([id]) => currentPreviewIds.has(id))));
       setPreviewFingerprints((current) => Object.fromEntries(Object.entries(current).filter(
-        ([id, fingerprint]) => byId.get(id)?.evidence_fingerprint === fingerprint)));
+        ([id, fingerprint]) => !changedPreviewIds.has(id) && byId.get(id)?.evidence_fingerprint === fingerprint)));
       setPreviewStatuses((current) => Object.fromEntries(Object.entries(current).filter(
+        ([id]) => currentPreviewIds.has(id))));
+      setValidatedPreviews((current) => Object.fromEntries(Object.entries(current).filter(
         ([id]) => currentPreviewIds.has(id))));
       const currentEligibilityKeys = new Set([...byId.values()].map(eligibilityKey));
       setTrainingEligibility((current) => Object.fromEntries(Object.entries(current).filter(
         ([key]) => currentEligibilityKeys.has(key))));
       setEligibilityErrors((current) => Object.fromEntries(Object.entries(current).filter(
         ([key]) => currentEligibilityKeys.has(key))));
+      const closedCandidates = [...byId.values()].filter(item => !item.card_id &&
+        item.admission_state !== "preparing" &&
+        (!item.snoozed_until || new Date(item.snoozed_until).getTime() <= Date.now()) &&
+        (changedPreviewIds.has(item.id) || previewFingerprintState.current[item.id] !== item.evidence_fingerprint ||
+          (previewResultState.current.previews[item.id]?.state !== "ready" &&
+            previewResultState.current.previewStatuses[item.id] !== "unavailable")));
+      const unreadCandidate = closedCandidates.find(item => item.unread &&
+        !openedIds.current.has(item.id) && !suppressedIds.current.has(item.id));
+      closedPreparationIds.current = [...new Set([...(unreadCandidate ? [unreadCandidate.id] : []),
+        ...closedCandidates.map(item => item.id)])].slice(0, 2);
       setDiscoveries([...byId.values()]);
       setSessionItems((current) => current.flatMap((item) => {
         const replacement = byId.get(item.id);
@@ -396,15 +444,19 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
         return pendingId && (!refreshedItem || hasCurrentRecurringEvidence(refreshedItem)) ? null : pendingId;
       });
       setCurrentTime(Date.now());
+      lastFeedRefreshAt.current = performance.now();
+      deferredFeedRefresh.current = false;
       setFeedLoaded(true);
       setError(null);
-    } catch (cause) { setError(cause instanceof Error ? cause.message : "Could not load discoveries"); }
-  }, []);
+    } catch (cause) {
+      if (isCurrent()) setError(cause instanceof Error ? cause.message : "Could not load discoveries");
+    } finally { if (feedController.current === controller) feedController.current = null; }
+  }, [automaticFeedAllowed, previewIdentity]);
 
-  const startRefresh = useCallback((): Promise<void> => {
+  const startRefresh = useCallback((force = false): Promise<void> => {
     const currentRefresh = refreshInFlight.current;
     if (currentRefresh) return currentRefresh;
-    const pendingRefresh = loadFeed();
+    const pendingRefresh = loadFeed(force);
     refreshInFlight.current = pendingRefresh;
     void pendingRefresh.finally(() => {
       if (refreshInFlight.current === pendingRefresh) refreshInFlight.current = null;
@@ -414,11 +466,19 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
 
   const refresh = useCallback((force = false): Promise<void> => {
     if (!usesLocalApi()) return Promise.resolve();
+    if (!force && !automaticFeedAllowed()) { deferredFeedRefresh.current = true; return Promise.resolve(); }
     const currentRefresh = refreshInFlight.current;
-    return force && currentRefresh
-      ? currentRefresh.then(startRefresh)
-      : startRefresh();
-  }, [startRefresh]);
+    if (force && currentRefresh) {
+      if (!trailingRefresh.current) {
+        const requestLifetime = lifetime.current;
+        const pending = currentRefresh.then(() => requestLifetime === lifetime.current ? startRefresh(true) : undefined);
+        trailingRefresh.current = pending;
+        void pending.finally(() => { if (trailingRefresh.current === pending) trailingRefresh.current = null; });
+      }
+      return trailingRefresh.current;
+    }
+    return startRefresh(force);
+  }, [automaticFeedAllowed, startRefresh]);
 
   const refreshAfterInactivePreview = useCallback(() => {
     if (staleRefreshInFlight.current) return;
@@ -504,47 +564,46 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     });
   }, [active, trainingEligibility, eligibilityErrors, checkTrainingEligibility, isEligibilityCurrent]);
 
-  useEffect(() => {
-    if (!usesLocalApi()) return;
-    const initialTimer = window.setTimeout(() => void refresh(), 0);
-    const interval = window.setInterval(() => void refresh(), 30_000);
-    return () => { window.clearTimeout(initialTimer); window.clearInterval(interval); };
-  }, [refresh]);
-
-  const loadPreview = useCallback(async (item: DiscoveryItem): Promise<void> => {
-    const key = `${item.id}:${item.evidence_fingerprint}`;
-    const requestGeneration = previewGenerations.current.get(item.id);
-    const isCurrent = () => currentFeedItems.current.get(item.id)?.evidence_fingerprint === item.evidence_fingerprint &&
-      previewGenerations.current.get(item.id) === requestGeneration;
-    if (requestedPreflights.current.has(key) ||
-        (stalePreviewKeys.current.has(key) &&
-          performance.now() < (nextPreflightRetryAt.current.get(key) ?? 0)) || !isCurrent()) return;
-    requestedPreflights.current.add(key);
+  const loadPreview = useCallback(async (work: DiscoveryPreviewWork, context: {
+    signal: AbortSignal; isCurrent: () => boolean;
+  }): Promise<"complete" | "retry"> => {
+    const item = currentFeedItems.current.get(work.discoveryId);
+    if (!item || previewIdentity(item) !== work.identity || !context.isCurrent()) return "complete";
+    const key = work.identity;
+    const isCurrent = () => context.isCurrent() &&
+      currentFeedItems.current.get(item.id) !== undefined &&
+      previewIdentity(currentFeedItems.current.get(item.id)!) === key;
     const finishPreview = measureTempoDragPhase("discovery-preview");
     let previewFailed = false;
     try {
-      const response = await backgroundFetch(`${API_URL}/api/discoveries/${item.id}/recommendations`);
-      if (!isCurrent()) return;
+      const response = await backgroundFetch(`${API_URL}/api/discoveries/${item.id}/recommendations`, { signal: context.signal });
+      if (!isCurrent()) return "complete";
       if (await inactiveDiscoveryPreview(response)) {
         if (isCurrent()) {
           stalePreviewKeys.current.add(key);
           setPreviews((current) => { const next = { ...current }; delete next[item.id]; return next; });
           setPreviewFingerprints((current) => { const next = { ...current }; delete next[item.id]; return next; });
           setPreviewStatuses((current) => { const next = { ...current }; delete next[item.id]; return next; });
-          nextPreflightRetryAt.current.set(key, performance.now() + previewRetryDelayMs);
+          setValidatedPreviews((current) => { const next = { ...current }; delete next[item.id]; return next; });
           refreshAfterInactivePreview();
         }
-        return;
+        return "retry";
       }
       const result = await readJsonResponse(response, discoveryRecommendationSchema, "continuation preview");
-      if (!isCurrent()) return;
+      if (!isCurrent()) return "complete";
       stalePreviewKeys.current.delete(key);
       const unusableReadyResult = result.state === "ready" &&
-        (result.evidence_fingerprint !== item.evidence_fingerprint || !previewMatchesDecision(item, result));
+        (result.evidence_fingerprint !== item.evidence_fingerprint || !matchesPreview(item, result));
       const checkedResult: Recommendation = unusableReadyResult
         ? { state: "unavailable", opportunity_id: item.id, candidates: [],
             reason: "Discovery position and recommendation disagree; refresh evidence or inspect it in Builder" }
         : result;
+      setValidatedPreviews((current) => {
+        const remaining = { ...current }; delete remaining[item.id];
+        return checkedResult.state === "ready" ? { ...remaining, [item.id]: {
+          decision: previewDecisionIdentity(item), recommendation: checkedResult,
+        } } : remaining;
+      });
       setPreviews((current) => ({ ...current, [item.id]: checkedResult }));
       setPreviewFingerprints((current) => ({ ...current, [item.id]: item.evidence_fingerprint }));
       setPreviewStatuses((current) => {
@@ -554,59 +613,111 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
           ? checkedResult.state : null;
         return status ? { ...remaining, [item.id]: status } : remaining;
       });
-      if (checkedResult.state === "waiting")
-        nextPreflightRetryAt.current.set(key, performance.now() + previewRetryDelayMs);
-      else nextPreflightRetryAt.current.delete(key);
+      return checkedResult.state === "waiting" ? "retry" : "complete";
     } catch (cause) {
       previewFailed = true;
-      if (!isCurrent()) return;
+      if (!isCurrent()) return "complete";
       stalePreviewKeys.current.delete(key);
       reportDebugError(cause, { kind: "api", source: "discovery preview",
         endpoint: `${API_URL}/api/discoveries/${item.id}/recommendations` });
       setPreviewFingerprints((current) => ({ ...current, [item.id]: item.evidence_fingerprint }));
       setPreviewStatuses((current) => ({ ...current, [item.id]: "failed" }));
-      nextPreflightRetryAt.current.set(key, performance.now() + previewRetryDelayMs);
-    } finally {
-      finishPreview(previewFailed);
-      requestedPreflights.current.delete(key);
-      const replacement = currentFeedItems.current.get(item.id);
-      if (replacement && !replacement.card_id &&
-          replacement.evidence_fingerprint === item.evidence_fingerprint &&
-          previewGenerations.current.get(item.id) !== requestGeneration)
-        setDiscoveries((current) => [...current]);
-    }
-  }, [refreshAfterInactivePreview]);
+      return "retry";
+    } finally { finishPreview(previewFailed); }
+  }, [matchesPreview, previewIdentity, refreshAfterInactivePreview]);
 
   useEffect(() => {
-    if (!feedLoaded || !initialAdmissionFlushFinished) return;
-    const preflightItems = discoveries.filter((item) => !item.card_id &&
-      !stalePreviewKeys.current.has(`${item.id}:${item.evidence_fingerprint}`) &&
-      (previewFingerprints[item.id] !== item.evidence_fingerprint ||
-        (!previews[item.id] && !previewStatuses[item.id])));
-    if (!initialPreflightComplete) {
-      if (initialPreflightStarted.current) return;
-      initialPreflightStarted.current = true;
-      void withConcurrency(preflightItems, previewConcurrency, loadPreview).finally(() => setInitialPreflightComplete(true));
-    } else if (preflightItems.length) {
-      void withConcurrency(preflightItems, previewConcurrency, loadPreview);
-    }
-  }, [feedLoaded, initialAdmissionFlushFinished, discoveries, previewFingerprints, previews, previewStatuses,
-    initialPreflightComplete, loadPreview]);
+    const componentLifetime = ++lifetime.current;
+    const scheduler = new DiscoveryPreviewScheduler(loadPreview, previewConcurrency, () => performance.now(), 30_000,
+      work => navigator.onLine !== false && (document.visibilityState === "visible"
+        ? demandState.current.open || !demandState.current.paused
+        : demandState.current.open && work.priority === "explicit"));
+    schedulerRef.current = scheduler;
+    validationCache.current = new DiscoveryPreviewValidationCache(cacheHit => scheduler.recordValidation(cacheHit));
+    const tray = triggerRef.current?.closest("aside");
+    // Bounded snapshots are available to tests and browser debug inspection;
+    // scheduler bookkeeping never causes a render merely for diagnostics.
+    if (tray) Object.defineProperty(tray, "discoveryPreviewDiagnostics", {
+      configurable: true, value: () => scheduler.snapshot(),
+    });
+    return () => {
+      lifetime.current = componentLifetime + 1;
+      scheduler.dispose();
+      if (schedulerRef.current === scheduler) schedulerRef.current = null;
+      feedController.current?.abort();
+      validationCache.current!.clear();
+      if (tray) Reflect.deleteProperty(tray, "discoveryPreviewDiagnostics");
+    };
+  }, [loadPreview]);
 
   useEffect(() => {
-    if (!initialPreflightComplete) return;
-    const retryTimer = window.setInterval(() => {
-      const { discoveries: currentDiscoveries, previewFingerprints: currentFingerprints,
-        previewStatuses: currentStatuses } = preflightState.current;
-      const waitingItems = currentDiscoveries.filter((item) => !item.card_id &&
-        performance.now() >= (nextPreflightRetryAt.current.get(`${item.id}:${item.evidence_fingerprint}`) ?? 0) &&
-        (stalePreviewKeys.current.has(`${item.id}:${item.evidence_fingerprint}`) ||
-          (currentFingerprints[item.id] === item.evidence_fingerprint &&
-            (currentStatuses[item.id] === "waiting" || currentStatuses[item.id] === "failed"))));
-      void withConcurrency(waitingItems, previewConcurrency, loadPreview);
-    }, 3_000);
-    return () => window.clearInterval(retryTimer);
-  }, [initialPreflightComplete, loadPreview]);
+    if (!usesLocalApi()) return;
+    const wake = () => {
+      setBrowserDemand((current) => current + 1);
+      if (automaticFeedAllowed() && (deferredFeedRefresh.current || lastFeedRefreshAt.current === null ||
+          performance.now() - lastFeedRefreshAt.current >= feedRefreshDelayMs)) void refresh();
+    };
+    const initialTimer = window.setTimeout(wake, 0);
+    const interval = window.setInterval(() => void refresh(), feedRefreshDelayMs);
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("online", wake);
+    window.addEventListener("offline", wake);
+    return () => {
+      window.clearTimeout(initialTimer); window.clearInterval(interval);
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("online", wake); window.removeEventListener("offline", wake);
+    };
+  }, [automaticFeedAllowed, refresh]);
+
+  useEffect(() => {
+    if (automaticFeedAllowed() && (deferredFeedRefresh.current || lastFeedRefreshAt.current === null ||
+        performance.now() - lastFeedRefreshAt.current >= feedRefreshDelayMs)) void refresh();
+  }, [open, interactionBlocked, speculativePreparationPaused, automaticFeedAllowed, refresh]);
+
+  useEffect(() => {
+    const currentItems = [...currentFeedItems.current.values()];
+    const identities = currentItems.map(previewIdentity);
+    const demand: DiscoveryPreviewWork[] = [];
+    const online = navigator.onLine !== false;
+    const visible = document.visibilityState === "visible";
+    const add = (item: DiscoveryItem | undefined, priority: DiscoveryPreviewWork["priority"]) => {
+      if (!item || item.card_id || item.admission_state === "preparing" || item.admission_state === "queued" ||
+          completedAdmissions.includes(`${item.id}:${item.evidence_fingerprint}`)) return;
+      const identity = previewIdentity(item);
+      if (demand.some(work => work.identity === identity)) return;
+      demand.push({ identity, discoveryId: item.id, priority,
+        feedOrder: currentItems.findIndex(candidate => candidate.id === item.id) });
+    };
+    if (feedLoaded && initialAdmissionFlushFinished && online) {
+      if (open) {
+        const requested = currentItems.find(item => item.id === activeId);
+        add(requested, "explicit");
+        if (visible) {
+          const candidates = currentItems.filter(item => !completedAdmissions.includes(`${item.id}:${item.evidence_fingerprint}`) &&
+            item.admission_state !== "preparing" && item.admission_state !== "queued" && previewStatuses[item.id] !== "unavailable" &&
+            (!item.snoozed_until || new Date(item.snoozed_until).getTime() <= currentTime));
+          const index = candidates.findIndex(item => item.id === activeId);
+          const isStalled = (item: DiscoveryItem) => previewStatuses[item.id] === "waiting" ||
+            previewStatuses[item.id] === "failed";
+          // Keep retry demand without consuming productive preparation slots.
+          // The scheduler owns each identity's existing backoff deadline.
+          for (const item of candidates.filter(isStalled)) add(item, "look-ahead");
+          const lookAhead = candidates.slice(index < 0 ? 0 : index + 1).filter(item => !isStalled(item));
+          // Fill unused slots from productive preceding entries as well.
+          const preceding = candidates.slice(0, Math.max(0, index)).reverse().filter(item => !isStalled(item));
+          for (const item of [...lookAhead, ...preceding].slice(0, 2)) add(item, "look-ahead");
+        }
+      } else if (visible && !interactionBlocked && !speculativePreparationPaused) {
+        const candidates = currentItems.filter(item => closedPreparationIds.current.includes(item.id) && !item.card_id &&
+          (!item.snoozed_until || new Date(item.snoozed_until).getTime() <= currentTime));
+        const unread = candidates.find(item => item.unread && !openedIds.current.has(item.id) && !suppressedIds.current.has(item.id));
+        add(unread, "safe-break");
+        for (const item of candidates) { if (demand.length >= 2) break; add(item, "background"); }
+      }
+    }
+    schedulerRef.current?.update(identities, demand);
+  }, [discoveries, feedLoaded, initialAdmissionFlushFinished, open, activeId, interactionBlocked,
+    browserDemand, currentTime, completedAdmissions, previewIdentity, previewStatuses, speculativePreparationPaused]);
 
   useEffect(() => {
     if (!openRequest || openRequest.token === lastOpenRequestToken.current)
@@ -881,9 +992,10 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
   };
 
   const unreadCount = visibleDiscoveries.filter((item) => item.unread).length;
-  const preflightPending = !initialPreflightComplete || discoveries.some((item) =>
-    !item.card_id && previewFingerprints[item.id] === item.evidence_fingerprint &&
-    (previewStatuses[item.id] === "waiting" || previewStatuses[item.id] === "failed"));
+  const preflightPending = !feedLoaded || discoveries.some((item) =>
+    !item.card_id && item.admission_state !== "preparing" &&
+    (previewFingerprints[item.id] !== item.evidence_fingerprint ||
+      previewStatuses[item.id] === "waiting" || previewStatuses[item.id] === "failed"));
   const requestedDiscoveryNotReady = activeId !== null && activeIndex < 0;
   const unavailableReason = activeId
     ? previews[activeId]?.reason

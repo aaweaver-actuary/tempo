@@ -1085,3 +1085,37 @@ CI reproduced a startup-FEN comparison after the actual puzzle had loaded. The
 case now waits for the shared board's existing input-ready signal before taking
 its baseline; all SAN/orientation/persisted-UCI and unchanged-board assertions
 remain. No product code, timeout, CI selection or retry policy changed.
+
+## Issue #33 — globally bounded Discoveries preview work
+
+The regular frontend suite includes the following named regressions:
+
+| Defect/behavior | Named coverage |
+| --- | --- |
+| Overlapping initial/incremental pools exceed two requests | `discovery_preview_global_concurrency_survives_overlapping_triggers` in `discoveries-tray-regressions.test.tsx` (baseline peak four); `discovery_explicit_demand_precedes_queued_speculation` in `discovery-preview-scheduler-regressions.test.ts` queues 100 entries and elevates the requested item |
+| Waiting preview hides an independently usable discovery | `discovery_ready_item_does_not_wait_for_feed_preflight`; existing `shows only ready discoveries in feed order and does not acknowledge hidden items` now verifies immediate saved-card readiness and preservation of the active item as earlier entries become ready |
+| Closed training triggers feed/preview churn | `discovery_closed_training_defers_preview_and_feed_work`; `discovery_open_request_elevates_existing_demand_during_training` |
+| Hidden/reconnected pages cause overlapping work or partial counts | `discovery_visibility_return_coalesces_refresh_and_drain`; `discovery_offline_recovery_defers_reads_and_preserves_full_pagination`; `discovery_hidden_mid_pagination_never_publishes_a_partial_feed`; scheduler `discovery_visibility_gate_is_checked_at_capacity_release_before_react_reconciliation` |
+| Replaced or removed evidence accepts late results | Scheduler `discovery_fingerprint_replacement_fences_late_results`, `discovery_removal_and_return_uses_new_generation`; component `discovery_replaced_and_returned_component_preview_cannot_publish_obsolete_results`; PR #28 browser late-response cases remain |
+| Retry wakes create duplicate pools/backlogs | `discovery_due_retries_do_not_duplicate_queue_entries` exercises 100 waiting entries, one earliest wake, repeated updates and paused demand |
+| Unmount leaks work into another instance | `discovery_unmount_disposes_work_and_fences_remount`; `discovery_component_unmount_aborts_and_ignores_old_preview` |
+| Speculative pause blocks admission confirmation | `discovery_admission_confirmation_is_independent_of_preview_pause` verifies one submit, one confirmation, one queue refresh and a required feed refresh during hidden training |
+| Validation repeats, accepts replaced positions/results, or counts React metadata reuse as cache hits | `discovery_validation_cache_reuses_only_current_authoritative_identity`; `discovery_same_fingerprint_position_replacement_invalidates_validation`; `discovery_synthetic_workload_records_request_and_validation_counts` |
+
+Browser: `hidden discovery speculation stays paused and viewer demand starts bounded look-ahead`
+in `discovery-viewer.spec.ts` verifies real Home training wiring, visibility wakes,
+viewer demand and the concurrency diagnostic. Existing inactive preview, fingerprint,
+removal/return, navigation and admission browser tests explicitly open the viewer
+before expecting preparation. Held-drag and pinned performance scenarios still
+release real in-flight Discoveries responses during dragging; explicit viewer demand
+now starts that work before returning to the training board.
+
+Policy and before/after evidence: [Discoveries preview scheduling](../docs/discoveries-preview-scheduling.md).
+
+- Issue #33 viewer look-ahead leaves a newly returned earlier item unnavigable: `discovery_viewer_prepares_new_items_before_current_feed_position`; browser `late removed preview cannot be reused when the discovery returns` preserves the current item while the earlier result prepares. Look-ahead remains limited to two neighbors.
+- Issue #33 foreground queue independence with bounded closed preparation: browser `discovery preview backlog leaves a prompt foreground training queue refresh` retains its queue latency and active request cap assertions, checks that closed preparation stops at two, and proves explicit viewer demand resumes work.
+
+- Issue #33 stalled look-ahead starvation: `discovery_waiting_previews_do_not_starve_later_viewer_candidates` opens a saved item, stalls the first two previews (waiting/failed), prepares and navigates to a later ready item before their deadline, preserves the active selection, and proves 30-second retries remain deduplicated across repeated renders/wakes with global concurrency two. It failed before separating retry demand from productive capacity.
+- Issue #33 rejected-loader diagnostics: `discovery_rejected_loader_reenqueues_retry_with_consistent_diagnostics` proves rejected loads re-enqueue with consistent `enqueued`/`retriesScheduled` counters, one pending identity and timer, unchanged backoff, released capacity and timer cleanup. It failed before incrementing `enqueued` on rejection.
+- Issue #33 / PR #55 integration: `dismissal advances through undecided discoveries and clears the final item` failed after the initial rebase because a deferred ready-item addition could reinsert a removed item. The addition now checks the current authoritative feed object before publishing; PR #55's handled-evidence and PR #59's polling coverage remain intact.
+- Issue #33 concurrent ready-result reconciliation: `discovery_unchanged_refresh_preserves_a_concurrent_ready_preview` completes a valid preview and an inactive-item refresh in one React batch. It failed before retaining unchanged item ownership independently of lagging rendered-result refs. The existing browser `inactive discovery preview refreshes once without a retry notification and another discovery loads` reproduced this ordering in CI; its assertions and deadlines remain unchanged.

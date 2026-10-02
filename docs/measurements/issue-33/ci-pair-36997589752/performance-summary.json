@@ -1,0 +1,313 @@
+{
+  "schema_version": 1,
+  "commit": "1496021f82bfddd1df8b4276fcc57f7e7dd853df",
+  "timestamp": "2026-10-02T10:54:11.104Z",
+  "environment": {
+    "platform": "linux",
+    "architecture": "arm64",
+    "dockerCpus": "4",
+    "dockerMemoryBytes": "16722010112",
+    "host": {
+      "platform": "linux",
+      "architecture": "arm64",
+      "cpuModel": "unknown",
+      "logicalCpus": 4,
+      "memoryBytes": 16722010112
+    },
+    "runner": "linux-pinned",
+    "buildMode": "production-local"
+  },
+  "metrics": [
+    {
+      "id": "held-drag.idle.capture-on.gap",
+      "label": "Held drag idle.capture-on frame gap p95",
+      "value": 17.244999999995343,
+      "unit": "ms",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"idle\",true,6]"
+    },
+    {
+      "id": "held-drag.idle.capture-on.displacement",
+      "label": "Held drag idle.capture-on DOM displacement p95",
+      "value": 11.043026291841022,
+      "unit": "CSS px",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"idle\",true,6]"
+    },
+    {
+      "id": "held-drag.idle.capture-on.interruptions",
+      "label": "Held drag idle.capture-on interrupted holds",
+      "value": 0,
+      "unit": "count",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"idle\",true,6]"
+    },
+    {
+      "id": "held-drag.idle.capture-off.gap",
+      "label": "Held drag idle.capture-off frame gap p95",
+      "value": 17.23499999998603,
+      "unit": "ms",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"idle\",false,6]"
+    },
+    {
+      "id": "held-drag.idle.capture-off.displacement",
+      "label": "Held drag idle.capture-off DOM displacement p95",
+      "value": 11.043026291841022,
+      "unit": "CSS px",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"idle\",false,6]"
+    },
+    {
+      "id": "held-drag.idle.capture-off.interruptions",
+      "label": "Held drag idle.capture-off interrupted holds",
+      "value": 0,
+      "unit": "count",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"idle\",false,6]"
+    },
+    {
+      "id": "held-drag.synthetic-worker.capture-on.gap",
+      "label": "Held drag synthetic-worker.capture-on frame gap p95",
+      "value": 17.300000000046566,
+      "unit": "ms",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"synthetic-worker\",true,6]"
+    },
+    {
+      "id": "held-drag.synthetic-worker.capture-on.displacement",
+      "label": "Held drag synthetic-worker.capture-on DOM displacement p95",
+      "value": 11.043026291841022,
+      "unit": "CSS px",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"synthetic-worker\",true,6]"
+    },
+    {
+      "id": "held-drag.synthetic-worker.capture-on.interruptions",
+      "label": "Held drag synthetic-worker.capture-on interrupted holds",
+      "value": 0,
+      "unit": "count",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"synthetic-worker\",true,6]"
+    },
+    {
+      "id": "held-drag.synthetic-worker.capture-off.gap",
+      "label": "Held drag synthetic-worker.capture-off frame gap p95",
+      "value": 17.279999999969732,
+      "unit": "ms",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"synthetic-worker\",false,6]"
+    },
+    {
+      "id": "held-drag.synthetic-worker.capture-off.displacement",
+      "label": "Held drag synthetic-worker.capture-off DOM displacement p95",
+      "value": 11.043026291841022,
+      "unit": "CSS px",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"synthetic-worker\",false,6]"
+    },
+    {
+      "id": "held-drag.synthetic-worker.capture-off.interruptions",
+      "label": "Held drag synthetic-worker.capture-off interrupted holds",
+      "value": 0,
+      "unit": "count",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"synthetic-worker\",false,6]"
+    },
+    {
+      "id": "held-drag.discovery-preparation.capture-on.gap",
+      "label": "Held drag discovery-preparation.capture-on frame gap p95",
+      "value": 17.255000000004657,
+      "unit": "ms",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"discovery-preparation\",true,6]"
+    },
+    {
+      "id": "held-drag.discovery-preparation.capture-on.displacement",
+      "label": "Held drag discovery-preparation.capture-on DOM displacement p95",
+      "value": 11.043026291841022,
+      "unit": "CSS px",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"discovery-preparation\",true,6]"
+    },
+    {
+      "id": "held-drag.discovery-preparation.capture-on.interruptions",
+      "label": "Held drag discovery-preparation.capture-on interrupted holds",
+      "value": 0,
+      "unit": "count",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"discovery-preparation\",true,6]"
+    },
+    {
+      "id": "held-drag.discovery-preparation.capture-off.gap",
+      "label": "Held drag discovery-preparation.capture-off frame gap p95",
+      "value": 17.290000000037253,
+      "unit": "ms",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"discovery-preparation\",false,6]"
+    },
+    {
+      "id": "held-drag.discovery-preparation.capture-off.displacement",
+      "label": "Held drag discovery-preparation.capture-off DOM displacement p95",
+      "value": 11.043026291841022,
+      "unit": "CSS px",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"discovery-preparation\",false,6]"
+    },
+    {
+      "id": "held-drag.discovery-preparation.capture-off.interruptions",
+      "label": "Held drag discovery-preparation.capture-off interrupted holds",
+      "value": 0,
+      "unit": "count",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"discovery-preparation\",false,6]"
+    },
+    {
+      "id": "held-drag.stockfish-worker.capture-on.gap",
+      "label": "Held drag stockfish-worker.capture-on frame gap p95",
+      "value": 17.285000000032596,
+      "unit": "ms",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"stockfish-worker\",true,6]"
+    },
+    {
+      "id": "held-drag.stockfish-worker.capture-on.displacement",
+      "label": "Held drag stockfish-worker.capture-on DOM displacement p95",
+      "value": 11.043026291841022,
+      "unit": "CSS px",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"stockfish-worker\",true,6]"
+    },
+    {
+      "id": "held-drag.stockfish-worker.capture-on.interruptions",
+      "label": "Held drag stockfish-worker.capture-on interrupted holds",
+      "value": 0,
+      "unit": "count",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"stockfish-worker\",true,6]"
+    },
+    {
+      "id": "held-drag.stockfish-worker.capture-off.gap",
+      "label": "Held drag stockfish-worker.capture-off frame gap p95",
+      "value": 17.35999999998603,
+      "unit": "ms",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"stockfish-worker\",false,6]"
+    },
+    {
+      "id": "held-drag.stockfish-worker.capture-off.displacement",
+      "label": "Held drag stockfish-worker.capture-off DOM displacement p95",
+      "value": 11.043026291841022,
+      "unit": "CSS px",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"stockfish-worker\",false,6]"
+    },
+    {
+      "id": "held-drag.stockfish-worker.capture-off.interruptions",
+      "label": "Held drag stockfish-worker.capture-off interrupted holds",
+      "value": 0,
+      "unit": "count",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"stockfish-worker\",false,6]"
+    },
+    {
+      "id": "held-drag.main-thread-stall.capture-on.gap",
+      "label": "Held drag main-thread-stall.capture-on frame gap p95",
+      "value": 17.520000000018626,
+      "unit": "ms",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"main-thread-stall\",true,6]"
+    },
+    {
+      "id": "held-drag.main-thread-stall.capture-on.displacement",
+      "label": "Held drag main-thread-stall.capture-on DOM displacement p95",
+      "value": 11.043026291841022,
+      "unit": "CSS px",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"main-thread-stall\",true,6]"
+    },
+    {
+      "id": "held-drag.main-thread-stall.capture-on.interruptions",
+      "label": "Held drag main-thread-stall.capture-on interrupted holds",
+      "value": 0,
+      "unit": "count",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"main-thread-stall\",true,6]"
+    },
+    {
+      "id": "held-drag.main-thread-stall.capture-off.gap",
+      "label": "Held drag main-thread-stall.capture-off frame gap p95",
+      "value": 17.505000000004657,
+      "unit": "ms",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"main-thread-stall\",false,6]"
+    },
+    {
+      "id": "held-drag.main-thread-stall.capture-off.displacement",
+      "label": "Held drag main-thread-stall.capture-off DOM displacement p95",
+      "value": 11.043026291841022,
+      "unit": "CSS px",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"main-thread-stall\",false,6]"
+    },
+    {
+      "id": "held-drag.main-thread-stall.capture-off.interruptions",
+      "label": "Held drag main-thread-stall.capture-off interrupted holds",
+      "value": 0,
+      "unit": "count",
+      "comparisonKey": "[{\"browser\":\"chromium\",\"browserVersion\":\"153.0.8010.12\",\"buildMode\":\"production-local\",\"runner\":\"linux-pinned\",\"architecture\":\"arm64\",\"viewport\":{\"width\":1280,\"height\":800},\"devicePixelRatio\":1,\"reducedMotion\":\"no-preference\",\"serviceWorkers\":\"block\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":\"{\\\"platform\\\":\\\"linux\\\",\\\"architecture\\\":\\\"arm64\\\",\\\"cpuModel\\\":\\\"unknown\\\",\\\"logicalCpus\\\":4,\\\"memoryBytes\\\":16722010112}\",\"containerLimits\":\"no explicit per-container CPU/memory limits; shared Docker VM\",\"gpu\":\"unavailable; headless pinned browser\",\"physicalPresentation\":\"unavailable\",\"liveBackendLoad\":\"unmeasured; routed synthetic API fixtures\"},{\"name\":\"held-drag-v3-callback-cadence-blocked-sw\",\"pointerMoves\":40,\"paceMs\":20,\"repetitions\":3,\"dataset\":\"Spanish five-ply card and one discovery\",\"probe\":\"bounded-transform-probe-v1\"},\"main-thread-stall\",false,6]"
+    },
+    {
+      "id": "browser.long-tasks",
+      "label": "Long tasks",
+      "value": 0,
+      "unit": "count",
+      "comparisonKey": "[{\"platform\":\"linux\",\"architecture\":\"arm64\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":{\"platform\":\"linux\",\"architecture\":\"arm64\",\"cpuModel\":\"unknown\",\"logicalCpus\":4,\"memoryBytes\":16722010112},\"runner\":\"linux-pinned\",\"buildMode\":\"production-local\"},\"chromium\",{\"name\":\"prepareVisualUI-default\",\"boardReloads\":5,\"warmMoves\":5}]"
+    },
+    {
+      "id": "view.Builder.p95",
+      "label": "Builder warm switch p95",
+      "value": 31.570000000006985,
+      "unit": "ms",
+      "comparisonKey": "[{\"platform\":\"linux\",\"architecture\":\"arm64\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":{\"platform\":\"linux\",\"architecture\":\"arm64\",\"cpuModel\":\"unknown\",\"logicalCpus\":4,\"memoryBytes\":16722010112},\"runner\":\"linux-pinned\",\"buildMode\":\"production-local\"},\"chromium\",{\"name\":\"prepareVisualUI-default\",\"boardReloads\":5,\"warmMoves\":5}]"
+    },
+    {
+      "id": "view.Games.p95",
+      "label": "Games warm switch p95",
+      "value": 30.32500000001164,
+      "unit": "ms",
+      "comparisonKey": "[{\"platform\":\"linux\",\"architecture\":\"arm64\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":{\"platform\":\"linux\",\"architecture\":\"arm64\",\"cpuModel\":\"unknown\",\"logicalCpus\":4,\"memoryBytes\":16722010112},\"runner\":\"linux-pinned\",\"buildMode\":\"production-local\"},\"chromium\",{\"name\":\"prepareVisualUI-default\",\"boardReloads\":5,\"warmMoves\":5}]"
+    },
+    {
+      "id": "view.Endgames.p95",
+      "label": "Endgames warm switch p95",
+      "value": 28.964999999967404,
+      "unit": "ms",
+      "comparisonKey": "[{\"platform\":\"linux\",\"architecture\":\"arm64\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":{\"platform\":\"linux\",\"architecture\":\"arm64\",\"cpuModel\":\"unknown\",\"logicalCpus\":4,\"memoryBytes\":16722010112},\"runner\":\"linux-pinned\",\"buildMode\":\"production-local\"},\"chromium\",{\"name\":\"prepareVisualUI-default\",\"boardReloads\":5,\"warmMoves\":5}]"
+    },
+    {
+      "id": "view.Tactics.p95",
+      "label": "Tactics warm switch p95",
+      "value": 28.005000000004657,
+      "unit": "ms",
+      "comparisonKey": "[{\"platform\":\"linux\",\"architecture\":\"arm64\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":{\"platform\":\"linux\",\"architecture\":\"arm64\",\"cpuModel\":\"unknown\",\"logicalCpus\":4,\"memoryBytes\":16722010112},\"runner\":\"linux-pinned\",\"buildMode\":\"production-local\"},\"chromium\",{\"name\":\"prepareVisualUI-default\",\"boardReloads\":5,\"warmMoves\":5}]"
+    },
+    {
+      "id": "view.Train.p95",
+      "label": "Train warm switch p95",
+      "value": 33.94000000000233,
+      "unit": "ms",
+      "comparisonKey": "[{\"platform\":\"linux\",\"architecture\":\"arm64\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":{\"platform\":\"linux\",\"architecture\":\"arm64\",\"cpuModel\":\"unknown\",\"logicalCpus\":4,\"memoryBytes\":16722010112},\"runner\":\"linux-pinned\",\"buildMode\":\"production-local\"},\"chromium\",{\"name\":\"prepareVisualUI-default\",\"boardReloads\":5,\"warmMoves\":5}]"
+    },
+    {
+      "id": "board-ready.p95",
+      "label": "Board ready p95",
+      "value": 47.50500000000466,
+      "unit": "ms",
+      "comparisonKey": "[{\"platform\":\"linux\",\"architecture\":\"arm64\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":{\"platform\":\"linux\",\"architecture\":\"arm64\",\"cpuModel\":\"unknown\",\"logicalCpus\":4,\"memoryBytes\":16722010112},\"runner\":\"linux-pinned\",\"buildMode\":\"production-local\"},\"chromium\",{\"name\":\"prepareVisualUI-default\",\"boardReloads\":5,\"warmMoves\":5}]"
+    },
+    {
+      "id": "move-to-paint.p95",
+      "label": "Builder after-move to rAF p95 (legacy move-to-paint)",
+      "value": 15.315000000002328,
+      "unit": "ms",
+      "comparisonKey": "[{\"platform\":\"linux\",\"architecture\":\"arm64\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":{\"platform\":\"linux\",\"architecture\":\"arm64\",\"cpuModel\":\"unknown\",\"logicalCpus\":4,\"memoryBytes\":16722010112},\"runner\":\"linux-pinned\",\"buildMode\":\"production-local\"},\"chromium\",{\"name\":\"prepareVisualUI-default\",\"boardReloads\":5,\"warmMoves\":5}]"
+    },
+    {
+      "id": "training-card.p95",
+      "label": "Training card advance p95",
+      "value": 29.600000000034925,
+      "unit": "ms",
+      "comparisonKey": "[{\"platform\":\"linux\",\"architecture\":\"arm64\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":{\"platform\":\"linux\",\"architecture\":\"arm64\",\"cpuModel\":\"unknown\",\"logicalCpus\":4,\"memoryBytes\":16722010112},\"runner\":\"linux-pinned\",\"buildMode\":\"production-local\"},{\"name\":\"six prepared single-move opening cards\",\"cards\":6}]"
+    },
+    {
+      "id": "builder-query.p95",
+      "label": "Builder worker query p95",
+      "value": 15.919999999983702,
+      "unit": "ms",
+      "comparisonKey": "[{\"platform\":\"linux\",\"architecture\":\"arm64\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":{\"platform\":\"linux\",\"architecture\":\"arm64\",\"cpuModel\":\"unknown\",\"logicalCpus\":4,\"memoryBytes\":16722010112},\"runner\":\"linux-pinned\",\"buildMode\":\"production-local\"},{\"name\":\"legal-two-ply-opening-pairs-v1\",\"lines\":250,\"plies\":500,\"warmPositionChanges\":6}]"
+    },
+    {
+      "id": "builder-query-paint.p95",
+      "label": "Builder query to paint p95",
+      "value": 44.01500000001397,
+      "unit": "ms",
+      "comparisonKey": "[{\"platform\":\"linux\",\"architecture\":\"arm64\",\"dockerCpus\":\"4\",\"dockerMemoryBytes\":\"16722010112\",\"host\":{\"platform\":\"linux\",\"architecture\":\"arm64\",\"cpuModel\":\"unknown\",\"logicalCpus\":4,\"memoryBytes\":16722010112},\"runner\":\"linux-pinned\",\"buildMode\":\"production-local\"},{\"name\":\"legal-two-ply-opening-pairs-v1\",\"lines\":250,\"plies\":500,\"warmPositionChanges\":6}]"
+    }
+  ],
+  "staleArtifacts": [],
+  "slowestUnitFiles": [],
+  "baselineCommit": "dfbb66d67b314357e55c2030ff794a15415f316c",
+  "regressions": []
+}

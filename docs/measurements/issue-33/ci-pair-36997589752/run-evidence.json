@@ -1,0 +1,280 @@
+{
+  "baseCommit": "dfbb66d67b314357e55c2030ff794a15415f316c",
+  "candidateCommit": "1496021f82bfddd1df8b4276fcc57f7e7dd853df",
+  "workflowCommit": "9fd701d8cd19360491522e9aae5a3485f13e04bd",
+  "runId": "36997589752",
+  "runAttempt": "1",
+  "nodeVersion": "v22.23.3",
+  "pinnedPlaywrightImage": "mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27",
+  "singleJobSequential": true,
+  "commands": [
+    {
+      "label": "port-base-fixture",
+      "command": "git",
+      "args": [
+        "apply",
+        "/home/runner/work/tempo/tempo/benchmark/candidate/docs/measurements/issue-33/base-measurement-harness.patch"
+      ],
+      "directory": "/home/runner/work/tempo/tempo/benchmark/base",
+      "environment": {},
+      "startedAt": "2026-10-02T10:49:41.933Z",
+      "exitCode": 0,
+      "seconds": 0.00576873999999998,
+      "signal": null,
+      "finishedAt": "2026-10-02T10:49:41.939Z"
+    },
+    {
+      "label": "plan",
+      "command": "make",
+      "args": [
+        "plan"
+      ],
+      "directory": "/home/runner/work/tempo/tempo/benchmark/candidate",
+      "environment": {},
+      "startedAt": "2026-10-02T10:49:41.965Z",
+      "exitCode": 0,
+      "seconds": 0.06085296100000005,
+      "signal": null,
+      "finishedAt": "2026-10-02T10:49:42.026Z"
+    },
+    {
+      "label": "install-host-before",
+      "command": "npm",
+      "args": [
+        "ci",
+        "--no-audit"
+      ],
+      "directory": "/home/runner/work/tempo/tempo/benchmark/base",
+      "environment": {},
+      "startedAt": "2026-10-02T10:49:42.026Z",
+      "exitCode": 0,
+      "seconds": 14.101679903,
+      "signal": null,
+      "finishedAt": "2026-10-02T10:49:56.128Z"
+    },
+    {
+      "label": "install-host-after",
+      "command": "npm",
+      "args": [
+        "ci",
+        "--no-audit"
+      ],
+      "directory": "/home/runner/work/tempo/tempo/benchmark/candidate",
+      "environment": {},
+      "startedAt": "2026-10-02T10:49:56.130Z",
+      "exitCode": 0,
+      "seconds": 9.689338973,
+      "signal": null,
+      "finishedAt": "2026-10-02T10:50:05.819Z"
+    },
+    {
+      "label": "pull-pinned-image",
+      "command": "docker",
+      "args": [
+        "pull",
+        "mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27"
+      ],
+      "directory": "/home/runner/work/tempo/tempo/benchmark/candidate",
+      "environment": {},
+      "startedAt": "2026-10-02T10:50:05.854Z",
+      "exitCode": 0,
+      "seconds": 26.892321745,
+      "signal": null,
+      "finishedAt": "2026-10-02T10:50:32.747Z"
+    },
+    {
+      "label": "warm-container-dependencies",
+      "command": "docker",
+      "args": [
+        "run",
+        "--platform",
+        "linux/arm64",
+        "--rm",
+        "--init",
+        "-v",
+        "/home/runner/work/tempo/tempo/benchmark/base:/workspace",
+        "-v",
+        "/workspace/node_modules",
+        "--mount",
+        "type=volume,source=tempo-playwright-npm-cache,target=/root/.npm",
+        "-w",
+        "/workspace",
+        "mcr.microsoft.com/playwright:v1.63.0-noble@sha256:eff16c30e6f3f4af0a03fa4b706120d5e9b0891c344a27d64559aff5900a4a27",
+        "bash",
+        "-lc",
+        "npm ci --no-audit"
+      ],
+      "directory": "/home/runner/work/tempo/tempo/benchmark/base",
+      "environment": {},
+      "startedAt": "2026-10-02T10:50:32.747Z",
+      "exitCode": 0,
+      "seconds": 17.726666346,
+      "signal": null,
+      "finishedAt": "2026-10-02T10:50:50.474Z"
+    },
+    {
+      "label": "processes-before",
+      "command": "ps",
+      "args": [
+        "-eo",
+        "pid,ppid,comm,args"
+      ],
+      "directory": "/home/runner/work/tempo/tempo/benchmark/base",
+      "environment": {},
+      "startedAt": "2026-10-02T10:50:50.490Z",
+      "exitCode": 0,
+      "seconds": 0.023273861000008764,
+      "signal": null,
+      "finishedAt": "2026-10-02T10:50:50.513Z"
+    },
+    {
+      "label": "perf-before",
+      "command": "make",
+      "args": [
+        "perf"
+      ],
+      "directory": "/home/runner/work/tempo/tempo/benchmark/base",
+      "environment": {
+        "TEMPO_TEST_TIMING_DIR": "test-results/performance/issue-33-before",
+        "TEMPO_FULL_TEST_RUN_COMMIT": "dfbb66d67b314357e55c2030ff794a15415f316c",
+        "TEMPO_CI_REPORT": "test-results/performance/issue-33-before/playwright-results.json"
+      },
+      "startedAt": "2026-10-02T10:50:50.513Z",
+      "exitCode": 0,
+      "seconds": 200.11314653300002,
+      "signal": null,
+      "finishedAt": "2026-10-02T10:54:10.627Z"
+    },
+    {
+      "label": "processes-after",
+      "command": "ps",
+      "args": [
+        "-eo",
+        "pid,ppid,comm,args"
+      ],
+      "directory": "/home/runner/work/tempo/tempo/benchmark/candidate",
+      "environment": {},
+      "startedAt": "2026-10-02T10:54:10.638Z",
+      "exitCode": 0,
+      "seconds": 0.007104009000002407,
+      "signal": null,
+      "finishedAt": "2026-10-02T10:54:10.645Z"
+    },
+    {
+      "label": "perf-after",
+      "command": "make",
+      "args": [
+        "perf"
+      ],
+      "directory": "/home/runner/work/tempo/tempo/benchmark/candidate",
+      "environment": {
+        "TEMPO_TEST_TIMING_DIR": "test-results/performance/issue-33-after",
+        "TEMPO_FULL_TEST_RUN_COMMIT": "1496021f82bfddd1df8b4276fcc57f7e7dd853df",
+        "TEMPO_CI_REPORT": "test-results/performance/issue-33-after/playwright-results.json"
+      },
+      "startedAt": "2026-10-02T10:54:10.646Z",
+      "exitCode": 0,
+      "seconds": 203.07751986999995,
+      "signal": null,
+      "finishedAt": "2026-10-02T10:57:33.723Z"
+    },
+    {
+      "label": "workload-before",
+      "command": "npm",
+      "args": [
+        "run",
+        "test:unit",
+        "--",
+        "tests/unit/discoveries-tray-regressions.test.tsx",
+        "-t",
+        "discovery_synthetic_workload_records_request_and_validation_counts",
+        "--reporter=default",
+        "--reporter=json",
+        "--outputFile.json=/home/runner/work/tempo/tempo/benchmark/base/test-results/performance/issue-33-before/unit-workload.json"
+      ],
+      "directory": "/home/runner/work/tempo/tempo/benchmark/base",
+      "environment": {
+        "TEMPO_DISCOVERY_MEASUREMENT": "/home/runner/work/tempo/tempo/benchmark/base/test-results/performance/issue-33-before/deterministic-workload.json"
+      },
+      "startedAt": "2026-10-02T10:57:33.724Z",
+      "exitCode": 0,
+      "seconds": 2.425547238999978,
+      "signal": null,
+      "finishedAt": "2026-10-02T10:57:36.149Z"
+    },
+    {
+      "label": "workload-after",
+      "command": "npm",
+      "args": [
+        "run",
+        "test:unit",
+        "--",
+        "tests/unit/discoveries-tray-regressions.test.tsx",
+        "-t",
+        "discovery_synthetic_workload_records_request_and_validation_counts",
+        "--reporter=default",
+        "--reporter=json",
+        "--outputFile.json=/home/runner/work/tempo/tempo/benchmark/candidate/test-results/performance/issue-33-after/unit-workload.json"
+      ],
+      "directory": "/home/runner/work/tempo/tempo/benchmark/candidate",
+      "environment": {
+        "TEMPO_DISCOVERY_MEASUREMENT": "/home/runner/work/tempo/tempo/benchmark/candidate/test-results/performance/issue-33-after/deterministic-workload.json"
+      },
+      "startedAt": "2026-10-02T10:57:36.150Z",
+      "exitCode": 0,
+      "seconds": 2.0771642639999626,
+      "signal": null,
+      "finishedAt": "2026-10-02T10:57:38.227Z"
+    },
+    {
+      "label": "compare-performance",
+      "command": "node",
+      "args": [
+        "scripts/report-performance.mjs",
+        "--directory",
+        "/home/runner/work/tempo/tempo/benchmark/candidate/test-results/performance/issue-33-after",
+        "--baseline",
+        "/home/runner/work/tempo/tempo/benchmark/base/test-results/performance/issue-33-before"
+      ],
+      "directory": "/home/runner/work/tempo/tempo/benchmark/candidate",
+      "environment": {},
+      "startedAt": "2026-10-02T10:57:38.227Z",
+      "exitCode": 0,
+      "seconds": 0.06186918999999762,
+      "signal": null,
+      "finishedAt": "2026-10-02T10:57:38.289Z"
+    }
+  ],
+  "harnessHashes": {
+    "package.json": "871d606911bda99304e8656c4a48f89b4cb0cfb892186bd1c4893a73daf89602",
+    "package-lock.json": "2569e8543f12bf10f70571928c6de1203d72eca13806f4da380c58a89111471a",
+    "Makefile": "5bb0c0b68281174f7dec3cc254331afc33c71a194ea11c1a02a46149accf7a8e",
+    "vite.static.config.ts": "246fd5a879696038e20158fb83ff4609afae76eedfdb4a8c300bb94b5ce6d67b",
+    "playwright.visual.config.ts": "c4318696f05da78acac3735d265892113f77c637a3e8a890329f1e1096cda3f9",
+    "scripts/test-visual.mjs": "154b02e01e067dc1e7e81a8ead86cd6f7d48e0dde85cfc7bf6ecd78002039b7d",
+    "scripts/pinned-playwright-image.mjs": "be82545499e762e5ca96c4fda7639161f5bfd91f4bdf8b1e5d2aa3c9e132ca3b",
+    "scripts/check-test-capabilities.mjs": "2138acb726efd8cda3e464576636e99c6274b246ce4dcce603a94441c366b538",
+    "tests/browser/performance.spec.ts": "33a8153293dc5644caf9cb561bf082a5b6c15b865b868f202feb620c40ecd1d8",
+    "tests/browser/held-drag-fixtures.ts": "8135e9576e382a3faeb39f215b9cb8463f135d63395a40dca7ccc1efb58fa100",
+    "tests/browser/ui-fixtures.ts": "6dfe5fbd70b65cd8a1d8ec03c2a5162667d863be6e44e343a443400879198cbd",
+    "tests/browser/visual-fixtures.ts": "3a463cccb9ac4e316717d766806c45edf4d88147e4a4db4bacbf9e48c9487b0c"
+  },
+  "baselineChanges": [
+    "tests/browser/performance.spec.ts",
+    "tests/unit/discoveries-tray-regressions.test.tsx"
+  ],
+  "comparison": {
+    "matchingEnvironment": true,
+    "matchingFixture": true,
+    "completeHolds": true,
+    "heldDragSha256": {
+      "before": "84c04dbc030ee4a5c434d78c78c0756d43664a5d539dc69d4d5592eab3ffc7f9",
+      "after": "008c75cff29ba650385aee301fcd3026147d20542456f34ea33343d955364a98"
+    }
+  },
+  "fixturePatchSha256": "a336269f03a057675c7756a9d1e64660968d98c41c14ea67fc9d34a02d75649b",
+  "productTrees": {
+    "before": "040000 tree 186718d9541e13a7d6a2f2439575742c2ac1392f\tapp\n040000 tree d1df1efad62d1c465bf62fc0a4ea5253ddf3c1c1\tbackend\n040000 tree 9340bc1a0a385eb8a99926d74c9fde29f33d1489\tpublic",
+    "after": "040000 tree beaadfefb9d4fb1b60065879ab55c5f25d3d71cb\tapp\n040000 tree a5141f04886d80ca16cfb3e727c989dfa804244d\tbackend\n040000 tree 9340bc1a0a385eb8a99926d74c9fde29f33d1489\tpublic"
+  }
+}
