@@ -1,8 +1,16 @@
-import { useEffect, useState, useSyncExternalStore } from "react";
+import { useEffect, useRef, useState, useSyncExternalStore } from "react";
 import { Button } from "./buttons/BaseButton";
 import { discardOfflineConflict, readPreparedTraining, type OfflineAttempt, type PreparedTraining } from "../lib/offline-training";
 import { notifications, publishNotification, resolveNotification, subscribeNotifications } from "../lib/notifications";
 import { isIPhoneHomeScreen } from "../utils/local";
+
+import { useDialogFocus } from "../hooks/use-dialog-focus";
+
+function ConflictDialog({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  const dialogRef = useRef<HTMLElement>(null);
+  useDialogFocus(dialogRef, onClose);
+  return <section ref={dialogRef} role="dialog" tabIndex={-1} aria-modal="true" aria-label="Review conflicts" className="offline-conflicts-dialog" onClick={event => event.stopPropagation()}>{children}</section>;
+}
 
 function conflictAttempts(prepared: PreparedTraining | null): OfflineAttempt[] {
   return prepared?.attempts.filter((attempt) => Boolean(attempt.conflict)) ?? [];
@@ -69,12 +77,11 @@ export function OfflineReviewConflicts() {
   }
 
   return <div className="offline-conflicts-control">
-    <Button type="button" className="offline-conflicts-trigger" onClick={() => setOpen(true)}>
+    <Button type="button" className="offline-conflicts-trigger" onClick={event => { event.currentTarget.focus(); setOpen(true); }}>
       Review conflicts{attempts.length ? ` (${attempts.length})` : ""}
     </Button>
     {open && <div className="offline-conflicts-backdrop" onClick={() => setOpen(false)}>
-      <section role="dialog" aria-modal="true" aria-label="Review conflicts" className="offline-conflicts-dialog"
-        onClick={(event) => event.stopPropagation()}>
+      <ConflictDialog onClose={() => setOpen(false)}>
         <header><h2>Review conflicts</h2><Button type="button" onClick={() => setOpen(false)}>Close</Button></header>
         <p>The computer’s saved reviews take priority. These phone attempts remain on this device until you discard each one.</p>
         {error && <p role="alert">{error}</p>}
@@ -97,7 +104,7 @@ export function OfflineReviewConflicts() {
             </article>;
           })}
         </div>
-      </section>
+      </ConflictDialog>
     </div>}
   </div>;
 }

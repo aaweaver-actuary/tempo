@@ -18,8 +18,7 @@ export function FlipBoardButton({
       aria-label="Flip board"
       title="Flip board (F)"
       onClick={() => {
-        if (board.onFlip) board.onFlip();
-        else window.dispatchEvent(new Event("tempo:flip-board"));
+        window.dispatchEvent(new Event("tempo:flip-board"));
       }}
     >
       ⇅ <span>Flip</span>

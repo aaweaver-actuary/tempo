@@ -1,5 +1,6 @@
 "use client";
 import { DiscoveryPreviewScheduler, DiscoveryPreviewValidationCache, type DiscoveryPreviewWork } from "../lib/discovery-preview-scheduler";
+import { historyKeyboardActions, usePopupKeyboard } from "../lib/keyboard-shortcuts";
 import { measureTempoDragPhase } from "../lib/performance";
 import { Button } from "./buttons/BaseButton";
 
@@ -860,11 +861,11 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     triggerRef.current?.focus();
   }, [visibleDiscoveries]);
 
+  usePopupKeyboard(dialogRef, closeViewer, open);
   useEffect(() => {
     if (!open) return;
     closeRef.current?.focus();
     const handleKey = (event: KeyboardEvent) => {
-      if (event.key === "Escape") { event.preventDefault(); closeViewer(); }
       if (event.key === "Tab") {
         const focusable = [...(dialogRef.current?.querySelectorAll<HTMLElement>(
           'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), [tabindex]:not([tabindex="-1"])',
@@ -983,30 +984,12 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
     [boardStep, displayedArrow],
   );
 
-  useEffect(() => {
-    if (!open || !active) return;
-    const onArrowKey = (event: KeyboardEvent) => {
-      if (
-        event.target instanceof HTMLInputElement ||
-        event.target instanceof HTMLSelectElement ||
-        event.target instanceof HTMLTextAreaElement ||
-        (event.target instanceof HTMLElement && event.target.isContentEditable)
-      )
-        return;
-      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
-      event.preventDefault();
-      const change = event.key === "ArrowLeft" ? -1 : 1;
-      setBoardNavigation({
-        discoveryId: active.id,
-        cursor: Math.max(
-          0,
-          Math.min(boardHistory.steps.length - 1, boardCursor + change),
-        ),
-      });
-    };
-    window.addEventListener("keydown", onArrowKey);
-    return () => window.removeEventListener("keydown", onArrowKey);
-  }, [open, active, boardCursor, boardHistory.steps.length]);
+  const navigateBoard = (cursor: number) => { if (active) setBoardNavigation({ discoveryId: active.id, cursor }); };
+  const keyboard = { ...historyKeyboardActions(boardCursor, boardHistory.steps.length - 1, navigateBoard),
+    reset: () => navigateBoard(boardHistory.decisionIndex),
+    nextItem: activeIndex >= 0 && activeIndex < reviewItems.length - 1
+      ? () => setActiveId(reviewItems[activeIndex + 1].id) : undefined,
+  };
 
   const unreadCount = visibleDiscoveries.filter((item) => item.unread).length;
   const preflightPending = !feedLoaded || discoveries.some((item) =>
@@ -1191,6 +1174,7 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
               <div className="tempo-discovery-main">
                 <div className="tempo-discovery-board">
                   <Chessboard
+                    keyboard={keyboard}
                     owner="discoveries"
                     fen={boardStep?.fen ?? fen}
                     orientation={active.trained_color}

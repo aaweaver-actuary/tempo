@@ -2,6 +2,7 @@
 import { Button } from "./buttons/BaseButton";
 
 import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { usePopupKeyboard } from "../lib/keyboard-shortcuts";
 import { API_URL } from "../const";
 import { backgroundFetch } from "../lib/background-fetch";
 import { requestActivityControl } from "../lib/activity-control-command";
@@ -70,6 +71,8 @@ const groupOrder = ["Running", "Queued", "Paused", "Needs attention", "Recently 
 export function ServiceStatusPanel() {
   const lastDiagnosticsRequest = useRef(Number.NEGATIVE_INFINITY);
   const [open, setOpen] = useState(false);
+  const popupRef = useRef<HTMLElement>(null);
+  usePopupKeyboard(popupRef, () => setOpen(false), open);
   // Null means this mounted panel has never successfully loaded activity; paused reads retain known status.
   const [status, setStatus] = useState<ActivityResponse | null>(null);
   const [items, setItems] = useState<ActivityItem[]>([]);
@@ -280,13 +283,13 @@ export function ServiceStatusPanel() {
 
   return <aside className="tempo-activity-tray">
     <Button type="button" className="tempo-activity-trigger" aria-label="Analysis activity" aria-expanded={open} aria-controls="tempo-activity-content"
-      onClick={() => setOpen(value => !value)}>
+      onClick={event => { event.currentTarget.focus(); setOpen(value => !value); }}>
       <span className="tempo-activity-trigger-desktop">Analysis activity</span>
       <span className="tempo-activity-trigger-mobile">Jobs</span>
       {activeCount > 0 && <span> · {activeCount}</span>}
       {((status?.counts.failed ?? 0) > 0 || status?.writer?.healthy === false || error) && <span className="tempo-activity-attention" aria-label="needs attention"> !</span>}
     </Button>
-    {open && <section id="tempo-activity-content" className="tempo-activity-content" aria-label="Analysis activity">
+    {open && <section ref={popupRef} id="tempo-activity-content" className="tempo-activity-content" aria-label="Analysis activity">
       <div className="tempo-activity-heading"><strong>Background activity</strong><Button type="button" onClick={() => setOpen(false)}>Close</Button></div>
       {!usesLocalApi() && <p>This practice demo has no local analysis service.</p>}
       {error && <p role="alert">{error} <Button type="button" onClick={() => void refresh()}>Retry status</Button></p>}

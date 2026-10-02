@@ -1,3 +1,4 @@
+import { useBoardHistory } from "../hooks/use-board-history";
 import { TextInput } from "../components/inputs/TextInput";
 import { Button } from "../components/buttons/BaseButton";
 import { Dialog } from "../components/dialog";
@@ -56,6 +57,7 @@ export default function EndgamesView({
   });
   const [outcome, setOutcome] = useState<"correct" | "wrong" | null>(null);
   const generation = useRef(0);
+  const [positionGeneration, setPositionGeneration] = useState(0);
   const resultTimer = useRef<ReturnType<typeof setTimeout> | undefined>(
     undefined,
   );
@@ -66,6 +68,7 @@ export default function EndgamesView({
   const [target, setTarget] = useState<"win" | "draw">("win");
   const [status, setStatus] = useState("Finding a legal tablebase position…");
   const [fen, setFen] = useState(STANDARD_FEN);
+  const [playedPositions, setPlayedPositions] = useState<string[]>([STANDARD_FEN]);
   const [busy, setBusy] = useState(true);
   const [userMoves, setUserMoves] = useState(0);
   const [complete, setComplete] = useState(false);
@@ -163,6 +166,7 @@ export default function EndgamesView({
 
   const newPosition = useCallback(
     async (index = selected) => {
+      setPositionGeneration(generation.current + 1);
       const token = ++generation.current;
       clearTimeout(resultTimer.current);
       setBusy(true);
@@ -178,6 +182,7 @@ export default function EndgamesView({
           const attempt = await startEndgameAttempt(item.templateId);
           if (token !== generation.current) return;
           setFen(attempt.fen);
+          setPlayedPositions([attempt.fen]);
           setTarget(attempt.target);
           setBusy(false);
           setStatus("Win or draw?");
@@ -211,6 +216,7 @@ export default function EndgamesView({
           if (category === "loss") continue;
           if (token !== generation.current) return;
           setFen(candidate);
+          setPlayedPositions([candidate]);
           setTarget(category);
           setStatus("Classify the position before playing.");
           setBusy(false);
@@ -265,7 +271,9 @@ export default function EndgamesView({
       } catch {
         return;
       }
-      setFen(board.fen());
+      const playedFen = board.fen();
+      setFen(playedFen);
+      setPlayedPositions(positions => [...positions, playedFen]);
       setBusy(true);
       if (board.isCheckmate()) {
         setComplete(true);
@@ -305,7 +313,9 @@ export default function EndgamesView({
             to: defense.slice(2, 4) as Square,
             promotion: defense[4],
           });
-          setFen(board.fen());
+          const replyFen = board.fen();
+          setFen(replyFen);
+          setPlayedPositions(positions => [...positions, replyFen]);
         }
         const count = userMoves + 1;
         setUserMoves(count);
@@ -351,12 +361,14 @@ export default function EndgamesView({
   );
 
   const endgamePositionKey = `${scheduledCard?.queueEntryId ?? scheduledCard?.id ?? selected}:${scheduledCard?.queueCycle ?? 0}:${scheduledCard?.revision ?? 1}`;
+  const boardHistory = useBoardHistory(`${endgamePositionKey}:${positionGeneration}`, playedPositions, fen);
   useBoardPublisher("endgames", useSharedBoard ? {
+    keyboard: boardHistory.keyboard,
     positionKey: endgamePositionKey,
     unavailable: fen === STANDARD_FEN ? status : undefined,
-    fen,
+    fen: boardHistory.fen,
     interactionMode:
-      busy || classification !== target || complete ? "readonly" : "legal",
+      boardHistory.viewingHistory || busy || classification !== target || complete ? "readonly" : "legal",
     showHint: false,
     theme,
     pieceSet,
@@ -415,8 +427,9 @@ export default function EndgamesView({
           {!useSharedBoard && (
             <Chessboard
               positionKey={endgamePositionKey}
-              fen={fen}
-              locked={busy || classification !== target || complete}
+              keyboard={boardHistory.keyboard}
+              fen={boardHistory.fen}
+              locked={boardHistory.viewingHistory || busy || classification !== target || complete}
               showHint={false}
               theme={theme}
               pieceSet={pieceSet}

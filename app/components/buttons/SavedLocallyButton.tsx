@@ -1,5 +1,7 @@
 import { Button } from "./BaseButton";
-import { useState } from "react";
+import { useRef, useState } from "react";
+
+import { usePopupKeyboard } from "../../lib/keyboard-shortcuts";
 
 interface SavedLocallyButtonProps {
   setShowImport: (show: boolean) => void;
@@ -9,6 +11,8 @@ export default function SavedLocallyButton({
   setShowImport,
 }: SavedLocallyButtonProps) {
   const [open, setOpen] = useState(false);
+  const popupRef = useRef<HTMLDivElement>(null);
+  usePopupKeyboard(popupRef, () => setOpen(false), open);
   return (
     <div className="local-data-menu">
       <Button
@@ -16,13 +20,13 @@ export default function SavedLocallyButton({
         aria-expanded={open}
         aria-controls="local-data-menu"
         aria-label="Open local data menu"
-        onClick={() => setOpen((value) => !value)}
+        onClick={event => { event.currentTarget.focus(); setOpen((value) => !value); }}
       >
         <span className="status-dot" aria-hidden="true" />
         <span>Local data</span>
       </Button>
       {open && (
-        <div id="local-data-menu" className="local-data-popover" role="menu">
+        <div ref={popupRef} id="local-data-menu" className="local-data-popover" role="menu">
           <strong>Local data</strong>
           <small>Saved on this computer</small>
           <Button

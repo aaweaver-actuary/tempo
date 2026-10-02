@@ -18,8 +18,21 @@ export function useBoardPublisher(owner: BoardShellOwner, snapshot: Partial<Boar
   const onDrawnShapesChange = useCommittedCallback<Parameters<NonNullable<BoardShellSnapshot["onDrawnShapesChange"]>>, void>(
     (...arguments_) => snapshot?.onDrawnShapesChange?.(...arguments_));
   const onFlip = useCommittedCallback(() => snapshot?.onFlip?.());
+  const previous = useCommittedCallback(() => snapshot?.keyboard?.previous?.());
+  const next = useCommittedCallback(() => snapshot?.keyboard?.next?.());
+  const start = useCommittedCallback(() => snapshot?.keyboard?.start?.());
+  const end = useCommittedCallback(() => snapshot?.keyboard?.end?.());
+  const reset = useCommittedCallback(() => snapshot?.keyboard?.reset?.());
+  const hint = useCommittedCallback(() => snapshot?.keyboard?.hint?.());
+  const nextItem = useCommittedCallback(() => snapshot?.keyboard?.nextItem?.());
   const completeSnapshot: BoardShellSnapshot = {
     ...defaultBoardState, ...snapshot, owner,
+    keyboard: snapshot?.keyboard ? { ...snapshot.keyboard,
+      previous: snapshot.keyboard.previous ? previous : undefined, next: snapshot.keyboard.next ? next : undefined,
+      start: snapshot.keyboard.start ? start : undefined, end: snapshot.keyboard.end ? end : undefined,
+      reset: snapshot.keyboard.reset ? reset : undefined, hint: snapshot.keyboard.hint ? hint : undefined,
+      nextItem: snapshot.keyboard.nextItem ? nextItem : undefined,
+    } : undefined,
     onMove: snapshot?.onMove ? onMove : undefined,
     onFreeMove: snapshot?.onFreeMove ? onFreeMove : undefined,
     onSquareSelect: snapshot?.onSquareSelect ? onSquareSelect : undefined,

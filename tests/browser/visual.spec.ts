@@ -193,3 +193,29 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 720 
     await expect(dialog.locator(".board-frame")).toHaveAttribute("data-orientation", "black");
   });
 }
+
+for (const width of [390, 1280]) {
+  test(`keyboard help and letter preference remain readable ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 }); await prepareVisualUI(page);
+    const helpButton = page.getByRole("button", { name: "Keyboard shortcuts", exact: true });
+    const buttonBounds = (await helpButton.boundingBox())!;
+    expect(buttonBounds.height).toBeGreaterThanOrEqual(width === 390 ? 44 : 36);
+    await helpButton.click();
+    const help = page.getByRole("dialog", { name: "Keyboard shortcuts" });
+    await expect(help).toBeVisible();
+    const bounds = (await help.boundingBox())!;
+    expect(bounds.x).toBeGreaterThanOrEqual(0); expect(bounds.x + bounds.width).toBeLessThanOrEqual(width);
+    const firstKey = help.locator("dt").first();
+    const firstKeyBounds = (await firstKey.boundingBox())!;
+    expect(firstKeyBounds.x).toBeGreaterThan(bounds.x);
+    expect(await firstKey.evaluate(element => {
+      const bounds = element.getBoundingClientRect();
+      return element.contains(document.elementFromPoint(bounds.x + bounds.width / 2, bounds.y + bounds.height / 2));
+    })).toBe(true);
+    await expect(page).toHaveScreenshot(`keyboard-help-${width}.png`, { animations: "disabled", fullPage: true });
+    await page.keyboard.press("Escape"); await navigate(page, "Settings");
+    await page.getByRole("tab", { name: "Board", exact: true }).click();
+    await expect(page.getByRole("checkbox", { name: /Letter keyboard shortcuts/ })).toBeChecked();
+    await expect(page).toHaveScreenshot(`keyboard-settings-${width}.png`, { animations: "disabled", fullPage: true });
+  });
+}
