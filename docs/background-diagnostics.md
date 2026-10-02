@@ -1,5 +1,10 @@
 # Background progress diagnostics (#37)
 
+Current PR #56 review corrections, rebased test evidence, the local durability
+failure and focused reproduction, and revised full-hook measurements are recorded
+in [the corrective evidence](background-diagnostics-review-evidence.md). The
+delivery sections below retain historical evidence from the original candidate.
+
 This change instruments the existing lifecycle; eligibility, capacity, admission,
 retry policy and scheduling order are unchanged. In particular, it does not
 implement #38 or #39. It never pauses, resets or cleans a study queue.
