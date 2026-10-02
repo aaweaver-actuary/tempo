@@ -6,11 +6,61 @@ import {
   notificationsAtOrAbove, publishNotification, resolveNotification, updateNotification,
 } from "../../app/lib/notifications";
 import { NotificationCenter, NotificationViewport } from "../../app/components/notification-center";
+import { WorkspaceRefreshStatus } from "../../app/components/workspace-refresh-status";
 
 beforeEach(() => { clearNotificationHistory(); vi.useRealTimers(); });
 afterEach(() => { vi.useRealTimers(); });
 
 describe("notification regressions", () => {
+  it("workspace refresh failure survives remount until matching recovery", () => {
+    const refresh = (state: string, url: string) => act(() => {
+      window.dispatchEvent(new CustomEvent("tempo-workspace-data", { detail: { state, url } }));
+    });
+    const view = render(<WorkspaceRefreshStatus />);
+    const failedUrl = "http://localhost:8000/api/repertoires";
+    refresh("refreshing", failedUrl);
+    refresh("error", failedUrl);
+    const failedId = notifications()[0].id;
+    expect(JSON.parse(localStorage.getItem("tempo-notifications-v1")!)[0].details)
+      .toEqual({ failedUrls: ["/api/repertoires"] });
+    view.unmount();
+    render(<WorkspaceRefreshStatus />);
+    refresh("ready", "/api/games/summary");
+    expect(notifications()[0]).toMatchObject({ id: failedId, severity: "warning", active: false, resolvedAt: null });
+    expect(notificationNeedsAttention(notifications()[0])).toBe(true);
+    refresh("ready", failedUrl);
+    expect(notifications()[0]).toMatchObject({ id: failedId, severity: "success", resolvedAt: expect.any(String) });
+  });
+
+  it("failed workspace refresh remains actionable until its own data recovers", () => {
+    render(<><WorkspaceRefreshStatus /><NotificationCenter /><NotificationViewport /></>);
+    const refresh = (state: string, url: string) => act(() => {
+      window.dispatchEvent(new CustomEvent("tempo-workspace-data", { detail: { state, url } }));
+    });
+    refresh("refreshing", "/api/repertoires");
+    refresh("refreshing", "/api/games/summary");
+    const progressId = notifications()[0].id;
+    refresh("error", "/api/repertoires");
+    refresh("ready", "/api/games/summary");
+    expect(notifications()).toHaveLength(1);
+    expect(notifications()[0]).toMatchObject({ id: progressId, severity: "warning", active: false, resolvedAt: null });
+    expect(notificationNeedsAttention(notifications()[0])).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Notifications" }));
+    const tray = within(screen.getByRole("region", { name: "Notifications" }));
+    expect(tray.getByText(notifications()[0].message)).toBeTruthy();
+    refresh("refreshing", "/api/repertoires");
+    expect(notificationNeedsAttention(notifications()[0])).toBe(true);
+    refresh("ready", "/api/repertoires");
+    expect(notifications()).toHaveLength(1);
+    expect(notifications()[0]).toMatchObject({ id: progressId, severity: "success", active: false,
+      message: "Workspace data refreshed.", resolvedAt: expect.any(String) });
+    expect(notificationNeedsAttention(notifications()[0])).toBe(false);
+    expect(notificationToastIds()).toHaveLength(0);
+    expect(tray.queryByText("Workspace data refreshed.")).toBeNull();
+    fireEvent.click(tray.getByRole("button", { name: "All" }));
+    expect(tray.getByText("Workspace data refreshed.")).toBeTruthy();
+  });
+
   it("clearing one notification removes only its badge contribution and retains exported history", () => {
     const clearedId = publishNotification({ severity: "warning", source: "sync", key: "sync-conflict",
       message: "Saved conflict", details: { cardIds: ["card-1"] } });

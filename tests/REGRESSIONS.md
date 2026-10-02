@@ -2,6 +2,8 @@
 
 Quiet notifications (October 2, 2026):
 
+- Terminal settings transfer failures were falsely resolved and hidden from Needs attention: `settings transfer unavailable warning remains actionable after progress ends`; `settings transfer error remains actionable after progress ends`; `successful settings transfer resolves the same progress record quietly` in `tests/unit/settings-notification-regressions.test.tsx` exercise the actual settings component and tray, retaining one record per operation.
+- Workspace refresh progress falsely reported success after an error or an unrelated read succeeded: `failed workspace refresh remains actionable until its own data recovers`; `workspace refresh failure survives remount until matching recovery` in `tests/unit/notification-regressions.test.tsx` preserve the warning through retries/reloads until each failed URL returns ready.
 - Routine saves interrupt study: `routine review saves never show popups`; `active work stays in history without a popup and history keeps the latest 500`; browser `review saves stay quiet without moving the board or card`.
 - Grouped Clear controls acknowledge all represented notices without resolving independent saves or hiding new arrivals: `clearing grouped notifications preserves independent operations and new arrivals`; the retained notification-clear browser cases inspect cleared history under All after reopening Needs attention.
 - Retry warnings flood the window or keep popups alive: `identical retries share one entry without reopening or extending the popup`; `keyed diagnostic repeats keep their popup deadline when details change`; `warning popups stay bounded and expire even while work remains active`.

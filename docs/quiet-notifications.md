@@ -10,6 +10,8 @@ The Clear controls from main remain available. Clearing a grouped row acknowledg
 
 A failed save ends its progress state without resolving its warning or error. Guided-attempt notices resolve only when the durable pending-attempt list is empty, including legacy repeated notices. Phone conflicts are tracked independently. Actual save/retry behavior, PostgreSQL persistence and worker scheduling are outside this change.
 
+Ending progress is not itself resolution. Terminal settings transfer warnings/errors use `updateNotification()` with `active: false`, preserving `resolvedAt: null` and visibility under Needs attention. Only confirmed success/recovery uses `resolveNotification()`, which sets `resolvedAt`. Failed workspace refreshes retain an actionable warning until each failed URL successfully refreshes; another read finishing cannot resolve them. Successful completion stays quiet in history.
+
 ## Validation scope
 
 The relevant risks are hiding actionable failures, merging different operations/details, resetting popup timers on retries, clearing a still-pending save, and browser workflows depending on a success popup. Named regular regressions are registered in `tests/REGRESSIONS.md`.
@@ -44,7 +46,7 @@ The complete candidate browser run passed every notification/history assertion, 
 
 Timing reports and browser traces/screenshots remain under `test-results/`. Scenario stage times are nested within command wall time and must not be added again. This work makes no performance-speedup claim.
 
-## Remaining boundary
+## Historical rebase evidence
 
 The PR candidate was rebased onto main `072f55048c7f0d3cccca1fcf9e01c32df514fd2f`, including its persistent notification clearing and backend observability changes. The named `clearing grouped notifications preserves independent operations and new arrivals` regression proves the integration. Existing Clear browser cases now inspect retained entries under All after reopening Needs attention.
 
@@ -58,3 +60,11 @@ Rebased checks ran on clean source candidate `5e7155348ad6cb80652ba32e04cd3fe9ec
 | `git diff origin/main..HEAD --check` | Passed | Static inspection |
 
 CI owns all required validation of the rebased candidate, including browser, pinned visual, backend/Rust/build and PostgreSQL durability layers. The earlier browser and visual runs remain historical evidence and are not attributed to the rebased candidate. The Study queue-publication failure must be addressed or receive passing current-candidate evidence before claiming browser readiness. A local `make full` was not run because CI owns that boundary. No merge, release or live deployment is claimed.
+
+## Current-main lifecycle follow-up
+
+The branch was subsequently rebased onto main `5dd0815b4bac42dea3077959fd92f1db33f4cf04`. The settings warning/error regressions and workspace refresh failure regression failed before the caller fixes; the settings success control already passed. A further remount regression reproduced false recovery before preserving failed refresh resources in the existing notification details. All five new regressions are registered in `tests/REGRESSIONS.md`.
+
+Every `resolveNotification()` caller was semantically audited: settings terminal failures and workspace refresh errors needed correction. Training saves/next-card loading, pending-review recovery, service/writer recovery, guided-attempt confirmation, phone replay/conflict removal, queued discovery confirmation, and validated endpoint recovery retain their successful resolution behavior. The API and test-only resolution calls remain unchanged. No backend persistence or retry logic changed.
+
+The current PR description records final head/base, exact commands, local evidence and the fresh complete candidate CI run. CI run `36998607620` validated the older head `7ab2466c5213c0ca7ffe895226f922eec18000eb` against main `072f55048c7f0d3cccca1fcf9e01c32df514fd2f`; it is historical evidence only and cannot validate this follow-up.
