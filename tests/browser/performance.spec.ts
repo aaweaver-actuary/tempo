@@ -453,7 +453,11 @@ test("held-piece drag baseline separates workloads and capture overhead", async 
                 await experimentPage.reload();
               }
               await expect(experimentPage.locator(".board-frame")).toHaveAttribute("data-input-enabled", "true");
+              // #33 defers closed-tray training work. Explicit demand starts
+              // this controlled in-flight workload before returning to the board.
+              await experimentPage.getByRole("button", { name: "Discoveries", exact: true }).click();
               await expect.poll(discovery.started).toBe(true);
+              await experimentPage.getByRole("button", { name: "Back to work", exact: true }).click();
               if (workload !== "discovery-preparation") {
                 discovery.release(); await expect.poll(discovery.completed).toBe(true);
                 // Settle the routed response before the idle/control measurements.

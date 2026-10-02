@@ -1,5 +1,10 @@
 import { test, expect, prepareUI, noPageOverflow } from "./ui-fixtures";
 
+async function openDiscoveries(page: import("@playwright/test").Page) {
+  const trigger = page.getByRole("button", { name: "Discoveries", exact: true });
+  if (await trigger.getAttribute("aria-expanded") !== "true") await trigger.click();
+}
+
 const beforeReply = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
 const decisionFen = "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2";
 const startFen = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
@@ -42,7 +47,7 @@ test("inactive discovery preview refreshes once without a retry notification and
   });
   await page.route("**/api/discoveries/valid/recommendations", route => route.fulfill({ json: readyPreview("valid") }));
   await prepareUI(page);
-  await page.getByRole("button", { name: "Discoveries" }).click();
+  await openDiscoveries(page);
   const viewer = page.getByRole("dialog", { name: "Discoveries" });
   await expect(viewer.getByText("1 of 1 · white to move")).toBeVisible();
   await expect.poll(() => feedReads).toBeGreaterThanOrEqual(2);
@@ -67,10 +72,11 @@ test("same-key inactive preview recovers after the retry delay without an error 
       : route.fulfill({ status: 404, json: { detail: "'Active discovery not found'" } });
   });
   await prepareUI(page);
+  await openDiscoveries(page);
   await expect.poll(() => previewReads).toBe(1);
   previewReady = true;
   await page.clock.fastForward(31_000);
-  await page.getByRole("button", { name: "Discoveries" }).click();
+  await openDiscoveries(page);
   const viewer = page.getByRole("dialog", { name: "Discoveries" });
   await expect(viewer.getByText("1 of 1 · white to move")).toBeVisible();
   expect(previewReads).toBe(2);
@@ -90,12 +96,14 @@ test("repeated same-key inactive 404 previews stay bounded and silent", async ({
     return route.fulfill({ status: 404, json: { detail: "'Active discovery not found'" } });
   });
   await prepareUI(page);
+  await openDiscoveries(page);
   await expect.poll(() => previewReads).toBe(1);
   await page.clock.fastForward(29_000);
   expect(previewReads).toBe(1);
   await page.clock.fastForward(35_000);
   await expect.poll(() => previewReads).toBeGreaterThanOrEqual(2);
   expect(previewReads).toBeLessThanOrEqual(3);
+  await page.getByRole("button", { name: "Back to work", exact: true }).click();
   await page.getByRole("button", { name: "Notifications" }).click();
   await expect(page.locator("#notification-tray").getByText(/Active discovery not found/)).toHaveCount(0);
 });
@@ -113,7 +121,7 @@ test("refresh selects the remaining review item when the first feed item is wait
   await page.route("**/api/repertoires/rep/opportunities/*/training-eligibility", route =>
     route.fulfill({ json: { eligible: true, reason: null } }));
   await prepareUI(page);
-  await page.getByRole("button", { name: "Discoveries" }).click();
+  await openDiscoveries(page);
   const viewer = page.getByRole("dialog", { name: "Discoveries" });
   await expect(viewer.getByText("1 of 2 · white to move")).toBeVisible();
   refreshed = true;
@@ -137,7 +145,7 @@ for (const failure of [
       route.fulfill({ status: failure.status, json: failure.body }));
     await page.route("**/api/discoveries/valid/recommendations", route => route.fulfill({ json: readyPreview("valid") }));
     await prepareUI(page);
-    await page.getByRole("button", { name: "Discoveries" }).click();
+    await openDiscoveries(page);
     const viewer = page.getByRole("dialog", { name: "Discoveries" });
     await expect(viewer.getByText("1 of 1 · white to move")).toBeVisible();
     await viewer.getByRole("button", { name: "Back to work" }).click();
@@ -153,7 +161,7 @@ test("genuine discovery preview network failure remains observable", async ({ pa
   await page.route("**/api/discoveries/failure/recommendations", route => route.abort("failed"));
   await page.route("**/api/discoveries/valid/recommendations", route => route.fulfill({ json: readyPreview("valid") }));
   await prepareUI(page);
-  await page.getByRole("button", { name: "Discoveries" }).click();
+  await openDiscoveries(page);
   const viewer = page.getByRole("dialog", { name: "Discoveries" });
   await expect(viewer.getByText("1 of 1 · white to move")).toBeVisible();
   await viewer.getByRole("button", { name: "Back to work" }).click();
@@ -180,12 +188,13 @@ test("late obsolete preview cannot replace a newer evidence version", async ({ p
     return route.fulfill({ json: readyPreview("same", "new") });
   });
   await prepareUI(page);
+  await openDiscoveries(page);
   await expect.poll(() => oldPreviewReads).toBe(1);
   await page.clock.fastForward(33_000);
   await expect.poll(() => Boolean(releaseOldPreview)).toBe(true);
   await page.clock.fastForward(30_100);
   await expect.poll(() => feedReads).toBeGreaterThanOrEqual(3);
-  await page.getByRole("button", { name: "Discoveries" }).click();
+  await openDiscoveries(page);
   const viewer = page.getByRole("dialog", { name: "Discoveries" });
   await expect(viewer.getByText("1 of 1 · white to move")).toBeVisible();
   releaseOldPreview?.();
@@ -211,6 +220,7 @@ test("late removed preview cannot be reused when the discovery returns", async (
   });
   await page.route("**/api/discoveries/valid/recommendations", route => route.fulfill({ json: readyPreview("valid") }));
   await prepareUI(page);
+  await openDiscoveries(page);
   await expect.poll(() => Boolean(releaseRemovedPreview)).toBe(true);
   const tray = page.locator(".tempo-discoveries-tray");
   await expect(tray).toHaveAttribute("data-discovery-count", "2");
@@ -223,8 +233,10 @@ test("late removed preview cannot be reused when the discovery returns", async (
   await (await returnedFeed).finished();
   await expect(tray).toHaveAttribute("data-discovery-count", "2");
   releaseRemovedPreview?.();
-  await page.getByRole("button", { name: "Discoveries" }).click();
+  await openDiscoveries(page);
   const viewer = page.getByRole("dialog", { name: "Discoveries" });
+  await expect(viewer.getByText("2 of 2 · white to move")).toBeVisible();
+  await viewer.getByRole("button", { name: "Previous", exact: true }).click();
   await expect(viewer.getByText("1 of 2 · white to move")).toBeVisible();
   expect(previewReads).toBeGreaterThanOrEqual(2);
 });
@@ -241,7 +253,7 @@ test("unsupported saved discovery explains Builder route without sending train",
   await page.route("**/api/repertoires/rep/opportunities/unsupported/training-eligibility", route =>
     route.fulfill({ json: { eligible: false, reason: "The target decision cannot be isolated from this prefix card" } }));
   await prepareUI(page);
-  await page.getByRole("button", { name: "Discoveries" }).click();
+  await openDiscoveries(page);
   const viewer = page.getByRole("dialog", { name: "Discoveries" });
   await expect(viewer.getByText(/target decision cannot be isolated/)).toBeVisible();
   await expect(viewer.getByRole("button", { name: "Train this decision" })).toBeDisabled();
@@ -264,7 +276,7 @@ test("supported saved discovery checks eligibility before direct training", asyn
     return route.fulfill({ json: { card_id: "response-card", queued: true, idempotent: false } });
   });
   await prepareUI(page);
-  await page.getByRole("button", { name: "Discoveries" }).click();
+  await openDiscoveries(page);
   const viewer = page.getByRole("dialog", { name: "Discoveries" });
   await expect(viewer.getByRole("button", { name: "Train this decision" })).toBeEnabled();
   await viewer.getByRole("button", { name: "Train this decision" }).click();
@@ -284,7 +296,7 @@ test("genuine training eligibility failure remains visible and blocks direct tra
     return route.fulfill({ json: { card_id: "response-card", queued: true, idempotent: false } });
   });
   await prepareUI(page);
-  await page.getByRole("button", { name: "Discoveries" }).click();
+  await openDiscoveries(page);
   const viewer = page.getByRole("dialog", { name: "Discoveries" });
   await expect(viewer.getByText("Eligibility service unavailable").first()).toBeVisible();
   await expect(viewer.getByRole("button", { name: "Train this decision" })).toBeDisabled();
@@ -309,7 +321,7 @@ test("eligibility recovers after an unchanged feed poll through an item retry", 
       : route.fulfill({ status: 503, json: { detail: "Eligibility service unavailable" } });
   });
   await prepareUI(page);
-  await page.getByRole("button", { name: "Discoveries" }).click();
+  await openDiscoveries(page);
   const viewer = page.getByRole("dialog", { name: "Discoveries" });
   await expect(viewer.getByText("Eligibility service unavailable").first()).toBeVisible();
   await expect(viewer.getByRole("button", { name: "Train this decision" })).toBeDisabled();
@@ -344,7 +356,7 @@ test("discovery viewer with a white decision rejects a black recommendation", as
       depth: 14, report_id: "a".repeat(64), source_game_id: "game", source_ply: 2 }],
   } }));
   await prepareUI(page);
-  await page.getByRole("button", { name: "Discoveries" }).click();
+  await openDiscoveries(page);
   const viewer = page.getByRole("dialog", { name: "Discoveries" });
   await expect(viewer.getByText("No discoveries ready for review")).toBeVisible();
   await expect(viewer.getByText(/Discovery position and recommendation disagree/)).toBeVisible();
@@ -376,7 +388,7 @@ test("black repertoire discovery keeps black at the bottom through route and pre
       depth: 14, report_id: "a".repeat(64), source_game_id: "game", source_ply: 1 }],
   } }));
   await prepareUI(page);
-  await page.getByRole("button", { name: "Discoveries" }).click();
+  await openDiscoveries(page);
   const viewer = page.getByRole("dialog", { name: "Discoveries" });
   const board = viewer.locator(".board-frame");
   await expect(viewer.getByText("1 of 1 · black to move")).toBeVisible();
@@ -425,7 +437,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1470, height: 836 
         { move_uci: "d2d4", score: { cp: 10, mate: null }, loss_cp: 10, depth: 14 }],
     } }));
     await prepareUI(page);
-    await page.getByRole("button", { name: "Discoveries" }).click();
+    await openDiscoveries(page);
     const viewer = page.getByRole("dialog", { name: "Discoveries" });
     await expect(viewer).toBeVisible();
     await expect(viewer.locator(".board-frame")).toHaveAttribute("data-fen", decisionFen);
@@ -500,7 +512,7 @@ test("Add and train opens the next discovery before the save responds", async ({
     state: "queued", error: null,
   } }));
   await prepareUI(page);
-  await page.getByRole("button", { name: "Discoveries" }).click();
+  await openDiscoveries(page);
   const viewer = page.getByRole("dialog", { name: "Discoveries" });
   await expect(viewer.getByText("1 of 2 · white to move")).toBeVisible();
   await expect(viewer.getByRole("button", { name: "Add and train" })).toBeEnabled();
@@ -510,4 +522,54 @@ test("Add and train opens the next discovery before the save responds", async ({
   finishSave?.();
   await viewer.getByRole("button", { name: "Previous", exact: true }).click();
   await expect(viewer.getByRole("button", { name: "Add and train" })).toBeDisabled();
+});
+
+test("hidden discovery speculation stays paused and viewer demand starts bounded look-ahead", async ({ page }, testInfo) => {
+  await page.clock.install();
+  await page.addInitScript(() => {
+    Object.defineProperty(document, "visibilityState", { configurable: true, get: () =>
+      Reflect.get(window, "discoveryFixtureVisible") ? "visible" : "hidden" });
+  });
+  const { prepareVisualUI } = await import("./visual-fixtures");
+  await prepareVisualUI(page, false);
+  let feedReads = 0;
+  const requested: string[] = [];
+  const releases = new Map<string, () => Promise<void>>();
+  const items = Array.from({ length: 100 }, (_, index) => discoveryFixture(`finding-${index}`));
+  await page.route("**/api/discoveries?**", route => {
+    feedReads++; return route.fulfill({ json: discoveryFeed(items) });
+  });
+  await page.route("**/api/discoveries/*/recommendations", async route => {
+    const id = route.request().url().match(/discoveries\/([^/]+)\/recommendations/)![1];
+    requested.push(id);
+    await new Promise<void>(resolve => releases.set(id, async () => {
+      releases.delete(id); await route.fulfill({ json: readyPreview(id) }); resolve();
+    }));
+  });
+  try {
+    await page.reload();
+    await expect(page.locator(".board-frame")).toHaveAttribute("data-input-enabled", "true");
+    await expect(page.locator(".tempo-discoveries-tray")).toBeVisible();
+    await page.clock.fastForward(60_000);
+    expect(feedReads).toBe(0); expect(requested).toEqual([]);
+    await page.evaluate(() => {
+      Reflect.set(window, "discoveryFixtureVisible", true);
+      for (let wake = 0; wake < 10; wake++) document.dispatchEvent(new Event("visibilitychange"));
+    });
+    // The training attempt still owns the foreground after visibility returns.
+    await page.clock.fastForward(30_000);
+    expect(feedReads).toBe(0); expect(requested).toEqual([]);
+    await openDiscoveries(page);
+    await expect.poll(() => requested.length).toBe(2);
+    expect(requested).toEqual(["finding-0", "finding-1"]);
+    await releases.get("finding-0")!();
+    await expect(page.getByText("1 of 1 · white to move")).toBeVisible();
+    await expect.poll(() => requested.length).toBe(3);
+    expect(requested[2]).toBe("finding-2");
+    const diagnostics = await page.locator(".tempo-discoveries-tray").evaluate(element =>
+      (Reflect.get(element, "discoveryPreviewDiagnostics") as () => { maximumActive: number; queued: number })());
+    expect(diagnostics.maximumActive).toBe(2);
+    expect(requested).not.toContain("finding-99");
+    await testInfo.attach("discovery-demand", { body: JSON.stringify({ feedReads, requested, diagnostics }), contentType: "application/json" });
+  } finally { await Promise.all([...releases.values()].map(release => release())); }
 });
