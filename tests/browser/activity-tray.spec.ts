@@ -2,6 +2,31 @@ import { test, expect, prepareUI, navigate, noPageOverflow } from "./ui-fixtures
 import { heldDrag, prepareHeldDrag } from "./held-drag-fixtures";
 import { prepareVisualUI } from "./visual-fixtures";
 
+test("phone notification history groups retries and opens to needs attention", async ({ page }, testInfo) => {
+  await page.setViewportSize({ width: 320, height: 700 });
+  await page.addInitScript(() => {
+    const base = { occurredAt: "2026-10-02T09:00:00Z", updatedAt: "2026-10-02T09:00:00Z", resolvedAt: null, active: false };
+    localStorage.setItem("tempo-notifications-v1", JSON.stringify([
+      ...Array.from({ length: 20 }, (_, index) => ({ ...base, id: `retry-${index}`, severity: "warning", source: "training queue", message: "Queue sync paused. Reconnect to retry." })),
+      { ...base, id: "saved", severity: "success", source: "review", message: "Routine review saved." },
+      { ...base, id: "resolved", severity: "error", source: "service", message: "Recovered service failure.", resolvedAt: "2026-10-02T09:01:00Z" },
+    ]));
+  });
+  await prepareUI(page);
+  await page.getByRole("button", { name: "Notifications" }).click();
+  await expect(page.getByRole("button", { name: "Needs attention" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.locator(".notification-item").filter({ hasText: "Queue sync paused." })).toHaveCount(1);
+  await expect(page.locator(".notification-list")).toContainText("Repeated 20 times");
+  await expect(page.locator(".notification-list")).not.toContainText("Routine review saved.");
+  await expect(page.locator(".notification-list")).not.toContainText("Recovered service failure.");
+  await page.locator(".notification-tray").screenshot({ path: testInfo.outputPath("notification-needs-attention.png") });
+  await page.getByRole("button", { name: "All", exact: true }).click();
+  await expect(page.locator(".notification-list")).toContainText("Routine review saved.");
+  await expect(page.locator(".notification-list")).toContainText("Recovered service failure.");
+  await page.locator(".notification-tray").screenshot({ path: testInfo.outputPath("notification-all-history.png") });
+  await noPageOverflow(page);
+});
+
 for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }, { width: 1280, height: 720 }]) {
   test(`activity tray stays reachable and controls queued work ${viewport.width}`, async ({ page }) => {
     await page.setViewportSize(viewport);
@@ -101,6 +126,8 @@ for (const width of [320, 1280]) {
     expect(clearButtonBounds.height).toBeGreaterThanOrEqual(width < 768 ? 44 : 36);
     await individualClear.focus();
     await individualClear.press("Enter");
+    await expect(errorEntry).toHaveCount(0);
+    await notificationTray.getByRole("button", { name: "All", exact: true }).click();
     await expect(errorEntry.getByText("Cleared", { exact: true })).toBeVisible();
     await expect(countBadge).toHaveText("1");
     const boardAfterIndividualClear = (await studyBoard.boundingBox())!;
@@ -121,6 +148,8 @@ for (const width of [320, 1280]) {
     await page.reload();
     await expect(countBadge).toHaveCount(0);
     await notificationTrigger.click();
+    await expect(notificationTray.getByRole("article")).toHaveCount(0);
+    await notificationTray.getByRole("button", { name: "All", exact: true }).click();
     await expect(notificationTray.getByText("Cleared", { exact: true })).toHaveCount(3);
     await page.evaluate(() => window.dispatchEvent(new ErrorEvent("error", {
       message: "New notification after clearing", error: new Error("New notification after clearing"),

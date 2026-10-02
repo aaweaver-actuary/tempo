@@ -1,9 +1,12 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { waitFor } from "@testing-library/react";
 import { fetchAndInitializeQueue } from "../../app/views/fetchAndInitializeQueue";
 import { useTrainingStore } from "../../app/state/training-store";
 import { clearDebugErrors, debugErrors } from "../../app/lib/debug-reporting";
 import { localDayKey } from "../../app/utils/local";
 import { OfflineReplayError } from "../../app/lib/offline-training";
+import { clearNotificationHistory, notificationToastIds, notifications, publishNotification } from "../../app/lib/notifications";
+import { enqueueTrainingFailure, pendingTrainingFailures } from "../../app/lib/training-failure-outbox";
 import { asCardId, asFenString, asQueueEntryId, asSanMove, type PracticeCard } from "../../app/types";
 
 const offlineTrainingMocks = vi.hoisted(() => ({
@@ -27,6 +30,7 @@ const activeCard: PracticeCard = {
 beforeEach(() => {
   localStorage.clear();
   clearDebugErrors();
+  clearNotificationHistory();
   useTrainingStore.setState(useTrainingStore.getInitialState(), true);
   offlineTrainingMocks.readPreparedTraining.mockResolvedValue({
     localDate: localDayKey(), preparedAt: new Date().toISOString(), cards: [{
@@ -39,6 +43,40 @@ beforeEach(() => {
 });
 
 describe("desktop live queue isolation", () => {
+  it("guided attempt recovery clears its warning while phone conflicts remain", async () => {
+    const pendingNotice = publishNotification({ severity: "warning", source: "training queue", key: "guided-attempt-save", message: "Guided attempt save pending. Tempo will retry." });
+    offlineTrainingMocks.replayOfflineAttempts.mockResolvedValueOnce({
+      localDate: localDayKey(), preparedAt: new Date().toISOString(), cards: [], nextTemporaryId: -1,
+      attempts: [{ localEntryId: 801, cardId: "desktop-active", outcome: "correct", guided: false,
+        completedAt: new Date().toISOString(), expectedReviewId: 0, expectedRevision: 1, conflict: "Computer review changed" }],
+    });
+    vi.stubGlobal("fetch", vi.fn(async () => Response.json({ count: 0, cards: [] })));
+    await fetchAndInitializeQueue();
+    expect(notifications().find((record) => record.id === pendingNotice)?.resolvedAt).not.toBeNull();
+    expect(notifications().find((record) => record.key === "phone-review-conflicts")).toMatchObject({ severity: "warning", resolvedAt: null });
+  });
+
+  it("guided attempt warnings clear quietly only after pending saves are confirmed", async () => {
+    const legacy = publishNotification({ severity: "warning", source: "training queue", message: "Guided attempt save pending. Tempo will retry." });
+    enqueueTrainingFailure(801);
+    let confirmAttempt: ((response: Response) => void) | undefined;
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith("/fail")) return new Promise<Response>((resolve) => { confirmAttempt = resolve; });
+      return Response.json({ count: 1, cards: [{ id: "desktop-active", queue_entry_id: 801,
+        start_fen: startingFen, moves: ["e2e4"], content_type: "opening", repertoire_name: "Desktop active", repertoire_source: "PGN" }] });
+    }));
+    await fetchAndInitializeQueue();
+    expect(pendingTrainingFailures()).toEqual([801]);
+    expect(notifications().find((record) => record.key === "guided-attempt-save")).toMatchObject({ severity: "warning", resolvedAt: null });
+    expect(notifications().find((record) => record.id === legacy)?.resolvedAt).toBeNull();
+    expect(confirmAttempt).toBeDefined();
+    confirmAttempt!(Response.json({ attempt_failed: true }));
+    await waitFor(() => expect(pendingTrainingFailures()).toEqual([]));
+    await waitFor(() => expect(notifications().every((record) => record.resolvedAt)).toBe(true));
+    expect(notificationToastIds()).toHaveLength(0);
+    expect(useTrainingStore.getState().queueNotice).toBe("");
+  });
+
   it("desktop same-day prepared queue cannot replace a failed live request", async () => {
     const store = useTrainingStore.getState();
     store.hydrateLocalQueue([activeCard], true, 1);
@@ -84,5 +122,9 @@ describe("desktop live queue isolation", () => {
       source: "training-offline-review-replay", operation: "replay saved offline reviews",
     });
     expect(debugErrors().at(-1)?.context.endpointPath).toBe("/api/cards/desktop-active/review");
+    expect(notifications().find((record) => record.key === "phone-review-syncing")).toMatchObject({ severity: "warning", active: false, resolvedAt: null });
+    await fetchAndInitializeQueue();
+    expect(notifications().find((record) => record.key === "phone-review-syncing")).toMatchObject({ severity: "success", active: false });
+    expect(notifications().find((record) => record.key === "phone-review-syncing")?.resolvedAt).not.toBeNull();
   });
 });
