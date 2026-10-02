@@ -1317,6 +1317,14 @@ The quota, terminal-ID, stale browser marker, and Home refresh-retry regressions
 | `test_canonical_introduction_scores_hide_after_another_repertoire_scope_changes` | Same backend file | Published scores retaining primary game evidence after another repertoire changes the classification universe. |
 | `test_canonical_global_scope_ignores_internal_tactics_and_study_schedule_changes` | Same backend file | Unrelated tactical capture or grading invalidating opening game classification. |
 | CF-1 through CF-4 | `scripts/check_postgres_canonical_freshness.py`, invoked by the regular PostgreSQL durability `background_workloads` stage | Real branch → graph stage/link/classify/cleanup → already requested coverage; source invalidation and stale Explorer/Maia heartbeats, failures and submissions; opportunity compute/publication race; full-set game classification including another primary, NULL, newly eligible/ineligible and no-op saves. Pools close between durable slices to prove restartable cursors. |
+| `canonical route provenance %s keeps the live Black training card playable` | `tests/unit/desktop-queue-regressions.test.ts` | Strict queue validation dropping both authored and generated cards after adding provenance; both cases failed before the contract correction. |
+| `canonical route provenance remains a validated boolean in queue transport` | `tests/unit/domain-boundary-regressions.test.tsx` | Losing numeric/boolean wire compatibility or weakening validation for the new provenance field. |
+
+The complete browser gate exposed the queue-contract mismatch in six existing
+workflows: Black training (both board interaction cases), training comparison,
+FEN-only Study review, captured tactic review, and training burial. Their existing
+real PostgreSQL/browser assertions remain unchanged and must pass on the corrected
+candidate.
 
 Existing foreground-contention, task-lease replay, accepted discovery, shared-card,
 training-history, prefix idempotency, compatibility migration and browser cases

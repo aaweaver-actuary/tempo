@@ -81,6 +81,7 @@ export const queueCardSchema = z.strictObject({
   source_fen: z.string().nullable().optional(),
   introduced_at: z.iso.date().nullable().optional(),
   pending_validation: sqliteBooleanSchema.optional(),
+  canonical_route_source: sqliteBooleanSchema.optional(),
 });
 export const queueEnvelopeSchema = z.strictObject({
   cards: z.array(z.unknown()),
