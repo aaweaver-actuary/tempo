@@ -1,6 +1,8 @@
 import { useLayoutEffect, useRef, useSyncExternalStore, type RefObject } from "react";
 
 export type BoardKeyboardActions = {
+  // History boards own navigation even at a boundary; static previews do not.
+  capturesNavigation?: boolean;
   previous?: () => void;
   next?: () => void;
   start?: () => void;
@@ -85,15 +87,17 @@ function dispatchKey(event: KeyboardEvent) {
   const board = selectedBoard();
   if (!board) return;
   const actions = board.current();
+  const navigationKey = ["arrowleft", "arrowright", "arrowup", "arrowdown", "home", "end"].includes(key);
+  if (navigationKey && !actions.capturesNavigation) return;
   const command = ({ arrowleft: actions.previous, arrowright: actions.next,
     arrowup: actions.start, home: actions.start, arrowdown: actions.end, end: actions.end,
     f: actions.flip, r: actions.reset, h: actions.hint, n: actions.nextItem, "?": actions.help } as Record<string, (() => void) | undefined>)[key];
   if (!command) {
-    if (["arrowleft", "arrowright", "arrowup", "arrowdown", "home", "end"].includes(key)) event.preventDefault();
+    if (navigationKey) event.preventDefault();
     return;
   }
   event.preventDefault();
-  if (event.repeat && !["arrowleft", "arrowright", "arrowup", "arrowdown", "home", "end"].includes(key)) return;
+  if (event.repeat && !navigationKey) return;
   command();
 }
 function ensureDispatcher() {
@@ -167,6 +171,7 @@ export function usePopupKeyboard(elementRef: RefObject<HTMLElement | null>, onCl
 
 export function historyKeyboardActions(cursor: number, length: number, navigate: (cursor: number) => void): BoardKeyboardActions {
   return {
+    capturesNavigation: true,
     previous: cursor > 0 ? () => navigate(Math.max(0, cursor - 1)) : undefined,
     next: cursor < length ? () => navigate(Math.min(length, cursor + 1)) : undefined,
     start: () => navigate(0), end: () => navigate(length),

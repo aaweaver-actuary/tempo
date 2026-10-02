@@ -20,6 +20,47 @@ beforeEach(() => {
   vi.spyOn(HTMLElement.prototype, "getClientRects").mockImplementation(function (this: HTMLElement) { return (this.closest('[hidden]') ? [] : [{ width: 400 }]) as unknown as DOMRectList; });
 });
 
+it("static preview boards preserve browser navigation defaults before and after activation", () => {
+  render(<Chessboard {...boardProps} locked />);
+  const frame = document.querySelector(".board-frame")!;
+  for (const activated of [false, true]) {
+    if (activated) fireEvent.pointerDown(document.querySelector(".board-viewport")!);
+    for (const key of ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Home", "End"]) {
+      const event = new KeyboardEvent("keydown", { key, cancelable: true });
+      act(() => window.dispatchEvent(event));
+      expect(event.defaultPrevented, `${key}, activated: ${activated}`).toBe(false);
+      expect(frame.getAttribute("data-fen")).toBe(initialFen);
+    }
+  }
+  fireEvent.keyDown(window, { key: "f" });
+  expect(frame.getAttribute("data-orientation")).toBe("black");
+  fireEvent.keyDown(window, { key: "r" });
+  expect(frame.getAttribute("data-orientation")).toBe("white");
+  fireEvent.keyDown(window, { key: "?" });
+  expect(screen.getByRole("dialog")).toBeTruthy();
+});
+
+it("navigable boards consume browser navigation at the revealed frontier", () => {
+  function RevealedBoard() {
+    const history = useBoardHistory("revealed", [initialFen, firstPosition], firstPosition);
+    return <Chessboard {...boardProps} fen={history.fen} locked={history.viewingHistory} keyboard={history.keyboard} />;
+  }
+  render(<RevealedBoard />);
+  const frame = document.querySelector(".board-frame")!;
+  for (const key of ["ArrowRight", "End", "ArrowDown"]) {
+    const event = new KeyboardEvent("keydown", { key, cancelable: true });
+    act(() => window.dispatchEvent(event));
+    expect(event.defaultPrevented, key).toBe(true);
+    expect(frame.getAttribute("data-fen")).toBe(firstPosition);
+  }
+  fireEvent.keyDown(window, { key: "Home" });
+  expect(frame.getAttribute("data-fen")).toBe(initialFen);
+  const event = new KeyboardEvent("keydown", { key: "ArrowLeft", cancelable: true });
+  act(() => window.dispatchEvent(event));
+  expect(event.defaultPrevented).toBe(true);
+  expect(frame.getAttribute("data-fen")).toBe(initialFen);
+});
+
 it("navigation never crosses the revealed frontier of an unanswered training card", () => {
   const grade = vi.fn(async () => undefined); const restart = vi.fn(); const move = vi.fn();
   useTrainingStore.setState({ currentFenString: asFenString(firstPosition), step: 1, feedback: "ready", attempt: { entryKey: "keyboard-card", generation: 1, phase: "playerTurn" } });
@@ -80,7 +121,7 @@ it("only the last active visible board handles keys and popup boards fence the b
 
 it("typing widgets modifiers IME and handled events preserve their keyboard behavior", () => {
   const flip = vi.fn(); const next = vi.fn();
-  render(<><Chessboard {...boardProps} onFlip={flip} keyboard={{ next }} /><input aria-label="Text" /><div contentEditable><span>Editable child</span></div>
+  render(<><Chessboard {...boardProps} onFlip={flip} keyboard={{ capturesNavigation: true, next }} /><input aria-label="Text" /><div contentEditable><span>Editable child</span></div>
     <div role="tablist"><button>Tab</button></div><div role="separator" tabIndex={0}>Split</div></>);
   fireEvent.keyDown(screen.getByLabelText("Text"), { key: "f" });
   fireEvent.keyDown(screen.getByText("Editable child"), { key: "f" });
@@ -99,7 +140,7 @@ it("typing widgets modifiers IME and handled events preserve their keyboard beha
 
 it("letter-shortcut preference persists while arrows Escape and contextual help remain active", () => {
   const flip = vi.fn(); const next = vi.fn();
-  render(<Chessboard {...boardProps} onFlip={flip} keyboard={{ next }} />);
+  render(<Chessboard {...boardProps} onFlip={flip} keyboard={{ capturesNavigation: true, next }} />);
   act(() => setLetterShortcutsEnabled(false)); expect(letterShortcutsEnabled()).toBe(false); expect(localStorage.getItem("tempo-letter-shortcuts")).toBe("false");
   fireEvent.keyDown(window, { key: "f" }); expect(flip).not.toHaveBeenCalled();
   fireEvent.keyDown(window, { key: "ArrowRight" }); expect(next).toHaveBeenCalledOnce();
