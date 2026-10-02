@@ -216,3 +216,30 @@ Typecheck passed in 6.37s; lint passed in 10.65s with zero errors and the same
 nine existing warnings. No unchanged dependencies were reinstalled. The PR body
 records the pushed head and current CI evidence; no older result is relabeled
 as a current candidate gate pass.
+
+Main advanced again to `6e623d5` while draft PR #64 was created. Its
+visibility-aware status polling was integrated without altering the polling
+logic. Existing keyboard registration and focus restoration remain the only
+feature changes to the activity panel. Both branches' regression records are
+retained.
+
+The dirty second merge candidate (parents `af9b0a3` and `6e623d5`) passed:
+
+```sh
+npm run test:unit -- \
+  tests/unit/service-status-panel-regressions.test.tsx \
+  tests/unit/status-polling-regressions.test.tsx \
+  tests/unit/popup-shortcuts-regressions.test.tsx \
+  tests/unit/notification-regressions.test.tsx
+npm run typecheck
+npm run lint
+git diff --check
+```
+
+All 75 tests in four files passed (Vitest 4.59s; command wall time 5.18s).
+Typecheck passed in 7.76s; lint passed in 12.86s with zero errors and the same
+nine existing warnings. CI owns required current-base browser and pinned proof.
+Docker inventory during PR preparation showed only the protected live Tempo
+stack and no `tempo-pg-regressions-*` images or containers; no development
+resources needed removal. The unmerged task checkout and diagnostic evidence
+are retained.
