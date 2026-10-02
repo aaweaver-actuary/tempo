@@ -79,6 +79,7 @@ class Result:
 
 class PriorityDatabase:
     def __init__(self):
+        self.metrics = []
         self.version = 0
         self.repertoire_version = 0
         self.generation = 3
@@ -95,6 +96,10 @@ class PriorityDatabase:
         self.connection_open = False
 
     def execute(self, statement, parameters=()):
+        if "INSERT INTO background_metric_buckets" in statement:
+            self.metrics.append((statement, parameters))
+            return Result()
+
         if "FROM background_tasks" in statement:
             return Result({"generation": 1, "lease_token": "lease", "state": "leased"})
         if "SELECT version FROM priority_source_epoch" in statement:

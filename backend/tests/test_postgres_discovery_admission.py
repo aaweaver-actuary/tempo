@@ -72,7 +72,7 @@ def test_postgres_discovery_branch_rebuild_is_admitted_once_under_lease(monkeypa
 def test_postgres_discovery_admission_completes_published_card_without_replay(monkeypatch):
     intent = {"id": "intent-one", "state": "preparing", "line_id": "line-one",
               "repertoire_id": "repertoire-one", "opportunity_id": "opportunity-one",
-              "created_at": "2026-01-01T00:00:00+00:00"}
+              "evidence_fingerprint": "revision-one", "created_at": "2026-01-01T00:00:00+00:00"}
     writes = []
     queued_cards = []
     completed = []
@@ -117,6 +117,10 @@ def test_postgres_discovery_admission_completes_published_card_without_replay(mo
     assert queued_cards == ["card-one"]
     assert completed == [True]
     assert any("UPDATE discovery_admission_intents" in statement for statement, _ in writes)
+    opportunity_write = next((statement, parameters) for statement, parameters in writes
+                             if "UPDATE repertoire_opportunities" in statement)
+    assert "WHERE id=? AND evidence_fingerprint=?" in opportunity_write[0]
+    assert opportunity_write[1][-1] == "revision-one"
 
     lease_current = False
     assert not discovery_admission.execute_admission_intent_slice(task)

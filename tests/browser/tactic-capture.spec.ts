@@ -74,7 +74,9 @@ test("manual capture places and removes pieces and freely drags an incomplete se
 
 test("Black-first capture keeps its orientation while typed SAN and real-board moves save one solution", async ({ page }) => {
   await prepareUI(page); await nav(page, "Tactics");
+  await expect(page.getByText(/Puzzle \d+ of/)).toBeVisible();
   const studyBoard = page.locator(".persistent-board-shell .board-frame");
+  await expect(studyBoard).toHaveAttribute("data-input-enabled", "true");
   const originalFen = await studyBoard.getAttribute("data-fen");
   await page.getByRole("button", { name: "Capture tactic", exact: true }).click();
   const dialog = page.getByRole("dialog"), board = dialog.locator(".board-frame");

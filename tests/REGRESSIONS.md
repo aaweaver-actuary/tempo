@@ -2,6 +2,14 @@
 
 | Issue | Required regression |
 | --- | --- |
+| Tactic capture restoration test reads the placeholder board before the underlying puzzle loads | `Black-first capture keeps its orientation while typed SAN and real-board moves save one solution` waits for the loaded puzzle before recording the restored FEN |
+| A delayed discovery admission handles newer evidence, or a resurfaced revision cannot reuse the same move | `test_stale_discovery_admission_preserves_card_without_handling_new_evidence`; `test_resurfaced_discovery_accepts_same_move_with_revisioned_intent_and_replay`; `test_sqlite_resurfaced_admission_identity_keeps_old_intent_and_same_revision_retries`; `test_postgres_resurfaced_acceptance_keeps_revision_identity_and_same_choice_retries`; `test_sqlite_revisioned_admission_upgrade_preserves_legacy_intents_and_task_references`; `test_postgres_stale_admission_and_revisioned_same_move_replay` in `scripts/check_postgres_upgrade.py` (real PostgreSQL leases, unique constraints, reconnect, queue preservation, and replay) |
+| A delayed Train this decision command or old receipt handles an unreviewed evidence revision | `test_direct_discovery_training_rejects_obsolete_evidence_without_handling_current_revision`; `a completed training receipt for older evidence cannot confirm the current revision`; existing obsolete-eligibility and older-confirmation regressions |
+| Handled discoveries remain in the inbox or return without new evidence | `test_handled_discovery_clears_feed_persists_and_resurfaces_only_with_material_evidence`; `test_sqlite_handled_upgrade_requires_matching_queued_revision_and_card`; `test_handled_discovery_feed_counts_and_pagination_exclude_completed_items`; `test_discovery_accepted_engine_branch_survives_publication_restart`; `test_handled_discovery_postgres_upgrade_and_material_evidence_replay` in `scripts/check_postgres_upgrade.py`; `confirmed Add and train removes the handled discovery from the review session`; `confirmed Train this decision clears the last item while keeping the viewer open`; `confirmation from older evidence does not clear a newly surfaced discovery`; `dismissal advances through undecided discoveries and clears the final item`; browser `confirmed Add and train clears the completed item after advancing before the save responds`; existing `confirmed failed discovery save remains visible with a retry action` |
+| Legacy queued state for revision A hides current revision B during the handled-state upgrade (027 after the current-main rebase) | `test_sqlite_handled_upgrade_requires_matching_queued_revision_and_card`; `test_postgres_handled_upgrade_requires_matching_queued_revision_and_card` in `scripts/check_postgres_upgrade.py`: matching queued intent and card backfills; mismatched, absent, wrong-card, unfinished, preparing, and failed cases remain unhandled; initialization/migrations repeat safely and preserve history |
+| Repertoire Opportunities trains unreviewed current evidence after the displayed row becomes stale | `Repertoire train submits the displayed revision and leaves newer evidence unhandled on conflict`; browser `Repertoire Opportunities stale Train submits displayed evidence and preserves the current revision`: the displayed fingerprint is submitted and a conflict leaves newer evidence actionable |
+| Missing Train revisions bypass the write guard, including persisted legacy commands | `test_discovery_training_requires_reviewed_revision_before_any_write`; `test_postgres_discovery_train_requires_revision_before_dispatch`: missing/null/empty request revisions reject without writes/dispatch; `test_direct_training_requires_revision_before_opening_write_transaction`; `test_postgres_legacy_train_payload_cannot_write_current_evidence`: legacy service/command payloads reject before database work; `test_postgres_direct_training_requires_current_reviewed_revision` in `scripts/check_postgres_upgrade.py`: real PostgreSQL missing/stale revisions reject, matching training confirms, reconnect/replay preserves one queue row and reviews |
+| Legacy fingerprintless browser Train state confirms or resubmits current evidence | `legacy fingerprintless Train pending cannot confirm or resubmit current evidence`; `legacy fingerprintless Train complete cannot confirm or resubmit current evidence`: obsolete actions are cleared before any fetch and require review/click again; `revisionless Train calls are rejected before a request or pending action is created`: runtime guard protects untyped callers; existing `a completed training receipt for older evidence cannot confirm the current revision` retains A/B receipt separation |
 | #32: Equivalent last moves and training parent updates disturb board ownership or input | `equivalent last-move values do not cancel a held piece or reapply FEN`; `training parent status updates keep the lease and forward the latest handler exactly once`; `equivalent snapshots suppress store publications while callbacks use current card and step`; `a fixed twenty-update status workload produces no new publication, lease release or reset` |
 | #32: Released, remounted, or obsolete publishers overwrite the active workspace | `released and remounted same-owner sessions fence both late updates and late releases`; `an obsolete mounted publisher cannot steal a replacement owner's lease on rerender`; `Strict Mode reacquires once per setup and reapplies the board after construction cleanup` |
 | #32: Genuine invalidation retains stale input or queued events grade a replacement card | `same-FEN card changes and same-owner remounts invalidate held input`; `read-only or unavailable input cancels the held move and ignores queued move events`; `a wrong attempt returning to the same FEN explicitly resets through position revision`; `deferred Chessground events from a previous card cannot grade or annotate its replacement` |
@@ -262,6 +270,7 @@ Append every new reported issue and its test names here. All listed tests belong
 - Long phone review conflicts move the training layout or disappear before they can be copied — `nine phone conflicts can be inspected and discarded individually without changing computer reviews`; `a transient popup fades while its notification remains in the tray`; `severity JSON export includes safe details and excludes secrets`.
 - Notifications reorder incorrectly, lose save transitions or repeat conflicts, disappear on reload, or fail when storage is full — `new notifications and updates remain newest first with severity thresholds`; `saving status resolves in place and repeated unresolved conflicts do not duplicate`; `active work stays visible until resolved and history keeps the latest 500`; `history survives module reload and still works when storage writes fail`.
 - The notification tray is clipped on a narrow phone — `notifications tray remains inside a 320px phone viewport`.
+- Old notifications keep the badge count elevated and obscure new arrivals — `clearing one notification removes only its badge contribution and retains exported history`; `clear all acknowledges every retained notification regardless of severity filter`; `unchanged cleared incidents stay cleared while changed and recurring incidents count again`; `cleared notifications survive reload and remain usable when storage writes fail` in `tests/unit/notification-regressions.test.tsx`; `notification clear controls preserve history across reload and count new arrivals at 320`; `notification clear controls preserve history across reload and count new arrivals at 1280` in `tests/browser/activity-tray.spec.ts`.
 - Games displays an unrelated tactical position or mismatched arrows while reviewing a game — `Games selection and move navigation keep the board on the selected game`; `selecting another game changes piece placement and move highlights together`.
 - Games displays a placeholder position before full game moves load — `Games shows loading until the selected game's full moves arrive`.
 - Game sync records a SQLite lock after provider success — `test_sync_finalization_retries_transient_database_lock_without_refetching_providers`.
@@ -957,6 +966,7 @@ failed against the original PR implementation before the guard was added.
 - `test_canonical_prefix_matching_stub_without_continuation_never_reports_complete`.
 - `test_canonical_prefix_shared_card_edit_cannot_escape_any_linked_repertoire`.
 - `test_canonical_prefix_stale_recommendation_worker_cannot_publish`.
+- `test_canonical_prefix_refresh_preserves_previously_handled_discoveries` (scope refresh retains the handled evidence and accepted work introduced by #55).
 - `test_canonical_prefix_game_matches_and_statistics_exclude_sicilian_philidor_and_incomplete_games` (all imported games remain available).
 - `test_canonical_prefix_repertoire_api_exposes_only_normalized_typed_metadata`.
 - `test_canonical_prefix_discovery_admits_verified_new_gap_routes_and_rejects_stale_queued_work`.
@@ -988,3 +998,119 @@ in `backend/tests/test_postgres_import_verification.py` protects exact legacy
 snapshot recovery: copy does not advance imported source revisions, and the
 trigger is restored within the same transaction. Real PostgreSQL import/verify
 and service recreation remain part of the durability gate.
+
+## Issue #34 — visibility-aware status polling
+
+Passive status reads pause while hidden/offline. Visible closed activity counts and writer health refresh every 30 seconds plus request duration on success; open activity and sync status retain their active 2-second / idle 15-second completion-relative intervals. Activity failure backoff is 5/10/20/60 seconds while open, with a 30-second minimum while closed. Sync failure backoff remains 5/10/20/60 seconds. Explicit recovery resets backoff. Hidden/offline status is last-known; returning visible/online refreshes it. No acquisition timer, command/outbox recovery, discovery scheduler, or backend policy changes.
+
+- `tests/unit/status-polling-regressions.test.tsx`: `activity_polling_matches_open_visible_online_policy`, `activity_refresh_events_coalesce_without_parallel_requests`, `activity_obsolete_offsets_and_unmounted_sessions_cannot_publish`, `activity_offset_changes_ignore_late_success_and_preserve_one_flight`, `activity_offset_changes_ignore_late_error_and_preserve_one_flight`, `activity_rapid_open_close_preserves_a_single_closed_timer` cover timing, single-flight wakes, offset ownership, and lifecycle cleanup.
+- `activity_equivalent_responses_preserve_render_identity`, `activity_idle_polling_and_real_progress_match_policy`, `activity_writer_failure_and_recovery_remain_actionable`, `activity_failure_backoff_and_recovery_match_policy_open_true`, `activity_failure_backoff_and_recovery_match_policy_open_false`, `activity_remount_offline_does_not_claim_service_recovery`, and `activity_invalid_payload_and_explicit_retry_preserve_actionable_errors` cover unchanged snapshots, real changes, errors, health notifications, and verified recovery.
+- `sync_status_hidden_offline_and_failure_backoff_match_policy`, `sync_status_recovery_bursts_are_single_flight`, `sync_status_equivalent_responses_preserve_consumer_identity`, `sync_status_progress_errors_and_recovery_publish_changes`, `sync_status_failure_backoff_recovers_without_duplicate_incidents`, `sync_status_unmounted_responses_cannot_resolve_new_session_incidents`, `sync_status_superseded_by_a_manual_command_cannot_publish_an_old_completion`, `sync_status_equal_provider_counts_retain_identity_and_changed_counts_publish`, and `sync_status_invalid_payload_does_not_publish_false_success_and_recovers` cover passive sync status. Parameterized `sync_status_job_<status>_retains_its_existing_interval` covers all six job states.
+- `passive_status_throttling_preserves_game_acquisition_and_pending_commands` and `activity_controls_remain_prompt_while_passive_reads_are_suspended` protect acquisition cadence, manual commands, and receipt confirmation independently of display polling.
+- `equivalent_status_during_actual_training_avoids_parent_commits_and_board_publications` exercises the real TrainingView with active status polling. Parameterized `status_request_counts_match_the_sixty_second_window_<scenario>` covers closed/open, active/idle, hidden, and offline counts under controlled clocks. The open window counts its explicit open refresh and excludes the preceding closed bootstrap; hidden/offline windows launch no passive requests.
+- `tests/browser/activity-tray.spec.ts::status_recovery_during_training_preserves_held_drag_and_command_execution` holds a real piece across a delayed status response and coalesced recovery burst, then checks explicit activity control. The existing navigation-growth case explicitly wakes the closed trigger before assessing geometry.
+
+These count/identity assertions establish reduced polling and React work, not a drag-latency improvement. Existing held-drag preservation and diagnostics specs remain independent boundary coverage.
+
+`manual_sync_startup_suspends_passive_reads_until_command_state_and_then_reconciles` covers a completed bootstrap read followed by delayed manual settings, wake/timer events during startup, queued command publication, rejected pre-command status, and one legitimate post-command reconciliation. It failed on PR #59 before separating command invalidation from status recovery. The existing in-flight supersession regression remains in the suite.
+
+`activity_coalesced_success_clears_failure_before_react_commits` batches a failed read and immediately successful queued follow-up without an intervening React commit. It verifies no alert/attention, resolution of a retained incident, single-flight request counts, and exactly one closed-panel timer. It failed on PR #59 before synchronously tracking requested errors; polling, control, and retry errors now use the same publisher.
+
+`manual_sync_post_command_status_reconciles_before_react_commits` verifies that an immediately completed post-command read can reconcile queued command state to a completed server job, even when it equals the bootstrap snapshot and the command/read share a React batch.
+
+`manual_sync_precommand_error_is_not_erased_by_historical_completed_status_<failure>` covers missing usernames, settings/enqueue HTTP and validation failures, and blocked receipts: each retains its local error without an immediate historical-job reconciliation and through repeated later historical polls while the idle timer continues. All six strengthened cases failed on PR #59 before explicit error ownership. `manual_sync_<pending|complete>_receipt_keeps_immediate_status_reconciliation` preserves prompt reconciliation for non-blocked pending operations and confirmed saved commands, including unchanged receipt identity and POST counts.
+
+`successful_manual_sync_supersedes_prior_manual_error` protects local errors from historical completions and unrelated active-job errors, retains the error during a delayed retry, then verifies a validated subsequent command and immediate reconciliation can clear it. Command errors and queued React state share one publication contract; status-derived errors retain their existing recovery policy.
+
+`activity_initial_offline_mount_reports_unavailable_not_empty` verifies no initial offline read, an explicit unqueried message without a service incident, one coalesced online recovery, and known-empty rendering only after success. `activity_offline_after_success_preserves_last_known_empty_status` retains known-empty counts offline. `activity_offline_after_success_preserves_last_known_items_and_writer_health` retains cached details and actionable writer health when the tray first opens offline, without a read or false recovery. Initial false-empty and missing cached-detail cases failed on PR #59 before the fix.
+
+`activity_polling_preserves_current_main_diagnostics_throttle` protects main's activity-triggered diagnostics read and 15-second minimum across open polling, offline suspension and coalesced recovery. Activity/sync request-count fixtures exclude this separate diagnostic endpoint; its real request path remains covered by the named integration regression.
+
+Issue #37: background progress diagnostics (observability only).
+The regular Python suite includes `backend/tests/test_background_diagnostics.py`:
+
+- `test_background_diagnostics_classifies_queue_states_and_eligibility` and
+  `test_background_oldest_eligible_age_excludes_delayed_paused_and_blocked` cover
+  queued/delayed/paused/leased/retrying/failed/complete without treating delay as
+  eligible starvation.
+- `test_background_pending_age_survives_retry_deferral_and_reclaim` and
+  `test_background_generation_replacement_and_restart_are_visible` preserve dirty
+  age independently of current generation age and lifecycle churn.
+- `test_background_duplicate_delivery_does_not_inflate_semantic_completion` and
+  `test_engine_callback_replay_does_not_inflate_position_or_preemption_counts`
+  distinguish committed slices, full generations and accepted semantic units.
+- `test_background_admission_wait_is_separate_from_handler_execution` and
+  `test_background_diagnostics_preserves_foreground_responsiveness` prove the
+  timing seam without changing the gate's blocking behavior.
+- `test_background_stale_delivery_and_result_discard_are_distinct`,
+  `test_background_stale_delivery_skips_the_expensive_handler`,
+  `test_background_missing_task_delivery_is_observed_without_a_dangling_event`,
+  and `test_background_stale_publication_lock_and_removed_result_are_observed`
+  cover pre-execution and publication fences, including deleted rows.
+- `test_background_lease_expiry_and_reclaim_are_counted_once` and
+  `test_engine_defense_expired_lease_reclaim_and_claim_are_observed` cover lease
+  churn without modifying claim eligibility or capacity.
+- `test_engine_preemption_seconds_are_separate_from_successful_work` separates
+  abandoned/preempted search time from accepted successful positions.
+- `test_background_snapshot_cost_is_independent_of_event_history`,
+  `test_background_metric_buckets_expire_without_unbounded_growth`, and
+  `test_background_diagnostics_query_deadline_returns_unavailable` cover a
+  100,000-event history, 600 bucket rotations and explicit bounded-query failure.
+- `test_background_diagnostics_redaction_and_schema_parity`,
+  `test_background_public_diagnostics_reject_invalid_counters_and_old_engine_fields`,
+  and `test_background_runbook_snapshots_validate_without_private_fields` cover
+  public contracts, missing legacy timing and sanitized example snapshots.
+- `test_background_metric_outcomes_roll_back_with_their_transaction` and
+  `test_postgres_background_counter_flush_follows_domain_writes_and_sorts_locks`
+  cover rollback, coalescing and deterministic lock order.
+
+`tests/unit/background-diagnostics-regressions.test.ts` supplies the named
+Python/TypeScript schema parity, bounded cache and monotonic engine outcome
+regressions. `debug bundle includes only validated aggregate background diagnostics` in `debug-reporting-regressions.test.tsx` protects
+export redaction. The normal PostgreSQL `schema_upgrade` scenario executes
+`check_postgres_background_diagnostics.py` against a runner-owned database for
+real migration/replay/concurrent counters/lease reclaim/rollback and query cost.
+These are new instrumentation contracts; there was no prior snapshot endpoint
+against which to demonstrate an equivalent failing baseline. Existing scheduling
+and callback contract tests remain in the regular suite.
+
+CI #37 packaging regression: `engine Docker image includes every relative worker
+module including diagnostic timing` in the regular background diagnostics unit
+file fails before copying the new helper into `Dockerfile.engine`. The initial PR
+PostgreSQL job reproduced the missing module by exiting at worker startup. The
+fixed candidate must pass the real disposable Docker startup and durability gate.
+
+`test_background_postgres_numeric_aggregates_preserve_strict_public_schema`
+reproduces PostgreSQL SUM(bigint)'s Decimal values, including estimated-age sums,
+before conversion to public integers. It failed before the producer conversion;
+strict consumer validation remains unchanged. The disposable ring-retention
+assertion reads after commit because PostgreSQL counter deltas flush at that
+boundary.
+
+PR #56 review correction: stale-delivery preflight must not bypass admission or
+consult lagging replica state. In `backend/tests/test_background_diagnostics.py`,
+`test_background_delivery_preflight_is_classified_and_measured_before_handler`,
+`test_background_delivery_preflight_uses_primary_and_read_only_transaction`, and
+`test_background_delivery_preflight_waits_for_foreground_admission` all failed on
+the reviewed head before the fix. Existing stale-handler-skip, duplicate-delivery,
+and stale-publication regressions retain the final authoritative fences.
+
+PR #56 reservation correction: `test_background_diagnostic_redis_io_never_runs_under_database_reservation`
+checks actual diagnostic Redis calls against both local and shared lease state,
+including exception cleanup. `test_background_admission_timing_excludes_diagnostic_publication`
+uses a controlled clock to prove telemetry latency is excluded from admission wait.
+Both are regular cases in `backend/tests/test_background_diagnostics.py`.
+
+PR #56 event-accounting correction: `test_background_known_kind_lifecycle_has_no_redundant_kind_select`
+traces enqueue/replacement/claim/failure/retry/slice/restart/completion/deferral
+and fails on extra kind-only reads (12 on the reviewed lifecycle baseline).
+`test_background_id_only_event_keeps_single_kind_lookup` preserves exceptional
+ID-only accounting. Both run in `backend/tests/test_background_diagnostics.py`;
+the disposable PostgreSQL proof also traces the full known-kind event hook.
+
+PR #56 main integration exposed a readiness race in the inherited browser case
+`Black-first capture keeps its orientation while typed SAN and real-board moves save one solution`.
+CI reproduced a startup-FEN comparison after the actual puzzle had loaded. The
+case now waits for the shared board's existing input-ready signal before taking
+its baseline; all SAN/orientation/persisted-UCI and unchanged-board assertions
+remain. No product code, timeout, CI selection or retry policy changed.

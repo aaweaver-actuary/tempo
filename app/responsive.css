@@ -569,6 +569,10 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
 .notification-count { display: inline-grid; place-items: center; min-width: 1.3rem; height: 1.3rem; padding: 0 0.2rem; border-radius: 1rem; background: var(--rust); color: white; font-size: 0.75rem; }
 .notification-tray { position: absolute; z-index: 130; top: calc(100% + 0.5rem); right: 0; display: grid; gap: 0.7rem; width: min(430px, calc(100vw - 1rem)); max-height: min(75dvh, 700px); padding: 0.9rem; overflow: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); box-shadow: 0 8px 32px #2224; }
 .notification-tray header, .notification-export, .notification-item-meta { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.notification-tray header { flex-wrap: wrap; }
+.notification-header-actions, .notification-clear-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; }
+.notification-clear-actions { justify-content: flex-end; color: var(--muted); font-size: 0.8rem; }
+.notification-new-label { color: var(--rust); font-weight: 700; }
 .notification-retention { margin: 0; font-size: 0.8rem; color: var(--muted); }
 .notification-filters { display: flex; flex-wrap: wrap; gap: 0.3rem; }
 .notification-filters button { padding: 0.3rem 0.5rem; text-transform: capitalize; border: 1px solid var(--line); border-radius: 5px; background: transparent; }

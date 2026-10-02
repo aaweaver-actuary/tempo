@@ -467,7 +467,7 @@ it("invalid discovery route falls back to the decision board", async () => {
   expect(screen.getByTestId("discovery-board").getAttribute("data-shapes")).toContain('"brush":"green"');
 });
 
-it("Add and train advances before saving and preserves the review order after refresh", async () => {
+it("confirmed Add and train removes the handled discovery from the review session", async () => {
   let feedOrder = [reviewDiscovery("first"), reviewDiscovery("second")];
   backgroundFetch.mockImplementation(async () => Response.json({ discoveries: feedOrder,
     total: 2, next_offset: null, unread_count: 0 }));
@@ -491,9 +491,11 @@ it("Add and train advances before saving and preserves the review order after re
   await act(async () => finishSave?.(Response.json({ status: "preparing", intent_id: "intent" })));
   await act(async () => { await flushPendingDiscoveryAdmissions(); });
   await waitFor(() => expect(backgroundFetch.mock.calls.length).toBeGreaterThan(1));
-  fireEvent.click(screen.getByRole("button", { name: "Previous" }));
-  expect(screen.getByText("1 of 2 · white to move")).toBeTruthy();
-  expect(screen.getByRole("button", { name: "Add and train" }).hasAttribute("disabled")).toBe(true);
+  await waitFor(() => expect(screen.getByText("1 of 1 · white to move")).toBeTruthy());
+  expect(screen.getByRole("button", { name: "Previous" }).hasAttribute("disabled")).toBe(true);
+  act(() => window.dispatchEvent(new CustomEvent(DISCOVERY_ADMISSION_QUEUED,
+    { detail: { opportunityId: "second" } })));
+  await waitFor(() => expect(screen.getByText("No discoveries ready for review")).toBeTruthy());
 });
 
 it("confirmed failed discovery save remains visible with a retry action", async () => {
@@ -816,4 +818,59 @@ it.each(obsoleteEligibilityOutcomes.slice(2))("current eligibility failure remai
     await act(async () => fixture.requests[1].resolve(Response.json({ eligible: true, reason: null })));
     expect(fixture.train().disabled).toBe(false);
   } finally { await fixture.dispose(); }
+});
+
+
+it("confirmed Train this decision clears the last item while keeping the viewer open", async () => {
+  const discovery = savedEligibilityDiscovery();
+  let trained = false;
+  backgroundFetch.mockReset();
+  backgroundFetch.mockImplementation(async () => Response.json({ discoveries: trained ? [] : [discovery],
+    total: trained ? 0 : 1, next_offset: null, unread_count: 0 }));
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).endsWith("/training-eligibility")) return Response.json({ eligible: true, reason: null });
+    if (String(input).endsWith("/train")) trained = true;
+    return Response.json({ card_id: "card", queued: true, idempotent: false });
+  }));
+  render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+  await waitFor(() => expect(screen.getByRole("button", { name: "Train this decision" }).hasAttribute("disabled")).toBe(false));
+  fireEvent.click(screen.getByRole("button", { name: "Train this decision" }));
+  await waitFor(() => expect(screen.getByText("No discoveries ready for review")).toBeTruthy());
+  expect(screen.getByRole("dialog", { name: "Discoveries" })).toBeTruthy();
+});
+
+it("confirmation from older evidence does not clear a newly surfaced discovery", async () => {
+  const discovery = savedEligibilityDiscovery();
+  backgroundFetch.mockReset();
+  backgroundFetch.mockImplementation(async () => Response.json({ discoveries: [discovery],
+    total: 1, next_offset: null, unread_count: 0 }));
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ eligible: true, reason: null })));
+  render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+  await screen.findByText("1 of 1 · white to move");
+  act(() => window.dispatchEvent(new CustomEvent(DISCOVERY_ADMISSION_QUEUED,
+    { detail: { opportunityId: discovery.id, evidenceFingerprint: "older-evidence" } })));
+  expect(screen.getByText("1 of 1 · white to move")).toBeTruthy();
+});
+
+
+it("dismissal advances through undecided discoveries and clears the final item", async () => {
+  const base = savedEligibilityDiscovery();
+  let feed = [{ ...base, id: "first" }, { ...base, id: "second" }];
+  backgroundFetch.mockReset();
+  backgroundFetch.mockImplementation(async () => Response.json({ discoveries: feed,
+    total: feed.length, next_offset: null, unread_count: 0 }));
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const dismissedId = String(input).match(/opportunities\/([^/]+)\/dismiss/)?.[1];
+    if (dismissedId) feed = feed.filter((item) => item.id !== dismissedId);
+    return Response.json(dismissedId ? { dismissed: true } : { eligible: true, reason: null });
+  }));
+  render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+  await screen.findByText("1 of 2 · white to move");
+  fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+  await screen.findByText("1 of 1 · white to move");
+  fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
+  await screen.findByText("No discoveries ready for review");
 });

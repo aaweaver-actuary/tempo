@@ -76,7 +76,7 @@ from .models import (
     ThreatAnalysisFailureRequest,
     DefenseAttemptRequest,
     DefenseRecognitionRequest,
-    DiscoveryAcceptanceRequest,
+    DiscoveryAcceptanceRequest, DiscoveryTrainingRequest,
 )
 from .services.analysis import AnalysisCapabilities
 from .services.analysis_paste import (
@@ -132,6 +132,7 @@ from .services.database_executor import (
 )
 from .services.durable_tasks import enqueue_task, enqueue_task_in_transaction, list_tasks, retry_task
 from .services.background_activity import claimable, control_order, list_activity, report_progress, set_control
+from .services.background_metrics import BackgroundDiagnostics
 from .services.repertoire_conflicts import (
     find_repertoire_conflicts,
     trained_move_index,
@@ -812,6 +813,12 @@ def system_tasks():
         status["writer"] = {"healthy": database_writer.healthy,
                             **database_writer.queued_counts}
     return status
+
+
+@app.get("/api/system/background-diagnostics", response_model=BackgroundDiagnostics)
+def system_background_diagnostics() -> BackgroundDiagnostics:
+    from .services.background_diagnostics import snapshot
+    return snapshot()
 
 
 @app.get("/api/system/activity")
@@ -3770,6 +3777,7 @@ def discoveries_feed(offset: int = 0, limit: int = 25):
                FROM repertoire_opportunities opportunity
                WHERE opportunity.status='active'
                  AND opportunity.canonical_prefix_revision=(SELECT canonical_prefix_revision FROM repertoires WHERE id=opportunity.repertoire_id)
+                 AND opportunity.handled_evidence_json IS NULL
                  AND opportunity.repertoire_id NOT IN
                      ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__')""",
             (datetime.now(timezone.utc).isoformat(),),
@@ -3777,6 +3785,7 @@ def discoveries_feed(offset: int = 0, limit: int = 25):
         identifiers = [dict(row) for row in database.execute(
             """SELECT id,repertoire_id FROM repertoire_opportunities
                WHERE status='active' AND canonical_prefix_revision=(SELECT canonical_prefix_revision FROM repertoires WHERE id=repertoire_opportunities.repertoire_id)
+                 AND handled_evidence_json IS NULL
                  AND repertoire_id NOT IN
                    ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__')
                ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?""",
@@ -3926,16 +3935,19 @@ def repertoire_opportunity_training_eligibility(identifier: str, opportunity_id:
 
 @app.post("/api/repertoires/{identifier}/opportunities/{opportunity_id}/train")
 def train_repertoire_opportunity(identifier: str, opportunity_id: str,
+                                 request: DiscoveryTrainingRequest,
                                  idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    expected_fingerprint = request.evidence_fingerprint
     if postgres_store.configured():
         from .command_dispatch import dispatch_command
         return dispatch_command(
-            "opportunities.train", {"repertoire_id": identifier, "opportunity_id": opportunity_id},
+            "opportunities.train", {"repertoire_id": identifier, "opportunity_id": opportunity_id,
+                                    "evidence_fingerprint": expected_fingerprint},
             idempotency_key=idempotency_key,
         )
     with connection() as database:
         try:
-            return admit_existing_decision(database, identifier, opportunity_id)
+            return admit_existing_decision(database, identifier, opportunity_id, expected_fingerprint)
         except KeyError as error:
             raise HTTPException(404, str(error)) from error
         except ValueError as error:
@@ -4732,7 +4744,7 @@ def submit_game_analysis_position(
         return dispatch_command(
             "games.analysis.position.report",
             {"report_id": report_id, "lease_id": request.lease_id,
-             "request_json": request_json, "report": request.report},
+             "request_json": request_json, "report": request.report, "diagnostics": request.diagnostics.model_dump() if request.diagnostics else None},
             idempotency_key=idempotency_key, background=True,
         )
     try:
@@ -4752,7 +4764,7 @@ def release_game_analysis_position(
         from .command_dispatch import dispatch_command
         return dispatch_command(
             "games.analysis.position.release",
-            {"report_id": report_id, "lease_id": request.lease_id},
+            {"report_id": report_id, "lease_id": request.lease_id, "diagnostics": request.diagnostics.model_dump() if request.diagnostics else None},
             idempotency_key=idempotency_key, background=True,
         )
     return {"status": release_position(report_id, request.lease_id)}
@@ -4769,7 +4781,7 @@ def fail_game_analysis_position(
         from .command_dispatch import dispatch_command
         return dispatch_command(
             "games.analysis.position.release",
-            {"report_id": report_id, "lease_id": request.lease_id, "error": request.error},
+            {"report_id": report_id, "lease_id": request.lease_id, "error": request.error, "diagnostics": request.diagnostics.model_dump() if request.diagnostics else None},
             idempotency_key=idempotency_key, background=True,
         )
     return {"status": release_position(report_id, request.lease_id, request.error)}
@@ -5283,7 +5295,7 @@ def submit_defensive_threat_analysis(
         return dispatch_command(
             "threat.analysis.report",
             {"request_id": request_id, "lease_id": request.lease_id,
-             "report": request.report},
+             "report": request.report, "diagnostics": request.diagnostics.model_dump() if request.diagnostics else None},
             idempotency_key=idempotency_key, background=True,
         )
     try:
@@ -5310,7 +5322,7 @@ def fail_defensive_threat_analysis(
         return dispatch_command(
             "threat.analysis.failure",
             {"request_id": request_id, "lease_id": request.lease_id,
-             "error": request.error},
+             "error": request.error, "diagnostics": request.diagnostics.model_dump() if request.diagnostics else None},
             idempotency_key=idempotency_key, background=True,
         )
     with connection(background=activity_gate.in_background) as database:
@@ -5341,7 +5353,7 @@ def release_defensive_threat_analysis(
 
         return dispatch_command(
             "threat.analysis.release",
-            {"request_id": request_id, "lease_id": request.lease_id},
+            {"request_id": request_id, "lease_id": request.lease_id, "diagnostics": request.diagnostics.model_dump() if request.diagnostics else None},
             idempotency_key=idempotency_key, background=True,
         )
     with connection(background=activity_gate.in_background) as database:

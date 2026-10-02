@@ -19,7 +19,7 @@ development services may connect to the live study instance.
 
 ## Persistence and boundaries
 
-Migration 026 stores UCI moves, a monotonically increasing prefix revision, and
+Migration 029 stores UCI moves, a monotonically increasing prefix revision, and
 an active compatibility preview per repertoire. Empty moves mean unrestricted
 analysis. SAN and the endpoint FEN are derived from legal moves from the standard
 starting position. Setting the same prefix is a no-op.

@@ -14,7 +14,7 @@ from .database import read_connection
 from .postgres_store import PostgresConnection
 from .services.cards import card_id
 from .services.discovery_admission import (
-    DISCOVERY_ADMISSION_PRIORITY, recommend_missing_continuations,
+    DISCOVERY_ADMISSION_PRIORITY, admission_intent_id, recommend_missing_continuations,
 )
 from .services.durable_tasks import enqueue_compact_postgres_task_in_transaction
 
@@ -26,12 +26,10 @@ def prepare_discovery_acceptance(
     with read_connection() as database:
         existing = database.execute(
             "SELECT id,evidence_fingerprint FROM discovery_admission_intents "
-            "WHERE opportunity_id=? AND selected_move_uci=?",
-            (opportunity_id, selected_move_uci),
+            "WHERE opportunity_id=? AND selected_move_uci=? AND evidence_fingerprint=?",
+            (opportunity_id, selected_move_uci, evidence_fingerprint),
         ).fetchone()
     if existing is not None:
-        if existing["evidence_fingerprint"] != evidence_fingerprint:
-            raise ValueError("This continuation was accepted from a different evidence revision")
         return {"opportunity_id": opportunity_id, "selected_move_uci": selected_move_uci,
                 "evidence_fingerprint": evidence_fingerprint}
     recommendation = recommend_missing_continuations(opportunity_id)
@@ -56,12 +54,10 @@ def accept_discovery(database: PostgresConnection, payload: dict[str, Any]) -> d
     fingerprint = payload["evidence_fingerprint"]
     prior = database.execute_native(
         "SELECT id,evidence_fingerprint,state FROM discovery_admission_intents "
-        "WHERE opportunity_id=%s AND selected_move_uci=%s FOR UPDATE",
-        (opportunity_id, selected_move_uci),
+        "WHERE opportunity_id=%s AND selected_move_uci=%s AND evidence_fingerprint=%s FOR UPDATE",
+        (opportunity_id, selected_move_uci, fingerprint),
     ).fetchone()
     if prior is not None:
-        if prior["evidence_fingerprint"] != fingerprint:
-            raise HTTPException(409, "This continuation was accepted from a different evidence revision")
         if prior["state"] != "queued":
             task = database.execute_native(
                 "SELECT state FROM background_tasks WHERE kind='discovery_admission' "
@@ -90,12 +86,10 @@ def accept_discovery(database: PostgresConnection, payload: dict[str, Any]) -> d
     # Recheck after locking the parent opportunity before inserting its child.
     prior = database.execute_native(
         "SELECT id,evidence_fingerprint,state FROM discovery_admission_intents "
-        "WHERE opportunity_id=%s AND selected_move_uci=%s FOR UPDATE",
-        (opportunity_id, selected_move_uci),
+        "WHERE opportunity_id=%s AND selected_move_uci=%s AND evidence_fingerprint=%s FOR UPDATE",
+        (opportunity_id, selected_move_uci, fingerprint),
     ).fetchone()
     if prior is not None:
-        if prior["evidence_fingerprint"] != fingerprint:
-            raise HTTPException(409, "This continuation was accepted from a different evidence revision")
         return {"status": "preparing", "intent_id": prior["id"]}
     preview_moves = payload["preview_moves_uci"]
     starting_fen = payload["starting_fen"]
@@ -105,7 +99,7 @@ def accept_discovery(database: PostgresConnection, payload: dict[str, Any]) -> d
     line_id = hashlib.sha256(
         f"{opportunity['repertoire_id']}\0{card_id(starting_fen, preview_moves)}".encode()
     ).hexdigest()
-    intent_id = hashlib.sha256(f"{opportunity_id}\0{selected_move_uci}".encode()).hexdigest()
+    intent_id = admission_intent_id(opportunity_id, selected_move_uci, fingerprint)
     now = datetime.now(timezone.utc).isoformat()
     database.execute_native(
         "INSERT INTO discovery_admission_intents("

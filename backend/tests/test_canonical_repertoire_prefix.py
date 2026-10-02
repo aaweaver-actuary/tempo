@@ -363,6 +363,27 @@ def test_canonical_prefix_stale_recommendation_worker_cannot_publish(prefix_data
         assert connection.execute("SELECT count(*) FROM threat_analysis_requests").fetchone()[0] == 0
 
 
+def test_canonical_prefix_refresh_preserves_previously_handled_discoveries(prefix_database):
+    from app.services.repertoire_opportunities import _publish, list_opportunities
+    add_line([*ITALIAN, "f8c5", "c2c3"])
+    evidence = {"supporting_games": 1}
+    publication = dict(repertoire_id="italian", kind="missing_response", fen_key="position", target="g8f6",
+                       card_id=None, opponent_move_uci="g8f6", score=1, evidence=evidence)
+    with database.connection() as connection:
+        connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES('accepted-card','italian','prefix',?,?,'2026-10-02')",
+                           (chess.STARTING_FEN, json.dumps(ITALIAN)))
+        _publish(connection, **publication)
+        connection.execute("UPDATE repertoire_opportunities SET handled_evidence_json=evidence_json,admission_state='queued',admitted_card_id='accepted-card'")
+    apply_preview(prepare_prefix())
+    with database.connection() as connection:
+        _publish(connection, **publication)
+        opportunity = connection.execute("SELECT * FROM repertoire_opportunities").fetchone()
+        assert opportunity["canonical_prefix_revision"] == 1
+        assert json.loads(opportunity["handled_evidence_json"]) == evidence
+        assert opportunity["admission_state"] == "queued" and opportunity["admitted_card_id"] == "accepted-card"
+        assert list_opportunities(connection, "italian") == []
+
+
 def test_canonical_prefix_game_matches_and_statistics_exclude_sicilian_philidor_and_incomplete_games(prefix_database):
     from app.services.repertoire_comparison import compare_all_games
     from app.services.repertoire_statistics import repertoire_statistics
