@@ -10,7 +10,7 @@ const baseDirectory = resolve(process.env.BASE_CHECKOUT);
 const candidateDirectory = resolve(process.env.CANDIDATE_CHECKOUT);
 const outputDirectory = resolve("test-results/issue-33-pair");
 const baseCommit = "dfbb66d67b314357e55c2030ff794a15415f316c";
-const candidateCommit = "89e6e09d95c151cf2538442c04258e4b512c1f76";
+const candidateCommit = "1496021f82bfddd1df8b4276fcc57f7e7dd853df";
 mkdirSync(outputDirectory, { recursive: true });
 const evidence = { baseCommit, candidateCommit, workflowCommit: process.env.GITHUB_SHA,
   runId: process.env.GITHUB_RUN_ID, runAttempt: process.env.GITHUB_RUN_ATTEMPT,

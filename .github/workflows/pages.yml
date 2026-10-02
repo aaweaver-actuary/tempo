@@ -26,7 +26,7 @@ jobs:
           persist-credentials: false
       - uses: actions/checkout@v4
         with:
-          ref: 89e6e09d95c151cf2538442c04258e4b512c1f76
+          ref: 1496021f82bfddd1df8b4276fcc57f7e7dd853df
           path: benchmark/candidate
           persist-credentials: false
       - uses: actions/setup-node@v4
