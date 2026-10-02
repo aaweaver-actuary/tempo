@@ -37,10 +37,10 @@ it.each([false, true])("study feedback browses the reference line and R restores
   await screen.findByText("Find the reference line");
   for (const move of ["d2d4", "d7d5"]) {
     fireEvent.change(screen.getByLabelText("Coordinates or UCI move"), { target: { value: move } });
-    fireEvent.click(screen.getByRole("button", { name: "Add", exact: true }));
+    fireEvent.click(screen.getByRole("button", { name: "Add" }));
   }
-  fireEvent.click(screen.getByRole("button", { name: "Hint", exact: true }));
-  fireEvent.click(screen.getByRole("button", { name: "Submit", exact: true }));
+  fireEvent.click(screen.getByRole("button", { name: "Hint" }));
+  fireEvent.click(screen.getByRole("button", { name: "Submit" }));
   await screen.findByText("Reference continuation");
   const frame = document.querySelector(".board-frame")!;
   expect(frame.getAttribute("data-fen")).toBe(submittedBoard.fen());

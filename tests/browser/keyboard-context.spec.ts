@@ -6,6 +6,54 @@ import { expectedPieces, renderedPieces, playMove, squareCenter } from "./keyboa
 
 test.use({ serviceWorkers: "block" });
 
+test("incorrect study answers retain their live board while Home End and R browse the revealed reference", async ({ page }) => {
+  await prepareVisualUI(page);
+  const startingFen = new Chess().fen();
+  const submitted = new Chess(); submitted.move("d4"); submitted.move("d5");
+  const reference = new Chess(); reference.move("e4"); reference.move("e5");
+  await page.route("**/api/queue/window?**", route => route.fulfill({ json: { count: 1, cards: [{
+    id: "study-keyboard", queue_entry_id: 901, start_fen: startingFen, moves: [], content_type: "study_exercise",
+    repertoire_name: "Keyboard study", repertoire_source: "Study", study_id: "keyboard-study",
+    study_exercise_id: "keyboard-exercise", revision: 1, trained_color: "white",
+  }] } }));
+  await page.route("**/api/studies/keyboard-study/exercises/keyboard-exercise/present", route => route.fulfill({ json: {
+    id: "keyboard-exercise", revision: 1, type: "move_line", prompt: "Find the reference line", hint: "Develop a piece", fen: startingFen,
+  } }));
+  const submissions: Record<string, unknown>[] = [];
+  await page.route("**/api/studies/keyboard-study/exercises/keyboard-exercise/attempts", route => {
+    submissions.push(route.request().postDataJSON());
+    return route.fulfill({ json: { attempt_id: "study-answer", assessment: { outcome: "incorrect", feedback: "Review the reference" }, rating: "again" } });
+  });
+  await page.route("**/api/studies/keyboard-study/exercises/keyboard-exercise/attempts/*/feedback", route => route.fulfill({ json: {
+    specification: { type: "move_line", prompt: "Find the reference line", hint: "Develop a piece", explanation: "Reference continuation",
+      grading_policy: "reference", mode: "stepwise_line", accepted_lines: [["e2e4", "e7e5"]] },
+  } }));
+  await page.reload();
+  await expect(page.getByText("Find the reference line")).toBeVisible();
+  const board = page.locator(".board-frame");
+  await playMove(page, board, "d2", "d4");
+  await expect(board).toHaveAttribute("data-fen", (() => { const position = new Chess(); position.move("d4"); return position.fen(); })());
+  await playMove(page, board, "d7", "d5");
+  await expect(board).toHaveAttribute("data-fen", submitted.fen());
+  await page.getByRole("button", { name: "Hint", exact: true }).click();
+  await page.getByRole("button", { name: "Submit", exact: true }).click();
+  await expect(page.getByText("Reference continuation")).toBeVisible();
+  await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(submitted.fen()));
+  await page.keyboard.press("Home");
+  await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(startingFen));
+  await expect(board).toHaveAttribute("data-input-enabled", "false");
+  await page.keyboard.press("End");
+  await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(reference.fen()));
+  await expect(board).toHaveAttribute("data-input-enabled", "false");
+  await page.keyboard.press("ArrowRight");
+  await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(reference.fen()));
+  await page.keyboard.press("r");
+  await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(submitted.fen()));
+  await expect(page.getByText("Answer: d2d4 d7d5")).toBeVisible();
+  expect(submissions).toHaveLength(1);
+  expect(submissions[0]).toMatchObject({ answer: { type: "move_line", moves: ["d2d4", "d7d5"] }, hint_seen: true });
+});
+
 test("training arrows never uncover the next answer and R restores the decision without grading", async ({ page }) => {
   await prepareVisualUI(page);
   const writes: string[] = [];

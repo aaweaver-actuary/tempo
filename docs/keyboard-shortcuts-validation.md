@@ -1,5 +1,118 @@
 # Contextual keyboard shortcuts: validation record
 
+## PR #64 review fixes: selected scope
+
+Continue on the existing isolated PR branch after integrating main `0d71492`.
+The three risks are an authoritative study answer outside the revealed reference
+line, a defense-stage transition retaining a historical cursor, and static
+previews claiming browser navigation. First reproduce each defect in the existing
+unit integration files, then repair it without changing dispatcher ownership,
+grading or service contracts. Run affected history/study, defense, dispatcher,
+popup and shared-board callers; typecheck, lint and diff checks. Run the existing
+keyboard and cross-browser specs plus real-board study/defense cases where
+rendering and restored legal interaction need browser proof. No visual baseline
+changes are planned. CI owns fresh complete required candidate validation.
+
+The initial failing-baseline revision after current-main integration is
+`26f9b4189d888b69c5ee8812f3515889355b23fd`; added regression tests are dirty-tree
+changes until each coherent fix is committed. Earlier evidence below remains
+historical and does not validate the new review fixes.
+
+### Failing baselines and repairs
+
+| Focused command (`npm run test:unit --`) | Baseline result | Command wall time |
+| --- | --- | ---: |
+| `tests/unit/study-attempt-pending-regressions.test.tsx -t 'study feedback browses the reference line'` | Both embedded/shared End assertions failed | 3.18s |
+| `tests/unit/defense-recognition-regressions.test.tsx -t 'continuing to defense resets'` | Continue and N both retained the refutation FEN | 1.80s |
+| `tests/unit/board-shortcuts-regressions.test.tsx -t 'static preview boards\|navigable boards consume'` | Static defaultPrevented assertion failed; boundary case passed | 1.66s |
+
+The first study test invocation (1.76s) reproduced the embedded defect but exposed
+a test-local ResizeObserver lifecycle gap in the shared case. The corrected
+fixture then reproduced the actual End defect in both cases before production
+code changed. Defense/static baselines were run after the preceding coherent fix.
+
+`useBoardHistory` now represents an unmatched live cursor as null, with Previous
+entering the revealed frontier. Historical cursors stay distinct and read-only;
+reset restores the authoritative answer. Defense Continue/N share one explicit
+reset-and-transition handler. `historyKeyboardActions` declares the new optional
+`capturesNavigation` capability; the dispatcher leaves navigation defaults alone
+when it is disabled. The two existing direct-command test fixtures now explicitly
+declare their intended navigation capability; their assertions are unchanged.
+
+Focused whole-file confirmations passed: study + board, 12 cases / 1.84s;
+defense, 8 / 1.88s; board + popup, 13 / 1.79s. The repairs are separate commits
+`081832d`, `639b98a`, and `3cbcbb4`.
+
+### Local candidate evidence before quiet-notification integration
+
+On macOS ARM64 / Apple M3 with Node 26.3.0 and unchanged installed dependencies,
+the dirty tree based on `3cbcbb4` passed **147 tests in 16 files** (Vitest 7.19s;
+command wall 7.68s):
+
+```sh
+npm run test:unit -- \
+  tests/unit/board-shortcuts-regressions.test.tsx \
+  tests/unit/popup-shortcuts-regressions.test.tsx \
+  tests/unit/board-authoritative-restoration-regressions.test.tsx \
+  tests/unit/board-drag-preservation-regressions.test.tsx \
+  tests/unit/defense-recognition-regressions.test.tsx \
+  tests/unit/shared-board-shell-tactics-regressions.test.tsx \
+  tests/unit/shared-board-shell-endgames-regressions.test.tsx \
+  tests/unit/shared-board-shell-training-regressions.test.tsx \
+  tests/unit/study-attempt-pending-regressions.test.tsx \
+  tests/unit/discoveries-tray-regressions.test.tsx \
+  tests/unit/repair-endgame-regressions.test.tsx \
+  tests/unit/shared-board-shell-games-regressions.test.tsx \
+  tests/unit/builder-regressions.test.tsx \
+  tests/unit/tactic-capture-regressions.test.tsx \
+  tests/unit/shared-board-shell-mount-regressions.test.tsx \
+  tests/unit/notification-regressions.test.tsx
+```
+
+`npm run typecheck` passed in 7.55s; `npm run lint` passed in 12.87s with zero
+errors and the same nine pre-existing warnings. The initial typecheck caught
+three unsupported `exact` options in new role queries (4.81s); removing those
+options preserved exact role-name matching and passed (5.79s). An earlier lint
+pass took 8.95s. `git diff --check` passed. `make plan` was inspected, and
+`node scripts/ci-verification-plan.mjs --base origin/main` selected complete
+coverage (175/175 regular cases plus pinned checks) before the next main update.
+No Python setup was needed by the inspected local unit scope.
+
+All browser commands used `/usr/bin/time -p` and the elevated disposable runner:
+
+| Exact command | Cases | Playwright | Browser stage | Command wall |
+| --- | ---: | ---: | ---: | ---: |
+| `make ui-file FILE=keyboard-context.spec.ts` | 5 passed | 6.6s | 7.31s | 42.33s |
+| `make ui-file FILE=defense-preview.spec.ts` | 2 passed | 6.9s | 7.72s | 39.33s |
+| `make ui-file FILE=cross-browser.spec.ts` | 18 passed across three engines | 22.8s | 23.65s | 53.47s |
+
+The extended defense browser spec first failed in 50.17s: the desktop assertion
+used a diagnostic that the UI does not display, and the phone click after
+scrolling back did not select the piece. Correcting the status assertion left
+only that phone failure (44.02s). The final spec uses the existing `boardVisible`
+geometry/animation readiness helper after scrolling, then waits for an observed
+selected square before completing the legal move. Both transitions, actual
+pieces, hinted recognition identity and exactly one intentional move submission
+are asserted. No sleeps, timeout increases, skipped cases or weakened existing
+assertions were introduced. Failure traces/screenshots are retained under
+`test-results/browser-postgres-24401/` and `browser-postgres-37984/`.
+
+All five invocations used fresh projects: `tempo-pg-regressions-21709-b37beaf9`,
+`24401-77585328`, `37984-6dd10e39`, `39018-cb11ba74`, and `39574-71115e5b`
+(the same `tempo-pg-regressions-` prefix applies to each). Their reports record
+revision, creation/run timestamps, active stage durations and cleanup. Logs are
+`test-results/pr64-review-*.log`; per-project reports are under
+`test-results/performance/postgres-scenarios-browser-<project>.json`.
+The owning runner's teardown is `docker compose <captured project/config flags>
+down --rmi local -v`, plus explicit removal of its separately built maintenance
+image. Every cleanup exited zero; none of these projects' containers/images
+remained. Live resources, another active task's project and shared caches were
+preserved. No visual baselines changed; fresh CI will run the pinned checks.
+
+Related issue bodies/discussion #13 and #14 were reviewed. This repairs their
+defensive UI transition only; UX-policy reconciliation and recurring-pack
+requirements remain outside this PR and those issues remain open.
+
 ## Candidate and scope
 
 Work is isolated in `.dev-copies/contextual-keybindings` on

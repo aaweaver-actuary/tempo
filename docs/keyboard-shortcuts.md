@@ -27,7 +27,13 @@ No database schema, backend business rules or background handlers change.
 | Escape | Dismiss one topmost popup; otherwise the newest visible toast |
 
 Historical exercise positions are read-only. Browsing never changes the live
-attempt or requests engine/tablebase analysis. A boundary is a no-op. R also
+attempt or requests engine/tablebase analysis. If the submitted/live FEN is
+outside the revealed reference line, it remains separate: Home/End browse the
+reference, Previous enters at its revealed frontier, and R returns to that live
+answer. Continue to defense and N both leave refutation browsing and restore the
+original legal defensive decision without changing recognition or hint results.
+A history boundary consumes navigation without moving further. Static previews
+retain browser Arrow/Home/End behavior while supporting F/R/help. R also
 cancels held input and fences deferred callbacks at the same position.
 
 The dispatcher targets the last board clicked or focused, defaults to the
@@ -39,6 +45,8 @@ available. Shortcut buttons are attached to every board, including previews.
 
 The shared board publisher preserves callback identity while exposing current
 availability. Public services, database schemas and grading APIs are unchanged.
+`historyKeyboardActions` explicitly enables `capturesNavigation`; static boards
+leave that capability disabled, independently of command availability.
 Popup registration shares one Escape dispatcher with focus restoration.
 
 ## Validation scope and ownership
