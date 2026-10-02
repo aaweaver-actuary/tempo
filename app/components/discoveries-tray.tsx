@@ -407,9 +407,9 @@ export function DiscoveriesTray({ safeToOpen, safeBreakCounter, interactionBlock
       schedulerRef.current?.update(currentIdentities, []);
       for (const key of stalePreviewKeys.current)
         if (!currentIdentities.has(key)) stalePreviewKeys.current.delete(key);
-      const currentPreviewIds = new Set(Object.entries(previewFingerprintState.current)
-        .filter(([id, fingerprint]) => !changedPreviewIds.has(id) && byId.get(id)?.evidence_fingerprint === fingerprint)
-        .map(([id]) => id));
+      // Result writes may share this React batch with the refresh. Preserve
+      // unchanged ownership directly; the rendered-result ref can lag those writes.
+      const currentPreviewIds = new Set([...byId.keys()].filter(id => !changedPreviewIds.has(id)));
       setPreviews((current) => Object.fromEntries(Object.entries(current).filter(
         ([id]) => currentPreviewIds.has(id))));
       setPreviewFingerprints((current) => Object.fromEntries(Object.entries(current).filter(

@@ -51,7 +51,9 @@ meaning (complete loaded feed, or ready/unread items as appropriate).
 
 Identity includes discovery ID, evidence fingerprint and item generation. Removal,
 return, fingerprint change, or changed decision inputs creates new ownership.
-Unchanged refreshes preserve valid results. Queued obsolete work is discarded;
+Unchanged refreshes preserve valid results, including preview writes sharing a
+React batch with reconciliation; preservation uses current feed ownership rather
+than a result ref published by a later effect. Queued obsolete work is discarded;
 in-flight obsolete results cannot write previews, statuses, retries or validation.
 An obsolete request continues to occupy capacity until it settles. Unmount aborts
 owned client requests and fences publication. HTTP abort is **not** a guarantee
@@ -79,7 +81,8 @@ enter this scheduler.
 ## Reproducible evidence
 
 The subsequent review fix separates stalled retry demand from productive viewer
-capacity and corrects rejected-loader enqueue accounting. It does not change the
+capacity, corrects rejected-loader enqueue accounting, and preserves concurrent
+ready results across unchanged refreshes. It does not change the
 100-item measurement fixture or held-drag harness. The paired results below remain
 attributed to their measured source; they do not measure the new starvation case
 or the later main integration. Focused regressions and fresh complete CI validate

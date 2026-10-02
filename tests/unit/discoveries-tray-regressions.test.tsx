@@ -1308,3 +1308,42 @@ it("discovery_waiting_previews_do_not_starve_later_viewer_candidates", async () 
     await schedulerMicrotasks();
   }
 });
+
+it("discovery_unchanged_refresh_preserves_a_concurrent_ready_preview", async () => {
+  vi.useFakeTimers();
+  const refreshedFeed = deferredEligibility<Response>();
+  backgroundFetch.mockReset();
+  backgroundFetch.mockResolvedValueOnce(Response.json({ discoveries: [schedulerDiscovery("inactive"), schedulerDiscovery("valid")],
+    total: 2, next_offset: null, unread_count: 0 }));
+  backgroundFetch.mockImplementation(() => refreshedFeed.promise);
+  const inactiveResponse = deferredEligibility<Response>();
+  const validResponse = deferredEligibility<Response>();
+  const previews: string[] = [];
+  vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
+    const id = String(input).match(/discoveries\/([^/]+)\/recommendations/)?.[1];
+    if (!id) return Promise.resolve(Response.json({ acknowledged: true }));
+    previews.push(id);
+    return id === "inactive" ? inactiveResponse.promise : validResponse.promise;
+  }));
+  const view = render(<DiscoveriesTray interactionBlocked safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  try {
+    fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(previews).toEqual(["inactive", "valid"]);
+    await act(async () => inactiveResponse.resolve(Response.json({ detail: "Active discovery not found" }, { status: 404 })));
+    expect(backgroundFetch).toHaveBeenCalledTimes(2);
+    // Finish the valid result and unchanged refresh in one React batch. Feed
+    // reconciliation must not rely on a result ref updated by a later effect.
+    await act(async () => {
+      validResponse.resolve(Response.json(schedulerRecommendation("valid")));
+      for (let step = 0; step < 25; step++) await Promise.resolve();
+      refreshedFeed.resolve(Response.json({ discoveries: [schedulerDiscovery("valid")],
+        total: 1, next_offset: null, unread_count: 0 }));
+      for (let step = 0; step < 25; step++) await Promise.resolve();
+    });
+    await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+    expect(screen.getByText("Example route: valid")).toBeTruthy();
+    expect(previews).toEqual(["inactive", "valid"]);
+    expect(previewDiagnostics()).toMatchObject({ validationInvocations: 1, maximumActive: 2, active: 0 });
+  } finally { view.unmount(); }
+});
