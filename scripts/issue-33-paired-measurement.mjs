@@ -10,7 +10,7 @@ const baseDirectory = resolve(process.env.BASE_CHECKOUT);
 const candidateDirectory = resolve(process.env.CANDIDATE_CHECKOUT);
 const outputDirectory = resolve("test-results/issue-33-pair");
 const baseCommit = "dfbb66d67b314357e55c2030ff794a15415f316c";
-const candidateCommit = "1496021f82bfddd1df8b4276fcc57f7e7dd853df";
+const candidateCommit = "a570f95de216fc1d6d1989f9922dfcafc166e523";
 mkdirSync(outputDirectory, { recursive: true });
 const evidence = { baseCommit, candidateCommit, workflowCommit: process.env.GITHUB_SHA,
   runId: process.env.GITHUB_RUN_ID, runAttempt: process.env.GITHUB_RUN_ATTEMPT,
@@ -18,6 +18,9 @@ const evidence = { baseCommit, candidateCommit, workflowCommit: process.env.GITH
   commands: [], harnessHashes: {}, baselineChanges: [], comparison: null };
 const save = () => writeFileSync(join(outputDirectory, "run-evidence.json"), JSON.stringify(evidence, null, 2) + "\n");
 const hash = (contents) => createHash("sha256").update(contents).digest("hex");
+let dockerEventWatcher;
+const dockerEvents = [];
+let dockerEventBuffer = "";
 const gitOutput = (directory, args) => {
   const result = spawnSync("git", args, { cwd: directory, encoding: "utf8" });
   assert.equal(result.status, 0, result.stderr);
@@ -70,6 +73,15 @@ try {
   // Create host-owned node_modules before Docker mounts anonymous dependencies.
   for (const [label, directory] of [["before", baseDirectory], ["after", candidateDirectory]])
     await required(`install-host-${label}`, "npm", ["ci", "--no-audit"], directory);
+  // The single-use hosted VM has no other task containers. Retain exact ownership
+  // and lifecycle identifiers; the product runner itself remains unchanged.
+  dockerEventWatcher = spawn("docker", ["events", "--filter", "type=container", "--format", "{{json .}}"], { stdio: ["ignore", "pipe", "pipe"] });
+  dockerEventWatcher.stdout.on("data", (chunk) => {
+    dockerEventBuffer += chunk.toString();
+    const lines = dockerEventBuffer.split("\n"); dockerEventBuffer = lines.pop();
+    for (const line of lines) if (line) dockerEvents.push(JSON.parse(line));
+  });
+  dockerEventWatcher.on("error", (error) => { evidence.dockerEventError = error.message; });
   await required("pull-pinned-image", "docker", ["pull", pinnedPlaywrightImage], candidateDirectory);
   await required("warm-container-dependencies", "docker", ["run", "--platform", "linux/arm64", "--rm", "--init",
     "-v", `${baseDirectory}:/workspace`, "-v", "/workspace/node_modules",
@@ -124,5 +136,18 @@ try {
 } catch (error) {
   evidence.error = error.stack; process.exitCode = 1; console.error(error);
 } finally {
+  if (dockerEventWatcher) {
+    if (dockerEventWatcher.pid && dockerEventWatcher.exitCode === null && dockerEventWatcher.signalCode === null) {
+      const stopped = new Promise((done) => dockerEventWatcher.once("close", done));
+      dockerEventWatcher.kill("SIGTERM"); await stopped;
+    }
+    writeFileSync(join(outputDirectory, "docker-events.json"), JSON.stringify(dockerEvents, null, 2) + "\n");
+    const remaining = spawnSync("docker", ["ps", "-aq"], { encoding: "utf8" });
+    evidence.dockerResources = { owningWorkflowCommit: evidence.workflowCommit,
+      composeProject: null, cleanup: "Runner-owned containers use docker run --rm; no built development images",
+      containerIds: [...new Set(dockerEvents.map((event) => event.Actor.ID))],
+      sharedImage: pinnedPlaywrightImage, remainingContainerIds: remaining.stdout.trim().split("\n").filter(Boolean) };
+    if (remaining.status !== 0 || evidence.dockerResources.remainingContainerIds.length || evidence.dockerEventError) process.exitCode = 1;
+  }
   save();
 }
