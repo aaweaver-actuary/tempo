@@ -3,7 +3,7 @@ import { Profiler } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { ServiceStatusPanel } from "../../app/components/service-status-panel";
 import { useGameSync, type GameSyncState } from "../../app/hooks/use-game-sync";
-import { notifications, clearNotificationHistory } from "../../app/lib/notifications";
+import { notifications, clearNotificationHistory, publishNotification } from "../../app/lib/notifications";
 import { clearDebugErrors, debugErrors } from "../../app/lib/debug-reporting";
 import TrainingView from "../../app/views/training_view";
 import { useTrainingStore } from "../../app/state/training-store";
@@ -120,6 +120,39 @@ it("activity_refresh_events_coalesce_without_parallel_requests", async () => {
   expect(fetchMock).toHaveBeenCalledTimes(2);
   view.unmount(); await wake(); await advance(60_000);
   expect(fetchMock).toHaveBeenCalledTimes(2);
+});
+
+it("activity_coalesced_success_clears_failure_before_react_commits", async () => {
+  const failedRequest = deferred<Response>();
+  const followupParsed = deferred<void>();
+  const immediateSuccess = Response.json(activeActivity);
+  vi.spyOn(immediateSuccess, "json").mockImplementation(async () => {
+    followupParsed.resolve();
+    return activeActivity;
+  });
+  const fetchMock = vi.fn().mockImplementationOnce(() => failedRequest.promise)
+    .mockImplementation(async () => immediateSuccess);
+  vi.stubGlobal("fetch", fetchMock);
+  // Retained incidents must recover even when this session's transient failure is batched away.
+  const incidentId = publishNotification({ key: "analysis-activity-error", source: "analysis activity",
+    severity: "error", message: "Activity was unavailable in the previous session." });
+  render(<ServiceStatusPanel />); await settle();
+  fireEvent.click(screen.getByRole("button", { name: "Analysis activity" }));
+  await wake();
+  expect(fetchMock).toHaveBeenCalledTimes(1);
+  // No React commit or artificial wait separates the failure and immediate follow-up success.
+  await act(async () => {
+    failedRequest.resolve(new Response("unavailable", { status: 503 }));
+    await followupParsed.promise;
+  });
+  expect(fetchMock).toHaveBeenCalledTimes(2);
+  expect(screen.queryByRole("alert")).toBeNull();
+  expect(screen.queryByLabelText("needs attention")).toBeNull();
+  expect(notifications().filter(record => record.key === "analysis-activity-error")).toHaveLength(1);
+  expect(notifications().find(record => record.id === incidentId)?.resolvedAt).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: "Close" })); await settle();
+  await advance(29_999); expect(fetchMock).toHaveBeenCalledTimes(2);
+  await advance(1); expect(fetchMock).toHaveBeenCalledTimes(3);
 });
 
 it("activity_obsolete_offsets_and_unmounted_sessions_cannot_publish", async () => {

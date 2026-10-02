@@ -949,3 +949,5 @@ Passive status reads pause while hidden/offline. Visible closed activity counts 
 These count/identity assertions establish reduced polling and React work, not a drag-latency improvement. Existing held-drag preservation and diagnostics specs remain independent boundary coverage.
 
 `manual_sync_startup_suspends_passive_reads_until_command_state_and_then_reconciles` covers a completed bootstrap read followed by delayed manual settings, wake/timer events during startup, queued command publication, rejected pre-command status, and one legitimate post-command reconciliation. It failed on PR #59 before separating command invalidation from status recovery. The existing in-flight supersession regression remains in the suite.
+
+`activity_coalesced_success_clears_failure_before_react_commits` batches a failed read and immediately successful queued follow-up without an intervening React commit. It verifies no alert/attention, resolution of a retained incident, single-flight request counts, and exactly one closed-panel timer. It failed on PR #59 before synchronously tracking requested errors; polling, control, and retry errors now use the same publisher.

@@ -1,7 +1,7 @@
 "use client";
 import { Button } from "./buttons/BaseButton";
 
-import { Fragment, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { Fragment, useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import { API_URL } from "../const";
 import { backgroundFetch } from "../lib/background-fetch";
 import { requestActivityControl } from "../lib/activity-control-command";
@@ -72,8 +72,12 @@ export function ServiceStatusPanel() {
   const [status, setStatus] = useState<ActivityResponse | null>(null);
   const [items, setItems] = useState<ActivityItem[]>([]);
   const [error, setError] = useState<string | null>(null);
-  const committedError = useRef(error);
-  useLayoutEffect(() => { committedError.current = error; }, [error]);
+  const requestedError = useRef<string | null>(null);
+  const publishError = useCallback((message: string | null) => {
+    if (requestedError.current === message) return;
+    requestedError.current = message;
+    setError(message);
+  }, []);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [offset, setOffset] = useState(0);
   const [nextOffset, setNextOffset] = useState<number | null>(null);
@@ -144,7 +148,7 @@ export function ServiceStatusPanel() {
           setNextOffset(value.next_offset);
         }
       }
-      if (committedError.current !== null) setError(null);
+      publishError(null);
     };
     // All timer, wake and command refreshes share this component-owned flight.
     const poll = (): Promise<ActivityResponse | null> => {
@@ -169,7 +173,7 @@ export function ServiceStatusPanel() {
             if (!stopped && requestGeneration === offsetGeneration) {
               failureCount += 1;
               const message = cause instanceof Error ? cause.message : "Could not load activity status";
-              if (committedError.current !== message) setError(message);
+              publishError(message);
             }
           }
         } while (refreshPending && eligible());
@@ -213,7 +217,7 @@ export function ServiceStatusPanel() {
       window.removeEventListener("offline", recover);
       document.removeEventListener("visibilitychange", recover);
     };
-  }, []);
+  }, [publishError]);
   useEffect(() => { updatePollingDemand.current(open, offset); }, [open, offset]);
 
   const control = async (item: ActivityItem, action: string) => {
@@ -224,7 +228,7 @@ export function ServiceStatusPanel() {
       window.dispatchEvent(new CustomEvent("tempo:background-control", { detail: { source: item.source, id: item.id, action } }));
       await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Activity control failed");
+      publishError(cause instanceof Error ? cause.message : "Activity control failed");
     } finally { setBusyKey(null); }
   };
 
@@ -238,7 +242,7 @@ export function ServiceStatusPanel() {
       if (!response.ok) throw new Error(`Retry failed: HTTP ${response.status}`);
       await refresh();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Retry failed");
+      publishError(cause instanceof Error ? cause.message : "Retry failed");
     } finally { setBusyKey(null); }
   };
 
