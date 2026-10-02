@@ -132,15 +132,41 @@ def test_canonical_prefix_reports_first_conflict_and_disconnected_lines_without_
         assert connection.execute("SELECT COUNT(*) FROM repertoire_lines").fetchone()[0] == 2
 
 
-def test_canonical_prefix_stale_preview_cannot_save_after_a_source_edit(prefix_database):
+@pytest.mark.parametrize("mutation", ["insert", "move"])
+def test_canonical_prefix_stale_preview_cannot_save_after_a_source_edit(prefix_database, mutation):
     add_line([*ITALIAN, "f8c5", "c2c3"])
     preview = prepare_prefix()
-    add_line([*ITALIAN, "g8f6", "d2d3"], "new")
+    if mutation == "insert":
+        add_line([*ITALIAN, "g8f6", "d2d3"], "new")
+    else:
+        with database.connection() as connection:
+            connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('other','Other','other.pgn','2026-10-02')")
+            connection.execute("UPDATE repertoire_lines SET repertoire_id='other' WHERE id='main'")
     from fastapi import HTTPException
     with pytest.raises(HTTPException, match="check the current prefix"):
         apply_preview(preview)
     with database.read_connection() as connection:
         assert preview_projection(connection, "italian", preview["preview_id"])["state"] == "stale"
+
+
+@pytest.mark.parametrize("mutation", ["update", "insert", "delete"])
+def test_canonical_prefix_preview_rejects_owned_card_changes_without_a_link(prefix_database, mutation):
+    add_line([*ITALIAN, "f8c5", "c2c3"])
+    with database.connection() as connection:
+        connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES('owned','italian','prefix',?,?,'2026-10-02')",
+                           (chess.STARTING_FEN, json.dumps(ITALIAN)))
+    preview = prepare_prefix()
+    with database.connection() as connection:
+        if mutation == "update":
+            connection.execute("UPDATE cards SET moves_json=? WHERE id='owned'", (json.dumps(["e2e4", "e7e5", "g1f3", "d7d6"]),))
+        elif mutation == "insert":
+            connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES('another-owned','italian','prefix',?,?,'2026-10-02')",
+                               (chess.STARTING_FEN, json.dumps(ITALIAN)))
+        else:
+            connection.execute("DELETE FROM cards WHERE id='owned'")
+    from fastapi import HTTPException
+    with pytest.raises(HTTPException, match="check the current prefix"):
+        apply_preview(preview)
 
 
 def test_canonical_prefix_rejects_off_scope_additions_and_clearing_restores_analysis(prefix_database):

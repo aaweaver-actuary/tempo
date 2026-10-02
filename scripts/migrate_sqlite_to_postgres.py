@@ -131,7 +131,8 @@ def copy_table(
     count = 0
     with destination.transaction():
         with destination.cursor() as cursor:
-            scope_trigger = {"repertoire_lines": "canonical_line_source", "repertoire_cards": "canonical_link_source"}.get(table_name)
+            scope_trigger = {"repertoire_lines": "canonical_line_source", "repertoire_cards": "canonical_link_source",
+                             "cards": "canonical_card_insert_source"}.get(table_name)
             if scope_trigger:
                 # Copy the snapshot's source revision verbatim. Trigger state is
                 # transactional, so a failed copy also restores its protection.

@@ -42,17 +42,25 @@ def initialize_sqlite_schema(database) -> None:
         database.execute(definition)
     for event in ("INSERT", "UPDATE", "DELETE"):
         source = "OLD" if event == "DELETE" else "NEW"
+        affected_repertoires = "id IN (OLD.repertoire_id,NEW.repertoire_id)" if event == "UPDATE" else f"id={source}.repertoire_id"
         for table in ("repertoire_lines", "repertoire_cards"):
             database.execute(
                 f"CREATE TRIGGER IF NOT EXISTS canonical_source_{table}_{event.lower()} AFTER {event} ON {table} "
-                f"BEGIN UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id={source}.repertoire_id; END"
+                f"BEGIN UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE {affected_repertoires}; END"
             )
     database.execute(
         "CREATE TRIGGER IF NOT EXISTS canonical_source_card_update AFTER UPDATE ON cards "
-        "WHEN OLD.start_fen<>NEW.start_fen OR OLD.moves_json<>NEW.moves_json OR OLD.archived<>NEW.archived "
+        "WHEN OLD.start_fen IS NOT NEW.start_fen OR OLD.moves_json IS NOT NEW.moves_json OR OLD.archived IS NOT NEW.archived "
+        "OR OLD.repertoire_id IS NOT NEW.repertoire_id OR OLD.content_type IS NOT NEW.content_type "
         "BEGIN UPDATE repertoires SET scope_source_revision=scope_source_revision+1 "
-        "WHERE id IN (SELECT repertoire_id FROM repertoire_cards WHERE card_id=NEW.id); END"
+        "WHERE id IN (OLD.repertoire_id,NEW.repertoire_id) OR id IN (SELECT repertoire_id FROM repertoire_cards WHERE card_id=NEW.id); END"
     )
+    for event, source in (("INSERT", "NEW"), ("DELETE", "OLD")):
+        database.execute(
+            f"CREATE TRIGGER IF NOT EXISTS canonical_source_card_{event.lower()} AFTER {event} ON cards "
+            f"BEGIN UPDATE repertoires SET scope_source_revision=scope_source_revision+1 "
+            f"WHERE id={source}.repertoire_id OR id IN (SELECT repertoire_id FROM repertoire_cards WHERE card_id={source}.id); END"
+        )
 
 
 def request_preview(database, repertoire_id: str, moves: list[str]) -> dict:

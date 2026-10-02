@@ -26,10 +26,21 @@ CREATE TABLE canonical_prefix_positions(
 CREATE FUNCTION advance_canonical_prefix_source() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
     IF TG_TABLE_NAME='cards' THEN
-        UPDATE repertoires SET scope_source_revision=scope_source_revision+1
-        WHERE id IN (SELECT repertoire_id FROM repertoire_cards WHERE card_id=NEW.id);
+        IF TG_OP='DELETE' THEN
+            UPDATE repertoires SET scope_source_revision=scope_source_revision+1
+            WHERE id=OLD.repertoire_id OR id IN (SELECT repertoire_id FROM repertoire_cards WHERE card_id=OLD.id);
+        ELSIF TG_OP='INSERT' THEN
+            UPDATE repertoires SET scope_source_revision=scope_source_revision+1
+            WHERE id=NEW.repertoire_id OR id IN (SELECT repertoire_id FROM repertoire_cards WHERE card_id=NEW.id);
+        ELSE
+            UPDATE repertoires SET scope_source_revision=scope_source_revision+1
+            WHERE id IN (OLD.repertoire_id,NEW.repertoire_id)
+                OR id IN (SELECT repertoire_id FROM repertoire_cards WHERE card_id=NEW.id);
+        END IF;
     ELSIF TG_OP='DELETE' THEN
         UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id=OLD.repertoire_id;
+    ELSIF TG_OP='UPDATE' THEN
+        UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id IN (OLD.repertoire_id,NEW.repertoire_id);
     ELSE
         UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id=NEW.repertoire_id;
     END IF;
@@ -39,9 +50,13 @@ CREATE TRIGGER canonical_line_source AFTER INSERT OR UPDATE OR DELETE ON reperto
     FOR EACH ROW EXECUTE FUNCTION advance_canonical_prefix_source();
 CREATE TRIGGER canonical_link_source AFTER INSERT OR UPDATE OR DELETE ON repertoire_cards
     FOR EACH ROW EXECUTE FUNCTION advance_canonical_prefix_source();
-CREATE TRIGGER canonical_card_source AFTER UPDATE OF start_fen,moves_json,archived ON cards
-    FOR EACH ROW WHEN (OLD.start_fen IS DISTINCT FROM NEW.start_fen OR OLD.moves_json IS DISTINCT FROM NEW.moves_json OR OLD.archived IS DISTINCT FROM NEW.archived)
+CREATE TRIGGER canonical_card_source AFTER UPDATE OF start_fen,moves_json,archived,repertoire_id,content_type ON cards
+    FOR EACH ROW WHEN (OLD.start_fen IS DISTINCT FROM NEW.start_fen OR OLD.moves_json IS DISTINCT FROM NEW.moves_json OR OLD.archived IS DISTINCT FROM NEW.archived OR OLD.repertoire_id IS DISTINCT FROM NEW.repertoire_id OR OLD.content_type IS DISTINCT FROM NEW.content_type)
     EXECUTE FUNCTION advance_canonical_prefix_source();
+CREATE TRIGGER canonical_card_insert_source AFTER INSERT ON cards
+    FOR EACH ROW EXECUTE FUNCTION advance_canonical_prefix_source();
+CREATE TRIGGER canonical_card_delete_source AFTER DELETE ON cards
+    FOR EACH ROW EXECUTE FUNCTION advance_canonical_prefix_source();
 
 -- Readers must never expose a comparison made against a previous opening scope.
 ALTER TABLE game_repertoire_matches_legacy ADD COLUMN canonical_prefix_revision BIGINT NOT NULL DEFAULT 0;
