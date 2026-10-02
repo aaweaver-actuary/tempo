@@ -49,11 +49,12 @@ it("pending or failed burial cannot report success and completed receipts confir
     .mockResolvedValueOnce(Response.json({ operation_id: "bury-pending" }, { status: 202 }))
     .mockResolvedValueOnce(Response.json({ state: "pending" }))
     .mockResolvedValueOnce(Response.json({ detail: "Queue unavailable" }, { status: 503 }))
+    .mockResolvedValueOnce(Response.json({ state: "unknown" }))
     .mockResolvedValueOnce(Response.json({ operation_id: "bury-pending" }, { status: 202 }))
     .mockResolvedValueOnce(Response.json({ state: "complete", response: { buried: true, queue_entry_id: 42 } }));
   vi.stubGlobal("fetch", fetcher);
   await expect(buryTrainingEntry(42)).rejects.toThrow("still pending");
-  await expect(buryTrainingEntry(42)).rejects.toThrow("Queue unavailable");
+  await expect(buryTrainingEntry(42)).rejects.toThrow("still pending");
   await expect(buryTrainingEntry(42)).resolves.toBeUndefined();
 });
 
@@ -138,9 +139,50 @@ it.each([400, 401, 403, 404, 422])("definitive HTTP %s burial rejection clears i
 it.each([408, 429, 503])("retriable HTTP %s burial failure preserves its identity", async (status) => {
   const fetcher = vi.fn(async () => Response.json({ detail: "Retry burial" }, { status }));
   vi.stubGlobal("fetch", fetcher);
-  await expect(buryTrainingEntry(42)).rejects.toThrow("Retry burial");
+  await expect(buryTrainingEntry(42)).rejects.toThrow(status === 503 ? "still pending" : "Retry burial");
   const operationId = localStorage.getItem("tempo-bury-operation-42");
   expect(operationId).toBeTruthy();
-  await expect(buryTrainingEntry(42)).rejects.toThrow("Retry burial");
-  expect((fetcher.mock.calls[1] as unknown as [string, RequestInit])[1].headers).toEqual({ "Idempotency-Key": operationId });
+  await expect(buryTrainingEntry(42)).rejects.toThrow(status === 503 ? "still pending" : "Retry burial");
+  expect((fetcher.mock.calls[status === 503 ? 2 : 1] as unknown as [string, RequestInit])[1].headers).toEqual({ "Idempotency-Key": operationId });
+});
+
+
+it("direct 500 durable failed burial clears identity for a fresh command", async () => {
+  const fetcher = vi.fn().mockResolvedValueOnce(Response.json({}, { status: 500 }))
+    .mockResolvedValueOnce(Response.json({ state: "failed", error: { message: "Synthetic terminal failure" } }))
+    .mockResolvedValueOnce(Response.json({ buried: true, queue_entry_id: 42 }));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(buryTrainingEntry(42)).rejects.toThrow("Synthetic terminal failure");
+  const rejectedId = fetcher.mock.calls[0][1].headers["Idempotency-Key"];
+  expect(fetcher.mock.calls[1][0]).toContain(`/operations/${rejectedId}`);
+  expect(localStorage.getItem("tempo-bury-operation-42")).toBeNull();
+  await buryTrainingEntry(42);
+  expect(fetcher.mock.calls[2][1].headers["Idempotency-Key"]).not.toBe(rejectedId);
+});
+
+it("direct 500 completed receipt confirms original burial until queue refresh", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(Response.json({}, { status: 500 }))
+    .mockResolvedValueOnce(Response.json({ state: "complete", response: { buried: true, queue_entry_id: 42 } })));
+  await expect(buryTrainingEntry(42)).resolves.toBeUndefined();
+  expect(localStorage.getItem("tempo-bury-operation-42")).toBeTruthy();
+});
+
+it.each(["unknown", "queued", "pending", "executing", "retrying", "blocked", "unavailable"])(
+  "direct 500 with %s receipt retains burial identity", async (state) => {
+    const fetcher = vi.fn(async (url: string) => url.includes("/operations/")
+      ? Response.json({ state }, { status: state === "unavailable" ? 503 : 200 })
+      : Response.json({}, { status: 500 }));
+    vi.stubGlobal("fetch", fetcher);
+    await expect(buryTrainingEntry(42)).rejects.toThrow();
+    const operationId = localStorage.getItem("tempo-bury-operation-42");
+    await expect(buryTrainingEntry(42)).rejects.toThrow();
+    expect(localStorage.getItem("tempo-bury-operation-42")).toBe(operationId);
+    expect(operationId).toBeTruthy();
+  });
+
+it("direct 500 mismatched completed receipt rejects and retains identity", async () => {
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(Response.json({}, { status: 500 }))
+    .mockResolvedValueOnce(Response.json({ state: "complete", response: { buried: true, queue_entry_id: 99 } })));
+  await expect(buryTrainingEntry(42)).rejects.toThrow("did not confirm");
+  expect(localStorage.getItem("tempo-bury-operation-42")).toBeTruthy();
 });

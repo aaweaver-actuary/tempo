@@ -1,5 +1,5 @@
 import { API_URL } from "../const";
-import { confirmOperationResponse, FailedOperationError } from "./operation-status";
+import { confirmOperationResponse, FailedOperationError, readOperationResponse } from "./operation-status";
 
 export async function buryTrainingEntry(queueEntryId: number): Promise<void> {
   const operationKey = `tempo-bury-operation-${queueEntryId}`;
@@ -9,7 +9,11 @@ export async function buryTrainingEntry(queueEntryId: number): Promise<void> {
     let response = await fetch(`${API_URL}/api/queue/entries/${queueEntryId}/bury`, {
       method: "POST", headers: { "Idempotency-Key": operationId },
     });
-    response = await confirmOperationResponse(response);
+    // A direct server error can replay a permanently failed receipt, or hide
+    // a committed command. Only its durable receipt resolves that ambiguity.
+    if (response.status >= 500) {
+      response = await readOperationResponse(operationId);
+    } else response = await confirmOperationResponse(response);
     if (!response.ok) {
       // Request timeouts and rate limits leave the command retriable. Other
       // 4xx responses definitively reject this logical operation.

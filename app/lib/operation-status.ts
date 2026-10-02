@@ -20,9 +20,14 @@ export async function confirmOperationResponse(response: Response): Promise<Resp
   // Existing discovery admissions also return 202, with an intent ID that
   // their own status endpoint confirms. Preserve that response for its caller.
   if (!pending.operation_id) return response;
-  const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(pending.operation_id)}`);
+  return readOperationResponse(pending.operation_id);
+}
+
+// Resolve a known command through the same receipt semantics as a 202 response.
+export async function readOperationResponse(operationId: string): Promise<Response> {
+  const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(operationId)}`);
   if (!status.ok)
-    throw new PendingOperationError(pending.operation_id);
+    throw new PendingOperationError(operationId);
   const receipt = await status.json() as {
     state?: string;
     response?: unknown;
@@ -35,11 +40,11 @@ export async function confirmOperationResponse(response: Response): Promise<Resp
   if (receipt.state === "failed")
     throw new FailedOperationError(
       receipt.error?.message ?? "The save failed. Check the service before retrying.",
-      pending.operation_id,
+      operationId,
     );
   if (receipt.state === "blocked")
-    throw new PendingOperationError(pending.operation_id,
-      `Operation ${pending.operation_id} is blocked: ${receipt.last_error?.message ?? receipt.message ?? "check the local service"}. Retry it from the operation status after resolving the error.`,
+    throw new PendingOperationError(operationId,
+      `Operation ${operationId} is blocked: ${receipt.last_error?.message ?? receipt.message ?? "check the local service"}. Retry it from the operation status after resolving the error.`,
       true);
-  throw new PendingOperationError(pending.operation_id);
+  throw new PendingOperationError(operationId);
 }
