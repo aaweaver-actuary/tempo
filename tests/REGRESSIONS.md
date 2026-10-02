@@ -8,6 +8,7 @@ Quiet notifications (October 2, 2026):
 - Grouping loses independent saves or diagnostic details: `grouped discovery warnings resolve independently`; `confirming one grouped save does not restart the remaining warning popup`; `grouping keeps different sources severities details and resolution states separate`; `stored duplicate warnings group after reload without losing operation identities`.
 - Routine and recovered notices obscure actionable failures: `notification history opens to unresolved warnings and errors`; `failed saves remain actionable after saving progress ends`; `guided attempt warnings clear quietly only after pending saves are confirmed`; `guided attempt recovery clears its warning while phone conflicts remain`; browser `phone notification history groups retries and opens to needs attention`.
 - The existing settings and offline-phone browser regressions now verify persisted changes and retained history instead of requiring success popups. Existing JSON export, storage-failure and independent discovery-confirmation regressions remain required.
+- The Black capture browser case waits for the loaded puzzle before recording its unchanged-board invariant: `Black-first capture keeps its orientation while typed SAN and real-board moves save one solution`. A diagnostic trace captured the empty startup board before the puzzle arrived; the original restoration assertion remains unchanged.
 
 | Issue | Required regression |
 | --- | --- |
