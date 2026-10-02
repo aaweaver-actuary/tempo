@@ -138,3 +138,28 @@ it("discovery_visibility_gate_is_checked_at_capacity_release_before_react_reconc
   expect(scheduler.snapshot().maximumActive).toBe(2);
   scheduler.dispose();
 });
+
+
+it("discovery_rejected_loader_reenqueues_retry_with_consistent_diagnostics", async () => {
+  vi.useFakeTimers();
+  const response = deferred<"complete">();
+  const loader = vi.fn().mockRejectedValueOnce(new Error("Preview fixture failure"))
+    .mockImplementation(() => response.promise);
+  const scheduler = new DiscoveryPreviewScheduler(loader, 2, () => Date.now());
+  const item = work(0, "look-ahead");
+  try {
+    scheduler.update([item.identity], [item]); await settle();
+    expect(scheduler.snapshot()).toMatchObject({ enqueued: 2, started: 1, completed: 1,
+      retriesScheduled: 1, active: 0, queued: 1, maximumActive: 1 });
+    for (let wake = 0; wake < 20; wake++) scheduler.update([item.identity], [item]);
+    expect(scheduler.snapshot()).toMatchObject({ enqueued: 2, queued: 1 });
+    expect(vi.getTimerCount()).toBe(1);
+    await vi.advanceTimersByTimeAsync(29_999); expect(loader).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1); expect(loader).toHaveBeenCalledTimes(2);
+    for (let wake = 0; wake < 20; wake++) scheduler.update([item.identity], [item]);
+    expect(scheduler.snapshot()).toMatchObject({ active: 1, queued: 0, enqueued: 2 });
+    response.resolve("complete"); await settle();
+    expect(scheduler.snapshot()).toMatchObject({ active: 0, queued: 0, completed: 2 });
+    expect(vi.getTimerCount()).toBe(0);
+  } finally { scheduler.dispose(); }
+});

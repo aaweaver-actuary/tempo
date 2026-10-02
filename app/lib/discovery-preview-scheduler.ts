@@ -89,7 +89,7 @@ export class DiscoveryPreviewScheduler {
           this.retryAt.set(work.identity, this.now() + this.retryDelayMs);
           this.diagnostics.retriesScheduled++;
           const currentDemand = this.demand.get(work.identity);
-          if (currentDemand) this.pending.set(work.identity, currentDemand);
+          if (currentDemand) { this.pending.set(work.identity, currentDemand); this.diagnostics.enqueued++; }
         }).finally(() => {
           this.active.delete(work.identity); this.diagnostics.completed++; this.drain();
         });

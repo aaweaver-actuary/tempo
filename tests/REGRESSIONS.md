@@ -1100,3 +1100,5 @@ Policy and before/after evidence: [Discoveries preview scheduling](../docs/disco
 
 - Issue #33 viewer look-ahead leaves a newly returned earlier item unnavigable: `discovery_viewer_prepares_new_items_before_current_feed_position`; browser `late removed preview cannot be reused when the discovery returns` preserves the current item while the earlier result prepares. Look-ahead remains limited to two neighbors.
 - Issue #33 foreground queue independence with bounded closed preparation: browser `discovery preview backlog leaves a prompt foreground training queue refresh` retains its queue latency and active request cap assertions, checks that closed preparation stops at two, and proves explicit viewer demand resumes work.
+
+- Issue #33 rejected-loader diagnostics: `discovery_rejected_loader_reenqueues_retry_with_consistent_diagnostics` proves rejected loads re-enqueue with consistent `enqueued`/`retriesScheduled` counters, one pending identity and timer, unchanged backoff, released capacity and timer cleanup. It failed before incrementing `enqueued` on rejection.
