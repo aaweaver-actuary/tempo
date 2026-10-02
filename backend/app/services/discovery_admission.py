@@ -456,17 +456,20 @@ def recommend_missing_continuations(opportunity_id: str) -> dict:
 DISCOVERY_ADMISSION_PRIORITY = 80
 
 
+def admission_intent_id(opportunity_id: str, selected_move_uci: str, evidence_fingerprint: str) -> str:
+    """Retry identity includes the evidence the learner actually accepted."""
+    return hashlib.sha256(f"{opportunity_id}\0{selected_move_uci}\0{evidence_fingerprint}".encode()).hexdigest()
+
+
 def create_admission_intent(opportunity_id: str, selected_move_uci: str,
                             expected_fingerprint: str) -> dict:
     with read_connection() as database:
         prior = database.execute(
             """SELECT * FROM discovery_admission_intents
-               WHERE opportunity_id=? AND selected_move_uci=?""",
-            (opportunity_id, selected_move_uci),
+               WHERE opportunity_id=? AND selected_move_uci=? AND evidence_fingerprint=?""",
+            (opportunity_id, selected_move_uci, expected_fingerprint),
         ).fetchone()
     if prior:
-        if prior["evidence_fingerprint"] != expected_fingerprint:
-            raise ValueError("This continuation was accepted from a different evidence revision")
         if prior["state"] != "queued":
             with read_connection() as database:
                 existing_task = database.execute(
@@ -506,9 +509,16 @@ def create_admission_intent(opportunity_id: str, selected_move_uci: str,
     line_id = hashlib.sha256(
         f"{repertoire_id}\0{card_id(starting_fen, preview_moves)}".encode()
     ).hexdigest()
-    intent_id = hashlib.sha256(f"{opportunity_id}\0{selected_move_uci}".encode()).hexdigest()
+    intent_id = admission_intent_id(opportunity_id, selected_move_uci, expected_fingerprint)
     with connection() as database:
-        database.execute(
+        database.execute("BEGIN IMMEDIATE")
+        current_opportunity = database.execute(
+            "SELECT status,evidence_fingerprint FROM repertoire_opportunities WHERE id=?", (opportunity_id,),
+        ).fetchone()
+        if (not current_opportunity or current_opportunity["status"] != "active"
+                or current_opportunity["evidence_fingerprint"] != expected_fingerprint):
+            raise ValueError("Discovery evidence changed; refresh the preview")
+        inserted = database.execute(
             """INSERT OR IGNORE INTO discovery_admission_intents(
                  id,opportunity_id,repertoire_id,evidence_fingerprint,starting_fen,
                  selected_move_uci,preview_moves_json,recommendation_json,line_id,
@@ -517,15 +527,16 @@ def create_admission_intent(opportunity_id: str, selected_move_uci: str,
              starting_fen, selected_move_uci, json.dumps(preview_moves),
              json.dumps(selected), line_id, _now(), _now()),
         )
-        database.execute(
-            """UPDATE repertoire_opportunities SET admission_state='preparing',
-                 seen_at=COALESCE(seen_at,?),updated_at=? WHERE id=?""",
-            (_now(), _now(), opportunity_id),
-        )
-        enqueue_task_in_transaction(
-            database, "discovery_admission", intent_id, {"intent_id": intent_id},
-            priority=DISCOVERY_ADMISSION_PRIORITY,
-        )
+        if inserted.rowcount:
+            database.execute(
+                """UPDATE repertoire_opportunities SET admission_state='preparing',
+                     seen_at=COALESCE(seen_at,?),updated_at=? WHERE id=? AND evidence_fingerprint=?""",
+                (_now(), _now(), opportunity_id, expected_fingerprint),
+            )
+            enqueue_task_in_transaction(
+                database, "discovery_admission", intent_id, {"intent_id": intent_id},
+                priority=DISCOVERY_ADMISSION_PRIORITY,
+            )
     return {"id": intent_id, "line_id": line_id, "repertoire_id": repertoire_id,
             "starting_fen": starting_fen, "selected_move_uci": selected_move_uci,
             "preview_moves_uci": preview_moves,
@@ -562,6 +573,7 @@ def _materialize_admission_branch(task: dict) -> None:
             if not lock_current_slice(database, task):
                 return
         else:
+            database.execute("BEGIN IMMEDIATE")
             lease = database.execute(
                 "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
             ).fetchone()
@@ -674,6 +686,7 @@ def execute_admission_intent_slice(task: dict) -> bool:
             if not lock_current_slice(database, task):
                 return False
         else:
+            database.execute("BEGIN IMMEDIATE")
             lease = database.execute(
                 "SELECT generation,lease_token FROM background_tasks WHERE id=?", (task["id"],),
             ).fetchone()
@@ -713,8 +726,9 @@ def execute_admission_intent_slice(task: dict) -> bool:
                 )
                 database.execute(
                     """UPDATE repertoire_opportunities SET admission_state='queued',
-                         admitted_card_id=?,updated_at=? WHERE id=?""",
-                    (card_id_value, _now(), current["opportunity_id"]),
+                         handled_evidence_json=evidence_json,card_id=COALESCE(card_id,?),
+                         admitted_card_id=?,updated_at=? WHERE id=? AND evidence_fingerprint=?""",
+                    (card_id_value, card_id_value, _now(), current["opportunity_id"], current["evidence_fingerprint"]),
                 )
                 if postgres_store.configured():
                     complete_task_slice_in_transaction(database, task)

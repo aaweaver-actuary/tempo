@@ -61,6 +61,9 @@ def snooze_opportunity(database: PostgresConnection, payload: dict[str, Any]) ->
 
 
 def train_opportunity(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    reviewed_fingerprint = payload.get("evidence_fingerprint")
+    if not isinstance(reviewed_fingerprint, str) or not reviewed_fingerprint.strip():
+        raise HTTPException(409, "Review the current evidence and train again with its evidence revision")
     repertoire_id = str(payload["repertoire_id"])
     opportunity_id = str(payload["opportunity_id"])
     opportunity = database.execute_native(
@@ -77,7 +80,7 @@ def train_opportunity(database: PostgresConnection, payload: dict[str, Any]) -> 
     local_day = date.today().isoformat()
     lock_queue_date_for_position(database, local_day)
     try:
-        result = admit_existing_decision(database, repertoire_id, opportunity_id)
+        result = admit_existing_decision(database, repertoire_id, opportunity_id, reviewed_fingerprint)
     except KeyError as error:
         raise HTTPException(404, str(error)) from error
     except ValueError as error:

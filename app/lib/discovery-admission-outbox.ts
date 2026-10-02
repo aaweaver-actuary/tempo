@@ -177,7 +177,7 @@ async function processAdmission(admission: PendingDiscoveryAdmission) {
     if (body.state === "queued") {
       replaceAdmission(admission.opportunityId, () => null);
       window.dispatchEvent(new CustomEvent(DISCOVERY_ADMISSION_QUEUED,
-        { detail: { opportunityId: admission.opportunityId } }));
+        { detail: { opportunityId: admission.opportunityId, evidenceFingerprint: admission.evidenceFingerprint } }));
     } else if (body.state === "failed") {
       throw new ConfirmedSaveError(body.error ?? "Discovery admission failed. Retry the save.");
     } else if (body.state !== "preparing") {

@@ -270,9 +270,9 @@ Changes refresh today's remaining automatic introductions. Completed work and du
 reviews remain. Unused allowance does not accumulate: seven learned out of ten
 still permits up to ten new cards tomorrow.
 
-PostgreSQL migration 27 adds the nullable column. Upgrade with the normal
+PostgreSQL migration 29 adds the nullable column. Upgrade with the normal
 stopped-writer migration procedure before starting the API/workers requiring schema
-27. SQLite compatibility initialization adds the same nullable field. Settings
+29. SQLite compatibility initialization adds the same nullable field. Settings
 writes and their queue-refresh generation commit together on PostgreSQL; old worker
 checkpoints cannot publish after that generation changes. Publication rechecks the
 current limit and admissions without reversing the foreground settings/task lock
@@ -516,13 +516,18 @@ column-list repair, then passed (1.40 s pytest); the whole tactical file passed
 (7 tests, 3.62 s). The audit found six positional repertoire inserts, all in tests;
 each now names the columns of its intentional current, miniature or legacy schema.
 
-Current main `072f550` uses migration 26 for background diagnostics. Integration
+Main `072f550` uses migration 26 for background diagnostics. That integration
 renumbers the repertoire migration and schema readiness to 27. The named migration
 regression reproduced the collision. The proof's present/absent restoration cases
 also reproduced leaked diagnostic buckets; restoration now preserves bounded
 `daily_queue` buckets while retaining unrelated kinds. No production queue or
 diagnostic behavior changed. The 32 focused integration cases passed in 7.32 s;
 the final observer additionally verifies an unrelated metric kind and stable order.
+
+Main subsequently advanced to `5dd0815`, introducing handled-discovery migrations
+27 and 28. Both remain intact; the repertoire migration, ledger and schema
+readiness now use 29. The same named numbering regression reproduced the duplicate
+27 before this repair. Current-base CI owns the final combined candidate gate.
 
 `TEMPO_PYTHON=backend/.venv/bin/python make python` passed **844 tests** in
 106.18 s pytest / 108.29 s wall, on `ea74d0f` plus the migration/counter patch

@@ -329,8 +329,8 @@ export default function RepertoireView({
     await applyOpportunityCommand(repertoireId, opportunityId, "dismiss");
     await loadOpportunities(repertoireId);
   }
-  async function trainOpportunity(repertoireId: string, opportunityId: string) {
-    await applyOpportunityCommand(repertoireId, opportunityId, "train");
+  async function trainOpportunity(repertoireId: string, opportunityId: string, evidenceFingerprint: string) {
+    await applyOpportunityCommand(repertoireId, opportunityId, "train", evidenceFingerprint);
     await onQueueChanged();
     await loadOpportunities(repertoireId);
     onTrain();
@@ -598,6 +598,7 @@ export default function RepertoireView({
                               void trainOpportunity(
                                 item.id,
                                 opportunity.id,
+                                opportunity.evidence_fingerprint,
                               ).catch((failure) =>
                                 setError(
                                   failure instanceof Error
