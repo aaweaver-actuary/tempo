@@ -2,6 +2,7 @@ import { test, expect } from "./observability";
 import { navigate } from "./ui-fixtures";
 import { prepareVisualUI } from "./visual-fixtures";
 import { prepareRepairUI } from "./repair-fixtures";
+import type { ActivityResponse } from "../../app/lib/service-status";
 
 for (const width of [390, 1280]) {
   test(`repair-dialog-${width}`, async ({ page }) => {
@@ -17,7 +18,6 @@ for (const width of [390, 1280]) {
     await expect(page).toHaveScreenshot(`repair-dialog-${width}.png`, { animations: "disabled", fullPage: true });
   });
 }
-import type { ActivityResponse } from "../../app/lib/service-status";
 for (const viewport of [
   { width: 390, height: 844 },
   { width: 768, height: 1024 },
