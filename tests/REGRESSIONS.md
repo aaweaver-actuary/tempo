@@ -1271,6 +1271,14 @@ checking-only frontend contract). The real browser workflow repeats Check prefix
 and asserts that the task identities remain unchanged.
 The same PostgreSQL scenario submits ten distinct candidates and waits for durable
 retention to settle at at most nine previews while preserving the active pointer.
+
+`Canonical prefix dialog 390` and `Canonical prefix dialog 1280` in the pinned
+visual suite also keep the compact preview's shortcut toolbar hidden and its Save
+button fully visible. Both failed after merging main's keyboard controls: the new
+default toolbar clipped the phone footer and changed the desktop layout. The
+preview uses the existing `showShortcutButton` option; shared board controls and
+the existing screenshot baselines remain unchanged.
+
 ### Training burial until tomorrow
 
 Bury retains today's unfinished queue rows as `buried`, preserving scheduling and completed cycles. Those rows exclude the card from same-day materialization and still consume its new Study admission quota. Active queue reads remain `queued` only; next-day eligibility follows normal admission. PostgreSQL supplies durable command receipts; the SQLite compatibility route intentionally does not provide receipt replay.

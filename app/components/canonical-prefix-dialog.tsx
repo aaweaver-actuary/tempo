@@ -116,7 +116,7 @@ export function CanonicalPrefixDialog({ repertoireId, repertoireName, side, them
     <div className="canonical-prefix-actions"><Button disabled={working || committed} onClick={() => void checkPrefix(movetext)}>Check prefix</Button>
       {suggestion && <Button disabled={working || committed} onClick={() => { setMovetext(suggestion); void checkPrefix(suggestion); }}>Use shared opening</Button>}
       <Button disabled={working || committed} onClick={() => { setMovetext(""); void checkPrefix(""); }}>Clear prefix</Button></div>
-    <div className="canonical-prefix-board"><Chessboard owner={`canonical-prefix:${repertoireId}`} fen={fen} orientation={side} theme={theme} pieceSet={pieceSet} locked showHint={false} onMove={() => {}} /></div>
+    <div className="canonical-prefix-board"><Chessboard owner={`canonical-prefix:${repertoireId}`} fen={fen} orientation={side} theme={theme} pieceSet={pieceSet} locked showHint={false} showShortcutButton={false} onMove={() => {}} /></div>
     {preview?.san && <p className="canonical-prefix-notation">{preview.san}</p>}
     {(previewId && !preview || preview?.state === "checking") && <p role="status">Checking saved lines and cards…</p>}
     {preview?.state === "ready" && <p role="status">{preview.moves_uci.length ? "Compatible. Discoveries start after this opening." : "Compatible. Saving will remove the opening restriction."}</p>}
