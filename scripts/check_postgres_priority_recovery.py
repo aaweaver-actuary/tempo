@@ -640,6 +640,8 @@ def main() -> None:
                 durable_tasks, postgres_priority, introduction_priorities,
                 postgres_game_derivation, observer,
             )
+            from scripts.rehearse_integrity_repair import guided_repair_postgres_contention_restart_replay_and_publication
+            guided_repair_postgres_contention_restart_replay_and_publication(observer)
         print("PASS schema 20/21 priority recovery across queued, retrying, expired, "
               "and old-ordering work; repeated migration and stale delivery are inert")
         print("PASS PostgreSQL second-batch crash, reconstructed task claim, shuffled retry, "
