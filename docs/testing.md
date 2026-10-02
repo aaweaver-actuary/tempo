@@ -507,3 +507,40 @@ current-candidate CI and post-merge pinned validation remain pending. Historical
 Settings differences, the 1920 notification-header discrepancy and pinned
 installation exit 137 are not resolved by this harness work. No visual baseline,
 timeout or assertion was weakened. PR #54 remains draft and unmerged.
+
+### PR #54 CI repair and current-main integration (2026-10-02)
+
+The tactical migration fixture's five-value positional repertoire insert failed
+against the six-column schema. Its named regression failed before the explicit
+column-list repair, then passed (1.40 s pytest); the whole tactical file passed
+(7 tests, 3.62 s). The audit found six positional repertoire inserts, all in tests;
+each now names the columns of its intentional current, miniature or legacy schema.
+
+Current main `072f550` uses migration 26 for background diagnostics. Integration
+renumbers the repertoire migration and schema readiness to 27. The named migration
+regression reproduced the collision. The proof's present/absent restoration cases
+also reproduced leaked diagnostic buckets; restoration now preserves bounded
+`daily_queue` buckets while retaining unrelated kinds. No production queue or
+diagnostic behavior changed. The 32 focused integration cases passed in 7.32 s;
+the final observer additionally verifies an unrelated metric kind and stable order.
+
+`TEMPO_PYTHON=backend/.venv/bin/python make python` passed **844 tests** in
+106.18 s pytest / 108.29 s wall, on `ea74d0f` plus the migration/counter patch
+subsequently committed as `9341eb6`, macOS arm64, CPython 3.14.5. All 37
+`node --test tests/runner/postgres-test-speedups.test.mjs` cases passed in 1.34 s.
+These are backend/runner results, not the complete release gate.
+
+The 1920 Settings baseline independently predates the Notifications header.
+A tracked-source export of current main `072f550` was rendered with the normal
+Playwright 1.63 pinned arm64 image and visual configuration. The single Settings
+1920 probe asserts the Notifications button and captures the page; no product
+source changed. Against the old baseline, raw pixel differences are confined to
+`(1352,13)–(1633,57)` in the header; the complete page body is identical.
+The replacement is committed separately from the repertoire UI snapshots.
+The exact filtered pinned command uses `visual.spec.ts --grep 'Settings 1920'
+--update-snapshots=all`; it passed one test in 6.0 s / 14.49 s wall. The original
+anchored filter matched zero cases and is not passing evidence; a second run
+accepted the old image within tolerance without writing a replacement, so the
+final probe explicitly captured it. Screenshot thresholds remain unchanged.
+Source, logs, raw comparison and task-owned container events are retained under
+`test-results/pr54-main-visual-reference/` and `test-results/pr54-isolation/`.
