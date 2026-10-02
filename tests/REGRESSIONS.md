@@ -930,6 +930,7 @@ generation invalidation.
 - `test_repertoire_limit_proof_cleanup_failure_is_loud_and_atomic` — restoration failure surfaces with the original assertion as context and rolls back fixture deletion and partial queue restoration together.
 - `test_repertoire_limit_proof_reconciliation_preserves_unrelated_entries` — reconciliation publishes only fixture entries while advancing past unrelated candidates.
 - `tests/runner/postgres-test-speedups.test.mjs::repertoire limit recreation fixture includes its final White response` — the PR's recreation PGN ends after White's prescribed move so integrity validation permits study admission. Reproduced `w !== b` on `1. e4 e5 *` after the isolated Docker run exposed `missing_response`; fixed with `2. Nf3`, without bypassing integrity checks or extending waits.
+- `tests/runner/postgres-test-speedups.test.mjs::repertoire limit recreation fixture survives backup then leaves unrelated study state intact` — executes the real recreation/backup action bodies with I/O seams, verifies override replay and backup before cleanup, and preserves unrelated fixtures. Reproduced the leftover recreation entry after Docker study durability rejected guided failure with HTTP 409; production deletion now removes that owned repertoire before the next foreground workflow.
 
 ## Tactic capture orientation and typed SAN
 

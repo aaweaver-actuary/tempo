@@ -74,6 +74,7 @@ const measureScenario = createScenarioTimer(timingPath, {
 console.log(`PostgreSQL ${options.mode} timings: ${timingPath}`);
 const measuredHttpRequests = [];
 let activeStudyRepertoireId = null;
+let limitRecreationRepertoireId = null;
 
 async function apiRequest(path, options = {}, label = null) {
   const startedAt = performance.now();
@@ -569,6 +570,7 @@ const actions = {
   command_recreation: async () => {
     const settings = await get("settings");
     const importedLimit = await importFixture("repertoire-limit-recreation.pgn", repertoireLimitRecreationPgn);
+    limitRecreationRepertoireId = importedLimit.repertoire_id;
     await waitForStudyableImport(importedLimit.repertoire_id);
     const before = await get("queue/today");
     const operationId = `pg-durability-${randomBytes(12).toString("hex")}`;
@@ -631,6 +633,12 @@ const actions = {
     console.log("PASS every PostgreSQL table matches after backup restoration");
     run("docker", [...compose, "up", "--no-build", "-d"]);
     await waitForReady();
+    if (limitRecreationRepertoireId !== null) {
+      await postCommand(`repertoires/${limitRecreationRepertoireId}`, {}, {
+        method: "DELETE", label: "foreground DELETE recreation fixture after verified backup",
+      });
+      limitRecreationRepertoireId = null;
+    }
   },
   browser: async () => {
       const browserArguments = buildPostgresPlaywrightArguments(options);
