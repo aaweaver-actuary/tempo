@@ -544,3 +544,15 @@ accepted the old image within tolerance without writing a replacement, so the
 final probe explicitly captured it. Screenshot thresholds remain unchanged.
 Source, logs, raw comparison and task-owned container events are retained under
 `test-results/pr54-main-visual-reference/` and `test-results/pr54-isolation/`.
+
+Expected, Actual and Diff from CI run `36997007615` were manually reviewed for
+all four Settings widths. The accepted feature snapshots add the default-limit
+wording, no-rollover explanation, repertoire heading/row, allowance selector,
+current-limit status and disabled clean Save button. At 390 and 768, the long
+repertoire title wraps within the existing card; the numeric current-limit status
+remains readable beside the native selector. At 1280 and 1920, the row fits on
+one line. Existing downstream Training settings and footer move down; typography,
+navigation, alignment and horizontal bounds remain consistent. Only these four
+Settings images change; the independent 1920 header correction is the preceding
+commit. The complete pinned visual/performance gate and required current-candidate
+CI remain separate validation requirements, reported in the PR description.
