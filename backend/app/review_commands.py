@@ -23,7 +23,7 @@ def submit_review(database: PostgresConnection, payload: dict[str, Any]) -> dict
     if completion:
         from .services.postgres_opening_evidence import persist_checkpoint, evidence_error
         if (completion.attempt_id != request.attempt_id or completion.manifest.card_id != card_id or
-                completion.queue_entry_id != request.queue_entry_id or not completion.terminal or
+                completion.queue_entry_id is None or completion.queue_entry_id != request.queue_entry_id or not completion.terminal or
                 completion.terminal.state != "complete"):
             raise evidence_error("Completion must identify the same aggregate review attempt and queue entry")
         receipt = database.execute("SELECT 1 FROM review_attempt_receipts WHERE attempt_id=?", (request.attempt_id,)).fetchone()

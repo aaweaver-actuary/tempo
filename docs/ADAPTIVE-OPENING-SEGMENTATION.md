@@ -292,3 +292,14 @@ protection, scheduling ownership and decision FSRS, historical replay, cutover a
 opt-out recovery. PR 4 remains responsible for adaptive assembly, thresholds,
 cooldowns/pins, probes and diagnostics. Issues #35/#36 remain open with their original
 teaching-history and alternative-index implementation requirements.
+
+PR 2 parent-recovery audit: `test_offline_repeat_reconciles_parent_aggregate_only_fallback`
+failed on `7fd6042` plus the new test because it required parent evidence completion,
+even after the original aggregate review had confirmed its compatible fallback.
+Parent binding now uses the confirmed aggregate receipt, immutable presentation scope
+and original/requeue entry, and rejects missing parents and unrelated queue cycles.
+Evidence completion also requires a resolved actual queue entry. The final named
+PostgreSQL rehearsal passed on a fresh disposable 18.6 container in 2.10s of execution
+(`bash /private/tmp/tempo-shadow-run-focused.sh`, logs retained); the focused manifest,
+contract and route files passed 23 cases in 0.62s. This backend follow-up requires fresh
+current-candidate CI durability; the earlier local Docker artifact is not relabelled.

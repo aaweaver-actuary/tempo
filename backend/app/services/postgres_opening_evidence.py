@@ -167,9 +167,20 @@ def _persist_checkpoint(database, request: OpeningEvidenceCheckpoint, *, complet
         if queue_proof is None:
             raise EvidenceConflict("The queue entry does not represent this observed presentation")
     if completing_review and request.parent_attempt_id:
-        parent = database.execute_native("SELECT card_id,repertoire_id,state FROM opening_evidence_attempts WHERE attempt_id=%s", (request.parent_attempt_id,)).fetchone()
-        if not parent or tuple(parent) != (manifest.card_id, manifest.repertoire_id, "complete"):
-            raise EvidenceConflict("The offline parent evidence completion has not been reconciled")
+        # Parent-review reconciliation owns temporary queue resolution, including
+        # a confirmed aggregate-only fallback after rejected parent evidence.
+        parent = database.execute_native(
+            "SELECT receipt.card_id,receipt.queue_entry_id,receipt.result_json FROM review_attempt_receipts receipt "
+            "WHERE receipt.attempt_id=%s AND EXISTS(SELECT 1 FROM opening_evidence_queue_contexts context "
+            "WHERE context.queue_entry_id=receipt.queue_entry_id AND context.presentation_snapshot_id=%s "
+            "AND context.repertoire_id=%s)",
+            (request.parent_attempt_id, manifest.presentation_snapshot_id, manifest.repertoire_id),
+        ).fetchone()
+        if not parent or parent["card_id"] != manifest.card_id:
+            raise EvidenceConflict("The offline parent aggregate review has not been reconciled with this presentation")
+        parent_result = json.loads(parent["result_json"])
+        if request.queue_entry_id not in {parent["queue_entry_id"], parent_result.get("requeue_entry_id")}:
+            raise EvidenceConflict("The offline repeat is not bound to its parent's reconciled queue entry")
     context = request.model_dump(mode="json", exclude={"events", "terminal", "queue_entry_id"})
     database.execute_native(
         "INSERT INTO opening_evidence_attempts(attempt_id,manifest_id,presentation_snapshot_id,repertoire_id,card_id,"

@@ -46,6 +46,39 @@ def verify_persisted_shadow():
     postgres_store.close_pools()
 
 
+def test_offline_repeat_reconciles_parent_aggregate_only_fallback(database, card_id, queue_entry_id, checkpoint, event, manifest, observed_at):
+    database.execute_native('SAVEPOINT parent_fallback')
+    parent_attempt_id=card_id+'-aggregate-only-parent'
+    parent=submit_review(database,{'card_id':card_id,'review':{'outcome':'correct','queue_entry_id':queue_entry_id,
+      'attempt_id':parent_attempt_id,'recorded_at':observed_at}})
+    assert parent['persisted'] and parent['requeue_entry_id']
+    repeat=checkpoint('repeat-after-fallback')
+    repeat['parent_attempt_id']=parent_attempt_id
+    repeat['queue_entry_id']=parent['requeue_entry_id']
+    repeat['events']=[event(0,1)]
+    repeat['terminal']={'state':'complete','final_sequence':1,'ended_at':observed_at}
+    wrong_parent=copy.deepcopy(repeat);wrong_parent['parent_attempt_id']=card_id+'-unknown-parent'
+    try:
+        persist_checkpoint(database,{'checkpoint':wrong_parent,'prepared_manifest':manifest},completing_review=True)
+    except HTTPException as error:assert 'parent aggregate review' in error.detail['message']
+    else:raise AssertionError('An unreconciled parent was accepted')
+    # A parent can resolve only its original queue or confirmed repeat, never a
+    # separate queue cycle even when its immutable presentation happens to match.
+    other_queue=database.execute("INSERT INTO daily_queue(queue_date,card_id,cycle,position,card_bucket,admission_repertoire_id) "
+      "VALUES(?,?,99,1001,'opening',?) RETURNING id",(date.today().isoformat(),card_id,manifest['repertoire_id'])).fetchone()[0]
+    wrong_binding=copy.deepcopy(repeat);wrong_binding['queue_entry_id']=other_queue
+    try:persist_checkpoint(database,{'checkpoint':wrong_binding,'prepared_manifest':manifest},completing_review=True)
+    except HTTPException as error:assert 'parent' in error.detail['message']
+    else:raise AssertionError('A different queue cycle was accepted for the parent')
+    result=submit_review(database,{'card_id':card_id,'review':{'outcome':'correct','queue_entry_id':repeat['queue_entry_id'],
+      'attempt_id':repeat['attempt_id'],'expected_review_id':parent['review_id'],'recorded_at':observed_at,
+      'opening_evidence_completion':repeat},'prepared_manifest':manifest})
+    assert result['persisted'],'A confirmed aggregate-only parent blocked its valid repeat evidence'
+    assert database.execute_native('SELECT state FROM opening_evidence_attempts WHERE attempt_id=%s',(repeat['attempt_id'],)).fetchone()[0]=='complete'
+    database.execute_native('ROLLBACK TO SAVEPOINT parent_fallback')
+    print('PASS test_offline_repeat_reconciles_parent_aggregate_only_fallback')
+
+
 def test_postgres_shadow_replay_atomicity_and_scheduling_invariance():
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Shadow rehearsal requires a disposable PostgreSQL instance')
@@ -185,6 +218,9 @@ def test_postgres_shadow_replay_atomicity_and_scheduling_invariance():
             assert {k:v for k,v in enabled.items() if k not in {'review_id','requeue_entry_id'}}=={k:v for k,v in absent.items() if k not in {'review_id','requeue_entry_id'}}
             assert submit_review(database,{'card_id':prefix,'review':{**review,'opening_evidence_completion':logical},'prepared_manifest':manifest})==enabled
             database.execute_native('ROLLBACK TO SAVEPOINT comparable')
+    with postgres_store.connection() as database:
+        database.execute("UPDATE cards SET scheduling_mode='normal' WHERE id=?",(prefix,))
+        test_offline_repeat_reconciles_parent_aggregate_only_fallback(database,prefix,queue,checkpoint,event,manifest,now.isoformat())
     # A rejected aggregate review rolls back events, observations and completion together.
     atomic=checkpoint('atomic');atomic['events']=[event(0,1)];atomic['terminal']={'state':'complete','final_sequence':1,'ended_at':now.isoformat()}
     try:

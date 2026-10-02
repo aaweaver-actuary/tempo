@@ -97,3 +97,20 @@ def test_sqlite_reports_unsupported_evidence_without_claiming_shadow_persistence
     with pytest.raises(HTTPException) as rejected:main.review('shadow-card',request)
     assert rejected.value.detail['code']=='opening_evidence_unavailable'
     assert rejected.value.detail['aggregate_review_allowed'] is True
+
+
+def test_review_completion_requires_a_resolved_actual_queue_binding(monkeypatch):
+    import pytest
+    from fastapi import HTTPException
+    from app import review_commands
+    fixture=json.loads((Path(__file__).resolve().parents[2]/'tests/fixtures/opening-evidence-manifest.json').read_text())
+    monkeypatch.setattr(review_commands,'lock_queue_date_for_position',lambda *args:None)
+    completion={'attempt_id':'unbound-repeat','manifest':fixture,'origin_queue_entry_id':101,
+      'queue_entry_id':None,'started_at':'2026-09-30T12:00:00Z','study_timezone':'UTC',
+      'terminal':{'state':'complete','final_sequence':0,'ended_at':'2026-09-30T12:01:00Z'}}
+    with pytest.raises(HTTPException) as rejected:
+        review_commands.submit_review(SimpleNamespace(execute=lambda *args:None),
+          {'card_id':'shadow-card','review':{'outcome':'correct','attempt_id':'unbound-repeat',
+            'opening_evidence_completion':completion}})
+    assert rejected.value.detail['code']=='opening_evidence_conflict'
+    assert 'queue entry' in rejected.value.detail['message']
