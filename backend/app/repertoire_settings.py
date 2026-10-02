@@ -3,7 +3,7 @@ from fastapi import HTTPException
 
 from .models import RepertoireSettingsResponse
 
-SYSTEM_REPERTOIRES = ('__tactics__', '__endgames__', '__game_mistakes__', '__game_tactics__', '__captured_tactics__')
+SYSTEM_REPERTOIRES = ('__tactics__', '__endgames__', '__game_mistakes__', '__game_tactics__', '__captured_tactics__', '__defense__')
 
 
 def effective_opening_limits(database) -> dict[str, int]:

@@ -102,9 +102,12 @@ def test_repertoire_override_rejects_invalid_payloads(workspace, payload):
 
 
 def test_repertoire_override_rejects_missing_and_system_repertoires(workspace):
-    for repertoire_id in ('missing', '__tactics__'):
+    with database.connection() as connection:
+        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('__defense__','Defensive tactics','synthetic',?)", (date.today().isoformat(),))
+    for repertoire_id in ('missing', '__tactics__', '__defense__'):
         assert workspace.put(f'/api/repertoires/{repertoire_id}/settings', json={'new_cards_per_day': 5}).status_code == 404
 
+    assert {record['id'] for record in workspace.get('/api/repertoires').json()['repertoires']} == {'first', 'second'}
 
 def test_shared_card_is_deduplicated_and_charged_to_admitting_repertoire(workspace):
     assert workspace.put('/api/repertoires/first/settings', json={'new_cards_per_day': 0}).status_code == 200

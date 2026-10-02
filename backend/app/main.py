@@ -2132,9 +2132,11 @@ async def import_pgn(
 
 @app.get("/api/repertoires")
 def list_repertoires():
+    from .repertoire_settings import SYSTEM_REPERTOIRES
+    system_placeholders = ",".join("?" for _ in SYSTEM_REPERTOIRES)
     with read_connection() as db:
         rows = db.execute(
-            """
+            f"""
             WITH line_counts AS (
                 SELECT repertoire_id,COUNT(*) AS line_count
                 FROM repertoire_lines
@@ -2213,10 +2215,10 @@ def list_repertoires():
             LEFT JOIN background_tasks graph_task
               ON graph_task.kind='opening_graph_rebuild'
              AND graph_task.deduplication_key=r.id
-            WHERE r.id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')
+            WHERE r.id NOT IN ({system_placeholders})
             ORDER BY r.created_at DESC
         """,
-            (date.today().isoformat(), date.today().isoformat()),
+            (date.today().isoformat(), date.today().isoformat(), *SYSTEM_REPERTOIRES),
         ).fetchall()
         repertoire_items = [
             {
