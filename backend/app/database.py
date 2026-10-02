@@ -57,7 +57,8 @@ def connection(*, background: bool = False) -> Iterator[sqlite3.Connection]:
                 gate_wait_seconds = time.perf_counter() - gate_started
                 transaction_started = time.perf_counter()
                 try:
-                    with postgres_store.connection(read_only=False, background=True) as database:
+                    from .services.background_runtime import database_stage
+                    with database_stage(), postgres_store.connection(read_only=False, background=True) as database:
                         yield database
                 finally:
                     transaction_seconds = time.perf_counter() - transaction_started
@@ -158,7 +159,8 @@ def background_read_connection() -> Iterator[sqlite3.Connection]:
 
     if postgres_store.configured():
         with activity_gate.background_database_section():
-            with postgres_store.connection(read_only=True, background=True) as database:
+            from .services.background_runtime import database_stage
+            with database_stage(), postgres_store.connection(read_only=True, background=True) as database:
                 yield database
         return
     with activity_gate.background_database_section():
@@ -1282,6 +1284,12 @@ def initialize() -> None:
             database.execute(statement)
         # Existing local databases are migrated in place; user review history is never rebuilt.
         columns = {
+            "background_tasks": {
+                "replaced_pending_generation": "INTEGER NOT NULL DEFAULT 0",
+                "pending_since": "TEXT",
+                "generation_started_at": "TEXT",
+                "age_origin_estimated": "INTEGER NOT NULL DEFAULT 0",
+            },
             "daily_queue": {
                 "review_result_json": "TEXT",
                 "attempt_failed": "INTEGER NOT NULL DEFAULT 0",
@@ -1386,6 +1394,9 @@ def initialize() -> None:
             },
             "game_move_analysis_candidates": {"score_text": "TEXT"},
             "game_analysis_jobs": {
+                "age_origin_estimated": "INTEGER NOT NULL DEFAULT 0",
+                "pending_since": "TEXT",
+                "generation_started_at": "TEXT",
                 "analysis_evidence_version": "INTEGER NOT NULL DEFAULT 1"
             },
             "game_findings": {"source_opportunity_id": "TEXT", "review_after": "TEXT"},
@@ -1417,6 +1428,8 @@ def initialize() -> None:
                     database.execute(
                         f"ALTER TABLE {table} ADD COLUMN {name} {definition}"
                     )
+        from .services.background_metrics_schema import install as install_background_metrics
+        install_background_metrics(database)
         # Materialize the default in existing rows before a later VACUUM. Older
         # SQLite builds can report a virtual NOT NULL default as NULL afterward.
         database.execute(

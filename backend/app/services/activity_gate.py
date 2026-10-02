@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
-from contextlib import nullcontext
+from contextlib import nullcontext, ExitStack
 from contextvars import ContextVar
 import threading
 import time
@@ -110,15 +110,18 @@ class ApplicationActivityGate:
             redis_admission_gate.background_lease()
             if redis_admission_gate.configured() else nullcontext()
         )
-        with shared_lease:
-            self.wait_for_foreground()
-            with self._condition:
-                self._condition.wait_for(
-                    lambda: self._foreground_requests == 0
-                    and self._active_background_sections == 0
-                )
-                self._active_background_sections += 1
-                self._condition.notify_all()
+        from .background_runtime import admission_wait
+        with ExitStack() as leases:
+            with admission_wait():
+                leases.enter_context(shared_lease)
+                self.wait_for_foreground()
+                with self._condition:
+                    self._condition.wait_for(
+                        lambda: self._foreground_requests == 0
+                        and self._active_background_sections == 0
+                    )
+                    self._active_background_sections += 1
+                    self._condition.notify_all()
             try:
                 yield
             finally:

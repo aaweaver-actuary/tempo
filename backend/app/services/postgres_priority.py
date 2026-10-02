@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import os
+from .background_metrics import increment
 from typing import Any
 
 from ..database import connection
@@ -110,6 +111,9 @@ def _prepare_priority_generation(task, repertoire_id, generation):
         if _priority_source_version(database, repertoire_id) != source_version:
             enqueue_priority_refresh_in_transaction(database, repertoire_id)
             return True
+    # Count invocations before compute, including attempts whose result is later stale.
+    with connection(background=True) as database:
+        increment(database, "repertoire_priority", task["id"], priority_calculator_calls=1)
     records = calculate_priority_records(calculation_input)
     # Ordinals are durable identities across a partially committed retry.
     records.sort(key=lambda record: record.card_id)
@@ -269,4 +273,8 @@ def execute_repertoire_priority_slice(task: dict[str, Any]) -> bool:
             database, "priority_retention", repertoire_id,
             {"repertoire_id": repertoire_id}, priority=200,
         )
-        return complete_task_slice_in_transaction(database, task)
+        completed = complete_task_slice_in_transaction(database, task)
+        if completed:
+            increment(database, "repertoire_priority", task["id"], priority_publications=1,
+                      priority_published_records=expected_count, useful_completions=1)
+        return completed

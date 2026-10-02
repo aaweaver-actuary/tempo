@@ -112,6 +112,7 @@ def postgres_sql(sqlite_statement: str) -> str | None:
 class PostgresConnection:
     def __init__(self, database: psycopg.Connection[TempoRow]):
         self._database = database
+        self._background_metric_deltas: dict[tuple, dict] = {}
 
     @property
     def raw(self) -> psycopg.Connection[TempoRow]:
@@ -140,10 +141,26 @@ class PostgresConnection:
         cursor.executemany(translated, parameters)
         return cursor
 
+    def add_background_metrics(self, key: tuple, counts: dict) -> None:
+        # Buffer only numeric deltas, never payloads or task identities. Flush after domain locks.
+        deltas = self._background_metric_deltas.setdefault(key, {})
+        for name, amount in counts.items():
+            deltas[name] = (max(deltas.get(name, 0), amount) if name.endswith("_max_seconds")
+                            else deltas.get(name, 0) + amount)
+
+    def flush_background_metrics(self) -> None:
+        if self._background_metric_deltas:
+            from .services.background_metrics import write_metric_delta
+            for key, counts in sorted(self._background_metric_deltas.items()):
+                write_metric_delta(self, key, counts)
+            self._background_metric_deltas.clear()
+
     def commit(self) -> None:
+        self.flush_background_metrics()
         self._database.commit()
 
     def rollback(self) -> None:
+        self._background_metric_deltas.clear()
         self._database.rollback()
 
 
@@ -216,7 +233,9 @@ def connection(*, read_only: bool = False, background: bool = False) -> Iterator
                                  (f"{lock_limit}ms",))
             configured_at = time.perf_counter()
             try:
-                yield PostgresConnection(database)
+                connection = PostgresConnection(database)
+                yield connection
+                connection.flush_background_metrics()
             finally:
                 handled_at = time.perf_counter()
     finally:
@@ -230,3 +249,11 @@ def connection(*, read_only: bool = False, background: bool = False) -> Iterator
                 (handled_at or finished_at) - (configured_at or finished_at),
                 finished_at - (handled_at or finished_at),
             )
+
+
+@contextmanager
+def diagnostic_read_connection(timeout_seconds: float = 0.1):
+    """Bound pool acquisition as well as SQL execution for operational snapshots."""
+    with _pool(True).connection(timeout=timeout_seconds) as database:
+        database.execute("SET TRANSACTION READ ONLY")
+        yield PostgresConnection(database)

@@ -934,3 +934,50 @@ and preview FEN. The named component regression
 covers `--` and a valid prefix followed by `--`, proving atomic rejection, retained
 input, an inline error, disabled save, and no backend request. Both regressions
 failed against the original PR implementation before the guard was added.
+Issue #37: background progress diagnostics (observability only).
+The regular Python suite includes `backend/tests/test_background_diagnostics.py`:
+
+- `test_background_diagnostics_classifies_queue_states_and_eligibility` and
+  `test_background_oldest_eligible_age_excludes_delayed_paused_and_blocked` cover
+  queued/delayed/paused/leased/retrying/failed/complete without treating delay as
+  eligible starvation.
+- `test_background_pending_age_survives_retry_deferral_and_reclaim` and
+  `test_background_generation_replacement_and_restart_are_visible` preserve dirty
+  age independently of current generation age and lifecycle churn.
+- `test_background_duplicate_delivery_does_not_inflate_semantic_completion` and
+  `test_engine_callback_replay_does_not_inflate_position_or_preemption_counts`
+  distinguish committed slices, full generations and accepted semantic units.
+- `test_background_admission_wait_is_separate_from_handler_execution` and
+  `test_background_diagnostics_preserves_foreground_responsiveness` prove the
+  timing seam without changing the gate's blocking behavior.
+- `test_background_stale_delivery_and_result_discard_are_distinct`,
+  `test_background_stale_delivery_skips_the_expensive_handler`,
+  `test_background_missing_task_delivery_is_observed_without_a_dangling_event`,
+  and `test_background_stale_publication_lock_and_removed_result_are_observed`
+  cover pre-execution and publication fences, including deleted rows.
+- `test_background_lease_expiry_and_reclaim_are_counted_once` and
+  `test_engine_defense_expired_lease_reclaim_and_claim_are_observed` cover lease
+  churn without modifying claim eligibility or capacity.
+- `test_engine_preemption_seconds_are_separate_from_successful_work` separates
+  abandoned/preempted search time from accepted successful positions.
+- `test_background_snapshot_cost_is_independent_of_event_history`,
+  `test_background_metric_buckets_expire_without_unbounded_growth`, and
+  `test_background_diagnostics_query_deadline_returns_unavailable` cover a
+  100,000-event history, 600 bucket rotations and explicit bounded-query failure.
+- `test_background_diagnostics_redaction_and_schema_parity`,
+  `test_background_public_diagnostics_reject_invalid_counters_and_old_engine_fields`,
+  and `test_background_runbook_snapshots_validate_without_private_fields` cover
+  public contracts, missing legacy timing and sanitized example snapshots.
+- `test_background_metric_outcomes_roll_back_with_their_transaction` and
+  `test_postgres_background_counter_flush_follows_domain_writes_and_sorts_locks`
+  cover rollback, coalescing and deterministic lock order.
+
+`tests/unit/background-diagnostics-regressions.test.ts` supplies the named
+Python/TypeScript schema parity, bounded cache and monotonic engine outcome
+regressions. `debug bundle includes only validated aggregate background diagnostics` in `debug-reporting-regressions.test.tsx` protects
+export redaction. The normal PostgreSQL `schema_upgrade` scenario executes
+`check_postgres_background_diagnostics.py` against a runner-owned database for
+real migration/replay/concurrent counters/lease reclaim/rollback and query cost.
+These are new instrumentation contracts; there was no prior snapshot endpoint
+against which to demonstrate an equivalent failing baseline. Existing scheduling
+and callback contract tests remain in the regular suite.
