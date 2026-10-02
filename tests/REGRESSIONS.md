@@ -934,3 +934,91 @@ and preview FEN. The named component regression
 covers `--` and a valid prefix followed by `--`, proving atomic rejection, retained
 input, an inline error, disabled save, and no backend request. Both regressions
 failed against the original PR implementation before the guard was added.
+Issue #37: background progress diagnostics (observability only).
+The regular Python suite includes `backend/tests/test_background_diagnostics.py`:
+
+- `test_background_diagnostics_classifies_queue_states_and_eligibility` and
+  `test_background_oldest_eligible_age_excludes_delayed_paused_and_blocked` cover
+  queued/delayed/paused/leased/retrying/failed/complete without treating delay as
+  eligible starvation.
+- `test_background_pending_age_survives_retry_deferral_and_reclaim` and
+  `test_background_generation_replacement_and_restart_are_visible` preserve dirty
+  age independently of current generation age and lifecycle churn.
+- `test_background_duplicate_delivery_does_not_inflate_semantic_completion` and
+  `test_engine_callback_replay_does_not_inflate_position_or_preemption_counts`
+  distinguish committed slices, full generations and accepted semantic units.
+- `test_background_admission_wait_is_separate_from_handler_execution` and
+  `test_background_diagnostics_preserves_foreground_responsiveness` prove the
+  timing seam without changing the gate's blocking behavior.
+- `test_background_stale_delivery_and_result_discard_are_distinct`,
+  `test_background_stale_delivery_skips_the_expensive_handler`,
+  `test_background_missing_task_delivery_is_observed_without_a_dangling_event`,
+  and `test_background_stale_publication_lock_and_removed_result_are_observed`
+  cover pre-execution and publication fences, including deleted rows.
+- `test_background_lease_expiry_and_reclaim_are_counted_once` and
+  `test_engine_defense_expired_lease_reclaim_and_claim_are_observed` cover lease
+  churn without modifying claim eligibility or capacity.
+- `test_engine_preemption_seconds_are_separate_from_successful_work` separates
+  abandoned/preempted search time from accepted successful positions.
+- `test_background_snapshot_cost_is_independent_of_event_history`,
+  `test_background_metric_buckets_expire_without_unbounded_growth`, and
+  `test_background_diagnostics_query_deadline_returns_unavailable` cover a
+  100,000-event history, 600 bucket rotations and explicit bounded-query failure.
+- `test_background_diagnostics_redaction_and_schema_parity`,
+  `test_background_public_diagnostics_reject_invalid_counters_and_old_engine_fields`,
+  and `test_background_runbook_snapshots_validate_without_private_fields` cover
+  public contracts, missing legacy timing and sanitized example snapshots.
+- `test_background_metric_outcomes_roll_back_with_their_transaction` and
+  `test_postgres_background_counter_flush_follows_domain_writes_and_sorts_locks`
+  cover rollback, coalescing and deterministic lock order.
+
+`tests/unit/background-diagnostics-regressions.test.ts` supplies the named
+Python/TypeScript schema parity, bounded cache and monotonic engine outcome
+regressions. `debug bundle includes only validated aggregate background diagnostics` in `debug-reporting-regressions.test.tsx` protects
+export redaction. The normal PostgreSQL `schema_upgrade` scenario executes
+`check_postgres_background_diagnostics.py` against a runner-owned database for
+real migration/replay/concurrent counters/lease reclaim/rollback and query cost.
+These are new instrumentation contracts; there was no prior snapshot endpoint
+against which to demonstrate an equivalent failing baseline. Existing scheduling
+and callback contract tests remain in the regular suite.
+
+CI #37 packaging regression: `engine Docker image includes every relative worker
+module including diagnostic timing` in the regular background diagnostics unit
+file fails before copying the new helper into `Dockerfile.engine`. The initial PR
+PostgreSQL job reproduced the missing module by exiting at worker startup. The
+fixed candidate must pass the real disposable Docker startup and durability gate.
+
+`test_background_postgres_numeric_aggregates_preserve_strict_public_schema`
+reproduces PostgreSQL SUM(bigint)'s Decimal values, including estimated-age sums,
+before conversion to public integers. It failed before the producer conversion;
+strict consumer validation remains unchanged. The disposable ring-retention
+assertion reads after commit because PostgreSQL counter deltas flush at that
+boundary.
+
+PR #56 review correction: stale-delivery preflight must not bypass admission or
+consult lagging replica state. In `backend/tests/test_background_diagnostics.py`,
+`test_background_delivery_preflight_is_classified_and_measured_before_handler`,
+`test_background_delivery_preflight_uses_primary_and_read_only_transaction`, and
+`test_background_delivery_preflight_waits_for_foreground_admission` all failed on
+the reviewed head before the fix. Existing stale-handler-skip, duplicate-delivery,
+and stale-publication regressions retain the final authoritative fences.
+
+PR #56 reservation correction: `test_background_diagnostic_redis_io_never_runs_under_database_reservation`
+checks actual diagnostic Redis calls against both local and shared lease state,
+including exception cleanup. `test_background_admission_timing_excludes_diagnostic_publication`
+uses a controlled clock to prove telemetry latency is excluded from admission wait.
+Both are regular cases in `backend/tests/test_background_diagnostics.py`.
+
+PR #56 event-accounting correction: `test_background_known_kind_lifecycle_has_no_redundant_kind_select`
+traces enqueue/replacement/claim/failure/retry/slice/restart/completion/deferral
+and fails on extra kind-only reads (12 on the reviewed lifecycle baseline).
+`test_background_id_only_event_keeps_single_kind_lookup` preserves exceptional
+ID-only accounting. Both run in `backend/tests/test_background_diagnostics.py`;
+the disposable PostgreSQL proof also traces the full known-kind event hook.
+
+PR #56 main integration exposed a readiness race in the inherited browser case
+`Black-first capture keeps its orientation while typed SAN and real-board moves save one solution`.
+CI reproduced a startup-FEN comparison after the actual puzzle had loaded. The
+case now waits for the shared board's existing input-ready signal before taking
+its baseline; all SAN/orientation/persisted-UCI and unchanged-board assertions
+remain. No product code, timeout, CI selection or retry policy changed.

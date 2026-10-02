@@ -279,6 +279,12 @@ class GameAnalysisRequest(BaseModel):
     network_version: str = "nn-61e7af4bb97d.nnue"
 
 
+class EngineAttemptDiagnostics(BaseModel):
+    model_config = {"extra": "forbid", "strict": True}
+    outcome: Literal["success", "preempted", "timeout", "failure"]
+    elapsed_seconds: float = Field(ge=0, le=3600, allow_inf_nan=False)
+
+
 class GameAnalysisFailureRequest(BaseModel):
     """Request model for reporting a game analysis failure."""
 
@@ -288,6 +294,7 @@ class GameAnalysisFailureRequest(BaseModel):
 
 class GameAnalysisLeaseRequest(BaseModel):
     """Request model for acquiring a game analysis lease."""
+    diagnostics: EngineAttemptDiagnostics | None = None
 
     lease_id: str
 
@@ -295,11 +302,13 @@ class GameAnalysisLeaseRequest(BaseModel):
 class ThreatAnalysisSubmission(BaseModel):
     lease_id: str = Field(min_length=1)
     report: dict
+    diagnostics: EngineAttemptDiagnostics | None = None
 
 
 class ThreatAnalysisFailureRequest(BaseModel):
     lease_id: str = Field(min_length=1)
     error: str = Field(min_length=1, max_length=1000)
+    diagnostics: EngineAttemptDiagnostics | None = None
 
 
 class DefenseAttemptRequest(BaseModel):

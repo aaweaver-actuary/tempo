@@ -109,6 +109,8 @@ def background_lease() -> Iterator[None]:
         _CLAIM_BACKGROUND, 2, _FOREGROUND_KEY, _BACKGROUND_KEY,
         int(time.time() * 1000), token, _BACKGROUND_LEASE_MS,
     ):
+        from .background_runtime import heartbeat
+        heartbeat()
         time.sleep(0.01)
     try:
         yield

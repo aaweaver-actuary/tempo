@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "environment": "macOS ARM64 SQLite compatibility; not PostgreSQL evidence",
+  "current_queue_rows": 1000,
+  "snapshot_empty_history": {
+    "samples": 30,
+    "p50_seconds": 0.004492166510317475,
+    "p95_seconds": 0.005326125072315335,
+    "max_seconds": 0.006415458046831191
+  },
+  "snapshot_100000_events": {
+    "samples": 30,
+    "p50_seconds": 0.0050096664926968515,
+    "p95_seconds": 0.005487040965817869,
+    "max_seconds": 0.005769042065367103
+  },
+  "transition_baseline": {
+    "samples": 100,
+    "p50_seconds": 0.002864499983843416,
+    "p95_seconds": 0.003960833069868386,
+    "max_seconds": 0.0049638329073786736
+  },
+  "transition_instrumented": {
+    "samples": 100,
+    "p50_seconds": 0.0035635000094771385,
+    "p95_seconds": 0.004544917028397322,
+    "max_seconds": 0.012788874912075698
+  },
+  "bucket_rows": 1,
+  "state_count_query_plan": [
+    [
+      6,
+      0,
+      211,
+      "SCAN background_tasks USING COVERING INDEX idx_background_tasks_claim"
+    ]
+  ]
+}

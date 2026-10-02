@@ -1,0 +1,241 @@
+[
+  {
+    "period": "quiet",
+    "snapshot": {
+      "schema_version": 1,
+      "collection_started_at": "2026-10-01T00:00:00+00:00",
+      "generated_at": "2026-10-02T12:00:00+00:00",
+      "window_start": "2026-10-01T12:05:00+00:00",
+      "window_end": "2026-10-02T12:00:00+00:00",
+      "query_duration_seconds": 0.003,
+      "available": true,
+      "queues": [
+        {
+          "queue": "durable",
+          "state": "queued",
+          "underlying_state": "queued",
+          "count": 1,
+          "oldest_pending_age_seconds": 600,
+          "oldest_generation_age_seconds": 600
+        },
+        {
+          "queue": "durable",
+          "state": "delayed",
+          "underlying_state": "queued",
+          "count": 50,
+          "oldest_pending_age_seconds": 1000,
+          "next_eligibility_seconds": 3600
+        }
+      ],
+      "counters": [
+        {
+          "kind": "engine_game",
+          "useful_completion_unit": "accepted_position",
+          "counts": {
+            "useful_completions": 0,
+            "engine_completed_positions": 0,
+            "engine_preemptions": 0,
+            "engine_preempted_seconds": 0.0,
+            "engine_abandoned_seconds": 0.0,
+            "engine_successful_seconds": 0.0,
+            "engine_successful_samples": 0,
+            "engine_abandoned_samples": 0
+          }
+        },
+        {
+          "kind": "repertoire_priority",
+          "useful_completion_unit": "published_priority_generation",
+          "counts": {
+            "priority_calculator_calls": 0,
+            "priority_publications": 0,
+            "priority_published_records": 0,
+            "useful_completions": 0,
+            "completed_generations": 0,
+            "generation_replacements": 0,
+            "generation_restarts": 0,
+            "claims": 0,
+            "slices": 0,
+            "contention_deferrals": 0
+          }
+        },
+        {
+          "kind": "game_analysis_publish",
+          "useful_completion_unit": "published_game_analysis",
+          "counts": {
+            "useful_completions": 0,
+            "completed_generations": 0
+          }
+        }
+      ],
+      "runtime": {
+        "available": false,
+        "coverage": "fixed_slots_latest_samples",
+        "retention_seconds": 15,
+        "workers": []
+      }
+    }
+  },
+  {
+    "period": "training",
+    "snapshot": {
+      "schema_version": 1,
+      "collection_started_at": "2026-10-01T00:00:00+00:00",
+      "generated_at": "2026-10-02T12:10:00+00:00",
+      "window_start": "2026-10-01T12:15:00+00:00",
+      "window_end": "2026-10-02T12:10:00+00:00",
+      "query_duration_seconds": 0.003,
+      "available": true,
+      "queues": [
+        {
+          "queue": "durable",
+          "state": "queued",
+          "underlying_state": "queued",
+          "count": 6,
+          "oldest_pending_age_seconds": 900,
+          "oldest_generation_age_seconds": 900
+        },
+        {
+          "queue": "durable",
+          "state": "delayed",
+          "underlying_state": "queued",
+          "count": 50,
+          "oldest_pending_age_seconds": 1000,
+          "next_eligibility_seconds": 3600
+        }
+      ],
+      "counters": [
+        {
+          "kind": "engine_game",
+          "useful_completion_unit": "accepted_position",
+          "counts": {
+            "useful_completions": 2,
+            "engine_completed_positions": 2,
+            "engine_preemptions": 10,
+            "engine_preempted_seconds": 30.0,
+            "engine_abandoned_seconds": 30.0,
+            "engine_successful_seconds": 4.0,
+            "engine_successful_samples": 2,
+            "engine_abandoned_samples": 10
+          }
+        },
+        {
+          "kind": "repertoire_priority",
+          "useful_completion_unit": "published_priority_generation",
+          "counts": {
+            "priority_calculator_calls": 3,
+            "priority_publications": 0,
+            "priority_published_records": 0,
+            "useful_completions": 0,
+            "completed_generations": 0,
+            "generation_replacements": 2,
+            "generation_restarts": 1,
+            "claims": 35,
+            "slices": 30,
+            "contention_deferrals": 1
+          }
+        },
+        {
+          "kind": "game_analysis_publish",
+          "useful_completion_unit": "published_game_analysis",
+          "counts": {
+            "useful_completions": 0,
+            "completed_generations": 0
+          }
+        }
+      ],
+      "runtime": {
+        "available": true,
+        "coverage": "fixed_slots_latest_samples",
+        "retention_seconds": 15,
+        "workers": [
+          {
+            "kind": "repertoire_priority",
+            "stage": "foreground_admission",
+            "observed_at": "2026-10-02T12:10:00+00:00",
+            "process_started_at": "2026-10-02T11:00:00+00:00",
+            "admission_wait_seconds": 12.0,
+            "handler_elapsed_seconds": 13.0,
+            "execution_seconds": 1.0,
+            "dispatch_wait_seconds": 2.0
+          }
+        ]
+      }
+    }
+  },
+  {
+    "period": "drain",
+    "snapshot": {
+      "schema_version": 1,
+      "collection_started_at": "2026-10-01T00:00:00+00:00",
+      "generated_at": "2026-10-02T12:20:00+00:00",
+      "window_start": "2026-10-01T12:25:00+00:00",
+      "window_end": "2026-10-02T12:20:00+00:00",
+      "query_duration_seconds": 0.003,
+      "available": true,
+      "queues": [
+        {
+          "queue": "durable",
+          "state": "queued",
+          "underlying_state": "queued",
+          "count": 0,
+          "oldest_pending_age_seconds": null,
+          "oldest_generation_age_seconds": null
+        },
+        {
+          "queue": "durable",
+          "state": "delayed",
+          "underlying_state": "queued",
+          "count": 50,
+          "oldest_pending_age_seconds": 1000,
+          "next_eligibility_seconds": 3600
+        }
+      ],
+      "counters": [
+        {
+          "kind": "engine_game",
+          "useful_completion_unit": "accepted_position",
+          "counts": {
+            "useful_completions": 20,
+            "engine_completed_positions": 20,
+            "engine_preemptions": 10,
+            "engine_preempted_seconds": 30.0,
+            "engine_abandoned_seconds": 30.0,
+            "engine_successful_seconds": 40.0,
+            "engine_successful_samples": 20,
+            "engine_abandoned_samples": 10
+          }
+        },
+        {
+          "kind": "repertoire_priority",
+          "useful_completion_unit": "published_priority_generation",
+          "counts": {
+            "priority_calculator_calls": 3,
+            "priority_publications": 1,
+            "priority_published_records": 100,
+            "useful_completions": 1,
+            "completed_generations": 1,
+            "generation_replacements": 2,
+            "generation_restarts": 1,
+            "claims": 35,
+            "slices": 30,
+            "contention_deferrals": 1
+          }
+        },
+        {
+          "kind": "game_analysis_publish",
+          "useful_completion_unit": "published_game_analysis",
+          "counts": {
+            "useful_completions": 1,
+            "completed_generations": 1
+          }
+        }
+      ],
+      "runtime": {
+        "available": false,
+        "coverage": "fixed_slots_latest_samples",
+        "retention_seconds": 15,
+        "workers": []
+      }
+    }
+  }
+]

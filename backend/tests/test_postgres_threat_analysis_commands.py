@@ -94,14 +94,16 @@ def test_postgres_threat_report_validates_lease_and_queues_candidates_atomically
         "status": "complete", "candidate_count": 2,
     }
     assert validations == [True]
-    assert len(writes) == 1
+    assert len(writes) == 2
+    assert sum("INSERT INTO background_metric_buckets" in statement for statement, _ in writes) == 1
     assert [item[1] for item in enqueued] == ["candidate-one", "candidate-two"]
 
     state["lease_id"] = "replacement"
     with pytest.raises(HTTPException) as error:
         threat_analysis_commands.submit_threat_report(Database(), payload)
     assert error.value.status_code == 409
-    assert len(writes) == 1
+    assert len(writes) == 2
+    assert sum("INSERT INTO background_metric_buckets" in statement for statement, _ in writes) == 1
     assert len(enqueued) == 2
 
 
