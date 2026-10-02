@@ -80,8 +80,11 @@ The final source measurement compares pre-#33 base
 `dfbb66d67b314357e55c2030ff794a15415f316c` against candidate
 `a570f95de216fc1d6d1989f9922dfcafc166e523`, rebased onto main
 `072f55048c7f0d3cccca1fcf9e01c32df514fd2f` (including merged PRs #56, #60 and #61).
-Later evidence-only commits preserve these product, test and build inputs; their
-final head and required CI result are recorded in [PR #58](https://github.com/aaweaver-actuary/tempo/pull/58).
+Later evidence-only commits preserve these product, test and build inputs.
+The publication rebase onto main `60d2ddeb9b3f1b2396df5a01dac1b9825c6a5337`
+adds only PR-completion instructions; all product, test, dependency and measurement
+inputs remain identical to the measured source. The final head and required CI
+result are recorded in [PR #58](https://github.com/aaweaver-actuary/tempo/pull/58).
 
 [Dedicated paired run 36999113072](https://github.com/aaweaver-actuary/tempo/actions/runs/36999113072) passed on one
 `ubuntu-24.04-arm` job. Base and candidate ran sequentially, with no unrelated
