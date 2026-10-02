@@ -48,7 +48,14 @@ The final completion leaves the dialog open with its empty state. Failed or unco
 saves remain recoverable; merely viewing a discovery does not complete it. Completed
 decisions persist across reloads and return only for three additional supporting games.
 Admission completion handles only the accepted evidence revision; a delayed older
-admission preserves its training work without hiding newer evidence. Prior study cards and history are preserved.
+admission preserves its training work without hiding newer evidence. Both Discoveries and
+Repertoire Opportunities train the fingerprint shown with the reviewed evidence; the API
+requires that fingerprint and rejects a stale revision. A legacy browser Train action
+without a fingerprint is cleared with an instruction to review and click Train again.
+Upgrades backfill handled state only from a queued intent matching the opportunity,
+evidence fingerprint, and admitted card. Ambiguous legacy queued rows remain visible
+and actionable; their historical intents, cards, queue entries, and reviews are preserved.
+Prior study cards and history are preserved.
 Defensive recognition uses one board
 selection step at a time, keeps solution marks hidden until assessment submission,
 then shows recognition and move feedback separately.

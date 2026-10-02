@@ -1761,10 +1761,12 @@ def test_postgres_opportunity_state_actions_dispatch_idempotent_commands(monkeyp
     response = TestClient(main.app).post(
         f"/api/repertoires/white/opportunities/discovery-1/{action}",
         headers={"Idempotency-Key": f"discovery-1-{action}"},
+        **({"json": {"evidence_fingerprint": "reviewed-A"}} if action == "train" else {}),
     )
     assert response.status_code == 200, response.text
     assert dispatched == [(f"opportunities.{action}", {
         "repertoire_id": "white", "opportunity_id": "discovery-1",
+        **({"evidence_fingerprint": "reviewed-A"} if action == "train" else {}),
     }, f"discovery-1-{action}")]
 
 
@@ -6428,3 +6430,35 @@ def test_postgres_coverage_building_summary_remains_queued(monkeypatch):
     summary = repertoire_coverage.coverage_summary("rep")
     assert summary["status"] == "queued"
     assert summary["is_complete"] is False
+
+
+@pytest.mark.parametrize("body", [None, {}, {"evidence_fingerprint": None}, {"evidence_fingerprint": ""}])
+def test_postgres_discovery_train_requires_revision_before_dispatch(monkeypatch, body):
+    from fastapi.testclient import TestClient
+    from app import main
+
+    dispatched = []
+    monkeypatch.setattr(main.postgres_store, "configured", lambda: True)
+    monkeypatch.setattr(main.activity_gate, "foreground", lambda: nullcontext())
+    monkeypatch.setattr(command_dispatch, "dispatch_command", lambda *args, **kwargs: dispatched.append(args))
+    response = TestClient(main.app).post("/api/repertoires/rep/opportunities/discovery/train", json=body)
+    assert response.status_code == 422, response.text
+    assert dispatched == []
+
+
+@pytest.mark.parametrize("fingerprint", [None, "", " "])
+def test_postgres_legacy_train_payload_cannot_write_current_evidence(fingerprint):
+    from fastapi import HTTPException
+    from app import opportunity_commands
+
+    class Database:
+        def execute_native(self, *args):
+            raise AssertionError("A revisionless legacy command must be rejected before database work")
+
+    payload = {"repertoire_id": "rep", "opportunity_id": "discovery"}
+    if fingerprint is not None:
+        payload["evidence_fingerprint"] = fingerprint
+    with pytest.raises(HTTPException) as failure:
+        opportunity_commands.train_opportunity(Database(), payload)
+    assert failure.value.status_code == 409
+    assert "Review the current evidence" in failure.value.detail

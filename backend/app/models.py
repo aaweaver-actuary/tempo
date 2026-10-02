@@ -334,7 +334,7 @@ class DefenseRecognitionRequest(BaseModel):
 
 
 class DiscoveryTrainingRequest(BaseModel):
-    evidence_fingerprint: str | None = Field(default=None, min_length=1)
+    evidence_fingerprint: str = Field(min_length=1)
 
 
 class DiscoveryAcceptanceRequest(BaseModel):

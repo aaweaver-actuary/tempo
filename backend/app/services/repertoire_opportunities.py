@@ -1158,8 +1158,10 @@ def existing_decision_training_eligibility(database: sqlite3.Connection, reperto
 
 
 def admit_existing_decision(database: sqlite3.Connection, repertoire_id: str,
-                            opportunity_id: str, expected_fingerprint: str | None = None) -> dict:
+                            opportunity_id: str, expected_fingerprint: str) -> dict:
     """Explicitly queue a saved decision without changing ancestor mastery or reviews."""
+    if not isinstance(expected_fingerprint, str) or not expected_fingerprint.strip():
+        raise ValueError("Review the current evidence and train again with its evidence revision")
     if isinstance(database, sqlite3.Connection) and not database.in_transaction:
         database.execute("BEGIN IMMEDIATE")
     opportunity, card = _existing_decision_training_plan(

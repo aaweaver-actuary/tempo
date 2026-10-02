@@ -3917,14 +3917,14 @@ def repertoire_opportunity_training_eligibility(identifier: str, opportunity_id:
 
 @app.post("/api/repertoires/{identifier}/opportunities/{opportunity_id}/train")
 def train_repertoire_opportunity(identifier: str, opportunity_id: str,
-                                 idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
-                                 request: DiscoveryTrainingRequest | None = None):
-    expected_fingerprint = request.evidence_fingerprint if request else None
+                                 request: DiscoveryTrainingRequest,
+                                 idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    expected_fingerprint = request.evidence_fingerprint
     if postgres_store.configured():
         from .command_dispatch import dispatch_command
         return dispatch_command(
             "opportunities.train", {"repertoire_id": identifier, "opportunity_id": opportunity_id,
-                                    **({"evidence_fingerprint": expected_fingerprint} if expected_fingerprint else {})},
+                                    "evidence_fingerprint": expected_fingerprint},
             idempotency_key=idempotency_key,
         )
     with connection() as database:

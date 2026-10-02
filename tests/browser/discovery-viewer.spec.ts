@@ -1,4 +1,4 @@
-import { test, expect, prepareUI, noPageOverflow } from "./ui-fixtures";
+import { test, expect, prepareUI, noPageOverflow, navigate } from "./ui-fixtures";
 
 const beforeReply = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1";
 const decisionFen = "rnbqkbnr/pp1ppppp/8/2p5/4P3/8/PPPP1PPP/RNBQKBNR w KQkq c6 0 2";
@@ -511,4 +511,38 @@ test("confirmed Add and train clears the completed item after advancing before t
   await expect(viewer.getByText("1 of 1 · white to move")).toBeVisible();
   await expect(viewer.getByRole("button", { name: "Previous", exact: true })).toBeDisabled();
   await expect(viewer.getByRole("button", { name: "Add and train" })).toBeEnabled();
+});
+
+
+test("Repertoire Opportunities stale Train submits displayed evidence and preserves the current revision", async ({ page }) => {
+  let currentFingerprint = "shown-A";
+  let submittedFingerprint: unknown;
+  let newerEvidenceHandled = false;
+  await page.route("**/api/repertoires", route => route.fulfill({ json: { repertoires: [{
+    id: "rep", name: "Revision safety", source_name: "Regression", line_count: 1, card_count: 1,
+    due_count: 0, trained_color: "white", integrity_status: "clean", integrity_issue_count: 0,
+  }] } }));
+  await page.route("**/api/repertoires/rep/opportunities", route => route.fulfill({ json: {
+    opportunities: [discoveryFixture("repertoire-stale", "shown-A", "target")],
+  } }));
+  await page.route("**/api/repertoires/rep/opportunities/repertoire-stale/train", route => {
+    submittedFingerprint = route.request().postDataJSON()?.evidence_fingerprint;
+    if (submittedFingerprint !== currentFingerprint)
+      return route.fulfill({ status: 409, json: { detail: "Discovery evidence changed; refresh before training" } });
+    newerEvidenceHandled = true;
+    return route.fulfill({ json: { card_id: "target", queued: true, idempotent: false } });
+  });
+  await prepareUI(page);
+  await navigate(page, "Repertoire");
+  await page.getByRole("button", { name: "Opportunities", exact: true }).click();
+  const panel = page.locator(".opportunities-panel");
+  const train = panel.getByRole("button", { name: "Train this decision", exact: true });
+  await expect(train).toBeEnabled();
+  currentFingerprint = "newer-B";
+  await train.click();
+  await expect(page.getByText("Discovery evidence changed; refresh before training", { exact: true })).toBeVisible();
+  expect(submittedFingerprint).toBe("shown-A");
+  expect(newerEvidenceHandled).toBe(false);
+  await expect(train).toBeEnabled();
+  await expect(panel.getByText("In training queue", { exact: true })).toHaveCount(0);
 });

@@ -72,3 +72,44 @@ it("issue 4 opportunities explain promotion, degraded sources, and explicit acti
   fireEvent.click(screen.getByRole("button", { name: "Investigate branch" }));
   expect(onResolveGap).toHaveBeenCalledWith("rep", expect.objectContaining({ move_uci: "e2e4", gap_id: "node:e2e4" }));
 });
+
+
+it("Repertoire train submits the displayed revision and leaves newer evidence unhandled on conflict", async () => {
+  const onTrain = vi.fn();
+  const onQueueChanged = vi.fn();
+  const displayedOpportunity = {
+    id: "stale-opportunity", repertoire_id: "rep", kind: "weak_known_decision", status: "active",
+    fen_key: startKey, fen: startFen, card_id: "target", opponent_move_uci: null,
+    trained_color: "white", score: 1, created_at: "2026-09-23", updated_at: "2026-09-23",
+    evidence: { supporting_games: 5 }, evidence_fingerprint: "shown-A", seen_at: null,
+    snoozed_until: null, admission_state: null, admitted_card_id: null, unread: true,
+    source_games: [], routes: [],
+  };
+  let currentFingerprint = "shown-A";
+  let newerEvidenceHandled = false;
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    if (String(input).endsWith("/opportunities")) return Response.json({ opportunities: [displayedOpportunity] });
+    if (String(input).endsWith("/train")) {
+      const body = init?.body ? JSON.parse(String(init.body)) : {};
+      if (body.evidence_fingerprint && body.evidence_fingerprint !== currentFingerprint)
+        return Response.json({ detail: "Discovery evidence changed; refresh before training" }, { status: 409 });
+      newerEvidenceHandled = true;
+      return Response.json({ card_id: "target", queued: true, idempotent: false });
+    }
+    throw new Error(`Unexpected request: ${String(input)}`);
+  });
+  vi.stubGlobal("fetch", fetcher);
+  render(<RepertoireView imported={[]} onImport={vi.fn()} onBrowse={vi.fn()}
+    onResolveGap={vi.fn()} onShowGamesAtPosition={vi.fn()} onRepair={vi.fn()} onDeleteLocal={vi.fn()}
+    onRenameLocal={vi.fn()} onQueueChanged={onQueueChanged} onTrain={onTrain} />);
+  fireEvent.click(await screen.findByRole("button", { name: "Opportunities" }));
+  const trainButton = await screen.findByRole("button", { name: "Train this decision" });
+  currentFingerprint = "newer-B";
+  fireEvent.click(trainButton);
+  await waitFor(() => expect(fetcher.mock.calls.find(([input]) => String(input).endsWith("/train"))?.[1]?.body)
+    .toBe(JSON.stringify({ evidence_fingerprint: "shown-A" })));
+  await screen.findByText(/Discovery evidence changed/);
+  expect(newerEvidenceHandled).toBe(false);
+  expect(onTrain).not.toHaveBeenCalled();
+  expect(onQueueChanged).not.toHaveBeenCalled();
+});

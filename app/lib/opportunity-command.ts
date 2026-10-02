@@ -31,11 +31,23 @@ function validateResult(action: Action, value: unknown): void {
   responseSchemas[action].parse(value);
 }
 
+export function applyOpportunityCommand(
+  repertoireId: string, opportunityId: string, action: "train", evidenceFingerprint: string,
+): Promise<void>;
+export function applyOpportunityCommand(
+  repertoireId: string, opportunityId: string, action: Exclude<Action, "train">,
+): Promise<void>;
 export async function applyOpportunityCommand(
   repertoireId: string, opportunityId: string, action: Action, evidenceFingerprint?: string,
 ): Promise<void> {
+  if (action === "train" && !evidenceFingerprint?.trim())
+    throw new Error("Training requires the evidence revision you reviewed.");
   const key = `${PENDING_PREFIX}${opportunityId}`;
   let pending = readPending(key);
+  if (pending?.action === "train" && !pending.evidenceFingerprint?.trim()) {
+    localStorage.removeItem(key);
+    throw new Error("Review the current evidence and click Train again. The earlier action has no evidence revision.");
+  }
   if (pending) {
     const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(pending.operationId)}`);
     if (!status.ok) throw new PendingOperationError(pending.operationId);

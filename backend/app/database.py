@@ -1439,7 +1439,19 @@ def initialize() -> None:
                     if table == "repertoire_opportunities" and name == "handled_evidence_json":
                         database.execute(
                             "UPDATE repertoire_opportunities SET handled_evidence_json=evidence_json "
-                            "WHERE admission_state='queued' AND admitted_card_id IS NOT NULL"
+                            "WHERE admission_state='queued' AND admitted_card_id IS NOT NULL "
+                            "AND EXISTS (SELECT 1 FROM discovery_admission_intents AS intent "
+                            "WHERE intent.opportunity_id=repertoire_opportunities.id "
+                            "AND intent.evidence_fingerprint=repertoire_opportunities.evidence_fingerprint "
+                            "AND intent.state='queued' "
+                            "AND intent.card_id=repertoire_opportunities.admitted_card_id)"
+                        )
+                        # Historical queue work survives; ambiguous current
+                        # evidence must be available for a new learner decision.
+                        database.execute(
+                            "UPDATE repertoire_opportunities SET admission_state=NULL,"
+                            "admitted_card_id=NULL,seen_at=NULL "
+                            "WHERE admission_state='queued' AND handled_evidence_json IS NULL"
                         )
         # SQLite cannot drop an inline UNIQUE constraint. There are no child
         # foreign keys to this table; copy every column and preserve legacy IDs.
