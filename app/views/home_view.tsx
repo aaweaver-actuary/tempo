@@ -276,7 +276,7 @@ export default function Home() {
     }
   }, [serviceError]);
   const reviewPendingEntries = useRef(new Set<string>());
-  const pendingBurialEntryId = useRef<number | undefined>(undefined);
+  const [pendingBurialEntryId, setPendingBurialEntryId] = useState<number | undefined>();
   const reviewTransitionGeneration = useRef(0);
   const pendingOpponentReply = useRef<{
     timer: ReturnType<typeof setTimeout> | undefined;
@@ -696,21 +696,21 @@ export default function Home() {
   }
 
   async function buryCurrentCard() {
-    if (serviceError && !offlineQueue && pendingBurialEntryId.current === undefined)
+    if (serviceError && !offlineQueue && pendingBurialEntryId === undefined)
       throw new Error("Refresh the live queue before burying this card.");
     if (offlineQueue) throw new Error("Burying needs the computer. Continue reviewing or reconnect.");
     if (databaseQueue) {
-      const queueEntryId = pendingBurialEntryId.current ?? card.queueEntryId;
+      const queueEntryId = pendingBurialEntryId ?? card.queueEntryId;
       if (!queueEntryId)
         throw new Error("The active queue entry is unavailable. Refresh the queue.");
-      pendingBurialEntryId.current = queueEntryId;
+      setPendingBurialEntryId(queueEntryId);
       try {
         await buryTrainingEntry(queueEntryId);
         await refreshDatabaseQueue(true);
         finishTrainingBurial(queueEntryId);
-        pendingBurialEntryId.current = undefined;
+        setPendingBurialEntryId(undefined);
       } catch (error) {
-        if (!hasPendingTrainingBurial(queueEntryId)) pendingBurialEntryId.current = undefined;
+        if (!hasPendingTrainingBurial(queueEntryId)) setPendingBurialEntryId(undefined);
         throw error;
       }
       setSafeBreakCounter((count) => count + 1);
@@ -730,7 +730,7 @@ export default function Home() {
   }
 
   const tryMove = useCommittedCallback((from: Square, to: Square) => {
-    if (serviceError && !offlineQueue) return;
+    if (pendingBurialEntryId !== undefined || (serviceError && !offlineQueue)) return;
     const currentTurn =
       new Chess(currentFenString).turn() === "b" ? "black" : "white";
     if (
@@ -889,7 +889,7 @@ export default function Home() {
     outcome: "again" | "correct",
     options: { recordedAtCompletion?: boolean; retryPending?: boolean } = {},
   ) {
-    if (serviceError && !offlineQueue) return;
+    if (pendingBurialEntryId !== undefined || (serviceError && !offlineQueue)) return;
     const entryKey = String(card.queueEntryId ?? card.id);
     if (reviewPendingEntries.current.has(entryKey) || cardsLeft === 0) return;
     const pendingBeforeReview = databaseQueue && !offlineQueue ? pendingReviews() : [];
@@ -1253,7 +1253,7 @@ export default function Home() {
   ].includes(currentView);
 
   function handleAttemptFailure() {
-    if (serviceError && !offlineQueue) return;
+    if (pendingBurialEntryId !== undefined || (serviceError && !offlineQueue)) return;
     if (!attemptFailed) {
       setAttemptFailed(true);
       setQueueNotice("Again recorded · finish with guidance");
@@ -1265,7 +1265,7 @@ export default function Home() {
   }
 
   function resetCardAttempt() {
-    if (serviceError && !offlineQueue) return;
+    if (pendingBurialEntryId !== undefined || (serviceError && !offlineQueue)) return;
     resetLine();
     setAttemptFailed(true);
     setFeedback("wrong");
@@ -1509,6 +1509,7 @@ export default function Home() {
               pieceSet={pieceSet}
               rateCard={rateCard}
               onBury={buryCurrentCard}
+              burialPending={pendingBurialEntryId !== undefined}
               onDefenseGraded={async () => {
                 await refreshDatabaseQueue(true);
                 setReviewed((count) => count + 1);

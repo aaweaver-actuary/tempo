@@ -37,6 +37,7 @@ export default function EndgamesView({
   scheduledCard,
   onReview,
   onBury,
+  blocked = false,
   useSharedBoard = false,
 }: {
   theme: BoardTheme;
@@ -45,6 +46,7 @@ export default function EndgamesView({
   scheduledCard?: PracticeCard;
   onReview?: (outcome: "correct" | "again") => void;
   onBury?: () => Promise<void>;
+  blocked?: boolean;
   useSharedBoard?: boolean;
 }) {
   const [templates, setTemplates] =
@@ -263,7 +265,7 @@ export default function EndgamesView({
 
   const play = useCallback(
     async (from: Square, to: Square) => {
-      if (classification !== target || busy || complete) return;
+      if (blocked || classification !== target || busy || complete) return;
       const board = new Chess(fen);
       const token = generation.current;
       try {
@@ -349,6 +351,7 @@ export default function EndgamesView({
       setBusy(false);
     },
     [
+      blocked,
       classification,
       target,
       busy,
@@ -368,7 +371,7 @@ export default function EndgamesView({
     unavailable: fen === STANDARD_FEN ? status : undefined,
     fen: boardHistory.fen,
     interactionMode:
-      boardHistory.viewingHistory || busy || classification !== target || complete ? "readonly" : "legal",
+      boardHistory.viewingHistory || blocked || busy || classification !== target || complete ? "readonly" : "legal",
     showHint: false,
     theme,
     pieceSet,
@@ -383,6 +386,7 @@ export default function EndgamesView({
 
   return (
     <section
+      inert={blocked}
       className={`endgames-page${scheduledCard ? " scheduled-endgame" : ""}`}
       {...tools.panelProps}
     >
@@ -429,7 +433,7 @@ export default function EndgamesView({
               positionKey={endgamePositionKey}
               keyboard={boardHistory.keyboard}
               fen={boardHistory.fen}
-              locked={boardHistory.viewingHistory || busy || classification !== target || complete}
+              locked={boardHistory.viewingHistory || blocked || busy || classification !== target || complete}
               showHint={false}
               theme={theme}
               pieceSet={pieceSet}
@@ -441,7 +445,7 @@ export default function EndgamesView({
             {scheduledCard && onBury && (
               <Button
                 type="button"
-                disabled={burying || complete}
+                disabled={blocked || busy || burying || complete}
                 onClick={() => void runBury()}
               >
                 {burying ? "Burying…" : "Bury"}

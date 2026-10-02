@@ -309,7 +309,7 @@ export default function DefenseTrainingView({
           editMode={recognitionStage && !assessmentDone} onSquareSelect={recognitionStage && !assessmentDone ? selectSquare : undefined}
           onFreeMove={recognitionStage && !assessmentDone ? (from, to) => { selectSquare(from); selectSquare(to); } : undefined} />}
         <BoardTools>
-          <Button type="button" disabled={burying || busy || Boolean(definitive)} onClick={() => void runBury()}>{burying ? "Burying…" : "Bury"}</Button>
+          <Button type="button" disabled={blocked || burying || busy || Boolean(definitive)} onClick={() => void runBury()}>{burying ? "Burying…" : "Bury"}</Button>
           {saveError && pending && <Button disabled={busy} onClick={() => void submit(pending)}>Retry move submission</Button>}
           {loadError && <Button onClick={() => void loadExercise()}>Retry loading exercise</Button>}
         </BoardTools>

@@ -32,7 +32,19 @@ test("training Bury hides the card for today across reload and reports a failed 
   await expect(page.getByRole("button", { name: "Bury", exact: true })).toBeVisible();
   await page.route("**/api/queue/entries/*/bury", (route) => route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "Queue defer unavailable" }) }));
   await page.getByRole("button", { name: "Bury", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("Queue defer unavailable");
+  await expect(page.getByRole("alert")).toContainText("still pending");
+  for (const name of ["Bury", "Correct", "Again"]) {
+    await expect(page.getByRole("button", { name, exact: true })).toBeDisabled();
+  }
+  await expect(page.getByRole("button", { name: /Restart/ })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "Retry bury", exact: true })).toBeEnabled();
+  const board = page.locator(".board-frame").first();
+  await expect(board).toHaveAttribute("data-input-enabled", "false");
+  const fenBeforeBlockedMove = await board.getAttribute("data-fen");
+  const box = (await board.locator(".cg-wrap").boundingBox())!;
+  for (const rank of [6.5, 4.5])
+    await page.mouse.click(box.x + box.width * 4.5 / 8, box.y + box.height * rank / 8);
+  await expect(board).toHaveAttribute("data-fen", fenBeforeBlockedMove!);
   await page.unroute("**/api/queue/entries/*/bury");
   const before = (await (await request.get(`${api}/queue/today`)).json()).cards;
   await page.getByRole("button", { name: "Retry bury" }).click();
