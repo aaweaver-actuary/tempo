@@ -444,7 +444,54 @@ it.each([
   await advance(14_999); expect(statusCalls).toBe(1);
   expect(value.state.error).toContain(expectedError);
   await advance(1); expect(statusCalls).toBe(2); // Ordinary idle polling resumes with one completion-relative timer.
-  view.unmount(); await advance(30_000); expect(statusCalls).toBe(2);
+  expect(value.state.error).toContain(expectedError);
+  await advance(15_000); expect(statusCalls).toBe(3);
+  expect(value.state.error).toContain(expectedError);
+  view.unmount(); await advance(30_000); expect(statusCalls).toBe(3);
+});
+
+it("successful_manual_sync_supersedes_prior_manual_error", async () => {
+  const commandResponse = deferred<Response>();
+  let username = ""; let commandEstablished = false; let statusCalls = 0; let syncPosts = 0;
+  let passiveJob = { ...activeJob, status: "complete", error: null as string | null,
+    result: { imported: 3, synced_at: "2026-09-22T00:00:00Z", providers: {} } as object | null };
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const path = String(input);
+    if (path.endsWith("/sync/status")) {
+      statusCalls++;
+      return Response.json({ providers: [], active_job: commandEstablished ? activeJob : passiveJob });
+    }
+    if (path.endsWith("/api/settings")) return Response.json({ ...syncSettings, lichess_username: username });
+    syncPosts++;
+    return commandResponse.promise;
+  }));
+  let value!: ReturnType<typeof useGameSync>;
+  function Probe() { value = useGameSync(); return null; }
+  render(<Probe />); await settle();
+  await act(async () => value.sync(true));
+  const manualError = "Add a Lichess or Chess.com username in Settings.";
+  expect(value.state.error).toBe(manualError);
+  await advance(15_000); expect(statusCalls).toBe(2);
+  expect(value.state.error).toBe(manualError);
+  // Even an unrelated active job's server error cannot replace the actionable local failure.
+  passiveJob = { ...passiveJob, status: "running", error: "Earlier provider outage", result: null };
+  await advance(15_000); expect(statusCalls).toBe(3);
+  expect(value.state.error).toBe(manualError);
+  username = "player";
+  let command!: Promise<void>;
+  await act(async () => { command = value.sync(true); });
+  expect(syncPosts).toBe(1);
+  expect(value.state.error).toBe(manualError); // Merely starting another attempt is not success.
+  commandEstablished = true;
+  await act(async () => {
+    commandResponse.resolve(Response.json({ imported: 0, job_id: activeJob.id, status: "queued", providers: {} }));
+    await command;
+  });
+  expect(statusCalls).toBe(4);
+  expect(value.state.error).toBe("");
+  expect(value.state.jobStatus).toBe("running");
+  await advance(2_000); expect(statusCalls).toBe(5);
+  expect(value.state.error).toBe("");
 });
 
 it.each(["pending", "complete"])("manual_sync_%s_receipt_keeps_immediate_status_reconciliation", async receiptState => {

@@ -1,6 +1,6 @@
 import { settingsResponseSchema, syncResultSchema, syncStatusSchema } from "../domain/schemas";
 import { readJsonResponse } from "../lib/validated-data";
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { API_URL } from "../const";
 import { usesLocalApi } from "../utils/local";
 import type { GameProviderValue, GameSyncJobStatusValue } from "../types";
@@ -28,6 +28,7 @@ export type GameSyncState = {
   filterLabel?: string;
   jobStatus?: GameSyncJobStatusValue;
 };
+type SyncErrorOwner = "none" | "status" | "command";
 
 function sameSyncState(left: GameSyncState, right: GameSyncState) {
   const leftProviders = left.providers ?? [];
@@ -44,8 +45,17 @@ function sameSyncState(left: GameSyncState, right: GameSyncState) {
 
 export function useGameSync() {
   const [state, setState] = useState<GameSyncState>({ syncing: false, lastSuccess: "", error: "", imported: 0, providers: [], filterLabel: "Rated blitz, rapid, and classical · last 90 days" });
-  const committedState = useRef(state);
-  useLayoutEffect(() => { committedState.current = state; }, [state]);
+  // Track queued state and error ownership together, including updates before React commits.
+  const requestedState = useRef({ state, errorOwner: "none" as SyncErrorOwner });
+  const publishState = useCallback((project: (current: GameSyncState) => GameSyncState,
+    errorUpdate?: { message: string; owner: Exclude<SyncErrorOwner, "none"> }) => {
+    const previous = requestedState.current;
+    const next = { ...project(previous.state), error: errorUpdate?.message ?? previous.state.error };
+    const errorOwner = errorUpdate ? errorUpdate.message ? errorUpdate.owner : "none" : previous.errorOwner;
+    const nextState = sameSyncState(previous.state, next) ? previous.state : next;
+    requestedState.current = { state: nextState, errorOwner };
+    if (nextState !== previous.state) setState(nextState);
+  }, []);
   const active = useRef(false);
   const interval = useRef(180_000);
   const lastStarted = useRef(0);
@@ -73,11 +83,13 @@ export function useGameSync() {
       const settings = await readJsonResponse(settingsResponse, settingsResponseSchema, "game sync settings", { endpoint: failedEndpoint, reportHttpFailure: false });
       interval.current = Number(settings.auto_sync_minutes ?? 3) * 60_000;
       if (!settings.lichess_username && !settings.chesscom_username) {
-        if (manual) setState((current) => ({ ...current, error: "Add a Lichess or Chess.com username in Settings." }));
+        if (manual) publishState(current => current,
+          { message: "Add a Lichess or Chess.com username in Settings.", owner: "command" });
         return;
       }
       lastStarted.current = Date.now();
-      setState((current) => ({ ...current, syncing: true, error: "" }));
+      // Starting another attempt alone cannot clear an earlier actionable command failure.
+      publishState(current => ({ ...current, syncing: true }));
       failedEndpoint = `${API_URL}/api/games/sync`;
       failedOperation = "sync games";
       failedMethod = "POST";
@@ -85,13 +97,16 @@ export function useGameSync() {
       const result = await readJsonResponse(response, syncResultSchema, "game sync", { endpoint: failedEndpoint, reportHttpFailure: false });
       commandNeedsStatusReconciliation = true;
       const providerResults = Object.values(result.providers);
-      setState((current) => ({ ...current, syncing: result.status !== "complete" && result.status !== "failed", error: providerResults.filter((provider) => provider.error).map((provider) => `${provider.provider}: ${provider.error}`).join(" · "), imported: result.imported, providers: providerResults, jobStatus: result.status }));
+      // A validated command result releases local-error ownership to server status/reconciliation.
+      publishState(current => ({ ...current, syncing: result.status !== "complete" && result.status !== "failed",
+        imported: result.imported, providers: providerResults, jobStatus: result.status }),
+        { message: providerResults.filter(provider => provider.error).map(provider => `${provider.provider}: ${provider.error}`).join(" · "), owner: "status" });
     } catch (error) {
       if (error instanceof PendingOperationError) {
         // Unresolved receipts keep durable command recovery; blocked receipts retain their actionable error.
         commandNeedsStatusReconciliation = !error.blocked;
-        setState((current) => ({ ...current, syncing: !error.blocked,
-          error: error.blocked ? error.message : "" }));
+        publishState(current => ({ ...current, syncing: !error.blocked }),
+          { message: error.blocked ? error.message : "", owner: "command" });
         return;
       }
       reportDebugError(error, {
@@ -101,7 +116,8 @@ export function useGameSync() {
         endpoint: failedEndpoint,
         method: failedMethod,
       });
-      setState((current) => ({ ...current, syncing: false, error: error instanceof Error ? error.message : "Could not sync games." }));
+      publishState(current => ({ ...current, syncing: false }),
+        { message: error instanceof Error ? error.message : "Could not sync games.", owner: "command" });
     } finally {
       active.current = false;
       if (manual) {
@@ -110,7 +126,7 @@ export function useGameSync() {
         else resumeStatusPolling.current();
       }
     }
-  }, []);
+  }, [publishState]);
   useEffect(() => {
     if (!usesLocalApi()) return;
     let stopped = false;
@@ -154,12 +170,16 @@ export function useGameSync() {
           const providerError = result.providers.find((provider) => provider.last_error)?.last_error ?? "";
           const jobStatus = result.active_job?.status;
           const jobIsActive = jobStatus === "queued" || jobStatus === "running" || jobStatus === "paused" || jobStatus === "retrying";
+          const statusError = (result.active_job?.error ?? providerError) || "";
+          // Passive jobs, historical or active, cannot replace a newer local command error.
+          // A subsequent validated result or non-blocked pending receipt above releases that ownership.
+          const errorUpdate = requestedState.current.errorOwner !== "command" && (statusError || completedResult)
+            ? { message: statusError, owner: "status" as const } : undefined;
           const projectState = (current: GameSyncState): GameSyncState => ({
             ...current,
             syncing: jobStatus ? jobIsActive : active.current ? current.syncing : hasPendingGameSyncCommand(),
             jobStatus,
             lastSuccess: completedResult?.synced_at ?? (current.lastSuccess || latest),
-            error: (result.active_job?.error ?? providerError) || (completedResult ? "" : current.error),
             imported: completedResult?.imported ?? current.imported,
             providers: providerResults.length ? providerResults.map(provider => ({
               provider: provider.provider, fetched: provider.fetched, inserted: provider.inserted, updated: provider.updated,
@@ -167,12 +187,7 @@ export function useGameSync() {
             })).sort((left, right) => left.provider.localeCompare(right.provider)) : current.providers,
             filterLabel: result.active_filters ? `${result.active_filters.rated_only ? "Rated " : ""}${result.active_filters.speeds.join(", ")} · last ${result.active_filters.days} days` : current.filterLabel,
           });
-          if (!sameSyncState(committedState.current, projectState(committedState.current))) {
-            setState(current => {
-              const next = projectState(current);
-              return sameSyncState(current, next) ? current : next;
-            });
-          }
+          publishState(projectState, errorUpdate);
           nextStatusDelay = jobIsActive ? 2_000 : 15_000;
         } catch (error) {
           if (stopped) break;
@@ -251,6 +266,6 @@ export function useGameSync() {
       window.removeEventListener("offline", pauseStatus);
       document.removeEventListener("visibilitychange", recover);
     };
-  }, [sync]);
+  }, [sync, publishState]);
   return { state, sync };
 }
