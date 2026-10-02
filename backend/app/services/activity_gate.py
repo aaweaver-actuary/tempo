@@ -110,10 +110,13 @@ class ApplicationActivityGate:
             redis_admission_gate.background_lease()
             if redis_admission_gate.configured() else nullcontext()
         )
-        from .background_runtime import admission_wait
-        with ExitStack() as leases:
+        from .background_runtime import admission_wait, reserved_database_telemetry, heartbeat
+        # Acquire before suppressing so admission-wait heartbeats remain visible.
+        # Exit leases before telemetry suppression, including error cleanup.
+        with ExitStack() as telemetry, ExitStack() as leases:
             with admission_wait():
                 leases.enter_context(shared_lease)
+                telemetry.enter_context(reserved_database_telemetry())
                 self.wait_for_foreground()
                 with self._condition:
                     self._condition.wait_for(
@@ -128,6 +131,7 @@ class ApplicationActivityGate:
                 with self._condition:
                     self._active_background_sections -= 1
                     self._condition.notify_all()
+        heartbeat()
 
     @contextmanager
     def background_job(self, job_type: str, job_id: str):

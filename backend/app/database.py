@@ -44,6 +44,14 @@ DB_PATH = Path(
 
 
 @contextmanager
+def _measured_background_database_section():
+    from .services.background_runtime import database_stage
+    # Stage publication is outside the admission lease and local reservation.
+    with database_stage(), activity_gate.background_database_section():
+        yield
+
+
+@contextmanager
 def connection(*, background: bool = False) -> Iterator[sqlite3.Connection]:
     if _query_only_request.get():
         with read_connection() as database:
@@ -53,12 +61,11 @@ def connection(*, background: bool = False) -> Iterator[sqlite3.Connection]:
         activity_gate.assert_foreground_connection_allowed(background)
         if background:
             gate_started = time.perf_counter()
-            with activity_gate.background_database_section():
+            with _measured_background_database_section():
                 gate_wait_seconds = time.perf_counter() - gate_started
                 transaction_started = time.perf_counter()
                 try:
-                    from .services.background_runtime import database_stage
-                    with database_stage(), postgres_store.connection(read_only=False, background=True) as database:
+                    with postgres_store.connection(read_only=False, background=True) as database:
                         yield database
                 finally:
                     transaction_seconds = time.perf_counter() - transaction_started
@@ -76,7 +83,7 @@ def connection(*, background: bool = False) -> Iterator[sqlite3.Connection]:
         # the time this foreground request enters the activity gate. Wait for
         # that bounded section to commit instead of surfacing a transient 503.
         activity_gate.wait_for_background_sections()
-    section = activity_gate.background_database_section() if background else None
+    section = _measured_background_database_section() if background else None
     section_wait_started = time.perf_counter() if background else None
     if section is not None:
         section.__enter__()
@@ -158,13 +165,12 @@ def background_read_connection(*, authoritative: bool = False) -> Iterator[sqlit
     """Admit a bounded background read only while foreground work is idle."""
 
     if postgres_store.configured():
-        with activity_gate.background_database_section():
-            from .services.background_runtime import database_stage
+        with _measured_background_database_section():
             options = {"authoritative": True} if authoritative else {}
-            with database_stage(), postgres_store.connection(read_only=True, background=True, **options) as database:
+            with postgres_store.connection(read_only=True, background=True, **options) as database:
                 yield database
         return
-    with activity_gate.background_database_section():
+    with _measured_background_database_section():
         with read_connection() as database:
             yield database
 

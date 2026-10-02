@@ -27,3 +27,13 @@ background reads with an authoritative option that selects the primary pool and
 sets the transaction read-only. Existing PG background timeout/lock policy is
 unchanged. The SQLite test submission adapter now honors background classification
 instead of substituting a foreground connection for both write classes.
+
+Reservation/timing baseline: three new cases failed in 3.09 s. The two
+reservation cases first exposed missing SQLite database-stage classification;
+the controlled-clock case attributed five seconds to three seconds of admission
+wait. The corrected tests assert the actual Redis call boundary against both
+local reservation and shared lease state, including exceptions. Combined
+preflight/admission/reservation selection: seven passed in 2.61 s. Stage samples
+are throttled; lifecycle start/end remain forced outside reservations. Network
+publication precedes the admission clock, and suppression lasts through shared
+lease release. No admission policy changed.

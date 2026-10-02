@@ -1002,3 +1002,9 @@ consult lagging replica state. In `backend/tests/test_background_diagnostics.py`
 `test_background_delivery_preflight_waits_for_foreground_admission` all failed on
 the reviewed head before the fix. Existing stale-handler-skip, duplicate-delivery,
 and stale-publication regressions retain the final authoritative fences.
+
+PR #56 reservation correction: `test_background_diagnostic_redis_io_never_runs_under_database_reservation`
+checks actual diagnostic Redis calls against both local and shared lease state,
+including exception cleanup. `test_background_admission_timing_excludes_diagnostic_publication`
+uses a controlled clock to prove telemetry latency is excluded from admission wait.
+Both are regular cases in `backend/tests/test_background_diagnostics.py`.

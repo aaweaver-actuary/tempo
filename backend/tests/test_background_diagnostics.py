@@ -529,3 +529,64 @@ def test_background_delivery_preflight_waits_for_foreground_admission(diagnostic
         thread.join(1)
     assert observed[0] is True
     assert observed[1]>0
+
+
+@pytest.mark.parametrize('fail_section',[False,True])
+def test_background_diagnostic_redis_io_never_runs_under_database_reservation(diagnostic_database,monkeypatch,fail_section):
+    lease_active=[False]
+    violations=[]
+    samples=[]
+    clock=[0.0]
+    gate=database.activity_gate
+    @contextmanager
+    def shared_lease():
+        lease_active[0]=True
+        try:
+            yield
+        finally:
+            lease_active[0]=False
+    class DiagnosticRedis:
+        def set(self,key,value,ex):
+            if gate.active_background_sections or lease_active[0]:
+                violations.append((gate.active_background_sections,lease_active[0]))
+            assert ex==15
+            samples.append(json.loads(value))
+        def mget(self,keys):
+            return [json.dumps(samples[-1])]+[None]*(len(keys)-1)
+    monkeypatch.setattr(background_runtime.time,'monotonic',lambda:clock[0])
+    monkeypatch.setattr(background_runtime.redis_admission_gate,'configured',lambda:True)
+    monkeypatch.setattr(background_runtime.redis_admission_gate,'background_lease',shared_lease)
+    monkeypatch.setattr(background_runtime.redis_admission_gate,'foreground_present',lambda:False)
+    monkeypatch.setattr(background_runtime,'_diagnostic_client',lambda:DiagnosticRedis())
+    with background_runtime.measure_handler('daily_queue') as measurement, gate.background_job('daily_queue','synthetic'):
+        clock[0]=6
+        try:
+            with database.background_read_connection():
+                assert gate.active_background_sections==1
+                assert lease_active[0]
+                assert measurement.stage=='database'
+                clock[0]=12
+                measurement.publish(force=True) # Even a future misplaced force cannot do network I/O.
+                if fail_section:
+                    raise RuntimeError('synthetic read failure')
+        except RuntimeError:
+            assert fail_section
+        assert gate.active_background_sections==0
+        assert not lease_active[0]
+    assert violations==[]
+    assert any(sample['stage']=='database' for sample in samples)
+    assert samples[-1]['stage']=='idle'
+    assert background_runtime.snapshot().available
+
+
+def test_background_admission_timing_excludes_diagnostic_publication(monkeypatch):
+    clock=[0.0]
+    monkeypatch.setattr(background_runtime.time,'monotonic',lambda:clock[0])
+    def publish(measurement,**kwargs):
+        if measurement.stage=='foreground_admission':
+            clock[0]+=2
+    monkeypatch.setattr(background_runtime.RuntimeMeasurement,'publish',publish)
+    with background_runtime.measure_handler('daily_queue') as measurement:
+        with background_runtime.admission_wait():
+            clock[0]+=3
+        assert measurement.sample().admission_wait_seconds==3

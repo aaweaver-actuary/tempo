@@ -23,6 +23,7 @@ from .background_diagnostic_types import DiagnosticTimestamp, WorkKind
 
 _LOGGER = logging.getLogger("tempo.background.diagnostics")
 STAGES = ("idle", "dispatch", "foreground_admission", "database", "execution", "unknown")
+_reserved_database_depth: ContextVar[int] = ContextVar("diagnostic_database_reservation_depth", default=0)
 _current: ContextVar["RuntimeMeasurement | None"] = ContextVar("background_measurement", default=None)
 
 
@@ -81,6 +82,9 @@ class RuntimeMeasurement:
                            execution_seconds=max(0.0, elapsed-wait), dispatch_wait_seconds=self.dispatch_wait_seconds)
 
     def publish(self, *, force=False):
+        from .activity_gate import activity_gate
+        if _reserved_database_depth.get() or activity_gate.active_background_sections:
+            return
         now = time.monotonic()
         if not force and now-self.last_publish < 5:
             return
@@ -124,9 +128,10 @@ def admission_wait():
         return
     previous_stage = measurement.stage
     if measurement.admission_depth == 0:
-        measurement.admission_started = time.monotonic()
         measurement.stage = "foreground_admission"
-        measurement.publish(force=True)
+        measurement.publish()
+        # Telemetry latency is execution overhead, not foreground admission wait.
+        measurement.admission_started = time.monotonic()
     measurement.admission_depth += 1
     try:
         yield
@@ -136,7 +141,6 @@ def admission_wait():
             measurement.admission_wait_seconds += max(0.0, time.monotonic()-measurement.admission_started)
             measurement.admission_started = None
             measurement.stage = previous_stage
-            measurement.publish(force=True)
 
 
 def heartbeat():
@@ -151,13 +155,13 @@ def database_stage():
     previous = measurement.stage if measurement else None
     if measurement:
         measurement.stage = "database"
-        measurement.publish(force=True)
+        measurement.publish()
     try:
         yield
     finally:
         if measurement:
+            measurement.publish()
             measurement.stage = previous
-            measurement.publish(force=True)
 
 
 def snapshot() -> RuntimeSnapshot:
@@ -178,3 +182,13 @@ def snapshot() -> RuntimeSnapshot:
         return RuntimeSnapshot(available=True, workers=workers)
     except Exception:
         return RuntimeSnapshot()
+
+
+@contextmanager
+def reserved_database_telemetry():
+    """Suppress diagnostic network I/O until both local and shared leases release."""
+    token = _reserved_database_depth.set(_reserved_database_depth.get()+1)
+    try:
+        yield
+    finally:
+        _reserved_database_depth.reset(token)
