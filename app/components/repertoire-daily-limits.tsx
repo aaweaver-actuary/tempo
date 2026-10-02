@@ -18,6 +18,7 @@ function RepertoireLimitRow({ repertoire, defaultLimit }: { repertoire: Repertoi
   const initialLimit = restored.pending ? restored.pending.new_cards_per_day : repertoire.new_cards_per_day;
   const [inherit, setInherit] = useState(initialLimit === null);
   const [customLimit, setCustomLimit] = useState(String(initialLimit ?? defaultLimit));
+  const [hasCustomDraft, setHasCustomDraft] = useState(initialLimit !== null);
   const [savedLimit, setSavedLimit] = useState(repertoire.new_cards_per_day);
   const [pending, setPending] = useState(restored.pending !== null || Boolean(restored.error));
   const [saving, setSaving] = useState(false);
@@ -34,6 +35,7 @@ function RepertoireLimitRow({ repertoire, defaultLimit }: { repertoire: Repertoi
       setSavedLimit(result.new_cards_per_day);
       setInherit(result.new_cards_per_day === null);
       setCustomLimit(String(result.new_cards_per_day ?? defaultLimit));
+      setHasCustomDraft(result.new_cards_per_day !== null);
       setPending(false);
       invalidateWorkspaceData();
       setStatus("Saved. Today’s remaining new cards will refresh.");
@@ -45,11 +47,15 @@ function RepertoireLimitRow({ repertoire, defaultLimit }: { repertoire: Repertoi
   return <div className="repertoire-limit-row" role="group" aria-label={`${repertoire.name} daily limit`}>
     <strong>{repertoire.name}</strong>
     <label><span>Allowance</span><SelectInput aria-label={`${repertoire.name} allowance`} disabled={saving || pending}
-      value={inherit ? "default" : "custom"} onChange={event => { setInherit(event.target.value === "default"); setStatus(""); }}>
+      value={inherit ? "default" : "custom"} onChange={event => {
+        const useDefault = event.target.value === "default";
+        if (!useDefault && !hasCustomDraft) setCustomLimit(String(defaultLimit));
+        setInherit(useDefault); setStatus("");
+      }}>
       <option value="default">Use default ({defaultLimit}/day)</option><option value="custom">Custom limit</option>
     </SelectInput></label>
     {!inherit && <label><span>New cards per day</span><TextInput aria-label={`${repertoire.name} new cards per day`} type="number" min="0" max="100" step="1"
-      disabled={saving || pending} value={customLimit} onChange={event => { setCustomLimit(event.target.value); setStatus(""); }} /></label>}
+      disabled={saving || pending} value={customLimit} onChange={event => { setCustomLimit(event.target.value); setHasCustomDraft(true); setStatus(""); }} /></label>}
     <small>Current limit: {savedLimit ?? defaultLimit}/day{savedLimit === 0 ? " · New cards paused" : ""}</small>
     {invalidLimit && <p role="alert">Enter a whole number from 0 to 100.</p>}
     {pending && <p role="status">A save is awaiting confirmation. Check its result before editing.</p>}

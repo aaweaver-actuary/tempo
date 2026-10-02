@@ -101,3 +101,19 @@ it("repertoire load errors offer retry and demo mode explains local availability
   expect(screen.getByText("Repertoire overrides require local Tempo.")).toBeTruthy();
   expect(screen.queryByLabelText("French allowance")).toBeNull();
 });
+
+
+it("inherited custom input uses the current default and preserves an edited draft", async () => {
+  loadRepertoires();
+  const view = render(<RepertoireDailyLimits defaultLimit={10} enabled local />);
+  const allowance = await screen.findByLabelText("French allowance");
+  view.rerender(<RepertoireDailyLimits defaultLimit={12} enabled local />);
+  expect(screen.getByText("Current limit: 12/day")).toBeTruthy();
+  fireEvent.change(allowance, { target: { value: "custom" } });
+  expect((screen.getByLabelText("French new cards per day") as HTMLInputElement).value).toBe("12");
+  fireEvent.change(screen.getByLabelText("French new cards per day"), { target: { value: "5" } });
+  fireEvent.change(allowance, { target: { value: "default" } });
+  view.rerender(<RepertoireDailyLimits defaultLimit={14} enabled local />);
+  fireEvent.change(allowance, { target: { value: "custom" } });
+  expect((screen.getByLabelText("French new cards per day") as HTMLInputElement).value).toBe("5");
+});
