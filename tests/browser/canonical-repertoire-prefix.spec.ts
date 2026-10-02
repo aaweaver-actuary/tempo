@@ -33,6 +33,7 @@ for (const width of [390, 1280]) {
     await repertoireCard.locator("details.card-menu summary").click();
     await repertoireCard.getByRole("menuitem", { name: "Canonical prefix…" }).click();
     const dialog = page.getByRole("dialog", { name: "Canonical prefix" });
+    await expect(dialog.getByText("Compatible. Saving will remove the opening restriction.")).toBeVisible({ timeout: 30_000 });
     await expect(dialog.getByRole("button", { name: "Use shared opening" })).toBeVisible();
     await dialog.getByLabel("Assumed SAN moves").fill("e4 e5 Nf3 Nc6 Bc4");
     await dialog.getByRole("button", { name: "Check prefix" }).click();

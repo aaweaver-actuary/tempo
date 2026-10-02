@@ -986,6 +986,10 @@ interrupted preview, and the workspace/coverage transport contracts.
 in `tests/browser/canonical-repertoire-prefix.spec.ts` exercises the real
 PostgreSQL workflow at phone and desktop sizes. `Canonical prefix dialog` in
 `tests/browser/visual.spec.ts` pins the preview and controls at both sizes.
+The workflow waits for the initial durable compatibility check to become ready
+before asserting its shared-opening suggestion. Full-matrix CI captured normal
+`checking` responses at the earlier immediate assertion; all preview reads were
+successful, with no product error or stale result.
 Its header placement assertions failed before the scoped close-button layout:
 the desktop close button sat outside the dialog and the phone name crowded it.
 The regular PostgreSQL durability scenario verifies a preview queued while the
