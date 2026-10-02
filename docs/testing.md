@@ -408,3 +408,102 @@ a persistent threat-claim failure requires a fresh equivalent main comparison.
 CI owns final required PR candidate validation; pinned visuals remain outside
 this harness fix. Identity-sequence gaps are retained rather than resetting
 shared sequences.
+
+## PR #54 durability isolation results (2026-10-02)
+
+Root cause: the real settings command increments/requeues `daily_queue/current`,
+rewrites today's projection and appends/prunes task events. The proof deleted
+only its repertoires and operation receipts. Its global rollover helper also
+changed unrelated learning cards, whose PostgreSQL card-update triggers advance
+owner/shared repertoire priority epochs; its reconciliation could mutate unrelated
+tomorrow entries.
+
+The proof now snapshots every column of the singleton `background_tasks` row,
+its complete `background_task_events` history (an event-ID boundary cannot recover
+pruned events), and `queue_projections` for today/tomorrow. It also snapshots the
+affected unrelated cards' `state`/`introduced_at` and present/absent
+`priority_repertoire_source_epochs` for their owners and shared links. Cleanup in
+`finally` deletes exact fixture repertoire/receipt IDs, restores task/event IDs
+and rows or their original absence, restores card fields then trigger-owned
+epochs, and verifies the snapshot plus zero fixture card/link/review/queue rows
+in one transaction. A cleanup failure rolls back and propagates. Reconciliation
+publishes only fixture entries. Real settings commands, receipt replay and an
+explicit older-checkpoint generation invalidation assertion remain enabled.
+
+Audit: cards, repertoire links, reviews and queue entries cascade from the two
+synthetic repertoires; fixture priority epochs also cascade. Admission's opportunity
+update is restricted to synthetic repertoire/card IDs, which have no opportunity
+rows. Settings and `priority_source_epoch` are read-only in this proof; no other
+task FK exists beyond cascading events. Shared identity sequences are not reset.
+No production implementation or performance threshold changed.
+
+Two later PR-fixture defects surfaced once the threat benchmark passed. The
+recreation PGN `1. e4 e5 *` failed integrity with `missing_response`; adding
+`2. Nf3` supplies the required White move. That fixture then remained at the
+front of the queue and blocked guided failure with HTTP 409. The runner now
+retains the override through recreation/replay and backup comparison, then
+deletes only the owned repertoire through the production command before study
+durability. A runner regression executes those real scenario bodies with I/O
+seams and verifies replay, backup ordering and preservation of unrelated fixtures.
+
+Focused evidence (macOS, Node 26.3.0, CPython 3.14.5):
+
+- `make plan`: inspected the complete scope; no full gate launched locally.
+- `TEMPO_PYTHON=backend/.venv/bin/python make python-file FILE=backend/tests/test_repertoire_limit_proof_isolation.py`: original existing/absent-task cases failed (2 cases, 2.70 s); initial restoration passed. Adding the migration-21 trigger fixture then reproduced four epoch leaks (2.89 s). Final six cases passed in 4.06 s on the `032c68e` working tree with the script/test/registry changes committed as `b12895d`; these Python inputs are unchanged in the final executable candidate.
+- `node --test --test-name-pattern='repertoire limit recreation fixture' tests/runner/postgres-test-speedups.test.mjs`: PGN regression failed (`w !== b`, 0.186 s).
+- `node --test --test-name-pattern='repertoire limit recreation fixture survives' tests/runner/postgres-test-speedups.test.mjs`: lifecycle regression failed on the leftover owned fixture (1.000 s).
+- `/usr/bin/time -p node --test tests/runner/postgres-test-speedups.test.mjs`: 37 passed, 1.12 s wall (1.036 s runner), on `3de1bf6` plus the runner/test/registry changes subsequently committed as `28a3483`.
+- `/usr/bin/time -p npm run lint`: zero errors, nine existing warnings, 20.95 s on that same working tree.
+- `git diff --check`: passed before each candidate commit and the documentation follow-up.
+
+Elevated disposable `make docker-durability` runs:
+
+1. `032c68e`: repertoire/capture proofs passed; 250 ms threat claim committed in
+   129 ms (50 ms baseline timed out and rolled back in 60 ms). Failed at recreation
+   integrity (`missing_response`); backup/study not reached. Its recorded stages
+   total 179.52 s; this is not an independently instrumented command wall time.
+2. `/usr/bin/time -p make docker-durability`, clean `3de1bf6`: repertoire/capture,
+   134 ms threat claim, recreation and backup passed; study failed at guided
+   failure with HTTP 409. 166.54 s wall. Stage times: background workloads 28.61 s,
+   recreation 47.39 s, backup 23.34 s, failed study 8.37 s, cleanup 13.32 s.
+3. `/usr/bin/time -p make docker-durability`, clean executable candidate
+   `28a348354c187a71bb28f53208f0a9a6fcdcba33`: **all 14 stages passed**, 196.36 s
+   wall. PostgreSQL 18.6 disposable project `tempo-pg-regressions-12259-a760b092`.
+   Real 10/5 limits, seven-of-ten daily reset without rollover, stale publication,
+   inheritance, receipt replay, generation invalidation, restoration and capture
+   contention all passed. Threat claim: 20,000 queued requests, one eligible,
+   committed in **65 ms** with transaction=250 ms and lock=25 ms. The 50 ms
+   baseline timed out/rolled back in 52 ms with no persisted lease. No A/B run
+   against main was needed because the benchmark passed after isolation; these
+   runs do not prove that the original timeout was independently pre-existing.
+
+| Final durability stage | Result | Seconds |
+| --- | --- | ---: |
+| compose_config | pass | 0.13 |
+| image_build | pass | 8.23 |
+| maintenance_cli | pass | 3.24 |
+| startup | pass | 14.60 |
+| service_health | pass | 0.41 |
+| background_budget | pass | 3.01 |
+| operation_recovery | pass | 5.91 |
+| schema_upgrade | pass | 13.03 |
+| background_workloads | pass | 28.00 |
+| threat_candidate_upsert | pass | 1.19 |
+| command_recreation | pass | 31.53 |
+| backup_restore | pass | 27.47 |
+| study_durability | pass | 46.19 |
+| cleanup | pass | 12.56 |
+
+Durability timings are in
+`test-results/performance/postgres-scenarios-durability-tempo-pg-regressions-12259-a760b092.json`.
+Raw local logs are retained under `test-results/pr54-isolation/`. Stage sums omit
+some orchestration/preflight overhead; the measured wall time is authoritative.
+The documentation-only follow-up does not relabel runtime evidence as a clean
+pass on a newer commit. Every disposable invocation cleaned its resources; the
+primary checkout and live study services remained untouched.
+
+Remaining gate: this is a complete **durability** pass, not `make full`. Required
+current-candidate CI and post-merge pinned validation remain pending. Historical
+Settings differences, the 1920 notification-header discrepancy and pinned
+installation exit 137 are not resolved by this harness work. No visual baseline,
+timeout or assertion was weakened. PR #54 remains draft and unmerged.
