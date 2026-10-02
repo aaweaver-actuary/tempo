@@ -54,7 +54,7 @@ import { usesLocalApi, localDayKey } from "../utils/local";
 import { trainedColor } from "../utils/cards";
 import { buryQueuedCard } from "../domain/training-session";
 import { rememberBrowserTrainingBurial, restoreBrowserTrainingBurials } from "../lib/browser-training-burials";
-import { buryTrainingEntry, finishTrainingBurial, hasPendingTrainingBurial } from "../lib/training-bury-command";
+import { buryTrainingEntry, finishTrainingBurial, hasPendingTrainingBurial, pendingTrainingBurialEntry, recoverTrainingBurial } from "../lib/training-bury-command";
 import BuilderView from "./analysis_view";
 import ComparisonView from "./comparison_view";
 import type { ComparisonBoard, ComparisonLaunch } from "../lib/comparison";
@@ -276,7 +276,12 @@ export default function Home() {
     }
   }, [serviceError]);
   const reviewPendingEntries = useRef(new Set<string>());
-  const [pendingBurialEntryId, setPendingBurialEntryId] = useState<number | undefined>();
+  const [pendingBurialEntryState, setPendingBurialEntryId] = useState<number | undefined>(() => usesLocalApi() ? pendingTrainingBurialEntry() : undefined);
+  const pendingBurialEntryId = pendingBurialEntryState ?? (databaseQueue && !offlineQueue
+    ? pendingTrainingBurialEntry(practiceCards.flatMap(card => card.queueEntryId ? [card.queueEntryId] : []))
+    : undefined);
+  const [burialRecoveryError, setBurialRecoveryError] = useState("");
+  const burialRecoveryStarted = useRef(false);
   const reviewTransitionGeneration = useRef(0);
   const pendingOpponentReply = useRef<{
     timer: ReturnType<typeof setTimeout> | undefined;
@@ -343,6 +348,24 @@ export default function Home() {
     },
     [checkPendingIntegrity],
   );
+  useEffect(() => {
+    if (!databaseQueue || offlineQueue || burialRecoveryStarted.current) return;
+    burialRecoveryStarted.current = true;
+    const entryId = pendingBurialEntryId;
+    if (entryId === undefined) return;
+    void (async () => {
+      try {
+        await recoverTrainingBurial(entryId);
+        await refreshDatabaseQueue(true);
+        finishTrainingBurial(entryId);
+        setPendingBurialEntryId(undefined);
+      } catch (error) {
+        if (!hasPendingTrainingBurial(entryId)) setPendingBurialEntryId(undefined);
+        setBurialRecoveryError(error instanceof Error ? error.message : "Could not resolve burial. Retry to check its result.");
+      }
+    })();
+  }, [databaseQueue, offlineQueue, pendingBurialEntryId, practiceCards, refreshDatabaseQueue]);
+
   const refreshQueueOnly = useCallback(async () => {
     invalidateWorkspaceData();
     await fetchAndInitializeQueue(false);
@@ -696,6 +719,7 @@ export default function Home() {
   }
 
   async function buryCurrentCard() {
+    setBurialRecoveryError("");
     if (serviceError && !offlineQueue && pendingBurialEntryId === undefined)
       throw new Error("Refresh the live queue before burying this card.");
     if (offlineQueue) throw new Error("Burying needs the computer. Continue reviewing or reconnect.");
@@ -705,7 +729,7 @@ export default function Home() {
         throw new Error("The active queue entry is unavailable. Refresh the queue.");
       setPendingBurialEntryId(queueEntryId);
       try {
-        await buryTrainingEntry(queueEntryId);
+        await buryTrainingEntry(queueEntryId, pendingBurialEntryId !== undefined);
         await refreshDatabaseQueue(true);
         finishTrainingBurial(queueEntryId);
         setPendingBurialEntryId(undefined);
@@ -1510,6 +1534,7 @@ export default function Home() {
               rateCard={rateCard}
               onBury={buryCurrentCard}
               burialPending={pendingBurialEntryId !== undefined}
+              burialRecoveryError={burialRecoveryError}
               onDefenseGraded={async () => {
                 await refreshDatabaseQueue(true);
                 setReviewed((count) => count + 1);

@@ -48,3 +48,15 @@ export async function readOperationResponse(operationId: string): Promise<Respon
       true);
   throw new PendingOperationError(operationId);
 }
+
+
+// Retry conflicts and delivery failures are ambiguous: resolve the same receipt
+// before classifying the command, rather than treating endpoint 4xx as terminal.
+export async function retryBlockedOperation(operationId: string): Promise<Response> {
+  try {
+    await fetch(`${API_URL}/api/operations/${encodeURIComponent(operationId)}/retry`, { method: "POST" });
+  } catch {
+    // The retry request may have been delivered despite a lost response.
+  }
+  return readOperationResponse(operationId);
+}

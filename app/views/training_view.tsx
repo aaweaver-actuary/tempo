@@ -65,6 +65,7 @@ interface TrainingViewProps {
   onDefenseGraded?: () => Promise<void>;
   onBury?: () => Promise<void>;
   burialPending?: boolean;
+  burialRecoveryError?: string;
 }
 
 function StandardTrainingView({
@@ -494,7 +495,7 @@ export default function TrainingView(props: TrainingViewProps) {
     } finally { setBurying(false); }
   }
   return <>
-    {(buryError || props.burialPending) && <div role="alert">{buryError || "Burial is unresolved. Retry to check its result."} <Button disabled={burying} onClick={() => void runBury()}>Retry bury</Button></div>}
+    {(buryError || props.burialRecoveryError || props.burialPending) && <div role="alert">{buryError || props.burialRecoveryError || "Burial is unresolved. Retry to check its result."} <Button disabled={burying} onClick={() => void runBury()}>Retry bury</Button></div>}
     <TrainingContent {...props} onBury={runBury} burialPending={props.burialPending || burying} />
   </>;
 }

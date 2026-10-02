@@ -495,6 +495,40 @@ async function verifyStudyBurialRetainsQuota() {
   console.log("PASS PostgreSQL buried Study admission retains quota through materialization and locked candidate replay");
 }
 
+async function verifyBlockedBurialRecovery() {
+  const before = await get("queue/today");
+  const selected = before.cards[0];
+  assert(selected, "Blocked burial fixture has an authoritative active entry");
+  const originalState = stableStudyState(await get("migration/snapshot"), selected.repertoire_id);
+  const operationId = "pg-study-blocked-bury";
+  const prepared = spawnSync("docker", [...compose, "exec", "-T", "foreground-worker", "python", "-",
+    String(selected.queue_entry_id), operationId], {
+    input: readFileSync("tests/fixtures/postgres-blocked-burial.py", "utf8"), encoding: "utf8", env: environment,
+  });
+  assert.equal(prepared.status, 0, prepared.stderr);
+  const replay = await apiRequest(`queue/entries/${selected.queue_entry_id}/bury`, {
+    method: "POST", headers: { "Idempotency-Key": operationId },
+  });
+  assert.equal(replay.status, 202);
+  assert.equal((await replay.json()).state, "blocked", "Ordinary command replay cannot resume a blocked receipt");
+  const result = await postCommand(`operations/${operationId}/retry`, {});
+  assert.deepEqual(result, { buried: true, queue_entry_id: selected.queue_entry_id });
+  const receipt = await get(`operations/${operationId}`);
+  assert.equal(receipt.state, "complete");
+  assert.equal(receipt.retry_cycle, 1);
+  assert.equal(receipt.attempt_count, 2);
+  const after = await get("queue/today");
+  assert.deepEqual(after.cards.map(card => card.queue_entry_id),
+    before.cards.filter(card => card.id !== selected.id).map(card => card.queue_entry_id));
+  const afterState = stableStudyState(await get("migration/snapshot"), selected.repertoire_id);
+  assert.deepEqual(afterState.cards, originalState.cards, "Blocked recovery leaves scheduling unchanged");
+  assert.deepEqual(afterState.reviews, originalState.reviews, "Blocked recovery creates no review");
+  assert.deepEqual(await postCommand(`queue/entries/${selected.queue_entry_id}/bury`, {}, { operationId }), result);
+  assert.deepEqual((await get("queue/today")).cards.map(card => card.queue_entry_id),
+    after.cards.map(card => card.queue_entry_id), "Recovered receipt replay never buries the next card");
+  console.log("PASS PostgreSQL blocked burial resumes original payload through retry endpoint without duplicate effects");
+}
+
 const actions = {
   compose_config: async () => {
     const config = spawnSync("docker", [...compose, "config", "--format", "json"],
@@ -699,6 +733,7 @@ const actions = {
   study_durability: async () => {
     await verifyForegroundAndStudyDurability();
     await verifyStudyBurialRetainsQuota();
+    await verifyBlockedBurialRecovery();
   },
   cleanup: async () => executeDiagnosticCleanup(() => {
     if (process.env.TEMPO_CI_REPORT && resourcesCreated) {

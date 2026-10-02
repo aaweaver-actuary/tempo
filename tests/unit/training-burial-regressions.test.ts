@@ -186,3 +186,33 @@ it("direct 500 mismatched completed receipt rejects and retains identity", async
   await expect(buryTrainingEntry(42)).rejects.toThrow("did not confirm");
   expect(localStorage.getItem("tempo-bury-operation-42")).toBeTruthy();
 });
+
+
+it.each(["complete", "failed", "queued", "pending", "executing", "retrying", "blocked", "conflict", "mismatched", "unavailable"])(
+  "blocked burial retry uses durable endpoint and preserves identity through %s", async (outcome) => {
+    let operationId = "";
+    let retried = false;
+    const fetcher = vi.fn(async (url: string, options?: RequestInit) => {
+      if (url.endsWith("/bury")) {
+        expect(operationId).toBe("");
+        operationId = (options!.headers as Record<string, string>)["Idempotency-Key"];
+        return Response.json({ operation_id: operationId }, { status: 202 });
+      }
+      expect(url).toContain(`/operations/${operationId}`);
+      if (url.endsWith("/retry")) {
+        expect(options?.method).toBe("POST");
+        retried = true;
+        return Response.json({}, { status: outcome === "conflict" ? 409 : 202 });
+      }
+      return Response.json(!retried ? { state: "blocked" } : {
+        state: outcome === "conflict" || outcome === "mismatched" ? "complete" : outcome,
+        response: { buried: true, queue_entry_id: outcome === "mismatched" ? 99 : 42 }, error: { message: "Terminal retry failure" },
+      });
+    });
+    vi.stubGlobal("fetch", fetcher);
+    await expect(buryTrainingEntry(42)).rejects.toThrow("blocked");
+    if (outcome === "complete" || outcome === "conflict") await buryTrainingEntry(42, true);
+    else await expect(buryTrainingEntry(42, true)).rejects.toThrow();
+    expect(retried).toBe(true);
+    expect(localStorage.getItem("tempo-bury-operation-42")).toBe(outcome === "failed" ? null : operationId);
+  });

@@ -45,9 +45,26 @@ test("training Bury hides the card for today across reload and reports a failed 
   for (const rank of [6.5, 4.5])
     await page.mouse.click(box.x + box.width * 4.5 / 8, box.y + box.height * rank / 8);
   await expect(board).toHaveAttribute("data-fen", fenBeforeBlockedMove!);
+  const storedBurial = await page.evaluate(() => {
+    const entryId = localStorage.getItem("tempo-pending-burial-entry");
+    return { entryId, operationId: localStorage.getItem(`tempo-bury-operation-${entryId}`) };
+  });
+  expect(storedBurial.entryId).toBeTruthy();
+  expect(storedBurial.operationId).toBeTruthy();
+  await page.reload();
+  await nav(page, "Train");
+  await expect(page.getByRole("button", { name: "Retry bury", exact: true })).toBeEnabled();
+  for (const name of ["Bury", "Correct", "Again"])
+    await expect(page.getByRole("button", { name, exact: true })).toBeDisabled();
+  await expect(page.locator(".board-frame").first()).toHaveAttribute("data-input-enabled", "false");
+  expect(await page.evaluate(() => localStorage.getItem(`tempo-bury-operation-${localStorage.getItem("tempo-pending-burial-entry")}`))).toBe(storedBurial.operationId);
   await page.unroute("**/api/queue/entries/*/bury");
+  const retriedBurial = page.waitForRequest(request => request.method() === "POST" && request.url().endsWith("/bury"));
   const before = (await (await request.get(`${api}/queue/today`)).json()).cards;
   await page.getByRole("button", { name: "Retry bury" }).click();
+  const retryRequest = await retriedBurial;
+  expect(retryRequest.url()).toContain(`/entries/${storedBurial.entryId}/bury`);
+  expect(retryRequest.headers()["idempotency-key"]).toBe(storedBurial.operationId);
   await expect.poll(async () => {
     const after = (await (await request.get(`${api}/queue/today`)).json()).cards;
     return after[0]?.queue_entry_id;
@@ -55,6 +72,7 @@ test("training Bury hides the card for today across reload and reports a failed 
   const after = (await (await request.get(`${api}/queue/today`)).json()).cards;
   expect(after).toHaveLength(before.length - 1);
   expect(after.some((card: { id: string }) => card.id === before[0].id)).toBe(false);
+  await expect.poll(() => page.evaluate(() => localStorage.getItem("tempo-pending-burial-entry"))).toBeNull();
   await page.reload();
   await nav(page, "Train");
   await expect(page.getByRole("button", { name: "Bury", exact: true })).toBeVisible();
