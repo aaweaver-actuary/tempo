@@ -1101,9 +1101,9 @@ it("discovery_same_fingerprint_position_replacement_invalidates_validation", asy
   fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
   await act(async () => { await vi.advanceTimersByTimeAsync(1); });
   expect(previewDiagnostics().validationInvocations).toBe(1);
-  for (let update = 0; update < 10; update++) view.rerender(<DiscoveriesTray {...props} safeBreakCounter={update} />);
+  for (let update = 0; update < 20; update++) view.rerender(<DiscoveriesTray {...props} safeBreakCounter={update} />);
   expect(previewDiagnostics().validationInvocations).toBe(1);
-  expect(previewDiagnostics().validationCacheHits).toBeGreaterThan(0);
+  expect(previewDiagnostics().validationCacheHits).toBe(0);
   feed = [{ ...feed[0], fen: new Chess().move("e4").after }];
   await act(async () => { await vi.advanceTimersByTimeAsync(30_000); });
   expect(fetcher).toHaveBeenCalledTimes(2);
@@ -1167,7 +1167,8 @@ it("discovery_synthetic_workload_records_request_and_validation_counts", async (
   await act(async () => { await vi.advanceTimersByTimeAsync(1); });
   for (let update = 0; update < 20; update++) view.rerender(<DiscoveriesTray {...props} safeBreakCounter={update} />);
   await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
-  const viewerOpen = { previews, maximumActive, feedPages: backgroundFetch.mock.calls.length, validations };
+  const viewerOpen = { previews, maximumActive, feedPages: backgroundFetch.mock.calls.length, validations,
+    validationInvocations: previewDiagnostics().validationInvocations, validationCacheHits: previewDiagnostics().validationCacheHits };
   if (process.env.TEMPO_DISCOVERY_MEASUREMENT)
     writeFileSync(process.env.TEMPO_DISCOVERY_MEASUREMENT, JSON.stringify({ closedTraining, viewerOpen }, null, 2) + "\n");
   expect(previews).toBeGreaterThan(0); expect(maximumActive).toBeLessThanOrEqual(2);
@@ -1219,4 +1220,28 @@ it("discovery_hidden_mid_pagination_never_publishes_a_partial_feed", async () =>
   expect(backgroundFetch).toHaveBeenCalledTimes(3);
   expect(document.querySelector("aside.tempo-discoveries-tray")?.getAttribute("data-discovery-count")).toBe("2");
   view.unmount(); visibility.mockRestore();
+});
+
+it("discovery_viewer_prepares_new_items_before_current_feed_position", async () => {
+  vi.useFakeTimers();
+  const current = { ...schedulerDiscovery("current"), card_id: "saved-card" };
+  let feed: Array<ReturnType<typeof schedulerDiscovery> | typeof current> = [current];
+  backgroundFetch.mockReset(); backgroundFetch.mockImplementation(async () => Response.json({
+    discoveries: feed, total: feed.length, next_offset: null, unread_count: 0,
+  }));
+  const fetcher = vi.fn(async (input: RequestInfo | URL) => String(input).includes("recommendations")
+    ? Response.json(schedulerRecommendation("earlier")) : Response.json({ eligible: true, reason: null }));
+  vi.stubGlobal("fetch", fetcher);
+  const view = render(<DiscoveriesTray safeToOpen={false} safeBreakCounter={0} onQueueChanged={async () => {}} />);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  fireEvent.click(screen.getByRole("button", { name: "Discoveries" }));
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  feed = [schedulerDiscovery("earlier"), current];
+  await act(async () => { await vi.advanceTimersByTimeAsync(30_001); });
+  expect(fetcher.mock.calls.filter(([input]) => String(input).includes("recommendations"))).toHaveLength(1);
+  await act(async () => { await vi.advanceTimersByTimeAsync(1); });
+  expect(screen.getByText("2 of 2 · white to move")).toBeTruthy();
+  fireEvent.click(screen.getByRole("button", { name: /^Previous$/ }));
+  expect(screen.getByText("Example route: earlier")).toBeTruthy();
+  view.unmount();
 });
