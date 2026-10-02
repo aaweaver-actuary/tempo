@@ -135,3 +135,20 @@ test("capture modal keeps incomplete setup draggable and restores focus across b
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0); await expect(launch).toBeFocused();
 });
+
+test("capture accepts SAN from Black's perspective across browser engines", async ({ page }) => {
+  await prepareVisualUI(page); await navigate(page, "Tactics");
+  await page.getByRole("button", { name: "Capture tactic", exact: true }).click();
+  const dialog = page.getByRole("dialog"), board = dialog.locator(".board-frame");
+  await dialog.getByLabel("FEN", { exact: true }).fill("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR b KQkq - 0 1");
+  await dialog.getByRole("button", { name: "Solution", exact: true }).click();
+  await dialog.getByLabel("SAN moves").fill("1...e5");
+  await dialog.getByLabel("SAN moves").press("Enter");
+  await expect(board).toHaveAttribute("data-orientation", "black");
+  await expect(board).toHaveAttribute("data-fen", "rnbqkbnr/pppp1ppp/8/4p3/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 2");
+  await expect(dialog.getByLabel("SAN moves")).toBeFocused();
+  await dialog.getByLabel("SAN moves").fill("Nf3");
+  await dialog.getByRole("button", { name: "Add moves", exact: true }).click();
+  await expect(board).toHaveAttribute("data-fen", "rnbqkbnr/pppp1ppp/8/4p3/8/5N2/PPPPPPPP/RNBQKB1R b KQkq - 1 2");
+  await expect(board).toHaveAttribute("data-orientation", "black");
+});
