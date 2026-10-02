@@ -88,47 +88,62 @@ def _publish_decision_summary(database: sqlite3.Connection, repertoire_id: str, 
     )
 
 
-def _materially_new(evidence: dict, dismissed: dict) -> bool:
-    return (
-        evidence.get("supporting_games", 0) >= dismissed.get("supporting_games", 0) + 3
-        or (bool(evidence.get("validated_recommendation"))
-            and evidence.get("validated_recommendation") != dismissed.get("validated_recommendation"))
-    )
+def _materially_new(evidence: dict, handled_evidence: dict) -> bool:
+    return evidence.get("supporting_games", 0) >= handled_evidence.get("supporting_games", 0) + 3
 
 
 def _publish(database: sqlite3.Connection, *, repertoire_id: str, kind: str,
              fen_key: str, target: str, card_id: str | None,
              opponent_move_uci: str | None, score: float, evidence: dict) -> None:
     opportunity_id = _stable_id(repertoire_id, kind, fen_key, target)
+    # Serialize publication with admission completion: the read must describe
+    # the row whose handled/preparing state this transaction will replace.
+    if isinstance(database, sqlite3.Connection) and not database.in_transaction:
+        database.execute("BEGIN IMMEDIATE")
+    row_lock = " FOR UPDATE" if isinstance(database, postgres_store.PostgresConnection) else ""
+    published_fingerprint = _fingerprint(evidence)
     previous = database.execute(
-        "SELECT status,dismissed_evidence_json FROM repertoire_opportunities WHERE id=?",
+        "SELECT status,dismissed_evidence_json,handled_evidence_json,evidence_fingerprint,admission_state "
+        f"FROM repertoire_opportunities WHERE id=?{row_lock}",
         (opportunity_id,),
     ).fetchone()
     previous_dismissal = (
         json.loads(previous["dismissed_evidence_json"])
         if previous and previous["dismissed_evidence_json"] else {}
     )
+    handled_evidence = (json.loads(previous["handled_evidence_json"])
+                        if previous and previous["handled_evidence_json"] else None)
+    reopened = handled_evidence is not None and _materially_new(evidence, handled_evidence)
+    preparing_revision_changed = bool(previous and previous["admission_state"] == "preparing"
+                                      and previous["evidence_fingerprint"] != published_fingerprint)
+    reset_admission = reopened or preparing_revision_changed
+    handled_snapshot = None if reopened or handled_evidence is None else previous["handled_evidence_json"]
     status = "dismissed" if previous and previous["status"] == "dismissed" and not _materially_new(evidence, previous_dismissal) else "active"
     database.execute(
         """INSERT INTO repertoire_opportunities(
              id,repertoire_id,kind,fen_key,card_id,opponent_move_uci,status,score,
-             evidence_json,evidence_fingerprint,dismissed_evidence_json,created_at,updated_at,resolved_at
-           ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)
-           ON CONFLICT(id) DO UPDATE SET card_id=excluded.card_id,
+             evidence_json,evidence_fingerprint,dismissed_evidence_json,handled_evidence_json,created_at,updated_at,resolved_at
+           ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,NULL)
+           ON CONFLICT(id) DO UPDATE SET card_id=COALESCE(excluded.card_id,
+               repertoire_opportunities.card_id,repertoire_opportunities.admitted_card_id),
              opponent_move_uci=excluded.opponent_move_uci,status=excluded.status,
              score=excluded.score,evidence_json=excluded.evidence_json,
              evidence_fingerprint=excluded.evidence_fingerprint,
              dismissed_evidence_json=CASE WHEN excluded.status='active' THEN NULL
                ELSE repertoire_opportunities.dismissed_evidence_json END,
-             seen_at=CASE WHEN repertoire_opportunities.status='dismissed'
-                AND excluded.status='active' THEN NULL ELSE repertoire_opportunities.seen_at END,
+             handled_evidence_json=excluded.handled_evidence_json,
+             admission_state=CASE WHEN ? THEN NULL ELSE repertoire_opportunities.admission_state END,
+             admitted_card_id=CASE WHEN ? THEN NULL ELSE repertoire_opportunities.admitted_card_id END,
+             snoozed_until=CASE WHEN ? THEN NULL ELSE repertoire_opportunities.snoozed_until END,
+             seen_at=CASE WHEN ? OR (repertoire_opportunities.status='dismissed'
+                AND excluded.status='active') THEN NULL ELSE repertoire_opportunities.seen_at END,
              updated_at=excluded.updated_at,resolved_at=NULL""",
         (opportunity_id, repertoire_id, kind, fen_key, card_id,
          opponent_move_uci, status, score, json.dumps(evidence, sort_keys=True),
-         _fingerprint(evidence), json.dumps(previous_dismissal) if previous_dismissal else None,
-         _now(), _now()),
+         published_fingerprint, json.dumps(previous_dismissal) if previous_dismissal else None,
+         handled_snapshot, _now(), _now(), reset_admission, reset_admission, reset_admission, reset_admission),
     )
-    if kind in {"post_gap_weakness", "missing_response"} and card_id is None and status == "active":
+    if kind in {"post_gap_weakness", "missing_response"} and card_id is None and status == "active" and handled_snapshot is None:
         enqueue_task_in_transaction(
             database, "discovery_recommendation", opportunity_id,
             {"opportunity_id": opportunity_id}, priority=128,
@@ -896,6 +911,7 @@ def list_opportunities(database: sqlite3.Connection, repertoire_id: str,
                    FROM repertoire_opportunities opportunity
                    LEFT JOIN cards card ON card.id=opportunity.card_id
                    WHERE opportunity.repertoire_id=? AND opportunity.status='active'
+                     AND opportunity.handled_evidence_json IS NULL
                    {identifier_clause}
                    ORDER BY opportunity.score DESC,opportunity.id{limit_clause}""",
                 (repertoire_id, *(opportunity_ids or [])),
@@ -1066,14 +1082,18 @@ def snooze_opportunity(database: sqlite3.Connection, repertoire_id: str,
 
 
 def _existing_decision_training_plan(database: sqlite3.Connection, repertoire_id: str,
-                                     opportunity_id: str) -> tuple[sqlite3.Row, sqlite3.Row | None]:
+                                     opportunity_id: str, expected_fingerprint: str | None = None,
+                                     *, lock_for_write: bool = False) -> tuple[sqlite3.Row, sqlite3.Row | None]:
     """Validate direct training without writing, including the exact target position."""
+    row_lock = " FOR UPDATE" if lock_for_write and isinstance(database, postgres_store.PostgresConnection) else ""
     opportunity = database.execute(
-        """SELECT * FROM repertoire_opportunities WHERE id=? AND repertoire_id=?""",
+        f"SELECT * FROM repertoire_opportunities WHERE id=? AND repertoire_id=?{row_lock}",
         (opportunity_id, repertoire_id),
     ).fetchone()
     if not opportunity:
         raise KeyError("Discovery not found")
+    if expected_fingerprint is not None and opportunity["evidence_fingerprint"] != expected_fingerprint:
+        raise ValueError("Discovery evidence changed; refresh before training")
     if opportunity["admission_state"] == "queued" and opportunity["admitted_card_id"]:
         return opportunity, None
     if opportunity["status"] != "active":
@@ -1138,9 +1158,15 @@ def existing_decision_training_eligibility(database: sqlite3.Connection, reperto
 
 
 def admit_existing_decision(database: sqlite3.Connection, repertoire_id: str,
-                            opportunity_id: str) -> dict:
+                            opportunity_id: str, expected_fingerprint: str) -> dict:
     """Explicitly queue a saved decision without changing ancestor mastery or reviews."""
-    opportunity, card = _existing_decision_training_plan(database, repertoire_id, opportunity_id)
+    if not isinstance(expected_fingerprint, str) or not expected_fingerprint.strip():
+        raise ValueError("Review the current evidence and train again with its evidence revision")
+    if isinstance(database, sqlite3.Connection) and not database.in_transaction:
+        database.execute("BEGIN IMMEDIATE")
+    opportunity, card = _existing_decision_training_plan(
+        database, repertoire_id, opportunity_id, expected_fingerprint, lock_for_write=True,
+    )
     if card is None:
         return {"card_id": opportunity["admitted_card_id"], "queued": True,
                 "idempotent": True}
@@ -1166,7 +1192,8 @@ def admit_existing_decision(database: sqlite3.Connection, repertoire_id: str,
     )
     database.execute(
         """UPDATE repertoire_opportunities SET admission_state='queued',
-             admitted_card_id=?,seen_at=COALESCE(seen_at,?),updated_at=? WHERE id=?""",
-        (target_card_id, _now(), _now(), opportunity_id),
+             handled_evidence_json=evidence_json,admitted_card_id=?,seen_at=COALESCE(seen_at,?),updated_at=?
+             WHERE id=? AND evidence_fingerprint=?""",
+        (target_card_id, _now(), _now(), opportunity_id, opportunity["evidence_fingerprint"]),
     )
     return {"card_id": target_card_id, "queued": True, "idempotent": False}

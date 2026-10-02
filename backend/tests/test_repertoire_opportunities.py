@@ -8,6 +8,7 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 
 import chess
+import pytest
 from fastapi.testclient import TestClient
 
 from app import database
@@ -270,14 +271,15 @@ def test_discovery_explicit_locked_decision_survives_daily_cap_and_duplicate_cli
                 (f"game-{number}", 2, target_key),
             )
         refresh_card_opportunity(db, "rep", "target")
-        opportunity_id = list_opportunities(db, "rep")[0]["id"]
+        opportunity = list_opportunities(db, "rep")[0]
+        opportunity_id = opportunity["id"]
         db.execute("UPDATE settings SET new_cards_per_day=0 WHERE id=1")
     client = TestClient(app)
     path = f"/api/repertoires/rep/opportunities/{opportunity_id}/train"
-    first = client.post(path)
+    first = client.post(path, json={"evidence_fingerprint": opportunity["evidence_fingerprint"]})
     assert first.status_code == 200
     assert first.json() == {"card_id": "target", "queued": True, "idempotent": False}
-    assert client.post(path).json()["idempotent"] is True
+    assert client.post(path, json={"evidence_fingerprint": opportunity["evidence_fingerprint"]}).json()["idempotent"] is True
     with database.connection() as db:
         seed_queue(db, date.today().isoformat())
         queued = db.execute("SELECT admission_kind,admission_source FROM daily_queue WHERE card_id='target'").fetchall()
@@ -365,8 +367,10 @@ def test_discovery_prefix_split_isolates_target_without_transferring_reviews(tmp
         for number in range(1, 6):
             _seed_decision_game(db, number, root_key, target_key)
         refresh_card_opportunity(db, "rep", "target")
-        opportunity_id = list_opportunities(db, "rep")[0]["id"]
-    result = TestClient(app).post(f"/api/repertoires/rep/opportunities/{opportunity_id}/train")
+        opportunity = list_opportunities(db, "rep")[0]
+        opportunity_id = opportunity["id"]
+    result = TestClient(app).post(f"/api/repertoires/rep/opportunities/{opportunity_id}/train",
+        json={"evidence_fingerprint": opportunity["evidence_fingerprint"]})
     assert result.status_code == 200, result.text
     continuation_id = result.json()["card_id"]
     assert continuation_id != "target"
@@ -386,7 +390,8 @@ def test_discovery_training_eligibility_rejects_earlier_prefix_target_without_wr
         for number in range(1, 6):
             _seed_decision_game(db, number, root_key, target_key)
         refresh_card_opportunity(db, "rep", "target")
-        opportunity_id = list_opportunities(db, "rep")[0]["id"]
+        opportunity = list_opportunities(db, "rep")[0]
+        opportunity_id = opportunity["id"]
         original_card = tuple(db.execute("SELECT * FROM cards WHERE id='target'").fetchone())
         original_queue = db.execute("SELECT COUNT(*) FROM daily_queue").fetchone()[0]
     client = TestClient(app)
@@ -396,7 +401,8 @@ def test_discovery_training_eligibility_rejects_earlier_prefix_target_without_wr
         "eligible": False,
         "reason": "The target decision cannot be isolated from this prefix card",
     }
-    response = client.post(f"/api/repertoires/rep/opportunities/{opportunity_id}/train")
+    response = client.post(f"/api/repertoires/rep/opportunities/{opportunity_id}/train",
+        json={"evidence_fingerprint": opportunity["evidence_fingerprint"]})
     assert response.status_code == 409
     with database.connection() as db:
         assert tuple(db.execute("SELECT * FROM cards WHERE id='target'").fetchone()) == original_card
@@ -413,17 +419,33 @@ def test_discovery_training_eligibility_accepts_supported_target(tmp_path, monke
         for number in range(1, 6):
             _seed_decision_game(db, number, root_key, target_key)
         refresh_card_opportunity(db, "rep", "target")
-        opportunity_id = list_opportunities(db, "rep")[0]["id"]
+        opportunity = list_opportunities(db, "rep")[0]
+        opportunity_id = opportunity["id"]
     client = TestClient(app)
     eligibility = client.get(f"/api/repertoires/rep/opportunities/{opportunity_id}/training-eligibility")
     assert eligibility.status_code == 200
     assert eligibility.json() == {"eligible": True, "reason": None}
-    response = client.post(f"/api/repertoires/rep/opportunities/{opportunity_id}/train")
+    response = client.post(f"/api/repertoires/rep/opportunities/{opportunity_id}/train",
+        json={"evidence_fingerprint": opportunity["evidence_fingerprint"]})
     assert response.status_code == 200
     assert response.json()["queued"] is True
 
 
 def test_discovery_accepted_engine_branch_survives_publication_restart(tmp_path, monkeypatch):
+    _complete_discovery_admission_lifecycle(tmp_path, monkeypatch)
+
+
+def test_stale_discovery_admission_preserves_card_without_handling_new_evidence(tmp_path, monkeypatch):
+    _complete_discovery_admission_lifecycle(tmp_path, monkeypatch, republish_before_completion=True)
+
+
+def test_resurfaced_discovery_accepts_same_move_with_revisioned_intent_and_replay(tmp_path, monkeypatch):
+    _complete_discovery_admission_lifecycle(tmp_path, monkeypatch, republish_before_completion=True,
+                                          accept_new_revision=True)
+
+
+def _complete_discovery_admission_lifecycle(tmp_path, monkeypatch, *, republish_before_completion=False,
+                                           accept_new_revision=False):
     monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
     # This test drives the durable admission slice itself; an embedded worker
     # racing that manual claim would materialize the line before the assertion.
@@ -574,7 +596,19 @@ def test_discovery_accepted_engine_branch_survives_publication_restart(tmp_path,
         ).fetchone()
         db.execute("UPDATE background_tasks SET state='leased',lease_token='lease' WHERE id=?", (task["id"],))
         work = {**dict(task), "lease_token": "lease", "payload": json.loads(task["payload_json"])}
+    if republish_before_completion:
+        with database.connection() as db:
+            repertoire_opportunities._publish(
+                db, repertoire_id="rep", kind="post_gap_weakness", fen_key=target_key,
+                target="e7e5", card_id=None, opponent_move_uci="e7e5", score=1,
+                evidence={"supporting_games": 4,
+                          "findings": [{"game_id": "game-1", "mistake_ply": 2}]},
+            )
+            newer_fingerprint = db.execute("SELECT evidence_fingerprint FROM repertoire_opportunities WHERE id=?",
+                                           (opportunity_id,)).fetchone()[0]
+            assert newer_fingerprint != fingerprint
     assert execute_admission_intent_slice(work) is False
+    assert execute_admission_intent_slice(work) is False  # Duplicate delivery is harmless.
     with TestClient(app) as client:
         assert client.get(f"/api/discovery-admissions/{intent_id}").json() == {
             "state": "queued", "error": None,
@@ -583,6 +617,37 @@ def test_discovery_accepted_engine_branch_survives_publication_restart(tmp_path,
         assert db.execute("SELECT state FROM discovery_admission_intents WHERE id=?", (intent_id,)).fetchone()[0] == "queued"
         assert db.execute("SELECT admission_kind FROM daily_queue WHERE card_id=?", (target_card_id,)).fetchone()[0] == "explicit"
         assert db.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 0
+        completed_discovery = db.execute("SELECT * FROM repertoire_opportunities WHERE id=?",
+                                        (intent["opportunity_id"],)).fetchone()
+        if republish_before_completion:
+            assert completed_discovery["evidence_fingerprint"] == newer_fingerprint
+            assert completed_discovery["handled_evidence_json"] is None
+            assert completed_discovery["admission_state"] is None
+            assert completed_discovery["card_id"] is None
+            assert [item["id"] for item in list_opportunities(db, "rep")] == [opportunity_id]
+        else:
+            assert completed_discovery["handled_evidence_json"] == completed_discovery["evidence_json"]
+            assert completed_discovery["card_id"] == target_card_id
+    feed_ids = [item["id"] for item in TestClient(app).get("/api/discoveries").json()["discoveries"]]
+    assert (opportunity_id in feed_ids) is republish_before_completion
+    if accept_new_revision:
+        payload = {"selected_move_uci": "b1c3", "evidence_fingerprint": newer_fingerprint}
+        client = TestClient(app)
+        accepted_b = client.post(f"/api/discoveries/{opportunity_id}/accept", json=payload)
+        assert accepted_b.status_code == 202, accepted_b.text
+        second_intent_id = accepted_b.json()["intent_id"]
+        assert second_intent_id != intent_id
+        assert client.post(f"/api/discoveries/{opportunity_id}/accept", json=payload).json()["intent_id"] == second_intent_id
+        database.initialize()
+        with database.connection() as db:
+            assert db.execute("SELECT COUNT(*) FROM discovery_admission_intents WHERE opportunity_id=?",
+                              (opportunity_id,)).fetchone()[0] == 2
+            assert db.execute("SELECT state FROM discovery_admission_intents WHERE id=?",
+                              (intent_id,)).fetchone()[0] == "queued"
+            assert db.execute("SELECT COUNT(*) FROM background_tasks WHERE kind='discovery_admission' AND deduplication_key=?",
+                              (second_intent_id,)).fetchone()[0] == 1
+            assert db.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id=?", (target_card_id,)).fetchone()[0] == 1
+            assert db.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 0
 
 
 def test_discovery_admission_replay_promotes_stalled_save_ahead_of_recurring_refresh(tmp_path, monkeypatch):
@@ -1137,3 +1202,235 @@ def test_issue4_background_scan_yields_to_foreground_and_replays_without_duplica
         ).fetchone()
         assert root_summary["encounter_count"] == root_summary["success_count"] == 5
         assert target_summary["miss_count"] == target_summary["route_success_count"] == 5
+
+
+def test_handled_discovery_clears_feed_persists_and_resurfaces_only_with_material_evidence(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as db:
+        _, target_key = _seed_decision_route(db)
+        def publish(evidence):
+            repertoire_opportunities._publish(db, repertoire_id="rep", kind="weak_known_decision",
+                fen_key=target_key, target="g1f3", card_id="target", opponent_move_uci=None,
+                score=1, evidence=evidence)
+        publish({"supporting_games": 5})
+        opportunity = list_opportunities(db, "rep")[0]
+        opportunity_id = opportunity["id"]
+        repertoire_opportunities.admit_existing_decision(db, "rep", opportunity_id, opportunity["evidence_fingerprint"])
+    client = TestClient(app)
+    assert client.get("/api/discoveries?limit=1").json() == {
+        "discoveries": [], "total": 0, "next_offset": None, "unread_count": 0}
+    database.initialize()
+    with database.connection() as db:
+        publish({"supporting_games": 6})
+        assert list_opportunities(db, "rep") == []
+        publish({"supporting_games": 7})
+        assert list_opportunities(db, "rep") == []
+        publish({"supporting_games": 8})
+        assert [item["id"] for item in list_opportunities(db, "rep")] == [opportunity_id]
+        item = db.execute("SELECT * FROM repertoire_opportunities WHERE id=?", (opportunity_id,)).fetchone()
+        assert item["admission_state"] is None
+        assert item["admitted_card_id"] is None
+        assert item["seen_at"] is None
+        assert repertoire_opportunities.admit_existing_decision(db, "rep", opportunity_id, item["evidence_fingerprint"])["idempotent"] is False
+        assert repertoire_opportunities.admit_existing_decision(db, "rep", opportunity_id, item["evidence_fingerprint"])["idempotent"] is True
+        assert db.execute("SELECT COUNT(*) FROM daily_queue WHERE card_id='target'").fetchone()[0] == 1
+        publish({"supporting_games": 8, "validated_recommendation": "new recommendation"})
+        assert list_opportunities(db, "rep") == []
+        publish({"supporting_games": 11})
+        assert len(list_opportunities(db, "rep")) == 1
+
+
+def test_sqlite_handled_upgrade_requires_matching_queued_revision_and_card(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    cases = {
+        "matching-queued": ("queued", "queued", True, "target"),
+        "mismatched-queued": ("queued", "queued", False, "target"),
+        "ambiguous-queued": ("queued", None, True, "target"),
+        "wrong-card-queued": ("queued", "queued", True, "root"),
+        "unfinished-intent": ("queued", "preparing", True, "target"),
+        "preparing": ("preparing", "preparing", True, "target"),
+        "failed": ("failed", "failed", True, "target"),
+    }
+    identifiers = {}
+    with database.connection() as db:
+        _, target_key = _seed_decision_route(db)
+        for target, (opportunity_state, intent_state, same_revision, admitted_card) in cases.items():
+            repertoire_opportunities._publish(db, repertoire_id="rep", kind="weak_known_decision",
+                fen_key=target_key, target=target, card_id="target", opponent_move_uci=None,
+                score=1, evidence={"supporting_games": 5})
+            identifier = repertoire_opportunities._stable_id("rep", "weak_known_decision", target_key, target)
+            identifiers[target] = identifier
+            fingerprint = db.execute("SELECT evidence_fingerprint FROM repertoire_opportunities WHERE id=?", (identifier,)).fetchone()[0]
+            db.execute("UPDATE repertoire_opportunities SET admission_state=?,admitted_card_id='target',seen_at='legacy' WHERE id=?",
+                       (opportunity_state, identifier))
+            if intent_state:
+                db.execute("""INSERT INTO discovery_admission_intents(id,opportunity_id,repertoire_id,evidence_fingerprint,
+                    starting_fen,selected_move_uci,preview_moves_json,recommendation_json,line_id,state,card_id,created_at,updated_at)
+                    VALUES(?,?,'rep',?,'start','g1f3','[]','{}','legacy-line',?,?,'legacy','legacy')""",
+                    (target, identifier, fingerprint if same_revision else "older-A", intent_state, admitted_card))
+        snapshots = {row["id"]: (row["evidence_json"], row["evidence_fingerprint"], row["card_id"])
+                     for row in db.execute("SELECT * FROM repertoire_opportunities")}
+        old_intents = [tuple(row) for row in db.execute("SELECT * FROM discovery_admission_intents ORDER BY id")]
+        db.execute("ALTER TABLE repertoire_opportunities DROP COLUMN handled_evidence_json")
+    database.initialize()
+    database.initialize()
+    with database.connection() as db:
+        for target, identifier in identifiers.items():
+            current = db.execute("SELECT * FROM repertoire_opportunities WHERE id=?", (identifier,)).fetchone()
+            assert (current["evidence_json"], current["evidence_fingerprint"], current["card_id"]) == snapshots[identifier]
+            assert current["handled_evidence_json"] == (current["evidence_json"] if target == "matching-queued" else None), target
+            if target != "matching-queued" and cases[target][0] == "queued":
+                assert current["admission_state"] is None and current["admitted_card_id"] is None, target
+        visible = {item["id"]: item for item in list_opportunities(db, "rep")}
+        assert set(visible) == set(identifiers.values()) - {identifiers["matching-queued"]}
+        assert visible[identifiers["mismatched-queued"]]["admission_state"] is None
+        assert [tuple(row) for row in db.execute("SELECT * FROM discovery_admission_intents ORDER BY id")] == old_intents
+    feed = TestClient(app).get("/api/discoveries").json()
+    assert feed["total"] == len(cases) - 1
+    assert identifiers["mismatched-queued"] in {item["id"] for item in feed["discoveries"]}
+
+
+@pytest.mark.parametrize("body", [None, {}, {"evidence_fingerprint": None}, {"evidence_fingerprint": ""}])
+def test_discovery_training_requires_reviewed_revision_before_any_write(tmp_path, monkeypatch, body):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as db:
+        _, target_key = _seed_decision_route(db)
+        repertoire_opportunities._publish(db, repertoire_id="rep", kind="weak_known_decision",
+            fen_key=target_key, target="g1f3", card_id="target", opponent_move_uci=None,
+            score=1, evidence={"supporting_games": 5})
+        identifier = list_opportunities(db, "rep")[0]["id"]
+    response = TestClient(app).post(f"/api/repertoires/rep/opportunities/{identifier}/train", json=body)
+    assert response.status_code == 422, response.text
+    with database.connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM daily_queue").fetchone()[0] == 0
+        assert list_opportunities(db, "rep")[0]["admission_state"] is None
+
+
+def test_handled_discovery_feed_counts_and_pagination_exclude_completed_items(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as db:
+        _, target_key = _seed_decision_route(db)
+        for target in ("handled", "pending-one", "pending-two"):
+            repertoire_opportunities._publish(db, repertoire_id="rep", kind="weak_known_decision",
+                fen_key=target_key, target=target, card_id="target", opponent_move_uci=None,
+                score=1, evidence={"supporting_games": 5})
+        handled_id = repertoire_opportunities._stable_id("rep", "weak_known_decision", target_key, "handled")
+        reviewed_fingerprint = db.execute(
+            "SELECT evidence_fingerprint FROM repertoire_opportunities WHERE id=?", (handled_id,),
+        ).fetchone()[0]
+        repertoire_opportunities.admit_existing_decision(db, "rep", handled_id, reviewed_fingerprint)
+    client = TestClient(app)
+    first = client.get("/api/discoveries?limit=1").json()
+    second = client.get("/api/discoveries?offset=1&limit=1").json()
+    assert first["total"] == second["total"] == 2
+    assert first["unread_count"] == second["unread_count"] == 2
+    assert first["next_offset"] == 1 and second["next_offset"] is None
+    assert len(first["discoveries"]) == len(second["discoveries"]) == 1
+    assert first["discoveries"][0]["id"] != second["discoveries"][0]["id"]
+    assert handled_id not in {first["discoveries"][0]["id"], second["discoveries"][0]["id"]}
+
+
+def test_sqlite_resurfaced_admission_identity_keeps_old_intent_and_same_revision_retries(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as db:
+        _, target_key = _seed_decision_route(db)
+        def publish(supporting_games):
+            repertoire_opportunities._publish(db, repertoire_id="rep", kind="weak_known_decision",
+                fen_key=target_key, target="same-choice", card_id=None, opponent_move_uci=None,
+                score=1, evidence={"supporting_games": supporting_games})
+        publish(5)
+        opportunity = list_opportunities(db, "rep")[0]
+        opportunity_id = opportunity["id"]
+        fingerprint_a = list_opportunities(db, "rep")[0]["evidence_fingerprint"]
+    def recommendation(_opportunity_id):
+        with database.read_connection() as db:
+            current_fingerprint = db.execute("SELECT evidence_fingerprint FROM repertoire_opportunities WHERE id=?",
+                                             (opportunity_id,)).fetchone()[0]
+        return {"state": "ready", "evidence_fingerprint": current_fingerprint,
+                "repertoire_id": "rep", "starting_fen": chess.STARTING_FEN,
+                "candidates": [{"move_uci": "e2e4", "preview_moves_uci": ["e2e4"]}]}
+    monkeypatch.setattr(discovery_admission, "recommend_missing_continuations", recommendation)
+    intent_a = create_admission_intent(opportunity_id, "e2e4", fingerprint_a)
+    with database.connection() as db:
+        # A completed previously while the current source still requires a continuation.
+        db.execute("UPDATE discovery_admission_intents SET state='queued' WHERE id=?", (intent_a["id"],))
+        db.execute("UPDATE repertoire_opportunities SET handled_evidence_json=evidence_json,admission_state='queued' WHERE id=?",
+                   (opportunity_id,))
+        publish(8)
+        fingerprint_b = list_opportunities(db, "rep")[0]["evidence_fingerprint"]
+    intent_b = create_admission_intent(opportunity_id, "e2e4", fingerprint_b)
+    assert intent_b["id"] != intent_a["id"]
+    assert create_admission_intent(opportunity_id, "e2e4", fingerprint_b)["id"] == intent_b["id"]
+    with database.connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM discovery_admission_intents WHERE opportunity_id=?", (opportunity_id,)).fetchone()[0] == 2
+        assert db.execute("SELECT state,evidence_fingerprint FROM discovery_admission_intents WHERE id=?", (intent_a["id"],)).fetchone()[:] == ("queued", fingerprint_a)
+        assert db.execute("SELECT COUNT(*) FROM background_tasks WHERE kind='discovery_admission' AND deduplication_key=?", (intent_b["id"],)).fetchone()[0] == 1
+
+
+def test_direct_discovery_training_rejects_obsolete_evidence_without_handling_current_revision(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as db:
+        _, target_key = _seed_decision_route(db)
+        def publish(supporting_games):
+            repertoire_opportunities._publish(db, repertoire_id="rep", kind="weak_known_decision",
+                fen_key=target_key, target="g1f3", card_id="target", opponent_move_uci=None,
+                score=1, evidence={"supporting_games": supporting_games})
+        publish(5)
+        discovery_a = list_opportunities(db, "rep")[0]
+        publish(8)
+        discovery_b = list_opportunities(db, "rep")[0]
+    client = TestClient(app)
+    path = f"/api/repertoires/rep/opportunities/{discovery_a['id']}/train"
+    stale_response = client.post(path, json={"evidence_fingerprint": discovery_a["evidence_fingerprint"]})
+    assert stale_response.status_code == 409
+    assert client.get("/api/discoveries").json()["discoveries"][0]["evidence_fingerprint"] == discovery_b["evidence_fingerprint"]
+    with database.connection() as db:
+        assert db.execute("SELECT COUNT(*) FROM daily_queue").fetchone()[0] == 0
+    assert client.post(path, json={"evidence_fingerprint": discovery_b["evidence_fingerprint"]}).status_code == 200
+
+
+def test_sqlite_revisioned_admission_upgrade_preserves_legacy_intents_and_task_references(tmp_path, monkeypatch):
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "tempo.db")
+    database.initialize()
+    with database.connection() as db:
+        _, target_key = _seed_decision_route(db)
+        repertoire_opportunities._publish(db, repertoire_id="rep", kind="weak_known_decision",
+            fen_key=target_key, target="legacy", card_id=None, opponent_move_uci=None,
+            score=1, evidence={"supporting_games": 5})
+        opportunity = list_opportunities(db, "rep")[0]
+        opportunity_id = opportunity["id"]
+        db.execute("INSERT INTO discovery_admission_intents(id,opportunity_id,repertoire_id,evidence_fingerprint,starting_fen,selected_move_uci,preview_moves_json,recommendation_json,line_id,state,created_at,updated_at) VALUES('legacy-id',?,'rep','A',?,'e2e4','[\"e2e4\"]','{}','line','queued','2026-01-01','2026-01-01')",
+                   (opportunity_id, chess.STARTING_FEN))
+        enqueue_task_in_transaction(db, "discovery_admission", "legacy-id", {"intent_id": "legacy-id"}, priority=80)
+        before = tuple(db.execute("SELECT * FROM discovery_admission_intents").fetchone())
+        definition = db.execute("SELECT sql FROM sqlite_master WHERE name='discovery_admission_intents'").fetchone()[0]
+        legacy_definition = definition.replace("discovery_admission_intents", "legacy_intents", 1).replace(
+            "UNIQUE(opportunity_id,selected_move_uci,evidence_fingerprint)", "UNIQUE(opportunity_id,selected_move_uci)")
+        db.execute(legacy_definition)
+        db.execute("INSERT INTO legacy_intents SELECT * FROM discovery_admission_intents")
+        db.execute("DROP TABLE discovery_admission_intents")
+        db.execute("ALTER TABLE legacy_intents RENAME TO discovery_admission_intents")
+    database.initialize()
+    database.initialize()
+    with database.connection() as db:
+        assert tuple(db.execute("SELECT * FROM discovery_admission_intents WHERE id='legacy-id'").fetchone()) == before
+        db.execute("INSERT INTO discovery_admission_intents SELECT 'new-id',opportunity_id,repertoire_id,'B',starting_fen,selected_move_uci,preview_moves_json,recommendation_json,line_id,state,card_id,last_error,created_at,updated_at FROM discovery_admission_intents WHERE id='legacy-id'")
+        assert db.execute("SELECT COUNT(*) FROM discovery_admission_intents").fetchone()[0] == 2
+        assert json.loads(db.execute("SELECT payload_json FROM background_tasks WHERE deduplication_key='legacy-id'").fetchone()[0]) == {"intent_id": "legacy-id"}
+        assert db.execute("PRAGMA foreign_key_check").fetchall() == []
+
+
+@pytest.mark.parametrize("fingerprint", [None, "", " "])
+def test_direct_training_requires_revision_before_opening_write_transaction(fingerprint):
+    class Database:
+        def execute(self, *args):
+            raise AssertionError("Revisionless training must not start database work")
+
+    with pytest.raises(ValueError, match="evidence revision"):
+        repertoire_opportunities.admit_existing_decision(Database(), "rep", "discovery", fingerprint)
