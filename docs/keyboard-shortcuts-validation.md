@@ -9,6 +9,10 @@ execution tested the dirty feature tree based on that revision; timing artifacts
 label the base commit and must not be interpreted as clean-main test results.
 The original study checkout and its running services were not modified.
 
+The tested final product/test source was committed as
+`1eb248fd43eccd9be2874e97f0f1fbe27a89674a`. This follow-up record adds only
+that revision identifier; it does not change the tested implementation.
+
 The risk is shared board ownership, keyboard/focus routing, hidden exercise
 continuations, and held/deferred input. State tests cover exercise boundaries;
 real-browser tests cover rendered pieces, input cancellation, active-board
