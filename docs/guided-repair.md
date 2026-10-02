@@ -132,3 +132,68 @@ using `docker compose -p tempo-pg-regressions-36245-1d2cea6e -f docker-compose.p
 and explicit removal of its separately built maintenance image. Logs and timing
 JSON retain resource identifiers. Fresh current-candidate CI follows this patch;
 previous-head passes are not final candidate evidence.
+
+## Asynchronous retry review follow-up
+
+Starting reviewed/current head: `4ff198d13bc84d0fbb357a636e2e54d618d26e9d`;
+main is still `92f9aea`, and PR #66 remains draft/unmerged. The bounded change
+covers durable retry admission, stale terminal observations, lost replies/reload,
+and genuinely new failures. It must preserve original edit identity, fair polls,
+and passive study completion. No recommendation/lease fences change.
+
+Smallest proof: delayed operation-cycle and task-command receipt unit regressions,
+including reload and new failure. Then all existing repair outbox/component/caller
+files, typecheck/lint, affected backend status tests if the scan-retry read needs
+correction, and recovery browser workflow. Move the visual type import only; no
+rendering or baseline changes. CI owns the complete final merge-candidate gate,
+including PostgreSQL durability and pinned visuals. Existing timing evidence is
+cost guidance rather than a pass for this follow-up.
+
+Retry intent now persists before delivery while retaining the pollable saving or
+validating phase. Original blocked operations store their retry-cycle/total-attempt
+baseline; unchanged terminal receipts are pre-retry observations. Advancement or
+a nonterminal receipt clears the baseline, and a new terminal cycle is actionable.
+Task retries preserve their separate idempotency key and wait for its completed
+durable command receipt, which proves the atomic reset committed even if the
+client misses the intermediate queued state. Synchronous task replies provide the
+same proof. Lost responses replay that retry key; the original source edit never
+receives another key. In-flight polling finishes before a new retry baseline is
+written. Queued/leased graph work and a matching queued/leased scan override only
+their cached old scan failure; completion publication/generation fences remain.
+
+Four delayed-transition unit cases reproduced the reviewed defect (1.25s Vitest);
+the cached scan-status regression also failed before correction (0.80s pytest).
+
+Follow-up focused evidence on `4eff80b86b4cd5546f7bc94f2dc4f2f06f23dc98`
+plus the retry diff committed with this record (macOS ARM64, Node 26.3,
+Python 3.14.5; disposable PostgreSQL 18.6/Redis 7):
+
+| Command | Result and measured duration |
+| --- | --- |
+| `npm run test:unit -- tests/unit/integrity-repair-outbox-regressions.test.ts tests/unit/integrity-repair-pending-regressions.test.ts tests/unit/repertoire-integrity-dialog-regressions.test.tsx tests/unit/study-regressions.test.tsx` | 52 passed; 14.74s Vitest, 15.37s command wall |
+| `PYTHONPATH=backend backend/.venv/bin/python -m pytest backend/tests/test_integrity_recommendations.py backend/tests/test_postgres_route_contract.py backend/tests/test_postgres_cutover.py -q -o cache_dir=.pytest_cache --rootdir=.` | 205 passed; 2.27s pytest |
+| `npm run typecheck` / `npm run lint` | Passed; 6.18s / 20.22s command wall; lint has 9 existing warnings, no errors |
+| `/usr/bin/time -p make ui-file FILE=recovery.spec.ts` | 18 passed; 41.9s Playwright, 42.84s browser stage, 77.12s command wall |
+| `/usr/bin/time -p make docker-durability` | All 14 planned stages passed; 168.80s command wall |
+| `git diff --check` | Passed |
+
+The first browser run exposed a test double-grade: the one-move card grades
+automatically, so clicking Correct afterward could grade the next card. The new
+case now waits for automatic advancement and asserts exactly one reviewed card;
+the focused case then passed (25.4s Playwright, 80.61s runner wall), followed by
+the whole recovery file above. Existing passive completion and held-drag assertions
+are retained. No visual layout or snapshots changed; CI owns the fresh complete
+candidate gate, including pinned visual/performance checks. No local full pass is
+claimed.
+
+Owning runner projects: `tempo-pg-regressions-73760-9b781852` (recovery) and
+`tempo-pg-regressions-74785-66f69eb3` (durability). Cleanup passed (13.32s and
+14.88s respectively): each runner executes its explicit project-scoped
+`docker compose -p <project> -f docker-compose.postgres.test.yml down --rmi local -v`
+and removes its separately built maintenance image. Resource IDs, creation/start
+times, source mounts, logs and timing JSON are retained in ignored
+`test-results/guided-repair-retry-evidence/`. Live study resources were not changed.
+Main remains `92f9aea`; PR #66 is draft/unmerged at `d5212cf`, so migration 030 is
+unchanged and no overlapping implementation is imported. Issue #4 remains an open
+umbrella; this follow-up supplies retry correctness rather than its other learning
+requirements. The final PR description will identify the new CI candidate/run.

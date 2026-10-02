@@ -196,3 +196,36 @@ def test_integrity_recommendations_report_provider_failure_without_mutating_repa
     result = repair.get('/api/repertoires/rep/integrity/issues/issue/recommendations?signature=signature').json()
     assert result['state'] == 'failed' and result['reason'] == 'Docker Stockfish unavailable'
     assert repair.get('/api/repertoires/rep/integrity').json()['issue_count'] == 1
+
+
+def test_repair_status_does_not_report_a_cached_scan_failure_after_its_task_retry_commits(monkeypatch):
+    from app import integrity_api
+    from types import SimpleNamespace
+    graph = {'kind': 'opening_graph_rebuild', 'generation': 2, 'state': 'complete',
+             'payload_json': json.dumps({'repertoire_id': 'rep'})}
+    scan = {'generation': 2, 'state': 'queued', 'payload_json': json.dumps({'graph_generation': 2})}
+    class Database:
+        def execute(self, query, parameters):
+            if 'FROM background_tasks' in query:
+                row = graph if parameters == ('graph',) else scan
+            elif 'FROM repertoire_integrity_state' in query:
+                row = {'scan_status': 'failed', 'scan_generation': 'scan:2', 'scan_error': 'Old scan failure'}
+            elif 'COUNT(*)' in query: row = (0,)
+            elif 'FROM repertoire_integrity_issues' in query: row = None
+            else: raise AssertionError(query)
+            return SimpleNamespace(fetchone=lambda: row)
+    @contextmanager
+    def reader(): yield Database()
+    monkeypatch.setattr(integrity_api, 'read_connection', reader)
+    monkeypatch.setattr(integrity_api.postgres_store, 'configured', lambda: True)
+    for retry_state in ('queued', 'leased'):
+        scan['state'] = retry_state
+        assert integrity_api.repair_status('rep', 'graph', 'issue', 2)['state'] == 'waiting'
+    scan['state'] = 'failed'
+    assert integrity_api.repair_status('rep', 'graph', 'issue', 2)['state'] == 'failed'
+    for retry_state in ('queued', 'leased'):
+        graph['state'] = retry_state
+        assert integrity_api.repair_status('rep', 'graph', 'issue', 2)['state'] == 'waiting'
+    graph['state'] = 'complete'
+    scan.update(state='queued', generation=3)
+    assert integrity_api.repair_status('rep', 'graph', 'issue', 2)['state'] == 'failed'

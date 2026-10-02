@@ -73,7 +73,8 @@ it("failed validation retries its task without repeating the source edit", async
   const repair = enqueueIntegrityRepair(choice); let retried = false; let posts = 0;
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (url.includes("operations")) return Response.json({ state: "complete", response: submission });
+    if (url.includes("operations")) return Response.json(url.endsWith(repair.operationId) ?
+      { state: "complete", response: submission } : { state: "unknown" });
     if (init?.method === "POST") { expect(url).toContain("/tasks/graph/retry"); posts++; retried = true; return Response.json({ retried: true }); }
     return Response.json(retried ? { ...complete, state: "waiting", task_generation: 3 } :
       { ...complete, state: "failed", reason: "Graph failed", retry_task_id: "graph" });
@@ -114,7 +115,8 @@ it("a later integrity scan failure receives a fresh retry key while preserving t
   const retryKeys: string[] = [];
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input);
-    if (url.includes("operations")) return Response.json({ state: "complete", response: submission });
+    if (url.includes("operations")) return Response.json(url.endsWith(repair.operationId) ?
+      { state: "complete", response: submission } : { state: "unknown" });
     if (init?.method === "POST") {
       retryKeys.push(new Headers(init.headers).get("Idempotency-Key")!); failed = false;
       return Response.json({ state: "queued" });
@@ -126,4 +128,161 @@ it("a later integrity scan failure receives a fresh retry key while preserving t
   failed = true; await flushIntegrityRepairs(); await retryIntegrityRepair(repair.operationId);
   expect(retryKeys).toHaveLength(2); expect(retryKeys[0]).not.toBe(retryKeys[1]);
   expect(pendingIntegrityRepairs()[0].operationId).toBe(repair.operationId);
+});
+
+it("blocked repair retry keeps old receipts pollable across reload until the original operation advances", async () => {
+  const repair = enqueueIntegrityRepair(choice);
+  let serverReceipt: object = { state: "blocked", retry_cycle: 2, attempt_count: 10, cycle_attempt_count: 5 };
+  let retryPosts = 0, sourcePosts = 0;
+  const confirmed = vi.fn(); window.addEventListener(INTEGRITY_REPAIR_CONFIRMED, confirmed);
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (init?.method === "POST") {
+      if (url.endsWith(`/operations/${repair.operationId}/retry`)) { retryPosts++; return Response.json({ state: "blocked" }, { status: 202 }); }
+      sourcePosts++; throw new Error("The original source edit must not be submitted again");
+    }
+    return Response.json(url.includes("operations") ? serverReceipt : complete);
+  }));
+  try {
+    await flushIntegrityRepairs(); expect(pendingIntegrityRepairs()[0].phase).toBe("blocked");
+    await retryIntegrityRepair(repair.operationId);
+    await flushIntegrityRepairs(); await flushIntegrityRepairs();
+    expect(pendingIntegrityRepairs()[0].phase).toBe("saving");
+    vi.resetModules(); const recovered = await import("../../app/lib/integrity-repair-outbox");
+    await recovered.flushIntegrityRepairs(); expect(recovered.pendingIntegrityRepairs()[0].phase).toBe("saving");
+    serverReceipt = { state: "executing", retry_cycle: 3, attempt_count: 11, cycle_attempt_count: 1 };
+    await recovered.flushIntegrityRepairs();
+    serverReceipt = { state: "complete", response: submission, retry_cycle: 3, attempt_count: 11 };
+    await recovered.flushIntegrityRepairs(); expect(recovered.pendingIntegrityRepairs()[0].phase).toBe("validating");
+    await recovered.flushIntegrityRepairs(); await recovered.flushIntegrityRepairs();
+    expect(retryPosts).toBe(1); expect(sourcePosts).toBe(0); expect(confirmed).toHaveBeenCalledOnce();
+  } finally { window.removeEventListener(INTEGRITY_REPAIR_CONFIRMED, confirmed); }
+});
+
+it("task repair retry waits for its durable retry command across old failures and reload", async () => {
+  const repair = enqueueIntegrityRepair(choice);
+  let retryCommand = "unknown", validation = "failed", retryPosts = 0, sourcePosts = 0;
+  const confirmed = vi.fn(); window.addEventListener(INTEGRITY_REPAIR_CONFIRMED, confirmed);
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (init?.method === "POST") {
+      if (!url.endsWith("/tasks/graph/retry")) { sourcePosts++; throw new Error("Repeated source edit"); }
+      retryPosts++; retryCommand = "queued";
+      return Response.json({ operation_id: new Headers(init.headers).get("Idempotency-Key"), state: "queued" }, { status: 202 });
+    }
+    if (url.endsWith(`/operations/${repair.operationId}`)) return Response.json({ state: "complete", response: submission });
+    if (url.includes("operations")) return Response.json({ state: retryCommand,
+      response: retryCommand === "complete" ? { id: "graph", generation: 2, state: "queued" } : undefined });
+    return Response.json({ ...complete, state: validation, task_generation: validation === "failed" ? 2 : 3,
+      reason: validation === "failed" ? "Graph failed" : null, retry_task_id: validation === "failed" ? "graph" : null });
+  }));
+  try {
+    await flushIntegrityRepairs(); await flushIntegrityRepairs();
+    await retryIntegrityRepair(repair.operationId); await flushIntegrityRepairs(); await flushIntegrityRepairs();
+    expect(pendingIntegrityRepairs()[0].phase).toBe("validating");
+    vi.resetModules(); const recovered = await import("../../app/lib/integrity-repair-outbox");
+    await recovered.flushIntegrityRepairs(); expect(recovered.pendingIntegrityRepairs()[0].phase).toBe("validating");
+    retryCommand = "complete"; validation = "waiting";
+    await recovered.flushIntegrityRepairs(); await recovered.flushIntegrityRepairs();
+    expect(recovered.pendingIntegrityRepairs()[0]).toMatchObject({ taskGeneration: 3, operationId: repair.operationId });
+    validation = "complete"; await recovered.flushIntegrityRepairs(); await recovered.flushIntegrityRepairs();
+    expect(retryPosts).toBe(1); expect(sourcePosts).toBe(0); expect(confirmed).toHaveBeenCalledOnce();
+  } finally { window.removeEventListener(INTEGRITY_REPAIR_CONFIRMED, confirmed); }
+});
+
+it("an advanced blocked retry cycle is actionable even when no intermediate executing poll was observed", async () => {
+  const repair = enqueueIntegrityRepair(choice); let cycle = 2;
+  vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === "POST") return Response.json({ state: "blocked" }, { status: 202 });
+    return Response.json({ state: "blocked", retry_cycle: cycle, attempt_count: cycle * 5, cycle_attempt_count: 5,
+      last_error: { message: "Database unavailable" } });
+  }));
+  await flushIntegrityRepairs(); await retryIntegrityRepair(repair.operationId);
+  expect(pendingIntegrityRepairs()[0].phase).toBe("saving");
+  cycle = 3; await flushIntegrityRepairs();
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ phase: "blocked", error: "Database unavailable" });
+});
+
+it("a task retry that completes then fails again is actionable without an intermediate waiting poll", async () => {
+  const repair = enqueueIntegrityRepair(choice); let commandComplete = false;
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (init?.method === "POST") return Response.json({ operation_id: new Headers(init.headers).get("Idempotency-Key") }, { status: 202 });
+    if (url.endsWith(`/operations/${repair.operationId}`)) return Response.json({ state: "complete", response: submission });
+    if (url.includes("operations")) return Response.json(commandComplete ?
+      { state: "complete", response: { id: "graph", state: "queued", generation: 2 } } : { state: "queued" });
+    return Response.json({ ...complete, state: "failed", reason: "Graph failed again", retry_task_id: "graph" });
+  }));
+  await flushIntegrityRepairs(); await flushIntegrityRepairs(); await retryIntegrityRepair(repair.operationId);
+  expect(pendingIntegrityRepairs()[0].phase).toBe("validating");
+  commandComplete = true; await flushIntegrityRepairs();
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ phase: "failed", error: "Graph failed again", operationId: repair.operationId });
+});
+
+it.each(["operation", "task"])("a lost %s retry response replays the same retry identity after reload", async kind => {
+  const repair = enqueueIntegrityRepair(choice);
+  let retryReceiptVisible = false, finished = false;
+  const retryKeys: string[] = [], confirmed = vi.fn();
+  window.addEventListener(INTEGRITY_REPAIR_CONFIRMED, confirmed);
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (init?.method === "POST") {
+      expect(url).toContain("/retry");
+      const key = new Headers(init.headers).get("Idempotency-Key")!;
+      expect(pendingIntegrityRepairs()[0].retryOperationId).toBe(key);
+      retryKeys.push(key);
+      if (retryKeys.length === 1) throw new Error("Retry response lost");
+      return Response.json({ operation_id: kind === "task" ? key : repair.operationId }, { status: 202 });
+    }
+    if (url.endsWith(`/operations/${repair.operationId}`)) return Response.json(kind === "operation" && !retryReceiptVisible ?
+      { state: "blocked", retry_cycle: 1, attempt_count: 5 } : { state: "complete", response: submission });
+    if (url.includes("operations")) return Response.json(retryReceiptVisible ?
+      { state: "complete", response: { id: "graph", generation: 2, state: "queued" } } : { state: "unknown" });
+    return Response.json({ ...complete, state: finished ? "complete" : retryReceiptVisible ? "waiting" : "failed",
+      retry_task_id: retryReceiptVisible ? null : "graph" });
+  }));
+  try {
+    await flushIntegrityRepairs(); if (kind === "task") await flushIntegrityRepairs();
+    await retryIntegrityRepair(repair.operationId);
+    const storedRetryId = pendingIntegrityRepairs()[0].retryOperationId;
+    expect(pendingIntegrityRepairs()[0].phase).toBe(kind === "task" ? "validating" : "saving");
+    vi.spyOn(Date, "now").mockReturnValue(Date.now() + 60_000);
+    vi.resetModules(); const recovered = await import("../../app/lib/integrity-repair-outbox");
+    await recovered.flushIntegrityRepairs();
+    expect(retryKeys).toEqual([storedRetryId, storedRetryId]);
+    retryReceiptVisible = true; await recovered.flushIntegrityRepairs(); await recovered.flushIntegrityRepairs();
+    finished = true; await recovered.flushIntegrityRepairs(); await recovered.flushIntegrityRepairs();
+    expect(confirmed).toHaveBeenCalledOnce(); expect(recovered.pendingIntegrityRepairs()).toEqual([]);
+    expect(retryKeys).toHaveLength(2);
+  } finally { window.removeEventListener(INTEGRITY_REPAIR_CONFIRMED, confirmed); }
+});
+
+it("retry storage failure preserves the terminal choice before any retry POST", async () => {
+  const repair = enqueueIntegrityRepair(choice); const retryPosts = vi.fn();
+  vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === "POST") retryPosts();
+    return Response.json({ state: "blocked", retry_cycle: 1, attempt_count: 5 });
+  }));
+  await flushIntegrityRepairs();
+  vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw new Error("Storage full"); });
+  await expect(retryIntegrityRepair(repair.operationId)).rejects.toThrow("Storage full");
+  expect(retryPosts).not.toHaveBeenCalled();
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: repair.operationId, phase: "blocked" });
+});
+
+it("concurrent repair Retry clicks share one persisted retry identity and admission", async () => {
+  const repair = enqueueIntegrityRepair(choice); let baselineReads = 0, posts = 0;
+  let releaseBaseline!: (response: Response) => void;
+  const baseline = new Promise<Response>(resolve => { releaseBaseline = resolve; });
+  const blocked = { state: "blocked", retry_cycle: 1, attempt_count: 5 };
+  vi.stubGlobal("fetch", vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+    if (init?.method === "POST") { posts++; return Response.json({ state: "blocked" }, { status: 202 }); }
+    if (++baselineReads === 2) return baseline;
+    return Response.json(blocked);
+  }));
+  await flushIntegrityRepairs();
+  const firstClick = retryIntegrityRepair(repair.operationId), secondClick = retryIntegrityRepair(repair.operationId);
+  expect(firstClick).toBe(secondClick);
+  releaseBaseline(Response.json(blocked)); await firstClick; await secondClick;
+  expect(posts).toBe(1); expect(pendingIntegrityRepairs()[0].phase).toBe("saving");
 });

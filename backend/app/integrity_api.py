@@ -48,8 +48,19 @@ def repair_status(identifier: str, task_id: str, issue_id: str, generation: int 
                   'issue_count': count, 'reason': None, 'retry_task_id': None}
         if task['state'] == 'failed':
             return {**result, 'state': 'failed', 'reason': task['last_error'] or 'Repair processing failed', 'retry_task_id': task_id}
+        if task['state'] in {'queued', 'leased'}:
+            return result
         if state and state['scan_status'] == 'failed':
             scan = state['scan_generation']
+            if postgres_store.configured() and scan:
+                scan_id, _, scan_generation = scan.rpartition(':')
+                retried_scan = database.execute('SELECT generation,state,payload_json FROM background_tasks WHERE id=?', (scan_id,)).fetchone()
+                if (retried_scan and str(retried_scan['generation']) == scan_generation
+                        and retried_scan['state'] in {'queued', 'leased'}
+                        and json.loads(retried_scan['payload_json']).get('graph_generation') == task['generation']):
+                    # The retry committed; the cached scan error is from before
+                    # this queued/leased attempt, not a new terminal failure.
+                    return result
             return {**result, 'state': 'failed', 'reason': state['scan_error'] or 'Repertoire validation failed',
                     'retry_task_id': scan.rsplit(':', 1)[0] if postgres_store.configured() and scan else None}
         published = True

@@ -129,5 +129,19 @@ def guided_repair_postgres_contention_restart_replay_and_publication(observer):
     else: raise AssertionError('Graph/integrity workflow did not finish its slices')
     confirmed = status()
     assert confirmed['state'] == 'complete' and confirmed['task_generation'] == successor['generation'], confirmed
+    # A retry resets its durable task before the scan worker clears the cached
+    # failure. The authoritative task state must keep confirmation pollable.
+    from app.activity_commands import retry_failed_task
+    scan_generation = observer.execute('SELECT scan_generation FROM repertoire_integrity_state WHERE repertoire_id=%s', (repertoire_id,)).fetchone()[0]
+    scan_id = scan_generation.rsplit(':', 1)[0]
+    observer.execute("UPDATE background_tasks SET state='failed' WHERE id=%s", (scan_id,))
+    observer.execute("UPDATE repertoire_integrity_state SET scan_status='failed',scan_error='Old scan failure' WHERE repertoire_id=%s", (repertoire_id,))
     observer.commit()
+    assert status()['state'] == 'failed'
+    with connection() as database: retry_failed_task(database, {'task_id': scan_id})
+    assert status()['state'] == 'waiting', 'Cached scan failure stranded the committed task retry'
+    observer.execute("UPDATE background_tasks SET state='complete' WHERE id=%s", (scan_id,))
+    observer.execute("UPDATE repertoire_integrity_state SET scan_status='idle',scan_error=NULL WHERE repertoire_id=%s", (repertoire_id,))
+    observer.commit()
+    assert status()['state'] == 'complete'
     print('PASS guided_repair_postgres_contention_restart_replay_and_publication')

@@ -7,6 +7,12 @@ export const INTEGRITY_REPAIRS_CHANGED = "tempo-integrity-repairs-changed";
 export const INTEGRITY_REPAIR_CONFIRMED = "tempo-integrity-repair-confirmed";
 const storageKey = "tempo-pending-integrity-repairs-v2";
 const legacyKey = "tempo-pending-integrity-repair-v1";
+const retrySchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("operation"), baselineRetryCycle: z.number().int().nonnegative(),
+    baselineAttemptCount: z.number().int().nonnegative(), deliveryAccepted: z.boolean() }),
+  z.object({ kind: z.literal("task"), taskId: z.string().min(1),
+    taskResetConfirmed: z.boolean() }),
+]);
 const repairSchema = z.object({
   repertoireId: z.string().min(1), issueId: z.string().min(1), signature: z.string().min(1),
   selectedMoveUci: z.string().regex(/^[a-h][1-8][a-h][1-8][qrbn]?$/),
@@ -14,12 +20,14 @@ const repairSchema = z.object({
   phase: z.enum(["queued", "saving", "validating", "failed", "blocked", "stale"]),
   taskId: z.string().optional(), taskGeneration: z.number().int().positive().optional(),
   retryTaskId: z.string().nullable().optional(), retryOperationId: z.string().optional(),
+  retry: retrySchema.optional(),
   terminalOperationFailure: z.boolean().optional(), error: z.string().optional(),
   attempts: z.number().int().nonnegative().default(0), nextAttemptAt: z.number().finite().default(0),
   pollOrder: z.number().int().nonnegative().default(0),
 });
 export type PendingIntegrityRepair = z.infer<typeof repairSchema>;
 let activeFlush: Promise<void> | undefined;
+const activeRetries = new Map<string, Promise<void>>();
 
 function writeRepairs(repairs: PendingIntegrityRepair[]) {
   localStorage.setItem(storageKey, JSON.stringify(repairs));
@@ -71,9 +79,11 @@ async function timedRequest(url: string, init?: RequestInit, background = true) 
 }
 async function receipt(operationId: string) {
   const response = await timedRequest(`${API_URL}/api/operations/${encodeURIComponent(operationId)}`);
-  if (response.status === 404) return { state: "unknown" };
+  if (response.status === 404) return { state: "unknown", retry_cycle: 0, attempt_count: 0 };
   if (!response.ok) throw new Error("Could not confirm repair delivery. Its saved choice will be retried.");
   return z.object({ state: z.string(), response: z.unknown().optional(),
+    retry_cycle: z.number().int().nonnegative().default(0),
+    attempt_count: z.number().int().nonnegative().default(0),
     error: z.object({ message: z.string().optional() }).optional(),
     last_error: z.object({ message: z.string().optional() }).optional() }).parse(await response.json());
 }
@@ -83,22 +93,70 @@ function accepted(repair: PendingIntegrityRepair, response: unknown) {
     throw new Error("Repair confirmation does not match its saved choice.");
   updateRepair(repair.operationId, current => ({ ...current, phase: "validating",
     taskId: result.task_id, taskGeneration: result.task_generation ?? 1,
-    retryOperationId: undefined, retryTaskId: undefined, terminalOperationFailure: false,
+    retry: undefined, retryOperationId: undefined, retryTaskId: undefined, terminalOperationFailure: false,
     error: undefined, attempts: 0, nextAttemptAt: 0 }));
 }
 function fail(repair: PendingIntegrityRepair, phase: "failed" | "blocked" | "stale", error: string, terminalOperationFailure = false) {
-  updateRepair(repair.operationId, current => ({ ...current, phase, error, terminalOperationFailure }));
+  updateRepair(repair.operationId, current => ({ ...current, phase, error, terminalOperationFailure,
+    retry: undefined, retryOperationId: undefined }));
 }
-async function confirmReceipt(repair: PendingIntegrityRepair) {
-  const status = await receipt(repair.operationId);
+async function confirmReceipt(repair: PendingIntegrityRepair, observed?: Awaited<ReturnType<typeof receipt>>) {
+  const status = observed ?? await receipt(repair.operationId);
   if (status.state === "complete") { accepted(repair, status.response); return true; }
   if (status.state === "failed") { fail(repair, "failed", status.error?.message ?? "Repair save failed.", true); return true; }
   if (status.state === "blocked") { fail(repair, "blocked", status.last_error?.message ?? "Repair delivery is blocked. Resolve the service error, then retry."); return true; }
   if (status.state !== "unknown") updateRepair(repair.operationId, current => ({ ...current, phase: "saving" }));
   return status.state !== "unknown";
 }
+async function submitRetry(repair: PendingIntegrityRepair) {
+  const retry = repair.retry!;
+  const endpoint = retry.kind === "task" ? `${API_URL}/api/system/tasks/${encodeURIComponent(retry.taskId)}/retry`
+    : `${API_URL}/api/operations/${encodeURIComponent(repair.operationId)}/retry`;
+  const response = await timedRequest(endpoint, { method: "POST",
+    headers: { "Idempotency-Key": repair.retryOperationId! } }, false);
+  if (!response.ok) throw new Error("Could not confirm the repair retry. Its saved request will be checked again.");
+  const result = z.object({ operation_id: z.string().optional(), id: z.string().optional() }).parse(await response.json());
+  if (retry.kind === "task" && (result.operation_id && result.operation_id !== repair.retryOperationId
+      || result.id && result.id !== retry.taskId)) throw new Error("Retry confirmation does not match the saved task.");
+  const applied = retry.kind === "task" && response.status !== 202 && !result.operation_id;
+  updateRepair(repair.operationId, current => ({ ...current,
+    retry: retry.kind === "task" ? { ...retry, taskResetConfirmed: applied } : { ...retry, deliveryAccepted: true } }));
+  return applied;
+}
+async function processRetry(repair: PendingIntegrityRepair): Promise<boolean> {
+  const retry = repair.retry!;
+  if (retry.kind === "operation") {
+    const status = await receipt(repair.operationId);
+    if (status.state === "unknown") throw new Error("The original repair receipt is unavailable. Its retry choice is preserved.");
+    const advanced = status.retry_cycle > retry.baselineRetryCycle || status.attempt_count > retry.baselineAttemptCount
+      || !["blocked", "failed"].includes(status.state);
+    if (advanced) {
+      updateRepair(repair.operationId, current => ({ ...current, retry: undefined, retryOperationId: undefined }));
+      await confirmReceipt(repair, status);
+    } else if (!retry.deliveryAccepted) await submitRetry(repair);
+    // An unchanged terminal observation is still the pre-retry failure.
+    return false;
+  }
+  if (!retry.taskResetConfirmed) {
+    const status = await receipt(repair.retryOperationId!);
+    if (status.state === "complete") {
+      const result = z.object({ id: z.string(), generation: z.number().int().positive(), state: z.string() }).parse(status.response);
+      if (result.id !== retry.taskId) throw new Error("Retry receipt does not match the saved task.");
+    } else if (["failed", "blocked"].includes(status.state)) {
+      fail(repair, "failed", status.error?.message ?? status.last_error?.message ?? "The task retry failed. Check Analysis activity and retry again.");
+      return false;
+    } else if (status.state === "unknown") {
+      if (!await submitRetry(repair)) return false;
+    } else return false;
+    // This receipt (or synchronous result) proves the atomic task reset committed.
+    // A later terminal read is a new failure even if no queued poll was observed.
+    updateRepair(repair.operationId, current => ({ ...current, retry: { ...retry, taskResetConfirmed: true } }));
+  }
+  return true;
+}
 async function processRepair(repair: PendingIntegrityRepair) {
   try {
+    if (repair.retry && !await processRetry(repair)) return;
     if (!repair.taskId) {
       if (await confirmReceipt(repair)) return;
       updateRepair(repair.operationId, current => ({ ...current, phase: "saving" }));
@@ -136,10 +194,10 @@ async function processRepair(repair: PendingIntegrityRepair) {
     } else if (status.state === "failed") {
       updateRepair(repair.operationId, current => ({ ...current, phase: status.retry_task_id ? "failed" : "stale",
         error: status.reason ?? "Repair validation failed", retryTaskId: status.retry_task_id,
-        taskGeneration: status.task_generation }));
+        taskGeneration: status.task_generation, retry: undefined, retryOperationId: undefined }));
     } else {
       updateRepair(repair.operationId, current => ({ ...current, error: undefined, attempts: 0, nextAttemptAt: 0,
-        taskGeneration: status.task_generation, retryOperationId: undefined, retryTaskId: undefined }));
+        taskGeneration: status.task_generation, retry: undefined, retryOperationId: undefined, retryTaskId: undefined }));
     }
   } catch (error) {
     updateRepair(repair.operationId, current => {
@@ -166,17 +224,39 @@ export function flushIntegrityRepairs(): Promise<void> {
   })().finally(() => { activeFlush = undefined; });
   return activeFlush;
 }
-export async function retryIntegrityRepair(operationId: string) {
+export function retryIntegrityRepair(operationId: string): Promise<void> {
+  const active = activeRetries.get(operationId);
+  if (active) return active;
+  const retry = requestIntegrityRepairRetry(operationId).finally(() => activeRetries.delete(operationId));
+  activeRetries.set(operationId, retry);
+  return retry;
+}
+async function requestIntegrityRepairRetry(operationId: string) {
+  // Do not let an already-running status read overwrite a new retry baseline.
+  if (activeFlush) await activeFlush;
   const repair = pendingIntegrityRepairs().find(item => item.operationId === operationId);
   if (!repair) return;
   if (repair.phase === "stale") throw new Error("Refresh the issue and choose a response again.");
+  if (repair.retry) {
+    updateRepair(operationId, current => ({ ...current, error: undefined, attempts: 0, nextAttemptAt: 0 }));
+    return flushIntegrityRepairs();
+  }
   if (repair.retryTaskId || repair.phase === "blocked") {
     const retryOperationId = repair.retryOperationId ?? crypto.randomUUID();
-    updateRepair(operationId, current => ({ ...current, retryOperationId }));
-    const endpoint = repair.retryTaskId ? `${API_URL}/api/system/tasks/${encodeURIComponent(repair.retryTaskId)}/retry`
-      : `${API_URL}/api/operations/${encodeURIComponent(operationId)}/retry`;
-    const response = await timedRequest(endpoint, { method: "POST", headers: { "Idempotency-Key": retryOperationId } }, false);
-    if (!response.ok) throw new Error("Could not confirm the repair retry. Check Analysis activity and retry again.");
+    let retry: z.infer<typeof retrySchema>;
+    if (repair.retryTaskId) retry = { kind: "task", taskId: repair.retryTaskId, taskResetConfirmed: false };
+    else {
+      const status = await receipt(operationId);
+      if (status.state !== "blocked") {
+        await confirmReceipt(repair, status);
+        return flushIntegrityRepairs();
+      }
+      retry = { kind: "operation", baselineRetryCycle: status.retry_cycle, baselineAttemptCount: status.attempt_count, deliveryAccepted: false };
+    }
+    // Persist intent before network I/O, including an ambiguous/lost POST response.
+    updateRepair(operationId, current => ({ ...current, retryOperationId, retry,
+      phase: current.taskId ? "validating" : "saving", error: undefined, attempts: 0, nextAttemptAt: 0 }));
+    return flushIntegrityRepairs();
   } else if (repair.terminalOperationFailure) {
     const response = await timedRequest(`${API_URL}/api/repertoires/${encodeURIComponent(repair.repertoireId)}/integrity`);
     if (!response.ok) throw new Error("Could not refresh the rejected repair. Its choice has been preserved.");

@@ -4,6 +4,87 @@ import { prepareRepairUI, repairStartFen } from "./repair-fixtures";
 import { expectedPieces, renderedPieces, playMove, squareCenter } from "./keyboard-fixtures";
 import { Chess } from "chess.js";
 
+test("repair retries survive delayed operation and task transitions after reload without another source edit", async ({ page }) => {
+  const repair = await prepareRepairUI(page);
+  const reviewedCards: string[] = [];
+  page.on("request", request => {
+    const match = new URL(request.url()).pathname.match(/^\/api\/cards\/([^/]+)\/review$/);
+    if (request.method() === "POST" && match) reviewedCards.push(match[1]);
+  });
+  let operationAdvanced = false, operationRetryPosts = 0, oldReceiptPolls = 0;
+  let taskRetryId = "", taskRetryPosts = 0, pendingTaskPolls = 0, taskRetryApplied = false;
+  let validation: "waiting" | "failed" | "complete" = "waiting";
+  await page.route("**/api/operations/*", route => {
+    const id = new URL(route.request().url()).pathname.split("/").at(-1)!;
+    if (id === taskRetryId) {
+      pendingTaskPolls++;
+      return route.fulfill({ json: taskRetryApplied ? { state: "complete",
+        response: { id: "repair-graph", generation: 2, state: "queued" } } : { state: "queued" } });
+    }
+    if (id !== repair.operationIds[0]) return route.fulfill({ json: { state: "unknown" } });
+    if (!repair.accepted) return route.fulfill({ json: { state: "unknown" } });
+    if (!operationAdvanced) {
+      if (operationRetryPosts) oldReceiptPolls++;
+      return route.fulfill({ json: { state: "blocked", retry_cycle: 1, attempt_count: 5, cycle_attempt_count: 5,
+        last_error: { message: "Retryable save failure" } } });
+    }
+    return route.fulfill({ json: { state: "complete", retry_cycle: 2, attempt_count: 6,
+      response: { task_id: "repair-graph", task_generation: 2, repertoire_id: "repair-repertoire",
+        issue_id: "repair-issue", state: "queued" } } });
+  });
+  await page.route("**/api/operations/*/retry", route => {
+    operationRetryPosts++;
+    return route.fulfill({ status: 202, json: { state: "blocked" } });
+  });
+  await page.route("**/api/system/tasks/repair-graph/retry", route => {
+    taskRetryPosts++; taskRetryId = route.request().headers()["idempotency-key"];
+    return route.fulfill({ status: 202, json: { operation_id: taskRetryId, state: "queued" } });
+  });
+  await page.route("**/api/repertoires/repair-repertoire/integrity/repairs/repair-graph?**", route =>
+    route.fulfill({ json: { task_id: "repair-graph", task_generation: taskRetryApplied ? 3 : 2, state: validation,
+      issue_count: validation === "complete" ? 0 : 1, reason: validation === "failed" ? "Retryable graph failure" : null,
+      retry_task_id: validation === "failed" ? "repair-graph" : null } }));
+  await page.getByRole("button", { name: "Resume repair" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "e4", exact: true }).click();
+  await page.getByRole("button", { name: "Keep this response" }).click();
+  await expect.poll(() => repair.operationIds.length).toBe(1);
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-integrity-repairs-v2")!)[0]?.attempts ?? 0)).toBeGreaterThan(0);
+  await page.clock.setFixedTime(new Date("2026-09-18T16:00:10Z"));
+  await page.reload();
+  const retryButton = page.getByRole("button", { name: "Retry repair", exact: true });
+  await expect(retryButton).toBeVisible();
+  await retryButton.click();
+  await expect(page.getByText("Repair saving", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect.poll(() => oldReceiptPolls).toBeGreaterThanOrEqual(2);
+  await expect(page.getByText("Repair saving", { exact: true })).toBeVisible();
+  operationAdvanced = true;
+  await expect(page.getByText("Repair validating", { exact: true })).toBeVisible();
+  validation = "failed";
+  await expect(retryButton).toBeVisible(); await retryButton.click();
+  await expect.poll(() => taskRetryPosts).toBe(1);
+  await page.reload();
+  await expect.poll(() => pendingTaskPolls).toBeGreaterThanOrEqual(2);
+  await expect(page.getByText("Repair validating", { exact: true })).toBeVisible();
+  taskRetryApplied = true; validation = "waiting";
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-integrity-repairs-v2")!)[0]?.taskGeneration)).toBe(3);
+  const studyBoard = page.locator(".persistent-board-shell .board-frame");
+  await playMove(page, studyBoard, "e2", "e4");
+  // Completing this one-move card grades it automatically. An additional click
+  // can arrive after that advancement and incorrectly grade the next card.
+  await expect(page.getByRole("heading", { name: "Second study card" })).toBeVisible();
+  const positionBeforeConfirmation = await studyBoard.getAttribute("data-fen");
+  validation = "complete"; repair.confirmed = true;
+  await expect(page.getByText("Repair validating", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(studyBoard).toHaveAttribute("data-fen", positionBeforeConfirmation!);
+  await expect(page.getByRole("heading", { name: "Second study card" })).toBeVisible();
+  expect(operationRetryPosts).toBe(1); expect(taskRetryPosts).toBe(1);
+  expect(repair.operationIds).toHaveLength(1);
+  expect(reviewedCards).toEqual(["study-one"]);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-integrity-repairs-v2")!))).toEqual([]);
+});
+
 test("guided repair previews real arrows and pieces, saves durably, and preserves study through reload and confirmation", async ({ page }) => {
   const repair = await prepareRepairUI(page);
   await page.getByRole("button", { name: "Resume repair" }).click();
