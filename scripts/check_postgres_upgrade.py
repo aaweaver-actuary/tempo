@@ -1,4 +1,4 @@
-"""Rehearse a populated 16-to-current upgrade on a disposable database."""
+"""Rehearse historical upgrades and populated current-main evidence admission."""
 
 from __future__ import annotations
 
@@ -257,6 +257,31 @@ def main() -> None:
                     intent_id = "legacy-admission" if target == "matching-queued" else f"legacy:{target}"
                     database.execute("INSERT INTO discovery_admission_intents(id,opportunity_id,repertoire_id,evidence_fingerprint,starting_fen,selected_move_uci,preview_moves_json,recommendation_json,line_id,state,card_id,created_at,updated_at) VALUES(%s,%s,'preserved-repertoire',%s,'4k3/8/8/8/8/8/8/4K3 w - - 0 1','e1d2','[\"e1d2\"]','{}','legacy-line',%s,%s,'2026-01-01','2026-01-01')",
                                      (intent_id, opportunity_id, accepted_fingerprint, intent_state, intent_card))
+            # Seed evidence inputs only after reaching the actual main schema.
+            for migration in sorted(MIGRATIONS.glob("[0-9][0-9][0-9]_*.sql")):
+                if 16 < int(migration.name[:3]) < POSTGRES_SCHEMA_VERSION:
+                    database.execute(migration.read_text(), prepare=False)
+                    database.commit()
+            main_versions = [row[0] for row in database.execute(
+                "SELECT version FROM tempo_schema_migrations ORDER BY version").fetchall()]
+            assert main_versions == list(range(1, POSTGRES_SCHEMA_VERSION))
+            assert main_versions[-1] == 29
+            assert database.execute("SELECT to_regclass('opening_evidence_presentations')").fetchone()[0] is None
+            database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,revision,due_date) VALUES('opening-upgrade','preserved-repertoire','prefix','rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1','[\"e2e4\"]','white',7,'2026-01-01')")
+            database.execute("INSERT INTO daily_queue(queue_date,card_id,position,card_bucket) VALUES('2026-01-01','opening-upgrade',99,'opening')")
+            database.execute("INSERT INTO reviews(card_id,rating,reviewed_at,previous_interval,next_interval) VALUES('opening-upgrade','correct','2026-01-02',1,17)")
+            for trained_color in ('white', 'black'):
+                legacy_id = 'legacy-'+trained_color+'-upgrade'
+                starting_fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+                legacy_moves = json.dumps(['e2e4'] if trained_color=='white' else ['e2e4','e7e5'])
+                database.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES(%s,'Legacy upgrade','upgrade-test','2026-01-01')", (legacy_id,))
+                database.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(%s,%s,'Legacy line',%s,%s,%s,'2026-01-01')",
+                                 (legacy_id+'-line', legacy_id, trained_color, starting_fen, legacy_moves))
+                database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,revision,due_date) VALUES(%s,%s,'prefix',%s,%s,NULL,3,'2026-01-01')",
+                                 (legacy_id, legacy_id, starting_fen, legacy_moves))
+                # No admission binding: a single eligible owner must backfill correctly.
+                database.execute("INSERT INTO daily_queue(queue_date,card_id,position,card_bucket) VALUES('2026-01-01',%s,100,'opening')", (legacy_id,))
+
             database.commit()
         apply_migrations(rehearsal_dsn)
         apply_migrations(rehearsal_dsn)
@@ -274,10 +299,20 @@ def main() -> None:
                 "FROM operation_receipts WHERE operation_id='preserved-receipt'"
             ).fetchone() == ("complete", '{"saved":true}', 0, 0, 0)
             assert database.execute("SELECT id,content_type,archived,interval_days FROM cards ORDER BY id").fetchall() == [
-                ("known-plural", "tactic", 1, 17), ("unknown-plural", "tactics", 1, 17)]
+                ("known-plural", "tactic", 1, 17), ("legacy-black-upgrade", "opening", 0, 0),
+                ("legacy-white-upgrade", "opening", 0, 0), ("opening-upgrade", "opening", 0, 0), ("unknown-plural", "tactics", 1, 17)]
             assert database.execute("SELECT card_id,card_bucket FROM daily_queue ORDER BY card_id").fetchall() == [
-                ("known-plural", "tactic"), ("unknown-plural", "tactics")]
-            assert database.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 2
+                ("known-plural", "tactic"), ("legacy-black-upgrade", "opening"),
+                ("legacy-white-upgrade", "opening"), ("opening-upgrade", "opening"), ("unknown-plural", "tactics")]
+            assert database.execute("SELECT COUNT(*) FROM reviews").fetchone()[0] == 3
+            assert database.execute("SELECT card_id,revision,trained_color FROM opening_evidence_presentations ORDER BY card_id").fetchall() == [
+                ('legacy-black-upgrade',3,None), ('legacy-white-upgrade',3,None), ('opening-upgrade',7,'white')]
+            assert database.execute("SELECT repertoire_id,effective_trained_color FROM opening_evidence_queue_contexts ORDER BY repertoire_id").fetchall() == [
+                ('legacy-black-upgrade','black'), ('legacy-white-upgrade','white'), ('preserved-repertoire','white')]
+            assert database.execute("SELECT COUNT(*) FROM opening_evidence_queue_contexts WHERE repertoire_id='preserved-repertoire'").fetchone()[0] == 1
+            assert database.execute("SELECT COUNT(*) FROM opening_evidence_observations").fetchone()[0] == 0
+            assert database.execute("SELECT COUNT(*) FROM opening_evidence_attempts").fetchone()[0] == 0
+            print("PASS test_postgres_current_main_upgrade_captures_legacy_evidence_contexts schema29->30")
             assert database.execute("SELECT COUNT(*) FROM tactic_captures").fetchone()[0] == 0
             assert database.execute(
                 "SELECT COUNT(*) FROM pg_indexes WHERE indexname="

@@ -3,6 +3,7 @@ from uuid import UUID
 from urllib.parse import urlsplit
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
+from .opening_evidence_contracts import OpeningEvidenceCheckpoint
 
 
 class Settings(BaseModel):
@@ -40,6 +41,7 @@ class ReviewRequest(BaseModel):
     expected_review_id: int | None = None
     expected_revision: int | None = None
     attempt_id: str | None = Field(default=None, min_length=1, max_length=100)
+    opening_evidence_completion: OpeningEvidenceCheckpoint | None = None
 
 
 class BranchRequest(BaseModel):
