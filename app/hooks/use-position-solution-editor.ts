@@ -62,6 +62,18 @@ export function usePositionSolutionEditor(initialFen: string, initialMoves: SanM
     if (confirmReset && moves.length) setPendingFen(fen);
     else applyStartingFen(fen);
   }
+  function loadPositionAndSolution(fen: string, solutionMoves: readonly SanMove[]) {
+    setFenText(fen);
+    setBoardFen(fen);
+    setMoves([...solutionMoves]);
+    setCursor(0);
+    setWorkingCursor(0);
+    setTab("solution");
+    setPendingFen(null);
+    setPiece(null);
+    setPromotion("q");
+    setError("");
+  }
   const positionError = playablePositionError(startingFen);
   const previewFen = useMemo(() => {
     try { return fenAfterMoves(moves, cursor, startingFen); }
@@ -107,7 +119,7 @@ export function usePositionSolutionEditor(initialFen: string, initialMoves: SanM
     return true;
   }
   return {
-    startingFen, boardFen, setStartingFen, changeStartingFen, positionError,
+    startingFen, boardFen, setStartingFen, changeStartingFen, loadPositionAndSolution, positionError,
     moves, setMoves, cursor, setCursor, workingCursor, tab, setTab, piece, setPiece,
     promotion, setPromotion, error, setError, previewFen, pendingFen,
     confirmStartingChange() { if (pendingFen !== null) applyStartingFen(pendingFen); setPendingFen(null); },

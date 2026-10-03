@@ -1,4 +1,5 @@
 import { test, expect } from "./observability";
+import { readFileSync } from "node:fs";
 import { navigate, noPageOverflow } from "./ui-fixtures";
 import { prepareVisualUI } from "./visual-fixtures";
 import { expectedPieces, renderedPieces, playMove } from "./keyboard-fixtures";
@@ -151,6 +152,24 @@ test("capture accepts SAN from Black's perspective across browser engines", asyn
   await dialog.getByLabel("SAN moves").fill("Nf3");
   await dialog.getByRole("button", { name: "Add moves", exact: true }).click();
   await expect(board).toHaveAttribute("data-fen", "rnbqkbnr/pppp1ppp/8/4p3/8/5N2/PPPPPPPP/RNBQKB1R b KQkq - 1 2");
+  await expect(board).toHaveAttribute("data-orientation", "black");
+});
+
+test("Chess.com puzzle import starts at the solver position across browser engines", async ({ page }) => {
+  await prepareVisualUI(page); await navigate(page, "Tactics");
+  await page.getByRole("button", { name: "Capture tactic", exact: true }).click();
+  const dialog = page.getByRole("dialog"), board = dialog.locator(".board-frame");
+  await dialog.getByRole("button", { name: "Paste Chess.com puzzle PGN" }).click();
+  await dialog.getByLabel("Chess.com puzzle PGN").fill(readFileSync("tests/fixtures/chesscom-puzzle-rush.pgn", "utf8"));
+  await dialog.getByRole("button", { name: "Load PGN", exact: true }).click();
+  const startingFen = "r1b2rk1/ppq2p1p/2np1Qp1/2b5/2B1Pp2/1P6/P1PP2PP/R1B1K1NR b KQ - 0 1";
+  await expect(board).toHaveAttribute("data-fen", startingFen);
+  await expect(board).toHaveAttribute("data-orientation", "black");
+  await board.click();
+  await page.keyboard.press("End");
+  await expect(board).toHaveAttribute("data-fen", "r1b2rk1/ppq2p1p/3p2p1/8/2BnPp2/1P6/P1PP2PP/R1B1K1NR w KQ - 0 3");
+  await page.keyboard.press("Home");
+  await expect(board).toHaveAttribute("data-fen", startingFen);
   await expect(board).toHaveAttribute("data-orientation", "black");
 });
 

@@ -109,6 +109,21 @@ intentionally repaired rows or edit historical source bytes to make them match.
 
 ## Browser behavior
 
+Capture accepts manual/FEN authoring or **Paste Chess.com puzzle PGN**. Paste the
+puzzle export and click **Load PGN** to inspect and edit the position, solution,
+and source before **Add to training**. Loading alone does not save anything.
+Chess.com exports include a leading opponent/setup move: import advances that
+move, shows the resulting starting position, and uses the remaining mainline as
+the authored solution. The resulting side to move determines board orientation.
+
+A puzzle needs an explicit FEN and either `PuzzleID` or a Chess.com `/puzzles/`
+Link. `PuzzleID` and `Link` populate existing Reference and URL fields, Source
+becomes Puzzle Rush, and Note is preserved. Other metadata is unused. Invalid
+PGNs preserve the current capture; loading another valid PGN replaces it.
+URL validation, persistence, scheduling, and pending recovery still use the
+ordinary tactic capture pipeline. Arbitrary game-to-tactic PGN extraction is
+outside this feature.
+
 Capture opens on an empty board. Incomplete setup can be placed, removed, or
 freely dragged; malformed FEN text never reaches the board renderer. A playable
 position enables legal solution recording. Navigation can replace a continuation,
