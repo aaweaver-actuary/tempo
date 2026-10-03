@@ -193,7 +193,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     const running = await rejected.runningServices();
     assert(!running.some(name => ["api", "foreground-worker", "background-worker", "web", "defense-engine", "maia-worker"].includes(name)));
     assert.deepEqual(await readHistory(), expected, "rejected DDL preserves original study history");
-    console.log("PASS Tempo CLI populated 16-to-current upgrade permits migration 025 normalization, retains original H0 through committed-schema failure/retry/repair, restores backup, quiesces before dependencies, corrects uncommitted/missing fallback dependencies, and preserves repeat/restart/rejected-migration history");
+    console.log("PASS Tempo CLI populated 16-to-current upgrade permits migration 025 normalization, verifies actual PostgreSQL image major, retains original H0 through committed-schema failure/retry/repair, restores backup, quiesces before dependencies, corrects uncommitted/missing fallback dependencies, and preserves repeat/restart/rejected-migration history");
   } catch (error) { failure = error; }
   finally {
     try {

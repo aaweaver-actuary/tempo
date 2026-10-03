@@ -65,6 +65,13 @@ forbid dependency recreation; they do not take a migration backup or stop the
 application. A dependency startup failure after writer shutdown leaves writers
 stopped and records no successful deployment.
 
+Before writer shutdown or dependency recreation, the CLI runs `postgres --version`
+from the selected immutable PostgreSQL image without networking or study-volume
+mounts. Its actual server major must match the registered major. This applies to
+ordinary tags, registry-qualified tags, digest references, and saved fallback IDs;
+tag spelling does not establish compatibility. A mismatch requires the separate
+PostgreSQL major-upgrade procedure.
+
 For migrations, application services and recurring backups stop first. A new
 custom-format backup gets a checksum, an isolated restore, and a comparison of
 every public table. The CLI then atomically saves the original history digest,

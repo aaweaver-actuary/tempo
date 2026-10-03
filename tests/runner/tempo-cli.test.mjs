@@ -303,6 +303,27 @@ function imageRuntimeFixture(t, reference, actualMajor, fallback = false) {
   return { runtime, calls, fixture };
 }
 
+for (const [label, reference, major, fallback] of [
+  ["standard compatible tag", "postgres:18.6-trixie", 18, false],
+  ["registry-qualified incompatible tag", "docker.io/library/postgres:19", 19, false],
+  ["digest-pinned incompatible image", `postgres@sha256:${"f".repeat(64)}`, 19, false],
+  ["compatible tag with incompatible contents", "postgres:18.6-trixie", 19, false],
+  ["compatible recorded fallback ID", "postgres:18.6-trixie", 18, true],
+  ["incompatible recorded fallback ID", "postgres:18.6-trixie", 19, true],
+]) test(`CLI PostgreSQL image major: ${label}`, async t => {
+  const { runtime, calls } = imageRuntimeFixture(t, reference, major, fallback);
+  await runtime.config();
+  if (major === 18) { await runtime.ensureImages(); await runtime.ensureImages(); }
+  else await assert.rejects(executeLifecycle({ recreate: true }, runtime), /Registered PostgreSQL major 18; candidate image PostgreSQL major 19.*separate major-upgrade/);
+  const probe = calls.find(args => args.includes("--version"));
+  assert(probe, "actual image contents must be checked");
+  assert.equal(calls.filter(args => args.includes("--version")).length, 1, "immutable image version is cached within the invocation");
+  assert(probe.includes("sha256:fixture-postgres"));
+  assert(probe.includes("none") && probe.includes("--entrypoint") && probe.includes("postgres"));
+  assert(!probe.includes("--mount") && !probe.includes("-v"));
+  assert(!calls.some(args => args.includes("up") || args.includes("stop")));
+});
+
 test("CLI migration guard rejects wrong database identity and incompatible continuation schemas", async t => {
   const { runtime, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18);
   await runtime.config();

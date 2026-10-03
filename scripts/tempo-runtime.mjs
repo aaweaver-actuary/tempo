@@ -74,6 +74,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   const guardPath = join(stateDirectory, "migration-guard.json");
   let migrationGuard = existsSync(guardPath) ? JSON.parse(readFileSync(guardPath, "utf8")) : null;
   let originalHistoryVerified = false;
+  let verifiedPostgresImage;
   const operation = { id: randomUUID(), revision, started_at: new Date().toISOString(), phase: "checking", target: target.project };
   const docker = (args, options) => run("docker", ["--context", target.context, ...args], options);
   const compose = (args, options) => docker(["compose", "--project-directory", target.root,
@@ -84,9 +85,6 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   async function config() {
     configuration = JSON.parse((await compose(["--profile", "maintenance", "config", "--format", "json"])).stdout);
     validateTarget(configuration, target);
-    if (configuration.services.postgres.image?.startsWith("postgres:")
-      && !new RegExp(`^postgres:${target.postgresMajor}(?:\\.|-)`).test(configuration.services.postgres.image))
-      throw new Error("Candidate PostgreSQL major upgrade is unsupported; use the separate major-upgrade procedure.");
     for (const secret of Object.values(configuration.secrets ?? {})) {
       const text = readFileSync(secret.file, "utf8").trim();
       secretValues.push(text);
@@ -136,7 +134,8 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       await config();
       if (Object.entries(configuration.services).some(([name, service]) => service.image !== images[name]))
         throw new Error("Saved Compose image receipt differs from its recorded immutable images.");
-        return { dependenciesMayChange: !(await recordedDependenciesMatch()) };
+      await verifySelectedPostgresImage();
+      return { dependenciesMayChange: !(await recordedDependenciesMatch()) };
     }
     stage("preparing_images");
     const releaseDirectory = join(stateDirectory, "releases", `${revision}-${operation.id}`);
@@ -160,7 +159,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       }
       imageOverride = join(releaseDirectory, "images.json");
       atomicJson(imageOverride, { services: Object.fromEntries(Object.entries(images).map(([name, image]) => [name, { image }])) });
-      await config(); return { dependenciesMayChange: true };
+      await config(); await verifySelectedPostgresImage(); return { dependenciesMayChange: true };
     }
     const labelsFile = join(releaseDirectory, "build-labels.json");
     const buildServices = Object.entries(configuration.services).filter(([, service]) => service.build).map(([name]) => name);
@@ -181,7 +180,14 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     imageOverride = join(releaseDirectory, "images.json");
     atomicJson(imageOverride, { services: Object.fromEntries(Object.entries(images).map(([name, image]) => [name, { image }])) });
     await config();
+    await verifySelectedPostgresImage();
     return { dependenciesMayChange: true };
+  }
+
+  async function verifySelectedPostgresImage() {
+    if (verifiedPostgresImage && verifiedPostgresImage === images.postgres) return;
+    await verifyPostgresImageMajor(docker, images.postgres, target.postgresMajor);
+    verifiedPostgresImage = images.postgres;
   }
 
   async function recordedDependenciesMatch() {
@@ -201,6 +207,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   }
 
   async function ensureDatabase({ allowRecreation = false } = {}) {
+    await verifySelectedPostgresImage();
     stage("checking_database");
     const volume = target.volumes[target.postgresVolumeKey];
     const image = configuration.services.postgres.image;
@@ -212,8 +219,6 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       "-ec", 'files=$(find /data -maxdepth 4 -type f -name PG_VERSION); test "$(printf "%s\\n" "$files" | grep -c .)" = 1; cat "$files"']);
     if (Number(cluster.stdout.trim()) !== expectedMajor)
       throw new Error("Existing PostgreSQL cluster does not match the registered major version; a separate major-upgrade procedure is required.");
-    if (!fallback && !new RegExp(`^postgres:${expectedMajor}(?:\\.|-)`).test(target.postgresImage))
-      throw new Error("Candidate PostgreSQL major upgrade is unsupported.");
     await compose(["up", "-d", "--no-build", "--no-deps", ...(allowRecreation ? ["--force-recreate"] : ["--no-recreate"]),
       "--wait", "--wait-timeout", "180", "postgres", "redis"], { echo: true });
     const pong = (await compose(["exec", "-T", "redis", "redis-cli", "ping"])).stdout.trim();
@@ -450,4 +455,13 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   return { config, inspectTarget, compose, docker, runningServices, ensureImages, ensureDatabase,
     checkSchema, checkMigrationRetry, resolveMigrationGuard, stopApplications, backup, migrate, startServices, verifyReady, commitDeployment,
     recordFailure, stopAll, backupOnly, secretValues, get configuration() { return configuration; } };
+}
+
+async function verifyPostgresImageMajor(docker, image, registeredMajor) {
+  if (!image?.startsWith("sha256:")) throw new Error("PostgreSQL version verification requires the selected immutable image ID.");
+  const result = await docker(["run", "--rm", "--read-only", "--network", "none", "--entrypoint", "postgres", image, "--version"]);
+  const actualMajor = Number(result.stdout.trim().match(/^postgres \(PostgreSQL\) (\d+)(?:\.|\s|$)/)?.[1]);
+  if (!Number.isInteger(actualMajor) || actualMajor < 1) throw new Error(`Could not determine PostgreSQL server major from selected image ${image}.`);
+  if (actualMajor !== registeredMajor)
+    throw new Error(`Registered PostgreSQL major ${registeredMajor}; candidate image PostgreSQL major ${actualMajor}. A separate major-upgrade procedure is required.`);
 }

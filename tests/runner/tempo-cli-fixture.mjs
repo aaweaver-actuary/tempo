@@ -93,7 +93,7 @@ async function fakeCommand() {
     const image = args.at(-1); output([{ Id: image.startsWith("sha256:") ? image : `sha256:${image}`,
       Config: { Labels: { "org.opencontainers.image.revision": fixture.revision } } }]); process.exit(0);
   }
-  if (!args.includes("compose") && args.includes("run")) { output(fixture.mode === "empty" ? "" : "18"); process.exit(0); }
+  if (!args.includes("compose") && args.includes("run")) { output(args.includes("--version") ? "postgres (PostgreSQL) 18.6" : fixture.mode === "empty" ? "" : "18"); process.exit(0); }
   const resolvedConfig = () => {
     const config = structuredClone(fixture.config);
     for (let index = 0; index < args.length; index++) if (args[index] === "-f") {
