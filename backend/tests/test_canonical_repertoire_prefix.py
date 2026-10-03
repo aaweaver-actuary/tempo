@@ -1285,17 +1285,22 @@ def test_canonical_card_promotion_does_not_invalidate_generated_shared_membershi
 
 
 def test_canonical_graph_cleanup_removes_generated_link_from_authored_shared_card(prefix_database):
+    from app.services.canonical_prefix import read_prefix
     from app.services.opening_graph import enqueue_opening_graph_rebuild, execute_opening_graph_rebuild
     with database.connection() as connection:
         connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('other','Other','other.pgn','2026-10-02')")
         connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES('shared-authored','italian','response',?,?,'2026-10-02')", (chess.STARTING_FEN, json.dumps(ITALIAN)))
         connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('italian','shared-authored',1),('other','shared-authored',0)")
+        connection.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES('2026-10-03','shared-authored',0)")
+        before = read_prefix(connection, 'italian')['source_revision']
     enqueue_opening_graph_rebuild('other')
     execute_opening_graph_rebuild(claim_task('opening_graph_rebuild'))
     with database.read_connection() as connection:
         assert not connection.execute("SELECT 1 FROM repertoire_cards WHERE repertoire_id='other' AND card_id='shared-authored'").fetchone()
         assert connection.execute("SELECT 1 FROM repertoire_cards WHERE repertoire_id='italian' AND card_id='shared-authored'").fetchone()
         assert connection.execute("SELECT archived FROM cards WHERE id='shared-authored'").fetchone()[0] == 0
+        assert connection.execute("SELECT status FROM daily_queue WHERE card_id='shared-authored'").fetchone()[0] == 'queued'
+        assert read_prefix(connection, 'italian')['source_revision'] == before
 
 
 def test_canonical_generated_prefix_split_preserves_membership_and_scope(prefix_database):

@@ -778,6 +778,7 @@ def publish_opening_graph_rebuild(
                    SELECT link.card_id FROM repertoire_cards link
                    JOIN cards legacy ON legacy.id=link.card_id
                    WHERE link.repertoire_id=? AND legacy.content_type='opening' AND link.canonical_route_source=0 AND legacy.canonical_route_source=0
+                     AND NOT EXISTS(SELECT 1 FROM repertoire_cards retained WHERE retained.card_id=legacy.id AND retained.repertoire_id<>link.repertoire_id)
                      AND NOT EXISTS(
                          SELECT 1 FROM opening_graph_steps step
                          WHERE step.repertoire_id=? AND step.generation=?
@@ -789,7 +790,7 @@ def publish_opening_graph_rebuild(
         database.execute(
             """DELETE FROM repertoire_cards
                WHERE repertoire_id=? AND canonical_route_source=0 AND card_id IN (
-                   SELECT card.id FROM cards card WHERE card.content_type='opening' AND card.canonical_route_source=0
+                   SELECT card.id FROM cards card WHERE card.content_type='opening'
                      AND NOT EXISTS(
                          SELECT 1 FROM opening_graph_steps step
                          WHERE step.repertoire_id=? AND step.generation=?

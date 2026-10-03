@@ -17,7 +17,7 @@ from app.canonical_prefix_api import save_prefix
 from app.services import repertoire_opportunities as opportunities
 from app.services.canonical_prefix import read_prefix, line_origin, prefix_projection, scope_line
 from app.services.canonical_prefix_preview import request_preview, execute_prefix_preview_slice
-from app.services.canonical_scope_freshness import game_scope_generation
+from app.services.canonical_scope_freshness import game_scope_generation, coverage_run_is_current
 from app.services.durable_tasks import complete_task, claim_task, enqueue_task_in_transaction, warm_completion_sql
 from app.services.postgres_opening_graph import execute_postgres_opening_graph_slice
 from app.services.postgres_coverage_seed import execute_coverage_seed_slice, request_coverage_seed_in_transaction
@@ -28,7 +28,6 @@ from app.services.introduction_priorities import rebuild_introduction_priorities
 from app.services.postgres_game_derivation import execute_game_position_index_slice
 from app.services.repertoire_game_refresh import execute_repertoire_game_refresh_slice
 from app.services.postgres_opening_graph import request_graph_rebuild_in_transaction
-from app.services.repertoire_integrity import _reconcile_derived_cards
 from app.services.analysis_paste import build_paste_preview, parse_pasted_lines, commit_pasted_lines
 from app.services.pgn import ParsedLine
 from app.integrity_repair_commands import _replace_repertoire_line
@@ -154,6 +153,17 @@ def prove_mutation_boundaries(repertoire_id, shared_repertoire_id, game_id):
         for identifier in (first_id, replacement_id):
             assert database.execute('SELECT canonical_route_source FROM repertoire_cards WHERE repertoire_id=? AND card_id=?', (repertoire_id, identifier)).fetchone()[0] == 0
         database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,0) ON CONFLICT(repertoire_id,card_id) DO NOTHING', (shared_repertoire_id, replacement_id))
+    # Give Y current independent route/coverage certificates before X adopts B.
+    with postgres_store.connection() as database:
+        database.execute('DELETE FROM repertoire_lines WHERE repertoire_id=?', (shared_repertoire_id,))
+        add_repertoire_branch(database, {'repertoire_id': shared_repertoire_id, 'name': 'Shared certificate', 'trained_color': 'white', 'starting_fen': chess.STARTING_FEN, 'moves': route})
+    set_prefix(shared_repertoire_id, ITALIAN)
+    shared_run_id = complete_coverage(shared_repertoire_id)
+    with postgres_store.connection() as database:
+        shared_prefix = read_prefix(database, shared_repertoire_id)
+        shared_revision = shared_prefix['source_revision']
+        shared_ending_fen = prefix_projection(route)['ending_fen']
+        assert line_origin(database, shared_prefix['preview_id'], shared_ending_fen) == route
         before = read_prefix(database, repertoire_id)['source_revision']
         result = revise_card(database, {'card_id': first_id, 'request': {'starting_fen': pair['start_fen'], 'moves': json.loads(pair['moves_json']), 'history_mode': 'preserve', 'expected_revision': 1}})
         assert result['card_id'] == replacement_id
@@ -161,16 +171,23 @@ def prove_mutation_boundaries(repertoire_id, shared_repertoire_id, game_id):
         assert database.execute('SELECT canonical_route_source FROM repertoire_cards WHERE repertoire_id=? AND card_id=?', (repertoire_id, replacement_id)).fetchone()[0] == 1
         assert database.execute('SELECT canonical_route_source FROM repertoire_cards WHERE repertoire_id=? AND card_id=?', (shared_repertoire_id, replacement_id)).fetchone()[0] == 0
         assert read_prefix(database, repertoire_id)['source_revision'] > before
+        assert read_prefix(database, shared_repertoire_id)['source_revision'] == shared_revision
+        assert line_origin(database, shared_prefix['preview_id'], shared_ending_fen) == route
+        assert coverage_run_is_current(database, database.execute('SELECT * FROM repertoire_coverage_runs WHERE id=?', (shared_run_id,)).fetchone(), shared_repertoire_id)
         database.execute('DELETE FROM repertoire_lines WHERE repertoire_id=?', (repertoire_id,))
         request_graph_rebuild_in_transaction(database, repertoire_id, NOW[:10])
     run_bounded_task_slices('opening_graph_rebuild', repertoire_id, execute_postgres_opening_graph_slice)
     with postgres_store.connection() as database:
-        _reconcile_derived_cards(database, shared_repertoire_id)
-        _reconcile_derived_cards(database, repertoire_id)
+        database.execute('DELETE FROM repertoire_lines WHERE repertoire_id=?', (shared_repertoire_id,))
+        request_graph_rebuild_in_transaction(database, shared_repertoire_id, NOW[:10])
+        authored_revision = read_prefix(database, repertoire_id)['source_revision']
+    run_bounded_task_slices('opening_graph_rebuild', shared_repertoire_id, execute_postgres_opening_graph_slice)
+    with postgres_store.connection() as database:
+        assert read_prefix(database, repertoire_id)['source_revision'] == authored_revision
         assert database.execute('SELECT archived FROM cards WHERE id=?', (replacement_id,)).fetchone()[0] == 0
         assert database.execute('SELECT 1 FROM repertoire_cards WHERE repertoire_id=? AND card_id=?', (repertoire_id, replacement_id)).fetchone()
         assert not database.execute('SELECT 1 FROM repertoire_cards WHERE repertoire_id=? AND card_id=?', (shared_repertoire_id, replacement_id)).fetchone()
-    print('PASS CF-7 graph-generated A -> existing B promotes edited membership only; authored B survives later graph and integrity cleanup', flush=True)
+    print('PASS CF-7 graph-generated A -> existing B promotes edited membership only; Y certificates survive X adoption; real Y graph cleanup removes generated Y link and preserves authored X/B', flush=True)
 
     # CF-6: current graph means card writes choose integrity-only, yet games rebuild.
     for mutation in ('revise', 'archive'):

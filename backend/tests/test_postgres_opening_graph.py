@@ -243,8 +243,11 @@ def test_postgres_graph_cleanup_removes_only_obsolete_links_in_bounded_slices(mo
     class Database:
         def execute_native(self, statement, parameters=()):
             statements.append((statement, parameters))
-            current = parameters[-1] == "current" if parameters else False
-            return type("Cursor", (), {"fetchone": lambda _self: (1,) if current else None})()
+            if "FOR UPDATE OF link,card" in statement:
+                result = None if parameters[-1] == "adopted" else (0,)
+            else:
+                result = (1,) if parameters and parameters[-1] == "current" else None
+            return type("Cursor", (), {"fetchone": lambda _self: result})()
 
     monkeypatch.setattr(postgres_opening_graph, "lock_current_slice", lambda *_args: True)
     monkeypatch.setattr(
@@ -254,7 +257,7 @@ def test_postgres_graph_cleanup_removes_only_obsolete_links_in_bounded_slices(mo
     )
     task = {"generation": 7, "payload": {"repertoire_id": "rep", "local_day": "2026-09-27"}}
     assert postgres_opening_graph.cleanup_graph_cards_in_transaction(
-        Database(), task, ("obsolete", "current"),
+        Database(), task, ("obsolete", "adopted", "current"),
     )
     assert sum(statement.startswith("DELETE FROM repertoire_cards") for statement, _ in statements) == 1
     assert transitions[-1][0] == "cleanup"

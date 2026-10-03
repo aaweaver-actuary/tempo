@@ -1407,3 +1407,7 @@ Baseline at `f5044167c9cfbb7eb84f89e848da7f70957aa989`: the new hidden-current H
 ### PR #66 boundary review: independent card and link provenance
 
 `test_canonical_card_promotion_does_not_invalidate_generated_shared_membership` reproduces Y's unwanted source bump (0 → 1) at the reviewed head and now verifies its source revision, canonical route certificate and completed coverage remain current after X adopts the shared card. `test_canonical_card_owner_fallback_respects_explicit_membership` covers missing, generated and authored owner links. `test_canonical_structural_edit_invalidates_both_authored_shared_memberships` preserves genuine shared-source invalidation. Migration 033 and SQLite compatibility triggers retain separate card/membership flags; no migration 034 is introduced.
+
+### PR #66 boundary review: graph cleanup uses membership provenance
+
+`test_canonical_graph_cleanup_removes_generated_link_from_authored_shared_card` proves normal SQLite graph publication removes obsolete generated Y membership while retaining authored X/B, its queued card, and X source revision. It failed on the reviewed head because cleanup required global card provenance to be generated. `test_postgres_graph_cleanup_removes_only_obsolete_links_in_bounded_slices` now checks the in-transaction provenance recheck as well as current-graph retention and bounded continuation. CF-7 rebuilds Y through real PostgreSQL graph slices and asserts removal directly, without manual `_reconcile_derived_cards()` calls.
