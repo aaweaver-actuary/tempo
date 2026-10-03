@@ -4069,3 +4069,11 @@ button {
 .tactic-capture .san-entry input { width: 100%; min-width: 0; }
 .tactic-capture .san-entry .editor-key-help { margin: 0; line-height: 1.5; }
 .tactic-capture .san-entry button { justify-self: start; }
+.capture-pgn-input { margin-bottom: 16px; }
+.capture-input-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; }
+.capture-input-toolbar .editor-tabs { margin-bottom: 0; }
+.capture-pgn-panel { display: grid; gap: 8px; margin-top: 10px; }
+.capture-pgn-panel label { display: grid; gap: 4px; }
+.capture-pgn-panel textarea { width: 100%; margin-top: 0; font-family: monospace; }
+.capture-pgn-panel .editor-key-help { margin: 0; line-height: 1.5; }
+.capture-pgn-panel button { justify-self: start; }

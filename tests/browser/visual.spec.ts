@@ -1,4 +1,5 @@
 import { test, expect } from "./observability";
+import { readFileSync } from "node:fs";
 import { navigate } from "./ui-fixtures";
 import { prepareVisualUI } from "./visual-fixtures";
 import type { ActivityResponse } from "../../app/lib/service-status";
@@ -195,6 +196,16 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 720 
     await sanInput.fill("1...e5");
     await dialog.getByRole("button", { name: "Add moves", exact: true }).click();
     await expect(dialog.locator(".board-frame")).toHaveAttribute("data-orientation", "black");
+    await dialog.getByRole("button", { name: "Paste Chess.com puzzle PGN" }).click();
+    const pgnInput = dialog.getByLabel("Chess.com puzzle PGN");
+    await pgnInput.scrollIntoViewIfNeeded();
+    await expect(pgnInput).toBeInViewport();
+    const pgnBounds = (await pgnInput.boundingBox())!;
+    expect(pgnBounds.x).toBeGreaterThanOrEqual(0);
+    expect(pgnBounds.x + pgnBounds.width).toBeLessThanOrEqual(viewport.width);
+    await pgnInput.fill(readFileSync("tests/fixtures/chesscom-puzzle-rush.pgn", "utf8"));
+    await dialog.getByRole("button", { name: "Load PGN", exact: true }).click();
+    await expect(dialog.locator(".board-frame")).toHaveAttribute("data-fen", "r1b2rk1/ppq2p1p/2np1Qp1/2b5/2B1Pp2/1P6/P1PP2PP/R1B1K1NR b KQ - 0 1");
   });
 }
 

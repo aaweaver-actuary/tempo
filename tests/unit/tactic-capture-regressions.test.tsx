@@ -1,17 +1,27 @@
 import { act, cleanup, fireEvent, render, renderHook, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
+import { readFileSync } from "node:fs";
 import { TacticCaptureDialog } from "../../app/components/tactic-capture-dialog";
 import { EMPTY_SETUP_FEN, solutionUciMoves, usePositionSolutionEditor } from "../../app/hooks/use-position-solution-editor";
 import { pendingTacticCapture, saveTacticCapture } from "../../app/lib/tactic-capture-command";
 import { invalidateWorkspaceData } from "../../app/lib/workspace-data";
 import { mapQueueCardToPracticeCard } from "../../app/domain/adapters/practice-card-adapters";
+import { asSanMove } from "../../app/types";
 
 vi.mock("../../app/lib/workspace-data", () => ({ invalidateWorkspaceData: vi.fn() }));
 vi.mock("../../app/components/chessboard", () => ({ Chessboard: (props: { fen: string; onMove: (from: string, to: string) => void; locked: boolean; orientation?: string }) =>
   <div data-testid="capture-board" data-fen={props.fen} data-orientation={props.orientation}><button disabled={props.locked} onClick={() => props.onMove("e2", "e4")}>Record e4</button></div> }));
 afterEach(() => { cleanup(); localStorage.clear(); vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 const draft = { starting_fen: new Chess().fen(), moves: ["e2e4"], source_kind: "manual" as const, note: "" };
+const puzzlePgn = readFileSync("tests/fixtures/chesscom-puzzle-rush.pgn", "utf8");
+const puzzleStartingFen = "r1b2rk1/ppq2p1p/2np1Qp1/2b5/2B1Pp2/1P6/P1PP2PP/R1B1K1NR b KQ - 0 1";
+function loadPuzzlePgn(text = puzzlePgn) {
+  if (!screen.queryByLabelText("Chess.com puzzle PGN"))
+    fireEvent.click(screen.getByRole("button", { name: "Paste Chess.com puzzle PGN" }));
+  fireEvent.change(screen.getByLabelText("Chess.com puzzle PGN"), { target: { value: text } });
+  fireEvent.click(screen.getByRole("button", { name: "Load PGN" }));
+}
 function success(body: string, reused = false) {
   const request = JSON.parse(body);
   return Response.json({ capture_id: request.capture_id, card_id: "captured", reused, queued: true, introduced: !reused });
@@ -287,4 +297,125 @@ it("capture rejects null SAN moves inline and retains typed text without enablin
     expect((screen.getByRole("button", { name: "Add to training" }) as HTMLButtonElement).disabled).toBe(true);
   }
   expect(fetcher).not.toHaveBeenCalled();
+});
+
+it("Chess.com puzzle PGN populates an editable capture without persisting until Add to training", async () => {
+  const fetcher = vi.fn(async (_url: string, init: RequestInit) => success(init.body as string));
+  vi.stubGlobal("fetch", fetcher);
+  const onClose = vi.fn();
+  render(<TacticCaptureDialog theme="brown" pieceSet="cburnett" onClose={onClose} onQueueChanged={vi.fn()} />);
+  fireEvent.change(screen.getByLabelText("Note (optional)"), { target: { value: "Remember the fork" } });
+  loadPuzzlePgn();
+  expect(screen.getByLabelText("FEN")).toHaveProperty("value", puzzleStartingFen);
+  expect(screen.getByTestId("capture-board").getAttribute("data-fen")).toBe(puzzleStartingFen);
+  expect(screen.getByTestId("capture-board").getAttribute("data-orientation")).toBe("black");
+  expect(screen.getByRole("button", { name: "1.Bd4" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "Qxd4" })).toBeTruthy();
+  expect(screen.getByRole("button", { name: "2.Nxd4" })).toBeTruthy();
+  expect(screen.getByLabelText("Source")).toHaveProperty("value", "puzzle_rush");
+  expect(screen.getByLabelText("Reference (optional)")).toHaveProperty("value", "NDA2OTUxNjU4NDc5NTM3NDc3MA==-b2b3");
+  expect(screen.getByLabelText("URL (optional)")).toHaveProperty("value", "https://www.chess.com/puzzles/problem/3211014");
+  expect(screen.getByLabelText("Note (optional)")).toHaveProperty("value", "Remember the fork");
+  expect(fetcher).not.toHaveBeenCalled();
+  expect(pendingTacticCapture()).toBeNull();
+  fireEvent.change(screen.getByLabelText("Reference (optional)"), { target: { value: "edited-reference" } });
+  fireEvent.click(screen.getByRole("button", { name: "Add to training" }));
+  await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+  expect(JSON.parse(fetcher.mock.calls[0][1].body as string)).toMatchObject({
+    starting_fen: puzzleStartingFen, moves: ["c5d4", "f6d4", "c6d4"], source_kind: "puzzle_rush",
+    source_ref: "edited-reference", source_url: "https://www.chess.com/puzzles/problem/3211014", note: "Remember the fork",
+  });
+});
+
+it("Chess.com puzzle import rejects invalid input without changing the authored capture", () => {
+  openCaptureSolution();
+  enterSan("e4 e5");
+  fireEvent.change(screen.getByLabelText("Reference (optional)"), { target: { value: "original-reference" } });
+  fireEvent.change(screen.getByLabelText("URL (optional)"), { target: { value: "https://example.com/original" } });
+  fireEvent.change(screen.getByLabelText("Note (optional)"), { target: { value: "original-note" } });
+  const originalBoard = screen.getByTestId("capture-board").getAttribute("data-fen");
+  for (const invalidPgn of ["", "malformed PGN", puzzlePgn.replace("Qxd4 Nxd4", "Qxd4 Nc6")]) {
+    loadPuzzlePgn(invalidPgn);
+    expect(screen.getByRole("alert").textContent).toContain("PGN");
+    expect(screen.getByLabelText("FEN")).toHaveProperty("value", new Chess().fen());
+    expect(screen.getByTestId("capture-board").getAttribute("data-fen")).toBe(originalBoard);
+    expect(screen.getByRole("button", { name: "1.e4" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "e5" })).toBeTruthy();
+    expect(screen.getByLabelText("Source")).toHaveProperty("value", "manual");
+    expect(screen.getByLabelText("Reference (optional)")).toHaveProperty("value", "original-reference");
+    expect(screen.getByLabelText("URL (optional)")).toHaveProperty("value", "https://example.com/original");
+    expect(screen.getByLabelText("Note (optional)")).toHaveProperty("value", "original-note");
+    expect(screen.getByLabelText("Chess.com puzzle PGN")).toHaveProperty("value", invalidPgn);
+  }
+  loadPuzzlePgn();
+  expect(screen.queryByRole("alert")).toBeNull();
+});
+
+it("Loading another Chess.com puzzle replaces editor state and preserves the note", () => {
+  openCaptureSolution();
+  enterSan("e4 e5");
+  fireEvent.change(screen.getByLabelText("Note (optional)"), { target: { value: "keep this note" } });
+  fireEvent.change(screen.getByLabelText("FEN"), { target: { value: EMPTY_SETUP_FEN } });
+  expect(screen.getByText("Changing the starting position will clear the recorded solution.")).toBeTruthy();
+  loadPuzzlePgn();
+  expect(screen.queryByText("Changing the starting position will clear the recorded solution.")).toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "2.Nxd4" }));
+  fireEvent.change(screen.getByLabelText("SAN moves"), { target: { value: "old unsubmitted text" } });
+  const whitePuzzle = `[FEN "${new Chess().fen().replace(" w ", " b ")}"]\n[Link "https://www.chess.com/puzzles/problem/42"]\n\n1... e5 2. Nf3 Nc6 *`;
+  loadPuzzlePgn(whitePuzzle);
+  const startingBoard = new Chess(new Chess().fen().replace(" w ", " b "));
+  startingBoard.move("e5");
+  expect(screen.getByLabelText("FEN")).toHaveProperty("value", startingBoard.fen());
+  expect(screen.getByTestId("capture-board").getAttribute("data-fen")).toBe(startingBoard.fen());
+  expect(screen.getByTestId("capture-board").getAttribute("data-orientation")).toBe("white");
+  expect(screen.getByLabelText("SAN moves")).toHaveProperty("value", "");
+  expect(screen.queryByRole("button", { name: "1.Bd4" })).toBeNull();
+  expect(screen.getByRole("button", { name: "1.Nf3" })).toBeTruthy();
+  expect(screen.getByLabelText("Reference (optional)")).toHaveProperty("value", "");
+  expect(screen.getByLabelText("Note (optional)")).toHaveProperty("value", "keep this note");
+  fireEvent.click(screen.getByRole("button", { name: "1.Nf3" }));
+  startingBoard.move("Nf3");
+  expect(screen.getByTestId("capture-board").getAttribute("data-fen")).toBe(startingBoard.fen());
+  loadPuzzlePgn(puzzlePgn.replace(/^\[Link .*\]\n/m, ""));
+  expect(screen.getByLabelText("URL (optional)")).toHaveProperty("value", "");
+});
+
+it("Chess.com puzzle replacement resets both cursors, setup controls, errors and pending FEN", () => {
+  const { result } = renderHook(() => usePositionSolutionEditor(new Chess().fen(), [], true));
+  act(() => { result.current.playSanSolution("e4 e5"); });
+  act(() => { result.current.changeStartingFen(EMPTY_SETUP_FEN); result.current.setPiece("R"); result.current.setPromotion("n"); result.current.setError("old error"); });
+  act(() => result.current.loadPositionAndSolution(puzzleStartingFen, ["Bd4", "Qxd4", "Nxd4"].map(asSanMove)));
+  expect(result.current).toMatchObject({ startingFen: puzzleStartingFen, boardFen: puzzleStartingFen,
+    moves: ["Bd4", "Qxd4", "Nxd4"], cursor: 0, workingCursor: 0, tab: "solution", pendingFen: null, error: "", piece: null, promotion: "q" });
+  expect(result.current.previewFen).toBe(puzzleStartingFen);
+});
+
+it("Chess.com puzzle controls stay locked while saving or awaiting capture confirmation", async () => {
+  let rejectSave!: (error: Error) => void;
+  vi.stubGlobal("fetch", vi.fn(() => new Promise<Response>((_resolve, reject) => { rejectSave = reject; })));
+  openCaptureSolution();
+  loadPuzzlePgn();
+  fireEvent.click(screen.getByRole("button", { name: "Add to training" }));
+  for (const control of [screen.getByRole("button", { name: "Paste Chess.com puzzle PGN" }), screen.getByRole("button", { name: "Load PGN" }), screen.getByLabelText("Chess.com puzzle PGN")])
+    expect(control).toHaveProperty("disabled", true);
+  await act(async () => rejectSave(new Error("lost transport")));
+  await waitFor(() => expect(screen.getByText(/A capture is awaiting confirmation/)).toBeTruthy());
+  const originalPending = pendingTacticCapture();
+  fireEvent.click(screen.getByRole("button", { name: "Load PGN" }));
+  expect(pendingTacticCapture()).toEqual(originalPending);
+  cleanup();
+  render(<TacticCaptureDialog theme="brown" pieceSet="cburnett" onClose={vi.fn()} onQueueChanged={vi.fn()} />);
+  expect(screen.getByRole("button", { name: "Paste Chess.com puzzle PGN" })).toHaveProperty("disabled", true);
+});
+
+it("Chess.com puzzle Link errors use existing capture validation and leave imported fields editable", async () => {
+  vi.stubGlobal("fetch", vi.fn(async () => Response.json({ detail: "Source URL must be an http or https URL" }, { status: 422 })));
+  render(<TacticCaptureDialog theme="brown" pieceSet="cburnett" onClose={vi.fn()} onQueueChanged={vi.fn()} />);
+  loadPuzzlePgn(puzzlePgn.replace("https://www.chess.com/puzzles/problem/3211014", "not-a-url"));
+  expect(screen.getByLabelText("URL (optional)")).toHaveProperty("value", "not-a-url");
+  fireEvent.click(screen.getByRole("button", { name: "Add to training" }));
+  await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("Source URL"));
+  expect(screen.getByLabelText("URL (optional)")).toHaveProperty("disabled", false);
+  expect(screen.getByLabelText("FEN")).toHaveProperty("value", puzzleStartingFen);
+  expect(pendingTacticCapture()).toBeNull();
 });
