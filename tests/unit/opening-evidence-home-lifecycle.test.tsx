@@ -72,3 +72,42 @@ it("AS-15 recovery cancels idle work during foreground transitions and after unm
   expect(recover).not.toHaveBeenCalled();
 });
 
+it("AS-16 restarted opening attempt records displayed guidance as guided", async () => {
+  vi.spyOn(journal, "recoverOpeningEvidence").mockResolvedValue(undefined);
+  const assistance = vi.fn();
+  vi.spyOn(journal, "beginOpeningAttempt").mockReturnValue({ assistance } as unknown as journal.OpeningAttemptJournal);
+  const partial = vi.spyOn(journal, "partialOpeningAttempt").mockImplementation(() => undefined);
+  vi.mocked(fetchAndInitializeQueue).mockImplementation(async () => { useTrainingStore.getState().hydrateLocalQueue([card], true); });
+  render(<Home />);
+  await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(101));
+  const original = useTrainingStore.getState().attempt.attemptId;
+  fireEvent.click(screen.getByRole("button", { name: /Restart/ }));
+  const restarted = useTrainingStore.getState();
+  expect(restarted.attempt.attemptId).not.toBe(original);
+  expect(partial).toHaveBeenCalledWith(original);
+  expect(restarted.isAttemptFailed).toBe(true);
+  expect(restarted.attempt.phase).toBe("guided");
+  expect(restarted.showHint).toBe(true);
+  act(() => useBoardShellStore.getState().board.onHintExposure?.(restarted.currentFenString));
+  expect(assistance).toHaveBeenLastCalledWith(0, "guided");
+  expect(restarted.feedback).toBe("ready");
+  expect(localStorage.getItem("tempo-pending-training-failures-v1")).toContain("101");
+});
+
+it("AS-16 wrong-response reveal remains revealed", async () => {
+  vi.spyOn(journal, "recoverOpeningEvidence").mockResolvedValue(undefined);
+  const assistance = vi.fn();
+  const response = vi.fn();
+  vi.spyOn(journal, "beginOpeningAttempt").mockReturnValue({ assistance, response } as unknown as journal.OpeningAttemptJournal);
+  vi.mocked(fetchAndInitializeQueue).mockImplementation(async () => { useTrainingStore.getState().hydrateLocalQueue([card], true); });
+  render(<Home />);
+  await waitFor(() => expect(useTrainingStore.getState().getCard().queueEntryId).toBe(101));
+  await act(async () => { await Promise.resolve(); });
+  await act(async () => useBoardShellStore.getState().board.onMove?.("e2", "e5"));
+  await waitFor(() => expect(useTrainingStore.getState().feedback).toBe("wrong"));
+  const failed = useTrainingStore.getState();
+  expect(failed.isAttemptFailed).toBe(true);
+  expect(response).toHaveBeenCalledWith(0, "e2e5", "illegal");
+  act(() => useBoardShellStore.getState().board.onHintExposure?.(failed.currentFenString));
+  expect(assistance).toHaveBeenLastCalledWith(0, "revealed");
+});

@@ -1330,7 +1330,6 @@ export default function Home() {
     if (pendingBurialEntryId !== undefined || (serviceError && !offlineQueue)) return;
     resetLine();
     setAttemptFailed(true);
-    setFeedback("wrong");
     setShowHint(true);
     setFailureFen(card.startingFen);
     setQueueNotice("Again recorded · restarted in guided mode");
