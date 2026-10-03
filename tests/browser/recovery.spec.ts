@@ -92,6 +92,11 @@ test("repair retries survive delayed operation and task transitions after reload
 
 test("guided repair previews real arrows and pieces, saves durably, and preserves study through reload and confirmation", async ({ page }) => {
   const repair = await prepareRepairUI(page);
+  const reviewedCards: string[] = [];
+  page.on("request", request => {
+    const match = new URL(request.url()).pathname.match(/^\/api\/cards\/([^/]+)\/review$/);
+    if (request.method() === "POST" && match) reviewedCards.push(match[1]);
+  });
   await page.getByRole("button", { name: "Resume repair" }).click();
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByText("Suggested response: e4")).toBeVisible();
@@ -116,14 +121,22 @@ test("guided repair previews real arrows and pieces, saves durably, and preserve
   await expect.poll(() => repair.operationIds.length).toBe(1);
   expect(repair.operationIds[0]).toBe(saved.operationId);
   const studyBoard = page.locator(".persistent-board-shell .board-frame");
-  await playMove(page, studyBoard, "e2", "e4");
+  await expect(page.getByRole("heading", { name: "First study card" })).toBeVisible();
+  // Use one explicit grade for setup. A terminal move would also grade this card
+  // automatically, allowing a subsequent Correct click to grade its replacement.
   await page.getByRole("button", { name: "Correct", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Second study card" })).toBeVisible();
+  await expect.poll(() => reviewedCards).toEqual(["study-one"]);
+  await expect.poll(() => page.evaluate(() => JSON.parse(
+    localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]",
+  ))).toEqual([]);
   // Advance the fixture's fixed wall clock beyond the durable retry deadline.
   await page.clock.setFixedTime(new Date("2026-09-18T16:00:10Z"));
   await page.reload();
   await expect(page.getByText("Repair validating", { exact: true })).toBeVisible();
   await expect(page.getByRole("dialog")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Second study card" })).toBeVisible();
+  await expect.poll(() => renderedPieces(studyBoard)).toEqual(expectedPieces(repairStartFen));
   expect(repair.operationIds).toEqual([saved.operationId]);
   expect(repair.receiptIds).toContain(saved.operationId);
   const from = await squareCenter(studyBoard, "d2"), to = await squareCenter(studyBoard, "d4");
@@ -143,6 +156,7 @@ test("guided repair previews real arrows and pieces, saves durably, and preserve
   await expect(page.getByRole("dialog")).toHaveCount(0);
   await page.mouse.up();
   await expect.poll(() => studyBoard.getAttribute("data-fen")).not.toBe(beforeFen);
+  expect(reviewedCards).toEqual(["study-one"]);
 });
 import type { Page } from "@playwright/test";
 
