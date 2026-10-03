@@ -317,3 +317,52 @@ for (const [name, alter] of [
   alter(config);
   assert.throws(() => validateTarget(config, target), /mount|volume/i);
 });
+
+test("actual CLI fallback corrects uncommitted or missing dependency containers before starting recorded applications", t => {
+  for (const mutation of ["image", "config", "missing"]) {
+    const fixture = commandFixture(t, "ci-fail");
+    const machinePath = join(fixture.directory, "machine.json");
+    const machine = JSON.parse(readFileSync(machinePath, "utf8"));
+    if (mutation === "image") machine.containers.find(container => container.Id === "container-redis").Image = "sha256:uncommitted-candidate";
+    if (mutation === "config") machine.containers.find(container => container.Id === "container-postgres").Config.Labels["com.docker.compose.config-hash"] = "uncommitted-config";
+    if (mutation === "missing") machine.containers = machine.containers.filter(container => container.Id !== "container-redis");
+    writeFileSync(machinePath, JSON.stringify(machine));
+    const result = fixture.command("start", "--no-open");
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert(result.stdout.includes("update remains blocked"));
+    const calls = fixture.calls();
+    const shutdown = calls.findIndex(call => call.args.includes("stop") && call.args.includes("foreground-worker"));
+    const dependencies = calls.findIndex(call => call.args.includes("up") && call.args.includes("postgres"));
+    assert(shutdown >= 0 && dependencies > shutdown, mutation + " must stop writers before correction");
+    assert(!calls[dependencies].args.includes("--no-recreate"));
+    const corrected = JSON.parse(readFileSync(machinePath, "utf8"));
+    for (const name of ["postgres", "redis"]) {
+      const container = corrected.containers.find(container => container.Config.Labels["com.docker.compose.service"] === name);
+      assert.equal(container.Image, `sha256:fixture-${name}`);
+      assert.equal(container.Config.Labels["com.docker.compose.config-hash"], `fixture-hash-${name}`);
+    }
+    assert(!calls.some(call => call.args.includes("build") || call.args.some(arg => arg.includes("pg_dump") || arg.includes("pg_restore"))));
+  }
+});
+
+test("actual CLI compatible fallback trusts immutable dependency IDs rather than mutable image tags", t => {
+  const fixture = commandFixture(t, "ci-fail");
+  const result = fixture.command("start", "--no-open");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  const calls = fixture.calls();
+  assert(!calls.some(call => call.args.includes("stop") || call.args.includes("build")));
+  const dependencies = calls.find(call => call.args.includes("up") && call.args.includes("postgres"));
+  assert(dependencies.args.includes("--no-recreate"));
+});
+
+test("actual CLI backup rejects mismatched dependencies without starting any recorded application", t => {
+  const fixture = commandFixture(t, "ci-fail");
+  const machinePath = join(fixture.directory, "machine.json");
+  const machine = JSON.parse(readFileSync(machinePath, "utf8"));
+  machine.containers.find(container => container.Id === "container-redis").Image = "sha256:uncommitted-candidate";
+  writeFileSync(machinePath, JSON.stringify(machine));
+  const result = fixture.command("backup");
+  assert.notEqual(result.status, 0);
+  assert(result.stderr.includes("Run tempo start"));
+  assert(!fixture.calls().some(call => call.args.includes("up") || call.args.includes("stop")));
+});

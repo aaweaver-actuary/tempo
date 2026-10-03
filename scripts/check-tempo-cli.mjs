@@ -124,6 +124,26 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     assert.equal(child.status, 0, child.stdout + child.stderr);
     assert(child.stdout.includes("update remains blocked")); output.push(child.stdout);
 
+    // Simulate uncommitted candidate dependencies on these disposable volumes:
+    // Redis has a different command/configuration, and PostgreSQL is absent.
+    // The recorded deployment must restore its containers without data rollback.
+    await repeat.stopApplications();
+    const failedCandidateOverride = join(directory, "uncommitted-dependencies.json");
+    atomicJson(failedCandidateOverride, { services: { redis: { command: ["redis-server", "--appendonly", "yes", "--appendfsync", "always"] } } });
+    await docker([...composeArguments, "-f", failedCandidateOverride, "up", "-d", "--no-build", "--no-deps", "--force-recreate", "--wait", "redis"]);
+    await compose(["rm", "-s", "-f", "postgres"]);
+    const correctedFallback = createRuntime(target, { run, stateDirectory, revision, previous: record, fallback: true });
+    await correctedFallback.inspectTarget();
+    const correctionStart = commandLog.length;
+    await executeLifecycle({ recreate: false }, correctedFallback);
+    const correctionCalls = commandLog.slice(correctionStart);
+    const correctionShutdown = correctionCalls.findIndex(call => call.args.includes("stop") && call.args.includes("foreground-worker"));
+    const correctionStartup = correctionCalls.findIndex(call => call.args.includes("up") && call.args.includes("postgres"));
+    assert(correctionShutdown >= 0 && correctionStartup > correctionShutdown);
+    assert(correctionCalls[correctionStartup].args.includes("--force-recreate"));
+    assert.deepEqual((await correctedFallback.ensureImages()), { dependenciesMayChange: false }, "restored dependencies match saved immutable image/config identities");
+    assert.deepEqual(await readHistory(), expected, "dependency correction preserves authoritative data");
+
     const beforeRestart = (await repeat.compose(["ps", "-q", "api"])).stdout.trim();
     const restartStart = commandLog.length;
     await executeLifecycle({ recreate: true }, repeat);

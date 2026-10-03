@@ -129,7 +129,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       await config();
       if (Object.entries(configuration.services).some(([name, service]) => service.image !== images[name]))
         throw new Error("Saved Compose image receipt differs from its recorded immutable images.");
-      return { dependenciesMayChange: false };
+      return { dependenciesMayChange: !(await recordedDependenciesMatch()) };
     }
     stage("preparing_images");
     const releaseDirectory = join(stateDirectory, "releases", `${revision}-${operation.id}`);
@@ -177,6 +177,22 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     return { dependenciesMayChange: true };
   }
 
+  async function recordedDependenciesMatch() {
+    // Resolve hashes from the saved Compose definitions and immutable image
+    // overlay, rather than trusting tags or a receipt's desired state alone.
+    const hashes = new Map((await compose(["--profile", "maintenance", "config", "--hash", "*"])).stdout.trim()
+      .split("\n").filter(Boolean).map(line => line.trim().split(/\s+/)));
+    const ids = (await compose(["ps", "-aq", "postgres", "redis"])).stdout.trim().split(/\s+/).filter(Boolean);
+    const dependencies = ids.length ? JSON.parse((await docker(["inspect", ...ids])).stdout) : [];
+    validateContainers(dependencies, target);
+    return ["postgres", "redis"].every(service => {
+      const matches = dependencies.filter(container => container.Config?.Labels?.["com.docker.compose.project"] === target.project
+        && container.Config?.Labels?.["com.docker.compose.service"] === service);
+      return hashes.has(service) && matches.length === 1 && matches[0].Image === images[service]
+        && matches[0].Config.Labels["com.docker.compose.config-hash"] === hashes.get(service);
+    });
+  }
+
   async function ensureDatabase({ allowRecreation = false } = {}) {
     stage("checking_database");
     const volume = target.volumes[target.postgresVolumeKey];
@@ -191,7 +207,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       throw new Error("Existing PostgreSQL cluster does not match the registered major version; a separate major-upgrade procedure is required.");
     if (!fallback && !new RegExp(`^postgres:${expectedMajor}(?:\\.|-)`).test(target.postgresImage))
       throw new Error("Candidate PostgreSQL major upgrade is unsupported.");
-    await compose(["up", "-d", "--no-build", "--no-deps", ...(!allowRecreation ? ["--no-recreate"] : []),
+    await compose(["up", "-d", "--no-build", "--no-deps", ...(allowRecreation ? ["--force-recreate"] : ["--no-recreate"]),
       "--wait", "--wait-timeout", "180", "postgres", "redis"], { echo: true });
     const pong = (await compose(["exec", "-T", "redis", "redis-cli", "ping"])).stdout.trim();
     if (pong !== "PONG") throw new Error("Redis is not ready: expected PONG.");
@@ -326,9 +342,15 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
 
   async function backupOnly() {
     const originallyRunning = await runningServices();
+    const imagePreparation = await ensureImages();
+    if (imagePreparation.dependenciesMayChange) {
+      const error = new Error("Live PostgreSQL/Redis differ from the recorded deployment. Run tempo start to safely reconcile dependencies before taking a backup.");
+      await recordFailure(error);
+      throw error;
+    }
     let failure, failedPhase;
     try {
-      await ensureImages(); await ensureDatabase(); await checkSchema();
+      await ensureDatabase(); await checkSchema();
       await stopApplications();
       await backup();
     } catch (error) { failure = error; failedPhase = operation.phase; }

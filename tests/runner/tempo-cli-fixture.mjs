@@ -37,13 +37,19 @@ export function cliFixture(mode = "upgrade") {
     evidence: { commit: oldRevision, url: "https://github.com/fixture/verified" }, verified_at: "2026-10-01" }));
   writeFileSync(join(directory, "fixture.json"), JSON.stringify({ mode, root, names, target, config, revision }));
   writeFileSync(join(directory, "machine.json"), JSON.stringify({ schema: mode === "upgrade" || mode === "migration-fail" ? 28 : 29,
+    head: ["race-dirty", "race-head"].includes(mode) ? "c".repeat(40) : revision,
+    containers: ["postgres", "redis"].map(name => ({ Id: `container-${name}`, Image: images[name],
+      Config: { Image: `untrusted-tag-${name}`, Labels: { "com.docker.compose.project": "tempo",
+        "com.docker.compose.service": name, "com.docker.compose.project.working_dir": root,
+        "com.docker.compose.config-hash": `fixture-hash-${name}` } },
+      Mounts: services[name].volumes.map(volume => ({ Type: "volume", Name: volume.source, Destination: volume.target })) })),
     running: names.filter(name => name !== "migration"), migrations: 0 }));
   for (const name of ["docker", "git"]) {
     const path = join(bin, name);
     writeFileSync(path, `#!${process.execPath}\n(${fakeCommand.toString()})();\n`); chmodSync(path, 0o755);
   }
   const hook = join(directory, "network.mjs");
-  writeFileSync(hook, `import {readFileSync} from 'node:fs';\nconst fixture=JSON.parse(readFileSync(process.env.TEMPO_CLI_FIXTURE_DIRECTORY+'/fixture.json','utf8'));\nglobalThis.fetch=async(url)=>{\nif(String(url).includes('/actions/workflows/')) return Response.json({workflow_runs:[{id:12,head_sha:fixture.revision,head_branch:'main',event:'push',status:'completed',html_url:'https://github.com/fixture/ci'}]});\nif(String(url).includes('/actions/runs/')) return Response.json({jobs:['plan','frontend / verify','backend / verify','build / verify','postgres / verify','browser / verify','visual / verify','quality'].map(name=>({name,status:'completed',conclusion:fixture.mode==='ci-fail'&&name==='quality'?'failure':'success'}))});\nif(String(url).endsWith('/api/health')) return Response.json({status:'ok',storage:'postgresql',test_instance:false});\nreturn new Response('Tempo', {status:200});\n};\n`);
+  writeFileSync(hook, `import {readFileSync} from 'node:fs';\nconst fixture=JSON.parse(readFileSync(process.env.TEMPO_CLI_FIXTURE_DIRECTORY+'/fixture.json','utf8'));\nglobalThis.fetch=async(url)=>{\nif(String(url).includes('/actions/workflows/')) return Response.json({workflow_runs:[{id:12,head_sha:fixture.revision,head_branch:'main',event:'push',status:'completed',html_url:'https://github.com/fixture/ci'}]});\nif(String(url).includes('/actions/runs/')) { if(['race-dirty','race-head'].includes(fixture.mode)) { const path=process.env.TEMPO_CLI_FIXTURE_DIRECTORY+'/machine.json'; const machine=JSON.parse(readFileSync(path,'utf8')); if(fixture.mode==='race-dirty') machine.sourceEdited=true; else machine.head='d'.repeat(40); const fs=await import('node:fs'); fs.writeFileSync(path,JSON.stringify(machine)); if(fixture.mode==='race-dirty') fs.writeFileSync(fixture.root+'/personal-work','preserved study notes'); } return Response.json({jobs:['plan','frontend / verify','backend / verify','build / verify','postgres / verify','browser / verify','visual / verify','quality'].map(name=>({name,status:'completed',conclusion:fixture.mode==='ci-fail'&&name==='quality'?'failure':'success'}))}); }\nif(String(url).endsWith('/api/health')) return Response.json({status:'ok',storage:'postgresql',test_instance:false});\nreturn new Response('Tempo', {status:200});\n};\n`);
   const environment = { ...process.env, PATH: `${bin}:${process.env.PATH}`, TEMPO_CLI_FIXTURE_DIRECTORY: directory,
     TEMPO_CLI_STATE_DIR: stateRoot, TEMPO_CLI_CONFIG: registration };
   delete environment.TEMPO_UPGRADE_EXPECTED_PROJECT;
@@ -68,26 +74,38 @@ async function fakeCommand() {
     if (args[0] === "branch") output("main");
     else if (args[0] === "status") output(fixture.mode === "dirty" || machine.sourceEdited ? " M personal-work" : "");
     else if (args[0] === "remote") output("https://github.com/aaweaver-actuary/tempo");
-    else if (args[0] === "rev-parse") output(fixture.revision);
+    else if (args[0] === "rev-parse") output(args[1] === "HEAD" ? machine.head : fixture.revision);
+    else if (args[0] === "merge") { machine.head = args.at(-1); save(); }
     else if (args[0] === "ls-remote") output(fixture.revision + " refs/heads/main");
     process.exit(0);
   }
   if (args.includes("info")) { if (args.includes("--format")) output("fixture-daemon"); process.exit(0); }
   if (args.includes("volume") && args.includes("inspect")) { output([]); process.exit(0); }
-  if (args.includes("ps") && args.includes("-aq")) { output(""); process.exit(0); }
+  if (args.includes("ps") && args.includes("-aq")) {
+    const containers = args.includes("compose") ? machine.containers.filter(container => args.includes(container.Config.Labels["com.docker.compose.service"])) : machine.containers;
+    output(containers.map(container => container.Id).join("\n")); process.exit(0);
+  }
+  if (args.includes("inspect") && !args.includes("image")) {
+    output(machine.containers.filter(container => args.includes(container.Id))); process.exit(0);
+  }
   if (args.includes("image") && args.includes("inspect")) {
     const image = args.at(-1); output([{ Id: image.startsWith("sha256:") ? image : `sha256:${image}`,
       Config: { Labels: { "org.opencontainers.image.revision": fixture.revision } } }]); process.exit(0);
   }
   if (!args.includes("compose") && args.includes("run")) { output(fixture.mode === "empty" ? "" : "18"); process.exit(0); }
-  if (args.includes("config")) {
+  const resolvedConfig = () => {
     const config = structuredClone(fixture.config);
     for (let index = 0; index < args.length; index++) if (args[index] === "-f") {
       const extra = JSON.parse(fs.readFileSync(args[index + 1], "utf8"));
       for (const [name, service] of Object.entries(extra.services ?? {})) config.services[name] = { ...config.services[name], ...service,
         ...(service.build ? { build: { ...config.services[name]?.build, ...service.build } } : {}) };
     }
-    output(config); process.exit(0);
+    return config;
+  };
+  if (args.includes("config")) {
+    if (args.includes("--hash")) output(["postgres", "redis"].map(name => `${name} fixture-hash-${name}`).join("\n"));
+    else output(resolvedConfig());
+    process.exit(0);
   }
   if (args.includes("build") && fixture.mode === "build-fail") { console.error("build unavailable"); process.exit(13); }
   if (args.includes("build") && fixture.mode === "edited-during-build") { machine.sourceEdited = true; save(); }
@@ -95,6 +113,16 @@ async function fakeCommand() {
   if (args.includes("stop")) { machine.running = machine.running.filter(name => !args.includes(name)); save(); process.exit(0); }
   if (args.includes("up")) {
     if (fixture.mode === "dependency-fail" && args.includes("postgres")) { console.error("dependency startup failed"); process.exit(18); }
+    for (const name of ["postgres", "redis"].filter(name => args.includes(name))) {
+      let container = machine.containers.find(container => container.Config.Labels["com.docker.compose.service"] === name);
+      if (!container) { container = { Id: `container-${name}`, Config: { Labels: {} }, Mounts: [] }; machine.containers.push(container); }
+      if (!args.includes("--no-recreate")) {
+        const image = resolvedConfig().services[name].image;
+        container.Image = image.startsWith("sha256:") ? image : `sha256:${image}`;
+        container.Config.Labels = { "com.docker.compose.project": "tempo", "com.docker.compose.service": name,
+          "com.docker.compose.project.working_dir": fixture.root, "com.docker.compose.config-hash": `fixture-hash-${name}` };
+      }
+    }
     machine.running = [...new Set([...machine.running, ...fixture.names.filter(name => args.includes(name))])]; save(); process.exit(0);
   }
   if (args.includes("ping")) { output("PONG"); process.exit(0); }
