@@ -21,18 +21,25 @@ export function configurationFingerprint(configured) {
 export async function executeLifecycle(plan, actions) {
   let interruptedApplications = false;
   try {
-    await actions.ensureImages();
-    await actions.ensureDatabase();
-    const status = await actions.checkSchema();
-    if (status.pending_versions.length || plan.recreate) {
+    const imagePreparation = await actions.ensureImages();
+    const allowDependencyRecreation = Boolean(plan.recreate || imagePreparation?.dependenciesMayChange);
+    if (allowDependencyRecreation) {
+      // Image preparation may fail without downtime. Only after it succeeds
+      // may dependency changes begin, with every application consumer stopped.
       interruptedApplications = true;
       await actions.stopApplications();
-      if (status.pending_versions.length) {
-        await actions.backup();
-        await actions.migrate();
-        const updated = await actions.checkSchema();
-        if (updated.pending_versions.length) throw new Error("Migrations did not reach the required schema version.");
+    }
+    await actions.ensureDatabase({ allowRecreation: allowDependencyRecreation });
+    const status = await actions.checkSchema();
+    if (status.pending_versions.length) {
+      if (!interruptedApplications) {
+        interruptedApplications = true;
+        await actions.stopApplications();
       }
+      await actions.backup();
+      await actions.migrate();
+      const updated = await actions.checkSchema();
+      if (updated.pending_versions.length) throw new Error("Migrations did not reach the required schema version.");
     }
     interruptedApplications = true;
     await actions.startServices({ recreate: Boolean(plan.recreate) });
@@ -122,7 +129,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       await config();
       if (Object.entries(configuration.services).some(([name, service]) => service.image !== images[name]))
         throw new Error("Saved Compose image receipt differs from its recorded immutable images.");
-      return;
+      return { dependenciesMayChange: false };
     }
     stage("preparing_images");
     const releaseDirectory = join(stateDirectory, "releases", `${revision}-${operation.id}`);
@@ -146,7 +153,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       }
       imageOverride = join(releaseDirectory, "images.json");
       atomicJson(imageOverride, { services: Object.fromEntries(Object.entries(images).map(([name, image]) => [name, { image }])) });
-      await config(); return;
+      await config(); return { dependenciesMayChange: true };
     }
     const labelsFile = join(releaseDirectory, "build-labels.json");
     const buildServices = Object.entries(configuration.services).filter(([, service]) => service.build).map(([name]) => name);
@@ -167,9 +174,10 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     imageOverride = join(releaseDirectory, "images.json");
     atomicJson(imageOverride, { services: Object.fromEntries(Object.entries(images).map(([name, image]) => [name, { image }])) });
     await config();
+    return { dependenciesMayChange: true };
   }
 
-  async function ensureDatabase() {
+  async function ensureDatabase({ allowRecreation = false } = {}) {
     stage("checking_database");
     const volume = target.volumes[target.postgresVolumeKey];
     const image = configuration.services.postgres.image;
@@ -183,7 +191,8 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       throw new Error("Existing PostgreSQL cluster does not match the registered major version; a separate major-upgrade procedure is required.");
     if (!fallback && !new RegExp(`^postgres:${expectedMajor}(?:\\.|-)`).test(target.postgresImage))
       throw new Error("Candidate PostgreSQL major upgrade is unsupported.");
-    await compose(["up", "-d", "--no-build", "--no-deps", "--wait", "--wait-timeout", "180", "postgres", "redis"], { echo: true });
+    await compose(["up", "-d", "--no-build", "--no-deps", ...(!allowRecreation ? ["--no-recreate"] : []),
+      "--wait", "--wait-timeout", "180", "postgres", "redis"], { echo: true });
     const pong = (await compose(["exec", "-T", "redis", "redis-cli", "ping"])).stdout.trim();
     if (pong !== "PONG") throw new Error("Redis is not ready: expected PONG.");
   }
@@ -324,7 +333,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       await backup();
     } catch (error) { failure = error; failedPhase = operation.phase; }
     try {
-      if (originallyRunning.length) await compose(["up", "-d", "--no-build", "--no-deps", ...originallyRunning], { echo: true });
+      if (originallyRunning.length) await compose(["up", "-d", "--no-build", "--no-deps", "--no-recreate", ...originallyRunning], { echo: true });
       const newlyStarted = ["redis", "postgres"].filter(name => !originallyRunning.includes(name));
       if (newlyStarted.length) await compose(["stop", "--timeout", "60", ...newlyStarted], { echo: true });
       if (originallyRunning.includes("web")) await verifyReady();

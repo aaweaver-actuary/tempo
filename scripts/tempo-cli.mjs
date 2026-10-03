@@ -181,10 +181,11 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
     await runtime.inspectTarget(); secrets.push(...runtime.secretValues);
     const recreate = options.command === "restart" || Boolean(candidate && previous?.revision !== selectedRevision);
     await executeLifecycle({ recreate }, { ...runtime, ensureImages: async () => {
-      await runtime.ensureImages();
+      const imagePreparation = await runtime.ensureImages();
       if (candidate && ((await run("git", ["rev-parse", "HEAD"])).stdout.trim() !== selectedRevision
         || (await run("git", ["status", "--porcelain"])).stdout.trim()))
         throw new Error("Checkout changed while images were prepared. Local work is preserved; no database maintenance or application shutdown was started.");
+      return imagePreparation;
     } });
     log(`Tempo ready at ${target.webUrl} (revision ${selectedRevision.slice(0, 12)})${blockedUpdate ? "; update remains blocked" : ""}.`);
     if (options.command !== "migrate" && !options.flags.has("--no-open") && process.platform === "darwin")

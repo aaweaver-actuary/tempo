@@ -129,11 +129,27 @@ function actions({ pending = [29], failAt, build = true } = {}) {
 test("start after merge verifies backup before migrations and publishes success only after readiness", async () => {
   const { calls, handlers } = actions();
   await executeLifecycle({ recreate: true }, handlers);
-  assert.deepEqual(calls, ["ensureImages", "ensureDatabase", "checkSchema", "stopApplications", "backup", "migrate", "checkSchema", "startServices", "verifyReady", "commitDeployment"]);
+  assert.deepEqual(calls, ["ensureImages", "stopApplications", "ensureDatabase", "checkSchema", "backup", "migrate", "checkSchema", "startServices", "verifyReady", "commitDeployment"]);
+});
+
+test("changed dependency preparation stops writers before dependency recreation even on the same revision", async () => {
+  const { calls, handlers } = actions({ pending: [] });
+  handlers.ensureImages = async () => { calls.push("ensureImages"); return { dependenciesMayChange: true }; };
+  handlers.ensureDatabase = async options => { calls.push("ensureDatabase"); assert.equal(options.allowRecreation, true); };
+  await executeLifecycle({ recreate: false }, handlers);
+  assert.deepEqual(calls.slice(0, 3), ["ensureImages", "stopApplications", "ensureDatabase"]);
+  assert(!calls.includes("backup") && !calls.includes("migrate"));
+});
+
+test("dependency recreation failure leaves writers stopped and never publishes a deployment", async () => {
+  const { calls, handlers } = actions({ failAt: "ensureDatabase", pending: [] });
+  await assert.rejects(executeLifecycle({ recreate: true }, handlers), /failed ensureDatabase/);
+  assert.deepEqual(calls, ["ensureImages", "stopApplications", "ensureDatabase", "stopApplications", "recordFailure"]);
 });
 
 test("repeated compatible start avoids backup migration and application shutdown", async () => {
   const { calls, handlers } = actions({ pending: [], build: false });
+  handlers.ensureDatabase = async options => { calls.push("ensureDatabase"); assert.equal(options.allowRecreation, false); };
   await executeLifecycle({ recreate: false }, handlers);
   assert.deepEqual(calls, ["ensureDatabase", "checkSchema", "startServices", "verifyReady", "commitDeployment"]);
 });
@@ -178,8 +194,24 @@ test("actual CLI upgrades with a verified backup and keeps repeat starts free of
   assert.equal(repeated.status, 0, repeated.stdout + repeated.stderr);
   for (const call of fixture.calls().slice(beforeRepeat)) assert(!call.args.includes("build") && !call.args.includes("stop")
     && !(call.args.includes("scripts/apply_postgres_migrations.py") && !call.args.includes("--check")));
+  for (const call of fixture.calls().slice(beforeRepeat).filter(call => call.args.includes("up") && call.args.includes("postgres")))
+    assert(call.args.includes("--no-recreate"), "compatible dependency checks cannot recreate running infrastructure");
   const record = JSON.parse(readFileSync(join(fixture.stateDirectory, "deployment.json"), "utf8"));
   assert.equal(record.schema, 29); assert.equal(record.backup.verified, true);
+});
+
+test("actual CLI dependency startup failure occurs after writer shutdown and keeps writers stopped", t => {
+  const fixture = commandFixture(t, "dependency-fail");
+  const result = fixture.command("start", "--no-open");
+  assert.notEqual(result.status, 0);
+  const calls = fixture.calls();
+  const preparation = calls.findIndex(call => call.args.includes("build"));
+  const stop = calls.findIndex(call => call.args.includes("stop") && call.args.includes("foreground-worker"));
+  const dependencies = calls.findIndex(call => call.args.includes("up") && call.args.includes("postgres"));
+  assert(preparation >= 0 && stop > preparation && dependencies > stop);
+  const remaining = JSON.parse(readFileSync(join(fixture.directory, "machine.json"), "utf8")).running;
+  assert(!remaining.some(name => ["api", "foreground-worker", "background-worker", "background-scheduler"].includes(name)));
+  assert(!calls.slice(dependencies + 1).some(call => call.args.includes("up") && call.args.includes("api")));
 });
 
 test("actual CLI falls back explicitly after failed CI and preserves local edits without fetching", t => {

@@ -90,7 +90,10 @@ async function fakeCommand() {
   if (args.includes("build") && fixture.mode === "edited-during-build") { machine.sourceEdited = true; save(); }
   if (args.includes("ps")) { for (const Service of machine.running) output({ Service, State: "running" }); process.exit(0); }
   if (args.includes("stop")) { machine.running = machine.running.filter(name => !args.includes(name)); save(); process.exit(0); }
-  if (args.includes("up")) { machine.running = [...new Set([...machine.running, ...fixture.names.filter(name => args.includes(name))])]; save(); process.exit(0); }
+  if (args.includes("up")) {
+    if (fixture.mode === "dependency-fail" && args.includes("postgres")) { console.error("dependency startup failed"); process.exit(18); }
+    machine.running = [...new Set([...machine.running, ...fixture.names.filter(name => args.includes(name))])]; save(); process.exit(0);
+  }
   if (args.includes("ping")) { output("PONG"); process.exit(0); }
   if (args.includes("psql")) { output(Array.from({ length: machine.schema }, (_, index) => index + 1).join("\n")); process.exit(0); }
   if (args.includes("scripts/apply_postgres_migrations.py")) {
