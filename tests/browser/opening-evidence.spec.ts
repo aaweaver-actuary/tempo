@@ -40,6 +40,126 @@ async function savedEvents(page: Page) {
   }));
 }
 
+async function savedAttempts(page: Page) {
+  return page.evaluate(() => new Promise<Record<string, unknown>[]>((resolve, reject) => {
+    const request = indexedDB.open("tempo-offline-training", 2);
+    request.onsuccess = () => {
+      const database = request.result;
+      const read = database.transaction("opening_attempts").objectStore("opening_attempts").getAll();
+      read.onsuccess = () => { database.close(); resolve(read.result); };
+      read.onerror = () => { database.close(); reject(read.error); };
+    };
+    request.onerror = () => reject(request.error);
+  }));
+}
+
+test("AS-15 recovered evidence waits for foreground queue readiness and an idle opportunity", async ({ page }) => {
+  await prepareVisualUI(page); await prepareQueue(page);
+  await page.route("**/api/opening-evidence/checkpoints", route => route.abort("failed"));
+  await page.goto("/"); await move(page, "e2", "e4");
+  await expect.poll(async () => (await savedEvents(page)).length).toBeGreaterThan(0);
+  const original = (await savedAttempts(page))[0].attempt_id;
+  await page.addInitScript(() => {
+    const callbacks = new Map<number, IdleRequestCallback>(); let sequence = 0;
+    window.requestIdleCallback = callback => { callbacks.set(++sequence, callback); return sequence; };
+    window.cancelIdleCallback = id => { callbacks.delete(id); };
+    Object.assign(window, { evidenceIdleCallbacks: callbacks });
+  });
+  let releaseQueue!: () => void;
+  let queueRequested!: () => void;
+  const queueStarted = new Promise<void>(resolve => { queueRequested = resolve; });
+  await page.route("**/api/queue/window?**", async route => {
+    queueRequested(); await new Promise<void>(resolve => { releaseQueue = resolve; });
+    await route.fulfill({ json: { local_date: localDate, count: 1, cards: [card], projection } });
+  });
+  await page.unroute("**/api/opening-evidence/checkpoints");
+  const recovered: OpeningEvidenceCheckpoint[] = [];
+  await page.route("**/api/opening-evidence/checkpoints", async route => {
+    const checkpoint = route.request().postDataJSON() as OpeningEvidenceCheckpoint;
+    recovered.push(checkpoint);
+    await route.fulfill({ json: { persisted: true, attempt_id: checkpoint.attempt_id,
+      received_sequences: checkpoint.events.map(event => event.sequence), contiguous_sequence: checkpoint.terminal?.final_sequence ?? 1 } });
+  });
+  await page.reload({ waitUntil: "domcontentloaded" }); await queueStarted;
+  expect((await savedAttempts(page)).some(attempt => attempt.attempt_id === original)).toBe(true);
+  expect(recovered).toEqual([]);
+  expect(await page.evaluate(() => (window as unknown as { evidenceIdleCallbacks: Map<number, unknown> }).evidenceIdleCallbacks.size)).toBe(0);
+  releaseQueue();
+  await expect(page.getByText("Shadow opening", { exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { evidenceIdleCallbacks: Map<number, unknown> }).evidenceIdleCallbacks.size)).toBe(1);
+  await page.evaluate(() => {
+    const callbacks = (window as unknown as { evidenceIdleCallbacks: Map<number, IdleRequestCallback> }).evidenceIdleCallbacks;
+    for (const callback of callbacks.values()) callback({ didTimeout: false, timeRemaining: () => 50 });
+    callbacks.clear();
+  });
+  await expect.poll(() => recovered.some(checkpoint => checkpoint.attempt_id === original && checkpoint.terminal?.state === "partial")).toBe(true);
+});
+
+test("AS-16 restarted opening board records guided arrows and retains the prior partial attempt", async ({ page }) => {
+  await prepareVisualUI(page); await prepareQueue(page);
+  await page.route("**/api/opening-evidence/checkpoints", route => route.abort("failed"));
+  await page.route("**/api/queue/entries/101/fail", route => route.fulfill({ json: { persisted: true } }));
+  await page.goto("/"); await move(page, "e2", "e4");
+  await expect.poll(async () => (await savedEvents(page)).length).toBeGreaterThan(0);
+  const original = (await savedAttempts(page))[0].attempt_id;
+  await page.getByRole("button", { name: /Restart/ }).click();
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", card.start_fen);
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-hint", "true");
+  await expect.poll(async () => (await savedAttempts(page)).find(attempt => attempt.attempt_id === original)?.terminal)
+    .toMatchObject({ state: "partial" });
+  await expect.poll(async () => (await savedEvents(page) as { attempt_id: string; assistance?: string }[])
+    .filter(event => event.attempt_id !== original).map(event => event.assistance)).toContain("guided");
+  expect((await savedEvents(page) as { attempt_id: string; assistance?: string }[])
+    .some(event => event.attempt_id !== original && event.assistance === "revealed")).toBe(false);
+});
+
+test("AS-16 local review quota saves the aggregate and retains evidence through a late checkpoint receipt", async ({ page }) => {
+  await prepareVisualUI(page); await prepareQueue(page);
+  await page.addInitScript(() => {
+    const setItem = Storage.prototype.setItem;
+    Storage.prototype.setItem = function (key, value) {
+      if (key === "tempo-pending-training-reviews-v1" && value.includes("openingEvidenceCompletion"))
+        throw new DOMException("Evidence review exceeds quota", "QuotaExceededError");
+      return setItem.call(this, key, value);
+    };
+  });
+  let releaseCheckpoint!: () => void;
+  let checkpointFinished = false;
+  await page.route("**/api/opening-evidence/checkpoints", async route => {
+    const checkpoint = route.request().postDataJSON() as OpeningEvidenceCheckpoint;
+    await new Promise<void>(resolve => { releaseCheckpoint = resolve; });
+    await route.fulfill({ json: { persisted: true, attempt_id: checkpoint.attempt_id,
+      received_sequences: checkpoint.events.map(event => event.sequence), contiguous_sequence: checkpoint.events.at(-1)?.sequence ?? 0 } });
+    checkpointFinished = true;
+  });
+  const reviews: { attempt_id: string; opening_evidence_completion?: unknown }[] = [];
+  await page.route("**/api/cards/shadow-card/review", async route => {
+    const review = route.request().postDataJSON();
+    expect(review.opening_evidence_completion).toBeUndefined();
+    expect(route.request().headers()["idempotency-key"]).toBe(`review-attempt:${review.attempt_id}:aggregate-only`);
+    const durable = await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]"));
+    expect(durable[0]).toMatchObject({ attemptId: review.attempt_id, evidenceFallbackReason: "local_storage_quota" });
+    reviews.push(review); await route.fulfill({ json: { persisted: true } });
+  });
+  const nextCard = { ...card, id: "shadow-next", queue_entry_id: 102, repertoire_name: "Next opening", opening_decision_manifest: undefined };
+  await page.route("**/api/queue/window?**", route => route.fulfill({ json: {
+    local_date: localDate, count: reviews.length ? 1 : 2, cards: reviews.length ? [nextCard] : [card, nextCard], projection } }));
+  await page.goto("/"); await move(page, "e2", "e4");
+  await expect.poll(() => Boolean(releaseCheckpoint)).toBe(true);
+  await move(page, "g1", "f3"); await move(page, "f1", "b5");
+  await expect.poll(() => reviews.length).toBe(1);
+  await expect(page.getByText("Next opening", { exact: true })).toBeVisible();
+  await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]").length)).toBe(0);
+  await expect.poll(async () => (await savedAttempts(page)).find(attempt => attempt.attempt_id === reviews[0].attempt_id))
+    .toMatchObject({ delivery_state: "retained", retention_reason: "local_storage_quota", terminal: { state: "complete" } });
+  releaseCheckpoint(); await expect.poll(() => checkpointFinished).toBe(true);
+  await expect.poll(async () => (await savedEvents(page) as { attempt_id: string }[])
+    .filter(event => event.attempt_id === reviews[0].attempt_id).length).toBe(3);
+  await page.reload();
+  expect((await savedAttempts(page)).find(attempt => attempt.attempt_id === reviews[0].attempt_id)?.delivery_state).toBe("retained");
+  expect((await savedEvents(page) as { attempt_id: string }[]).filter(event => event.attempt_id === reviews[0].attempt_id)).toHaveLength(3);
+});
+
 test("AS-08 deferred evidence persistence leaves rendered moves and aggregate review responsive", async ({ page }) => {
   await prepareVisualUI(page); await prepareQueue(page);
   let releaseCheckpoint: (() => void) | undefined;

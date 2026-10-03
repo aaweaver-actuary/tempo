@@ -1251,3 +1251,16 @@ not the abbreviated example reference, is authoritative.
 
 No backend business-rule, schema, idempotency or queue path changes accompany
 this input adaptation.
+
+### PR #69 foreground and browser-storage isolation
+
+- `test_opening_checkpoint_dispatches_as_background_without_changing_review_dispatch` — standalone checkpoint routing, stable replay identity and foreground review routing (opening evidence backend contracts).
+- `AS-15 opening evidence recovery waits for foreground startup readiness` — no mount/reconnect scan before queue readiness (opening-evidence Home lifecycle).
+- `AS-16 evidence outbox quota falls back to durable aggregate-only review` — optional evidence quota cannot prevent durable aggregate review/key (review outbox).
+- `AS-16 aggregate-only outbox storage failure remains blocking and retryable` — mandatory storage failure does not send or claim persistence (review outbox).
+- `AS-16 restarted opening attempt records displayed guidance as guided` — fresh guided identity and actual displayed assistance category (Home lifecycle).
+- `test_postgres_background_opening_checkpoint_preserves_foreground_progress_and_replay` — stopped background worker leaves queue/review foreground paths available; worker restart and exact checkpoint receipt replay (regular Docker study durability).
+- `AS-15 recovery cancels idle work during foreground transitions and after unmount`, `AS-15 only the current queue generation can settle recovery readiness`, `AS-15 overlapping recovery shares one scan and failed storage remains retryable` — lifecycle cancellation, empty valid queue, unavailable queue, generations and coalescing.
+- `AS-16 wrong-response reveal remains revealed` — real Home move handling keeps post-error assistance distinct from Restart guidance.
+- `AS-16 quota fallback reload and ambiguous retries retain the compact payload and key`, `AS-16 denied initial review storage never switches to aggregate-only` — durable identity and fail-closed non-quota storage errors.
+- `AS-15 recovered evidence waits for foreground queue readiness and an idle opportunity`, `AS-16 restarted opening board records guided arrows and retains the prior partial attempt`, `AS-16 local review quota saves the aggregate and retains evidence through a late checkpoint receipt` — regular critical browser workflows for orphan recovery, rendered Restart guidance, aggregate advancement, retained IndexedDB data and in-flight receipt safety.
