@@ -3,6 +3,8 @@ import {
   enqueueTrainingFailure,
   flushTrainingFailures,
   pendingTrainingFailures,
+  pendingTrainingFailureContexts,
+  clearTrainingFailureAfterReview,
 } from "../../app/lib/training-failure-outbox";
 import { enqueuePendingReview, flushPendingReviews } from "../../app/lib/review-outbox";
 
@@ -89,4 +91,38 @@ it("stale failed-attempt marker cannot fail a different queued entry", async () 
     : Response.json({ detail: "This queue attempt is no longer active" }, { status: 409 })));
   await expect(flushTrainingFailures()).rejects.toThrow("no longer available");
   expect(pendingTrainingFailures()).toEqual([]);
+});
+
+
+it("guided failure replay preserves its displayed card revision through a transient retry", async () => {
+  enqueueTrainingFailure(42, "original-card", 3);
+  const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ detail: "busy" }, { status: 503 }))
+    .mockResolvedValueOnce(Response.json({ attempt_failed: true }));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(flushTrainingFailures()).rejects.toThrow("busy");
+  await flushTrainingFailures();
+  expect(fetcher.mock.calls.map(([, request]) => JSON.parse(request.body))).toEqual([
+    { card_id: "original-card", expected_revision: 3 }, { card_id: "original-card", expected_revision: 3 },
+  ]);
+  expect(fetcher.mock.calls[0][1].headers["Idempotency-Key"]).toBe(fetcher.mock.calls[1][1].headers["Idempotency-Key"]);
+});
+
+it("explicit ambiguous guided marker conflict cannot rotate onto replacement content", async () => {
+  enqueueTrainingFailure(42, "original-card", 3);
+  const fetcher = vi.fn().mockResolvedValue(Response.json({ code: "queue_attempt_unprovable", detail: "Original attempt changed" }, { status: 409 }));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(flushTrainingFailures()).rejects.toThrow("Original attempt changed");
+  await flushTrainingFailures();
+  expect(fetcher).toHaveBeenCalledTimes(1);
+  expect(pendingTrainingFailures()).toEqual([]);
+});
+
+
+it("old completed review cannot clear a replacement card's guided marker on the same queue ID", () => {
+  enqueueTrainingFailure(42, "original-card", 1);
+  enqueueTrainingFailure(42, "replacement-card", 1);
+  clearTrainingFailureAfterReview(42, "original-card", 1);
+  expect(pendingTrainingFailureContexts()).toEqual([
+    expect.objectContaining({ queueEntryId: 42, backendId: "replacement-card", expectedRevision: 1 }),
+  ]);
 });

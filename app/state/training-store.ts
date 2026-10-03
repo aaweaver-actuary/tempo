@@ -539,11 +539,16 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
     const activeCard = current.practiceCards[current.activeCardIndex];
     if (!advance && activeCard && current.isDatabaseQueueActive &&
         ["playerTurn", "opponentReplyPending", "guided", "feedbackPause"].includes(current.attempt.phase)) {
+      const matchingActiveCard = practiceCards.find(
+        (queuedCard) => attemptEntryKey(queuedCard) === current.attempt.entryKey,
+      );
       const upcomingCards = practiceCards.filter(
         (queuedCard) => attemptEntryKey(queuedCard) !== current.attempt.entryKey,
       );
       const activeCardStillQueued = upcomingCards.length !== practiceCards.length;
-      const retainedCards = [activeCard, ...upcomingCards];
+      const retainedCards = [matchingActiveCard
+        ? { ...activeCard, priorityReason: matchingActiveCard.priorityReason }
+        : activeCard, ...upcomingCards];
       set({
         practiceCards: retainedCards,
         dailyQueue: retainedCards.map((_, index) => index),

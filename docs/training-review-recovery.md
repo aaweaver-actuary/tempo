@@ -41,7 +41,7 @@ behavior, including review-evidence-only results for changed completed content.
 | Editing, archival, replacement, prefix splitting | Old card/revision/content remains in origins. Results for changed, archived, or replaced work conflict; replacement content is never automatically credited. |
 | Randomization/order preservation | Positions change without invalidating the attempt or rewriting its origin. |
 | Burial | A buried attempt is an explicit retired conflict; recovery does not undo a user's burial. |
-| Guided marking, reinforcement and requeue | Guided failure latches in provenance. Replays use the canonical receipt; new cycle numbers include deleted origins. |
+| Guided marking, reinforcement and requeue | Guided failure latches in provenance. New advisory markers carry displayed card/revision; a legacy queue-only marker must have one unchanged origin. Ambiguous replacement markers conflict instead of marking the new content. Replays use the canonical receipt; new cycle numbers include deleted origins. |
 | Opening, tactic and study admission | The shared queue triggers capture the admitted card and raw displayed content. Defense grading continues to require its rubric. |
 
 ## Browser retention and study continuity
@@ -64,3 +64,11 @@ Regression inventory: `tests/REGRESSIONS.md`. Local evidence and tested revision
 recorded with the PR. CI owns required final candidate verification. Open PRs #66
 and #69 also change migration numbering/contracts; migration 30 must be rebased and
 renumbered if either lands first. This branch does not depend on either unmerged PR.
+
+An active snapshot also keeps its card identity in the attempt key. An unchanged
+context may refresh its priority reason without replacing the board or logical
+attempt. Pending results and guided markers match card identity as well as queue
+ID; an old card cannot hide or guide replacement content reusing that projection.
+Legacy failure markers remain replayable through server validation, but cannot
+supply unproven local guidance after refresh. Completing one context clears only
+its own guided marker, leaving a replacement context's marker intact.

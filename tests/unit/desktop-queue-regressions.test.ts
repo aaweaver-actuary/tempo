@@ -3,6 +3,7 @@ import { waitFor } from "@testing-library/react";
 import { fetchAndInitializeQueue } from "../../app/views/fetchAndInitializeQueue";
 import { useTrainingStore } from "../../app/state/training-store";
 import { clearDebugErrors, debugErrors } from "../../app/lib/debug-reporting";
+import { enqueuePendingReview } from "../../app/lib/review-outbox";
 import { localDayKey } from "../../app/utils/local";
 import { OfflineReplayError } from "../../app/lib/offline-training";
 import { clearNotificationHistory, notificationToastIds, notifications, publishNotification } from "../../app/lib/notifications";
@@ -127,4 +128,27 @@ describe("desktop live queue isolation", () => {
     expect(notifications().find((record) => record.key === "phone-review-syncing")).toMatchObject({ severity: "success", active: false });
     expect(notifications().find((record) => record.key === "phone-review-syncing")?.resolvedAt).not.toBeNull();
   });
+});
+
+
+it("pending old-card review cannot hide replacement content on the same queue ID", async () => {
+  enqueuePendingReview({ backendId: "old-card", queueEntryId: 801, outcome: "correct", guided: false });
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => String(url).endsWith("/review")
+    ? Response.json({ detail: "busy" }, { status: 503 })
+    : Response.json({ count: 1, cards: [{ id: "replacement-card", queue_entry_id: 801,
+      start_fen: startingFen, moves: ["d2d4"], content_type: "opening", repertoire_name: "Replacement", repertoire_source: "PGN" }] })));
+  await fetchAndInitializeQueue();
+  expect(useTrainingStore.getState().getCard().backendId).toBe("replacement-card");
+  expect(useTrainingStore.getState().cardsLeft).toBe(1);
+});
+
+it("old guided marker cannot label replacement content sharing its queue ID", async () => {
+  enqueueTrainingFailure(801, "old-card", 1);
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => String(url).endsWith("/fail")
+    ? Response.json({ detail: "busy" }, { status: 503 })
+    : Response.json({ count: 1, cards: [{ id: "replacement-card", revision: 1, queue_entry_id: 801,
+      start_fen: startingFen, moves: ["d2d4"], content_type: "opening", repertoire_name: "Replacement", repertoire_source: "PGN" }] })));
+  await fetchAndInitializeQueue();
+  expect(useTrainingStore.getState().getCard().backendId).toBe("replacement-card");
+  expect(useTrainingStore.getState().isAttemptFailed).toBe(false);
 });

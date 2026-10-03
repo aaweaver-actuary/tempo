@@ -12,7 +12,7 @@ import psycopg
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from app import postgres_store, review_commands  # registers the production review handlers
+from app import postgres_store, queue_commands, review_commands  # registers the production review handlers
 from app.command_gateway import execute_command, read_operation, request_digest
 from app.services.postgres_queue_refresh import _reconcile_one_unseen_entry
 from check_postgres_repertoire_limits import snapshot_queue_environment, restore_queue_environment
@@ -125,6 +125,26 @@ def test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recov
         postgres_store.close_pools()
         assert execute_command(conflict_operation, "cards.review.reconcile", payloads[2]) == conflict
         assert read_operation(recovery_operation)["state"] == "complete"
+        # A stale guided marker must not poison content reassigned to the same
+        # projection ID. The production foreground handler receives displayed identity.
+        with postgres_store.connection() as database:
+            database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(?,?,-200,'review',?) RETURNING id", (today, card_ids[2], identifier))
+            reassigned_entry = database.execute("SELECT id FROM daily_queue WHERE card_id=? AND position=-200", (card_ids[2],)).fetchone()[0]
+            database.execute("UPDATE daily_queue SET card_id=? WHERE id=?", (card_ids[3], reassigned_entry))
+        for suffix, marker_payload in (("legacy", {"entry_id": reassigned_entry}),
+                                       ("identified", {"entry_id": reassigned_entry, "card_id": card_ids[2], "expected_revision": 2})):
+            marker_operation = f"{identifier}-stale-marker-{suffix}"
+            operations.append(marker_operation)
+            assert execute_command(marker_operation, "queue.attempt_failed", marker_payload) is None
+            assert read_operation(marker_operation)["error"]["code"] == "queue_attempt_unprovable"
+        with postgres_store.connection(read_only=True) as database:
+            assert database.execute("SELECT attempt_failed FROM daily_queue WHERE id=?", (reassigned_entry,)).fetchone()[0] == 0
+        current_marker_operation = f"{identifier}-current-marker"
+        operations.append(current_marker_operation)
+        current_marker = {"entry_id": reassigned_entry, "card_id": card_ids[3], "expected_revision": 1}
+        assert execute_command(current_marker_operation, "queue.attempt_failed", current_marker)["attempt_failed"]
+        assert execute_command(current_marker_operation, "queue.attempt_failed", current_marker)["attempt_failed"]
+        print("PASS test_postgres_stale_guided_marker_reassignment_and_idempotent_current_context")
         print("PASS test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recovery")
     finally:
         executor.shutdown(wait=True)

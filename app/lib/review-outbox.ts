@@ -169,7 +169,7 @@ function retainConflict(review: PendingReview, conflict: ReviewConflictInformati
   // One write changes replay state without any delete/add gap. A storage failure
   // leaves the completed result in the FIFO, so it cannot be silently discarded.
   replaceReview(review, { ...review, state: "conflicted", conflict });
-  clearTrainingFailureAfterReview(review.queueEntryId);
+  clearTrainingFailureAfterReview(review.queueEntryId, review.backendId, review.expectedRevision);
   result.conflictedAttemptIds.push(logicalAttemptId(review));
   updateReviewConflictNotice();
 }
@@ -196,7 +196,8 @@ async function savePendingReviews(): Promise<ReviewFlushResult> {
         const failureEndpoint = `${API_URL}/api/queue/entries/${review.queueEntryId}/fail`;
         try {
           const response = await requestReviewSave(failureEndpoint, {
-            method: "POST", headers: { "Idempotency-Key": `queue-fail:${review.queueEntryId}` },
+            method: "POST", headers: { "Idempotency-Key": `queue-fail:${attemptId}`, "Content-Type": "application/json" },
+            body: JSON.stringify({ card_id: review.backendId, expected_revision: review.expectedRevision }),
           }, review);
           if (!response.ok) throw await responseError(response, failureEndpoint, review);
         } catch (error) {
@@ -226,7 +227,7 @@ async function savePendingReviews(): Promise<ReviewFlushResult> {
         throw new ReviewReplayError("The computer did not confirm this review. Retry saving it.",
           `${API_URL}/api/cards/${review.backendId}/review`, review);
       replaceReview(review);
-      clearTrainingFailureAfterReview(review.queueEntryId);
+      clearTrainingFailureAfterReview(review.queueEntryId, review.backendId, review.expectedRevision);
       result.persistedAttemptIds.push(attemptId);
       if (persisted.warning) publishNotification({ severity: "warning", source: "training review", key: `review-reconciliation:${attemptId}`,
         message: `${persisted.warning} Saved result: ${review.outcome} at ${review.completedAt ?? "unknown"}. ` +

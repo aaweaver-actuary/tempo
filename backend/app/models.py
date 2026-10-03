@@ -30,6 +30,13 @@ class Settings(BaseModel):
     coverage_maia_elo: int = Field(default=1500, ge=1100, le=1900)
 
 
+class QueueAttemptFailureRequest(BaseModel):
+    """Displayed content identity for an advisory guided-failure marker."""
+
+    card_id: str = Field(min_length=1)
+    expected_revision: int | None = Field(default=None, ge=1)
+
+
 class ReviewRequest(BaseModel):
     """Request model for reviewing a card."""
 

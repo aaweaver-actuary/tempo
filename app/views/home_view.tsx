@@ -715,7 +715,7 @@ export default function Home() {
       return;
     }
     try {
-      enqueueTrainingFailure(card.queueEntryId);
+      enqueueTrainingFailure(card.queueEntryId, String(card.backendId ?? card.id), card.revision);
       void flushTrainingFailures().catch((error) =>
         showTrainingNotice(`Could not save guided-attempt state. Tempo will retry. ${String(error)}`, "warning"));
     } catch (error) {
@@ -923,7 +923,7 @@ export default function Home() {
     if (reviewPendingEntries.current.has(entryKey) || cardsLeft === 0) return;
     const pendingBeforeReview = databaseQueue && !offlineQueue ? pendingReviews() : [];
     if (!options.retryPending && !options.recordedAtCompletion &&
-        pendingBeforeReview.some((review) => review.queueEntryId === card.queueEntryId)) {
+        pendingBeforeReview.some((review) => review.queueEntryId === card.queueEntryId && review.backendId === String(card.backendId ?? card.id))) {
       setPendingReviewError("This card has a review waiting to save. Retry saving the review before grading it again.");
       return;
     }
@@ -933,7 +933,8 @@ export default function Home() {
     clearTimeout(completionTimer.current);
     const retryNeedsAdvance =
       retryPending &&
-      pendingBeforeReview[0]?.queueEntryId === card.queueEntryId;
+      pendingBeforeReview[0]?.queueEntryId === card.queueEntryId &&
+      pendingBeforeReview[0]?.backendId === String(card.backendId ?? card.id);
     setReviewPersistenceState("saving");
     setReviewSaveError("");
     if (!retryPending) setAttemptPhase("feedbackPause");
@@ -983,7 +984,7 @@ export default function Home() {
                 useTrainingStore.getState().assistedThisAttempt,
             });
           }
-          const submittedReview = pendingReviews().find((review) => review.queueEntryId === card.queueEntryId);
+          const submittedReview = pendingReviews().find((review) => review.queueEntryId === card.queueEntryId && review.backendId === String(card.backendId ?? card.id));
           submittedAttemptId = submittedReview?.attemptId;
           setReviewPersistenceIdentity(submittedReview);
           const finishNextCard = measureTempoDragPhase("next-card-readiness");
@@ -1000,7 +1001,7 @@ export default function Home() {
         try { await flushPendingReviews(); finishReviewPersistence(); }
         catch (error) { finishReviewPersistence(true); throw error; }
         const resultConflicted = conflictedReviews().some((review) => submittedAttemptId
-          ? review.attemptId === submittedAttemptId : review.queueEntryId === card.queueEntryId);
+          ? review.attemptId === submittedAttemptId : review.queueEntryId === card.queueEntryId && review.backendId === String(card.backendId ?? card.id));
         if (transitionGeneration === reviewTransitionGeneration.current)
           setReviewPersistenceState(resultConflicted ? "conflicted" : "saved");
         setQueueNotice("");

@@ -74,7 +74,7 @@ describe("review attempt reliability", () => {
   it("reload drains an earlier review before marking the next guided card", async () => {
     enqueuePendingReview({ backendId: "persisted-card", queueEntryId: 42,
       outcome: "correct", guided: false });
-    enqueueTrainingFailure(43);
+    enqueueTrainingFailure(43, "next-card", 1);
     const requestedPaths: string[] = [];
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
       const path = new URL(String(input)).pathname;
@@ -200,6 +200,31 @@ describe("review attempt reliability", () => {
     expect(refreshed.getCard().queueEntryId).toBe(42);
     expect(refreshed.step).toBe(1);
     expect(refreshed.attempt).toEqual(attemptBeforeRefresh);
+  });
+  it("same queue ID on replacement content cannot consume the active card's future slot", () => {
+    const store = useTrainingStore.getState();
+    store.hydrateLocalQueue([card], true);
+    const beforeRefresh = useTrainingStore.getState();
+    const replacement = { ...card, id: asCardId("replacement-card"), backendId: asCardId("replacement-card") };
+    store.hydrateLocalQueue([replacement], false, 1);
+    const refreshed = useTrainingStore.getState();
+    expect(refreshed.getCard()).toEqual(card);
+    expect(refreshed.practiceCards[1]).toEqual(replacement);
+    expect(refreshed.cardsLeft).toBe(2);
+    expect(refreshed.attempt).toEqual(beforeRefresh.attempt);
+  });
+  it("unchanged active content refreshes its priority reason without resetting its board or logical attempt", () => {
+    const store = useTrainingStore.getState();
+    store.hydrateLocalQueue([card], true);
+    store.setStep(1);
+    const beforeRefresh = useTrainingStore.getState();
+    store.hydrateLocalQueue([{ ...card, priorityReason: "Priority review · missed in a recent game" }]);
+    const refreshed = useTrainingStore.getState();
+    expect(refreshed.getCard().priorityReason).toBe("Priority review · missed in a recent game");
+    expect(refreshed.currentFenString).toBe(beforeRefresh.currentFenString);
+    expect(refreshed.boardAttempt).toBe(beforeRefresh.boardAttempt);
+    expect(refreshed.step).toBe(beforeRefresh.step);
+    expect(refreshed.attempt).toEqual(beforeRefresh.attempt);
   });
   it("late queue responses cannot replace a newer playable queue entry", async () => {
     const responses: ((response: Response) => void)[] = [];

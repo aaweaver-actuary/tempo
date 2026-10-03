@@ -110,7 +110,7 @@ test("prepared phone queue survives API outage reload and syncs its review", asy
   expect(replayedEntries).toEqual([501, 502, 602]);
 });
 
-test("phone 225-card offline queue reconciles to the desktop 241-card count and next card after reconnect", async ({ page, browser }) => {
+test("phone reconnect retains its active card before advancing into the refreshed 241-card queue", async ({ page, browser }) => {
   const queueCards = (count: number, prefix: string) => Array.from({ length: count }, (_, index) => ({
     ...preparedCards[0], id: `${prefix}-${index}`, queue_entry_id: 10_000 + index,
     repertoire_name: index === 0 ? `${prefix} first card` : `${prefix} card ${index}`,
@@ -156,9 +156,18 @@ test("phone 225-card offline queue reconciles to the desktop 241-card count and 
 
     phoneConnected = true;
     await page.evaluate(() => window.dispatchEvent(new Event("online")));
-    await expect(page.locator(".session-count strong")).toHaveText("241");
-    await expect(page.getByText("new first card")).toBeVisible();
+    await expect(page.locator(".session-count strong")).toHaveText("242");
+    await expect(page.getByText("old first card")).toBeVisible();
     await expect(page.getByText("Offline queue", { exact: true })).toHaveCount(0);
+    const submittedCards: string[] = [];
+    await page.route("**/api/cards/*/review", route => {
+      submittedCards.push(new URL(route.request().url()).pathname.split("/")[3]);
+      return route.fulfill({ json: { persisted: true } });
+    });
+    await page.getByRole("button", { name: "Correct", exact: true }).click();
+    await expect(page.getByText("new first card")).toBeVisible();
+    await expect(page.locator(".session-count strong")).toHaveText("241");
+    await expect.poll(() => submittedCards).toEqual(["old-0"]);
   } finally {
     await desktopContext.close();
   }
@@ -390,7 +399,7 @@ test("an older prepared response cannot replace a newer saved phone queue", asyn
   expect(savedCardIds).toContain("newer-third");
 });
 
-test("complete queue reconciliation keeps a removed in-progress board paused until Retry", async ({ page }) => {
+test("complete queue reconciliation keeps a removed phone attempt playable and retains its completed conflict", async ({ page }) => {
   const activeCard = { ...preparedCards[0], moves: ["e2e4", "e7e5", "g1f3"],
     repertoire_name: "In-progress card" };
   const nextCard = { ...preparedCards[1], repertoire_name: "Next live card" };
@@ -408,12 +417,26 @@ test("complete queue reconciliation keeps a removed in-progress board paused unt
   await expect(page.getByText("In-progress card")).toBeVisible();
   await playBoardSquare(page, "e2");
   await playBoardSquare(page, "e4");
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", /4p3\/4P3/);
+  const activeFen = await page.locator(".board-frame").getAttribute("data-fen");
+  await page.route("**/api/cards/phone-first/review", route => route.fulfill({
+    status: 409, json: { detail: "Original queue context unavailable" },
+  }));
+  await page.route("**/api/cards/phone-first/review/reconcile", route => route.fulfill({ json: {
+    persisted: false, conflict: { code: "queue_attempt_unprovable", message: "Original queue context unavailable", retryable: false },
+  } }));
   canonicalCards = [nextCard];
   await page.evaluate(() => window.dispatchEvent(new Event("online")));
-  await expect(page.getByRole("main").getByText(/active card is no longer in today's queue/)).toBeVisible();
+  await expect(page.locator(".session-count strong")).toHaveText("2");
+  await expect.poll(async () => (await readSavedPhoneQueue(page))?.cards.map(card => card.id)).toEqual([nextCard.id]);
   await expect(page.getByText("In-progress card")).toBeVisible();
-  await page.getByRole("button", { name: "Retry", exact: true }).click();
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", activeFen!);
+  await expect(page.getByRole("main").getByText(/active card is no longer in today's queue/)).toHaveCount(0);
+  await playBoardSquare(page, "g1");
+  await playBoardSquare(page, "f3");
   await expect(page.getByText("Next live card")).toBeVisible();
+  await page.getByRole("button", { name: "Review conflicts (1)" }).click();
+  await expect(page.getByRole("dialog", { name: "Review conflicts" })).toContainText("Original queue context unavailable");
 });
 
 test("prepared phone queue validates study metadata beyond the live window and keeps offline exercises", async ({ page }) => {

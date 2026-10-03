@@ -253,3 +253,30 @@ def test_study_migration_preserves_queue_attempt_provenance_and_triggers(tmp_pat
         connection.execute("DELETE FROM daily_queue WHERE id=?", (queue_entry_id,))
         retained = connection.execute("SELECT revision,attempt_failed FROM queue_attempt_origins ORDER BY revision").fetchall()
         assert [tuple(context) for context in retained] == [(1, 0), (2, 1)]
+
+
+@pytest.mark.parametrize("with_identity", [False, True])
+def test_stale_guided_marker_never_marks_reassigned_queue_content(admitted_attempt, with_identity):
+    queue_entry_id, _ = admitted_attempt
+    with database.connection() as connection:
+        connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) SELECT 'another-card',repertoire_id,kind,start_fen,moves_json,state,due_date FROM cards WHERE id='recovery-card'")
+        connection.execute("UPDATE daily_queue SET card_id='another-card' WHERE id=?", (queue_entry_id,))
+    response = TestClient(main.app).post(f"/api/queue/entries/{queue_entry_id}/fail",
+        json={"card_id": "recovery-card", "expected_revision": 1} if with_identity else None)
+    assert response.status_code == 409
+    assert response.json()["code"] == "queue_attempt_unprovable"
+    with database.connection() as connection:
+        assert connection.execute("SELECT attempt_failed FROM daily_queue WHERE id=?", (queue_entry_id,)).fetchone()[0] == 0
+
+
+def test_identified_guided_marker_can_mark_only_current_replacement_context(admitted_attempt):
+    queue_entry_id, _ = admitted_attempt
+    with database.connection() as connection:
+        connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) SELECT 'another-card',repertoire_id,kind,start_fen,moves_json,state,due_date FROM cards WHERE id='recovery-card'")
+        connection.execute("UPDATE daily_queue SET card_id='another-card' WHERE id=?", (queue_entry_id,))
+    response = TestClient(main.app).post(f"/api/queue/entries/{queue_entry_id}/fail",
+        json={"card_id": "another-card", "expected_revision": 1})
+    assert response.status_code == 200
+    with database.connection() as connection:
+        retained = connection.execute("SELECT card_id,attempt_failed FROM queue_attempt_origins WHERE queue_entry_id=? ORDER BY card_id", (queue_entry_id,)).fetchall()
+        assert [tuple(row) for row in retained] == [("another-card", 1), ("recovery-card", 0)]

@@ -14,7 +14,7 @@ test("Games prioritizes a canonical miss and explains the targeted study card", 
   let prioritized = false;
   await page.route("**/api/queue/window?**", route => route.fulfill({ json: {
     cards: [{ id: "visual-card", queue_entry_id: 1, start_fen: startFen,
-      moves: ["e2e4", "e7e5", "g1f3"], content_type: "opening",
+      moves: ["e2e4", "e7e5", "g1f3", "b8c6", "f1b5"], content_type: "opening",
       repertoire_name: "Spanish opening", repertoire_source: "PGN",
       first_correct_at: "2026-09-17T12:00:00Z", trained_color: "white",
       gameplay_priority_reason: prioritized ? priorityReason : null }],

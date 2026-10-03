@@ -84,3 +84,20 @@ def retain_recovered_completion(database, entry: dict, result_json: str) -> None
         "WHERE queue_entry_id=? AND card_id=? AND revision=?",
         (result_json, entry["id"], entry["card_id"], entry["revision"]),
     )
+
+
+def validate_failure_marker(database, entry_id: int, card_id=None, expected_revision=None) -> None:
+    """A queue-only legacy marker cannot choose between replacement contexts."""
+    from .review_conflicts import ReviewConflict
+
+    contexts = database.execute("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=?", (entry_id,)).fetchall()
+    current = database.execute("""SELECT c.id,c.revision,c.start_fen,c.moves_json,c.trained_color,c.content_type
+        FROM daily_queue q JOIN cards c ON c.id=q.card_id WHERE q.id=?""", (entry_id,)).fetchone()
+    if card_id is not None:
+        contexts = [origin for origin in contexts if origin["card_id"] == card_id
+                    and (expected_revision is None or origin["revision"] == expected_revision)]
+    if not current or len(contexts) != 1 or current["id"] != contexts[0]["card_id"] or any(
+        current[column] != contexts[0][column]
+        for column in ("revision", "start_fen", "moves_json", "trained_color", "content_type")
+    ):
+        raise ReviewConflict("queue_attempt_unprovable", "The guided attempt no longer matches this queue entry. Its completed review needs reconciliation.")

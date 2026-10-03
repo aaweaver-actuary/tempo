@@ -7,7 +7,7 @@ import { reportDebugError } from "../lib/debug-reporting";
 import { conflictedReviews, flushPendingReviews, pendingReviews, ReviewReplayError, updateReviewConflictNotice } from "../lib/review-outbox";
 import { describeOfflineQueue, OfflineReplayError, readPreparedTraining, replayOfflineAttempts, requiresConnectedGrading, savePreparedTraining } from "../lib/offline-training";
 import { waitForOfflineShell } from "../lib/offline-shell";
-import { flushTrainingFailures, pendingTrainingFailures } from "../lib/training-failure-outbox";
+import { flushTrainingFailures, pendingTrainingFailures, pendingTrainingFailureContexts } from "../lib/training-failure-outbox";
 import { hydrateNotifications, notifications, publishNotification, resolveNotification, updateNotification, type NotificationSeverity } from "../lib/notifications";
 
 let requestGeneration = 0;
@@ -144,17 +144,19 @@ export async function fetchAndInitializeQueue(
   try {
     let pendingOfflineCardIds = new Set<string>();
     const withoutPendingReviews = (cards: PracticeCard[]) => {
-      const pendingEntryIds = new Set(pendingReviews().map((review) => review.queueEntryId));
+      const pendingResults = pendingReviews();
       const conflictedCardIds = new Set(conflictedReviews().map((review) => review.backendId));
       return cards.filter((card) =>
-        (!card.queueEntryId || !pendingEntryIds.has(card.queueEntryId)) &&
+        !pendingResults.some((review) => review.queueEntryId === card.queueEntryId && review.backendId === String(card.backendId ?? card.id)) &&
         !conflictedCardIds.has(String(card.backendId ?? card.id)) &&
         !pendingOfflineCardIds.has(String(card.backendId ?? card.id)));
     };
-    const pendingFailureEntries = new Set(pendingTrainingFailures());
+    const pendingFailureContexts = pendingTrainingFailureContexts();
+    const pendingFailureEntries = new Set(pendingFailureContexts.map((item) => item.queueEntryId));
     let failureSaveError: string | null = null;
     const retainPendingFailures = (cards: PracticeCard[]) => cards.map((card) =>
-      card.queueEntryId && pendingFailureEntries.has(card.queueEntryId)
+      card.queueEntryId && pendingFailureContexts.some((item) => item.queueEntryId === card.queueEntryId &&
+          item.backendId === String(card.backendId ?? card.id) && item.expectedRevision === card.revision)
         ? { ...card, attemptFailed: true } : card);
     const savedPreparedQueue = typeof indexedDB === "undefined" ? null : await readPreparedTraining().catch(() => null);
     if (isIPhoneHomeScreen() && !useTrainingStore.getState().isDatabaseQueueActive && !pendingReviews().length &&
@@ -357,10 +359,10 @@ export async function fetchAndInitializeQueue(
         );
         throw error;
       }
-      const pendingEntryIds = new Set(pendingReviews().map((review) => review.queueEntryId));
+      const pendingResults = pendingReviews();
       const supportedCards = prepared.cards.filter((card) =>
         !requiresConnectedGrading(card) &&
-        (!card.queue_entry_id || !pendingEntryIds.has(card.queue_entry_id)));
+        !pendingResults.some((review) => review.queueEntryId === card.queue_entry_id && review.backendId === card.id));
       const cards = await runStudyTask<PracticeCard[]>({
         kind: "queue", payload: { cards: supportedCards, count: supportedCards.length, local_date: prepared.localDate },
       });

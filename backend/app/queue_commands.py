@@ -45,6 +45,8 @@ def mark_attempt_failed(database: PostgresConnection, payload: dict[str, Any]) -
     ).fetchone()
     if active_entry is None or active_entry["id"] != entry_id:
         raise ReviewConflict("queue_attempt_inactive", "This queue attempt is no longer active")
+    from .queue_attempt_origins import validate_failure_marker
+    validate_failure_marker(database, entry_id, payload.get("card_id"), payload.get("expected_revision"))
     changed = database.execute(
         "UPDATE daily_queue SET attempt_failed=1 WHERE id=? AND status='queued'",
         (entry_id,),

@@ -69,6 +69,7 @@ from .models import (
     RepertoireSettingsRequest,
     RemoveBranchRequest,
     ReviewRequest,
+    QueueAttemptFailureRequest,
     Settings,
     TacticAttemptRequest,
     TacticCaptureRequest,
@@ -2725,10 +2726,11 @@ def queue_entry_state(entry_id: int):
 
 @app.post("/api/queue/entries/{entry_id}/fail")
 def mark_attempt_failed(entry_id: int,
+                        request: QueueAttemptFailureRequest | None = None,
                         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     if postgres_store.configured():
         from .command_dispatch import dispatch_command
-        return dispatch_command("queue.attempt_failed", {"entry_id": entry_id},
+        return dispatch_command("queue.attempt_failed", {"entry_id": entry_id, **(request.model_dump() if request else {})},
                                 idempotency_key=idempotency_key)
     with connection() as db:
         active_entry = db.execute(
@@ -2740,6 +2742,9 @@ def mark_attempt_failed(entry_id: int,
         ).fetchone()
         if not active_entry or active_entry["id"] != entry_id:
             raise ReviewConflict("queue_attempt_inactive", "This queue attempt is no longer active")
+        from .queue_attempt_origins import validate_failure_marker
+        validate_failure_marker(db, entry_id, request.card_id if request else None,
+                                request.expected_revision if request else None)
         if not db.execute(
             """UPDATE daily_queue SET attempt_failed=1 WHERE id=? AND status='queued'
                AND ((SELECT content_type FROM cards WHERE id=card_id)!='defense'
