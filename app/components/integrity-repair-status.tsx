@@ -11,11 +11,21 @@ export function IntegrityRepairStatus({ onConfirmed, onResume }: {
 }) {
   const [repairs, setRepairs] = useState<PendingIntegrityRepair[]>([]);
   const [error, setError] = useState("");
+  const statusContainer = useRef<HTMLDivElement>(null);
   const callbacks = useRef({ onConfirmed, onResume });
   useEffect(() => { callbacks.current = { onConfirmed, onResume }; }, [onConfirmed, onResume]);
   useEffect(() => {
     if (!usesLocalApi()) return;
+    let releaseFrame = 0;
+    const releaseLayout = () => {
+      if (!statusContainer.current?.style.minHeight) return;
+      cancelAnimationFrame(releaseFrame);
+      // Chessground must resolve this drop before the board changes location.
+      releaseFrame = requestAnimationFrame(() => statusContainer.current?.style.removeProperty("min-height"));
+    };
     const update = () => {
+      if (statusContainer.current && document.querySelector(".board-viewport piece.dragging"))
+        statusContainer.current.style.minHeight = `${statusContainer.current.getBoundingClientRect().height}px`;
       try {
         const next = pendingIntegrityRepairs(); setRepairs(next); setError("");
         for (const repair of next) {
@@ -44,14 +54,23 @@ export function IntegrityRepairStatus({ onConfirmed, onResume }: {
     window.addEventListener("storage", update);
     window.addEventListener("online", flush);
     document.addEventListener("visibilitychange", flush);
+    document.addEventListener("mouseup", releaseLayout);
+    document.addEventListener("touchend", releaseLayout);
+    document.addEventListener("pointercancel", releaseLayout);
+    window.addEventListener("blur", releaseLayout);
     const interval = window.setInterval(flush, 3_000);
     return () => {
+      cancelAnimationFrame(releaseFrame);
+      document.removeEventListener("mouseup", releaseLayout);
+      document.removeEventListener("touchend", releaseLayout);
+      document.removeEventListener("pointercancel", releaseLayout);
+      window.removeEventListener("blur", releaseLayout);
       window.clearInterval(interval); window.removeEventListener(INTEGRITY_REPAIRS_CHANGED, update);
       window.removeEventListener(INTEGRITY_REPAIR_CONFIRMED, confirmed); window.removeEventListener("storage", update);
       window.removeEventListener("online", flush); document.removeEventListener("visibilitychange", flush);
     };
   }, []);
-  return <>{error && <div className="ui-notice error" role="alert">{error}</div>}
+  return <div ref={statusContainer} data-integrity-repair-status style={{ display: "flow-root" }}>{error && <div className="ui-notice error" role="alert">{error}</div>}
     {repairs.map(repair => <div className="integrity-train-notice" role={repair.error ? "alert" : "status"} key={repair.operationId}>
       <strong>{repair.phase === "queued" ? "Repair queued on this device" : repair.phase === "saving" ? "Repair saving" :
         repair.phase === "validating" ? "Repair validating" : "Repair needs attention"}</strong>
@@ -62,5 +81,5 @@ export function IntegrityRepairStatus({ onConfirmed, onResume }: {
       }}>Refresh repair</Button> : (repair.error || ["failed", "blocked"].includes(repair.phase)) &&
         <Button onClick={() => void retryIntegrityRepair(repair.operationId).catch(failure => setError(String(failure)))}>Retry repair</Button>}
     </div>)}
-  </>;
+  </div>;
 }
