@@ -1040,3 +1040,213 @@ def test_canonical_global_scope_ignores_internal_tactics_and_study_schedule_chan
         connection.execute("UPDATE cards SET state='learning',due_date='2026-10-03',stability=5 WHERE id='scheduled'")
         connection.execute("DELETE FROM repertoires WHERE id='__captured_tactics__'")
         assert game_scope_generation(connection) == before_study
+
+
+@pytest.mark.parametrize('admission', ['branch', 'pgn', 'paste', 'repair'])
+def test_canonical_downstream_admission_certifies_final_source_without_renewing_unrelated_routes(prefix_database, quiet_prefix_writes, admission):
+    from app.services.canonical_prefix import line_origin, read_prefix, scope_line
+    route = [*ITALIAN, 'f8c5', 'c2c3']
+    unrelated = [*ITALIAN, 'g8f6', 'd2d3']
+    add_line(route)
+    add_line(unrelated, 'unrelated')
+    downstream = prefix_projection(route)['ending_fen']
+    if admission == 'repair':
+        add_line(['d7d6', 'd2d4'], 'repair-source', downstream)
+    apply_preview(prepare_prefix())
+    with database.read_connection() as connection:
+        before = read_prefix(connection, 'italian')['source_revision']
+    if admission == 'branch':
+        from app.main import branch
+        from app.models import BranchRequest
+        branch(BranchRequest(repertoire_id='italian', name='New downstream', trained_color='white', starting_fen=downstream, moves=['g8f6', 'd2d4']))
+    elif admission == 'pgn':
+        import asyncio
+        from io import BytesIO
+        from fastapi import UploadFile
+        from app.main import import_pgn
+        text = f'[Event "Downstream"]\n[SetUp "1"]\n[FEN "{downstream}"]\n\n4... Nf6 5. d4 *'
+        asyncio.run(import_pgn(UploadFile(filename='italian.pgn', file=BytesIO(text.encode())), 'white', 3, None))
+    elif admission == 'paste':
+        from app.services.analysis_paste import build_paste_preview, parse_pasted_lines, commit_pasted_lines
+        with database.connection() as connection:
+            text = 'Nf6 d4'
+            preview = build_paste_preview(connection, text, downstream, None)
+            commit_pasted_lines(connection, text, downstream, None, preview['preview_token'], [{'index': 0, 'repertoire_id': 'italian', 'acknowledge_conflict': True}], preview, parse_pasted_lines(text, downstream))
+    else:
+        from app.services.repertoire_integrity import _rewrite_line
+        with database.connection() as connection:
+            source = connection.execute("SELECT * FROM repertoire_lines WHERE id='repair-source'").fetchone()
+            assert _rewrite_line(connection, source, ['g8f6', 'd2d4'])
+    with database.read_connection() as connection:
+        current = read_prefix(connection, 'italian')
+        assert current['source_revision'] > before
+        assert line_origin(connection, current['preview_id'], downstream) == route
+        line = dict(connection.execute('SELECT * FROM repertoire_lines WHERE start_fen=? AND moves_json=?', (downstream, json.dumps(['g8f6', 'd2d4']))).fetchone())
+        assert not scope_line(connection, 'italian', line).get('scope_pending')
+        assert line_origin(connection, current['preview_id'], prefix_projection(unrelated)['ending_fen']) is None
+
+
+@pytest.mark.parametrize('mutation', ['revise', 'archive'])
+def test_canonical_sqlite_card_scope_mutation_admits_durable_game_refresh(prefix_database, quiet_prefix_writes, mutation):
+    from app import main
+    from app.models import CardRevisionRequest
+    from app.services.canonical_scope_freshness import game_scope_generation
+    from app.services.cards import card_id
+    identifier = card_id(chess.STARTING_FEN, ITALIAN)
+    with database.connection() as connection:
+        connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES(?,'italian','response',?,?,'2026-10-02')", (identifier, chess.STARTING_FEN, json.dumps(ITALIAN)))
+        connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('italian',?)", (identifier,))
+        before = game_scope_generation(connection)
+    if mutation == 'revise':
+        main.revise_card(identifier, CardRevisionRequest(starting_fen=chess.STARTING_FEN, moves=[*ITALIAN, 'f8c5'], history_mode='preserve', expected_revision=1))
+    else:
+        main.archive_card(identifier)
+    with database.read_connection() as connection:
+        assert game_scope_generation(connection) > before
+        refresh = connection.execute("SELECT * FROM background_tasks WHERE kind='repertoire_game_refresh' AND deduplication_key='all'").fetchone()
+        assert refresh is not None and refresh['state'] == 'queued'
+        assert json.loads(refresh['payload_json']) == {'after_game_id': ''}
+
+
+def test_canonical_sqlite_existing_generated_replacement_promotes_only_edited_membership(prefix_database, quiet_prefix_writes):
+    from app.main import revise_card
+    from app.models import CardRevisionRequest
+    from app.services.cards import card_id
+    from app.services.canonical_prefix import read_prefix
+    from app.services.repertoire_integrity import _reconcile_derived_cards
+    first = card_id(chess.STARTING_FEN, ITALIAN)
+    replacement = card_id(chess.STARTING_FEN, [*ITALIAN, 'f8c5'])
+    with database.connection() as connection:
+        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('other','Other','other.pgn','2026-10-02')")
+        for identifier, moves in [(first, ITALIAN), (replacement, [*ITALIAN, 'f8c5'])]:
+            connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,canonical_route_source) VALUES(?,'italian','response',?,?,'2026-10-02',0)", (identifier, chess.STARTING_FEN, json.dumps(moves)))
+            connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('italian',?,0)", (identifier,))
+        connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('other',?,0)", (replacement,))
+        before = read_prefix(connection, 'italian')['source_revision']
+    assert revise_card(first, CardRevisionRequest(starting_fen=chess.STARTING_FEN, moves=[*ITALIAN, 'f8c5'], history_mode='preserve', expected_revision=1))['card_id'] == replacement
+    with database.connection() as connection:
+        assert connection.execute('SELECT canonical_route_source FROM cards WHERE id=?', (replacement,)).fetchone()[0] == 1
+        assert connection.execute("SELECT canonical_route_source FROM repertoire_cards WHERE repertoire_id='italian' AND card_id=?", (replacement,)).fetchone()[0] == 1
+        assert connection.execute("SELECT canonical_route_source FROM repertoire_cards WHERE repertoire_id='other' AND card_id=?", (replacement,)).fetchone()[0] == 0
+        assert read_prefix(connection, 'italian')['source_revision'] > before
+        _reconcile_derived_cards(connection, 'other')
+        _reconcile_derived_cards(connection, 'italian')
+        assert connection.execute('SELECT archived FROM cards WHERE id=?', (replacement,)).fetchone()[0] == 0
+        assert connection.execute("SELECT 1 FROM repertoire_cards WHERE repertoire_id='italian' AND card_id=?", (replacement,)).fetchone()
+
+
+@pytest.mark.parametrize('card_source,link_source', [(0, 0), (1, 0), (0, 1), (1, 1)])
+def test_canonical_integrity_reconciliation_respects_specific_membership_provenance(prefix_database, card_source, link_source):
+    from app.services.repertoire_integrity import _reconcile_derived_cards
+    with database.connection() as connection:
+        connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,canonical_route_source) VALUES('standalone','italian','response',?,?,'2026-10-02',?)", (chess.STARTING_FEN, json.dumps(ITALIAN), card_source))
+        connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('italian','standalone',?)", (link_source,))
+        _reconcile_derived_cards(connection, 'italian')
+        link = connection.execute("SELECT 1 FROM repertoire_cards WHERE repertoire_id='italian' AND card_id='standalone'").fetchone()
+        assert bool(link) == bool(link_source)
+        assert connection.execute("SELECT archived FROM cards WHERE id='standalone'").fetchone()[0] == int(not (card_source or link_source))
+
+
+def test_canonical_generated_graph_materialization_does_not_admit_global_game_refresh(prefix_database):
+    from app.services.opening_graph import enqueue_opening_graph_rebuild, execute_opening_graph_rebuild
+    from app.services.canonical_scope_freshness import game_scope_generation
+    from app.services.canonical_prefix import read_prefix
+    add_line([*ITALIAN, 'f8c5', 'c2c3'])
+    apply_preview(prepare_prefix())
+    with database.connection() as connection:
+        connection.execute("DELETE FROM background_tasks WHERE kind='repertoire_game_refresh'")
+        before = (read_prefix(connection, 'italian')['source_revision'], game_scope_generation(connection))
+    enqueue_opening_graph_rebuild('italian')
+    execute_opening_graph_rebuild(claim_task('opening_graph_rebuild'))
+    with database.read_connection() as connection:
+        assert connection.execute('SELECT 1 FROM cards WHERE canonical_route_source=0').fetchone()
+        assert (read_prefix(connection, 'italian')['source_revision'], game_scope_generation(connection)) == before
+        assert not connection.execute("SELECT 1 FROM background_tasks WHERE kind='repertoire_game_refresh'").fetchone()
+
+
+def test_canonical_game_refresh_admission_rolls_back_with_mutation_and_fences_prior_sweep(prefix_database):
+    from app.services.repertoire_game_refresh import refreshing_game_scope, execute_repertoire_game_refresh_slice
+    from app.services.canonical_scope_freshness import game_scope_generation
+    with database.read_connection() as connection:
+        initial = game_scope_generation(connection)
+    with pytest.raises(RuntimeError, match='Interrupted'):
+        with database.connection() as connection, refreshing_game_scope(connection):
+            connection.execute("UPDATE repertoires SET is_main=1 WHERE id='italian'")
+            raise RuntimeError('Interrupted foreground write')
+    with database.read_connection() as connection:
+        assert game_scope_generation(connection) == initial
+        assert not connection.execute("SELECT 1 FROM background_tasks WHERE kind='repertoire_game_refresh'").fetchone()
+    with database.connection() as connection, refreshing_game_scope(connection):
+        connection.execute("UPDATE repertoires SET is_main=1 WHERE id='italian'")
+    old_sweep = claim_task('repertoire_game_refresh')
+    with database.connection() as connection, refreshing_game_scope(connection):
+        connection.execute("UPDATE repertoires SET is_main=0 WHERE id='italian'")
+    assert execute_repertoire_game_refresh_slice(old_sweep) is False
+    with database.read_connection() as connection:
+        replacement = connection.execute("SELECT * FROM background_tasks WHERE kind='repertoire_game_refresh'").fetchone()
+        assert replacement['generation'] > old_sweep['generation']
+        assert replacement['state'] == 'queued'
+        assert json.loads(replacement['payload_json']) == {'after_game_id': ''}
+
+
+@pytest.mark.parametrize('admission', ['pgn', 'paste', 'repair'])
+def test_canonical_batch_admissions_certify_every_verified_route_at_one_final_revision(prefix_database, quiet_prefix_writes, admission):
+    from app.services.canonical_prefix import line_origin, read_prefix
+    route = [*ITALIAN, 'f8c5', 'c2c3']
+    downstream = prefix_projection(route)['ending_fen']
+    continuations = [['g8f6', 'd2d4'], ['a7a6', 'd2d3']]
+    add_line(route)
+    if admission == 'repair':
+        add_line(['d7d6', 'd2d4'], 'first-repair', downstream)
+        add_line(['d7d6', 'd2d3'], 'second-repair', downstream)
+    apply_preview(prepare_prefix())
+    if admission == 'pgn':
+        import asyncio
+        from io import BytesIO
+        from fastapi import UploadFile
+        from app.main import import_pgn
+        text = f'[Event "First"]\n[SetUp "1"]\n[FEN "{downstream}"]\n\n4... Nf6 5. d4 *\n\n[Event "Second"]\n[SetUp "1"]\n[FEN "{downstream}"]\n\n4... a6 5. d3 *'
+        asyncio.run(import_pgn(UploadFile(filename='italian.pgn', file=BytesIO(text.encode())), 'white', 3, None))
+    elif admission == 'paste':
+        from app.services.analysis_paste import build_paste_preview, parse_pasted_lines, commit_pasted_lines
+        with database.connection() as connection:
+            text = 'Nf6 (a6 d3) d4'
+            preview = build_paste_preview(connection, text, downstream, None)
+            commit_pasted_lines(connection, text, downstream, None, preview['preview_token'], [{'index': index, 'repertoire_id': 'italian', 'acknowledge_conflict': True} for index in range(2)], preview, parse_pasted_lines(text, downstream))
+    else:
+        from app.services.repertoire_integrity import resolve_issue
+        # Both conflicting lines share the trained decision after ...d6. One
+        # guided repair replaces both in a single foreground transaction.
+        continuations = [['d7d6', 'e1g1']]
+        decision_fen = prefix_projection([*route, 'd7d6'])['ending_fen']
+        with database.connection() as connection:
+            from app.services.repertoire_integrity import sweep_repertoire
+            sweep_repertoire(connection, 'italian')
+            issue = connection.execute('SELECT * FROM repertoire_integrity_issues WHERE fen_key=?', (' '.join(decision_fen.split()[:4]),)).fetchone()
+            assert issue is not None
+            result = resolve_issue(connection, 'italian', issue['id'], issue['signature'], 'e1g1')
+            assert result['changed_line_count'] == 2
+    with database.read_connection() as connection:
+        current = read_prefix(connection, 'italian')
+        for moves in continuations:
+            ending_fen = prefix_projection([*route, *moves])['ending_fen']
+            assert line_origin(connection, current['preview_id'], ending_fen) == [*route, *moves]
+            row = connection.execute('SELECT source_revision FROM canonical_prefix_positions WHERE preview_id=? AND fen_key=? AND in_scope=1', (current['preview_id'], ' '.join(ending_fen.split()[:4]))).fetchone()
+            assert row[0] == current['source_revision']
+
+
+def test_canonical_unrelated_integrity_repair_preserves_authored_standalone_source(prefix_database):
+    from app.services.repertoire_integrity import resolve_issue, sweep_repertoire
+    add_line(['e2e4', 'e7e5', 'g1f3'], 'first')
+    add_line(['e2e4', 'e7e5', 'f1c4'], 'second')
+    with database.connection() as connection:
+        connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES('standalone','italian','response',?,?,'2026-10-02')", (chess.STARTING_FEN, json.dumps(['d2d4'])))
+        connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES('italian','standalone')")
+        sweep_repertoire(connection, 'italian')
+        decision_key = ' '.join(prefix_projection(['e2e4', 'e7e5'])['ending_fen'].split()[:4])
+        issue = connection.execute('SELECT * FROM repertoire_integrity_issues WHERE fen_key=?', (decision_key,)).fetchone()
+        assert issue is not None
+        result = resolve_issue(connection, 'italian', issue['id'], issue['signature'], 'g1f3')
+        assert result['changed_line_count'] > 0
+        assert connection.execute("SELECT archived FROM cards WHERE id='standalone'").fetchone()[0] == 0
+        assert connection.execute("SELECT 1 FROM repertoire_cards WHERE repertoire_id='italian' AND card_id='standalone'").fetchone()

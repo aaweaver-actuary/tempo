@@ -814,7 +814,7 @@ def test_postgres_integrity_repair_dispatches_prepared_plan_with_idempotency(mon
     assert observed == [("integrity.issue.resolve", prepared, "repair-one")]
 
 
-def test_postgres_integrity_repair_rejects_stale_issue_signature(monkeypatch):
+def test_postgres_integrity_repair_rejects_stale_issue_signature(monkeypatch, unscoped_canonical_prefix):
     from app import integrity_repair_commands
 
     observed = []
@@ -1545,7 +1545,7 @@ def test_postgres_branch_removal_dispatches_foreground_command_with_idempotency(
     assert dispatched == [("repertoire.branch.remove", request, "remove-white-e4")]
 
 
-def test_postgres_branch_removal_queues_coverage_with_changed_lines(monkeypatch):
+def test_postgres_branch_removal_queues_coverage_with_changed_lines(monkeypatch, unscoped_canonical_prefix):
     from app import branch_commands
 
     class QueryResult:
@@ -1659,7 +1659,7 @@ def test_postgres_card_revision_dispatches_expected_revision_and_idempotency(mon
     (4, 0, None), (3, 1, "replacement"),
 ])
 def test_postgres_card_revision_rejects_stale_edit_before_mutating_cards(
-    stored_revision, archived, superseded_by,
+    stored_revision, archived, superseded_by, unscoped_canonical_prefix,
 ):
     from app.card_commands import revise_card
 
@@ -1688,7 +1688,7 @@ def test_postgres_card_revision_rejects_stale_edit_before_mutating_cards(
     assert all(not statement.startswith(("INSERT", "UPDATE", "DELETE")) for statement in statements)
 
 
-def test_postgres_card_revision_reports_existing_target_revision():
+def test_postgres_card_revision_reports_existing_target_revision(unscoped_canonical_prefix):
     from app.card_commands import revise_card
 
     statements = []
@@ -1744,7 +1744,7 @@ def test_postgres_card_archive_dispatches_idempotent_foreground_command(monkeypa
     assert dispatched == [("cards.archive", {"card_id": "card-1"}, "archive-card-1")]
 
 
-def test_postgres_card_archive_returns_unchecked_integrity_after_scan_intent(monkeypatch):
+def test_postgres_card_archive_returns_unchecked_integrity_after_scan_intent(monkeypatch, unscoped_canonical_prefix):
     from app import card_commands
 
     statements = []

@@ -1369,3 +1369,20 @@ training-history, prefix idempotency, compatibility migration and browser cases
 remain in the regular gate. These fixes do not close the broader scheduling and
 fan-out work in issues #40/#41, dismissal lifecycle work in #7, or partial-run
 selection policy in #8.
+
+## Canonical prefix mutation boundaries (PR #66 review pass)
+
+All named backend cases run in `backend/tests/test_canonical_repertoire_prefix.py`.
+
+| Named regression | Protection |
+| --- | --- |
+| `test_canonical_downstream_admission_certifies_final_source_without_renewing_unrelated_routes` (branch, PGN, paste, repair) | A downstream route remains immediately reconstructable after its own authoritative write; unrelated historical anchors remain stale. |
+| `test_canonical_batch_admissions_certify_every_verified_route_at_one_final_revision` (PGN, paste, repair) | All admitted routes in a batch use the final source revision, after all writes and before commit. |
+| `test_canonical_sqlite_card_scope_mutation_admits_durable_game_refresh` (revise, archive) | Direct compatibility API mutations atomically schedule replacement game publications. |
+| `test_canonical_game_refresh_admission_rolls_back_with_mutation_and_fences_prior_sweep` | Interrupted foreground mutations admit no refresh; a subsequent mutation resets the durable cursor and rejects the old sweep lease. |
+| `test_canonical_generated_graph_materialization_does_not_admit_global_game_refresh` | Generated materialization changes neither authoritative/global scope nor global refresh admission. |
+| `test_canonical_sqlite_existing_generated_replacement_promotes_only_edited_membership` | A → existing generated B becomes authored; an unrelated shared membership stays generated, and B survives cleanup. |
+| `test_canonical_integrity_reconciliation_respects_specific_membership_provenance` (all four card/link combinations) | Unsupported generated memberships can be removed; authored links and cards remain available. |
+| `test_canonical_unrelated_integrity_repair_preserves_authored_standalone_source` | A real unrelated guided repair preserves an authored card without a supporting saved line. |
+
+Real PostgreSQL checks in `scripts/check_postgres_canonical_freshness.py` run in the regular Docker durability/complete CI gate: **CF-5** invokes downstream branch admission, its original coverage seed, PGN, paste and integrity replacement; **CF-6** invokes authored revise/archive, durable full refresh and real game position/comparison derivation; **CF-7** materializes A/B through graph slices, promotes the existing replacement, verifies unrelated membership provenance, and runs later graph/integrity cleanup. Pools close between every slice to prove durable continuation across process restart. CF-1–4 remain required.

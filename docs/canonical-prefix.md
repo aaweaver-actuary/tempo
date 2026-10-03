@@ -209,3 +209,41 @@ recovery (PR #68) keeps its original receipt semantics. After integrating these
 changes, run focused schema/route, canonical scope, repair/discovery and import
 contract cases first; the new complete CI candidate supplies PostgreSQL durability,
 all browser workflows, pinned checks and final current-base validation.
+
+## Mutation transaction guarantees
+
+Admission separates validation from certification. A foreground transaction locks
+and validates every proposed route against the current source, performs all line,
+card and membership mutations, then certifies only its admitted routes using the
+final source revision. Duplicate imports and unrelated historical routes are not
+renewed. Repairs validate their entire batch before any source replacement. The
+same small `certify_admitted_route` helper serves PostgreSQL and SQLite.
+
+Explicit card revision promotes its result even when that identity already
+exists. Membership upserts promote only the edited card's affected repertoires;
+other generated links on a shared replacement remain generated. Derived integrity
+cleanup checks the specific membership: it can remove an unsupported generated
+link, but preserves authored links, and never archives an authored card. A
+retained authored link also protects a generated card from archival.
+
+A mutation guard compares global game scope before/after the product write and
+atomically admits the existing full `repertoire_game_refresh` when it advances.
+It resets the sweep cursor because the prior generation may already have passed
+an affected game, fencing any old lease. This queues work only; game computation
+continues in the existing bounded, restartable handlers. Generated graph writes
+do not advance global scope or admit a global refresh solely for materialization.
+
+| Authoritative boundary | Durable game rebuild admission |
+| --- | --- |
+| PostgreSQL branch add/remove, PGN import, card revise/archive, guided repair | Guard on the foreground command, inside its existing transaction. |
+| SQLite branch add/remove, PGN re-import, card revise/archive | Guard inside the direct API transaction. |
+| Analysis paste (both stores) | Guard on shared batch admission. |
+| Guided SQLite repair and automatic unsupported-link reconciliation within repair | Guard on synchronous resolution / bounded repair publication. |
+| Discovery admission (both stores) | Guard on the bounded branch-materialization transaction. |
+| Explicit prefix-split membership writes (both stores) | Guard on shared split admission. |
+| Prefix save/clear | Existing in-transaction full refresh when opening moves change. |
+| Main repertoire selection / deletion | Existing PostgreSQL in-transaction refresh; SQLite now uses the same mutation guard atomically. |
+| Generated graph/card/link maintenance; training/reviews; internal study/tactics | No refresh solely for these writes: they do not advance global classification scope. |
+
+The scope/versioning model and schema version 33 are unchanged. Selective game
+fan-out remains deferred to issue #41.
