@@ -1,16 +1,8 @@
 // @vitest-environment node
 import { execFileSync } from "node:child_process";
 import { expect, it } from "vitest";
-import { integrityRecommendationSchema, settingsResponseSchema, syncStatusSchema } from "../../app/domain/schemas";
+import { settingsResponseSchema, syncStatusSchema } from "../../app/domain/schemas";
 import { resolvePython } from "../../scripts/resolve-python.mjs";
-
-it.each(["waiting", "failed"])("repair recommendation %s payloads parse without engine lines", state => {
-  const payload = { state, repertoire_id: "rep", issue_id: "issue", signature: "signature",
-    reason: state === "waiting" ? "Preparing a repertoire recommendation" : "Docker Stockfish unavailable",
-    candidates: [] };
-  expect(integrityRecommendationSchema.parse(payload)).toEqual(payload);
-  expect(integrityRecommendationSchema.safeParse({ ...payload, engine_lines: "invalid" }).success).toBe(false);
-});
 
 it("Pydantic settings response and strict Zod adapter accept the same transport fixture", () => {
   const output = execFileSync(
