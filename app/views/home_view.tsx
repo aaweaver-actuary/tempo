@@ -94,7 +94,6 @@ import { Settings } from "../utils/settings";
 import { TreeBrowser } from "./tree_browser";
 import { useShallow } from "zustand/react/shallow";
 import { WorkspaceRefreshStatus } from "../components/workspace-refresh-status";
-import { IntegrityRepairStatus } from "../components/integrity-repair-status";
 import { RepertoireIntegrityDialog } from "../components/repertoire-integrity-dialog";
 import { repertoiresResponseSchema } from "../domain/schemas";
 import { NotificationCenter } from "../components/notification-center";
@@ -316,8 +315,8 @@ export default function Home() {
               item.id === preferred && item.integrity_status === "needs_repair",
           )
         : undefined;
-      // Passive integrity refresh must not change modal ownership or focus.
-      const paused = preferredCandidate ?? candidate ?? parsed.repertoires.find(item => item.integrity_status === "needs_repair");
+      setRepairRepertoireId(preferredCandidate?.id);
+      const paused = preferredCandidate ?? candidate;
       const repairItems = parsed.repertoires.filter(
         (item) => item.integrity_status === "needs_repair",
       );
@@ -376,6 +375,7 @@ export default function Home() {
     const onIntegrity = (event: Event) => {
       const detail = (event as CustomEvent<{ repertoireId?: string }>).detail;
       if (detail?.repertoireId) {
+        deferredRepairIds.current.delete(detail.repertoireId);
         void checkPendingIntegrity(detail.repertoireId);
       } else void checkPendingIntegrity();
     };
@@ -1437,16 +1437,6 @@ export default function Home() {
       </header>
       {!usesLocalApi() && <DemoBanner />}
       <WorkspaceRefreshStatus />
-      <IntegrityRepairStatus onConfirmed={() => {
-        invalidateWorkspaceData();
-        invalidateTrainingQueueCache();
-        void checkPendingIntegrity();
-        const training = useTrainingStore.getState();
-        if (training.cardsLeft === 0 && training.attempt.phase === "complete")
-          void refreshDatabaseQueue().catch(() => undefined);
-        // Ordinary review advancement/empty-queue refresh reconciles recovered cards.
-        // A passive top-20 response must never replace the held active card.
-      }} onResume={setRepairRepertoireId} />
       {currentView === "builder" && discoveryReturn && (
         <div className="discovery-builder-return" role="status">
           <span>Investigating a discovery in Builder.</span>
@@ -1898,6 +1888,12 @@ export default function Home() {
           onClose={() => {
             deferredRepairIds.current.add(repairRepertoireId);
             setRepairRepertoireId(undefined);
+          }}
+          onClean={() => {
+            deferredRepairIds.current.delete(repairRepertoireId);
+            setRepairRepertoireId(undefined);
+            setPausedIntegrity(undefined);
+            void refreshDatabaseQueue();
           }}
         />
       )}
