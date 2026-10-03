@@ -276,7 +276,7 @@ def priority_position_publication_invalidates_prepared_generation(
     original_page_size = priority_inputs.PERSONAL_EVIDENCE_ROWS_PER_READ
     personal_pages = 0
 
-    def read_while_publishing(read_section, fen_keys, trained_color):
+    def read_while_publishing(read_section, fen_keys, trained_color, *, repertoire_id=None):
         @contextmanager
         def interleaved_read_section():
             nonlocal personal_pages
@@ -286,7 +286,7 @@ def priority_position_publication_invalidates_prepared_generation(
             if personal_pages == 1:
                 publish_position_index()
 
-        return original_personal_read(interleaved_read_section, fen_keys, trained_color)
+        return original_personal_read(interleaved_read_section, fen_keys, trained_color, repertoire_id=repertoire_id)
 
     priority_inputs.PERSONAL_EVIDENCE_ROWS_PER_READ = 1
     priority_inputs._read_personal_evidence_rows = read_while_publishing

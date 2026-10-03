@@ -9,6 +9,7 @@ import uuid
 import chess
 
 from ..database import connection
+from ..postgres_store import PostgresConnection
 
 
 FINDING_PRIORITY = {
@@ -32,6 +33,7 @@ def _impact(finding) -> tuple[int, int, float]:
 
 def create_or_resume_session(game_id: str) -> dict:
     with connection() as database:
+        database.execute("BEGIN IMMEDIATE")
         game = database.execute(
             "SELECT id,analysis_version FROM imported_games WHERE id=?", (game_id,)
         ).fetchone()
@@ -44,9 +46,9 @@ def create_or_resume_session(game_id: str) -> dict:
             (game_id, game["analysis_version"]),
         ).fetchone()
         if existing:
-            return read_session(existing["id"])
+            return read_session_from_database(database, existing["id"])
         findings = database.execute(
-            """SELECT * FROM game_findings WHERE game_id=?
+            """SELECT * FROM current_game_findings game_findings WHERE game_id=?
                  AND analysis_version=? AND kind!='defensive tactical threat'
                  AND status NOT IN ('ignored','excluded') ORDER BY ply""",
             (game_id, game["analysis_version"]),
@@ -92,23 +94,55 @@ def _public_item(finding, *, reveal: bool) -> dict:
 
 def read_session(session_id: str) -> dict:
     with connection() as database:
+        database.execute("BEGIN IMMEDIATE")
         return read_session_from_database(database, session_id)
+
+
+def reconcile_guided_review_session(database, session) -> dict:
+    """Remove unpublished findings while retaining the completed surviving prefix."""
+    reconciled = dict(session)
+    original_ids = json.loads(session["finding_ids_json"])
+    original_index = int(session["current_index"])
+    current_findings = database.execute(
+        "SELECT * FROM current_game_findings WHERE id IN ("
+        + ",".join("?" for _ in original_ids) + ")",
+        tuple(original_ids),
+    ).fetchall() if original_ids else []
+    findings_by_id = {finding["id"]: finding for finding in current_findings}
+    retained_ids = [finding_id for finding_id in original_ids if finding_id in findings_by_id]
+    completed_survivors = sum(finding_id in findings_by_id for finding_id in original_ids[:original_index])
+    # Reuse this one publication snapshot for display and grading. A second
+    # filtered lookup could compress the list again during scope invalidation.
+    reconciled["current_findings"] = [findings_by_id[finding_id] for finding_id in retained_ids]
+    status = "complete" if session["status"] == "complete" or completed_survivors >= len(retained_ids) else "active"
+    if retained_ids != original_ids or completed_survivors != original_index or status != session["status"]:
+        serialized_ids = json.dumps(retained_ids)
+        updated_at = datetime.now(timezone.utc).isoformat()
+        database.execute(
+            "UPDATE guided_review_sessions SET finding_ids_json=?,current_index=?,status=?,updated_at=? WHERE id=?",
+            (serialized_ids, completed_survivors, status, updated_at, session["id"]),
+        )
+        reconciled.update(finding_ids_json=serialized_ids, current_index=completed_survivors,
+                          status=status, updated_at=updated_at)
+    return reconciled
+
+
+def guided_review_error(status_code: int, detail: str) -> dict:
+    """Commit reconciliation before the HTTP boundary rejects an obsolete attempt."""
+    return {"guided_review_error": {"status_code": status_code, "detail": detail}}
 
 
 def read_session_from_database(database, session_id: str) -> dict:
     """Build the usual session response inside a command's uncommitted transaction."""
 
     session = database.execute(
-        "SELECT * FROM guided_review_sessions WHERE id=?", (session_id,),
+        "SELECT * FROM guided_review_sessions WHERE id=?"
+        + (" FOR UPDATE" if isinstance(database, PostgresConnection) else ""), (session_id,),
     ).fetchone()
     if not session:
         raise LookupError("Guided review not found")
-    finding_ids = json.loads(session["finding_ids_json"])
-    findings = []
-    for finding_id in finding_ids:
-        finding = database.execute("SELECT * FROM game_findings WHERE id=?", (finding_id,)).fetchone()
-        if finding:
-            findings.append(finding)
+    session = reconcile_guided_review_session(database, session)
+    findings = session["current_findings"]
     current_index = int(session["current_index"])
     current = findings[current_index] if current_index < len(findings) else None
     attempts = database.execute(
@@ -123,20 +157,24 @@ def read_session_from_database(database, session_id: str) -> dict:
     }
 
 
-def submit_attempt(session_id: str, move_uci: str) -> dict:
+def submit_attempt(session_id: str, move_uci: str, finding_id: str) -> dict:
     with connection() as database:
+        database.execute("BEGIN IMMEDIATE")
         session = database.execute(
             "SELECT * FROM guided_review_sessions WHERE id=?", (session_id,)
         ).fetchone()
-        if not session or session["status"] != "active":
+        if not session:
             raise LookupError("Active guided review not found")
+        session = reconcile_guided_review_session(database, session)
+        if session["status"] != "active":
+            return guided_review_error(404, "Guided review is complete")
         finding_ids = json.loads(session["finding_ids_json"])
         current_index = int(session["current_index"])
         if current_index >= len(finding_ids):
             raise LookupError("Guided review is complete")
-        finding = database.execute(
-            "SELECT * FROM game_findings WHERE id=?", (finding_ids[current_index],)
-        ).fetchone()
+        if finding_ids[current_index] != finding_id:
+            return guided_review_error(409, "Guided review changed. Reload the session before trying again")
+        finding = session["current_findings"][current_index]
         evidence = json.loads(finding["evidence_json"])
         fen = evidence.get("fen")
         try:

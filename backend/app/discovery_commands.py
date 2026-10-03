@@ -13,6 +13,8 @@ from .command_gateway import register_command
 from .database import read_connection
 from .postgres_store import PostgresConnection
 from .services.cards import card_id
+from .services.canonical_prefix import read_prefix
+from .services.canonical_scope_freshness import opportunity_is_current, game_scope_generation
 from .services.discovery_admission import (
     DISCOVERY_ADMISSION_PRIORITY, admission_intent_id, recommend_missing_continuations,
 )
@@ -70,11 +72,15 @@ def accept_discovery(database: PostgresConnection, payload: dict[str, Any]) -> d
                 )
         return {"status": "preparing", "intent_id": prior["id"]}
 
+    owner = database.execute_native("SELECT repertoire_id FROM repertoire_opportunities WHERE id=%s", (opportunity_id,)).fetchone()
+    if owner is not None:
+        read_prefix(database, owner[0], lock=True)
+        game_scope_generation(database, lock=True)
     opportunity = database.execute_native(
-        "SELECT id,repertoire_id,evidence_fingerprint,card_id,status "
+        "SELECT * "
         "FROM repertoire_opportunities WHERE id=%s FOR UPDATE", (opportunity_id,),
     ).fetchone()
-    if opportunity is None or opportunity["status"] != "active":
+    if opportunity is None or opportunity["status"] != "active" or not opportunity_is_current(database, opportunity):
         raise HTTPException(404, "Active discovery not found")
     if opportunity["card_id"]:
         raise HTTPException(409, "This discovery already has a saved decision card")

@@ -38,6 +38,7 @@ def select_main_repertoire(database: PostgresConnection, payload: dict[str, Any]
         f"WHERE id NOT IN ({system_placeholders})",
         (repertoire_id, *_SYSTEM_REPERTOIRES),
     )
+    enqueue_task_in_transaction(database, "repertoire_game_refresh", "all", {"after_game_id": ""}, priority=90)
     return {"id": repertoire_id, "is_main": True}
 
 

@@ -1047,6 +1047,65 @@ covers `--` and a valid prefix followed by `--`, proving atomic rejection, retai
 input, an inline error, disabled save, and no backend request. Both regressions
 failed against the original PR implementation before the guard was added.
 
+## Repertoire-wide canonical prefix
+
+`backend/tests/test_canonical_repertoire_prefix.py` covers:
+
+- `test_italian_prefix_suppresses_sicilian_and_philidor_coverage_nodes` (failed before the scope boundary: opponent nodes included plies 1 and 3; now only 5 and 7).
+- `test_canonical_prefix_parses_one_legal_san_sequence_and_rejects_nulls`.
+- `test_canonical_prefix_requires_exact_complete_game_history` (incomplete games and alternative initial move orders are excluded).
+- `test_canonical_prefix_accepts_matching_stubs_and_verified_continuations`.
+- `test_canonical_prefix_durable_preview_resolves_continuations_in_a_later_pass`.
+- `test_canonical_prefix_reports_first_conflict_and_disconnected_lines_without_deleting`.
+- `test_canonical_prefix_stale_preview_cannot_save_after_a_source_edit`.
+- `test_canonical_prefix_preview_rejects_owned_card_changes_without_a_link` (the preview source fingerprint covers owned and shared cards).
+- `test_canonical_prefix_rejects_off_scope_additions_and_clearing_restores_analysis`.
+- `test_canonical_prefix_preview_yields_to_foreground_restarts_and_replays_idempotently`.
+- `test_matching_game_feedback_starts_after_prefix_while_training_routes_remain_intact`.
+- `test_canonical_prefix_probabilities_condition_on_assumed_opponent_moves`.
+- `test_canonical_prefix_anchored_continuation_retains_downstream_probabilities_and_absolute_horizon` (shortening a prefix restores downstream reach probabilities without changing saved training lines).
+- `test_canonical_prefix_black_boundary_preserves_later_position_transpositions`.
+- `test_canonical_prefix_revisions_are_independent_and_stale_coverage_is_unknown`.
+- `test_canonical_prefix_matching_stub_without_continuation_never_reports_complete`.
+- `test_canonical_prefix_shared_card_edit_cannot_escape_any_linked_repertoire`.
+- `test_canonical_prefix_stale_recommendation_worker_cannot_publish`.
+- `test_canonical_prefix_refresh_preserves_previously_handled_discoveries` (scope refresh retains the handled evidence and accepted work introduced by #55).
+- `test_canonical_prefix_game_matches_and_statistics_exclude_sicilian_philidor_and_incomplete_games` (all imported games remain available).
+- `test_canonical_prefix_repertoire_api_exposes_only_normalized_typed_metadata`.
+- `test_canonical_prefix_discovery_admits_verified_new_gap_routes_and_rejects_stale_queued_work`.
+- `test_canonical_prefix_opportunity_publication_locks_repertoire_before_task_to_avoid_foreground_deadlock`.
+
+`test_canonical_prefix_discovery_acceptance_requires_current_scope_revision` in
+`backend/tests/test_postgres_discovery_acceptance.py` protects the publication
+revision contract for both current and obsolete discoveries.
+
+`tests/unit/canonical-prefix-regressions.test.tsx` covers explicit suggestion
+acceptance, conflicts blocking saves, clearing only after explicit save, recovery
+of a lost save acknowledgement, retention of a pending operation's identity,
+replay of undelivered commands, server-error receipt recovery, reopening an
+interrupted preview, and the workspace/coverage transport contracts.
+
+`canonical Italian prefix persists without changing training and rejects Philidor additions`
+in `tests/browser/canonical-repertoire-prefix.spec.ts` exercises the real
+PostgreSQL workflow at phone and desktop sizes. `Canonical prefix dialog` in
+`tests/browser/visual.spec.ts` pins the preview and controls at both sizes.
+The workflow waits for the initial durable compatibility check to become ready
+before asserting its shared-opening suggestion. Full-matrix CI captured normal
+`checking` responses at the earlier immediate assertion; all preview reads were
+successful, with no product error or stale result.
+Its header placement assertions failed before the scoped close-button layout:
+the desktop close button sat outside the dialog and the phone name crowded it.
+The regular PostgreSQL durability scenario verifies a preview queued while the
+worker is stopped, resumption, unchanged cards/reviews/scheduling, persistence of
+verified anchors after service recreation, and replay of the original save
+receipt without a second revision.
+
+`test_canonical_prefix_snapshot_copy_preserves_source_revision_and_restores_trigger`
+in `backend/tests/test_postgres_import_verification.py` protects exact legacy
+snapshot recovery: copy does not advance imported source revisions, and the
+trigger is restored within the same transaction. Real PostgreSQL import/verify
+and service recreation remain part of the durability gate.
+
 ## Contextual keyboard shortcuts
 
 - PR #64 browser navigation ownership: `static preview boards preserve browser navigation defaults before and after activation` and `navigable boards consume browser navigation at the revealed frontier` (`board-shortcuts-regressions.test.tsx`) distinguish explicit history capability from static F/R/help support. The static case failed before the capability guard; the boundary case remains protected.
@@ -1210,6 +1269,54 @@ Policy and before/after evidence: [Discoveries preview scheduling](../docs/disco
 - Issue #33 rejected-loader diagnostics: `discovery_rejected_loader_reenqueues_retry_with_consistent_diagnostics` proves rejected loads re-enqueue with consistent `enqueued`/`retriesScheduled` counters, one pending identity and timer, unchanged backoff, released capacity and timer cleanup. It failed before incrementing `enqueued` on rejection.
 - Issue #33 / PR #55 integration: `dismissal advances through undecided discoveries and clears the final item` failed after the initial rebase because a deferred ready-item addition could reinsert a removed item. The addition now checks the current authoritative feed object before publishing; PR #55's handled-evidence and PR #59's polling coverage remain intact.
 - Issue #33 concurrent ready-result reconciliation: `discovery_unchanged_refresh_preserves_a_concurrent_ready_preview` completes a valid preview and an inactive-item refresh in one React batch. It failed before retaining unchanged item ownership independently of lagging rendered-result refs. The existing browser `inactive discovery preview refreshes once without a retry notification and another discovery loads` reproduced this ordering in CI; its assertions and deadlines remain unchanged.
+
+## PR #66 review — current routes, SQLite parity and preview lifecycle
+
+`backend/tests/test_canonical_repertoire_prefix.py` adds:
+
+- `test_canonical_prefix_current_route_required_after_source_disappears_at_branch_boundary` (delete/change): actual branch admission rejects an expired route, historical continuations cannot self-certify, and a restored rooted line plus a fresh check permits admission. Both variants failed before the source fence.
+- `test_sqlite_unrestricted_zero_node_coverage_preserves_complete_empty_run`, paired with the existing `test_canonical_prefix_matching_stub_without_continuation_never_reports_complete`. The unrestricted case failed before the fix.
+- `test_sqlite_shared_card_edit_validates_all_memberships_before_study_mutation` (owner/link variants): valid edits succeed; either affected repertoire can reject the whole edit, with unchanged cards, revisions, reviews, queue, annotations and tasks. Both variants failed before the fix.
+- `test_sqlite_prefixed_pgn_reimport_validates_all_candidates_atomically`: a mixed matching/off-scope re-import leaves all study tables unchanged; a matching re-import succeeds. Failed before the fix.
+- `test_canonical_prefix_identical_previews_reuse_work_and_version_changes_create_new_scan`: duplicate checks reuse one scan; changed source and prefix versions require a new one. Failed before the fix.
+- `test_canonical_prefix_preview_retention_is_bounded_restartable_and_preserves_active_certificate`: interrupted leases, bounded child cleanup, replay fencing, active-preview preservation and stale-proof rejection.
+- `test_canonical_prefix_card_root_recertifies_connected_lines_but_cannot_resurrect_deleted_anchor`: card roots participate in multipass validation and deletion invalidates their certificates.
+- `test_sqlite_integrity_line_rewrite_cannot_escape_canonical_scope`.
+- `test_canonical_prefix_unverified_continuation_never_reports_partial_routes_as_complete`.
+- `test_canonical_prefix_admission_rechecks_source_version_before_inserting`.
+- `test_integrity_shared_card_replacement_belongs_only_to_validated_repertoire`.
+
+`backend/tests/test_postgres_cutover.py` adds
+`test_postgres_coverage_unverified_canonical_route_fails_actionably_without_publication`.
+The component regression `canonical prefix confirmed save followed by refresh failure remains committed without a stale retry` failed before the UI fix and protects the confirmed receipt and disabled stale save.
+
+The regular PostgreSQL `study_durability` scenario now independently requests the
+same prefix while its worker is stopped and proves one persisted scan survives
+restart. It also exercises real branch commands: deleting a source rejects a new
+arbitrary-FEN continuation; restoring and recertifying the route admits it again.
+Existing foreground-contention, interrupted command, history/schedule preservation,
+exact-order membership, shortening, Black scope and later transposition regressions
+remain in the regular gate.
+`test_postgres_coverage_fingerprint_tracks_route_certificates_only_for_scoped_repertoires`
+retains unrestricted coverage identity across derived card/link changes while
+scoped source mutations invalidate route-dependent calculations.
+`test_canonical_prefix_retired_preview_cannot_save_during_bounded_cleanup`
+protects the save/retention race: a preview is invalidated before its first child
+is removed, so an otherwise-current token cannot become an incomplete active
+certificate. `canonical prefix command accepts a reused %s compatibility result`
+covers ready/conflicting producer responses (both failed against the previous
+checking-only frontend contract). The real browser workflow repeats Check prefix
+and asserts that the task identities remain unchanged.
+The same PostgreSQL scenario submits ten distinct candidates and waits for durable
+retention to settle at at most nine previews while preserving the active pointer.
+
+`Canonical prefix dialog 390` and `Canonical prefix dialog 1280` in the pinned
+visual suite also keep the compact preview's shortcut toolbar hidden and its Save
+button fully visible. Both failed after merging main's keyboard controls: the new
+default toolbar clipped the phone footer and changed the desktop layout. The
+preview uses the existing `showShortcutButton` option; shared board controls and
+the existing screenshot baselines remain unchanged.
+
 ### Training burial until tomorrow
 
 Bury retains today's unfinished queue rows as `buried`, preserving scheduling and completed cycles. Those rows exclude the card from same-day materialization and still consume its new Study admission quota. Active queue reads remain `queued` only; next-day eligibility follows normal admission. PostgreSQL supplies durable command receipts; the SQLite compatibility route intentionally does not provide receipt replay.
@@ -1229,3 +1336,96 @@ The quota, terminal-ID, stale browser marker, and Home refresh-retry regressions
 - The browser burial workflow reloads while unresolved and verifies the board/control lock, explicit retry, original entry/operation identity, and cleanup. `PASS PostgreSQL blocked burial resumes original payload through retry endpoint without duplicate effects` uses the production receipt lifecycle and real HTTP retry endpoint in the regular durability scenario, preserving scheduling, reviews, and unrelated queue order.
 
 - Terminal burial recovery cannot leave a Retry control that starts a new burial on the replacement card: `Home unresolved burial survives remount and resolves failed on its original entry` verifies entry 42 cleanup, interactive replacement 43, no Retry bury and no replacement request; `Home terminal burial controls block mutations until a definitive outcome` covers ordinary terminal rejection. The `training Bury hides the card for today across reload and reports a failed bury` browser workflow also verifies terminal recovery removes Retry while restoring normal controls without issuing a new burial.
+
+## Canonical prefix derived freshness (PR #66 follow-up)
+
+| Regression | Regular coverage | Failure prevented |
+| --- | --- | --- |
+| `test_canonical_coverage_source_change_hides_complete_run_and_stale_maia` | `backend/tests/test_canonical_repertoire_prefix.py` | Complete coverage and leased Maia results surviving an authoritative source change; current recertification restores analysis. |
+| `test_canonical_graph_materialization_preserves_authoritative_source_revision` | Same backend file | Graph-generated cards and links invalidating the route source they materialize. |
+| `test_canonical_global_game_scope_hides_other_primary_and_null_comparisons` (newly eligible, newly ineligible, NULL primary, same prefix) | Same backend file | Another repertoire's scope change leaving matches, comparisons, decisions or primary findings current; unchanged saves invalidating game classifications. General game analysis remains visible. |
+| `test_canonical_opportunity_compute_source_race_discards_then_rebuilds` | Same backend file | Publishing discovery calculations made before a source edit. |
+| `test_canonical_explorer_source_race_cannot_publish_and_priority_ignores_old_run` | Same backend file | Stale Explorer candidates and coverage evidence entering discovery or priority calculations. |
+| `test_canonical_coverage_scope_predicate_survives_postgres_compatibility_translation` | Same backend file | Feeding native PostgreSQL JSON operators through the SQLite SQL translator. |
+| `test_canonical_explicit_generated_card_edit_promotes_source_and_clearing_revokes_route` | Same backend file | An explicit edit or clearing moves leaving generated provenance and old route certificates valid. |
+| `test_canonical_graph_cleanup_preserves_independently_authored_cards` | Same backend file | Graph cleanup removing an independently saved card or its membership. |
+| `test_canonical_published_introduction_priorities_hide_after_source_edit` | Same backend file | Already published introduction scores surviving a scoped source change. |
+| `test_canonical_discovery_feed_counts_and_foreground_admission_hide_stale_source` | Same backend file | A stale discovery retaining feed counts or accepting a new foreground admission. |
+| `test_canonical_preview_checks_authored_membership_of_a_generated_shared_card` | Same backend file | An explicitly saved membership bypassing compatibility checks because the shared card was originally graph-generated. |
+| `test_canonical_introduction_scores_hide_after_another_repertoire_scope_changes` | Same backend file | Published scores retaining primary game evidence after another repertoire changes the classification universe. |
+| `test_canonical_global_scope_ignores_internal_tactics_and_study_schedule_changes` | Same backend file | Unrelated tactical capture or grading invalidating opening game classification. |
+| CF-1 through CF-4 | `scripts/check_postgres_canonical_freshness.py`, invoked by the regular PostgreSQL durability `background_workloads` stage | Real branch → graph stage/link/classify/cleanup → already requested coverage; source invalidation and stale Explorer/Maia heartbeats, failures and submissions; opportunity compute/publication race; full-set game classification including another primary, NULL, newly eligible/ineligible and no-op saves. Pools close between durable slices to prove restartable cursors. |
+| `canonical route provenance %s keeps the live Black training card playable` | `tests/unit/desktop-queue-regressions.test.ts` | Strict queue validation dropping both authored and generated cards after adding provenance; both cases failed before the contract correction. |
+| `canonical route provenance remains a validated boolean in queue transport` | `tests/unit/domain-boundary-regressions.test.tsx` | Losing numeric/boolean wire compatibility or weakening validation for the new provenance field. |
+
+The complete browser gate exposed the queue-contract mismatch in six existing
+workflows: Black training (both board interaction cases), training comparison,
+FEN-only Study review, captured tactic review, and training burial. Their existing
+real PostgreSQL/browser assertions remain unchanged and must pass on the corrected
+candidate.
+
+Existing foreground-contention, task-lease replay, accepted discovery, shared-card,
+training-history, prefix idempotency, compatibility migration and browser cases
+remain in the regular gate. These fixes do not close the broader scheduling and
+fan-out work in issues #40/#41, dismissal lifecycle work in #7, or partial-run
+selection policy in #8.
+
+## Canonical prefix mutation boundaries (PR #66 review pass)
+
+All named backend cases run in `backend/tests/test_canonical_repertoire_prefix.py`.
+
+| Named regression | Protection |
+| --- | --- |
+| `test_canonical_downstream_admission_certifies_final_source_without_renewing_unrelated_routes` (branch, PGN, paste, repair) | A downstream route remains immediately reconstructable after its own authoritative write; unrelated historical anchors remain stale. |
+| `test_canonical_batch_admissions_certify_every_verified_route_at_one_final_revision` (PGN, paste, repair) | All admitted routes in a batch use the final source revision, after all writes and before commit. |
+| `test_canonical_sqlite_card_scope_mutation_admits_durable_game_refresh` (revise, archive) | Direct compatibility API mutations atomically schedule replacement game publications. |
+| `test_canonical_game_refresh_admission_rolls_back_with_mutation_and_fences_prior_sweep` | Interrupted foreground mutations admit no refresh; a subsequent mutation resets the durable cursor and rejects the old sweep lease. |
+| `test_canonical_generated_graph_materialization_does_not_admit_global_game_refresh` | Generated materialization changes neither authoritative/global scope nor global refresh admission. |
+| `test_canonical_sqlite_existing_generated_replacement_promotes_only_edited_membership` | A → existing generated B becomes authored; an unrelated shared membership stays generated, and B survives cleanup. |
+| `test_canonical_integrity_reconciliation_respects_specific_membership_provenance` (all four card/link combinations) | Unsupported generated memberships can be removed; authored links and cards remain available. |
+| `test_canonical_unrelated_integrity_repair_preserves_authored_standalone_source` | A real unrelated guided repair preserves an authored card without a supporting saved line. |
+
+Real PostgreSQL checks in `scripts/check_postgres_canonical_freshness.py` run in the regular Docker durability/complete CI gate: **CF-5** invokes downstream branch admission, its original coverage seed, PGN, paste and integrity replacement; **CF-6** invokes authored revise/archive, durable full refresh and real game position/comparison derivation; **CF-7** materializes A/B through graph slices, promotes the existing replacement, verifies unrelated membership provenance, and runs later graph/integrity cleanup. Pools close between every slice to prove durable continuation across process restart. CF-1–4 remain required.
+
+`test_canonical_first_defense_collection_admits_game_refresh_and_replay_preserves_scope` in `backend/tests/test_defensive_threat_persistence.py` covers the first `__defense__` collection membership entering the existing global universe: approval atomically admits game refresh; unchanged approval replay advances neither global scope nor the refresh generation. This does not change the universe model or defensive teaching behavior.
+
+CI's FEN-only phone study workflow failed after UTC midnight when the regular browser inherited UTC and the disposable service used New York time. `regular browser and service share the study day across UTC midnight` in `tests/unit/postgres-browser-day-regressions.test.ts` compares actual fixture configuration and both sides of the calendar boundary. `prepared study queue shares the disposable service calendar day` in `tests/browser/studies.spec.ts` proves the browser's real calendar matches the authoritative prepared queue. Regular browser timezone is pinned to the same service timezone; the existing grading assertion is unchanged.
+
+### PR #66 boundary review: guided-session publication reconciliation
+
+`backend/tests/test_guided_review.py` covers:
+
+- `test_guided_review_hidden_current_get_and_submit_grade_same_finding_without_500`: canonical freshness hides the current item; GET and POST select its successor and the saved attempt references that successor.
+- `test_guided_review_hidden_completed_finding_remaps_index_and_preserves_attempts`: removed completed items reduce the index while historical attempts survive.
+- `test_guided_review_all_remaining_hidden_post_commits_completion_and_resume_is_not_stranded` and `test_guided_review_all_findings_hidden_get_returns_complete_session`: exhausted sessions complete durably and never dereference missing findings.
+- `test_guided_review_scope_change_between_display_and_attempt_rejects_old_target`: stale displayed identities return 409 without grading another finding.
+
+`tests/unit/guided-review-pending-regressions.test.ts` covers finding-based response validation after index remapping, direct/recovered stale rejection, and preservation of unresolved legacy move-only operations. The existing PostgreSQL command locking/receipt tests remain required; real command parity is proved by CF-9 in the disposable durability workflow.
+
+Baseline at `f5044167c9cfbb7eb84f89e848da7f70957aa989`: the new hidden-current HTTP regression reproduced SQLite `TypeError: 'NoneType' object is not subscriptable` before production edits. The four initial boundary cases ran in 1.38s; the corrected generated-split fixture independently reproduced authored child links in 0.62s. These are failing-baseline evidence, not candidate validation.
+
+### PR #66 boundary review: independent card and link provenance
+
+`test_canonical_card_promotion_does_not_invalidate_generated_shared_membership` reproduces Y's unwanted source bump (0 → 1) at the reviewed head and now verifies its source revision, canonical route certificate and completed coverage remain current after X adopts the shared card. `test_canonical_card_owner_fallback_respects_explicit_membership` covers missing, generated and authored owner links. `test_canonical_structural_edit_invalidates_both_authored_shared_memberships` preserves genuine shared-source invalidation. Migration 033 and SQLite compatibility triggers retain separate card/membership flags; no migration 034 is introduced.
+
+### PR #66 boundary review: graph cleanup uses membership provenance
+
+`test_canonical_graph_cleanup_removes_generated_link_from_authored_shared_card` proves normal SQLite graph publication removes obsolete generated Y membership while retaining authored X/B, its queued card, and X source revision. It failed on the reviewed head because cleanup required global card provenance to be generated. `test_postgres_graph_cleanup_removes_only_obsolete_links_in_bounded_slices` now checks the in-transaction provenance recheck as well as current-graph retention and bounded continuation. CF-7 rebuilds Y through real PostgreSQL graph slices and asserts removal directly, without manual `_reconcile_derived_cards()` calls.
+
+### PR #66 boundary review: prefix splits retain source membership provenance
+
+`test_canonical_generated_prefix_split_preserves_membership_and_scope` splits a real graph-generated prefix with an active canonical rule and verifies both generated child cards/links, unchanged source/global scope, no new game refresh, and current route/coverage certificates. The reviewed head failed with child link provenance 1 instead of 0.
+
+`backend/tests/test_prefix_split.py` adds `test_prefix_split_preserves_each_shared_membership_provenance` (generated, authored and mixed shared sources), `test_prefix_split_owner_without_link_inherits_card_provenance`, and `test_prefix_split_generated_input_preserves_existing_authored_children_without_source_bump`. Authored wins on child collisions and replay retains the existing split result/history.
+
+Real PostgreSQL durability retains CF-1–7 and adds **CF-8**: invoke `cards.prefix_split.accept` through the command gateway, verify unchanged source/global generation and refresh identity, generated children and valid canonical/coverage certificates, then exercise graph cleanup's real prepare/commit boundary and stale-lease replay after foreground membership adoption. **CF-9** invokes actual guided start/attempt commands and persisted operation receipts: stale displayed target rejection, resumed/GET/graded target parity, completed-index remapping, durable exhaustion, and restarting without a stranded active session.
+
+`guided review reloads a stale displayed finding without grading its successor` in `tests/browser/guided-review-board-restoration.spec.ts` verifies the 409 response reloads the successor and restores actual board pieces without resubmitting the prior move. The existing correct/incorrect restoration assertions and timeouts remain unchanged; attempt payload assertions additionally require the displayed finding identity.
+
+The split membership regression also covers a globally authored card with a **generated owner membership**, both with an authored membership elsewhere and with only generated links. These two cases reproduced transient owner source bumps on `b872aa1774575e98f2cc6ef7d60d701409966ee5` (2 failed / 4 passed, 1.84s). Splitting now installs child links before restoring copied card provenance, and archives the source while its original membership flags are still present. This keeps owner fallback from briefly inventing an authoritative route. CF-8 executes both the wholly generated and mixed authored-card/generated-owner cases through the PostgreSQL command gateway; only the explicitly authored repertoire advances source/global scope and admits refresh in the mixed case.
+
+Complete CI run 37110969049 exposed two existing browser fixture races. `Settings letter preference takes effect immediately and persists while arrows and help work` sent Home before Chessground's deferred move callback committed Builder history. The shared `playMove` fixture now waits for the application's FEN to change before returning. `guided repair previews real arrows and pieces, saves durably, and preserves study through reload and confirmation` additionally clicked Correct after its one-move card completed automatically, saving the untouched second card; this reproduced locally (1 failed / 21 passed, 56.8s). Its redundant click is removed, as in the neighboring repair test. All existing board, focus, drag, receipt and persistence assertions and browser timeouts remain unchanged.
+
+That stricter move synchronization exposed stale board hit-test geometry when the repair-status banner translates the persistent board without changing its size. `board layout shifts refresh hit-test bounds before mouse and touch input without resetting a held piece` failed with both hit tests using the old top coordinate (1 failed, 1.01s). The board now clears cached bounds in capture listeners before Chessground's mouse/touch handlers; it does not reset position, redraw, or cancel a held drag. The regression also checks listener removal on unmount. The existing real recovery browser case continues to prove actual piece movement and held-drag preservation through repair confirmation.
+
+Run 37112651569 passed 187 regular browser cases but exposed the complementary banner-collapse boundary at the same recovery test's final drop assertion. Confirmation removed the banner while a piece was held, translating the board underneath the cursor and resolving a different legal but incorrect repertoire move. `repair confirmation removes its message but reserves board layout until the held drop is processed` failed before the fix (1 failed, 1.04s). Repair status now reserves its measured height during held input, removes completed messages immediately, and releases that space on the frame after mouse/touch release or cancellation. The existing real browser assertions continue to require a successful drop through passive confirmation.

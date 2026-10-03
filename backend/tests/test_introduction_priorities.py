@@ -318,6 +318,8 @@ def test_next_day_admits_from_last_published_scores_without_delaying_due_review(
     with database.connection() as db:
         _seed_repertoire(db, opening_lines, opening_lines)
         db.execute("UPDATE settings SET new_cards_per_day=1 WHERE id=1")
+        from app.services.canonical_scope_freshness import game_scope_generation
+        current_evidence = json.dumps({"game_scope_generation": game_scope_generation(db)})
         for generation, scores in (
             (1, [0.9, 0.8, 0.1]),
             (2, [0.1, 0.4, 0.95]),
@@ -325,9 +327,9 @@ def test_next_day_admits_from_last_published_scores_without_delaying_due_review(
             for card_index, score in enumerate(scores):
                 db.execute(
                     """INSERT INTO repertoire_card_priority_generations(
-                           repertoire_id,generation,card_id,scoring_version,priority_score,updated_at
-                       ) VALUES('rep',?,?,1,?,?)""",
-                    (generation, f"card-{card_index}", score, now),
+                           repertoire_id,generation,card_id,scoring_version,priority_score,updated_at,evidence_json
+                       ) VALUES('rep',?,?,1,?,?,?)""",
+                    (generation, f"card-{card_index}", score, now, current_evidence),
                 )
         db.execute(
             "INSERT INTO repertoire_priority_publications(repertoire_id,generation,updated_at) VALUES('rep',1,?)",

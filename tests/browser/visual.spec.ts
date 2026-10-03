@@ -214,6 +214,42 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 1280, height: 720 
   });
 }
 
+
+for (const width of [390, 1280]) {
+  test(`Canonical prefix dialog ${width}`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 844 });
+    await prepareVisualUI(page);
+    const prefix = { moves_uci: ["e2e4", "e7e5", "g1f3", "b8c6", "f1c4"],
+      san: "1. e4 e5 2. Nf3 Nc6 3. Bc4", revision: 0,
+      ending_fen: "r1bqkbnr/pppp1ppp/2n5/4p3/2B1P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3" };
+    await page.route("**/api/repertoires/visual-repertoire/canonical-prefix**", route => {
+      const path = new URL(route.request().url()).pathname;
+      if (path.endsWith("/preview/visual-preview")) return route.fulfill({ json: {
+        ...prefix, preview_id: "visual-preview", state: "ready", suggestion: prefix,
+        conflicts: [], conflict_count: 0, next_cursor: null, error: null,
+      } });
+      if (path.endsWith("/preview")) return route.fulfill({ json: {
+        ...prefix, preview_id: "visual-preview", state: "checking",
+      } });
+      return route.fulfill({ json: prefix });
+    });
+    await navigate(page, "Repertoire");
+    await page.locator(".repertoire-card details.card-menu summary").click();
+    await page.getByRole("menuitem", { name: "Canonical prefix…" }).click();
+    const dialog = page.getByRole("dialog", { name: "Canonical prefix" });
+    await expect(dialog.getByText("Compatible. Discoveries start after this opening.")).toBeVisible();
+    await expect(dialog.locator(".board-frame")).toHaveAttribute("data-fen", prefix.ending_fen);
+    await expect(dialog.getByRole("button", { name: "Keyboard shortcuts" })).toHaveCount(0);
+    await expect(dialog.getByRole("button", { name: "Save prefix" })).toBeInViewport({ ratio: 1 });
+    const dialogBounds = (await dialog.boundingBox())!;
+    const nameBounds = (await dialog.locator(".dialog-header p").boundingBox())!;
+    const closeBounds = (await dialog.getByRole("button", { name: "Close window" }).boundingBox())!;
+    expect(closeBounds.x + closeBounds.width).toBeLessThanOrEqual(dialogBounds.x + dialogBounds.width);
+    expect(nameBounds.x + nameBounds.width).toBeLessThanOrEqual(closeBounds.x);
+    await expect(page).toHaveScreenshot(`canonical-prefix-${width}.png`, { animations: "disabled", fullPage: true });
+  });
+}
+
 for (const width of [390, 1280]) {
   test(`keyboard help and letter preference remain readable ${width}`, async ({ page }) => {
     await page.setViewportSize({ width, height: 844 }); await prepareVisualUI(page);

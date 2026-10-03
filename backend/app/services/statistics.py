@@ -89,7 +89,7 @@ def refresh_game_features(
             (game_id,),
         ).fetchall()
         primary_match = database.execute(
-            "SELECT * FROM game_repertoire_matches WHERE game_id=? AND is_primary=1",
+            "SELECT * FROM current_game_repertoire_matches game_repertoire_matches WHERE game_id=? AND is_primary=1",
             (game_id,),
         ).fetchone()
         configured_timezone = database.execute("SELECT timezone FROM settings WHERE id=1").fetchone()[0]
@@ -209,6 +209,8 @@ def statistics_breakdown(dimension: str, window_days: int) -> dict:
     if not expression:
         raise ValueError("Unknown statistics dimension")
     cutoff = (datetime.now(timezone.utc).date() - timedelta(days=window_days - 1)).isoformat()
+    classification_filter = (" AND EXISTS(SELECT 1 FROM current_repertoire_comparisons comparison WHERE comparison.game_id=g.id)"
+                             if dimension == "repertoire" else "")
     with connection() as database:
         rows = database.execute(
             f"""SELECT {expression} AS segment,COUNT(*) AS games,
@@ -216,8 +218,9 @@ def statistics_breakdown(dimension: str, window_days: int) -> dict:
                        SUM(f.tactical_found) AS tactical_found,
                        SUM(f.tactical_opportunities) AS tactical_opportunities
                   FROM imported_games g JOIN game_feature_rows f ON f.game_id=g.id
-                  LEFT JOIN repertoires r ON r.id=f.primary_repertoire_id
-                 WHERE g.adaptive_excluded=0 AND f.local_day>=?
+                  LEFT JOIN current_game_repertoire_matches match ON match.game_id=g.id AND match.is_primary=1
+                  LEFT JOIN repertoires r ON r.id=match.repertoire_id
+                 WHERE g.adaptive_excluded=0 AND f.local_day>=? {classification_filter}
                  GROUP BY segment ORDER BY games DESC,segment""",
             (cutoff,),
         ).fetchall()

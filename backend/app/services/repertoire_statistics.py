@@ -111,14 +111,14 @@ def repertoire_statistics(repertoire_id: str, window: str) -> dict:
         timezone_name = database.execute("SELECT timezone FROM settings WHERE id=1").fetchone()[0]
         cutoff = _cutoff(window, timezone_name)
         game_rows = [dict(row) for row in database.execute(
-            """SELECT game.id,game.played_at,game.result,game.color FROM game_repertoire_matches match
+            """SELECT game.id,game.played_at,game.result,game.color FROM current_game_repertoire_matches match
                JOIN imported_games game ON game.id=match.game_id
                WHERE match.repertoire_id=? AND match.is_primary=1 AND game.adaptive_excluded=0""", (repertoire_id,),
         )]
         decision_rows = [dict(row) for row in database.execute(
             """SELECT event.game_id,event.card_id,event.fen_key,event.outcome,event.played_at
-               FROM repertoire_decision_events event JOIN imported_games game ON game.id=event.game_id
-               JOIN game_repertoire_matches match ON match.game_id=event.game_id
+               FROM current_repertoire_decision_events event JOIN imported_games game ON game.id=event.game_id
+               JOIN current_game_repertoire_matches match ON match.game_id=event.game_id
                  AND match.repertoire_id=event.repertoire_id AND match.is_primary=1
                WHERE event.repertoire_id=? AND game.adaptive_excluded=0""", (repertoire_id,),
         )]
@@ -250,9 +250,9 @@ def repertoire_positions(repertoire_id: str, window: str, sort: str, cursor: str
         events = [dict(row) for row in database.execute(
             """SELECT event.fen_key,event.expected_uci,event.actual_uci,event.outcome,event.card_id,
                       event.game_id,event.ply,event.played_at
-               FROM repertoire_decision_events event
+               FROM current_repertoire_decision_events event
                JOIN imported_games game ON game.id=event.game_id
-               JOIN game_repertoire_matches match ON match.game_id=event.game_id
+               JOIN current_game_repertoire_matches match ON match.game_id=event.game_id
                  AND match.repertoire_id=event.repertoire_id AND match.is_primary=1
                WHERE event.repertoire_id=? AND game.adaptive_excluded=0""", (repertoire_id,),
         )]

@@ -175,7 +175,7 @@ def _enqueue_game_repertoire_refreshes(game_id: str) -> None:
     enqueue_priority_refreshes_for_game(game_id, background=True)
     with connection(background=True) as database:
         repertoire_ids = [row[0] for row in database.execute(
-            "SELECT DISTINCT repertoire_id FROM game_repertoire_matches WHERE game_id=?",
+            "SELECT DISTINCT repertoire_id FROM current_game_repertoire_matches game_repertoire_matches WHERE game_id=?",
             (game_id,),
         )]
     for repertoire_id in repertoire_ids:

@@ -15,7 +15,7 @@ from .services.real_game_feedback import prioritize_real_game_miss
 
 def _locked_finding(database: PostgresConnection, finding_id: str):
     return database.execute_native(
-        "SELECT f.*,g.adaptive_excluded FROM game_findings f "
+        "SELECT f.*,g.adaptive_excluded FROM current_game_findings f "
         "JOIN imported_games g ON g.id=f.game_id WHERE f.id=%s FOR UPDATE OF f,g",
         (finding_id,),
     ).fetchone()
@@ -57,7 +57,7 @@ def decide_finding(database: PostgresConnection, payload: dict[str, Any]) -> dic
         if not finding["card_id"]:
             raise HTTPException(422, "This repertoire lapse is not linked to a study card")
         linked_event = database.execute(
-            """SELECT id FROM repertoire_decision_events
+            """SELECT id FROM current_repertoire_decision_events repertoire_decision_events
                WHERE game_id=? AND repertoire_id=? AND ply=? AND card_id=? AND outcome='miss'""",
             (finding["game_id"], finding["repertoire_id"],
              finding["ply"], finding["card_id"]),

@@ -54,7 +54,7 @@ def set_game_exclusion(database: PostgresConnection, payload: dict[str, Any]) ->
         priority=125,
     )
     affected_repertoire_ids = [row[0] for row in database.execute(
-        "SELECT repertoire_id FROM game_repertoire_matches WHERE game_id=?",
+        "SELECT repertoire_id FROM current_game_repertoire_matches game_repertoire_matches WHERE game_id=?",
         (game_id,),
     )]
     for repertoire_id in sorted(set(affected_repertoire_ids)):

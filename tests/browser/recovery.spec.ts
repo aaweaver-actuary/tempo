@@ -112,7 +112,8 @@ test("guided repair previews real arrows and pieces, saves durably, and preserve
   expect(repair.operationIds[0]).toBe(saved.operationId);
   const studyBoard = page.locator(".persistent-board-shell .board-frame");
   await playMove(page, studyBoard, "e2", "e4");
-  await page.getByRole("button", { name: "Correct", exact: true }).click();
+  // The completed one-move card advances automatically. Clicking Correct
+  // after that transition would grade the untouched second card.
   await expect(page.getByRole("heading", { name: "Second study card" })).toBeVisible();
   // Advance the fixture's fixed wall clock beyond the durable retry deadline.
   await page.clock.setFixedTime(new Date("2026-09-18T16:00:10Z"));

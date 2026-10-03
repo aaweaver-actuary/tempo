@@ -23,11 +23,21 @@ class Database:
         self.task = task
         self.statements = []
 
+    def execute(self, statement, parameters=()):
+        return self.execute_native(statement.replace("?", "%s"), parameters)
+
     def execute_native(self, statement, parameters=()):
         self.statements.append((statement, parameters))
         if statement.startswith("SELECT id,evidence_fingerprint,state"):
             return Cursor(self.prior)
-        if statement.startswith("SELECT id,repertoire_id,evidence_fingerprint"):
+        if statement.startswith("SELECT repertoire_id FROM repertoire_opportunities"):
+            return Cursor((self.opportunity["repertoire_id"],) if self.opportunity else None)
+        if statement.startswith("SELECT canonical_prefix_moves_json"):
+            return Cursor({"canonical_prefix_moves_json": "[]", "canonical_prefix_revision": 0,
+                           "canonical_prefix_preview_id": None, "scope_source_revision": 0})
+        if statement.startswith("SELECT generation FROM repertoire_game_scope"):
+            return Cursor((0,))
+        if statement.startswith("SELECT * FROM repertoire_opportunities"):
             return Cursor(self.opportunity)
         if statement.startswith("SELECT state FROM background_tasks"):
             return Cursor(self.task)
@@ -56,8 +66,12 @@ def test_postgres_discovery_acceptance_creates_one_intent_and_durable_task(monke
     assert len(queued) == 1
     assert queued[0][:3] == ("discovery_admission", response["intent_id"],
                              {"intent_id": response["intent_id"]})
-    assert "FOR UPDATE" in database.statements[1][0]
-    assert "INSERT INTO discovery_admission_intents" in database.statements[3][0]
+    metadata_lock = next(index for index, (statement, _) in enumerate(database.statements) if statement.startswith("SELECT canonical_prefix_moves_json") and "FOR UPDATE" in statement)
+    opportunity_lock = next(index for index, (statement, _) in enumerate(database.statements) if statement.startswith("SELECT * FROM repertoire_opportunities"))
+    assert metadata_lock < opportunity_lock
+    assert "FOR UPDATE" in database.statements[opportunity_lock][0]
+    assert any("INSERT INTO discovery_admission_intents" in statement for statement, _ in database.statements)
+    assert any("canonical_prefix_revision" in statement for statement, _ in database.statements)
 
 
 def test_postgres_discovery_acceptance_replays_prior_without_duplicate_task(monkeypatch):
@@ -97,7 +111,7 @@ def test_postgres_discovery_acceptance_rejects_stale_evidence_before_write():
     with pytest.raises(HTTPException) as error:
         discovery_commands.accept_discovery(database, prepared())
     assert error.value.status_code == 409
-    assert len(database.statements) == 2
+    assert all(not statement.startswith("INSERT") for statement, _ in database.statements)
 
 
 def test_postgres_discovery_acceptance_route_keeps_idempotency_key(monkeypatch):
@@ -120,6 +134,25 @@ def test_postgres_discovery_acceptance_route_keeps_idempotency_key(monkeypatch):
     assert request_digest("discovery.accept", prepared()) == request_digest(
         "discovery.accept", changed_preparation,
     )
+
+
+@pytest.mark.parametrize("opportunity_revision,expected_status", [(1, None), (0, 404)])
+def test_canonical_prefix_discovery_acceptance_requires_current_scope_revision(monkeypatch, opportunity_revision, expected_status):
+    from app.services import canonical_scope_freshness
+    current_prefix = lambda *_args, **_kwargs: {"revision": 1, "moves": [], "source_revision": 0, "preview_id": None}
+    monkeypatch.setattr(discovery_commands, "read_prefix", current_prefix)
+    monkeypatch.setattr(canonical_scope_freshness, "read_prefix", current_prefix)
+    monkeypatch.setattr(discovery_commands, "enqueue_compact_postgres_task_in_transaction", lambda *_args, **_kwargs: None)
+    database = Database(opportunity={"id": "opening-one", "repertoire_id": "white-openings",
+        "canonical_prefix_revision": opportunity_revision, "evidence_fingerprint": "revision-one", "card_id": None, "status": "active"})
+    if expected_status:
+        with pytest.raises(HTTPException) as error:
+            discovery_commands.accept_discovery(database, prepared())
+        assert error.value.status_code == expected_status
+        assert all(not statement.startswith("INSERT") for statement, _ in database.statements)
+    else:
+        assert discovery_commands.accept_discovery(database, prepared())["status"] == "preparing"
+    assert any(statement.startswith("SELECT * FROM repertoire_opportunities") for statement, _ in database.statements)
 
 
 def test_postgres_resurfaced_acceptance_keeps_revision_identity_and_same_choice_retries(monkeypatch):

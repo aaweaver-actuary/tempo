@@ -116,7 +116,7 @@ from .services.threat_training import (
 from .services.tactical_opportunities import tactical_statistics
 from .services.statistics import enqueue_daily_snapshot, statistics_breakdown, statistics_overview
 from .services.repertoire_statistics import repertoire_statistics, repertoire_positions
-from .services.repertoire_game_refresh import enqueue_repertoire_game_refresh, execute_repertoire_game_refresh_slice
+from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice, refreshing_game_scope
 from .services.guided_review import create_or_resume_session, read_session, submit_attempt
 from .services.game_sync_coordinator import (
     coordinator,
@@ -146,6 +146,7 @@ from .services.repertoire_integrity import (
 )
 from .services.puzzles import validate_puzzle_record
 from .services.prefix_split import apply_prefix_split, preview_prefix_split
+from .services.canonical_prefix import prefix_projection, ensure_line_in_scope, certify_admitted_route
 from .services.repertoire_coverage import (
     claim_maia_coverage_node,
     coverage_gaps,
@@ -652,7 +653,10 @@ async def prioritize_foreground_requests(request: Request, call_next):
             and (len(path_parts) == 4 or path_parts[4] == "reject")
             and request.method == "POST"
         )
-        if not read_only_post and not any((study_create, study_update, study_archive,
+        canonical_prefix_command = (path_parts[:2] == ["api", "repertoires"]
+            and len(path_parts) in {4, 5} and path_parts[3] == "canonical-prefix"
+            and request.method in {"POST", "PUT"})
+        if not read_only_post and not any((canonical_prefix_command, study_create, study_update, study_archive,
                     study_import_commit, study_bundle_import,
                     exercise_create, exercise_revise,
                     exercise_enroll, exercise_attempt, exercise_self_assess,
@@ -696,7 +700,11 @@ async def prioritize_foreground_requests(request: Request, call_next):
     is_background = (
         request.headers.get("x-tempo-work-class", "").casefold() == "background"
     )
-    request_scope = query_only_request() if request.method == "GET" or read_only_post else None
+    guided_review_reconciliation_read = (
+        request.method == "GET" and len(request_path_parts) == 3
+        and request_path_parts[:2] == ["api", "guided-reviews"]
+    )
+    request_scope = query_only_request() if (request.method == "GET" and not guided_review_reconciliation_read) or read_only_post else None
     if request_scope is not None:
         request_scope.__enter__()
     try:
@@ -1062,7 +1070,7 @@ def _priority_frontier_depth(priority_row) -> int:
 
 
 _ACTIVE_OPENING_MISS_SQL = """SELECT DISTINCT event.card_id
-               FROM repertoire_decision_events event
+               FROM current_repertoire_decision_events event
                JOIN imported_games game ON game.id=event.game_id
                WHERE event.outcome='miss' AND game.adaptive_excluded=0
                  AND NOT EXISTS(
@@ -1087,19 +1095,19 @@ _PRIORITY_OPENING_CANDIDATE_BODY = """SELECT DISTINCT c.id,linked.id repertoire_
                      AND candidate_link.repertoire_id=linked.id
                )
            )
-           LEFT JOIN gameplay_card_priorities p ON p.card_id=c.id AND p.priority_date<=?
+           LEFT JOIN current_gameplay_card_priorities p ON p.card_id=c.id AND p.priority_date<=?
            LEFT JOIN active_miss ON active_miss.card_id=c.id
-           LEFT JOIN repertoire_opportunities opportunity ON opportunity.repertoire_id=linked.id
+           LEFT JOIN current_repertoire_opportunities opportunity ON opportunity.repertoire_id=linked.id
              AND opportunity.card_id=c.id AND opportunity.kind='weak_known_decision'
              AND opportunity.status='active'
              AND json_extract(opportunity.evidence_json,'$.analysis_based') IS NULL
            LEFT JOIN repertoire_priority_publications publication
              ON publication.repertoire_id=linked.id
-           LEFT JOIN repertoire_card_priority_generations published_priority
+           LEFT JOIN current_repertoire_card_priority_generations published_priority
              ON published_priority.card_id=c.id
             AND published_priority.repertoire_id=linked.id
             AND published_priority.generation=publication.generation
-           LEFT JOIN repertoire_card_introduction_priorities legacy_priority
+           LEFT JOIN current_repertoire_card_introduction_priorities legacy_priority
              ON legacy_priority.card_id=c.id AND legacy_priority.repertoire_id=linked.id
            WHERE c.content_type='opening' AND (c.due_date<=? OR p.card_id IS NOT NULL OR active_miss.card_id IS NOT NULL OR opportunity.id IS NOT NULL)
              AND (c.state='new' OR (c.state='locked' AND opportunity.id IS NOT NULL))
@@ -1645,6 +1653,8 @@ register_durable_task_handler("integrity_recommendation", execute_integrity_reco
 register_durable_task_handler("opening_graph_rebuild", execute_opening_graph_rebuild)
 from .services.postgres_opening_segmentation import execute_segmentation_slice
 register_durable_task_handler("opening_segmentation", execute_segmentation_slice)
+from .services.canonical_prefix_preview import execute_prefix_preview_slice
+register_durable_task_handler("canonical_prefix_preview", execute_prefix_preview_slice)
 register_durable_task_handler("repertoire_opportunity", execute_opportunity_slice)
 register_durable_task_handler("priority_retention", execute_priority_retention_slice)
 register_durable_task_handler("repertoire_game_refresh", execute_repertoire_game_refresh_slice)
@@ -2000,12 +2010,14 @@ async def import_pgn(
     }
     derived_at = time.perf_counter()
     now = datetime.now(timezone.utc).isoformat()
-    with connection() as db:
+    with connection() as db, refreshing_game_scope(db):
         existing_repertoire = db.execute(
             "SELECT r.id FROM repertoires r WHERE source_name=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__') AND EXISTS(SELECT 1 FROM repertoire_lines l WHERE l.repertoire_id=r.id AND l.trained_color=?) ORDER BY created_at DESC LIMIT 1",
             (file.filename, trained_color),
         ).fetchone()
         rid = existing_repertoire["id"] if existing_repertoire else str(uuid.uuid4())
+        validated_routes = [ensure_line_in_scope(db, rid, line.starting_fen, line.moves, remember=False) for line in lines] if existing_repertoire else [{} for line in lines]
+        admitted_routes = []
         db.execute(
             "UPDATE repertoires SET is_main=0 WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')"
         )
@@ -2013,7 +2025,7 @@ async def import_pgn(
             "INSERT INTO repertoires(id,name,source_name,created_at,is_main) VALUES(?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET is_main=1,source_name=excluded.source_name",
             (rid, file.filename.rsplit(".", 1)[0], file.filename, now),
         )
-        for line in lines:
+        for line, validated_route in zip(lines, validated_routes):
             moves_json = json.dumps(line.moves)
             existing_line = db.execute(
                 "SELECT id FROM repertoire_lines WHERE repertoire_id=? AND start_fen=? AND moves_json=?",
@@ -2026,8 +2038,8 @@ async def import_pgn(
                     f"{rid}\0{card_id(line.starting_fen, line.moves)}".encode()
                 ).hexdigest()
             )
-            db.execute(
-                "INSERT OR IGNORE INTO repertoire_lines VALUES(?,?,?,?,?,?,?)",
+            inserted = db.execute(
+                "INSERT OR IGNORE INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,?,?,?,?)",
                 (
                     line_id,
                     rid,
@@ -2038,6 +2050,8 @@ async def import_pgn(
                     now,
                 ),
             )
+            if inserted.rowcount:
+                admitted_routes.append(validated_route)
             db.execute(
                 """INSERT INTO repertoire_line_training_depths(
                        line_id,learner_decision_count
@@ -2059,6 +2073,8 @@ async def import_pgn(
                         now,
                     ),
                 )
+        for validated_route in admitted_routes:
+            certify_admitted_route(db, rid, validated_route)
         placeholders = ",".join("?" for _ in segment_ids)
         existing_segment_ids = {
             row["id"]
@@ -2188,6 +2204,7 @@ def list_repertoires():
                 GROUP BY repertoire_id
             )
             SELECT r.id,r.name,r.source_name,r.created_at,r.is_main,r.new_cards_per_day,
+                   r.canonical_prefix_moves_json,r.canonical_prefix_revision,
                    COALESCE(r.new_cards_per_day,(SELECT new_cards_per_day FROM settings WHERE id=1)) effective_new_cards_per_day,
                    COALESCE(rs.status,'unchecked') integrity_status,
                    COALESCE(rs.scan_status,'idle') integrity_scan_status,rs.scan_error integrity_scan_error,
@@ -2229,8 +2246,10 @@ def list_repertoires():
         ).fetchall()
         repertoire_items = [
             {
-                **dict(row),
+                **{key: value for key, value in dict(row).items() if key not in {"canonical_prefix_moves_json", "canonical_prefix_revision"}},
                 "introduction_priority": priority_status(db, row["id"]),
+                "canonical_prefix": prefix_projection(
+                    json.loads(row["canonical_prefix_moves_json"]), int(row["canonical_prefix_revision"])),
             }
             for row in rows
         ]
@@ -2492,6 +2511,9 @@ def migration_snapshot():
     table_names = [
         "settings",
         "repertoires",
+        "canonical_prefix_previews",
+        "canonical_prefix_results",
+        "canonical_prefix_positions",
         "repertoire_lines",
         "repertoire_cards",
         "cards",
@@ -2513,6 +2535,7 @@ def migration_snapshot():
         "game_analysis_jobs",
         "game_sync_jobs",
         "game_derivation_jobs",
+        "repertoire_game_scope",
         "game_position_occurrences",
         "gameplay_card_priorities",
         "repertoire_comparisons",
@@ -2588,7 +2611,7 @@ def make_main_repertoire(identifier: str,
             "repertoires.main.select", {"repertoire_id": identifier},
             idempotency_key=idempotency_key,
         )
-    with connection() as db:
+    with connection() as db, refreshing_game_scope(db):
         if not db.execute(
             "SELECT 1 FROM repertoires WHERE id=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')",
             (identifier,),
@@ -2612,7 +2635,7 @@ def delete_repertoire(identifier: str,
         )
     if identifier in {"__tactics__", "__endgames__", "__game_mistakes__", "__game_tactics__", "__captured_tactics__"}:
         raise HTTPException(400, "This system repertoire cannot be deleted")
-    with connection() as db:
+    with connection() as db, refreshing_game_scope(db):
         if not db.execute(
             "SELECT 1 FROM repertoires WHERE id=?", (identifier,)
         ).fetchone():
@@ -2638,7 +2661,6 @@ def delete_repertoire(identifier: str,
                 "UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')",
                 (replacement[0],),
             )
-    enqueue_repertoire_game_refresh(background=False)
     coordinator.wake()
     return {"deleted": True, "id": identifier}
 
@@ -3097,17 +3119,18 @@ def branch(request: BranchRequest,
         f"{request.repertoire_id}\0{card_id(request.starting_fen, moves)}".encode()
     ).hexdigest()
     now = datetime.now(timezone.utc).isoformat()
-    with connection() as db:
+    with connection() as db, refreshing_game_scope(db):
         if not db.execute(
             "SELECT 1 FROM repertoires WHERE id=?", (request.repertoire_id,)
         ).fetchone():
             raise HTTPException(404, "Repertoire not found")
+        validated_route = ensure_line_in_scope(db, request.repertoire_id, request.starting_fen, moves, remember=False)
         duplicate = (
             db.execute("SELECT 1 FROM repertoire_lines WHERE id=?", (lid,)).fetchone()
             is not None
         )
         db.execute(
-            "INSERT OR IGNORE INTO repertoire_lines VALUES(?,?,?,?,?,?,?)",
+            "INSERT OR IGNORE INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,?,?,?,?)",
             (
                 lid,
                 request.repertoire_id,
@@ -3151,6 +3174,8 @@ def branch(request: BranchRequest,
                 "UPDATE repertoire_coverage_candidates SET covered=1 WHERE node_id=? AND move_uci=?",
                 (gap_node_id, gap_move_uci),
             )
+        if not duplicate:
+            certify_admitted_route(db, request.repertoire_id, validated_route)
         integrity = integrity_summary(db, request.repertoire_id)
     try:
         enqueue_opening_graph_rebuild(
@@ -3185,7 +3210,7 @@ def remove_branch(request: RemoveBranchRequest,
     except ValueError:
         raise HTTPException(422, "Branch contains an illegal move")
     position_key = " ".join(request.starting_fen.split()[:4])
-    with connection() as db:
+    with connection() as db, refreshing_game_scope(db):
         if not db.execute(
             "SELECT 1 FROM repertoires WHERE id=?", (request.repertoire_id,)
         ).fetchone():
@@ -3442,10 +3467,16 @@ def revise_card(identifier: str, request: CardRevisionRequest,
     moves = validated_line(request.starting_fen, request.moves)
     replacement = card_id(request.starting_fen, moves)
     now = datetime.now(timezone.utc).isoformat()
-    with connection() as db:
+    with connection() as db, refreshing_game_scope(db):
         old = db.execute("SELECT * FROM cards WHERE id=?", (identifier,)).fetchone()
         if not old:
             raise HTTPException(404, "Card not found")
+        affected_repertoire_ids = [row[0] for row in db.execute(
+            "SELECT repertoire_id FROM repertoire_cards WHERE card_id=? "
+            "UNION SELECT repertoire_id FROM cards WHERE id=? ORDER BY repertoire_id",
+            (identifier, identifier),
+        )]
+        validated_routes = {repertoire_id: ensure_line_in_scope(db, repertoire_id, request.starting_fen, moves, remember=False) for repertoire_id in affected_repertoire_ids}
         existing = db.execute(
             "SELECT * FROM cards WHERE id=?", (replacement,)
         ).fetchone()
@@ -3463,7 +3494,7 @@ def revise_card(identifier: str, request: CardRevisionRequest,
         )
         if replacement == identifier:
             db.execute(
-                "UPDATE cards SET start_fen=?,moves_json=?,source_fen=?,revision=? WHERE id=?",
+                "UPDATE cards SET start_fen=?,moves_json=?,source_fen=?,revision=?,canonical_route_source=1 WHERE id=?",
                 (
                     request.starting_fen,
                     json.dumps(moves),
@@ -3473,6 +3504,7 @@ def revise_card(identifier: str, request: CardRevisionRequest,
                 ),
             )
         elif existing:
+            db.execute("UPDATE cards SET canonical_route_source=1 WHERE id=?", (replacement,))
             if request.history_mode == "preserve":
                 db.execute(
                     "UPDATE reviews SET card_id=? WHERE card_id=?",
@@ -3495,6 +3527,7 @@ def revise_card(identifier: str, request: CardRevisionRequest,
                     "moves_json": json.dumps(moves),
                     "source_fen": request.source_fen,
                     "revision": revision,
+                    "canonical_route_source": 1,
                     "archived": 0,
                     "superseded_by": None,
                 }
@@ -3537,16 +3570,15 @@ def revise_card(identifier: str, request: CardRevisionRequest,
             )
         if replacement != identifier:
             db.execute(
-                "INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id) SELECT repertoire_id,? FROM repertoire_cards WHERE card_id=?",
+                "INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) SELECT repertoire_id,?,1 FROM repertoire_cards WHERE card_id=? ON CONFLICT(repertoire_id,card_id) DO UPDATE SET canonical_route_source=1",
                 (replacement, identifier),
             )
             db.execute("DELETE FROM repertoire_cards WHERE card_id=?", (identifier,))
-        repertoire_ids = [
-            row["repertoire_id"]
-            for row in db.execute(
-                "SELECT repertoire_id FROM repertoire_cards WHERE card_id=?", (replacement,)
-            )
-        ]
+        for repertoire_id in affected_repertoire_ids:
+            db.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,1) ON CONFLICT(repertoire_id,card_id) DO UPDATE SET canonical_route_source=1", (repertoire_id, replacement))
+        for repertoire_id, validated_route in validated_routes.items():
+            certify_admitted_route(db, repertoire_id, validated_route)
+        repertoire_ids = affected_repertoire_ids
         for repertoire_id in set(repertoire_ids):
             db.execute(
                 "UPDATE cards SET pending_validation=1 WHERE id=?",
@@ -3574,7 +3606,7 @@ def archive_card(identifier: str,
         return dispatch_command(
             "cards.archive", {"card_id": identifier}, idempotency_key=idempotency_key,
         )
-    with connection() as db:
+    with connection() as db, refreshing_game_scope(db):
         repertoire_ids = [
             row["repertoire_id"]
             for row in db.execute(
@@ -3785,15 +3817,19 @@ def discoveries_feed(offset: int = 0, limit: int = 25):
             """SELECT COUNT(*), SUM(CASE WHEN opportunity.seen_at IS NULL
                        AND opportunity.snoozed_until IS NULL
                        OR opportunity.snoozed_until<=? THEN 1 ELSE 0 END)
-               FROM repertoire_opportunities opportunity
-               WHERE opportunity.status='active' AND opportunity.handled_evidence_json IS NULL
+               FROM current_repertoire_opportunities opportunity
+               WHERE opportunity.status='active'
+                 AND opportunity.canonical_prefix_revision=(SELECT canonical_prefix_revision FROM repertoires WHERE id=opportunity.repertoire_id)
+                 AND opportunity.handled_evidence_json IS NULL
                  AND opportunity.repertoire_id NOT IN
                      ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__')""",
             (datetime.now(timezone.utc).isoformat(),),
         ).fetchone()
         identifiers = [dict(row) for row in database.execute(
-            """SELECT id,repertoire_id FROM repertoire_opportunities
-               WHERE status='active' AND handled_evidence_json IS NULL AND repertoire_id NOT IN
+            """SELECT id,repertoire_id FROM current_repertoire_opportunities
+               WHERE status='active'
+                 AND handled_evidence_json IS NULL
+                 AND repertoire_id NOT IN
                    ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__','__defense__')
                ORDER BY updated_at DESC,id DESC LIMIT ? OFFSET ?""",
             (limit, offset),
@@ -4681,7 +4717,7 @@ def _claim_game_analysis():
                       c.divergence_ply
                FROM game_analysis_jobs j
                JOIN imported_games g ON g.id=j.game_id
-               LEFT JOIN repertoire_comparisons c ON c.game_id=g.id
+               LEFT JOIN current_repertoire_comparisons c ON c.game_id=g.id
                WHERE j.status='queued' AND g.rated=1 AND g.speed IN ('blitz','rapid','classical')
                  AND {claimable('game_analysis', 'j.game_id')}
                ORDER BY {control_order('game_analysis', 'j.game_id')}g.played_at DESC LIMIT 1"""
@@ -4807,7 +4843,7 @@ def finalize_game_analysis_position(
             """SELECT j.game_id,j.analysis_version,j.analysis_evidence_version,
                       j.lease_id,g.color,g.start_fen,g.moves_json,c.divergence_ply
                FROM game_analysis_jobs j JOIN imported_games g ON g.id=j.game_id
-               LEFT JOIN repertoire_comparisons c ON c.game_id=j.game_id
+               LEFT JOIN current_repertoire_comparisons c ON c.game_id=j.game_id
                WHERE j.status='leased' AND j.lease_id=?""", (request.lease_id,),
         ).fetchone()
     if not row:
@@ -5234,7 +5270,7 @@ def save_game_analysis(
     enqueue_threat_scan(game_id, threat_analysis_version, background=background)
     with read_connection() as database:
         affected_repertoires = [row[0] for row in database.execute(
-            "SELECT repertoire_id FROM game_repertoire_matches WHERE game_id=?", (game_id,),
+            "SELECT repertoire_id FROM current_game_repertoire_matches game_repertoire_matches WHERE game_id=?", (game_id,),
         )]
     for repertoire_id in affected_repertoires:
         enqueue_opportunity_refresh(repertoire_id, background=True)
@@ -5630,12 +5666,12 @@ def list_game_findings(
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     with connection() as db:
         total = db.execute(
-            f"SELECT COUNT(*) FROM game_findings f JOIN imported_games g ON g.id=f.game_id {where}",
+            f"SELECT COUNT(*) FROM current_game_findings f JOIN imported_games g ON g.id=f.game_id {where}",
             parameters,
         ).fetchone()[0]
         rows = db.execute(
             f"""SELECT f.*,g.played_at,g.provider,g.opening_name,g.adaptive_excluded
-                 FROM game_findings f JOIN imported_games g ON g.id=f.game_id
+                 FROM current_game_findings f JOIN imported_games g ON g.id=f.game_id
                  {where} ORDER BY g.played_at DESC,f.ply,f.kind,f.id
                  LIMIT ? OFFSET ?""",
             [*parameters, page_limit, offset],
@@ -5662,7 +5698,7 @@ def next_tactical_finding(motif: str | None = None):
         parameters.append(motif)
     with connection() as db:
         remaining = db.execute(
-            f"""SELECT COUNT(*) FROM game_findings f
+            f"""SELECT COUNT(*) FROM current_game_findings f
                 JOIN imported_games g ON g.id=f.game_id
                 JOIN tactical_opportunities o ON o.id=f.source_opportunity_id
                 WHERE {' AND '.join(clauses)}""", parameters,
@@ -5671,7 +5707,7 @@ def next_tactical_finding(motif: str | None = None):
             f"""SELECT f.*,g.played_at,g.provider,g.speed,g.color,g.opening_name,
                        o.outcome,o.opportunity_value_cp,o.evaluation_loss_cp,o.accepted_moves_json,
                        o.evidence_json AS opportunity_evidence
-                FROM game_findings f
+                FROM current_game_findings f
                 JOIN imported_games g ON g.id=f.game_id
                 JOIN tactical_opportunities o ON o.id=f.source_opportunity_id
                 WHERE {' AND '.join(clauses)}
@@ -5701,7 +5737,7 @@ def curate_tactical_finding(finding_id: str, request: GameFindingCurationRequest
     now = datetime.now(timezone.utc)
     with connection() as db:
         finding = db.execute(
-            "SELECT f.*,g.adaptive_excluded FROM game_findings f JOIN imported_games g ON g.id=f.game_id WHERE f.id=?",
+            "SELECT f.*,g.adaptive_excluded FROM current_game_findings f JOIN imported_games g ON g.id=f.game_id WHERE f.id=?",
             (finding_id,),
         ).fetchone()
         if not finding or finding["kind"] != "tactical miss":
@@ -5749,7 +5785,7 @@ def decide_game_finding(finding_id: str, request: GameFindingDecisionRequest,
         )
     with connection() as db:
         finding = db.execute(
-            """SELECT f.*,g.adaptive_excluded FROM game_findings f
+            """SELECT f.*,g.adaptive_excluded FROM current_game_findings f
                JOIN imported_games g ON g.id=f.game_id WHERE f.id=?""",
             (finding_id,),
         ).fetchone()
@@ -5764,7 +5800,7 @@ def decide_game_finding(finding_id: str, request: GameFindingDecisionRequest,
                     422, "This repertoire lapse is not linked to a study card"
                 )
             linked_event = db.execute(
-                """SELECT id FROM repertoire_decision_events
+                """SELECT id FROM current_repertoire_decision_events repertoire_decision_events
                    WHERE game_id=? AND repertoire_id=? AND ply=? AND card_id=? AND outcome='miss'""",
                 (finding["game_id"], finding["repertoire_id"], finding["ply"], finding["card_id"]),
             ).fetchone()
@@ -5843,7 +5879,7 @@ def exclude_game_from_adaptation(
     enqueue_game_derivation(game_id)
     with read_connection() as database:
         affected_repertoires = [row[0] for row in database.execute(
-            "SELECT repertoire_id FROM game_repertoire_matches WHERE game_id=?", (game_id,),
+            "SELECT repertoire_id FROM current_game_repertoire_matches game_repertoire_matches WHERE game_id=?", (game_id,),
         )]
     for repertoire_id in affected_repertoires:
         enqueue_opportunity_refresh(repertoire_id, background=True)
@@ -5973,7 +6009,7 @@ def summary(
         rows = db.execute(
             f"""SELECT {GAME_SUMMARY_SELECT}
                FROM imported_games g
-               LEFT JOIN game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
+               LEFT JOIN current_game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
                WHERE {where}
                ORDER BY g.played_at DESC,g.id DESC LIMIT ?""",
             (*parameters, limit + 1),
@@ -5982,14 +6018,14 @@ def summary(
         count_parameters = parameters[:-3] if cursor_played_at and cursor_id else parameters
         total = db.execute(
             f"""SELECT COUNT(*) FROM imported_games g
-                 LEFT JOIN game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
+                 LEFT JOIN current_game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
                  WHERE {' AND '.join(count_clauses) if count_clauses else '1=1'}""",
             count_parameters,
         ).fetchone()[0]
         position_plies = {
             row["id"]: db.execute(
                 """SELECT COALESCE(
-                     (SELECT MIN(event.ply) FROM repertoire_decision_events event
+                     (SELECT MIN(event.ply) FROM current_repertoire_decision_events event
                       WHERE event.game_id=? AND event.repertoire_id=? AND event.fen_key=?),
                      (SELECT MIN(occurrence.ply) FROM game_position_occurrences occurrence
                       WHERE occurrence.game_id=? AND occurrence.fen_key=?))""",
@@ -6041,7 +6077,7 @@ def game_position_summary(fen: str, repertoire_id: str | None = None):
                       a.loss_cp,a.label
                FROM game_position_occurrences p
                JOIN imported_games g ON g.id=p.game_id
-               LEFT JOIN game_repertoire_matches match ON match.game_id=g.id AND match.is_primary=1
+               LEFT JOIN current_game_repertoire_matches match ON match.game_id=g.id AND match.is_primary=1
                LEFT JOIN game_move_analysis a ON a.game_id=p.game_id AND a.ply=p.ply
                WHERE p.fen_key={'%s' if postgres_mode else '?'}
                  AND {repertoire_filter}
@@ -6110,7 +6146,7 @@ def game_detail(game_id: str):
     with connection() as db:
         row = db.execute(
             f"""SELECT {GAME_PUBLIC_SELECT}
-               FROM imported_games g LEFT JOIN game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
+               FROM imported_games g LEFT JOIN current_game_repertoire_matches m ON m.game_id=g.id AND m.is_primary=1
                WHERE g.id=?""",
             (game_id,),
         ).fetchone()
@@ -6197,13 +6233,21 @@ def attempt_guided_game_review(session_id: str, request: GuidedReviewAttemptRequ
                                idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     if postgres_store.configured():
         from .command_dispatch import dispatch_command
-        return dispatch_command(
+        result = dispatch_command(
             "games.guided_review.attempt",
-            {"session_id": session_id, "move_uci": request.move_uci},
+            {"session_id": session_id, "move_uci": request.move_uci, "finding_id": request.finding_id},
             idempotency_key=idempotency_key,
         )
+        if isinstance(result, dict) and "guided_review_error" in result:
+            error = result["guided_review_error"]
+            raise HTTPException(error["status_code"], error["detail"])
+        return result
     try:
-        return submit_attempt(session_id, request.move_uci)
+        result = submit_attempt(session_id, request.move_uci, request.finding_id)
+        if "guided_review_error" in result:
+            error = result["guided_review_error"]
+            raise HTTPException(error["status_code"], error["detail"])
+        return result
     except LookupError as error:
         raise HTTPException(404, str(error)) from error
     except ValueError as error:
@@ -6212,6 +6256,8 @@ def attempt_guided_game_review(session_id: str, request: GuidedReviewAttemptRequ
 
 from .opening_segmentation_api import router as opening_segmentation_router
 app.include_router(opening_segmentation_router)
+from .canonical_prefix_api import router as canonical_prefix_router
+app.include_router(canonical_prefix_router)
 
 from .integrity_api import router as integrity_router
 app.include_router(integrity_router)

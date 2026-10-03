@@ -1,4 +1,5 @@
 import * as z from "zod";
+import { canonicalPrefixSchema } from "../canonical-prefix";
 import { QueueAttemptState } from "../cards";
 import {
   cardIdSchema,
@@ -80,6 +81,7 @@ export const queueCardSchema = z.strictObject({
   source_fen: z.string().nullable().optional(),
   introduced_at: z.iso.date().nullable().optional(),
   pending_validation: sqliteBooleanSchema.optional(),
+  canonical_route_source: sqliteBooleanSchema.optional(),
 });
 export const queueEnvelopeSchema = z.strictObject({
   cards: z.array(z.unknown()),
@@ -254,6 +256,7 @@ export const repertoiresResponseSchema = z.strictObject({
       id: repertoireIdSchema,
       name: z.string(),
       source_name: z.string(),
+      canonical_prefix: canonicalPrefixSchema.optional(),
       created_at: isoDateSchema.optional(),
       is_main: sqliteBooleanSchema.optional(),
       new_cards_per_day: z.number().int().min(0).max(100).nullable().optional(),
@@ -862,6 +865,7 @@ export const repertoireCoverageSummarySchema = z.strictObject({
   settings: z
     .strictObject({
       automatic_priority: z.boolean(),
+      canonical_prefix_revision: integer.optional(),
       reply_denominator: integer,
       cumulative_target: z.number(),
       horizon_fullmoves: integer,

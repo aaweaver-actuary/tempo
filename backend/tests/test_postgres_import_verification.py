@@ -3,6 +3,7 @@
 from contextlib import contextmanager
 from pathlib import Path
 import sys
+import pytest
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from migrate_sqlite_to_postgres import destination_fingerprint
@@ -40,3 +41,41 @@ def test_postgres_cutover_digest_ignores_new_target_columns():
         'SELECT "id", "analysis_version" FROM "imported_games" '
         'ORDER BY "id" COLLATE "C"'
     ]
+
+
+
+@pytest.mark.parametrize("table_name,trigger_name", [
+    ("repertoire_lines", "canonical_line_source"),
+    ("repertoire_cards", "canonical_link_source"),
+    ("cards", "canonical_card_insert_source"),
+])
+def test_canonical_prefix_snapshot_copy_preserves_source_revision_and_restores_trigger(tmp_path, table_name, trigger_name):
+    from contextlib import nullcontext
+    import sqlite3
+    from migrate_sqlite_to_postgres import copy_table
+    source = sqlite3.connect(tmp_path / "source.db")
+    source.execute(f'CREATE TABLE "{table_name}"(id TEXT PRIMARY KEY)')
+    source.execute(f'INSERT INTO "{table_name}" VALUES(\'line\')')
+    statements = []
+    rows = []
+    class Copy:
+        def write_row(self, row):
+            rows.append(row)
+    class Cursor:
+        def execute(self, statement, parameters=()):
+            statements.append(str(statement))
+        def copy(self, statement):
+            statements.append(str(statement))
+            return nullcontext(Copy())
+    class Destination:
+        def transaction(self):
+            return nullcontext()
+        def cursor(self):
+            return nullcontext(Cursor())
+    count, _ = copy_table(source, Destination(), table_name, ["id"], ["id"])
+    source.close()
+    assert count == 1 and rows == [("line",)]
+    assert "DISABLE TRIGGER" in statements[0] and trigger_name in statements[0]
+    assert "COPY" in statements[1]
+    assert "ENABLE TRIGGER" in statements[2] and trigger_name in statements[2]
+    assert "tempo_migration_progress" in statements[3]

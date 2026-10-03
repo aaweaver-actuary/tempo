@@ -1110,3 +1110,30 @@ def test_discoveries_auto_admission_prioritizes_recurring_position_before_recent
             ).fetchone()[0] is None
     finally:
         database_writer.stop()
+
+
+def test_canonical_first_defense_collection_admits_game_refresh_and_replay_preserves_scope(tmp_path, monkeypatch):
+    from app.services.canonical_scope_freshness import game_scope_generation
+    from app.services.database_executor import database_writer
+    from app.services.threat_training import approve_defense_candidate
+    monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'defense-membership.db')
+    database.initialize()
+    database_writer.start()
+    try:
+        candidate_id = seed_candidate()
+        with database.read_connection() as connection:
+            before = game_scope_generation(connection)
+            assert not connection.execute("SELECT 1 FROM repertoires WHERE id='__defense__'").fetchone()
+        card_identifier = approve_defense_candidate(candidate_id)
+        with database.read_connection() as connection:
+            current = game_scope_generation(connection)
+            assert current > before
+            refresh = connection.execute("SELECT * FROM background_tasks WHERE kind='repertoire_game_refresh' AND deduplication_key='all'").fetchone()
+            assert refresh is not None and refresh['state'] == 'queued'
+        assert approve_defense_candidate(candidate_id) == card_identifier
+        with database.read_connection() as connection:
+            assert game_scope_generation(connection) == current
+            replayed = connection.execute("SELECT generation FROM background_tasks WHERE kind='repertoire_game_refresh' AND deduplication_key='all'").fetchone()
+            assert replayed[0] == refresh['generation']
+    finally:
+        database_writer.stop()
