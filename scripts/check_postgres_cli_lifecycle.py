@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import os
+import argparse
+import json
 from pathlib import Path
 
 import psycopg
@@ -15,6 +17,19 @@ def main():
     if os.environ.get("TEMPO_TEST_INSTANCE") != "disposable":
         raise RuntimeError("CLI fixture requires an explicitly disposable database")
     dsn = os.environ["TEMPO_POSTGRES_ADMIN_URL"]
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--history", action="store_true", help="Read only the original fixture history, allowing unrelated worker receipts")
+    if parser.parse_args().history:
+        with psycopg.connect(dsn, options="-c default_transaction_read_only=on") as database:
+            history = {}
+            for name, statement in {
+                "reviews": "SELECT id,card_id,rating,reviewed_at,previous_interval,next_interval FROM reviews WHERE card_id='cli-history' ORDER BY id",
+                "queue": "SELECT id,queue_date,card_id,position,status FROM daily_queue WHERE card_id='cli-history' ORDER BY id",
+                "receipt": "SELECT operation_id,command_name,request_hash,state,response_json,error_json,created_at,updated_at FROM operation_receipts WHERE operation_id='cli-preserved-receipt'",
+            }.items():
+                history[name] = database.execute(statement).fetchall()
+            print(json.dumps(history, default=str))
+        return
     with psycopg.connect(dsn) as database:
         tables = database.execute("SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='public'").fetchone()[0]
         if tables:

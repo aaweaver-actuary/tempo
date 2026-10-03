@@ -65,7 +65,9 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     }
     await compose(["up", "-d", "--no-build", "--no-deps", "--wait", "postgres", "redis"], { echo: true });
     await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration", "scripts/check_postgres_cli_lifecycle.py"], { echo: true });
-    const expected = (await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration", "scripts/verify_postgres_cli_state.py"])).stdout.trim();
+    const readHistory = async () => JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration",
+      "scripts/check_postgres_cli_lifecycle.py", "--history"])).stdout);
+    const expected = await readHistory();
     const preparedImages = { revision, images, configFingerprint: configurationFingerprint(config) };
     const runtime = createRuntime(target, { run, stateDirectory, revision, evidence, preparedImages });
     await runtime.inspectTarget();
@@ -73,8 +75,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     const record = JSON.parse(readFileSync(join(stateDirectory, "deployment.json"), "utf8"));
     assert.equal(record.schema, schemaVersionFromSource(readFileSync("backend/app/schema_version.py", "utf8")));
     assert.equal(record.backup.verified, true);
-    await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration",
-      "scripts/verify_postgres_cli_state.py", "--expected", expected]);
+    assert.deepEqual(await readHistory(), expected, "upgrade preserves original study history while workers may add unrelated receipts");
 
     const repeat = createRuntime(target, { run, stateDirectory, revision, evidence, previous: record });
     await repeat.inspectTarget();
@@ -96,8 +97,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     await executeLifecycle({ recreate: true }, repeat);
     const afterRestart = (await repeat.compose(["ps", "-q", "api"])).stdout.trim();
     assert.notEqual(beforeRestart, afterRestart, "restart recreates the real API container");
-    await repeat.compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration",
-      "scripts/verify_postgres_cli_state.py", "--expected", expected]);
+    assert.deepEqual(await readHistory(), expected, "restart preserves original study history");
 
     // A genuinely rejected PostgreSQL migration, after a verified backup, must
     // leave all application consumers stopped. Keep the final column while
@@ -110,8 +110,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     await assert.rejects(executeLifecycle({ recreate: true }, rejected), /already exists/);
     const running = await rejected.runningServices();
     assert(!running.some(name => ["api", "foreground-worker", "background-worker", "web", "defense-engine", "maia-worker"].includes(name)));
-    await rejected.compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration",
-      "scripts/verify_postgres_cli_state.py", "--expected", expected]);
+    assert.deepEqual(await readHistory(), expected, "rejected DDL preserves original study history");
     console.log("PASS Tempo CLI populated 16-to-current upgrade, restored backup, repeat start, real restart, fallback, and rejected migration preserve study history");
   } catch (error) { failure = error; }
   finally {
