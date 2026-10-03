@@ -1,4 +1,7 @@
 import { API_URL } from "../const";
+import { backgroundFetch } from "./background-fetch";
+
+type OperationResponseOptions = { background?: boolean };
 
 export class PendingOperationError extends Error {
   constructor(readonly operationId: string, message?: string, readonly blocked = false) {
@@ -14,18 +17,19 @@ export class FailedOperationError extends Error {
   }
 }
 
-export async function confirmOperationResponse(response: Response): Promise<Response> {
+export async function confirmOperationResponse(response: Response, options: OperationResponseOptions = {}): Promise<Response> {
   if (response.status !== 202) return response;
   const pending = await response.clone().json() as { operation_id?: string };
   // Existing discovery admissions also return 202, with an intent ID that
   // their own status endpoint confirms. Preserve that response for its caller.
   if (!pending.operation_id) return response;
-  return readOperationResponse(pending.operation_id);
+  return readOperationResponse(pending.operation_id, options);
 }
 
 // Resolve a known command through the same receipt semantics as a 202 response.
-export async function readOperationResponse(operationId: string): Promise<Response> {
-  const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(operationId)}`);
+export async function readOperationResponse(operationId: string, options: OperationResponseOptions = {}): Promise<Response> {
+  const request = options.background ? backgroundFetch : fetch;
+  const status = await request(`${API_URL}/api/operations/${encodeURIComponent(operationId)}`);
   if (!status.ok)
     throw new PendingOperationError(operationId);
   const receipt = await status.json() as {

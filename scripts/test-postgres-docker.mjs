@@ -450,7 +450,10 @@ async function verifyForegroundAndStudyDurability() {
   assert.equal(persistedCheckpoint.persisted, true);
   assert.deepEqual(await postCommand("opening-evidence/checkpoints", backgroundCheckpoint,
     { operationId: checkpointOperationId }), persistedCheckpoint);
-  const checkpointReceipt = await get(`operations/${checkpointOperationId}`);
+  const receiptResponse = await apiRequest(`operations/${encodeURIComponent(checkpointOperationId)}`,
+    { headers: { "X-Tempo-Work-Class": "background" } });
+  assert.equal(receiptResponse.status, 200, "Background checkpoint receipt remains readable after worker completion");
+  const checkpointReceipt = await receiptResponse.json();
   assert.equal(checkpointReceipt.state, "complete");
   assert.deepEqual(checkpointReceipt.response, persistedCheckpoint);
   run("docker", [...compose, "exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo", "-v", "ON_ERROR_STOP=1", "-Atqc",

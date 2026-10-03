@@ -5,6 +5,7 @@ import { API_URL } from "../const";
 import { offlineTrainingDatabase } from "./offline-training-storage";
 import { confirmOperationResponse, FailedOperationError } from "./operation-status";
 import { publishNotification } from "./notifications";
+import { backgroundFetch } from "./background-fetch";
 
 type AttemptHeader = Omit<OpeningEvidenceCheckpoint, "events">;
 type SavedAttempt = AttemptHeader & { owner_session_id: string; final_sequence: number;
@@ -301,7 +302,7 @@ async function deliverOpeningEvidence(): Promise<void> {
         method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": operationKey,
           "X-Tempo-Work-Class": "background" },
         body: JSON.stringify(checkpoint), signal: controller.signal,
-      }));
+      }), { background: true });
     } catch (error) {
       if (error instanceof FailedOperationError) { await rejectOpeningEvidence(checkpoint.attempt_id, error.message); continue; }
       throw error;
@@ -381,7 +382,7 @@ async function recoverSavedOpeningEvidence(): Promise<void> {
       if (attempt.terminal?.state === "complete") {
         // A crash between sealing and saving the aggregate outbox leaves observed
         // work, not an invented review. Check persisted completion before reclaiming it.
-        const response = await fetch(`${API_URL}/api/opening-evidence/attempts/${encodeURIComponent(attempt.attempt_id)}`);
+        const response = await backgroundFetch(`${API_URL}/api/opening-evidence/attempts/${encodeURIComponent(attempt.attempt_id)}`);
         if (response.ok) {
           const persisted = await response.json() as { state?: string };
           if (persisted.state === "complete") { await acknowledgeOpeningReview(attempt.attempt_id); return; }

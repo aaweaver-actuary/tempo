@@ -283,7 +283,11 @@ test("AS-15 crash recovery seals committed work as partial and starts a new boar
 test("AS-15 orphaned completion without an aggregate outbox retains partial work instead of inventing a review", async ({ page }) => {
   await prepareVisualUI(page); await prepareQueue(page);
   await page.route("**/api/opening-evidence/checkpoints", route => route.abort("failed"));
-  await page.route("**/api/opening-evidence/attempts/*", route => route.fulfill({ status: 404, json: { detail: "Not persisted" } }));
+  const verificationWorkClasses: (string | undefined)[] = [];
+  await page.route("**/api/opening-evidence/attempts/*", route => {
+    verificationWorkClasses.push(route.request().headers()["x-tempo-work-class"]);
+    return route.fulfill({ status: 404, json: { detail: "Not persisted" } });
+  });
   await page.goto("/"); await move(page, "e2", "e4");
   await expect.poll(async () => (await savedEvents(page)).length).toBe(1);
   const events = await savedEvents(page) as { attempt_id: string; observed_at: string }[];
@@ -314,6 +318,7 @@ test("AS-15 orphaned completion without an aggregate outbox retains partial work
   await expect.poll(() => recovered.some(checkpoint => checkpoint.terminal?.state === "partial")).toBe(true);
   expect(recovered.find(checkpoint => checkpoint.terminal)?.terminal?.ended_at).toBe(events[0].observed_at);
   expect(aggregateReviews).toBe(0);
+  expect(verificationWorkClasses).toEqual(["background"]);
 });
 
 for (const rejectParentEvidence of [false, true]) {

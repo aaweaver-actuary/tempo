@@ -1265,3 +1265,10 @@ this input adaptation.
 - `AS-16 quota fallback reload and ambiguous retries retain the compact payload and key`, `AS-16 denied initial review storage never switches to aggregate-only` — durable identity and fail-closed non-quota storage errors.
 - `AS-15 recovered evidence waits for foreground queue readiness and an idle opportunity`, `AS-16 restarted opening board records guided arrows and retains the prior partial attempt`, `AS-16 local review quota saves the aggregate and retains evidence through a late checkpoint receipt` — regular critical browser workflows for orphan recovery, rendered Restart guidance, aggregate advancement, retained IndexedDB data and in-flight receipt safety.
 - `test_opening_checkpoint_request_is_background_without_a_client_work_class_header` — actual HTTP middleware keeps standalone checkpoint receipt admission out of its own foreground lease; legacy clients need no new header, and review requests stay foreground.
+
+### PR #69 — preserve shadow-only GET admission
+
+- `AS-15 orphan evidence verification uses background HTTP admission` — saved orphan completion verification uses the background HTTP helper; no aggregate review is invented.
+- `AS-15 background checkpoint receipt polling remains background after HTTP 202 (pending retry=false/true)` — actual journal delivery retains background admission through receipt confirmation, frozen payload/key, successful acknowledgment and ambiguous pending retry.
+- `foreground review completion and operation receipt reads retain foreground admission by default` — the shared operation helper preserves foreground review POST and receipt semantics.
+- `test_opening_checkpoint_receipt_read_uses_background_admission` — actual API middleware enters the requested activity class and passes the same background flag to the receipt reader; no header retains foreground defaults.

@@ -248,3 +248,28 @@ def test_review_requeue_context_correction_only_runs_for_fresh_review(
     if corrections:
         assert corrections == [(requeue_id, manifest['presentation_snapshot_id'],
                                 manifest['repertoire_id'], manifest['trained_color'])]
+
+
+@pytest.mark.parametrize('background', [True, False])
+def test_opening_checkpoint_receipt_read_uses_background_admission(monkeypatch, background):
+    from fastapi.testclient import TestClient
+    from app import main
+    observed_scopes = []
+    reads = []
+    @contextmanager
+    def scope(work_class):
+        observed_scopes.append(work_class)
+        yield
+    monkeypatch.setattr(main.postgres_store, 'configured', lambda: True)
+    monkeypatch.setattr(main.activity_gate, 'foreground', lambda: scope('foreground'))
+    monkeypatch.setattr(main.activity_gate, 'background_request', lambda: scope('background'))
+    def read(operation_id, **options):
+        reads.append((operation_id, options))
+        assert observed_scopes == ['background' if background else 'foreground']
+        return {'state': 'complete', 'response': {'persisted': True}}
+    monkeypatch.setattr(main, 'read_operation', read)
+    headers = {'X-Tempo-Work-Class': 'background'} if background else {}
+    response = TestClient(main.app).get('/api/operations/opening-checkpoint:receipt', headers=headers)
+    assert response.status_code == 200
+    assert response.json() == {'state': 'complete', 'response': {'persisted': True}}
+    assert reads == [('opening-checkpoint:receipt', {'background': background})]
