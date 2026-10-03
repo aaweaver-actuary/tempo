@@ -12,10 +12,11 @@ export type AttemptToken = {
   entryKey: string;
   generation: number;
   phase: AttemptPhase;
+  reviewAttemptId?: string;
 };
 
 export function attemptEntryKey(card: PracticeCard): string {
-  return `${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${card.revision ?? 1}:${card.startingFen}:${card.moves.join(" ")}`;
+  return `${card.backendId ?? card.id}:${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${card.revision ?? 1}:${card.startingFen}:${card.moves.join(" ")}`;
 }
 
 export function isAttemptPlayable(attempt: AttemptToken): boolean {

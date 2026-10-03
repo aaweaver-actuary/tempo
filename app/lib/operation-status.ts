@@ -8,30 +8,31 @@ export class PendingOperationError extends Error {
 }
 
 export class FailedOperationError extends Error {
-  constructor(message: string, readonly operationId: string) {
+  constructor(message: string, readonly operationId: string, readonly status?: number,
+    readonly code?: string, readonly retryable?: boolean) {
     super(message);
     this.name = "FailedOperationError";
   }
 }
 
-export async function confirmOperationResponse(response: Response): Promise<Response> {
+export async function confirmOperationResponse(response: Response, signal?: AbortSignal): Promise<Response> {
   if (response.status !== 202) return response;
   const pending = await response.clone().json() as { operation_id?: string };
   // Existing discovery admissions also return 202, with an intent ID that
   // their own status endpoint confirms. Preserve that response for its caller.
   if (!pending.operation_id) return response;
-  return readOperationResponse(pending.operation_id);
+  return readOperationResponse(pending.operation_id, signal);
 }
 
 // Resolve a known command through the same receipt semantics as a 202 response.
-export async function readOperationResponse(operationId: string): Promise<Response> {
-  const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(operationId)}`);
+export async function readOperationResponse(operationId: string, signal?: AbortSignal): Promise<Response> {
+  const status = await fetch(`${API_URL}/api/operations/${encodeURIComponent(operationId)}`, { signal });
   if (!status.ok)
     throw new PendingOperationError(operationId);
   const receipt = await status.json() as {
     state?: string;
     response?: unknown;
-    error?: { message?: string };
+    error?: { message?: string; detail?: string; status_code?: number; code?: string; retryable?: boolean };
     last_error?: { message?: string };
     message?: string;
   };
@@ -39,8 +40,10 @@ export async function readOperationResponse(operationId: string): Promise<Respon
     return Response.json(receipt.response);
   if (receipt.state === "failed")
     throw new FailedOperationError(
-      receipt.error?.message ?? "The save failed. Check the service before retrying.",
+      receipt.error?.detail ?? receipt.error?.message ?? "The save failed. Check the service before retrying.",
       operationId,
+      receipt.error?.status_code, receipt.error?.code,
+      receipt.error?.retryable ?? (receipt.error?.status_code === 409 ? false : undefined),
     );
   if (receipt.state === "blocked")
     throw new PendingOperationError(operationId,

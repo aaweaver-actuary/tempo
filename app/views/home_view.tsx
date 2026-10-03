@@ -82,13 +82,16 @@ import SavedLocallyButton from "../components/buttons/SavedLocallyButton";
 import DemoBanner from "../components/DemoBanner";
 import TrainingView from "./training_view";
 import StudiesView from "./studies_view";
-import { fetchAndInitializeQueue, invalidateTrainingQueueCache } from "./fetchAndInitializeQueue";
+import { loadEligibleOfflineQueue, fetchAndInitializeQueue, invalidateTrainingQueueCache } from "./fetchAndInitializeQueue";
 import {
   enqueuePendingReview,
   flushPendingReviews,
   pendingReviews,
+  conflictedReviews,
+  ReviewReplayError,
+  type PendingReview,
 } from "../lib/review-outbox";
-import { describeOfflineQueue, markOfflineAttemptFailed, recordOfflineAttempt, requiresConnectedGrading } from "../lib/offline-training";
+import { describeOfflineQueue, markOfflineAttemptFailed, recordOfflineAttempt } from "../lib/offline-training";
 import { enqueueTrainingFailure, flushTrainingFailures } from "../lib/training-failure-outbox";
 import { Settings } from "../utils/settings";
 import { TreeBrowser } from "./tree_browser";
@@ -104,7 +107,7 @@ import {
   DiscoveriesTray,
   type DiscoveryItem,
 } from "../components/discoveries-tray";
-import { setActiveDebugWorkspace } from "../lib/debug-reporting";
+import { setActiveDebugWorkspace, reportDebugError } from "../lib/debug-reporting";
 
 export default function Home() {
   const gameSync = useGameSync();
@@ -160,9 +163,11 @@ export default function Home() {
     | "saving"
     | "saveFailed"
     | "saved"
+    | "conflicted"
     | "refreshingQueue"
     | "queueFailed"
   >("idle");
+  const [reviewPersistenceIdentity, setReviewPersistenceIdentity] = useState<Pick<PendingReview, "backendId" | "queueEntryId" | "attemptId">>();
   useEffect(() => {
     const showUpdate = () => publishNotification({
       severity: "warning", source: "phone update", key: "phone-update-ready",
@@ -710,7 +715,7 @@ export default function Home() {
       return;
     }
     try {
-      enqueueTrainingFailure(card.queueEntryId);
+      enqueueTrainingFailure(card.queueEntryId, String(card.backendId ?? card.id), card.revision);
       void flushTrainingFailures().catch((error) =>
         showTrainingNotice(`Could not save guided-attempt state. Tempo will retry. ${String(error)}`, "warning"));
     } catch (error) {
@@ -918,7 +923,7 @@ export default function Home() {
     if (reviewPendingEntries.current.has(entryKey) || cardsLeft === 0) return;
     const pendingBeforeReview = databaseQueue && !offlineQueue ? pendingReviews() : [];
     if (!options.retryPending && !options.recordedAtCompletion &&
-        pendingBeforeReview.some((review) => review.queueEntryId === card.queueEntryId)) {
+        pendingBeforeReview.some((review) => review.queueEntryId === card.queueEntryId && review.backendId === String(card.backendId ?? card.id))) {
       setPendingReviewError("This card has a review waiting to save. Retry saving the review before grading it again.");
       return;
     }
@@ -928,7 +933,8 @@ export default function Home() {
     clearTimeout(completionTimer.current);
     const retryNeedsAdvance =
       retryPending &&
-      pendingBeforeReview[0]?.queueEntryId === card.queueEntryId;
+      pendingBeforeReview[0]?.queueEntryId === card.queueEntryId &&
+      pendingBeforeReview[0]?.backendId === String(card.backendId ?? card.id);
     setReviewPersistenceState("saving");
     setReviewSaveError("");
     if (!retryPending) setAttemptPhase("feedbackPause");
@@ -938,12 +944,7 @@ export default function Home() {
           card.queueEntryId, outcome,
           attemptFailed || useTrainingStore.getState().assistedThisAttempt,
         );
-        const availableCards = saved.cards.filter((queuedCard) => !requiresConnectedGrading(queuedCard));
-        const nextCards = await runStudyTask<typeof practiceCards>({
-          kind: "queue", payload: {
-            cards: availableCards, count: availableCards.length, local_date: saved.localDate,
-          },
-        });
+        const nextCards = await loadEligibleOfflineQueue(saved);
         useTrainingStore.getState().hydrateLocalQueue(nextCards, true, nextCards.length);
         setReviewed((count) => count + 1);
         setReviewPersistenceState("idle");
@@ -959,6 +960,7 @@ export default function Home() {
     }
     if (databaseQueue && card.backendId) {
       let advancedFromCache = false;
+      let submittedAttemptId: string | undefined;
       try {
         if (!retryPending) {
           if (!card.queueEntryId)
@@ -969,23 +971,34 @@ export default function Home() {
             enqueuePendingReview({
               backendId: card.backendId,
               queueEntryId: card.queueEntryId,
+              attemptId: useTrainingStore.getState().attempt.reviewAttemptId,
+              expectedRevision: card.revision,
               outcome,
               guided:
                 attemptFailed ||
                 useTrainingStore.getState().assistedThisAttempt,
             });
           }
+          const submittedReview = pendingReviews().find((review) => review.queueEntryId === card.queueEntryId && review.backendId === String(card.backendId ?? card.id));
+          submittedAttemptId = submittedReview?.attemptId;
+          setReviewPersistenceIdentity(submittedReview);
           const finishNextCard = measureTempoDragPhase("next-card-readiness");
           advancedFromCache = useTrainingStore.getState().advanceCachedQueue();
           if (advancedFromCache) requestAnimationFrame(() => finishNextCard());
           else finishNextCard(true);
           setReviewed((count) => count + 1);
         }
+        if (retryPending) {
+          submittedAttemptId = pendingBeforeReview[0]?.attemptId;
+          setReviewPersistenceIdentity(pendingBeforeReview[0]);
+        }
         const finishReviewPersistence = measureTempoDragPhase("review-persistence");
         try { await flushPendingReviews(); finishReviewPersistence(); }
         catch (error) { finishReviewPersistence(true); throw error; }
+        const resultConflicted = conflictedReviews().some((review) => submittedAttemptId
+          ? review.attemptId === submittedAttemptId : review.queueEntryId === card.queueEntryId && review.backendId === String(card.backendId ?? card.id));
         if (transitionGeneration === reviewTransitionGeneration.current)
-          setReviewPersistenceState("saved");
+          setReviewPersistenceState(resultConflicted ? "conflicted" : "saved");
         setQueueNotice("");
         reviewPendingEntries.current.delete(entryKey);
         if (
@@ -993,7 +1006,7 @@ export default function Home() {
           !advancedFromCache &&
           (!retryPending || retryNeedsAdvance)
         )
-          setReviewPersistenceState("refreshingQueue");
+          setReviewPersistenceState(resultConflicted ? "conflicted" : "refreshingQueue");
         const finishQueueReadiness = measureTempoDragPhase("next-card-readiness");
         void refreshDatabaseQueue(
           !advancedFromCache && (!retryPending || retryNeedsAdvance),
@@ -1007,16 +1020,25 @@ export default function Home() {
           .catch(() => {
             finishQueueReadiness(true);
             if (transitionGeneration === reviewTransitionGeneration.current)
-              setReviewPersistenceState("queueFailed");
-            showTrainingNotice("Result saved. The queue could not be refreshed.", "warning");
+              setReviewPersistenceState(resultConflicted ? "conflicted" : "queueFailed");
+            showTrainingNotice(resultConflicted ? "Result kept for review. The queue could not be refreshed." : "Result saved. The queue could not be refreshed.", "warning");
           });
         return;
       } catch (error) {
         reviewPendingEntries.current.delete(entryKey);
+        if (error instanceof ReviewReplayError) {
+          setReviewPersistenceIdentity(error);
+          reportDebugError(error, { kind: "api", source: "training-review-replay", operation: "save pending review",
+            endpoint: error.endpoint, status: error.status, retryable: error.retryable,
+            cardId: error.backendId, queueEntryId: error.queueEntryId, attemptId: error.attemptId, code: error.code,
+            classification: error.classification });
+        }
         setReviewPersistenceState("saveFailed");
         setReviewSaveError(
           error instanceof Error && error.message
-            ? `The local database could not save this result. ${error.message}`
+            ? `${error instanceof ReviewReplayError && error.queueEntryId !== card.queueEntryId
+              ? "An earlier completed result could not be saved. Your result remains queued."
+              : "The local database could not save this result."} ${error.message}`
             : "The local database could not save this result. Please retry.",
         );
         setQueueNotice("");
@@ -1082,6 +1104,8 @@ export default function Home() {
         enqueuePendingReview({
           backendId: card.backendId,
           queueEntryId: card.queueEntryId,
+          attemptId: token.reviewAttemptId,
+          expectedRevision: card.revision,
           outcome,
           guided:
             useTrainingStore.getState().isAttemptFailed ||
@@ -1542,6 +1566,7 @@ export default function Home() {
               }}
               reviewPersistenceState={reviewPersistenceState}
               reviewSaveError={reviewSaveError}
+              reviewPersistenceIdentity={reviewPersistenceIdentity}
               retryReviewSave={() =>
                 void rateCard("correct", { retryPending: true })
               }

@@ -29,6 +29,7 @@ from .command_gateway import load_blocked_operation, read_operation
 from .celery_app import celery_app
 from .study_routes import router as study_router
 from .models import TacticActivationRequest
+from .review_conflicts import ReviewConflict
 from .services.tactical_catalog import (
     catalog_status,
     activate,
@@ -68,6 +69,7 @@ from .models import (
     RepertoireSettingsRequest,
     RemoveBranchRequest,
     ReviewRequest,
+    QueueAttemptFailureRequest,
     Settings,
     TacticAttemptRequest,
     TacticCaptureRequest,
@@ -234,6 +236,11 @@ async def lifespan(_: FastAPI):
 
 app = FastAPI(title="Tempo local API", version="0.2.0", lifespan=lifespan)
 app.include_router(study_router)
+
+@app.exception_handler(ReviewConflict)
+async def review_conflict_response(_request: Request, error: ReviewConflict):
+    return JSONResponse(status_code=error.status_code,
+                        content={"detail": error.detail, "code": error.code, "retryable": error.retryable})
 
 
 @app.get("/api/operations/{operation_id}")
@@ -468,8 +475,9 @@ async def prioritize_foreground_requests(request: Request, call_next):
                        and path_parts[3] == "links" and request.method == "POST")
         queue_entry_command = (len(path_parts) == 5 and path_parts[:3] == ["api", "queue", "entries"]
                                and path_parts[4] in {"fail", "bury"} and request.method == "POST")
-        card_review_command = (len(path_parts) == 4 and path_parts[:2] == ["api", "cards"]
-                               and path_parts[3] == "review" and request.method == "POST")
+        card_review_command = (path_parts[:2] == ["api", "cards"]
+                               and path_parts[3:] in (["review"], ["review", "reconcile"])
+                               and request.method == "POST")
         card_revision_command = (len(path_parts) == 3 and path_parts[:2] == ["api", "cards"]
                                  and request.method == "PUT")
         card_archive_command = (len(path_parts) == 3 and path_parts[:2] == ["api", "cards"]
@@ -2494,6 +2502,9 @@ def migration_snapshot():
         "cards",
         "reviews",
         "daily_queue",
+        "queue_attempt_origins",
+        "review_attempt_receipts",
+        "review_schedule_snapshots",
         "daily_queue_days",
         "position_annotations",
         "teaching_states",
@@ -2642,8 +2653,10 @@ def delete_repertoire(identifier: str,
 
 def requeue(db, day, cid, after, attempt):
     cycle = db.execute(
-        "SELECT COALESCE(MAX(cycle),-1)+1 FROM daily_queue WHERE queue_date=? AND card_id=?",
-        (day, cid),
+        "SELECT COALESCE(MAX(cycle),-1)+1 FROM ("
+        "SELECT cycle FROM daily_queue WHERE queue_date=? AND card_id=? UNION ALL "
+        "SELECT cycle FROM queue_attempt_origins WHERE queue_date=? AND card_id=?) cycles",
+        (day, cid, day, cid),
     ).fetchone()[0]
     if after is None:
         position = db.execute(
@@ -2713,10 +2726,11 @@ def queue_entry_state(entry_id: int):
 
 @app.post("/api/queue/entries/{entry_id}/fail")
 def mark_attempt_failed(entry_id: int,
+                        request: QueueAttemptFailureRequest | None = None,
                         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     if postgres_store.configured():
         from .command_dispatch import dispatch_command
-        return dispatch_command("queue.attempt_failed", {"entry_id": entry_id},
+        return dispatch_command("queue.attempt_failed", {"entry_id": entry_id, **(request.model_dump(exclude_none=True) if request else {})},
                                 idempotency_key=idempotency_key)
     with connection() as db:
         active_entry = db.execute(
@@ -2727,14 +2741,17 @@ def mark_attempt_failed(entry_id: int,
             (date.today().isoformat(),),
         ).fetchone()
         if not active_entry or active_entry["id"] != entry_id:
-            raise HTTPException(409, "This queue attempt is no longer active")
+            raise ReviewConflict("queue_attempt_inactive", "This queue attempt is no longer active")
+        from .queue_attempt_origins import validate_failure_marker
+        validate_failure_marker(db, entry_id, request.card_id if request else None,
+                                request.expected_revision if request else None)
         if not db.execute(
             """UPDATE daily_queue SET attempt_failed=1 WHERE id=? AND status='queued'
                AND ((SELECT content_type FROM cards WHERE id=card_id)!='defense'
                     OR (SELECT include_defensive_cards_in_daily_stack FROM settings WHERE id=1)=1)""",
             (entry_id,),
         ).rowcount:
-            raise HTTPException(409, "This queue attempt is no longer active")
+            raise ReviewConflict("queue_attempt_inactive", "This queue attempt is no longer active")
     return {"attempt_failed": True}
 
 
@@ -2779,6 +2796,28 @@ def review(identifier: str, request: ReviewRequest,
     return _apply_review(identifier, request)
 
 
+@app.post("/api/cards/{identifier}/review/reconcile")
+def reconcile_review(identifier: str, request: ReviewRequest,
+                     idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
+    if not request.attempt_id or request.queue_entry_id is None:
+        raise HTTPException(422, "Reconciliation requires the original attempt and queue entry IDs")
+    if postgres_store.configured():
+        from .command_dispatch import dispatch_command
+        return dispatch_command("cards.review.reconcile",
+                                {"card_id": identifier, "review": request.model_dump(mode="json")},
+                                idempotency_key=idempotency_key)
+    return _reconcile_review(identifier, request)
+
+
+def _reconcile_review(identifier: str, request: ReviewRequest, *, database=None):
+    # A separate transport operation can recover a historical failed command.
+    # The logical attempt receipt still owns exactly-once scheduling and replay.
+    try:
+        return _apply_review(identifier, request, database=database)
+    except ReviewConflict as error:
+        return {"persisted": False, "conflict": error.information()}
+
+
 def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
     original_request = {"outcome": request.outcome, "guided": request.guided}
     now = datetime.now(timezone.utc)
@@ -2791,23 +2830,34 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
             raise HTTPException(422, "Review timestamp must include a timezone and cannot be in the future")
         now = recorded_at.astimezone(timezone.utc)
     day = date.today().isoformat()
+    original_payload = request.model_dump(mode="json")
+    if request.recorded_at:
+        original_payload["recorded_at"] = now.isoformat()
+    request_json = json.dumps(original_payload, sort_keys=True)
     with (nullcontext(database) if database is not None else connection()) as db:
         if request.attempt_id:
             receipt = db.execute(
-                "SELECT card_id,queue_entry_id,outcome,guided,completed_at,result_json "
+                "SELECT card_id,queue_entry_id,outcome,guided,completed_at,result_json,request_json "
                 "FROM review_attempt_receipts WHERE attempt_id=?",
                 (request.attempt_id,),
             ).fetchone()
             if receipt:
+                if receipt["request_json"] and json.loads(receipt["request_json"]) != original_payload:
+                    raise ReviewConflict("review_attempt_reused", "Review attempt ID was reused for a different result")
                 if (receipt["card_id"] != identifier or
                         (request.queue_entry_id is not None and receipt["queue_entry_id"] != request.queue_entry_id) or
                         receipt["outcome"] != request.outcome or bool(receipt["guided"]) != request.guided or
                         receipt["completed_at"] != (now.isoformat() if request.recorded_at else None)):
-                    raise HTTPException(409, "Review attempt ID was reused for a different result")
+                    raise ReviewConflict("review_attempt_reused", "Review attempt ID was reused for a different result")
                 return json.loads(receipt["result_json"])
-        content_row = db.execute("SELECT content_type FROM cards WHERE id=?", (identifier,)).fetchone()
+        content_row = db.execute("SELECT content_type,archived,superseded_by,revision,state FROM cards WHERE id=?", (identifier,)).fetchone()
+        if not content_row:
+            raise ReviewConflict("card_unavailable", "This card is no longer available. The completed result needs review.")
+        if content_row["archived"] or content_row["superseded_by"]:
+            raise ReviewConflict("card_replaced" if content_row["superseded_by"] else "card_archived",
+                                 "This card was replaced or archived. The completed result needs review.")
         if content_row and content_row["content_type"] == "defense":
-            raise HTTPException(409, "Defensive exercises must be graded through their move rubric")
+            raise ReviewConflict("review_requires_rubric", "Defensive exercises must be graded through their move rubric")
         owner_ids = [
             row[0]
             for row in db.execute(
@@ -2827,7 +2877,7 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
                  )) LIMIT 1""",
             (identifier,),
         ).fetchone():
-            raise HTTPException(409, "This card belongs only to a repertoire awaiting integrity repair")
+            raise ReviewConflict("card_integrity_blocked", "This card belongs only to a repertoire awaiting integrity repair")
         entry = (
             db.execute(
                 "SELECT * FROM daily_queue WHERE id=? AND card_id=?" +
@@ -2842,7 +2892,19 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
             ).fetchone()
         )
         if not entry:
-            raise HTTPException(409, "This queue attempt is no longer available")
+            from .queue_attempt_origins import recover_queue_entry
+            entry = recover_queue_entry(db, identifier, request)
+        elif entry["status"] in {"blocked", "superseded", "skipped"} and not entry["review_result_json"]:
+            from .queue_attempt_origins import recover_queue_entry
+            entry = recover_queue_entry(db, identifier, request)
+        elif entry["status"] == "queued" and request.queue_entry_id and request.attempt_id:
+            # Validate the displayed content even while its projection survives.
+            # Queue IDs alone never authorize grading edited or replacement work.
+            from .queue_attempt_origins import recover_queue_entry
+            recover_queue_entry(db, identifier, request)
+        recovered_entry = isinstance(entry, dict) and entry.get("_recovered", False)
+        if recovered_entry and content_row["state"] == "locked":
+            raise ReviewConflict("card_integrity_blocked", "This card is awaiting validation. The completed result needs review.")
         if entry["status"] != "queued":
             if entry["review_result_json"]:
                 stored_result = json.loads(entry["review_result_json"])
@@ -2860,6 +2922,7 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
                          int(request.guided), now.isoformat(), stored_result["review_id"],
                          "canonical", None, json.dumps(confirmed)),
                     )
+                    db.execute("UPDATE review_attempt_receipts SET request_json=? WHERE attempt_id=?", (request_json, request.attempt_id))
                     return confirmed
                 if request.attempt_id and request.attempt_id != recorded_attempt_id:
                     reconciled = reconcile_completed_review(
@@ -2871,31 +2934,33 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
                         competing_review={"outcome": recorded_request.get("outcome") if recorded_request else None,
                                           "completed_at": recorded_time},
                     )
+                    db.execute("UPDATE review_attempt_receipts SET request_json=? WHERE attempt_id=?", (request_json, request.attempt_id))
                     if postgres_store.configured() and content_row and content_row["content_type"] == "opening":
                         for repertoire_id in owner_ids:
                             enqueue_priority_refresh_in_transaction(db, repertoire_id)
                     return reconciled
                 if recorded_request is not None and recorded_request != original_request:
-                    raise HTTPException(409, "A different review already completed this queue attempt")
+                    raise ReviewConflict("queue_attempt_result_conflict", "A different review already completed this queue attempt")
                 if request.recorded_at and recorded_time != now.isoformat():
-                    raise HTTPException(409, "This queue attempt was already reviewed on another device")
+                    raise ReviewConflict("queue_attempt_other_device", "This queue attempt was already reviewed on another device")
                 return {
                     **stored_result,
                     "queue_entry_id": entry["id"],
                     "persisted": True,
                     "idempotent": True,
                 }
-            raise HTTPException(409, "This attempt was already completed")
+            raise ReviewConflict("queue_attempt_retired", "This attempt was already completed")
         if request.expected_revision is not None:
             current_revision = db.execute("SELECT revision FROM cards WHERE id=?", (identifier,)).fetchone()
             if not current_revision or current_revision["revision"] != request.expected_revision:
-                raise HTTPException(409, "This card changed after the phone queue was prepared")
+                raise ReviewConflict("card_revision_changed", "This card changed after the phone queue was prepared")
         latest_review_id = db.execute(
             "SELECT COALESCE(MAX(id),0) FROM reviews WHERE card_id=? AND invalidated_at IS NULL",
             (identifier,),
         ).fetchone()[0]
         if request.expected_review_id is not None and latest_review_id != request.expected_review_id:
-            raise HTTPException(409, "This card was reviewed on another device after the phone queue was prepared")
+            if not recovered_entry:
+                raise ReviewConflict("card_other_device_review", "This card was reviewed on another device after the phone queue was prepared")
         settings = get_settings()
         if request.recorded_at:
             try:
@@ -2904,6 +2969,36 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
                 review_day = now.astimezone().date()
         else:
             review_day = date.today()
+        if recovered_entry:
+            # Admission survives a mutable limit projection. Completed cycle-0
+            # introductions still consume allowance; a repeat is never new work.
+            if entry["cycle"] == 0 and entry["admission_kind"] == "new" and content_row["content_type"] == "opening":
+                db.execute("UPDATE cards SET introduced_at=COALESCE(introduced_at,?) WHERE id=?",
+                           (entry["queue_date"], identifier))
+            later_review = db.execute(
+                "SELECT id FROM reviews WHERE card_id=? AND invalidated_at IS NULL AND reviewed_at>? LIMIT 1",
+                (identifier, now.isoformat()),
+            ).fetchone()
+            if later_review or not request.recorded_at:
+                reconciled = reconcile_completed_review(
+                    db, identifier, entry["id"], attempt_id=request.attempt_id,
+                    outcome=request.outcome, guided=bool(request.guided or entry["attempt_failed"]),
+                    completed_at=now if request.recorded_at else None,
+                    expected_revision=entry["revision"], timezone_name=settings.timezone,
+                )
+                db.execute("UPDATE review_attempt_receipts SET outcome=?,guided=? WHERE attempt_id=?",
+                           (original_request["outcome"], int(original_request["guided"]), request.attempt_id))
+                db.execute("UPDATE review_attempt_receipts SET request_json=? WHERE attempt_id=?", (request_json, request.attempt_id))
+                from .queue_attempt_origins import retain_recovered_completion
+                retain_recovered_completion(db, entry, json.dumps({
+                    **reconciled, "_request": original_request,
+                    "_recorded_at": now.isoformat() if request.recorded_at else None,
+                    "_attempt_id": request.attempt_id,
+                }))
+                if postgres_store.configured() and content_row["content_type"] == "opening":
+                    for repertoire_id in owner_ids:
+                        enqueue_priority_refresh_in_transaction(db, repertoire_id)
+                return reconciled
         if entry["attempt_failed"] or request.guided:
             request = request.model_copy(update={"outcome": "again", "guided": True})
         schedule_before_review = card_schedule_state(db, identifier)
@@ -2960,6 +3055,7 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
             "review_id": db.execute("SELECT MAX(id) FROM reviews WHERE card_id=?", (identifier,)).fetchone()[0],
             "persisted": True,
             "idempotent": False,
+            **({"reconciliation": "queue_origin"} if recovered_entry else {}),
         }
         if schedule_before_review:
             save_schedule_snapshot(db, persisted_result["review_id"], schedule_before_review)
@@ -2971,12 +3067,15 @@ def _apply_review(identifier: str, request: ReviewRequest, *, database=None):
                  int(original_request["guided"]), now.isoformat() if request.recorded_at else None,
                  persisted_result["review_id"], "canonical", None, json.dumps(persisted_result)),
             )
-        db.execute(
-            "UPDATE daily_queue SET review_result_json=? WHERE id=?",
-            (json.dumps({**persisted_result, "_request": original_request,
-                         "_recorded_at": now.isoformat() if request.recorded_at else None,
-                         "_attempt_id": request.attempt_id}), entry["id"]),
-        )
+            db.execute("UPDATE review_attempt_receipts SET request_json=? WHERE attempt_id=?", (request_json, request.attempt_id))
+        queue_result_json = json.dumps({**persisted_result, "_request": original_request,
+                                       "_recorded_at": now.isoformat() if request.recorded_at else None,
+                                       "_attempt_id": request.attempt_id})
+        db.execute("UPDATE daily_queue SET review_result_json=? WHERE id=? AND card_id=?",
+                   (queue_result_json, entry["id"], identifier))
+        if recovered_entry:
+            from .queue_attempt_origins import retain_recovered_completion
+            retain_recovered_completion(db, entry, queue_result_json)
         if postgres_store.configured():
             if persisted_result["state"] == "mature":
                 enqueue_task_in_transaction(

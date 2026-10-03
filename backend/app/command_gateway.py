@@ -221,6 +221,8 @@ def execute_command(
             error_json = json.dumps({
                 "message": str(error),
                 "status_code": error.status_code if isinstance(error, HTTPException) else 500,
+                **({"detail": error.detail} if isinstance(error, HTTPException) else {}),
+                **({"code": error.code, "retryable": error.retryable} if hasattr(error, "code") and hasattr(error, "retryable") else {}),
             })
             raw.execute(
                 "UPDATE operation_receipts SET state='failed',error_json=%s,"

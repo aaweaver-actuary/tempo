@@ -221,6 +221,15 @@ function stableStudyState(snapshot, repertoireId) {
       "id", "queue_date", "card_id", "cycle", "position", "status", "attempt_state",
       "attempt_failed", "review_result_json",
     ]),
+    queueOrigins: selectRows("queue_attempt_origins", (row) => cardIds.has(row.card_id), [
+      "queue_entry_id", "card_id", "revision", "queue_date", "cycle", "admission_kind",
+      "admission_repertoire_id", "attempt_failed", "last_status", "review_result_json",
+      "legacy", "start_fen", "moves_json", "trained_color", "content_type",
+    ]),
+    attemptReceipts: selectRows("review_attempt_receipts", (row) => cardIds.has(row.card_id), [
+      "attempt_id", "card_id", "queue_entry_id", "outcome", "guided", "completed_at",
+      "review_id", "scheduling_status", "warning", "result_json", "request_json",
+    ]),
     prefixSplits: selectRows("prefix_splits", (row) => cardIds.has(row.source_card_id), [
       "source_card_id", "source_revision", "shortened_card_id", "continuation_card_id",
     ]),
@@ -669,6 +678,8 @@ const actions = {
         verifyWorkloadConsumers("exited");
       },
       measureWorkload: () => {
+        run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+          "/source/scripts/check_postgres_queue_attempt_recovery.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
           "/source/scripts/check_postgres_repertoire_limits.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",

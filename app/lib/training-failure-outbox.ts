@@ -6,7 +6,7 @@ const storageKey = "tempo-pending-training-failures-v1";
 const requestTimeoutMs = 15_000;
 let activeFlush: Promise<void> | undefined;
 
-type PendingTrainingFailure = { queueEntryId: number; operationId: string };
+type PendingTrainingFailure = { queueEntryId: number; operationId: string; backendId?: string; expectedRevision?: number };
 type QueueEntryState = {
   state: "head" | "queued" | "completed" | "unavailable";
   attempt_failed: boolean;
@@ -21,7 +21,9 @@ function savedTrainingFailures(): PendingTrainingFailure[] {
       ? !Number.isSafeInteger(item) || item <= 0
       : !item || typeof item !== "object" ||
         !Number.isSafeInteger(item.queueEntryId) || item.queueEntryId <= 0 ||
-        typeof item.operationId !== "string" || !item.operationId || item.operationId.length > 128))
+        typeof item.operationId !== "string" || !item.operationId || item.operationId.length > 128 ||
+        (item.backendId !== undefined && (typeof item.backendId !== "string" || !item.backendId)) ||
+        (item.expectedRevision !== undefined && (!Number.isSafeInteger(item.expectedRevision) || item.expectedRevision < 1))))
     throw new Error("Saved training failures are invalid. Restore your browser data before continuing.");
   if (parsed.some((item) => typeof item === "number")) {
     const upgraded = parsed.map((item) => typeof item === "number"
@@ -37,28 +39,34 @@ export function pendingTrainingFailures(): number[] {
   return savedTrainingFailures().map((pending) => pending.queueEntryId);
 }
 
-export function enqueueTrainingFailure(queueEntryId: number): void {
+export function pendingTrainingFailureContexts(): PendingTrainingFailure[] {
+  return savedTrainingFailures();
+}
+
+export function enqueueTrainingFailure(queueEntryId: number, backendId?: string, expectedRevision?: number): void {
   if (!Number.isSafeInteger(queueEntryId) || queueEntryId <= 0)
     throw new Error("The active queue entry has no valid identity.");
   const pending = savedTrainingFailures();
-  if (!pending.some((item) => item.queueEntryId === queueEntryId))
+  if (!pending.some((item) => item.queueEntryId === queueEntryId && item.backendId === backendId && item.expectedRevision === expectedRevision))
     localStorage.setItem(storageKey, JSON.stringify([...pending,
-      { queueEntryId, operationId: crypto.randomUUID() }]));
+      { queueEntryId, operationId: crypto.randomUUID(), backendId, expectedRevision }]));
 }
 
-function removeTrainingFailure(queueEntryId: number): void {
+function removeTrainingFailure(queueEntryId: number, operationId?: string): void {
   localStorage.setItem(storageKey, JSON.stringify(
-    savedTrainingFailures().filter((item) => item.queueEntryId !== queueEntryId),
+    savedTrainingFailures().filter((item) => item.queueEntryId !== queueEntryId || (operationId !== undefined && item.operationId !== operationId)),
   ));
 }
 
-export function clearTrainingFailureAfterReview(queueEntryId: number): void {
-  if (pendingTrainingFailures().includes(queueEntryId)) removeTrainingFailure(queueEntryId);
+export function clearTrainingFailureAfterReview(queueEntryId: number, backendId?: string, expectedRevision?: number): void {
+  const matching = savedTrainingFailures().filter((item) => item.queueEntryId === queueEntryId &&
+    (item.backendId === undefined || (item.backendId === backendId && item.expectedRevision === expectedRevision)));
+  for (const item of matching) removeTrainingFailure(queueEntryId, item.operationId);
 }
 
-function rotateTrainingFailureOperation(queueEntryId: number): void {
+function rotateTrainingFailureOperation(operationId: string): void {
   localStorage.setItem(storageKey, JSON.stringify(savedTrainingFailures().map((item) =>
-    item.queueEntryId === queueEntryId ? { ...item, operationId: crypto.randomUUID() } : item)));
+    item.operationId === operationId ? { ...item, operationId: crypto.randomUUID() } : item)));
 }
 
 async function rejectedFailureState(queueEntryId: number): Promise<QueueEntryState> {
@@ -80,7 +88,7 @@ async function rejectedFailureState(queueEntryId: number): Promise<QueueEntrySta
 
 async function saveTrainingFailures(): Promise<void> {
   while (savedTrainingFailures().length) {
-    const { queueEntryId, operationId } = savedTrainingFailures()[0];
+    const { queueEntryId, operationId, backendId, expectedRevision } = savedTrainingFailures()[0];
     const earlierPendingReview = pendingReviews()[0];
     if (earlierPendingReview && earlierPendingReview.queueEntryId !== queueEntryId) return;
     const controller = new AbortController();
@@ -89,7 +97,8 @@ async function saveTrainingFailures(): Promise<void> {
     try {
       response = await fetch(`${API_URL}/api/queue/entries/${queueEntryId}/fail`, {
         method: "POST", signal: controller.signal,
-        headers: { "Idempotency-Key": operationId },
+        headers: { "Idempotency-Key": operationId, ...(backendId ? { "Content-Type": "application/json" } : {}) },
+        ...(backendId ? { body: JSON.stringify({ card_id: backendId, expected_revision: expectedRevision }) } : {}),
       });
       response = await confirmOperationResponse(response);
     } catch (cause) {
@@ -100,13 +109,18 @@ async function saveTrainingFailures(): Promise<void> {
       window.clearTimeout(timeout);
     }
     if (response.status === 409) {
+      const conflict = await response.clone().json().catch(() => ({})) as { code?: string; detail?: string };
+      if (conflict.code === "queue_attempt_unprovable") {
+        removeTrainingFailure(queueEntryId, operationId);
+        throw new Error(conflict.detail ?? "The guided attempt no longer matches this queue entry.");
+      }
       const state = await rejectedFailureState(queueEntryId);
       if (state.state === "queued" || state.state === "head") {
-        if (state.attempt_failed) removeTrainingFailure(queueEntryId);
-        else rotateTrainingFailureOperation(queueEntryId);
+        if (state.attempt_failed) removeTrainingFailure(queueEntryId, operationId);
+        else rotateTrainingFailureOperation(operationId);
         return;
       }
-      removeTrainingFailure(queueEntryId);
+      removeTrainingFailure(queueEntryId, operationId);
       if (state.state === "completed") continue;
       throw new Error("This queue attempt is no longer available. Refresh the training queue.");
     }
@@ -114,7 +128,7 @@ async function saveTrainingFailures(): Promise<void> {
       const body = await response.json().catch(() => ({})) as { detail?: string };
       throw new Error(body.detail ?? `Local service returned HTTP ${response.status}.`);
     }
-    removeTrainingFailure(queueEntryId);
+    removeTrainingFailure(queueEntryId, operationId);
   }
 }
 
