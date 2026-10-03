@@ -95,13 +95,25 @@ async function savePendingReviews(): Promise<void> {
       onEvidenceRejected: (message) => {
         const updated = pendingReviews().map((item) =>
           item.attemptId === attemptId ? { ...item, evidenceRejected: message } : item);
-        const rejected = updated.find((item) => item.attemptId === attemptId);
-        const archived = readStoredReviews(rejectedOpeningReviewStorageKey);
-        // Keep the full rejected envelope after the aggregate outbox is drained,
-        // even when the separate IndexedDB journal is unavailable.
-        if (rejected && !archived.some((item) => item.attemptId === attemptId))
-          localStorage.setItem(rejectedOpeningReviewStorageKey, JSON.stringify([...archived, rejected]));
+        // Required: a reload must retain the aggregate-only delivery identity.
         localStorage.setItem(storageKey, JSON.stringify(updated));
+        try {
+          const rejected = updated.find((item) => item.attemptId === attemptId);
+          const archived = readStoredReviews(rejectedOpeningReviewStorageKey);
+          // Best effort: keep the full rejected envelope after the outbox drains,
+          // even when the separate IndexedDB journal is unavailable.
+          if (rejected && !archived.some((item) => item.attemptId === attemptId))
+            localStorage.setItem(rejectedOpeningReviewStorageKey, JSON.stringify([...archived, rejected]));
+        } catch {
+          try {
+            publishNotification({ severity: "warning", source: "opening evidence",
+              key: `opening-evidence-archive:${attemptId}`,
+              message: "The normal review can still save. An extra diagnostic copy of the rejected opening evidence could not be retained.",
+              details: { cardId: review.backendId, queueEntryId: review.queueEntryId } });
+          } catch {
+            // Diagnostic warnings must not block the required review delivery.
+          }
+        }
       },
       body: {
         outcome: review.outcome,
