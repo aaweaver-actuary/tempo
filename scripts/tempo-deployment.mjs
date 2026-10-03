@@ -234,6 +234,11 @@ export async function selectCandidate(target, run, fetchJson = githubJson) {
   }
   const evidence = qualityEvidence(revision, workflowRun, jobs);
   if (revision !== current) {
+    const checkedHead = (await run("git", ["rev-parse", "HEAD"])).stdout.trim();
+    const checkedBranch = (await run("git", ["branch", "--show-current"])).stdout.trim();
+    const checkedStatus = (await run("git", ["status", "--porcelain"])).stdout.trim();
+    if (checkedHead !== current || checkedBranch !== "main" || checkedStatus)
+      throw new Error("Local source changed while update verification was running. Local work is preserved; main was not fast-forwarded.");
     await run("git", ["merge", "--ff-only", revision]);
     if ((await run("git", ["rev-parse", "HEAD"])).stdout.trim() !== revision)
       throw new Error("Checkout revision changed during update; no deployment was started.");

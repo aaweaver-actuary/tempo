@@ -366,3 +366,49 @@ test("actual CLI backup rejects mismatched dependencies without starting any rec
   assert(result.stderr.includes("Run tempo start"));
   assert(!fixture.calls().some(call => call.args.includes("up") || call.args.includes("stop")));
 });
+
+test("actual CLI concurrent source changes block fast-forward and retain verified fallback", t => {
+  for (const mode of ["race-dirty", "race-head"]) {
+    const fixture = commandFixture(t, mode);
+    const result = fixture.command("start", "--no-open");
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert(result.stdout.includes("source changed") && result.stdout.includes("update remains blocked"));
+    assert(!fixture.calls().some(call => call.args.includes("merge") || call.args.includes("build")));
+    const machine = JSON.parse(readFileSync(join(fixture.directory, "machine.json"), "utf8"));
+    assert.equal(machine.head, (mode === "race-head" ? "d" : "c").repeat(40));
+    if (mode === "race-dirty") { assert(machine.sourceEdited); assert.equal(readFileSync(join(fixture.root, "personal-work"), "utf8"), "preserved study notes"); }
+  }
+});
+
+function sourceSelectionFixture({ changedSource, runs = [{ id: 1 }], failedRuns = [], incompleteRuns = [] } = {}) {
+  const current = "c".repeat(40), revision = "a".repeat(40), calls = [];
+  let head = current, branch = "main", dirty = false;
+  const run = async (_command, args) => {
+    calls.push(args);
+    let stdout = "";
+    if (args[0] === "branch") stdout = branch;
+    if (args[0] === "status") stdout = dirty ? "?? user-work" : "";
+    if (args[0] === "remote") stdout = "https://github.com/aaweaver-actuary/tempo";
+    if (args[0] === "rev-parse") stdout = args[1] === "HEAD" ? head : revision;
+    if (args[0] === "merge") { head = args.at(-1); stdout = head; }
+    return { stdout, code: 0 };
+  };
+  const fetchJson = async path => {
+    if (path.includes("workflows/")) return { workflow_runs: runs.map(candidate => ({ head_sha: revision, head_branch: "main", event: "push", status: "completed", html_url: "fixture", ...candidate })) };
+    if (changedSource === "dirty") dirty = true;
+    if (changedSource === "head") head = "d".repeat(40);
+    if (changedSource === "branch") branch = "personal-work";
+    const id = Number(path.match(/runs\/(\d+)/)[1]);
+    return { jobs: ["plan", "frontend / verify", "backend / verify", "build / verify", "postgres / verify", "browser / verify", "visual / verify", "quality"].map(name => ({ name, status: "completed", conclusion: failedRuns.includes(id) && name === "quality" ? "failure" : "success" })).filter(job => !incompleteRuns.includes(id) || job.name !== "browser / verify") };
+  };
+  return { run, fetchJson, calls, revision, source: () => ({ head, branch, dirty }) };
+}
+
+for (const changedSource of ["dirty", "head", "branch"]) test(`source update refuses concurrent ${changedSource} changes immediately before fast-forward`, async () => {
+  const fixture = sourceSelectionFixture({ changedSource });
+  await assert.rejects(selectCandidate({ root: "fixture" }, fixture.run, fixture.fetchJson), /source changed/i);
+  assert(!fixture.calls.some(args => args[0] === "merge"));
+  assert.equal(fixture.source().head, (changedSource === "head" ? "d" : "c").repeat(40));
+  if (changedSource === "dirty") assert(fixture.source().dirty);
+  if (changedSource === "branch") assert.equal(fixture.source().branch, "personal-work");
+});
