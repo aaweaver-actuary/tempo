@@ -697,6 +697,9 @@ async def prioritize_foreground_requests(request: Request, call_next):
             )
     is_background = (
         request.headers.get("x-tempo-work-class", "").casefold() == "background"
+        # Its receipt read uses background admission too; a foreground request
+        # lease would wait on itself, including for older clients without headers.
+        or (request.method == "POST" and request.url.path == "/api/opening-evidence/checkpoints")
     )
     request_scope = query_only_request() if request.method == "GET" or read_only_post else None
     if request_scope is not None:

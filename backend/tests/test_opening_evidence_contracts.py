@@ -31,6 +31,31 @@ def test_opening_checkpoint_dispatches_as_background_without_changing_review_dis
     assert dispatched[2][2].get('background', False) is False
 
 
+def test_opening_checkpoint_request_is_background_without_a_client_work_class_header(monkeypatch):
+    from contextlib import contextmanager
+    from fastapi.testclient import TestClient
+    from app import main, command_dispatch, opening_evidence_api
+    fixture = json.loads((Path(__file__).resolve().parents[2]/'tests/fixtures/opening-evidence-manifest.json').read_text())
+    request = {'attempt_id': 'background-http', 'manifest': fixture, 'origin_queue_entry_id': 101,
+               'started_at': '2026-09-30T12:00:00Z', 'study_timezone': 'UTC'}
+    observed_scopes = []
+    @contextmanager
+    def scope(work_class):
+        observed_scopes.append(work_class)
+        yield
+    monkeypatch.setattr(main.postgres_store, 'configured', lambda: True)
+    monkeypatch.setattr(main.activity_gate, 'foreground', lambda: scope('foreground'))
+    monkeypatch.setattr(main.activity_gate, 'background_request', lambda: scope('background'))
+    monkeypatch.setattr(opening_evidence_api, 'prepare_checkpoint', lambda request: fixture)
+    monkeypatch.setattr(command_dispatch, 'dispatch_command', lambda *args, **kwargs: {'persisted': True})
+    client = TestClient(main.app)
+    assert client.post('/api/opening-evidence/checkpoints', json=request).status_code == 200
+    assert observed_scopes == ['background']
+    observed_scopes.clear()
+    assert client.post('/api/cards/card/review', json={'outcome': 'correct', 'queue_entry_id': 101}).status_code == 200
+    assert observed_scopes == ['foreground']
+
+
 def test_shadow_manifest_fixture_matches_backend_producer_and_prescribed_revision():
     from app.services.opening_decision_evidence import decision_manifest
     fixture = json.loads((Path(__file__).resolve().parents[2]/'tests/fixtures/opening-evidence-manifest.json').read_text())

@@ -122,6 +122,10 @@ in-memory events, report a capture gap and allow repair without changing feedbac
 Browser leases protect other tabs; orphaned sessions retain committed work as partial.
 A sealed orphan without an aggregate outbox checks server completion before recovery
 and never invents an aggregate review.
+Recovery waits for the current queue initialization to finish and a browser idle
+opportunity; reconnects share one recovery pass and foreground transitions cancel
+scheduled work. Restart initializes a fresh guided attempt with ready feedback,
+while actual wrong-response arrows retain their revealed classification.
 
 First response, assistance, manual failure, reveal and correction remain separate
 facts. Assistance categories are teaching/hint/revealed/guided/other; no assistance
@@ -131,6 +135,9 @@ UCI and existing grading disposition are separate, including valid alternatives 
 illegal/unverified context. Manual Again fabricates no move. Corrections cannot become
 clean first recall. Unreached decisions earn no observations.
 
+Standalone checkpoint requests and commands use background admission; final evidence
+attached to a card review remains foreground. Older checkpoint clients without a
+work-class header receive the same background request classification.
 Checkpoint deliveries use immutable keys and at most 256 events. `(attempt_id,sequence)`
 is an immutable event identity. Exact duplicates succeed, changed context/content
 returns a structured conflict, and out-of-order input advances projections only through
@@ -148,6 +155,12 @@ replay validates the evidence binding. An absent completion preserves the legacy
 payload and command fingerprint exactly. A definitive evidence rejection retains the
 journal/diagnostic, then submits the original aggregate body under a separate
 `:aggregate-only` key. Ambiguous results retry the original envelope and key.
+If browser quota prevents attaching optional evidence to the local review outbox,
+a compact aggregate record durably captures `local_storage_quota` and the same
+aggregate-only identity. The full journal is retained separately in IndexedDB for
+diagnosis, including after late checkpoint receipts and reload. Failure to save
+even the compact aggregate remains blocking and retryable; retention diagnostics
+never claim evidence persistence when browser storage is unavailable.
 
 Only affected decision summaries update. Internal paginated provenance reads report
 first responses, clean successes, incorrect/assisted responses, manual failures,

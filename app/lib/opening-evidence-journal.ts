@@ -298,7 +298,8 @@ async function deliverOpeningEvidence(): Promise<void> {
     let response: Response;
     try {
       response = await confirmOperationResponse(await fetch(`${API_URL}/api/opening-evidence/checkpoints`, {
-        method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": operationKey },
+        method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": operationKey,
+          "X-Tempo-Work-Class": "background" },
         body: JSON.stringify(checkpoint), signal: controller.signal,
       }));
     } catch (error) {
