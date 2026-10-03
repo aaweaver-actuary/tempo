@@ -90,7 +90,8 @@ import {
 } from "../lib/review-outbox";
 import { describeOfflineQueue, markOfflineAttemptFailed, recordOfflineAttempt, requiresConnectedGrading } from "../lib/offline-training";
 import { enqueueTrainingFailure, flushTrainingFailures } from "../lib/training-failure-outbox";
-import { beginOpeningAttempt, completeOpeningAttempt, partialOpeningAttempt, recoverOpeningEvidence } from "../lib/opening-evidence-journal";
+import { beginOpeningAttempt, completeOpeningAttempt, partialOpeningAttempt } from "../lib/opening-evidence-journal";
+import { useOpeningEvidenceRecovery } from "../hooks/use-opening-evidence-recovery";
 import type { AssistanceKind } from "../domain/opening-evidence";
 import { Settings } from "../utils/settings";
 import { TreeBrowser } from "./tree_browser";
@@ -302,16 +303,11 @@ export default function Home() {
   useEffect(() => {
     if (currentView === "train" && cardsLeft > 0) openingJournal();
   }, [currentView, cardsLeft, attempt.attemptId, openingJournal]);
-  useEffect(() => {
-    if (!usesLocalApi()) return;
-    const recover = () => { void recoverOpeningEvidence().catch((error) => publishNotification({
-      severity: "warning", source: "opening evidence", key: "opening-evidence-recovery",
-      message: `Opening evidence recovery is pending. Normal training continues. ${String(error)}`,
-    })); };
-    recover();
-    window.addEventListener("online", recover);
-    return () => window.removeEventListener("online", recover);
-  }, []);
+  const queueReadiness = useTrainingStore(state => state.queueReadiness);
+  useOpeningEvidenceRecovery(usesLocalApi(), queueReadiness === "ready",
+    pendingBurialEntryId !== undefined || attempt.phase === "opponentReplyPending" ||
+    reviewPersistenceState === "saving" || reviewPersistenceState === "refreshingQueue" ||
+    reviewPersistenceState === "saveFailed");
   const repertoireLine = card.moves;
 
   useEffect(() => {

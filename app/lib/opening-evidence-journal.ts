@@ -15,6 +15,7 @@ type SavedEvent = OpeningDecisionEvent & { attempt_id: string };
 const captures = new Map<string, OpeningAttemptJournal>();
 const sessionId = crypto.randomUUID();
 let activeFlush: Promise<void> | undefined;
+let activeRecovery: Promise<void> | undefined;
 let flushTimer: ReturnType<typeof setTimeout> | undefined;
 let writeTail = Promise.resolve();
 const releaseLeases = new Map<string, () => void>();
@@ -318,7 +319,7 @@ export function flushOpeningEvidence(): Promise<void> {
 }
 
 /** Claim only sessions whose browser lease has ended; another tab's board stays active. */
-export async function recoverOpeningEvidence(): Promise<void> {
+async function recoverSavedOpeningEvidence(): Promise<void> {
   if (typeof indexedDB === "undefined" || typeof navigator === "undefined" || !navigator.locks) return;
   await writeTail.catch(() => undefined);
   for (const journal of captures.values()) {
@@ -373,4 +374,9 @@ export async function recoverOpeningEvidence(): Promise<void> {
     });
   }
   await flushOpeningEvidence();
+}
+
+export function recoverOpeningEvidence(): Promise<void> {
+  activeRecovery ??= recoverSavedOpeningEvidence().finally(() => { activeRecovery = undefined; });
+  return activeRecovery;
 }

@@ -138,6 +138,8 @@ export async function fetchAndInitializeQueue(
   activeQueueController?.abort();
   const controller = new AbortController();
   activeQueueController = controller;
+  useTrainingStore.setState({ queueReadiness: "loading" });
+  let queueInitialized = false;
   let failedOperation = "process today queue";
   let failedEndpoint: string | undefined;
   let queueRequestFailed = false;
@@ -255,6 +257,7 @@ export async function fetchAndInitializeQueue(
     );
     useTrainingStore.getState().setPendingReviewError(pendingReviewError);
     useTrainingStore.getState().setOfflineQueue(false);
+    queueInitialized = true;
     try { localStorage.setItem(queueCacheKey, JSON.stringify(raw)); } catch {
       // A full browser storage quota must not turn a successful queue read into a failure.
     }
@@ -361,6 +364,7 @@ export async function fetchAndInitializeQueue(
       if (generation !== requestGeneration) return;
       useTrainingStore.getState().hydrateLocalQueue(cards, advance, cards.length);
       useTrainingStore.getState().setOfflineQueue(true);
+      queueInitialized = true;
       showQueueNotice(`${describeOfflineQueue(prepared)} Live service: ${String(error)}. Retry sync when connected.`, "warning");
       return;
     }
@@ -371,6 +375,8 @@ export async function fetchAndInitializeQueue(
       );
     throw error;
   } finally {
+    if (generation === requestGeneration)
+      useTrainingStore.setState({ queueReadiness: queueInitialized ? "ready" : "unavailable" });
     if (activeQueueController === controller) activeQueueController = null;
   }
 }

@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import manifestFixture from "../fixtures/opening-evidence-manifest.json";
 import { openingDecisionManifestSchema, openingEvidenceCheckpointSchema } from "../../app/domain/opening-evidence";
-import { OpeningAttemptJournal, beginOpeningAttempt, partialOpeningAttempt } from "../../app/lib/opening-evidence-journal";
+import { OpeningAttemptJournal, beginOpeningAttempt, partialOpeningAttempt, recoverOpeningEvidence } from "../../app/lib/opening-evidence-journal";
 import * as openingStorage from "../../app/lib/offline-training-storage";
 import { saveEvidenceAwareReview } from "../../app/lib/opening-evidence-review";
 import { useTrainingStore } from "../../app/state/training-store";
@@ -16,6 +16,21 @@ const header = { attempt_id: "logical-attempt", manifest, origin_queue_entry_id:
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllGlobals(); });
 
 describe("shadow opening journal", () => {
+  it("AS-15 overlapping recovery shares one scan and failed storage remains retryable", async () => {
+    vi.stubGlobal("indexedDB", {});
+    vi.stubGlobal("navigator", { locks: { request: vi.fn() } });
+    let rejectOpen!: (error: Error) => void;
+    const opening = vi.spyOn(openingStorage, "offlineTrainingDatabase").mockImplementation(() =>
+      new Promise((_resolve, reject) => { rejectOpen = reject; }));
+    const firstRecovery = recoverOpeningEvidence();
+    expect(recoverOpeningEvidence()).toBe(firstRecovery);
+    await vi.waitFor(() => expect(opening).toHaveBeenCalledOnce());
+    rejectOpen(new Error("Browser storage unavailable"));
+    await expect(firstRecovery).rejects.toThrow("Browser storage unavailable");
+    opening.mockRejectedValue(new Error("Retry is still denied"));
+    await expect(recoverOpeningEvidence()).rejects.toThrow("Retry is still denied");
+    expect(opening).toHaveBeenCalledTimes(2);
+  });
   it("AS-08 appends before advancing without awaiting deferred local persistence", () => {
     const appends = vi.fn(() => new Promise<void>(() => undefined));
     const journal = new OpeningAttemptJournal(header, appends);

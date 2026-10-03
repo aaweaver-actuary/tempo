@@ -25,6 +25,7 @@ import { STANDARD_FEN } from "../const";
 import { partialOpeningAttempt } from "../lib/opening-evidence-journal";
 
 export type TrainingStoreState = {
+  queueReadiness: "uninitialized" | "loading" | "ready" | "unavailable";
   practiceCards: PracticeCard[];
   importedRepertoires: LocalRepertoire[];
   activeCardIndex: number;
@@ -202,6 +203,7 @@ const defaultState = {
   isDatabaseQueueActive: false,
   isOfflineQueueActive: false,
   serviceError: "",
+  queueReadiness: "uninitialized",
 };
 
 export const selectTrainingViewState = (state: TrainingStoreState) => ({
