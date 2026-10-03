@@ -5,6 +5,8 @@ import json
 from pathlib import Path
 from types import SimpleNamespace
 
+import pytest
+
 
 def test_shadow_manifest_fixture_matches_backend_producer_and_prescribed_revision():
     from app.services.opening_decision_evidence import decision_manifest
@@ -140,3 +142,61 @@ def test_evidence_migration_captures_valid_scope_color_without_overwriting_conte
     assert "learner.effective_trained_color IN ('white','black')" in binding
     assert 'ON CONFLICT DO NOTHING' in binding
     assert 'DO UPDATE' not in binding
+
+
+@pytest.mark.parametrize(('has_receipt', 'idempotent', 'requeue_id', 'expected_corrections'), [
+    (False, False, 202, 1),
+    (True, False, 202, 0),  # Receipt replay retains the original idempotent=False result.
+    (False, True, 202, 0),
+    (False, False, None, 0),
+    (False, None, 202, 0),
+])
+def test_review_requeue_context_correction_only_runs_for_fresh_review(
+        monkeypatch, has_receipt, idempotent, requeue_id, expected_corrections):
+    from app import main, review_commands
+    from app.services import postgres_opening_evidence
+    manifest = json.loads((Path(__file__).resolve().parents[2]/'tests/fixtures/opening-evidence-manifest.json').read_text())
+    completion = {'attempt_id':'context-authority', 'manifest':manifest, 'origin_queue_entry_id':101,
+                  'queue_entry_id':101, 'started_at':'2026-09-30T12:00:00Z', 'study_timezone':'UTC',
+                  'terminal':{'state':'complete', 'final_sequence':0, 'ended_at':'2026-09-30T12:01:00Z'}}
+    corrections = []
+    validation_order = []
+    result = {'persisted':True, 'requeue_entry_id':requeue_id}
+    if idempotent is not None:
+        result['idempotent'] = idempotent
+
+    def execute(statement, parameters):
+        if 'FROM review_attempt_receipts' in statement:
+            row = (1,) if has_receipt else None
+        elif 'SELECT revision' in statement:
+            row = (manifest['card_revision'],)
+        elif 'SELECT status' in statement:
+            row = ('queued',)
+        else:
+            row = None
+        return SimpleNamespace(fetchone=lambda:row)
+
+    def execute_native(statement, parameters):
+        if 'INSERT INTO opening_evidence_queue_contexts' in statement:
+            assert validation_order == ['validated', 'reviewed', 'completed']
+            corrections.append(parameters)
+        return SimpleNamespace(fetchone=lambda:('complete',))
+
+    database = SimpleNamespace(execute=execute, execute_native=execute_native)
+    def apply_review(*arguments, **options):
+        assert options['database'] is database and validation_order == ['validated']
+        validation_order.append('reviewed')
+        return result
+    monkeypatch.setattr(review_commands, 'lock_queue_date_for_position', lambda *arguments:None)
+    monkeypatch.setattr(main, '_apply_review', apply_review)
+    monkeypatch.setattr(postgres_opening_evidence, 'persist_checkpoint',
+                        lambda *arguments, **options:validation_order.append('validated'))
+    monkeypatch.setattr(postgres_opening_evidence, 'complete_review_evidence',
+                        lambda *arguments:validation_order.append('completed'))
+    assert review_commands.submit_review(database, {'card_id':manifest['card_id'],
+        'review':{'outcome':'correct', 'attempt_id':completion['attempt_id'], 'queue_entry_id':101,
+                  'opening_evidence_completion':completion}, 'prepared_manifest':manifest}) == result
+    assert len(corrections) == expected_corrections
+    if corrections:
+        assert corrections == [(requeue_id, manifest['presentation_snapshot_id'],
+                                manifest['repertoire_id'], manifest['trained_color'])]

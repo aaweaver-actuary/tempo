@@ -241,6 +241,68 @@ def test_postgres_shared_legacy_color_requires_authoritative_admission():
         print('PASS test_postgres_shared_legacy_color_requires_authoritative_admission '+trained_color)
 
 
+def test_postgres_legacy_review_requeue_inherits_color_after_source_replacement():
+    if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
+        raise RuntimeError('Requeue color rehearsal requires disposable PostgreSQL')
+    os.environ['TEMPO_DATABASE_WRITE_URL'] = os.getenv('TEMPO_SHADOW_REHEARSAL_URL', 'postgresql://postgres@postgres:5432/tempo')
+    os.environ['TEMPO_DATABASE_READ_URL'] = os.environ['TEMPO_DATABASE_WRITE_URL']
+    for original_color, replacement_color in (('white', 'black'), ('black', 'white')):
+        fixture = _create_color_fixture(original_color)
+        manifest = _transport_color_fixture(fixture)['opening_decision_manifest']
+        completion = _color_checkpoint(fixture, manifest).model_dump(mode='json')
+        completion['terminal']['state'] = 'complete'
+        context_query = ('SELECT context.*,context.xmin::text AS row_version '
+                         'FROM opening_evidence_queue_contexts context '
+                         'JOIN opening_evidence_presentations snapshot ON snapshot.id=context.presentation_snapshot_id '
+                         'WHERE snapshot.card_id=%s ORDER BY context.queue_entry_id')
+        with postgres_store.connection() as database:
+            original_card = dict(database.execute('SELECT * FROM cards WHERE id=?', (fixture['card_id'],)).fetchone())
+            original_contexts = [dict(row) for row in database.execute_native(context_query, (fixture['card_id'],)).fetchall()]
+            database.execute('DELETE FROM repertoire_lines WHERE repertoire_id=?', (fixture['repertoire_id'],))
+            database.execute('INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,?,?,?,?)',
+                             (fixture['card_id']+'-replacement', fixture['repertoire_id'], 'Changed source color',
+                              replacement_color, original_card['start_fen'], original_card['moves_json'], fixture['now'].isoformat()))
+            assert dict(database.execute('SELECT * FROM cards WHERE id=?', (fixture['card_id'],)).fetchone()) == original_card
+        assert _transport_color_fixture(fixture, evidence=False)['trained_color'] == replacement_color
+        authoritative = prepare_checkpoint(OpeningEvidenceCheckpoint.model_validate(completion))
+        assert authoritative == manifest and manifest['trained_color'] == original_color
+        payload = {'card_id':fixture['card_id'],
+                   'review':{'outcome':'correct','queue_entry_id':fixture['queue_id'],
+                             'attempt_id':completion['attempt_id'],'recorded_at':fixture['now'].isoformat(),
+                             'opening_evidence_completion':completion}, 'prepared_manifest':authoritative}
+        with postgres_store.connection() as database:
+            result = submit_review(database, payload)
+            assert result['persisted'] and result['requeue_entry_id'] and result['idempotent'] is False
+            contexts = [dict(row) for row in database.execute_native(context_query, (fixture['card_id'],)).fetchall()]
+            inherited = next(row for row in contexts if row['queue_entry_id'] == result['requeue_entry_id'])
+            assert inherited['effective_trained_color'] == original_color, (
+                f"Requeue inherited mutable {inherited['effective_trained_color']} instead of validated {original_color}")
+            assert inherited['presentation_snapshot_id'] == manifest['presentation_snapshot_id']
+            assert inherited['repertoire_id'] == manifest['repertoire_id']
+            assert [row for row in contexts if row['queue_entry_id'] != result['requeue_entry_id']] == original_contexts
+        repeat_transport = _transport_color_fixture(fixture, queue_id=result['requeue_entry_id'])
+        assert repeat_transport['trained_color'] == original_color
+        assert repeat_transport['opening_decision_manifest'] == manifest
+        assert 'opening_evidence_diagnostic' not in repeat_transport
+        repeat = _color_checkpoint(fixture, manifest).model_dump(mode='json')
+        repeat.update(attempt_id=fixture['card_id']+'-repeat', origin_queue_entry_id=result['requeue_entry_id'],
+                      queue_entry_id=result['requeue_entry_id'], parent_attempt_id=completion['attempt_id'])
+        repeat_request = OpeningEvidenceCheckpoint.model_validate(repeat)
+        assert prepare_checkpoint(repeat_request) == manifest
+        with postgres_store.connection() as database:
+            scheduling_before = _fixture_scheduling(database, fixture)
+            assert persist_checkpoint(database, {'checkpoint':repeat, 'prepared_manifest':manifest})['persisted']
+            assert _fixture_scheduling(database, fixture) == scheduling_before
+        # A new delivery can replay the receipt's original idempotent=False result.
+        # Its committed contexts must not even acquire a new PostgreSQL row version.
+        with postgres_store.connection() as database:
+            assert submit_review(database, payload) == result
+            assert _fixture_scheduling(database, fixture) == scheduling_before
+            assert [dict(row) for row in database.execute_native(context_query, (fixture['card_id'],)).fetchall()] == contexts
+        _retain_color_provenance(fixture)
+        print('PASS test_postgres_legacy_review_requeue_inherits_color_after_source_replacement '+original_color+'->'+replacement_color)
+
+
 def test_postgres_legacy_review_requeue_preserves_validated_color():
     for trained_color in ('white', 'black'):
         fixture = _create_color_fixture(trained_color)
@@ -475,6 +537,7 @@ def test_postgres_shadow_replay_atomicity_and_scheduling_invariance():
 if __name__=='__main__':
     if '--verify-persisted' in sys.argv:verify_persisted_shadow()
     else:
+        test_postgres_legacy_review_requeue_inherits_color_after_source_replacement()
         test_postgres_legacy_opening_color_queue_checkpoint_round_trip()
         test_postgres_modern_color_wins_over_repertoire_fallback()
         test_postgres_shared_legacy_color_requires_authoritative_admission()
