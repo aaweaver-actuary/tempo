@@ -215,6 +215,7 @@ def apply_prefix_split(
         )
     ] or [(source_card["repertoire_id"], int(source_card["canonical_route_source"]))]
 
+    copied_child_ids = []
     shortened_card = database.execute(
         "SELECT * FROM cards WHERE id=?", (shortened_card_id,)
     ).fetchone()
@@ -224,6 +225,9 @@ def apply_prefix_split(
             source_card,
             {
                 "id": shortened_card_id,
+                # Install membership provenance before restoring card provenance:
+                # the owner may have an explicitly generated source membership.
+                "canonical_route_source": 0,
                 "moves_json": json.dumps(split["shortened_moves"]),
                 "revision": int(source_card["revision"]) + 1,
                 "archived": 0,
@@ -233,6 +237,7 @@ def apply_prefix_split(
                 "hard_correct_streak": 0,
             },
         )
+        copied_child_ids.append(shortened_card_id)
     database.execute(
         """INSERT OR IGNORE INTO card_revisions(
                card_id,revision,start_fen,moves_json,history_mode,created_at
@@ -283,6 +288,7 @@ def apply_prefix_split(
             source_card,
             {
                 "id": continuation_card_id,
+                "canonical_route_source": 0,
                 "kind": "response",
                 "start_fen": split["continuation_starting_fen"],
                 "moves_json": json.dumps(split["continuation_moves"]),
@@ -308,6 +314,7 @@ def apply_prefix_split(
                 "trained_color": trained_color,
             },
         )
+        copied_child_ids.append(continuation_card_id)
     for repertoire_id, membership_source in source_memberships:
         for child_card_id in (shortened_card_id, continuation_card_id):
             database.execute(
@@ -316,11 +323,16 @@ def apply_prefix_split(
                 "WHERE repertoire_cards.canonical_route_source=0 AND excluded.canonical_route_source=1",
                 (repertoire_id, child_card_id, membership_source),
             )
-    database.execute("DELETE FROM repertoire_cards WHERE card_id=?", (source_card_id,))
+    if source_card["canonical_route_source"]:
+        for child_card_id in copied_child_ids:
+            database.execute("UPDATE cards SET canonical_route_source=1 WHERE id=?", (child_card_id,))
+    # Archive while the original links still describe the owner semantics.
+    # Removing a generated owner link first would activate authored owner fallback.
     database.execute(
         "UPDATE cards SET archived=1,superseded_by=? WHERE id=?",
         (shortened_card_id, source_card_id),
     )
+    database.execute("DELETE FROM repertoire_cards WHERE card_id=?", (source_card_id,))
     _queue_split_followups(database, shortened_card_id, continuation_card_id, today)
     database.execute(
         """INSERT INTO prefix_splits(

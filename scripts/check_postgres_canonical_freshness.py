@@ -220,13 +220,14 @@ def prove_mutation_boundaries(repertoire_id, shared_repertoire_id, game_id):
     print('PASS CF-6 explicit authored card revise/archive hides old game publication, durably resets full refresh, real position/comparison slices restore current publication after restart', flush=True)
 
 
-def prove_generated_split_boundary():
+def prove_generated_split_boundary(card_source=0):
     from app.prefix_split_commands import accept_prefix_split  # registers the real command
     from app.command_gateway import execute_command
     from app.services.postgres_opening_graph import prepare_obsolete_graph_cards, cleanup_graph_cards_in_transaction
     identifier = 'canonical-generated-split-' + uuid.uuid4().hex
     route = ['h2h3', 'a7a6', 'g2g3', 'b7b6', 'f1g2', 'c8b7', 'g1f3']
     operation_id = identifier + '-split'
+    authored_repertoire_id = identifier + '-authored'
     try:
         with postgres_store.connection() as database:
             database.execute('INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)', (identifier, identifier, identifier + '.pgn', NOW))
@@ -237,6 +238,11 @@ def prove_generated_split_boundary():
         with postgres_store.connection() as database:
             source = database.execute("SELECT * FROM cards WHERE repertoire_id=? AND kind='prefix' AND canonical_route_source=0 AND archived=0", (identifier,)).fetchone()
             assert source is not None
+            if card_source:
+                # The globally authored card still has a generated owner link.
+                database.execute('UPDATE cards SET canonical_route_source=1 WHERE id=?', (source['id'],))
+                database.execute('INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)', (authored_repertoire_id, authored_repertoire_id, 'authored.pgn', NOW))
+                database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,1)', (authored_repertoire_id, source['id']))
             prefix = read_prefix(database, identifier)
             before_scope = game_scope_generation(database)
             refresh = dict(database.execute("SELECT * FROM background_tasks WHERE kind='repertoire_game_refresh' AND deduplication_key='all'").fetchone())
@@ -246,11 +252,18 @@ def prove_generated_split_boundary():
         assert result and not result['idempotent'], result
         with postgres_store.connection() as database:
             assert read_prefix(database, identifier)['source_revision'] == prefix['source_revision']
-            assert game_scope_generation(database) == before_scope
-            assert dict(database.execute("SELECT * FROM background_tasks WHERE kind='repertoire_game_refresh' AND deduplication_key='all'").fetchone()) == refresh
+            refreshed_task = dict(database.execute("SELECT * FROM background_tasks WHERE kind='repertoire_game_refresh' AND deduplication_key='all'").fetchone())
+            if card_source:
+                assert game_scope_generation(database) > before_scope
+                assert refreshed_task['generation'] > refresh['generation']
+            else:
+                assert game_scope_generation(database) == before_scope
+                assert refreshed_task == refresh
             for child_id in [result['parent']['card_id'], result['continuation']['card_id']]:
-                assert database.execute('SELECT canonical_route_source FROM cards WHERE id=?', (child_id,)).fetchone()[0] == 0
+                assert database.execute('SELECT canonical_route_source FROM cards WHERE id=?', (child_id,)).fetchone()[0] == card_source
                 assert database.execute('SELECT canonical_route_source FROM repertoire_cards WHERE repertoire_id=? AND card_id=?', (identifier, child_id)).fetchone()[0] == 0
+                if card_source:
+                    assert database.execute('SELECT canonical_route_source FROM repertoire_cards WHERE repertoire_id=? AND card_id=?', (authored_repertoire_id, child_id)).fetchone()[0] == 1
             assert line_origin(database, prefix['preview_id'], ending_fen) == route
             assert coverage_run_is_current(database, database.execute('SELECT * FROM repertoire_coverage_runs WHERE id=?', (run_id,)).fetchone(), identifier)
         run_bounded_task_slices('opening_graph_rebuild', identifier, execute_postgres_opening_graph_slice)
@@ -277,12 +290,12 @@ def prove_generated_split_boundary():
             assert cleanup_graph_cards_in_transaction(database, claimed, candidates)
             assert database.execute('SELECT canonical_route_source FROM repertoire_cards WHERE repertoire_id=? AND card_id=?', (identifier, probe_id)).fetchone()[0] == 1
             assert not cleanup_graph_cards_in_transaction(database, claimed, candidates)
-        print('PASS CF-8 generated split command preserves card/link provenance, source/global scope, refresh identity, certificate and coverage; real graph cleanup protects intervening adoption', flush=True)
+        print(f'PASS CF-8 card source={card_source}: split command preserves generated owner scope/certificate/coverage and each link provenance; only authored memberships advance global scope/refresh; graph cleanup protects intervening adoption', flush=True)
     finally:
         with postgres_store.connection() as database:
             database.execute('DELETE FROM operation_receipts WHERE operation_id=?', (operation_id,))
             database.execute("DELETE FROM background_tasks WHERE deduplication_key=? OR json_extract(payload_json,'$.repertoire_id')=?", (identifier, identifier))
-            database.execute('DELETE FROM repertoires WHERE id=?', (identifier,))
+            database.execute('DELETE FROM repertoires WHERE id IN (?,?)', (identifier, authored_repertoire_id))
         postgres_store.close_pools()
 
 
@@ -501,6 +514,7 @@ def main():
         print('PASS PostgreSQL clearing authored moves revokes the previous route source',flush=True)
         prove_mutation_boundaries(mutation_repertoire_id, other_repertoire_id, game_id)
         prove_generated_split_boundary()
+        prove_generated_split_boundary(card_source=1)
         prove_guided_review_boundary(mutation_repertoire_id)
     finally:
         opportunities._calculate_node_opportunities = saved_calculate
