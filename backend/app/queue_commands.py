@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import HTTPException
 
 from .command_gateway import register_command
+from .review_conflicts import ReviewConflict
 from .postgres_store import PostgresConnection
 from .queue_position_lock import lock_queue_date_for_position
 from .services.durable_tasks import enqueue_task_in_transaction
@@ -43,13 +44,13 @@ def mark_attempt_failed(database: PostgresConnection, payload: dict[str, Any]) -
         f"{_ACTIVE_QUEUE_SQL} LIMIT 1 FOR UPDATE OF q", (date.today().isoformat(),),
     ).fetchone()
     if active_entry is None or active_entry["id"] != entry_id:
-        raise HTTPException(409, "This queue attempt is no longer active")
+        raise ReviewConflict("queue_attempt_inactive", "This queue attempt is no longer active")
     changed = database.execute(
         "UPDATE daily_queue SET attempt_failed=1 WHERE id=? AND status='queued'",
         (entry_id,),
     ).rowcount
     if not changed:
-        raise HTTPException(409, "This queue attempt is no longer active")
+        raise ReviewConflict("queue_attempt_inactive", "This queue attempt is no longer active")
     return {"attempt_failed": True}
 
 

@@ -1676,3 +1676,6 @@ def initialize() -> None:
     from .study_migration import migrate_studies
 
     migrate_studies()
+    from .queue_attempt_origins import initialize_sqlite_origins
+    with connection() as database:
+        initialize_sqlite_origins(database)
