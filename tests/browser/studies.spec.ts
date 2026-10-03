@@ -49,6 +49,10 @@ async function waitForPreparedPhoneShell(page: Page, localDate: string): Promise
 }
 
 test("FEN-only study square exercise is authored enrolled and reviewed through the real workspace", async ({ page, request }) => {
+  // Compose's local queue day can differ from the browser after UTC midnight.
+  // Pin this workflow to that day while its timers continue running normally.
+  const serverQueue = await (await request.get(`${api}/queue/today`)).json();
+  await page.clock.setFixedTime(new Date(`${serverQueue.local_date}T12:00:00Z`));
   const catalog = await (await request.get(`${api}/tactics/catalog`)).json();
   expect(catalog.packs.filter((pack: { active: boolean }) => pack.active)).toEqual([]);
   await page.goto("/");
@@ -80,6 +84,11 @@ test("FEN-only study square exercise is authored enrolled and reviewed through t
   await nav(page, "Train");
   await expect(page.getByText("Select the white knight square")).toBeVisible();
   await expect(page.getByText("Original synthetic study")).toHaveCount(0);
+  const browserLocalDate = await page.evaluate(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  });
+  await waitForPreparedPhoneShell(page, browserLocalDate);
   await expect(page.locator(".board-frame").first()).toHaveAttribute("data-fen", fen);
   const beforeFen = await page.locator(".board-frame").first().getAttribute("data-fen");
   await page.getByLabel("Coordinates or UCI move").fill("g1");

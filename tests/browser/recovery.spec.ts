@@ -55,6 +55,11 @@ test("repair retries survive delayed operation and task transitions after reload
   await expect(retryButton).toBeVisible();
   await retryButton.click();
   await expect(page.getByText("Repair saving", { exact: true })).toBeVisible();
+  // This scenario reloads an acknowledged retry, after its durable delivery marker.
+  // Reloading on the optimistic label can cancel the POST before it is accepted.
+  await expect.poll(() => page.evaluate(() => JSON.parse(
+    localStorage.getItem("tempo-pending-integrity-repairs-v2")!,
+  )[0]?.retry?.deliveryAccepted)).toBe(true);
   await page.reload();
   await expect.poll(() => oldReceiptPolls).toBeGreaterThanOrEqual(2);
   await expect(page.getByText("Repair saving", { exact: true })).toBeVisible();
