@@ -8,7 +8,8 @@ import { localDayKey } from "../utils/local";
 import { offlineTrainingDatabase as database } from "./offline-training-storage";
 import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
 import { saveEvidenceAwareReview } from "./opening-evidence-review";
-import { acknowledgeOpeningReview } from "./opening-evidence-journal";
+import { acknowledgeOpeningReview, retainOpeningEvidenceForStorageFallback } from "./opening-evidence-journal";
+import { publishNotification } from "./notifications";
 
 export type OfflineAttempt = {
   localEntryId: number;
@@ -31,6 +32,7 @@ export type OfflineAttempt = {
   attemptId?: string;
   openingEvidenceCompletion?: OpeningEvidenceCheckpoint;
   openingEvidenceRejected?: string;
+  openingEvidenceFallbackReason?: "local_storage_quota";
   answer?: StudyAnswer;
   assessment?: StudyAssessment;
   selfRating?: "correct" | "again";
@@ -167,9 +169,17 @@ export async function recordOfflineAttempt(
     assessment: StudyAssessment; selfRating?: "correct" | "again" },
   openingResponse?: { attemptId: string; completion?: OpeningEvidenceCheckpoint },
 ): Promise<PreparedTraining> {
-  return updatePreparedTraining((current) => {
+  const completedAt = openingResponse?.completion?.terminal?.ended_at ?? new Date().toISOString();
+  const update = (includeEvidence: boolean) => (current: PreparedTraining | null): PreparedTraining => {
     if (!current || current.localDate !== localDayKey())
       throw new Error("The prepared queue is from another day. Reconnect before reviewing.");
+    // A committed phone review already owns this queue entry, even if optional diagnostics failed.
+    const prior = current.attempts.find(attempt => attempt.localEntryId === localEntryId);
+    if (prior) {
+      if (openingResponse && prior.attemptId !== openingResponse.attemptId)
+        throw new Error("This phone queue entry already has a different saved review. Reload before reviewing.");
+      return current;
+    }
     const cardIndex = current.cards.findIndex((queuedCard) => queuedCard.queue_entry_id === localEntryId);
     const card = current.cards[cardIndex];
     if (!card)
@@ -191,12 +201,14 @@ export async function recordOfflineAttempt(
     const parent = current.attempts.find((attempt) => attempt.localEntryId === card.parent_local_entry_id);
     const attempt: OfflineAttempt = {
       localEntryId, parentLocalEntryId: card.parent_local_entry_id,
-      cardId: card.id, outcome, guided, completedAt: openingResponse?.completion?.terminal?.ended_at ?? new Date().toISOString(),
+      cardId: card.id, outcome, guided, completedAt,
       expectedReviewId: parent?.serverReviewId ?? card.latest_review_id ?? 0,
       expectedRevision: card.revision ?? 1,
       queueCycle: card.cycle ?? 0,
       ...(studyResponse ?? {}),
-      ...(openingResponse ? { attemptId: openingResponse.attemptId, openingEvidenceCompletion: openingResponse.completion } : {}),
+      ...(openingResponse ? { attemptId: openingResponse.attemptId,
+        ...(includeEvidence ? { openingEvidenceCompletion: openingResponse.completion }
+          : { openingEvidenceFallbackReason: "local_storage_quota" as const }) } : {}),
     };
     const remaining = current.cards.filter((_, index) => index !== cardIndex);
     let nextTemporaryId = current.nextTemporaryId;
@@ -219,7 +231,20 @@ export async function recordOfflineAttempt(
       remaining.splice(Math.min(repeatPosition, remaining.length), 0, repeatedCard);
     }
     return { ...current, cards: remaining, attempts: [...current.attempts, attempt], nextTemporaryId };
-  });
+  };
+  try { return await updatePreparedTraining(update(true)); }
+  catch (error) {
+    const name = error && typeof error === "object" && "name" in error ? error.name : undefined;
+    if (!openingResponse?.completion || !["QuotaExceededError", "NS_ERROR_DOM_QUOTA_REACHED"].includes(String(name))) throw error;
+    const compact = await updatePreparedTraining(update(false));
+    // Aggregate durability precedes optional diagnostics; neither retention nor its
+    // failure can prevent this committed phone review from advancing training.
+    void retainOpeningEvidenceForStorageFallback(openingResponse.completion).catch(retentionError => publishNotification({
+      severity: "warning", source: "opening evidence", key: `opening-evidence:${openingResponse.attemptId}`,
+      message: `The phone review is saved, but opening evidence could not be retained separately. ${String(retentionError)}`,
+    }));
+    return compact;
+  }
 }
 
 export async function recordOfflineStudyAttempt(localEntryId: number, studyId: string,
@@ -288,6 +313,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
         response = await saveEvidenceAwareReview({
           endpoint: reviewEndpoint, operationKey: `phone-reconcile:${reviewAttemptId}`, signal: controller.signal,
           completion, evidenceRejected: attempt.openingEvidenceRejected,
+          aggregateOnly: attempt.openingEvidenceFallbackReason === "local_storage_quota",
           onEvidenceRejected: async (message) => {
             await updatePreparedTraining((saved) => ({ ...saved!, attempts: saved!.attempts.map((item) =>
               item.localEntryId === attempt.localEntryId ? { ...item, openingEvidenceRejected: message } : item) }));
@@ -344,7 +370,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
     if (result.review) result = { ...result.review };
     if (!Number.isInteger(result.review_id) && !(result.persisted && result.reconciliation === "history_only"))
       throw new Error("Review sync did not confirm a saved review");
-    if (attempt.openingEvidenceCompletion && attempt.attemptId)
+    if (attempt.openingEvidenceCompletion && attempt.attemptId && !attempt.openingEvidenceFallbackReason)
       void acknowledgeOpeningReview(attempt.attemptId).catch(() => undefined);
     current = await updatePreparedTraining((saved) => ({
       ...saved!, attempts: saved!.attempts.map((item) => item.localEntryId === attempt.localEntryId

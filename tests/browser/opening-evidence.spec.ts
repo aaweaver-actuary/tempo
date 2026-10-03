@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { openingDecisionManifestSchema } from "../../app/domain/opening-evidence";
 const manifest = openingDecisionManifestSchema.parse(JSON.parse(readFileSync(new URL("../fixtures/opening-evidence-manifest.json", import.meta.url), "utf8")));
 import type { OpeningEvidenceCheckpoint } from "../../app/domain/opening-evidence";
+import type { PreparedTraining } from "../../app/lib/offline-training";
 import { prepareVisualUI } from "./visual-fixtures";
 
 const today = new Date();
@@ -18,6 +19,79 @@ async function prepareQueue(page: Page) {
   await page.route("**/api/queue/window?**", route => route.fulfill({ json: payload }));
   await page.route("**/api/queue/prepared?**", route => route.fulfill({ json: { ...payload, prepared_at: new Date().toISOString() } }));
   await page.route("**/api/repertoire/lines", route => route.fulfill({ json: { lines: [] } }));
+}
+
+for (const compactFails of [false, true]) {
+test(compactFails
+  ? "AS-16 offline compact quota failure blocks advancement until durable retry"
+  : "AS-16 offline evidence quota saves a compact phone review and retains its journal after sync", async ({ page, context }) => {
+  await context.addInitScript((failCompact) => {
+    Object.defineProperty(navigator, "standalone", { value: true, configurable: true });
+    Object.defineProperty(navigator, "userAgent", { value: "Mozilla/5.0 (iPhone) AppleWebKit/605.1.15", configurable: true });
+    const settings = window as unknown as { offlineEvidenceQuotaMode: string };
+    settings.offlineEvidenceQuotaMode = failCompact ? "both" : "full";
+    const put = IDBObjectStore.prototype.put;
+    IDBObjectStore.prototype.put = function (value, key) {
+      if (this.name === "training" && value.attempts?.length &&
+        (settings.offlineEvidenceQuotaMode === "both" || JSON.stringify(value).includes("openingEvidenceCompletion")))
+        throw new DOMException("Prepared review exceeds quota", "QuotaExceededError");
+      return key === undefined ? put.call(this, value) : put.call(this, value, key);
+    };
+  }, compactFails);
+  await prepareQueue(page);
+  await page.route("**/api/queue/prepared?**", route => route.fulfill({ json: {
+    local_date: localDate, count: 1, cards: [{ ...card, first_correct_at: undefined }], projection, prepared_at: new Date().toISOString() } }));
+  const readPhone = () => page.evaluate(() => new Promise<PreparedTraining>(resolve => {
+    const request = indexedDB.open("tempo-offline-training", 2);
+    request.onsuccess = () => {
+      const database = request.result;
+      const read = database.transaction("training").objectStore("training").get("prepared-daily-queue");
+      read.onsuccess = () => { database.close(); resolve(read.result); };
+    };
+  }));
+  await page.goto("/");
+  await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
+  await expect.poll(async () => Boolean(await readPhone())).toBe(true);
+  await page.route("**/api/**", route => route.abort("internetdisconnected"));
+  await page.reload(); await move(page, "e2", "e4");
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", /4P3.* w /);
+  await move(page, "g1", "f3");
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", /5N2.* w /);
+  const attemptId = (await savedAttempts(page))[0].attempt_id;
+  await move(page, "f1", "b5");
+  if (compactFails) {
+    await expect(page.getByRole("button", { name: "Retry save", exact: true })).toBeVisible();
+    expect((await readPhone()).attempts).toEqual([]);
+    expect((await readPhone()).cards[0].queue_entry_id).toBe(101);
+    await page.evaluate(() => { (window as unknown as { offlineEvidenceQuotaMode: string }).offlineEvidenceQuotaMode = "full"; });
+    await page.getByRole("button", { name: "Retry save", exact: true }).click();
+  }
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", card.start_fen);
+  const recorded = await readPhone();
+  expect(recorded.attempts).toHaveLength(1);
+  expect(recorded.attempts[0]).toMatchObject({ attemptId, localEntryId: 101, outcome: "correct", expectedRevision: 3,
+    openingEvidenceFallbackReason: "local_storage_quota" });
+  expect(recorded.attempts[0].openingEvidenceCompletion).toBeUndefined();
+  expect(recorded.cards[0].parent_local_entry_id).toBe(101);
+  await expect.poll(async () => (await savedAttempts(page)).find(attempt => attempt.attempt_id === attemptId)?.delivery_state).toBe("retained");
+  const retainedEvents = (await savedEvents(page) as { attempt_id: string }[]).filter(event => event.attempt_id === attemptId);
+  expect(retainedEvents.length).toBeGreaterThanOrEqual(3);
+  const reviews: Record<string, unknown>[] = [], keys: string[] = [];
+  await page.route("**/api/cards/shadow-card/review", async route => {
+    reviews.push(route.request().postDataJSON()); keys.push(route.request().headers()["idempotency-key"]);
+    await route.fulfill({ json: { persisted: true, review_id: 801, requeue_entry_id: 102 } });
+  });
+  await page.unroute("**/api/**"); await page.reload();
+  await expect.poll(() => reviews.length).toBe(1);
+  expect(keys).toEqual([`phone-reconcile:${attemptId}:aggregate-only`]);
+  expect(reviews[0]).not.toHaveProperty("opening_evidence_completion");
+  expect(reviews[0]).toMatchObject({ attempt_id: attemptId, outcome: "correct", recorded_at: recorded.attempts[0].completedAt });
+  await page.reload();
+  await expect(page.getByText("Shadow opening", { exact: true })).toBeVisible();
+  expect(reviews).toHaveLength(1);
+  expect((await savedAttempts(page)).find(attempt => attempt.attempt_id === attemptId)?.delivery_state).toBe("retained");
+  expect((await savedEvents(page) as { attempt_id: string }[]).filter(event => event.attempt_id === attemptId)).toEqual(retainedEvents);
+});
 }
 async function square(page: Page, square: string) {
   const bounds = (await page.locator(".cg-wrap").boundingBox())!;

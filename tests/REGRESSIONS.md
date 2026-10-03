@@ -1283,3 +1283,14 @@ this input adaptation.
 - `foreground receipt polling forwards an optional caller signal without changing admission` — cancellation remains caller-controlled and does not demote foreground work.
 
 These regressions run in `tests/unit/opening-evidence-background-admission.test.ts`, alongside background admission, pending/complete receipt and foreground review controls. Existing browser and PostgreSQL background contention/restart/replay coverage remains required.
+
+### PR #69 offline quota durability
+
+- `AS-16 offline review quota falls back to durable aggregate-only phone review` — actual prepared transaction aborts only for the evidence envelope, compact commit preserves aggregate identity/repeat rules, retained journal survives reload/sync, and ambiguous replay retries the frozen aggregate-only key/body.
+- `AS-16 offline aggregate-only storage failure remains blocking and retryable`; `AS-16 offline evidence non-quota storage errors remain blocking (SecurityError/InvalidStateError)` — no false durable review, queue advance or network send.
+- `AS-16 offline quota retention failure cannot undo a durable compact review` — optional diagnostics cannot block the committed review or duplicate its repeat on retry.
+
+Coverage lives in `tests/unit/opening-evidence-offline-quota.test.ts` and the regular opening-evidence browser file, alongside existing outbox and PostgreSQL contracts. Offline aggregate ownership remains authoritative.
+
+- `AS-16 offline evidence quota saves a compact phone review and retains its journal after sync`; `AS-16 offline compact quota failure blocks advancement until durable retry` — real IndexedDB transactions and phone UI prove compact durability, blocking failure/retry, aggregate-only sync identity and retained evidence across reload. Registered critical browser inventory.
+- `AS-16 aggregate phone storage quota without evidence remains blocking` — quota fallback is restricted to optional evidence; the successful quota case covers modern and legacy Firefox quota names.
