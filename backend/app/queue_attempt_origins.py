@@ -44,14 +44,27 @@ def initialize_sqlite_origins(database) -> None:
                 last_status=excluded.last_status,
                 review_result_json=COALESCE(excluded.review_result_json,queue_attempt_origins.review_result_json);
             END""")
-    database.execute("""CREATE TRIGGER IF NOT EXISTS queue_attempt_origin_revision
-        AFTER UPDATE OF revision ON cards WHEN NEW.revision!=OLD.revision BEGIN
-        INSERT OR IGNORE INTO queue_attempt_origins
-        SELECT q.id,NEW.id,NEW.revision,q.queue_date,q.cycle,q.admission_kind,
-               q.admission_repertoire_id,q.attempt_failed,q.status,q.review_result_json,0,
-               NEW.start_fen,NEW.moves_json,NEW.trained_color,NEW.content_type
-        FROM daily_queue q WHERE q.card_id=NEW.id AND q.status='queued';
-        END""")
+    # Replace existing installations atomically, including connections which
+    # have not opened an outer write transaction yet. Do not use executescript:
+    # its implicit commit would expose a triggerless revision boundary.
+    database.execute("SAVEPOINT queue_attempt_revision_trigger")
+    try:
+        database.execute("DROP TRIGGER IF EXISTS queue_attempt_origin_revision")
+        database.execute("""CREATE TRIGGER queue_attempt_origin_revision
+            AFTER UPDATE OF revision ON cards WHEN NEW.revision!=OLD.revision BEGIN
+            UPDATE daily_queue SET attempt_failed=0
+            WHERE card_id=NEW.id AND status!='complete' AND attempt_failed!=0;
+            INSERT OR IGNORE INTO queue_attempt_origins
+            SELECT q.id,NEW.id,NEW.revision,q.queue_date,q.cycle,q.admission_kind,
+                   q.admission_repertoire_id,q.attempt_failed,q.status,q.review_result_json,0,
+                   NEW.start_fen,NEW.moves_json,NEW.trained_color,NEW.content_type
+            FROM daily_queue q WHERE q.card_id=NEW.id AND q.status='queued';
+            END""")
+    except Exception:
+        database.execute("ROLLBACK TO queue_attempt_revision_trigger")
+        raise
+    finally:
+        database.execute("RELEASE queue_attempt_revision_trigger")
 
 
 def recover_queue_entry(database, card_id: str, request) -> dict:

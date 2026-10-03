@@ -41,7 +41,7 @@ _ACTIVE_QUEUE_SQL = """SELECT q.id FROM daily_queue q JOIN cards c ON c.id=q.car
 def mark_attempt_failed(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, bool]:
     entry_id = int(payload["entry_id"])
     active_entry = database.execute(
-        f"{_ACTIVE_QUEUE_SQL} LIMIT 1 FOR UPDATE OF q", (date.today().isoformat(),),
+        f"{_ACTIVE_QUEUE_SQL} LIMIT 1 FOR UPDATE OF q,c", (date.today().isoformat(),),
     ).fetchone()
     if active_entry is None or active_entry["id"] != entry_id:
         raise ReviewConflict("queue_attempt_inactive", "This queue attempt is no longer active")

@@ -7,12 +7,14 @@ from pathlib import Path
 import sys
 import time
 import uuid
+from threading import Event
+from unittest.mock import patch
 
 import psycopg
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "backend"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from app import postgres_store, queue_commands, review_commands  # registers the production review handlers
+from app import postgres_store, queue_commands, queue_attempt_origins, review_commands  # registers the production review handlers
 from app.command_gateway import execute_command, read_operation, request_digest
 from app.services.postgres_queue_refresh import _reconcile_one_unseen_entry
 from check_postgres_repertoire_limits import snapshot_queue_environment, restore_queue_environment
@@ -168,5 +170,111 @@ def test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recov
         postgres_store.close_pools()
 
 
+def test_postgres_guided_marker_locks_displayed_revision_until_commit():
+    if os.getenv("TEMPO_TEST_INSTANCE") != "disposable":
+        raise RuntimeError("Guided-marker proof requires a disposable PostgreSQL instance")
+    dsn = "postgresql://postgres@postgres:5432/tempo"
+    os.environ["TEMPO_DATABASE_WRITE_URL"] = dsn
+    os.environ["TEMPO_DATABASE_READ_URL"] = dsn
+    postgres_store.close_pools()
+    identifier = f"guided-revision-proof-{uuid.uuid4()}"
+    card_ids = [f"{identifier}-{suffix}" for suffix in ("marker-first", "edit-first")]
+    today = date.today().isoformat()
+    operations = []
+    validated = Event()
+    release_marker = Event()
+    executor = ThreadPoolExecutor(max_workers=2)
+    editor = psycopg.connect(dsn)
+    original_validation = queue_attempt_origins.validate_failure_marker
+    marker_pid = []
+    try:
+        with postgres_store.connection() as database:
+            database.execute("INSERT INTO repertoires(id,name,source_name,created_at,new_cards_per_day) VALUES(?,?,'synthetic',?,0)", (identifier, "Guided revision proof", today))
+            entries = []
+            for index, card_id in enumerate(card_ids):
+                database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date,introduced_at,first_correct_at) VALUES(?,?,'prefix',?,'[\"e2e4\"]','learning',?,?,?)",
+                    (card_id, identifier, "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", today, today, today))
+                database.execute("INSERT INTO repertoire_cards VALUES(?,?)", (identifier, card_id))
+                entries.append(database.execute("INSERT INTO daily_queue(queue_date,card_id,position,admission_kind,admission_repertoire_id) VALUES(?,?,?,'review',?) RETURNING id", (today, card_id, -1000000 + index, identifier)).fetchone()[0])
+
+        def pause_after_validation(database, entry_id, card_id=None, expected_revision=None):
+            original_validation(database, entry_id, card_id, expected_revision)
+            if entry_id == entries[0]:
+                marker_pid.append(database.execute("SELECT pg_backend_pid()").fetchone()[0])
+                validated.set()
+                if not release_marker.wait(timeout=15):
+                    raise AssertionError("Marker barrier was not released")
+
+        def edit_revision():
+            editor.execute("UPDATE cards SET revision=2,moves_json='[\"d2d4\"]' WHERE id=%s", (card_ids[0],))
+            editor.commit()
+
+        marker_operation = f"{identifier}-marker"
+        operations.append(marker_operation)
+        with patch.object(queue_attempt_origins, "validate_failure_marker", pause_after_validation):
+            marker_future = executor.submit(execute_command, marker_operation, "queue.attempt_failed",
+                {"entry_id": entries[0], "card_id": card_ids[0], "expected_revision": 1})
+            assert validated.wait(timeout=5), "Production marker did not reach validation"
+            editor_future = executor.submit(edit_revision)
+            try:
+                deadline = time.monotonic() + 5
+                with psycopg.connect(dsn, autocommit=True) as observer:
+                    while True:
+                        blocked = observer.execute("SELECT wait_event_type,pg_blocking_pids(pid) FROM pg_stat_activity WHERE pid=%s", (editor.info.backend_pid,)).fetchone()
+                        if blocked and blocked[0] == "Lock" and marker_pid[0] in blocked[1]:
+                            break
+                        assert not editor_future.done(), "Editor committed R2 before the validated R1 marker committed"
+                        assert time.monotonic() < deadline, f"Editor did not wait for marker lock: {blocked}"
+            finally:
+                release_marker.set()
+            assert marker_future.result(timeout=5)["attempt_failed"]
+            editor_future.result(timeout=5)
+        with postgres_store.connection(read_only=True) as database:
+            origins = [tuple(row) for row in database.execute("SELECT revision,attempt_failed FROM queue_attempt_origins WHERE queue_entry_id=? ORDER BY revision", (entries[0],))]
+            assert origins == [(1, 1), (2, 0)], origins
+            projection = database.execute("SELECT attempt_failed,status,admission_kind,admission_repertoire_id,cycle FROM daily_queue WHERE id=?", (entries[0],)).fetchone()
+            assert tuple(projection) == (0, "queued", "review", identifier, 0)
+        review_operation = f"{identifier}-review"
+        operations.append(review_operation)
+        payload = {"card_id": card_ids[0], "review": {"outcome": "correct", "guided": False,
+            "queue_entry_id": entries[0], "expected_revision": 2, "attempt_id": f"{identifier}-R2",
+            "recorded_at": datetime.now(timezone.utc).isoformat()}}
+        saved = execute_command(review_operation, "cards.review", payload)
+        assert saved["persisted"]
+        assert execute_command(review_operation, "cards.review", payload) == saved
+        replay_operation = f"{identifier}-review-replay"
+        operations.append(replay_operation)
+        assert execute_command(replay_operation, "cards.review.reconcile", payload) == saved
+        with postgres_store.connection() as database:
+            assert [tuple(row) for row in database.execute("SELECT rating,guided FROM reviews WHERE card_id=?", (card_ids[0],))] == [("correct", 0)]
+            # Opposite ordering: editing commits before the stale marker arrives.
+            database.execute("UPDATE cards SET revision=2,moves_json='[\"d2d4\"]' WHERE id=?", (card_ids[1],))
+        stale_operation = f"{identifier}-edit-first-marker"
+        operations.append(stale_operation)
+        assert execute_command(stale_operation, "queue.attempt_failed", {"entry_id": entries[1], "card_id": card_ids[1], "expected_revision": 1}) is None
+        assert read_operation(stale_operation)["error"]["code"] == "queue_attempt_unprovable"
+        with postgres_store.connection(read_only=True) as database:
+            assert database.execute("SELECT attempt_failed FROM daily_queue WHERE id=?", (entries[1],)).fetchone()[0] == 0
+            assert [tuple(row) for row in database.execute("SELECT revision,attempt_failed FROM queue_attempt_origins WHERE queue_entry_id=? ORDER BY revision", (entries[1],))] == [(1, 0), (2, 0)]
+        print("PASS test_postgres_guided_marker_locks_displayed_revision_until_commit (marker-first and edit-first)")
+    finally:
+        release_marker.set()
+        executor.shutdown(wait=True)
+        editor.rollback()
+        editor.close()
+        postgres_store.close_pools()
+        with postgres_store.connection() as database:
+            for operation_id in operations:
+                database.execute("DELETE FROM operation_receipts WHERE operation_id=?", (operation_id,))
+            for card_id in card_ids:
+                database.execute("DELETE FROM review_schedule_snapshots WHERE review_id IN (SELECT id FROM reviews WHERE card_id=?)", (card_id,))
+                database.execute("DELETE FROM review_attempt_receipts WHERE card_id=?", (card_id,))
+            database.execute("DELETE FROM repertoires WHERE id=?", (identifier,))
+            for card_id in card_ids:
+                database.execute("DELETE FROM queue_attempt_origins WHERE card_id=?", (card_id,))
+        postgres_store.close_pools()
+
+
 if __name__ == "__main__":
+    test_postgres_guided_marker_locks_displayed_revision_until_commit()
     test_postgres_queue_attempt_maintenance_contention_restart_and_receipt_recovery()

@@ -1,3 +1,8 @@
+PR #72 repair: displayed guidance and phone fallback (October 3, 2026):
+
+- `test_postgres_guided_marker_locks_displayed_revision_until_commit` in `scripts/check_postgres_queue_attempt_recovery.py` pauses the production marker immediately after validation, observes a separate editor's PostgreSQL lock wait, retains R1 guidance while R2 remains unassisted, and proves fresh review idempotency. Its edit-first ordering rejects the stale R1 marker without marking R2.
+- `test_card_revision_retains_original_guided_failure_without_guiding_new_content` in `backend/tests/test_queue_attempt_recovery.py` covers sequential queued/blocked/completed projections and replacement of an already-installed SQLite revision trigger on repeated initialization. `test_sqlite_revision_trigger_replacement_rolls_back_on_install_failure` proves failed installation leaves the original trigger installed.
+
 # Reported issues and regression coverage
 
 Stale queue attempts and poisoned training-review replay (October 3, 2026):

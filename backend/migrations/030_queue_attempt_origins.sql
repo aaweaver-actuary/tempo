@@ -45,6 +45,10 @@ FOR EACH ROW EXECUTE FUNCTION retain_queue_attempt_origin();
 
 CREATE FUNCTION retain_queue_attempt_revision() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
+    -- Guidance belongs to the displayed revision; keep its retained origin but
+    -- reset unfinished projections before their new content origin is captured.
+    UPDATE daily_queue SET attempt_failed=0
+    WHERE card_id=NEW.id AND status!='complete' AND attempt_failed!=0;
     INSERT INTO queue_attempt_origins
     SELECT q.id,NEW.id,NEW.revision,q.queue_date,q.cycle,q.admission_kind,
            q.admission_repertoire_id,q.attempt_failed,q.status,q.review_result_json,0,

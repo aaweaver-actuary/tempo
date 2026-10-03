@@ -288,3 +288,60 @@ def test_legacy_empty_guided_marker_body_preserves_unchanged_context(admitted_at
     response = TestClient(main.app).post(f"/api/queue/entries/{queue_entry_id}/fail", json=marker_body)
     assert response.status_code == 200
     assert response.json()["attempt_failed"] is True
+
+
+@pytest.mark.parametrize("status", ["queued", "blocked", "complete"])
+@pytest.mark.parametrize("reinitialize", [False, True])
+def test_card_revision_retains_original_guided_failure_without_guiding_new_content(admitted_attempt, status, reinitialize):
+    queue_entry_id, _ = admitted_attempt
+    with database.connection() as connection:
+        connection.execute("UPDATE daily_queue SET attempt_failed=1,status=? WHERE id=?", (status, queue_entry_id))
+        original = dict(connection.execute("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=? AND revision=1", (queue_entry_id,)).fetchone())
+        projection = dict(connection.execute("SELECT * FROM daily_queue WHERE id=?", (queue_entry_id,)).fetchone())
+        if reinitialize:
+            # Simulate an already-installed pre-repair SQLite trigger.
+            connection.execute("DROP TRIGGER queue_attempt_origin_revision")
+            connection.execute("""CREATE TRIGGER queue_attempt_origin_revision
+                AFTER UPDATE OF revision ON cards WHEN NEW.revision!=OLD.revision BEGIN
+                INSERT OR IGNORE INTO queue_attempt_origins
+                SELECT q.id,NEW.id,NEW.revision,q.queue_date,q.cycle,q.admission_kind,
+                       q.admission_repertoire_id,q.attempt_failed,q.status,q.review_result_json,0,
+                       NEW.start_fen,NEW.moves_json,NEW.trained_color,NEW.content_type
+                FROM daily_queue q WHERE q.card_id=NEW.id AND q.status='queued'; END""")
+    if reinitialize:
+        database.initialize()
+        database.initialize()
+    with database.connection() as connection:
+        connection.execute("UPDATE cards SET revision=2,moves_json='[\"d2d4\"]' WHERE id='recovery-card'")
+        revised = dict(connection.execute("SELECT * FROM daily_queue WHERE id=?", (queue_entry_id,)).fetchone())
+        assert revised == {**projection, "attempt_failed": 1 if status == "complete" else 0}
+        assert dict(connection.execute("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=? AND revision=1", (queue_entry_id,)).fetchone()) == original
+        if status == "complete":
+            assert connection.execute("SELECT COUNT(*) FROM queue_attempt_origins WHERE revision=2").fetchone()[0] == 0
+        else:
+            if status == "blocked":
+                connection.execute("UPDATE daily_queue SET status='queued' WHERE id=?", (queue_entry_id,))
+            new_origin = connection.execute("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=? AND revision=2", (queue_entry_id,)).fetchone()
+            assert new_origin["attempt_failed"] == 0
+            assert new_origin["admission_kind"] == original["admission_kind"]
+            connection.execute("UPDATE cards SET revision=3,moves_json='[\"c2c4\"]' WHERE id='recovery-card'")
+            assert [tuple(row) for row in connection.execute("SELECT revision,attempt_failed FROM queue_attempt_origins WHERE queue_entry_id=? ORDER BY revision", (queue_entry_id,))] == [(1, 1), (2, 0), (3, 0)]
+
+
+def test_sqlite_revision_trigger_replacement_rolls_back_on_install_failure(admitted_attempt):
+    from app.queue_attempt_origins import initialize_sqlite_origins
+
+    class FailedTriggerInstall:
+        def __init__(self, connection):
+            self.connection = connection
+
+        def execute(self, statement, parameters=()):
+            if statement.startswith("CREATE TRIGGER queue_attempt_origin_revision"):
+                raise RuntimeError("Simulated trigger install failure")
+            return self.connection.execute(statement, parameters)
+
+    with database.connection() as connection:
+        original = connection.execute("SELECT sql FROM sqlite_master WHERE name='queue_attempt_origin_revision'").fetchone()[0]
+        with pytest.raises(RuntimeError, match="trigger install failure"):
+            initialize_sqlite_origins(FailedTriggerInstall(connection))
+        assert connection.execute("SELECT sql FROM sqlite_master WHERE name='queue_attempt_origin_revision'").fetchone()[0] == original
