@@ -98,9 +98,12 @@ changed pinned content is reported for review rather than silently reapplied.
 Migration 30 records immutable saved presentations (actual revision, starting FEN,
 exact move JSON and saved trained color), seeds current presentations, and captures
 content changes with a narrow transactional trigger. Queue contexts preserve the
-admission repertoire. Only an unambiguous eligible owner can substitute for a missing
-admission binding. Unknown color, illegal content and ambiguous scope produce an
-actionable capture diagnostic; ordinary cards remain playable.
+proven repertoire and effective learner color. Initial binding without admission
+requires an unambiguous eligible owner. A review-generated repeat can instead use
+its unique immutable context copied from the validated parent completion. Explicit
+admission must match that context; multiple valid contexts remain ambiguous.
+Unknown color, illegal content and ambiguous scope produce an actionable capture
+diagnostic; ordinary cards remain playable.
 
 Live/window/prepared queues expose manifest v1 only with
 `include_opening_evidence=true`; default response shapes remain compatible. Manifest

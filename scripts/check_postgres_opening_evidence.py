@@ -241,6 +241,80 @@ def test_postgres_shared_legacy_color_requires_authoritative_admission():
         print('PASS test_postgres_shared_legacy_color_requires_authoritative_admission '+trained_color)
 
 
+def test_postgres_shared_review_requeue_inherits_authoritative_evidence_scope():
+    if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
+        raise RuntimeError('Shared requeue rehearsal requires disposable PostgreSQL')
+    os.environ['TEMPO_DATABASE_WRITE_URL'] = os.getenv('TEMPO_SHADOW_REHEARSAL_URL', 'postgresql://postgres@postgres:5432/tempo')
+    os.environ['TEMPO_DATABASE_READ_URL'] = os.environ['TEMPO_DATABASE_WRITE_URL']
+    from app.review_commands import submit_review
+    for trained_color in ('white', 'black'):
+        fixture = _create_color_fixture(trained_color, shared=True)
+        manifest = _transport_color_fixture(fixture)['opening_decision_manifest']
+        assert manifest['repertoire_id'] == fixture['repertoire_id']
+        assert manifest['trained_color'] == trained_color
+        completion = _color_checkpoint(fixture, manifest).model_dump(mode='json')
+        completion['terminal']['state'] = 'complete'
+        payload = {'card_id':fixture['card_id'],
+                   'review':{'outcome':'correct','queue_entry_id':fixture['queue_id'],
+                             'attempt_id':completion['attempt_id'],'recorded_at':fixture['now'].isoformat(),
+                             'opening_evidence_completion':completion},
+                   'prepared_manifest':prepare_checkpoint(OpeningEvidenceCheckpoint.model_validate(completion))}
+        context_query = ('SELECT context.*,context.xmin::text AS row_version '
+                         'FROM opening_evidence_queue_contexts context '
+                         'WHERE queue_entry_id IN (%s,%s) ORDER BY queue_entry_id')
+        with postgres_store.connection() as database:
+            assert database.execute('SELECT COUNT(*) FROM repertoire_cards WHERE card_id=?', (fixture['card_id'],)).fetchone()[0] == 2
+            result = submit_review(database, payload)
+            assert result['persisted'] and result['idempotent'] is False and result['requeue_entry_id'] is not None
+            repeat_id = result['requeue_entry_id']
+            assert database.execute('SELECT admission_repertoire_id FROM daily_queue WHERE id=?', (repeat_id,)).fetchone()[0] is None
+            contexts = [dict(row) for row in database.execute_native(context_query, (fixture['queue_id'], repeat_id)).fetchall()]
+            inherited = next(row for row in contexts if row['queue_entry_id']==repeat_id)
+            assert inherited['repertoire_id'] == manifest['repertoire_id']
+            assert inherited['presentation_snapshot_id'] == manifest['presentation_snapshot_id']
+            assert inherited['effective_trained_color'] == trained_color
+        transport = _transport_color_fixture(fixture, queue_id=repeat_id)
+        assert 'opening_decision_manifest' in transport, 'Shared repeat rejected its uniquely proven context: '+str(transport.get('opening_evidence_diagnostic'))
+        assert transport['opening_decision_manifest'] == manifest
+        assert transport['trained_color'] == trained_color and 'opening_evidence_diagnostic' not in transport
+        repeat = _color_checkpoint(fixture, manifest).model_dump(mode='json')
+        repeat.update(attempt_id=fixture['card_id']+'-repeat',origin_queue_entry_id=repeat_id,
+                      queue_entry_id=repeat_id,parent_attempt_id=completion['attempt_id'])
+        assert prepare_checkpoint(OpeningEvidenceCheckpoint.model_validate(repeat)) == manifest
+        with postgres_store.connection() as database:
+            scheduling = _fixture_scheduling(database, fixture)
+            assert persist_checkpoint(database, {'checkpoint':repeat,'prepared_manifest':manifest})['persisted']
+            assert _fixture_scheduling(database, fixture) == scheduling
+        with postgres_store.connection() as database:
+            assert submit_review(database, payload) == result
+            assert _fixture_scheduling(database, fixture) == scheduling
+            assert [dict(row) for row in database.execute_native(context_query, (fixture['queue_id'], repeat_id)).fetchall()] == contexts
+        _retain_color_provenance(fixture)
+        print('PASS test_postgres_shared_review_requeue_inherits_authoritative_evidence_scope '+trained_color)
+
+
+def test_postgres_evidence_context_requires_unique_scope_and_matching_admission():
+    fixture = _create_color_fixture('white', shared=True)
+    manifest = _transport_color_fixture(fixture)['opening_decision_manifest']
+    with postgres_store.connection() as database:
+        # A context belonging to B cannot override explicit queue admission A.
+        database.execute_native('DELETE FROM opening_evidence_queue_contexts WHERE queue_entry_id=%s', (fixture['queue_id'],))
+        database.execute_native('INSERT INTO opening_evidence_queue_contexts VALUES(%s,%s,%s,%s)',
+                                (fixture['queue_id'],manifest['presentation_snapshot_id'],fixture['alternate'],'black'))
+    conflict = _transport_color_fixture(fixture)
+    assert 'opening_decision_manifest' not in conflict and 'ambiguous' in conflict['opening_evidence_diagnostic']
+    with postgres_store.connection() as database:
+        unbound = database.execute("INSERT INTO daily_queue(queue_date,card_id,cycle,position,card_bucket) VALUES(?,?,2,2000,'opening') RETURNING id",
+                                   (date.today().isoformat(), fixture['card_id'])).fetchone()[0]
+        for repertoire,color in [(fixture['repertoire_id'],'white'),(fixture['alternate'],'black')]:
+            database.execute_native('INSERT INTO opening_evidence_queue_contexts VALUES(%s,%s,%s,%s)',
+                                    (unbound,manifest['presentation_snapshot_id'],repertoire,color))
+    ambiguous = _transport_color_fixture(fixture, queue_id=unbound)
+    assert 'opening_decision_manifest' not in ambiguous and 'ambiguous' in ambiguous['opening_evidence_diagnostic']
+    _retain_color_provenance(fixture)
+    print('PASS test_postgres_evidence_context_requires_unique_scope_and_matching_admission')
+
+
 def test_postgres_legacy_review_requeue_inherits_color_after_source_replacement():
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Requeue color rehearsal requires disposable PostgreSQL')
@@ -537,6 +611,8 @@ def test_postgres_shadow_replay_atomicity_and_scheduling_invariance():
 if __name__=='__main__':
     if '--verify-persisted' in sys.argv:verify_persisted_shadow()
     else:
+        test_postgres_shared_review_requeue_inherits_authoritative_evidence_scope()
+        test_postgres_evidence_context_requires_unique_scope_and_matching_admission()
         test_postgres_legacy_review_requeue_inherits_color_after_source_replacement()
         test_postgres_legacy_opening_color_queue_checkpoint_round_trip()
         test_postgres_modern_color_wins_over_repertoire_fallback()

@@ -56,6 +56,8 @@ def queue_manifests(cards: list[dict]) -> None:
     candidates = [card for card in cards if card["content_type"] == "opening"]
     if not candidates:
         return
+    # Explicit admission must match. Without it, a unique immutable context can
+    # prove a review-generated repeat; matching cardinality below rejects rivals.
     with postgres_store.connection(read_only=True) as database:
         rows = database.execute_native(
             "SELECT context.queue_entry_id,context.repertoire_id,context.effective_trained_color,snapshot.* "
@@ -65,11 +67,7 @@ def queue_manifests(cards: list[dict]) -> None:
             "AND snapshot.card_id=card.id AND snapshot.revision=card.revision "
             "AND snapshot.start_fen=card.start_fen AND snapshot.moves_json=card.moves_json "
             "AND snapshot.trained_color IS NOT DISTINCT FROM card.trained_color "
-            "AND (context.repertoire_id=queue.admission_repertoire_id OR (queue.admission_repertoire_id IS NULL "
-            "AND (SELECT COUNT(*) FROM (SELECT card.repertoire_id UNION SELECT link.repertoire_id "
-            "FROM repertoire_cards link WHERE link.card_id=card.id) owners JOIN repertoires repertoire "
-            "ON repertoire.id=owners.repertoire_id WHERE NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block "
-            "WHERE block.card_id=card.id AND block.repertoire_id=owners.repertoire_id))=1)) "
+            "AND (queue.admission_repertoire_id IS NULL OR context.repertoire_id=queue.admission_repertoire_id) "
             "AND EXISTS(SELECT 1 FROM repertoires eligible WHERE eligible.id=context.repertoire_id "
             "AND (eligible.id=card.repertoire_id OR EXISTS(SELECT 1 FROM repertoire_cards link "
             "WHERE link.card_id=card.id AND link.repertoire_id=eligible.id))) "
