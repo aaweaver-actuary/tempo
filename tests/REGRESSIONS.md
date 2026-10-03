@@ -1284,13 +1284,17 @@ this input adaptation.
 
 These regressions run in `tests/unit/opening-evidence-background-admission.test.ts`, alongside background admission, pending/complete receipt and foreground review controls. Existing browser and PostgreSQL background contention/restart/replay coverage remains required.
 
-### PR #69 offline quota durability
+### PR #69 offline quota durability and one-journal recovery slices
 
 - `AS-16 offline review quota falls back to durable aggregate-only phone review` — actual prepared transaction aborts only for the evidence envelope, compact commit preserves aggregate identity/repeat rules, retained journal survives reload/sync, and ambiguous replay retries the frozen aggregate-only key/body.
 - `AS-16 offline aggregate-only storage failure remains blocking and retryable`; `AS-16 offline evidence non-quota storage errors remain blocking (SecurityError/InvalidStateError)` — no false durable review, queue advance or network send.
 - `AS-16 offline quota retention failure cannot undo a durable compact review` — optional diagnostics cannot block the committed review or duplicate its repeat on retry.
+- `AS-15 opening evidence recovery processes one journal per idle slice`; `AS-15 a failed recovery journal consumes one slice and yields before the next journal (immediate/deferred)` — real async journal storage plus coalesced recovery preserves untouched later records and deterministic eventual progress.
+- `AS-15 foreground activity pauses remaining opening evidence recovery backlog` — real hook/idle callbacks recheck foreground state between actual journal slices; repeated reconnects serialize work, and unmount cancels it.
 
-Coverage lives in `tests/unit/opening-evidence-offline-quota.test.ts` and the regular opening-evidence browser file, alongside existing outbox and PostgreSQL contracts. Offline aggregate ownership remains authoritative.
+Coverage lives in `tests/unit/opening-evidence-offline-quota.test.ts` and `tests/unit/opening-evidence-recovery-slices.test.tsx`, alongside existing live-delivery, Home, outbox, browser and PostgreSQL contracts. Offline aggregate ownership and live flush behavior remain authoritative.
 
 - `AS-16 offline evidence quota saves a compact phone review and retains its journal after sync`; `AS-16 offline compact quota failure blocks advancement until durable retry` — real IndexedDB transactions and phone UI prove compact durability, blocking failure/retry, aggregate-only sync identity and retained evidence across reload. Registered critical browser inventory.
+- `AS-15 reconnect requests share an active recovery slice without concurrent journal work`; `AS-15 a live browser lease yields to later recovery journals without closing its attempt`; `AS-15 recovery leaves completions owned by pending aggregate reviews and retained evidence untouched` — serialized reconnects, lease safety/fairness and aggregate ownership exclusions.
 - `AS-16 aggregate phone storage quota without evidence remains blocking` — quota fallback is restricted to optional evidence; the successful quota case covers modern and legacy Firefox quota names.
+- `AS-15 live flushing requested during a recovery slice keeps its normal delivery behavior` — shared serialization does not drop a live caller's pending checkpoint work or expand the recovery slice itself.

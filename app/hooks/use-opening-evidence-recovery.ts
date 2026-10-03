@@ -6,24 +6,34 @@ import { useTrainingStore } from "../state/training-store";
 /** Yield until the queue is usable and the browser has an idle opportunity. */
 export function useOpeningEvidenceRecovery(enabled: boolean, ready: boolean, blocked: boolean): void {
   const pending = useRef(true);
-  const [connectivityGeneration, setConnectivityGeneration] = useState(0);
+  const running = useRef(false);
+  const mounted = useRef(false);
+  const [recoveryGeneration, setRecoveryGeneration] = useState(0);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   useEffect(() => {
     if (!enabled) return;
     const requestRecovery = () => {
       pending.current = true;
-      setConnectivityGeneration(generation => generation + 1);
+      setRecoveryGeneration(generation => generation + 1);
     };
     window.addEventListener("online", requestRecovery);
     return () => window.removeEventListener("online", requestRecovery);
   }, [enabled]);
 
   useEffect(() => {
-    if (!enabled || !ready || blocked || !pending.current) return;
+    if (!enabled || !ready || blocked || !pending.current || running.current) return;
     let canceled = false;
     const recover = () => {
       if (canceled || useTrainingStore.getState().queueReadiness !== "ready") return;
       pending.current = false;
-      void recoverOpeningEvidence().catch(error => {
+      running.current = true;
+      void recoverOpeningEvidence().then(result => {
+        if (result.moreWork) pending.current = true;
+        running.current = false;
+        // A new render schedules a new idle callback and rechecks foreground state.
+        if (mounted.current && pending.current) setRecoveryGeneration(generation => generation + 1);
+      }).catch(error => {
+        running.current = false;
         pending.current = true; // Retry at the next readiness/connectivity opportunity, never spin.
         publishNotification({
           severity: "warning", source: "opening evidence", key: "opening-evidence-recovery",
@@ -44,5 +54,5 @@ export function useOpeningEvidenceRecovery(enabled: boolean, ready: boolean, blo
       cancelAnimationFrame(frameId);
       channel.port1.close(); channel.port2.close();
     };
-  }, [enabled, ready, blocked, connectivityGeneration]);
+  }, [enabled, ready, blocked, recoveryGeneration]);
 }

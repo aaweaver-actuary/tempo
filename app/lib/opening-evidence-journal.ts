@@ -17,7 +17,10 @@ type SavedEvent = OpeningDecisionEvent & { attempt_id: string };
 const captures = new Map<string, OpeningAttemptJournal>();
 const sessionId = crypto.randomUUID();
 let activeFlush: Promise<void> | undefined;
-let activeRecovery: Promise<void> | undefined;
+let activeDeliverySlice: Promise<void> | undefined;
+type RecoverySliceResult = { moreWork: boolean };
+let activeRecovery: Promise<RecoverySliceResult> | undefined;
+const leasedRecoveryAttempts = new Set<string>();
 let flushTimer: ReturnType<typeof setTimeout> | undefined;
 let writeTail = Promise.resolve();
 const releaseLeases = new Map<string, () => void>();
@@ -100,7 +103,7 @@ export class OpeningAttemptJournal {
   }
 }
 
-async function storeAppend(journal: OpeningAttemptJournal, event?: OpeningDecisionEvent): Promise<void> {
+async function storeAppend(journal: OpeningAttemptJournal, event?: OpeningDecisionEvent, scheduleFlush = true): Promise<void> {
   const snapshot = journal.snapshot();
   const attempt: SavedAttempt = { ...snapshot, owner_session_id: sessionId, final_sequence: snapshot.events.length,
     local_capture_gap: journal.storageError,
@@ -130,7 +133,7 @@ async function storeAppend(journal: OpeningAttemptJournal, event?: OpeningDecisi
     if (snapshot.terminal) releaseLeases.get(snapshot.attempt_id)?.();
     if (snapshot.terminal?.state === "partial" && captures.get(snapshot.attempt_id) === journal)
       captures.delete(snapshot.attempt_id);
-    if (attempt.delivery_state === "pending") scheduleOpeningEvidenceFlush();
+    if (scheduleFlush && attempt.delivery_state === "pending") scheduleOpeningEvidenceFlush();
   });
   writeTail = writing;
   return writing;
@@ -181,14 +184,15 @@ function scheduleOpeningEvidenceFlush(): void {
   }, 0);
 }
 
-async function savedJournal(): Promise<{ attempt: SavedAttempt; events: SavedEvent[] } | undefined> {
+async function savedJournal(attemptId?: string): Promise<{ attempt: SavedAttempt; events: SavedEvent[] } | undefined> {
   const database = await offlineTrainingDatabase();
   return new Promise((resolve, reject) => {
     const transaction = database.transaction(["opening_attempts", "opening_events"]);
-    const request = transaction.objectStore("opening_attempts").index("delivery_state").get("pending");
+    const attempts = transaction.objectStore("opening_attempts");
+    const request = attemptId ? attempts.get(attemptId) : attempts.index("delivery_state").get("pending");
     request.onsuccess = () => {
       const attempt = request.result as SavedAttempt | undefined;
-      if (!attempt) { resolve(undefined); return; }
+      if (!attempt || attempt.delivery_state !== "pending") { resolve(undefined); return; }
       const events = transaction.objectStore("opening_events").index("attempt_id").getAll(attempt.attempt_id, 256);
       events.onsuccess = () => resolve({ attempt, events: events.result as SavedEvent[] });
       events.onerror = () => reject(events.error);
@@ -261,11 +265,11 @@ export function retainOpeningEvidenceForStorageFallback(completion: OpeningEvide
   return retaining;
 }
 
-async function deliverOpeningEvidence(): Promise<void> {
+async function deliverOpeningEvidence(attemptId?: string): Promise<void> {
   if (typeof indexedDB === "undefined" || (typeof navigator !== "undefined" && !navigator.onLine)) return;
   await writeTail.catch(() => undefined);
   for (;;) {
-    const saved = await savedJournal();
+    const saved = await savedJournal(attemptId);
     if (!saved) return;
     const frozenDelivery = saved.attempt.delivery;
     const header = openingEvidenceCheckpointSchema.omit({ events: true }).parse(Object.fromEntries(
@@ -305,6 +309,7 @@ async function deliverOpeningEvidence(): Promise<void> {
       if (!response.ok) {
         if (response.status === 409 || response.status === 422) {
           await rejectOpeningEvidence(checkpoint.attempt_id, await response.text());
+          if (attemptId) return;
           continue;
         }
         // HTTP failure alone is ambiguous. Resolve the frozen command, just as
@@ -315,7 +320,11 @@ async function deliverOpeningEvidence(): Promise<void> {
       if (!receipt.persisted || receipt.attempt_id !== checkpoint.attempt_id || !Array.isArray(receipt.received_sequences))
         throw new Error("Opening evidence persistence was not confirmed.");
     } catch (error) {
-      if (error instanceof FailedOperationError) { await rejectOpeningEvidence(checkpoint.attempt_id, error.message); continue; }
+      if (error instanceof FailedOperationError) {
+        await rejectOpeningEvidence(checkpoint.attempt_id, error.message);
+        if (attemptId) return;
+        continue;
+      }
       throw error;
     } finally { clearTimeout(timeout); }
     const database = await offlineTrainingDatabase();
@@ -341,27 +350,44 @@ async function deliverOpeningEvidence(): Promise<void> {
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
     });
+    if (attemptId) return;
   }
 }
 
 export function flushOpeningEvidence(): Promise<void> {
-  activeFlush ??= deliverOpeningEvidence().finally(() => { activeFlush = undefined; });
+  activeFlush ??= (activeDeliverySlice
+    ? activeDeliverySlice.then(() => deliverOpeningEvidence())
+    : deliverOpeningEvidence()).finally(() => { activeFlush = undefined; });
   return activeFlush;
 }
 
-/** Claim only sessions whose browser lease has ended; another tab's board stays active. */
-async function recoverSavedOpeningEvidence(): Promise<void> {
-  if (typeof indexedDB === "undefined" || typeof navigator === "undefined" || !navigator.locks) return;
-  await writeTail.catch(() => undefined);
-  for (const journal of captures.values()) {
-    if (journal.storageError) await storeAppend(journal);
-  }
-  const database = await offlineTrainingDatabase();
-  const attempts = await new Promise<SavedAttempt[]>((resolve, reject) => {
-    const request = database.transaction("opening_attempts").objectStore("opening_attempts").getAll();
-    request.onsuccess = () => resolve(request.result as SavedAttempt[]);
+/** Read one eligible row in primary-key order, without loading the journal table. */
+function recoveryCandidate(database: IDBDatabase, pendingAggregateIds: Set<string | undefined>): Promise<SavedAttempt | undefined> {
+  return new Promise((resolve, reject) => {
+    const request = database.transaction("opening_attempts").objectStore("opening_attempts").openCursor();
+    request.onsuccess = () => {
+      const cursor = request.result;
+      if (!cursor) { resolve(undefined); return; }
+      const attempt = cursor.value as SavedAttempt;
+      const eligible = attempt.final_sequence && !leasedRecoveryAttempts.has(attempt.attempt_id) &&
+        !["rejected", "retained"].includes(attempt.delivery_state) &&
+        !(attempt.terminal?.state === "complete" && pendingAggregateIds.has(attempt.attempt_id)) &&
+        ((attempt.delivery_state === "pending" && (attempt.owner_session_id !== sessionId || attempt.terminal?.state === "partial")) ||
+          (attempt.owner_session_id !== sessionId && attempt.terminal?.state !== "partial"));
+      if (eligible) resolve(attempt);
+      else cursor.continue();
+    };
     request.onerror = () => reject(request.error);
   });
+}
+
+/** Claim and deliver one journal, then yield to the hook's next idle opportunity. */
+async function recoverSavedOpeningEvidence(): Promise<RecoverySliceResult> {
+  if (typeof indexedDB === "undefined" || typeof navigator === "undefined" || !navigator.locks) return { moreWork: false };
+  await writeTail.catch(() => undefined);
+  const unsaved = [...captures.values()].find(journal => journal.storageError);
+  if (unsaved) await storeAppend(unsaved, undefined, false);
+  const database = await offlineTrainingDatabase();
   const pendingReviews = JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]") as { attemptId?: string }[];
   const prepared = await new Promise<{ attempts?: { attemptId?: string; serverReviewId?: number; serverAcknowledged?: boolean }[] } | undefined>((resolve, reject) => {
     const request = database.transaction("training").objectStore("training").get("prepared-daily-queue");
@@ -373,41 +399,59 @@ async function recoverSavedOpeningEvidence(): Promise<void> {
     ...(prepared?.attempts ?? []).filter(attempt => !attempt.serverReviewId && !attempt.serverAcknowledged)
       .map(attempt => attempt.attemptId),
   ]);
-  for (const attempt of attempts) {
+  // Repairing a failed append also consumes this slice's single journal identity.
+  const attempt = unsaved ? await new Promise<SavedAttempt | undefined>((resolve, reject) => {
+    const request = database.transaction("opening_attempts").objectStore("opening_attempts").get(unsaved.header.attempt_id);
+    request.onsuccess = () => resolve(request.result); request.onerror = () => reject(request.error);
+  }) : await recoveryCandidate(database, pendingAggregateIds);
+  if (attempt) {
     if (attempt.local_capture_gap) publishNotification({ severity: "warning", source: "opening evidence",
       key: `opening-evidence:${attempt.attempt_id}`, message: `A previous local capture reported a gap. Saved evidence remains recoverable; normal review is available. ${attempt.local_capture_gap}` });
-    if (attempt.owner_session_id === sessionId || attempt.terminal?.state === "partial" || !attempt.final_sequence || ["rejected", "retained"].includes(attempt.delivery_state) ||
-      (attempt.terminal?.state === "complete" && pendingAggregateIds.has(attempt.attempt_id))) continue;
-    await navigator.locks.request(`tempo-opening-attempt:${attempt.attempt_id}`, { ifAvailable: true }, async (lease) => {
-      if (!lease) return;
-      if (attempt.terminal?.state === "complete") {
-        // A crash between sealing and saving the aggregate outbox leaves observed
-        // work, not an invented review. Check persisted completion before reclaiming it.
-        const response = await backgroundFetch(`${API_URL}/api/opening-evidence/attempts/${encodeURIComponent(attempt.attempt_id)}`);
-        if (response.ok) {
-          const persisted = await response.json() as { state?: string };
-          if (persisted.state === "complete") { await acknowledgeOpeningReview(attempt.attempt_id); return; }
-        } else if (response.status !== 404) throw new Error("Could not verify an orphaned opening completion. Its journal remains saved for recovery.");
-      }
-      await new Promise<void>((resolve, reject) => {
-        const transaction = database.transaction("opening_attempts", "readwrite");
-        const store = transaction.objectStore("opening_attempts");
-        const read = store.get(attempt.attempt_id);
-        read.onsuccess = () => {
-          if (read.result && read.result.terminal?.state !== "partial") store.put({ ...read.result, delivery_state: "pending",
-            terminal: { state: "partial", final_sequence: read.result.final_sequence,
-              ended_at: read.result.terminal?.ended_at ?? new Date().toISOString() } });
-        };
-        transaction.oncomplete = () => resolve();
-        transaction.onerror = () => reject(transaction.error);
-        transaction.onabort = () => reject(transaction.error);
+    let deliver = !["rejected", "retained"].includes(attempt.delivery_state) &&
+      !(attempt.terminal?.state === "complete" && pendingAggregateIds.has(attempt.attempt_id));
+    if (attempt.owner_session_id !== sessionId && attempt.terminal?.state !== "partial") {
+      await navigator.locks.request(`tempo-opening-attempt:${attempt.attempt_id}`, { ifAvailable: true }, async lease => {
+        if (!lease) {
+          // Skip a live browser for this pass, rather than repeatedly scheduling it.
+          leasedRecoveryAttempts.add(attempt.attempt_id); deliver = false; return;
+        }
+        if (attempt.terminal?.state === "complete") {
+          const response = await backgroundFetch(`${API_URL}/api/opening-evidence/attempts/${encodeURIComponent(attempt.attempt_id)}`);
+          if (response.ok) {
+            const persisted = await response.json() as { state?: string };
+            if (persisted.state === "complete") { await acknowledgeOpeningReview(attempt.attempt_id); deliver = false; return; }
+          } else if (response.status !== 404) throw new Error("Could not verify an orphaned opening completion. Its journal remains saved for recovery.");
+        }
+        await new Promise<void>((resolve, reject) => {
+          const transaction = database.transaction("opening_attempts", "readwrite");
+          const store = transaction.objectStore("opening_attempts");
+          const read = store.get(attempt.attempt_id);
+          read.onsuccess = () => {
+            if (read.result && read.result.terminal?.state !== "partial" && !["rejected", "retained"].includes(read.result.delivery_state)) store.put({ ...read.result, delivery_state: "pending",
+              terminal: { state: "partial", final_sequence: read.result.final_sequence,
+                ended_at: read.result.terminal?.ended_at ?? new Date().toISOString() } });
+          };
+          transaction.oncomplete = () => resolve();
+          transaction.onerror = () => reject(transaction.error); transaction.onabort = () => reject(transaction.error);
+        });
       });
-    });
+    }
+    if (deliver) {
+      // Serialize with live delivery. A live flush requested during this slice
+      // waits for it, then owns its usual backlog loop independently.
+      if (activeFlush) await activeFlush.catch(() => undefined);
+      if (!activeFlush) {
+        activeDeliverySlice = deliverOpeningEvidence(attempt.attempt_id).finally(() => { activeDeliverySlice = undefined; });
+        await activeDeliverySlice;
+      }
+    }
   }
-  await flushOpeningEvidence();
+  const moreWork = [...captures.values()].some(journal => journal.storageError) || Boolean(await recoveryCandidate(database, pendingAggregateIds));
+  if (!moreWork) leasedRecoveryAttempts.clear();
+  return { moreWork };
 }
 
-export function recoverOpeningEvidence(): Promise<void> {
+export function recoverOpeningEvidence(): Promise<RecoverySliceResult> {
   activeRecovery ??= recoverSavedOpeningEvidence().finally(() => { activeRecovery = undefined; });
   return activeRecovery;
 }

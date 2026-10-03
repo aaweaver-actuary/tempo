@@ -48,6 +48,15 @@ async function savedJournal(complete = false) {
           return result;
         };
         return {
+          openCursor: () => {
+            const values = [...rows.values()]; let position = 0;
+            const cursor = { result: null as unknown, onsuccess: null as (() => void) | null };
+            const advance = () => queueMicrotask(() => {
+              cursor.result = position < values.length ? { value: structuredClone(values[position++]), continue: advance } : null;
+              cursor.onsuccess?.();
+            });
+            advance(); return cursor;
+          },
           get: (key: unknown) => request(() => rows.get(key)),
           getAll: () => request(() => [...rows.values()]),
           put: (value: { attempt_id: string }) => request(() => rows.set(value.attempt_id, structuredClone(value))),

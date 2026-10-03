@@ -30,7 +30,7 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals(); localStorage.clear(); });
 
 it("AS-15 opening evidence recovery waits for foreground startup readiness", async () => {
-  const recover = vi.spyOn(journal, "recoverOpeningEvidence").mockResolvedValue(undefined);
+  const recover = vi.spyOn(journal, "recoverOpeningEvidence").mockResolvedValue({ moreWork: false });
   let finishQueue!: () => void;
   vi.mocked(fetchAndInitializeQueue).mockImplementation(() => new Promise<void>(resolve => { finishQueue = resolve; }));
   render(<Home />);
@@ -51,7 +51,7 @@ it("AS-15 opening evidence recovery waits for foreground startup readiness", asy
 });
 
 it("AS-15 recovery cancels idle work during foreground transitions and after unmount", async () => {
-  const recover = vi.spyOn(journal, "recoverOpeningEvidence").mockResolvedValue(undefined);
+  const recover = vi.spyOn(journal, "recoverOpeningEvidence").mockResolvedValue({ moreWork: false });
   vi.mocked(fetchAndInitializeQueue).mockImplementation(async () => {
     if (!useTrainingStore.getState().isDatabaseQueueActive) useTrainingStore.getState().hydrateLocalQueue([card], true);
     useTrainingStore.setState({ queueReadiness: "ready" });
@@ -73,7 +73,7 @@ it("AS-15 recovery cancels idle work during foreground transitions and after unm
 });
 
 it("AS-16 restarted opening attempt records displayed guidance as guided", async () => {
-  vi.spyOn(journal, "recoverOpeningEvidence").mockResolvedValue(undefined);
+  vi.spyOn(journal, "recoverOpeningEvidence").mockResolvedValue({ moreWork: false });
   const assistance = vi.fn();
   vi.spyOn(journal, "beginOpeningAttempt").mockReturnValue({ assistance } as unknown as journal.OpeningAttemptJournal);
   const partial = vi.spyOn(journal, "partialOpeningAttempt").mockImplementation(() => undefined);
@@ -95,7 +95,7 @@ it("AS-16 restarted opening attempt records displayed guidance as guided", async
 });
 
 it("AS-16 wrong-response reveal remains revealed", async () => {
-  vi.spyOn(journal, "recoverOpeningEvidence").mockResolvedValue(undefined);
+  vi.spyOn(journal, "recoverOpeningEvidence").mockResolvedValue({ moreWork: false });
   const assistance = vi.fn();
   const response = vi.fn();
   vi.spyOn(journal, "beginOpeningAttempt").mockReturnValue({ assistance, response } as unknown as journal.OpeningAttemptJournal);
