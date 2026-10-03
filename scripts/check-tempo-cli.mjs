@@ -45,7 +45,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     ])).stdout);
     validateTarget(productConfig, { root, project: "tempo", ports: portsFromConfig(productConfig),
       volumes: productVolumes, postgresVolumeKey: "tempo-postgres-data" });
-    console.log("PASS current product Compose persistent-volume ownership contract (read-only configuration)");
+    console.log("PASS current product Compose persistent-volume and API/worker PostgreSQL, passfile/secret, Redis contracts (read-only configuration)");
   } finally { rmSync(productSecrets, { recursive: true, force: true }); }
   const composeArguments = ["compose", "--project-directory", root, "-p", childProject,
     ...composeFiles.flatMap(file => ["-f", file])];

@@ -19,7 +19,14 @@ export function cliFixture(mode = "upgrade") {
   services["postgres-backup"].volumes = [{ type: "volume", source: "tempo-postgres-backups", target: "/backups" }];
   services["defense-engine"].volumes = [{ type: "volume", source: "tempo-engine-operations", target: "/state" }];
   services.api.environment = { TEMPO_DATABASE_READ_URL: "postgresql://tempo_reader@postgres:5432/tempo" };
-  const config = { name: "tempo", volumes, services, secrets: { password: { file: secret } } };
+  for (const name of ["foreground-worker", "background-worker"]) {
+    services[name].environment = { TEMPO_DATABASE_WRITE_URL: "postgresql://tempo_writer@postgres:5432/tempo",
+      TEMPO_DATABASE_READ_URL: "postgresql://tempo_writer@postgres:5432/tempo", PGPASSFILE: "/run/secrets/writer_pgpass",
+      TEMPO_REDIS_URL: "redis://redis:6379/0" };
+    services[name].secrets = [{ source: "writer_pgpass", target: "writer_pgpass", mode: 0o400 }];
+  }
+  services["background-scheduler"].environment = { TEMPO_REDIS_URL: "redis://redis:6379/0" };
+  const config = { name: "tempo", volumes, services, secrets: { password: { file: secret }, writer_pgpass: { file: secret } } };
   const composeFile = join(root, "compose.json"); writeFileSync(composeFile, JSON.stringify(config));
   const target = { version: 1, root, project: "tempo", context: "desktop-linux", daemonId: "fixture-daemon", ports: [], volumes,
     composeFiles: [composeFile], postgresVolumeKey: "tempo-postgres-data", postgresImage: "postgres:18.6-trixie",

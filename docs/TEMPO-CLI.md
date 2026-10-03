@@ -58,7 +58,14 @@ allowed main CI run for that exact revision, even if a later rerun is pending
 or failed. Immediately before fast-forwarding, it rechecks the branch, exact
 HEAD, and cleanliness; concurrent edits or source movement block the update.
 It loads the updated CLI before deployment. Images are built
-before stopping services. When prepared images/configuration or an explicit
+before stopping services. Before maintenance, resolved Compose configuration
+must pin the API to its PostgreSQL reader and both Celery workers to
+`postgresql://tempo_writer@postgres:5432/tempo` for reads and writes, without
+`TEMPO_DB_PATH`. Each worker must use `/run/secrets/writer_pgpass` backed by its
+attached `writer_pgpass` secret; exposed secret modes must be `0400`, and secret
+source files must have private permissions. Both workers and the scheduler must
+use `redis://redis:6379/0`. Invalid wiring blocks deployment before any service
+changes. When prepared images/configuration or an explicit
 restart may recreate PostgreSQL or Redis, application writers stop before
 dependency startup. Ordinary compatible starts reuse recorded image IDs and
 forbid dependency recreation; they do not take a migration backup or stop the

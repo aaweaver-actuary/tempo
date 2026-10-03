@@ -34,6 +34,33 @@ function inside(path, directory) {
   return difference === "" || (!difference.startsWith("..") && !isAbsolute(difference));
 }
 
+function validateWorkerStorageContract(serviceName, service, secrets) {
+  const environment = service?.environment ?? {};
+  const expectedEnvironment = {
+    TEMPO_DATABASE_WRITE_URL: "postgresql://tempo_writer@postgres:5432/tempo",
+    TEMPO_DATABASE_READ_URL: "postgresql://tempo_writer@postgres:5432/tempo",
+    PGPASSFILE: "/run/secrets/writer_pgpass",
+    TEMPO_REDIS_URL: "redis://redis:6379/0",
+  };
+  for (const [name, expected] of Object.entries(expectedEnvironment)) {
+    if (environment[name] !== expected)
+      throw new Error(`Tempo ${serviceName} must set ${name} to ${expected} before maintenance.`);
+  }
+  // database.py supports this legacy SQLite override; reject its presence even
+  // when empty so the worker contract cannot imply a compatibility fallback.
+  if (Object.hasOwn(environment, "TEMPO_DB_PATH"))
+    throw new Error(`Tempo ${serviceName} must not define the SQLite fallback TEMPO_DB_PATH.`);
+  const passfileMounts = (service.secrets ?? []).filter(secret =>
+    resolve("/run/secrets", secret.target ?? secret.source) === expectedEnvironment.PGPASSFILE);
+  if (!secrets?.writer_pgpass || passfileMounts.length !== 1 || passfileMounts[0].source !== "writer_pgpass")
+    throw new Error(`Tempo ${serviceName} must attach only writer_pgpass at /run/secrets/writer_pgpass.`);
+  const mode = passfileMounts[0].mode;
+  // Resolved Compose uses an octal string (or a numeric mode). Some versions
+  // omit unsupported local modes; the global private-file check still applies.
+  if (mode !== undefined && mode !== "0400" && mode !== 0o400)
+    throw new Error(`Tempo ${serviceName} writer_pgpass must use private mode 0400.`);
+}
+
 export function validateTarget(config, target) {
   if (config.name !== target.project) throw new Error("Compose project differs from the registered Tempo target.");
   if (JSON.stringify(portsFromConfig(config)) !== JSON.stringify(target.ports))
@@ -67,6 +94,10 @@ export function validateTarget(config, target) {
   if (!/^postgresql:\/\/tempo_reader@postgres:5432\/tempo$/.test(api.TEMPO_DATABASE_READ_URL ?? "")
     || api.TEMPO_DATABASE_WRITE_URL || api.TEMPO_DB_PATH)
     throw new Error("Tempo API must use PostgreSQL reader credentials without a writer or SQLite fallback.");
+  for (const serviceName of ["foreground-worker", "background-worker"])
+    validateWorkerStorageContract(serviceName, config.services[serviceName], config.secrets);
+  if (config.services["background-scheduler"]?.environment?.TEMPO_REDIS_URL !== "redis://redis:6379/0")
+    throw new Error("Tempo background-scheduler must set TEMPO_REDIS_URL to redis://redis:6379/0 before maintenance.");
   if (target.disposable) {
     if (!target.project.startsWith("tempo-pg-regressions-") || api.TEMPO_TEST_INSTANCE !== "disposable"
       || Object.values(target.volumes).some(volume => !volume.name.startsWith(`${target.project}_`)))

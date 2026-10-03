@@ -23,13 +23,20 @@ function fixture(t) {
   const target = { root: join(path, "checkout"), project: "tempo", context: "desktop-linux",
     volumes: structuredClone(productVolumes),
     postgresVolumeKey: "tempo-postgres-data", ports: [{ service: "web", host: "127.0.0.1", port: "3000", target: 80 }] };
-  const config = { name: "tempo", volumes: target.volumes, secrets: { password: { file: secret } },
+  const config = { name: "tempo", volumes: target.volumes, secrets: { password: { file: secret }, writer_pgpass: { file: secret } },
     services: { postgres: { image: "postgres:18.6-trixie", environment: { POSTGRES_DB: "tempo" },
       volumes: [{ type: "volume", source: "tempo-postgres-data", target: "/var/lib/postgresql" }] }, web: { ports: [{ host_ip: "127.0.0.1", published: "3000", target: 80 }] },
       redis: { volumes: [{ type: "volume", source: "tempo-redis-data", target: "/data" }] },
       "postgres-backup": { volumes: [{ type: "volume", source: "tempo-postgres-backups", target: "/backups" }], tmpfs: ["/var/lib/postgresql"] },
       "defense-engine": { volumes: [{ type: "volume", source: "tempo-engine-operations", target: "/state" }] },
       api: { environment: { TEMPO_DATABASE_READ_URL: "postgresql://tempo_reader@postgres:5432/tempo" } } } };
+  for (const name of ["foreground-worker", "background-worker"]) config.services[name] = {
+    environment: { TEMPO_DATABASE_WRITE_URL: "postgresql://tempo_writer@postgres:5432/tempo",
+      TEMPO_DATABASE_READ_URL: "postgresql://tempo_writer@postgres:5432/tempo",
+      PGPASSFILE: "/run/secrets/writer_pgpass", TEMPO_REDIS_URL: "redis://redis:6379/0" },
+    secrets: [{ source: "writer_pgpass", target: "writer_pgpass", mode: 0o400 }],
+  };
+  config.services["background-scheduler"] = { environment: { TEMPO_REDIS_URL: "redis://redis:6379/0" } };
   return { path, secret, target, config };
 }
 
@@ -49,6 +56,55 @@ test("CLI rejects mismatched projects volumes ports and writable reader credenti
     const changed = structuredClone(config); alter(changed);
     assert.throws(() => validateTarget(changed, target), /target|volume|port|reader/i);
   }
+});
+
+for (const [name, alter] of [
+  ["foreground missing writer URL", config => { delete config.services["foreground-worker"].environment.TEMPO_DATABASE_WRITE_URL; }],
+  ["foreground reader role as writer", config => { config.services["foreground-worker"].environment.TEMPO_DATABASE_WRITE_URL = "postgresql://tempo_reader@postgres:5432/tempo"; }],
+  ["foreground writer to another database", config => { config.services["foreground-worker"].environment.TEMPO_DATABASE_WRITE_URL = "postgresql://tempo_writer@postgres:5432/other"; }],
+  ["foreground writer to another host", config => { config.services["foreground-worker"].environment.TEMPO_DATABASE_WRITE_URL = "postgresql://tempo_writer@elsewhere:5432/tempo"; }],
+  ["background missing read URL", config => { delete config.services["background-worker"].environment.TEMPO_DATABASE_READ_URL; }],
+  ["background reader role as reader", config => { config.services["background-worker"].environment.TEMPO_DATABASE_READ_URL = "postgresql://tempo_reader@postgres:5432/tempo"; }],
+  ["foreground SQLite fallback", config => { config.services["foreground-worker"].environment.TEMPO_DB_PATH = "/state/tempo.db"; }],
+  ["background empty SQLite fallback variable", config => { config.services["background-worker"].environment.TEMPO_DB_PATH = ""; }],
+  ["foreground missing passfile", config => { delete config.services["foreground-worker"].environment.PGPASSFILE; }],
+  ["background wrong passfile", config => { config.services["background-worker"].environment.PGPASSFILE = "/run/secrets/reader_pgpass"; }],
+  ["foreground writer secret unattached", config => { config.services["foreground-worker"].secrets = []; }],
+  ["background wrong secret at writer passfile", config => { config.services["background-worker"].secrets[0].source = "password"; }],
+  ["foreground writer secret at wrong target", config => { config.services["foreground-worker"].secrets[0].target = "other_pgpass"; }],
+  ["background duplicate passfile target", config => { config.services["background-worker"].secrets.push({ source: "password", target: "/run/secrets/writer_pgpass" }); }],
+  ["writer secret undefined globally", config => { delete config.secrets.writer_pgpass; }],
+  ["foreground public passfile mode", config => { config.services["foreground-worker"].secrets[0].mode = 0o444; }],
+  ["foreground wrong broker", config => { config.services["foreground-worker"].environment.TEMPO_REDIS_URL = "redis://other:6379/0"; }],
+  ["background wrong broker database", config => { config.services["background-worker"].environment.TEMPO_REDIS_URL = "redis://redis:6379/1"; }],
+  ["scheduler missing broker", config => { delete config.services["background-scheduler"].environment.TEMPO_REDIS_URL; }],
+  ["missing foreground service", config => { delete config.services["foreground-worker"]; }],
+  ["missing background service", config => { delete config.services["background-worker"]; }],
+]) test(`CLI worker storage contract rejects ${name}`, t => {
+  const { config, target } = fixture(t);
+  alter(config);
+  assert.throws(() => validateTarget(config, target), /worker|scheduler/i);
+});
+
+test("CLI worker storage contract accepts production identities and resolved secret targets with private or omitted mode", t => {
+  const { config, target } = fixture(t);
+  assert.doesNotThrow(() => validateTarget(config, target));
+  config.services["background-worker"].secrets[0].mode = "0400";
+  config.services["background-worker"].secrets[0].target = "/run/secrets/writer_pgpass";
+  delete config.services["foreground-worker"].secrets[0].mode; // Local Compose omits unsupported secret modes; file permissions are checked separately.
+  assert.doesNotThrow(() => validateTarget(config, target));
+});
+
+test("CLI worker storage contract blocks actual maintenance before any deployment command", t => {
+  const fixture = commandFixture(t, "upgrade");
+  const data = readFixtureJson(fixture, "fixture.json");
+  delete data.config.services["foreground-worker"].environment.TEMPO_DATABASE_WRITE_URL;
+  writeFileSync(fixture.target.composeFiles[0], JSON.stringify(data.config));
+  const result = fixture.command("start", "--no-open");
+  assert.notEqual(result.status, 0);
+  assert(result.stderr.includes("foreground-worker") && result.stderr.includes("TEMPO_DATABASE_WRITE_URL"));
+  assert(!fixture.calls().some(call => ["build", "pull", "up", "stop", "merge"].some(command => call.args.includes(command))));
+  assert.equal(readFixtureJson(fixture, "deployment.json", true).revision, "b".repeat(40));
 });
 
 test("CLI refuses missing insecure or checkout-local secret files without exposing their values", t => {
