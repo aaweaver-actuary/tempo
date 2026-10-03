@@ -1250,3 +1250,97 @@ def test_canonical_unrelated_integrity_repair_preserves_authored_standalone_sour
         assert result['changed_line_count'] > 0
         assert connection.execute("SELECT archived FROM cards WHERE id='standalone'").fetchone()[0] == 0
         assert connection.execute("SELECT 1 FROM repertoire_cards WHERE repertoire_id='italian' AND card_id='standalone'").fetchone()
+
+
+def test_canonical_card_promotion_does_not_invalidate_generated_shared_membership(prefix_database, quiet_prefix_writes):
+    from app.main import revise_card
+    from app.models import CardRevisionRequest
+    from app.services.cards import card_id
+    from app.services.canonical_prefix import read_prefix, line_origin
+    from app.services.canonical_scope_freshness import coverage_run_is_current
+    from app.services import repertoire_coverage as coverage
+    first = card_id(chess.STARTING_FEN, ITALIAN)
+    replacement = card_id(chess.STARTING_FEN, [*ITALIAN, 'f8c5'])
+    with database.connection() as connection:
+        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('other','Other','other.pgn','2026-10-02')")
+        for identifier, moves in [(first, ITALIAN), (replacement, [*ITALIAN, 'f8c5'])]:
+            connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,canonical_route_source) VALUES(?,'italian','response',?,?,'2026-10-02',0)", (identifier, chess.STARTING_FEN, json.dumps(moves)))
+            connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('italian',?,0)", (identifier,))
+        connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('other',?,0)", (replacement,))
+        connection.execute("INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES('other-route','other','Other route','white',?,?,'2026-10-03')", (chess.STARTING_FEN, json.dumps([*ITALIAN, 'f8c5'])))
+    _set_other_prefix('other', ITALIAN)
+    run_id = coverage.enqueue_coverage_refresh('other')
+    with database.connection() as connection:
+        connection.execute("UPDATE repertoire_coverage_runs SET status='complete' WHERE id=?", (run_id,))
+        before = read_prefix(connection, 'other')['source_revision']
+        prefix = read_prefix(connection, 'other')
+        ending_fen = prefix_projection([*ITALIAN, 'f8c5'])['ending_fen']
+        assert line_origin(connection, prefix['preview_id'], ending_fen) == [*ITALIAN, 'f8c5']
+    revise_card(first, CardRevisionRequest(starting_fen=chess.STARTING_FEN, moves=[*ITALIAN, 'f8c5'], history_mode='preserve', expected_revision=1))
+    with database.read_connection() as connection:
+        assert read_prefix(connection, 'other')['source_revision'] == before
+        assert line_origin(connection, prefix['preview_id'], ending_fen) == [*ITALIAN, 'f8c5']
+        run = connection.execute("SELECT * FROM repertoire_coverage_runs WHERE id=?", (run_id,)).fetchone()
+        assert coverage_run_is_current(connection, run, 'other')
+
+
+def test_canonical_graph_cleanup_removes_generated_link_from_authored_shared_card(prefix_database):
+    from app.services.opening_graph import enqueue_opening_graph_rebuild, execute_opening_graph_rebuild
+    with database.connection() as connection:
+        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('other','Other','other.pgn','2026-10-02')")
+        connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES('shared-authored','italian','response',?,?,'2026-10-02')", (chess.STARTING_FEN, json.dumps(ITALIAN)))
+        connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('italian','shared-authored',1),('other','shared-authored',0)")
+    enqueue_opening_graph_rebuild('other')
+    execute_opening_graph_rebuild(claim_task('opening_graph_rebuild'))
+    with database.read_connection() as connection:
+        assert not connection.execute("SELECT 1 FROM repertoire_cards WHERE repertoire_id='other' AND card_id='shared-authored'").fetchone()
+        assert connection.execute("SELECT 1 FROM repertoire_cards WHERE repertoire_id='italian' AND card_id='shared-authored'").fetchone()
+        assert connection.execute("SELECT archived FROM cards WHERE id='shared-authored'").fetchone()[0] == 0
+
+
+def test_canonical_generated_prefix_split_preserves_membership_and_scope(prefix_database):
+    from app.services.opening_graph import enqueue_opening_graph_rebuild, execute_opening_graph_rebuild
+    from app.services.prefix_split import apply_prefix_split
+    from app.services.canonical_prefix import read_prefix
+    from app.services.canonical_scope_freshness import game_scope_generation
+    add_line([*ITALIAN, 'f8c5', 'c2c3'])
+    enqueue_opening_graph_rebuild('italian')
+    execute_opening_graph_rebuild(claim_task('opening_graph_rebuild'))
+    with database.connection() as connection:
+        source = connection.execute("SELECT * FROM cards WHERE kind='prefix' AND canonical_route_source=0 AND json_array_length(moves_json)>=5 LIMIT 1").fetchone()
+        assert source is not None
+        before = read_prefix(connection, 'italian')['source_revision']
+        generation = game_scope_generation(connection)
+        refresh = connection.execute("SELECT COUNT(*) FROM background_tasks WHERE kind='repertoire_game_refresh'").fetchone()[0]
+        result = apply_prefix_split(connection, source['id'], source['revision'])
+        for child in [result['parent']['card_id'], result['continuation']['card_id']]:
+            assert connection.execute("SELECT canonical_route_source FROM cards WHERE id=?", (child,)).fetchone()[0] == 0
+            assert connection.execute("SELECT canonical_route_source FROM repertoire_cards WHERE repertoire_id='italian' AND card_id=?", (child,)).fetchone()[0] == 0
+        assert read_prefix(connection, 'italian')['source_revision'] == before
+        assert game_scope_generation(connection) == generation
+        assert connection.execute("SELECT COUNT(*) FROM background_tasks WHERE kind='repertoire_game_refresh'").fetchone()[0] == refresh
+
+
+@pytest.mark.parametrize('owner_link_source', [None, 0, 1])
+def test_canonical_card_owner_fallback_respects_explicit_membership(prefix_database, owner_link_source):
+    from app.services.canonical_prefix import read_prefix
+    with database.connection() as connection:
+        connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,canonical_route_source) VALUES('owner-source','italian','response',?,?,'2026-10-03',0)", (chess.STARTING_FEN, json.dumps(ITALIAN)))
+        if owner_link_source is not None:
+            connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('italian','owner-source',?)", (owner_link_source,))
+        before = read_prefix(connection, 'italian')['source_revision']
+        connection.execute("UPDATE cards SET canonical_route_source=1 WHERE id='owner-source'")
+        after = read_prefix(connection, 'italian')['source_revision']
+        assert (after > before) == (owner_link_source != 0)
+
+
+def test_canonical_structural_edit_invalidates_both_authored_shared_memberships(prefix_database):
+    from app.services.canonical_prefix import read_prefix
+    with database.connection() as connection:
+        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('other','Other','other.pgn','2026-10-03')")
+        connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date) VALUES('shared-source','italian','response',?,?,'2026-10-03')", (chess.STARTING_FEN, json.dumps(ITALIAN)))
+        connection.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES('italian','shared-source',1),('other','shared-source',1)")
+        before = {identifier: read_prefix(connection, identifier)['source_revision'] for identifier in ['italian', 'other']}
+        connection.execute("UPDATE cards SET moves_json=? WHERE id='shared-source'", (json.dumps([*ITALIAN, 'f8c5']),))
+        for identifier in before:
+            assert read_prefix(connection, identifier)['source_revision'] > before[identifier]

@@ -25,20 +25,22 @@ BEGIN
     RETURN NEW;
 END $$;
 CREATE TRIGGER canonical_card_promote BEFORE UPDATE ON cards FOR EACH ROW EXECUTE FUNCTION promote_canonical_card_source();
+-- Explicit membership provenance overrides the card owner fallback. Card
+-- promotion alone never adopts a generated membership in another repertoire.
 CREATE OR REPLACE FUNCTION advance_canonical_prefix_source() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
     IF TG_TABLE_NAME='cards' THEN
         IF TG_OP='DELETE' THEN
             IF OLD.canonical_route_source=0 OR OLD.content_type<>'opening' OR OLD.moves_json='[]' THEN RETURN NULL; END IF;
-            UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id=OLD.repertoire_id OR id IN (SELECT repertoire_id FROM repertoire_cards WHERE card_id=OLD.id);
+            UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE (id=OLD.repertoire_id AND NOT EXISTS(SELECT 1 FROM repertoire_cards owner_link WHERE owner_link.card_id=OLD.id AND owner_link.repertoire_id=OLD.repertoire_id AND owner_link.canonical_route_source=0)) OR id IN (SELECT repertoire_id FROM repertoire_cards WHERE card_id=OLD.id AND canonical_route_source=1);
         ELSIF TG_OP='INSERT' THEN
             IF NEW.canonical_route_source=0 OR NEW.content_type<>'opening' OR NEW.moves_json='[]' THEN RETURN NULL; END IF;
-            UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id=NEW.repertoire_id OR id IN (SELECT repertoire_id FROM repertoire_cards WHERE card_id=NEW.id);
+            UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE (id=NEW.repertoire_id AND NOT EXISTS(SELECT 1 FROM repertoire_cards owner_link WHERE owner_link.card_id=NEW.id AND owner_link.repertoire_id=NEW.repertoire_id AND owner_link.canonical_route_source=0)) OR id IN (SELECT repertoire_id FROM repertoire_cards WHERE card_id=NEW.id AND canonical_route_source=1);
         ELSE
             IF OLD.canonical_route_source=0 AND NEW.canonical_route_source=0 THEN RETURN NULL; END IF;
             IF ROW(OLD.start_fen,OLD.moves_json,OLD.archived,OLD.repertoire_id,OLD.content_type,OLD.trained_color,OLD.canonical_route_source) IS NOT DISTINCT FROM ROW(NEW.start_fen,NEW.moves_json,NEW.archived,NEW.repertoire_id,NEW.content_type,NEW.trained_color,NEW.canonical_route_source) THEN RETURN NULL; END IF;
             IF (OLD.content_type<>'opening' AND NEW.content_type<>'opening') OR (OLD.moves_json='[]' AND NEW.moves_json='[]') THEN RETURN NULL; END IF;
-            UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id IN (OLD.repertoire_id,NEW.repertoire_id) OR id IN (SELECT repertoire_id FROM repertoire_cards WHERE card_id=NEW.id);
+            UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE (id=OLD.repertoire_id AND OLD.canonical_route_source=1 AND NOT EXISTS(SELECT 1 FROM repertoire_cards owner_link WHERE owner_link.card_id=OLD.id AND owner_link.repertoire_id=OLD.repertoire_id AND owner_link.canonical_route_source=0)) OR (id=NEW.repertoire_id AND NEW.canonical_route_source=1 AND NOT EXISTS(SELECT 1 FROM repertoire_cards owner_link WHERE owner_link.card_id=NEW.id AND owner_link.repertoire_id=NEW.repertoire_id AND owner_link.canonical_route_source=0)) OR id IN (SELECT repertoire_id FROM repertoire_cards WHERE card_id=NEW.id AND canonical_route_source=1);
         END IF;
     ELSE
         IF TG_TABLE_NAME='repertoire_cards' THEN

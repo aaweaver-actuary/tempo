@@ -1403,3 +1403,7 @@ CI's FEN-only phone study workflow failed after UTC midnight when the regular br
 `tests/unit/guided-review-pending-regressions.test.ts` covers finding-based response validation after index remapping, direct/recovered stale rejection, and preservation of unresolved legacy move-only operations. The existing PostgreSQL command locking/receipt tests remain required; real command parity is proved by CF-9 in the disposable durability workflow.
 
 Baseline at `f5044167c9cfbb7eb84f89e848da7f70957aa989`: the new hidden-current HTTP regression reproduced SQLite `TypeError: 'NoneType' object is not subscriptable` before production edits. The four initial boundary cases ran in 1.38s; the corrected generated-split fixture independently reproduced authored child links in 0.62s. These are failing-baseline evidence, not candidate validation.
+
+### PR #66 boundary review: independent card and link provenance
+
+`test_canonical_card_promotion_does_not_invalidate_generated_shared_membership` reproduces Y's unwanted source bump (0 → 1) at the reviewed head and now verifies its source revision, canonical route certificate and completed coverage remain current after X adopts the shared card. `test_canonical_card_owner_fallback_respects_explicit_membership` covers missing, generated and authored owner links. `test_canonical_structural_edit_invalidates_both_authored_shared_memberships` preserves genuine shared-source invalidation. Migration 033 and SQLite compatibility triggers retain separate card/membership flags; no migration 034 is introduced.
