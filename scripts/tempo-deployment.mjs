@@ -208,6 +208,31 @@ async function githubJson(path) {
   return response.json();
 }
 
+async function verifiedMainEvidence(revision, fetchJson) {
+  let verificationFailure;
+  // Any complete successful allowed run for this exact main revision is proof.
+  // A later pending/failed rerun does not invalidate immutable successful proof.
+  for (let runPage = 1; ; runPage += 1) {
+    const result = await fetchJson(`actions/workflows/pages.yml/runs?head_sha=${revision}&branch=main&per_page=100&page=${runPage}`);
+    for (const workflowRun of result.workflow_runs) {
+      if (workflowRun.head_sha !== revision || workflowRun.head_branch !== "main"
+        || !["push", "workflow_dispatch", "schedule"].includes(workflowRun.event)) continue;
+      try {
+        if (workflowRun.status !== "completed") throw new Error(`Main revision verification is still pending. ${workflowRun.html_url}`);
+        const jobs = [];
+        for (let jobPage = 1; ; jobPage += 1) {
+          const page = await fetchJson(`actions/runs/${workflowRun.id}/jobs?filter=latest&per_page=100&page=${jobPage}`);
+          jobs.push(...page.jobs);
+          if (page.jobs.length < 100) break;
+        }
+        return qualityEvidence(revision, workflowRun, jobs);
+      } catch (error) { verificationFailure ??= error; }
+    }
+    if (result.workflow_runs.length < 100) break;
+  }
+  throw verificationFailure ?? new Error("No complete main CI verification exists for the candidate revision.");
+}
+
 export async function selectCandidate(target, run, fetchJson = githubJson) {
   if (!target.root) throw new Error("Tempo checkout is not registered.");
   const branch = (await run("git", ["branch", "--show-current"])).stdout.trim();
@@ -222,17 +247,7 @@ export async function selectCandidate(target, run, fetchJson = githubJson) {
   const current = (await run("git", ["rev-parse", "HEAD"])).stdout.trim();
   if ((await run("git", ["merge-base", "--is-ancestor", current, revision], { allowFailure: true })).code !== 0)
     throw new Error("Local main has diverged; Tempo will not reset or merge your work.");
-  const runs = await fetchJson(`actions/workflows/pages.yml/runs?head_sha=${revision}&branch=main&per_page=20`);
-  const workflowRun = runs.workflow_runs.find(candidate => candidate.head_sha === revision && candidate.head_branch === "main"
-    && ["push", "workflow_dispatch", "schedule"].includes(candidate.event));
-  if (!workflowRun) throw new Error("No complete main CI verification exists for the candidate revision.");
-  const jobs = [];
-  for (let page = 1; ; page += 1) {
-    const result = await fetchJson(`actions/runs/${workflowRun.id}/jobs?filter=latest&per_page=100&page=${page}`);
-    jobs.push(...result.jobs);
-    if (result.jobs.length < 100) break;
-  }
-  const evidence = qualityEvidence(revision, workflowRun, jobs);
+  const evidence = await verifiedMainEvidence(revision, fetchJson);
   if (revision !== current) {
     const checkedHead = (await run("git", ["rev-parse", "HEAD"])).stdout.trim();
     const checkedBranch = (await run("git", ["branch", "--show-current"])).stdout.trim();

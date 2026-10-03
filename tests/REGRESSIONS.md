@@ -1233,6 +1233,10 @@ this input adaptation.
 - `actual CLI blocked update rejects an incomplete recorded image set before changing services` rejects damaged fallback receipts before database startup or application shutdown.
 - `actual CLI detects checkout edits during image preparation before touching the running application` rechecks source after builds and preserves work edited during preparation.
 - `changed dependency preparation stops writers before dependency recreation even on the same revision`, `dependency recreation failure leaves writers stopped and never publishes a deployment`, and `actual CLI dependency startup failure occurs after writer shutdown and keeps writers stopped` protect writer quiescence before PostgreSQL/Redis recreation. Compatible repeat-start cases require `--no-recreate`; failed image/source preparation preserves the running application.
+- The five `CLI volume ownership:` regressions reject Redis additionally mounting PostgreSQL data, relocated Redis data, PostgreSQL substituting Redis data, defense-engine mounting PostgreSQL data, and removal of required backup storage. The real Docker stage additionally resolves and validates current product Compose read-only, including secrets/tmpfs separation.
+- `actual CLI fallback corrects uncommitted or missing dependency containers before starting recorded applications` covers changed image IDs, changed Compose configuration identity, and absent containers. `actual CLI compatible fallback trusts immutable dependency IDs rather than mutable image tags` preserves the no-stop/no-build fast path. `actual CLI backup rejects mismatched dependencies without starting any recorded application` protects the explicit backup path.
+- `source update refuses concurrent dirty changes immediately before fast-forward`, `source update refuses concurrent head changes immediately before fast-forward`, and `source update refuses concurrent branch changes immediately before fast-forward` use deterministic command boundaries. `actual CLI concurrent source changes block fast-forward and retain verified fallback` additionally preserves newly created notes and independently moved HEAD while preventing merge/build.
+- `source update accepts a complete successful exact main run after a failed exact run`, `source update rejects exact main revisions when every eligible run fails or lacks required jobs`, `source update never accepts successful CI from another SHA branch or event`, and `source update accepts successful exact main evidence after a pending run and across workflow pages` encode acceptance of any complete successful allowed exact-main run, including pagination, without weakening required-job evidence.
 
 `backend/tests/test_postgres_upgrade_regressions.py` additionally covers
 newer/gapped history rejection, failed rollout, and read-only status with
@@ -1254,5 +1258,8 @@ with unchanged row identity/history and successful readiness/deployment commit,
 preserved reviews/queue/receipt history, compatible repeat start without
 rebuild/migration, actual command fallback, real container recreation on
 restart, and stopped consumers after genuinely rejected PostgreSQL DDL.
+It also simulates an uncommitted Redis configuration and missing PostgreSQL
+container, then verifies writer shutdown before immutable fallback correction,
+the restored dependency image/config identities, and unchanged study history.
 The runner records ownership/diagnostics and verifies its own volume teardown.
 Full and durability gates include this stage; browser-only scopes omit it.

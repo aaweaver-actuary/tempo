@@ -53,8 +53,11 @@ need to decide whether a merge requires a rebuild or a migration.
 ## What happens during an update
 
 The CLI preserves local edits and accepts only a fast-forward of a clean main
-checkout from the verified Tempo repository. It checks complete CI for that
-exact revision and loads the updated CLI before deployment. Images are built
+checkout from the verified Tempo repository. It accepts a complete successful
+allowed main CI run for that exact revision, even if a later rerun is pending
+or failed. Immediately before fast-forwarding, it rechecks the branch, exact
+HEAD, and cleanliness; concurrent edits or source movement block the update.
+It loads the updated CLI before deployment. Images are built
 before stopping services. When prepared images/configuration or an explicit
 restart may recreate PostgreSQL or Redis, application writers stop before
 dependency startup. Ordinary compatible starts reuse recorded image IDs and
@@ -73,8 +76,19 @@ If GitHub is unavailable or the candidate has failed checks, `start` can use
 the last recorded, verified image set with its saved Compose definitions. It
 clearly reports the blocked update and running revision. Fallback requires
 the images to exist and the database schema to match; it never rebuilds old
-code from newer source. Before the first verified deployment, a blocked update
-is an error.
+code from newer source. Before using the no-recreate path, it inspects existing
+PostgreSQL/Redis containers for the registered project/service, immutable image
+IDs, and saved Compose configuration hashes. Missing or mismatched dependencies
+require writer shutdown and container recreation from the saved deployment,
+using the existing named volumes without restoring old data. Explicit backup
+fails closed on a dependency mismatch and directs you to `tempo start` first.
+Before the first verified deployment, a blocked update is an error.
+
+Persistent volumes have fixed owners and destinations: PostgreSQL data belongs
+to `postgres:/var/lib/postgresql`, backups to `postgres-backup:/backups`, Redis
+data to `redis:/data`, and engine operations to `defense-engine:/state`. Extra,
+swapped, relocated, and missing persistent mounts block maintenance. Secrets
+and temporary memory mounts are separate from persistent data.
 
 ## When something fails
 

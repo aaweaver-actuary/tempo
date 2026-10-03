@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { schemaVersionFromSource, validateTarget, validateContainers, deploymentCanStart,
-  acquireTargetLock, qualityEvidence, atomicJson, productVolumes } from "../../scripts/tempo-deployment.mjs";
+  acquireTargetLock, qualityEvidence, atomicJson, selectCandidate, productVolumes } from "../../scripts/tempo-deployment.mjs";
 import { executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 
@@ -306,6 +306,7 @@ test("actual CLI detects checkout edits during image preparation before touching
   assert(!fixture.calls().some(call => call.args.includes("up") || call.args.includes("stop")));
 });
 
+
 for (const [name, alter] of [
   ["Redis cannot additionally mount registered PostgreSQL data", config => config.services.redis.volumes.push({ type: "volume", source: "tempo-postgres-data", target: "/data" })],
   ["Redis cannot move its registered data to another destination", config => { config.services.redis.volumes[0].target = "/wrong-data"; }],
@@ -355,18 +356,6 @@ test("actual CLI compatible fallback trusts immutable dependency IDs rather than
   assert(dependencies.args.includes("--no-recreate"));
 });
 
-test("actual CLI backup rejects mismatched dependencies without starting any recorded application", t => {
-  const fixture = commandFixture(t, "ci-fail");
-  const machinePath = join(fixture.directory, "machine.json");
-  const machine = JSON.parse(readFileSync(machinePath, "utf8"));
-  machine.containers.find(container => container.Id === "container-redis").Image = "sha256:uncommitted-candidate";
-  writeFileSync(machinePath, JSON.stringify(machine));
-  const result = fixture.command("backup");
-  assert.notEqual(result.status, 0);
-  assert(result.stderr.includes("Run tempo start"));
-  assert(!fixture.calls().some(call => call.args.includes("up") || call.args.includes("stop")));
-});
-
 test("actual CLI concurrent source changes block fast-forward and retain verified fallback", t => {
   for (const mode of ["race-dirty", "race-head"]) {
     const fixture = commandFixture(t, mode);
@@ -411,4 +400,48 @@ for (const changedSource of ["dirty", "head", "branch"]) test(`source update ref
   assert.equal(fixture.source().head, (changedSource === "head" ? "d" : "c").repeat(40));
   if (changedSource === "dirty") assert(fixture.source().dirty);
   if (changedSource === "branch") assert.equal(fixture.source().branch, "personal-work");
+});
+
+test("source update accepts a complete successful exact main run after a failed exact run", async () => {
+  const fixture = sourceSelectionFixture({ runs: [{ id: 1 }, { id: 2 }], failedRuns: [1] });
+  const selected = await selectCandidate({ root: "fixture" }, fixture.run, fixture.fetchJson);
+  assert.equal(selected.evidence.run_id, 2);
+});
+
+test("source update rejects exact main revisions when every eligible run fails or lacks required jobs", async () => {
+  const fixture = sourceSelectionFixture({ runs: [{ id: 1 }, { id: 2 }], failedRuns: [1], incompleteRuns: [2] });
+  await assert.rejects(selectCandidate({ root: "fixture" }, fixture.run, fixture.fetchJson), /quality/);
+  assert(!fixture.calls.some(args => args[0] === "merge"));
+});
+
+test("source update never accepts successful CI from another SHA branch or event", async () => {
+  for (const candidate of [{ head_sha: "b".repeat(40) }, { head_branch: "personal" }, { event: "pull_request" }]) {
+    const fixture = sourceSelectionFixture({ runs: [{ id: 1 }, { id: 2, ...candidate }], failedRuns: [1] });
+    await assert.rejects(selectCandidate({ root: "fixture" }, fixture.run, fixture.fetchJson));
+    assert(!fixture.calls.some(args => args[0] === "merge"));
+  }
+});
+
+
+test("source update accepts successful exact main evidence after a pending run and across workflow pages", async () => {
+  const fixture = sourceSelectionFixture();
+  const fetchJson = async path => {
+    if (path.includes("workflows/")) return { workflow_runs: path.endsWith("page=1")
+      ? Array.from({ length: 100 }, (_, index) => ({ id: index, head_sha: fixture.revision, head_branch: "main", event: "push", status: "in_progress" }))
+      : [{ id: 101, head_sha: fixture.revision, head_branch: "main", event: "push", status: "completed", html_url: "fixture" }] };
+    return fixture.fetchJson(path);
+  };
+  assert.equal((await selectCandidate({ root: "fixture" }, fixture.run, fetchJson)).evidence.run_id, 101);
+});
+
+test("actual CLI backup rejects mismatched dependencies without starting any recorded application", t => {
+  const fixture = commandFixture(t, "ci-fail");
+  const machinePath = join(fixture.directory, "machine.json");
+  const machine = JSON.parse(readFileSync(machinePath, "utf8"));
+  machine.containers.find(container => container.Id === "container-redis").Image = "sha256:uncommitted-candidate";
+  writeFileSync(machinePath, JSON.stringify(machine));
+  const result = fixture.command("backup");
+  assert.notEqual(result.status, 0);
+  assert(result.stderr.includes("Run tempo start"));
+  assert(!fixture.calls().some(call => call.args.includes("up") || call.args.includes("stop")));
 });
