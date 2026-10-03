@@ -1216,3 +1216,28 @@ not the abbreviated example reference, is authoritative.
 
 No backend business-rule, schema, idempotency or queue path changes accompany
 this input adaptation.
+
+## Tempo CLI after-merge maintenance
+
+`tests/unit/tempo-cli-regressions.test.ts` runs the named Node cases in
+`tests/runner/tempo-cli.test.mjs` through the regular suite:
+
+- `restart compares numeric PostgreSQL schema versions rather than Python source or psql formatting` protects the reported restart/schema comparison confusion.
+- `CLI rejects mismatched projects volumes ports and writable reader credentials before maintenance`, `CLI rejects a foreign container attached to the registered PostgreSQL volume`, and `CLI refuses missing insecure or checkout-local secret files without exposing their values` protect installation identity, storage isolation, and private credentials.
+- `release evidence requires the exact main revision and successful complete quality jobs`, `blocked updates can start only recorded immutable images with the same database schema`, and the actual CLI process cases cover complete revision-specific CI, preserved local changes, immutable fallback, upgrades, repeat starts, read-only plans, sanitized failures, and explicit failed-migration retry.
+- `target maintenance lock prevents concurrent commands and recovers a dead owner without deleting another lock` and `deployment records are atomically replaced rather than appended or partially published` protect concurrency and restart bookkeeping.
+- Lifecycle cases require a verified backup before migration, readiness before success, no application interruption on failed builds, and stopped consumers after backup, migration, or readiness failures.
+
+`backend/tests/test_postgres_upgrade_regressions.py` additionally covers
+newer/gapped history rejection, failed rollout, and read-only status with
+pending migrations or missing initialization/roles. The existing legacy
+import/recovery coverage remains required.
+
+The regular PostgreSQL `schema_upgrade` stage invokes
+`scripts/check-tempo-cli.mjs` on its own project/ports/volumes with populated
+schema 16. It proves a real restore-verified backup and upgrade to current,
+preserved reviews/queue/receipt history, compatible repeat start without
+rebuild/migration, actual command fallback, real container recreation on
+restart, and stopped consumers after genuinely rejected PostgreSQL DDL.
+The runner records ownership/diagnostics and verifies its own volume teardown.
+Full and durability gates include this stage; browser-only scopes omit it.
