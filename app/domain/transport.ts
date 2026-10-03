@@ -55,6 +55,11 @@ export type BackendQueueCard = {
   is_main?: boolean;
   trained_color?: PieceColor | null;
   revision?: number;
+  opening_decision_manifest?: import("./opening-evidence").OpeningDecisionManifest;
+  opening_evidence_diagnostic?: string;
+  opening_evidence_study_timezone?: string;
+  opening_evidence_origin_queue_entry_id?: number;
+  opening_evidence_parent_attempt_id?: string;
   repertoire_id?: string | null;
   study_id?: string | null;
   study_exercise_id?: string | null;

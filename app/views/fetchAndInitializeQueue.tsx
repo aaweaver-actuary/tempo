@@ -63,7 +63,7 @@ async function fetchQueueWindow(signal: AbortSignal): Promise<Response> {
     controller.abort();
   }, 15_000);
   try {
-    return await fetch(`${API_URL}/api/queue/window?limit=20`, { signal: controller.signal });
+    return await fetch(`${API_URL}/api/queue/window?limit=20&include_opening_evidence=true`, { signal: controller.signal });
   } catch (error) {
     if (timedOut)
       throw new Error("Queue request timed out after 15 seconds. Retry loading the queue.", { cause: error });
@@ -282,7 +282,7 @@ export async function fetchAndInitializeQueue(
       if (!pendingTrainingFailures().length) useTrainingStore.getState().setQueueNotice("");
     }
     const hasConflicts = Boolean(replayed?.attempts.some((attempt) => attempt.conflict));
-    if (isIPhoneHomeScreen() && typeof indexedDB !== "undefined" && options.preparePhoneQueue !== false) void fetch(`${API_URL}/api/queue/prepared`, { signal: controller.signal })
+    if (isIPhoneHomeScreen() && typeof indexedDB !== "undefined" && options.preparePhoneQueue !== false) void fetch(`${API_URL}/api/queue/prepared?include_opening_evidence=true`, { signal: controller.signal })
       .then(async (response) => {
         if (response.status === 404)
           throw new Error("Tempo on the computer is an older version. Update it, then reopen Tempo on the phone.");

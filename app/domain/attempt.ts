@@ -12,6 +12,7 @@ export type AttemptToken = {
   entryKey: string;
   generation: number;
   phase: AttemptPhase;
+  attemptId?: string;
 };
 
 export function attemptEntryKey(card: PracticeCard): string {

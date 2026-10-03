@@ -2,6 +2,10 @@ import { API_URL } from "../const";
 import { confirmOperationResponse } from "./operation-status";
 import { publishNotification } from "./notifications";
 import { clearTrainingFailureAfterReview } from "./training-failure-outbox";
+import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
+import { openingEvidenceCheckpointSchema } from "../domain/opening-evidence";
+import { saveEvidenceAwareReview } from "./opening-evidence-review";
+import { acknowledgeOpeningReview } from "./opening-evidence-journal";
 
 export type PendingReview = {
   backendId: string;
@@ -10,9 +14,12 @@ export type PendingReview = {
   guided: boolean;
   attemptId?: string;
   completedAt?: string;
+  openingEvidenceCompletion?: OpeningEvidenceCheckpoint;
+  evidenceRejected?: string;
 };
 
 const storageKey = "tempo-pending-training-reviews-v1";
+const rejectedOpeningReviewStorageKey = "tempo-rejected-opening-reviews-v1";
 const reviewRequestTimeoutMs = 15_000;
 let activeFlush: Promise<void> | undefined;
 
@@ -24,7 +31,11 @@ export class ReviewReplayError extends Error {
 }
 
 export function pendingReviews(): PendingReview[] {
-  const stored = localStorage.getItem(storageKey);
+  return readStoredReviews(storageKey);
+}
+
+function readStoredReviews(key: string): PendingReview[] {
+  const stored = localStorage.getItem(key);
   if (!stored) return [];
   const parsed: unknown = JSON.parse(stored);
   if (!Array.isArray(parsed) || parsed.some((item) =>
@@ -34,6 +45,8 @@ export function pendingReviews(): PendingReview[] {
     !["again", "correct"].includes(item.outcome) ||
     typeof item.guided !== "boolean" ||
     (item.attemptId !== undefined && typeof item.attemptId !== "string") ||
+    (item.openingEvidenceCompletion !== undefined && !openingEvidenceCheckpointSchema.safeParse(item.openingEvidenceCompletion).success) ||
+    (item.evidenceRejected !== undefined && typeof item.evidenceRejected !== "string") ||
     (item.completedAt !== undefined && typeof item.completedAt !== "string"))) {
     throw new Error("The saved training review is invalid. Restore your data before continuing.");
   }
@@ -76,17 +89,40 @@ async function savePendingReviews(): Promise<void> {
     }
     const reviewEndpoint = `${API_URL}/api/cards/${review.backendId}/review`;
     const attemptId = review.attemptId ?? `legacy-online:${review.queueEntryId}`;
-    const reviewResponse = await confirmOperationResponse(await requestReviewSave(reviewEndpoint, {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "Idempotency-Key": `review-attempt:${attemptId}` },
-      body: JSON.stringify({
+    const reviewResponse = await saveEvidenceAwareReview({
+      endpoint: reviewEndpoint, operationKey: `review-attempt:${attemptId}`, request: requestReviewSave,
+      completion: review.openingEvidenceCompletion, evidenceRejected: review.evidenceRejected,
+      onEvidenceRejected: (message) => {
+        const updated = pendingReviews().map((item) =>
+          item.attemptId === attemptId ? { ...item, evidenceRejected: message } : item);
+        // Required: a reload must retain the aggregate-only delivery identity.
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+        try {
+          const rejected = updated.find((item) => item.attemptId === attemptId);
+          const archived = readStoredReviews(rejectedOpeningReviewStorageKey);
+          // Best effort: keep the full rejected envelope after the outbox drains,
+          // even when the separate IndexedDB journal is unavailable.
+          if (rejected && !archived.some((item) => item.attemptId === attemptId))
+            localStorage.setItem(rejectedOpeningReviewStorageKey, JSON.stringify([...archived, rejected]));
+        } catch {
+          try {
+            publishNotification({ severity: "warning", source: "opening evidence",
+              key: `opening-evidence-archive:${attemptId}`,
+              message: "The normal review can still save. An extra diagnostic copy of the rejected opening evidence could not be retained.",
+              details: { cardId: review.backendId, queueEntryId: review.queueEntryId } });
+          } catch {
+            // Diagnostic warnings must not block the required review delivery.
+          }
+        }
+      },
+      body: {
         outcome: review.outcome,
         guided: review.guided,
         queue_entry_id: review.queueEntryId,
         attempt_id: attemptId,
         ...(review.completedAt ? { recorded_at: review.completedAt } : {}),
-      }),
-    }));
+      },
+    });
     if (!reviewResponse.ok)
       throw new ReviewReplayError(await responseDetail(reviewResponse), reviewEndpoint);
     const result = await reviewResponse.clone().json() as { persisted?: boolean; warning?: string;
@@ -98,6 +134,8 @@ async function savePendingReviews(): Promise<void> {
       remaining.filter((item) => item.queueEntryId !== review.queueEntryId),
     ));
     clearTrainingFailureAfterReview(review.queueEntryId);
+    if (review.openingEvidenceCompletion)
+      void acknowledgeOpeningReview(attemptId).catch(() => undefined);
     if (result.warning) {
       publishNotification({ severity: "warning", source: "training review", key: `review-reconciliation:${attemptId}`,
         message: `${result.warning} Saved result: ${review.outcome} at ${review.completedAt ?? "unknown"}. ` +

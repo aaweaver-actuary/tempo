@@ -18,6 +18,7 @@ export function useBoardPublisher(owner: BoardShellOwner, snapshot: Partial<Boar
   const onDrawnShapesChange = useCommittedCallback<Parameters<NonNullable<BoardShellSnapshot["onDrawnShapesChange"]>>, void>(
     (...arguments_) => snapshot?.onDrawnShapesChange?.(...arguments_));
   const onFlip = useCommittedCallback(() => snapshot?.onFlip?.());
+  const onHintExposure = useCommittedCallback((fen: string) => snapshot?.onHintExposure?.(fen));
   const previous = useCommittedCallback(() => snapshot?.keyboard?.previous?.());
   const next = useCommittedCallback(() => snapshot?.keyboard?.next?.());
   const start = useCommittedCallback(() => snapshot?.keyboard?.start?.());
@@ -38,6 +39,7 @@ export function useBoardPublisher(owner: BoardShellOwner, snapshot: Partial<Boar
     onSquareSelect: snapshot?.onSquareSelect ? onSquareSelect : undefined,
     onDrawnShapesChange: snapshot?.onDrawnShapesChange ? onDrawnShapesChange : undefined,
     onFlip: snapshot?.onFlip ? onFlip : undefined,
+    onHintExposure: snapshot?.onHintExposure ? onHintExposure : undefined,
   };
   const committedSnapshot = useRef(completeSnapshot);
   useLayoutEffect(() => { committedSnapshot.current = completeSnapshot; });

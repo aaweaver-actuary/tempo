@@ -19,6 +19,18 @@ from . import postgres_store
 CommandHandler = Callable[[postgres_store.PostgresConnection, dict[str, Any]], Any]
 _handlers: dict[str, CommandHandler] = {}
 MAX_BACKGROUND_CYCLE_ATTEMPTS = 11
+MAX_HTTP_ERROR_DETAIL_BYTES = 16_384
+
+
+def _is_json_native_detail(detail: Any) -> bool:
+    if detail is None or type(detail) in {str, int, float, bool}:
+        return True
+    if type(detail) is list:
+        return all(_is_json_native_detail(item) for item in detail)
+    if type(detail) is dict:
+        return all(type(key) is str and _is_json_native_detail(value)
+                   for key, value in detail.items())
+    return False
 
 
 class CommandConflict(ValueError):
@@ -35,7 +47,10 @@ def request_digest(command_name: str, payload: dict[str, Any]) -> str:
     # A paste preview is derived from the current repertoire snapshot. After a
     # successful save that snapshot changes, but replaying the same user save
     # must still resolve to its original receipt.
-    if command_name == "analysis.paste.commit":
+    if command_name in {"opening_evidence.checkpoint", "cards.review"}:
+        # Preparation is authoritative derived data; retries bind the original envelope.
+        identity_payload = {key: value for key, value in payload.items() if key != "prepared_manifest"}
+    elif command_name == "analysis.paste.commit":
         identity_payload = payload["request"]
     elif command_name == "discovery.accept":
         # Recommendation preparation can change during a retry. The accepted
@@ -218,10 +233,22 @@ def execute_command(
             raise
         except Exception as error:
             raw.execute("ROLLBACK TO SAVEPOINT command_handler")
-            error_json = json.dumps({
+            error_payload = {
                 "message": str(error),
                 "status_code": error.status_code if isinstance(error, HTTPException) else 500,
-            })
+            }
+            if isinstance(error, HTTPException):
+                try:
+                    # Preserve message for legacy operation-status callers. New
+                    # receipts can also reconstruct the original HTTP detail.
+                    if _is_json_native_detail(error.detail) and len(
+                        json.dumps(error.detail, allow_nan=False).encode("utf-8")
+                    ) <= MAX_HTTP_ERROR_DETAIL_BYTES:
+                        error_payload["detail"] = error.detail
+                except (TypeError, ValueError, RecursionError):
+                    # Unsupported/cyclic detail retains the existing envelope.
+                    pass
+            error_json = json.dumps(error_payload)
             raw.execute(
                 "UPDATE operation_receipts SET state='failed',error_json=%s,"
                 "attempt_token=NULL,lease_expires_at=NULL,updated_at=NOW() "

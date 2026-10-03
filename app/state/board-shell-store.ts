@@ -19,6 +19,7 @@ export type BoardShellSnapshot = {
   orientation: "white" | "black";
   interactionMode: BoardInteractionMode;
   showHint: boolean;
+  onHintExposure?: (fen: string) => void;
   theme: BoardTheme;
   pieceSet: PieceSet;
   shapes: DrawShape[];
