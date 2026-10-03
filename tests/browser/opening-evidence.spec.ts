@@ -56,8 +56,14 @@ async function savedAttempts(page: Page) {
 test("AS-15 recovered evidence waits for foreground queue readiness and an idle opportunity", async ({ page }) => {
   await prepareVisualUI(page); await prepareQueue(page);
   await page.route("**/api/opening-evidence/checkpoints", route => route.abort("failed"));
-  await page.goto("/"); await move(page, "e2", "e4");
+  await page.goto("/");
+  const initialCheckpointFailed = page.waitForEvent("requestfailed", {
+    predicate: request => request.url().endsWith("/api/opening-evidence/checkpoints"),
+  });
+  await move(page, "e2", "e4");
   await expect.poll(async () => (await savedEvents(page)).length).toBeGreaterThan(0);
+  // Commit precedes automatic delivery. Settle that delivery before replacing its route.
+  await initialCheckpointFailed;
   const original = (await savedAttempts(page))[0].attempt_id;
   await page.addInitScript(() => {
     const callbacks = new Map<number, IdleRequestCallback>(); let sequence = 0;
