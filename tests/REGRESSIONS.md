@@ -1228,6 +1228,10 @@ this input adaptation.
 - `target maintenance lock prevents concurrent commands and recovers a dead owner without deleting another lock` and `deployment records are atomically replaced rather than appended or partially published` protect concurrency and restart bookkeeping.
 - `CLI recognizes the old backup image's unused anonymous scratch volume but rejects unknown study mounts` permits the previous backup image's unused anonymous mount only at its known destination; new backup containers use temporary memory there.
 - Lifecycle cases require a verified backup before migration, readiness before success, no application interruption on failed builds, and stopped consumers after backup, migration, or readiness failures.
+- `actual CLI backup restores the prior running service state and retains the failed backup phase` protects service restoration and truthful diagnostics after an explicit backup failure.
+- `actual CLI backup restores stopped state when database validation fails before the backup` restores initially stopped PostgreSQL and Redis even when an earlier role check rejects the operation.
+- `actual CLI blocked update rejects an incomplete recorded image set before changing services` rejects damaged fallback receipts before database startup or application shutdown.
+- `actual CLI detects checkout edits during image preparation before touching the running application` rechecks source after builds and preserves work edited during preparation.
 
 `backend/tests/test_postgres_upgrade_regressions.py` additionally covers
 newer/gapped history rejection, failed rollout, and read-only status with

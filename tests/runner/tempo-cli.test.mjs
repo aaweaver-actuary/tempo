@@ -228,3 +228,45 @@ test("actual CLI failed builds preserve running services and failure diagnostics
   assert(!(failedBackup.stdout + failedBackup.stderr).includes("canary-private-password"));
   assert(!readFileSync(join(backupFixture.stateDirectory, "operation.json"), "utf8").includes("canary-private-password"));
 });
+
+test("actual CLI backup restores the prior running service state and retains the failed backup phase", t => {
+  const fixture = commandFixture(t, "backup-fail");
+  const before = JSON.parse(readFileSync(join(fixture.directory, "machine.json"), "utf8"));
+  const result = fixture.command("backup");
+  assert.notEqual(result.status, 0);
+  const after = JSON.parse(readFileSync(join(fixture.directory, "machine.json"), "utf8"));
+  assert.deepEqual(after.running.sort(), before.running.sort());
+  const operation = JSON.parse(readFileSync(join(fixture.stateDirectory, "operation.json"), "utf8"));
+  assert.equal(operation.phase, "failed"); assert.equal(operation.failed_phase, "verifying_backup");
+  assert(!(result.stdout + result.stderr + JSON.stringify(operation)).includes("canary-private-password"));
+});
+
+test("actual CLI blocked update rejects an incomplete recorded image set before changing services", t => {
+  const fixture = commandFixture(t, "ci-fail");
+  const recordPath = join(fixture.stateDirectory, "deployment.json");
+  const record = JSON.parse(readFileSync(recordPath, "utf8"));
+  delete record.images.api; writeFileSync(recordPath, JSON.stringify(record));
+  const result = fixture.command("start", "--no-open");
+  assert.notEqual(result.status, 0);
+  assert(result.stderr.includes("image receipt"));
+  assert(!fixture.calls().some(call => call.args.includes("up") || call.args.includes("stop")));
+});
+
+test("actual CLI backup restores stopped state when database validation fails before the backup", t => {
+  const fixture = commandFixture(t, "status-fail");
+  const machinePath = join(fixture.directory, "machine.json");
+  const machine = JSON.parse(readFileSync(machinePath, "utf8"));
+  machine.running = []; writeFileSync(machinePath, JSON.stringify(machine));
+  const result = fixture.command("backup");
+  assert.notEqual(result.status, 0); assert(result.stderr.includes("roles"));
+  assert.deepEqual(JSON.parse(readFileSync(machinePath, "utf8")).running, []);
+  assert(!fixture.calls().some(call => call.args.some(argument => argument.includes("pg_dump"))));
+});
+
+test("actual CLI detects checkout edits during image preparation before touching the running application", t => {
+  const fixture = commandFixture(t, "edited-during-build");
+  const result = fixture.command("start", "--no-open");
+  assert.notEqual(result.status, 0); assert(result.stderr.includes("Checkout changed"));
+  assert(fixture.calls().some(call => call.args.includes("build")));
+  assert(!fixture.calls().some(call => call.args.includes("up") || call.args.includes("stop")));
+});

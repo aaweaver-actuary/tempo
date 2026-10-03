@@ -63,7 +63,7 @@ async function fakeCommand() {
   const save = () => fs.writeFileSync(machinePath, JSON.stringify(machine));
   if (command === "git") {
     if (args[0] === "branch") output("main");
-    else if (args[0] === "status") output(fixture.mode === "dirty" ? " M personal-work" : "");
+    else if (args[0] === "status") output(fixture.mode === "dirty" || machine.sourceEdited ? " M personal-work" : "");
     else if (args[0] === "remote") output("https://github.com/aaweaver-actuary/tempo");
     else if (args[0] === "rev-parse") output(fixture.revision);
     else if (args[0] === "ls-remote") output(fixture.revision + " refs/heads/main");
@@ -87,6 +87,7 @@ async function fakeCommand() {
     output(config); process.exit(0);
   }
   if (args.includes("build") && fixture.mode === "build-fail") { console.error("build unavailable"); process.exit(13); }
+  if (args.includes("build") && fixture.mode === "edited-during-build") { machine.sourceEdited = true; save(); }
   if (args.includes("ps")) { for (const Service of machine.running) output({ Service, State: "running" }); process.exit(0); }
   if (args.includes("stop")) { machine.running = machine.running.filter(name => !args.includes(name)); save(); process.exit(0); }
   if (args.includes("up")) { machine.running = [...new Set([...machine.running, ...fixture.names.filter(name => args.includes(name))])]; save(); process.exit(0); }
@@ -94,7 +95,7 @@ async function fakeCommand() {
   if (args.includes("psql")) { output(Array.from({ length: machine.schema }, (_, index) => index + 1).join("\n")); process.exit(0); }
   if (args.includes("scripts/apply_postgres_migrations.py")) {
     if (args.includes("--check")) output({ expected_version: 29, applied_versions: Array.from({ length: machine.schema }, (_, index) => index + 1),
-      pending_versions: machine.schema === 29 ? [] : [29], initialized: true, roles_ready: true, credentials_ready: true });
+      pending_versions: machine.schema === 29 ? [] : [29], initialized: true, roles_ready: fixture.mode !== "status-fail", credentials_ready: true });
     else { machine.migrations++; save(); if (fixture.mode === "migration-fail") { console.error("migration failed"); process.exit(17); } machine.schema = 29; save(); }
     process.exit(0);
   }

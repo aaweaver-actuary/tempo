@@ -113,10 +113,15 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     const desiredFingerprint = configurationFingerprint(configuration);
     const reusable = previous && previous.revision === revision && previous.configFingerprint === desiredFingerprint;
     if (fallback || reusable) {
+      if (previous.evidence?.commit !== revision || !previous.verified_at
+        || Object.keys(configuration.services).some(name => !previous.images?.[name]))
+        throw new Error("Recorded image receipt is incomplete or belongs to a different revision. Preserve it and inspect tempo doctor.");
       for (const image of Object.values(previous.images)) await docker(["image", "inspect", image]);
       images = previous.images;
       composeFiles = previous.composeFiles; imageOverride = previous.imageOverride;
       await config();
+      if (Object.entries(configuration.services).some(([name, service]) => service.image !== images[name]))
+        throw new Error("Saved Compose image receipt differs from its recorded immutable images.");
       return;
     }
     stage("preparing_images");
@@ -312,19 +317,19 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
 
   async function backupOnly() {
     const originallyRunning = await runningServices();
-    await ensureImages(); await ensureDatabase(); await checkSchema();
-    await stopApplications();
-    let failure;
+    let failure, failedPhase;
     try {
+      await ensureImages(); await ensureDatabase(); await checkSchema();
+      await stopApplications();
       await backup();
-    } catch (error) { failure = error; await recordFailure(error); }
+    } catch (error) { failure = error; failedPhase = operation.phase; }
     try {
       if (originallyRunning.length) await compose(["up", "-d", "--no-build", "--no-deps", ...originallyRunning], { echo: true });
       const newlyStarted = ["redis", "postgres"].filter(name => !originallyRunning.includes(name));
       if (newlyStarted.length) await compose(["stop", "--timeout", "60", ...newlyStarted], { echo: true });
       if (originallyRunning.includes("web")) await verifyReady();
-    } catch (error) { failure = failure ? new AggregateError([failure, error], "Backup and service restoration failed") : error; await recordFailure(failure); }
-    if (failure) throw failure;
+    } catch (error) { failure = failure ? new AggregateError([failure, error], "Backup and service restoration failed") : error; }
+    if (failure) { if (failedPhase) operation.phase = failedPhase; await recordFailure(failure); throw failure; }
     operation.phase = "backup_verified"; atomicJson(journalPath, operation);
   }
 
