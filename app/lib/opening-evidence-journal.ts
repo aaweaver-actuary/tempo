@@ -416,11 +416,15 @@ async function recoverSavedOpeningEvidence(): Promise<RecoverySliceResult> {
           leasedRecoveryAttempts.add(attempt.attempt_id); deliver = false; return;
         }
         if (attempt.terminal?.state === "complete") {
-          const response = await backgroundFetch(`${API_URL}/api/opening-evidence/attempts/${encodeURIComponent(attempt.attempt_id)}`);
-          if (response.ok) {
-            const persisted = await response.json() as { state?: string };
-            if (persisted.state === "complete") { await acknowledgeOpeningReview(attempt.attempt_id); deliver = false; return; }
-          } else if (response.status !== 404) throw new Error("Could not verify an orphaned opening completion. Its journal remains saved for recovery.");
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 15_000);
+          try {
+            const response = await backgroundFetch(`${API_URL}/api/opening-evidence/attempts/${encodeURIComponent(attempt.attempt_id)}`, { signal: controller.signal });
+            if (response.ok) {
+              const persisted = await response.json() as { state?: string };
+              if (persisted.state === "complete") { await acknowledgeOpeningReview(attempt.attempt_id); deliver = false; return; }
+            } else if (response.status !== 404) throw new Error("Could not verify an orphaned opening completion. Its journal remains saved for recovery.");
+          } finally { clearTimeout(timeout); }
         }
         await new Promise<void>((resolve, reject) => {
           const transaction = database.transaction("opening_attempts", "readwrite");

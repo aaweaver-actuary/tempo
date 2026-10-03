@@ -1303,3 +1303,6 @@ Coverage lives in `tests/unit/opening-evidence-offline-quota.test.ts` and `tests
 
 - `AS-16 online review receipt polling remains bounded after HTTP 202`; `AS-16 phone review receipt polling remains bounded after HTTP 202` — actual durable outbox/phone replay, one signal across POST and receipt GET, 15s/5s fake deadlines, frozen retries and exactly one confirmation; includes compact quota identities.
 - `AS-16 guided review failure receipt shares the foreground review deadline` — existing Again/failure command also retains its signal through receipt confirmation without demoting foreground admission.
+
+- `AS-15 orphan completion verification timeout yields and retries safely` — a stalled background GET releases the coalesced recovery promise after 15s without changing journal state; a later 404 yields one partial checkpoint.
+- `AS-15 orphan verification response body shares its bounded deadline` — full response-read cancellation boundary.
