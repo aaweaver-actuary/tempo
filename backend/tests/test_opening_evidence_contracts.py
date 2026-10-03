@@ -8,6 +8,29 @@ from types import SimpleNamespace
 import pytest
 
 
+def test_opening_checkpoint_dispatches_as_background_without_changing_review_dispatch(monkeypatch):
+    from app import main, command_dispatch, opening_evidence_api
+    from app.models import ReviewRequest
+    from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
+    fixture = json.loads((Path(__file__).resolve().parents[2]/'tests/fixtures/opening-evidence-manifest.json').read_text())
+    request = OpeningEvidenceCheckpoint(attempt_id='background-checkpoint', manifest=fixture,
+        origin_queue_entry_id=101, started_at='2026-09-30T12:00:00Z', study_timezone='UTC')
+    dispatched = []
+    monkeypatch.setattr(opening_evidence_api, 'prepare_checkpoint', lambda request: fixture)
+    monkeypatch.setattr(main.postgres_store, 'configured', lambda: True)
+    monkeypatch.setattr(command_dispatch, 'dispatch_command',
+        lambda name, payload, **options: dispatched.append((name, payload, options)) or {'persisted': True})
+    for _ in range(2):
+        opening_evidence_api.opening_evidence_checkpoint(request, idempotency_key='checkpoint-key')
+    main.review('card', ReviewRequest(outcome='correct', queue_entry_id=101), idempotency_key='review-key')
+    assert dispatched[0] == dispatched[1]
+    assert dispatched[0] == ('opening_evidence.checkpoint',
+        {'checkpoint': request.model_dump(mode='json'), 'prepared_manifest': fixture},
+        {'idempotency_key': 'checkpoint-key', 'background': True})
+    assert dispatched[2][0] == 'cards.review'
+    assert dispatched[2][2].get('background', False) is False
+
+
 def test_shadow_manifest_fixture_matches_backend_producer_and_prescribed_revision():
     from app.services.opening_decision_evidence import decision_manifest
     fixture = json.loads((Path(__file__).resolve().parents[2]/'tests/fixtures/opening-evidence-manifest.json').read_text())

@@ -1,4 +1,4 @@
-"""Foreground checkpoint and internal read routes for optional shadow facts."""
+"""Background checkpoint delivery and internal reads for optional shadow facts."""
 from fastapi import APIRouter, Header, HTTPException, Query
 from . import postgres_store
 from .command_gateway import register_command
@@ -14,7 +14,7 @@ def opening_evidence_checkpoint(request: OpeningEvidenceCheckpoint,
     from .command_dispatch import dispatch_command
     return dispatch_command('opening_evidence.checkpoint',
                             {'checkpoint':request.model_dump(mode='json'), 'prepared_manifest':prepare_checkpoint(request)},
-                            idempotency_key=idempotency_key)
+                            idempotency_key=idempotency_key, background=True)
 
 
 @router.get('/api/opening-evidence/decisions/{decision_id}')
