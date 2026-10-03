@@ -112,12 +112,34 @@ export function deploymentCanStart(record, schema, availableImages) {
 }
 
 export function atomicJson(path, value) {
-  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const parentDirectory = dirname(path);
+  mkdirSync(parentDirectory, { recursive: true, mode: 0o700 });
   const temporary = `${path}.${randomUUID()}.partial`;
-  const descriptor = openSync(temporary, "wx", 0o600);
-  try { writeFileSync(descriptor, `${JSON.stringify(value, null, 2)}\n`); fsyncSync(descriptor); }
-  finally { closeSync(descriptor); }
-  renameSync(temporary, path);
+  let temporaryCreated = false;
+  try {
+    const descriptor = openSync(temporary, "wx", 0o600);
+    temporaryCreated = true;
+    try { writeFileSync(descriptor, `${JSON.stringify(value, null, 2)}\n`); fsyncSync(descriptor); }
+    finally { closeSync(descriptor); }
+    renameSync(temporary, path);
+    temporaryCreated = false;
+    // The renamed entry must be durable before a migration can commit. Node's
+    // read-only directory descriptor works on macOS and Linux; fail closed on
+    // all errors, including filesystems that do not support directory fsync.
+    try {
+      const directoryDescriptor = openSync(parentDirectory, "r");
+      try { fsyncSync(directoryDescriptor); }
+      finally { closeSync(directoryDescriptor); }
+    } catch (error) {
+      throw new Error(`Deployment state durability failed for ${path}: could not sync its containing directory. ${error.message}`, { cause: error });
+    }
+  } catch (error) {
+    if (temporaryCreated) {
+      try { unlinkSync(temporary); }
+      catch (cleanupError) { throw new AggregateError([error, cleanupError], "Deployment state write failed and temporary-file cleanup also failed."); }
+    }
+    throw error;
+  }
 }
 
 export function acquireTargetLock(directory) {

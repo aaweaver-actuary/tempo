@@ -77,6 +77,9 @@ custom-format backup gets a checksum, an isolated restore, and a comparison of
 every public table. The CLI then atomically saves the original history digest,
 counts, column contract, starting/intended schema, target/database identity, and
 verified backup reference in `migration-guard.json` before any migration commits.
+Every atomic state replacement flushes the file before rename and its containing
+directory afterward. A directory-sync failure is a deployment-state durability
+error: migrations cannot begin, writers remain stopped, and no success is recorded.
 Only then do ordered migrations run. Required schema,
 workers, PostgreSQL API health, the web endpoint, and service state must pass
 before success is recorded. Database volumes, Redis state, and engine journals

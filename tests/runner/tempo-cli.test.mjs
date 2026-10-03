@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import fs, { existsSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync, readFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { schemaVersionFromSource, validateTarget, validateContainers, deploymentCanStart,
@@ -115,6 +116,57 @@ test("deployment records are atomically replaced rather than appended or partial
   const path = join(directory(t), "deployment.json");
   atomicJson(path, { revision: "old" }); atomicJson(path, { revision: "verified" });
   assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), { revision: "verified" });
+});
+
+function observeAtomicFileSystem(t, failOperation) {
+  const events = [];
+  const pathsByDescriptor = new Map();
+  for (const method of ["openSync", "writeFileSync", "fsyncSync", "closeSync", "renameSync"]) {
+    const original = fs[method];
+    t.mock.method(fs, method, (...args) => {
+      const path = method === "openSync" || method === "renameSync" ? args[0] : pathsByDescriptor.get(args[0]);
+      const event = { method, path, directory: method === "fsyncSync" && fs.fstatSync(args[0]).isDirectory(), destination: method === "renameSync" ? args[1] : undefined };
+      events.push(event);
+      if (failOperation?.(event, events)) throw new Error("injected filesystem failure");
+      const result = original(...args);
+      if (method === "openSync") pathsByDescriptor.set(result, path);
+      if (method === "closeSync") pathsByDescriptor.delete(args[0]);
+      return result;
+    });
+  }
+  syncBuiltinESMExports();
+  t.after(() => { t.mock.restoreAll(); syncBuiltinESMExports(); });
+  return events;
+}
+
+test("deployment records fsync file contents before rename and the containing directory afterward", t => {
+  const path = join(directory(t), "deployment.json");
+  const events = observeAtomicFileSystem(t);
+  atomicJson(path, { revision: "verified" });
+  assert.deepEqual(events.map(event => event.method), ["openSync", "writeFileSync", "fsyncSync", "closeSync", "renameSync", "openSync", "fsyncSync", "closeSync"]);
+  assert.equal(events[2].directory, false);
+  assert.equal(events[6].directory, true);
+  assert.equal(events[5].path, join(path, ".."));
+  assert.equal(events[4].destination, path);
+});
+
+test("deployment records surface directory fsync failure and retain the renamed destination", t => {
+  const stateDirectory = directory(t), path = join(stateDirectory, "migration-guard.json");
+  atomicJson(path, { state: "old" });
+  const events = observeAtomicFileSystem(t, event => event.directory);
+  assert.throws(() => atomicJson(path, { state: "pending" }), /deployment state.*durab/i);
+  assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), { state: "pending" });
+  assert.deepEqual(readdirSync(stateDirectory), ["migration-guard.json"]);
+  assert.equal(events.at(-1).method, "closeSync", "directory descriptor closes after fsync failure");
+});
+
+for (const method of ["writeFileSync", "fsyncSync", "renameSync"]) test(`deployment records clean temporary files after ${method} failure without replacing existing state`, t => {
+  const stateDirectory = directory(t), path = join(stateDirectory, "deployment.json");
+  atomicJson(path, { revision: "old" });
+  observeAtomicFileSystem(t, event => event.method === method);
+  assert.throws(() => atomicJson(path, { revision: "new" }), /injected filesystem failure/);
+  assert.deepEqual(JSON.parse(readFileSync(path, "utf8")), { revision: "old" });
+  assert.deepEqual(readdirSync(stateDirectory), ["deployment.json"]);
 });
 
 function actions({ pending = [29], failAt, build = true } = {}) {
@@ -276,7 +328,7 @@ test("actual CLI migration guard interrupted attempts survive loss of the operat
   assert.equal(assertOriginalHistory(fixture).state, "verified");
 });
 
-function imageRuntimeFixture(t, reference, actualMajor, fallback = false) {
+function imageRuntimeFixture(t, reference, actualMajor, fallback = false, responseForCommand = () => undefined) {
   const fixture = commandFixture(t, "upgrade");
   const config = readFixtureJson(fixture, "fixture.json").config;
   config.services.postgres.image = reference;
@@ -285,6 +337,8 @@ function imageRuntimeFixture(t, reference, actualMajor, fallback = false) {
   const calls = [];
   const run = async (_command, args) => {
     calls.push(args);
+    const response = responseForCommand(args);
+    if (response !== undefined) return { stdout: response, stderr: "", code: 0 };
     let result = "";
     if (args.includes("config")) {
       const resolved = structuredClone(config);
@@ -302,6 +356,43 @@ function imageRuntimeFixture(t, reference, actualMajor, fallback = false) {
     preparedImages: { revision: record.revision, images: record.images, configFingerprint: configurationFingerprint(config) }, log: () => {} });
   return { runtime, calls, fixture };
 }
+
+test("CLI migration guard durability failure prevents migrations writer startup and deployment publication", async t => {
+  let appliedSchema = 28;
+  const { runtime, calls, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18, false, args => {
+    if (args.includes("--mount")) return "18";
+    if (args.includes("ping")) return "PONG";
+    if (args.includes("ps")) return "[]";
+    if (args.includes("scripts/apply_postgres_migrations.py")) {
+      if (!args.includes("--check")) { appliedSchema = 29; return ""; }
+      return JSON.stringify({ initialized: true, roles_ready: true, credentials_ready: true, expected_version: 29,
+        applied_versions: Array.from({ length: appliedSchema }, (_, index) => index + 1), pending_versions: appliedSchema === 28 ? [29] : [] });
+    }
+    if (args.includes("scripts/verify_postgres_cli_state.py")) return JSON.stringify({ reviews: { count: 1, digest: "original-H0" } });
+  });
+  rmSync(join(fixture.stateDirectory, "deployment.json"));
+  await runtime.config();
+  const guardPath = join(fixture.stateDirectory, "migration-guard.json");
+  let failedDirectorySync = false;
+  observeAtomicFileSystem(t, (event, events) => {
+    if (!failedDirectorySync && event.directory && events.findLast(previous => previous.method === "renameSync")?.destination === guardPath) {
+      failedDirectorySync = true; return true;
+    }
+    return false;
+  });
+  await assert.rejects(executeLifecycle({ recreate: true }, { ...runtime, verifyReady: async () => {} }), /deployment state.*durab/i);
+  assert(failedDirectorySync, "failure occurs after the guard rename");
+  assert.equal(appliedSchema, 28);
+  assert(!calls.some(args => args.includes("scripts/apply_postgres_migrations.py") && !args.includes("--check")));
+  assert(!calls.some(args => args.includes("up") && args.includes("foreground-worker")));
+  assert(calls.at(-2).includes("stop") && calls.at(-2).includes("foreground-worker"), "failure leaves writers stopped");
+  assert(!existsSync(join(fixture.stateDirectory, "deployment.json")));
+  const guard = JSON.parse(readFileSync(guardPath, "utf8"));
+  assert(guard.backup.verified);
+  assert.equal(guard.study_invariants.reviews.digest, "original-H0");
+  assert.equal(guard.state, "pending");
+  assert.equal(JSON.parse(readFileSync(join(fixture.stateDirectory, "operation.json"), "utf8")).phase, "failed");
+});
 
 for (const [label, reference, major, fallback] of [
   ["standard compatible tag", "postgres:18.6-trixie", 18, false],
