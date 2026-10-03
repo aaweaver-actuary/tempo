@@ -21,13 +21,13 @@ def test_postgres_guided_review_routes_dispatch_foreground_receipts(monkeypatch)
     started = client.post("/api/games/provider:one/guided-review",
                           headers={"Idempotency-Key": "start-one"})
     attempted = client.post("/api/guided-reviews/session-one/attempt",
-                            json={"move_uci": "e2e4"},
+                            json={"move_uci": "e2e4", "finding_id": "finding-one"},
                             headers={"Idempotency-Key": "attempt-one"})
     assert started.status_code == attempted.status_code == 200
     assert dispatched == [
         ("games.guided_review.start", {"game_id": "provider:one"}, "start-one"),
         ("games.guided_review.attempt",
-         {"session_id": "session-one", "move_uci": "e2e4"}, "attempt-one"),
+         {"session_id": "session-one", "move_uci": "e2e4", "finding_id": "finding-one"}, "attempt-one"),
     ]
 
 
@@ -45,7 +45,7 @@ def test_postgres_guided_review_start_locks_game_before_creating_session(monkeyp
             statements.append((statement, parameters))
             if "FROM imported_games" in statement:
                 return SimpleNamespace(fetchone=lambda: {"id": "game-one", "analysis_version": 1})
-            if "SELECT id FROM guided_review_sessions" in statement:
+            if "FROM guided_review_sessions" in statement:
                 return SimpleNamespace(fetchone=lambda: None)
             if "SELECT * FROM current_game_findings" in statement:
                 return SimpleNamespace(fetchall=lambda: [finding])
@@ -80,14 +80,14 @@ def test_postgres_guided_review_attempt_locks_session_before_advancing(monkeypat
                     "id": "session-one", "status": "active", "current_index": 0,
                     "finding_ids_json": '["finding-one"]',
                 })
-            if "SELECT * FROM current_game_findings" in statement:
-                return SimpleNamespace(fetchone=lambda: finding)
+            if "FROM current_game_findings" in statement:
+                return SimpleNamespace(fetchall=lambda: [finding])
             return SimpleNamespace()
 
     monkeypatch.setattr(guided_review_commands, "read_session_from_database",
                         lambda _database, session_id: {"id": session_id, "current_index": 1})
     result = guided_review_commands.submit_review_attempt(
-        Database(), {"session_id": "session-one", "move_uci": "e2e4"},
+        Database(), {"session_id": "session-one", "move_uci": "e2e4", "finding_id": "finding-one"},
     )
     assert result["correct"] is True
     assert "FOR UPDATE" in statements[0][0]

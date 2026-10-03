@@ -12,7 +12,10 @@ from fastapi import HTTPException
 
 from .command_gateway import register_command
 from .postgres_store import PostgresConnection
-from .services.guided_review import _impact, _public_item, read_session_from_database
+from .services.guided_review import (
+    _impact, _public_item, read_session_from_database,
+    reconcile_guided_review_session, guided_review_error,
+)
 
 
 def start_review(database: PostgresConnection, payload: dict[str, Any]) -> dict:
@@ -23,9 +26,9 @@ def start_review(database: PostgresConnection, payload: dict[str, Any]) -> dict:
     if game is None:
         raise HTTPException(404, "Game not found")
     existing = database.execute(
-        """SELECT id FROM guided_review_sessions
+        """SELECT * FROM guided_review_sessions
            WHERE game_id=? AND analysis_version=? AND status='active'
-           ORDER BY updated_at DESC LIMIT 1""",
+           ORDER BY updated_at DESC LIMIT 1 FOR UPDATE""",
         (game_id, game["analysis_version"]),
     ).fetchone()
     if existing:
@@ -61,17 +64,18 @@ def submit_review_attempt(database: PostgresConnection, payload: dict[str, Any])
     session = database.execute(
         "SELECT * FROM guided_review_sessions WHERE id=? FOR UPDATE", (session_id,),
     ).fetchone()
-    if session is None or session["status"] != "active":
+    if session is None:
         raise HTTPException(404, "Active guided review not found")
+    session = reconcile_guided_review_session(database, session)
+    if session["status"] != "active":
+        return guided_review_error(404, "Guided review is complete")
     finding_ids = json.loads(session["finding_ids_json"])
     current_index = int(session["current_index"])
     if current_index >= len(finding_ids):
         raise HTTPException(404, "Guided review is complete")
-    finding = database.execute(
-        "SELECT * FROM current_game_findings game_findings WHERE id=?", (finding_ids[current_index],),
-    ).fetchone()
-    if finding is None:
-        raise HTTPException(409, "Guided review finding is unavailable")
+    if payload.get("finding_id") != finding_ids[current_index]:
+        return guided_review_error(409, "Guided review changed. Reload the session before trying again")
+    finding = session["current_findings"][current_index]
     evidence = json.loads(finding["evidence_json"])
     try:
         board = chess.Board(evidence.get("fen"))

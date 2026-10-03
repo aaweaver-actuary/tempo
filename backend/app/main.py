@@ -700,7 +700,11 @@ async def prioritize_foreground_requests(request: Request, call_next):
     is_background = (
         request.headers.get("x-tempo-work-class", "").casefold() == "background"
     )
-    request_scope = query_only_request() if request.method == "GET" or read_only_post else None
+    guided_review_reconciliation_read = (
+        request.method == "GET" and len(request_path_parts) == 3
+        and request_path_parts[:2] == ["api", "guided-reviews"]
+    )
+    request_scope = query_only_request() if (request.method == "GET" and not guided_review_reconciliation_read) or read_only_post else None
     if request_scope is not None:
         request_scope.__enter__()
     try:
@@ -6229,13 +6233,21 @@ def attempt_guided_game_review(session_id: str, request: GuidedReviewAttemptRequ
                                idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     if postgres_store.configured():
         from .command_dispatch import dispatch_command
-        return dispatch_command(
+        result = dispatch_command(
             "games.guided_review.attempt",
-            {"session_id": session_id, "move_uci": request.move_uci},
+            {"session_id": session_id, "move_uci": request.move_uci, "finding_id": request.finding_id},
             idempotency_key=idempotency_key,
         )
+        if isinstance(result, dict) and "guided_review_error" in result:
+            error = result["guided_review_error"]
+            raise HTTPException(error["status_code"], error["detail"])
+        return result
     try:
-        return submit_attempt(session_id, request.move_uci)
+        result = submit_attempt(session_id, request.move_uci, request.finding_id)
+        if "guided_review_error" in result:
+            error = result["guided_review_error"]
+            raise HTTPException(error["status_code"], error["detail"])
+        return result
     except LookupError as error:
         raise HTTPException(404, str(error)) from error
     except ValueError as error:

@@ -78,7 +78,7 @@ for (const candidate of [
       await clickSquare(page, candidate.move.slice(2, 4) as Square);
       const appliedCandidate = new Chess(findingFen);
       appliedCandidate.move({ from: candidate.move.slice(0, 2), to: candidate.move.slice(2, 4) });
-      await expect.poll(() => submissions).toEqual([{ move_uci: candidate.move }]);
+      await expect.poll(() => submissions).toEqual([{ move_uci: candidate.move, finding_id: finding.finding_id }]);
       await expect.poll(() => renderedPieces(page)).toEqual(expectedPieces(appliedCandidate.fen()));
       await expect(board).toHaveAttribute("data-input-enabled", "true");
     } finally {
@@ -92,6 +92,6 @@ for (const candidate of [
     await expect.poll(() => renderedPieces(page)).toEqual(expectedPieces(revealedEnd.fen()));
     await page.keyboard.press("r");
     await expect.poll(() => renderedPieces(page)).toEqual(expectedPieces(findingFen));
-    expect(submissions).toEqual([{ move_uci: candidate.move }]);
+    expect(submissions).toEqual([{ move_uci: candidate.move, finding_id: finding.finding_id }]);
   });
 }

@@ -1390,3 +1390,16 @@ Real PostgreSQL checks in `scripts/check_postgres_canonical_freshness.py` run in
 `test_canonical_first_defense_collection_admits_game_refresh_and_replay_preserves_scope` in `backend/tests/test_defensive_threat_persistence.py` covers the first `__defense__` collection membership entering the existing global universe: approval atomically admits game refresh; unchanged approval replay advances neither global scope nor the refresh generation. This does not change the universe model or defensive teaching behavior.
 
 CI's FEN-only phone study workflow failed after UTC midnight when the regular browser inherited UTC and the disposable service used New York time. `regular browser and service share the study day across UTC midnight` in `tests/unit/postgres-browser-day-regressions.test.ts` compares actual fixture configuration and both sides of the calendar boundary. `prepared study queue shares the disposable service calendar day` in `tests/browser/studies.spec.ts` proves the browser's real calendar matches the authoritative prepared queue. Regular browser timezone is pinned to the same service timezone; the existing grading assertion is unchanged.
+
+### PR #66 boundary review: guided-session publication reconciliation
+
+`backend/tests/test_guided_review.py` covers:
+
+- `test_guided_review_hidden_current_get_and_submit_grade_same_finding_without_500`: canonical freshness hides the current item; GET and POST select its successor and the saved attempt references that successor.
+- `test_guided_review_hidden_completed_finding_remaps_index_and_preserves_attempts`: removed completed items reduce the index while historical attempts survive.
+- `test_guided_review_all_remaining_hidden_post_commits_completion_and_resume_is_not_stranded` and `test_guided_review_all_findings_hidden_get_returns_complete_session`: exhausted sessions complete durably and never dereference missing findings.
+- `test_guided_review_scope_change_between_display_and_attempt_rejects_old_target`: stale displayed identities return 409 without grading another finding.
+
+`tests/unit/guided-review-pending-regressions.test.ts` covers finding-based response validation after index remapping, direct/recovered stale rejection, and preservation of unresolved legacy move-only operations. The existing PostgreSQL command locking/receipt tests remain required; real command parity is proved by CF-9 in the disposable durability workflow.
+
+Baseline at `f5044167c9cfbb7eb84f89e848da7f70957aa989`: the new hidden-current HTTP regression reproduced SQLite `TypeError: 'NoneType' object is not subscriptable` before production edits. The four initial boundary cases ran in 1.38s; the corrected generated-split fixture independently reproduced authored child links in 0.62s. These are failing-baseline evidence, not candidate validation.
