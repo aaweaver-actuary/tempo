@@ -463,6 +463,13 @@
   },
   {
     "method": "POST",
+    "path": "/api/cards/{identifier}/review/reconcile",
+    "handler": "reconcile_review",
+    "treatment": "foreground_command",
+    "state": "staged"
+  },
+  {
+    "method": "POST",
     "path": "/api/repertoire/paste/preview",
     "handler": "preview_analysis_paste",
     "treatment": "read_only_post",

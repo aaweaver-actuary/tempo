@@ -11,4 +11,3 @@ class ReviewConflict(HTTPException):
 
     def information(self) -> dict:
         return {"code": self.code, "message": self.detail, "retryable": self.retryable}
-

@@ -474,8 +474,9 @@ async def prioritize_foreground_requests(request: Request, call_next):
                        and path_parts[3] == "links" and request.method == "POST")
         queue_entry_command = (len(path_parts) == 5 and path_parts[:3] == ["api", "queue", "entries"]
                                and path_parts[4] in {"fail", "bury"} and request.method == "POST")
-        card_review_command = (len(path_parts) == 4 and path_parts[:2] == ["api", "cards"]
-                               and path_parts[3] == "review" and request.method == "POST")
+        card_review_command = (path_parts[:2] == ["api", "cards"]
+                               and path_parts[3:] in (["review"], ["review", "reconcile"])
+                               and request.method == "POST")
         card_revision_command = (len(path_parts) == 3 and path_parts[:2] == ["api", "cards"]
                                  and request.method == "PUT")
         card_archive_command = (len(path_parts) == 3 and path_parts[:2] == ["api", "cards"]
