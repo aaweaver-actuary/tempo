@@ -18,7 +18,7 @@ export async function saveEvidenceAwareReview(options: {
   const send = () => request(options.endpoint, { method: "POST", signal: options.signal,
     headers: { "Content-Type": "application/json", "Idempotency-Key": `${options.operationKey}${rejection || options.aggregateOnly ? ":aggregate-only" : ""}` },
     body: JSON.stringify({ ...options.body, ...(options.completion && !rejection && !options.aggregateOnly ? { opening_evidence_completion: options.completion } : {}) }),
-  }).then(confirmOperationResponse);
+  }).then(response => confirmOperationResponse(response, { signal: options.signal }));
   let response: Response;
   try { response = await send(); }
   catch (error) {

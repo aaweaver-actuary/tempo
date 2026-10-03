@@ -326,7 +326,7 @@ async function performReplayOfflineAttempts(): Promise<PreparedTraining | null> 
           },
         });
       }
-      response = await confirmOperationResponse(response);
+      response = await confirmOperationResponse(response, { signal: controller.signal });
     } catch (error) {
       throw new OfflineReplayError(`Could not sync saved review. ${String(error)}`, reviewEndpoint, { cause: error });
     } finally {

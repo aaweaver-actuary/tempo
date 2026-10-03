@@ -81,14 +81,21 @@ export function enqueuePendingReview(review: PendingReview): void {
 }
 
 async function requestReviewSave(url: string, options: RequestInit): Promise<Response> {
+  try { return await fetch(url, options); }
+  catch (error) {
+    throw new ReviewReplayError(error instanceof Error ? error.message : String(error), url, { cause: error });
+  }
+}
+
+async function withReviewSaveDeadline(url: string, send: (signal: AbortSignal) => Promise<Response>): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), reviewRequestTimeoutMs);
   try {
-    return await fetch(url, { ...options, signal: controller.signal });
+    return await send(controller.signal);
   } catch (error) {
     if (controller.signal.aborted)
       throw new ReviewReplayError("Review save timed out after 15 seconds. Retry save.", url, { cause: error });
-    throw new ReviewReplayError(error instanceof Error ? error.message : String(error), url, { cause: error });
+    throw error;
   } finally {
     clearTimeout(timeout);
   }
@@ -99,16 +106,16 @@ async function savePendingReviews(): Promise<void> {
     const review = pendingReviews()[0];
     if (review.guided) {
       const failureEndpoint = `${API_URL}/api/queue/entries/${review.queueEntryId}/fail`;
-      const failureResponse = await confirmOperationResponse(await requestReviewSave(failureEndpoint, {
-        method: "POST", headers: { "Idempotency-Key": `queue-fail:${review.queueEntryId}` },
-      }));
+      const failureResponse = await withReviewSaveDeadline(failureEndpoint, async signal => confirmOperationResponse(await requestReviewSave(failureEndpoint, {
+        method: "POST", headers: { "Idempotency-Key": `queue-fail:${review.queueEntryId}` }, signal,
+      }), { signal }));
       if (!failureResponse.ok && failureResponse.status !== 409)
         throw new ReviewReplayError(await responseDetail(failureResponse), failureEndpoint);
     }
     const reviewEndpoint = `${API_URL}/api/cards/${review.backendId}/review`;
     const attemptId = review.attemptId ?? `legacy-online:${review.queueEntryId}`;
-    const reviewResponse = await saveEvidenceAwareReview({
-      endpoint: reviewEndpoint, operationKey: `review-attempt:${attemptId}`, request: requestReviewSave,
+    const reviewResponse = await withReviewSaveDeadline(reviewEndpoint, signal => saveEvidenceAwareReview({
+      endpoint: reviewEndpoint, operationKey: `review-attempt:${attemptId}`, signal, request: requestReviewSave,
       completion: review.openingEvidenceCompletion, evidenceRejected: review.evidenceRejected,
       aggregateOnly: review.evidenceFallbackReason === "local_storage_quota",
       onEvidenceRejected: (message) => {
@@ -141,7 +148,7 @@ async function savePendingReviews(): Promise<void> {
         attempt_id: attemptId,
         ...(review.completedAt ? { recorded_at: review.completedAt } : {}),
       },
-    });
+    }));
     if (!reviewResponse.ok)
       throw new ReviewReplayError(await responseDetail(reviewResponse), reviewEndpoint);
     const result = await reviewResponse.clone().json() as { persisted?: boolean; warning?: string;

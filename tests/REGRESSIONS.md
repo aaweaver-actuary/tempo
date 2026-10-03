@@ -1298,3 +1298,8 @@ Coverage lives in `tests/unit/opening-evidence-offline-quota.test.ts` and `tests
 - `AS-15 reconnect requests share an active recovery slice without concurrent journal work`; `AS-15 a live browser lease yields to later recovery journals without closing its attempt`; `AS-15 recovery leaves completions owned by pending aggregate reviews and retained evidence untouched` — serialized reconnects, lease safety/fairness and aggregate ownership exclusions.
 - `AS-16 aggregate phone storage quota without evidence remains blocking` — quota fallback is restricted to optional evidence; the successful quota case covers modern and legacy Firefox quota names.
 - `AS-15 live flushing requested during a recovery slice keeps its normal delivery behavior` — shared serialization does not drop a live caller's pending checkpoint work or expand the recovery slice itself.
+
+### Bounded review and recovery lifecycle
+
+- `AS-16 online review receipt polling remains bounded after HTTP 202`; `AS-16 phone review receipt polling remains bounded after HTTP 202` — actual durable outbox/phone replay, one signal across POST and receipt GET, 15s/5s fake deadlines, frozen retries and exactly one confirmation; includes compact quota identities.
+- `AS-16 guided review failure receipt shares the foreground review deadline` — existing Again/failure command also retains its signal through receipt confirmation without demoting foreground admission.
