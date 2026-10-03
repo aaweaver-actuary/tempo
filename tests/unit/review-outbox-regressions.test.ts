@@ -4,6 +4,7 @@ import { enqueueTrainingFailure, pendingTrainingFailures } from "../../app/lib/t
 import manifest from "../fixtures/opening-evidence-manifest.json";
 import { openingEvidenceCheckpointSchema } from "../../app/domain/opening-evidence";
 import * as notificationModule from "../../app/lib/notifications";
+import * as openingEvidenceJournal from "../../app/lib/opening-evidence-journal";
 
 beforeEach(() => {
   localStorage.clear();
@@ -25,17 +26,18 @@ function enqueueOpeningEvidenceReview(attemptId: string) {
 }
 
 describe("optimistic training review outbox", () => {
-  it("AS-16 evidence outbox quota falls back to durable aggregate-only review", async () => {
+  it.each(["QuotaExceededError", "NS_ERROR_DOM_QUOTA_REACHED"])("AS-16 evidence outbox quota falls back to durable aggregate-only review (%s)", async quotaName => {
     vi.stubGlobal("indexedDB", undefined);
     const original = enqueueOpeningEvidenceReview("quota-attempt");
     const unchanged = structuredClone(original);
     localStorage.clear();
+    const retainEvidence = vi.spyOn(openingEvidenceJournal, "retainOpeningEvidenceForStorageFallback");
     const setItem = Storage.prototype.setItem;
     const writes: string[] = [];
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
       if (key === "tempo-pending-training-reviews-v1") {
         writes.push(value);
-        if (value.includes("openingEvidenceCompletion")) throw new DOMException("Storage quota exceeded", "QuotaExceededError");
+        if (value.includes("openingEvidenceCompletion")) throw new DOMException("Storage quota exceeded", quotaName);
       }
       return setItem.call(this, key, value);
     });
@@ -44,6 +46,9 @@ describe("optimistic training review outbox", () => {
     const { openingEvidenceCompletion: _completion, ...aggregate } = unchanged;
     expect(pendingReviews()).toEqual([{ ...aggregate, evidenceFallbackReason: "local_storage_quota" }]);
     expect(writes).toHaveLength(2);
+    expect(JSON.parse(writes[0])).toEqual([unchanged]);
+    expect(JSON.parse(writes[1])).toEqual(pendingReviews());
+    expect(retainEvidence).toHaveBeenCalledExactlyOnceWith(unchanged.openingEvidenceCompletion);
     const request = vi.fn(async (_url, options: RequestInit) => {
       expect(pendingReviews()[0]).toMatchObject({ evidenceFallbackReason: "local_storage_quota" });
       expect(new Headers(options.headers).get("Idempotency-Key")).toBe("review-attempt:quota-attempt:aggregate-only");
@@ -57,14 +62,15 @@ describe("optimistic training review outbox", () => {
     expect(pendingReviews()).toEqual([]);
   });
 
-  it("AS-16 aggregate-only outbox storage failure remains blocking and retryable", async () => {
+  it.each(["QuotaExceededError", "NS_ERROR_DOM_QUOTA_REACHED"])("AS-16 aggregate-only outbox storage failure remains blocking and retryable (%s)", async quotaName => {
     vi.stubGlobal("indexedDB", undefined);
     const original = enqueueOpeningEvidenceReview("quota-blocked");
     localStorage.clear();
     const request = vi.fn(); vi.stubGlobal("fetch", request);
-    const failure = new DOMException("All review storage is full", "QuotaExceededError");
+    const failure = new DOMException("All review storage is full", quotaName);
     const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw failure; });
     expect(() => enqueuePendingReview(original)).toThrow(failure);
+    expect(write).toHaveBeenCalledTimes(2);
     expect(pendingReviews()).toEqual([]);
     await flushPendingReviews();
     expect(request).not.toHaveBeenCalled();
@@ -73,13 +79,13 @@ describe("optimistic training review outbox", () => {
     expect(pendingReviews()).toEqual([original]);
   });
 
-  it("AS-16 quota fallback reload and ambiguous retries retain the compact payload and key", async () => {
+  it.each(["QuotaExceededError", "NS_ERROR_DOM_QUOTA_REACHED"])("AS-16 quota fallback reload and ambiguous retries retain the compact payload and key (%s)", async quotaName => {
     vi.stubGlobal("indexedDB", undefined);
     const original = enqueueOpeningEvidenceReview("quota-retry"); localStorage.clear();
     const setItem = Storage.prototype.setItem;
     vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
       if (key === "tempo-pending-training-reviews-v1" && value.includes("openingEvidenceCompletion"))
-        throw new DOMException("Evidence is too large", "QuotaExceededError");
+        throw new DOMException("Evidence is too large", quotaName);
       return setItem.call(this, key, value);
     });
     enqueuePendingReview(original);
@@ -98,11 +104,22 @@ describe("optimistic training review outbox", () => {
     expect(pendingReviews()).toEqual([]);
   });
 
-  it("AS-16 denied initial review storage never switches to aggregate-only", () => {
+  it.each(["SecurityError", "InvalidStateError", "NotAllowedError"])("AS-16 denied initial review storage never switches to aggregate-only (%s)", storageErrorName => {
     const original = enqueueOpeningEvidenceReview("denied-initial"); localStorage.clear();
-    const denied = new DOMException("Storage access denied", "SecurityError");
+    const denied = new DOMException("Storage access denied", storageErrorName);
     const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw denied; });
     expect(() => enqueuePendingReview(original)).toThrow(denied);
+    expect(write).toHaveBeenCalledOnce();
+    expect(pendingReviews()).toEqual([]);
+  });
+
+  it.each([
+    new Error("Unknown storage failure"),
+    Object.assign(new Error("Unverified quota failure"), { name: "NS_ERROR_DOM_QUOTA_REACHED" }),
+  ])("AS-16 unknown initial review storage failure remains blocking (%s)", storageFailure => {
+    const original = enqueueOpeningEvidenceReview("unknown-storage"); localStorage.clear();
+    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw storageFailure; });
+    expect(() => enqueuePendingReview(original)).toThrow(storageFailure);
     expect(write).toHaveBeenCalledOnce();
     expect(pendingReviews()).toEqual([]);
   });

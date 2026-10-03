@@ -65,7 +65,7 @@ export function enqueuePendingReview(review: PendingReview): void {
   try {
     localStorage.setItem(storageKey, JSON.stringify([...pending, normalizedReview]));
   } catch (error) {
-    if (!(error instanceof DOMException) || error.name !== "QuotaExceededError" || !normalizedReview.openingEvidenceCompletion) throw error;
+    if (!(error instanceof DOMException) || !["QuotaExceededError", "NS_ERROR_DOM_QUOTA_REACHED"].includes(error.name) || !normalizedReview.openingEvidenceCompletion) throw error;
     const { openingEvidenceCompletion, ...aggregateReview } = normalizedReview;
     // Required: commit the compact envelope and its delivery identity before advancing.
     localStorage.setItem(storageKey, JSON.stringify([...pending, {
