@@ -10,6 +10,7 @@ from typing import Any
 from fastapi import HTTPException
 from pydantic import BaseModel
 
+from .services.repertoire_game_refresh import refresh_game_publications_after_mutation
 from .command_gateway import register_command
 from .postgres_store import PostgresConnection
 from .services.cards import card_id
@@ -30,10 +31,11 @@ class PreparedIntegrityRepair(BaseModel):
 
 
 def _replace_repertoire_line(
-    database: PostgresConnection, source_line: Any, moves: list[str],
+    database: PostgresConnection, source_line: Any, moves: list[str], *, validated_route: dict | None = None, certify: bool = True,
 ) -> bool:
-    from .services.canonical_prefix import ensure_line_in_scope
-    ensure_line_in_scope(database, source_line["repertoire_id"], source_line["start_fen"], moves)
+    from .services.canonical_prefix import ensure_line_in_scope, certify_admitted_route
+    if validated_route is None:
+        validated_route = ensure_line_in_scope(database, source_line["repertoire_id"], source_line["start_fen"], moves, remember=False)
     new_line_id = hashlib.sha256(
         f"{source_line['repertoire_id']}\0{card_id(source_line['start_fen'], moves)}".encode(),
     ).hexdigest()
@@ -59,9 +61,12 @@ def _replace_repertoire_line(
     database.execute_native(
         "DELETE FROM repertoire_lines WHERE id=%s", (source_line["id"],),
     )
+    if certify:
+        certify_admitted_route(database, source_line["repertoire_id"], validated_route)
     return True
 
 
+@refresh_game_publications_after_mutation
 def resolve_integrity_issue(
     database: PostgresConnection, raw_payload: dict[str, Any],
 ) -> dict[str, Any]:
@@ -89,6 +94,9 @@ def resolve_integrity_issue(
         raise HTTPException(422, "Repair line expectations do not match the changes")
     if set(prepared.changed_cards) != set(prepared.expected_card_moves):
         raise HTTPException(422, "Repair card expectations do not match the changes")
+    from .services.canonical_prefix import ensure_line_in_scope, certify_admitted_route
+    line_changes = []
+    card_changes = []
     for source_id, moves in prepared.changed_lines.items():
         source_line = database.execute_native(
             "SELECT * FROM repertoire_lines WHERE id=%s AND repertoire_id=%s FOR UPDATE",
@@ -96,7 +104,7 @@ def resolve_integrity_issue(
         ).fetchone()
         if source_line is None or source_line["moves_json"] != prepared.expected_line_moves[source_id]:
             raise HTTPException(409, "A repertoire line changed during repair; refresh and try again")
-        _replace_repertoire_line(database, source_line, moves)
+        line_changes.append((source_line, moves, ensure_line_in_scope(database, repertoire_id, source_line["start_fen"], moves, remember=False)))
     for source_id, moves in prepared.changed_cards.items():
         source_card = database.execute_native(
             "SELECT * FROM cards WHERE id=%s FOR UPDATE", (source_id,),
@@ -109,9 +117,18 @@ def resolve_integrity_issue(
         ).fetchone()
         if source_card["repertoire_id"] != repertoire_id and linked is None:
             raise HTTPException(409, "A repertoire card was detached during repair")
-        _rewrite_card(database, repertoire_id, source_card, moves)
+        card_changes.append((source_card, moves, ensure_line_in_scope(database, repertoire_id, source_card["start_fen"], moves, remember=False)))
+    admitted_routes = []
+    for source_line, moves, validated_route in line_changes:
+        if _replace_repertoire_line(database, source_line, moves, validated_route=validated_route, certify=False):
+            admitted_routes.append(validated_route)
+    for source_card, moves, validated_route in card_changes:
+        if _rewrite_card(database, repertoire_id, source_card, moves, validated_route=validated_route, certify=False):
+            admitted_routes.append(validated_route)
     for card_identifier in prepared.unsupported_card_ids:
         _archive_unsupported_card(database, repertoire_id, card_identifier)
+    for validated_route in admitted_routes:
+        certify_admitted_route(database, repertoire_id, validated_route)
     invalidate_integrity_in_transaction(database, repertoire_id)
     return {
         "task_id": graph_task["id"], "task_generation": graph_task["generation"], "repertoire_id": repertoire_id,

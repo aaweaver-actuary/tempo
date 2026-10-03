@@ -477,8 +477,6 @@ def finalize_graph_in_transaction(
         database, str(task["payload"]["repertoire_id"]),
         int(task["generation"]), str(task["payload"]["local_day"]),
     )
-    from .durable_tasks import enqueue_compact_postgres_task_in_transaction
-    enqueue_compact_postgres_task_in_transaction(database, "repertoire_game_refresh", "all", {"after_game_id": ""}, priority=90)
     if not complete_task_slice_in_transaction(database, task):
         raise RuntimeError("Opening graph lease changed before finalization")
     return False

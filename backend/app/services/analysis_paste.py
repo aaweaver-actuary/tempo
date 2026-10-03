@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 import chess
 import chess.pgn
 
+from .repertoire_game_refresh import refresh_game_publications_after_mutation
 from .cards import card_id
 from .pgn import ends_on_trained_move
 from .repertoire_comparison import canonical_fen
@@ -258,6 +259,7 @@ def _resolves_gap(database: sqlite3.Connection, source_gap_id: str, repertoire_i
     return False
 
 
+@refresh_game_publications_after_mutation
 def commit_pasted_lines(
     database: sqlite3.Connection, raw_text: str, starting_fen: str | None,
     source_gap_id: str | None, preview_token: str, selections: list[dict],
@@ -294,9 +296,10 @@ def commit_pasted_lines(
                 batch_responses[key] = (move, index)
     if any(not by_index[index].get("acknowledge_conflict") for index in batch_conflict_indices):
         raise PasteInputError("Confirm conflicting trained moves between pasted lines before saving")
-    from .canonical_prefix import ensure_line_in_scope
-    for index, selection in by_index.items():
-        ensure_line_in_scope(database, selection["repertoire_id"], parsed[index].starting_fen, list(parsed[index].moves))
+    from .canonical_prefix import ensure_line_in_scope, certify_admitted_route
+    validated_routes = {index: ensure_line_in_scope(database, selection["repertoire_id"], parsed[index].starting_fen, list(parsed[index].moves), remember=False)
+                        for index, selection in sorted(by_index.items(), key=lambda item: (item[1]["repertoire_id"], item[0]))}
+    admitted_routes = []
     now = datetime.now(timezone.utc).isoformat()
     saved: list[dict] = []
     affected: set[str] = set()
@@ -321,12 +324,14 @@ def commit_pasted_lines(
         duplicate = option["duplicate"] or insert_key in inserted_keys
         inserted_keys.add(insert_key)
         if not duplicate:
-            database.execute(
+            inserted = database.execute(
                 """INSERT OR IGNORE INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at)
                    VALUES(?,?,?,?,?,?,?)""",
                 (line_id, selected["repertoire_id"], pasted.san,
                  option["trained_color"], pasted.starting_fen, json.dumps(list(pasted.moves)), now),
             )
+            if inserted.rowcount:
+                admitted_routes.append((selected["repertoire_id"], validated_routes[index]))
             depth = database.execute("SELECT initial_depth FROM settings WHERE id=1").fetchone()[0]
             database.execute(
                 "INSERT OR IGNORE INTO repertoire_line_training_depths(line_id,learner_decision_count) VALUES(?,?)",
@@ -343,4 +348,6 @@ def commit_pasted_lines(
             affected.add(selected["repertoire_id"])
         saved.append({"index": index, "repertoire_id": selected["repertoire_id"],
                       "duplicate": duplicate, "conflict": bool(option["conflicts"]) or index in batch_conflict_indices})
+    for repertoire_id, validated_route in admitted_routes:
+        certify_admitted_route(database, repertoire_id, validated_route)
     return {"saved": saved, "affected_repertoire_ids": sorted(affected), "gap_resolved": resolved_gap}

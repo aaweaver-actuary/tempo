@@ -609,7 +609,8 @@ def _materialize_admission_branch(task: dict) -> None:
     if scoped_line["status"] != "valid":
         raise ValueError("This continuation is outside the canonical prefix. " + scoped_line["reason"])
     activity_gate.wait_for_foreground()
-    with connection(background=True) as database:
+    from .repertoire_game_refresh import refreshing_game_scope
+    with connection(background=True) as database, refreshing_game_scope(database):
         if postgres_store.configured():
             read_prefix(database, intent["repertoire_id"], lock=True)
             canonical_scope_freshness.game_scope_generation(database, lock=True)

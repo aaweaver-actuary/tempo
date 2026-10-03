@@ -9,6 +9,7 @@ from typing import Any
 import chess
 from fastapi import HTTPException
 
+from .services.repertoire_game_refresh import refresh_game_publications_after_mutation
 from .command_gateway import register_command
 from .database import card_columns
 from .models import CardRevisionRequest
@@ -69,17 +70,17 @@ def _request_current_integrity_scan(
             request_graph_rebuild_in_transaction(database, repertoire_id, local_day)
 
 
+@refresh_game_publications_after_mutation
 def revise_card(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
     identifier = str(payload["card_id"])
     request = CardRevisionRequest.model_validate(payload["request"])
     if request.expected_revision is None:
         raise HTTPException(422, "expected_revision is required for card edits")
     moves = _validated_moves(request.starting_fen, request.moves)
-    from .services.canonical_prefix import ensure_line_in_scope
+    from .services.canonical_prefix import ensure_line_in_scope, certify_admitted_route
     repertoire_ids = [row[0] for row in database.execute(
         "SELECT repertoire_id FROM repertoire_cards WHERE card_id=? UNION SELECT repertoire_id FROM cards WHERE id=? ORDER BY repertoire_id", (identifier, identifier))]
-    for repertoire_id in repertoire_ids:
-        ensure_line_in_scope(database, repertoire_id, request.starting_fen, moves)
+    validated_routes = {repertoire_id: ensure_line_in_scope(database, repertoire_id, request.starting_fen, moves, remember=False) for repertoire_id in repertoire_ids}
     replacement_id = card_id(request.starting_fen, moves)
     for locked_id in sorted({identifier, replacement_id}):
         database.execute_native(
@@ -107,10 +108,11 @@ def revise_card(database: PostgresConnection, payload: dict[str, Any]) -> dict[s
     )
     if replacement_id == identifier:
         database.execute_native(
-            "UPDATE cards SET start_fen=%s,moves_json=%s,source_fen=%s,revision=%s WHERE id=%s",
+            "UPDATE cards SET start_fen=%s,moves_json=%s,source_fen=%s,revision=%s,canonical_route_source=1 WHERE id=%s",
             (request.starting_fen, json.dumps(moves), request.source_fen, revision, identifier),
         )
     elif existing is not None:
+        database.execute_native("UPDATE cards SET canonical_route_source=1 WHERE id=%s", (replacement_id,))
         if request.history_mode == "preserve":
             database.execute_native(
                 "UPDATE reviews SET card_id=%s WHERE card_id=%s", (replacement_id, identifier),
@@ -158,14 +160,18 @@ def revise_card(database: PostgresConnection, payload: dict[str, Any]) -> dict[s
         )
     if replacement_id != identifier:
         database.execute_native(
-            "INSERT INTO repertoire_cards(repertoire_id,card_id) "
-            "SELECT repertoire_id,%s FROM repertoire_cards WHERE card_id=%s "
-            "ON CONFLICT(repertoire_id,card_id) DO NOTHING",
+            "INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) "
+            "SELECT repertoire_id,%s,1 FROM repertoire_cards WHERE card_id=%s "
+            "ON CONFLICT(repertoire_id,card_id) DO UPDATE SET canonical_route_source=1",
             (replacement_id, identifier),
         )
         database.execute_native(
             "DELETE FROM repertoire_cards WHERE card_id=%s", (identifier,),
         )
+    for repertoire_id, validated_route in validated_routes.items():
+        database.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,1) ON CONFLICT(repertoire_id,card_id) DO UPDATE SET canonical_route_source=1", (repertoire_id, replacement_id))
+    for repertoire_id, validated_route in validated_routes.items():
+        certify_admitted_route(database, repertoire_id, validated_route)
     repertoire_ids = [str(row[0]) for row in database.execute_native(
         "SELECT repertoire_id FROM repertoire_cards WHERE card_id=%s ORDER BY repertoire_id",
         (replacement_id,),
@@ -184,6 +190,7 @@ def revise_card(database: PostgresConnection, payload: dict[str, Any]) -> dict[s
     }
 
 
+@refresh_game_publications_after_mutation
 def archive_card(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
     identifier = str(payload["card_id"])
     database.execute_native(

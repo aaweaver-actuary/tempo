@@ -155,6 +155,16 @@ def ensure_line_in_scope(database, repertoire_id: str, starting_fen: str,
     return result
 
 
+def certify_admitted_route(database, repertoire_id: str, validation_result: dict) -> None:
+    """Certify only a route validated by this transaction, after its final source write."""
+    if not validation_result.get("positions"):
+        return
+    current = read_prefix(database, repertoire_id, lock=True)
+    if current["moves"] and current["preview_id"]:
+        store_positions(database, current["preview_id"], validation_result["positions"],
+                        source_revision=current["source_revision"])
+
+
 def scope_line(database, repertoire_id: str, line: dict, prefix: dict | None = None) -> dict:
     """Build an analysis route without changing the saved training start or moves."""
     prefix = prefix if prefix is not None else read_prefix(database, repertoire_id)

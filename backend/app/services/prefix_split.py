@@ -8,6 +8,7 @@ import sqlite3
 
 import chess
 
+from .repertoire_game_refresh import refresh_game_publications_after_mutation
 from ..database import card_columns
 from .cards import card_id
 from .review_service import preserve_daily_queue_order
@@ -175,6 +176,7 @@ def _queue_split_followups(
     preserve_daily_queue_order(database, today)
 
 
+@refresh_game_publications_after_mutation
 def apply_prefix_split(
     database: sqlite3.Connection,
     source_card_id: str,

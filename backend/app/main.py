@@ -116,7 +116,7 @@ from .services.threat_training import (
 from .services.tactical_opportunities import tactical_statistics
 from .services.statistics import enqueue_daily_snapshot, statistics_breakdown, statistics_overview
 from .services.repertoire_statistics import repertoire_statistics, repertoire_positions
-from .services.repertoire_game_refresh import enqueue_repertoire_game_refresh, execute_repertoire_game_refresh_slice
+from .services.repertoire_game_refresh import execute_repertoire_game_refresh_slice, refreshing_game_scope
 from .services.guided_review import create_or_resume_session, read_session, submit_attempt
 from .services.game_sync_coordinator import (
     coordinator,
@@ -146,7 +146,7 @@ from .services.repertoire_integrity import (
 )
 from .services.puzzles import validate_puzzle_record
 from .services.prefix_split import apply_prefix_split, preview_prefix_split
-from .services.canonical_prefix import prefix_projection, ensure_line_in_scope
+from .services.canonical_prefix import prefix_projection, ensure_line_in_scope, certify_admitted_route
 from .services.repertoire_coverage import (
     claim_maia_coverage_node,
     coverage_gaps,
@@ -2006,15 +2006,14 @@ async def import_pgn(
     }
     derived_at = time.perf_counter()
     now = datetime.now(timezone.utc).isoformat()
-    with connection() as db:
+    with connection() as db, refreshing_game_scope(db):
         existing_repertoire = db.execute(
             "SELECT r.id FROM repertoires r WHERE source_name=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__') AND EXISTS(SELECT 1 FROM repertoire_lines l WHERE l.repertoire_id=r.id AND l.trained_color=?) ORDER BY created_at DESC LIMIT 1",
             (file.filename, trained_color),
         ).fetchone()
         rid = existing_repertoire["id"] if existing_repertoire else str(uuid.uuid4())
-        if existing_repertoire:
-            for line in lines:
-                ensure_line_in_scope(db, rid, line.starting_fen, line.moves, remember=False)
+        validated_routes = [ensure_line_in_scope(db, rid, line.starting_fen, line.moves, remember=False) for line in lines] if existing_repertoire else [{} for line in lines]
+        admitted_routes = []
         db.execute(
             "UPDATE repertoires SET is_main=0 WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')"
         )
@@ -2022,7 +2021,7 @@ async def import_pgn(
             "INSERT INTO repertoires(id,name,source_name,created_at,is_main) VALUES(?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET is_main=1,source_name=excluded.source_name",
             (rid, file.filename.rsplit(".", 1)[0], file.filename, now),
         )
-        for line in lines:
+        for line, validated_route in zip(lines, validated_routes):
             moves_json = json.dumps(line.moves)
             existing_line = db.execute(
                 "SELECT id FROM repertoire_lines WHERE repertoire_id=? AND start_fen=? AND moves_json=?",
@@ -2035,7 +2034,7 @@ async def import_pgn(
                     f"{rid}\0{card_id(line.starting_fen, line.moves)}".encode()
                 ).hexdigest()
             )
-            db.execute(
+            inserted = db.execute(
                 "INSERT OR IGNORE INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,?,?,?,?)",
                 (
                     line_id,
@@ -2047,6 +2046,8 @@ async def import_pgn(
                     now,
                 ),
             )
+            if inserted.rowcount:
+                admitted_routes.append(validated_route)
             db.execute(
                 """INSERT INTO repertoire_line_training_depths(
                        line_id,learner_decision_count
@@ -2068,6 +2069,8 @@ async def import_pgn(
                         now,
                     ),
                 )
+        for validated_route in admitted_routes:
+            certify_admitted_route(db, rid, validated_route)
         placeholders = ",".join("?" for _ in segment_ids)
         existing_segment_ids = {
             row["id"]
@@ -2604,7 +2607,7 @@ def make_main_repertoire(identifier: str,
             "repertoires.main.select", {"repertoire_id": identifier},
             idempotency_key=idempotency_key,
         )
-    with connection() as db:
+    with connection() as db, refreshing_game_scope(db):
         if not db.execute(
             "SELECT 1 FROM repertoires WHERE id=? AND id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')",
             (identifier,),
@@ -2614,7 +2617,6 @@ def make_main_repertoire(identifier: str,
             "UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')",
             (identifier,),
         )
-    enqueue_repertoire_game_refresh(background=False)
     return {"id": identifier, "is_main": True}
 
 
@@ -2629,7 +2631,7 @@ def delete_repertoire(identifier: str,
         )
     if identifier in {"__tactics__", "__endgames__", "__game_mistakes__", "__game_tactics__", "__captured_tactics__"}:
         raise HTTPException(400, "This system repertoire cannot be deleted")
-    with connection() as db:
+    with connection() as db, refreshing_game_scope(db):
         if not db.execute(
             "SELECT 1 FROM repertoires WHERE id=?", (identifier,)
         ).fetchone():
@@ -2655,7 +2657,6 @@ def delete_repertoire(identifier: str,
                 "UPDATE repertoires SET is_main=CASE WHEN id=? THEN 1 ELSE 0 END WHERE id NOT IN ('__tactics__','__endgames__','__game_mistakes__','__game_tactics__','__captured_tactics__')",
                 (replacement[0],),
             )
-    enqueue_repertoire_game_refresh(background=False)
     coordinator.wake()
     return {"deleted": True, "id": identifier}
 
@@ -3114,12 +3115,12 @@ def branch(request: BranchRequest,
         f"{request.repertoire_id}\0{card_id(request.starting_fen, moves)}".encode()
     ).hexdigest()
     now = datetime.now(timezone.utc).isoformat()
-    with connection() as db:
+    with connection() as db, refreshing_game_scope(db):
         if not db.execute(
             "SELECT 1 FROM repertoires WHERE id=?", (request.repertoire_id,)
         ).fetchone():
             raise HTTPException(404, "Repertoire not found")
-        ensure_line_in_scope(db, request.repertoire_id, request.starting_fen, moves)
+        validated_route = ensure_line_in_scope(db, request.repertoire_id, request.starting_fen, moves, remember=False)
         duplicate = (
             db.execute("SELECT 1 FROM repertoire_lines WHERE id=?", (lid,)).fetchone()
             is not None
@@ -3169,6 +3170,8 @@ def branch(request: BranchRequest,
                 "UPDATE repertoire_coverage_candidates SET covered=1 WHERE node_id=? AND move_uci=?",
                 (gap_node_id, gap_move_uci),
             )
+        if not duplicate:
+            certify_admitted_route(db, request.repertoire_id, validated_route)
         integrity = integrity_summary(db, request.repertoire_id)
     try:
         enqueue_opening_graph_rebuild(
@@ -3203,7 +3206,7 @@ def remove_branch(request: RemoveBranchRequest,
     except ValueError:
         raise HTTPException(422, "Branch contains an illegal move")
     position_key = " ".join(request.starting_fen.split()[:4])
-    with connection() as db:
+    with connection() as db, refreshing_game_scope(db):
         if not db.execute(
             "SELECT 1 FROM repertoires WHERE id=?", (request.repertoire_id,)
         ).fetchone():
@@ -3460,7 +3463,7 @@ def revise_card(identifier: str, request: CardRevisionRequest,
     moves = validated_line(request.starting_fen, request.moves)
     replacement = card_id(request.starting_fen, moves)
     now = datetime.now(timezone.utc).isoformat()
-    with connection() as db:
+    with connection() as db, refreshing_game_scope(db):
         old = db.execute("SELECT * FROM cards WHERE id=?", (identifier,)).fetchone()
         if not old:
             raise HTTPException(404, "Card not found")
@@ -3469,8 +3472,7 @@ def revise_card(identifier: str, request: CardRevisionRequest,
             "UNION SELECT repertoire_id FROM cards WHERE id=? ORDER BY repertoire_id",
             (identifier, identifier),
         )]
-        for repertoire_id in affected_repertoire_ids:
-            ensure_line_in_scope(db, repertoire_id, request.starting_fen, moves, remember=False)
+        validated_routes = {repertoire_id: ensure_line_in_scope(db, repertoire_id, request.starting_fen, moves, remember=False) for repertoire_id in affected_repertoire_ids}
         existing = db.execute(
             "SELECT * FROM cards WHERE id=?", (replacement,)
         ).fetchone()
@@ -3488,7 +3490,7 @@ def revise_card(identifier: str, request: CardRevisionRequest,
         )
         if replacement == identifier:
             db.execute(
-                "UPDATE cards SET start_fen=?,moves_json=?,source_fen=?,revision=? WHERE id=?",
+                "UPDATE cards SET start_fen=?,moves_json=?,source_fen=?,revision=?,canonical_route_source=1 WHERE id=?",
                 (
                     request.starting_fen,
                     json.dumps(moves),
@@ -3498,6 +3500,7 @@ def revise_card(identifier: str, request: CardRevisionRequest,
                 ),
             )
         elif existing:
+            db.execute("UPDATE cards SET canonical_route_source=1 WHERE id=?", (replacement,))
             if request.history_mode == "preserve":
                 db.execute(
                     "UPDATE reviews SET card_id=? WHERE card_id=?",
@@ -3563,10 +3566,14 @@ def revise_card(identifier: str, request: CardRevisionRequest,
             )
         if replacement != identifier:
             db.execute(
-                "INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id) SELECT repertoire_id,? FROM repertoire_cards WHERE card_id=?",
+                "INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) SELECT repertoire_id,?,1 FROM repertoire_cards WHERE card_id=? ON CONFLICT(repertoire_id,card_id) DO UPDATE SET canonical_route_source=1",
                 (replacement, identifier),
             )
             db.execute("DELETE FROM repertoire_cards WHERE card_id=?", (identifier,))
+        for repertoire_id in affected_repertoire_ids:
+            db.execute("INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,1) ON CONFLICT(repertoire_id,card_id) DO UPDATE SET canonical_route_source=1", (repertoire_id, replacement))
+        for repertoire_id, validated_route in validated_routes.items():
+            certify_admitted_route(db, repertoire_id, validated_route)
         repertoire_ids = affected_repertoire_ids
         for repertoire_id in set(repertoire_ids):
             db.execute(
@@ -3595,7 +3602,7 @@ def archive_card(identifier: str,
         return dispatch_command(
             "cards.archive", {"card_id": identifier}, idempotency_key=idempotency_key,
         )
-    with connection() as db:
+    with connection() as db, refreshing_game_scope(db):
         repertoire_ids = [
             row["repertoire_id"]
             for row in db.execute(
