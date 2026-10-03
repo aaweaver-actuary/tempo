@@ -1226,6 +1226,7 @@ this input adaptation.
 - `CLI rejects mismatched projects volumes ports and writable reader credentials before maintenance`, `CLI rejects a foreign container attached to the registered PostgreSQL volume`, and `CLI refuses missing insecure or checkout-local secret files without exposing their values` protect installation identity, storage isolation, and private credentials.
 - `release evidence requires the exact main revision and successful complete quality jobs`, `blocked updates can start only recorded immutable images with the same database schema`, and the actual CLI process cases cover complete revision-specific CI, preserved local changes, immutable fallback, upgrades, repeat starts, read-only plans, sanitized failures, and explicit failed-migration retry.
 - `target maintenance lock prevents concurrent commands and recovers a dead owner without deleting another lock` and `deployment records are atomically replaced rather than appended or partially published` protect concurrency and restart bookkeeping.
+- `CLI recognizes the old backup image's unused anonymous scratch volume but rejects unknown study mounts` permits the previous backup image's unused anonymous mount only at its known destination; new backup containers use temporary memory there.
 - Lifecycle cases require a verified backup before migration, readiness before success, no application interruption on failed builds, and stopped consumers after backup, migration, or readiness failures.
 
 `backend/tests/test_postgres_upgrade_regressions.py` additionally covers

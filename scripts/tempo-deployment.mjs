@@ -73,7 +73,11 @@ export function validateContainers(containers, target) {
       if (workingDirectory && resolve(workingDirectory) !== resolve(target.root))
         throw new Error("Registered Compose project belongs to another checkout.");
       for (const mount of container.Mounts ?? []) {
-        if (mount.Type === "volume" && !volumes.has(mount.Name))
+        // Older backup containers inherit PostgreSQL's unused anonymous image
+        // volume. It contains no cluster; new configurations use tmpfs here.
+        const unusedBackupScratch = labels["com.docker.compose.service"] === "postgres-backup"
+          && mount.Destination === "/var/lib/postgresql" && /^[a-f0-9]{64}$/.test(mount.Name ?? "");
+        if (mount.Type === "volume" && !volumes.has(mount.Name) && !unusedBackupScratch)
           throw new Error("A Tempo container has an unregistered volume; stop and inspect the target.");
       }
     }

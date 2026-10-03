@@ -66,6 +66,19 @@ test("CLI rejects a foreign container attached to the registered PostgreSQL volu
   assert.throws(() => validateContainers([container], target), /another|foreign|other-task/);
 });
 
+test("CLI recognizes the old backup image's unused anonymous scratch volume but rejects unknown study mounts", t => {
+  const { target } = fixture(t);
+  const container = { Config: { Labels: { "com.docker.compose.project": target.project,
+    "com.docker.compose.service": "postgres-backup" } },
+    Mounts: [{ Type: "volume", Name: "a".repeat(64), Destination: "/var/lib/postgresql" }] };
+  assert.doesNotThrow(() => validateContainers([container], target));
+  container.Mounts[0].Name = "unknown-study-data";
+  assert.throws(() => validateContainers([container], target), /unregistered/);
+  container.Mounts[0].Name = "a".repeat(64);
+  container.Config.Labels["com.docker.compose.service"] = "postgres";
+  assert.throws(() => validateContainers([container], target), /unregistered/);
+});
+
 test("blocked updates can start only recorded immutable images with the same database schema", () => {
   const record = { schema: 29, images: { api: "sha256:verified" }, revision: "a".repeat(40) };
   assert.equal(deploymentCanStart(record, 29, ["sha256:verified"]), true);
