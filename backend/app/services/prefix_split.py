@@ -207,13 +207,13 @@ def apply_prefix_split(
     today = date.today().isoformat()
     shortened_card_id = split["shortened_card_id"]
     continuation_card_id = split["continuation_card_id"]
-    linked_repertoire_ids = [
-        row[0]
+    source_memberships = [
+        (row[0], int(row[1]))
         for row in database.execute(
-            "SELECT repertoire_id FROM repertoire_cards WHERE card_id=?",
+            "SELECT repertoire_id,canonical_route_source FROM repertoire_cards WHERE card_id=?",
             (source_card_id,),
         )
-    ] or [source_card["repertoire_id"]]
+    ] or [(source_card["repertoire_id"], int(source_card["canonical_route_source"]))]
 
     shortened_card = database.execute(
         "SELECT * FROM cards WHERE id=?", (shortened_card_id,)
@@ -308,15 +308,14 @@ def apply_prefix_split(
                 "trained_color": trained_color,
             },
         )
-    for repertoire_id in linked_repertoire_ids:
-        database.execute(
-            "INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)",
-            (repertoire_id, shortened_card_id),
-        )
-        database.execute(
-            "INSERT OR IGNORE INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)",
-            (repertoire_id, continuation_card_id),
-        )
+    for repertoire_id, membership_source in source_memberships:
+        for child_card_id in (shortened_card_id, continuation_card_id):
+            database.execute(
+                "INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,?) "
+                "ON CONFLICT(repertoire_id,card_id) DO UPDATE SET canonical_route_source=1 "
+                "WHERE repertoire_cards.canonical_route_source=0 AND excluded.canonical_route_source=1",
+                (repertoire_id, child_card_id, membership_source),
+            )
     database.execute("DELETE FROM repertoire_cards WHERE card_id=?", (source_card_id,))
     database.execute(
         "UPDATE cards SET archived=1,superseded_by=? WHERE id=?",

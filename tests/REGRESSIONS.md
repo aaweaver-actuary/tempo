@@ -1411,3 +1411,13 @@ Baseline at `f5044167c9cfbb7eb84f89e848da7f70957aa989`: the new hidden-current H
 ### PR #66 boundary review: graph cleanup uses membership provenance
 
 `test_canonical_graph_cleanup_removes_generated_link_from_authored_shared_card` proves normal SQLite graph publication removes obsolete generated Y membership while retaining authored X/B, its queued card, and X source revision. It failed on the reviewed head because cleanup required global card provenance to be generated. `test_postgres_graph_cleanup_removes_only_obsolete_links_in_bounded_slices` now checks the in-transaction provenance recheck as well as current-graph retention and bounded continuation. CF-7 rebuilds Y through real PostgreSQL graph slices and asserts removal directly, without manual `_reconcile_derived_cards()` calls.
+
+### PR #66 boundary review: prefix splits retain source membership provenance
+
+`test_canonical_generated_prefix_split_preserves_membership_and_scope` splits a real graph-generated prefix with an active canonical rule and verifies both generated child cards/links, unchanged source/global scope, no new game refresh, and current route/coverage certificates. The reviewed head failed with child link provenance 1 instead of 0.
+
+`backend/tests/test_prefix_split.py` adds `test_prefix_split_preserves_each_shared_membership_provenance` (generated, authored and mixed shared sources), `test_prefix_split_owner_without_link_inherits_card_provenance`, and `test_prefix_split_generated_input_preserves_existing_authored_children_without_source_bump`. Authored wins on child collisions and replay retains the existing split result/history.
+
+Real PostgreSQL durability retains CF-1–7 and adds **CF-8**: invoke `cards.prefix_split.accept` through the command gateway, verify unchanged source/global generation and refresh identity, generated children and valid canonical/coverage certificates, then exercise graph cleanup's real prepare/commit boundary and stale-lease replay after foreground membership adoption. **CF-9** invokes actual guided start/attempt commands and persisted operation receipts: stale displayed target rejection, resumed/GET/graded target parity, completed-index remapping, durable exhaustion, and restarting without a stranded active session.
+
+`guided review reloads a stale displayed finding without grading its successor` in `tests/browser/guided-review-board-restoration.spec.ts` verifies the 409 response reloads the successor and restores actual board pieces without resubmitting the prior move. The existing correct/incorrect restoration assertions and timeouts remain unchanged; attempt payload assertions additionally require the displayed finding identity.

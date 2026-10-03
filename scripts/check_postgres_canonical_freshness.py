@@ -1,4 +1,4 @@
-"""CF-1/7: real durable PostgreSQL scope, graph, coverage, and publication races."""
+"""CF-1/9: real durable PostgreSQL scope, graph, coverage, and publication races."""
 from datetime import datetime, timezone
 import json
 import os
@@ -187,6 +187,14 @@ def prove_mutation_boundaries(repertoire_id, shared_repertoire_id, game_id):
         assert database.execute('SELECT archived FROM cards WHERE id=?', (replacement_id,)).fetchone()[0] == 0
         assert database.execute('SELECT 1 FROM repertoire_cards WHERE repertoire_id=? AND card_id=?', (repertoire_id, replacement_id)).fetchone()
         assert not database.execute('SELECT 1 FROM repertoire_cards WHERE repertoire_id=? AND card_id=?', (shared_repertoire_id, replacement_id)).fetchone()
+        # Genuine mutations still invalidate every authored shared membership.
+        database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,1)', (shared_repertoire_id, replacement_id))
+        structural_before = {scope_id: read_prefix(database, scope_id)['source_revision'] for scope_id in (repertoire_id, shared_repertoire_id)}
+        database.execute('UPDATE cards SET archived=1 WHERE id=?', (replacement_id,))
+        for scope_id, revision in structural_before.items():
+            assert read_prefix(database, scope_id)['source_revision'] > revision
+        database.execute('UPDATE cards SET archived=0 WHERE id=?', (replacement_id,))
+        database.execute('DELETE FROM repertoire_cards WHERE repertoire_id=? AND card_id=?', (shared_repertoire_id, replacement_id))
     print('PASS CF-7 graph-generated A -> existing B promotes edited membership only; Y certificates survive X adoption; real Y graph cleanup removes generated Y link and preserves authored X/B', flush=True)
 
     # CF-6: current graph means card writes choose integrity-only, yet games rebuild.
@@ -210,6 +218,125 @@ def prove_mutation_boundaries(repertoire_id, shared_repertoire_id, game_id):
             assert database.execute('SELECT 1 FROM current_repertoire_comparisons WHERE game_id=?', (game_id,)).fetchone()
             assert database.execute('SELECT repertoire_scope_generation FROM imported_games WHERE id=?', (game_id,)).fetchone()[0] == game_scope_generation(database)
     print('PASS CF-6 explicit authored card revise/archive hides old game publication, durably resets full refresh, real position/comparison slices restore current publication after restart', flush=True)
+
+
+def prove_generated_split_boundary():
+    from app.prefix_split_commands import accept_prefix_split  # registers the real command
+    from app.command_gateway import execute_command
+    from app.services.postgres_opening_graph import prepare_obsolete_graph_cards, cleanup_graph_cards_in_transaction
+    identifier = 'canonical-generated-split-' + uuid.uuid4().hex
+    route = ['h2h3', 'a7a6', 'g2g3', 'b7b6', 'f1g2', 'c8b7', 'g1f3']
+    operation_id = identifier + '-split'
+    try:
+        with postgres_store.connection() as database:
+            database.execute('INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)', (identifier, identifier, identifier + '.pgn', NOW))
+            add_repertoire_branch(database, {'repertoire_id': identifier, 'name': 'Generated split', 'trained_color': 'white', 'starting_fen': chess.STARTING_FEN, 'moves': route})
+        run_bounded_task_slices('opening_graph_rebuild', identifier, execute_postgres_opening_graph_slice)
+        set_prefix(identifier, route[:3])
+        run_id = complete_coverage(identifier)
+        with postgres_store.connection() as database:
+            source = database.execute("SELECT * FROM cards WHERE repertoire_id=? AND kind='prefix' AND canonical_route_source=0 AND archived=0", (identifier,)).fetchone()
+            assert source is not None
+            prefix = read_prefix(database, identifier)
+            before_scope = game_scope_generation(database)
+            refresh = dict(database.execute("SELECT * FROM background_tasks WHERE kind='repertoire_game_refresh' AND deduplication_key='all'").fetchone())
+            ending_fen = prefix_projection(route)['ending_fen']
+            assert line_origin(database, prefix['preview_id'], ending_fen) == route
+        result = execute_command(operation_id, 'cards.prefix_split.accept', {'card_id': source['id'], 'request': {'expected_revision': source['revision']}})
+        assert result and not result['idempotent'], result
+        with postgres_store.connection() as database:
+            assert read_prefix(database, identifier)['source_revision'] == prefix['source_revision']
+            assert game_scope_generation(database) == before_scope
+            assert dict(database.execute("SELECT * FROM background_tasks WHERE kind='repertoire_game_refresh' AND deduplication_key='all'").fetchone()) == refresh
+            for child_id in [result['parent']['card_id'], result['continuation']['card_id']]:
+                assert database.execute('SELECT canonical_route_source FROM cards WHERE id=?', (child_id,)).fetchone()[0] == 0
+                assert database.execute('SELECT canonical_route_source FROM repertoire_cards WHERE repertoire_id=? AND card_id=?', (identifier, child_id)).fetchone()[0] == 0
+            assert line_origin(database, prefix['preview_id'], ending_fen) == route
+            assert coverage_run_is_current(database, database.execute('SELECT * FROM repertoire_coverage_runs WHERE id=?', (run_id,)).fetchone(), identifier)
+        run_bounded_task_slices('opening_graph_rebuild', identifier, execute_postgres_opening_graph_slice)
+        # Prove the prepare/commit boundary using real worker functions: adopt a
+        # selected generated link before its write slice, then replay that slice.
+        with postgres_store.connection() as database:
+            probe_id = identifier + '-adopted-between-slices'
+            database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,due_date,canonical_route_source) VALUES(?,?,'response',?,?,'2026-10-03',0)", (probe_id, identifier, chess.STARTING_FEN, json.dumps(route[:1])))
+            database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,0)', (identifier, probe_id))
+            task = request_graph_rebuild_in_transaction(database, identifier, NOW[:10])
+        for _ in range(120):
+            claimed = claim_owned('opening_graph_rebuild', identifier)
+            assert claimed is not None
+            if claimed['phase'] == 'cleanup':
+                break
+            execute_postgres_opening_graph_slice(claimed)
+            postgres_store.close_pools()
+        else:
+            raise AssertionError('Graph fixture never reached its cleanup slice')
+        candidates = prepare_obsolete_graph_cards(identifier, claimed['generation'], probe_id[:-1])
+        assert probe_id in candidates, candidates
+        with postgres_store.connection() as database:
+            database.execute('UPDATE repertoire_cards SET canonical_route_source=1 WHERE repertoire_id=? AND card_id=?', (identifier, probe_id))
+            assert cleanup_graph_cards_in_transaction(database, claimed, candidates)
+            assert database.execute('SELECT canonical_route_source FROM repertoire_cards WHERE repertoire_id=? AND card_id=?', (identifier, probe_id)).fetchone()[0] == 1
+            assert not cleanup_graph_cards_in_transaction(database, claimed, candidates)
+        print('PASS CF-8 generated split command preserves card/link provenance, source/global scope, refresh identity, certificate and coverage; real graph cleanup protects intervening adoption', flush=True)
+    finally:
+        with postgres_store.connection() as database:
+            database.execute('DELETE FROM operation_receipts WHERE operation_id=?', (operation_id,))
+            database.execute("DELETE FROM background_tasks WHERE deduplication_key=? OR json_extract(payload_json,'$.repertoire_id')=?", (identifier, identifier))
+            database.execute('DELETE FROM repertoires WHERE id=?', (identifier,))
+        postgres_store.close_pools()
+
+
+def prove_guided_review_boundary(repertoire_id):
+    from app.guided_review_commands import start_review, submit_review_attempt  # register commands
+    from app.command_gateway import execute_command
+    from app.services.guided_review import read_session_from_database
+    game_id = 'canonical-guided-' + uuid.uuid4().hex
+    operation_ids = []
+    def command(name, payload):
+        operation_id = game_id + '-' + str(len(operation_ids))
+        operation_ids.append(operation_id)
+        return execute_command(operation_id, name, payload)
+    try:
+        with postgres_store.connection() as database:
+            database.execute("INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,result,start_fen,moves_json,analysis_version) VALUES(?,'lichess','CanonicalReview',?,'rapid',1,'white','1-0',?,'[\"e2e4\"]',1)", (game_id, NOW, chess.STARTING_FEN))
+            for finding_id, kind, ply, loss in [('A', 'repertoire lapse', 0, 300), ('B', 'tactical miss', 1, 200), ('C', 'major mistake', 2, 100)]:
+                database.execute("INSERT INTO game_findings(id,game_id,analysis_version,ply,kind,confidence,evidence_json,created_at,updated_at) VALUES(?,?,1,?,?,1,?,?,?)", (game_id + finding_id, game_id, ply, kind, json.dumps({'fen': chess.STARTING_FEN, 'best_move_uci': 'e2e4', 'loss_cp': loss}), NOW, NOW))
+        started = command('games.guided_review.start', {'game_id': game_id})
+        assert started and started['current']['finding_id'] == game_id + 'A', started
+        with postgres_store.connection() as database:
+            database.execute('UPDATE repertoires SET scope_source_revision=scope_source_revision+1 WHERE id=?', (repertoire_id,))
+        stale = command('games.guided_review.attempt', {'session_id': started['id'], 'finding_id': game_id + 'A', 'move_uci': 'e2e4'})
+        assert stale['guided_review_error']['status_code'] == 409
+        resumed = command('games.guided_review.start', {'game_id': game_id})
+        assert resumed['id'] == started['id'] and resumed['current']['finding_id'] == game_id + 'B'
+        with postgres_store.connection() as database:
+            displayed = read_session_from_database(database, started['id'])
+        assert displayed['current']['finding_id'] == game_id + 'B'
+        result = command('games.guided_review.attempt', {'session_id': started['id'], 'finding_id': game_id + 'B', 'move_uci': 'e2e4'})
+        assert result['revealed']['finding_id'] == game_id + 'B' and result['session']['current']['finding_id'] == game_id + 'C'
+        with postgres_store.connection() as database:
+            assert database.execute('SELECT finding_id FROM guided_review_attempts WHERE session_id=?', (started['id'],)).fetchone()[0] == game_id + 'B'
+            # Removing a completed ID remaps the index, retaining attempt history.
+            database.execute("UPDATE guided_review_sessions SET finding_ids_json=?,current_index=2 WHERE id=?", (json.dumps([game_id + 'A', game_id + 'B', game_id + 'C']), started['id']))
+            remapped = read_session_from_database(database, started['id'])
+            assert remapped['current_index'] == 1 and remapped['current']['finding_id'] == game_id + 'C'
+            assert remapped['attempts'][0]['finding_id'] == game_id + 'B'
+            database.execute("UPDATE game_findings SET kind='repertoire gap',game_scope_generation=-1 WHERE id=?", (game_id + 'C',))
+        complete = command('games.guided_review.attempt', {'session_id': started['id'], 'finding_id': game_id + 'C', 'move_uci': 'e2e4'})
+        assert complete['guided_review_error']['status_code'] == 404
+        with postgres_store.connection() as database:
+            session = read_session_from_database(database, started['id'])
+            assert session['status'] == 'complete' and session['current'] is None
+            assert len(session['attempts']) == 1
+        restarted = command('games.guided_review.start', {'game_id': game_id})
+        assert restarted['id'] != started['id'] and restarted['current']['finding_id'] == game_id + 'B'
+        print('PASS CF-9 real PostgreSQL guided command reconciliation/receipts: stale target 409, GET/submit parity, completed-index remap, exhausted session 404 with durable completion and no extra attempt', flush=True)
+    finally:
+        with postgres_store.connection() as database:
+            for operation_id in operation_ids:
+                database.execute('DELETE FROM operation_receipts WHERE operation_id=?', (operation_id,))
+            database.execute('DELETE FROM imported_games WHERE id=?', (game_id,))
+        postgres_store.close_pools()
 
 
 def main():
@@ -373,6 +500,8 @@ def main():
             assert database.execute('SELECT canonical_route_source FROM repertoire_cards WHERE card_id=?',(generated_card,)).fetchone()[0] == 1
         print('PASS PostgreSQL clearing authored moves revokes the previous route source',flush=True)
         prove_mutation_boundaries(mutation_repertoire_id, other_repertoire_id, game_id)
+        prove_generated_split_boundary()
+        prove_guided_review_boundary(mutation_repertoire_id)
     finally:
         opportunities._calculate_node_opportunities = saved_calculate
         with postgres_store.connection() as database:

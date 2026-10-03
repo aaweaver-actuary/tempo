@@ -1306,15 +1306,21 @@ def test_canonical_graph_cleanup_removes_generated_link_from_authored_shared_car
 def test_canonical_generated_prefix_split_preserves_membership_and_scope(prefix_database):
     from app.services.opening_graph import enqueue_opening_graph_rebuild, execute_opening_graph_rebuild
     from app.services.prefix_split import apply_prefix_split
-    from app.services.canonical_prefix import read_prefix
-    from app.services.canonical_scope_freshness import game_scope_generation
+    from app.services.canonical_prefix import read_prefix, line_origin
+    from app.services.canonical_scope_freshness import game_scope_generation, coverage_run_is_current
+    from app.services import repertoire_coverage as coverage
     add_line([*ITALIAN, 'f8c5', 'c2c3'])
+    apply_preview(prepare_prefix())
     enqueue_opening_graph_rebuild('italian')
     execute_opening_graph_rebuild(claim_task('opening_graph_rebuild'))
+    run_id = coverage.enqueue_coverage_refresh('italian')
     with database.connection() as connection:
         source = connection.execute("SELECT * FROM cards WHERE kind='prefix' AND canonical_route_source=0 AND json_array_length(moves_json)>=5 LIMIT 1").fetchone()
         assert source is not None
-        before = read_prefix(connection, 'italian')['source_revision']
+        prefix = read_prefix(connection, 'italian')
+        ending_fen = prefix_projection([*ITALIAN, 'f8c5', 'c2c3'])['ending_fen']
+        assert line_origin(connection, prefix['preview_id'], ending_fen) == [*ITALIAN, 'f8c5', 'c2c3']
+        before = prefix['source_revision']
         generation = game_scope_generation(connection)
         refresh = connection.execute("SELECT COUNT(*) FROM background_tasks WHERE kind='repertoire_game_refresh'").fetchone()[0]
         result = apply_prefix_split(connection, source['id'], source['revision'])
@@ -1323,6 +1329,8 @@ def test_canonical_generated_prefix_split_preserves_membership_and_scope(prefix_
             assert connection.execute("SELECT canonical_route_source FROM repertoire_cards WHERE repertoire_id='italian' AND card_id=?", (child,)).fetchone()[0] == 0
         assert read_prefix(connection, 'italian')['source_revision'] == before
         assert game_scope_generation(connection) == generation
+        assert line_origin(connection, prefix['preview_id'], ending_fen) == [*ITALIAN, 'f8c5', 'c2c3']
+        assert coverage_run_is_current(connection, connection.execute('SELECT * FROM repertoire_coverage_runs WHERE id=?', (run_id,)).fetchone(), 'italian')
         assert connection.execute("SELECT COUNT(*) FROM background_tasks WHERE kind='repertoire_game_refresh'").fetchone()[0] == refresh
 
 

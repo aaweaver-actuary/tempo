@@ -355,3 +355,57 @@ def test_prefix_split_preserves_the_complete_repertoire_line_and_original_review
             ).fetchone()
             assert source["archived"] == 1
             assert source["superseded_by"] == result["parent"]["card_id"]
+
+
+@pytest.mark.parametrize('card_source, owner_link_source, other_link_source', [(0, 0, 0), (1, 1, 1), (1, 1, 0), (0, 1, 0)])
+def test_prefix_split_preserves_each_shared_membership_provenance(tmp_path, monkeypatch, card_source, owner_link_source, other_link_source):
+    from app.services.prefix_split import apply_prefix_split
+    monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'tempo.db')
+    database.initialize()
+    with database.connection() as db:
+        source_id = seed_prefix_card(db, 'white', ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1b5'])
+        db.execute('UPDATE cards SET canonical_route_source=? WHERE id=?', (card_source, source_id))
+        db.execute('UPDATE repertoire_cards SET canonical_route_source=? WHERE card_id=?', (owner_link_source, source_id))
+        db.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('shared','Shared','shared.pgn','2026-10-03')")
+        db.execute('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,?)', ('shared', source_id, other_link_source))
+        result = apply_prefix_split(db, source_id, 3)
+        for child in [result['parent']['card_id'], result['continuation']['card_id']]:
+            assert db.execute('SELECT canonical_route_source FROM cards WHERE id=?', (child,)).fetchone()[0] == card_source
+            for repertoire_id, expected in [('white-repertoire', owner_link_source), ('shared', other_link_source)]:
+                assert db.execute('SELECT canonical_route_source FROM repertoire_cards WHERE repertoire_id=? AND card_id=?', (repertoire_id, child)).fetchone()[0] == expected
+        assert not db.execute('SELECT 1 FROM repertoire_cards WHERE card_id=?', (source_id,)).fetchone()
+        assert apply_prefix_split(db, source_id, 3)['idempotent']
+
+
+@pytest.mark.parametrize('card_source', [0, 1])
+def test_prefix_split_owner_without_link_inherits_card_provenance(tmp_path, monkeypatch, card_source):
+    from app.services.prefix_split import apply_prefix_split
+    monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'tempo.db')
+    database.initialize()
+    with database.connection() as db:
+        source_id = seed_prefix_card(db, 'white', ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1b5'])
+        db.execute('UPDATE cards SET canonical_route_source=? WHERE id=?', (card_source, source_id))
+        db.execute('DELETE FROM repertoire_cards WHERE card_id=?', (source_id,))
+        result = apply_prefix_split(db, source_id, 3)
+        for child in [result['parent']['card_id'], result['continuation']['card_id']]:
+            assert db.execute('SELECT canonical_route_source FROM repertoire_cards WHERE card_id=?', (child,)).fetchone()[0] == card_source
+
+
+def test_prefix_split_generated_input_preserves_existing_authored_children_without_source_bump(tmp_path, monkeypatch):
+    from app.services.prefix_split import apply_prefix_split, preview_prefix_split, _copy_card
+    monkeypatch.setattr(database, 'DB_PATH', tmp_path / 'tempo.db')
+    database.initialize()
+    with database.connection() as db:
+        source_id = seed_prefix_card(db, 'white', ['e2e4', 'e7e5', 'g1f3', 'b8c6', 'f1b5'])
+        db.execute('UPDATE cards SET canonical_route_source=0 WHERE id=?', (source_id,))
+        db.execute('UPDATE repertoire_cards SET canonical_route_source=0 WHERE card_id=?', (source_id,))
+        preview = preview_prefix_split(db, source_id)
+        source = db.execute('SELECT * FROM cards WHERE id=?', (source_id,)).fetchone()
+        for child in [preview['parent'], preview['continuation']]:
+            _copy_card(db, source, {'id': child['card_id'], 'start_fen': child['starting_fen'], 'moves_json': json.dumps(child['moves']), 'canonical_route_source': 1})
+            db.execute('INSERT INTO repertoire_cards(repertoire_id,card_id,canonical_route_source) VALUES(?,?,1)', ('white-repertoire', child['card_id']))
+        before = db.execute("SELECT scope_source_revision FROM repertoires WHERE id='white-repertoire'").fetchone()[0]
+        result = apply_prefix_split(db, source_id, 3)
+        assert db.execute("SELECT scope_source_revision FROM repertoires WHERE id='white-repertoire'").fetchone()[0] == before
+        for child in [result['parent']['card_id'], result['continuation']['card_id']]:
+            assert db.execute('SELECT canonical_route_source FROM repertoire_cards WHERE card_id=?', (child,)).fetchone()[0] == 1
