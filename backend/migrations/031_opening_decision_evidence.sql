@@ -33,12 +33,13 @@ CREATE TABLE opening_evidence_queue_contexts (
     queue_entry_id BIGINT NOT NULL,
     presentation_snapshot_id BIGINT NOT NULL REFERENCES opening_evidence_presentations(id),
     repertoire_id TEXT NOT NULL,
+    effective_trained_color TEXT NOT NULL CHECK(effective_trained_color IN ('white','black')),
     PRIMARY KEY(queue_entry_id,presentation_snapshot_id,repertoire_id)
 );
 CREATE FUNCTION opening_evidence_bind_queue(queue_identifier BIGINT, card_identifier TEXT, admission_repertoire TEXT)
 RETURNS void LANGUAGE sql AS $$
-    INSERT INTO opening_evidence_queue_contexts(queue_entry_id,presentation_snapshot_id,repertoire_id)
-    SELECT queue_identifier,snapshot.id,scope.repertoire_id
+    INSERT INTO opening_evidence_queue_contexts(queue_entry_id,presentation_snapshot_id,repertoire_id,effective_trained_color)
+    SELECT queue_identifier,snapshot.id,scope.repertoire_id,learner.effective_trained_color
     FROM cards card JOIN opening_evidence_presentations snapshot
       ON snapshot.card_id=card.id AND snapshot.revision=card.revision
       AND snapshot.start_fen=card.start_fen AND snapshot.moves_json=card.moves_json
@@ -55,7 +56,15 @@ RETURNS void LANGUAGE sql AS $$
         ) owners JOIN repertoires existing ON existing.id=owners.repertoire_id
           WHERE NOT EXISTS(SELECT 1 FROM repertoire_integrity_card_blocks block
             WHERE block.card_id=card.id AND block.repertoire_id=owners.repertoire_id))=1))
-    ) scope WHERE card.id=card_identifier AND card.content_type='opening'
+    ) scope
+    -- Legacy color belongs to this proven scope, not to the raw presentation.
+    -- Capture once: repertoire edits must not change historical checkpoint identity.
+    CROSS JOIN LATERAL (
+      SELECT COALESCE(card.trained_color,(SELECT line.trained_color FROM repertoire_lines line
+        WHERE line.repertoire_id=scope.repertoire_id ORDER BY line.created_at,line.id LIMIT 1)) effective_trained_color
+    ) learner
+    WHERE card.id=card_identifier AND card.content_type='opening'
+      AND learner.effective_trained_color IN ('white','black')
     ON CONFLICT DO NOTHING;
 $$;
 CREATE FUNCTION opening_evidence_capture_queue_context() RETURNS trigger LANGUAGE plpgsql AS $$

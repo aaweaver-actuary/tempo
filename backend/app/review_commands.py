@@ -45,9 +45,10 @@ def submit_review(database: PostgresConnection, payload: dict[str, Any]) -> dict
         complete_review_evidence(database, completion, result)
         if result.get("requeue_entry_id"):
             database.execute_native(
-                "INSERT INTO opening_evidence_queue_contexts(queue_entry_id,presentation_snapshot_id,repertoire_id) "
-                "VALUES(%s,%s,%s) ON CONFLICT DO NOTHING",
-                (result["requeue_entry_id"], completion.manifest.presentation_snapshot_id, completion.manifest.repertoire_id),
+                "INSERT INTO opening_evidence_queue_contexts(queue_entry_id,presentation_snapshot_id,repertoire_id,effective_trained_color) "
+                "VALUES(%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+                (result["requeue_entry_id"], completion.manifest.presentation_snapshot_id,
+                 completion.manifest.repertoire_id, completion.manifest.trained_color),
             )
     return result
 

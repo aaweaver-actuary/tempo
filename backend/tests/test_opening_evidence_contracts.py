@@ -43,7 +43,7 @@ def test_shadow_chess_validation_closes_read_connection_before_traversal(monkeyp
     def read(**options):
         nonlocal active
         active=True
-        yield SimpleNamespace(execute_native=lambda *args:SimpleNamespace(fetchone=lambda:{'saved':True}))
+        yield SimpleNamespace(execute_native=lambda *args:SimpleNamespace(fetchone=lambda:{'trained_color':'white','effective_trained_color':'white'}))
         active=False
     def derive(*args):
         assert not active,'Chess traversal held its database read connection'
@@ -114,3 +114,29 @@ def test_review_completion_requires_a_resolved_actual_queue_binding(monkeypatch)
             'opening_evidence_completion':completion}})
     assert rejected.value.detail['code']=='opening_evidence_conflict'
     assert 'queue entry' in rejected.value.detail['message']
+
+
+def test_scoped_color_adapter_preserves_raw_legacy_presentation():
+    from app.services.postgres_opening_evidence import _manifest_snapshot
+    snapshot = {'trained_color':None, 'effective_trained_color':'black', 'id':17}
+    assert _manifest_snapshot(snapshot) == {**snapshot, 'trained_color':'black'}
+    assert snapshot['trained_color'] is None
+
+
+def test_scoped_color_adapter_rejects_unknown_and_explicit_mismatch():
+    import pytest
+    from app.services.postgres_opening_evidence import _manifest_snapshot
+    for raw_color, effective_color in [(None,None),(None,'unknown'),('white','black'),('unknown','white')]:
+        with pytest.raises(ValueError):
+            _manifest_snapshot({'trained_color':raw_color, 'effective_trained_color':effective_color})
+
+
+def test_evidence_migration_captures_valid_scope_color_without_overwriting_context():
+    source = (Path(__file__).resolve().parents[1]/'migrations/031_opening_decision_evidence.sql').read_text()
+    assert "effective_trained_color TEXT NOT NULL CHECK(effective_trained_color IN ('white','black'))" in source
+    assert 'WHERE line.repertoire_id=scope.repertoire_id ORDER BY line.created_at,line.id LIMIT 1' in source
+    binding = source.split('CREATE FUNCTION opening_evidence_bind_queue',1)[1].split('CREATE FUNCTION opening_evidence_capture_queue_context',1)[0]
+    assert 'COALESCE(card.trained_color,' in binding
+    assert "learner.effective_trained_color IN ('white','black')" in binding
+    assert 'ON CONFLICT DO NOTHING' in binding
+    assert 'DO UPDATE' not in binding

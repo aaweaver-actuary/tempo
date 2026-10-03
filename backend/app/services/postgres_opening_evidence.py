@@ -19,13 +19,23 @@ def evidence_error(message: str, code: str = "opening_evidence_conflict") -> HTT
     return HTTPException(409, {"code": code, "message": message, "aggregate_review_allowed": True})
 
 
+def _manifest_snapshot(context: dict) -> dict:
+    """Use the learner color captured with admission, never mutable line data."""
+    effective_trained_color = context["effective_trained_color"]
+    if effective_trained_color not in {"white", "black"}:
+        raise ValueError("The immutable opening context has no valid trained color")
+    if context["trained_color"] is not None and context["trained_color"] != effective_trained_color:
+        raise ValueError("The immutable opening context disagrees with the explicit presentation color")
+    return {**context, "trained_color": effective_trained_color}
+
+
 def prepare_checkpoint(request: OpeningEvidenceCheckpoint) -> dict:
     """Load immutable inputs, close the read, then do bounded chess validation."""
     if not postgres_store.configured():
         raise evidence_error("Opening shadow evidence requires PostgreSQL", "opening_evidence_unavailable")
     with postgres_store.connection(read_only=True) as database:
         row = database.execute_native(
-            "SELECT snapshot.* FROM opening_evidence_presentations snapshot "
+            "SELECT snapshot.*,context.effective_trained_color FROM opening_evidence_presentations snapshot "
             "JOIN opening_evidence_queue_contexts context ON context.presentation_snapshot_id=snapshot.id "
             "WHERE snapshot.id=%s AND context.queue_entry_id=%s AND context.repertoire_id=%s",
             (request.manifest.presentation_snapshot_id, request.origin_queue_entry_id, request.manifest.repertoire_id),
@@ -34,7 +44,7 @@ def prepare_checkpoint(request: OpeningEvidenceCheckpoint) -> dict:
     if snapshot is None:
         raise evidence_error("The original opening presentation and repertoire scope cannot be proven")
     try:
-        authoritative_manifest = decision_manifest(snapshot, request.manifest.repertoire_id)
+        authoritative_manifest = decision_manifest(_manifest_snapshot(snapshot), request.manifest.repertoire_id)
         validate_checkpoint(request, authoritative_manifest)
     except (ValueError, KeyError) as error:
         raise evidence_error(str(error)) from error
@@ -48,7 +58,7 @@ def queue_manifests(cards: list[dict]) -> None:
         return
     with postgres_store.connection(read_only=True) as database:
         rows = database.execute_native(
-            "SELECT context.queue_entry_id,context.repertoire_id,snapshot.* "
+            "SELECT context.queue_entry_id,context.repertoire_id,context.effective_trained_color,snapshot.* "
             "FROM opening_evidence_queue_contexts context JOIN opening_evidence_presentations snapshot "
             "ON snapshot.id=context.presentation_snapshot_id JOIN daily_queue queue ON queue.id=context.queue_entry_id "
             "JOIN cards card ON card.id=queue.card_id WHERE context.queue_entry_id=ANY(%s::bigint[]) "
@@ -76,13 +86,16 @@ def queue_manifests(cards: list[dict]) -> None:
                     if snapshot["card_id"] == card["id"]
                     and snapshot["revision"] == card["revision"]
                     and snapshot["start_fen"] == card["start_fen"]
-                    and json.loads(snapshot["moves_json"]) == card["moves"]
-                    and snapshot["trained_color"] == card["trained_color"]]
+                    and json.loads(snapshot["moves_json"]) == card["moves"]]
         if len(matching) != 1:
-            card["opening_evidence_diagnostic"] = "Opening evidence unavailable: presentation or repertoire scope is ambiguous. Normal review remains available."
+            card["opening_evidence_diagnostic"] = "Opening evidence unavailable: presentation, repertoire scope or trained color is ambiguous or unavailable. Normal review remains available."
             continue
         try:
-            card["opening_decision_manifest"] = decision_manifest(matching[0], matching[0]["repertoire_id"])
+            manifest = decision_manifest(_manifest_snapshot(matching[0]), matching[0]["repertoire_id"])
+            # The display repertoire may differ from admission; the board and
+            # manifest must use the same immutable learner color when negotiated.
+            card["trained_color"] = manifest["trained_color"]
+            card["opening_decision_manifest"] = manifest
         except (ValueError, KeyError) as error:
             card["opening_evidence_diagnostic"] = f"Opening evidence unavailable: {error}. Normal review remains available."
 
@@ -153,7 +166,7 @@ def _persist_checkpoint(database, request: OpeningEvidenceCheckpoint, *, complet
         "SELECT 1 FROM opening_evidence_queue_contexts context JOIN opening_evidence_presentations snapshot "
         "ON snapshot.id=context.presentation_snapshot_id WHERE context.queue_entry_id=%s "
         "AND context.presentation_snapshot_id=%s AND context.repertoire_id=%s "
-        "AND snapshot.card_id=%s AND snapshot.revision=%s AND snapshot.trained_color=%s",
+        "AND snapshot.card_id=%s AND snapshot.revision=%s AND context.effective_trained_color=%s",
         (request.origin_queue_entry_id, manifest.presentation_snapshot_id, manifest.repertoire_id,
          manifest.card_id, manifest.card_revision, manifest.trained_color),
     ).fetchone()

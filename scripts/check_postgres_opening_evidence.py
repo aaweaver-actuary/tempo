@@ -79,6 +79,212 @@ def test_offline_repeat_reconciles_parent_aggregate_only_fallback(database, card
     print('PASS test_offline_repeat_reconciles_parent_aggregate_only_fallback')
 
 
+def _create_color_fixture(line_color, *, card_color=None, shared=False, tied_lines=False):
+    prefix = 'legacy-color-' + uuid.uuid4().hex
+    now = datetime.now(timezone.utc).replace(microsecond=0)
+    fen = 'rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1'
+    learner_color = card_color or line_color
+    moves = ['e2e4', 'e7e5'] if learner_color == 'black' else ['e2e4']
+    alternate = prefix+'-alternate' if shared else None
+    with postgres_store.connection() as database:
+        database.execute('INSERT INTO repertoires(id,name,source_name,created_at) VALUES(?,?,?,?)',
+                         (prefix, 'Legacy color', 'test', now.isoformat()))
+        if tied_lines:
+            # Insert the later ID first: binding must use the deterministic tie-break.
+            database.execute('INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,?,?,?,?)',
+                             (prefix+'-z', prefix, 'Tied opposite line', 'black' if line_color=='white' else 'white', fen, json.dumps(moves), now.isoformat()))
+        if line_color is not None:
+            database.execute('INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,?,?,?,?)',
+                             (prefix+'-a', prefix, 'Legacy line', line_color, fen, json.dumps(moves), now.isoformat()))
+        database.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,trained_color,due_date) VALUES(?,?,'prefix',?,?,?,?)",
+                         (prefix, prefix, fen, json.dumps(moves), card_color, date.today().isoformat()))
+        database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)', (prefix, prefix))
+        if alternate:
+            opposite = 'black' if line_color=='white' else 'white'
+            database.execute('INSERT INTO repertoires(id,name,source_name,created_at,is_main) VALUES(?,?,?,?,1)',
+                             (alternate, 'Opposite display scope', 'test', now.isoformat()))
+            database.execute('INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,?,?,?,?)',
+                             (alternate+'-line', alternate, 'Other line', opposite, fen, json.dumps(moves), now.isoformat()))
+            database.execute('INSERT INTO repertoire_cards(repertoire_id,card_id) VALUES(?,?)', (alternate, prefix))
+        queue = database.execute("INSERT INTO daily_queue(queue_date,card_id,position,card_bucket,admission_repertoire_id) VALUES(?,?,1999,'opening',?) RETURNING id",
+                                 (date.today().isoformat(), prefix, prefix)).fetchone()[0]
+    return {'card_id':prefix, 'queue_id':queue, 'repertoire_id':prefix, 'alternate':alternate, 'now':now}
+
+
+def _transport_color_fixture(fixture, *, evidence=True, queue_id=None):
+    from app import main
+    return next(card for card in main._queue_payload(include_opening_evidence=evidence)['cards']
+                if card['queue_entry_id'] == (queue_id or fixture['queue_id']))
+
+
+def _color_checkpoint(fixture, manifest):
+    decision = manifest['decisions'][0]
+    return OpeningEvidenceCheckpoint(attempt_id=fixture['card_id']+'-attempt', manifest=manifest,
+        origin_queue_entry_id=fixture['queue_id'], queue_entry_id=fixture['queue_id'],
+        started_at=fixture['now'].isoformat(), study_timezone='UTC',
+        events=[{'sequence':1,'decision_index':0,'decision_id':decision['decision_id'],
+                 'expected_uci':decision['expected_uci'],'kind':'first_response',
+                 'observed_at':fixture['now'].isoformat(),'response_uci':decision['expected_uci'],
+                 'disposition':'expected'}],
+        terminal={'state':'partial','final_sequence':1,'ended_at':fixture['now'].isoformat()})
+
+
+def _fixture_scheduling(database, fixture):
+    return {table:[dict(row) for row in database.execute(query,(fixture['card_id'],)).fetchall()]
+            for table,query in {'cards':'SELECT * FROM cards WHERE id=?',
+              'queue':'SELECT * FROM daily_queue WHERE card_id=? ORDER BY id',
+              'reviews':'SELECT * FROM reviews WHERE card_id=? ORDER BY id',
+              'splits':'SELECT * FROM prefix_splits WHERE source_card_id=?'}.items()}
+
+
+def _retain_color_provenance(fixture):
+    with postgres_store.connection() as database:
+        database.execute('DELETE FROM cards WHERE id=?', (fixture['card_id'],))
+        database.execute('DELETE FROM repertoires WHERE id=?', (fixture['repertoire_id'],))
+        if fixture['alternate']:
+            database.execute('DELETE FROM repertoires WHERE id=?', (fixture['alternate'],))
+        digest = shadow_digest(database, fixture['card_id'])
+        database.execute_native("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,response_json) VALUES(%s,'shadow.evidence.fixture',%s,'complete',%s)",
+                                (fixture['card_id'], digest, json.dumps({'digest':digest})))
+
+
+def _assert_color_round_trip(fixture, trained_color):
+    transport = _transport_color_fixture(fixture)
+    assert transport['trained_color'] == trained_color
+    assert 'opening_decision_manifest' in transport, 'Legacy scoped color omitted its authoritative manifest: '+str(transport.get('opening_evidence_diagnostic'))
+    assert 'opening_evidence_diagnostic' not in transport
+    manifest = transport['opening_decision_manifest']
+    assert manifest['trained_color'] == trained_color
+    assert manifest['repertoire_id'] == fixture['repertoire_id']
+    checkpoint = _color_checkpoint(fixture, manifest)
+    assert prepare_checkpoint(checkpoint) == manifest
+    payload = {'checkpoint':checkpoint.model_dump(mode='json'), 'prepared_manifest':manifest}
+    with postgres_store.connection() as database:
+        before = _fixture_scheduling(database, fixture)
+        result = persist_checkpoint(database, payload)
+        assert result['persisted'] and result['contiguous_sequence'] == 1
+        assert _fixture_scheduling(database, fixture) == before, 'Legacy checkpoint changed scheduling state'
+    return manifest, checkpoint, payload
+
+
+def test_postgres_legacy_opening_color_queue_checkpoint_round_trip():
+    """AS-16/19: real queue transport must agree with immutable evidence."""
+    if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
+        raise RuntimeError('Legacy color rehearsal requires disposable PostgreSQL')
+    os.environ['TEMPO_DATABASE_WRITE_URL'] = os.getenv('TEMPO_SHADOW_REHEARSAL_URL', 'postgresql://postgres@postgres:5432/tempo')
+    os.environ['TEMPO_DATABASE_READ_URL'] = os.environ['TEMPO_DATABASE_WRITE_URL']
+    for trained_color in ('white', 'black'):
+        fixture = _create_color_fixture(trained_color)
+        ordinary = _transport_color_fixture(fixture, evidence=False)
+        assert ordinary['trained_color'] == trained_color
+        assert 'opening_decision_manifest' not in ordinary
+        manifest, checkpoint, payload = _assert_color_round_trip(fixture, trained_color)
+        assert _transport_color_fixture(fixture)['opening_decision_manifest'] == manifest
+        with postgres_store.connection(read_only=True) as database:
+            snapshot = database.execute_native('SELECT * FROM opening_evidence_presentations WHERE card_id=%s', (fixture['card_id'],)).fetchone()
+            assert snapshot['trained_color'] is None
+            assert database.execute_native('SELECT effective_trained_color FROM opening_evidence_queue_contexts WHERE queue_entry_id=%s', (fixture['queue_id'],)).fetchone()[0] == trained_color
+        opposite = 'black' if trained_color=='white' else 'white'
+        with postgres_store.connection() as database:
+            database.execute('DELETE FROM repertoire_lines WHERE repertoire_id=?', (fixture['repertoire_id'],))
+            database.execute('INSERT INTO repertoire_lines(id,repertoire_id,name,trained_color,start_fen,moves_json,created_at) VALUES(?,?,?,?,?,?,?)',
+                             (fixture['card_id']+'-replacement', fixture['repertoire_id'], 'Changed line', opposite, snapshot['start_fen'], snapshot['moves_json'], fixture['now'].isoformat()))
+            database.execute_native('SELECT opening_evidence_bind_queue(%s,%s,%s)', (fixture['queue_id'], fixture['card_id'], fixture['repertoire_id']))
+        assert _transport_color_fixture(fixture, evidence=False)['trained_color'] == opposite
+        assert _transport_color_fixture(fixture)['opening_decision_manifest'] == manifest
+        assert _transport_color_fixture(fixture)['trained_color'] == trained_color
+        assert prepare_checkpoint(checkpoint) == manifest
+        with postgres_store.connection() as database:
+            assert persist_checkpoint(database, payload)['state'] == 'partial'
+            assert database.execute_native('SELECT COUNT(*) FROM opening_evidence_events WHERE attempt_id=%s', (checkpoint.attempt_id,)).fetchone()[0] == 1
+            assert database.execute_native('SELECT effective_trained_color FROM opening_evidence_queue_contexts WHERE queue_entry_id=%s', (fixture['queue_id'],)).fetchone()[0] == trained_color
+        with postgres_store.connection() as database:
+            replacement_moves = ['e2e4'] if opposite=='white' else ['e2e4','e7e5']
+            database.execute('UPDATE cards SET revision=2,moves_json=? WHERE id=?', (json.dumps(replacement_moves), fixture['card_id']))
+        replacement_manifest = _transport_color_fixture(fixture)['opening_decision_manifest']
+        assert replacement_manifest['trained_color'] == opposite
+        assert replacement_manifest['manifest_id'] != manifest['manifest_id']
+        assert replacement_manifest['presentation_snapshot_id'] != manifest['presentation_snapshot_id']
+        assert prepare_checkpoint(checkpoint) == manifest
+        _retain_color_provenance(fixture)
+        # Historical preparation survives deletion of mutable source/card/queue data.
+        assert prepare_checkpoint(checkpoint) == manifest
+        print('PASS test_postgres_legacy_opening_color_queue_checkpoint_round_trip '+trained_color)
+        print('PASS test_postgres_legacy_color_replay_survives_line_replacement '+trained_color)
+        print('PASS test_postgres_legacy_edit_captures_new_color_without_rewriting_history '+trained_color)
+    postgres_store.close_pools()
+
+
+def test_postgres_modern_color_wins_over_repertoire_fallback():
+    fixture = _create_color_fixture('black', card_color='white')
+    assert _transport_color_fixture(fixture, evidence=False)['trained_color'] == 'white'
+    _assert_color_round_trip(fixture, 'white')
+    _retain_color_provenance(fixture)
+    print('PASS test_postgres_modern_color_wins_over_repertoire_fallback')
+
+
+def test_postgres_shared_legacy_color_requires_authoritative_admission():
+    for trained_color in ('white', 'black'):
+        fixture = _create_color_fixture(trained_color, shared=True)
+        opposite = 'black' if trained_color=='white' else 'white'
+        assert _transport_color_fixture(fixture, evidence=False)['trained_color'] == opposite
+        with postgres_store.connection() as database:
+            unbound = database.execute("INSERT INTO daily_queue(queue_date,card_id,cycle,position,card_bucket) VALUES(?,?,2,2000,'opening') RETURNING id",
+                                       (date.today().isoformat(), fixture['card_id'])).fetchone()[0]
+        ambiguous = _transport_color_fixture(fixture, queue_id=unbound)
+        assert 'opening_decision_manifest' not in ambiguous
+        assert 'ambiguous' in ambiguous['opening_evidence_diagnostic']
+        with postgres_store.connection(read_only=True) as database:
+            assert not database.execute_native('SELECT 1 FROM opening_evidence_queue_contexts WHERE queue_entry_id=%s', (unbound,)).fetchone()
+        _assert_color_round_trip(fixture, trained_color)
+        _retain_color_provenance(fixture)
+        print('PASS test_postgres_shared_legacy_color_requires_authoritative_admission '+trained_color)
+
+
+def test_postgres_legacy_review_requeue_preserves_validated_color():
+    for trained_color in ('white', 'black'):
+        fixture = _create_color_fixture(trained_color)
+        manifest = _transport_color_fixture(fixture)['opening_decision_manifest']
+        completion = _color_checkpoint(fixture, manifest).model_dump(mode='json')
+        completion['terminal']['state'] = 'complete'
+        authoritative = prepare_checkpoint(OpeningEvidenceCheckpoint.model_validate(completion))
+        with postgres_store.connection() as database:
+            result = submit_review(database, {'card_id':fixture['card_id'],
+                'review':{'outcome':'correct','queue_entry_id':fixture['queue_id'],
+                         'attempt_id':completion['attempt_id'],'recorded_at':fixture['now'].isoformat(),
+                         'opening_evidence_completion':completion}, 'prepared_manifest':authoritative})
+            assert result['persisted'] and result['requeue_entry_id']
+            assert database.execute_native('SELECT effective_trained_color FROM opening_evidence_queue_contexts WHERE queue_entry_id=%s AND presentation_snapshot_id=%s AND repertoire_id=%s',
+                (result['requeue_entry_id'], manifest['presentation_snapshot_id'], fixture['repertoire_id'])).fetchone()[0] == trained_color
+        repeat_transport = _transport_color_fixture(fixture, queue_id=result['requeue_entry_id'])
+        assert repeat_transport['opening_decision_manifest'] == manifest
+        repeat = _color_checkpoint(fixture, manifest).model_dump(mode='json')
+        repeat.update(attempt_id=fixture['card_id']+'-repeat', origin_queue_entry_id=result['requeue_entry_id'],
+                      queue_entry_id=result['requeue_entry_id'], parent_attempt_id=completion['attempt_id'])
+        assert prepare_checkpoint(OpeningEvidenceCheckpoint.model_validate(repeat)) == manifest
+        _retain_color_provenance(fixture)
+        print('PASS test_postgres_legacy_review_requeue_preserves_validated_color '+trained_color)
+
+
+def test_postgres_missing_or_invalid_legacy_color_omits_context():
+    for line_color, card_color in [(None,None),('unknown',None),('white','unknown')]:
+        fixture = _create_color_fixture(line_color, card_color=card_color)
+        transport = _transport_color_fixture(fixture)
+        assert 'opening_decision_manifest' not in transport
+        assert 'trained color' in transport['opening_evidence_diagnostic']
+        with postgres_store.connection(read_only=True) as database:
+            assert not database.execute_native('SELECT 1 FROM opening_evidence_queue_contexts WHERE queue_entry_id=%s', (fixture['queue_id'],)).fetchone()
+        _retain_color_provenance(fixture)
+    print('PASS test_postgres_missing_or_invalid_legacy_color_omits_context')
+
+
+def test_postgres_legacy_color_line_order_is_deterministic():
+    fixture = _create_color_fixture('white', tied_lines=True)
+    _assert_color_round_trip(fixture, 'white')
+    _retain_color_provenance(fixture)
+    print('PASS test_postgres_legacy_color_line_order_is_deterministic')
+
+
 def test_postgres_shadow_replay_atomicity_and_scheduling_invariance():
     if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
         raise RuntimeError('Shadow rehearsal requires a disposable PostgreSQL instance')
@@ -268,4 +474,11 @@ def test_postgres_shadow_replay_atomicity_and_scheduling_invariance():
 
 if __name__=='__main__':
     if '--verify-persisted' in sys.argv:verify_persisted_shadow()
-    else:test_postgres_shadow_replay_atomicity_and_scheduling_invariance()
+    else:
+        test_postgres_legacy_opening_color_queue_checkpoint_round_trip()
+        test_postgres_modern_color_wins_over_repertoire_fallback()
+        test_postgres_shared_legacy_color_requires_authoritative_admission()
+        test_postgres_legacy_review_requeue_preserves_validated_color()
+        test_postgres_missing_or_invalid_legacy_color_omits_context()
+        test_postgres_legacy_color_line_order_is_deterministic()
+        test_postgres_shadow_replay_atomicity_and_scheduling_invariance()

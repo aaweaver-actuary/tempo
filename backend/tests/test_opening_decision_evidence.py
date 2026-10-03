@@ -1,5 +1,6 @@
 """Named regular-suite protections for the shadow evidence foundation."""
 import json
+import hashlib
 import pytest
 import chess
 from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
@@ -107,3 +108,18 @@ def test_study_day_uses_original_response_time_and_frozen_timezone():
     decisions=manifest()['decisions']
     observed=event(decisions,0,1,observed_at='2026-09-30T03:00:00Z')
     assert reduce_observations([observed],'America/New_York')[0]['study_day']=='2026-09-29'
+
+
+@pytest.mark.parametrize('trained_color', ['white', 'black'])
+def test_manifest_identity_preserves_captured_color_in_v1_hash(trained_color):
+    moves = ['e2e4'] if trained_color=='white' else ['e2e4','e7e5']
+    result = manifest(moves=moves, color=trained_color)
+    assert result == manifest(moves=moves, color=trained_color)
+    components = ['opening-decision-manifest',1,1,'rep','card',3,
+                  trained_color,chess.STARTING_FEN,json.dumps(moves)]
+    expected = hashlib.sha256(json.dumps(components,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    assert result['manifest_id'] == expected
+    components[6] = 'black' if trained_color=='white' else 'white'
+    opposite_identity = hashlib.sha256(json.dumps(components,sort_keys=True,separators=(',',':')).encode()).hexdigest()
+    assert result['manifest_id'] != opposite_identity
+    assert result['trained_color'] == trained_color
