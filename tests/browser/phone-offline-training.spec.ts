@@ -541,3 +541,37 @@ test("service worker update during an active phone attempt waits for a safe reop
   await expect(page.getByText(/Tempo update ready. Finish this attempt/)).toBeVisible();
   await expect(page.getByText("First phone card")).toBeVisible();
 });
+
+
+test("iphone offline fallback excludes a conflicted card across revision and queue changes", async ({ page }) => {
+  const cards = [{ ...preparedCards[0], revision: 2, queue_entry_id: 601 },
+    { ...preparedCards[1], revision: 1, first_correct_at: new Date().toISOString() }];
+  const payload = { local_date: localDate, count: cards.length, cards };
+  await page.route("**/api/queue/window?**", (route) => route.fulfill({ json: payload }));
+  await page.route("**/api/queue/prepared", (route) => route.fulfill({ json: {
+    ...payload, prepared_at: new Date().toISOString(),
+    projection: { state: "ready", generation: 1, updated_at: null, refresh_pending: 0, last_error: null, blocked_count: 0 },
+  } }));
+  await page.goto("/");
+  await expectPhoneQueuePrepared(page);
+  await page.waitForFunction(() => Boolean(navigator.serviceWorker?.controller));
+  const retainedConflict = { backendId: "phone-first", queueEntryId: 501, expectedRevision: 1,
+    attemptId: "original-conflicted-A", completedAt: "2026-10-03T12:00:00Z", outcome: "correct",
+    guided: false, state: "conflicted", reconciliationSequence: 1,
+    conflict: { code: "card_revision_changed", message: "Card changed after this result", retryable: false } };
+  await page.evaluate((conflict) => localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([conflict])), retainedConflict);
+  await page.route("**/api/**", (route) => route.abort("internetdisconnected"));
+  await page.reload();
+  await expect(page.getByText("Second phone card")).toBeVisible();
+  await expect(page.getByText("First phone card")).toHaveCount(0);
+  await expect(page.getByRole("main").getByText(/Offline queue prepared/)).toBeVisible();
+  expect((await readSavedPhoneQueue(page))?.attempts).toEqual([]);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1")!))).toEqual([retainedConflict]);
+  await page.getByRole("button", { name: "Correct" }).click();
+  await expect.poll(async () => (await readSavedPhoneQueue(page))?.attempts.map((attempt) => attempt.cardId)).toEqual(["phone-second"]);
+  await expect(page.getByText("First phone card")).toHaveCount(0);
+  expect(await page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1")!))).toEqual([retainedConflict]);
+  await page.reload();
+  await expect(page.getByText("First phone card")).toHaveCount(0);
+  expect((await readSavedPhoneQueue(page))?.attempts.map((attempt) => attempt.cardId)).toEqual(["phone-second"]);
+});

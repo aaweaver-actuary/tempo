@@ -82,7 +82,7 @@ import SavedLocallyButton from "../components/buttons/SavedLocallyButton";
 import DemoBanner from "../components/DemoBanner";
 import TrainingView from "./training_view";
 import StudiesView from "./studies_view";
-import { fetchAndInitializeQueue, invalidateTrainingQueueCache } from "./fetchAndInitializeQueue";
+import { loadEligibleOfflineQueue, fetchAndInitializeQueue, invalidateTrainingQueueCache } from "./fetchAndInitializeQueue";
 import {
   enqueuePendingReview,
   flushPendingReviews,
@@ -91,7 +91,7 @@ import {
   ReviewReplayError,
   type PendingReview,
 } from "../lib/review-outbox";
-import { describeOfflineQueue, markOfflineAttemptFailed, recordOfflineAttempt, requiresConnectedGrading } from "../lib/offline-training";
+import { describeOfflineQueue, markOfflineAttemptFailed, recordOfflineAttempt } from "../lib/offline-training";
 import { enqueueTrainingFailure, flushTrainingFailures } from "../lib/training-failure-outbox";
 import { Settings } from "../utils/settings";
 import { TreeBrowser } from "./tree_browser";
@@ -944,12 +944,7 @@ export default function Home() {
           card.queueEntryId, outcome,
           attemptFailed || useTrainingStore.getState().assistedThisAttempt,
         );
-        const availableCards = saved.cards.filter((queuedCard) => !requiresConnectedGrading(queuedCard));
-        const nextCards = await runStudyTask<typeof practiceCards>({
-          kind: "queue", payload: {
-            cards: availableCards, count: availableCards.length, local_date: saved.localDate,
-          },
-        });
+        const nextCards = await loadEligibleOfflineQueue(saved);
         useTrainingStore.getState().hydrateLocalQueue(nextCards, true, nextCards.length);
         setReviewed((count) => count + 1);
         setReviewPersistenceState("idle");

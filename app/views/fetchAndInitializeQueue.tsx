@@ -5,7 +5,7 @@ import { runStudyTask } from "../lib/background-study";
 import type { PracticeCard } from "../domain/cards";
 import { reportDebugError } from "../lib/debug-reporting";
 import { conflictedReviews, flushPendingReviews, pendingReviews, ReviewReplayError, updateReviewConflictNotice } from "../lib/review-outbox";
-import { describeOfflineQueue, OfflineReplayError, readPreparedTraining, replayOfflineAttempts, requiresConnectedGrading, savePreparedTraining } from "../lib/offline-training";
+import { describeOfflineQueue, OfflineReplayError, readPreparedTraining, replayOfflineAttempts, requiresConnectedGrading, savePreparedTraining, type OfflineAttempt, type PreparedTraining } from "../lib/offline-training";
 import { waitForOfflineShell } from "../lib/offline-shell";
 import { flushTrainingFailures, pendingTrainingFailures, pendingTrainingFailureContexts } from "../lib/training-failure-outbox";
 import { hydrateNotifications, notifications, publishNotification, resolveNotification, updateNotification, type NotificationSeverity } from "../lib/notifications";
@@ -13,6 +13,38 @@ import { hydrateNotifications, notifications, publishNotification, resolveNotifi
 let requestGeneration = 0;
 let activeQueueController: AbortController | null = null;
 const queueCacheKey = "tempo-training-queue-window-v2";
+
+function eligibleQueueCards(
+  cards: PracticeCard[], phoneAttempts: readonly OfflineAttempt[] = [], localRepeatQueueIds: ReadonlySet<number> = new Set(),
+): PracticeCard[] {
+  const pendingResults = pendingReviews();
+  const conflictedCardIds = new Set(conflictedReviews().map((review) => review.backendId));
+  const unacknowledgedPhoneCardIds = new Set(phoneAttempts
+    .filter((attempt) => !attempt.serverReviewId && !attempt.serverAcknowledged)
+    .map((attempt) => attempt.cardId));
+  return cards.filter((card) => {
+    const backendCardId = String(card.backendId ?? card.id);
+    return !pendingResults.some((review) => review.queueEntryId === card.queueEntryId && review.backendId === backendCardId) &&
+      !conflictedCardIds.has(backendCardId) &&
+      (!unacknowledgedPhoneCardIds.has(backendCardId) || localRepeatQueueIds.has(Number(card.queueEntryId)));
+  });
+}
+
+export async function loadEligibleOfflineQueue(prepared: PreparedTraining): Promise<PracticeCard[]> {
+  // Keep local reinforcement already linked to its saved parent attempt. A
+  // revised or unrelated projection cannot inherit that offline continuation.
+  const localRepeatQueueIds = new Set(prepared.cards.filter((card) => {
+    const parent = prepared.attempts.find((attempt) => attempt.localEntryId === card.parent_local_entry_id);
+    return parent && !parent.conflict && parent.cardId === card.id &&
+      parent.expectedRevision === (card.revision ?? 1) && (parent.queueCycle ?? 0) + 1 === (card.cycle ?? 0) &&
+      !prepared.attempts.some((attempt) => attempt.cardId === card.id && attempt.conflict);
+  }).map((card) => Number(card.queue_entry_id)));
+  const supportedCards = prepared.cards.filter((card) => !requiresConnectedGrading(card));
+  const cards = await runStudyTask<PracticeCard[]>({
+    kind: "queue", payload: { cards: supportedCards, count: supportedCards.length, local_date: prepared.localDate },
+  });
+  return eligibleQueueCards(cards, prepared.attempts, localRepeatQueueIds);
+}
 
 function showQueueNotice(message: string, severity: NotificationSeverity = "info") {
   useTrainingStore.getState().setQueueNotice(message);
@@ -142,15 +174,6 @@ export async function fetchAndInitializeQueue(
   let failedEndpoint: string | undefined;
   let queueRequestFailed = false;
   try {
-    let pendingOfflineCardIds = new Set<string>();
-    const withoutPendingReviews = (cards: PracticeCard[]) => {
-      const pendingResults = pendingReviews();
-      const conflictedCardIds = new Set(conflictedReviews().map((review) => review.backendId));
-      return cards.filter((card) =>
-        !pendingResults.some((review) => review.queueEntryId === card.queueEntryId && review.backendId === String(card.backendId ?? card.id)) &&
-        !conflictedCardIds.has(String(card.backendId ?? card.id)) &&
-        !pendingOfflineCardIds.has(String(card.backendId ?? card.id)));
-    };
     const pendingFailureContexts = pendingTrainingFailureContexts();
     const pendingFailureEntries = new Set(pendingFailureContexts.map((item) => item.queueEntryId));
     let failureSaveError: string | null = null;
@@ -168,7 +191,7 @@ export async function fetchAndInitializeQueue(
           if (cached.local_date === localDayKey() && cached.cards?.length) {
             const cachedCards = await runStudyTask<PracticeCard[]>({ kind: "queue", payload: cached });
             if (generation === requestGeneration) {
-              const availableCards = withoutPendingReviews(retainPendingFailures(cachedCards));
+              const availableCards = eligibleQueueCards(retainPendingFailures(cachedCards), savedPreparedQueue?.attempts);
               useTrainingStore.getState().hydrateLocalQueue(
                 availableCards, false, Math.max(0, (cached.count ?? cachedCards.length) - (cachedCards.length - availableCards.length)),
               );
@@ -215,9 +238,6 @@ export async function fetchAndInitializeQueue(
         });
       }
     }
-    pendingOfflineCardIds = new Set((replayed ?? savedPreparedQueue)?.attempts
-      .filter((attempt) => !attempt.serverReviewId && !attempt.serverAcknowledged)
-      .map((attempt) => attempt.cardId) ?? []);
     if (pendingReviews().length) {
       try {
         await flushPendingReviews();
@@ -257,7 +277,7 @@ export async function fetchAndInitializeQueue(
       payload: raw,
     });
     if (generation !== requestGeneration) return;
-    const availableCards = withoutPendingReviews(retainPendingFailures(cards));
+    const availableCards = eligibleQueueCards(retainPendingFailures(cards), (replayed ?? savedPreparedQueue)?.attempts);
     useTrainingStore.getState().hydrateLocalQueue(
       availableCards, advance, Math.max(0, (raw.count ?? cards.length) - (cards.length - availableCards.length)),
     );
@@ -315,7 +335,7 @@ export async function fetchAndInitializeQueue(
             projection: payload.projection,
           } });
           if (generation !== requestGeneration) return null;
-          const availableCards = withoutPendingReviews(retainPendingFailures(completeCards));
+          const availableCards = eligibleQueueCards(retainPendingFailures(completeCards), prepared.attempts);
           useTrainingStore.getState().hydrateLocalQueue(
             availableCards, false, Math.max(0, prepared.cards.length - (completeCards.length - availableCards.length)),
           );
@@ -359,15 +379,9 @@ export async function fetchAndInitializeQueue(
         );
         throw error;
       }
-      const pendingResults = pendingReviews();
-      const supportedCards = prepared.cards.filter((card) =>
-        !requiresConnectedGrading(card) &&
-        !pendingResults.some((review) => review.queueEntryId === card.queue_entry_id && review.backendId === card.id));
-      const cards = await runStudyTask<PracticeCard[]>({
-        kind: "queue", payload: { cards: supportedCards, count: supportedCards.length, local_date: prepared.localDate },
-      });
+      const availableCards = await loadEligibleOfflineQueue(prepared);
       if (generation !== requestGeneration) return;
-      useTrainingStore.getState().hydrateLocalQueue(cards, advance, cards.length);
+      useTrainingStore.getState().hydrateLocalQueue(availableCards, advance, availableCards.length);
       useTrainingStore.getState().setOfflineQueue(true);
       showQueueNotice(`${describeOfflineQueue(prepared)} Live service: ${String(error)}. Retry sync when connected.`, "warning");
       return;

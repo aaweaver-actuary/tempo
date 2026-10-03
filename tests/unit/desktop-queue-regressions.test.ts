@@ -1,6 +1,6 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { waitFor } from "@testing-library/react";
-import { fetchAndInitializeQueue } from "../../app/views/fetchAndInitializeQueue";
+import { fetchAndInitializeQueue, loadEligibleOfflineQueue } from "../../app/views/fetchAndInitializeQueue";
 import { useTrainingStore } from "../../app/state/training-store";
 import { clearDebugErrors, debugErrors } from "../../app/lib/debug-reporting";
 import { enqueuePendingReview } from "../../app/lib/review-outbox";
@@ -14,6 +14,7 @@ const offlineTrainingMocks = vi.hoisted(() => ({
   readPreparedTraining: vi.fn(),
   replayOfflineAttempts: vi.fn(),
 }));
+vi.mock("../../app/lib/offline-shell", () => ({ waitForOfflineShell: vi.fn().mockResolvedValue(undefined) }));
 vi.mock("../../app/lib/offline-training", async (importOriginal) => ({
   ...await importOriginal<typeof import("../../app/lib/offline-training")>(),
   readPreparedTraining: offlineTrainingMocks.readPreparedTraining,
@@ -151,4 +152,61 @@ it("old guided marker cannot label replacement content sharing its queue ID", as
   await fetchAndInitializeQueue();
   expect(useTrainingStore.getState().getCard().backendId).toBe("replacement-card");
   expect(useTrainingStore.getState().isAttemptFailed).toBe(false);
+});
+
+
+afterEach(() => vi.unstubAllGlobals());
+
+it("iphone fallback applies conflict card identity pending pair identity and unacknowledged phone exclusions", async () => {
+  vi.stubGlobal("navigator", { userAgent: "iPhone", standalone: true });
+  const rawCard = (id: string, queueEntryId: number) => ({ id, queue_entry_id: queueEntryId,
+    revision: 2, start_fen: startingFen, moves: ["d2d4"], content_type: "opening",
+    repertoire_name: id, repertoire_source: "PGN" });
+  const conflict = { backendId: "conflicted-A", queueEntryId: 801, outcome: "correct", guided: false,
+    attemptId: "original-A", completedAt: "2026-10-03T12:00:00Z", expectedRevision: 1,
+    state: "conflicted", reconciliationSequence: 1,
+    conflict: { code: "card_revision_changed", message: "Content changed", retryable: false } };
+  localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([conflict]));
+  enqueuePendingReview({ backendId: "pending-E", queueEntryId: 805, outcome: "correct", guided: false });
+  const prepared = { localDate: localDayKey(), preparedAt: new Date().toISOString(), nextTemporaryId: -1,
+    cards: [rawCard("conflicted-A", 901), rawCard("independent-B", 802), rawCard("unsynced-C", 803),
+      { ...rawCard("connected-D", 804), content_type: "defense" }, rawCard("pending-E", 805),
+      rawCard("replacement-F", 805), rawCard("pending-E", 905), rawCard("acknowledged-G", 806)],
+    attempts: [{ localEntryId: 703, cardId: "unsynced-C", outcome: "correct", guided: false,
+      completedAt: "2026-10-03T12:00:00Z", expectedReviewId: 0, expectedRevision: 1, conflict: "Review changed" },
+      { localEntryId: 706, cardId: "acknowledged-G", outcome: "correct", guided: false,
+        completedAt: "2026-10-03T12:00:00Z", expectedReviewId: 0, expectedRevision: 1, serverAcknowledged: true }],
+  };
+  offlineTrainingMocks.readPreparedTraining.mockResolvedValue(prepared);
+  offlineTrainingMocks.replayOfflineAttempts.mockRejectedValue(new TypeError("Offline"));
+  vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new TypeError("Offline")));
+  await fetchAndInitializeQueue();
+  expect(useTrainingStore.getState().isOfflineQueueActive).toBe(true);
+  expect(useTrainingStore.getState().practiceCards.map((card) => card.backendId)).toEqual([
+    "independent-B", "replacement-F", "pending-E", "acknowledged-G",
+  ]);
+  expect(useTrainingStore.getState().cardsLeft).toBe(4);
+  expect(JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1")!).find(
+    (review: { backendId: string }) => review.backendId === "conflicted-A")).toEqual(conflict);
+  expect(prepared.attempts).toHaveLength(2);
+});
+
+
+it("offline eligibility preserves only linked unchanged reinforcement while retaining conflicts", async () => {
+  const rawCard = { id: "local-repeat", queue_entry_id: 1000, parent_local_entry_id: 800, cycle: 1,
+    revision: 1, start_fen: startingFen, moves: ["e2e4"], content_type: "opening" as const,
+    repertoire_name: "Local repeat", repertoire_source: "PGN" };
+  const parent = { localEntryId: 800, cardId: "local-repeat", expectedRevision: 1, queueCycle: 0,
+    expectedReviewId: 0, completedAt: "2026-10-03T12:00:00Z", outcome: "correct" as const, guided: false };
+  const prepared = { localDate: localDayKey(), preparedAt: new Date().toISOString(), nextTemporaryId: 1001,
+    cards: [rawCard], attempts: [parent] };
+  expect((await loadEligibleOfflineQueue(prepared)).map((card) => card.queueEntryId)).toEqual([1000]);
+  expect(await loadEligibleOfflineQueue({ ...prepared, cards: [{ ...rawCard, revision: 2 }] })).toEqual([]);
+  expect(await loadEligibleOfflineQueue({ ...prepared, cards: [{ ...rawCard, parent_local_entry_id: 999 }] })).toEqual([]);
+  expect(await loadEligibleOfflineQueue({ ...prepared, attempts: [{ ...parent, conflict: "Content changed" }] })).toEqual([]);
+  localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([{ backendId: "local-repeat",
+    queueEntryId: 799, attemptId: "retained-conflict", completedAt: parent.completedAt, expectedRevision: 1,
+    outcome: "correct", guided: false, state: "conflicted", reconciliationSequence: 1,
+    conflict: { code: "card_revision_changed", message: "Content changed", retryable: false } }]));
+  expect(await loadEligibleOfflineQueue(prepared)).toEqual([]);
 });
