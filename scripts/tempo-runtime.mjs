@@ -3,7 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { basename, join } from "node:path";
-import { atomicJson, deploymentCanStart, redact, validateContainers, validateTarget } from "./tempo-deployment.mjs";
+import { atomicJson, deploymentCanStart, redact, targetKey, validateContainers, validateTarget } from "./tempo-deployment.mjs";
 
 export const applicationServices = ["web", "defense-engine", "maia-worker", "api",
   "foreground-worker", "background-worker", "background-scheduler"];
@@ -19,6 +19,9 @@ export function configurationFingerprint(configured) {
 }
 
 export async function executeLifecycle(plan, actions) {
+  // Authorization/guard failures must not replace the previous operation's
+  // evidence, especially an older failed attempt without a durable guard.
+  const migrationVerificationRequired = await actions.checkMigrationRetry?.();
   let interruptedApplications = false;
   try {
     const imagePreparation = await actions.ensureImages();
@@ -31,15 +34,16 @@ export async function executeLifecycle(plan, actions) {
     }
     await actions.ensureDatabase({ allowRecreation: allowDependencyRecreation });
     const status = await actions.checkSchema();
-    if (status.pending_versions.length) {
+    if (status.pending_versions.length || migrationVerificationRequired) {
       if (!interruptedApplications) {
         interruptedApplications = true;
         await actions.stopApplications();
       }
-      await actions.backup();
+      if (!migrationVerificationRequired) await actions.backup();
       await actions.migrate();
       const updated = await actions.checkSchema();
       if (updated.pending_versions.length) throw new Error("Migrations did not reach the required schema version.");
+      await actions.resolveMigrationGuard?.();
     }
     interruptedApplications = true;
     await actions.startServices({ recreate: Boolean(plan.recreate) });
@@ -56,7 +60,7 @@ export async function executeLifecycle(plan, actions) {
 }
 
 export function createRuntime(target, { run, stateDirectory, revision, evidence, previous = null,
-  fallback = false, preparedImages = null, log = console.log, fetcher = fetch, readinessMilliseconds = 180_000 }) {
+  fallback = false, preparedImages = null, retry = false, log = console.log, fetcher = fetch, readinessMilliseconds = 180_000 }) {
   let composeFiles = fallback ? previous.composeFiles : target.composeFiles;
   let imageOverride = fallback ? previous.imageOverride : null;
   let configuration;
@@ -67,6 +71,9 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   let stoppedServices = [];
   const secretValues = [];
   const journalPath = join(stateDirectory, "operation.json");
+  const guardPath = join(stateDirectory, "migration-guard.json");
+  let migrationGuard = existsSync(guardPath) ? JSON.parse(readFileSync(guardPath, "utf8")) : null;
+  let originalHistoryVerified = false;
   const operation = { id: randomUUID(), revision, started_at: new Date().toISOString(), phase: "checking", target: target.project };
   const docker = (args, options) => run("docker", ["--context", target.context, ...args], options);
   const compose = (args, options) => docker(["compose", "--project-directory", target.root,
@@ -129,7 +136,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
       await config();
       if (Object.entries(configuration.services).some(([name, service]) => service.image !== images[name]))
         throw new Error("Saved Compose image receipt differs from its recorded immutable images.");
-      return { dependenciesMayChange: !(await recordedDependenciesMatch()) };
+        return { dependenciesMayChange: !(await recordedDependenciesMatch()) };
     }
     stage("preparing_images");
     const releaseDirectory = join(stateDirectory, "releases", `${revision}-${operation.id}`);
@@ -226,7 +233,43 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     if (!status.credentials_ready) throw new Error("PostgreSQL reader/writer credentials did not pass the maintenance check.");
     if (fallback && !deploymentCanStart(previous, status.applied_versions.at(-1), Object.values(images)))
       throw new Error("The previous deployment is incompatible with the current database. Preserve the backup and fix forward with compatible code.");
+    if (migrationGuard?.state === "pending") {
+      const currentSchema = status.applied_versions.at(-1);
+      if (status.expected_version < migrationGuard.intended_schema || currentSchema < migrationGuard.starting_schema
+        || currentSchema > status.expected_version
+        || migrationGuard.starting_versions.some((version, index) => status.applied_versions[index] !== version))
+        throw new Error(`Candidate schema/ledger cannot safely continue the original migration. Preserve backup ${migrationGuard.backup.filename} and fix forward with compatible code.`);
+    }
     return status;
+  }
+
+  function checkMigrationRetry() {
+    // Read under the maintenance lock, including the backup path whose runtime
+    // was created during the earlier read-only inspection.
+    migrationGuard = existsSync(guardPath) ? JSON.parse(readFileSync(guardPath, "utf8")) : null;
+    if (migrationGuard) {
+      const database = { name: configuration.services.postgres.environment.POSTGRES_DB,
+        volume: target.volumes[target.postgresVolumeKey].name };
+      if (migrationGuard.version !== 1 || migrationGuard.target !== targetKey(target)
+        || migrationGuard.database?.name !== database.name || migrationGuard.database?.volume !== database.volume
+        || !["pending", "verified"].includes(migrationGuard.state)
+        || !Number.isInteger(migrationGuard.starting_schema) || !Number.isInteger(migrationGuard.intended_schema)
+        || migrationGuard.starting_schema < 1 || migrationGuard.intended_schema < migrationGuard.starting_schema
+        || !Array.isArray(migrationGuard.starting_versions) || migrationGuard.starting_versions.length !== migrationGuard.starting_schema
+        || migrationGuard.starting_versions.some((version, index) => version !== index + 1) || !migrationGuard.study_invariants
+        || !migrationGuard.backup?.verified || !migrationGuard.backup.filename)
+        throw new Error("Migration guard is invalid or belongs to another database. Preserve the guard and backup; inspect tempo doctor before recovery.");
+      if (migrationGuard.state === "pending") {
+        if (!retry) throw new Error(`Previous migration failed or was interrupted. Inspect tempo doctor and original backup ${migrationGuard.backup.filename}, fix the cause, then explicitly run tempo migrate --retry.`);
+        return true;
+      }
+    } else if (existsSync(journalPath)) {
+      const previousOperation = JSON.parse(readFileSync(journalPath, "utf8"));
+      if (previousOperation.phase === "applying_migrations"
+        || (previousOperation.phase === "failed" && previousOperation.failed_phase === "applying_migrations"))
+        throw new Error("Previous migration failed or was interrupted without a durable original guard. Preserve the original backup and operation; inspect tempo doctor and recover its original history before tempo migrate --retry.");
+    }
+    return false;
   }
 
   async function runningServices() {
@@ -273,14 +316,52 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   }
 
   async function migrate() {
+    originalHistoryVerified = false;
     stage("applying_migrations");
-    operation.study_invariants = JSON.parse((await maintenance("scripts/verify_postgres_cli_state.py")).stdout);
+    if (migrationGuard?.state !== "pending") {
+      if (!backupRecord?.verified) throw new Error("Migration requires a restore-verified backup before capturing history.");
+      // H0 belongs to this database attempt, not to a process or revision.
+      // Persist it before any migration transaction can commit. Retries never
+      // replace it, including when the ledger already reached the target.
+      migrationGuard = { version: 1, target: targetKey(target),
+        database: { name: configuration.services.postgres.environment.POSTGRES_DB, volume: target.volumes[target.postgresVolumeKey].name },
+        attempt_id: operation.id, origin_revision: revision, starting_schema: status.applied_versions.at(-1),
+        starting_versions: status.applied_versions, intended_schema: status.expected_version,
+        study_invariants: JSON.parse((await maintenance("scripts/verify_postgres_cli_state.py")).stdout),
+        backup: backupRecord, state: "pending", created_at: new Date().toISOString() };
+    }
+    migrationGuard.last_attempted_revision = revision;
+    migrationGuard.last_attempted_at = new Date().toISOString();
+    atomicJson(guardPath, migrationGuard);
+    operation.study_invariants = migrationGuard.study_invariants;
+    operation.backup = migrationGuard.backup;
     atomicJson(journalPath, operation);
-    await maintenance("scripts/apply_postgres_migrations.py", [], { echo: true });
-    await maintenance("scripts/verify_postgres_cli_state.py", ["--expected", JSON.stringify(operation.study_invariants)]);
+    if (status.pending_versions.length) await maintenance("scripts/apply_postgres_migrations.py", [], { echo: true });
+    try {
+      await maintenance("scripts/verify_postgres_cli_state.py", ["--expected", JSON.stringify(migrationGuard.study_invariants)]);
+      originalHistoryVerified = true;
+    } catch (error) {
+      throw new Error(`Original migration history verification failed; keep writers stopped. Preserve backup ${migrationGuard.backup.filename} and guard ${guardPath}. ${error.message}`, { cause: error });
+    }
+  }
+
+  function resolveMigrationGuard() {
+    if (migrationGuard?.state !== "pending" || !originalHistoryVerified || status.pending_versions.length
+      || status.applied_versions.at(-1) !== status.expected_version)
+      throw new Error("Original migration verification is unresolved; keep writers stopped.");
+    migrationGuard.state = "verified";
+    migrationGuard.verified_at = new Date().toISOString();
+    migrationGuard.verified_schema = status.expected_version;
+    atomicJson(guardPath, migrationGuard);
+    backupRecord = migrationGuard.backup;
+  }
+
+  function requireVerifiedMigration() {
+    if (migrationGuard?.state === "pending") throw new Error("Original migration verification is unresolved; keep writers stopped.");
   }
 
   async function startServices({ recreate = false } = {}) {
+    requireVerifiedMigration();
     stage("starting_services");
     const workers = ["foreground-worker", "background-worker", "background-scheduler", "api"].filter(name => configuration.services[name]);
     await compose(["up", "-d", "--no-build", "--no-deps", ...(recreate ? ["--force-recreate"] : []), "--wait", "--wait-timeout", "180", ...workers], { echo: true });
@@ -313,6 +394,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   }
 
   async function commitDeployment() {
+    requireVerifiedMigration();
     const record = { version: 1, revision, schema: status.expected_version, images, composeFiles,
       imageOverride, configFingerprint: configurationFingerprint(configuration), evidence: evidence ?? previous?.evidence,
       verified_at: new Date().toISOString(), ...((backupRecord ?? previous?.backup) ? { backup: backupRecord ?? previous.backup } : {}) };
@@ -341,6 +423,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   }
 
   async function backupOnly() {
+    if (checkMigrationRetry()) throw new Error("Original migration verification is unresolved. Inspect tempo doctor, then run tempo migrate --retry before taking another backup.");
     const originallyRunning = await runningServices();
     const imagePreparation = await ensureImages();
     if (imagePreparation.dependenciesMayChange) {
@@ -365,6 +448,6 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
   }
 
   return { config, inspectTarget, compose, docker, runningServices, ensureImages, ensureDatabase,
-    checkSchema, stopApplications, backup, migrate, startServices, verifyReady, commitDeployment,
+    checkSchema, checkMigrationRetry, resolveMigrationGuard, stopApplications, backup, migrate, startServices, verifyReady, commitDeployment,
     recordFailure, stopAll, backupOnly, secretValues, get configuration() { return configuration; } };
 }

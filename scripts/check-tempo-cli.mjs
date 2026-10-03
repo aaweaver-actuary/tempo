@@ -95,9 +95,35 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     assert.equal(legacyTacticalRow.content_type, "tactics");
     assert.equal(legacyTacticalRow.repertoire_id, "__game_tactics__", "fixture satisfies migration 025's predicate");
     const preparedImages = { revision, images, configFingerprint: configurationFingerprint(config) };
-    const runtime = createRuntime(target, { run, stateDirectory, revision, evidence, preparedImages });
+    // Commit the real schema-16 upgrade, then inject an unexpected historical
+    // mutation before the genuine verifier reads it. The current ledger must
+    // not let the next process skip its original H0 obligation.
+    const mutatingRun = async (command, args, options) => {
+      const result = await run(command, args, options);
+      if (args.includes("scripts/apply_postgres_migrations.py") && !args.includes("--check"))
+        await compose(["exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo", "-c",
+          "UPDATE reviews SET rating='incorrect' WHERE card_id='cli-history'"]);
+      return result;
+    };
+    const runtime = createRuntime(target, { run: mutatingRun, stateDirectory, revision, evidence, preparedImages });
     await runtime.inspectTarget();
-    await executeLifecycle({ recreate: true }, runtime);
+    await assert.rejects(executeLifecycle({ recreate: true }, runtime), /Original migration history verification failed/);
+    const originalGuard = JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8"));
+    assert.equal(originalGuard.state, "pending");
+    const failedReceipt = await compose(["exec", "-T", "postgres", "psql", "-tA", "-U", "postgres", "-d", "tempo", "-c", "SELECT MAX(version) FROM tempo_schema_migrations"]);
+    assert.equal(Number(failedReceipt.stdout.trim()), schemaVersionFromSource(readFileSync("backend/app/schema_version.py", "utf8")));
+    const retryRuntime = () => createRuntime(target, { run, stateDirectory, revision, evidence, preparedImages, retry: true });
+    const failedRetry = retryRuntime(); await failedRetry.inspectTarget();
+    const retryStart = commandLog.length;
+    await assert.rejects(executeLifecycle({ recreate: false }, failedRetry), /Original migration history verification failed/);
+    assert(!commandLog.slice(retryStart).some(call => call.args.includes("scripts/verify_postgres_cli_state.py") && !call.args.includes("--expected")));
+    assert(!commandLog.slice(retryStart).some(call => call.args.includes("scripts/apply_postgres_migrations.py") && !call.args.includes("--check")));
+    assert.deepEqual(JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8")).study_invariants, originalGuard.study_invariants);
+    assert(!(await failedRetry.runningServices()).includes("api"));
+    await compose(["exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "tempo", "-c", "UPDATE reviews SET rating='correct' WHERE card_id='cli-history'"]);
+    const repairedRetry = retryRuntime(); await repairedRetry.inspectTarget();
+    await executeLifecycle({ recreate: false }, repairedRetry);
+    assert.equal(JSON.parse(readFileSync(join(stateDirectory, "migration-guard.json"), "utf8")).state, "verified");
     const record = JSON.parse(readFileSync(join(stateDirectory, "deployment.json"), "utf8"));
     assert.equal(record.schema, schemaVersionFromSource(readFileSync("backend/app/schema_version.py", "utf8")));
     assert.equal(record.backup.verified, true);
@@ -167,7 +193,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     const running = await rejected.runningServices();
     assert(!running.some(name => ["api", "foreground-worker", "background-worker", "web", "defense-engine", "maia-worker"].includes(name)));
     assert.deepEqual(await readHistory(), expected, "rejected DDL preserves original study history");
-    console.log("PASS Tempo CLI populated 16-to-current upgrade permits migration 025 normalization, restores backup, quiesces before dependencies, corrects uncommitted/missing fallback dependencies, and preserves repeat/restart/rejected-migration history");
+    console.log("PASS Tempo CLI populated 16-to-current upgrade permits migration 025 normalization, retains original H0 through committed-schema failure/retry/repair, restores backup, quiesces before dependencies, corrects uncommitted/missing fallback dependencies, and preserves repeat/restart/rejected-migration history");
   } catch (error) { failure = error; }
   finally {
     try {

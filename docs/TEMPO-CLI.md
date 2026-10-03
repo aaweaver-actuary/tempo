@@ -67,7 +67,10 @@ stopped and records no successful deployment.
 
 For migrations, application services and recurring backups stop first. A new
 custom-format backup gets a checksum, an isolated restore, and a comparison of
-every public table. Only then do ordered migrations run. Required schema,
+every public table. The CLI then atomically saves the original history digest,
+counts, column contract, starting/intended schema, target/database identity, and
+verified backup reference in `migration-guard.json` before any migration commits.
+Only then do ordered migrations run. Required schema,
 workers, PostgreSQL API health, the web endpoint, and service state must pass
 before success is recorded. Database volumes, Redis state, and engine journals
 remain intact.
@@ -99,6 +102,15 @@ create an empty database, discard local changes, or skip release checks.
 
 A failed migration leaves application services stopped. Inspect the failure
 and ledger, repair the cause, then explicitly run `tempo migrate --retry`.
+Retry continues the same history-verification obligation: it reuses the original
+fingerprint and backup, applies only remaining migrations, and verifies the original
+history even when the ledger is already current. New candidate revisions require
+the same explicit retry and compatible schema/ledger. The guard is atomically
+marked verified only after original history and required schema pass, before
+application startup. Failed verification retains the original guard and backup,
+keeps writers stopped, and cannot publish deployment success. `tempo doctor`
+shows this obligation and backup reference. Do not delete the guard to resume;
+inspect and fix forward, or use a separate explicit recovery procedure.
 An interrupted maintenance run retains its progress and backup location. A
 temporary restore database left by failure is retained for inspection; the
 CLI drops only the database it created during a successfully verified drill.

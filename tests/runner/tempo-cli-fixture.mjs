@@ -36,7 +36,8 @@ export function cliFixture(mode = "upgrade") {
     schema: mode === "upgrade" || mode === "migration-fail" ? 28 : 29, images, composeFiles: [composeFile], imageOverride,
     evidence: { commit: oldRevision, url: "https://github.com/fixture/verified" }, verified_at: "2026-10-01" }));
   writeFileSync(join(directory, "fixture.json"), JSON.stringify({ mode, root, names, target, config, revision }));
-  writeFileSync(join(directory, "machine.json"), JSON.stringify({ schema: mode === "upgrade" || mode === "migration-fail" ? 28 : 29,
+  writeFileSync(join(directory, "machine.json"), JSON.stringify({ schema: mode === "partial-fail" ? 26 : ["upgrade", "migration-fail", "history-fail", "interrupted"].includes(mode) ? 28 : 29,
+    history: "preserved", migrationVersions: [],
     head: ["race-dirty", "race-head"].includes(mode) ? "c".repeat(40) : revision,
     containers: ["postgres", "redis"].map(name => ({ Id: `container-${name}`, Image: images[name],
       Config: { Image: `untrusted-tag-${name}`, Labels: { "com.docker.compose.project": "tempo",
@@ -129,11 +130,27 @@ async function fakeCommand() {
   if (args.includes("psql")) { output(Array.from({ length: machine.schema }, (_, index) => index + 1).join("\n")); process.exit(0); }
   if (args.includes("scripts/apply_postgres_migrations.py")) {
     if (args.includes("--check")) output({ expected_version: 29, applied_versions: Array.from({ length: machine.schema }, (_, index) => index + 1),
-      pending_versions: machine.schema === 29 ? [] : [29], initialized: true, roles_ready: fixture.mode !== "status-fail", credentials_ready: true });
-    else { machine.migrations++; save(); if (fixture.mode === "migration-fail") { console.error("migration failed"); process.exit(17); } machine.schema = 29; save(); }
+      pending_versions: Array.from({ length: 29 - machine.schema }, (_, index) => machine.schema + index + 1), initialized: true, roles_ready: fixture.mode !== "status-fail", credentials_ready: true });
+    else {
+      if (fixture.mode === "interrupted") { process.kill(process.ppid, "SIGKILL"); process.exit(0); }
+      machine.migrations++; save();
+      if (fixture.mode === "migration-fail") { console.error("migration failed"); process.exit(17); }
+      const lastVersion = fixture.mode === "partial-fail" ? 27 : 29;
+      for (let version = machine.schema + 1; version <= lastVersion; version++) machine.migrationVersions.push(version);
+      machine.schema = lastVersion;
+      if (["partial-fail", "history-fail"].includes(fixture.mode)) machine.history = "unexpected mutation";
+      save();
+      if (fixture.mode === "partial-fail") { console.error("migration failed after committed version 27"); process.exit(17); }
+    }
     process.exit(0);
   }
-  if (args.includes("scripts/verify_postgres_cli_state.py")) { output({ reviews: { count: 1, digest: "preserved" } }); process.exit(0); }
+  if (args.includes("scripts/verify_postgres_cli_state.py")) {
+    const actual = { reviews: { columns: ["id", "rating"], count: 1, digest: machine.history } };
+    if (args.includes("--expected") && JSON.stringify(actual) !== JSON.stringify(JSON.parse(args[args.indexOf("--expected") + 1]))) {
+      console.error("Schema upgrade changed review, queue, or operation receipt history; keep writers stopped"); process.exit(19);
+    }
+    output(actual); process.exit(0);
+  }
   if (fixture.mode === "backup-fail" && args.some(argument => argument.includes("pg_dump"))) { console.error("canary-private-password backup failed"); process.exit(14); }
   process.exit(0);
 }

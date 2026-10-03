@@ -137,6 +137,8 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
     }
     const operation = readJson(join(stateDirectory, "operation.json"));
     if (operation) log(`Last operation: ${operation.phase}${operation.failure ? ` — ${operation.failure}` : ""}`);
+    const guard = readJson(join(stateDirectory, "migration-guard.json"));
+    if (guard) log(`Original migration verification: ${guard.state}; origin ${guard.origin_revision}; backup ${guard.backup?.filename ?? "unknown"}`);
     if (options.command === "logs") {
       const service = options.services[0];
       if (service && !runtime.configuration.services[service]) throw new Error(`Unknown service: ${service}`);
@@ -171,13 +173,9 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
       if (!previous || options.command === "migrate") throw new Error("No eligible update can be applied. Run tempo doctor and resolve the blocker.");
       log(`Starting previously verified revision ${previous.revision}; the update has not been applied.`);
     }
-    const operation = readJson(join(stateDirectory, "operation.json"));
     const selectedRevision = candidate?.revision ?? previous.revision;
-    if (operation && operation.revision === selectedRevision && !options.flags.has("--retry")
-      && (operation.phase === "applying_migrations" || (operation.phase === "failed" && operation.failed_phase === "applying_migrations")))
-      throw new Error("Previous migration failed or was interrupted. Inspect tempo doctor and the recorded logs, fix the cause, then explicitly run tempo migrate --retry.");
     runtime = createRuntime(target, { run, stateDirectory, previous, revision: selectedRevision,
-      evidence: candidate?.evidence, fallback: !candidate, log });
+      evidence: candidate?.evidence, fallback: !candidate, retry: options.flags.has("--retry"), log });
     await runtime.inspectTarget(); secrets.push(...runtime.secretValues);
     const recreate = options.command === "restart" || Boolean(candidate && previous?.revision !== selectedRevision);
     await executeLifecycle({ recreate }, { ...runtime, ensureImages: async () => {

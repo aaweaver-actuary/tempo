@@ -4,8 +4,8 @@ import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { schemaVersionFromSource, validateTarget, validateContainers, deploymentCanStart,
-  acquireTargetLock, qualityEvidence, atomicJson, selectCandidate, productVolumes } from "../../scripts/tempo-deployment.mjs";
-import { executeLifecycle } from "../../scripts/tempo-runtime.mjs";
+  acquireTargetLock, qualityEvidence, atomicJson, selectCandidate, productVolumes, targetKey } from "../../scripts/tempo-deployment.mjs";
+import { configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 
 function directory(t) {
@@ -182,6 +182,152 @@ function commandFixture(t, mode) {
   t.after(() => rmSync(fixture.directory, { recursive: true, force: true }));
   return fixture;
 }
+
+function readFixtureJson(fixture, name, state = false) {
+  return JSON.parse(readFileSync(join(state ? fixture.stateDirectory : fixture.directory, name), "utf8"));
+}
+
+function editFixtureJson(fixture, name, alter) {
+  const value = readFixtureJson(fixture, name); alter(value);
+  writeFileSync(join(fixture.directory, name), JSON.stringify(value));
+}
+
+function assertOriginalHistory(fixture) {
+  const guard = readFixtureJson(fixture, "migration-guard.json", true);
+  assert.equal(guard.study_invariants.reviews.digest, "preserved");
+  assert.equal(guard.backup.verified, true);
+  assert.equal(fixture.calls().filter(call => call.args.includes("scripts/verify_postgres_cli_state.py") && !call.args.includes("--expected")).length, 1,
+    "an unresolved attempt never captures a new baseline");
+  assert.equal(fixture.calls().filter(call => call.args.some(argument => argument.includes("pg_dump"))).length, 1,
+    "retries retain the restore-verified original backup");
+  return guard;
+}
+
+test("actual CLI migration guard partial commits retain H0 through failed and repaired retries", t => {
+  const fixture = commandFixture(t, "partial-fail");
+  assert.notEqual(fixture.command("migrate").status, 0);
+  assert.equal(readFixtureJson(fixture, "machine.json").schema, 27);
+  editFixtureJson(fixture, "fixture.json", value => { value.mode = "repair"; });
+  const retry = fixture.command("migrate", "--retry");
+  assert.notEqual(retry.status, 0, "retry must detect the original mutation after remaining migrations commit");
+  const original = assertOriginalHistory(fixture);
+  assert.deepEqual(readFixtureJson(fixture, "machine.json").migrationVersions, [27, 28, 29]);
+  assert.deepEqual(assertOriginalHistory(fixture).study_invariants, original.study_invariants);
+  assert.equal(readFixtureJson(fixture, "migration-guard.json", true).state, "pending");
+  editFixtureJson(fixture, "machine.json", value => { value.history = "preserved"; });
+  const repaired = fixture.command("migrate", "--retry");
+  assert.equal(repaired.status, 0, repaired.stdout + repaired.stderr);
+  assert.equal(assertOriginalHistory(fixture).state, "verified");
+});
+
+test("actual CLI migration guard completed schema still verifies H0 before repaired startup", t => {
+  const fixture = commandFixture(t, "history-fail");
+  const deploymentBefore = readFixtureJson(fixture, "deployment.json", true);
+  assert.notEqual(fixture.command("migrate").status, 0);
+  assert.equal(readFixtureJson(fixture, "machine.json").schema, 29);
+  const retry = fixture.command("migrate", "--retry");
+  assert.notEqual(retry.status, 0, "a current ledger must not bypass the failed history check");
+  assert.match(retry.stderr, /history/);
+  const guard = assertOriginalHistory(fixture);
+  assert(retry.stderr.includes(guard.backup.filename), "diagnostics retain the original backup reference");
+  assert.deepEqual(readFixtureJson(fixture, "deployment.json", true), deploymentBefore);
+  assert(!readFixtureJson(fixture, "machine.json").running.includes("api"));
+  assert.equal(readFixtureJson(fixture, "machine.json").migrations, 1);
+  editFixtureJson(fixture, "machine.json", value => { value.history = "preserved"; });
+  const repaired = fixture.command("start", "--retry", "--no-open");
+  assert.equal(repaired.status, 0, repaired.stdout + repaired.stderr);
+  assert.equal(assertOriginalHistory(fixture).state, "verified");
+  assert.equal(readFixtureJson(fixture, "operation.json", true).phase, "ready");
+  assert.notDeepEqual(readFixtureJson(fixture, "deployment.json", true), deploymentBefore);
+});
+
+test("actual CLI migration guard newer candidates cannot bypass H0 or retry authorization", t => {
+  const fixture = commandFixture(t, "history-fail");
+  assert.notEqual(fixture.command("migrate").status, 0);
+  editFixtureJson(fixture, "fixture.json", value => { value.mode = "repair"; value.revision = "c".repeat(40); });
+  editFixtureJson(fixture, "machine.json", value => { value.head = "c".repeat(40); });
+  const ordinary = fixture.command("start", "--no-open");
+  assert.notEqual(ordinary.status, 0, "changing the selected revision cannot authorize continuation");
+  assert.match(ordinary.stderr, /--retry/);
+  const retried = fixture.command("migrate", "--retry");
+  assert.notEqual(retried.status, 0);
+  const guard = assertOriginalHistory(fixture);
+  assert.equal(guard.origin_revision, "a".repeat(40));
+  assert.equal(guard.last_attempted_revision, "c".repeat(40));
+  assert(!readFixtureJson(fixture, "machine.json").running.includes("api"));
+});
+
+test("actual CLI migration guard interrupted attempts survive loss of the operation journal", t => {
+  const fixture = commandFixture(t, "interrupted");
+  const interrupted = fixture.command("migrate");
+  assert.equal(interrupted.signal, "SIGKILL", interrupted.stdout + interrupted.stderr);
+  assert.equal(readFixtureJson(fixture, "machine.json").migrations, 0);
+  assert.equal(readFixtureJson(fixture, "operation.json", true).phase, "applying_migrations");
+  const guard = assertOriginalHistory(fixture);
+  rmSync(join(fixture.stateDirectory, "operation.json"));
+  const ordinary = fixture.command("migrate");
+  assert.notEqual(ordinary.status, 0);
+  assert.match(ordinary.stderr, /--retry/);
+  assert.deepEqual(readFixtureJson(fixture, "migration-guard.json", true), guard);
+  editFixtureJson(fixture, "fixture.json", value => { value.mode = "repair"; });
+  editFixtureJson(fixture, "machine.json", value => { value.history = "preserved"; });
+  const retry = fixture.command("migrate", "--retry");
+  assert.equal(retry.status, 0, retry.stdout + retry.stderr);
+  assert.equal(assertOriginalHistory(fixture).state, "verified");
+});
+
+function imageRuntimeFixture(t, reference, actualMajor, fallback = false) {
+  const fixture = commandFixture(t, "upgrade");
+  const config = readFixtureJson(fixture, "fixture.json").config;
+  config.services.postgres.image = reference;
+  writeFileSync(fixture.target.composeFiles[0], JSON.stringify(config));
+  const record = readFixtureJson(fixture, "deployment.json", true);
+  const calls = [];
+  const run = async (_command, args) => {
+    calls.push(args);
+    let result = "";
+    if (args.includes("config")) {
+      const resolved = structuredClone(config);
+      for (let index = 0; index < args.length; index++) if (args[index] === "-f") {
+        const overlay = JSON.parse(readFileSync(args[index + 1], "utf8"));
+        for (const [name, service] of Object.entries(overlay.services)) resolved.services[name] = { ...resolved.services[name], ...service };
+      }
+      result = args.includes("--hash") ? "postgres hash\nredis hash" : JSON.stringify(resolved);
+    } else if (args.includes("image") && args.includes("inspect")) result = JSON.stringify([{ Id: args.at(-1), Config: { Labels: { "org.opencontainers.image.revision": record.revision } } }]);
+    else if (args.includes("--version")) result = `postgres (PostgreSQL) ${actualMajor}.6 (test)`;
+    return { stdout: result, stderr: "", code: 0 };
+  };
+  const runtime = createRuntime(fixture.target, { run, stateDirectory: fixture.stateDirectory, revision: record.revision,
+    evidence: record.evidence, previous: record, fallback,
+    preparedImages: { revision: record.revision, images: record.images, configFingerprint: configurationFingerprint(config) }, log: () => {} });
+  return { runtime, calls, fixture };
+}
+
+test("CLI migration guard rejects wrong database identity and incompatible continuation schemas", async t => {
+  const { runtime, fixture } = imageRuntimeFixture(t, "postgres:18.6-trixie", 18);
+  await runtime.config();
+  const original = { version: 1, target: "wrong-target", database: { name: "tempo", volume: "tempo-postgres-data" },
+    starting_schema: 28, intended_schema: 30, starting_versions: Array.from({ length: 28 }, (_, i) => i + 1),
+    study_invariants: { reviews: { columns: ["id"], count: 1, digest: "preserved" } },
+    backup: { verified: true, filename: "original.dump" }, state: "pending" };
+  atomicJson(join(fixture.stateDirectory, "migration-guard.json"), original);
+  // The wrong identity must fail even with explicit authorization.
+  const guarded = createRuntime(fixture.target, { run: async () => ({ stdout: JSON.stringify(readFixtureJson(fixture, "fixture.json").config) }),
+    stateDirectory: fixture.stateDirectory, revision: "new", retry: true, log: () => {} });
+  await guarded.config();
+  assert.throws(() => guarded.checkMigrationRetry(), /another database/);
+  assert.throws(() => guarded.resolveMigrationGuard(), /unresolved/);
+  await assert.rejects(guarded.startServices(), /unresolved/);
+  await assert.rejects(guarded.commitDeployment(), /unresolved/);
+  original.target = targetKey(fixture.target);
+  atomicJson(join(fixture.stateDirectory, "migration-guard.json"), original);
+  const incompatible = createRuntime(fixture.target, { run: async (_command, args) => ({ stdout: JSON.stringify(args.includes("--check")
+    ? { expected_version: 29, applied_versions: original.starting_versions, pending_versions: [29], initialized: true, roles_ready: true, credentials_ready: true }
+    : readFixtureJson(fixture, "fixture.json").config) }), stateDirectory: fixture.stateDirectory, revision: "new", retry: true, log: () => {} });
+  await incompatible.config();
+  assert.equal(incompatible.checkMigrationRetry(), true);
+  await assert.rejects(incompatible.checkSchema(), /cannot safely continue.*original.dump/);
+});
 
 test("actual CLI upgrades with a verified backup and keeps repeat starts free of build migration or stop", t => {
   const fixture = commandFixture(t, "upgrade");
