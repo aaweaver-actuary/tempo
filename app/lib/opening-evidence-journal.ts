@@ -8,7 +8,8 @@ import { publishNotification } from "./notifications";
 
 type AttemptHeader = Omit<OpeningEvidenceCheckpoint, "events">;
 type SavedAttempt = AttemptHeader & { owner_session_id: string; final_sequence: number;
-  delivery_state: "idle" | "pending" | "complete" | "rejected"; rejection?: string;
+  delivery_state: "idle" | "pending" | "complete" | "rejected" | "retained"; rejection?: string;
+  retention_reason?: "local_storage_quota";
   local_capture_gap?: string;
   delivery?: { checkpoint: OpeningEvidenceCheckpoint; operationKey: string } };
 type SavedEvent = OpeningDecisionEvent & { attempt_id: string };
@@ -113,8 +114,9 @@ async function storeAppend(journal: OpeningAttemptJournal, event?: OpeningDecisi
       const prior = attempts.get(attempt.attempt_id);
       prior.onsuccess = () => attempts.put({ ...attempt,
         ...(prior.result?.delivery ? { delivery: prior.result.delivery } : {}),
-        ...(prior.result?.delivery_state === "rejected"
-          ? { delivery_state: "rejected", rejection: prior.result.rejection } : {}),
+        ...(["rejected", "retained"].includes(prior.result?.delivery_state)
+          ? { delivery_state: prior.result.delivery_state, rejection: prior.result.rejection,
+            retention_reason: prior.result.retention_reason } : {}),
       });
       // Normally one row; retries also repair this attempt's failed local appends.
       for (const pendingEvent of pendingEvents) transaction.objectStore("opening_events").put({ ...pendingEvent, attempt_id: snapshot.attempt_id });
@@ -201,7 +203,7 @@ export async function rejectOpeningEvidence(attemptId: string, message: string):
       const transaction = database.transaction("opening_attempts", "readwrite");
       const store = transaction.objectStore("opening_attempts");
       const read = store.get(attemptId);
-      read.onsuccess = () => { if (read.result) store.put({ ...read.result, delivery_state: "rejected", rejection: message }); };
+      read.onsuccess = () => { if (read.result && read.result.delivery_state !== "retained") store.put({ ...read.result, delivery_state: "rejected", rejection: message }); };
       transaction.oncomplete = () => resolve();
       transaction.onerror = () => reject(transaction.error);
       transaction.onabort = () => reject(transaction.error);
@@ -220,7 +222,7 @@ export async function acknowledgeOpeningReview(attemptId: string): Promise<void>
     const attempts = transaction.objectStore("opening_attempts");
     const read = attempts.get(attemptId);
     read.onsuccess = () => {
-      if (!read.result || read.result.delivery_state === "rejected") return;
+      if (!read.result || ["rejected", "retained"].includes(read.result.delivery_state)) return;
       attempts.delete(attemptId);
       const cursor = transaction.objectStore("opening_events").index("attempt_id").openCursor(attemptId);
       cursor.onsuccess = () => { if (cursor.result) { cursor.result.delete(); cursor.result.continue(); } };
@@ -232,6 +234,32 @@ export async function acknowledgeOpeningReview(attemptId: string): Promise<void>
   captures.delete(attemptId);
 }
 
+/** Local capacity fallback is diagnostic retention, not a server rejection. */
+export function retainOpeningEvidenceForStorageFallback(completion: OpeningEvidenceCheckpoint): Promise<void> {
+  const snapshot = structuredClone(completion);
+  const retaining = writeTail.catch(() => undefined).then(async () => {
+    if (typeof indexedDB === "undefined") throw new Error("IndexedDB is unavailable");
+    const database = await offlineTrainingDatabase();
+    const { events, ...header } = snapshot;
+    await new Promise<void>((resolve, reject) => {
+      const transaction = database.transaction(["opening_attempts", "opening_events"], "readwrite");
+      const attempts = transaction.objectStore("opening_attempts");
+      const prior = attempts.get(snapshot.attempt_id);
+      prior.onsuccess = () => attempts.put({ ...prior.result, ...header, owner_session_id: prior.result?.owner_session_id ?? sessionId,
+        final_sequence: events.length, delivery_state: "retained", retention_reason: "local_storage_quota" });
+      // Restore the full bounded envelope even if earlier checkpoints were acknowledged.
+      for (const event of events) transaction.objectStore("opening_events").put({ ...event, attempt_id: snapshot.attempt_id });
+      transaction.oncomplete = () => resolve();
+      transaction.onerror = () => reject(transaction.error);
+      transaction.onabort = () => reject(transaction.error);
+    });
+    publishNotification({ severity: "warning", source: "opening evidence", key: `opening-evidence:${snapshot.attempt_id}`,
+      message: "Opening evidence could not fit in review storage and is retained separately for diagnosis. The aggregate review can still save." });
+  });
+  writeTail = retaining;
+  return retaining;
+}
+
 async function deliverOpeningEvidence(): Promise<void> {
   if (typeof indexedDB === "undefined" || (typeof navigator !== "undefined" && !navigator.onLine)) return;
   await writeTail.catch(() => undefined);
@@ -240,7 +268,7 @@ async function deliverOpeningEvidence(): Promise<void> {
     if (!saved) return;
     const frozenDelivery = saved.attempt.delivery;
     const header = openingEvidenceCheckpointSchema.omit({ events: true }).parse(Object.fromEntries(
-      Object.entries(saved.attempt).filter(([key]) => !["owner_session_id", "final_sequence", "delivery_state", "rejection", "delivery", "local_capture_gap"].includes(key)),
+      Object.entries(saved.attempt).filter(([key]) => !["owner_session_id", "final_sequence", "delivery_state", "rejection", "retention_reason", "delivery", "local_capture_gap"].includes(key)),
     ));
     const events = saved.events.map(event => openingDecisionEventSchema.parse(
       Object.fromEntries(Object.entries(event).filter(([key]) => key !== "attempt_id")),
@@ -292,12 +320,12 @@ async function deliverOpeningEvidence(): Promise<void> {
       const transaction = database.transaction(["opening_attempts", "opening_events"], "readwrite");
       const attemptStore = transaction.objectStore("opening_attempts");
       const eventStore = transaction.objectStore("opening_events");
-      for (const event of checkpoint.events) if (receipt.received_sequences!.includes(event.sequence)) eventStore.delete([checkpoint.attempt_id, event.sequence]);
-      const remaining = eventStore.index("attempt_id").count(checkpoint.attempt_id);
-      remaining.onsuccess = () => {
-        const current = attemptStore.get(checkpoint.attempt_id);
-        current.onsuccess = () => {
-          if (!current.result || current.result.delivery_state === "rejected") return;
+      const current = attemptStore.get(checkpoint.attempt_id);
+      current.onsuccess = () => {
+        if (!current.result || ["rejected", "retained"].includes(current.result.delivery_state)) return;
+        for (const event of checkpoint.events) if (receipt.received_sequences!.includes(event.sequence)) eventStore.delete([checkpoint.attempt_id, event.sequence]);
+        const remaining = eventStore.index("attempt_id").count(checkpoint.attempt_id);
+        remaining.onsuccess = () => {
           const terminalPending = current.result.terminal?.state === "partial" &&
             JSON.stringify(current.result.terminal) !== JSON.stringify(checkpoint.terminal);
           if (checkpoint.terminal?.state === "partial" && receipt.contiguous_sequence === checkpoint.terminal.final_sequence && !remaining.result && !terminalPending) attemptStore.delete(checkpoint.attempt_id);
@@ -345,7 +373,7 @@ async function recoverSavedOpeningEvidence(): Promise<void> {
   for (const attempt of attempts) {
     if (attempt.local_capture_gap) publishNotification({ severity: "warning", source: "opening evidence",
       key: `opening-evidence:${attempt.attempt_id}`, message: `A previous local capture reported a gap. Saved evidence remains recoverable; normal review is available. ${attempt.local_capture_gap}` });
-    if (attempt.owner_session_id === sessionId || attempt.terminal?.state === "partial" || !attempt.final_sequence || attempt.delivery_state === "rejected" ||
+    if (attempt.owner_session_id === sessionId || attempt.terminal?.state === "partial" || !attempt.final_sequence || ["rejected", "retained"].includes(attempt.delivery_state) ||
       (attempt.terminal?.state === "complete" && pendingAggregateIds.has(attempt.attempt_id))) continue;
     await navigator.locks.request(`tempo-opening-attempt:${attempt.attempt_id}`, { ifAvailable: true }, async (lease) => {
       if (!lease) return;

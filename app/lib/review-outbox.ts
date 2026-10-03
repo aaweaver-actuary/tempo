@@ -5,7 +5,7 @@ import { clearTrainingFailureAfterReview } from "./training-failure-outbox";
 import type { OpeningEvidenceCheckpoint } from "../domain/opening-evidence";
 import { openingEvidenceCheckpointSchema } from "../domain/opening-evidence";
 import { saveEvidenceAwareReview } from "./opening-evidence-review";
-import { acknowledgeOpeningReview } from "./opening-evidence-journal";
+import { acknowledgeOpeningReview, retainOpeningEvidenceForStorageFallback } from "./opening-evidence-journal";
 
 export type PendingReview = {
   backendId: string;
@@ -16,6 +16,7 @@ export type PendingReview = {
   completedAt?: string;
   openingEvidenceCompletion?: OpeningEvidenceCheckpoint;
   evidenceRejected?: string;
+  evidenceFallbackReason?: "local_storage_quota";
 };
 
 const storageKey = "tempo-pending-training-reviews-v1";
@@ -47,6 +48,7 @@ function readStoredReviews(key: string): PendingReview[] {
     (item.attemptId !== undefined && typeof item.attemptId !== "string") ||
     (item.openingEvidenceCompletion !== undefined && !openingEvidenceCheckpointSchema.safeParse(item.openingEvidenceCompletion).success) ||
     (item.evidenceRejected !== undefined && typeof item.evidenceRejected !== "string") ||
+    (item.evidenceFallbackReason !== undefined && item.evidenceFallbackReason !== "local_storage_quota") ||
     (item.completedAt !== undefined && typeof item.completedAt !== "string"))) {
     throw new Error("The saved training review is invalid. Restore your data before continuing.");
   }
@@ -56,10 +58,26 @@ function readStoredReviews(key: string): PendingReview[] {
 export function enqueuePendingReview(review: PendingReview): void {
   const pending = pendingReviews();
   if (pending.some((item) => item.queueEntryId === review.queueEntryId)) return;
-  localStorage.setItem(storageKey, JSON.stringify([...pending, {
+  const normalizedReview = {
     ...review, attemptId: review.attemptId ?? crypto.randomUUID(),
     completedAt: review.completedAt ?? new Date().toISOString(),
-  }]));
+  };
+  try {
+    localStorage.setItem(storageKey, JSON.stringify([...pending, normalizedReview]));
+  } catch (error) {
+    if (!(error instanceof DOMException) || error.name !== "QuotaExceededError" || !normalizedReview.openingEvidenceCompletion) throw error;
+    const { openingEvidenceCompletion, ...aggregateReview } = normalizedReview;
+    // Required: commit the compact envelope and its delivery identity before advancing.
+    localStorage.setItem(storageKey, JSON.stringify([...pending, {
+      ...aggregateReview, evidenceFallbackReason: "local_storage_quota",
+    }]));
+    void retainOpeningEvidenceForStorageFallback(openingEvidenceCompletion).catch(error => {
+      try {
+        publishNotification({ severity: "warning", source: "opening evidence", key: `opening-evidence-retention:${normalizedReview.attemptId}`,
+          message: `The aggregate review is saved locally. Opening evidence could not be retained for diagnosis. Keep this page open to preserve observed work. ${String(error)}` });
+      } catch { /* Optional diagnostics cannot undo a durable aggregate review. */ }
+    });
+  }
 }
 
 async function requestReviewSave(url: string, options: RequestInit): Promise<Response> {
@@ -92,6 +110,7 @@ async function savePendingReviews(): Promise<void> {
     const reviewResponse = await saveEvidenceAwareReview({
       endpoint: reviewEndpoint, operationKey: `review-attempt:${attemptId}`, request: requestReviewSave,
       completion: review.openingEvidenceCompletion, evidenceRejected: review.evidenceRejected,
+      aggregateOnly: review.evidenceFallbackReason === "local_storage_quota",
       onEvidenceRejected: (message) => {
         const updated = pendingReviews().map((item) =>
           item.attemptId === attemptId ? { ...item, evidenceRejected: message } : item);

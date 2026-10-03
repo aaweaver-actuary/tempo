@@ -25,6 +25,88 @@ function enqueueOpeningEvidenceReview(attemptId: string) {
 }
 
 describe("optimistic training review outbox", () => {
+  it("AS-16 evidence outbox quota falls back to durable aggregate-only review", async () => {
+    vi.stubGlobal("indexedDB", undefined);
+    const original = enqueueOpeningEvidenceReview("quota-attempt");
+    const unchanged = structuredClone(original);
+    localStorage.clear();
+    const setItem = Storage.prototype.setItem;
+    const writes: string[] = [];
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
+      if (key === "tempo-pending-training-reviews-v1") {
+        writes.push(value);
+        if (value.includes("openingEvidenceCompletion")) throw new DOMException("Storage quota exceeded", "QuotaExceededError");
+      }
+      return setItem.call(this, key, value);
+    });
+    expect(() => enqueuePendingReview(original)).not.toThrow();
+    expect(original).toEqual(unchanged);
+    const { openingEvidenceCompletion: _completion, ...aggregate } = unchanged;
+    expect(pendingReviews()).toEqual([{ ...aggregate, evidenceFallbackReason: "local_storage_quota" }]);
+    expect(writes).toHaveLength(2);
+    const request = vi.fn(async (_url, options: RequestInit) => {
+      expect(pendingReviews()[0]).toMatchObject({ evidenceFallbackReason: "local_storage_quota" });
+      expect(new Headers(options.headers).get("Idempotency-Key")).toBe("review-attempt:quota-attempt:aggregate-only");
+      expect(JSON.parse(options.body as string)).toEqual({ outcome: original.outcome, guided: original.guided,
+        queue_entry_id: original.queueEntryId, attempt_id: original.attemptId, recorded_at: original.completedAt });
+      return Response.json({ persisted: true });
+    });
+    vi.stubGlobal("fetch", request);
+    await flushPendingReviews();
+    expect(request).toHaveBeenCalledOnce();
+    expect(pendingReviews()).toEqual([]);
+  });
+
+  it("AS-16 aggregate-only outbox storage failure remains blocking and retryable", async () => {
+    vi.stubGlobal("indexedDB", undefined);
+    const original = enqueueOpeningEvidenceReview("quota-blocked");
+    localStorage.clear();
+    const request = vi.fn(); vi.stubGlobal("fetch", request);
+    const failure = new DOMException("All review storage is full", "QuotaExceededError");
+    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw failure; });
+    expect(() => enqueuePendingReview(original)).toThrow(failure);
+    expect(pendingReviews()).toEqual([]);
+    await flushPendingReviews();
+    expect(request).not.toHaveBeenCalled();
+    write.mockRestore();
+    enqueuePendingReview(original);
+    expect(pendingReviews()).toEqual([original]);
+  });
+
+  it("AS-16 quota fallback reload and ambiguous retries retain the compact payload and key", async () => {
+    vi.stubGlobal("indexedDB", undefined);
+    const original = enqueueOpeningEvidenceReview("quota-retry"); localStorage.clear();
+    const setItem = Storage.prototype.setItem;
+    vi.spyOn(Storage.prototype, "setItem").mockImplementation(function (this: Storage, key, value) {
+      if (key === "tempo-pending-training-reviews-v1" && value.includes("openingEvidenceCompletion"))
+        throw new DOMException("Evidence is too large", "QuotaExceededError");
+      return setItem.call(this, key, value);
+    });
+    enqueuePendingReview(original);
+    const durable = localStorage.getItem("tempo-pending-training-reviews-v1");
+    const posts: RequestInit[] = [];
+    vi.stubGlobal("fetch", vi.fn(async (_url, options: RequestInit) => {
+      posts.push(options);
+      if (posts.length === 1) throw new TypeError("Lost response");
+      return Response.json({ persisted: true });
+    }));
+    await expect(flushPendingReviews()).rejects.toThrow("Lost response");
+    expect(localStorage.getItem("tempo-pending-training-reviews-v1")).toBe(durable);
+    await flushPendingReviews();
+    expect(posts[1].body).toBe(posts[0].body);
+    expect(new Headers(posts[1].headers).get("Idempotency-Key")).toBe("review-attempt:quota-retry:aggregate-only");
+    expect(pendingReviews()).toEqual([]);
+  });
+
+  it("AS-16 denied initial review storage never switches to aggregate-only", () => {
+    const original = enqueueOpeningEvidenceReview("denied-initial"); localStorage.clear();
+    const denied = new DOMException("Storage access denied", "SecurityError");
+    const write = vi.spyOn(Storage.prototype, "setItem").mockImplementation(() => { throw denied; });
+    expect(() => enqueuePendingReview(original)).toThrow(denied);
+    expect(write).toHaveBeenCalledOnce();
+    expect(pendingReviews()).toEqual([]);
+  });
+
   it.each([
     ["immediate", "opening_evidence_conflict"], ["immediate", "opening_evidence_unavailable"],
     ["deferred", "opening_evidence_conflict"], ["deferred", "opening_evidence_unavailable"],
