@@ -4,7 +4,7 @@ import { existsSync, mkdtempSync, mkdirSync, rmSync, writeFileSync, readFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { schemaVersionFromSource, validateTarget, validateContainers, deploymentCanStart,
-  acquireTargetLock, qualityEvidence, atomicJson } from "../../scripts/tempo-deployment.mjs";
+  acquireTargetLock, qualityEvidence, atomicJson, productVolumes } from "../../scripts/tempo-deployment.mjs";
 import { executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 
@@ -20,11 +20,14 @@ function fixture(t) {
   const secret = join(path, "password");
   writeFileSync(secret, "canary-password", { mode: 0o600 });
   const target = { root: join(path, "checkout"), project: "tempo", context: "desktop-linux",
-    volumes: { "tempo-postgres-data": { name: "tempo-postgres-data", external: true } },
+    volumes: structuredClone(productVolumes),
     postgresVolumeKey: "tempo-postgres-data", ports: [{ service: "web", host: "127.0.0.1", port: "3000", target: 80 }] };
   const config = { name: "tempo", volumes: target.volumes, secrets: { password: { file: secret } },
     services: { postgres: { image: "postgres:18.6-trixie", environment: { POSTGRES_DB: "tempo" },
       volumes: [{ type: "volume", source: "tempo-postgres-data", target: "/var/lib/postgresql" }] }, web: { ports: [{ host_ip: "127.0.0.1", published: "3000", target: 80 }] },
+      redis: { volumes: [{ type: "volume", source: "tempo-redis-data", target: "/data" }] },
+      "postgres-backup": { volumes: [{ type: "volume", source: "tempo-postgres-backups", target: "/backups" }], tmpfs: ["/var/lib/postgresql"] },
+      "defense-engine": { volumes: [{ type: "volume", source: "tempo-engine-operations", target: "/state" }] },
       api: { environment: { TEMPO_DATABASE_READ_URL: "postgresql://tempo_reader@postgres:5432/tempo" } } } };
   return { path, secret, target, config };
 }
@@ -301,4 +304,16 @@ test("actual CLI detects checkout edits during image preparation before touching
   assert.notEqual(result.status, 0); assert(result.stderr.includes("Checkout changed"));
   assert(fixture.calls().some(call => call.args.includes("build")));
   assert(!fixture.calls().some(call => call.args.includes("up") || call.args.includes("stop")));
+});
+
+for (const [name, alter] of [
+  ["Redis cannot additionally mount registered PostgreSQL data", config => config.services.redis.volumes.push({ type: "volume", source: "tempo-postgres-data", target: "/data" })],
+  ["Redis cannot move its registered data to another destination", config => { config.services.redis.volumes[0].target = "/wrong-data"; }],
+  ["PostgreSQL cannot substitute registered Redis data", config => { config.services.postgres.volumes[0].source = "tempo-redis-data"; }],
+  ["defense engine cannot mount registered PostgreSQL data", config => config.services["defense-engine"].volumes.push({ type: "volume", source: "tempo-postgres-data", target: "/state" })],
+  ["required backup persistent mount cannot be removed", config => { config.services["postgres-backup"].volumes = []; }],
+]) test(`CLI volume ownership: ${name}`, t => {
+  const { config, target } = fixture(t);
+  alter(config);
+  assert.throws(() => validateTarget(config, target), /mount|volume/i);
 });

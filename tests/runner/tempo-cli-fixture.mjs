@@ -15,6 +15,9 @@ export function cliFixture(mode = "upgrade") {
   const services = Object.fromEntries(names.map(name => [name, { image: `fixture-${name}`, ...(name !== "postgres" && name !== "redis" && name !== "postgres-backup" ? { build: { context: root } } : {}) }]));
   services.postgres = { image: "postgres:18.6-trixie", environment: { POSTGRES_USER: "tempo", POSTGRES_DB: "tempo" },
     volumes: [{ type: "volume", source: "tempo-postgres-data", target: "/var/lib/postgresql" }] };
+  services.redis.volumes = [{ type: "volume", source: "tempo-redis-data", target: "/data" }];
+  services["postgres-backup"].volumes = [{ type: "volume", source: "tempo-postgres-backups", target: "/backups" }];
+  services["defense-engine"].volumes = [{ type: "volume", source: "tempo-engine-operations", target: "/state" }];
   services.api.environment = { TEMPO_DATABASE_READ_URL: "postgresql://tempo_reader@postgres:5432/tempo" };
   const config = { name: "tempo", volumes, services, secrets: { password: { file: secret } } };
   const composeFile = join(root, "compose.json"); writeFileSync(composeFile, JSON.stringify(config));

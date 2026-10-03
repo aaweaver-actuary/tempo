@@ -2,10 +2,11 @@
 // reused from this test invocation; no live product target is adopted.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { atomicJson, commandExecutor, portsFromConfig, redact, schemaVersionFromSource, targetKey } from "./tempo-deployment.mjs";
+import { atomicJson, commandExecutor, portsFromConfig, productVolumes, redact, schemaVersionFromSource, targetKey, validateTarget } from "./tempo-deployment.mjs";
 import { configurationFingerprint, createRuntime, executeLifecycle } from "./tempo-runtime.mjs";
 
 export async function verifyTempoCliLifecycle({ project, environment, composeFiles, revision }) {
@@ -27,6 +28,25 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
   const run = (command, args, options) => { commandLog.push({ command, args }); return execute(command, args, options); };
   const context = (await run("docker", ["context", "show"])).stdout.trim();
   const docker = (args, options) => run("docker", ["--context", context, ...args], options);
+  const productSecrets = mkdtempSync(join(tmpdir(), "tempo-compose-contract-"));
+  const productSecretFiles = [
+    ["ADMIN_PASSWORD", "admin_password"], ["READER_PGPASS", "reader_pgpass"], ["WRITER_PGPASS", "writer_pgpass"],
+    ["ADMIN_PGPASS", "admin_pgpass"], ["READER_PASSWORD", "reader_password"], ["WRITER_PASSWORD", "writer_password"],
+  ];
+  try {
+    const productEnvironment = { ...childEnvironment, ...Object.fromEntries(productSecretFiles.map(([name, file]) => {
+      const destination = join(productSecrets, file);
+      writeFileSync(destination, readFileSync(join(environment.TEMPO_PG_TEST_SECRETS, file)), { mode: 0o600 });
+      return [`TEMPO_POSTGRES_${name}_FILE`, destination];
+    })) };
+    const productConfig = JSON.parse((await commandExecutor({ root, environment: productEnvironment, secretValues })("docker", [
+      "--context", context, "compose", "--project-directory", root, "-p", "tempo", "-f", join(root, "docker-compose.yml"),
+      "-f", join(root, "docker-compose.postgres-maintenance.yml"), "--profile", "maintenance", "config", "--format", "json",
+    ])).stdout);
+    validateTarget(productConfig, { root, project: "tempo", ports: portsFromConfig(productConfig),
+      volumes: productVolumes, postgresVolumeKey: "tempo-postgres-data" });
+    console.log("PASS current product Compose persistent-volume ownership contract (read-only configuration)");
+  } finally { rmSync(productSecrets, { recursive: true, force: true }); }
   const composeArguments = ["compose", "--project-directory", root, "-p", childProject,
     ...composeFiles.flatMap(file => ["-f", file])];
   const compose = (args, options) => docker([...composeArguments, ...args], options);
@@ -127,7 +147,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     const running = await rejected.runningServices();
     assert(!running.some(name => ["api", "foreground-worker", "background-worker", "web", "defense-engine", "maia-worker"].includes(name)));
     assert.deepEqual(await readHistory(), expected, "rejected DDL preserves original study history");
-    console.log("PASS Tempo CLI populated 16-to-current upgrade permits migration 025 normalization, restores backup, quiesces before dependencies, and preserves repeat/restart/fallback/rejected-migration history");
+    console.log("PASS Tempo CLI populated 16-to-current upgrade permits migration 025 normalization, restores backup, quiesces before dependencies, corrects uncommitted/missing fallback dependencies, and preserves repeat/restart/rejected-migration history");
   } catch (error) { failure = error; }
   finally {
     try {

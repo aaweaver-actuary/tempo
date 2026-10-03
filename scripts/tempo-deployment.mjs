@@ -8,6 +8,15 @@ import { dirname, isAbsolute, relative, resolve } from "node:path";
 export const productVolumes = Object.fromEntries(["tempo-postgres-data", "tempo-postgres-backups",
   "tempo-redis-data", "tempo-engine-operations"].map(name => [name, { name, external: true }]));
 
+// Persistent data has exactly one owner and destination. Test aliases retain
+// the same ownership contract on their independently scoped disposable volumes.
+const persistentMounts = {
+  postgres: { source: "tempo-postgres-data", disposableSource: "postgres-test-data", destination: "/var/lib/postgresql" },
+  "postgres-backup": { source: "tempo-postgres-backups", disposableSource: "postgres-test-backups", destination: "/backups" },
+  redis: { source: "tempo-redis-data", disposableSource: "redis-test-data", destination: "/data" },
+  "defense-engine": { source: "tempo-engine-operations", disposableSource: "engine-test-operations", destination: "/state" },
+};
+
 export function schemaVersionFromSource(source) {
   const matches = [...source.matchAll(/^POSTGRES_SCHEMA_VERSION\s*=\s*(\d+)\s*$/gm)];
   if (matches.length !== 1 || Number(matches[0][1]) < 1) throw new Error("Cannot read the candidate PostgreSQL schema version.");
@@ -37,6 +46,19 @@ export function validateTarget(config, target) {
   const mountedVolumes = Object.values(config.services).flatMap(service => service.volumes ?? [])
     .filter(volume => volume.type === "volume").map(volume => volume.source);
   if (mountedVolumes.some(key => !target.volumes[key])) throw new Error("Unregistered data volume in the Tempo target.");
+  for (const [serviceName, service] of Object.entries(config.services)) {
+    const expected = persistentMounts[serviceName];
+    const source = target.disposable ? expected?.disposableSource : expected?.source;
+    const mounts = (service.volumes ?? []).filter(mount => mount.type === "volume");
+    if (mounts.some(mount => !expected || mount.source !== source || mount.target !== expected.destination)
+      || (expected && mounts.length !== 1))
+      throw new Error(`Persistent volume mount ownership differs for ${serviceName}. Inspect tempo doctor before maintenance.`);
+  }
+  for (const [serviceName, expected] of Object.entries(persistentMounts)) {
+    const source = target.disposable ? expected.disposableSource : expected.source;
+    if (!config.services[serviceName] || !target.volumes[source])
+      throw new Error(`Required persistent volume mount is missing for ${serviceName}.`);
+  }
   const databaseMount = config.services.postgres?.volumes?.find(volume => volume.target === "/var/lib/postgresql");
   if (!databaseMount || databaseMount.type !== "volume" || databaseMount.source !== target.postgresVolumeKey
     || config.services.postgres.environment?.POSTGRES_DB !== "tempo")
