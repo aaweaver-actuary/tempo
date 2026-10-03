@@ -1,4 +1,7 @@
 import { defineConfig } from "@playwright/test";
+// Match host-side fixture dates and browser dates to the disposable service.
+const disposableTestTimezone = "America/New_York";
+process.env.TZ = disposableTestTimezone;
 const postgresTestUrl = process.env.TEMPO_DOCKER_URL;
 if (!postgresTestUrl) {
   throw new Error("Regular Playwright tests require an isolated PostgreSQL stack; use make browser or scripts/test-postgres-docker.mjs");
@@ -27,6 +30,8 @@ export default defineConfig({
     },
   ],
   use: {
+    // Match the disposable service calendar, including the UTC midnight gap.
+    timezoneId: disposableTestTimezone,
     baseURL: postgresTestUrl,
     trace: "retain-on-failure",
     screenshot: "only-on-failure",
