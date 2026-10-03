@@ -103,3 +103,58 @@ def test_postgres_cli_status_rejects_uninitialized_data_and_missing_writer_role(
     status = migration.migration_status("postgresql://administrator@fixture/tempo")
     assert status["pending_versions"] == []
     assert not status["initialized"] and not status["roles_ready"]
+
+
+@pytest.fixture
+def cli_history_fixture(monkeypatch):
+    import hashlib
+    import json
+    monkeypatch.syspath_prepend(str(Path(__file__).resolve().parents[2] / "scripts"))
+    from scripts import verify_postgres_cli_state as verification
+    records = {
+        "reviews": {"id": 1, "card_id": "legacy-tactic", "rating": "correct", "reviewed_at": "2000-01-01",
+                    "previous_interval": 1, "next_interval": 2, "internal_rating": "good", "guided": 0,
+                    "source_kind": "study", "source_ref": None, "invalidated_at": None, "invalidation_reason": None},
+        "daily_queue": {"id": 1, "queue_date": "2000-01-01", "card_id": "legacy-tactic", "cycle": 0,
+                        "position": 1, "status": "complete", "attempt_state": "clean", "review_result_json": None,
+                        "attempt_failed": 0, "card_bucket": "tactics", "admission_kind": "new",
+                        "gameplay_priority_reason": "derived reason", "admission_repertoire_id": "__game_tactics__",
+                        "admission_source": "fixture"},
+        "operation_receipts": {"operation_id": "fixture-receipt", "command_name": "fixture", "request_hash": "hash",
+                               "state": "complete", "response_json": '{"ok":true}', "error_json": None,
+                               "created_at": "2000-01-01", "updated_at": "2000-01-01", "attempt_count": 1,
+                               "cycle_attempt_count": 0, "attempt_token": None},
+    }
+    layout = {table: (("operation_id",) if table == "operation_receipts" else ("id",),
+                      tuple((column, "text", False) for column in row)) for table, row in records.items()}
+    monkeypatch.setattr(verification, "table_layout", lambda _database: layout)
+
+    def fingerprint(_database, table, columns, _primary_key, _text_keys):
+        projected = [records[table][column] for column in columns]
+        return 1, hashlib.sha256(json.dumps(projected).encode()).hexdigest()
+
+    monkeypatch.setattr(verification, "destination_fingerprint", fingerprint)
+    return verification, records
+
+
+def test_postgres_cli_history_allows_migration_025_queue_bucket_normalization(cli_history_fixture):
+    verification, records = cli_history_fixture
+    before = verification.study_fingerprints(None)
+    records["daily_queue"]["card_bucket"] = "tactic"
+    after = verification.study_fingerprints(None, before)
+    assert before == after
+    assert "card_bucket" not in before["daily_queue"]["columns"]
+
+
+@pytest.mark.parametrize("table,column", [
+    ("daily_queue", "id"), ("daily_queue", "card_id"), ("daily_queue", "cycle"),
+    ("daily_queue", "position"), ("daily_queue", "status"), ("daily_queue", "attempt_state"),
+    ("daily_queue", "review_result_json"), ("daily_queue", "admission_source"),
+    ("reviews", "rating"), ("reviews", "next_interval"), ("reviews", "invalidated_at"),
+    ("operation_receipts", "request_hash"), ("operation_receipts", "response_json"),
+])
+def test_postgres_cli_history_rejects_identity_result_and_provenance_changes(cli_history_fixture, table, column):
+    verification, records = cli_history_fixture
+    before = verification.study_fingerprints(None)
+    records[table][column] = "unexpected mutation"
+    assert verification.study_fingerprints(None, before) != before

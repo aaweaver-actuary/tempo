@@ -68,6 +68,12 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     const readHistory = async () => JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration",
       "scripts/check_postgres_cli_lifecycle.py", "--history"])).stdout);
     const expected = await readHistory();
+    const readNormalization = async () => JSON.parse((await compose(["--profile", "maintenance", "run", "--rm", "--no-deps", "-T", "migration",
+      "scripts/check_postgres_cli_lifecycle.py", "--normalization"])).stdout);
+    const legacyTacticalRow = await readNormalization();
+    assert.equal(legacyTacticalRow.card_bucket, "tactics");
+    assert.equal(legacyTacticalRow.content_type, "tactics");
+    assert.equal(legacyTacticalRow.repertoire_id, "__game_tactics__", "fixture satisfies migration 025's predicate");
     const preparedImages = { revision, images, configFingerprint: configurationFingerprint(config) };
     const runtime = createRuntime(target, { run, stateDirectory, revision, evidence, preparedImages });
     await runtime.inspectTarget();
@@ -75,6 +81,9 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     const record = JSON.parse(readFileSync(join(stateDirectory, "deployment.json"), "utf8"));
     assert.equal(record.schema, schemaVersionFromSource(readFileSync("backend/app/schema_version.py", "utf8")));
     assert.equal(record.backup.verified, true);
+    assert.equal(JSON.parse(readFileSync(join(stateDirectory, "operation.json"), "utf8")).phase, "ready");
+    assert.deepEqual(await readNormalization(), { ...legacyTacticalRow, card_bucket: "tactic", content_type: "tactic" },
+      "migration 025 normalizes the same card/queue row and preserves its historical identity");
     assert.deepEqual(await readHistory(), expected, "upgrade preserves original study history while workers may add unrelated receipts");
 
     const repeat = createRuntime(target, { run, stateDirectory, revision, evidence, previous: record });
@@ -83,6 +92,8 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     await executeLifecycle({ recreate: false }, repeat);
     assert(!commandLog.slice(repeatStart).some(call => call.args.includes("build") || call.args.includes("stop")
       || (call.args.includes("scripts/apply_postgres_migrations.py") && !call.args.includes("--check"))));
+    assert(commandLog.slice(repeatStart).filter(call => call.args.includes("up") && call.args.includes("postgres"))
+      .every(call => call.args.includes("--no-recreate")));
 
     // Exercise the actual installed-command entry point against PostgreSQL.
     // This checkout is a task branch, so start must explicitly retain the
@@ -94,7 +105,12 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     assert(child.stdout.includes("update remains blocked")); output.push(child.stdout);
 
     const beforeRestart = (await repeat.compose(["ps", "-q", "api"])).stdout.trim();
+    const restartStart = commandLog.length;
     await executeLifecycle({ recreate: true }, repeat);
+    const restartCalls = commandLog.slice(restartStart);
+    const writerShutdown = restartCalls.findIndex(call => call.args.includes("stop") && call.args.includes("foreground-worker"));
+    const dependencyStartup = restartCalls.findIndex(call => call.args.includes("up") && call.args.includes("postgres"));
+    assert(writerShutdown >= 0 && dependencyStartup > writerShutdown, "real restart stops writers before dependency changes");
     const afterRestart = (await repeat.compose(["ps", "-q", "api"])).stdout.trim();
     assert.notEqual(beforeRestart, afterRestart, "restart recreates the real API container");
     assert.deepEqual(await readHistory(), expected, "restart preserves original study history");
@@ -111,7 +127,7 @@ export async function verifyTempoCliLifecycle({ project, environment, composeFil
     const running = await rejected.runningServices();
     assert(!running.some(name => ["api", "foreground-worker", "background-worker", "web", "defense-engine", "maia-worker"].includes(name)));
     assert.deepEqual(await readHistory(), expected, "rejected DDL preserves original study history");
-    console.log("PASS Tempo CLI populated 16-to-current upgrade, restored backup, repeat start, real restart, fallback, and rejected migration preserve study history");
+    console.log("PASS Tempo CLI populated 16-to-current upgrade permits migration 025 normalization, restores backup, quiesces before dependencies, and preserves repeat/restart/fallback/rejected-migration history");
   } catch (error) { failure = error; }
   finally {
     try {

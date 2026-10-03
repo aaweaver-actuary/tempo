@@ -55,8 +55,12 @@ need to decide whether a merge requires a rebuild or a migration.
 The CLI preserves local edits and accepts only a fast-forward of a clean main
 checkout from the verified Tempo repository. It checks complete CI for that
 exact revision and loads the updated CLI before deployment. Images are built
-before stopping services. Ordinary compatible starts reuse recorded image IDs;
-they do not take a migration backup or stop the application.
+before stopping services. When prepared images/configuration or an explicit
+restart may recreate PostgreSQL or Redis, application writers stop before
+dependency startup. Ordinary compatible starts reuse recorded image IDs and
+forbid dependency recreation; they do not take a migration backup or stop the
+application. A dependency startup failure after writer shutdown leaves writers
+stopped and records no successful deployment.
 
 For migrations, application services and recurring backups stop first. A new
 custom-format backup gets a checksum, an isolated restore, and a comparison of
@@ -95,7 +99,8 @@ separate procedures in [PostgreSQL maintenance](POSTGRES-MAINTENANCE.md).
 CLI orchestration affects source updates, target isolation, container lifetime,
 and PostgreSQL maintenance. Plausible failures include a wrong target, local
 work loss, stale CI evidence, image/schema mismatch, partial maintenance, and
-false readiness. The smallest proof is the dependency-free CLI regression
+false readiness, dependency recreation with active writers, and rejecting an
+intentional legacy queue-label normalization. The smallest proof is the dependency-free CLI regression
 suite, its regular Vitest wrapper, and the read-only migration-status pytest
 cases. The settled candidate additionally runs the real disposable PostgreSQL
 durability gate, lint, and typecheck. CI owns final complete candidate and merge

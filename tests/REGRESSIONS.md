@@ -1232,15 +1232,25 @@ this input adaptation.
 - `actual CLI backup restores stopped state when database validation fails before the backup` restores initially stopped PostgreSQL and Redis even when an earlier role check rejects the operation.
 - `actual CLI blocked update rejects an incomplete recorded image set before changing services` rejects damaged fallback receipts before database startup or application shutdown.
 - `actual CLI detects checkout edits during image preparation before touching the running application` rechecks source after builds and preserves work edited during preparation.
+- `changed dependency preparation stops writers before dependency recreation even on the same revision`, `dependency recreation failure leaves writers stopped and never publishes a deployment`, and `actual CLI dependency startup failure occurs after writer shutdown and keeps writers stopped` protect writer quiescence before PostgreSQL/Redis recreation. Compatible repeat-start cases require `--no-recreate`; failed image/source preparation preserves the running application.
 
 `backend/tests/test_postgres_upgrade_regressions.py` additionally covers
 newer/gapped history rejection, failed rollout, and read-only status with
 pending migrations or missing initialization/roles. The existing legacy
 import/recovery coverage remains required.
 
+`test_postgres_cli_history_allows_migration_025_queue_bucket_normalization`
+allows the intended derived-label change. The parameterized
+`test_postgres_cli_history_rejects_identity_result_and_provenance_changes`
+protects queue identity/order/results/admission, review outcomes/invalidation,
+and receipt request/result history through explicit semantic column sets.
+
 The regular PostgreSQL `schema_upgrade` stage invokes
 `scripts/check-tempo-cli.mjs` on its own project/ports/volumes with populated
 schema 16. It proves a real restore-verified backup and upgrade to current,
+including migration 025 normalization of an archived `tactics` card in
+`__game_tactics__` and its complete legacy `tactics` queue row to `tactic`,
+with unchanged row identity/history and successful readiness/deployment commit,
 preserved reviews/queue/receipt history, compatible repeat start without
 rebuild/migration, actual command fallback, real container recreation on
 restart, and stopped consumers after genuinely rejected PostgreSQL DDL.
