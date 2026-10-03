@@ -280,3 +280,11 @@ def test_identified_guided_marker_can_mark_only_current_replacement_context(admi
     with database.connection() as connection:
         retained = connection.execute("SELECT card_id,attempt_failed FROM queue_attempt_origins WHERE queue_entry_id=? ORDER BY card_id", (queue_entry_id,)).fetchall()
         assert [tuple(row) for row in retained] == [("another-card", 1), ("recovery-card", 0)]
+
+
+@pytest.mark.parametrize("marker_body", [None, {}, {"card_id": "recovery-card", "expected_revision": 1}])
+def test_legacy_empty_guided_marker_body_preserves_unchanged_context(admitted_attempt, marker_body):
+    queue_entry_id, _ = admitted_attempt
+    response = TestClient(main.app).post(f"/api/queue/entries/{queue_entry_id}/fail", json=marker_body)
+    assert response.status_code == 200
+    assert response.json()["attempt_failed"] is True

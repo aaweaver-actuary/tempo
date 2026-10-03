@@ -2730,7 +2730,7 @@ def mark_attempt_failed(entry_id: int,
                         idempotency_key: str | None = Header(default=None, alias="Idempotency-Key")):
     if postgres_store.configured():
         from .command_dispatch import dispatch_command
-        return dispatch_command("queue.attempt_failed", {"entry_id": entry_id, **(request.model_dump() if request else {})},
+        return dispatch_command("queue.attempt_failed", {"entry_id": entry_id, **(request.model_dump(exclude_none=True) if request else {})},
                                 idempotency_key=idempotency_key)
     with connection() as db:
         active_entry = db.execute(

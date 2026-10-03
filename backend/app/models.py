@@ -33,7 +33,7 @@ class Settings(BaseModel):
 class QueueAttemptFailureRequest(BaseModel):
     """Displayed content identity for an advisory guided-failure marker."""
 
-    card_id: str = Field(min_length=1)
+    card_id: str | None = Field(default=None, min_length=1)
     expected_revision: int | None = Field(default=None, ge=1)
 
 
