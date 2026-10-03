@@ -203,7 +203,7 @@ const defaultState = {
   isDatabaseQueueActive: false,
   isOfflineQueueActive: false,
   serviceError: "",
-  queueReadiness: "uninitialized",
+  queueReadiness: "uninitialized" as const,
 };
 
 export const selectTrainingViewState = (state: TrainingStoreState) => ({

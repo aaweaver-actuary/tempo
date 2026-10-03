@@ -23,10 +23,13 @@ export function useOpeningEvidenceRecovery(enabled: boolean, ready: boolean, blo
     const recover = () => {
       if (canceled || useTrainingStore.getState().queueReadiness !== "ready") return;
       pending.current = false;
-      void recoverOpeningEvidence().catch(error => publishNotification({
-        severity: "warning", source: "opening evidence", key: "opening-evidence-recovery",
-        message: `Opening evidence recovery is pending. Normal training continues. ${String(error)}`,
-      }));
+      void recoverOpeningEvidence().catch(error => {
+        pending.current = true; // Retry at the next readiness/connectivity opportunity, never spin.
+        publishNotification({
+          severity: "warning", source: "opening evidence", key: "opening-evidence-recovery",
+          message: `Opening evidence recovery is pending. Normal training continues. ${String(error)}`,
+        });
+      });
     };
     if (typeof window.requestIdleCallback === "function") {
       const idleId = window.requestIdleCallback(recover);
