@@ -146,7 +146,10 @@ test("AS-16 local review quota saves the aggregate and retains evidence through 
     local_date: localDate, count: reviews.length ? 1 : 2, cards: reviews.length ? [nextCard] : [card, nextCard], projection } }));
   await page.goto("/"); await move(page, "e2", "e4");
   await expect.poll(() => Boolean(releaseCheckpoint)).toBe(true);
-  await move(page, "g1", "f3"); await move(page, "f1", "b5");
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", /4P3.* w /);
+  await move(page, "g1", "f3");
+  await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", /5N2.* w /);
+  await move(page, "f1", "b5");
   await expect.poll(() => reviews.length).toBe(1);
   await expect(page.getByText("Next opening", { exact: true })).toBeVisible();
   await expect.poll(() => page.evaluate(() => JSON.parse(localStorage.getItem("tempo-pending-training-reviews-v1") ?? "[]").length)).toBe(0);

@@ -74,7 +74,7 @@ export function enqueuePendingReview(review: PendingReview): void {
     void retainOpeningEvidenceForStorageFallback(openingEvidenceCompletion).catch(error => {
       try {
         publishNotification({ severity: "warning", source: "opening evidence", key: `opening-evidence-retention:${normalizedReview.attemptId}`,
-          message: `The aggregate review is saved locally. Opening evidence could not be retained for diagnosis. Keep this page open to preserve observed work. ${String(error)}` });
+          message: `The aggregate review is saved locally. Opening evidence could not be retained for diagnosis. Existing journal data remains where browser storage succeeded; restore storage before further capture. ${String(error)}` });
       } catch { /* Optional diagnostics cannot undo a durable aggregate review. */ }
     });
   }
