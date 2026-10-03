@@ -230,3 +230,26 @@ def test_sqlite_origin_backfill_runs_once_and_survives_reinitialization(admitted
     database.initialize()
     with database.connection() as connection:
         assert dict(connection.execute("SELECT * FROM queue_attempt_origins WHERE queue_entry_id=?", (queue_entry_id,)).fetchone()) == origin
+
+
+def test_study_migration_preserves_queue_attempt_provenance_and_triggers(tmp_path, monkeypatch):
+    from app import study_migration
+
+    monkeypatch.setattr(database, "DB_PATH", tmp_path / "legacy-study.db")
+    with monkeypatch.context() as legacy_schema:
+        legacy_schema.setattr(study_migration, "migrate_studies", lambda: None)
+        database.initialize()
+    with database.connection() as connection:
+        connection.execute("INSERT INTO repertoires(id,name,source_name,created_at) VALUES('legacy','Legacy','synthetic','2026-01-01')")
+        connection.execute("INSERT INTO cards(id,repertoire_id,kind,start_fen,moves_json,state,due_date) VALUES('legacy-card','legacy','prefix','retained-fen','[]','learning','2026-01-01')")
+        queue_entry_id = connection.execute("INSERT INTO daily_queue(queue_date,card_id,position) VALUES('2026-01-01','legacy-card',0)").lastrowid
+        original = dict(connection.execute("SELECT * FROM queue_attempt_origins").fetchone())
+    study_migration.migrate_studies()
+    study_migration.migrate_studies()
+    with database.connection() as connection:
+        assert dict(connection.execute("SELECT * FROM queue_attempt_origins").fetchone()) == original
+        connection.execute("UPDATE cards SET revision=2 WHERE id='legacy-card'")
+        connection.execute("UPDATE daily_queue SET attempt_failed=1 WHERE id=?", (queue_entry_id,))
+        connection.execute("DELETE FROM daily_queue WHERE id=?", (queue_entry_id,))
+        retained = connection.execute("SELECT revision,attempt_failed FROM queue_attempt_origins ORDER BY revision").fetchall()
+        assert [tuple(context) for context in retained] == [(1, 0), (2, 1)]
