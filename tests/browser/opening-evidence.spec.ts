@@ -29,7 +29,7 @@ test(compactFails
     Object.defineProperty(navigator, "standalone", { value: true, configurable: true });
     Object.defineProperty(navigator, "userAgent", { value: "Mozilla/5.0 (iPhone) AppleWebKit/605.1.15", configurable: true });
     const settings = window as unknown as { offlineEvidenceQuotaMode: string };
-    settings.offlineEvidenceQuotaMode = failCompact ? "both" : "full";
+    settings.offlineEvidenceQuotaMode = failCompact && sessionStorage.getItem("offline-evidence-capacity-restored") !== "true" ? "both" : "full";
     const put = IDBObjectStore.prototype.put;
     IDBObjectStore.prototype.put = function (value, key) {
       if (this.name === "training" && value.attempts?.length &&
@@ -63,7 +63,10 @@ test(compactFails
     await expect(page.getByRole("button", { name: "Retry save", exact: true })).toBeVisible();
     expect((await readPhone()).attempts).toEqual([]);
     expect((await readPhone()).cards[0].queue_entry_id).toBe(101);
-    await page.evaluate(() => { (window as unknown as { offlineEvidenceQuotaMode: string }).offlineEvidenceQuotaMode = "full"; });
+    await page.evaluate(() => {
+      sessionStorage.setItem("offline-evidence-capacity-restored", "true");
+      (window as unknown as { offlineEvidenceQuotaMode: string }).offlineEvidenceQuotaMode = "full";
+    });
     await page.getByRole("button", { name: "Retry save", exact: true }).click();
   }
   await expect(page.locator(".board-frame")).toHaveAttribute("data-fen", card.start_fen);
@@ -138,7 +141,9 @@ test("AS-15 recovered evidence waits for foreground queue readiness and an idle 
   await expect.poll(async () => (await savedEvents(page)).length).toBeGreaterThan(0);
   // Commit precedes automatic delivery. Settle that delivery before replacing its route.
   await initialCheckpointFailed;
-  const original = (await savedAttempts(page))[0].attempt_id;
+  const originalAttempt = (await savedAttempts(page))[0];
+  const original = originalAttempt.attempt_id;
+  const frozenDelivery = originalAttempt.delivery as { checkpoint: OpeningEvidenceCheckpoint; operationKey: string };
   await page.addInitScript(() => {
     const callbacks = new Map<number, IdleRequestCallback>(); let sequence = 0;
     window.requestIdleCallback = callback => { callbacks.set(++sequence, callback); return sequence; };
@@ -154,9 +159,11 @@ test("AS-15 recovered evidence waits for foreground queue readiness and an idle 
   });
   await page.unroute("**/api/opening-evidence/checkpoints");
   const recovered: OpeningEvidenceCheckpoint[] = [];
+  const recoveryKeys: string[] = [];
   await page.route("**/api/opening-evidence/checkpoints", async route => {
     const checkpoint = route.request().postDataJSON() as OpeningEvidenceCheckpoint;
     recovered.push(checkpoint);
+    recoveryKeys.push(route.request().headers()["idempotency-key"]);
     await route.fulfill({ json: { persisted: true, attempt_id: checkpoint.attempt_id,
       received_sequences: checkpoint.events.map(event => event.sequence), contiguous_sequence: checkpoint.terminal?.final_sequence ?? 1 } });
   });
@@ -172,7 +179,20 @@ test("AS-15 recovered evidence waits for foreground queue readiness and an idle 
     for (const callback of callbacks.values()) callback({ didTimeout: false, timeRemaining: () => 50 });
     callbacks.clear();
   });
+  // The ambiguous original envelope is retried unchanged in this slice.
+  await expect.poll(() => recovered.length).toBe(1);
+  expect(recovered[0]).toEqual(frozenDelivery.checkpoint);
+  expect(recoveryKeys[0]).toBe(frozenDelivery.operationKey);
+  await expect.poll(async () => (await savedAttempts(page)).find(attempt => attempt.attempt_id === original)?.delivery_state).toBe("pending");
+  await expect.poll(() => page.evaluate(() => (window as unknown as { evidenceIdleCallbacks: Map<number, unknown> }).evidenceIdleCallbacks.size)).toBe(1);
+  // Its newly sealed partial terminal needs a separate idle opportunity.
+  await page.evaluate(() => {
+    const callbacks = (window as unknown as { evidenceIdleCallbacks: Map<number, IdleRequestCallback> }).evidenceIdleCallbacks;
+    for (const callback of callbacks.values()) callback({ didTimeout: false, timeRemaining: () => 50 });
+    callbacks.clear();
+  });
   await expect.poll(() => recovered.some(checkpoint => checkpoint.attempt_id === original && checkpoint.terminal?.state === "partial")).toBe(true);
+  expect(recovered).toHaveLength(2);
 });
 
 test("AS-16 restarted opening board records guided arrows and retains the prior partial attempt", async ({ page }) => {
