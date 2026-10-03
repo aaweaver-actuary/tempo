@@ -1233,3 +1233,21 @@ PR #69 candidate CI fixture sequencing: `late obsolete preview cannot replace a 
 
 - `test_postgres_shared_review_requeue_inherits_authoritative_evidence_scope` (white/black) uses the actual queue and review path for a card linked to two differently colored repertoires. The original admission proves one scope; its fresh review copies an immutable context even though reinforcement admission is NULL. The repeat must emit the exact parent manifest/color without diagnostics, prepare and persist a new checkpoint, preserve scheduling, and replay the parent receipt without duplicate rows or context row-version changes. Retained provenance is checked by regular recreation and backup/restore. The case runs first to reproduce the missing-manifest defect before the scope fix.
 - `test_postgres_evidence_context_requires_unique_scope_and_matching_admission` rejects a conflicting context under explicit admission and multiple contexts with no admission. Existing `test_postgres_shared_legacy_color_requires_authoritative_admission` still rejects unbound shared entries without a context. The source-replacement color and fresh-review-only correction regressions remain mandatory.
+
+## Chess.com Puzzle Rush PGN capture
+
+Chess.com puzzle PGNs contain a leading opponent/setup move. Importing the
+header FEN directly would train the wrong side and position. The exact supplied
+export lives in `tests/fixtures/chesscom-puzzle-rush.pgn`; its PuzzleID header,
+not the abbreviated example reference, is authoritative.
+
+- `tests/unit/tactic-capture-pgn.test.ts::Chess.com Puzzle Rush PGN advances the setup move and imports only the solver line` — post-b3 black-to-move FEN, Bd4/Qxd4/Nxd4, canonical c5d4/f6d4/c6d4 and exact provenance. Named parameterized cases reject empty/malformed PGN, missing/invalid FEN, missing solution, illegal setup/continuation and null moves. Ordinary games and lookalike/non-puzzle Links are rejected; either PuzzleID or a valid Chess.com puzzle Link identifies the format. Explicit standard-position FEN, White learners, comments/variations and editable invalid Link are covered.
+- `tests/unit/tactic-capture-regressions.test.tsx::Chess.com puzzle PGN populates an editable capture without persisting until Add to training` — no request or pending save on load, inspected/edited provenance, unchanged note and normal canonical-UCI capture command. Failed against original main because the import control did not exist.
+- `Chess.com puzzle import rejects invalid input without changing the authored capture`; `Loading another Chess.com puzzle replaces editor state and preserves the note`; `Chess.com puzzle replacement resets both cursors, setup controls, errors and pending FEN` — atomic failure, replacement rather than mixing, cleared unsubmitted SAN, both orientations, navigation and absent provenance cleanup.
+- `Chess.com puzzle controls stay locked while saving or awaiting capture confirmation`; `Chess.com puzzle Link errors use existing capture validation and leave imported fields editable` — pending/reopened capture cannot be overwritten, and existing terminal URL rejection permits correction. Existing manual/FEN/SAN and receipt regressions remain required.
+- `tests/browser/tactic-capture.spec.ts::Chess.com Puzzle Rush PGN reaches ordinary Training through tactic capture` — real pawn placement on b3, black orientation, complete solution/provenance, no import POST, exact ordinary capture payload, dialog closure, unchanged Solve board and ordinary Training representation.
+- `tests/browser/cross-browser.spec.ts::Chess.com puzzle import starts at the solver position across browser engines` — imported start, End/Home navigation and fixed orientation on Chromium, Firefox and WebKit.
+- `tests/browser/visual.spec.ts::Capture tactic dialog 390` and `1280` — reviewed collapsed-dialog baselines plus expanded PGN input geometry and loading; existing manual SAN controls remain usable.
+
+No backend business-rule, schema, idempotency or queue path changes accompany
+this input adaptation.

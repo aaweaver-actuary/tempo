@@ -1,0 +1,18 @@
+[Event "?"]
+[Site "?"]
+[Date "????.??.??"]
+[Round "?"]
+[White "?"]
+[Black "?"]
+[Result "*"]
+[SetUp "1"]
+[FEN "r1b2rk1/ppq2p1p/2np1Qp1/2b5/2B1Pp2/8/PPPP2PP/R1B1K1NR w KQ - 0 1"]
+[ChessExplanationEngineVersion "Explanation Engine 1.176.41"]
+[BestPitchAlternative "-0.29: 1...Ne2 2.d5 Bxd5 3.Nb4 Bb3"]
+[SecondBestPitchAlternative "-0.89: 1...Nf3 2.d5 Bxd5 3.Nb4 Bb3"]
+[PuzzleGoals "WinMaterial"]
+[PuzzleThemes "Fork,PiecePlay"]
+[PuzzleID "NDA2OTUxNjU4NDc5NTM3NDc3MA==-b2b3"]
+[Link "https://www.chess.com/puzzles/problem/3211014"]
+
+1. b3 Bd4 2. Qxd4 Nxd4 *
