@@ -1272,3 +1272,14 @@ this input adaptation.
 - `AS-15 background checkpoint receipt polling remains background after HTTP 202 (pending retry=false/true)` — actual journal delivery retains background admission through receipt confirmation, frozen payload/key, successful acknowledgment and ambiguous pending retry.
 - `foreground review completion and operation receipt reads retain foreground admission by default` — the shared operation helper preserves foreground review POST and receipt semantics.
 - `test_opening_checkpoint_receipt_read_uses_background_admission` — actual API middleware enters the requested activity class and passes the same background flag to the receipt reader; no header retains foreground defaults.
+
+### PR #69 bounded checkpoint delivery and durable failure parity
+
+- `AS-15 checkpoint receipt polling is bounded by the delivery timeout (POST 202/500)` — actual journal receipt GET observes the POST's abort signal; the delivery settles, clears the active flush, and retries the unchanged frozen key/body/events.
+- `AS-15 immediate and deferred durable checkpoint failure both quarantine and advance the evidence queue (immediate/deferred)` — the same failed durable receipt rejects the first journal with retained diagnostics/events and delivers the next journal in the same flush.
+- `AS-15 ambiguous checkpoint HTTP failure retains frozen delivery for unchanged retry (unknown/pending/retrying/blocked/missing/network)` — transient HTTP failure is never quarantined without a failed receipt; blocked errors remain actionable; later retry preserves identity.
+- `AS-15 durable complete receipt resolves an ambiguous checkpoint HTTP failure` — durable success wins over an ambiguous HTTP response without a duplicate POST.
+
+- `foreground receipt polling forwards an optional caller signal without changing admission` — cancellation remains caller-controlled and does not demote foreground work.
+
+These regressions run in `tests/unit/opening-evidence-background-admission.test.ts`, alongside background admission, pending/complete receipt and foreground review controls. Existing browser and PostgreSQL background contention/restart/replay coverage remains required.

@@ -1,7 +1,7 @@
 import { API_URL } from "../const";
 import { backgroundFetch } from "./background-fetch";
 
-type OperationResponseOptions = { background?: boolean };
+type OperationResponseOptions = { background?: boolean; signal?: AbortSignal };
 
 export class PendingOperationError extends Error {
   constructor(readonly operationId: string, message?: string, readonly blocked = false) {
@@ -29,7 +29,8 @@ export async function confirmOperationResponse(response: Response, options: Oper
 // Resolve a known command through the same receipt semantics as a 202 response.
 export async function readOperationResponse(operationId: string, options: OperationResponseOptions = {}): Promise<Response> {
   const request = options.background ? backgroundFetch : fetch;
-  const status = await request(`${API_URL}/api/operations/${encodeURIComponent(operationId)}`);
+  const status = await request(`${API_URL}/api/operations/${encodeURIComponent(operationId)}`,
+    options.signal ? { signal: options.signal } : undefined);
   if (!status.ok)
     throw new PendingOperationError(operationId);
   const receipt = await status.json() as {

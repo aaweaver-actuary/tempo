@@ -3,7 +3,7 @@ import type { AssistanceKind, OpeningDecisionEvent, OpeningEvidenceCheckpoint } 
 import { openingEvidenceCheckpointSchema, openingDecisionEventSchema } from "../domain/opening-evidence";
 import { API_URL } from "../const";
 import { offlineTrainingDatabase } from "./offline-training-storage";
-import { confirmOperationResponse, FailedOperationError } from "./operation-status";
+import { confirmOperationResponse, FailedOperationError, readOperationResponse } from "./operation-status";
 import { publishNotification } from "./notifications";
 import { backgroundFetch } from "./background-fetch";
 
@@ -276,7 +276,6 @@ async function deliverOpeningEvidence(): Promise<void> {
     )).sort((left, right) => left.sequence - right.sequence);
     const checkpoint = frozenDelivery?.checkpoint ?? openingEvidenceCheckpointSchema.parse({ ...header, events,
       terminal: header.terminal?.state === "complete" ? null : header.terminal });
-    const identity = `${checkpoint.attempt_id}:${events.map((event) => event.sequence).join(",")}:${checkpoint.terminal ? "partial" : "active"}`;
     // Fixed-size delivery key, with a digest of the exact immutable envelope.
     const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(JSON.stringify(checkpoint)));
     const hash = Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
@@ -296,27 +295,29 @@ async function deliverOpeningEvidence(): Promise<void> {
     }
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 15_000);
-    let response: Response;
+    let receipt: { persisted?: boolean; attempt_id?: string; received_sequences?: number[]; contiguous_sequence?: number };
     try {
-      response = await confirmOperationResponse(await fetch(`${API_URL}/api/opening-evidence/checkpoints`, {
+      let response = await confirmOperationResponse(await fetch(`${API_URL}/api/opening-evidence/checkpoints`, {
         method: "POST", headers: { "Content-Type": "application/json", "Idempotency-Key": operationKey,
           "X-Tempo-Work-Class": "background" },
         body: JSON.stringify(checkpoint), signal: controller.signal,
-      }), { background: true });
+      }), { background: true, signal: controller.signal });
+      if (!response.ok) {
+        if (response.status === 409 || response.status === 422) {
+          await rejectOpeningEvidence(checkpoint.attempt_id, await response.text());
+          continue;
+        }
+        // HTTP failure alone is ambiguous. Resolve the frozen command, just as
+        // a deferred response does, before quarantining or accepting evidence.
+        response = await readOperationResponse(operationKey, { background: true, signal: controller.signal });
+      }
+      receipt = await response.json();
+      if (!receipt.persisted || receipt.attempt_id !== checkpoint.attempt_id || !Array.isArray(receipt.received_sequences))
+        throw new Error("Opening evidence persistence was not confirmed.");
     } catch (error) {
       if (error instanceof FailedOperationError) { await rejectOpeningEvidence(checkpoint.attempt_id, error.message); continue; }
       throw error;
     } finally { clearTimeout(timeout); }
-    if (!response.ok) {
-      if (response.status === 409 || response.status === 422) {
-        await rejectOpeningEvidence(checkpoint.attempt_id, await response.text());
-        continue;
-      }
-      throw new Error(`Opening checkpoint ${identity} returned HTTP ${response.status}.`);
-    }
-    const receipt = await response.json() as { persisted?: boolean; attempt_id?: string; received_sequences?: number[]; contiguous_sequence?: number };
-    if (!receipt.persisted || receipt.attempt_id !== checkpoint.attempt_id || !Array.isArray(receipt.received_sequences))
-      throw new Error("Opening evidence persistence was not confirmed.");
     const database = await offlineTrainingDatabase();
     await new Promise<void>((resolve, reject) => {
       const transaction = database.transaction(["opening_attempts", "opening_events"], "readwrite");
