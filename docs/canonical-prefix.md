@@ -241,6 +241,7 @@ do not advance global scope or admit a global refresh solely for materialization
 | Guided SQLite repair and automatic unsupported-link reconciliation within repair | Guard on synchronous resolution / bounded repair publication. |
 | Discovery admission (both stores) | Guard on the bounded branch-materialization transaction. |
 | Explicit prefix-split membership writes (both stores) | Guard on shared split admission. |
+| First defensive-training collection membership | Guard on shared transactional approval (manual, explicit or automatic); existing approval replay does not advance scope. |
 | Prefix save/clear | Existing in-transaction full refresh when opening moves change. |
 | Main repertoire selection / deletion | Existing PostgreSQL in-transaction refresh; SQLite now uses the same mutation guard atomically. |
 | Generated graph/card/link maintenance; training/reviews; internal study/tactics | No refresh solely for these writes: they do not advance global classification scope. |
