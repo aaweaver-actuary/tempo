@@ -195,6 +195,72 @@ test("AS-15 recovered evidence waits for foreground queue readiness and an idle 
   expect(recovered).toHaveLength(2);
 });
 
+test("AS-15 a real tab lease releases stranded evidence into a later idle slice", async ({ page: owner, context }) => {
+  await prepareVisualUI(owner); await prepareQueue(owner);
+  // This tab owns active board work; only the second tab runs recovery in this fixture.
+  await owner.addInitScript(() => { window.requestIdleCallback = () => 1; window.cancelIdleCallback = () => undefined; });
+  await owner.route("**/api/opening-evidence/checkpoints", route => route.abort("failed"));
+  await owner.goto("/");
+  const failed = owner.waitForEvent("requestfailed", { predicate: request => request.url().endsWith("/api/opening-evidence/checkpoints") });
+  await move(owner, "e2", "e4"); await failed;
+  const original = (await savedAttempts(owner))[0];
+  const frozen = original.delivery as { checkpoint: OpeningEvidenceCheckpoint; operationKey: string };
+  const recovering = await context.newPage();
+  await prepareVisualUI(recovering); await prepareQueue(recovering);
+  await recovering.addInitScript(() => {
+    const callbacks = new Map<number, IdleRequestCallback>(); let sequence = 0;
+    window.requestIdleCallback = callback => { callbacks.set(++sequence, callback); return sequence; };
+    window.cancelIdleCallback = id => { callbacks.delete(id); };
+    Object.assign(window, { evidenceIdleCallbacks: callbacks });
+  });
+  const checkpoints: OpeningEvidenceCheckpoint[] = [], keys: string[] = [];
+  await recovering.route("**/api/opening-evidence/checkpoints", async route => {
+    expect(route.request().headers()["x-tempo-work-class"]).toBe("background");
+    const checkpoint = route.request().postDataJSON() as OpeningEvidenceCheckpoint; checkpoints.push(checkpoint);
+    keys.push(route.request().headers()["idempotency-key"]);
+    await route.fulfill({ json: { persisted: true, attempt_id: checkpoint.attempt_id,
+      received_sequences: checkpoint.events.map(event => event.sequence), contiguous_sequence: checkpoint.terminal?.final_sequence ?? 1 } });
+  });
+  // Seed later orphan journals with the same observed presentation; the original remains owned by the live tab.
+  await owner.evaluate(() => new Promise<void>((resolve, reject) => {
+    const request = indexedDB.open("tempo-offline-training", 2);
+    request.onsuccess = () => {
+      const database = request.result, transaction = database.transaction(["opening_attempts", "opening_events"], "readwrite");
+      const attempts = transaction.objectStore("opening_attempts"), events = transaction.objectStore("opening_events");
+      const all = attempts.getAll(); all.onsuccess = () => {
+        const attempt = all.result[0]; const observed = events.index("attempt_id").getAll(attempt.attempt_id);
+        observed.onsuccess = () => { for (const id of ["zz-lease-B", "zz-lease-C"]) {
+          attempts.put({ ...attempt, attempt_id: id, owner_session_id: "closed-tab", delivery: undefined, delivery_state: "pending",
+            terminal: { state: "partial", final_sequence: attempt.final_sequence, ended_at: new Date().toISOString() } });
+          for (const event of observed.result) events.put({ ...event, attempt_id: id });
+        } };
+      };
+      transaction.oncomplete = () => { database.close(); resolve(); };
+      transaction.onerror = () => { database.close(); reject(transaction.error); };
+    };
+  }));
+  await recovering.goto("/"); await expect(recovering.getByText("Shadow opening", { exact: true })).toBeVisible();
+  const idleCount = () => recovering.evaluate(() => (window as unknown as { evidenceIdleCallbacks: Map<number, unknown> }).evidenceIdleCallbacks.size);
+  const idle = async () => {
+    await expect.poll(idleCount).toBe(1);
+    await recovering.evaluate(() => {
+      const callbacks = (window as unknown as { evidenceIdleCallbacks: Map<number, IdleRequestCallback> }).evidenceIdleCallbacks;
+      const [id, callback] = [...callbacks][0]; callbacks.delete(id); callback({ didTimeout: false, timeRemaining: () => 50 });
+    });
+  };
+  await idle(); await expect.poll(idleCount).toBe(1); expect(checkpoints).toEqual([]);
+  await idle(); await expect.poll(() => checkpoints.map(checkpoint => checkpoint.attempt_id)).toEqual(["zz-lease-B"]);
+  await idle(); await expect.poll(() => checkpoints.map(checkpoint => checkpoint.attempt_id)).toEqual(["zz-lease-B", "zz-lease-C"]);
+  await expect.poll(idleCount).toBe(0); expect((await savedAttempts(recovering)).find(attempt => attempt.attempt_id === original.attempt_id)).toEqual(original);
+  await owner.close(); // Real browser lock release, without reconnect/reload or direct recovery invocation.
+  await idle(); await expect.poll(() => checkpoints.length).toBe(3);
+  expect(checkpoints[2]).toEqual(frozen.checkpoint); expect(keys[2]).toBe(frozen.operationKey);
+  await idle(); await expect.poll(() => checkpoints.length).toBe(4);
+  expect(checkpoints[3]).toMatchObject({ attempt_id: original.attempt_id, terminal: { state: "partial" } });
+  await expect.poll(async () => (await savedAttempts(recovering)).some(attempt => attempt.attempt_id === original.attempt_id)).toBe(false);
+  await expect.poll(idleCount).toBe(0);
+});
+
 test("AS-16 restarted opening board records guided arrows and retains the prior partial attempt", async ({ page }) => {
   await prepareVisualUI(page); await prepareQueue(page);
   await page.route("**/api/opening-evidence/checkpoints", route => route.abort("failed"));

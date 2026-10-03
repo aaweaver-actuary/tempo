@@ -73,7 +73,9 @@ it("AS-16 guided review failure receipt shares the foreground review deadline", 
       return url.endsWith("/fail") ? Response.json({ operation_id: "guided-failure" }, { status: 202 }) : Response.json({ persisted: true }); }
     receiptSignal = init?.signal;
     if (retry) return Response.json({ state: "complete", response: { persisted: true } });
-    return new Promise<Response>((_resolve, reject) => init?.signal?.addEventListener("abort", () => reject(new DOMException("Receipt aborted", "AbortError")), { once: true }));
+    const receipt = Promise.withResolvers<Response>();
+    init?.signal?.addEventListener("abort", () => receipt.reject(new DOMException("Receipt aborted", "AbortError")), { once: true });
+    return receipt.promise;
   }));
   const first = outbox.flushPendingReviews(); const failed = expect(first).rejects.toThrow("timed out after 15 seconds");
   await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2)); await vi.advanceTimersByTimeAsync(15_000); await failed;

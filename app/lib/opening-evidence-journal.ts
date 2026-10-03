@@ -21,6 +21,38 @@ let activeDeliverySlice: Promise<void> | undefined;
 type RecoverySliceResult = { moreWork: boolean };
 let activeRecovery: Promise<RecoverySliceResult> | undefined;
 const leasedRecoveryAttempts = new Set<string>();
+const leaseReleaseListeners = new Set<() => void>();
+const leaseWaiters = new Map<string, AbortController>();
+
+/** Ownership release requests an idle slice; it never runs recovery directly. */
+export function subscribeOpeningEvidenceLeaseRelease(listener: () => void): () => void {
+  leaseReleaseListeners.add(listener);
+  return () => {
+    leaseReleaseListeners.delete(listener);
+    if (!leaseReleaseListeners.size) {
+      for (const controller of leaseWaiters.values()) controller.abort();
+      leaseWaiters.clear(); leasedRecoveryAttempts.clear();
+    }
+  };
+}
+
+function waitForAttemptLeaseRelease(attemptId: string): void {
+  if (!leaseReleaseListeners.size || leaseWaiters.has(attemptId)) return;
+  const controller = new AbortController();
+  leaseWaiters.set(attemptId, controller);
+  // The passive FIFO waiter does no work while holding the lock. Notify only
+  // after its callback has returned and the browser has released that lock.
+  void navigator.locks.request(`tempo-opening-attempt:${attemptId}`, { signal: controller.signal }, () => undefined).then(() => {
+    if (leaseWaiters.get(attemptId) !== controller) return;
+    leaseWaiters.delete(attemptId); leasedRecoveryAttempts.delete(attemptId);
+    for (const listener of leaseReleaseListeners) listener();
+  }).catch(error => {
+    if (!controller.signal.aborted) publishNotification({ severity: "warning", source: "opening evidence",
+      key: `opening-evidence-lease:${attemptId}`, message: `Opening evidence ownership could not be checked. Its journal remains saved; retry recovery after restoring browser access. ${String(error)}` });
+  }).finally(() => {
+    if (leaseWaiters.get(attemptId) === controller) leaseWaiters.delete(attemptId);
+  });
+}
 let flushTimer: ReturnType<typeof setTimeout> | undefined;
 let writeTail = Promise.resolve();
 const releaseLeases = new Map<string, () => void>();
@@ -413,7 +445,8 @@ async function recoverSavedOpeningEvidence(): Promise<RecoverySliceResult> {
       await navigator.locks.request(`tempo-opening-attempt:${attempt.attempt_id}`, { ifAvailable: true }, async lease => {
         if (!lease) {
           // Skip a live browser for this pass, rather than repeatedly scheduling it.
-          leasedRecoveryAttempts.add(attempt.attempt_id); deliver = false; return;
+          leasedRecoveryAttempts.add(attempt.attempt_id); waitForAttemptLeaseRelease(attempt.attempt_id);
+          deliver = false; return;
         }
         if (attempt.terminal?.state === "complete") {
           const controller = new AbortController();
@@ -451,7 +484,7 @@ async function recoverSavedOpeningEvidence(): Promise<RecoverySliceResult> {
     }
   }
   const moreWork = [...captures.values()].some(journal => journal.storageError) || Boolean(await recoveryCandidate(database, pendingAggregateIds));
-  if (!moreWork) leasedRecoveryAttempts.clear();
+  if (!moreWork && !leaseWaiters.size) leasedRecoveryAttempts.clear();
   return { moreWork };
 }
 

@@ -19,6 +19,7 @@
     { "paths": ["app/components/comparison-workspace.tsx"], "families": ["games"] }
   ],
   "critical": [
+    { "file": "opening-evidence.spec.ts", "title": "AS-15 a real tab lease releases stranded evidence into a later idle slice", "covers": "passive Web Locks release wakeup and one-journal idle slices" },
     { "file": "recovery.spec.ts", "title": "intentional training failure is saved once and reload resumes it without another failure", "covers": "durable review and reload" },
     { "file": "phone-offline-training.spec.ts", "title": "prepared phone queue survives API outage reload and syncs its review", "covers": "offline replay" },
     { "file": "opening-evidence.spec.ts", "title": "AS-08 deferred evidence persistence leaves rendered moves and aggregate review responsive", "covers": "shadow capture foreground isolation" },

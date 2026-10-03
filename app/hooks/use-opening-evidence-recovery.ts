@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { recoverOpeningEvidence } from "../lib/opening-evidence-journal";
+import { recoverOpeningEvidence, subscribeOpeningEvidenceLeaseRelease } from "../lib/opening-evidence-journal";
 import { publishNotification } from "../lib/notifications";
 import { useTrainingStore } from "../state/training-store";
 
@@ -17,7 +17,8 @@ export function useOpeningEvidenceRecovery(enabled: boolean, ready: boolean, blo
       setRecoveryGeneration(generation => generation + 1);
     };
     window.addEventListener("online", requestRecovery);
-    return () => window.removeEventListener("online", requestRecovery);
+    const unsubscribeLeaseRelease = subscribeOpeningEvidenceLeaseRelease(requestRecovery);
+    return () => { window.removeEventListener("online", requestRecovery); unsubscribeLeaseRelease(); };
   }, [enabled]);
 
   useEffect(() => {

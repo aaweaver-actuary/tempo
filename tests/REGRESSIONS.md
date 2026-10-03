@@ -1302,7 +1302,8 @@ Coverage lives in `tests/unit/opening-evidence-offline-quota.test.ts` and `tests
 ### Bounded review and recovery lifecycle
 
 - `AS-16 online review receipt polling remains bounded after HTTP 202`; `AS-16 phone review receipt polling remains bounded after HTTP 202` — actual durable outbox/phone replay, one signal across POST and receipt GET, 15s/5s fake deadlines, frozen retries and exactly one confirmation; includes compact quota identities.
-- `AS-16 guided review failure receipt shares the foreground review deadline` — existing Again/failure command also retains its signal through receipt confirmation without demoting foreground admission.
-
 - `AS-15 orphan completion verification timeout yields and retries safely` — a stalled background GET releases the coalesced recovery promise after 15s without changing journal state; a later 404 yields one partial checkpoint.
-- `AS-15 orphan verification response body shares its bounded deadline` — full response-read cancellation boundary.
+- `AS-15 lease-blocked opening evidence is retried after the owning tab releases it`; `AS-15 live lease retry does not create an idle recovery loop` — held A and later B/C progress, passive ownership release wakes the actual hook after backlog drains, foreground/idle checks, no polling and coalesced releases.
+- `AS-15 unmount cancels passive lease waiters without running recovery`; `AS-15 orphan verification response body shares its bounded deadline` — cancellation and full response-read boundaries.
+- `AS-15 a real tab lease releases stranded evidence into a later idle slice` — real two-tab Web Locks, B/C drain while A remains held, tab close wakes idle recovery without reconnect/reload; frozen retry and partial seal remain separate slices. Critical browser inventory.
+- `AS-16 guided review failure receipt shares the foreground review deadline` — existing Again/failure command also retains its signal through receipt confirmation without demoting foreground admission.
