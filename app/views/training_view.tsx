@@ -33,6 +33,7 @@ import { annotationToShapes } from "../utils/position-annotations";
 import { useShallow } from "zustand/react/shallow";
 import DefenseTrainingView from "./defense_training_view";
 import StudyExerciseRunner from "./study_exercise_runner";
+import type { PendingReview } from "../lib/review-outbox";
 
 interface TrainingViewProps {
   dateLabel: string;
@@ -49,9 +50,11 @@ interface TrainingViewProps {
     | "saving"
     | "saveFailed"
     | "saved"
+    | "conflicted"
     | "refreshingQueue"
     | "queueFailed";
   reviewSaveError?: string;
+  reviewPersistenceIdentity?: Pick<PendingReview, "backendId" | "queueEntryId" | "attemptId">;
   retryReviewSave?: () => void;
   retryQueueAfterReview?: () => void;
   handleAttemptFailure: () => void;
@@ -80,6 +83,7 @@ function StandardTrainingView({
   rateCard,
   reviewPersistenceState = "idle",
   reviewSaveError = "",
+  reviewPersistenceIdentity,
   retryReviewSave,
   retryQueueAfterReview = () => undefined,
   handleAttemptFailure,
@@ -98,6 +102,7 @@ function StandardTrainingView({
   const [rejectedPrefixOfferKey, setRejectedPrefixOfferKey] = useState("");
   const [prefixSplitError, setPrefixSplitError] = useState<{ key: string; message: string }>();
   const reviewNotificationId = useRef<string | undefined>(undefined);
+  const reviewNotificationKey = useRef<string | undefined>(undefined);
   const prefixOfferKey = `${card.backendId ?? card.id}:${card.revision ?? 1}:${card.prefixSplitLatestFailureId ?? 0}`;
   const {
     boardAttempt,
@@ -119,12 +124,24 @@ function StandardTrainingView({
 
   useEffect(() => {
     const source = "training review";
+    const saveKey = `review-save:${reviewPersistenceIdentity?.queueEntryId ?? card.queueEntryId ?? card.id}`;
+    const details = reviewPersistenceIdentity ? { cardId: reviewPersistenceIdentity.backendId,
+      queueEntryId: reviewPersistenceIdentity.queueEntryId, attemptId: reviewPersistenceIdentity.attemptId ?? "unknown" } : undefined;
+    if (reviewNotificationId.current && reviewNotificationKey.current !== saveKey && ["saving", "saveFailed", "conflicted"].includes(reviewPersistenceState)) {
+      updateNotification(reviewNotificationId.current, { severity: "info", active: false, message: "Result remains saved locally pending confirmation." });
+      reviewNotificationId.current = undefined;
+    }
+    reviewNotificationKey.current = saveKey;
     if (reviewPersistenceState === "saving") {
       reviewNotificationId.current = publishNotification({ severity: "info", source,
-        key: `review-save:${card.queueEntryId ?? card.id}`, message: "Saving result…", active: true });
+        key: saveKey, details, message: "Saving result…", active: true });
     } else if (reviewPersistenceState === "saveFailed") {
       if (reviewNotificationId.current) updateNotification(reviewNotificationId.current, { severity: "error", active: false, message: reviewSaveError });
-      else publishNotification({ severity: "error", source, key: `review-save:${card.queueEntryId ?? card.id}`, message: reviewSaveError });
+      else publishNotification({ severity: "error", source, key: saveKey, details, message: reviewSaveError });
+      reviewNotificationId.current = undefined;
+    } else if (reviewPersistenceState === "conflicted") {
+      if (reviewNotificationId.current) updateNotification(reviewNotificationId.current, { severity: "warning", active: false, message: "Completed result kept for review. Open Review conflicts to retry or export it." });
+      else publishNotification({ severity: "warning", source, key: saveKey, details, message: "Completed result kept for review. Open Review conflicts to retry or export it." });
       reviewNotificationId.current = undefined;
     } else if (reviewPersistenceState === "saved") {
       if (reviewNotificationId.current) resolveNotification(reviewNotificationId.current, { severity: "success", message: "Result saved." });
@@ -140,7 +157,7 @@ function StandardTrainingView({
       resolveNotification(reviewNotificationId.current, { severity: "success", message: "Result saved. Next card loaded." });
       reviewNotificationId.current = undefined;
     }
-  }, [card.id, card.queueEntryId, reviewPersistenceState, reviewSaveError]);
+  }, [card.id, card.queueEntryId, reviewPersistenceState, reviewSaveError, reviewPersistenceIdentity]);
   const liveQueueBlocked = Boolean(serviceError && !offlineQueue);
   const trainingMutationBlocked = liveQueueBlocked || reviewBlocked || burialPending;
   const isEndgame = card.kind === "endgame";

@@ -123,3 +123,45 @@ test("completed tactic advances while an earlier review save is still pending", 
   releaseFirstReview?.();
   await expect.poll(() => savedEntries).toEqual([201, 202]);
 });
+
+test("poisoned online A becomes inspectable while B and C save and conflict retry survives reload", async ({ page }) => {
+  await page.addInitScript(() => {
+    if (localStorage.getItem("recovery-fixture-seeded")) return;
+    localStorage.setItem("recovery-fixture-seeded", "true");
+    localStorage.setItem("tempo-pending-training-reviews-v1", JSON.stringify([
+      { backendId: "poison-a", queueEntryId: 501, outcome: "correct", guided: false, attemptId: "original-a", completedAt: "2026-09-18T15:00:00Z", expectedRevision: 1 },
+      { backendId: "valid-b", queueEntryId: 502, outcome: "correct", guided: false, attemptId: "original-b", completedAt: "2026-09-18T15:01:00Z" },
+      { backendId: "valid-c", queueEntryId: 503, outcome: "correct", guided: false, attemptId: "original-c", completedAt: "2026-09-18T15:02:00Z" },
+    ]));
+  });
+  const saved: string[] = [];
+  const reconciliations: Array<{ key: string; body: unknown }> = [];
+  let retrySucceeds = false;
+  await prepareVisualUI(page);
+  await page.route("**/api/cards/*/review", async route => {
+    const body = route.request().postDataJSON();
+    if (body.attempt_id === "original-a")
+      return route.fulfill({ status: 409, json: { detail: "Historical failed save" } });
+    saved.push(body.attempt_id);
+    return route.fulfill({ json: { persisted: true } });
+  });
+  await page.route("**/api/cards/poison-a/review/reconcile", async route => {
+    reconciliations.push({ key: route.request().headers()["idempotency-key"], body: route.request().postDataJSON() });
+    return route.fulfill({ json: retrySucceeds ? { persisted: true } : { persisted: false,
+      conflict: { code: "queue_attempt_unprovable", message: "The original queue attempt cannot be verified.", retryable: false } } });
+  });
+  await page.reload();
+  await expect.poll(() => saved).toEqual(["original-b", "original-c"]);
+  await expect(page.getByRole("button", { name: "Review conflicts (1)" })).toBeVisible();
+  await page.reload();
+  await page.getByRole("button", { name: "Review conflicts (1)" }).click();
+  const dialog = page.getByRole("dialog", { name: "Review conflicts" });
+  await expect(dialog).toContainText("The original queue attempt cannot be verified.");
+  const exported = JSON.parse(await dialog.getByRole("textbox", { name: "Conflict data" }).inputValue());
+  expect(exported.onlineReviews[0]).toMatchObject({ attemptId: "original-a", completedAt: "2026-09-18T15:00:00Z", state: "conflicted" });
+  retrySucceeds = true;
+  await dialog.getByRole("button", { name: "Retry saved result" }).click();
+  await expect(page.getByRole("button", { name: /Review conflicts/ })).toHaveCount(0);
+  expect(reconciliations.map(item => item.key)).toEqual(["review-reconcile:original-a:1", "review-reconcile:original-a:2"]);
+  expect(reconciliations[0].body).toEqual(reconciliations[1].body);
+});

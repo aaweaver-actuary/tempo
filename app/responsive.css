@@ -552,6 +552,7 @@ button:not(.primary-button):not(.primary):not(.brand):not(.game-row):not(
 .tempo-activity-trigger { min-height: 44px; cursor: pointer; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .notification-center { position: relative; }
 .offline-conflicts-control { position: fixed; z-index: 115; right: 1rem; bottom: 1rem; }
+.offline-conflicts-control.is-open { z-index: 150; }
 .offline-conflicts-trigger { padding: 0.65rem 0.85rem; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); box-shadow: 0 4px 18px #2223; }
 .offline-conflicts-backdrop { position: fixed; inset: 0; z-index: 150; display: grid; place-items: center; padding: 1rem; background: #1119; }
 .offline-conflicts-dialog { display: grid; gap: 0.7rem; width: min(700px, 100%); max-height: 90dvh; padding: 1rem; overflow: auto; border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }

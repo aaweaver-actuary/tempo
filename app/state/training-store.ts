@@ -474,6 +474,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       attempt: {
         entryKey: attemptEntryKey(nextCard),
         generation: get().attempt.generation + 1,
+        reviewAttemptId: crypto.randomUUID(),
         phase: "playerTurn",
       },
       reviewSaveError: "",
@@ -519,6 +520,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       attempt: {
         entryKey: attemptEntryKey(card),
         generation: get().attempt.generation + 1,
+        reviewAttemptId: crypto.randomUUID(),
         phase: nextAttemptFailed ? "guided" : "playerTurn",
       },
       reviewSaveError: "",
@@ -534,18 +536,18 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
   },
   hydrateLocalQueue: (practiceCards, advance = false, totalCount = practiceCards.length) => {
     const current = get();
-    const completedCard = current.practiceCards[current.activeCardIndex];
-    if (!advance && completedCard && current.attempt.phase === "feedbackPause" &&
-        current.feedback === "complete") {
+    const activeCard = current.practiceCards[current.activeCardIndex];
+    if (!advance && activeCard && current.isDatabaseQueueActive &&
+        ["playerTurn", "opponentReplyPending", "guided", "feedbackPause"].includes(current.attempt.phase)) {
       const upcomingCards = practiceCards.filter(
         (queuedCard) => attemptEntryKey(queuedCard) !== current.attempt.entryKey,
       );
-      const completedCardStillQueued = upcomingCards.length !== practiceCards.length;
-      const retainedCards = [completedCard, ...upcomingCards];
+      const activeCardStillQueued = upcomingCards.length !== practiceCards.length;
+      const retainedCards = [activeCard, ...upcomingCards];
       set({
         practiceCards: retainedCards,
         dailyQueue: retainedCards.map((_, index) => index),
-        cardsLeft: totalCount + (completedCardStillQueued ? 0 : 1),
+        cardsLeft: totalCount + (activeCardStillQueued ? 0 : 1),
         activeCardIndex: 0,
         isDatabaseQueueActive: true,
         serviceError: "",
@@ -557,15 +559,6 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       : practiceCards.findIndex(
           (card) => attemptEntryKey(card) === current.attempt.entryKey,
         );
-    if (!advance && retainedIndex < 0 && current.isDatabaseQueueActive &&
-        current.practiceCards[current.activeCardIndex] && current.step > 0 &&
-        current.attempt.phase !== "feedbackPause") {
-      set({
-        serviceError: "This active card is no longer in today's queue. Refresh before continuing.",
-        attempt: { ...current.attempt, phase: "feedbackPause" },
-      });
-      return;
-    }
     const activeCardIndex = Math.max(0, retainedIndex);
     const card = practiceCards[activeCardIndex];
     const queueState = {
@@ -599,6 +592,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
           attempt: {
             entryKey: card ? attemptEntryKey(card) : "",
             generation: current.attempt.generation + 1,
+            reviewAttemptId: crypto.randomUUID(),
             phase: card ? (failed ? "guided" : "playerTurn") : "complete",
           },
         });
@@ -628,6 +622,7 @@ export const useTrainingStore = create<TrainingStoreState>((set, get) => ({
       attempt: {
         entryKey: card ? attemptEntryKey(card) : "",
         generation: current.attempt.generation + 1,
+        reviewAttemptId: crypto.randomUUID(),
         phase: card ? (failed ? "guided" : "playerTurn") : "complete",
       },
     });

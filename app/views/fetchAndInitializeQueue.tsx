@@ -4,7 +4,7 @@ import { useTrainingStore } from "../state/training-store";
 import { runStudyTask } from "../lib/background-study";
 import type { PracticeCard } from "../domain/cards";
 import { reportDebugError } from "../lib/debug-reporting";
-import { flushPendingReviews, pendingReviews, ReviewReplayError } from "../lib/review-outbox";
+import { conflictedReviews, flushPendingReviews, pendingReviews, ReviewReplayError, updateReviewConflictNotice } from "../lib/review-outbox";
 import { describeOfflineQueue, OfflineReplayError, readPreparedTraining, replayOfflineAttempts, requiresConnectedGrading, savePreparedTraining } from "../lib/offline-training";
 import { waitForOfflineShell } from "../lib/offline-shell";
 import { flushTrainingFailures, pendingTrainingFailures } from "../lib/training-failure-outbox";
@@ -145,8 +145,10 @@ export async function fetchAndInitializeQueue(
     let pendingOfflineCardIds = new Set<string>();
     const withoutPendingReviews = (cards: PracticeCard[]) => {
       const pendingEntryIds = new Set(pendingReviews().map((review) => review.queueEntryId));
+      const conflictedCardIds = new Set(conflictedReviews().map((review) => review.backendId));
       return cards.filter((card) =>
         (!card.queueEntryId || !pendingEntryIds.has(card.queueEntryId)) &&
+        !conflictedCardIds.has(String(card.backendId ?? card.id)) &&
         !pendingOfflineCardIds.has(String(card.backendId ?? card.id)));
     };
     const pendingFailureEntries = new Set(pendingTrainingFailures());
@@ -225,9 +227,13 @@ export async function fetchAndInitializeQueue(
             source: "training-review-replay",
             operation: "save pending review",
             endpoint: error instanceof ReviewReplayError ? error.endpoint : `${API_URL}/api/cards/review`,
+            ...(error instanceof ReviewReplayError ? { cardId: error.backendId, queueEntryId: error.queueEntryId,
+              attemptId: error.attemptId, status: error.status, code: error.code, retryable: error.retryable,
+              classification: error.classification } : {}),
           });
       }
     }
+    updateReviewConflictNotice();
     if (pendingFailureEntries.size)
       void flushTrainingFailures().then(() => {
         if (generation === requestGeneration) showGuidedAttemptSaveNotice();

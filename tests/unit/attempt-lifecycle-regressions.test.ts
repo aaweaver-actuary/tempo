@@ -7,7 +7,7 @@ import {
   selectTrainingViewState,
 } from "../../app/state/training-store";
 import { attemptEntryKey } from "../../app/domain/attempt";
-import { enqueuePendingReview, pendingReviews } from "../../app/lib/review-outbox";
+import { conflictedReviews, enqueuePendingReview, pendingReviews } from "../../app/lib/review-outbox";
 import { enqueueTrainingFailure, pendingTrainingFailures } from "../../app/lib/training-failure-outbox";
 import { clearDebugErrors, debugErrors } from "../../app/lib/debug-reporting";
 import {
@@ -43,6 +43,34 @@ beforeEach(() => {
 });
 
 describe("review attempt reliability", () => {
+  it("refresh removing an active opening preserves its board and attempt for completion", () => {
+    const store = useTrainingStore.getState();
+    store.hydrateLocalQueue([card], true, 1);
+    store.setStep(1);
+    store.setCurrentFenString(asFenString(new Chess().fen()));
+    const before = useTrainingStore.getState();
+    const replacement = { ...card, id: asCardId("future-card"), backendId: asCardId("future-card"), queueEntryId: asQueueEntryId(43) };
+    store.hydrateLocalQueue([replacement], false, 1);
+    const after = useTrainingStore.getState();
+    expect(after.attempt).toEqual(before.attempt);
+    expect(after.currentFenString).toBe(before.currentFenString);
+    expect(after.getCard().queueEntryId).toBe(42);
+    expect(after.practiceCards[1].queueEntryId).toBe(43);
+    expect(after.serviceError).toBe("");
+  });
+  it.each(["playerTurn", "opponentReplyPending", "guided", "feedbackPause"] as const)("refresh preserves active %s state and identity when the queue projection disappears", (phase) => {
+    const store = useTrainingStore.getState();
+    store.hydrateLocalQueue([card], true, 1);
+    store.setAttemptPhase(phase);
+    const before = useTrainingStore.getState();
+    store.hydrateLocalQueue([], false, 0);
+    const after = useTrainingStore.getState();
+    expect(after.attempt).toEqual(before.attempt);
+    expect(after.attempt.reviewAttemptId).toBeTruthy();
+    expect(after.currentFenString).toBe(before.currentFenString);
+    expect(after.getCard()).toEqual(card);
+    expect(after.cardsLeft).toBe(1);
+  });
   it("reload drains an earlier review before marking the next guided card", async () => {
     enqueuePendingReview({ backendId: "persisted-card", queueEntryId: 42,
       outcome: "correct", guided: false });
@@ -107,7 +135,7 @@ describe("review attempt reliability", () => {
     expect(useTrainingStore.getState().serviceError).toBe("");
   });
 
-  it("unresolved review replay opens other training cards and pauses the pending card", async () => {
+  it("reload retains an unprovable result as a conflict and opens independent cards", async () => {
     localStorage.clear();
     enqueuePendingReview({ backendId: "persisted-card", queueEntryId: 42, outcome: "correct", guided: true });
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
@@ -116,6 +144,8 @@ describe("review attempt reliability", () => {
         return Response.json({ detail: "This queue attempt is no longer active" }, { status: 409 });
       if (url.endsWith("/review"))
         return Response.json({ detail: "This queue attempt is no longer available" }, { status: 409 });
+      if (url.endsWith("/review/reconcile"))
+        return Response.json({ persisted: false, conflict: { code: "queue_attempt_unprovable", message: "Original attempt unavailable", retryable: false } });
       return Response.json({ cards: [
         { id: "persisted-card", queue_entry_id: 42, start_fen: card.startingFen,
           moves: ["e2e4"], content_type: "opening", repertoire_name: "Pending", repertoire_source: "PGN" },
@@ -130,8 +160,9 @@ describe("review attempt reliability", () => {
     expect(useTrainingStore.getState().practiceCards.map((queuedCard) => queuedCard.queueEntryId)).toEqual([43]);
     expect(useTrainingStore.getState().cardsLeft).toBe(1);
     expect(useTrainingStore.getState().serviceError).toBe("");
-    expect(useTrainingStore.getState().pendingReviewError).toContain("no longer available");
-    expect(pendingReviews()).toHaveLength(1);
+    expect(useTrainingStore.getState().pendingReviewError).toBe("");
+    expect(pendingReviews()).toHaveLength(0);
+    expect(conflictedReviews()).toHaveLength(1);
     expect(fetchMock.mock.calls.some(([input]) => String(input).includes("/api/queue/window"))).toBe(true);
   });
   it("advances to a prefetched card before review persistence and retains the total queue count", () => {
@@ -143,16 +174,18 @@ describe("review attempt reliability", () => {
     expect(useTrainingStore.getState().cardsLeft).toBe(134);
     expect(useTrainingStore.getState().attempt.phase).toBe("playerTurn");
   });
-  it("pauses an active attempt when queue reconciliation removes its entry", () => {
+  it("repeated refreshes retain an active attempt until explicit advancement", () => {
     const replacement = { ...card, id: asCardId("replacement"), queueEntryId: asQueueEntryId(44) };
     const store = useTrainingStore.getState();
     store.hydrateLocalQueue([card], true);
     store.setStep(1);
     store.hydrateLocalQueue([replacement]);
     expect(useTrainingStore.getState().practiceCards[0].queueEntryId).toBe(42);
-    expect(useTrainingStore.getState().attempt.phase).toBe("feedbackPause");
-    expect(useTrainingStore.getState().serviceError).toContain("no longer in today's queue");
+    expect(useTrainingStore.getState().attempt.phase).toBe("playerTurn");
+    expect(useTrainingStore.getState().serviceError).toBe("");
     store.hydrateLocalQueue([replacement]);
+    expect(useTrainingStore.getState().practiceCards[0].queueEntryId).toBe(42);
+    expect(store.advanceCachedQueue()).toBe(true);
     expect(useTrainingStore.getState().practiceCards[0].queueEntryId).toBe(44);
   });
   it("keeps an in-progress phone attempt while a 225-card queue refreshes to 241 cards", () => {
