@@ -1,5 +1,13 @@
 # Reported issues and regression coverage
 
+Stranded PGN discard (October 4, 2026):
+
+- `discarding an unknown PGN import permits a different file after reload` in the dialog unit file and `tests/browser/recovery.spec.ts` covers recovery without the original file and a subsequent different upload. The component regression failed before the control existed.
+- `discarded PGN confirmation permits a different file with a fresh operation identity`, `lost PGN discard response resolves the original terminal receipt without another POST`, the three `unconfirmed %s PGN discard retains identity` cases, `timed out PGN discard retains identity and ignores a late terminal response`, `stale PGN discard completion cannot erase a newer pending import`, `stale PGN completion cannot replace a newer pending import when a different file is selected`, and `PGN discard preserves an already completed repertoire and validates its result` in `tests/unit/pgn-import-pending-regressions.test.ts` protect terminal clearing, ambiguous delivery and unrelated/newer state. `confirmed HTTP %s PGN failure permits a subsequent different file with a fresh identity` covers validation and durable failures. Existing same-file replay cases remain in that file.
+- `test_discarded_pgn_delivery_cannot_restore_its_payload_or_create_repertoire_data` (seven states), `test_pgn_discard_preserves_completed_import_and_rejects_other_command_types`, `test_pgn_discard_route_uses_stable_foreground_command_identity`, and `test_pgn_discard_invalid_route_requests_do_not_dispatch` in `backend/tests/test_postgres_pgn_discard.py` cover the production handlers and API boundary. Route inventory/write-guard tests include the new endpoint.
+- `verify_pgn_discard_fencing` in the regular PostgreSQL operation-recovery stage proves real row/advisory locking and the admission/discard completion race. The study-durability stage checks actual HTTP/Celery admission rejection and no repertoire creation before and after service recreation, then successfully imports a different PGN. These are disposable proofs; no live study fixture is used.
+- `pending-import-dialog-phone` in the pinned visual suite covers the new recovery control.
+
 Quiet notifications (October 2, 2026):
 
 - Terminal settings transfer failures were falsely resolved and hidden from Needs attention: `settings transfer unavailable warning remains actionable after progress ends`; `settings transfer error remains actionable after progress ends`; `successful settings transfer resolves the same progress record quietly` in `tests/unit/settings-notification-regressions.test.tsx` exercise the actual settings component and tray, retaining one record per operation.

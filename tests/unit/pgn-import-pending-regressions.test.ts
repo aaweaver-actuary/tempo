@@ -361,3 +361,124 @@ it("normal immediate PGN success retains existing import result behavior", async
   expect(fetcher).toHaveBeenCalledOnce();
   expect(localStorage.getItem(pendingKey)).toBeNull();
 });
+
+it("discarded PGN confirmation permits a different file with a fresh operation identity", async () => {
+  await rememberImport();
+  const { discardPendingPgnImport } = await import("../../app/lib/pgn-import-command");
+  const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ outcome: "discarded" }))
+    .mockResolvedValueOnce(Response.json({ operation_id: "original-import", state: "failed", error: { code: "import_discarded" } }))
+    .mockResolvedValueOnce(Response.json({ ...importResult, source_name: "different.pgn" }));
+  vi.stubGlobal("fetch", fetcher);
+  expect(await discardPendingPgnImport("original-import")).toBeNull();
+  expect(localStorage.getItem(pendingKey)).toBeNull();
+  await savePgnImportCommand(new File(["1. d4 d5 *"], "different.pgn"), "black", 6);
+  expect(fetcher.mock.calls[2][1].headers["Idempotency-Key"]).not.toBe("original-import");
+});
+
+it.each(["transport", "malformed", "http"])("unconfirmed %s PGN discard retains identity", async failure => {
+  await rememberImport();
+  const stored = localStorage.getItem(pendingKey);
+  const { discardPendingPgnImport } = await import("../../app/lib/pgn-import-command");
+  const fetcher = vi.fn().mockResolvedValueOnce(Response.json({}, { status: 202 })).mockImplementation(async () => {
+    if (failure === "transport") throw new Error("Offline");
+    if (failure === "malformed") return new Response("{");
+    return Response.json({}, { status: 503 });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  await expect(discardPendingPgnImport("original-import")).rejects.toBeInstanceOf(PendingOperationError);
+  expect(localStorage.getItem(pendingKey)).toBe(stored);
+});
+
+it("lost PGN discard response resolves the original terminal receipt without another POST", async () => {
+  await rememberImport();
+  const { discardPendingPgnImport } = await import("../../app/lib/pgn-import-command");
+  const fetcher = vi.fn().mockRejectedValueOnce(new Error("Lost response"))
+    .mockResolvedValueOnce(Response.json({ state: "failed", error: { code: "import_discarded" } }));
+  vi.stubGlobal("fetch", fetcher);
+  expect(await discardPendingPgnImport("original-import")).toBeNull();
+  expect(fetcher).toHaveBeenCalledTimes(2);
+  expect(fetcher.mock.calls[0][1].method).toBe("POST");
+  expect(localStorage.getItem(pendingKey)).toBeNull();
+});
+
+it("stale PGN discard completion cannot erase a newer pending import", async () => {
+  await rememberImport();
+  const { discardPendingPgnImport } = await import("../../app/lib/pgn-import-command");
+  const replacement = JSON.stringify({ operationId: "new-import", fingerprint: "different" });
+  vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+    if (url.includes("/api/operations/")) {
+      localStorage.setItem(pendingKey, replacement);
+      return Response.json({ state: "failed", error: { code: "import_discarded" } });
+    }
+    return Response.json({});
+  }));
+  await discardPendingPgnImport("original-import");
+  expect(localStorage.getItem(pendingKey)).toBe(replacement);
+});
+
+it("PGN discard preserves an already completed repertoire and validates its result", async () => {
+  await rememberImport();
+  const { discardPendingPgnImport } = await import("../../app/lib/pgn-import-command");
+  vi.stubGlobal("fetch", vi.fn().mockResolvedValueOnce(Response.json({}))
+    .mockResolvedValueOnce(Response.json({ state: "complete", response: importResult })));
+  expect(await discardPendingPgnImport("original-import")).toEqual(importResult);
+  expect(localStorage.getItem(pendingKey)).toBeNull();
+});
+
+it("timed out PGN discard retains identity and ignores a late terminal response", async () => {
+  await rememberImport();
+  const stored = localStorage.getItem(pendingKey);
+  const { discardPendingPgnImport } = await import("../../app/lib/pgn-import-command");
+  vi.useFakeTimers();
+  let release!: (response: Response) => void;
+  const fetcher = vi.fn().mockResolvedValueOnce(Response.json({}, { status: 202 }))
+    .mockImplementationOnce(() => new Promise<Response>(resolve => { release = resolve; }));
+  vi.stubGlobal("fetch", fetcher);
+  const discard = expect(discardPendingPgnImport("original-import")).rejects.toBeInstanceOf(PendingOperationError);
+  await vi.waitFor(() => expect(fetcher).toHaveBeenCalledTimes(2));
+  await vi.advanceTimersByTimeAsync(30_000);
+  await discard;
+  release(Response.json({ state: "failed", error: { code: "import_discarded" } }));
+  await Promise.resolve(); await Promise.resolve();
+  expect(localStorage.getItem(pendingKey)).toBe(stored);
+  expect(vi.getTimerCount()).toBe(0);
+});
+
+it.each([400, 422, 500])("confirmed HTTP %s PGN failure permits a subsequent different file with a fresh identity", async status => {
+  const operationIds: string[] = [];
+  const fetcher = vi.fn(async (url: string, options?: RequestInit) => {
+    if (options?.method !== "POST") return Response.json({ state: "failed", error: { message: "Admission failed" } });
+    operationIds.push((options.headers as Record<string, string>)["Idempotency-Key"]);
+    return operationIds.length === 1 ? Response.json({ detail: "Admission failed" }, { status })
+      : Response.json({ ...importResult, source_name: "different.pgn" });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  await expect(savePgnImportCommand(openingFile(), "white", 4)).rejects.toThrow("Admission failed");
+  await expect(savePgnImportCommand(new File(["1. d4 d5 *"], "different.pgn"), "black", 6)).resolves.toMatchObject({ source_name: "different.pgn" });
+  expect(operationIds).toHaveLength(2);
+  expect(operationIds[1]).not.toBe(operationIds[0]);
+});
+
+it("stale PGN completion cannot replace a newer pending import when a different file is selected", async () => {
+  await rememberImport();
+  const replacement = JSON.stringify({ operationId: "new-import", fingerprint: "different" });
+  const fetcher = vi.fn(async () => {
+    localStorage.setItem(pendingKey, replacement);
+    return Response.json({ state: "complete", response: importResult });
+  });
+  vi.stubGlobal("fetch", fetcher);
+  await expect(savePgnImportCommand(new File(["1. d4 d5 *"], "different.pgn"), "black", 6)).rejects.toBeInstanceOf(PendingOperationError);
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(localStorage.getItem(pendingKey)).toBe(replacement);
+});
+
+it("rejected PGN discard reports the service error and retains recovery identity", async () => {
+  await rememberImport();
+  const stored = localStorage.getItem(pendingKey);
+  const { discardPendingPgnImport } = await import("../../app/lib/pgn-import-command");
+  const fetcher = vi.fn().mockResolvedValueOnce(Response.json({ detail: "Only PGN imports can be discarded" }, { status: 409 }));
+  vi.stubGlobal("fetch", fetcher);
+  await expect(discardPendingPgnImport("original-import")).rejects.toThrow("Only PGN imports can be discarded");
+  expect(fetcher).toHaveBeenCalledOnce();
+  expect(localStorage.getItem(pendingKey)).toBe(stored);
+});

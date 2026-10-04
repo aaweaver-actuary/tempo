@@ -1,5 +1,27 @@
 # PGN import recovery and payload evidence
 
+## Deliberate discard
+
+The local import dialog offers **Discard pending import** whenever it has a
+retained operation, including after reopening without selecting a file. Discard
+uses a stable foreground `imports.pgn.discard` command through
+`POST /api/imports/pgn/{operation_id}/discard`. It serializes with admission and
+removes unresolved payload/retry state while keeping a terminal failed receipt
+with `error.code=import_discarded`. This minimal marker prevents delayed delivery
+from recreating the upload. Terminal delivery never repopulates a removed payload.
+
+If admission has already committed, discard returns `already_complete` and its
+existing result; it does not undo the repertoire or study data. Another command
+type cannot be discarded through this endpoint. Repeated discard uses the same
+command identity; an explicitly retried blocked discard uses the original retry
+cycle. No schema migration or new receipt state is required.
+
+The browser clears only the matching pending identity after a validated terminal
+receipt. Lost/unreadable status leaves recovery available. A stale response cannot
+erase a newer pending import. Confirmed failures clear identity and report their
+error; a subsequent deliberate upload creates a fresh operation ID. Uncertain
+timeouts retain identity and offer recovery or deliberate discard.
+
 ## Confirmed client defects
 
 The previous PGN command treated an `unknown` receipt as permanently pending,

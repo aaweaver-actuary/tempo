@@ -1,19 +1,39 @@
 import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { ImportDialogBox } from "../../app/ImportDialogBox";
-import { savePgnImportCommand } from "../../app/lib/pgn-import-command";
+import { savePgnImportCommand, discardPendingPgnImport } from "../../app/lib/pgn-import-command";
 import { PendingOperationError } from "../../app/lib/operation-status";
 import { reportDebugError } from "../../app/lib/debug-reporting";
 import { importResultSchema } from "../../app/domain/schemas";
 
 vi.mock("../../app/utils/local", () => ({ usesLocalApi: () => true }));
-vi.mock("../../app/lib/pgn-import-command", () => ({ savePgnImportCommand: vi.fn() }));
+vi.mock("../../app/lib/pgn-import-command", async importOriginal => ({
+  ...await importOriginal<typeof import("../../app/lib/pgn-import-command")>(),
+  savePgnImportCommand: vi.fn(), discardPendingPgnImport: vi.fn(),
+}));
 vi.mock("../../app/lib/debug-reporting", () => ({ reportDebugError: vi.fn() }));
 const settings = { initial_depth: 6, timezone: "local", new_cards_per_day: 2, lichess_username: "", chesscom_username: "", auto_sync_minutes: 3, engine_line_window_cp: 30, major_mistake_cp: 100, light_first_interval_days: 7, draw_hold_user_moves: 20 };
 const result = importResultSchema.parse({ repertoire_id: "rep", source_name: "opening.pgn", games_found: 1, unique_lines: 1, cards_created: 1, duplicates_merged: 0, cards_admitted_today: 0 });
-afterEach(() => { vi.unstubAllGlobals(); vi.mocked(savePgnImportCommand).mockReset(); });
+afterEach(() => { localStorage.clear(); vi.unstubAllGlobals(); vi.mocked(savePgnImportCommand).mockReset(); vi.mocked(discardPendingPgnImport).mockReset(); });
 
-async function openDialog() {
+it("discarding an unknown PGN import permits a different file after reload", async () => {
+  localStorage.setItem("tempo-pending-pgn-import-v1", JSON.stringify({ operationId: "original-import", fingerprint: "old.pgn:white:6:digest" }));
+  const dialog = await openDialog(false);
+  vi.mocked(discardPendingPgnImport).mockImplementation(async () => {
+    localStorage.removeItem("tempo-pending-pgn-import-v1"); return null;
+  });
+  fireEvent.click(screen.getByRole("button", { name: "Discard pending import" }));
+  await screen.findByText("Pending import discarded. You can choose a new PGN file.");
+  expect(discardPendingPgnImport).toHaveBeenCalledWith("original-import", expect.objectContaining({ signal: expect.any(AbortSignal) }));
+  expect(localStorage.getItem("tempo-pending-pgn-import-v1")).toBeNull();
+  vi.mocked(savePgnImportCommand).mockResolvedValue(result);
+  fireEvent.change(dialog.container.querySelector('input[type="file"]')!, { target: { files: [new File(["1. d4 d5 2. Bf4 *"], "different.pgn")] } });
+  fireEvent.click(screen.getByRole("button", { name: "Import repertoire" }));
+  await screen.findByRole("heading", { name: "Imported" });
+  expect(vi.mocked(savePgnImportCommand).mock.calls[0][0].name).toBe("different.pgn");
+});
+
+async function openDialog(selectFile = true) {
   const databaseUpdated = vi.fn(async () => {});
   vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
     const url = String(input);
@@ -24,7 +44,7 @@ async function openDialog() {
   const rendered = render(<ImportDialogBox onClose={vi.fn()} onImported={vi.fn()} onViewRepertoire={vi.fn()} onDatabaseUpdated={databaseUpdated} />);
   await screen.findByText("6 user moves");
   await waitFor(() => expect(screen.queryByText("Loading import settings…")).toBeNull());
-  fireEvent.change(rendered.container.querySelector('input[type="file"]')!, { target: { files: [new File(["1. e4 e5 2. Nf3 *"], "opening.pgn")] } });
+  if (selectFile) fireEvent.change(rendered.container.querySelector('input[type="file"]')!, { target: { files: [new File(["1. e4 e5 2. Nf3 *"], "opening.pgn")] } });
   return { ...rendered, databaseUpdated };
 }
 

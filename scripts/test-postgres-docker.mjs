@@ -353,7 +353,27 @@ async function reportStudyFixtureDiagnostics(repertoireId) {
   console.error(`PostgreSQL study fixture diagnostics: ${JSON.stringify(diagnostics)}`);
 }
 
+async function verifyDiscardedPgnReplay(operationId) {
+  const receipt = await get(`operations/${operationId}`);
+  assert.equal(receipt.state, "failed");
+  assert.equal(receipt.error?.code, "import_discarded");
+  const form = new FormData();
+  form.set("file", new Blob(["1. e4 e5 2. Nf3 *"], { type: "application/x-chess-pgn" }), `${operationId}.pgn`);
+  form.set("trained_color", "white");
+  form.set("initial_depth", "6");
+  const replay = await apiRequest("imports/pgn", { method: "POST", body: form,
+    headers: { "Idempotency-Key": operationId } });
+  assert.equal(replay.status, 409, `Discard fence rejects delayed PGN admission: ${await replay.text()}`);
+  const snapshot = await get("migration/snapshot");
+  assert.equal(snapshot.tables.repertoires.filter(row => row.source_name === `${operationId}.pgn`).length, 0,
+    "Discarded PGN cannot create repertoire data before or after recreation");
+}
+
 async function verifyForegroundAndStudyDurability() {
+  const discardedPgnId = `pg-study-discard-${randomBytes(12).toString("hex")}`;
+  const discarded = await confirm(await apiRequest(`imports/pgn/${discardedPgnId}/discard`, { method: "POST" }));
+  assert.equal(discarded.outcome, "discarded");
+  await verifyDiscardedPgnReplay(discardedPgnId);
   const studySettings = await get("settings");
   await postCommand("settings", { ...studySettings, new_cards_per_day: 100, study_new_per_day: 100 }, {
     method: "PUT", label: "foreground PUT study queue allowance",
@@ -481,6 +501,7 @@ async function verifyForegroundAndStudyDurability() {
   await waitForStudyableImport(importedBackground.repertoire_id);
   const afterRestartSnapshot = await get("migration/snapshot");
   await verifyPgnImportReplayWithoutDuplicates(pgnImportOperationId, importedStudy, "after recreation");
+  await verifyDiscardedPgnReplay(discardedPgnId);
   assert.deepEqual(stableStudyState(afterRestartSnapshot, importedStudy.repertoire_id), beforeRestartState,
     "Authoritative study identities, values, scheduling, annotation, queue, and split survive service recreation");
   const replayedReview = await postCommand(`cards/${reviewCard.id}/review`, reviewBody, {

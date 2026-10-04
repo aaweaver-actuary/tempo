@@ -629,8 +629,10 @@ async def prioritize_foreground_requests(request: Request, call_next):
                               and request.method == "POST")
         branch_remove_command = (path_parts == ["api", "repertoire", "branches", "remove"]
                                  and request.method == "POST")
-        pgn_import_command = (path_parts == ["api", "imports", "pgn"]
-                              and request.method == "POST")
+        pgn_import_command = (request.method == "POST" and (
+            path_parts == ["api", "imports", "pgn"] or
+            (len(path_parts) == 5 and path_parts[:3] == ["api", "imports", "pgn"]
+             and path_parts[4] == "discard")))
         analysis_paste_command = (path_parts == ["api", "repertoire", "paste", "commit"]
                                   and request.method == "POST")
         integrity_resolution_command = (
@@ -1946,6 +1948,20 @@ def queue_window(limit: int = 20):
     if not 1 <= limit <= 20:
         raise HTTPException(422, "Queue window limit must be between 1 and 20")
     return _queue_payload(limit)
+
+
+@app.post("/api/imports/pgn/{operation_id}/discard")
+def discard_pending_pgn(operation_id: str):
+    if not postgres_store.configured():
+        raise HTTPException(404, "PGN discard is available after PostgreSQL cutover")
+    if not 1 <= len(operation_id) <= 128:
+        raise HTTPException(422, "Invalid PGN operation identity")
+    from .command_dispatch import dispatch_command
+    discard_operation_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"tempo:pgn-discard:{operation_id}"))
+    if read_operation(discard_operation_id)["state"] == "blocked":
+        return JSONResponse(status_code=202, content=retry_blocked_operation(discard_operation_id))
+    return dispatch_command("imports.pgn.discard", {"operation_id": operation_id},
+                            idempotency_key=discard_operation_id)
 
 
 @app.post("/api/imports/pgn", response_model=ImportResult)
