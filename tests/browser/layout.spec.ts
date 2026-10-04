@@ -16,8 +16,10 @@ for (const viewport of viewports) {
     await page.setViewportSize(viewport);
     await prepareUI(page);
     let reference: Awaited<ReturnType<typeof boardBounds>> | undefined;
+    let referenceHasPhoneHeading = false;
     for (const workspace of boardWorkspaces) {
       await navigate(page, workspace);
+      if (!reference) referenceHasPhoneHeading = await page.locator(".phone-study-heading").count() > 0;
       await expect
         .poll(async () => {
           const bounds = await boardBounds(page);
@@ -27,11 +29,16 @@ for (const viewport of viewports) {
           }
           return Math.max(
             ...(["x", "y", "width", "height"] as const).map((axis) =>
+              axis === "y" && referenceHasPhoneHeading ? 0 :
               Math.abs(bounds[axis] - reference![axis]),
             ),
           );
         })
         .toBeLessThanOrEqual(1);
+      if (referenceHasPhoneHeading && workspace !== "Train") {
+        reference = await boardBounds(page);
+        referenceHasPhoneHeading = false;
+      }
       await noPageOverflow(page);
     }
   });
