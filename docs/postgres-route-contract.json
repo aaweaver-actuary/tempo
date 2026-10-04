@@ -1174,5 +1174,12 @@
     "handler": "request_preference",
     "treatment": "foreground_command",
     "state": "staged"
+  },
+  {
+    "method": "POST",
+    "path": "/api/imports/pgn/{operation_id}/discard",
+    "handler": "discard_pending_pgn",
+    "state": "staged",
+    "treatment": "foreground_command"
   }
 ]

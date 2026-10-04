@@ -78,6 +78,9 @@ def record_operation_attempt(
         if receipt[0] != command_name or receipt[1] != request_hash:
             raise CommandConflict("Operation ID was already used for another request")
         saved_payload = json.loads(receipt[3]) if receipt[3] else payload
+        # Terminal delivery must never repopulate a deliberately removed PGN.
+        if receipt[2] in {"complete", "failed"}:
+            return False, saved_payload, None, receipt[7]
         if receipt[3] is None:
             raw.execute(
                 "UPDATE operation_receipts SET payload_json=%s,background=%s WHERE operation_id=%s",

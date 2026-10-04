@@ -19,7 +19,7 @@ import {
 } from "./domain/schemas";
 import { readJsonResponse } from "./lib/validated-data";
 import { reportDebugError } from "./lib/debug-reporting";
-import { savePgnImportCommand } from "./lib/pgn-import-command";
+import { savePgnImportCommand, readPendingPgnImport, discardPendingPgnImport } from "./lib/pgn-import-command";
 import { PendingOperationError } from "./lib/operation-status";
 
 export function ImportDialogBox({
@@ -50,7 +50,17 @@ export function ImportDialogBox({
   });
   const [working, setWorking] = useState(false);
   const [error, setError] = useState("");
-  const [pendingImport, setPendingImport] = useState<PendingOperationError | null>(null);
+  function rememberedPendingImport() {
+    if (!usesLocalApi()) return null;
+    try {
+      const remembered = readPendingPgnImport();
+      return remembered ? new PendingOperationError(remembered.operationId,
+        "An earlier PGN import needs confirmation. Check again with its original file, or discard it to import a different file.") : null;
+    } catch { return null; }
+  }
+  const [pendingImport, setPendingImport] = useState<PendingOperationError | null>(rememberedPendingImport);
+  const [recoveryNotice, setRecoveryNotice] = useState("");
+  const [discarding, setDiscarding] = useState(false);
   const importController = useDialogRef<AbortController | null>(null);
   useEffect(() => () => importController.current?.abort(), [importController]);
   const [settingsLoaded, setSettingsLoaded] = useState(!usesLocalApi());
@@ -127,6 +137,7 @@ export function ImportDialogBox({
     importController.current = controller;
     setWorking(true);
     setError("");
+    setRecoveryNotice("");
     setPendingImport(null);
     try {
       const parsed = parsePgnImport(
@@ -197,7 +208,36 @@ export function ImportDialogBox({
       );
     } finally {
       importController.current = null;
-      if (!controller.signal.aborted) setWorking(false);
+      if (!controller.signal.aborted) {
+        setWorking(false);
+        setPendingImport(current => current ?? rememberedPendingImport());
+      }
+    }
+  }
+
+  async function discardImport() {
+    if (!pendingImport || importController.current) return;
+    const controller = new AbortController();
+    importController.current = controller;
+    setWorking(true);
+    setDiscarding(true);
+    setError("");
+    setRecoveryNotice("");
+    try {
+      const completed = await discardPendingPgnImport(pendingImport.operationId, { signal: controller.signal });
+      controller.signal.throwIfAborted();
+      setPendingImport(rememberedPendingImport());
+      setRecoveryNotice(completed ? "The earlier import already completed. Its repertoire has been kept."
+        : "Pending import discarded. You can choose a new PGN file.");
+      if (completed) await onDatabaseUpdated();
+    } catch (failure) {
+      if (!controller.signal.aborted) {
+        setPendingImport(rememberedPendingImport());
+        setError(failure instanceof Error ? failure.message : "Discard confirmation unavailable. Check again.");
+      }
+    } finally {
+      importController.current = null;
+      if (!controller.signal.aborted) { setWorking(false); setDiscarding(false); }
     }
   }
 
@@ -312,6 +352,10 @@ export function ImportDialogBox({
             {settingsError && <Notice error onRetry={() => { invalidateWorkspaceData(); void loadImportSettings(); }}>{settingsError}</Notice>}
             {error && <p className="editor-error" role="alert">{error}</p>}
             {pendingImport && <Notice error={pendingImport.blocked}>{pendingImport.message}</Notice>}
+            {recoveryNotice && <Notice>{recoveryNotice}</Notice>}
+            {pendingImport && <Button disabled={working} onClick={() => void discardImport()}>
+              {discarding ? "Discarding…" : "Discard pending import"}
+            </Button>}
             <div className="dialog-footer">
               <span>
                 <i className="status-dot" /> Stored locally

@@ -9,6 +9,7 @@ import json
 from typing import Any, Literal
 import uuid
 
+from fastapi import HTTPException
 from pydantic import BaseModel, Field
 
 from .command_gateway import register_command
@@ -177,3 +178,38 @@ def admit_pgn_import(database: PostgresConnection, raw_payload: dict[str, Any]) 
 
 
 register_command("imports.pgn.admit", admit_pgn_import)
+
+
+def discard_pgn_import(database: PostgresConnection, payload: dict[str, Any]) -> dict[str, Any]:
+    """Fence admission before deleting its saved payload; never undo committed study data."""
+    operation_id = payload["operation_id"]
+    if not isinstance(operation_id, str) or not 1 <= len(operation_id) <= 128:
+        raise HTTPException(422, "Invalid PGN operation identity")
+    discarded_error_json = json.dumps({
+        "code": "import_discarded", "message": "PGN import discarded.", "status_code": 410,
+    })
+    database.raw.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s, 0))", (operation_id,))
+    database.raw.execute(
+        "INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,error_json) "
+        "VALUES(%s,'imports.pgn.admit',%s,'failed',%s) ON CONFLICT(operation_id) DO NOTHING",
+        (operation_id, f"discarded:{operation_id}", discarded_error_json),
+    )
+    receipt = database.raw.execute(
+        "SELECT command_name,state,response_json FROM operation_receipts WHERE operation_id=%s FOR UPDATE",
+        (operation_id,),
+    ).fetchone()
+    if receipt[0] != "imports.pgn.admit":
+        raise HTTPException(409, "Only PGN imports can be discarded")
+    if receipt[1] == "complete":
+        return {"operation_id": operation_id, "outcome": "already_complete",
+                "import_result": json.loads(receipt[2])}
+    database.raw.execute(
+        "UPDATE operation_receipts SET state='failed',payload_json=NULL,response_json=NULL,"
+        "error_json=%s,last_error_json=NULL,next_retry_at=NULL,lease_expires_at=NULL,"
+        "attempt_token=NULL,updated_at=NOW() WHERE operation_id=%s",
+        (discarded_error_json, operation_id),
+    )
+    return {"operation_id": operation_id, "outcome": "discarded"}
+
+
+register_command("imports.pgn.discard", discard_pgn_import)

@@ -135,6 +135,18 @@ test("import-dialog-phone", async ({ page }) => {
   await expect(page).toHaveScreenshot("import-dialog-phone.png");
 });
 
+test("pending-import-dialog-phone", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepareVisualUI(page);
+  await page.evaluate(() => localStorage.setItem("tempo-pending-pgn-import-v1", JSON.stringify({
+    operationId: "pending-visual-import", fingerprint: "lost.pgn:white:6:digest",
+  })));
+  await navigate(page, "Repertoire");
+  await page.getByRole("button", { name: /Import PGN/ }).click();
+  await expect(page.getByRole("button", { name: "Discard pending import" })).toBeVisible();
+  await expect(page).toHaveScreenshot("pending-import-dialog-phone.png");
+});
+
 test("board-unavailable", async ({ page }) => {
   await prepareVisualUI(page);
   await page.route("**/api/queue/window?**", (route) =>

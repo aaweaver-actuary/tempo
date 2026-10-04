@@ -5,6 +5,9 @@ from __future__ import annotations
 from contextlib import nullcontext
 from concurrent.futures import ThreadPoolExecutor
 import os
+import json
+import threading
+import time
 import sys
 import uuid
 from pathlib import Path
@@ -17,6 +20,80 @@ from app.command_gateway import (
     CommandConflict, MAX_BACKGROUND_CYCLE_ATTEMPTS, claim_recoverable_operation,
     execute_command, read_operation, record_operation_attempt, register_command, request_digest,
 )
+
+
+def verify_pgn_discard_fencing() -> None:
+    from app.pgn_import_commands import discard_pgn_import, prepare_import_payload
+    from app.services.pgn import parse_pgn
+    owned_ids = []
+    source_name = f"discard-proof-{uuid.uuid4().hex}.pgn"
+    games_found, lines = parse_pgn('1. e4 e5 2. Nf3 Nc6 3. Bc4 Bc5 *')
+    payload = prepare_import_payload(source_name, "white", 2, games_found, lines)
+    try:
+        for previous_state in ("unknown", "queued", "executing", "retrying", "pending", "blocked", "failed"):
+            target_id = f"discard-proof-{uuid.uuid4().hex}"
+            owned_ids.append(target_id)
+            with postgres_store.connection(read_only=False) as database:
+                if previous_state != "unknown":
+                    database.raw.execute(
+                        "INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,payload_json,attempt_token) VALUES(%s,'imports.pgn.admit',%s,%s,%s,'old-token')",
+                        (target_id, request_digest("imports.pgn.admit", payload), previous_state, json.dumps(payload)),
+                    )
+                assert discard_pgn_import(database, {"operation_id": target_id})["outcome"] == "discarded"
+            try:
+                claimed, _, _, _ = record_operation_attempt(target_id, "imports.pgn.admit", payload, background=False)
+                assert not claimed
+                execute_command(target_id, "imports.pgn.admit", payload, attempt_token="old-token")
+            except (CommandConflict, RuntimeError):
+                pass
+            else:
+                raise AssertionError("Discarded admission was accepted")
+            with postgres_store.connection(read_only=True) as database:
+                assert tuple(database.raw.execute("SELECT state,payload_json,attempt_token FROM operation_receipts WHERE operation_id=%s", (target_id,)).fetchone()) == ("failed", None, None)
+                assert read_operation(target_id)["error"]["code"] == "import_discarded"
+                assert database.raw.execute("SELECT COUNT(*) FROM repertoires WHERE source_name=%s", (source_name,)).fetchone()[0] == 0
+
+        race_id = f"discard-race-{uuid.uuid4().hex}"
+        owned_ids.append(race_id)
+        admission_locked = threading.Event()
+        release_admission = threading.Event()
+        application_name = f"discard-{uuid.uuid4().hex}"
+        result = {"repertoire_id": "committed-proof"}
+
+        def complete_admission():
+            with postgres_store.connection(read_only=False) as database:
+                database.raw.execute("SELECT pg_advisory_xact_lock(hashtextextended(%s,0))", (race_id,))
+                database.raw.execute("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state) VALUES(%s,'imports.pgn.admit','race','pending')", (race_id,))
+                admission_locked.set()
+                assert release_admission.wait(10), "Admission race was not released"
+                database.raw.execute("UPDATE operation_receipts SET state='complete',response_json=%s WHERE operation_id=%s", (json.dumps(result), race_id))
+
+        def discard_during_admission():
+            with postgres_store.connection(read_only=False) as database:
+                database.raw.execute("SELECT set_config('application_name',%s,true)", (application_name,))
+                return discard_pgn_import(database, {"operation_id": race_id})
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            admission = executor.submit(complete_admission)
+            assert admission_locked.wait(10)
+            discard = executor.submit(discard_during_admission)
+            try:
+                deadline = time.monotonic() + 5
+                while True:
+                    with postgres_store.connection(read_only=True) as database:
+                        waiting = database.raw.execute("SELECT COUNT(*) FROM pg_stat_activity WHERE application_name=%s AND wait_event_type='Lock'", (application_name,)).fetchone()[0]
+                    if waiting:
+                        break
+                    assert time.monotonic() < deadline, "Discard never reached admission's lock"
+                    time.sleep(0.01)
+            finally:
+                release_admission.set()
+            admission.result()
+            assert discard.result() == {"operation_id": race_id, "outcome": "already_complete", "import_result": result}
+    finally:
+        with postgres_store.connection(read_only=False) as database:
+            database.raw.execute("DELETE FROM operation_receipts WHERE operation_id=ANY(%s::text[])", (owned_ids,))
+    print("PASS discarded PGN delivery cannot restore its payload or create repertoire data; admission race preserves completion")
 
 
 def main() -> None:
@@ -178,6 +255,7 @@ def main() -> None:
         )
     assert "matching journal or outbox" in read_operation(legacy_id)["message"]
 
+    verify_pgn_discard_fencing()
     postgres_store.close_pools()
     print("PASS finite retries, restart, conflict states and race, explicit cycle, stale lease, and one business effect")
 
