@@ -1308,3 +1308,36 @@ PostgreSQL snapshot effects and unchanged identities after service recreation;
 confirmed review replay produces no duplicate effect. No additional worker-write
 infrastructure scenario is needed for these static configuration checks.
 Full and durability gates include this stage; browser-only scopes omit it.
+
+## Issue #77 — read-only structural prefix evaluation
+
+`backend/tests/test_prefix_evaluation.py` runs in the regular backend suite:
+
+- `test_issue77_current_depths_reproduce_production_graph_and_do_not_mutate_input`
+- `test_issue77_black_shortening_has_hand_checked_counts_without_alias_inflation`
+- `test_issue77_unselected_alias_retains_card_and_qgd_route_unchanged`
+- `test_issue77_mixed_depths_and_duplicate_aliases_use_saved_depths`
+- `test_issue77_custom_black_root_and_opponent_cues_count_decisions_not_plies`
+- `test_issue77_chained_saved_splits_report_effective_depth_and_honor_production`
+- `test_issue77_short_routes_empty_selection_and_no_learner_moves_are_distinct`
+- `test_issue77_cycles_and_overlapping_roles_preserve_distinct_card_accounting`
+- `test_issue77_invalid_selection_and_candidate_depths_are_actionable`
+- `test_issue77_missing_or_zero_saved_depth_never_uses_global_default`
+- `test_issue77_stale_graph_and_malformed_split_fail_without_partial_results`
+- `test_issue77_size_limits_fail_without_truncating_source`
+- `test_issue77_snapshot_binds_depth_source_graph_and_split_revisions`
+
+`backend/tests/test_prefix_evaluation_api.py` runs in the regular backend suite:
+
+- `test_issue77_http_source_and_evaluation_use_typed_snapshot_contract`
+- `test_issue77_invalid_wire_values_have_machine_readable_errors`
+- `test_issue77_stale_snapshot_is_distinct_from_no_change_and_empty_selection`
+- `test_issue77_source_change_during_calculation_rejects_entire_result`
+- `test_issue77_foreground_preemption_and_deadline_return_retryable_errors`
+- `test_issue77_non_postgres_product_never_returns_sample_result`
+- `test_issue77_loader_reads_primary_repeatable_snapshot_and_closes_before_hashing`
+- `test_issue77_http_mid_calculation_preemption_returns_no_partial_metrics`
+- `test_issue77_runtime_guard_classifies_only_diagnostics_as_background_query_only`
+- `test_issue77_repeatable_primary_connection_sets_isolation_before_budget_queries`
+
+Real PostgreSQL proof: `scripts/check_postgres_opening_segmentation.py::test_issue77_readonly_snapshot_and_foreground_concurrency` runs in the regular disposable durability rehearsal. It exercises real query-only HTTP source/current/empty/candidate reads, unchanged cards/reviews/depths/queues/graph/task/receipt state, authoritative repeatable-read transactions, idle source connections and a NOWAIT foreground review during paused traversal, source invalidation during computation, and deterministic retry after a scheduling-only change. Existing graph/split/snapshot and route-contract regressions remain required.

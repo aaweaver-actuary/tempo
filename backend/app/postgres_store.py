@@ -212,12 +212,16 @@ def _pool(read_only: bool) -> ConnectionPool:
 
 
 @contextmanager
-def connection(*, read_only: bool = False, background: bool = False, authoritative: bool = False) -> Iterator[PostgresConnection]:
+def connection(*, read_only: bool = False, background: bool = False, authoritative: bool = False,
+               repeatable_read: bool = False) -> Iterator[PostgresConnection]:
     started_at = time.perf_counter()
     acquired_at = configured_at = handled_at = None
     try:
         with _pool(read_only and not authoritative).connection() as database:
             acquired_at = time.perf_counter()
+            if repeatable_read:
+                # Isolation must be selected before the background timeout SELECTs.
+                database.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
             if read_only and authoritative:
                 database.execute("SET TRANSACTION READ ONLY")
             if background:
