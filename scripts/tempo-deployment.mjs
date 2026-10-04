@@ -50,6 +50,12 @@ function validateWorkerStorageContract(serviceName, service, secrets) {
   // when empty so the worker contract cannot imply a compatibility fallback.
   if (Object.hasOwn(environment, "TEMPO_DB_PATH"))
     throw new Error(`Tempo ${serviceName} must not define the SQLite fallback TEMPO_DB_PATH.`);
+  // libpq can use hostaddr instead of the explicit host, and a selected service
+  // can supply a password or override PGPASSFILE. Reject competing inputs.
+  for (const name of ["PGPASSWORD", "PGHOSTADDR", "PGSERVICE"]) {
+    if (Object.hasOwn(environment, name))
+      throw new Error(`Tempo ${serviceName} must not define ${name}; PostgreSQL worker connections must use the explicit DSNs and /run/secrets/writer_pgpass.`);
+  }
   const passfileMounts = (service.secrets ?? []).filter(secret =>
     resolve("/run/secrets", secret.target ?? secret.source) === expectedEnvironment.PGPASSFILE);
   if (!secrets?.writer_pgpass || passfileMounts.length !== 1 || passfileMounts[0].source !== "writer_pgpass")

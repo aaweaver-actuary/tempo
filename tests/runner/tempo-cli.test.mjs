@@ -67,6 +67,11 @@ for (const [name, alter] of [
   ["background reader role as reader", config => { config.services["background-worker"].environment.TEMPO_DATABASE_READ_URL = "postgresql://tempo_reader@postgres:5432/tempo"; }],
   ["foreground SQLite fallback", config => { config.services["foreground-worker"].environment.TEMPO_DB_PATH = "/state/tempo.db"; }],
   ["background empty SQLite fallback variable", config => { config.services["background-worker"].environment.TEMPO_DB_PATH = ""; }],
+  ["foreground PGPASSWORD", config => { config.services["foreground-worker"].environment.PGPASSWORD = "wrong-password"; }],
+  ["background PGPASSWORD", config => { config.services["background-worker"].environment.PGPASSWORD = "wrong-password"; }],
+  ["empty PGPASSWORD", config => { config.services["foreground-worker"].environment.PGPASSWORD = ""; }],
+  ["foreground PGHOSTADDR redirect", config => { config.services["foreground-worker"].environment.PGHOSTADDR = "192.0.2.99"; }],
+  ["background PGSERVICE credentials", config => { config.services["background-worker"].environment.PGSERVICE = "competing"; }],
   ["foreground missing passfile", config => { delete config.services["foreground-worker"].environment.PGPASSFILE; }],
   ["background wrong passfile", config => { config.services["background-worker"].environment.PGPASSFILE = "/run/secrets/reader_pgpass"; }],
   ["foreground writer secret unattached", config => { config.services["foreground-worker"].secrets = []; }],
@@ -93,6 +98,45 @@ test("CLI worker storage contract accepts production identities and resolved sec
   config.services["background-worker"].secrets[0].target = "/run/secrets/writer_pgpass";
   delete config.services["foreground-worker"].secrets[0].mode; // Local Compose omits unsupported secret modes; file permissions are checked separately.
   assert.doesNotThrow(() => validateTarget(config, target));
+});
+
+test("CLI worker storage contract permits libpq defaults already pinned by the explicit DSN", t => {
+  const { config, target } = fixture(t);
+  for (const name of ["foreground-worker", "background-worker"]) Object.assign(config.services[name].environment, {
+    PGHOST: "unused-host", PGPORT: "9999", PGDATABASE: "unused-database", PGUSER: "unused-role",
+    PGSERVICEFILE: "/unused/service-file", // No service is selected; these defaults cannot replace the explicit DSN/passfile.
+  });
+  assert.doesNotThrow(() => validateTarget(config, target));
+});
+
+test("CLI worker storage contract rejects PGPASSWORD before mutations and keeps credentials out of output and saved state", t => {
+  const fixture = commandFixture(t, "upgrade");
+  const data = readFixtureJson(fixture, "fixture.json");
+  const password = "canary-worker-password-do-not-publish";
+  data.config.services["foreground-worker"].environment.PGPASSWORD = password;
+  writeFileSync(fixture.target.composeFiles[0], JSON.stringify(data.config));
+  const deploymentPath = join(fixture.stateDirectory, "deployment.json");
+  const previousDeployment = readFileSync(deploymentPath, "utf8");
+  const journalPath = join(fixture.stateDirectory, "operation.json");
+  const failurePath = join(fixture.stateDirectory, "failure-preserved.log");
+  writeFileSync(journalPath, JSON.stringify({ phase: "ready", revision: "b".repeat(40) }));
+  writeFileSync(failurePath, "Previously sanitized diagnostic\n");
+  const previousJournal = readFileSync(journalPath, "utf8"), previousFailure = readFileSync(failurePath, "utf8");
+  const result = fixture.command("start", "--no-open");
+  assert.notEqual(result.status, 0);
+  assert(result.stderr.includes("foreground-worker") && result.stderr.includes("PGPASSWORD"));
+  assert(result.stderr.includes("/run/secrets/writer_pgpass"));
+  assert(!result.stdout.includes(password) && !result.stderr.includes(password));
+  assert(!fixture.calls().some(call => ["build", "pull", "up", "stop", "merge"].some(command => call.args.includes(command))
+    || call.args.includes("scripts/apply_postgres_migrations.py")));
+  assert.equal(readFileSync(deploymentPath, "utf8"), previousDeployment);
+  assert.equal(readFileSync(journalPath, "utf8"), previousJournal);
+  assert.equal(readFileSync(failurePath, "utf8"), previousFailure);
+  for (const name of readdirSync(fixture.stateDirectory)) {
+    assert(fs.statSync(join(fixture.stateDirectory, name)).isFile(), "no candidate release directory may be written");
+    assert(!readFileSync(join(fixture.stateDirectory, name), "utf8").includes(password));
+  }
+  assert.deepEqual(readdirSync(fixture.stateDirectory).sort(), ["deployment.json", "failure-preserved.log", "operation.json"]);
 });
 
 test("CLI worker storage contract blocks actual maintenance before any deployment command", t => {

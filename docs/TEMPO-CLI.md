@@ -63,8 +63,12 @@ must pin the API to its PostgreSQL reader and both Celery workers to
 `postgresql://tempo_writer@postgres:5432/tempo` for reads and writes, without
 `TEMPO_DB_PATH`. Each worker must use `/run/secrets/writer_pgpass` backed by its
 attached `writer_pgpass` secret; exposed secret modes must be `0400`, and secret
-source files must have private permissions. Both workers and the scheduler must
-use `redis://redis:6379/0`. Invalid wiring blocks deployment before any service
+source files must have private permissions. Workers cannot define `PGPASSWORD`
+(even empty), `PGHOSTADDR`, or `PGSERVICE`:
+these can replace passfile credentials or redirect the connection despite the
+explicit DSNs. Ordinary libpq host/port/database/user defaults remain permitted.
+Both workers and the scheduler must use `redis://redis:6379/0`. Invalid wiring
+blocks deployment before any service
 changes. When prepared images/configuration or an explicit
 restart may recreate PostgreSQL or Redis, application writers stop before
 dependency startup. Ordinary compatible starts reuse recorded image IDs and
