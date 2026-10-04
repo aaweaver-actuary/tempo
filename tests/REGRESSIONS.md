@@ -749,6 +749,8 @@ Append every new reported issue and its test names here. All listed tests belong
 
 ## PostgreSQL-first test gate consolidation
 
+- Browser/Node host UTC advances a day before the disposable API's New York clock, causing phone study submissions to fail with an expired prepared queue: `PostgreSQL browser and disposable API share the same day across the UTC midnight boundary` in `tests/unit/postgres-test-runner-regressions.test.ts` starts from UTC and checks actual Playwright and Node fixture clocks against every disposable API/worker timezone and the observed midnight boundary. Reproduced an undefined browser timezone and then the remaining Node UTC clock before pinning both; real `studies.spec.ts` and `phone-offline-training.spec.ts` retain the authoring/offline/replay workflow proofs.
+
 - A slow initial Builder load makes the rerender performance regression attribute initial session persistence to an unrelated render: `Builder unrelated rerender does not rewrite repertoire selection or session` in `tests/unit/builder-performance-regressions.test.tsx` waits for the initial saved selection and session before measuring the unrelated render.
 - A durability PGN imports contradictory White responses or a player-turn endpoint and fails integrity before study: `valid opponent-branch durability and background fixtures prescribe one White response per position` in `tests/runner/postgres-test-speedups.test.mjs` and `test_opponent_branch_lines_share_one_trained_response_without_integrity_conflict` in `backend/tests/test_repertoire_integrity.py`; `make docker-durability` verifies the same fixture reaches `/api/queue/today` through normal publication.
 - Browser queue entries or reused guided/split cards invalidate the later durability scenario: `full browser coverage creates a fresh durability database before study commands` in `tests/runner/postgres-test-speedups.test.mjs`; `make full` checks the fresh queue and then verifies distinct review, guided-failure, and prefix-split cards.
@@ -1327,3 +1329,85 @@ Coverage lives in `tests/unit/opening-evidence-offline-quota.test.ts` and `tests
 - `AS-15 retry cleanup cancels delayed and idle work`; `AS-15 a warning subscriber cannot change blocked suspension or transient backoff` — unmount/disable cancel wakeups and diagnostic failures do not alter policy. Existing late-settlement and passive lease cleanup proofs remain. All above: `tests/unit/opening-evidence-recovery-policy.test.tsx`.
 - `operation status resume signal preserves receipt semantics`; `explicit operation retry signals only a proven nonblocked receipt despite throwing observers` — unknown/blocked/malformed states cannot resume; successful/pending known states notify observers without changing foreground defaults, result/error types or retry identity. Coverage: `tests/unit/operation-status-events.test.ts`.
 - `AS-15 events during an active failing slice cannot create a concurrent or early retry`; `AS-15 disabling and re-enabling recovery preserves the pending retry deadline`; `AS-15 malformed saved journal validation suspends without discarding evidence`; `AS-15 a checkpoint deadline becomes paced transport recovery with unchanged delivery` — in-flight signals, disabled lifecycle, actual journal schema validation and the real abort deadline preserve serialization, pacing and durable evidence. Coverage: `tests/unit/opening-evidence-recovery-policy.test.tsx`.
+
+## Tempo CLI after-merge maintenance
+
+`tests/unit/tempo-cli-regressions.test.ts` runs the named Node cases in
+`tests/runner/tempo-cli.test.mjs` through the regular suite:
+
+- `actual CLI interrupted fallback stops uncommitted candidate writers before rejecting an incompatible schema` kills the CLI after its schema-28-to-29 migration verifies H0 and starts all application services, before receipt publication. Blocked-update fallback uses the schema-28 receipt and unchanged dependency identities; application shutdown must precede schema rejection, without application startup, database rollback, guard replacement, or receipt replacement. The failure journal and diagnostics remain available.
+- `actual CLI interrupted fallback quiesces a partially started candidate` kills the first workers/API startup group before web/engine startup. `actual CLI interrupted fallback stops mixed application identities` combines a committed API with candidate writers. `actual CLI interrupted fallback rejects application config drift despite matching immutable images` independently requires saved Compose hashes. These four unsafe recovery regressions failed against reviewed head `c89b7cb` before the fix.
+- `actual CLI interrupted fallback rejects incompatible schema cleanly with no running applications` ignores stopped candidate containers and rejects without application startup. `actual CLI compatible fallback keeps committed applications running despite a stale rollout journal` preserves the no-stop/no-build/no-migration fallback despite another revision's post-start journal. `failed application identity inspection stops unconfirmed writers before database validation` makes inspection errors fail closed and prevents startup/publication.
+
+- `deployment records fsync file contents before rename and the containing directory afterward` records real filesystem calls and their ordering on the host platform. `deployment records surface directory fsync failure and retain the renamed destination` proves fail-closed behavior and descriptor cleanup without deleting published state.
+- `deployment records clean temporary files after writeFileSync failure without replacing existing state`, `deployment records clean temporary files after fsyncSync failure without replacing existing state`, and `deployment records clean temporary files after renameSync failure without replacing existing state` retain the old destination and remove only the writer's temporary file. The existing ordinary atomic replacement regression remains required.
+- `CLI migration guard durability failure prevents migrations writer startup and deployment publication` uses the real runtime lifecycle, restore-verified backup, and H0 capture. Injected directory-fsync failure after the guard rename prevents migration invocation and writer startup, leaves the guard pending and writers stopped, and commits no deployment receipt. These regressions failed against PR head `2b6a5dc` before the durability fix.
+- The named `CLI worker storage contract rejects ...` cases cover `foreground missing writer URL`, `foreground reader role as writer`, `foreground writer to another database`, `foreground writer to another host`, `background missing read URL`, `background reader role as reader`, `foreground SQLite fallback`, `background empty SQLite fallback variable`, `foreground missing passfile`, `background wrong passfile`, `foreground writer secret unattached`, `background wrong secret at writer passfile`, `foreground writer secret at wrong target`, `background duplicate passfile target`, `writer secret undefined globally`, `foreground public passfile mode`, `foreground wrong broker`, `background wrong broker database`, `scheduler missing broker`, `missing foreground service`, and `missing background service`. All 21 bad configurations passed validation before the fix and failed their new regressions.
+- `CLI worker storage contract accepts production identities and resolved secret targets with private or omitted mode` covers relative/absolute effective passfile targets and resolved octal-string/numeric modes. `CLI worker storage contract blocks actual maintenance before any deployment command` invokes the actual CLI and proves invalid worker wiring cannot build, pull, stop, deploy, fast-forward, or replace its prior receipt.
+- `CLI worker storage contract rejects foreground PGPASSWORD`, `CLI worker storage contract rejects background PGPASSWORD`, and `CLI worker storage contract rejects empty PGPASSWORD` protect the passfile authentication contract by key presence. `CLI worker storage contract rejects foreground PGHOSTADDR redirect` and `CLI worker storage contract rejects background PGSERVICE credentials` block the two additional confirmed libpq bypasses: a separate network address and service-provided password/passfile parameters. `CLI worker storage contract permits libpq defaults already pinned by the explicit DSN` keeps ordinary host/port/database/user defaults and an inactive service-file path permitted. These rejection cases failed against reviewed head `35e46e8`.
+- `CLI worker storage contract rejects PGPASSWORD before mutations and keeps credentials out of output and saved state` invokes `tempo start --no-open`, requires a worker/key/passfile diagnostic without the password, rejects before build/pull/stop/up/migration/source merge, preserves the exact prior receipt, journal, and sanitized failure log, and allows no new release directory or secret-bearing state.
+- `restart compares numeric PostgreSQL schema versions rather than Python source or psql formatting` protects the reported restart/schema comparison confusion.
+- `CLI rejects mismatched projects volumes ports and writable reader credentials before maintenance`, `CLI rejects a foreign container attached to the registered PostgreSQL volume`, and `CLI refuses missing insecure or checkout-local secret files without exposing their values` protect installation identity, storage isolation, and private credentials.
+- `release evidence requires the exact main revision and successful complete quality jobs`, `blocked updates can start only recorded immutable images with the same database schema`, and the actual CLI process cases cover complete revision-specific CI, preserved local changes, immutable fallback, upgrades, repeat starts, read-only plans, sanitized failures, and explicit failed-migration retry.
+- `target maintenance lock prevents concurrent commands and recovers a dead owner without deleting another lock` and `deployment records are atomically replaced rather than appended or partially published` protect concurrency and restart bookkeeping.
+- `CLI recognizes the old backup image's unused anonymous scratch volume but rejects unknown study mounts` permits the previous backup image's unused anonymous mount only at its known destination; new backup containers use temporary memory there.
+- Lifecycle cases require a verified backup before migration, readiness before success, no application interruption on failed builds, and stopped consumers after backup, migration, or readiness failures.
+- `actual CLI migration guard partial commits retain H0 through failed and repaired retries` proves committed versions are skipped and the original fingerprint survives retry rather than accepting mutated history.
+- `actual CLI migration guard completed schema still verifies H0 before repaired startup` rejects an unresolved historical mutation with no pending migrations, retains the original backup and deployment, then permits startup only after repair.
+- `actual CLI migration guard newer candidates cannot bypass H0 or retry authorization` preserves the original invariant across selected revisions and requires explicit continuation.
+- `actual CLI migration guard interrupted attempts survive loss of the operation journal` kills the actual CLI immediately after durable guard persistence and before migration commits; reentry requires retry and survives a missing operation journal.
+- `CLI migration guard rejects wrong database identity and incompatible continuation schemas` fails closed for another target or an older candidate, and independently blocks startup, guard resolution, and deployment publication while unresolved.
+- The six `CLI PostgreSQL image major:` cases cover a standard compatible tag, registry-qualified incompatible tag, digest-pinned incompatible image, compatible tag with incompatible contents, compatible recorded fallback ID, and incompatible recorded fallback ID. Each inspects the actual immutable image without study mounts; mismatches occur before application shutdown or database startup.
+- The regular disposable Docker CLI boundary commits the populated schema-16 upgrade, injects a real review mutation before verification, rejects a no-pending retry against original H0, repairs the fixture, then verifies/resolves H0 before readiness and publication. Migration-025 normalization and dependency correction remain covered.
+- `actual CLI backup restores the prior running service state and retains the failed backup phase` protects service restoration and truthful diagnostics after an explicit backup failure.
+- `actual CLI backup restores stopped state when database validation fails before the backup` restores initially stopped PostgreSQL and Redis even when an earlier role check rejects the operation.
+- `actual CLI blocked update rejects an incomplete recorded image set before changing services` rejects damaged fallback receipts before database startup or application shutdown.
+- `actual CLI detects checkout edits during image preparation before touching the running application` rechecks source after builds and preserves work edited during preparation.
+- `changed dependency preparation stops writers before dependency recreation even on the same revision`, `dependency recreation failure leaves writers stopped and never publishes a deployment`, and `actual CLI dependency startup failure occurs after writer shutdown and keeps writers stopped` protect writer quiescence before PostgreSQL/Redis recreation. Compatible repeat-start cases require `--no-recreate`; failed image/source preparation preserves the running application.
+- The five `CLI volume ownership:` regressions reject Redis additionally mounting PostgreSQL data, relocated Redis data, PostgreSQL substituting Redis data, defense-engine mounting PostgreSQL data, and removal of required backup storage. The real Docker stage additionally resolves and validates current product Compose read-only, including secrets/tmpfs separation.
+- `actual CLI fallback corrects uncommitted or missing dependency containers before starting recorded applications` covers changed image IDs, changed Compose configuration identity, and absent containers. `actual CLI compatible fallback trusts immutable dependency IDs rather than mutable image tags` preserves the no-stop/no-build fast path. `actual CLI backup rejects mismatched dependencies without starting any recorded application` protects the explicit backup path.
+- `source update refuses concurrent dirty changes immediately before fast-forward`, `source update refuses concurrent head changes immediately before fast-forward`, and `source update refuses concurrent branch changes immediately before fast-forward` use deterministic command boundaries. `actual CLI concurrent source changes block fast-forward and retain verified fallback` additionally preserves newly created notes and independently moved HEAD while preventing merge/build.
+- `source update accepts a complete successful exact main run after a failed exact run`, `source update rejects exact main revisions when every eligible run fails or lacks required jobs`, `source update never accepts successful CI from another SHA branch or event`, and `source update accepts successful exact main evidence after a pending run and across workflow pages` encode acceptance of any complete successful allowed exact-main run, including pagination, without weakening required-job evidence.
+
+`backend/tests/test_postgres_upgrade_regressions.py` additionally covers
+newer/gapped history rejection, failed rollout, and read-only status with
+pending migrations or missing initialization/roles. The existing legacy
+import/recovery coverage remains required.
+
+`test_postgres_cli_history_allows_migration_025_queue_bucket_normalization`
+allows the intended derived-label change. The parameterized
+`test_postgres_cli_history_rejects_identity_result_and_provenance_changes`
+protects queue identity/order/results/admission, review outcomes/invalidation,
+and receipt request/result history through explicit semantic column sets.
+
+The regular PostgreSQL `schema_upgrade` stage invokes
+`scripts/check-tempo-cli.mjs` on its own project/ports/volumes with populated
+schema 16. It proves a real restore-verified backup and upgrade to current,
+including migration 025 normalization of an archived `tactics` card in
+`__game_tactics__` and its complete legacy `tactics` queue row to `tactic`,
+with unchanged row identity/history and successful readiness/deployment commit,
+preserved reviews/queue/receipt history, compatible repeat start without
+rebuild/migration, actual command fallback, real container recreation on
+restart, and stopped consumers after genuinely rejected PostgreSQL DDL.
+It also simulates an uncommitted Redis configuration and missing PostgreSQL
+container, then verifies writer shutdown before immutable fallback correction,
+the restored dependency image/config identities, and unchanged study history.
+`PASS Tempo CLI interrupted uncommitted application rollout quiesces writers before incompatible fallback without database rollback`
+reconstructs the recovery boundary with an older schema receipt and the already
+migrated, H0-verified fixture. A separate real lifecycle process is killed after
+the first workers/API `up` returns with changed application Compose hashes but
+matching dependency images/configuration. The actual CLI then rejects fallback,
+physically stops every application service before schema checking, leaves
+PostgreSQL/Redis running, preserves the old receipt and verified guard, records
+failure, and retains the current ledger/history. Only the test receipt is then
+restored to the legitimate current version for the remaining lifecycle checks;
+no database rollback or second historical image build is involved.
+The runner records ownership/diagnostics and verifies its own volume teardown.
+Its read-only production Compose check also validates the API/worker PostgreSQL,
+worker passfile/secret, and worker/scheduler Redis contracts. The existing
+`study_durability` scenario sends foreground review,
+teaching, annotation, and queue commands through Celery, then inspects their
+PostgreSQL snapshot effects and unchanged identities after service recreation;
+confirmed review replay produces no duplicate effect. No additional worker-write
+infrastructure scenario is needed for these static configuration checks.
+Full and durability gates include this stage; browser-only scopes omit it.
