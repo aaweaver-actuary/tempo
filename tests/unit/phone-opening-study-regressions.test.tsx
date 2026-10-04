@@ -1,5 +1,5 @@
 import { TrainingRepairNotice } from "../../app/components/TrainingRepairNotice";
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import TrainingView from "../../app/views/training_view";
 import { useTrainingStore } from "../../app/state/training-store";
@@ -109,4 +109,42 @@ it("Phone repair notice retains counts, explanation, and resume outside study de
   const explanation = view.container.querySelector(".repair-explanation") as HTMLDetailsElement;
   expect(explanation.open).toBe(false);
   expect(explanation.textContent).toContain("Unaffected openings and tactics remain available.");
+});
+
+it("Phone opening study preserves the accessible training page heading", () => {
+  const props = trainingProps();
+  const view = render(<TrainingView {...props} />);
+  const expectHeadings = (pageTitle: string, activeRepertoire = true) => {
+    expect(screen.getAllByRole("heading", { level: 1 })).toHaveLength(1);
+    expect(screen.getByRole("heading", { level: 1, name: pageTitle })).toBeTruthy();
+    expect(screen.queryAllByRole("heading", { level: 2, name: "London System" }))
+      .toHaveLength(activeRepertoire ? 1 : 0);
+  };
+  expectHeadings("Daily training");
+  expect(view.container.querySelector(".training-header")).toBeNull();
+  expect(view.container.querySelector(".session-count")).toBeNull();
+  expect(screen.getByRole("heading", { level: 1 }).classList.contains("sr-only")).toBe(true);
+
+  view.rerender(<TrainingView {...props} serviceError="Study service unavailable" />);
+  expectHeadings("Local service unavailable");
+  expect(screen.getByRole("alert").textContent).toContain("Study service unavailable");
+  fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+  expect(props.refreshDatabaseQueue).toHaveBeenCalledOnce();
+
+  view.rerender(<TrainingView {...props} cardsLeft={0} />);
+  expectHeadings("You're done for today", false);
+  expect(view.container.querySelector(".phone-study-heading")).toBeNull();
+  act(() => useTrainingStore.setState({ queueNotice: "Prepared exercises require the computer" }));
+  expectHeadings("Prepared exercises unavailable offline", false);
+
+  act(() => useTrainingStore.setState({ queueNotice: "" }));
+  view.rerender(<TrainingView {...props} />);
+  for (const isPhone of [true, false, true]) {
+    act(() => {
+      phoneViewport = isPhone;
+      phoneMediaListeners.forEach(listener => listener());
+    });
+    expectHeadings("Daily training");
+    expect(view.container.querySelector(".session-count") !== null).toBe(!isPhone);
+  }
 });

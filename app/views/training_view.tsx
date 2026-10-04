@@ -342,12 +342,13 @@ function StandardTrainingView({
   return (
     <>
       {!phoneOpening && repairNotice}
-      {!phoneOpening && <TrainingViewHeader
+      <TrainingViewHeader
+        compact={phoneOpening}
         dateLabel={dateLabel}
         serviceError={serviceError}
         cardsLeft={cardsLeft}
         queueNotice={offlineQueue ? "" : queueNotice}
-      />}
+      />
       {serviceError && (
         <div role="alert">
           {serviceError}{" "}

@@ -13,6 +13,8 @@ for (const viewport of [{ width: 320, height: 568 }, { width: 390, height: 844 }
   test(`Phone opening study shows repertoire identity above the board ${viewport.width}`, async ({ page }) => {
     await page.setViewportSize(viewport);
     await prepareVisualUI(page, true, [openingCard("london", "London System", "d2d4", 1)]);
+    await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+    await expect(page.getByRole("heading", { level: 1, name: "Daily training", exact: true })).toHaveCount(1);
     const heading = page.locator(".shared-board-heading");
     await expect(heading.getByRole("heading", { name: "London System" })).toBeInViewport();
     await expect(heading.getByText("white to play", { exact: true })).toBeVisible();
@@ -68,12 +70,21 @@ test("Phone opening More supports keyboard help, restart, and edit without reset
   await page.keyboard.press("Escape");
   const boardInstance = page.locator(".cg-wrap");
   await boardInstance.evaluate(element => element.setAttribute("data-phone-instance", "original"));
+  await page.setViewportSize({ width: 767, height: 844 });
+  const expectTrainingHeadings = async () => {
+    await expect(page.getByRole("heading", { level: 1 })).toHaveCount(1);
+    await expect(page.getByRole("heading", { level: 1, name: "Daily training", exact: true })).toHaveCount(1);
+    await expect(page.getByRole("heading", { level: 2, name: "London System", exact: true })).toHaveCount(1);
+  };
+  await expectTrainingHeadings();
   await page.setViewportSize({ width: 768, height: 1024 });
   await expect(page.locator(".phone-study-heading")).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "London System", exact: true })).toBeVisible();
   await expect(page.getByRole("button", { name: "Keyboard shortcuts" })).toBeVisible();
   await expect(boardInstance).toHaveAttribute("data-phone-instance", "original");
-  await page.setViewportSize({ width: 390, height: 844 });
+  await expectTrainingHeadings();
+  await page.setViewportSize({ width: 767, height: 844 });
+  await expectTrainingHeadings();
   await expect(page.locator(".phone-study-heading h2")).toHaveText("London System");
   await expect(boardInstance).toHaveAttribute("data-phone-instance", "original");
   await navigate(page, "Tactics");
