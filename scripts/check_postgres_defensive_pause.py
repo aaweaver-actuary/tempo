@@ -69,6 +69,16 @@ def verify_activity_pause_provenance(request_id, task_id, unrelated_task_id):
         assert control(source, work_id, 'prioritize') == {'ok': True}
         assert item(source, work_id)['promoted'] is True
         assert control(source, work_id, 'normal') == {'ok': True}
+    assert control('durable', task_id, 'pause') == {'ok': True}
+    with postgres_store.connection() as connection:
+        connection.execute("UPDATE background_tasks SET state='failed',last_error='retry fixture' WHERE id=?", (task_id,))
+    with postgres_store.connection() as connection:
+        assert activity_commands.retry_failed_task(connection, {'task_id': task_id})['state'] == 'queued'
+    projected = item('durable', task_id)
+    assert projected['paused'] is True and projected['paused_by_settings'] is True
+    with postgres_store.connection() as connection:
+        assert connection.execute("SELECT paused FROM background_activity WHERE source='durable' AND work_id=?",
+                                  (task_id,)).fetchone()[0] == 0
     with postgres_store.connection() as connection:
         connection.execute("UPDATE repertoire_opportunities SET status='active'")
     assert control('threat_analysis', request_id, 'pause') == {'ok': True}

@@ -96,14 +96,16 @@ def emit_progress(
         )
 
 
-def set_control(source: str, work_id: str, action: str) -> bool:
+def set_control(source: str, work_id: str, action: str, *, allow_settings_blocked_resume: bool = False) -> bool:
     if source not in SOURCES or action not in {"pause", "resume", "prioritize", "normal"}:
         return False
     with connection() as database:
-        return set_control_in_transaction(database, source, work_id, action)
+        return set_control_in_transaction(database, source, work_id, action,
+                                          allow_settings_blocked_resume=allow_settings_blocked_resume)
 
 
-def set_control_in_transaction(database, source: str, work_id: str, action: str) -> bool:
+def set_control_in_transaction(database, source: str, work_id: str, action: str,
+                               *, allow_settings_blocked_resume: bool = False) -> bool:
     """Apply a validated activity control in the caller's short write transaction."""
     if source not in SOURCES or action not in {"pause", "resume", "prioritize", "normal"}:
         return False
@@ -125,7 +127,7 @@ def set_control_in_transaction(database, source: str, work_id: str, action: str)
             (work_id,),
         ).fetchone():
             return False
-    if action == 'resume' and not work_row[1]:
+    if action == 'resume' and not allow_settings_blocked_resume and not work_row[1]:
         raise HTTPException(409, 'Defensive analysis is disabled in Settings. '
                             'Enable Defensive analysis in Settings before resuming this work.')
     now = _now()

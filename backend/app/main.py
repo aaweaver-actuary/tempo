@@ -900,7 +900,8 @@ def retry_system_task(task_id: str,
     retried = retry_task(task_id)
     if retried is None:
         raise HTTPException(404, "Terminal task not found")
-    set_control("durable", task_id, "resume")
+    # Explicit Retry keeps its existing pause reset, like the PostgreSQL retry handler.
+    set_control("durable", task_id, "resume", allow_settings_blocked_resume=True)
     coordinator.wake()
     return retried
 

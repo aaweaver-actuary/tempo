@@ -304,6 +304,27 @@ def test_activity_terminal_defensive_work_keeps_existing_control_rejection(tmp_p
         database_writer.stop()
 
 
+def test_activity_failed_defensive_retry_retains_existing_behavior_during_global_pause(tmp_path, monkeypatch):
+    initialize_pause_database(tmp_path, monkeypatch)
+    database_writer.start()
+    try:
+        work_id = durable_tasks.enqueue_task('defensive_threat_scan', 'failed-activity-retry', {})['id']
+        assert background_activity.set_control('durable', work_id, 'pause')
+        with database.connection() as connection:
+            connection.execute("UPDATE background_tasks SET state='failed',last_error='fixture failure' WHERE id=?", (work_id,))
+        response = TestClient(main.app).post(f'/api/system/tasks/{work_id}/retry')
+        assert response.status_code == 200
+        assert response.json()['state'] == 'queued'
+        item = next(item for item in background_activity.list_activity()['items'] if item['id'] == work_id)
+        assert item['paused'] is True and item['paused_by_settings'] is True
+        with database.read_connection() as connection:
+            assert connection.execute("SELECT paused FROM background_activity WHERE source='durable' AND work_id=?",
+                                      (work_id,)).fetchone()[0] == 0
+            assert connection.execute('SELECT defensive_analysis_enabled FROM settings WHERE id=1').fetchone()[0] == 0
+    finally:
+        database_writer.stop()
+
+
 def test_postgres_defensive_setting_preserves_omitted_enabled_value(monkeypatch):
     from types import SimpleNamespace
     existing = Settings(defensive_analysis_enabled=True, include_defensive_cards_in_daily_stack=False).model_dump()
