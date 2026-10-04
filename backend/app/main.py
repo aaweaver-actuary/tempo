@@ -914,7 +914,7 @@ def capabilities():
 def get_settings():
     with read_connection() as db:
         row = db.execute(
-            "SELECT tactics_new_per_day,defense_new_cards_per_day,include_defensive_cards_in_daily_stack,discovery_window_days,initial_depth,timezone,new_cards_per_day,study_new_per_day,lichess_username,chesscom_username,auto_sync_minutes,engine_line_window_cp,major_mistake_cp,light_first_interval_days,draw_hold_user_moves,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
+            "SELECT tactics_new_per_day,defense_new_cards_per_day,include_defensive_cards_in_daily_stack,defensive_analysis_enabled,discovery_window_days,initial_depth,timezone,new_cards_per_day,study_new_per_day,lichess_username,chesscom_username,auto_sync_minutes,engine_line_window_cp,major_mistake_cp,light_first_interval_days,draw_hold_user_moves,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
         ).fetchone()
     return Settings(**dict(row))
 
@@ -938,14 +938,15 @@ def put_settings(s: Settings,
     )
     def persist_settings(db):
         previous_settings = db.execute(
-            "SELECT discovery_window_days,include_defensive_cards_in_daily_stack,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
+            "SELECT discovery_window_days,include_defensive_cards_in_daily_stack,defensive_analysis_enabled,coverage_reply_denominator,coverage_cumulative_target,coverage_horizon_fullmoves,coverage_path_floor,coverage_maia_elo FROM settings WHERE id=1"
         ).fetchone()
         db.execute(
-            "UPDATE settings SET tactics_new_per_day=?,defense_new_cards_per_day=?,include_defensive_cards_in_daily_stack=?,discovery_window_days=?,initial_depth=?,timezone=?,new_cards_per_day=?,study_new_per_day=?,lichess_username=?,chesscom_username=?,auto_sync_minutes=?,engine_line_window_cp=?,major_mistake_cp=?,light_first_interval_days=?,draw_hold_user_moves=?,coverage_reply_denominator=?,coverage_cumulative_target=?,coverage_horizon_fullmoves=?,coverage_path_floor=?,coverage_maia_elo=? WHERE id=1",
+            "UPDATE settings SET tactics_new_per_day=?,defense_new_cards_per_day=?,include_defensive_cards_in_daily_stack=?,defensive_analysis_enabled=?,discovery_window_days=?,initial_depth=?,timezone=?,new_cards_per_day=?,study_new_per_day=?,lichess_username=?,chesscom_username=?,auto_sync_minutes=?,engine_line_window_cp=?,major_mistake_cp=?,light_first_interval_days=?,draw_hold_user_moves=?,coverage_reply_denominator=?,coverage_cumulative_target=?,coverage_horizon_fullmoves=?,coverage_path_floor=?,coverage_maia_elo=? WHERE id=1",
             (
                 s.tactics_new_per_day,
                 s.defense_new_cards_per_day,
                 int(s.include_defensive_cards_in_daily_stack) if "include_defensive_cards_in_daily_stack" in s.model_fields_set else previous_settings["include_defensive_cards_in_daily_stack"],
+                int(s.defensive_analysis_enabled) if "defensive_analysis_enabled" in s.model_fields_set else previous_settings["defensive_analysis_enabled"],
                 s.discovery_window_days,
                 s.initial_depth,
                 s.timezone,
@@ -1677,6 +1678,10 @@ register_maintenance_handler(_ensure_current_daily_queue)
 
 
 def _ensure_daily_defense_admission() -> None:
+    from .services.defensive_analysis import analysis_enabled
+    with background_read_connection(authoritative=True) as database:
+        if not analysis_enabled(database):
+            return
     today = date.today().isoformat()
     with read_connection() as database:
         existing = database.execute(
@@ -5278,6 +5283,27 @@ def save_game_analysis(
     return result
 
 
+@app.get("/api/defensive-threats/analysis/{request_id}/control")
+def defensive_engine_control(request_id: str, lease_id: str):
+    """One authoritative, read-only request probe; never traverse the engine backlog."""
+    from .services.defensive_analysis import search_admission_sql
+    from .services.background_activity import claimable
+
+    # Foreground demand must stop the engine without waiting for background DB admission.
+    if activity_gate.foreground_waiting:
+        return {"foreground_active": True, "search_allowed": False}
+    with background_read_connection(authoritative=True) as database:
+        row = database.execute(
+            f"""SELECT state,lease_id,
+                    ({search_admission_sql('request.id')} AND
+                     {claimable('threat_analysis', 'request.id')}) AS search_allowed
+                FROM threat_analysis_requests request WHERE request.id=?""", (request_id,),
+        ).fetchone()
+    return {"foreground_active": activity_gate.foreground_waiting,
+            "search_allowed": bool(row and row['state'] == 'leased'
+                                   and row['lease_id'] == lease_id and row['search_allowed'])}
+
+
 @app.post("/api/defensive-threats/analysis/claim")
 def claim_defensive_threat_analysis(
     engine_worker: str | None = Header(default=None, alias="X-Tempo-Engine-Worker"),
@@ -5402,6 +5428,7 @@ def release_defensive_threat_analysis(
     with connection(background=activity_gate.in_background) as database:
         updated = database.execute(
             """UPDATE threat_analysis_requests SET state='queued',lease_id=NULL,
+                  attempts=MAX(0,attempts-1),
                   lease_expires_at=NULL,updated_at=?
                WHERE id=? AND state='leased' AND lease_id=?""",
             (datetime.now(timezone.utc).isoformat(), request_id, request.lease_id),
