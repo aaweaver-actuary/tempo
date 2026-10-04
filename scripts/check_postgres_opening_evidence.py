@@ -509,10 +509,20 @@ def test_postgres_opening_attempt_http_admission_preserves_foreground_diagnostic
     fixture, payload = _large_checkpoint_fixture()
     checkpoint = payload['checkpoint']
     assert tasks.execute_background_command.run(fixture['card_id'] + '-get-seed', 'opening_evidence.checkpoint', payload)['persisted']
-    # A sentinel beyond the supported journal size proves the HTTP query's bound.
+    # The maximum valid journal must round-trip; PostgreSQL also rejects an
+    # out-of-bounds sequence without changing the persisted evidence.
     with postgres_store.connection() as connection:
-        connection.execute_native('INSERT INTO opening_evidence_events(attempt_id,sequence,event_json) VALUES(%s,257,%s)',
-                                  (checkpoint['attempt_id'], canonical_json({'sequence': 257})))
+        connection.execute_native('SAVEPOINT event_sequence_boundary')
+        try:
+            connection.execute_native('INSERT INTO opening_evidence_events(attempt_id,sequence,event_json) VALUES(%s,257,%s)',
+                                      (checkpoint['attempt_id'], canonical_json({'sequence': 257})))
+        except psycopg.errors.CheckViolation as error:
+            assert error.diag.constraint_name == 'opening_evidence_events_sequence_check'
+        else:
+            raise AssertionError('PostgreSQL accepted an event beyond the 256-event journal bound')
+        finally:
+            connection.execute_native('ROLLBACK TO SAVEPOINT event_sequence_boundary')
+        connection.execute_native('RELEASE SAVEPOINT event_sequence_boundary')
         digest = shadow_digest(connection, fixture['repertoire_id'])
         scheduling = _fixture_scheduling(connection, fixture)
     original_read = opening_evidence_api.background_read_connection
