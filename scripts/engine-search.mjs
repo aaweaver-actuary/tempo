@@ -1,5 +1,9 @@
 import { startEngineAttempt, engineWaitingStage } from "./engine-attempt-diagnostics.mjs";
 
+export function engineSearchWasPreempted(error) {
+  return error.message === "preempted" || error.diagnostics?.outcome === "preempted";
+}
+
 export function engineControlPath(job, kind) {
   return kind === "engine_defense"
     ? `/api/defensive-threats/analysis/${encodeURIComponent(job.id)}/control?lease_id=${encodeURIComponent(job.lease_id)}`

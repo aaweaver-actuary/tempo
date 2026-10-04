@@ -1,7 +1,11 @@
 // @vitest-environment node
 import { afterEach, expect, it, vi } from "vitest";
-import { createEngineSearch, admitEngineJob, engineSearchAllowed } from "../../scripts/engine-search.mjs";
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { createEngineSearch, admitEngineJob, engineSearchAllowed, engineSearchWasPreempted } from "../../scripts/engine-search.mjs";
 import { recoverNextEngineJob } from "../../scripts/engine-job-recovery.mjs";
+import { createDurableEngineRequest } from "../../scripts/durable-engine-request.mjs";
 
 const job = { id: "defensive-request", lease_id: "current-lease", request: {
   position_start_fen: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
@@ -54,6 +58,34 @@ it("an unresolved paused-job release propagates its durable operation instead of
   await expect(admitEngineJob(job, "engine_defense", request)).rejects.toBe(pending);
 });
 
+it("a pending defensive report survives pause and restart and delivers before another claim", async () => {
+  const directory = mkdtempSync(join(tmpdir(), "tempo-paused-report-"));
+  try {
+    const journalPath = join(directory, "pending.json");
+    const pendingJournal = createDurableEngineRequest("http://api", journalPath,
+      async (_api: string, _path: string, options: { operationId: string }) => {
+        throw Object.assign(new Error("receipt pending"), { operationId: options.operationId });
+      });
+    const reportPath = `/api/defensive-threats/analysis/${job.id}/report`;
+    const body = JSON.stringify({ lease_id: job.lease_id, report: { complete: true } });
+    await expect(pendingJournal.send(reportPath, { method: "POST", body })).rejects.toThrow("receipt pending");
+    const saved = await pendingJournal.pending();
+    const delivered = vi.fn().mockResolvedValue({ status: "complete" });
+    const restarted = createDurableEngineRequest("http://api", journalPath, delivered);
+    const defenseJournal = { recover: vi.fn().mockResolvedValue(null) };
+    await expect(recoverNextEngineJob(restarted, defenseJournal)).resolves.toMatchObject({ job: null });
+    expect(delivered.mock.calls[0]).toMatchObject(["http://api", reportPath, {
+      operationId: saved.operationId, body,
+    }]);
+    expect(delivered.mock.invocationCallOrder[0]).toBeLessThan(defenseJournal.recover.mock.invocationCallOrder[0]);
+    expect(await restarted.pending()).toBeNull();
+    await recoverNextEngineJob(restarted, defenseJournal);
+    expect(delivered).toHaveBeenCalledTimes(1);
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 it("repertoire recommendation permission allows a shared search while defensive analysis is paused", async () => {
   const request = vi.fn().mockResolvedValue({ foreground_active: false, search_allowed: true });
   expect(await admitEngineJob(job, "engine_defense", request)).toBe(true);
@@ -95,14 +127,17 @@ it("a defensive control outage stops and releases rather than authorizing more c
     .toBe(false);
 });
 
-it("a paused engine that cannot drain exits safely and cleans every search timer", async () => {
+it("a paused engine that cannot drain releases its lease without recording failure and cleans every timer", async () => {
   vi.useFakeTimers();
   const engine = new Engine();
   engine.drain = false;
   const searches = createEngineSearch(engine, vi.fn().mockResolvedValue({ foreground_active: false, search_allowed: false }));
   const result = searches.evaluate(job).catch((error: Error) => error);
   await vi.advanceTimersByTimeAsync(5_750);
-  expect(await result).toMatchObject({ message: "Stockfish did not drain after cancellation" });
+  const cancellation = await result;
+  expect(cancellation).toMatchObject({ message: "Stockfish did not drain after cancellation" });
+  expect(engineSearchWasPreempted(cancellation)).toBe(true);
+  expect(engineSearchWasPreempted(new Error("Engine timed out before requested depth"))).toBe(false);
   expect(searches.fatalEngineError).toBe(true);
   expect(vi.getTimerCount()).toBe(0);
 });

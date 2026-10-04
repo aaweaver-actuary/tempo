@@ -1,4 +1,4 @@
-import { createEngineSearch, admitEngineJob } from "./engine-search.mjs";
+import { createEngineSearch, admitEngineJob, engineSearchWasPreempted } from "./engine-search.mjs";
 import { engineWaitingStage } from "./engine-attempt-diagnostics.mjs";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
@@ -100,7 +100,7 @@ while (true) {
       continue;
     }
     if (job) {
-      const preempted = error.message === "preempted";
+      const preempted = engineSearchWasPreempted(error);
       try {
         if (job.kind === "finalize") {
           await request(`/api/games/analysis/${encodeURIComponent(job.game_id)}/failure`, {
