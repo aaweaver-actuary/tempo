@@ -63,7 +63,7 @@ it("a pending defensive report survives pause and restart and delivers before an
   try {
     const journalPath = join(directory, "pending.json");
     const pendingJournal = createDurableEngineRequest("http://api", journalPath,
-      async (_api: string, _path: string, options: { operationId: string }) => {
+      async (_api: string, _path: string, options: { operationId?: string } = {}) => {
         throw Object.assign(new Error("receipt pending"), { operationId: options.operationId });
       });
     const reportPath = `/api/defensive-threats/analysis/${job.id}/report`;
