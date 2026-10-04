@@ -948,3 +948,31 @@ describe("reported study regressions", () => {
     expect(screen.queryByText(/First clean solve/)).toBeNull();
   });
 });
+
+it("repair completion preserves the active attempt focus and pending opponent reply", async () => {
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/api/queue/window")) return Response.json({ count: 1, cards: [{
+      id: "repair-continuity", queue_entry_id: 870, start_fen: new Chess().fen(),
+      moves: ["e2e4", "e7e5", "g1f3"], trained_color: "white", content_type: "opening",
+      repertoire_name: "Repair continuity", repertoire_source: "fixture.pgn",
+    }] });
+    if (url.endsWith("/repertoires")) return Response.json({ repertoires: [{ id: "rep", name: "Repair repertoire",
+      source_name: "fixture.pgn", line_count: 1, card_count: 1, due_count: 1,
+      integrity_status: "needs_repair", integrity_issue_count: 1, blocked_due_count: 1 }] });
+    return Response.json({ providers: [], states: [], lines: [] });
+  }));
+  render(<Home />);
+  await screen.findByRole("heading", { name: "Repair continuity" });
+  await waitFor(() => expect(screen.getByTestId("board").getAttribute("data-fen")).toBe(new Chess().fen()));
+  vi.useFakeTimers();
+  const moveButton = screen.getByText("e2e4"); moveButton.focus(); fireEvent.click(moveButton);
+  const before = useTrainingStore.getState();
+  await act(async () => { window.dispatchEvent(new CustomEvent("tempo-integrity-repair-confirmed", { detail: { repertoireId: "rep" } })); });
+  const after = useTrainingStore.getState();
+  expect(after.attempt).toEqual(before.attempt); expect(after.step).toBe(before.step);
+  expect(after.currentFenString).toBe(before.currentFenString); expect(document.activeElement).toBe(moveButton);
+  expect(screen.queryByRole("dialog", { name: "Choose one response per position" })).toBeNull();
+  await act(async () => { await vi.advanceTimersByTimeAsync(430); });
+  expect(useTrainingStore.getState().step).toBe(2);
+});

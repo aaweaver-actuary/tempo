@@ -1,4 +1,5 @@
 import { TrainingRepairNotice } from "../components/TrainingRepairNotice";
+import { backgroundFetch } from "../lib/background-fetch";
 import { useCommittedCallback } from "../hooks/use-committed-callback";
 import { Button } from "../components/buttons/BaseButton";
 import { teachingResponseSchema } from "../domain/schemas";
@@ -98,6 +99,7 @@ import { Settings } from "../utils/settings";
 import { TreeBrowser } from "./tree_browser";
 import { useShallow } from "zustand/react/shallow";
 import { WorkspaceRefreshStatus } from "../components/workspace-refresh-status";
+import { IntegrityRepairStatus } from "../components/integrity-repair-status";
 import { RepertoireIntegrityDialog } from "../components/repertoire-integrity-dialog";
 import { repertoiresResponseSchema } from "../domain/schemas";
 import { NotificationCenter } from "../components/notification-center";
@@ -315,10 +317,10 @@ export default function Home() {
     setActiveDebugWorkspace(currentView);
   }, [currentView]);
 
-  const checkPendingIntegrity = useCallback(async (preferred?: string) => {
+  const checkPendingIntegrity = useCallback(async (preferred?: string, passive = false) => {
     if (!usesLocalApi()) return;
     try {
-      const response = await fetch(`${API_URL}/api/repertoires`);
+      const response = await (passive ? backgroundFetch : fetch)(`${API_URL}/api/repertoires`);
       const data = await response.json();
       const parsed = repertoiresResponseSchema.parse(data);
       const candidate = parsed.repertoires.find(
@@ -332,7 +334,7 @@ export default function Home() {
               item.id === preferred && item.integrity_status === "needs_repair",
           )
         : undefined;
-      setRepairRepertoireId(preferredCandidate?.id);
+      if (!passive) setRepairRepertoireId(preferredCandidate?.id);
       const paused = preferredCandidate ?? candidate;
       const repairItems = parsed.repertoires.filter(
         (item) => item.integrity_status === "needs_repair",
@@ -1905,6 +1907,17 @@ export default function Home() {
           }}
         />
       )}
+      <IntegrityRepairStatus
+        onConfirmed={() => {
+          invalidateWorkspaceData();
+          invalidateTrainingQueueCache();
+          void checkPendingIntegrity(undefined, true);
+        }}
+        onResume={(repertoireId) => {
+          deferredRepairIds.current.delete(repertoireId);
+          setRepairRepertoireId(repertoireId);
+        }}
+      />
       {repairRepertoireId && (
         <RepertoireIntegrityDialog
           repertoireId={repairRepertoireId}
@@ -1913,12 +1926,6 @@ export default function Home() {
           onClose={() => {
             deferredRepairIds.current.add(repairRepertoireId);
             setRepairRepertoireId(undefined);
-          }}
-          onClean={() => {
-            deferredRepairIds.current.delete(repairRepertoireId);
-            setRepairRepertoireId(undefined);
-            setPausedIntegrity(undefined);
-            void refreshDatabaseQueue();
           }}
         />
       )}
