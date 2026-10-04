@@ -25,6 +25,7 @@ ADMIN_DSN = 'postgresql://postgres@postgres:5432/postgres'
 
 def verify_pause():
     with postgres_store.connection() as connection:
+        connection.execute('INSERT INTO settings(id) VALUES(1)')
         assert connection.execute('SELECT defensive_analysis_enabled FROM settings WHERE id=1').fetchone()[0] == 0
         fen = '4k3/8/8/8/1n6/8/P7/R3K3 w Q - 0 1'
         game = GameSnapshot('lichess:pause-proof', 1, fen, ('a2a3',), 'white')
