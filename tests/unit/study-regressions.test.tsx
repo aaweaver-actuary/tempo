@@ -14,6 +14,7 @@ import { advanceTacticProgress } from "../../app/lib/tactics-progress";
 import { useTrainingStore } from "../../app/state/training-store";
 import { fetchAndInitializeQueue } from "../../app/views/fetchAndInitializeQueue";
 import { pendingReviews } from "../../app/lib/review-outbox";
+import { flushIntegrityRepairs, pendingIntegrityRepairs } from "../../app/lib/integrity-repair-outbox";
 
 vi.mock("../../app/components/board/chessboard", () => ({
   Chessboard: (props: {
@@ -1008,4 +1009,79 @@ it("late integrity count refresh cannot close an explicitly opened repair dialog
   await act(async () => { delayedCounts.splice(0).forEach(finish => finish(Response.json(repertoires))); });
   expect(screen.getByRole("dialog", { name: "Choose one response per position" })).toBe(dialog);
   expect(within(dialog).getByText("e2e4", { selector: "strong" })).not.toBeNull();
+});
+
+it.each([
+  { title: "confirmed partial repair restores the deferred resume notice without changing study", hasRemainingConflict: true },
+  { title: "confirmed final repair removes the deferred resume notice without changing study", hasRemainingConflict: false },
+])("$title", async ({ hasRemainingConflict }) => {
+  const repairIssues = ["first", "second"].map(id => ({ id, kind: "multiple_responses", signature: `${id}-signature`,
+    fen: new Chess().fen(), fen_key: new Chess().fen().split(" ").slice(0, 4).join(" "),
+    trained_color: "white", moves: [], sources: [{ type: "line", id: `${id}-source` }] }));
+  let serverIssues = hasRemainingConflict ? repairIssues : repairIssues.slice(0, 1);
+  let submissionConfirmed = false;
+  const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("/api/queue/window")) return Response.json({ count: 1, cards: [{
+      id: "partial-repair-study", queue_entry_id: 872, start_fen: new Chess().fen(), moves: ["e2e4", "e7e5", "g1f3"],
+      trained_color: "white", content_type: "opening", repertoire_name: "Active study", repertoire_source: "fixture.pgn",
+    }] });
+    if (url.endsWith("/repertoires")) return Response.json({ repertoires: [{ id: "rep", name: "Repair repertoire",
+      source_name: "fixture.pgn", line_count: 2, card_count: 6, due_count: 6, graph_state: "ready", graph_generation: 2,
+      integrity_status: serverIssues.length ? "needs_repair" : "clean", integrity_issue_count: serverIssues.length,
+      blocked_due_count: serverIssues.length * 3 }] });
+    if (url.endsWith("/integrity")) return Response.json({ repertoire_id: "rep",
+      status: serverIssues.length ? "needs_repair" : "clean", issue_count: serverIssues.length,
+      first_issue_id: serverIssues[0]?.id ?? null, scan_status: "idle", scan_generation: "scan:2",
+      scan_progress: { completed: 2, total: 2 }, last_scan_error: null, issues: serverIssues });
+    const submission = { task_id: "partial-repair-graph", repertoire_id: "rep", issue_id: "first", state: "queued" };
+    if (url.endsWith("/first/resolve") && init?.method === "POST") { submissionConfirmed = true; return Response.json(submission); }
+    if (url.includes("/api/operations/")) return Response.json(submissionConfirmed
+      ? { state: "complete", response: submission } : { state: "unknown" });
+    if (url.endsWith("/system/tasks")) return Response.json({ tasks: [{ id: "partial-repair-graph",
+      kind: "opening_graph_rebuild", deduplication_key: "rep", generation: 2, state: "complete" }] });
+    return Response.json({ providers: [], states: [], lines: [] });
+  });
+  vi.stubGlobal("fetch", fetchMock);
+  render(<Home />);
+  await screen.findByRole("heading", { name: "Active study" });
+  fireEvent.click(await screen.findByRole("button", { name: "Resume repair" }));
+  const dialog = await screen.findByRole("dialog", { name: "Choose one response per position" });
+  await within(dialog).findByText(/line first-source/);
+  fireEvent.click(within(dialog).getByRole("button", { name: "e2e4" }));
+  fireEvent.click(within(dialog).getByRole("button", { name: "Keep this response" }));
+  if (hasRemainingConflict) await within(dialog).findByText(/line second-source/);
+  else await within(dialog).findByText(/All choices queued/);
+  expect(pendingIntegrityRepairs().map(repair => repair.issueId)).toEqual(["first"]);
+  fireEvent.click(within(dialog).getByRole("button", { name: "Defer repertoire repair" }));
+  const studyMove = screen.getByRole("button", { name: "e2e4" });
+  studyMove.focus();
+  const beforeConfirmation = useTrainingStore.getState();
+  const queueReadsBeforeConfirmation = fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/queue/window")).length;
+  await act(async () => { await flushIntegrityRepairs(); });
+  serverIssues = hasRemainingConflict ? repairIssues.slice(1) : [];
+  await act(async () => { await flushIntegrityRepairs(); });
+  expect(pendingIntegrityRepairs()).toHaveLength(0);
+  expect(screen.queryByRole("dialog", { name: "Choose one response per position" })).toBeNull();
+  const afterConfirmation = useTrainingStore.getState();
+  expect(afterConfirmation.attempt).toEqual(beforeConfirmation.attempt);
+  expect(afterConfirmation.currentFenString).toBe(beforeConfirmation.currentFenString);
+  expect(afterConfirmation.step).toBe(beforeConfirmation.step);
+  expect(afterConfirmation.getCard().queueEntryId).toBe(beforeConfirmation.getCard().queueEntryId);
+  expect(document.activeElement).toBe(studyMove);
+  expect(fetchMock.mock.calls.filter(([input]) => String(input).includes("/api/queue/window"))).toHaveLength(queueReadsBeforeConfirmation);
+  const latestCountsRequest = fetchMock.mock.calls.filter(([input]) => String(input).endsWith("/repertoires")).at(-1)!;
+  expect(new Headers(latestCountsRequest[1]?.headers).get("X-Tempo-Work-Class")).toBe("background");
+  if (hasRemainingConflict) {
+    const resume = screen.getByRole("button", { name: "Resume repair" });
+    const notice = resume.closest('[role="status"]')!;
+    expect(notice.textContent).toContain("3 opening cards paused by repertoire repair.");
+    expect(notice.textContent).toContain("1 issue remaining.");
+    fireEvent.click(resume);
+    await screen.findByText(/line second-source/);
+    expect(screen.queryByText(/line first-source/)).toBeNull();
+  } else {
+    expect(screen.queryByRole("button", { name: "Resume repair" })).toBeNull();
+    expect(screen.queryByText(/opening cards? paused by repertoire repair/)).toBeNull();
+  }
 });

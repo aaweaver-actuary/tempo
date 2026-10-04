@@ -1909,7 +1909,8 @@ export default function Home() {
         />
       )}
       <IntegrityRepairStatus
-        onConfirmed={() => {
+        onConfirmed={(repertoireId) => {
+          deferredRepairIds.current.delete(repertoireId);
           invalidateWorkspaceData();
           invalidateTrainingQueueCache();
           void checkPendingIntegrity(undefined, true);
