@@ -208,8 +208,8 @@ await executeLifecycle({ recreate: false }, runtime);
     output.push(redact(failedFallback.stdout + failedFallback.stderr, secretValues));
     assert.notEqual(failedFallback.status, 0);
     assert.match(failedFallback.stderr, /previous deployment is incompatible with the current database/);
-    assert(failedFallback.stdout.includes("stopping applications")
-      && failedFallback.stdout.indexOf("stopping applications") < failedFallback.stdout.indexOf("checking database"));
+    assert(failedFallback.stdout.includes("stopping application services")
+      && failedFallback.stdout.indexOf("stopping application services") < failedFallback.stdout.indexOf("checking database"));
     assert(!failedFallback.stdout.includes("starting services"));
     const recoveredRunning = await recovery.runningServices();
     assert(![...applicationServices, "postgres-backup"].some(name => recoveredRunning.includes(name)));
