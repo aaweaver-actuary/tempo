@@ -1473,6 +1473,7 @@ case count; a successful zero-match command is not regression coverage.
 - `actual CLI diagnostic safety reports receipt image and configuration drift without changing containers` distinguishes saved receipt identities from actual containers. Known image revision labels contradicting the receipt also prevent a match claim.
 - `actual CLI diagnostic safety no-receipt blocked start explains preserved deployment state` preserves the nonzero exit while explaining the absence of fallback and preventing deployment/image/maintenance work.
 - `actual CLI diagnostic safety unavailable schema reads retain other diagnostics and zero exit` prevents a failed bounded ledger probe from hiding source/verification/API evidence or inventing an applied schema.
+- `actual CLI diagnostics retain partial immutable inspection evidence and separate receipt identity` keeps available image records from a nonzero bounded batch inspection, reports proven mixed revisions among available labels, and compares container IDs/configuration with the receipt even when revision metadata is missing. It permits no per-image deadline multiplication or container changes. It failed against product code `86aef6b` before the partial-evidence repair.
 
 Existing source-race, dirty/diverged checkout, image/schema fallback, interrupted
 rollout and migration-guard tests remain required. These injected command tests

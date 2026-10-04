@@ -1176,3 +1176,26 @@ test("actual CLI diagnostic safety unavailable schema reads retain other diagnos
   assert.match(result.stdout, /API health: HTTP 200/);
   assert.doesNotMatch(result.stdout, /Applied schema versions: 1/);
 });
+
+test("actual CLI diagnostics retain partial immutable inspection evidence and separate receipt identity", t => {
+  for (const [machine, expectedRevision, expectedReceipt] of [
+    [{ unavailableImageIds: ["sha256:fixture-web"] }, /Running application revision: unknown.*available revision evidence \(incomplete\): a{40}/, /Receipt consistency: matches immutable images and configuration of inspected running services/],
+    [{ unavailableImageIds: ["sha256:fixture-web"], imageRevisions: { "sha256:fixture-api": "b".repeat(40) } }, /Running application revision: mixed.*a{40}.*b{40}|Running application revision: mixed.*b{40}.*a{40}/, /Receipt consistency: differs from running service identities/],
+    [{ imageInspectionUnavailable: true }, /Running application revision: unknown/, /Receipt consistency: matches immutable images and configuration of inspected running services/],
+  ]) {
+    const fixture = diagnosticFixture(t, { receipt: true, machine });
+    const receiptPath = join(fixture.stateDirectory, "deployment.json");
+    const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+    receipt.revision = "a".repeat(40); receipt.evidence.commit = receipt.revision;
+    writeFileSync(receiptPath, JSON.stringify(receipt));
+    const before = readFileSync(join(fixture.directory, "machine.json"), "utf8");
+    const result = fixture.command("status");
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, expectedRevision);
+    assert.match(result.stdout, expectedReceipt);
+    assert.match(result.stdout, /Applied schema versions:/);
+    assert.equal(readFileSync(join(fixture.directory, "machine.json"), "utf8"), before);
+    const batchCalls = fixture.calls().filter(call => call.args.includes("image") && call.args.includes("inspect"));
+    assert.equal(batchCalls.length, 1, "Unavailable metadata must not cause per-image deadline multiplication");
+  }
+});

@@ -244,12 +244,15 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     if (!running.length) return { status: "unknown", detail: "no running application services", receipt: "unverified" };
     const missingServices = applicationServices.filter(service => configuration.services[service]
       && !running.some(container => container.Config?.Labels?.["com.docker.compose.service"] === service));
-    let imageDetails;
+    let imageDetails = [];
     try {
-      imageDetails = JSON.parse((await docker(["image", "inspect", ...new Set(running.map(container => container.Image))],
-        { timeout: 5000 })).stdout);
-      if (!Array.isArray(imageDetails)) throw new Error("Invalid immutable image inspection response.");
-    } catch { return { status: "unknown", detail: `immutable image inspection unavailable${missingServices.length ? `; missing services: ${missingServices.join(", ")}` : ""}`, receipt: "unverified" }; }
+      const inspection = await docker(["image", "inspect", ...new Set(running.map(container => container.Image))],
+        { allowFailure: true, timeout: 5000 });
+      const returnedImages = JSON.parse(inspection.stdout);
+      if (Array.isArray(returnedImages)) imageDetails = returnedImages.filter(image => image && typeof image.Id === "string");
+    } catch { /* Container IDs/configuration can still establish receipt identity. */ }
+    const unavailableImageServices = running.filter(container => !imageDetails.some(image => image.Id === container.Image))
+      .map(container => container.Config?.Labels?.["com.docker.compose.service"]);
     const revisions = running.map(container => imageDetails.find(image => image.Id === container.Image)
       ?.Config?.Labels?.["org.opencontainers.image.revision"]);
     const knownRevisions = [...new Set(revisions.filter(value => /^[a-f0-9]{40}$/.test(value ?? "")))];
@@ -258,8 +261,11 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     const identity = knownRevisions.length > 1 || duplicateService
       ? { status: "mixed", detail: knownRevisions.join(", ") || "duplicate application services" }
       : revisions.some(value => !/^[a-f0-9]{40}$/.test(value ?? ""))
-        ? { status: "unknown", detail: "revision labels missing from immutable images" }
+        ? { status: "unknown", detail: unavailableImageServices.length ? "immutable image inspection unavailable" : "revision labels missing from immutable images" }
         : { status: "consistent", detail: `${knownRevisions[0]} across ${running.length} inspected running services` };
+    if (identity.status === "unknown" && knownRevisions.length)
+      identity.detail += `; available revision evidence (incomplete): ${knownRevisions.join(", ")}`;
+    if (unavailableImageServices.length) identity.detail += `; immutable image inspection unavailable for: ${unavailableImageServices.join(", ")}`;
     if (missingServices.length) {
       if (identity.status === "consistent") identity.status = "partial";
       identity.detail += `; missing services: ${missingServices.join(", ")}`;

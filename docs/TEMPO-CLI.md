@@ -60,6 +60,10 @@ unavailable image inspection produce `unknown`, different revisions produce
 `mixed`, and absent application services are listed as `partial`. Receipt
 consistency compares the inspected running services with saved immutable images
 and Compose hashes; it does not certify stopped or missing services.
+Partial image inspection retains available revision labels, so known conflicting
+labels still establish a mixed revision while unavailable records remain explicit.
+Receipt ID/configuration comparison remains available without image metadata;
+an identity match does not verify a running revision whose labels are unknown.
 
 The applied migration ledger is shown separately from the schema required by
 local source, with missing ledger versions, pending local migrations, and a

@@ -136,8 +136,11 @@ async function fakeCommand() {
   }
   if (args.includes("image") && args.includes("inspect")) {
     if (machine.imageInspectionUnavailable) process.exit(17);
-    output(args.slice(args.indexOf("inspect") + 1).map(image => ({ Id: image.startsWith("sha256:") ? image : `sha256:${image}`,
-      Config: { Labels: machine.missingImageRevision ? {} : { "org.opencontainers.image.revision": machine.imageRevisions?.[image] ?? fixture.revision } } }))); process.exit(0);
+    const requestedImages = args.slice(args.indexOf("inspect") + 1);
+    const availableImages = requestedImages.filter(image => !machine.unavailableImageIds?.includes(image));
+    output(availableImages.map(image => ({ Id: image.startsWith("sha256:") ? image : `sha256:${image}`,
+      Config: { Labels: machine.missingImageRevision ? {} : { "org.opencontainers.image.revision": machine.imageRevisions?.[image] ?? fixture.revision } } })));
+    process.exit(availableImages.length < requestedImages.length ? 17 : 0);
   }
   if (!args.includes("compose") && args.includes("run")) { output(args.includes("--version") ? "postgres (PostgreSQL) 18.6" : fixture.mode === "empty" ? "" : "18"); process.exit(0); }
   const resolvedConfig = () => {
