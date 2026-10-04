@@ -154,7 +154,7 @@ test("actual browser collection grep selects exactly the planned tests", () => {
   const realCases = collect();
   const planned = verificationPlan({ paths: ["docs/testing.md"], files: readdirSync("tests/browser").filter(file => file.endsWith(".spec.ts")), cases: realCases });
   assert.deepEqual(collect(planned.browserGrep).map(item => item.id).sort(), planned.collection.filter(item => item.selected).map(item => item.id).sort());
-  assert.equal(planned.collection.filter(item => item.selected).length, 7);
+  assert.equal(planned.collection.filter(item => item.selected).length, inventory.critical.length);
   const results = browserResults({ suites: [{ specs: [{ id: "case", title: "title", tests: [{ projectName: "chromium", status: "skipped", results: [{ status: "skipped", duration: 0 }] }] }] }] });
   assert.equal(results[0].status, "failed");
 });

@@ -174,9 +174,14 @@ test("late obsolete preview cannot replace a newer evidence version", async ({ p
   let feedReads = 0;
   let oldPreviewReads = 0;
   let releaseOldPreview: (() => void) | undefined;
-  await page.route("**/api/discoveries?**", route => route.fulfill({ json: discoveryFeed([
-    discoveryFixture("same", ++feedReads <= 2 ? "old" : "new"),
-  ]) }));
+  await page.route("**/api/discoveries?**", route => {
+    const currentRead = ++feedReads;
+    const items = [discoveryFixture("same", currentRead <= 2 ? "old" : "new")];
+    // A saved-card marker makes the second feed's committed state observable without
+    // scheduling another preview. Do not advance the clock during that refresh.
+    if (currentRead === 2) items.push(discoveryFixture("refresh-marker", "marker", "saved-marker"));
+    return route.fulfill({ json: discoveryFeed(items) });
+  });
   await page.route("**/api/discoveries/same/recommendations", route => {
     if (++oldPreviewReads === 1) return route.fulfill({ json: {
       state: "waiting", opportunity_id: "same", evidence_fingerprint: "old",
@@ -192,8 +197,11 @@ test("late obsolete preview cannot replace a newer evidence version", async ({ p
   await expect.poll(() => oldPreviewReads).toBe(1);
   await page.clock.fastForward(33_000);
   await expect.poll(() => Boolean(releaseOldPreview)).toBe(true);
+  const tray = page.locator(".tempo-discoveries-tray");
+  await expect(tray).toHaveAttribute("data-discovery-count", "2");
   await page.clock.fastForward(30_100);
   await expect.poll(() => feedReads).toBeGreaterThanOrEqual(3);
+  await expect(tray).toHaveAttribute("data-discovery-count", "1");
   await openDiscoveries(page);
   const viewer = page.getByRole("dialog", { name: "Discoveries" });
   await expect(viewer.getByText("1 of 1 · white to move")).toBeVisible();

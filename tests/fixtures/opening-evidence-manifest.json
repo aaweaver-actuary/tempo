@@ -1,0 +1,33 @@
+{
+  "manifest_version": 1,
+  "policy_version": 1,
+  "manifest_id": "ab7ccbebe856bc33adc2a8c70705a66f92aab469c5ceb549c33b2fad458890f2",
+  "presentation_snapshot_id": 1,
+  "repertoire_id": "shadow-repertoire",
+  "card_id": "shadow-card",
+  "card_revision": 3,
+  "trained_color": "white",
+  "decisions": [
+    {
+      "decision_id": "132f7ad72d6dadf216229a5d05128a0c0c82f9b8f09f7ffc44df01d55301d649",
+      "decision_index": 0,
+      "move_offset": 0,
+      "fen": "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "expected_uci": "e2e4"
+    },
+    {
+      "decision_id": "4afd6332bf4b1942912404aedbe745b534b011ce22a6afccd54e896d88f7fceb",
+      "decision_index": 1,
+      "move_offset": 2,
+      "fen": "rnbqkbnr/pppp1ppp/8/4p3/4P3/8/PPPP1PPP/RNBQKBNR w KQkq - 0 2",
+      "expected_uci": "g1f3"
+    },
+    {
+      "decision_id": "9bb5ae19e4b9535ef4ff1cfb785a1a36a9ea3794bf631ee6abd2e4e420791b6b",
+      "decision_index": 2,
+      "move_offset": 4,
+      "fen": "r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3",
+      "expected_uci": "f1b5"
+    }
+  ]
+}

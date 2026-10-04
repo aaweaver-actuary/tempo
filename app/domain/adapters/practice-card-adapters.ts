@@ -3,6 +3,7 @@ import {
   queueCardSchema,
   packagedPuzzleSchema,
 } from "../schemas";
+import { openingDecisionManifestSchema } from "../opening-evidence";
 import { studySnapshotSchema } from "../study-exercises";
 import {
   parseData,
@@ -23,11 +24,22 @@ import {
 import { movesToSanFormat } from "../../utils/chess";
 import { canonicalizeMoves } from "../../utils/canonical-line";
 
+export function queueRecordWithCompatibleOpeningEvidence(raw: unknown): unknown {
+  if (!raw || typeof raw !== "object" || !("opening_decision_manifest" in raw) || raw.opening_decision_manifest === undefined) return raw;
+  const parsed = openingDecisionManifestSchema.safeParse(raw.opening_decision_manifest);
+  if (parsed.success) return raw;
+  const record = { ...raw } as Record<string, unknown>;
+  delete record.opening_decision_manifest;
+  record.opening_evidence_diagnostic = "Opening evidence omitted: invalid manifest. Refresh the queue or inspect service diagnostics.";
+  reportDataDiagnostic("opening evidence", raw, String(record.opening_evidence_diagnostic));
+  return record;
+}
+
 // Maps queue transport records from the backend into domain practice cards.
 export function mapQueueCardToPracticeCard(
   raw: BackendQueueCard | unknown,
 ): PracticeCard {
-  const card = parseData(queueCardSchema, raw, "queue card");
+  const card = parseData(queueCardSchema, queueRecordWithCompatibleOpeningEvidence(raw), "queue card");
   const startingFen = asFenString(card.start_fen);
   const validatedLine = canonicalizeMoves(startingFen, card.moves);
   if (validatedLine.diagnostics.length) {
@@ -101,6 +113,11 @@ export function mapQueueCardToPracticeCard(
           : "white"
         : (card.trained_color ?? "white"),
     revision: card.revision ?? 1,
+    openingDecisionManifest: card.content_type === "opening" ? card.opening_decision_manifest : undefined,
+    openingEvidenceDiagnostic: card.opening_evidence_diagnostic,
+    openingEvidenceStudyTimezone: card.opening_evidence_study_timezone,
+    openingEvidenceOriginEntryId: card.opening_evidence_origin_queue_entry_id ?? Number(card.queue_entry_id),
+    openingEvidenceParentAttemptId: card.opening_evidence_parent_attempt_id,
     defenseCandidateId: card.content_type === "defense" ? card.source_ref ?? undefined : undefined,
     studyId: card.study_id ?? undefined,
     studyExerciseId: card.study_exercise_id ?? undefined,
@@ -160,7 +177,7 @@ export function queueCardsFromPayload(raw: unknown): PracticeCard[] {
       diagnostic.message,
       diagnostic.card_id,
     );
-  return validRecords(queueCardSchema, body.cards, "queue card").flatMap(
+  return validRecords(queueCardSchema, body.cards.map(queueRecordWithCompatibleOpeningEvidence), "queue card").flatMap(
     (record) => {
       try {
         return [mapQueueCardToPracticeCard(record)];
