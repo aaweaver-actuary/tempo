@@ -10,6 +10,7 @@ import threading
 import time
 import uuid
 from urllib.request import Request, urlopen
+from urllib.error import HTTPError
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 from app import postgres_store
@@ -23,19 +24,41 @@ from app.command_gateway import execute_command
 
 def test_issue77_reader_only_deployed_api_evaluates_without_product_writes(repertoire_id, lines, product_snapshot):
     """Maintenance seeds stay separate from the running reader-only API process."""
+    from app.services import redis_admission_gate
+
     endpoint = f'http://api:8000/api/repertoires/{repertoire_id}/prefix-evaluation'
     before = product_snapshot()
-    with urlopen(endpoint + '/source', timeout=10) as response:
-        assert response.status == 200
-        source = json.load(response)
+    foreground_rejections = 0
+    def reader_api_response(request):
+        nonlocal foreground_rejections
+        request_deadline = time.monotonic() + 10
+        # Health probes are foreground requests too. Coordinate with their real
+        # leases; never disable admission or treat a database failure as success.
+        while time.monotonic() < request_deadline:
+            if redis_admission_gate.foreground_present():
+                time.sleep(0.01)
+                continue
+            try:
+                with urlopen(request, timeout=request_deadline - time.monotonic()) as response:
+                    assert response.status == 200
+                    return json.load(response)
+            except HTTPError as error:
+                error_body = error.read().decode()
+                detail = json.loads(error_body).get('detail', {})
+                if (error.code != 503 or detail.get('code') != 'evaluation_busy' or
+                        detail.get('message') != 'Study work is active. Retry the diagnostic when study is idle.'):
+                    raise AssertionError(f'Reader-only API returned {error.code}: {error_body}') from error
+                assert error.headers.get('Retry-After') == '1'
+                foreground_rejections += 1
+        raise AssertionError('Reader-only diagnostic never obtained foreground-idle admission within 10 seconds')
+
+    source = reader_api_response(endpoint + '/source')
     assert source['snapshot_id'] and source['graph_generation'] == 1
     assert {route['id'] for route in source['lines']} == {line['id'] for line in lines}
     request = Request(endpoint + '/evaluate', method='POST', headers={'Content-Type': 'application/json'},
         data=json.dumps({'snapshot_id': source['snapshot_id'], 'selected_line_ids': [lines[0]['id']],
                          'candidate_depths': {lines[0]['id']: 1}}).encode())
-    with urlopen(request, timeout=10) as response:
-        assert response.status == 200
-        result = json.load(response)
+    result = reader_api_response(request)
     assert result['snapshot_id'] == source['snapshot_id'] and result['status'] == 'changed'
     assert result['selected']['current']['metrics']['distinct_cards'] == 1
     assert result['selected']['proposed']['metrics']['distinct_cards'] == 2
@@ -47,7 +70,7 @@ def test_issue77_reader_only_deployed_api_evaluates_without_product_writes(reper
                       'source_http_status': 200, 'evaluate_http_status': 200,
                       'current_selected_cards': 1, 'proposed_selected_cards': 2,
                       'current_whole_cards': 3, 'proposed_whole_cards': 4,
-                      'product_state_unchanged': True}))
+                      'product_state_unchanged': True, 'foreground_rejections': foreground_rejections}))
 
 
 def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lines, card_ids):
