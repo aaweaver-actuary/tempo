@@ -162,13 +162,19 @@ async function confirmReceipt(repair: PendingIntegrityRepair, observed?: z.infer
   return true;
 }
 async function currentIntegrity(repair: PendingIntegrityRepair) {
-  const integrity = await readJsonResponse(await timedRequest(`${API_URL}/api/repertoires/${encodeURIComponent(repair.repertoireId)}/integrity`),
+  const response = await timedRequest(`${API_URL}/api/repertoires/${encodeURIComponent(repair.repertoireId)}/integrity`);
+  if (response.status === 404) {
+    fail(repair, "stale", "This repertoire was removed. Review the saved choice before discarding it.");
+    return null;
+  }
+  const integrity = await readJsonResponse(response,
     repertoireIntegritySchema, "repair evidence");
   if (integrity.repertoire_id !== repair.repertoireId) throw new Error("Repair evidence has an unrelated repertoire identity.");
   return integrity;
 }
 async function stillCurrent(repair: PendingIntegrityRepair) {
   const integrity = await currentIntegrity(repair);
+  if (!integrity) return false;
   if (integrity.scan_status === "failed") {
     fail(repair, "failed", integrity.last_scan_error ?? "Integrity evidence failed. Retry the scan in Analysis activity before saving this choice.");
     return false;
@@ -196,6 +202,7 @@ async function validateRepair(repair: PendingIntegrityRepair) {
   }
   if (task && task.state !== "complete") return;
   const integrity = await currentIntegrity(repair);
+  if (!integrity) return;
   if (integrity.scan_status === "failed") {
     const scanTask = tasks.tasks.find(item => item.kind === "integrity_scan" && item.deduplication_key === repair.repertoireId);
     updateRepair(repair.operationId, current => ({ ...current, phase: "failed", retryTaskId: scanTask?.id,

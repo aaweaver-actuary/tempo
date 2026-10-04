@@ -38,7 +38,8 @@ function fixture() {
     if (url.endsWith("/system/tasks")) return Response.json({ tasks });
     if (url.endsWith("/repertoires")) return Response.json({ repertoires });
     const repertoireMatch = url.match(/repertoires\/([^/]+)\/integrity$/);
-    if (repertoireMatch) return Response.json(currentEvidence.get(repertoireMatch[1]));
+    if (repertoireMatch) return currentEvidence.has(repertoireMatch[1]) ? Response.json(currentEvidence.get(repertoireMatch[1]))
+      : Response.json({ detail: "Repertoire not found" }, { status: 404 });
     throw new Error(`Unexpected request ${url}`);
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -84,6 +85,17 @@ it("stale later repair evidence pauses its repertoire without sending the old ch
   expect(pendingIntegrityRepairs().map(repair => repair.phase)).toEqual(["stale", "queued"]);
   const reviewed = enqueueIntegrityRepair({ ...choice, issueId: "second", signature: "changed" });
   expect(pendingIntegrityRepairs()[0].operationId).toBe(reviewed.operationId);
+});
+
+it("a removed repertoire pauses queued repair choices for review without losing their operation identities", async () => {
+  const environment = fixture(); const saved = enqueueIntegrityRepair(choice);
+  enqueueIntegrityRepair({ ...choice, issueId: "second", signature: "second-signature" });
+  environment.currentEvidence.delete("rep");
+  await flushIntegrityRepairs(); await flushIntegrityRepairs();
+  expect(environment.posts).toHaveLength(0);
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: saved.operationId, phase: "stale" });
+  expect(pendingIntegrityRepairs()[0].error).toContain("repertoire was removed");
+  expect(pendingIntegrityRepairs()[1].phase).toBe("queued");
 });
 
 it("lost repair response and reload reconcile the original receipt without submitting twice", async () => {
