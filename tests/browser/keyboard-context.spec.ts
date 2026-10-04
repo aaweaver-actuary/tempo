@@ -113,6 +113,9 @@ test("Settings letter preference takes effect immediately and persists while arr
   await navigate(page, "Builder");
   const board = page.locator(".board-frame");
   await playMove(page, board, "e2", "e4");
+  const playedPosition = new Chess(); playedPosition.move("e4");
+  await expect(board).toHaveAttribute("data-fen", playedPosition.fen());
+  await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(playedPosition.fen()));
   await page.keyboard.press("f"); await expect(board).toHaveAttribute("data-orientation", "white");
   await page.keyboard.press("Home"); await expect(board).toHaveAttribute("data-fen", new Chess().fen());
   await page.locator(".board-viewport").focus(); await page.keyboard.press("?");

@@ -25,6 +25,7 @@ export function PersistentBoardShell() {
         lastMove={board.lastMove}
         locked={Boolean(board.unavailable) || board.interactionMode === "readonly"}
         showHint={board.showHint}
+        onHintExposure={board.onHintExposure}
         theme={board.theme}
         pieceSet={board.pieceSet}
         shapes={board.shapes ?? EMPTY_SHAPES}
