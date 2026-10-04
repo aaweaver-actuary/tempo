@@ -10,7 +10,7 @@ import chess
 
 from .cards import card_id
 from .opening_graph import GraphInput, GraphStep, build_graph
-from .opening_segmentation import POLICY_VERSION, decision_identity, stable_key
+from .opening_segmentation import POLICY_VERSION, POSITION_VERSION, decision_identity, stable_key
 
 EVALUATION_VERSION = 1
 MAX_SOURCE_LINES = 2_000
@@ -78,6 +78,9 @@ class PublishedCard:
     archived: int
     linked: bool
 
+    def __post_init__(self):
+        object.__setattr__(self, 'moves', tuple(self.moves))
+
 
 @dataclass(frozen=True)
 class EvaluationSnapshot:
@@ -98,7 +101,7 @@ def ordered_steps(steps) -> tuple[GraphStep, ...]:
 
 
 def snapshot_identity(snapshot: EvaluationSnapshot) -> str:
-    return stable_key('structural-prefix-snapshot', EVALUATION_VERSION, POLICY_VERSION,
+    return stable_key('structural-prefix-snapshot', EVALUATION_VERSION, POLICY_VERSION, POSITION_VERSION,
                       snapshot.repertoire_id, snapshot.graph_generation,
                       [asdict(line) for line in sorted(snapshot.lines, key=lambda line: line.id)],
                       [asdict(override) for override in sorted(snapshot.prefix_overrides, key=lambda override: override.source_card_id)],

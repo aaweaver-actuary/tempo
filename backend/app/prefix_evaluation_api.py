@@ -46,7 +46,7 @@ router = APIRouter(route_class=DiagnosticRoute)
 
 def check_available(deadline):
     if monotonic() >= deadline:
-        raise diagnostic_error('evaluation_busy', 'Evaluation exceeded its computation deadline. Retry with a smaller selection.', 503)
+        raise diagnostic_error('evaluation_busy', 'Evaluation exceeded its computation deadline. Retry when study is idle.', 503)
     if activity_gate.foreground_waiting or (redis_admission_gate.configured() and redis_admission_gate.foreground_present()):
         raise diagnostic_error('evaluation_busy', 'Study work is active. Retry the diagnostic when study is idle.', 503)
 

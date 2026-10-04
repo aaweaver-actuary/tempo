@@ -32,7 +32,7 @@ def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lin
               'background_tasks', 'operation_receipts')
     def product_snapshot():
         with postgres_store.connection(read_only=True) as database:
-            return {table: sorted(json.dumps(dict(row), sort_keys=True) for row in
+            return {table: sorted(json.dumps(dict(row), sort_keys=True, default=str) for row in
                     database.execute_native(f'SELECT * FROM {table}').fetchall()) for table in tables}
 
     client = TestClient(app)  # No lifespan: the existing disposable product already owns startup.

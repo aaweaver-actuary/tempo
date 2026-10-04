@@ -8,7 +8,7 @@ import pytest
 from app.services.opening_graph import GraphInput, build_graph
 from app.services.cards import card_id
 from app.services.prefix_evaluation import (
-    EvaluationSnapshot, SourceLine, SplitOverride, PrefixEvaluationError,
+    EvaluationSnapshot, SourceLine, SplitOverride, PublishedCard, PrefixEvaluationError,
     evaluate_prefix, snapshot_identity,
 )
 
@@ -65,6 +65,9 @@ def test_issue77_black_shortening_has_hand_checked_counts_without_alias_inflatio
 
 
 def test_issue77_unselected_alias_retains_card_and_qgd_route_unchanged():
+    aliased_source = snapshot((line('a'), line('b', CARO_B), line('alias')))
+    aliased_result = evaluate_prefix(aliased_source, ('a', 'b'), {'a': 2, 'b': 2})
+    assert aliased_result['whole_repertoire']['proposed']['metrics']['distinct_cards'] == 4
     source = snapshot((line('a'), line('b', CARO_B), line('alias'), line('qgd', QGD)))
     result = evaluate_prefix(source, ('a', 'b'), {'a': 2, 'b': 2})
     assert result['selected']['proposed']['metrics']['distinct_cards'] == 3
@@ -81,6 +84,8 @@ def test_issue77_mixed_depths_and_duplicate_aliases_use_saved_depths():
     result = evaluate_prefix(source, ('a', 'alias', 'b'), None)
     assert result['selected']['current']['metrics']['distinct_cards'] == 3
     assert result['current_depth_distribution'] == [{'depth': 2, 'line_count': 2}, {'depth': 3, 'line_count': 1}]
+    for changed_default in (1, 20):
+        assert build_graph(GraphInput('rep', tuple(item.graph_line() for item in source.lines), changed_default)) == source.published_steps
 
 
 def test_issue77_custom_black_root_and_opponent_cues_count_decisions_not_plies():
@@ -174,3 +179,24 @@ def test_issue77_snapshot_binds_depth_source_graph_and_split_revisions():
                     replace(source, lines=(replace(source.lines[0], moves=CARO_B),)),
                     replace(source, prefix_overrides=(replace(source.prefix_overrides[0], shortened_revision=2),))):
         assert snapshot_identity(changed) != original
+
+
+def test_issue77_card_revisions_membership_and_decision_versions_fence_snapshot(monkeypatch):
+    from app.services import prefix_evaluation as evaluator
+    source = snapshot((line('a'),))
+    step = source.published_steps[0]
+    card = PublishedCard(step.card_id, step.starting_fen, list(step.moves), step.trained_color, 1, 0, True)
+    assert isinstance(card.moves, tuple)
+    source = replace(source, presentations=(card,))
+    token = snapshot_identity(source)
+    assert evaluate_prefix(source, ('a',), None)['status'] == 'no_change'
+    for changed in (replace(card, revision=2), replace(card, linked=False), replace(card, archived=1)):
+        assert snapshot_identity(replace(source, presentations=(changed,))) != token
+    for changed in (replace(card, linked=False), replace(card, archived=1), replace(card, moves=CARO_B)):
+        with pytest.raises(PrefixEvaluationError) as error:
+            evaluate_prefix(replace(source, presentations=(changed,)), ('a',), None)
+        assert error.value.code == 'graph_not_ready'
+    for version in ('EVALUATION_VERSION', 'POLICY_VERSION', 'POSITION_VERSION'):
+        with monkeypatch.context() as scope:
+            scope.setattr(evaluator, version, 99)
+            assert snapshot_identity(source) != token

@@ -92,6 +92,17 @@ def test_issue77_non_postgres_product_never_returns_sample_result(prepared, monk
     assert result.status_code == 409 and result.json()['detail']['code'] == 'unsupported_backend'
 
 
+def test_issue77_temporary_database_failure_is_retryable_without_partial_metrics(prepared, monkeypatch):
+    _, client = prepared
+    def unavailable(*_args):
+        raise api.psycopg.OperationalError('Diagnostic database unavailable')
+    monkeypatch.setattr(api, 'load_snapshot', unavailable)
+    response = client.get('/api/repertoires/rep/prefix-evaluation/source')
+    assert response.status_code == 503 and response.headers['retry-after'] == '1'
+    assert response.json()['detail']['code'] == 'evaluation_busy'
+    assert 'lines' not in response.json()
+
+
 def test_issue77_loader_reads_primary_repeatable_snapshot_and_closes_before_hashing(monkeypatch):
     source = snapshot((line('a'),))
     open_read = False

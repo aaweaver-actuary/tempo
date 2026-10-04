@@ -79,7 +79,7 @@ These are structural counts, not evidence of better learning or measured time sa
 
 The token binds source IDs/content/names, saved depths, published graph generation
 and shape, card content/revisions/membership/archive status, split definitions and
-child revisions, and contract/policy versions. Production currently loads a global
+child revisions, and contract/policy/position-identity versions. Production currently loads a global
 split map, so an unrelated saved split can conservatively invalidate the token.
 Reviews, scheduling, queues and priority epochs are excluded. No adaptive
 recommendation is required. Missing/zero saved depths are unsupported rather than

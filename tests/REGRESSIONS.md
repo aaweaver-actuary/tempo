@@ -1437,6 +1437,7 @@ Full and durability gates include this stage; browser-only scopes omit it.
 - `test_issue77_stale_graph_and_malformed_split_fail_without_partial_results`
 - `test_issue77_size_limits_fail_without_truncating_source`
 - `test_issue77_snapshot_binds_depth_source_graph_and_split_revisions`
+- `test_issue77_card_revisions_membership_and_decision_versions_fence_snapshot`
 
 `backend/tests/test_prefix_evaluation_api.py` runs in the regular backend suite:
 
@@ -1446,6 +1447,7 @@ Full and durability gates include this stage; browser-only scopes omit it.
 - `test_issue77_source_change_during_calculation_rejects_entire_result`
 - `test_issue77_foreground_preemption_and_deadline_return_retryable_errors`
 - `test_issue77_non_postgres_product_never_returns_sample_result`
+- `test_issue77_temporary_database_failure_is_retryable_without_partial_metrics`
 - `test_issue77_loader_reads_primary_repeatable_snapshot_and_closes_before_hashing`
 - `test_issue77_http_mid_calculation_preemption_returns_no_partial_metrics`
 - `test_issue77_runtime_guard_classifies_only_diagnostics_as_background_query_only`
