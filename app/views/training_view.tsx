@@ -1,6 +1,6 @@
 import { positionsFromMoves, useBoardHistory } from "../hooks/use-board-history";
 import { Button } from "../components/buttons/BaseButton";
-import { BoardTools } from "../components/board/board-workspace";
+import { BoardHeading, BoardTools } from "../components/board/board-workspace";
 import type { DrawShape } from "@lichess-org/chessground/draw";
 import type { Key } from "@lichess-org/chessground/types";
 import TrainingViewHeader from "./headers/TrainingViewHeader";
@@ -20,7 +20,9 @@ import FeedbackIcon from "../components/feedback/FeedbackIcon";
 import FeedbackText from "../components/feedback/FeedbackText";
 import OpeningTitle from "../components/OpeningTitle";
 import type { AssistanceKind } from "../domain/opening-evidence";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { usePhoneViewport } from "../hooks/use-phone-viewport";
+import { ActionMenu } from "../components/ui";
 import { publishNotification, resolveNotification, updateNotification } from "../lib/notifications";
 import { usesLocalApi } from "../utils/local";
 import { Square } from "chess.js";
@@ -36,6 +38,7 @@ import DefenseTrainingView from "./defense_training_view";
 import StudyExerciseRunner from "./study_exercise_runner";
 
 interface TrainingViewProps {
+  repairNotice?: ReactNode;
   dateLabel: string;
   serviceError: string;
   offlineQueue?: boolean;
@@ -71,6 +74,7 @@ interface TrainingViewProps {
 }
 
 function StandardTrainingView({
+  repairNotice,
   dateLabel,
   serviceError,
   offlineQueue = false,
@@ -97,6 +101,9 @@ function StandardTrainingView({
   useSharedBoard = false,
 }: TrainingViewProps) {
   const [burying, setBurying] = useState(false);
+  const phoneViewport = usePhoneViewport();
+  const phoneOpening = phoneViewport && card.kind === "opening" && cardsLeft > 0;
+  const [studyDetailsExpanded, setStudyDetailsExpanded] = useState(false);
   const [prefixSplitPendingAction, setPrefixSplitPendingAction] = useState<"accept" | "reject" | null>(null);
   const [rejectedPrefixOfferKey, setRejectedPrefixOfferKey] = useState("");
   const [prefixSplitError, setPrefixSplitError] = useState<{ key: string; message: string }>();
@@ -225,9 +232,118 @@ function StandardTrainingView({
     if (!attemptFailed && !trainingMutationBlocked) void rateCard("again");
   }
 
+  const buryAction = (
+    <Button
+      type="button"
+      disabled={
+        burying ||
+        isLocked ||
+        trainingMutationBlocked ||
+        feedback === "complete" ||
+        reviewPersistenceState === "saving" ||
+        reviewPersistenceState === "refreshingQueue"
+      }
+      onClick={() => void runBury()}
+    >
+      {burying ? "Burying…" : "Bury"}
+    </Button>
+  );
+  const showMoveAction = (
+    <AgainButton
+      handleAgain={handleAttemptFailure}
+      isAttemptFailed={attemptFailed}
+      isFeedbackComplete={feedback === "complete"}
+      hasNoCardsLeft={cardsLeft === 0}
+      isReviewBlocked={trainingMutationBlocked}
+    />
+  );
+  const secondaryActions = (<>
+    <RestartButton
+      handleRestart={resetCardAttempt}
+      disabled={trainingMutationBlocked}
+    />
+    <AnalyzeOnLichessButton
+      moves={card.moves.slice(0, step)}
+      fen={card.startingFen}
+      onClick={handleAnalyzeOnLichessClick}
+    />
+    <EditCardButton
+      disabled={burialPending}
+      card={card}
+      setEditorCard={(value) => setEditorCard(value)}
+    />
+  </>);
+
+  const studyMetadata = (
+    <div className="card-meta">
+      <span
+        className={`pill${card.kind === "puzzle" ? " puzzle" : ""}`}
+      >
+        {card.kind === "puzzle" ? "Puzzle" : "Review"}
+      </span>
+      {card.queueAttemptState === "reinforcement" && (
+        <span className="pill">Reinforcement</span>
+      )}
+      <StudyReviewBadge count={card.priorStudyReviewCount} />
+      {card.priorityReason && (
+        <span className="pill">{card.priorityReason}</span>
+      )}
+      {card.encounterBadges?.map((badge) => (
+        <span
+          key={badge}
+          className="pill"
+          title={`${card.encounterCount30d ?? 0} distinct games in 30 days${card.lastEncounteredAt ? ` · latest ${card.lastEncounteredAt.slice(0, 10)}` : ""}`}
+        >
+          {badge}
+        </span>
+      ))}
+      {!phoneOpening && !offlineQueue && /^(Again|Valid repertoire move|Cannot verify)/.test(queueNotice) && <em>{queueNotice}</em>}
+    </div>
+  );
+  const moveTrail = (
+    <div
+      className={`move-trail${revealedMoves.length ? "" : " empty"}`}
+      aria-live="polite"
+    >
+      <span>Moves played</span>
+      {revealedMoves.length ? (
+        <ol>
+          {revealedMoves.map((move, index) => (
+            <li key={`${move}-${index}`}>
+              <b>
+                {index % 2 === 0
+                  ? `${Math.floor(index / 2) + 1}.`
+                  : "..."}
+              </b>
+              {move}
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p>Nothing is revealed until you play it.</p>
+      )}
+    </div>
+  );
+  const positionActions = (
+    <div className="position-actions" aria-label="Open review position">
+      {usesLocalApi() && card.kind === "opening" && (attemptFailed || feedback === "complete") && (
+        <Button onClick={() => onOpenPosition("compare")}>Compare positions</Button>
+      )}
+      <Button onClick={() => onOpenPosition("analysis")}>
+        Analysis
+      </Button>
+      <Button onClick={() => onOpenPosition("builder")}>Builder</Button>
+      <Button onClick={() => onOpenPosition("games")}>
+        Games here
+      </Button>
+    </div>
+  );
+
   return (
     <>
+      {!phoneOpening && repairNotice}
       <TrainingViewHeader
+        compact={phoneOpening}
         dateLabel={dateLabel}
         serviceError={serviceError}
         cardsLeft={cardsLeft}
@@ -276,10 +392,16 @@ function StandardTrainingView({
       )}
       {cardsLeft > 0 && !isEndgame && (
         <section
-          className={`training-grid${useSharedBoard ? " training-grid-shared" : ""}`}
+          className={`training-grid${useSharedBoard ? " training-grid-shared" : ""}${phoneOpening ? " phone-opening-study" : ""}`}
           id="train"
         >
           <div className="board-column">
+            {phoneOpening && <BoardHeading>
+              <div className="phone-study-heading">
+                <h2>{card.title}</h2>
+                <p>{playerName.toLowerCase()} to play</p>
+              </div>
+            </BoardHeading>}
             {!useSharedBoard && (
               <Chessboard
                 key={`${card.queueEntryId ?? card.id}:${card.queueCycle ?? 0}:${card.revision ?? 1}`}
@@ -311,70 +433,28 @@ function StandardTrainingView({
               />
             )}
             <BoardTools>
-              <Button
-                type="button"
-                disabled={
-                  burying ||
-                  isLocked ||
-                  trainingMutationBlocked ||
-                  feedback === "complete" ||
-                  reviewPersistenceState === "saving" ||
-                  reviewPersistenceState === "refreshingQueue"
-                }
-                onClick={() => void runBury()}
-              >
-                {burying ? "Burying…" : "Bury"}
-              </Button>
-              <AgainButton
-                handleAgain={handleAttemptFailure}
-                isAttemptFailed={attemptFailed}
-                isFeedbackComplete={feedback === "complete"}
-                hasNoCardsLeft={cardsLeft === 0}
-                isReviewBlocked={trainingMutationBlocked}
-              />
-              <RestartButton
-                handleRestart={resetCardAttempt}
-                disabled={trainingMutationBlocked}
-              />
-              <AnalyzeOnLichessButton
-                moves={card.moves.slice(0, step)}
-                fen={card.startingFen}
-                onClick={handleAnalyzeOnLichessClick}
-              />
-              <EditCardButton
-                disabled={burialPending}
-                card={card}
-                setEditorCard={(value) => setEditorCard(value)}
-              />
+              {phoneOpening ? <>
+                {showMoveAction}
+                <ActionMenu label="More" summaryAriaLabel="Study actions" className="phone-study-actions"
+                  onClickCapture={(event) => {
+                    const action = (event.target as HTMLElement).closest("button,a");
+                    if (!action || action.hasAttribute("disabled")) return;
+                    event.currentTarget.open = false;
+                    event.currentTarget.querySelector("summary")?.focus();
+                  }}>
+                  <Button aria-label="Keyboard shortcuts" onClick={() => window.dispatchEvent(new Event("tempo:board-help"))}>? Keys</Button>
+                  {buryAction}
+                  {secondaryActions}
+                </ActionMenu>
+              </> : <>{buryAction}{showMoveAction}{secondaryActions}</>}
             </BoardTools>
           </div>
-          <aside className="study-panel">
-            <p className="side-to-play">{playerName.toLowerCase()} to play</p>
-            <div className="card-meta">
-              <span
-                className={`pill${card.kind === "puzzle" ? " puzzle" : ""}`}
-              >
-                {card.kind === "puzzle" ? "Puzzle" : "Review"}
-              </span>
-              {card.queueAttemptState === "reinforcement" && (
-                <span className="pill">Reinforcement</span>
-              )}
-              <StudyReviewBadge count={card.priorStudyReviewCount} />
-              {card.priorityReason && (
-                <span className="pill">{card.priorityReason}</span>
-              )}
-              {card.encounterBadges?.map((badge) => (
-                <span
-                  key={badge}
-                  className="pill"
-                  title={`${card.encounterCount30d ?? 0} distinct games in 30 days${card.lastEncounteredAt ? ` · latest ${card.lastEncounteredAt.slice(0, 10)}` : ""}`}
-                >
-                  {badge}
-                </span>
-              ))}
-              {!offlineQueue && /^(Again|Valid repertoire move|Cannot verify)/.test(queueNotice) && <em>{queueNotice}</em>}
-            </div>
-            <OpeningTitle card={card} />
+          <aside className="study-panel standard-study-panel">
+            {!phoneOpening && <>
+              <p className="side-to-play">{playerName.toLowerCase()} to play</p>
+              {studyMetadata}
+              <OpeningTitle card={card} />
+            </>}
             <div
               className={`feedback ${feedback}`}
               role="status"
@@ -386,31 +466,11 @@ function StandardTrainingView({
                 body={attemptFailed && feedback === "ready" ? "Follow the highlighted move to finish this line." : feedbackCopy.body}
               />
             </div>
+            {phoneOpening && !offlineQueue && /^(Again|Valid repertoire move|Cannot verify)/.test(queueNotice) && <em className="training-queue-notice">{queueNotice}</em>}
             {isFailedPosition && failureAnnotation?.comment && (
               <FailureNote failureAnnotation={failureAnnotation} />
             )}
-            <div
-              className={`move-trail${revealedMoves.length ? "" : " empty"}`}
-              aria-live="polite"
-            >
-              <span>Moves played</span>
-              {revealedMoves.length ? (
-                <ol>
-                  {revealedMoves.map((move, index) => (
-                    <li key={`${move}-${index}`}>
-                      <b>
-                        {index % 2 === 0
-                          ? `${Math.floor(index / 2) + 1}.`
-                          : "..."}
-                      </b>
-                      {move}
-                    </li>
-                  ))}
-                </ol>
-              ) : (
-                <p>Nothing is revealed until you play it.</p>
-              )}
-            </div>
+            {!phoneOpening && moveTrail}
             {usesLocalApi() && card.suggestShorterPrefix &&
               rejectedPrefixOfferKey !== prefixOfferKey &&
               card.kind === "opening" &&
@@ -445,18 +505,21 @@ function StandardTrainingView({
                 </strong>
               </Button>
             </div>
-            <div className="position-actions" aria-label="Open review position">
-              {usesLocalApi() && card.kind === "opening" && (attemptFailed || feedback === "complete") && (
-                <Button onClick={() => onOpenPosition("compare")}>Compare positions</Button>
-              )}
-              <Button onClick={() => onOpenPosition("analysis")}>
-                Analysis
-              </Button>
-              <Button onClick={() => onOpenPosition("builder")}>Builder</Button>
-              <Button onClick={() => onOpenPosition("games")}>
-                Games here
-              </Button>
-            </div>
+            {phoneOpening && <>
+              <p className="phone-session-count">{serviceError && !offlineQueue ? "—" : cardsLeft} cards left</p>
+              {repairNotice}
+            </>}
+            {phoneOpening ? <details className="study-details" open={studyDetailsExpanded}
+              onToggle={(event) => setStudyDetailsExpanded(event.currentTarget.open)}>
+              <summary>Study details</summary>
+              <div className="study-details-content">
+                {studyMetadata}
+                <p className="study-source">{card.subtitle}</p>
+                {moveTrail}
+                {positionActions}
+                <p className="study-date">Today · {dateLabel}</p>
+              </div>
+            </details> : positionActions}
           </aside>
         </section>
       )}
@@ -514,7 +577,7 @@ function TrainingContent(props: TrainingViewProps) {
   const liveQueueBlocked = Boolean(props.serviceError && !props.offlineQueue);
   const mutationBlocked = liveQueueBlocked || Boolean(props.burialPending);
   if (props.card.kind === "study" && props.card.studyId && props.card.studyExerciseId) {
-    return <>{liveQueueBlocked && <div role="alert">{props.serviceError} <RetryButton onRetry={() => props.refreshDatabaseQueue()} /></div>}<div inert={mutationBlocked}><StudyExerciseRunner
+    return <>{props.repairNotice}{liveQueueBlocked && <div role="alert">{props.serviceError} <RetryButton onRetry={() => props.refreshDatabaseQueue()} /></div>}<div inert={mutationBlocked}><StudyExerciseRunner
       key={`${props.card.queueEntryId ?? props.card.id}:${props.card.revision ?? 1}`}
       studyId={props.card.studyId} exerciseId={props.card.studyExerciseId}
       card={props.card} boardTheme={props.boardTheme} pieceSet={props.pieceSet}
@@ -523,7 +586,7 @@ function TrainingContent(props: TrainingViewProps) {
   }
   if (props.card.kind === "defense") {
     return (
-      <>{liveQueueBlocked && <div role="alert">{props.serviceError} <RetryButton onRetry={() => props.refreshDatabaseQueue()} /></div>}<div inert={mutationBlocked}><DefenseTrainingView
+      <>{props.repairNotice}{liveQueueBlocked && <div role="alert">{props.serviceError} <RetryButton onRetry={() => props.refreshDatabaseQueue()} /></div>}<div inert={mutationBlocked}><DefenseTrainingView
         key={`${props.card.queueEntryId ?? props.card.id}:${props.card.revision ?? 1}`}
         card={props.card}
         boardTheme={props.boardTheme}

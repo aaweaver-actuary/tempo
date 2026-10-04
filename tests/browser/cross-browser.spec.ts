@@ -207,3 +207,21 @@ test("contextual board keys and nested popup Escape work across browser engines"
   await expect(help).toHaveCount(0); await expect(capture).toBeVisible(); await expect(helpButton).toBeFocused();
   await page.keyboard.press("Escape"); await expect(capture).toHaveCount(0); await expect(launch).toBeFocused();
 });
+
+
+test("phone opening identity and move input work across browser engines", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await prepareVisualUI(page);
+  await expect(page.locator(".phone-study-heading h2")).toHaveText("Spanish opening");
+  const board = page.locator(".persistent-board-shell .board-frame");
+  await expect(board).toHaveAttribute("data-input-enabled", "true");
+  await playMove(page, board, "e2", "e4");
+  await expect(board).toHaveAttribute("data-fen", / b KQkq /);
+  await expect.poll(() => renderedPieces(board)).toEqual(expectedPieces(await board.getAttribute("data-fen") ?? ""));
+  const menu = page.locator(".phone-study-actions");
+  await menu.locator("summary").click();
+  await menu.getByRole("button", { name: /Restart/ }).click();
+  await expect(menu).not.toHaveAttribute("open", "");
+  await expect(menu.locator("summary")).toBeFocused();
+  await noPageOverflow(page);
+});

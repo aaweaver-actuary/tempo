@@ -29,6 +29,7 @@ const DRAW_BRUSHES = {
 
 type ChessboardProps = {
   showShortcutButton?: boolean;
+  layoutAnchor?: HTMLElement | null;
   keyboard?: BoardKeyboardActions;
   owner?: string;
   fen: string;
@@ -55,6 +56,7 @@ type ChessboardProps = {
 
 export function Chessboard({
   showShortcutButton = true,
+  layoutAnchor,
   fen,
   keyboard,
   owner,
@@ -360,6 +362,17 @@ export function Chessboard({
     apiRef.current?.setShapes([...drawnShapes]);
     appliedDrawnShapes.current = { shapes: drawnShapes, version: resetVersion.current };
   });
+  useLayoutEffect(() => {
+    if (!layoutAnchor) return;
+    // A heading can move the board without resizing its surface. Invalidate only
+    // cached hit-test bounds; redrawAll would interrupt a held drag.
+    const clearInputBounds = () => apiRef.current?.state.dom.bounds.clear();
+    const observer = new ResizeObserver(clearInputBounds);
+    observer.observe(layoutAnchor);
+    clearInputBounds();
+    return () => observer.disconnect();
+  }, [layoutAnchor]);
+
   useLayoutEffect(() => {
     if (!surfaceSize) return;
     captureRef.current?.boardEvent("redraw");
