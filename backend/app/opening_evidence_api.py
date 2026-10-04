@@ -3,7 +3,9 @@ from fastapi import APIRouter, Header, HTTPException, Query
 from . import postgres_store
 from .command_gateway import register_command
 from .opening_evidence_contracts import OpeningEvidenceCheckpoint
-from .services.postgres_opening_evidence import decision_evidence, persist_checkpoint, prepare_checkpoint
+from .services.postgres_opening_evidence import (
+    decision_evidence, prepare_checkpoint, prepare_standalone_checkpoint, commit_standalone_checkpoint,
+)
 
 router = APIRouter()
 
@@ -25,7 +27,7 @@ def opening_decision_evidence(decision_id: str, offset: int = Query(default=0, g
         return decision_evidence(database, decision_id, offset=offset, limit=limit)
 
 
-register_command('opening_evidence.checkpoint', persist_checkpoint)
+register_command('opening_evidence.checkpoint', commit_standalone_checkpoint, prepare=prepare_standalone_checkpoint)
 
 
 @router.get('/api/opening-evidence/attempts/{attempt_id}')

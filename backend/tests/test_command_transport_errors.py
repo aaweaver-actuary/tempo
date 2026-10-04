@@ -7,6 +7,7 @@ from types import SimpleNamespace
 from celery.exceptions import TimeoutError as CeleryTimeout
 from fastapi import FastAPI, HTTPException
 from fastapi.testclient import TestClient
+from psycopg.errors import SerializationFailure
 import pytest
 
 from app import command_dispatch, command_gateway
@@ -188,3 +189,28 @@ def test_command_receipt_cyclic_http_detail_does_not_lose_failure_receipt(receip
     assert response.status_code == 422
     assert response.json() == {"detail": str(transport.failure)}
     assert client.get("/operations/transport-regression").json()["state"] == "failed"
+
+
+@pytest.mark.parametrize('failure', [HTTPException(409, {'code':'opening_evidence_conflict', 'aggregate_review_allowed':True}),
+                                   ValueError('invalid preparation')])
+def test_prepared_command_failure_retains_existing_structured_receipt(receipt_transport, monkeypatch, failure):
+    transport, client = receipt_transport
+    def prepare(_payload):
+        raise failure
+    monkeypatch.setitem(command_gateway._preparers, 'test.transport.failure', prepare)
+    response = client.post('/review')
+    assert response.status_code == (failure.status_code if isinstance(failure, HTTPException) else 500)
+    assert response.json() == {'detail':failure.detail if isinstance(failure, HTTPException) else str(failure)}
+    receipt = client.get('/operations/transport-regression').json()
+    assert receipt['state'] == 'failed' and receipt['error']['message'] == str(failure)
+    assert transport.handler_calls == 0
+
+
+def test_prepared_command_database_failure_remains_retryable_without_failed_receipt(receipt_transport, monkeypatch):
+    transport, _client = receipt_transport
+    def prepare(_payload):
+        raise SerializationFailure('source changed')
+    monkeypatch.setitem(command_gateway._preparers, 'test.transport.failure', prepare)
+    with pytest.raises(SerializationFailure):
+        command_gateway.execute_command('transport-regression', 'test.transport.failure', {})
+    assert not transport.receipts and transport.handler_calls == 0

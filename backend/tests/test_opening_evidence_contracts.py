@@ -237,10 +237,14 @@ def test_review_requeue_context_correction_only_runs_for_fresh_review(
         return result
     monkeypatch.setattr(review_commands, 'lock_queue_date_for_position', lambda *arguments:None)
     monkeypatch.setattr(main, '_apply_review', apply_review)
-    monkeypatch.setattr(postgres_opening_evidence, 'persist_checkpoint',
-                        lambda *arguments, **options:validation_order.append('validated'))
-    monkeypatch.setattr(postgres_opening_evidence, 'complete_review_evidence',
-                        lambda *arguments:validation_order.append('completed'))
+    def persist_completion(connection, payload, **options):
+        assert connection is database and options == {'completing_review':True}
+        validation_order.append('validated')
+    def complete_evidence(connection, *arguments):
+        assert connection is database
+        validation_order.append('completed')
+    monkeypatch.setattr(postgres_opening_evidence, 'persist_checkpoint', persist_completion)
+    monkeypatch.setattr(postgres_opening_evidence, 'complete_review_evidence', complete_evidence)
     assert review_commands.submit_review(database, {'card_id':manifest['card_id'],
         'review':{'outcome':'correct', 'attempt_id':completion['attempt_id'], 'queue_entry_id':101,
                   'opening_evidence_completion':completion}, 'prepared_manifest':manifest}) == result

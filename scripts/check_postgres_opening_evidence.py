@@ -1,17 +1,22 @@
 """AS-03/08/09/10/11/15/16/19 against runner-owned PostgreSQL transactions."""
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
+from threading import Event, get_ident
 from unittest.mock import patch
 import hashlib
 import copy
 import json
 import os
 import sys
+import subprocess
+import time
 import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 from fastapi import HTTPException
+import psycopg
 from app import postgres_store
 from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
 from app.services.postgres_opening_evidence import prepare_checkpoint, persist_checkpoint, decision_evidence, canonical_json, queue_manifests
@@ -146,6 +151,239 @@ def _retain_color_provenance(fixture):
         digest = shadow_digest(database, fixture['card_id'])
         database.execute_native("INSERT INTO operation_receipts(operation_id,command_name,request_hash,state,response_json) VALUES(%s,'shadow.evidence.fixture',%s,'complete',%s)",
                                 (fixture['card_id'], digest, json.dumps({'digest':digest})))
+
+
+def _large_checkpoint_fixture():
+    fixture = _create_color_fixture('white')
+    # Twenty distinct learner decisions exercise the maximum projection/day writes.
+    moves = ('e2e4 e7e5 g1f3 b8c6 f1b5 a7a6 b5a4 g8f6 e1g1 f8e7 '
+             'f1e1 b7b5 a4b3 d7d6 c2c3 e8g8 h2h3 c6b8 d2d4 b8d7 '
+             'b1d2 c7c5 d4d5 c5c4 b3c2 d7c5 d2f1 f6d7 c1e3 c5b7 '
+             'f1g3 d7c5 b2b4 c5d7 a2a4 d7b6 a4b5 b6d7 g3f5').split()
+    with postgres_store.connection() as database:
+        database.execute('UPDATE cards SET moves_json=?,revision=2 WHERE id=?', (json.dumps(moves), fixture['card_id']))
+    manifest = _transport_color_fixture(fixture)['opening_decision_manifest']
+    assert len(manifest['decisions']) == 20
+    assert len({decision['decision_id'] for decision in manifest['decisions']}) == 20
+    events = []
+    for index, decision in enumerate(manifest['decisions']):
+        common = {'decision_index':index, 'decision_id':decision['decision_id'],
+                  'expected_uci':decision['expected_uci'], 'observed_at':fixture['now'].isoformat()}
+        events.append({**common, 'sequence':len(events)+1, 'kind':'first_response',
+                       'response_uci':decision['expected_uci'], 'disposition':'expected'})
+        # Repeated exposure after the response is valid, deduplicated assistance;
+        # the twenty initial responses remain clean and exercise clean-day writes.
+        for _ in range(12 if index < 16 else 11):
+            events.append({**common, 'sequence':len(events)+1, 'kind':'assistance', 'assistance':'hint'})
+    assert len(events) == 256
+    checkpoint = _color_checkpoint(fixture, manifest).model_dump(mode='json')
+    checkpoint.update(events=events, terminal=None)
+    return fixture, {'checkpoint':checkpoint, 'prepared_manifest':manifest}
+
+
+def _checkpoint_operation_receipt(operation_id):
+    with postgres_store.connection(read_only=True) as database:
+        return dict(database.execute_native('SELECT * FROM operation_receipts WHERE operation_id=%s', (operation_id,)).fetchone())
+
+
+def _recover_checkpoint_operation(operation_id):
+    from app import command_gateway, tasks
+    with postgres_store.connection() as database:
+        database.execute_native("UPDATE operation_receipts SET next_retry_at=NOW()-INTERVAL '1 minute',"
+                                "lease_expires_at=NOW()-INTERVAL '1 minute',updated_at='1970-01-01' WHERE operation_id=%s", (operation_id,))
+    recovered = command_gateway.claim_recoverable_operation()
+    assert recovered and recovered['operation_id'] == operation_id and recovered['background'] is True
+    return tasks.execute_background_command.run(operation_id, recovered['command_name'], recovered['payload'])
+
+
+def _assert_large_checkpoint(database, payload, *, state='active'):
+    request = payload['checkpoint']
+    attempt = database.execute_native('SELECT * FROM opening_evidence_attempts WHERE attempt_id=%s', (request['attempt_id'],)).fetchone()
+    assert attempt['state'] == state and attempt['contiguous_sequence'] == 256
+    events = database.execute_native('SELECT event_json FROM opening_evidence_events WHERE attempt_id=%s ORDER BY sequence', (request['attempt_id'],)).fetchall()
+    assert [json.loads(row[0]) for row in events] == OpeningEvidenceCheckpoint.model_validate(request).model_dump(mode='json')['events']
+    observations = database.execute_native('SELECT observation_json FROM opening_evidence_observations WHERE attempt_id=%s ORDER BY decision_index', (request['attempt_id'],)).fetchall()
+    from app.services.opening_decision_evidence import reduce_observations
+    expected = reduce_observations(request['events'], request['study_timezone'])
+    assert [json.loads(row[0]) for row in observations] == expected
+    assert len(observations) == 20 and all(item['clean'] for item in expected)
+    summaries = database.execute_native('SELECT * FROM opening_evidence_summaries WHERE decision_id=ANY(%s::text[])',
+                                       ([decision['decision_id'] for decision in request['manifest']['decisions']],)).fetchall()
+    assert sum(row['first_responses'] for row in summaries) == sum(row['clean_successes'] for row in summaries) == 20
+    assert all(row['distinct_clean_days'] == 1 for row in summaries)
+
+
+def _paused_checkpoint_review(*, complete_same_attempt):
+    from app import command_gateway, database as database_module, tasks
+    from app.services import postgres_opening_evidence as evidence
+    from app.services.activity_gate import activity_gate
+    fixture, payload = _large_checkpoint_fixture()
+    operation_id = fixture['card_id']+'-checkpoint'
+    # Persist one initial event so the test probes a real attempt row, not an absent key.
+    initial = copy.deepcopy(payload)
+    initial['checkpoint']['events'] = initial['checkpoint']['events'][:1]
+    assert tasks.execute_background_command.run(operation_id+'-initial', 'opening_evidence.checkpoint', initial)['persisted']
+    entered, release = Event(), Event()
+    source_pids, publication_ms, transaction_ms = [], [], []
+    original_read = database_module.background_read_connection
+    original_reduce = evidence.reduce_observations
+    original_commit = command_gateway._handlers['opening_evidence.checkpoint']
+    original_writer = command_gateway._writer_connection
+    reducer_thread = None
+
+    @contextmanager
+    def observe_read(**options):
+        with original_read(**options) as connection:
+            source_pids.append(connection.raw.info.backend_pid)
+            yield connection
+
+    def pause_reduction(events, study_timezone):
+        nonlocal reducer_thread
+        if len(events) == 256 and reducer_thread is None:
+            reducer_thread = get_ident()
+            assert activity_gate.active_background_sections == 0
+            entered.set()
+            assert release.wait(15), 'Foreground review failed to complete while reduction was paused'
+        return original_reduce(events, study_timezone)
+
+    def measured_publication(connection, prepared):
+        budget = connection.raw.execute('SHOW transaction_timeout').fetchone()[0]
+        assert budget == '250ms', 'The regression must retain the default background transaction budget'
+        started = time.perf_counter()
+        try:
+            return original_commit(connection, prepared)
+        finally:
+            publication_ms.append((time.perf_counter()-started)*1000)
+
+    @contextmanager
+    def measured_writer(background):
+        with original_writer(background) as connection:
+            started = time.perf_counter()
+            try:
+                yield connection
+            finally:
+                # Include receipt SQL and the connection's commit, below.
+                transaction_started = started
+        if background:
+            transaction_ms.append((time.perf_counter()-transaction_started)*1000)
+
+    with patch.object(database_module, 'background_read_connection', observe_read), \
+            patch.object(evidence, 'reduce_observations', pause_reduction), \
+            patch.object(command_gateway, '_writer_connection', measured_writer), \
+            patch.dict(command_gateway._handlers, {'opening_evidence.checkpoint':measured_publication}), \
+            ThreadPoolExecutor(max_workers=2) as workers:
+        checkpoint_future = workers.submit(tasks.execute_background_command.run, operation_id, 'opening_evidence.checkpoint', payload)
+        try:
+            assert entered.wait(10), 'Standalone checkpoint did not reach outside-transaction reduction'
+            assert source_pids and activity_gate.active_background_sections == 0
+            with psycopg.connect(os.environ['TEMPO_DATABASE_WRITE_URL']) as probe:
+                # Inspect the exact preparation connection before acquiring this attempt's
+                # row lock ourselves. Its read transaction must already be over.
+                sessions = probe.execute('SELECT pid,state,xact_start FROM pg_stat_activity WHERE pid=ANY(%s::int[])', (source_pids,)).fetchall()
+                assert sessions and all(row[1] == 'idle' and row[2] is None for row in sessions)
+                probe.execute('SELECT attempt_id FROM opening_evidence_attempts WHERE attempt_id=%s FOR UPDATE NOWAIT', (payload['checkpoint']['attempt_id'],))
+            review = {'outcome':'correct', 'queue_entry_id':fixture['queue_id'], 'recorded_at':fixture['now'].isoformat(),
+                      'attempt_id':payload['checkpoint']['attempt_id'] if complete_same_attempt else fixture['card_id']+'-aggregate'}
+            review_payload = {'card_id':fixture['card_id'], 'review':review}
+            if complete_same_attempt:
+                completion = copy.deepcopy(payload['checkpoint'])
+                completion['terminal'] = {'state':'complete', 'final_sequence':256, 'ended_at':fixture['now'].isoformat()}
+                review.update(opening_evidence_completion=completion)
+                review_payload['prepared_manifest'] = prepare_checkpoint(OpeningEvidenceCheckpoint.model_validate(completion))
+            started = time.perf_counter()
+            review_future = workers.submit(tasks.execute_foreground_command.run, fixture['card_id']+'-review', 'cards.review', review_payload)
+            review_result = review_future.result(timeout=10)
+            foreground_ms = (time.perf_counter()-started)*1000
+            assert review_result['persisted'] and not release.is_set() and not checkpoint_future.done()
+            with postgres_store.connection(read_only=True) as database:
+                scheduling = _fixture_scheduling(database, fixture)
+                if complete_same_attempt:
+                    _assert_large_checkpoint(database, payload, state='complete')
+                    before_stale = shadow_digest(database, fixture['repertoire_id'])
+        finally:
+            release.set()
+        checkpoint_result = checkpoint_future.result(timeout=10)
+    if complete_same_attempt:
+        assert checkpoint_result is None
+        receipt = _checkpoint_operation_receipt(operation_id)
+        assert receipt['state'] == 'retrying' and json.loads(receipt['last_error_json'])['class'] == 'SerializationFailure'
+        with postgres_store.connection(read_only=True) as database:
+            assert shadow_digest(database, fixture['repertoire_id']) == before_stale, 'Stale preparation changed completed evidence'
+        checkpoint_result = _recover_checkpoint_operation(operation_id)
+    assert checkpoint_result['persisted'] and checkpoint_result['contiguous_sequence'] == 256
+    assert checkpoint_result['state'] == ('complete' if complete_same_attempt else 'active')
+    with postgres_store.connection(read_only=True) as database:
+        _assert_large_checkpoint(database, payload, state=checkpoint_result['state'])
+        assert _fixture_scheduling(database, fixture) == scheduling, 'Checkpoint publication changed scheduling'
+        digest = shadow_digest(database, fixture['repertoire_id'])
+    # Same receipt and a distinct delivery key both preserve events, counters and days.
+    assert command_gateway.execute_command(operation_id, 'opening_evidence.checkpoint', payload, background=True) == checkpoint_result
+    assert tasks.execute_background_command.run(operation_id+'-replay', 'opening_evidence.checkpoint', payload) == checkpoint_result
+    with postgres_store.connection(read_only=True) as database:
+        assert shadow_digest(database, fixture['repertoire_id']) == digest and _fixture_scheduling(database, fixture) == scheduling
+    receipt = _checkpoint_operation_receipt(operation_id)
+    assert json.loads(receipt['payload_json']) == payload
+    assert receipt['request_hash'] == command_gateway.request_digest('opening_evidence.checkpoint', payload)
+    assert publication_ms and max(publication_ms) < 250
+    assert transaction_ms and max(transaction_ms) < 250
+    _retain_color_provenance(fixture)
+    print(json.dumps({'test':'test_postgres_opening_checkpoint_stale_preparation_preserves_foreground_completion' if complete_same_attempt else
+                      'test_postgres_opening_checkpoint_reduction_yields_to_foreground_review', 'decisions':20, 'events':256,
+                      'foreground_completed_before_release':True, 'foreground_ms':round(foreground_ms,3),
+                      'publication_ms':[round(value,3) for value in publication_ms],
+                      'background_transaction_ms':[round(value,3) for value in transaction_ms],
+                      'budget_ms':250, 'source_connections_idle':True}))
+
+
+def test_postgres_opening_checkpoint_reduction_yields_to_foreground_review():
+    _paused_checkpoint_review(complete_same_attempt=False)
+
+
+def test_postgres_opening_checkpoint_stale_preparation_preserves_foreground_completion():
+    _paused_checkpoint_review(complete_same_attempt=True)
+
+
+def _crash_worker_after_checkpoint_preparation():
+    from app import command_gateway, tasks
+    supplied = json.load(sys.stdin)
+    original_prepare = command_gateway._preparers['opening_evidence.checkpoint']
+    def crash_after_prepare(payload):
+        prepared = original_prepare(payload)
+        assert len(prepared.observations) == 20 and prepared.result['contiguous_sequence'] == 256
+        print('Prepared 256 events / 20 decisions; exiting before publication', flush=True)
+        os._exit(73)
+    command_gateway._preparers['opening_evidence.checkpoint'] = crash_after_prepare
+    tasks.execute_background_command.run(supplied['operation_id'], 'opening_evidence.checkpoint', supplied['payload'])
+    raise AssertionError('Crash worker unexpectedly reached publication')
+
+
+def test_postgres_opening_checkpoint_restart_recomputes_original_receipt():
+    from app import command_gateway
+    fixture, payload = _large_checkpoint_fixture()
+    operation_id = fixture['card_id']+'-restart'
+    with postgres_store.connection(read_only=True) as database:
+        scheduling = _fixture_scheduling(database, fixture)
+    child = subprocess.run([sys.executable, str(Path(__file__).resolve()), '--crash-after-prepare'],
+                           input=json.dumps({'operation_id':operation_id, 'payload':payload}), text=True,
+                           capture_output=True, timeout=20)
+    assert child.returncode == 73 and 'Prepared 256 events' in child.stdout, child.stdout+child.stderr
+    receipt = _checkpoint_operation_receipt(operation_id)
+    assert receipt['state'] == 'executing' and json.loads(receipt['payload_json']) == payload
+    assert receipt['request_hash'] == command_gateway.request_digest('opening_evidence.checkpoint', payload)
+    with postgres_store.connection(read_only=True) as database:
+        assert not database.execute_native('SELECT 1 FROM opening_evidence_attempts WHERE attempt_id=%s', (payload['checkpoint']['attempt_id'],)).fetchone()
+    result = _recover_checkpoint_operation(operation_id)
+    assert result['persisted'] and result['contiguous_sequence'] == 256
+    with postgres_store.connection(read_only=True) as database:
+        _assert_large_checkpoint(database, payload)
+        assert _fixture_scheduling(database, fixture) == scheduling
+        digest = shadow_digest(database, fixture['repertoire_id'])
+    assert command_gateway.execute_command(operation_id, 'opening_evidence.checkpoint', payload, background=True) == result
+    with postgres_store.connection(read_only=True) as database:
+        assert shadow_digest(database, fixture['repertoire_id']) == digest
+    assert _checkpoint_operation_receipt(operation_id)['attempt_count'] == 2
+    _retain_color_provenance(fixture)
+    print('PASS test_postgres_opening_checkpoint_restart_recomputes_original_receipt (process exit 73, lease recovery, exact replay)')
 
 
 def _assert_color_round_trip(fixture, trained_color):
@@ -610,7 +848,15 @@ def test_postgres_shadow_replay_atomicity_and_scheduling_invariance():
 
 if __name__=='__main__':
     if '--verify-persisted' in sys.argv:verify_persisted_shadow()
+    elif '--crash-after-prepare' in sys.argv:_crash_worker_after_checkpoint_preparation()
     else:
+        if os.getenv('TEMPO_TEST_INSTANCE') != 'disposable':
+            raise RuntimeError('Opening evidence rehearsal requires disposable PostgreSQL')
+        os.environ['TEMPO_DATABASE_WRITE_URL'] = os.getenv('TEMPO_SHADOW_REHEARSAL_URL', 'postgresql://postgres@postgres:5432/tempo')
+        os.environ['TEMPO_DATABASE_READ_URL'] = os.environ['TEMPO_DATABASE_WRITE_URL']
+        test_postgres_opening_checkpoint_reduction_yields_to_foreground_review()
+        test_postgres_opening_checkpoint_stale_preparation_preserves_foreground_completion()
+        test_postgres_opening_checkpoint_restart_recomputes_original_receipt()
         test_postgres_shared_review_requeue_inherits_authoritative_evidence_scope()
         test_postgres_evidence_context_requires_unique_scope_and_matching_admission()
         test_postgres_legacy_review_requeue_inherits_color_after_source_replacement()

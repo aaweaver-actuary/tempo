@@ -2,9 +2,11 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any
 
 from fastapi import HTTPException
+from psycopg.errors import SerializationFailure
 
 from .. import postgres_store
 from ..opening_evidence_contracts import OpeningEvidenceCheckpoint
@@ -148,6 +150,7 @@ def _persist_observations(database, attempt_id: str, observations: list[dict]) -
 
 
 def persist_checkpoint(database, payload: dict, *, completing_review: bool = False) -> dict:
+    """Foreground atomic review persistence; standalone commands use preparation."""
     request = OpeningEvidenceCheckpoint.model_validate(payload["checkpoint"])
     try:
         validate_checkpoint(request, payload["prepared_manifest"])
@@ -156,7 +159,7 @@ def persist_checkpoint(database, payload: dict, *, completing_review: bool = Fal
         raise evidence_error(str(error)) from error
 
 
-def _persist_checkpoint(database, request: OpeningEvidenceCheckpoint, *, completing_review: bool) -> dict:
+def _validate_checkpoint_scope(database, request: OpeningEvidenceCheckpoint, *, completing_review: bool) -> None:
     manifest = request.manifest
     if request.terminal and request.terminal.state == "complete" and not completing_review:
         raise EvidenceConflict("A complete shadow attempt must commit with its aggregate review")
@@ -192,6 +195,11 @@ def _persist_checkpoint(database, request: OpeningEvidenceCheckpoint, *, complet
         parent_result = json.loads(parent["result_json"])
         if request.queue_entry_id not in {parent["queue_entry_id"], parent_result.get("requeue_entry_id")}:
             raise EvidenceConflict("The offline repeat is not bound to its parent's reconciled queue entry")
+
+
+def _persist_checkpoint(database, request: OpeningEvidenceCheckpoint, *, completing_review: bool) -> dict:
+    manifest = request.manifest
+    _validate_checkpoint_scope(database, request, completing_review=completing_review)
     context = request.model_dump(mode="json", exclude={"events", "terminal", "queue_entry_id"})
     database.execute_native(
         "INSERT INTO opening_evidence_attempts(attempt_id,manifest_id,presentation_snapshot_id,repertoire_id,card_id,"
@@ -245,6 +253,140 @@ def _persist_checkpoint(database, request: OpeningEvidenceCheckpoint, *, complet
     )
     return {"persisted": True, "attempt_id": request.attempt_id, "contiguous_sequence": len(contiguous),
             "received_sequences": [row[0] for row in rows], "state": state}
+
+
+@dataclass(frozen=True)
+class PreparedOpeningCheckpoint:
+    request: OpeningEvidenceCheckpoint
+    source_attempt: dict | None
+    source_events: tuple[tuple[int, str], ...]
+    context_json: str
+    manifest_json: str
+    missing_events: tuple[tuple[int, str], ...]
+    observations: tuple[dict, ...]
+    terminal_json: str | None
+    result: dict
+
+
+def _read_checkpoint_source(database, attempt_id: str, *, lock: bool = False) -> tuple[dict | None, tuple[tuple[int, str], ...]]:
+    attempt = database.execute_native(
+        "SELECT * FROM opening_evidence_attempts WHERE attempt_id=%s" + (" FOR UPDATE" if lock else ""),
+        (attempt_id,),
+    ).fetchone()
+    events = database.execute_native(
+        "SELECT sequence,event_json FROM opening_evidence_events WHERE attempt_id=%s ORDER BY sequence LIMIT 256",
+        (attempt_id,),
+    ).fetchall()
+    return dict(attempt) if attempt else None, tuple((row[0], row[1]) for row in events)
+
+
+def prepare_standalone_checkpoint(payload: dict) -> PreparedOpeningCheckpoint:
+    """Read one bounded source, release PostgreSQL, then validate/reduce it."""
+    from ..database import background_read_connection
+    request = OpeningEvidenceCheckpoint.model_validate(payload["checkpoint"])
+    with background_read_connection(authoritative=True) as database:
+        row = database.execute_native(
+            "SELECT snapshot.*,context.effective_trained_color FROM opening_evidence_presentations snapshot "
+            "JOIN opening_evidence_queue_contexts context ON context.presentation_snapshot_id=snapshot.id "
+            "WHERE snapshot.id=%s AND context.queue_entry_id=%s AND context.repertoire_id=%s",
+            (request.manifest.presentation_snapshot_id, request.origin_queue_entry_id, request.manifest.repertoire_id),
+        ).fetchone()
+        snapshot = dict(row) if row else None
+        source_attempt, source_events = _read_checkpoint_source(database, request.attempt_id)
+    try:
+        if snapshot is None:
+            raise EvidenceConflict("The original opening presentation and repertoire scope cannot be proven")
+        authoritative_manifest = decision_manifest(_manifest_snapshot(snapshot), request.manifest.repertoire_id)
+        validate_checkpoint(request, authoritative_manifest)
+        return _compute_checkpoint_publication(request, source_attempt, source_events)
+    except (ValueError, KeyError) as error:
+        raise evidence_error(str(error)) from error
+
+
+def _compute_checkpoint_publication(
+    request: OpeningEvidenceCheckpoint, source_attempt: dict | None, source_events: tuple[tuple[int, str], ...],
+) -> PreparedOpeningCheckpoint:
+    if request.terminal and request.terminal.state == "complete":
+        raise EvidenceConflict("A complete shadow attempt must commit with its aggregate review")
+    context_json = canonical_json(request.model_dump(mode="json", exclude={"events", "terminal", "queue_entry_id"}))
+    if source_attempt and source_attempt["context_json"] != context_json:
+        raise EvidenceConflict("Attempt ID was reused with different immutable context")
+    if source_attempt and request.queue_entry_id is not None and source_attempt["queue_entry_id"] not in {None, request.queue_entry_id}:
+        raise EvidenceConflict("Attempt ID was bound to a different queue entry")
+    saved_terminal = json.loads(source_attempt["terminal_json"]) if source_attempt and source_attempt["terminal_json"] else None
+    requested_terminal = request.terminal.model_dump(mode="json") if request.terminal else None
+    if saved_terminal and requested_terminal and saved_terminal != requested_terminal:
+        raise EvidenceConflict("Attempt completion was reused with a different terminal state")
+    terminal = saved_terminal or requested_terminal
+    merged_events = dict(source_events)
+    missing_events = {}
+    for event in request.events:
+        event_json = canonical_json(event.model_dump(mode="json"))
+        if event.sequence in merged_events and merged_events[event.sequence] != event_json:
+            raise EvidenceConflict("Event identity was reused with different content")
+        if event.sequence not in merged_events:
+            missing_events[event.sequence] = event_json
+            merged_events[event.sequence] = event_json
+    ordered_events = sorted(merged_events.items())
+    if terminal and any(sequence > terminal["final_sequence"] for sequence, _ in ordered_events):
+        raise EvidenceConflict("An event is beyond the sealed final sequence")
+    contiguous = []
+    for sequence, event_json in ordered_events:
+        if sequence != len(contiguous) + 1:
+            break
+        contiguous.append(json.loads(event_json))
+    observations = reduce_observations(contiguous, request.study_timezone)
+    state = source_attempt["state"] if source_attempt else "active"
+    if terminal and terminal["state"] == "partial" and len(contiguous) == terminal["final_sequence"]:
+        state = "partial"
+    return PreparedOpeningCheckpoint(
+        request=request, source_attempt=source_attempt, source_events=source_events, context_json=context_json,
+        manifest_json=canonical_json(request.manifest.model_dump(mode="json")),
+        missing_events=tuple(sorted(missing_events.items())), observations=tuple(observations),
+        terminal_json=canonical_json(terminal) if terminal else None,
+        result={"persisted": True, "attempt_id": request.attempt_id, "contiguous_sequence": len(contiguous),
+                "received_sequences": [sequence for sequence, _ in ordered_events], "state": state},
+    )
+
+
+def commit_standalone_checkpoint(database, prepared: PreparedOpeningCheckpoint) -> dict:
+    """Publish only if the exact bounded read is current; staleness retries."""
+    request = prepared.request
+    manifest = request.manifest
+    try:
+        _validate_checkpoint_scope(database, request, completing_review=False)
+        inserted = database.execute_native(
+            "INSERT INTO opening_evidence_attempts(attempt_id,manifest_id,presentation_snapshot_id,repertoire_id,card_id,"
+            "card_revision,trained_color,context_json,manifest_json,started_at,study_timezone,queue_entry_id) "
+            "VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s) ON CONFLICT(attempt_id) DO NOTHING RETURNING attempt_id",
+            (request.attempt_id, manifest.manifest_id, manifest.presentation_snapshot_id, manifest.repertoire_id,
+             manifest.card_id, manifest.card_revision, manifest.trained_color, prepared.context_json,
+             prepared.manifest_json, request.started_at, request.study_timezone, request.queue_entry_id),
+        ).fetchone()
+        current_attempt, current_events = _read_checkpoint_source(database, request.attempt_id, lock=True)
+        # A newly inserted header belongs to this uncommitted publication. All
+        # other headers/events must exactly match the snapshot used to reduce.
+        if ((prepared.source_attempt is None and not inserted) or
+                (prepared.source_attempt is not None and current_attempt != prepared.source_attempt) or
+                current_events != prepared.source_events):
+            raise SerializationFailure("Opening checkpoint source changed; prepare again from durable evidence")
+        if prepared.missing_events:
+            database.execute_native(
+                "INSERT INTO opening_evidence_events(attempt_id,sequence,event_json) "
+                "SELECT %s,source.sequence,source.event_json FROM UNNEST(%s::bigint[],%s::text[]) source(sequence,event_json)",
+                (request.attempt_id, [sequence for sequence, _ in prepared.missing_events],
+                 [event_json for _, event_json in prepared.missing_events]),
+            )
+        _persist_observations(database, request.attempt_id, list(prepared.observations))
+        database.execute_native(
+            "UPDATE opening_evidence_attempts SET contiguous_sequence=%s,state=%s,terminal_json=%s,"
+            "queue_entry_id=COALESCE(queue_entry_id,%s) WHERE attempt_id=%s",
+            (prepared.result["contiguous_sequence"], prepared.result["state"], prepared.terminal_json,
+             request.queue_entry_id, request.attempt_id),
+        )
+        return prepared.result
+    except EvidenceConflict as error:
+        raise evidence_error(str(error)) from error
 
 
 def complete_review_evidence(database, completion: OpeningEvidenceCheckpoint, result: dict) -> None:
