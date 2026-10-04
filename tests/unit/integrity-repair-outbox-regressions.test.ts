@@ -210,6 +210,29 @@ it("repair journal migration preserves original data when storage writes fail", 
   expect(localStorage.getItem("tempo-pending-integrity-repairs-v2")).toBe(original);
 });
 
+it.each(["corrupt", "different choice", "different task"])("repair migration preserves the original journal when an existing upgraded record is %s", conflict => {
+  const originalRepair = { ...choice, operationId: "migration-identity", phase: "validating", taskId: "original-task", taskGeneration: 2 };
+  const original = JSON.stringify([originalRepair]);
+  localStorage.setItem("tempo-pending-integrity-repairs-v2", original);
+  const destination = conflict === "corrupt" ? "{" : JSON.stringify({ ...originalRepair,
+    ...(conflict === "different choice" ? { selectedMoveUci: "d2d4" } : { taskId: "unrelated-task" }) });
+  localStorage.setItem("tempo-pending-integrity-repairs-v3:migration-identity", destination);
+  expect(() => pendingIntegrityRepairs()).toThrow("Saved repair choices");
+  expect(localStorage.getItem("tempo-pending-integrity-repairs-v2")).toBe(original);
+  expect(localStorage.getItem("tempo-pending-integrity-repairs-v3:migration-identity")).toBe(destination);
+});
+
+it("conflicting legacy repair journals preserve both originals for recovery", () => {
+  const oldQueue = JSON.stringify([{ ...choice, operationId: "legacy-conflict", phase: "queued" }]);
+  const oldCommand = JSON.stringify({ operationId: "legacy-conflict",
+    fingerprint: JSON.stringify(["rep", "first", JSON.stringify({ signature: "first-signature", selected_move_uci: "d2d4" })]) });
+  localStorage.setItem("tempo-pending-integrity-repairs-v2", oldQueue);
+  localStorage.setItem("tempo-pending-integrity-repair-v1", oldCommand);
+  expect(() => pendingIntegrityRepairs()).toThrow("Saved repair choices");
+  expect(localStorage.getItem("tempo-pending-integrity-repairs-v2")).toBe(oldQueue);
+  expect(localStorage.getItem("tempo-pending-integrity-repair-v1")).toBe(oldCommand);
+});
+
 it("repair queue rejects corrupt data without clearing saved choices", () => {
   localStorage.setItem("tempo-pending-integrity-repairs-v3:broken", "{");
   expect(() => enqueueIntegrityRepair(choice)).toThrow("Saved repair choices");

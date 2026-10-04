@@ -45,6 +45,10 @@ export function subscribeIntegrityRepairs(listener: () => void) {
 function persist(repair: PendingIntegrityRepair) {
   localStorage.setItem(storagePrefix + repair.operationId, JSON.stringify(repairSchema.parse(repair)));
 }
+function sameRepairChoice(left: RepairChoice, right: RepairChoice) {
+  return left.repertoireId === right.repertoireId && left.issueId === right.issueId
+    && left.signature === right.signature && left.selectedMoveUci === right.selectedMoveUci;
+}
 function migrateLegacyRepairs() {
   const oldQueue = localStorage.getItem(legacyQueueKey);
   const oldCommand = localStorage.getItem(legacyCommandKey);
@@ -54,14 +58,24 @@ function migrateLegacyRepairs() {
     const command = z.object({ operationId: z.string(), fingerprint: z.string() }).parse(JSON.parse(oldCommand));
     const [repertoireId, issueId, body] = z.tuple([z.string(), z.string(), z.string()]).parse(JSON.parse(command.fingerprint));
     const choice = z.object({ signature: z.string(), selected_move_uci: z.string() }).parse(JSON.parse(body));
-    if (!recovered.some(repair => repair.operationId === command.operationId)) recovered.push(repairSchema.parse({
+    const commandRepair = repairSchema.parse({
       repertoireId, issueId, signature: choice.signature, selectedMoveUci: choice.selected_move_uci,
       operationId: command.operationId, phase: "saving",
-    }));
+    });
+    const matchingOperation = recovered.find(repair => repair.operationId === command.operationId);
+    if (matchingOperation && !sameRepairChoice(matchingOperation, commandRepair)) throw new Error("Legacy repair journals disagree about the saved choice.");
+    if (!matchingOperation) recovered.push(commandRepair);
   }
   recovered.forEach((repair, index) => {
     // Never overwrite progress already recovered by another tab or an earlier migration attempt.
-    if (!localStorage.getItem(storagePrefix + repair.operationId)) persist({ ...repair, queuedAt: repair.queuedAt || index });
+    const existingRecord = localStorage.getItem(storagePrefix + repair.operationId);
+    if (!existingRecord) persist({ ...repair, queuedAt: repair.queuedAt || index });
+    else {
+      const existing = repairSchema.parse(JSON.parse(existingRecord));
+      if (existing.operationId !== repair.operationId || !sameRepairChoice(existing, repair)
+        || repair.taskId && existing.taskId !== repair.taskId
+        || (existing.taskGeneration ?? 1) < (repair.taskGeneration ?? 1)) throw new Error("Recovered repair identity or task progress conflicts with its original journal.");
+    }
   });
   // All writes must succeed before either original journal is removed.
   if (oldQueue) localStorage.removeItem(legacyQueueKey);

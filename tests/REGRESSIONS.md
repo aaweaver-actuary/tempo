@@ -1532,6 +1532,10 @@ Backend names run in the existing contracts, preparation and transport pytest fi
 - **Phone opening study preserves the accessible training page heading** — `tests/unit/phone-opening-study-regressions.test.tsx`: exactly one centralized H1 through normal, service-error/retry, empty/offline, and phone/tablet transitions; no stale repertoire or visible counter wrapper. `tests/browser/phone-opening-study.spec.ts` asserts the accessible H1 and repertoire H2 through 767 → 768 → 767px with the same shared board instance.
 ## Repertoire repair choices queued without blocking the popup
 
+`repair migration preserves the original journal when an existing upgraded record is %s` covers corrupt, different-choice, and different-task destinations. Original v1/v2 journals are removed only after destination validation confirms their choice and task identities/progress; conflicting data is preserved for recovery.
+
+`conflicting legacy repair journals preserve both originals for recovery` rejects disagreement between a v1 fingerprint and a v2 record sharing an operation ID rather than silently discarding one payload.
+
 `a removed repertoire pauses queued repair choices for review without losing their operation identities` covers authoritative 404 evidence before delivery: no repair request is sent, later choices pause, and the original operation/choice remains available for review.
 
 `tests/unit/study-regressions.test.tsx`: `late integrity count refresh cannot close an explicitly opened repair dialog or erase its choice` holds startup repertoire responses, opens the dialog and selects a move, then releases the older count refresh. It failed on the late-response close and now preserves both dialog and selection. Full browser receipt/reload coverage also exercises opening the dialog amid startup requests.
