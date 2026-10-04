@@ -42,7 +42,7 @@ The rehearsal verifies the disposable bootstrap marker and current schema
 through a read-only connection before creating its own helper database. It
 covers 64,000-card current/stale generations, shared cards and unchanged history,
 locked rows, generation replacement, restart, timeout rollback and delayed replay.
-The runner stops API, background worker and scheduler consumers during this
+The runner stops defense engine, background worker and scheduler consumers during this
 stage, then restores dispatch. Recorded query plans execute separately after
 measured transactions and are rolled back; their rows describe post-slice state.
 
