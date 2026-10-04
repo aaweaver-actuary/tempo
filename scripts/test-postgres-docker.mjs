@@ -12,6 +12,8 @@ import { executeDiagnosticCleanup, executeIsolatedBackgroundWorkload, executePos
 import { assertNoCompletedFixtureConflict, backgroundPublicationPgn,
   repertoireLimitRecreationPgn, studyDurabilityPgn } from "./postgres-test-fixture.mjs";
 import { createScenarioTimer } from "./test-scenario-timings.mjs";
+import { verifyTempoCliLifecycle } from "./check-tempo-cli.mjs";
+import { atomicJson, redact } from "./tempo-deployment.mjs";
 
 const options = parsePostgresTestOptions(process.argv.slice(2));
 const stages = postgresTestStages(options);
@@ -54,6 +56,7 @@ const compose = ["compose", "-p", project, "-f", "docker-compose.postgres.test.y
 const environment = createIsolatedTestEnvironment(process.env, {
   TEMPO_PG_TEST_SECRETS: secretsDirectory,
   TEMPO_PG_TEST_PORT: String(testPort),
+  TEMPO_PG_MAINTENANCE_IMAGE: maintenanceImage,
   TEMPO_POSTGRES_ADMIN_PASSWORD_FILE: join(secretsDirectory, "admin_password"),
   TEMPO_POSTGRES_READER_PGPASS_FILE: join(secretsDirectory, "reader_pgpass"),
   TEMPO_POSTGRES_WRITER_PGPASS_FILE: join(secretsDirectory, "writer_pgpass"),
@@ -65,6 +68,12 @@ let maintenanceImageCreated = false;
 const timingPath = join(process.env.TEMPO_TEST_TIMING_DIR ?? "test-results/performance",
   `postgres-scenarios-${options.mode}-${project}.json`);
 const commitResult = spawnSync("git", ["rev-parse", "HEAD"], { encoding: "utf8" });
+const candidateRevision = commitResult.stdout.trim();
+const buildLabels = join(secretsDirectory, "image-labels.json");
+writeFileSync(buildLabels, JSON.stringify({ services: Object.fromEntries([
+  "schema", "api", "foreground-worker", "background-worker", "background-scheduler", "web", "defense-engine", "maia-worker",
+].map(name => [name, { build: { labels: { "org.opencontainers.image.revision": candidateRevision } } }])) }));
+compose.push("-f", buildLabels);
 const measureScenario = createScenarioTimer(timingPath, {
   runner: "postgres", mode: options.mode,
   commit: commitResult.status === 0 ? commitResult.stdout.trim() : null,
@@ -623,7 +632,7 @@ const actions = {
     run("docker", [...compose, "build"]);
   },
   maintenance_cli: async () => {
-    run("docker", ["build", "-f", "Dockerfile.postgres-maintenance", "-t", maintenanceImage, "."]);
+    run("docker", ["build", "-f", "Dockerfile.postgres-maintenance", "--label", `org.opencontainers.image.revision=${candidateRevision}`, "-t", maintenanceImage, "."]);
     maintenanceImageCreated = true;
     for (const script of ["apply_postgres_migrations.py", "migrate_sqlite_to_postgres.py", "repair_verified_game_tactics.py"]) {
       run("docker", ["run", "--rm", maintenanceImage, `scripts/${script}`, "--help"]);
@@ -661,6 +670,15 @@ const actions = {
       "/source/scripts/check_postgres_priority_recovery.py"]);
     run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
       "/source/scripts/check_postgres_background_diagnostics.py"]);
+    const consumers = ["api", "foreground-worker", "background-worker", "background-scheduler", "web", "defense-engine", "maia-worker"];
+    run("docker", [...compose, "stop", ...consumers]);
+    try {
+      await verifyTempoCliLifecycle({ project, environment, revision: candidateRevision,
+        composeFiles: [join(process.cwd(), "docker-compose.postgres.test.yml"), buildLabels] });
+    } finally {
+      run("docker", [...compose, "up", "--no-build", "-d", "--no-deps", ...consumers]);
+      await waitForReady();
+    }
   },
   background_workloads: async () => {
     await executeIsolatedBackgroundWorkload({
@@ -807,10 +825,29 @@ const actions = {
     await verifyBlockedBurialRecovery();
   },
   cleanup: async () => executeDiagnosticCleanup(() => {
+    if (resourcesCreated) {
+      const inspect = (args) => {
+        const result = spawnSync("docker", args, { encoding: "utf8", env: environment });
+        assert.equal(result.status, 0, "Could not record disposable Docker ownership");
+        return result.stdout.trim();
+      };
+      const ids = inspect(["ps", "-aq", "--filter", `label=com.docker.compose.project=${project}`]).split(/\s+/).filter(Boolean);
+      const containers = ids.length ? JSON.parse(inspect(["inspect", ...ids])).map(container => ({
+        id: container.Id, name: container.Name, image: container.Image, created: container.Created,
+        started_at: container.State.StartedAt, project: container.Config.Labels["com.docker.compose.project"],
+        volumes: container.Mounts.filter(mount => mount.Type === "volume").map(mount => ({ name: mount.Name, destination: mount.Destination })),
+      })) : [];
+      atomicJson(`test-results/tempo-cli/${project}/ownership.json`, { checkout: process.cwd(), revision: candidateRevision,
+        project, context: inspect(["context", "show"]), containers,
+        maintenance_image: maintenanceImageCreated ? JSON.parse(inspect(["image", "inspect", maintenanceImage])).map(image => ({ id: image.Id, created: image.Created, tag: maintenanceImage })) : [],
+        teardown: ["docker", ...compose, "down", "--rmi", "local", "-v"],
+        maintenance_teardown: ["docker", "image", "rm", maintenanceImage] });
+    }
     if (process.env.TEMPO_CI_REPORT && resourcesCreated) {
       const diagnostics = spawnSync("docker", [...compose, "logs", "--no-color", "--tail=200"], { encoding: "utf8", env: environment, maxBuffer: 10 * 1024 * 1024 });
       mkdirSync("test-results/ci", { recursive: true });
-      writeFileSync(`test-results/ci/${options.mode}-${project}-services.log`, `${diagnostics.stdout ?? ""}\n${diagnostics.stderr ?? ""}`);
+      writeFileSync(`test-results/ci/${options.mode}-${project}-services.log`, redact(`${diagnostics.stdout ?? ""}\n${diagnostics.stderr ?? ""}`,
+        [administratorPassword, readerPassword, writerPassword]));
     }
   }, async () => {
     const cleanupErrors = [];
@@ -819,6 +856,11 @@ const actions = {
         const stopped = spawnSync("docker", [...compose, "down", "--rmi", "local", "-v"],
           { stdio: "inherit", env: environment });
         if (stopped.error || stopped.status !== 0) cleanupErrors.push(new Error("Disposable PostgreSQL stack cleanup failed"));
+        for (const resource of ["container", "volume"]) {
+          const remaining = spawnSync("docker", [resource === "container" ? "ps" : "volume", ...(resource === "container" ? ["-aq"] : ["ls", "-q"]),
+            "--filter", `label=com.docker.compose.project=${project}`], { encoding: "utf8", env: environment });
+          if (remaining.status !== 0 || remaining.stdout.trim()) cleanupErrors.push(new Error(`Disposable PostgreSQL ${resource} cleanup left resources`));
+        }
       }
       if (maintenanceImageCreated) {
         const removedMaintenanceImage = spawnSync("docker", ["image", "rm", maintenanceImage],

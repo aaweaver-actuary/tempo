@@ -129,33 +129,22 @@ it("Makefile runs one full plan and rejects combined verification scopes", () =>
 });
 
 it("PostgreSQL upgrade --plan validates identities and invokes no mutating Docker command", () => {
-  const fakeCommandDirectory = mkdtempSync(join(tmpdir(), "tempo-upgrade-plan-"));
-  try {
-    const capturePath = join(fakeCommandDirectory, "docker-calls.txt");
-    const configPath = join(fakeCommandDirectory, "compose.json");
-    const volumes = Object.fromEntries(["tempo-postgres-data", "tempo-postgres-backups",
-      "tempo-redis-data", "tempo-engine-operations"].map((name) => [name, { external: true, name }]));
-    writeFileSync(configPath, JSON.stringify({ name: "tempo", volumes }));
-    const dockerPath = join(fakeCommandDirectory, "docker");
-    writeFileSync(dockerPath, [
-      "#!/bin/sh",
-      "printf '%s\\n' \"$*\" >> \"$TEMPO_UPGRADE_DOCKER_CAPTURE\"",
-      "cat \"$TEMPO_UPGRADE_COMPOSE_CONFIG\"",
-      "",
-    ].join("\n"));
-    chmodSync(dockerPath, 0o755);
-    const plan = spawnSync("sh", ["scripts/upgrade-postgres-schema.sh", "--plan"], {
-      cwd: process.cwd(), encoding: "utf8",
-      env: { ...process.env, PATH: `${fakeCommandDirectory}:${process.env.PATH ?? ""}`,
-        TEMPO_UPGRADE_EXPECTED_PROJECT: "tempo", TEMPO_UPGRADE_DOCKER_CAPTURE: capturePath,
-        TEMPO_UPGRADE_COMPOSE_CONFIG: configPath },
-    });
-    expect(plan.status, plan.stderr).toBe(0);
-    expect(plan.stdout).toContain("READ-ONLY PostgreSQL schema upgrade plan");
-    expect(readFileSync(capturePath, "utf8").trim()).toBe("compose config --format json");
-  } finally {
-    rmSync(fakeCommandDirectory, { recursive: true, force: true });
-  }
+  const script = `
+    import assert from 'node:assert/strict';
+    import {spawnSync} from 'node:child_process';
+    import {rmSync} from 'node:fs';
+    import {cliFixture} from './tests/runner/tempo-cli-fixture.mjs';
+    const fixture=cliFixture('upgrade');
+    try {
+      const result=spawnSync('sh',['scripts/upgrade-postgres-schema.sh','--plan'],{
+        encoding:'utf8',env:{...fixture.environment,NODE_OPTIONS:'--import='+fixture.hook},timeout:10000});
+      assert.equal(result.status,0,result.stdout+result.stderr);
+      assert(result.stdout.includes('No source, image, service, or database changes'));
+      for(const call of fixture.calls()) assert(!['fetch','merge','build','run','up','stop','pull'].some(value=>call.args.includes(value)));
+    } finally {rmSync(fixture.directory,{recursive:true,force:true});}
+  `;
+  const result = spawnSync(process.execPath, ["--input-type=module", "-e", script], { encoding: "utf8" });
+  expect(result.status, result.stdout + result.stderr).toBe(0);
 });
 
 it("lint scope excludes ignored local checkout copies", () => {

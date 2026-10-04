@@ -14,6 +14,12 @@ services:
       - source: admin_pgpass
         target: admin_pgpass
         mode: 0400
+      - source: reader_pgpass
+        target: reader_pgpass
+        mode: 0400
+      - source: writer_pgpass
+        target: writer_pgpass
+        mode: 0400
       - source: reader_password
         target: reader_password
         mode: 0400
