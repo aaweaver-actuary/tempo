@@ -30,7 +30,7 @@ describe("background activity tray", () => {
     fireEvent.click(screen.getByRole("button", { name: "Analysis activity" }));
     expect(await screen.findByText("Paused in Settings. Enable Defensive analysis in Settings to allow this work.")).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Resume" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Pause", exact: true })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "Prioritize" }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining("/api/system/activity/control"),
@@ -78,7 +78,7 @@ describe("background activity tray", () => {
     render(<ServiceStatusPanel />);
     fireEvent.click(screen.getByRole("button", { name: "Analysis activity" }));
     expect(await screen.findByRole("alert")).toHaveProperty("textContent", expect.stringContaining("unexpected format"));
-    expect(screen.queryByRole("button", { name: "Pause", exact: true })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Pause" })).toBeNull();
   });
 
   it("shows truthful progress and lets the user pause and prioritize eligible work", async () => {

@@ -80,7 +80,7 @@ test("combined defensive pauses retain individual Resume until Settings allows i
       receipt = await (await request.get(`${api}/operations/${encodeURIComponent(envelope.operation_id)}`)).json();
       return receipt.state;
     }).toBe("complete");
-    return receipt.response;
+    return receipt!.response;
   };
   try {
     await completeCommand(await request.put(`${api}/settings`, { data: { ...originalSettings, defensive_analysis_enabled: false } }));
@@ -103,7 +103,11 @@ test("combined defensive pauses retain individual Resume until Settings allows i
     await expect(work.getByRole("button", { name: "Pause", exact: true })).toHaveCount(0);
     await expect(work.getByRole("button", { name: "Prioritize", exact: true })).toBeVisible();
     await noPageOverflow(page);
-    await page.locator(".tempo-activity-content").screenshot({ path: testInfo.outputPath("combined-defensive-pauses.png") });
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await work.scrollIntoViewIfNeeded();
+    await work.screenshot({ path: testInfo.outputPath("combined-defensive-pauses.png") });
+    await noPageOverflow(page);
+    await page.setViewportSize({ width: 320, height: 700 });
     await page.getByRole("button", { name: "Close", exact: true }).click();
     await navigate(page, "Settings");
     await page.getByRole("checkbox", { name: /^Defensive analysis/ }).check();
