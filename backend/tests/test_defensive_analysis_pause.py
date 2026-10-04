@@ -226,3 +226,12 @@ def test_pausing_engine_release_preserves_retry_budget_and_idempotent_resume(tmp
     with database.connection() as connection:
         connection.execute('UPDATE settings SET defensive_analysis_enabled=1')
     assert threat_pipeline.claim_analysis_request()['id'] == request_id
+
+
+def test_defensive_engine_control_preempts_foreground_without_waiting_for_database(monkeypatch):
+    def forbidden_background_read(**options):
+        raise AssertionError('Foreground preemption must not wait for a database connection')
+    monkeypatch.setattr(main, 'background_read_connection', forbidden_background_read)
+    with main.activity_gate.foreground():
+        assert main.defensive_engine_control('request', 'lease') == {
+            'foreground_active': True, 'search_allowed': False}

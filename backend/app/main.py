@@ -5266,6 +5266,9 @@ def defensive_engine_control(request_id: str, lease_id: str):
     from .services.defensive_analysis import search_admission_sql
     from .services.background_activity import claimable
 
+    # Foreground demand must stop the engine without waiting for background DB admission.
+    if activity_gate.foreground_waiting:
+        return {"foreground_active": True, "search_allowed": False}
     with background_read_connection(authoritative=True) as database:
         row = database.execute(
             f"""SELECT state,lease_id,

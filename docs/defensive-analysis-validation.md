@@ -17,4 +17,4 @@ Related issues: #14 (defensive orchestration) and #43 (engine fairness), neither
 - `node --test tests/runner/postgres-test-speedups.test.mjs`: 37 passed / 0.61s.
 - Typecheck passed. Lint passed with existing unrelated warnings; new unused-parameter warnings were corrected.
 - First `make docker-durability` stopped in the existing diagnostic proof: the new classification generated a numeric `OR 0` for the game queue. Replaced it with a boolean predicate and retained the query budget. Runner cleanup passed. A new PostgreSQL proof asserts pause snapshot availability and classification.
-- Required final CI, browser, PostgreSQL durability, and pinned appearance evidence pending. Local tests use macOS ARM64, Node 26.3.0, Python 3.14.8, and runner-owned disposable Docker resources.
+- Required final CI, browser, PostgreSQL durability, and pinned appearance evidence pending. Local tests use macOS ARM64, Node 26.10.0, Python 3.14.8, and runner-owned disposable Docker resources.

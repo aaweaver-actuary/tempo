@@ -1321,3 +1321,4 @@ Full and durability gates include this stage; browser-only scopes omit it.
 - `defensive analysis pause persists independently of defensive cards` in `settings-defense-toggle.spec.ts` protects the actual Settings save/reload workflow.
 - `scripts/check_postgres_defensive_pause.py`, executed by the regular PostgreSQL durability runner, proves default-off migration, mixed-purpose claims, foreground contention, snapshot classification, restart persistence, omitted-setting preservation, and idempotent resume using its own disposable database.
 - `test_pausing_engine_release_preserves_retry_budget_and_idempotent_resume` protects pause releases from consuming failure retries, including repeated release and resumed claim. The PostgreSQL proof covers the same fenced decrement.
+- `test_defensive_engine_control_preempts_foreground_without_waiting_for_database` protects immediate foreground preemption before the control endpoint opens any background database connection.
