@@ -8,6 +8,17 @@ import { atomicJson, deploymentCanStart, redact, targetKey, validateContainers, 
 export const applicationServices = ["web", "defense-engine", "maia-worker", "api",
   "foreground-worker", "background-worker", "background-scheduler"];
 
+function applicationIdentitiesMatch(running, target, services, images, hashes) {
+  return running.every(container => {
+    const labels = container.Config?.Labels ?? {};
+    const service = labels["com.docker.compose.service"];
+    return labels["com.docker.compose.project"] === target.project && services.includes(service)
+      && running.filter(other => other.Config?.Labels?.["com.docker.compose.service"] === service).length === 1
+      && container.Image === images[service] && hashes.has(service)
+      && labels["com.docker.compose.config-hash"] === hashes.get(service);
+  });
+}
+
 export function configurationFingerprint(configured) {
   const stable = structuredClone(configured);
   for (const service of Object.values(stable.services)) {
@@ -223,14 +234,51 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     const applications = ids.length ? JSON.parse((await docker(["inspect", ...ids])).stdout) : [];
     validateContainers(applications, target);
     const running = applications.filter(container => container.State?.Running);
-    return running.every(container => {
-      const labels = container.Config?.Labels ?? {};
-      const service = labels["com.docker.compose.service"];
-      return labels["com.docker.compose.project"] === target.project && services.includes(service)
-        && running.filter(other => other.Config?.Labels?.["com.docker.compose.service"] === service).length === 1
-        && container.Image === images[service] && hashes.has(service)
-        && labels["com.docker.compose.config-hash"] === hashes.get(service);
-    });
+    return applicationIdentitiesMatch(running, target, services, images, hashes);
+  }
+
+  async function inspectRunningRevision() {
+    const running = containers.filter(container => container.State?.Running
+      && container.Config?.Labels?.["com.docker.compose.project"] === target.project
+      && applicationServices.includes(container.Config?.Labels?.["com.docker.compose.service"]));
+    if (!running.length) return { status: "unknown", detail: "no running application services", receipt: "unverified" };
+    const missingServices = applicationServices.filter(service => configuration.services[service]
+      && !running.some(container => container.Config?.Labels?.["com.docker.compose.service"] === service));
+    let imageDetails;
+    try {
+      imageDetails = JSON.parse((await docker(["image", "inspect", ...new Set(running.map(container => container.Image))],
+        { timeout: 5000 })).stdout);
+      if (!Array.isArray(imageDetails)) throw new Error("Invalid immutable image inspection response.");
+    } catch { return { status: "unknown", detail: `immutable image inspection unavailable${missingServices.length ? `; missing services: ${missingServices.join(", ")}` : ""}`, receipt: "unverified" }; }
+    const revisions = running.map(container => imageDetails.find(image => image.Id === container.Image)
+      ?.Config?.Labels?.["org.opencontainers.image.revision"]);
+    const knownRevisions = [...new Set(revisions.filter(value => /^[a-f0-9]{40}$/.test(value ?? "")))];
+    const duplicateService = running.some(container => running.filter(other => other.Config?.Labels?.["com.docker.compose.service"]
+      === container.Config?.Labels?.["com.docker.compose.service"]).length !== 1);
+    const identity = knownRevisions.length > 1 || duplicateService
+      ? { status: "mixed", detail: knownRevisions.join(", ") || "duplicate application services" }
+      : revisions.some(value => !/^[a-f0-9]{40}$/.test(value ?? ""))
+        ? { status: "unknown", detail: "revision labels missing from immutable images" }
+        : { status: "consistent", detail: `${knownRevisions[0]} across ${running.length} inspected running services` };
+    if (missingServices.length) {
+      if (identity.status === "consistent") identity.status = "partial";
+      identity.detail += `; missing services: ${missingServices.join(", ")}`;
+    }
+    identity.receipt = "unverified";
+    if (previous?.evidence?.commit === previous?.revision && previous?.verified_at && previous?.images) {
+      try {
+        const hashes = new Map((await compose(["--profile", "maintenance", "config", "--hash", "*"], { timeout: 5000 })).stdout.trim()
+          .split("\n").filter(Boolean).map(line => line.trim().split(/\s+/)));
+        const services = [...applicationServices, "postgres-backup"].filter(name => configuration.services[name]);
+        const inspected = containers.filter(container => container.State?.Running
+          && container.Config?.Labels?.["com.docker.compose.project"] === target.project
+          && services.includes(container.Config?.Labels?.["com.docker.compose.service"]));
+        const revisionContradiction = knownRevisions.some(imageRevision => imageRevision !== previous.revision);
+        identity.receipt = !revisionContradiction && applicationIdentitiesMatch(inspected, target, services, previous.images, hashes)
+          ? "matches immutable images and configuration of inspected running services" : "differs from running service identities";
+      } catch { identity.receipt = "unverified (saved configuration inspection unavailable)"; }
+    }
+    return identity;
   }
 
   async function ensureDatabase({ allowRecreation = false } = {}) {
@@ -479,7 +527,7 @@ export function createRuntime(target, { run, stateDirectory, revision, evidence,
     operation.phase = "backup_verified"; atomicJson(journalPath, operation);
   }
 
-  return { config, inspectTarget, compose, docker, runningServices, ensureImages, recordedApplicationsMatch, ensureDatabase,
+  return { config, inspectTarget, compose, docker, runningServices, inspectRunningRevision, ensureImages, recordedApplicationsMatch, ensureDatabase,
     checkSchema, checkMigrationRetry, resolveMigrationGuard, stopApplications, backup, migrate, startServices, verifyReady, commitDeployment,
     recordFailure, stopAll, backupOnly, secretValues, get configuration() { return configuration; } };
 }

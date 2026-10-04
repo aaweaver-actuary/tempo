@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { acquireTargetLock, atomicJson, commandExecutor, portsFromConfig, productVolumes,
+import { acquireTargetLock, assessMainVerification, atomicJson, commandExecutor, portsFromConfig, productVolumes,
   redact, schemaVersionFromSource, selectCandidate, targetKey, validateTarget } from "./tempo-deployment.mjs";
 import { createRuntime, executeLifecycle } from "./tempo-runtime.mjs";
 
@@ -97,6 +97,100 @@ async function ensureDocker(target, run, allowLaunch, log) {
   throw new Error("Docker Desktop did not become ready within 120 seconds.");
 }
 
+async function reportDiagnostics({ options, target, run, runtime, previous, stateDirectory, secrets, log }) {
+  log(`Target: ${target.project} on ${target.context}\nCheckout: ${target.root}`);
+  if (options.command === "logs") {
+    log(`Verified deployment: ${previous?.revision ?? "not yet recorded"}`);
+    const service = options.services[0];
+    if (service && !runtime.configuration.services[service]) throw new Error(`Unknown service: ${service}`);
+    await runtime.compose(["logs", "--no-color", "--tail", "100", ...(options.flags.has("--follow") ? ["--follow"] : []), ...(service ? [service] : [])], { echo: true });
+    return;
+  }
+  const gitRead = async args => run("git", args, { allowFailure: true, timeout: 5000 });
+  const branch = (await gitRead(["branch", "--show-current"])).stdout.trim();
+  const head = (await gitRead(["rev-parse", "HEAD"])).stdout.trim();
+  const sourceStatus = await gitRead(["--no-optional-locks", "status", "--porcelain"]);
+  const origin = (await gitRead(["remote", "get-url", "origin"])).stdout.trim();
+  log(`Local checkout: ${branch || "unknown branch"} at ${head || "unknown revision"}; ${sourceStatus.code !== 0 ? "cleanliness unknown" : sourceStatus.stdout.trim() ? "local changes present" : "clean"}`);
+  log(`Verified deployment: ${previous?.revision ?? "not yet recorded"}`);
+  const requiredSchema = schemaVersionFromSource(readFileSync(join(target.root, "backend/app/schema_version.py"), "utf8"));
+  log(`Required local schema: ${requiredSchema}`);
+  const running = await runtime.runningServices(); log(`Running services: ${running.join(", ") || "none"}`);
+  const identity = await runtime.inspectRunningRevision();
+  log(`Running application revision: ${identity.status} — ${identity.detail}`);
+  log(`Receipt consistency: ${identity.receipt}`);
+  if (running.includes("postgres")) {
+    const config = runtime.configuration;
+    const result = await runtime.compose(["exec", "-T", "-e",
+      "PGOPTIONS=-c default_transaction_read_only=on -c statement_timeout=1000 -c lock_timeout=100", "postgres", "psql", "-X", "-tA", "-v", "ON_ERROR_STOP=1", "-U",
+      config.services.postgres.environment.POSTGRES_USER ?? "postgres", "-d", config.services.postgres.environment.POSTGRES_DB,
+      "-c", "SELECT version FROM tempo_schema_migrations ORDER BY version"], { allowFailure: true, timeout: 5000 });
+    const applied = result.stdout.trim() ? result.stdout.trim().split(/\s+/).map(Number) : [];
+    if (result.code === 0 && applied.every(version => Number.isInteger(version) && version > 0)) {
+      log(`Applied schema versions: ${applied.join(", ") || "none"}`);
+      const newestApplied = Math.max(0, ...applied);
+      const gaps = Array.from({ length: newestApplied }, (_, index) => index + 1).filter(version => !applied.includes(version));
+      const pending = Array.from({ length: Math.max(0, requiredSchema - newestApplied) }, (_, index) => newestApplied + index + 1);
+      log(`Migration ledger gaps: ${gaps.join(", ") || "none"}`);
+      log(`Pending local migrations: ${pending.join(", ") || "none"}`);
+      if (newestApplied > requiredSchema) log(`Database schema ${newestApplied} is ahead of local source ${requiredSchema}; inspect compatible source before updating.`);
+    } else log("Database schema could not be read; inspect PostgreSQL logs.");
+  } else log("Applied schema versions: unavailable (PostgreSQL is not running)");
+  const operation = readJson(join(stateDirectory, "operation.json"));
+  if (operation) log(`Last operation: ${operation.phase}${operation.failure ? ` — ${redact(operation.failure, secrets)}` : ""}`);
+  const guard = readJson(join(stateDirectory, "migration-guard.json"));
+  if (guard) log(`Original migration verification: ${guard.state}; origin ${guard.origin_revision}; backup ${guard.backup?.filename ?? "unknown"}`);
+  log("Background completion: unverified; service state and API readiness do not prove completion of all background work.");
+
+  // The entire diagnostic remote lookup is bounded; it never fetches Git objects.
+  const remoteSignal = AbortSignal.timeout(30_000);
+  let remoteRevision, verification;
+  try {
+    const remoteMain = await run("git", ["ls-remote", "https://github.com/aaweaver-actuary/tempo", "refs/heads/main"], { allowFailure: true, timeout: 15_000 });
+    remoteRevision = remoteMain.stdout.trim().split(/\s+/)[0];
+    if (remoteMain.code !== 0 || !/^[a-f0-9]{40}$/.test(remoteRevision ?? "")) throw new Error("Remote main could not be read.");
+    log(`Latest main: ${remoteRevision}${remoteRevision === previous?.revision ? " (matches recorded receipt)" : " (not recorded as deployed)"}`);
+    verification = await assessMainVerification(remoteRevision, undefined, { signal: remoteSignal });
+  } catch (error) { verification = { status: "unavailable", message: error.message }; }
+  log(`Verification: ${verification.status} — ${redact(verification.message, secrets)}`);
+  let sourceBlocker;
+  if (branch !== "main") sourceBlocker = "registered checkout must be on main";
+  else if (sourceStatus.code !== 0) sourceBlocker = "checkout cleanliness could not be verified";
+  else if (sourceStatus.stdout.trim()) sourceBlocker = "local changes are preserved; save them on a separate branch before updating";
+  else if (!/^(?:https?:\/\/github\.com\/|git@github\.com:)aaweaver-actuary\/tempo(?:\.git)?$/.test(origin)) sourceBlocker = "registered checkout has an unexpected GitHub remote";
+  let ancestry = "unknown";
+  if (head && remoteRevision) {
+    if (head === remoteRevision) ancestry = "compatible";
+    else if ((await gitRead(["cat-file", "-e", `${remoteRevision}^{commit}`])).code === 0) {
+      const result = await gitRead(["merge-base", "--is-ancestor", head, remoteRevision]);
+      ancestry = result.code === 0 ? "compatible" : result.code === 1 ? "diverged" : "unknown";
+    }
+  }
+  log(`Local ancestry: ${ancestry}${ancestry === "unknown" ? "; no Git objects were fetched" : ""}`);
+  if (!sourceBlocker && ancestry === "diverged") sourceBlocker = "local main has diverged; Tempo will not reset or merge your work";
+  if (!sourceBlocker && guard?.state === "pending") sourceBlocker = "original migration verification requires inspection and explicit tempo migrate --retry";
+  log(`Update eligibility: ${sourceBlocker ? `blocked — ${sourceBlocker}` : verification.status !== "verified" ? verification.status
+    : ancestry === "unknown" ? "unknown — ancestry must be checked by the updater" : "eligible (deployment readiness still checked by tempo start)"}`);
+  if (verification.status !== "verified") {
+    if (!previous) log("No previous verified deployment is recorded, so the CLI has no verified fallback. This diagnostic has not applied the update.");
+    else log(`Recorded fallback: ${previous.revision}; images, schema and readiness must still pass the normal updater. This diagnostic has not applied the update.`);
+    if (verification.status === "pending") log(`Inspect ${verification.run?.html_url ?? "the exact-revision workflow"}, then run tempo start once eligible.`);
+    else if (verification.status === "failed") log(`Inspect and repair required job ${verification.job} in ${verification.run?.html_url}; run tempo start after exact-revision verification passes.`);
+    else if (verification.status === "missing") log(`Inspect allowed main verification for ${remoteRevision ?? "the current revision"}; run tempo start after complete exact-revision evidence exists.`);
+    else log("Restore GitHub access and inspect authentication, rate limits or network errors, then rerun tempo doctor. Unavailable evidence is not a failed test.");
+  }
+  if (guard?.state === "pending") log("Original migration verification remains required. Preserve its backup and guard, inspect the cause, then use tempo migrate --retry explicitly.");
+  if (options.flags.has("--plan")) {
+    log("Planned actions once eligible: recheck current main CI and source; prepare coherent images; check initialized storage and schema; if needed stop writers, verify a backup restore, and migrate; start services and verify readiness. No source, image, service, or database changes were made.");
+  } else if (options.command === "doctor") {
+    try {
+      const response = await fetch(`${target.webUrl}/api/health`, { signal: AbortSignal.timeout(5000) });
+      log(`API health: HTTP ${response.status} ${redact(await response.text(), secrets)}`);
+    } catch { log("API health: unavailable. Inspect API logs and the update eligibility above."); }
+    log("API readiness describes the running API's schema and basic worker/queue checks; it does not prove all background work has completed.");
+  }
+}
+
 export async function main(argumentsList = process.argv.slice(2), log = console.log) {
   const options = parseArguments(argumentsList);
   if (options.command === "help") { log(help); return 0; }
@@ -121,34 +215,7 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
   await runtime.inspectTarget(); secrets.push(...runtime.secretValues);
 
   if (readOnly) {
-    log(`Target: ${target.project} on ${target.context}\nCheckout: ${target.root}`);
-    log(`Verified deployment: ${previous?.revision ?? "not yet recorded"}`);
-    const remoteMain = await run("git", ["ls-remote", "https://github.com/aaweaver-actuary/tempo", "refs/heads/main"], { allowFailure: true, timeout: 15_000 });
-    const newestRevision = remoteMain.stdout.trim().split(/\s+/)[0];
-    log(remoteMain.code === 0 && newestRevision ? `Latest main: ${newestRevision}${newestRevision === previous?.revision ? " (deployed)" : " (not recorded as deployed)"}` : "Update availability: GitHub could not be reached.");
-    log(`Required local schema: ${schemaVersionFromSource(readFileSync(join(target.root, "backend/app/schema_version.py"), "utf8"))}`);
-    const running = await runtime.runningServices(); log(`Running services: ${running.join(", ") || "none"}`);
-    if (running.includes("postgres")) {
-      const config = runtime.configuration;
-      const result = await runtime.compose(["exec", "-T", "postgres", "psql", "-X", "-tA", "-U",
-        config.services.postgres.environment.POSTGRES_USER ?? "postgres", "-d", config.services.postgres.environment.POSTGRES_DB,
-        "-c", "SELECT version FROM tempo_schema_migrations ORDER BY version"], { allowFailure: true });
-      log(result.code === 0 ? `Applied schema versions: ${result.stdout.trim().split("\n").join(", ")}` : "Database schema could not be read; inspect PostgreSQL logs.");
-    }
-    const operation = readJson(join(stateDirectory, "operation.json"));
-    if (operation) log(`Last operation: ${operation.phase}${operation.failure ? ` — ${operation.failure}` : ""}`);
-    const guard = readJson(join(stateDirectory, "migration-guard.json"));
-    if (guard) log(`Original migration verification: ${guard.state}; origin ${guard.origin_revision}; backup ${guard.backup?.filename ?? "unknown"}`);
-    if (options.command === "logs") {
-      const service = options.services[0];
-      if (service && !runtime.configuration.services[service]) throw new Error(`Unknown service: ${service}`);
-      await runtime.compose(["logs", "--no-color", "--tail", "100", ...(options.flags.has("--follow") ? ["--follow"] : []), ...(service ? [service] : [])], { echo: true });
-    } else if (options.flags.has("--plan")) {
-      log("Planned actions: verify current main CI; preserve local changes; prepare coherent images; check initialized storage and schema; if needed stop writers, verify a backup restore, and migrate; start services and verify readiness. No source, image, service, or database changes were made.");
-    } else if (options.command === "doctor") {
-      const response = await fetch(`${target.webUrl}/api/health`, { signal: AbortSignal.timeout(5000) }).catch(() => null);
-      log(response ? `API health: HTTP ${response.status} ${redact(await response.text(), secrets)}` : "API health: unavailable. Run tempo start; it will check updates and report any blocker.");
-    }
+    await reportDiagnostics({ options, target, run, runtime, previous, stateDirectory, secrets, log });
     return 0;
   }
 
@@ -170,7 +237,8 @@ export async function main(argumentsList = process.argv.slice(2), log = console.
     }
     if (blockedUpdate) {
       log(`Update blocked: ${blockedUpdate}`);
-      if (!previous || options.command === "migrate") throw new Error("No eligible update can be applied. Run tempo doctor and resolve the blocker.");
+      if (!previous) throw new Error("No eligible update can be applied. No previous verified deployment is recorded, so the CLI has no verified fallback. This blocked attempt has not applied the update. Run tempo doctor, resolve the reported blocker, then run tempo start once eligible.");
+      if (options.command === "migrate") throw new Error("No eligible update can be applied. Run tempo doctor and resolve the blocker.");
       log(`Starting previously verified revision ${previous.revision}; the update has not been applied.`);
     }
     const selectedRevision = candidate?.revision ?? previous.revision;

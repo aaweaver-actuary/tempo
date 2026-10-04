@@ -1449,3 +1449,32 @@ Backend names run in the existing contracts, preparation and transport pytest fi
 - Existing `phone 225-card offline queue reconciles to the desktop 241-card count and next card after reconnect` now asserts the compact phone count (225 → 241) while retaining the desktop count and card-identity assertions. Required CI reproduced its outdated large-counter selector with the correct 225-card value visible on the new screen.
 
 - **Phone opening study preserves the accessible training page heading** — `tests/unit/phone-opening-study-regressions.test.tsx`: exactly one centralized H1 through normal, service-error/retry, empty/offline, and phone/tablet transitions; no stale repertoire or visible counter wrapper. `tests/browser/phone-opening-study.spec.ts` asserts the accessible H1 and repertoire H2 through 767 → 768 → 767px with the same shared board instance.
+
+### Incident: blocked update diagnostics (2026-10-04)
+
+The Node cases in `tests/runner/tempo-cli.test.mjs` remain part of the regular
+suite through the explicit disjoint `diagnostics ...` / `diagnostic safety` groups and the
+existing `CLI` contract group in `tests/unit/tempo-cli-regressions.test.ts`.
+`Every named CLI Node regression has exactly one nonempty regular-suite group`
+protects title routing and each wrapper invocation requires a nonzero passing
+case count; a successful zero-match command is not regression coverage.
+
+- `actual CLI diagnostics explain pending exact-main verification without a deployment receipt`, `actual CLI diagnostics identify a failed required job without a deployment receipt`, and `actual CLI diagnostics report an eligible candidate without claiming deployment` separate first-deployment eligibility, fallback absence, the exact run/job and the next operator action. All three failed against base `ed654be` before the repair.
+- `actual CLI diagnostics distinguish local schema debt from running API HTTP 200` reports pending source migrations and unknown immutable-image revision evidence separately from running API readiness. It also failed against the base.
+- `actual CLI diagnostics retain recorded fallback while newer verification is blocked` shows recorded and actual running revisions independently; a receipt is not proof that it runs.
+- `CLI verification assessment preserves earlier exact-SHA successes and ignores Pages publication`, `CLI verification assessment rejects unrelated SHA branch event and incomplete required jobs`, and `CLI verification assessment accepts success after unavailable separate-run jobs` retain the existing allowed exact-main evidence policy without demanding successful demo publication.
+- `CLI verification assessment bounds a hung client and never calls incomplete evidence missing` uses controlled cancellation and a client which ignores it, proving the diagnostic deadline yields unavailable evidence without timing-threshold assertions.
+- `actual CLI diagnostics preserve local facts through GitHub access rate-limit timeout and remote-main failure` preserves local schema/source output and running API health while separating unavailable evidence from failed checks.
+- `actual CLI diagnostics report mixed partial and unavailable immutable image evidence` covers different app image labels, stopped/missing services, and failed image inspection without inferred revisions or lost local output.
+- `actual CLI diagnostics report migration gaps and database-ahead source independently` prevents a sparse ledger or newer database from being presented as fully source-compatible.
+- `actual CLI diagnostic safety preserves source guards and unavailable local ancestry without fetching` covers local edits, a personal branch, divergence, and missing remote objects without changing source or Git refs.
+- `actual CLI diagnostic safety leaves source state receipts guards services and database unchanged` snapshots fixture source, registration, immutable receipt, migration guard, journal and container/database state across status/doctor/start-plan/restart-plan/migrate-plan. It rejects deployment/source-mutating commands and non-GET or background HTTP calls, and requires only the bounded, read-only ledger SELECT.
+- `actual CLI diagnostic safety logs remain available without contacting GitHub` protects immediate log access when remote verification is unavailable.
+- `actual CLI diagnostic safety reports receipt image and configuration drift without changing containers` distinguishes saved receipt identities from actual containers. Known image revision labels contradicting the receipt also prevent a match claim.
+- `actual CLI diagnostic safety no-receipt blocked start explains preserved deployment state` preserves the nonzero exit while explaining the absence of fallback and preventing deployment/image/maintenance work.
+- `actual CLI diagnostic safety unavailable schema reads retain other diagnostics and zero exit` prevents a failed bounded ledger probe from hiding source/verification/API evidence or inventing an applied schema.
+
+Existing source-race, dirty/diverged checkout, image/schema fallback, interrupted
+rollout and migration-guard tests remain required. These injected command tests
+prove diagnostic behavior and mutation boundaries; actual deployment/persistence
+still requires the disposable PostgreSQL durability stage and final candidate CI.

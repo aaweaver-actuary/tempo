@@ -5,7 +5,7 @@ import { syncBuiltinESMExports } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { schemaVersionFromSource, validateTarget, validateContainers, deploymentCanStart,
-  acquireTargetLock, qualityEvidence, atomicJson, selectCandidate, productVolumes, targetKey } from "../../scripts/tempo-deployment.mjs";
+  acquireTargetLock, assessMainVerification, qualityEvidence, atomicJson, selectCandidate, productVolumes, targetKey } from "../../scripts/tempo-deployment.mjs";
 import { configurationFingerprint, createRuntime, executeLifecycle } from "../../scripts/tempo-runtime.mjs";
 import { cliFixture } from "./tempo-cli-fixture.mjs";
 
@@ -923,4 +923,256 @@ test("actual CLI backup rejects mismatched dependencies without starting any rec
   assert.notEqual(result.status, 0);
   assert(result.stderr.includes("Run tempo start"));
   assert(!fixture.calls().some(call => call.args.includes("up") || call.args.includes("stop")));
+});
+
+function diagnosticFixture(t, { receipt = false, diagnostics = {}, machine = {} } = {}) {
+  const command = commandFixture(t);
+  const fixturePath = join(command.directory, "fixture.json");
+  writeFileSync(fixturePath, JSON.stringify({ ...JSON.parse(readFileSync(fixturePath, "utf8")), diagnostics }));
+  const machinePath = join(command.directory, "machine.json");
+  writeFileSync(machinePath, JSON.stringify({ ...JSON.parse(readFileSync(machinePath, "utf8")), ...machine }));
+  if (!receipt) rmSync(join(command.stateDirectory, "deployment.json"));
+  return command;
+}
+
+const diagnosticMainRun = { id: 12, head_sha: "a".repeat(40), head_branch: "main", event: "push",
+  status: "completed", html_url: "https://github.com/fixture/ci" };
+
+test("actual CLI diagnostics explain pending exact-main verification without a deployment receipt", t => {
+  const fixture = diagnosticFixture(t, { diagnostics: { runs: [{ ...diagnosticMainRun, status: "in_progress" }] } });
+  const result = fixture.command("doctor");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /Verification: pending/);
+  assert.match(result.stdout, /No previous verified deployment is recorded.*no verified fallback/);
+  assert.match(result.stdout, /has not applied the update/);
+  assert.match(result.stdout, /Inspect.*https:\/\/github.com\/fixture\/ci/);
+  assert.match(result.stdout, /tempo start.*once eligible/);
+  assert.match(result.stdout, /Local checkout: main.*a{40}/);
+  assert.match(result.stdout, /Background completion: unverified/);
+});
+
+test("actual CLI diagnostics identify a failed required job without a deployment receipt", t => {
+  const fixture = diagnosticFixture(t, { diagnostics: { jobs: ["plan", "frontend / verify", "backend / verify", "build / verify",
+    "postgres / verify", "browser / verify", "visual / verify", "quality"].map(name => ({ name, status: "completed",
+      conclusion: name === "backend / verify" ? "failure" : "success" })) } });
+  const result = fixture.command("status");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /Verification: failed.*backend \/ verify.*failure/);
+  assert.doesNotMatch(result.stdout, /still pending/);
+});
+
+test("actual CLI diagnostics report an eligible candidate without claiming deployment", t => {
+  const fixture = diagnosticFixture(t);
+  const result = fixture.command("start", "--plan");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /Verification: verified/);
+  assert.match(result.stdout, /Update eligibility: eligible/);
+  assert.match(result.stdout, /Verified deployment: not yet recorded/);
+  assert.doesNotMatch(result.stdout, /\(deployed\)/);
+});
+
+test("actual CLI diagnostics distinguish local schema debt from running API HTTP 200", t => {
+  const fixture = diagnosticFixture(t, { machine: { schema: 28, missingImageRevision: true } });
+  const result = fixture.command("doctor");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /Pending local migrations: 29/);
+  assert.match(result.stdout, /Running application revision: unknown/);
+  assert.match(result.stdout, /API health: HTTP 200/);
+  assert.match(result.stdout, /running API.*does not prove.*background/);
+});
+
+const diagnosticJobs = ["plan", "frontend / verify", "backend / verify", "build / verify", "postgres / verify",
+  "browser / verify", "visual / verify", "quality"].map(name => ({ name, status: "completed", conclusion: "success" }));
+
+function assessmentClient(runs, jobs = diagnosticJobs) {
+  return async path => path.includes("workflows/") ? { workflow_runs: runs } : { jobs };
+}
+
+test("CLI verification assessment preserves earlier exact-SHA successes and ignores Pages publication", async () => {
+  for (const laterStatus of ["in_progress", "completed"]) {
+    const runs = [{ ...diagnosticMainRun, id: 13, status: laterStatus }, diagnosticMainRun];
+    const client = async path => path.includes("workflows/") ? { workflow_runs: runs } : { jobs: path.includes("/13/")
+      ? diagnosticJobs.map(job => ({ ...job, conclusion: "failure" }))
+      : [...diagnosticJobs, { name: "pages-build", status: "completed", conclusion: "failure" }] };
+    const assessment = await assessMainVerification(diagnosticMainRun.head_sha, client);
+    assert.equal(assessment.status, "verified");
+    assert.equal(assessment.evidence.run_id, 12);
+  }
+});
+
+test("CLI verification assessment rejects unrelated SHA branch event and incomplete required jobs", async () => {
+  for (const invalid of [{ head_sha: "b".repeat(40) }, { head_branch: "feature" }, { event: "pull_request" }, { event: "merge_group" }]) {
+    const assessment = await assessMainVerification(diagnosticMainRun.head_sha, assessmentClient([{ ...diagnosticMainRun, ...invalid }]));
+    assert.equal(assessment.status, "missing");
+    assert.equal(assessment.evidence, undefined);
+  }
+  const missing = await assessMainVerification(diagnosticMainRun.head_sha, assessmentClient([diagnosticMainRun], diagnosticJobs.filter(job => job.name !== "visual / verify")));
+  assert.equal(missing.status, "missing"); assert.equal(missing.job, "visual / verify");
+  const incomplete = await assessMainVerification(diagnosticMainRun.head_sha, assessmentClient([diagnosticMainRun], diagnosticJobs.map(job => job.name === "quality" ? { ...job, status: "in_progress", conclusion: null } : job)));
+  assert.equal(incomplete.status, "pending"); assert.equal(incomplete.job, "quality");
+  for (const conclusion of ["failure", "cancelled", "skipped", "timed_out"]) {
+    const failed = await assessMainVerification(diagnosticMainRun.head_sha, assessmentClient([diagnosticMainRun], diagnosticJobs.map(job => job.name === "postgres / verify" ? { ...job, conclusion } : job)));
+    assert.equal(failed.status, "failed"); assert.equal(failed.conclusion, conclusion);
+  }
+});
+
+test("CLI verification assessment bounds a hung client and never calls incomplete evidence missing", async () => {
+  const controller = new AbortController();
+  let requested;
+  const started = new Promise(resolveStarted => { requested = resolveStarted; });
+  const assessmentPromise = assessMainVerification(diagnosticMainRun.head_sha, () => {
+    requested(); return new Promise(() => {});
+  }, { signal: controller.signal });
+  await started;
+  controller.abort(new Error("diagnostic deadline reached"));
+  const assessment = await assessmentPromise;
+  assert.equal(assessment.status, "unavailable");
+  assert.match(assessment.message, /deadline/);
+});
+
+test("CLI verification assessment accepts success after unavailable separate-run jobs", async () => {
+  const runs = [{ ...diagnosticMainRun, id: 13 }, diagnosticMainRun];
+  const client = async path => {
+    if (path.includes("workflows/")) return { workflow_runs: runs };
+    if (path.includes("/13/")) throw new Error("GitHub HTTP 429");
+    return { jobs: diagnosticJobs };
+  };
+  assert.equal((await assessMainVerification(diagnosticMainRun.head_sha, client)).status, "verified");
+});
+
+test("actual CLI diagnostics retain recorded fallback while newer verification is blocked", t => {
+  const fixture = diagnosticFixture(t, { receipt: true, diagnostics: { runs: [{ ...diagnosticMainRun, status: "queued" }] } });
+  const result = fixture.command("status");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /Recorded fallback: b{40}.*images, schema and readiness/);
+  assert.match(result.stdout, /Running application revision: consistent.*a{40}/);
+  assert.match(result.stdout, /Receipt consistency: differs from running service identities/);
+  assert.match(result.stdout, /Verification: pending/);
+});
+
+test("actual CLI diagnostics preserve local facts through GitHub access rate-limit timeout and remote-main failure", t => {
+  for (const diagnostics of [{ githubStatus: 403 }, { githubStatus: 429 }, { githubStatus: 200 }, { githubError: "request timed out" }, { remoteFailure: true }]) {
+    const fixture = diagnosticFixture(t, { diagnostics });
+    const result = fixture.command("doctor");
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /Local checkout: main/);
+    assert.match(result.stdout, /Applied schema versions: 1, 2/);
+    assert.match(result.stdout, /Verification: unavailable/);
+    assert.match(result.stdout, /Unavailable evidence is not a failed test/);
+    assert.match(result.stdout, /API health: HTTP 200/);
+  }
+});
+
+test("actual CLI diagnostics report mixed partial and unavailable immutable image evidence", t => {
+  for (const [machine, expected] of [
+    [{ imageInspectionUnavailable: true }, /Running application revision: unknown.*inspection unavailable/],
+    [{ imageRevisions: { "sha256:fixture-api": "b".repeat(40) } }, /Running application revision: mixed/],
+    [{ running: ["postgres", "api"] }, /Running application revision: partial.*missing services:.*web/],
+  ]) {
+    const fixture = diagnosticFixture(t, { machine });
+    const result = fixture.command("status");
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, expected);
+    assert.match(result.stdout, /Applied schema versions:/);
+  }
+});
+
+test("actual CLI diagnostics report migration gaps and database-ahead source independently", t => {
+  const fixture = diagnosticFixture(t, { machine: { appliedVersions: [1, 2, 4, 30] } });
+  const result = fixture.command("status");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /Migration ledger gaps: 3, 5/);
+  assert.match(result.stdout, /Database schema 30 is ahead of local source 29/);
+});
+
+test("actual CLI diagnostic safety preserves source guards and unavailable local ancestry without fetching", t => {
+  for (const [machine, expected] of [
+    [{ sourceEdited: true }, /Update eligibility: blocked.*local changes/],
+    [{ branch: "study-work" }, /Update eligibility: blocked.*checkout must be on main/],
+    [{ remote: "https://github.com/unrelated/tempo" }, /Update eligibility: blocked.*unexpected GitHub remote/],
+    [{ head: "c".repeat(40), ancestryCode: 1 }, /Update eligibility: blocked.*diverged/],
+    [{ head: "c".repeat(40), remoteObjectMissing: true }, /Update eligibility: unknown.*ancestry/],
+  ]) {
+    const fixture = diagnosticFixture(t, { machine });
+    const result = fixture.command("status");
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, expected);
+    assert(!fixture.calls().some(call => call.args.includes("fetch") || call.args.includes("merge")));
+  }
+});
+
+test("actual CLI diagnostic safety leaves source state receipts guards services and database unchanged", t => {
+  const fixture = diagnosticFixture(t, { receipt: true, diagnostics: { runs: [{ ...diagnosticMainRun, status: "in_progress" }] } });
+  writeFileSync(join(fixture.stateDirectory, "operation.json"), JSON.stringify({ phase: "failed", failure: "existing failure evidence" }));
+  writeFileSync(join(fixture.stateDirectory, "migration-guard.json"), JSON.stringify({ state: "pending", origin_revision: "b".repeat(40), backup: { filename: "original.dump" } }));
+  const preservedPaths = [join(fixture.directory, "machine.json"), fixture.registration,
+    ...readdirSync(fixture.stateDirectory).map(name => join(fixture.stateDirectory, name)),
+    join(fixture.root, "backend/app/schema_version.py")];
+  const before = preservedPaths.map(path => readFileSync(path, "utf8"));
+  for (const argumentsList of [["status"], ["doctor"], ["start", "--plan"], ["restart", "--plan"], ["migrate", "--plan"]]) {
+    const result = fixture.command(...argumentsList);
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /Original migration verification: pending/);
+    assert.match(result.stdout, /tempo migrate --retry explicitly/);
+  }
+  assert.deepEqual(preservedPaths.map(path => readFileSync(path, "utf8")), before);
+  assert.deepEqual(readdirSync(fixture.stateDirectory).sort(), ["deployment.json", "migration-guard.json", "operation.json"]);
+  for (const request of readFileSync(join(fixture.directory, "requests.jsonl"), "utf8").trim().split("\n").map(JSON.parse)) {
+    assert.equal(request.method, "GET");
+    assert(request.url.includes("api.github.com") || request.url.endsWith("/api/health"));
+  }
+  for (const call of fixture.calls()) assert(!["fetch", "merge", "build", "pull", "run", "up", "stop"].some(argument => call.args.includes(argument)));
+  for (const call of fixture.calls().filter(call => call.args.includes("psql"))) {
+    assert(call.args.some(argument => argument.includes("default_transaction_read_only=on")));
+    assert(call.args.some(argument => argument.includes("statement_timeout=1000")));
+    assert(call.args.some(argument => argument.includes("lock_timeout=100")));
+    assert.equal(call.args.at(-1), "SELECT version FROM tempo_schema_migrations ORDER BY version");
+  }
+});
+
+test("actual CLI diagnostic safety logs remain available without contacting GitHub", t => {
+  const fixture = diagnosticFixture(t, { diagnostics: { githubError: "GitHub unavailable" } });
+  const result = fixture.command("logs", "api");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert(fixture.calls().some(call => call.args.includes("logs") && call.args.includes("api")));
+  assert(!fixture.calls().some(call => call.command === "git"));
+  assert(!existsSync(join(fixture.directory, "requests.jsonl")));
+});
+
+test("actual CLI diagnostic safety reports receipt image and configuration drift without changing containers", t => {
+  for (const drift of ["Image", "configuration"]) {
+    const fixture = diagnosticFixture(t, { receipt: true });
+    const machinePath = join(fixture.directory, "machine.json");
+    const machine = JSON.parse(readFileSync(machinePath, "utf8"));
+    const api = machine.containers.find(container => container.Config.Labels["com.docker.compose.service"] === "api");
+    if (drift === "Image") api.Image = "sha256:unrecorded-api";
+    else api.Config.Labels["com.docker.compose.config-hash"] = "uncommitted-config";
+    writeFileSync(machinePath, JSON.stringify(machine));
+    const before = readFileSync(machinePath, "utf8");
+    const result = fixture.command("status");
+    assert.equal(result.status, 0, result.stdout + result.stderr);
+    assert.match(result.stdout, /Receipt consistency: differs from running service identities/);
+    assert.equal(readFileSync(machinePath, "utf8"), before);
+  }
+});
+
+test("actual CLI diagnostic safety no-receipt blocked start explains preserved deployment state", t => {
+  const fixture = diagnosticFixture(t, { diagnostics: { runs: [{ ...diagnosticMainRun, status: "in_progress" }] } });
+  const result = fixture.command("restart", "--no-open");
+  assert.notEqual(result.status, 0);
+  assert.match(result.stderr, /No previous verified deployment is recorded.*no verified fallback/);
+  assert.match(result.stderr, /blocked attempt has not applied the update/);
+  assert(!fixture.calls().some(call => ["build", "pull", "up", "stop"].some(argument => call.args.includes(argument))));
+  assert(!existsSync(join(fixture.stateDirectory, "deployment.json")));
+  assert(!existsSync(join(fixture.stateDirectory, "operation.json")));
+});
+
+test("actual CLI diagnostic safety unavailable schema reads retain other diagnostics and zero exit", t => {
+  const fixture = diagnosticFixture(t, { machine: { ledgerReadUnavailable: true } });
+  const result = fixture.command("doctor");
+  assert.equal(result.status, 0, result.stdout + result.stderr);
+  assert.match(result.stdout, /Database schema could not be read/);
+  assert.match(result.stdout, /Verification: verified/);
+  assert.match(result.stdout, /API health: HTTP 200/);
+  assert.doesNotMatch(result.stdout, /Applied schema versions: 1/);
 });
