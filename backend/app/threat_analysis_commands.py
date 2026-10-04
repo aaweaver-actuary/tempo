@@ -18,6 +18,8 @@ from .services.threat_pipeline import (
     _request_from_json, report_from_json, validate_analysis_report,
 )
 
+from .services.defensive_analysis import search_admission_sql, recommendation_request_ids_sql
+
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -28,6 +30,7 @@ _ELIGIBLE_THREAT_REQUEST = (
     "LEFT JOIN background_activity control ON control.source='threat_analysis' "
     "AND control.work_id=request.id "
     "WHERE request.state='queued' AND COALESCE(control.paused,0)=0 "
+    "AND " + search_admission_sql("request.id") + " "
     "AND (EXISTS(SELECT 1 FROM threat_candidate_requests relation "
     "JOIN threat_training_candidates candidate ON candidate.id=relation.candidate_id "
     "JOIN imported_games game ON game.id=candidate.game_id "
@@ -50,6 +53,11 @@ _ELIGIBLE_THREAT_REQUEST = (
 
 def claim_threat_analysis(database: PostgresConnection, _payload: dict[str, Any]) -> dict:
     now = _now()
+    setting = database.execute_native("SELECT defensive_analysis_enabled FROM settings WHERE id=1").fetchone()
+    if setting is None:
+        raise HTTPException(503, "Defensive analysis settings are unavailable; restore the database and retry")
+    recommendation_filter = ("" if setting[0] else
+        "AND request.id IN (" + recommendation_request_ids_sql() + ") ")
     reclaimed = database.execute_native(
         "UPDATE threat_analysis_requests SET state='queued',lease_id=NULL,"
         "lease_expires_at=NULL,updated_at=%s "
@@ -81,7 +89,7 @@ def claim_threat_analysis(database: PostgresConnection, _payload: dict[str, Any]
         ).fetchone():
             continue
         row = database.execute_native(
-            _ELIGIBLE_THREAT_REQUEST + priority_filter + "ORDER BY " + ordering +
+            _ELIGIBLE_THREAT_REQUEST + recommendation_filter + priority_filter + "ORDER BY " + ordering +
             " LIMIT 1 FOR UPDATE OF request SKIP LOCKED",
         ).fetchone()
         if row is not None:
@@ -159,6 +167,8 @@ def fail_threat_analysis(database: PostgresConnection, payload: dict[str, Any]) 
 def release_threat_analysis(database: PostgresConnection, payload: dict[str, Any]) -> dict:
     changed = database.execute_native(
         "UPDATE threat_analysis_requests SET state='queued',lease_id=NULL,"
+        "attempts=CASE WHEN NOT " + search_admission_sql("threat_analysis_requests.id") +
+        " THEN GREATEST(0,attempts-1) ELSE attempts END,"
         "lease_expires_at=NULL,updated_at=%s "
         "WHERE id=%s AND state='leased' AND lease_id=%s RETURNING id",
         (_now(), str(payload["request_id"]), str(payload["lease_id"])),

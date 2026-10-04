@@ -12,6 +12,7 @@ from ..database import read_connection, background_read_connection
 from .. import postgres_store
 from .database_executor import submit_background_write, submit_foreground_write
 from .background_activity import claimable, control_order
+from .defensive_analysis import DEFENSIVE_TASK_KINDS, analysis_enabled, task_admission_sql
 from .background_metrics import increment, record_event_counts
 
 
@@ -234,6 +235,7 @@ def claim_task(
             f"""SELECT * FROM background_tasks
                 WHERE state IN ('queued','retrying') AND next_attempt_at<=?{kind_clause}
                   AND {claimable('durable', 'background_tasks.id')}
+                  AND {task_admission_sql('background_tasks.kind')}
                 ORDER BY priority,{control_order('durable', 'background_tasks.id')}next_attempt_at,created_at LIMIT 1""",
             parameters,
         ).fetchone()
@@ -523,6 +525,25 @@ def list_tasks() -> list[dict]:
                         priority,created_at"""
         ).fetchall()
     return [serialize_task(row) for row in rows]
+
+
+def defer_paused_defensive_task(task: dict) -> bool:
+    """Return one pre-dispatched slice without consuming its failure budget or waking retries."""
+    if task['kind'] not in DEFENSIVE_TASK_KINDS:
+        return False
+
+    def operation(database):
+        if analysis_enabled(database):
+            return False
+        database.execute(
+            """UPDATE background_tasks SET state='queued',phase='queued',lease_token=NULL,
+               lease_expires_at=NULL,attempt_count=MAX(0,attempt_count-1),updated_at=?
+               WHERE id=? AND generation=? AND lease_token=? AND state='leased'""",
+            (_iso(), task['id'], task['generation'], task['lease_token']),
+        )
+        return True
+
+    return submit_background_write(operation, label='pause:defensive-slice')
 
 
 def current_delivery(task: dict) -> bool:

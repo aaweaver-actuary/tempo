@@ -807,7 +807,10 @@ def submit_defense_attempt(
                 """INSERT OR IGNORE INTO threat_candidate_requests(candidate_id,request_id,role)
                    VALUES(?,?,'attempt')""", (candidate_id, request.request_id),
             )
-        return {"status": "needs_analysis", "diagnostic": grade.diagnostic,
+            from .defensive_analysis import analysis_enabled
+            diagnostic = (grade.diagnostic if analysis_enabled(database) else
+                          "Defensive analysis is paused. Enable Defensive analysis in Settings to grade this move.")
+        return {"status": "needs_analysis", "diagnostic": diagnostic,
                 "analysis_request_id": request.request_id}
     recognition_correct = bool(recognition["recognition_correct"]) if recognition else None
     completed_status = "incorrect" if recognition_correct is False and grade.status == "correct" else grade.status

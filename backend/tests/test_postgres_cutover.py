@@ -4429,6 +4429,8 @@ def test_postgres_cutover_background_claim_orders_supported_kinds_by_priority(mo
         database.row_factory = sqlite3.Row
         database.executescript(BACKGROUND_METRIC_SCHEMA)
         database.executescript("""
+            CREATE TABLE settings(id INTEGER PRIMARY KEY,defensive_analysis_enabled INTEGER);
+            INSERT INTO settings VALUES(1,1);
             CREATE TABLE background_tasks(
                 id TEXT PRIMARY KEY,kind TEXT,deduplication_key TEXT,replaced_pending_generation INTEGER DEFAULT 0,
                 generation INTEGER,priority INTEGER,state TEXT,phase TEXT,

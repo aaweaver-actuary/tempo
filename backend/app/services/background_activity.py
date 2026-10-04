@@ -10,6 +10,8 @@ from ..database import connection, read_connection
 from .. import postgres_store
 
 
+from .defensive_analysis import DEFENSIVE_TASK_KINDS, analysis_enabled, recommendation_sql
+
 SOURCES = {
     "durable": ("background_tasks", "id"),
     "sync": ("game_sync_jobs", "id"),
@@ -176,17 +178,23 @@ def list_activity(*, offset: int = 0, limit: int = 50) -> dict:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
     items: list[dict] = []
     with read_connection() as database:
+        defensive_enabled = analysis_enabled(database)
         for row in database.execute("SELECT * FROM background_tasks WHERE state!='complete' OR updated_at>=?", (cutoff,)):
             items.append(_base_item("durable", row["id"], row["kind"].replace("_", " ").title(), row["state"], row["updated_at"], str(row["generation"]), row["phase"], error=row["last_error"]))
+            items[-1]["paused"] = not defensive_enabled and row["kind"] in DEFENSIVE_TASK_KINDS
         for row in database.execute(
-            """SELECT id,state,attempts,last_error,updated_at FROM threat_analysis_requests
-               WHERE state!='complete' OR updated_at>=?""", (cutoff,),
+            f"""SELECT request.id,state,attempts,last_error,updated_at,
+                      {recommendation_sql('request.id')} AS is_recommendation
+                FROM threat_analysis_requests request
+                WHERE state!='complete' OR updated_at>=?""", (cutoff,),
         ):
             state = ("running" if row["state"] == "leased" else
                      "retrying" if row["state"] == "queued" and row["attempts"] else row["state"])
-            items.append(_base_item("threat_analysis", row["id"], "Defensive engine search",
+            title = "Repertoire recommendation search" if row['is_recommendation'] else "Defensive engine search"
+            items.append(_base_item("threat_analysis", row["id"], title,
                                     state, row["updated_at"], str(row["attempts"]),
                                     error=row["last_error"]))
+            items[-1]["paused"] = not defensive_enabled and not row["is_recommendation"]
         for row in database.execute("SELECT * FROM game_sync_jobs WHERE status!='complete' OR updated_at>=?", (cutoff,)):
             items.append(_base_item("sync", row["id"], "Game sync", row["status"], row["updated_at"], row["id"], error=row["error"]))
         for row in database.execute("""SELECT j.*,g.provider,g.played_at FROM game_derivation_jobs j
@@ -252,18 +260,18 @@ def list_activity(*, offset: int = 0, limit: int = 50) -> dict:
     for item in items:
         control = controls.get((item["source"], item["id"]))
         if control:
-            item["paused"] = bool(control["paused"])
+            item["paused"] = item["paused"] or bool(control["paused"])
             item["promoted"] = bool(control["promoted"])
             if control["generation_key"] == item["generation_key"]:
                 item["phase"] = control["phase"] or item["phase"]
                 if control["completed_units"] is not None:
                     item["completed"] = control["completed_units"]
                     item["total"] = control["total_units"]
-            if item["paused"] and item["state"] in {"running", "leased", "finalizing"}:
-                item["state"] = "pausing"
-            elif item["paused"] and item["state"] in {"queued", "retrying"}:
-                item["state"] = "paused"
-                item["phase"] = "Paused"
+        if item["paused"] and item["state"] in {"running", "leased", "finalizing"}:
+            item["state"] = "pausing"
+        elif item["paused"] and item["state"] in {"queued", "retrying"}:
+            item["state"] = "paused"
+            item["phase"] = "Paused"
         if item["state"] == "complete" and item["total"] is not None:
             item["completed"] = item["total"]
     order = {"pausing": 0, "running": 1, "leased": 1, "finalizing": 1,
