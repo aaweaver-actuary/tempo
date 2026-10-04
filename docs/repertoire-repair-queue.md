@@ -20,7 +20,7 @@ Confirmation reads use background admission; explicit writes retain their foregr
 
 Base inspected and cloned: `eb42d8781fc3466db9dfea234490cd74e616fd26` (latest remote main at checkout creation). Isolated checkout `.dev-copies/repertoire-repair-queue`, branch `codex/repertoire-repair-queue`, macOS ARM64 with locked Node dependencies. Local evidence is from the dirty implementation candidate, not clean base HEAD. Named coverage is recorded in `tests/REGRESSIONS.md`.
 
-The implementation was rebased onto `698d50e8c0e4c15b683c537612e76c0b32db6fcd`, preserving the newly merged PGN discard recovery tests. Supported immutable receipts from the previous queue can contain `task_generation`; the outbox accepts that legacy field locally and preserves it without changing today's shared server schema.
+The implementation was rebased onto `698d50e8c0e4c15b683c537612e76c0b32db6fcd`, preserving the newly merged PGN discard recovery tests. Supported immutable receipts from the previous queue can contain `task_generation`; the outbox accepts that legacy field locally and preserves it without changing today's shared server schema. When completed tasks age out of the status list, graph publication must still reach that saved generation.
 
 - Baseline: the delayed-save dialog assertion failed on the unchanged implementation at the expected next-conflict assertion, 6.76 seconds Vitest. Retained in `test-results/repertoire-repair-queue/baseline.log`.
 - Initial focused units: 58 passed across outbox, pending compatibility, dialog, study and board preservation files in 10.52 seconds. After adding Home attempt/focus/reply coverage, 44 passed across the four affected files in 10.70 seconds. These are iteration results, not final-candidate validation.

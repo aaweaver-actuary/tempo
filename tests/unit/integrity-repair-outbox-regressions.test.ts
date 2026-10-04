@@ -19,6 +19,7 @@ function fixture() {
   const receipts = new Map<string, unknown>();
   const currentEvidence = new Map<string, unknown>([["rep", evidence()], ["other", evidence("other")]]);
   const tasks = [task(), task("other")];
+  const repertoires = [graph(), graph("other")];
   const posts: { key: string; url: string; body: unknown }[] = [];
   const fetchMock = vi.fn(async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
     const url = String(input);
@@ -35,13 +36,13 @@ function fixture() {
       return Response.json(result);
     }
     if (url.endsWith("/system/tasks")) return Response.json({ tasks });
-    if (url.endsWith("/repertoires")) return Response.json({ repertoires: [graph(), graph("other")] });
+    if (url.endsWith("/repertoires")) return Response.json({ repertoires });
     const repertoireMatch = url.match(/repertoires\/([^/]+)\/integrity$/);
     if (repertoireMatch) return Response.json(currentEvidence.get(repertoireMatch[1]));
     throw new Error(`Unexpected request ${url}`);
   });
   vi.stubGlobal("fetch", fetchMock);
-  return { receipts, currentEvidence, tasks, posts, fetchMock };
+  return { receipts, currentEvidence, tasks, repertoires, posts, fetchMock };
 }
 afterEach(() => { localStorage.clear(); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
@@ -181,7 +182,11 @@ it("previously shipped repair receipts preserve task generation when recovering 
   await flushIntegrityRepairs();
   expect(pendingIntegrityRepairs()[0]).toMatchObject({ operationId: "shipped-repair", taskId: "graph-rep", taskGeneration: 2, phase: "validating" });
   expect(environment.posts).toHaveLength(0);
-  environment.tasks[0].state = "complete"; environment.currentEvidence.set("rep", evidence("rep", []));
+  // Completed tasks age out of the status list. A prior graph must not confirm the saved generation.
+  environment.tasks.shift(); environment.repertoires[0].graph_generation = 1;
+  environment.currentEvidence.set("rep", evidence("rep", []));
+  await flushIntegrityRepairs(); expect(pendingIntegrityRepairs()).toHaveLength(1);
+  environment.repertoires[0].graph_generation = 2;
   await flushIntegrityRepairs(); expect(pendingIntegrityRepairs()).toEqual([]);
 });
 

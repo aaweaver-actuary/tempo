@@ -207,7 +207,8 @@ async function validateRepair(repair: PendingIntegrityRepair) {
     const repertoires = await readJsonResponse(response, repertoiresResponseSchema, "repair graph publication");
     const repertoire = repertoires.repertoires.find(item => item.id === repair.repertoireId);
     if (!repertoire) { fail(repair, "stale", "This repertoire was removed. Review the saved choice before discarding it."); return; }
-    if (repertoire.graph_state !== "ready" || task && (repertoire.graph_generation ?? 0) < task.generation) return;
+    const requiredGeneration = task?.generation ?? repair.taskGeneration ?? 1;
+    if (repertoire.graph_state !== "ready" || (repertoire.graph_generation ?? 0) < requiredGeneration) return;
   }
   if (integrity.issues.some(issue => issue.id === repair.issueId)) {
     fail(repair, "stale", "The repair finished but this position still needs review. Choose from the current evidence."); return;
