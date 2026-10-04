@@ -1000,11 +1000,11 @@ it("late integrity count refresh cannot close an explicitly opened repair dialog
     return Response.json({ providers: [], states: [], lines: [] });
   }));
   render(<Home />);
-  const resume = await screen.findByRole("button", { name: "Resume repair", exact: true });
+  const resume = await screen.findByRole("button", { name: "Resume repair" });
   await waitFor(() => expect(delayedCounts.length).toBeGreaterThan(0));
   fireEvent.click(resume);
   const dialog = await screen.findByRole("dialog", { name: "Choose one response per position" });
-  fireEvent.click(await within(dialog).findByRole("button", { name: "e2e4", exact: true }));
+  fireEvent.click(await within(dialog).findByRole("button", { name: "e2e4" }));
   await act(async () => { delayedCounts.splice(0).forEach(finish => finish(Response.json(repertoires))); });
   expect(screen.getByRole("dialog", { name: "Choose one response per position" })).toBe(dialog);
   expect(within(dialog).getByText("e2e4", { selector: "strong" })).not.toBeNull();
