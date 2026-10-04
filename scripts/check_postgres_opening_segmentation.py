@@ -9,6 +9,7 @@ import sys
 import threading
 import time
 import uuid
+from urllib.request import Request, urlopen
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 from app import postgres_store
@@ -18,6 +19,35 @@ from app.services.opening_graph import GraphInput, build_graph
 from app.services.review_service import apply_scheduling_review
 from app.opening_segmentation_api import segmentation_list, segmentation_detail, save_preference
 from app.command_gateway import execute_command
+
+
+def test_issue77_reader_only_deployed_api_evaluates_without_product_writes(repertoire_id, lines, product_snapshot):
+    """Maintenance seeds stay separate from the running reader-only API process."""
+    endpoint = f'http://api:8000/api/repertoires/{repertoire_id}/prefix-evaluation'
+    before = product_snapshot()
+    with urlopen(endpoint + '/source', timeout=10) as response:
+        assert response.status == 200
+        source = json.load(response)
+    assert source['snapshot_id'] and source['graph_generation'] == 1
+    assert {route['id'] for route in source['lines']} == {line['id'] for line in lines}
+    request = Request(endpoint + '/evaluate', method='POST', headers={'Content-Type': 'application/json'},
+        data=json.dumps({'snapshot_id': source['snapshot_id'], 'selected_line_ids': [lines[0]['id']],
+                         'candidate_depths': {lines[0]['id']: 1}}).encode())
+    with urlopen(request, timeout=10) as response:
+        assert response.status == 200
+        result = json.load(response)
+    assert result['snapshot_id'] == source['snapshot_id'] and result['status'] == 'changed'
+    assert result['selected']['current']['metrics']['distinct_cards'] == 1
+    assert result['selected']['proposed']['metrics']['distinct_cards'] == 2
+    assert result['selected']['proposed']['metrics']['learner_decision_occurrences'] == 2
+    assert result['whole_repertoire']['current']['metrics']['distinct_cards'] == 3
+    assert result['whole_repertoire']['proposed']['metrics']['distinct_cards'] == 4
+    assert product_snapshot() == before, 'Deployed reader-only prefix diagnostics wrote product state'
+    print(json.dumps({'test': 'test_issue77_reader_only_deployed_api_evaluates_without_product_writes',
+                      'source_http_status': 200, 'evaluate_http_status': 200,
+                      'current_selected_cards': 1, 'proposed_selected_cards': 2,
+                      'current_whole_cards': 3, 'proposed_whole_cards': 4,
+                      'product_state_unchanged': True}))
 
 
 def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lines, card_ids):
@@ -35,6 +65,7 @@ def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lin
             return {table: sorted(json.dumps(dict(row), sort_keys=True, default=str) for row in
                     database.execute_native(f'SELECT * FROM {table}').fetchall()) for table in tables}
 
+    test_issue77_reader_only_deployed_api_evaluates_without_product_writes(repertoire_id, lines, product_snapshot)
     client = TestClient(app)  # No lifespan: the existing disposable product already owns startup.
     base_path = f'/api/repertoires/{repertoire_id}/prefix-evaluation'
     before = product_snapshot()
@@ -56,7 +87,7 @@ def test_issue77_readonly_snapshot_and_foreground_concurrency(repertoire_id, lin
     def observed_connection(**options):
         with original_connection(**options) as database:
             if options.get('repeatable_read'):
-                assert options['read_only'] and options['authoritative'] and options['background']
+                assert options['read_only'] and not options.get('authoritative', False) and options['background']
                 settings = database.execute_native(
                     "SELECT pg_backend_pid(),current_setting('transaction_read_only'),"
                     "current_setting('transaction_isolation'),current_setting('transaction_timeout')").fetchone()

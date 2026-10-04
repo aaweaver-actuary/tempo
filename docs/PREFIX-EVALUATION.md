@@ -114,8 +114,11 @@ Reviews, scheduling, queues and priority epochs are excluded. No adaptive
 recommendation is required. Missing/zero saved depths are unsupported rather than
 replaced with the current global setting.
 
-All source reads use the primary PostgreSQL connection, read-only repeatable-read
-transactions and existing background transaction/lock budgets. JSON interpretation,
+All source reads use the API's configured PostgreSQL reader pool; the checked-in
+reader URL targets the authoritative PostgreSQL service, without API writer credentials.
+Repeatable reads are explicitly READ ONLY before the existing background transaction/lock
+budgets are set. Worker callers using `authoritative=True` retain their writer-pool
+selection. JSON interpretation,
 fingerprinting, chess traversal and counting occur after closing the connection.
 Isolation is selected before the timeout configuration queries. The API rechecks
 the source token after calculation and never returns partial results.

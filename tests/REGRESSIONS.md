@@ -1448,12 +1448,15 @@ Full and durability gates include this stage; browser-only scopes omit it.
 - `test_issue77_foreground_preemption_and_deadline_return_retryable_errors`
 - `test_issue77_non_postgres_product_never_returns_sample_result`
 - `test_issue77_temporary_database_failure_is_retryable_without_partial_metrics`
+- `test_issue77_endpoints_use_actual_reader_pool_without_writer_credentials` — source and evaluate keep the actual loader, connection helper and pool selection; only low-level pool I/O is stubbed. Reader URL present/writer URL absent failed before the repair with `TEMPO_DATABASE_WRITE_URL is missing`. Both reads retain explicitly read-only repeatable transactions and close before decoding.
 - `test_issue77_loader_reads_primary_repeatable_snapshot_and_closes_before_hashing`
 - `test_issue77_http_mid_calculation_preemption_returns_no_partial_metrics`
 - `test_issue77_runtime_guard_classifies_only_diagnostics_as_background_query_only`
-- `test_issue77_repeatable_primary_connection_sets_isolation_before_budget_queries`
+- `test_issue77_repeatable_reader_and_worker_connections_set_isolation_before_budgets` — reader-based repeats select the reader pool; authoritative worker controls retain the writer pool. Both set isolation/read-only before timeout queries.
 
 Real PostgreSQL proof: `scripts/check_postgres_opening_segmentation.py::test_issue77_readonly_snapshot_and_foreground_concurrency` runs in the regular disposable durability rehearsal. It exercises real query-only HTTP source/current/empty/candidate reads, unchanged cards/reviews/depths/queues/graph/task/receipt state, authoritative repeatable-read transactions, idle source connections and a NOWAIT foreground review during paused traversal, source invalidation during computation, and deterministic retry after a scheduling-only change. Existing graph/split/snapshot and route-contract regressions remain required.
+
+Reader-only deployment proof: `scripts/check_postgres_opening_segmentation.py::test_issue77_reader_only_deployed_api_evaluates_without_product_writes` runs in that same regular durability scenario. Separate maintenance setup seeds published source; real HTTP GET source and POST depth change hit the running API with normal startup guards. The runner verifies a reader URL and absent writer URL in the API container environment. Both return 200 with the expected selected/whole comparison, and the existing complete product-state snapshot remains unchanged. The in-process concurrency proof remains additional evidence, not a substitute for deployment coverage.
 
 ### PR #69 — enforce HTTP evidence database admission
 

@@ -222,7 +222,7 @@ def connection(*, read_only: bool = False, background: bool = False, authoritati
             if repeatable_read:
                 # Isolation must be selected before the background timeout SELECTs.
                 database.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
-            if read_only and authoritative:
+            if read_only and (authoritative or repeatable_read):
                 database.execute("SET TRANSACTION READ ONLY")
             if background:
                 transaction_limit = _background_timeout_ms(

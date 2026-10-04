@@ -72,7 +72,7 @@ def diagnostic_request():
 def load_snapshot(identifier, deadline):
     check_available(deadline)
     # No chess, JSON interpretation or application fingerprinting inside this transaction.
-    with postgres_store.connection(read_only=True, authoritative=True, background=True, repeatable_read=True) as database:
+    with postgres_store.connection(read_only=True, background=True, repeatable_read=True) as database:
         if database.execute_native('SELECT id FROM repertoires WHERE id=%s', (identifier,)).fetchone() is None:
             raise diagnostic_error('repertoire_not_found', 'Repertoire not found.', 404)
         publication = database.execute_native(
