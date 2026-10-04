@@ -4,6 +4,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Chess } from "chess.js";
@@ -975,4 +976,36 @@ it("repair completion preserves the active attempt focus and pending opponent re
   expect(screen.queryByRole("dialog", { name: "Choose one response per position" })).toBeNull();
   await act(async () => { await vi.advanceTimersByTimeAsync(430); });
   expect(useTrainingStore.getState().step).toBe(2);
+});
+
+it("late integrity count refresh cannot close an explicitly opened repair dialog or erase its choice", async () => {
+  const delayedCounts: ((response: Response) => void)[] = [];
+  let countReads = 0;
+  const repertoires = { repertoires: [{ id: "rep", name: "Repair repertoire", source_name: "fixture.pgn",
+    line_count: 1, card_count: 1, due_count: 1, integrity_status: "needs_repair", integrity_issue_count: 1, blocked_due_count: 1 }] };
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    const url = String(input);
+    if (url.includes("/api/queue/window")) return Response.json({ count: 1, cards: [{
+      id: "repair-count-race", queue_entry_id: 871, start_fen: new Chess().fen(), moves: ["e2e4", "e7e5"],
+      trained_color: "white", content_type: "opening", repertoire_name: "Active attempt", repertoire_source: "fixture.pgn",
+    }] });
+    if (url.endsWith("/repertoires")) {
+      if (++countReads === 1) return Response.json(repertoires);
+      return new Promise<Response>(resolve => delayedCounts.push(resolve));
+    }
+    if (url.endsWith("/integrity")) return Response.json({ repertoire_id: "rep", status: "needs_repair", issue_count: 1,
+      first_issue_id: "count-issue", scan_status: "idle", scan_generation: "scan:1", scan_progress: { completed: 1, total: 1 },
+      last_scan_error: null, issues: [{ id: "count-issue", kind: "multiple_responses", signature: "count-signature",
+        fen: new Chess().fen(), fen_key: new Chess().fen().split(" ").slice(0,4).join(" "), trained_color: "white", moves: [], sources: [] }] });
+    return Response.json({ providers: [], states: [], lines: [] });
+  }));
+  render(<Home />);
+  const resume = await screen.findByRole("button", { name: "Resume repair", exact: true });
+  await waitFor(() => expect(delayedCounts.length).toBeGreaterThan(0));
+  fireEvent.click(resume);
+  const dialog = await screen.findByRole("dialog", { name: "Choose one response per position" });
+  fireEvent.click(await within(dialog).findByRole("button", { name: "e2e4", exact: true }));
+  await act(async () => { delayedCounts.splice(0).forEach(finish => finish(Response.json(repertoires))); });
+  expect(screen.getByRole("dialog", { name: "Choose one response per position" })).toBe(dialog);
+  expect(within(dialog).getByText("e2e4", { selector: "strong" })).not.toBeNull();
 });

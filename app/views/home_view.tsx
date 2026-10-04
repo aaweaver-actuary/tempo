@@ -334,7 +334,8 @@ export default function Home() {
               item.id === preferred && item.integrity_status === "needs_repair",
           )
         : undefined;
-      if (!passive) setRepairRepertoireId(preferredCandidate?.id);
+      // Startup and count refreshes must preserve a dialog opened after their request began.
+      if (!passive && preferred) setRepairRepertoireId(preferredCandidate?.id);
       const paused = preferredCandidate ?? candidate;
       const repairItems = parsed.repertoires.filter(
         (item) => item.integrity_status === "needs_repair",
