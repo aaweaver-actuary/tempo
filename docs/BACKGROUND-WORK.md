@@ -12,6 +12,40 @@ Ordinary HTTP requests are foreground by default. Browser workers use `backgroun
 
 Derived results are staged and published atomically. A running replacement keeps the last published result visible. Newly created or changed analysis inputs stay pending until their generation publishes; a never-validated repertoire is quarantined only for itself. A failed analysis reports its error and remains retryable without blocking tactics or other clean repertoires.
 
+Opening-graph cleanup reads at most 256 ordered link keys before checking opening
+content and membership in the published generation. It removes at most two
+obsolete cards per slice. Its checkpoint stops at the second obsolete key, or
+the last inspected key when fewer than two are obsolete, so later obsolete keys
+remain available after restart. A current-only or non-opening page advances the
+cursor; only an empty candidate page ends cleanup. Cleanup effects and the
+checkpoint commit together through the current task's generation and lease fence.
+
+Priority retention keeps the active preparation and published/active priorities.
+It selects one stale preparation manifest, then locks and deletes at most 16
+prepared rows from that exact generation. It removes that manifest only after
+an exact-generation lookup proves its prepared rows are gone. Retention locks
+the priority job before its task, matching producers and protecting a generation
+transition through deletion. Locked stale rows remain pending and are revisited;
+a committed slice with no deletions is not useful completion.
+
+Transaction timeouts in `opening_graph_rebuild` and `priority_retention` preserve
+their last committed checkpoint and use the existing durable failure backoff and
+attempt limit. Lock contention still yields without spending a failure attempt.
+`background_slice_timeout` logs identify kind, phase, SQLSTATE and durable retry,
+failure or supersession. Celery success acknowledges a handled delivery, while
+the durable task state records whether product work is retrying or failed. An
+`idle` worker sample records handler exit and does not prove useful completion.
+
+The regular `make docker-durability` background-workload stage runs
+`scripts/check_postgres_graph_retention.py` with real PostgreSQL and Redis.
+The rehearsal verifies the disposable bootstrap marker and current schema
+through a read-only connection before creating its own helper database. It
+covers 64,000-card current/stale generations, shared cards and unchanged history,
+locked rows, generation replacement, restart, timeout rollback and delayed replay.
+The runner stops API, background worker and scheduler consumers during this
+stage, then restores dispatch. Recorded query plans execute separately after
+measured transactions and are rolled back; their rows describe post-slice state.
+
 Standalone checkpoint HTTP requests validate the envelope and dispatch `opening_evidence.checkpoint` without reading evidence sources or constructing an authoritative manifest. Unsupported PostgreSQL configuration returns the existing structured rejection before dispatch. Semantic validation belongs to the worker: an initial pending operation confirms no persistence, and definitive rejection retains its structured failed receipt.
 
 Standalone `opening_evidence.checkpoint` uses the optional `register_command(..., prepare=...)` hook in `backend/app/command_gateway.py`. The worker first durably claims the original source envelope and closes that write. Preparation reads immutable presentation/scope data and one bounded attempt/event snapshot through an authoritative background read, releases the connection, then validates chess and reduces up to 256 events into at most 20 observations. The prepared result holds copied source data, never a database connection or cursor. Historical saved payloads containing `prepared_manifest` keep their original identity; worker preparation ignores that derived field and revalidates immutable database authority.

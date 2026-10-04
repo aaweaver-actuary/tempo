@@ -427,6 +427,7 @@ def test_priority_scoring_version_change_requests_followup(monkeypatch):
 def test_priority_retention_reclaims_abandoned_preparations_but_keeps_active(monkeypatch):
     prepared = {(1, 0), (2, 0), (3, 0)}
     manifests = {1, 2, 3}
+    followups = []
 
     class RetentionDatabase:
         def execute(self, statement, parameters=()):
@@ -434,18 +435,19 @@ def test_priority_retention_reclaims_abandoned_preparations_but_keeps_active(mon
                 return Result({"generation": 2})
             if "FROM repertoire_priority_jobs" in statement:
                 return Result({"generation": 3, "status": "running"})
+            if "SELECT generation FROM repertoire_priority_preparations" in statement:
+                return Result(next(({"generation": generation} for generation in sorted(manifests)
+                                    if generation != parameters[1]), None))
             if "SELECT generation,ordinal FROM repertoire_priority_prepared_rows" in statement:
                 return Result(rows=[
                     {"generation": generation, "ordinal": ordinal}
                     for generation, ordinal in sorted(prepared)
-                    if generation != parameters[1]
+                    if generation == parameters[1]
                 ][:parameters[2]])
-            if "SELECT manifest.generation FROM repertoire_priority_preparations" in statement:
-                return Result(rows=[
-                    {"generation": generation} for generation in sorted(manifests)
-                    if generation != parameters[1]
-                    and not any(item[0] == generation for item in prepared)
-                ][:parameters[2]])
+            if "DELETE FROM repertoire_priority_preparations" in statement:
+                if not any(item[0] == parameters[1] for item in prepared):
+                    manifests.remove(parameters[1])
+                return Result()
             if "SELECT generation,card_id FROM repertoire_card_priority_generations" in statement:
                 return Result(rows=[])
             if "SELECT 1 FROM repertoire_card_priority_generations" in statement:
@@ -480,9 +482,14 @@ def test_priority_retention_reclaims_abandoned_preparations_but_keeps_active(mon
     monkeypatch.setattr(priority_retention, "lock_current_slice", lambda *_args: True)
     monkeypatch.setattr(priority_retention.activity_gate, "wait_for_foreground",
                         lambda: None)
-    assert not priority_retention.execute_priority_retention_slice({
+    monkeypatch.setattr(priority_retention, "enqueue_task_in_transaction",
+                        lambda *_args, **_kwargs: followups.append(True))
+    task = {
         "id": "retention", "generation": 1, "lease_token": "lease",
         "payload": {"repertoire_id": "rep"},
-    })
+    }
+    assert priority_retention.execute_priority_retention_slice(task)
+    assert prepared == {(2, 0), (3, 0)} and manifests == {2, 3}
+    assert not priority_retention.execute_priority_retention_slice(task)
     assert prepared == {(3, 0)}
-    assert manifests == {3}
+    assert manifests == {3} and followups == [True]
