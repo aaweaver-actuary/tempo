@@ -41,9 +41,12 @@ export function RepertoireIntegrityDialog({
   const [masters, setMasters] = useState<CandidateMove[]>([]);
   const [error, setError] = useState("");
   const [repairs, setRepairs] = useState<PendingIntegrityRepair[]>([]);
+  const observedRepairs = useRef<PendingIntegrityRepair[]>([]);
+  const [removedChoiceIdentities, setRemovedChoiceIdentities] = useState<Set<string>>(new Set());
   const suppressedIssues = new Set(repairs.filter(repair => repair.repertoireId === repertoireId && repair.phase !== "stale")
     .map(repair => repair.issueId));
-  const remainingIssues = payload?.issues.filter(candidate => !suppressedIssues.has(candidate.id)) ?? [];
+  const remainingIssues = payload?.issues.filter(candidate => !suppressedIssues.has(candidate.id)
+    && !removedChoiceIdentities.has(JSON.stringify([repertoireId, candidate.id, candidate.signature]))) ?? [];
   const issue = remainingIssues[0];
   const issueIdentity = issue ? JSON.stringify([repertoireId, issue.id, issue.signature]) : "";
   const selected = selectedChoice?.identity === issueIdentity ? selectedChoice.move : undefined;
@@ -68,7 +71,10 @@ export function RepertoireIntegrityDialog({
     try {
       const response = await fetch(`${API_URL}/api/repertoires/${encodeURIComponent(repertoireId)}/integrity`, { signal: controller.signal });
       const next = await readJsonResponse(response, repertoireIntegritySchema, "repertoire integrity");
-      if (!controller.signal.aborted) setPayload(next);
+      if (!controller.signal.aborted) {
+        setPayload(next);
+        setRemovedChoiceIdentities(new Set());
+      }
     } catch (failure) {
       if (controller.signal.aborted) return;
       reportDebugError(failure, { kind: "api", source: "repertoire-integrity", operation: "load integrity data" });
@@ -79,7 +85,19 @@ export function RepertoireIntegrityDialog({
   useEffect(() => {
     let active = true;
     const update = () => {
-      try { setRepairs(pendingIntegrityRepairs()); }
+      try {
+        const nextRepairs = pendingIntegrityRepairs();
+        const removedChoices = observedRepairs.current.filter(repair => repair.repertoireId === repertoireId
+          && repair.phase !== "stale" && !nextRepairs.some(next => next.operationId === repair.operationId));
+        observedRepairs.current = nextRepairs;
+        setRepairs(nextRepairs);
+        if (removedChoices.length) {
+          // The loaded snapshot can still contain completed choices until a refresh succeeds.
+          setRemovedChoiceIdentities(current => new Set([...current, ...removedChoices.map(repair =>
+            JSON.stringify([repair.repertoireId, repair.issueId, repair.signature]))]));
+          void load();
+        }
+      }
       catch (failure) { setError(failure instanceof Error ? failure.message : "Saved choices could not be read."); }
     };
     const confirmed = () => { update(); void load(); };
@@ -92,7 +110,7 @@ export function RepertoireIntegrityDialog({
       unsubscribe();
       window.removeEventListener(INTEGRITY_REPAIR_CONFIRMED, confirmed);
     };
-  }, [load]);
+  }, [load, repertoireId]);
 
   useEffect(() => {
     if (!payload || !["queued", "running", "retrying"].includes(payload.scan_status)) return;

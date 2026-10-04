@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import { RepertoireIntegrityDialog } from "../../app/components/repertoire-integrity-dialog";
-import { flushIntegrityRepairs, INTEGRITY_REPAIR_CONFIRMED } from "../../app/lib/integrity-repair-outbox";
+import { enqueueIntegrityRepair, discardStaleIntegrityRepair, flushIntegrityRepairs, pendingIntegrityRepairs,
+  INTEGRITY_REPAIR_CONFIRMED } from "../../app/lib/integrity-repair-outbox";
 import { loadExplorer, type ExplorerResult } from "../../app/lib/lichess-explorer";
 
 vi.mock("../../app/components/chessboard", () => ({ Chessboard: () => <div /> }));
@@ -116,4 +117,101 @@ it.each(["queued", "running", "retrying", "failed"])("empty repair issues during
   render(<RepertoireIntegrityDialog repertoireId="rep" theme="brown" pieceSet="cburnett" onClose={vi.fn()} />);
   await screen.findByText(scanStatus === "failed" ? "Scan needs attention" : "Checking repertoire integrity…");
   expect(screen.queryByText("This repertoire is clean.")).toBeNull();
+});
+
+it.each([
+  { title: "repair confirmation keeps the next conflict and selection during a delayed refresh", crossTab: false, refreshFails: false, changedConflict: false },
+  { title: "repair confirmation keeps the next conflict and selection after a failed refresh", crossTab: false, refreshFails: true, changedConflict: false },
+  { title: "cross-tab repair completion keeps the next conflict and selection until fresh evidence arrives", crossTab: true, refreshFails: false, changedConflict: false },
+  { title: "fresh changed repair evidence remains reviewable after completion", crossTab: false, refreshFails: false, changedConflict: true },
+])("$title", async ({ crossTab, refreshFails, changedConflict }) => {
+  const pendingRefreshes: ((response: Response) => void)[] = [];
+  let initialDialogRead = true;
+  let serverEvidence = integrity;
+  let submissionConfirmed = false;
+  const submission = { task_id: "dialog-repair-graph", repertoire_id: "rep", issue_id: "first", state: "queued" };
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input);
+    if (url.includes("position-summary")) return Response.json({ moves: [] });
+    if (url.endsWith("/integrity")) {
+      if (new Headers(init?.headers).get("X-Tempo-Work-Class") === "background") return Response.json(serverEvidence);
+      if (initialDialogRead) { initialDialogRead = false; return Response.json(integrity); }
+      return new Promise<Response>(resolve => pendingRefreshes.push(resolve));
+    }
+    if (url.endsWith("/first/resolve")) { submissionConfirmed = true; return Response.json(submission); }
+    if (url.includes("/api/operations/")) return Response.json(submissionConfirmed
+      ? { state: "complete", response: submission } : { state: "unknown" });
+    if (url.endsWith("/system/tasks")) return Response.json({ tasks: [{ id: "dialog-repair-graph",
+      kind: "opening_graph_rebuild", deduplication_key: "rep", generation: 2, state: "complete" }] });
+    if (url.endsWith("/repertoires")) return Response.json({ repertoires: [{ id: "rep", name: "Repair repertoire",
+      source_name: "fixture.pgn", line_count: 1, card_count: 1, due_count: 1, graph_state: "ready", graph_generation: 2 }] });
+    throw new Error(`Unexpected request ${url}`);
+  }));
+  render(<RepertoireIntegrityDialog repertoireId="rep" theme="brown" pieceSet="cburnett" onClose={vi.fn()} />);
+  await screen.findByText(/line first-source/);
+  fireEvent.click(screen.getByRole("button", { name: "Choose e4" }));
+  fireEvent.click(screen.getByRole("button", { name: "Keep this response" }));
+  await screen.findByText(/line second-source/);
+  fireEvent.click(screen.getByRole("button", { name: "Choose e4" }));
+  await act(async () => { await flushIntegrityRepairs(); });
+  const savingRepair = pendingIntegrityRepairs()[0];
+  expect(savingRepair.phase).toBe("validating");
+  serverEvidence = { ...integrity, issue_count: 1, first_issue_id: "second", issues: issues.slice(1) };
+  if (crossTab) {
+    const storageKey = Array.from({ length: localStorage.length }, (_, index) => localStorage.key(index)!)
+      .find(key => localStorage.getItem(key)?.includes(savingRepair.operationId))!;
+    const oldValue = localStorage.getItem(storageKey);
+    // Another tab removes the confirmed record; this tab receives storage, not its confirmation event.
+    await act(async () => {
+      localStorage.removeItem(storageKey);
+      window.dispatchEvent(new StorageEvent("storage", { key: storageKey, oldValue, newValue: null, storageArea: localStorage }));
+    });
+  } else {
+    // Complete the actual outbox path, including record removal before its changed/confirmation events.
+    await act(async () => { await flushIntegrityRepairs(); });
+  }
+  expect(pendingIntegrityRepairs()).toHaveLength(0);
+  expect(screen.queryByText(/line first-source/)).toBeNull();
+  expect(screen.getByText(/line second-source/)).not.toBeNull();
+  expect(screen.getByText("e2e4", { selector: "strong" })).not.toBeNull();
+  expect(pendingRefreshes.length).toBeGreaterThan(0);
+  if (changedConflict) serverEvidence = { ...integrity, issues: [{ ...issues[0], signature: "first-changed" }, issues[1]] };
+  await act(async () => {
+    pendingRefreshes.splice(0).forEach(finish => finish(refreshFails
+      ? Response.json({ detail: "Integrity refresh unavailable" }, { status: 503 }) : Response.json(serverEvidence)));
+  });
+  if (changedConflict) {
+    expect(screen.getByText(/line first-source/)).not.toBeNull();
+    expect(screen.queryByText("e2e4", { selector: "strong" })).toBeNull();
+    expect((screen.getByRole("button", { name: "Keep this response" }) as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: "Choose e4" }));
+    fireEvent.click(screen.getByRole("button", { name: "Keep this response" }));
+    expect(pendingIntegrityRepairs()[0].signature).toBe("first-changed");
+    return;
+  }
+  expect(screen.queryByText(/line first-source/)).toBeNull();
+  expect(screen.getByText(/line second-source/)).not.toBeNull();
+  expect(screen.getByText("e2e4", { selector: "strong" })).not.toBeNull();
+  expect((screen.getByRole("button", { name: "Keep this response" }) as HTMLButtonElement).disabled).toBe(false);
+  if (refreshFails) expect(screen.getByRole("alert").textContent).toContain("Integrity refresh unavailable");
+});
+
+it("discarding a stale repair keeps its current conflict and explicit selection reviewable", async () => {
+  const saved = enqueueIntegrityRepair({ repertoireId: "rep", issueId: "first", signature: "first-signature", selectedMoveUci: "e2e4" });
+  const refreshedEvidence = { ...integrity, issues: [{ ...issues[0], signature: "first-changed" }, issues[1]] };
+  vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).includes("/api/operations/")) return Response.json({ state: "unknown" });
+    if (String(input).includes("position-summary")) return Response.json({ moves: [] });
+    return Response.json(refreshedEvidence);
+  }));
+  await flushIntegrityRepairs();
+  expect(pendingIntegrityRepairs()[0].phase).toBe("stale");
+  render(<RepertoireIntegrityDialog repertoireId="rep" theme="brown" pieceSet="cburnett" onClose={vi.fn()} />);
+  await screen.findByText(/line first-source/);
+  fireEvent.click(screen.getByRole("button", { name: "Choose e4" }));
+  await act(async () => { discardStaleIntegrityRepair(saved.operationId); });
+  expect(screen.getByText(/line first-source/)).not.toBeNull();
+  expect(screen.getByText("e2e4", { selector: "strong" })).not.toBeNull();
+  fireEvent.click(screen.getByRole("button", { name: "Keep this response" }));
+  expect(pendingIntegrityRepairs()[0]).toMatchObject({ issueId: "first", signature: "first-changed", phase: "queued" });
 });
