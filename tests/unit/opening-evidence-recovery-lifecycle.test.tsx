@@ -5,6 +5,132 @@ import { evidenceCompletion, openingEvidenceStorage } from "../fixtures/opening-
 const browserStorage = localStorage;
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); vi.unstubAllGlobals(); browserStorage.clear(); });
 
+async function transientRecoveryFailures(failedSlices: number) {
+  const state = await openingEvidenceStorage();
+  const completion = evidenceCompletion("transient-orphan"); state.seed(completion);
+  const originalAttempt = structuredClone(state.stores.opening_attempts.get(completion.attempt_id));
+  const originalEvents = structuredClone([...state.stores.opening_events]);
+  let verificationCount = 0;
+  const delivered: typeof completion[] = [];
+  vi.stubGlobal("fetch", vi.fn(async (_url: string, init?: RequestInit) => {
+    expect(new Headers(init?.headers).get("X-Tempo-Work-Class")).toBe("background");
+    if (init?.method !== "POST") {
+      if (++verificationCount <= failedSlices) throw new TypeError("Transient verification failure");
+      return Response.json({}, { status: 404 });
+    }
+    const checkpoint = JSON.parse(init.body as string) as typeof completion;
+    delivered.push(checkpoint);
+    return Response.json({ persisted: true, attempt_id: checkpoint.attempt_id,
+      received_sequences: [1, 2, 3], contiguous_sequence: 3 });
+  }));
+  const journal = await import("../../app/lib/opening-evidence-journal");
+  const recovery = vi.spyOn(journal, "recoverOpeningEvidence");
+  const { useTrainingStore } = await import("../../app/state/training-store");
+  const { useOpeningEvidenceRecovery } = await import("../../app/hooks/use-opening-evidence-recovery");
+  useTrainingStore.setState(useTrainingStore.getInitialState(), true);
+  useTrainingStore.setState({ queueReadiness: "ready" });
+  const callbacks = new Map<number, IdleRequestCallback>(); let sequence = 0;
+  vi.stubGlobal("requestIdleCallback", vi.fn(callback => { callbacks.set(++sequence, callback); return sequence; }));
+  vi.stubGlobal("cancelIdleCallback", vi.fn(id => callbacks.delete(id)));
+  function Harness() {
+    const ready = useTrainingStore(store => store.queueReadiness === "ready");
+    const blocked = useTrainingStore(store => store.attempt.phase === "opponentReplyPending");
+    useOpeningEvidenceRecovery(true, ready, blocked); return null;
+  }
+  const mounted = render(<Harness />);
+  const idle = async () => {
+    expect(callbacks.size).toBe(1);
+    const [id, callback] = [...callbacks][0]; callbacks.delete(id);
+    await act(async () => { callback({ didTimeout: false, timeRemaining: () => 50 }); });
+  };
+  const expectUnchangedJournal = () => {
+    expect(state.stores.opening_attempts.get(completion.attempt_id)).toEqual(originalAttempt);
+    expect([...state.stores.opening_events]).toEqual(originalEvents);
+    expect(state.commits).toEqual([]); expect(delivered).toEqual([]);
+  };
+  return { ...state, completion, originalAttempt, delivered, recovery, callbacks, idle,
+    expectUnchangedJournal, mounted, useTrainingStore };
+}
+
+it("AS-15 transient opening-evidence recovery failure schedules another bounded idle slice", async () => {
+  const state = await transientRecoveryFailures(1);
+  await state.idle();
+  expect(state.recovery).toHaveBeenCalledOnce(); state.expectUnchangedJournal();
+  expect(state.useTrainingStore.getState().queueReadiness).toBe("ready");
+  await waitFor(() => expect(state.callbacks.size).toBe(1));
+  expect(requestIdleCallback).toHaveBeenCalledTimes(2);
+  // No connectivity/readiness/lease event or synchronous retry supplies this opportunity.
+  expect(state.recovery).toHaveBeenCalledOnce();
+  await state.idle();
+  await waitFor(() => expect(state.delivered).toHaveLength(1));
+  expect(state.recovery).toHaveBeenCalledTimes(2); expect(state.callbacks.size).toBe(0);
+  expect(state.delivered[0]).toEqual({ ...state.completion, terminal: { ...state.completion.terminal!, state: "partial" } });
+  expect(state.stores.opening_attempts.size).toBe(0); expect(state.stores.opening_events.size).toBe(0);
+});
+
+it("AS-15 foreground activity pauses a retry scheduled after recovery failure", async () => {
+  const state = await transientRecoveryFailures(1);
+  await state.idle(); await waitFor(() => expect(state.callbacks.size).toBe(1));
+  act(() => state.useTrainingStore.getState().setAttemptPhase("opponentReplyPending"));
+  expect(state.callbacks.size).toBe(0); state.expectUnchangedJournal();
+  act(() => { for (let index = 0; index < 3; index++) window.dispatchEvent(new Event("online")); });
+  expect(state.callbacks.size).toBe(0); expect(state.recovery).toHaveBeenCalledOnce();
+  act(() => state.useTrainingStore.getState().setAttemptPhase("playerTurn"));
+  expect(state.callbacks.size).toBe(1); expect(state.recovery).toHaveBeenCalledOnce();
+  await state.idle(); await waitFor(() => expect(state.delivered).toHaveLength(1));
+  expect(state.recovery).toHaveBeenCalledTimes(2); expect(state.callbacks.size).toBe(0);
+});
+
+it("AS-15 repeated transient recovery failures each yield to a distinct idle opportunity", async () => {
+  const state = await transientRecoveryFailures(2);
+  for (let failedSlice = 1; failedSlice <= 2; failedSlice++) {
+    await state.idle();
+    expect(state.recovery).toHaveBeenCalledTimes(failedSlice); state.expectUnchangedJournal();
+    await waitFor(() => expect(state.callbacks.size).toBe(1));
+    expect(requestIdleCallback).toHaveBeenCalledTimes(failedSlice + 1);
+    expect(state.recovery).toHaveBeenCalledTimes(failedSlice);
+  }
+  const { notifications } = await import("../../app/lib/notifications");
+  expect(notifications().filter(record => record.key === "opening-evidence-recovery")).toMatchObject([
+    { severity: "warning", occurrenceCount: 2, message: expect.stringContaining("Opening evidence recovery is pending. Normal training continues.") },
+  ]);
+  await state.idle(); await waitFor(() => expect(state.delivered).toHaveLength(1));
+  expect(state.recovery).toHaveBeenCalledTimes(3); expect(state.callbacks.size).toBe(0);
+});
+
+it("AS-15 unmount cancels an idle retry after transient recovery failure", async () => {
+  const state = await transientRecoveryFailures(1);
+  await state.idle(); await waitFor(() => expect(state.callbacks.size).toBe(1));
+  const canceledCallback = [...state.callbacks.values()][0];
+  state.mounted.unmount(); expect(state.callbacks.size).toBe(0);
+  await act(async () => { canceledCallback({ didTimeout: false, timeRemaining: () => 50 }); });
+  expect(state.recovery).toHaveBeenCalledOnce(); state.expectUnchangedJournal();
+});
+
+it("AS-15 a transient recovery failure settling after unmount cannot schedule retry", async () => {
+  const state = await transientRecoveryFailures(1);
+  let rejectVerification!: (error: Error) => void;
+  vi.mocked(fetch).mockImplementation(() => new Promise<Response>((_resolve, reject) => { rejectVerification = reject; }));
+  await state.idle(); await waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+  state.mounted.unmount();
+  await act(async () => { rejectVerification(new TypeError("Transient verification failure")); });
+  expect(state.callbacks.size).toBe(0); expect(requestIdleCallback).toHaveBeenCalledOnce();
+  expect(state.recovery).toHaveBeenCalledOnce(); state.expectUnchangedJournal();
+});
+
+it("AS-15 a throwing warning subscriber cannot strand the next recovery idle slice", async () => {
+  const state = await transientRecoveryFailures(1);
+  const { subscribeNotifications } = await import("../../app/lib/notifications");
+  const subscriber = vi.fn(() => { throw new Error("Notification subscriber failure"); });
+  const unsubscribe = subscribeNotifications(subscriber);
+  try {
+    await state.idle(); await waitFor(() => expect(state.callbacks.size).toBe(1));
+    expect(subscriber).toHaveBeenCalled(); expect(state.recovery).toHaveBeenCalledOnce(); state.expectUnchangedJournal();
+  } finally { unsubscribe(); }
+  await state.idle(); await waitFor(() => expect(state.delivered).toHaveLength(1));
+  expect(state.recovery).toHaveBeenCalledTimes(2); expect(state.callbacks.size).toBe(0);
+});
+
 it("AS-15 orphan completion verification timeout yields and retries safely", async () => {
   const state = await openingEvidenceStorage(); const completion = evidenceCompletion("orphan"); state.seed(completion);
   const original = structuredClone(state.stores.opening_attempts.get("orphan"));
@@ -100,9 +226,11 @@ it("AS-15 live lease retry does not create an idle recovery loop", async () => {
   vi.useFakeTimers(); await act(async () => { await vi.advanceTimersByTimeAsync(60_000); });
   expect(state.callbacks.size).toBe(0); expect(navigator.locks.request).toHaveBeenCalledTimes(lockRequests);
   expect(state.writes).toHaveLength(writes); expect(fetch).toHaveBeenCalledTimes(reads);
+  // Restore browser task scheduling before simulating the ownership-release event.
+  vi.useRealTimers();
   await act(async () => { await Promise.all([state.waiters.get("A")?.release(), state.waiters.get("B")?.release()]); });
   expect(state.callbacks.size).toBe(1); // Both ownership releases coalesce into one future idle opportunity.
-  vi.useRealTimers(); await state.idle(); await waitFor(() => expect(state.delivered).toEqual(["C", "A"]));
+  await state.idle(); await waitFor(() => expect(state.delivered).toEqual(["C", "A"]));
   await waitFor(() => expect(state.callbacks.size).toBe(1)); await state.idle();
   await waitFor(() => expect(state.delivered).toEqual(["C", "A", "B"])); expect(state.callbacks.size).toBe(0);
 });

@@ -103,6 +103,9 @@ it("AS-15 reconnect requests share an active recovery slice without concurrent j
   await act(async () => { const [id, callback] = [...callbacks][0]; callbacks.delete(id); callback({ didTimeout: false, timeRemaining: () => 50 }); });
   await waitFor(() => expect(requests).toHaveBeenCalledOnce());
   act(() => { for (let index = 0; index < 3; index++) window.dispatchEvent(new Event("online")); });
+  mounted.rerender(<Harness />);
+  const activeRecovery = state.journal.recoverOpeningEvidence();
+  expect(state.journal.recoverOpeningEvidence()).toBe(activeRecovery);
   expect(requests).toHaveBeenCalledOnce(); expect(callbacks.size).toBe(0);
   await act(async () => release(Response.json({}, { status: 404 })));
   await waitFor(() => expect(state.delivered).toEqual(["A"]));

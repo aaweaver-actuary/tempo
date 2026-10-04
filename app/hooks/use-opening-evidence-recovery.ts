@@ -35,11 +35,16 @@ export function useOpeningEvidenceRecovery(enabled: boolean, ready: boolean, blo
         if (mounted.current && pending.current) setRecoveryGeneration(generation => generation + 1);
       }).catch(error => {
         running.current = false;
-        pending.current = true; // Retry at the next readiness/connectivity opportunity, never spin.
-        publishNotification({
-          severity: "warning", source: "opening evidence", key: "opening-evidence-recovery",
-          message: `Opening evidence recovery is pending. Normal training continues. ${String(error)}`,
-        });
+        pending.current = true;
+        if (mounted.current) setRecoveryGeneration(generation => generation + 1);
+        try {
+          publishNotification({
+            severity: "warning", source: "opening evidence", key: "opening-evidence-recovery",
+            message: `Opening evidence recovery is pending. Normal training continues. ${String(error)}`,
+          });
+        } catch {
+          // A notification subscriber cannot strand the scheduled recovery retry.
+        }
       });
     };
     if (typeof window.requestIdleCallback === "function") {
