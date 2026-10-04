@@ -53,6 +53,35 @@ depth. Production saved splits still apply when their source card ID matches the
 requested prefix; shortening or lengthening can change which saved overrides match.
 No split is discarded or globally changed by this diagnostic.
 
+An abbreviated response for the two-route counting fixture is:
+
+```json
+{
+  "version": 1,
+  "preview_only": true,
+  "estimate_basis": "Structural counts only; not evidence of better learning or measured time savings.",
+  "selected_line_count": 2,
+  "status": "changed",
+  "depth_configuration_changed": true,
+  "structure_changed": true,
+  "selected": {
+    "current": {"metrics": {"distinct_cards": 2, "learner_decision_occurrences": 6, "board_starts": 2}},
+    "proposed": {"metrics": {"distinct_cards": 3, "learner_decision_occurrences": 4, "board_starts": 3}},
+    "delta": {"distinct_cards": 1, "learner_decision_occurrences": -2, "board_starts": 1},
+    "additional_starts": 1,
+    "reduced_starts": 0
+  }
+}
+```
+
+The full response also contains the snapshot identity, whole-repertoire comparison,
+all metric fields, card identities/payloads/roles, graph steps and line depths.
+Failure responses contain no comparison, for example:
+
+```json
+{"detail": {"code": "stale_snapshot", "message": "This structural snapshot is stale. Refresh the source and compare again."}}
+```
+
 ## Metrics and identities
 
 Distinct cards use production starting-position/move-sequence IDs; opponent setup
