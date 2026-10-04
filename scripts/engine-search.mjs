@@ -33,6 +33,7 @@ export async function admitEngineJob(job, kind, request) {
 export function createEngineSearch(engine, request) {
   let fatalEngineError = false;
   function evaluate(job, kind = "engine_defense") {
+    if (fatalEngineError) throw new Error("Stockfish is unavailable after a fatal engine error");
     engineWaitingStage(kind, "execution");
     const finishDiagnostic = startEngineAttempt(kind);
     return new Promise((resolveReport, rejectReport) => {
@@ -42,9 +43,11 @@ export function createEngineSearch(engine, request) {
       let preempted = false;
       let stopReason = "preempted";
       let stopWatchdog;
-      const stopSearch = () => {
-        if (preempted) return;
+      const stopSearch = (cause) => {
+        if (finished || preempted) return;
+        stopReason = cause;
         preempted = true;
+        clearTimeout(timeout);
         stopWatchdog = setTimeout(() => {
           fatalEngineError = true;
           finished = true;
@@ -60,8 +63,7 @@ export function createEngineSearch(engine, request) {
       const whiteTurn = (specification.position_start_fen.split(" ")[1] === "w") === (position.length % 2 === 0);
       const whiteSign = whiteTurn ? 1 : -1;
       const timeout = setTimeout(() => {
-        stopReason = "Engine timed out before requested depth";
-        stopSearch();
+        if (!finished && !preempted) stopSearch("Engine timed out before requested depth");
       }, 55_000);
       let controlPollPending = false;
       const foregroundPoll = process.env.TEMPO_ENGINE_SMOKE === "1" ? undefined : setInterval(async () => {
@@ -69,7 +71,7 @@ export function createEngineSearch(engine, request) {
         controlPollPending = true;
         try {
           const allowed = await engineSearchAllowed(job, kind, request);
-          if (!finished && !preempted && !allowed) stopSearch();
+          if (!finished && !preempted && !allowed) stopSearch("preempted");
         } finally {
           controlPollPending = false;
         }

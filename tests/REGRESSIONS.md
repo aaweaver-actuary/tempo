@@ -1457,3 +1457,11 @@ Backend names run in the existing contracts, preparation and transport pytest fi
 - `test_cancellation_cycles_preserve_genuine_failure_threshold_and_prior_failures` proves four cancellations consume no failure allowance and interleaved genuine failures still exhaust the original three-attempt threshold.
 - `test_defensive_release_counter_never_becomes_negative` protects the floor at zero.
 - `scripts/check_postgres_defensive_pause.py::verify_cancellation_retry_allowance` runs actual PostgreSQL claim/release/failure handlers in separately committed transactions, including shared recommendations, delayed releases, duplicate/superseded leases, retained reports/durable tasks/reviews, and the unchanged genuine failure threshold. Its named PASS proof is `defensive_cancel_release_after_resume_preserves_failures_and_fences_replay`.
+
+### PR #83 cancellation repair — first stop cause and production callback delivery
+
+- `pause near depth deadline preserves preemption through drain (drains=true/false)` fails on the original 55-second deadline overwriting a pause accepted at 54 seconds; both delayed `bestmove` and the failed-drain watchdog retain preemption with one stop and no report/timer leak.
+- `depth deadline first remains timeout when a later outstanding control reports pause` keeps a genuine timeout; `old control response cannot stop the next search after the previous search completed` protects cross-search late controls. Existing synchronous-drain and single-flight tests remain required.
+- `production worker routes cancellation and genuine failure outcomes` runs the actual extracted worker cycle and engine search for drained pause, fatal pause, genuine timeout and actual engine fault, checking outbound callbacks and shutdown/reuse protection.
+- `fatal cancellation bounds delivery and recovers the unchanged release before claims after restart` uses the actual durable journal, hung delivery/abort and repeated cycle execution. It preserves the same payload/operation ID, forbids conflicting claims, leaves volatile delivery options outside the journal and prevents reuse of the fatal engine.
+- `a pending defensive report survives pause and restart and delivers before another claim` now also runs the production cycle: report replay is preserved and never changed into a release/failure command.
