@@ -4,6 +4,7 @@ from contextlib import contextmanager
 from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 from threading import Event, get_ident
+from types import SimpleNamespace
 from unittest.mock import patch
 import hashlib
 import copy
@@ -16,6 +17,8 @@ import uuid
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend'))
 from fastapi import HTTPException
+from fastapi.testclient import TestClient
+from celery.exceptions import TimeoutError as CeleryTimeout
 import psycopg
 from app import postgres_store
 from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
@@ -384,6 +387,203 @@ def test_postgres_opening_checkpoint_restart_recomputes_original_receipt():
     assert _checkpoint_operation_receipt(operation_id)['attempt_count'] == 2
     _retain_color_provenance(fixture)
     print('PASS test_postgres_opening_checkpoint_restart_recomputes_original_receipt (process exit 73, lease recovery, exact replay)')
+
+
+def test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay():
+    from app import main, command_dispatch, command_gateway, database as database_module, tasks
+    from app.services import redis_admission_gate
+    fixture = _create_color_fixture('white')
+    manifest = _transport_color_fixture(fixture)['opening_decision_manifest']
+    checkpoint = _color_checkpoint(fixture, manifest).model_dump(mode='json')
+    operation_id = fixture['card_id'] + '-http-checkpoint'
+    historical_payload = {'checkpoint': checkpoint, 'prepared_manifest': {'obsolete': True}}
+    claimed, saved, _, _ = command_gateway.record_operation_attempt(operation_id, 'opening_evidence.checkpoint', historical_payload, background=True)
+    assert claimed and saved == historical_payload
+    with postgres_store.connection() as connection:
+        connection.execute_native("UPDATE operation_receipts SET state='queued',attempt_token=NULL,lease_expires_at=NULL WHERE operation_id=%s", (operation_id,))
+        scheduling = _fixture_scheduling(connection, fixture)
+    preparation_ready, allow_preparation, admission_denied, source_sql_started = Event(), Event(), Event(), Event()
+    preparing_worker_thread_id = None
+    source_connection_pids = []
+    original_prepare = command_gateway._preparers['opening_evidence.checkpoint']
+    original_read = database_module.background_read_connection
+    original_sql = postgres_store.PostgresConnection.execute_native
+    server = redis_admission_gate.client()
+    original_eval = server.eval
+    def observe_eval(script, *arguments):
+        result = original_eval(script, *arguments)
+        if script == redis_admission_gate._CLAIM_BACKGROUND and result == 0 and get_ident() == preparing_worker_thread_id:
+            admission_denied.set()
+        return result
+    def prepare(saved_payload):
+        nonlocal preparing_worker_thread_id
+        preparing_worker_thread_id = get_ident()
+        assert saved_payload == historical_payload, 'The worker replaced its historical durable payload'
+        preparation_ready.set()
+        assert allow_preparation.wait(10), 'HTTP checkpoint admission proof did not release preparation'
+        return original_prepare(saved_payload)
+    @contextmanager
+    def observe_read(**options):
+        if get_ident() == preparing_worker_thread_id:
+            assert options == {'authoritative': True}
+        with original_read(**options) as connection:
+            if get_ident() == preparing_worker_thread_id:
+                assert connection.raw.execute('SHOW transaction_read_only').fetchone()[0] == 'on'
+                assert connection.raw.execute('SHOW transaction_timeout').fetchone()[0] == '250ms'
+                assert connection.raw.execute('SHOW lock_timeout').fetchone()[0] == '25ms'
+                source_connection_pids.append(connection.raw.info.backend_pid)
+            yield connection
+    def observe_sql(connection, statement, parameters=()):
+        if statement.startswith('SELECT snapshot.*'):
+            assert get_ident() == preparing_worker_thread_id, 'Checkpoint HTTP performed API-side evidence preparation'
+            source_sql_started.set()
+        return original_sql(connection, statement, parameters)
+    with ThreadPoolExecutor(max_workers=2) as requests, \
+            patch.object(server, 'eval', observe_eval), \
+            patch.object(database_module, 'background_read_connection', observe_read), \
+            patch.object(postgres_store.PostgresConnection, 'execute_native', observe_sql), \
+            patch.dict(command_gateway._preparers, {'opening_evidence.checkpoint': prepare}):
+        def send_task(task_name, *, args, queue, **options):
+            assert task_name == 'app.tasks.execute_background_command' and queue == 'background'
+            assert set(args[2]) == {'checkpoint'}, 'New HTTP dispatch persisted derived preparation'
+            delivery = requests.submit(tasks.execute_background_command.run, *args)
+            def get(**options):
+                assert options['propagate'] is False
+                try:
+                    return delivery.result(timeout=options['timeout'])
+                except TimeoutError as error:
+                    raise CeleryTimeout() from error
+                except Exception as error:
+                    return error
+            return SimpleNamespace(get=get)
+        with patch.object(command_dispatch.celery_app, 'send_task', send_task):
+            client = TestClient(main.app)
+            posted = requests.submit(client.post, '/api/opening-evidence/checkpoints', json=checkpoint,
+                                     headers={'Idempotency-Key': operation_id})
+            try:
+                assert preparation_ready.wait(10), 'The HTTP checkpoint did not reach the genuine worker preparer'
+                with redis_admission_gate.foreground_lease():
+                    allow_preparation.set()
+                    assert admission_denied.wait(5), 'Worker source preparation never waited on shared foreground admission'
+                    assert not source_sql_started.is_set() and not source_connection_pids, 'Worker source read opened before admission'
+            finally:
+                allow_preparation.set()
+            response = posted.result(timeout=10)
+            assert response.status_code == 200 and response.json()['persisted']
+            result = response.json()
+            assert client.post('/api/opening-evidence/checkpoints', json=checkpoint,
+                               headers={'Idempotency-Key': operation_id}).json() == result
+            changed = {**checkpoint, 'study_timezone': 'America/New_York'}
+            assert client.post('/api/opening-evidence/checkpoints', json=changed,
+                               headers={'Idempotency-Key': operation_id}).status_code == 409
+    assert source_sql_started.is_set() and source_connection_pids
+    receipt = _checkpoint_operation_receipt(operation_id)
+    assert receipt['state'] == 'complete' and json.loads(receipt['payload_json']) == historical_payload
+    assert receipt['request_hash'] == command_gateway.request_digest('opening_evidence.checkpoint', {'checkpoint': checkpoint})
+    with postgres_store.connection(read_only=True) as connection:
+        assert _fixture_scheduling(connection, fixture) == scheduling
+        digest = shadow_digest(connection, fixture['repertoire_id'])
+    with psycopg.connect(os.environ['TEMPO_DATABASE_WRITE_URL']) as probe:
+        sessions = probe.execute('SELECT state,xact_start FROM pg_stat_activity WHERE pid=ANY(%s::int[])', (source_connection_pids,)).fetchall()
+        assert sessions and all(row[0] == 'idle' and row[1] is None for row in sessions)
+    for state in ('queued', 'retrying'):
+        recovery_id = operation_id + '-' + state
+        assert command_gateway.record_operation_attempt(recovery_id, 'opening_evidence.checkpoint', historical_payload, background=True)[0]
+        with postgres_store.connection() as connection:
+            connection.execute_native('UPDATE operation_receipts SET state=%s WHERE operation_id=%s', (state, recovery_id))
+        assert _recover_checkpoint_operation(recovery_id) == result
+        assert json.loads(_checkpoint_operation_receipt(recovery_id)['payload_json']) == historical_payload
+        with postgres_store.connection(read_only=True) as connection:
+            assert shadow_digest(connection, fixture['repertoire_id']) == digest
+            assert _fixture_scheduling(connection, fixture) == scheduling
+    assert not redis_admission_gate.foreground_present()
+    assert server.zcard(redis_admission_gate._BACKGROUND_KEY) == 0
+    _retain_color_provenance(fixture)
+    print('PASS test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay (real Redis denial, authoritative read-only 250ms/25ms, old/new identity, queued/retrying recovery)')
+
+
+def test_postgres_opening_attempt_http_admission_preserves_foreground_diagnostics():
+    from app import main, opening_evidence_api, tasks
+    from app.services import redis_admission_gate
+    from app.services.activity_gate import activity_gate
+    fixture, payload = _large_checkpoint_fixture()
+    checkpoint = payload['checkpoint']
+    assert tasks.execute_background_command.run(fixture['card_id'] + '-get-seed', 'opening_evidence.checkpoint', payload)['persisted']
+    # A sentinel beyond the supported journal size proves the HTTP query's bound.
+    with postgres_store.connection() as connection:
+        connection.execute_native('INSERT INTO opening_evidence_events(attempt_id,sequence,event_json) VALUES(%s,257,%s)',
+                                  (checkpoint['attempt_id'], canonical_json({'sequence': 257})))
+        digest = shadow_digest(connection, fixture['repertoire_id'])
+        scheduling = _fixture_scheduling(connection, fixture)
+    original_read = opening_evidence_api.background_read_connection
+    original_sql = postgres_store.PostgresConnection.execute_native
+    server = redis_admission_gate.client()
+    original_eval = server.eval
+    client = TestClient(main.app)
+    source_connection_pids = []
+    for outcome in ('found', 'missing', 'error'):
+        admission_denied, evidence_sql_started = Event(), Event()
+        def observe_eval(script, *arguments):
+            result = original_eval(script, *arguments)
+            if script == redis_admission_gate._CLAIM_BACKGROUND and result == 0:
+                admission_denied.set()
+            return result
+        @contextmanager
+        def observe_read(**options):
+            assert options == {'authoritative': True}
+            with original_read(**options) as connection:
+                assert connection.raw.execute('SHOW transaction_read_only').fetchone()[0] == 'on'
+                assert connection.raw.execute('SHOW transaction_timeout').fetchone()[0] == '250ms'
+                assert connection.raw.execute('SHOW lock_timeout').fetchone()[0] == '25ms'
+                source_connection_pids.append(connection.raw.info.backend_pid)
+                yield connection
+        def observe_sql(connection, statement, parameters=()):
+            if statement.startswith('SELECT * FROM opening_evidence_attempts'):
+                evidence_sql_started.set()
+                if outcome == 'error':
+                    raise RuntimeError('HTTP evidence read failed')
+            return original_sql(connection, statement, parameters)
+        with ThreadPoolExecutor(max_workers=1) as requests, \
+                patch.object(server, 'eval', observe_eval), \
+                patch.object(opening_evidence_api, 'background_read_connection', observe_read), \
+                patch.object(postgres_store.PostgresConnection, 'execute_native', observe_sql):
+            with redis_admission_gate.foreground_lease():
+                attempt_id = checkpoint['attempt_id'] if outcome != 'missing' else fixture['card_id'] + '-missing'
+                attempt_request = requests.submit(client.get, '/api/opening-evidence/attempts/' + attempt_id,
+                                          headers={'X-Tempo-Work-Class': 'background'})
+                assert admission_denied.wait(5), 'Background HTTP attempt did not wait on real shared admission'
+                assert not evidence_sql_started.is_set(), 'HTTP attempt evidence SQL bypassed foreground admission'
+            if outcome == 'error':
+                try:
+                    attempt_request.result(timeout=10)
+                except RuntimeError as error:
+                    assert str(error) == 'HTTP evidence read failed'
+                else:
+                    raise AssertionError('The evidence read error was hidden')
+            else:
+                response = attempt_request.result(timeout=10)
+                assert response.status_code == (200 if outcome == 'found' else 404)
+                if outcome == 'found':
+                    assert response.json()['attempt_id'] == checkpoint['attempt_id']
+                    assert response.json()['state'] == 'active'
+                    assert response.json()['events'] == checkpoint['events'] and len(response.json()['events']) == 256
+                else:
+                    assert response.json() == {'detail': 'Opening attempt evidence not found'}
+        assert not redis_admission_gate.foreground_present()
+        assert server.zcard(redis_admission_gate._BACKGROUND_KEY) == 0
+        assert activity_gate.active_background_sections == 0
+    with patch.object(opening_evidence_api, 'background_read_connection', side_effect=AssertionError('Foreground diagnostic self-admission')):
+        diagnostic = client.get('/api/opening-evidence/attempts/' + checkpoint['attempt_id'])
+        assert diagnostic.status_code == 200 and diagnostic.json()['events'] == checkpoint['events']
+    with postgres_store.connection(read_only=True) as connection:
+        assert shadow_digest(connection, fixture['repertoire_id']) == digest
+        assert _fixture_scheduling(connection, fixture) == scheduling
+    with psycopg.connect(os.environ['TEMPO_DATABASE_WRITE_URL']) as probe:
+        sessions = probe.execute('SELECT state,xact_start FROM pg_stat_activity WHERE pid=ANY(%s::int[])', (source_connection_pids,)).fetchall()
+        assert sessions and all(row[0] == 'idle' and row[1] is None for row in sessions)
+    assert not redis_admission_gate.foreground_present()
+    _retain_color_provenance(fixture)
+    print('PASS test_postgres_opening_attempt_http_admission_preserves_foreground_diagnostics (real Redis denial, authoritative read-only 250ms/25ms, ordered 256-event bound, 404/error cleanup, foreground control)')
 
 
 def _assert_color_round_trip(fixture, trained_color):
@@ -854,6 +1054,9 @@ if __name__=='__main__':
             raise RuntimeError('Opening evidence rehearsal requires disposable PostgreSQL')
         os.environ['TEMPO_DATABASE_WRITE_URL'] = os.getenv('TEMPO_SHADOW_REHEARSAL_URL', 'postgresql://postgres@postgres:5432/tempo')
         os.environ['TEMPO_DATABASE_READ_URL'] = os.environ['TEMPO_DATABASE_WRITE_URL']
+        assert os.getenv('TEMPO_REDIS_URL'), 'Opening evidence admission proof requires runner-owned Redis'
+        test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay()
+        test_postgres_opening_attempt_http_admission_preserves_foreground_diagnostics()
         test_postgres_opening_checkpoint_reduction_yields_to_foreground_review()
         test_postgres_opening_checkpoint_stale_preparation_preserves_foreground_completion()
         test_postgres_opening_checkpoint_restart_recomputes_original_receipt()

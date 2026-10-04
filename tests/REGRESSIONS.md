@@ -1419,3 +1419,19 @@ PostgreSQL snapshot effects and unchanged identities after service recreation;
 confirmed review replay produces no duplicate effect. No additional worker-write
 infrastructure scenario is needed for these static configuration checks.
 Full and durability gates include this stage; browser-only scopes omit it.
+
+### PR #69 — enforce HTTP evidence database admission
+
+- `test_opening_checkpoint_http_dispatch_does_not_prepare_evidence_in_api` — real HTTP route/middleware rejects API-side source reads and preserves the original checkpoint envelope, operation key and background dispatch, with and without a client header. Both baseline cases failed on the eager source read.
+- `test_background_opening_attempt_http_read_waits_for_foreground_admission` — real activity gate blocks the connection and evidence SQL behind a foreground lease; success, 404 and read-error paths release their connections and sections. All three baseline cases failed on SQL preceding admission release.
+- `test_foreground_opening_attempt_http_read_does_not_self_deadlock`, `test_opening_attempt_http_closes_read_before_event_decoding` — unmarked diagnostics remain foreground/read-only; response processing occurs after the bounded read closes.
+- `test_opening_evidence_http_unavailable_rejects_without_database_or_dispatch`, `test_opening_checkpoint_http_schema_rejection_precedes_dispatch` — unsupported PostgreSQL/SQLite and invalid schema fail explicitly without source reads or broker work; existing 409 detail and 503 are retained.
+- `test_opening_checkpoint_payload_identity_ignores_historical_preparation` — old/new checkpoint command fingerprints match; changed checkpoint content retains a distinct fingerprint.
+- `test_standalone_opening_checkpoint_reduces_outside_background_transaction`, `test_standalone_checkpoint_preparation_uses_immutable_source_instead_of_historical_manifest` — absent, valid and obsolete historical preparation remain accepted; authority is reconstructed from immutable inputs and traversal/reduction happen after the authoritative read closes.
+- `test_foreground_review_http_preparation_keeps_foreground_request_lease` — evidence-aware aggregate review retains its synchronous foreground preparation and foreground command dispatch without self-admission.
+- `test_opening_checkpoint_http_semantic_rejection_preserves_terminal_receipt` — real checkpoint route/preparer/gateway reject a schema-valid invalid manifest through immediate and deferred durable receipts; no publication/success receipt occurs and the structured failure replays.
+- `AS-15 immediate and deferred durable checkpoint failure both quarantine and advance the evidence queue (immediate/deferred)` — real journal classifies structured immediate HTTP 409 and deferred failed receipts, retaining rejected events and advancing to the next valid journal.
+- `test_postgres_opening_checkpoint_http_admission_preserves_saved_payload_replay` — actual HTTP/genuine worker/gateway with real PostgreSQL and Redis denial prove source admission, authoritative read-only 250 ms/25 ms settings, historical payload retention, unchanged-key replay, changed-content conflict, queued/retrying recovery and scheduling invariance.
+- `test_postgres_opening_attempt_http_admission_preserves_foreground_diagnostics` — actual GET waits on real Redis foreground admission before PostgreSQL SQL; authoritative limits, ordered 256-event bound, missing/error cleanup, idle released connections and foreground control preserve evidence and scheduling.
+
+Backend names run in the existing contracts, preparation and transport pytest files; the client names remain in `tests/unit/opening-evidence-background-admission.test.ts`. Real PostgreSQL names run in the existing disposable evidence rehearsal through the regular durability runner, with its runner-owned Redis enabled. Existing preparation/stale-source/restart/review atomicity, quota, recovery and recreation/backup proofs remain required.

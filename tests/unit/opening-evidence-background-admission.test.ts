@@ -188,21 +188,28 @@ it.each(["immediate", "deferred"])("AS-15 immediate and deferred durable checkpo
     delivery: { checkpoint: nextCheckpoint, operationKey: "opening-checkpoint:next-key" } });
   savedEvents.set(JSON.stringify([nextCheckpoint.attempt_id, 1]), { ...nextCheckpoint.events[0], attempt_id: nextCheckpoint.attempt_id });
   const requests: { url: string; init?: RequestInit }[] = [];
+  const error = { status_code: 409, message: "Durable handler failed", detail: {
+    code: "opening_evidence_conflict", message: "Immutable manifest differs", aggregate_review_allowed: true,
+  } };
   vi.stubGlobal("fetch", vi.fn(async (url: string, init?: RequestInit) => {
     requests.push({ url, init });
-    if (init?.method !== "POST") return Response.json({ state: "failed", error: { message: "Durable handler failed" } });
+    if (init?.method !== "POST") return Response.json({ state: "failed", error });
     const body = JSON.parse(init.body as string) as OpeningEvidenceCheckpoint;
-    if (body.attempt_id === checkpoint.attempt_id) return Response.json({ operation_id: originalDelivery.operationKey }, { status: timing === "immediate" ? 500 : 202 });
+    if (body.attempt_id === checkpoint.attempt_id) return timing === "immediate"
+      ? Response.json({ detail: error.detail }, { status: 409 })
+      : Response.json({ operation_id: originalDelivery.operationKey }, { status: 202 });
     return Response.json({ persisted: true, attempt_id: body.attempt_id, received_sequences: [1], contiguous_sequence: 1 });
   }));
   await journal.flushOpeningEvidence();
-  expect(requests).toHaveLength(3);
-  expect(requests[1].url).toMatch(new RegExp(`/operations/${encodeURIComponent(originalDelivery.operationKey)}$`));
+  expect(requests).toHaveLength(timing === "immediate" ? 2 : 3);
+  if (timing === "deferred") expect(requests[1].url).toMatch(new RegExp(`/operations/${encodeURIComponent(originalDelivery.operationKey)}$`));
+  else expect(requests.every(request => request.init?.method === "POST")).toBe(true);
   expect(requests.every(request => new Headers(request.init?.headers).get("X-Tempo-Work-Class") === "background")).toBe(true);
   expect(new Headers(requests[0].init?.headers).get("Idempotency-Key")).toBe(originalDelivery.operationKey);
   expect(JSON.parse(requests[0].init!.body as string)).toEqual(originalDelivery.checkpoint);
-  expect(JSON.parse(requests[2].init!.body as string).attempt_id).toBe(nextCheckpoint.attempt_id);
-  expect(attempts.get(checkpoint.attempt_id)).toMatchObject({ delivery_state: "rejected", rejection: "Durable handler failed", delivery: originalDelivery });
+  expect(JSON.parse(requests.at(-1)!.init!.body as string).attempt_id).toBe(nextCheckpoint.attempt_id);
+  expect(attempts.get(checkpoint.attempt_id)).toMatchObject({ delivery_state: "rejected",
+    rejection: timing === "immediate" ? JSON.stringify({ detail: error.detail }) : error.message, delivery: originalDelivery });
   expect(attempts.has(nextCheckpoint.attempt_id)).toBe(false);
   expect([...savedEvents.values()]).toEqual([{ ...checkpoint.events[0], attempt_id: checkpoint.attempt_id }]);
 });

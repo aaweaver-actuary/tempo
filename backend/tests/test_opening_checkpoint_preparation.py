@@ -14,18 +14,22 @@ from app.services import postgres_opening_evidence as evidence
 from app.services.opening_decision_evidence import EvidenceConflict, decision_manifest
 
 
-def test_standalone_opening_checkpoint_reduces_outside_background_transaction(monkeypatch):
+@pytest.mark.parametrize('historical_preparation', [None, 'valid', 'obsolete'])
+def test_standalone_opening_checkpoint_reduces_outside_background_transaction(monkeypatch, historical_preparation):
     from app import command_gateway, database, tasks
     from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
     from app.services import postgres_opening_evidence as evidence
     manifest = json.loads((Path(__file__).resolve().parents[2] / "tests/fixtures/opening-evidence-manifest.json").read_text())
     request = OpeningEvidenceCheckpoint(attempt_id="outside-transaction", manifest=manifest,
         origin_queue_entry_id=101, queue_entry_id=101, started_at="2026-09-30T12:00:00Z", study_timezone="UTC")
-    payload = {"checkpoint": request.model_dump(mode="json"), "prepared_manifest": manifest}
+    payload = {"checkpoint": request.model_dump(mode="json")}
+    if historical_preparation is not None:
+        payload['prepared_manifest'] = manifest if historical_preparation == 'valid' else {'obsolete': True}
     attempt = {"context_json": evidence.canonical_json(request.model_dump(mode="json", exclude={"events", "terminal", "queue_entry_id"})),
                "queue_entry_id":101, "state":"active", "terminal_json":None, "contiguous_sequence":0}
     active_sections = 0
     observed_sections = []
+    read_options = []
 
     def execute(statement, parameters=()):
         row = None
@@ -55,7 +59,12 @@ def test_standalone_opening_checkpoint_reduces_outside_background_transaction(mo
         return original_reduce(events, study_timezone)
 
     monkeypatch.setattr(command_gateway, "_writer_connection", section)
-    monkeypatch.setattr(database, "background_read_connection", section)
+    @contextmanager
+    def authoritative_read(**options):
+        read_options.append(options)
+        with section() as source:
+            yield source
+    monkeypatch.setattr(database, "background_read_connection", authoritative_read)
     monkeypatch.setattr(evidence, "reduce_observations", instrumented_reduce)
     def manifest_after_read(*args):
         assert active_sections == 0, "Chess validation held the source read open"
@@ -66,6 +75,7 @@ def test_standalone_opening_checkpoint_reduces_outside_background_transaction(mo
     assert result == {"persisted":True, "attempt_id":request.attempt_id, "contiguous_sequence":0, "received_sequences":[], "state":"active"}
     assert observed_sections == [0], "Standalone reduction held the command gateway's database transaction"
     assert active_sections == 0
+    assert read_options == [{'authoritative': True}]
     assert "cards.review" not in command_gateway._preparers, "Foreground review must retain its atomic handler"
 
 
@@ -86,6 +96,52 @@ def large_request():
 def source_header(request, **changes):
     return {'context_json':evidence.canonical_json(request.model_dump(mode='json', exclude={'events','terminal','queue_entry_id'})),
             'queue_entry_id':101, 'terminal_json':None, 'contiguous_sequence':0, 'state':'active', **changes}
+
+
+@pytest.mark.parametrize('historical_manifest', [None, {'obsolete': True}])
+def test_standalone_checkpoint_preparation_uses_immutable_source_instead_of_historical_manifest(monkeypatch, historical_manifest):
+    from app import database
+    from fastapi import HTTPException
+    manifest = json.loads((Path(__file__).resolve().parents[2] / 'tests/fixtures/opening-evidence-manifest.json').read_text())
+    request = OpeningEvidenceCheckpoint(attempt_id='historical-payload', manifest=manifest,
+        origin_queue_entry_id=101, started_at='2026-09-30T12:00:00Z', study_timezone='UTC')
+    snapshot = {'id': 1, 'card_id': 'shadow-card', 'revision': 3, 'start_fen': manifest['decisions'][0]['fen'],
+                'moves_json': '["e2e4","e7e5","g1f3","b8c6","f1b5"]', 'trained_color': 'white',
+                'effective_trained_color': 'white'}
+    active = False
+    def execute(statement, parameters):
+        assert active
+        if statement.startswith('SELECT snapshot.*'):
+            assert parameters == (1, 101, 'shadow-repertoire')
+            return SimpleNamespace(fetchone=lambda: snapshot)
+        return SimpleNamespace(fetchone=lambda: None, fetchall=lambda: [])
+    @contextmanager
+    def read(**options):
+        nonlocal active
+        assert options == {'authoritative': True}
+        active = True
+        try:
+            yield SimpleNamespace(execute_native=execute)
+        finally:
+            active = False
+    monkeypatch.setattr(database, 'background_read_connection', read)
+    original_manifest = evidence.decision_manifest
+    def derive_after_read(*arguments):
+        assert not active, 'Manifest authority was derived while the source read remained open'
+        return original_manifest(*arguments)
+    monkeypatch.setattr(evidence, 'decision_manifest', derive_after_read)
+    payload = {'checkpoint': request.model_dump(mode='json')}
+    if historical_manifest is not None:
+        payload['prepared_manifest'] = historical_manifest
+    before = copy.deepcopy(payload)
+    prepared = evidence.prepare_standalone_checkpoint(payload)
+    assert prepared.request == request and payload == before and not active
+    changed = copy.deepcopy(payload)
+    changed['checkpoint']['manifest']['manifest_id'] = '0' * 64
+    with pytest.raises(HTTPException) as rejected:
+        evidence.prepare_standalone_checkpoint(changed)
+    assert rejected.value.status_code == 409
+    assert rejected.value.detail['code'] == 'opening_evidence_conflict'
 
 
 def test_standalone_checkpoint_prepares_maximum_events_and_decisions_without_mutating_source():

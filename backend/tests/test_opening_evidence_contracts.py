@@ -8,6 +8,204 @@ from types import SimpleNamespace
 import pytest
 
 
+@pytest.fixture
+def checkpoint_http_envelope():
+    manifest = json.loads((Path(__file__).resolve().parents[2] / 'tests/fixtures/opening-evidence-manifest.json').read_text())
+    return {'attempt_id': 'http-admission-attempt', 'manifest': manifest, 'origin_queue_entry_id': 101,
+            'started_at': '2026-09-30T12:00:00Z', 'study_timezone': 'UTC'}
+
+
+@pytest.mark.parametrize('background_header', [True, False])
+def test_opening_checkpoint_http_dispatch_does_not_prepare_evidence_in_api(monkeypatch, checkpoint_http_envelope, background_header):
+    from fastapi.testclient import TestClient
+    from app import main, command_dispatch
+    from app.opening_evidence_contracts import OpeningEvidenceCheckpoint
+    from app.services.activity_gate import activity_gate
+    monkeypatch.delenv('TEMPO_REDIS_URL', raising=False)
+    monkeypatch.setattr(main.postgres_store, 'configured', lambda: True)
+    monkeypatch.setattr(main.postgres_store, 'connection',
+                        lambda **options: pytest.fail('Checkpoint HTTP dispatch performed an API-side evidence source read'))
+    submitted = []
+    def dispatch(command_name, payload, **options):
+        assert activity_gate.in_background, 'Checkpoint middleware acquired a foreground lease'
+        submitted.append((command_name, payload, options))
+        return {'operation_id': 'http-checkpoint-key', 'state': 'pending'}
+    monkeypatch.setattr(command_dispatch, 'dispatch_command', dispatch)
+    headers = {'Idempotency-Key': 'http-checkpoint-key', **({'X-Tempo-Work-Class': 'background'} if background_header else {})}
+    response = TestClient(main.app).post('/api/opening-evidence/checkpoints', json=checkpoint_http_envelope, headers=headers)
+    assert response.status_code == 200
+    assert submitted == [('opening_evidence.checkpoint',
+        {'checkpoint': OpeningEvidenceCheckpoint.model_validate(checkpoint_http_envelope).model_dump(mode='json')},
+        {'idempotency_key': 'http-checkpoint-key', 'background': True})]
+
+
+@pytest.fixture
+def attempt_http_boundary(monkeypatch):
+    from threading import Event
+    from fastapi.testclient import TestClient
+    from app import main
+    from app.services.activity_gate import activity_gate
+    monkeypatch.delenv('TEMPO_REDIS_URL', raising=False)
+    monkeypatch.delenv('TEMPO_FOREGROUND_ACTIVITY_URL', raising=False)
+    monkeypatch.setattr(main.postgres_store, 'configured', lambda: True)
+    boundary = SimpleNamespace(reached=Event(), sql_started=Event(), sections=[], active_connections=0,
+                               attempt={'attempt_id': 'http-attempt', 'state': 'partial'}, failure=None)
+    original_wait = activity_gate.wait_for_foreground
+    def observe_admission():
+        assert activity_gate.in_background, 'Foreground diagnostic tried to wait on its own lease'
+        boundary.reached.set()
+        original_wait()
+    monkeypatch.setattr(activity_gate, 'wait_for_foreground', observe_admission)
+    def execute(statement, parameters):
+        boundary.sql_started.set()
+        boundary.reached.set()
+        assert parameters == ('http-attempt',)
+        if boundary.failure:
+            raise boundary.failure
+        if 'opening_evidence_attempts' in statement:
+            return SimpleNamespace(fetchone=lambda: boundary.attempt)
+        assert statement == 'SELECT event_json FROM opening_evidence_events WHERE attempt_id=%s ORDER BY sequence LIMIT 256'
+        return SimpleNamespace(fetchall=lambda: [('{"sequence":1}',), ('{"sequence":2}',)])
+    @contextmanager
+    def connection(**options):
+        boundary.sections.append(options)
+        boundary.active_connections += 1
+        try:
+            yield SimpleNamespace(execute_native=execute)
+        finally:
+            boundary.active_connections -= 1
+    monkeypatch.setattr(main.postgres_store, 'connection', connection)
+    boundary.client = TestClient(main.app)
+    return boundary
+
+
+@pytest.mark.parametrize('outcome', ['found', 'missing', 'error'])
+def test_background_opening_attempt_http_read_waits_for_foreground_admission(attempt_http_boundary, outcome):
+    from concurrent.futures import ThreadPoolExecutor
+    from app.services.activity_gate import activity_gate
+    boundary = attempt_http_boundary
+    if outcome == 'missing':
+        boundary.attempt = None
+    elif outcome == 'error':
+        boundary.failure = RuntimeError('evidence read failed')
+    with ThreadPoolExecutor(max_workers=1) as requests:
+        with activity_gate.foreground():
+            response_future = requests.submit(boundary.client.get, '/api/opening-evidence/attempts/http-attempt',
+                                              headers={'X-Tempo-Work-Class': 'background'})
+            assert boundary.reached.wait(5), 'Background route reached neither admission nor evidence SQL'
+            assert not boundary.sql_started.is_set(), 'Background attempt evidence SQL started before foreground admission released'
+            assert not boundary.sections, 'Background attempt opened PostgreSQL before admission'
+        if outcome == 'error':
+            with pytest.raises(RuntimeError, match='evidence read failed'):
+                response_future.result(timeout=5)
+        else:
+            response = response_future.result(timeout=5)
+            assert response.status_code == (200 if outcome == 'found' else 404)
+            if outcome == 'found':
+                assert response.json() == {**boundary.attempt, 'events': [{'sequence': 1}, {'sequence': 2}]}
+            else:
+                assert response.json() == {'detail': 'Opening attempt evidence not found'}
+    assert boundary.sections == [{'read_only': True, 'background': True, 'authoritative': True}]
+    assert boundary.active_connections == activity_gate.active_background_sections == 0
+    assert not activity_gate.foreground_requests_active
+
+
+def test_foreground_opening_attempt_http_read_does_not_self_deadlock(attempt_http_boundary):
+    boundary = attempt_http_boundary
+    response = boundary.client.get('/api/opening-evidence/attempts/http-attempt')
+    assert response.status_code == 200
+    assert response.json() == {**boundary.attempt, 'events': [{'sequence': 1}, {'sequence': 2}]}
+    assert boundary.sections == [{'read_only': True}]
+    assert boundary.active_connections == 0
+
+
+@pytest.mark.parametrize('background_header', [True, False])
+def test_opening_evidence_http_unavailable_rejects_without_database_or_dispatch(monkeypatch, checkpoint_http_envelope, background_header):
+    from fastapi.testclient import TestClient
+    from app import main, command_dispatch
+    monkeypatch.delenv('TEMPO_REDIS_URL', raising=False)
+    monkeypatch.setattr(main.postgres_store, 'configured', lambda: False)
+    monkeypatch.setattr(main.postgres_store, 'connection', lambda **options: pytest.fail('Unavailable evidence opened PostgreSQL'))
+    monkeypatch.setattr(command_dispatch, 'dispatch_command', lambda *args, **options: pytest.fail('Unavailable evidence reached the broker'))
+    client = TestClient(main.app)
+    headers = {'X-Tempo-Work-Class': 'background'} if background_header else {}
+    rejected = client.post('/api/opening-evidence/checkpoints', json=checkpoint_http_envelope, headers=headers)
+    assert rejected.status_code == 409
+    assert rejected.json() == {'detail': {'code': 'opening_evidence_unavailable',
+        'message': 'Opening shadow evidence requires PostgreSQL', 'aggregate_review_allowed': True}}
+    unavailable = client.get('/api/opening-evidence/attempts/http-attempt', headers=headers)
+    assert unavailable.status_code == 503
+    assert unavailable.json() == {'detail': 'Opening shadow evidence requires PostgreSQL'}
+
+
+def test_opening_checkpoint_http_schema_rejection_precedes_dispatch(monkeypatch, checkpoint_http_envelope):
+    from fastapi.testclient import TestClient
+    from app import main, command_dispatch
+    monkeypatch.delenv('TEMPO_REDIS_URL', raising=False)
+    monkeypatch.setattr(main.postgres_store, 'configured', lambda: True)
+    monkeypatch.setattr(main.postgres_store, 'connection', lambda **options: pytest.fail('Invalid schema opened PostgreSQL'))
+    monkeypatch.setattr(command_dispatch, 'dispatch_command', lambda *args, **options: pytest.fail('Invalid schema reached the broker'))
+    response = TestClient(main.app).post('/api/opening-evidence/checkpoints', json={**checkpoint_http_envelope, 'events': 'invalid'})
+    assert response.status_code == 422
+    assert response.json()['detail'][0]['loc'] == ['body', 'events']
+
+
+def test_opening_checkpoint_payload_identity_ignores_historical_preparation(checkpoint_http_envelope):
+    from app.command_gateway import request_digest
+    payload = {'checkpoint': checkpoint_http_envelope}
+    historical_payload = {**payload, 'prepared_manifest': {'obsolete': True}}
+    digest = request_digest('opening_evidence.checkpoint', payload)
+    assert request_digest('opening_evidence.checkpoint', historical_payload) == digest
+    changed_payload = {'checkpoint': {**checkpoint_http_envelope, 'study_timezone': 'America/New_York'}}
+    assert request_digest('opening_evidence.checkpoint', changed_payload) != digest
+
+
+def test_foreground_review_http_preparation_keeps_foreground_request_lease(monkeypatch, checkpoint_http_envelope):
+    from fastapi.testclient import TestClient
+    from app import main, command_dispatch
+    from app.services.activity_gate import activity_gate
+    manifest = checkpoint_http_envelope['manifest']
+    completion = {**checkpoint_http_envelope, 'queue_entry_id': 101,
+                  'terminal': {'state': 'complete', 'final_sequence': 0, 'ended_at': '2026-09-30T12:01:00Z'}}
+    monkeypatch.delenv('TEMPO_REDIS_URL', raising=False)
+    monkeypatch.setattr(main.postgres_store, 'configured', lambda: True)
+    monkeypatch.setattr(activity_gate, 'wait_for_foreground', lambda: pytest.fail('Foreground review waited on its own lease'))
+    @contextmanager
+    def source_read(**options):
+        assert options == {'read_only': True}
+        assert not activity_gate.in_background and activity_gate.foreground_requests_active
+        snapshot = {'id': 1, 'card_id': 'shadow-card', 'revision': 3, 'start_fen': manifest['decisions'][0]['fen'],
+                    'moves_json': '["e2e4","e7e5","g1f3","b8c6","f1b5"]', 'trained_color': 'white', 'effective_trained_color': 'white'}
+        yield SimpleNamespace(execute_native=lambda *arguments: SimpleNamespace(fetchone=lambda: snapshot))
+    monkeypatch.setattr(main.postgres_store, 'connection', source_read)
+    submitted = []
+    def dispatch(name, payload, **options):
+        assert not activity_gate.in_background and activity_gate.foreground_requests_active
+        submitted.append((name, payload, options))
+        return {'persisted': True}
+    monkeypatch.setattr(command_dispatch, 'dispatch_command', dispatch)
+    response = TestClient(main.app).post('/api/cards/shadow-card/review', json={'outcome': 'correct',
+        'attempt_id': completion['attempt_id'], 'queue_entry_id': 101, 'opening_evidence_completion': completion})
+    assert response.status_code == 200
+    assert submitted[0][0] == 'cards.review' and submitted[0][1]['prepared_manifest'] == manifest
+    assert submitted[0][2].get('background', False) is False
+    assert not activity_gate.foreground_requests_active
+
+
+def test_opening_attempt_http_closes_read_before_event_decoding(attempt_http_boundary, monkeypatch):
+    boundary = attempt_http_boundary
+    original_decode = json.loads
+    decoded = []
+    def decode(value, *arguments, **options):
+        if value in ('{"sequence":1}', '{"sequence":2}'):
+            assert boundary.active_connections == 0, 'HTTP response decoding held the attempt read open'
+            decoded.append(value)
+        return original_decode(value, *arguments, **options)
+    monkeypatch.setattr(json, 'loads', decode)
+    assert boundary.client.get('/api/opening-evidence/attempts/http-attempt', headers={'X-Tempo-Work-Class': 'background'}).status_code == 200
+    assert decoded == ['{"sequence":1}', '{"sequence":2}']
+
+
 def test_opening_checkpoint_dispatches_as_background_without_changing_review_dispatch(monkeypatch):
     from app import main, command_dispatch, opening_evidence_api
     from app.models import ReviewRequest
@@ -16,7 +214,6 @@ def test_opening_checkpoint_dispatches_as_background_without_changing_review_dis
     request = OpeningEvidenceCheckpoint(attempt_id='background-checkpoint', manifest=fixture,
         origin_queue_entry_id=101, started_at='2026-09-30T12:00:00Z', study_timezone='UTC')
     dispatched = []
-    monkeypatch.setattr(opening_evidence_api, 'prepare_checkpoint', lambda request: fixture)
     monkeypatch.setattr(main.postgres_store, 'configured', lambda: True)
     monkeypatch.setattr(command_dispatch, 'dispatch_command',
         lambda name, payload, **options: dispatched.append((name, payload, options)) or {'persisted': True})
@@ -25,7 +222,7 @@ def test_opening_checkpoint_dispatches_as_background_without_changing_review_dis
     main.review('card', ReviewRequest(outcome='correct', queue_entry_id=101), idempotency_key='review-key')
     assert dispatched[0] == dispatched[1]
     assert dispatched[0] == ('opening_evidence.checkpoint',
-        {'checkpoint': request.model_dump(mode='json'), 'prepared_manifest': fixture},
+        {'checkpoint': request.model_dump(mode='json')},
         {'idempotency_key': 'checkpoint-key', 'background': True})
     assert dispatched[2][0] == 'cards.review'
     assert dispatched[2][2].get('background', False) is False
@@ -46,7 +243,6 @@ def test_opening_checkpoint_request_is_background_without_a_client_work_class_he
     monkeypatch.setattr(main.postgres_store, 'configured', lambda: True)
     monkeypatch.setattr(main.activity_gate, 'foreground', lambda: scope('foreground'))
     monkeypatch.setattr(main.activity_gate, 'background_request', lambda: scope('background'))
-    monkeypatch.setattr(opening_evidence_api, 'prepare_checkpoint', lambda request: fixture)
     monkeypatch.setattr(command_dispatch, 'dispatch_command', lambda *args, **kwargs: {'persisted': True})
     client = TestClient(main.app)
     assert client.post('/api/opening-evidence/checkpoints', json=request).status_code == 200

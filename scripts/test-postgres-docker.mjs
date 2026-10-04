@@ -751,7 +751,7 @@ const actions = {
           "/source/scripts/check_postgres_background_workloads.py"]);
         run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_opening_segmentation.py"]);
-        run("docker", [...compose, "run", "--rm", "--no-deps", "schema", "python",
+        run("docker", [...compose, "run", "--rm", "--no-deps", "-e", "TEMPO_REDIS_URL=redis://redis:6379/0", "schema", "python",
           "/source/scripts/check_postgres_opening_evidence.py"]);
       },
       restoreConsumers: async () => {

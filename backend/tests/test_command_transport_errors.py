@@ -24,6 +24,9 @@ class ReceiptTransport:
         })
         self.deferred = False
         self.handler_calls = 0
+        self.command_name = 'test.transport.failure'
+        self.payload = {}
+        self.background = False
 
     def execute(self, statement, parameters=()):
         row = None
@@ -55,7 +58,7 @@ class ReceiptTransport:
 
     def finish_worker(self):
         try:
-            command_gateway.execute_command("transport-regression", "test.transport.failure", {})
+            command_gateway.execute_command("transport-regression", self.command_name, self.payload, background=self.background)
         except RuntimeError:
             # Celery get(propagate=False) returns a failed task's exception.
             pass
@@ -214,3 +217,52 @@ def test_prepared_command_database_failure_remains_retryable_without_failed_rece
     with pytest.raises(SerializationFailure):
         command_gateway.execute_command('transport-regression', 'test.transport.failure', {})
     assert not transport.receipts and transport.handler_calls == 0
+
+
+@pytest.mark.parametrize('deferred', [False, True])
+def test_opening_checkpoint_http_semantic_rejection_preserves_terminal_receipt(receipt_transport, monkeypatch, deferred):
+    from pathlib import Path
+    from app import main
+    transport, _client = receipt_transport
+    manifest = json.loads((Path(__file__).resolve().parents[2] / 'tests/fixtures/opening-evidence-manifest.json').read_text())
+    checkpoint = {'attempt_id': 'semantic-rejection', 'manifest': {**manifest, 'manifest_id': '0' * 64},
+                  'origin_queue_entry_id': 101, 'started_at': '2026-09-30T12:00:00Z', 'study_timezone': 'UTC'}
+    snapshot = {'id': 1, 'card_id': 'shadow-card', 'revision': 3, 'start_fen': manifest['decisions'][0]['fen'],
+                'moves_json': '["e2e4","e7e5","g1f3","b8c6","f1b5"]', 'trained_color': 'white', 'effective_trained_color': 'white'}
+    def source_read(statement, parameters):
+        if statement.startswith('SELECT snapshot.*'):
+            return SimpleNamespace(fetchone=lambda: snapshot)
+        return SimpleNamespace(fetchone=lambda: None, fetchall=lambda: [])
+    monkeypatch.delenv('TEMPO_REDIS_URL', raising=False)
+    monkeypatch.delenv('TEMPO_FOREGROUND_ACTIVITY_URL', raising=False)
+    monkeypatch.setattr(main.postgres_store, 'configured', lambda: True)
+    monkeypatch.setattr(main.postgres_store, 'connection',
+                        lambda **options: nullcontext(SimpleNamespace(raw=transport, execute_native=source_read)))
+    monkeypatch.setitem(command_gateway._handlers, 'opening_evidence.checkpoint', transport.handler)
+    transport.command_name = 'opening_evidence.checkpoint'
+    transport.background = True
+    transport.deferred = deferred
+    def send_task(task_name, *, args, queue, **options):
+        assert task_name == 'app.tasks.execute_background_command' and queue == 'background'
+        assert args[:2] == ['transport-regression', 'opening_evidence.checkpoint']
+        transport.payload = args[2]
+        assert set(transport.payload) == {'checkpoint'}
+        return SimpleNamespace(get=transport.get_task_result)
+    monkeypatch.setattr(command_dispatch.celery_app, 'send_task', send_task)
+    client = TestClient(main.app)
+    response = client.post('/api/opening-evidence/checkpoints', json=checkpoint, headers={'Idempotency-Key': 'transport-regression'})
+    assert response.status_code == (202 if deferred else 409)
+    if deferred:
+        assert response.json()['operation_id'] == 'transport-regression'
+        assert 'persisted' not in response.json()
+        transport.finish_worker()
+    receipt = client.get('/api/operations/transport-regression', headers={'X-Tempo-Work-Class': 'background'}).json()
+    assert receipt['state'] == 'failed' and 'response' not in receipt
+    assert receipt['error']['status_code'] == 409
+    detail = receipt['error']['detail']
+    assert detail['code'] == 'opening_evidence_conflict' and detail['aggregate_review_allowed'] is True
+    transport.deferred = False
+    assert client.post('/api/opening-evidence/checkpoints', json=checkpoint,
+                       headers={'Idempotency-Key': 'transport-regression'}).json() == {'detail': detail}
+    assert transport.handler_calls == 0, 'Invalid evidence reached publication'
+    assert json.loads(transport.receipts['transport-regression']['error_json']) == receipt['error']
