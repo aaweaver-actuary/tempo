@@ -6,7 +6,16 @@ failed check returns an actionable 503. Do not cut over until the disposable
 browser stack, restored-data audit, benchmark gates, fresh snapshot parity,
 backup restore drill, and `make full` pass on the final checkout.
 
-## PostgreSQL schema upgrades after cutover
+## Routine starts and upgrades
+
+Use `tempo start` after installing the [Tempo CLI](TEMPO-CLI.md). The registered
+command performs necessary maintenance automatically, including the stopped-writer
+backup and restore drill below. Invoking it authorizes that maintenance for the
+registered target. `tempo migrate` uses the same checked workflow; `--plan` is
+read-only. Initial import, destructive restore, and PostgreSQL major upgrades
+remain separate operations requiring their own verified maintenance window.
+
+## Manual PostgreSQL schema upgrades after cutover
 
 Use this only after approval of the exact product database and maintenance
 window. Confirm `docker context show`, the Compose project, resolved volume
@@ -21,7 +30,7 @@ image IDs. Then stop application writers and readers before the backup:
 First run `scripts/upgrade-postgres-schema.sh --plan`. This read-only option
 validates the Compose project and external volume identities, then prints the
 sequence without building images, stopping services, backing up, or migrating.
-The `--apply` option runs the sequence below and exits before dependent startup
+The `--apply` option delegates to the CLI's checked migration workflow and exits before dependent startup
 if backup verification or migration fails. Set `COMPOSE_PROJECT_NAME` and
 `TEMPO_UPGRADE_EXPECTED_PROJECT` to the approved project name before invoking
 it; inspect the resolved Compose configuration and current container mounts

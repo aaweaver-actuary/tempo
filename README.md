@@ -32,13 +32,28 @@ Every reported defect must have a named regression test before closure. Run `mak
 
 ### Easiest on a Mac
 
-Complete the [PostgreSQL maintenance procedure](docs/POSTGRES-MAINTENANCE.md) once, then double-click **Start Tempo.command** in this folder. Tempo starts the Docker product and opens [http://localhost:3000](http://localhost:3000) automatically. Keep the Terminal window open while using Tempo; press Control-C there when you want to stop it.
+For the existing PostgreSQL installation, install the management command once:
+
+```sh
+./tempo install
+```
+
+After a merge, run `tempo start`. It checks the exact revision's complete CI,
+updates a clean main checkout, prepares images, verifies a backup before any
+migration, and opens [http://localhost:3000](http://localhost:3000) after readiness
+passes. Tempo runs in the background; use `tempo stop` to stop it. `tempo doctor`
+explains startup problems, and `tempo start --plan` previews maintenance.
+See [CLI commands and recovery](docs/TEMPO-CLI.md).
+
+You can also double-click **Start Tempo.command**; it uses the same CLI and
+registers the existing installation on its first run. Initial SQLite cutover
+remains a separate [PostgreSQL maintenance procedure](docs/POSTGRES-MAINTENANCE.md).
 
 If macOS blocks the launcher the first time, right-click **Start Tempo.command**, choose **Open**, and confirm once. Docker Desktop is required. The launcher checks Docker and the PostgreSQL Compose configuration before starting.
 
 ### Docker Compose
 
-After the maintenance import and restore drill, run `docker compose up --build`.
+Use `tempo start` for normal operation. The manual Compose procedures below remain available for maintenance diagnosis; they do not replace the CLI's source, backup, migration, and readiness checks.
 
 To keep Lichess Explorer coverage running while the browser is closed, set
 `TEMPO_LICHESS_EXPLORER_TOKEN` in your Docker Compose environment before starting
