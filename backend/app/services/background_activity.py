@@ -5,10 +5,13 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import logging
 import sqlite3
+from fastapi import HTTPException
 
 from ..database import connection, read_connection
 from .. import postgres_store
 
+
+from .defensive_analysis import analysis_enabled, recommendation_sql, search_admission_sql, task_admission_sql
 
 SOURCES = {
     "durable": ("background_tasks", "id"),
@@ -93,22 +96,27 @@ def emit_progress(
         )
 
 
-def set_control(source: str, work_id: str, action: str) -> bool:
+def set_control(source: str, work_id: str, action: str, *, allow_settings_blocked_resume: bool = False) -> bool:
     if source not in SOURCES or action not in {"pause", "resume", "prioritize", "normal"}:
         return False
     with connection() as database:
-        return set_control_in_transaction(database, source, work_id, action)
+        return set_control_in_transaction(database, source, work_id, action,
+                                          allow_settings_blocked_resume=allow_settings_blocked_resume)
 
 
-def set_control_in_transaction(database, source: str, work_id: str, action: str) -> bool:
+def set_control_in_transaction(database, source: str, work_id: str, action: str,
+                               *, allow_settings_blocked_resume: bool = False) -> bool:
     """Apply a validated activity control in the caller's short write transaction."""
     if source not in SOURCES or action not in {"pause", "resume", "prioritize", "normal"}:
         return False
     table, id_column = SOURCES[source]
     state_column = "state" if source in {"durable", "threat_analysis"} else "status"
     row_lock = " FOR UPDATE" if postgres_store.configured() else ""
+    settings_admission = (task_admission_sql('kind') if source == 'durable' else
+                          search_admission_sql('threat_analysis_requests.id') if source == 'threat_analysis' else '1=1')
     work_row = database.execute(
-        f"SELECT {state_column} FROM {table} WHERE {id_column}=?{row_lock}", (work_id,)
+        f"SELECT {state_column},({settings_admission}) AS settings_admitted "
+        f"FROM {table} WHERE {id_column}=?{row_lock}", (work_id,)
     ).fetchone()
     if not work_row or work_row[0] in {"failed", "superseded"}:
         return False
@@ -119,6 +127,9 @@ def set_control_in_transaction(database, source: str, work_id: str, action: str)
             (work_id,),
         ).fetchone():
             return False
+    if action == 'resume' and not allow_settings_blocked_resume and not work_row[1]:
+        raise HTTPException(409, 'Defensive analysis is disabled in Settings. '
+                            'Enable Defensive analysis in Settings before resuming this work.')
     now = _now()
     database.execute(
         """INSERT INTO background_activity(source,work_id,updated_at)
@@ -166,7 +177,7 @@ def _base_item(source: str, work_id: str, title: str, state: str, updated_at: st
         "source": source, "id": work_id, "title": title, "state": state,
         "phase": phase or state, "completed": completed, "total": total,
         "updated_at": updated_at, "generation_key": generation_key,
-        "error": error, "paused": False, "promoted": False,
+        "error": error, "paused": False, "paused_by_settings": False, "promoted": False,
     }
 
 
@@ -176,17 +187,29 @@ def list_activity(*, offset: int = 0, limit: int = 50) -> dict:
     cutoff = (datetime.now(timezone.utc) - timedelta(days=1)).isoformat()
     items: list[dict] = []
     with read_connection() as database:
-        for row in database.execute("SELECT * FROM background_tasks WHERE state!='complete' OR updated_at>=?", (cutoff,)):
-            items.append(_base_item("durable", row["id"], row["kind"].replace("_", " ").title(), row["state"], row["updated_at"], str(row["generation"]), row["phase"], error=row["last_error"]))
+        analysis_enabled(database)
         for row in database.execute(
-            """SELECT id,state,attempts,last_error,updated_at FROM threat_analysis_requests
-               WHERE state!='complete' OR updated_at>=?""", (cutoff,),
+            f"SELECT *,NOT {task_admission_sql('kind')} AS paused_by_settings "
+            "FROM background_tasks WHERE state!='complete' OR updated_at>=?", (cutoff,),
+        ):
+            items.append(_base_item("durable", row["id"], row["kind"].replace("_", " ").title(), row["state"], row["updated_at"], str(row["generation"]), row["phase"], error=row["last_error"]))
+            items[-1]['paused_by_settings'] = bool(row['paused_by_settings'])
+            items[-1]['paused'] = items[-1]['paused_by_settings']
+        for row in database.execute(
+            f"""SELECT request.id,state,attempts,last_error,updated_at,
+                      {recommendation_sql('request.id')} AS is_recommendation,
+                      NOT {search_admission_sql('request.id')} AS paused_by_settings
+                FROM threat_analysis_requests request
+                WHERE state!='complete' OR updated_at>=?""", (cutoff,),
         ):
             state = ("running" if row["state"] == "leased" else
                      "retrying" if row["state"] == "queued" and row["attempts"] else row["state"])
-            items.append(_base_item("threat_analysis", row["id"], "Defensive engine search",
+            title = "Repertoire recommendation search" if row['is_recommendation'] else "Defensive engine search"
+            items.append(_base_item("threat_analysis", row["id"], title,
                                     state, row["updated_at"], str(row["attempts"]),
                                     error=row["last_error"]))
+            items[-1]['paused_by_settings'] = bool(row['paused_by_settings'])
+            items[-1]['paused'] = items[-1]['paused_by_settings']
         for row in database.execute("SELECT * FROM game_sync_jobs WHERE status!='complete' OR updated_at>=?", (cutoff,)):
             items.append(_base_item("sync", row["id"], "Game sync", row["status"], row["updated_at"], row["id"], error=row["error"]))
         for row in database.execute("""SELECT j.*,g.provider,g.played_at FROM game_derivation_jobs j
@@ -252,18 +275,18 @@ def list_activity(*, offset: int = 0, limit: int = 50) -> dict:
     for item in items:
         control = controls.get((item["source"], item["id"]))
         if control:
-            item["paused"] = bool(control["paused"])
+            item["paused"] = item["paused"] or bool(control["paused"])
             item["promoted"] = bool(control["promoted"])
             if control["generation_key"] == item["generation_key"]:
                 item["phase"] = control["phase"] or item["phase"]
                 if control["completed_units"] is not None:
                     item["completed"] = control["completed_units"]
                     item["total"] = control["total_units"]
-            if item["paused"] and item["state"] in {"running", "leased", "finalizing"}:
-                item["state"] = "pausing"
-            elif item["paused"] and item["state"] in {"queued", "retrying"}:
-                item["state"] = "paused"
-                item["phase"] = "Paused"
+        if item["paused"] and item["state"] in {"running", "leased", "finalizing"}:
+            item["state"] = "pausing"
+        elif item["paused"] and item["state"] in {"queued", "retrying"}:
+            item["state"] = "paused"
+            item["phase"] = "Paused"
         if item["state"] == "complete" and item["total"] is not None:
             item["completed"] = item["total"]
     order = {"pausing": 0, "running": 1, "leased": 1, "finalizing": 1,

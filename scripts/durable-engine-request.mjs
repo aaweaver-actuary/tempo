@@ -17,7 +17,7 @@ export function createDurableEngineRequest(apiUrl, journalPath, transport = requ
     }
   }
 
-  async function send(path, options = {}) {
+  async function send(path, options = {}, deliveryOptions = {}) {
     if (options.method !== "POST") return transport(apiUrl, path, options);
     let saved = await pending();
     if (saved && (saved.path !== path || saved.options.body !== options.body)) {
@@ -33,7 +33,7 @@ export function createDurableEngineRequest(apiUrl, journalPath, transport = requ
     }
     try {
       const result = await transport(apiUrl, path, {
-        ...saved.options, operationId: saved.operationId,
+        ...saved.options, ...deliveryOptions, operationId: saved.operationId,
       });
       await unlink(journalPath);
       return result;

@@ -21,6 +21,7 @@ function isActivityResponse(value: unknown): value is ActivityResponse {
     && candidate.items.every(item => typeof item.id === "string" && typeof item.source === "string"
       && typeof item.title === "string" && typeof item.state === "string" && typeof item.phase === "string"
       && typeof item.updated_at === "string" && typeof item.paused === "boolean"
+      && (item.paused_by_settings === undefined || typeof item.paused_by_settings === "boolean")
       && typeof item.promoted === "boolean" && (item.error === null || typeof item.error === "string")
       && (item.completed === null || typeof item.completed === "number")
       && (item.total === null || typeof item.total === "number"))
@@ -55,7 +56,8 @@ function sameActivityItems(left: ActivityItem[], right: ActivityItem[]) {
     return item.source === other.source && item.id === other.id && item.title === other.title
       && item.state === other.state && item.phase === other.phase && item.completed === other.completed
       && item.total === other.total && item.updated_at === other.updated_at && item.error === other.error
-      && item.paused === other.paused && item.promoted === other.promoted;
+      && item.paused === other.paused && Boolean(item.paused_by_settings) === Boolean(other.paused_by_settings)
+      && item.promoted === other.promoted;
   });
 }
 
@@ -272,7 +274,7 @@ export function ServiceStatusPanel() {
     const localItems: ActivityItem[] = browserItems.map(item => ({
       source: "study", id: item.id, title: item.title, state: item.state,
       phase: item.phase, completed: null, total: null, updated_at: item.updated_at,
-      error: item.error ?? null, paused: false, promoted: false,
+      error: item.error ?? null, paused: false, paused_by_settings: false, promoted: false,
     }));
     return [...items, ...localItems].sort((left, right) =>
       groupOrder.indexOf(activityGroup(left.state)) - groupOrder.indexOf(activityGroup(right.state))
@@ -309,8 +311,9 @@ export function ServiceStatusPanel() {
             <p>{item.phase.replaceAll("_", " ")}{item.error ? ` · ${item.error}` : ""}</p>
             <ProgressBar item={item} />
             <time dateTime={item.updated_at}>Updated {item.updated_at.replace("T", " ").slice(0, 16)} UTC</time>
+            {controlEligible && item.paused_by_settings && <p>Paused in Settings. Enable Defensive analysis in Settings to allow this work.</p>}
             {controlEligible && <div className="tempo-activity-actions">
-              <Button type="button" disabled={busyKey === key} onClick={() => void control(item, item.paused ? "resume" : "pause")}>{item.paused ? "Resume" : "Pause"}</Button>
+              {!item.paused_by_settings && <Button type="button" disabled={busyKey === key} onClick={() => void control(item, item.paused ? "resume" : "pause")}>{item.paused ? "Resume" : "Pause"}</Button>}
               <Button type="button" disabled={busyKey === key} onClick={() => void control(item, item.promoted ? "normal" : "prioritize")}>{item.promoted ? "Normal priority" : "Prioritize"}</Button>
             </div>}
             {item.state === "failed" && (item.source === "durable" || item.source === "game_analysis" || item.source === "threat_analysis") &&

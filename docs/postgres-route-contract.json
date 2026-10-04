@@ -1202,5 +1202,12 @@
     "handler": "opening_attempt_evidence",
     "treatment": "reader",
     "state": "staged"
+  },
+  {
+    "method": "GET",
+    "path": "/api/defensive-threats/analysis/{request_id}/control",
+    "handler": "defensive_engine_control",
+    "treatment": "reader",
+    "state": "staged"
   }
 ]
