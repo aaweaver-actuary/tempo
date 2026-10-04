@@ -56,7 +56,7 @@ from .game_analysis_publication import (
 from . import integrity_repair_commands  # noqa: F401 - registers guided integrity repairs
 from .services.activity_gate import activity_gate
 from .services.background_runtime import measure_handler
-from .services.durable_tasks import current_delivery, record_stale_delivery
+from .services.durable_tasks import current_delivery, record_stale_delivery, defer_paused_defensive_task
 from .services.durable_tasks import claim_task, complete_task, defer_task_for_contention, fail_task
 from .services.priority_retention import execute_priority_retention_slice
 from .services.postgres_queue_refresh import execute_postgres_queue_refresh_slice
@@ -290,6 +290,8 @@ def execute_background_slice(self, claimed_task: dict[str, Any]) -> bool:
     with measure_handler(claimed_task["kind"], (self.request.headers or {}).get("submitted_at")), \
             activity_gate.background_job(claimed_task["kind"], claimed_task["id"]):
         try:
+            if defer_paused_defensive_task(claimed_task):
+                return False
             if not current_delivery(claimed_task):
                 record_stale_delivery(claimed_task)
                 return False

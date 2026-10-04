@@ -1,4 +1,5 @@
-import { startEngineAttempt, engineWaitingStage } from "./engine-attempt-diagnostics.mjs";
+import { createEngineSearch, admitEngineJob } from "./engine-search.mjs";
+import { engineWaitingStage } from "./engine-attempt-diagnostics.mjs";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import StockfishFactory from "../public/engines/sf_19_smallnet.js";
@@ -15,7 +16,6 @@ const engine = await StockfishFactory({
   locateFile: (name) => resolve(assetDirectory, name),
   listen: () => {},
 });
-let fatalEngineError = false;
 engine.setNnueBuffer(new Uint8Array(await readFile(resolve(assetDirectory, "nn-61e7af4bb97d.nnue"))));
 engine.uci("uci");
 engine.uci("setoption name Threads value 1");
@@ -34,102 +34,8 @@ async function request(path, options = {}) {
   });
 }
 
-function evaluate(job, kind = "engine_defense") {
-  engineWaitingStage(kind, "execution");
-  const finishDiagnostic = startEngineAttempt(kind);
-  return new Promise((resolveReport, rejectReport) => {
-    const { request: specification } = job;
-    const lines = new Map();
-    let finished = false;
-    let preempted = false;
-    let stopReason = "preempted";
-    let stopWatchdog;
-    const stopSearch = () => {
-      if (preempted) return;
-      preempted = true;
-      engine.uci("stop");
-      stopWatchdog = setTimeout(() => {
-        fatalEngineError = true;
-        const error = new Error("Stockfish did not drain after cancellation");
-        error.diagnostics = finishDiagnostic(stopReason === "preempted" ? "preempted" : "timeout");
-        rejectReport(error);
-      }, 5_000);
-    };
-    const position = specification.position_prefix_uci ?? [];
-    const whiteTurn = (specification.position_start_fen.split(" ")[1] === "w") === (position.length % 2 === 0);
-    const whiteSign = whiteTurn ? 1 : -1;
-    const timeout = setTimeout(() => {
-      stopReason = "Engine timed out before requested depth";
-      stopSearch();
-    }, 55_000);
-    const foregroundPoll = process.env.TEMPO_ENGINE_SMOKE === "1" ? undefined : setInterval(async () => {
-      if (finished || preempted) return;
-      try {
-        const { active } = await request("/api/system/foreground-active");
-        if (active) {
-          stopSearch();
-        }
-      } catch {
-        stopSearch();
-      }
-    }, 750);
-    engine.listen = (text) => {
-      if (text.startsWith("info ") && text.includes(" pv ") && !preempted) {
-        const rank = Number(text.match(/ multipv (\d+)/)?.[1] ?? 1);
-        const root = text.match(/ pv ([a-h][1-8][a-h][1-8][qrbn]?)/)?.[1];
-        const depth = Number(text.match(/ depth (\d+)/)?.[1] ?? 0);
-        const centipawns = text.match(/ score cp (-?\d+)/)?.[1];
-        const mate = text.match(/ score mate (-?\d+)/)?.[1];
-        if (root && (centipawns !== undefined || mate !== undefined)) {
-          lines.set(rank, {
-            root_move_uci: root,
-            pv_uci: text.split(" pv ")[1].trim().split(/\s+/),
-            score: centipawns === undefined
-              ? { cp: null, mate: Number(mate) * whiteSign }
-              : { cp: Number(centipawns) * whiteSign, mate: null },
-            depth,
-          });
-        }
-      }
-      if (text.startsWith("bestmove ")) {
-        finished = true;
-        clearTimeout(timeout);
-        clearInterval(foregroundPoll);
-        clearTimeout(stopWatchdog);
-        if (preempted) {
-          const error = new Error(stopReason);
-          error.diagnostics = finishDiagnostic(stopReason === "preempted" ? "preempted" : "timeout");
-          return rejectReport(error);
-        }
-        const completeLines = [...lines.entries()]
-          .sort(([left], [right]) => left - right)
-          .map(([, line]) => line)
-          .filter((line) => line.depth >= specification.depth);
-        if (!completeLines.length) {
-          const error = new Error("Engine did not reach the requested depth");
-          error.diagnostics = finishDiagnostic("failure");
-          return rejectReport(error);
-        }
-        resolveReport({ report: { request: specification, complete: true, lines: completeLines }, diagnostics: finishDiagnostic("success") });
-      }
-    };
-    engine.onError = (message) => {
-      if (!finished) {
-        fatalEngineError = true;
-        finished = true;
-        clearTimeout(timeout);
-        clearInterval(foregroundPoll);
-        clearTimeout(stopWatchdog);
-        const error = new Error(String(message));
-        error.diagnostics = finishDiagnostic("failure");
-        rejectReport(error);
-      }
-    };
-    engine.uci(`setoption name MultiPV value ${Math.max(1, Math.min(5, specification.multipv))}`);
-    engine.uci(`position fen ${specification.position_start_fen}${position.length ? ` moves ${position.join(" ")}` : ""}`);
-    engine.uci(`go depth ${specification.depth}${specification.root_move_uci ? ` searchmoves ${specification.root_move_uci}` : ""}`);
-  });
-}
+const searches = createEngineSearch(engine, request);
+const evaluate = searches.evaluate;
 
 if (process.env.TEMPO_ENGINE_SMOKE === "1") {
   const { report } = await evaluate({ request: {
@@ -177,6 +83,10 @@ while (true) {
       job = undefined;
       continue;
     }
+    if (!await admitEngineJob(job, jobKind === "defense" ? "engine_defense" : "engine_game", request)) {
+      job = undefined;
+      continue;
+    }
     const { report, diagnostics } = await evaluate(job, jobKind === "defense" ? "engine_defense" : "engine_game");
     await request(jobKind === "defense"
       ? `/api/defensive-threats/analysis/${job.id}/report`
@@ -208,7 +118,7 @@ while (true) {
         });
       } catch (reportingError) { console.error("Could not update engine request:", reportingError); }
     } else console.error("Could not claim engine request:", error);
-    if (fatalEngineError) process.exit(1);
+    if (searches.fatalEngineError) process.exit(1);
     await sleep(2_000);
   }
 }

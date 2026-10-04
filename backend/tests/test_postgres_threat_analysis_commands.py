@@ -29,6 +29,8 @@ def test_postgres_threat_claim_reclaims_one_lease_and_returns_claimed_request(mo
     class Database:
         def execute_native(self, statement, parameters=()):
             statements.append((statement, parameters))
+            if statement.startswith("SELECT defensive_analysis_enabled"):
+                return Cursor((1,))
             if statement.startswith("SELECT request.id"):
                 return Cursor({"id": "request-one", "request_json": '{"depth":14}'})
             return Cursor()
@@ -37,8 +39,8 @@ def test_postgres_threat_claim_reclaims_one_lease_and_returns_claimed_request(mo
     assert result["job"]["id"] == "request-one"
     assert result["job"]["request"] == {"depth": 14}
     assert result["job"]["lease_id"]
-    assert "LIMIT 1 FOR UPDATE SKIP LOCKED" in statements[0][0]
-    assert "FOR UPDATE OF request SKIP LOCKED" in statements[1][0]
+    assert "LIMIT 1 FOR UPDATE SKIP LOCKED" in statements[1][0]
+    assert "FOR UPDATE OF request SKIP LOCKED" in statements[2][0]
 
 
 def test_postgres_threat_claim_checks_sparse_priorities_before_ordered_queue():
@@ -49,6 +51,8 @@ def test_postgres_threat_claim_checks_sparse_priorities_before_ordered_queue():
         def execute_native(self, statement, parameters=()):
             nonlocal request_queries
             statements.append(statement)
+            if statement.startswith("SELECT defensive_analysis_enabled"):
+                return Cursor((1,))
             if statement.startswith("SELECT request.id"):
                 request_queries += 1
                 if request_queries == 2:
@@ -57,10 +61,10 @@ def test_postgres_threat_claim_checks_sparse_priorities_before_ordered_queue():
 
     result = threat_analysis_commands.claim_threat_analysis(Database(), {})
     assert result["job"]["id"] == "ordinary-request"
-    assert "WHERE role='attempt'" in statements[1]
-    assert "SELECT 1 FROM background_activity" in statements[2]
-    assert "ORDER BY request.created_at,request.id" in statements[3]
-    assert "LIMIT 1 OFFSET 0" in statements[3]
+    assert "WHERE role='attempt'" in statements[2]
+    assert "SELECT 1 FROM background_activity" in statements[3]
+    assert "ORDER BY request.created_at,request.id" in statements[4]
+    assert "LIMIT 1 OFFSET 0" in statements[4]
 
 
 def test_postgres_threat_report_validates_lease_and_queues_candidates_atomically(monkeypatch):
@@ -162,3 +166,18 @@ def test_postgres_threat_routes_reuse_engine_operation_id(monkeypatch):
         "claim-one", "report-one", "failure-one", "release-one", "retry-one",
     ]
     assert [call[3] for call in calls] == [True, True, True, True, False]
+
+
+def test_postgres_paused_claim_uses_active_recommendation_driver_without_claiming_defensive_backlog():
+    statements = []
+    class Database:
+        def execute_native(self, statement, parameters=()):
+            statements.append(statement)
+            if statement.startswith('SELECT defensive_analysis_enabled'):
+                return Cursor((0,))
+            return Cursor()
+    assert threat_analysis_commands.claim_threat_analysis(Database(), {}) == {'job': None}
+    request_queries = [statement for statement in statements if statement.startswith('SELECT request.id')]
+    assert request_queries
+    assert all('request.id IN (SELECT recommendation.request_id' in statement for statement in request_queries)
+    assert all('coverage_discovery_recommendation_requests' in statement for statement in request_queries)

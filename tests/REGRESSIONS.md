@@ -1308,3 +1308,16 @@ PostgreSQL snapshot effects and unchanged identities after service recreation;
 confirmed review replay produces no duplicate effect. No additional worker-write
 infrastructure scenario is needed for these static configuration checks.
 Full and durability gates include this stage; browser-only scopes omit it.
+
+## Independent defensive analysis pause — related #14, #43
+
+- `test_disabled_defensive_analysis_does_not_claim_exercise_search` reproduces a defensive request being leased with analysis disabled; the original claim failed this regression before the gate.
+- `test_paused_defense_keeps_shared_repertoire_recommendation_claimable` covers game-backed and coverage-backed recommendations sharing defensive requests, including stale leases and dismissed recommendations.
+- `test_defensive_control_pause_resume_and_read_only_replay`, `test_defensive_pause_setting_survives_legacy_omission_and_restart`, `test_defensive_pause_migrates_existing_sqlite_without_losing_requests`, and `test_postgres_defensive_setting_preserves_omitted_enabled_value` preserve settings, queued evidence, and compatibility.
+- `test_defensive_slices_pause_before_claim_and_redispatched_work_replays_once` covers all six defensive task kinds; `test_paused_defensive_celery_delivery_never_computes_or_wakes_retries` protects delivery-time gating without a retry storm.
+- `test_postgres_paused_claim_uses_active_recommendation_driver_without_claiming_defensive_backlog` protects sparse recommendation selection while disabled. Existing grading/admission fixtures explicitly enable analysis so their regular coverage remains meaningful.
+- `test_defensive_pause_activity_labels_recommendations_and_preserved_work` distinguishes recommendation searches from paused defensive work.
+- `tests/unit/defensive-analysis-pause-regressions.test.ts` covers active cancellation/drain, recovered claims, unresolved durable releases, shared recommendation permission, ordinary game progress, single-flight/stale control polls, control outages, and fatal drain cleanup. Existing journal recovery/report-delivery regressions remain required.
+- `defensive analysis pause persists independently of defensive cards` in `settings-defense-toggle.spec.ts` protects the actual Settings save/reload workflow.
+- `scripts/check_postgres_defensive_pause.py`, executed by the regular PostgreSQL durability runner, proves default-off migration, mixed-purpose claims, foreground contention, snapshot classification, restart persistence, omitted-setting preservation, and idempotent resume using its own disposable database.
+- `test_pausing_engine_release_preserves_retry_budget_and_idempotent_resume` protects pause releases from consuming failure retries, including repeated release and resumed claim. The PostgreSQL proof covers the same fenced decrement.

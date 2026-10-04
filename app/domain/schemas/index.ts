@@ -295,6 +295,7 @@ export const settingsResponseSchema = z.strictObject({
   tactics_new_per_day: z.number().int().min(0).max(100).default(5),
   defense_new_cards_per_day: z.number().int().min(0).max(100).default(5),
   include_defensive_cards_in_daily_stack: z.boolean().default(true),
+  defensive_analysis_enabled: z.boolean().default(false),
   discovery_window_days: z.union([z.literal(30), z.literal(90)]).default(90),
   lichess_username: z.string(),
   chesscom_username: z.string(),

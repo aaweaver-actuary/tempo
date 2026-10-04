@@ -32,7 +32,8 @@ def seed_candidate(*, game_id: str = "lichess:defense-one", fen: str = FEN,
         game, SourceLine("engine", 1, ("b4c2", "e1d2", "c2a1", "d2c1"))
     )[0]
     with database.connection() as db:
-        db.execute("UPDATE settings SET defense_new_cards_per_day=0 WHERE id=1")
+        # These grading/admission fixtures explicitly opt into defensive analysis.
+        db.execute("UPDATE settings SET defensive_analysis_enabled=1,defense_new_cards_per_day=0 WHERE id=1")
         db.execute(
             """INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,
                  result,start_fen,moves_json,analysis_state,analysis_version)
@@ -77,7 +78,8 @@ def seed_validated_control():
         game, SourceLine("engine", 1, ("b4c2", "e1d2", "c2a1", "d2c1")),
     )[0]
     with database.connection() as db:
-        db.execute("UPDATE settings SET defense_new_cards_per_day=0 WHERE id=1")
+        # These grading/admission fixtures explicitly opt into defensive analysis.
+        db.execute("UPDATE settings SET defensive_analysis_enabled=1,defense_new_cards_per_day=0 WHERE id=1")
         db.execute(
             """INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,
                  result,start_fen,moves_json,analysis_state,analysis_version)
@@ -128,7 +130,8 @@ def seed_reported_rc4_candidate():
         game, SourceLine("engine", 1, ("f5e3", "g2g3", "e3c4", "f2f4")),
     )[0]
     with database.connection() as db:
-        db.execute("UPDATE settings SET defense_new_cards_per_day=0 WHERE id=1")
+        # These grading/admission fixtures explicitly opt into defensive analysis.
+        db.execute("UPDATE settings SET defensive_analysis_enabled=1,defense_new_cards_per_day=0 WHERE id=1")
         db.execute(
             """INSERT INTO imported_games(id,provider,username,played_at,speed,rated,color,
                  result,start_fen,moves_json,analysis_state,analysis_version)
@@ -531,7 +534,8 @@ def test_discovery_paused_defense_can_train_now_beyond_automatic_daily_cap(tmp_p
         candidate_id = seed_candidate()
         assert client.post(f"/api/defensive-threats/candidates/{candidate_id}/pause").status_code == 200
         with database.connection() as db:
-            db.execute("UPDATE settings SET defense_new_cards_per_day=0 WHERE id=1")
+            # These grading/admission fixtures explicitly opt into defensive analysis.
+            db.execute("UPDATE settings SET defensive_analysis_enabled=1,defense_new_cards_per_day=0 WHERE id=1")
         trained = client.post(f"/api/defensive-threats/candidates/{candidate_id}/train-now")
         assert trained.status_code == 200, trained.text
         card_id = trained.json()["card_id"]
