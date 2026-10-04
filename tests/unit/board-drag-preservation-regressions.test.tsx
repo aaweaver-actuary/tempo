@@ -12,7 +12,7 @@ import { asCardId, asFenString, asSanMove } from "../../app/types";
 import { useBoardShellStore } from "../../app/state/board-shell-store";
 import { useTrainingStore } from "../../app/state/training-store";
 
-const api = vi.hoisted(() => ({ set: vi.fn(), cancelMove: vi.fn(), destroy: vi.fn(),
+const api = vi.hoisted(() => ({ state: { dom: { bounds: { clear: vi.fn() } } }, set: vi.fn(), cancelMove: vi.fn(), destroy: vi.fn(),
   redrawAll: vi.fn(), setAutoShapes: vi.fn(), setShapes: vi.fn() }));
 const createBoard = vi.hoisted(() => vi.fn((element: unknown, config: unknown) => { void element; void config; return api; }));
 vi.mock("@lichess-org/chessground", () => ({ Chessground: createBoard }));
@@ -239,4 +239,28 @@ it("editor mode transition refreshes geometry after the setup palette moves the 
   view.rerender(<Chessboard {...boardProps} editMode={false} />);
   expect(api.redrawAll).toHaveBeenCalledOnce();
   expect(api.set).toHaveBeenLastCalledWith(expect.objectContaining({ movable: expect.objectContaining({ free: false }) }));
+});
+
+
+it("heading size changes clear hit-test bounds without canceling a held drag", () => {
+  const heading = document.createElement("div");
+  let notifyHeadingResize: (() => void) | undefined;
+  const disconnectHeadingObserver = vi.fn();
+  vi.stubGlobal("ResizeObserver", class {
+    constructor(private notify: () => void) {}
+    observe(element: HTMLElement) { if (element === heading) notifyHeadingResize = this.notify; }
+    disconnect() { disconnectHeadingObserver(); }
+  });
+  const view = render(<Chessboard {...boardProps} layoutAnchor={heading} />);
+  api.state.dom.bounds.clear.mockClear();
+  api.redrawAll.mockClear(); api.cancelMove.mockClear(); api.set.mockClear();
+  const originalInstances = createBoard.mock.calls.length;
+  act(() => notifyHeadingResize?.());
+  expect(api.state.dom.bounds.clear).toHaveBeenCalledOnce();
+  expect(api.redrawAll).not.toHaveBeenCalled();
+  expect(api.cancelMove).not.toHaveBeenCalled();
+  expect(api.set).not.toHaveBeenCalled();
+  expect(createBoard).toHaveBeenCalledTimes(originalInstances);
+  view.unmount();
+  expect(disconnectHeadingObserver).toHaveBeenCalled();
 });

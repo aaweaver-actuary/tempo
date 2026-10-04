@@ -1,3 +1,4 @@
+import { TrainingRepairNotice } from "../components/TrainingRepairNotice";
 import { useCommittedCallback } from "../hooks/use-committed-callback";
 import { Button } from "../components/buttons/BaseButton";
 import { teachingResponseSchema } from "../domain/schemas";
@@ -1537,29 +1538,15 @@ export default function Home() {
                 </Button>
               </div>
             )}
-            {pausedIntegrity && (
-              <div className="integrity-train-notice" role="status">
-                <strong>
-                  {pausedIntegrity.blockedDue} opening card
-                  {pausedIntegrity.blockedDue === 1 ? "" : "s"} paused by
-                  repertoire repair.
-                </strong>
-                <span>
-                  Unaffected openings and tactics remain available ·{" "}
-                  {pausedIntegrity.issueCount} issue
-                  {pausedIntegrity.issueCount === 1 ? "" : "s"} remaining.
-                </span>
-                <Button
-                  onClick={() => {
-                    deferredRepairIds.current.delete(pausedIntegrity.id);
-                    setRepairRepertoireId(pausedIntegrity.id);
-                  }}
-                >
-                  Resume repair
-                </Button>
-              </div>
-            )}
             <TrainingView
+              repairNotice={pausedIntegrity && <TrainingRepairNotice
+                blockedDue={pausedIntegrity.blockedDue}
+                issueCount={pausedIntegrity.issueCount}
+                onResume={() => {
+                  deferredRepairIds.current.delete(pausedIntegrity.id);
+                  setRepairRepertoireId(pausedIntegrity.id);
+                }}
+              />}
               dateLabel={new Date().toLocaleDateString()}
               serviceError={serviceError}
               offlineQueue={offlineQueue}

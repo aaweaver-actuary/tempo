@@ -1435,3 +1435,14 @@ Full and durability gates include this stage; browser-only scopes omit it.
 - `test_postgres_opening_attempt_http_admission_preserves_foreground_diagnostics` — actual GET waits on real Redis foreground admission before PostgreSQL SQL; authoritative limits, ordered 256-event bound, missing/error cleanup, idle released connections and foreground control preserve evidence and scheduling.
 
 Backend names run in the existing contracts, preparation and transport pytest files; the client names remain in `tests/unit/opening-evidence-background-admission.test.ts`. Real PostgreSQL names run in the existing disposable evidence rehearsal through the regular durability runner, with its runner-owned Redis enabled. Existing preparation/stale-source/restart/review atomicity, quota, recovery and recreation/backup proofs remain required.
+
+### Phone opening study: repertoire identity beside the board
+
+- `Phone opening study shows repertoire identity above the board` — component and real-browser coverage at 320, 390, and 767px; title appears once, before the full-width board, with side to play. The component case failed on the original layout.
+- `Phone study heading follows London-to-Ruy-Lopez card transitions` — local/offline component transition and real first-move/review workflow switch the heading with the active card. The original component case failed because identity remained below the board.
+- `Phone study details keep feedback and save retries outside the disclosure`, `Phone opening study preserves the empty-state header without a stale repertoire`, `Phone study actions retain pending-burial locks` — collapsed metadata does not conceal active errors, grading, or pending-operation protection.
+- `Phone study More retains restart and edit handlers and closes after selection`, `Phone opening More supports keyboard help, restart, and edit without resetting on resize` — handlers remain usable, menu focus returns, and the shared Chessground instance survives the phone/tablet breakpoint.
+- `Long phone repertoire names wrap without hiding the board or overflowing` — narrow-screen identity stays readable with no page overflow.
+- The shared heading's resize invalidates Chessground's cached input bounds without recreating/redrawing the board; first moves and the incorrect-move visual case exercise this boundary. Existing workspace geometry comparisons retain dimensions and all non-training vertical-position checks.
+- `heading size changes clear hit-test bounds without canceling a held drag`, `phone opening identity and move input work across browser engines` — bounds invalidation leaves the board instance and drag intact, and phone input/restart works in Chromium, Firefox, and WebKit.
+- `Phone repair notice retains counts, explanation, and resume outside study details` — truthful paused/issue counts, collapsed explanation, and the original repair callback remain available.

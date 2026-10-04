@@ -15,7 +15,12 @@ The saved split defaults to 46%, survives navigation/reload, and is clamped at r
 time to protect a 320px surface and 360px context panel. Header/toolbar measurements
 reserve desktop height; no workspace may introduce its own board sizing formula.
 
-The board and its toolbar retain their bounds across workspaces. The desktop toolbar
+The board and its toolbar retain their bounds across workspaces. Phone opening
+study adds a wrapping repertoire heading and side-to-play label immediately above
+the board; its vertical position may differ, but board dimensions and alignment
+remain shared. Phone opening controls are Flip, Show move, and More; feedback,
+grading, repair access, and save/retry notices remain outside collapsed Study details.
+The desktop toolbar
 reserves two rows so mode-specific actions cannot move or resize the board. A separator
 supports pointer dragging, Left/Right (2 percentage points), Home, and a reset button.
 The page never scrolls horizontally. Only identified data tables may scroll horizontally.
@@ -76,7 +81,8 @@ and provider connectivity are distinct; generic success badges must not imply se
 ## Validation
 
 Geometry: 320x568, 390x844, 844x390, 768x1024, 1024x768, 1280x720, 1440x900,
-1920x1080, and breakpoint-adjacent widths. Board bounds differ by at most 1 CSS pixel
+1920x1080, and breakpoint-adjacent widths. Board bounds (except the documented phone opening-study vertical offset) differ
+by at most 1 CSS pixel
 between modes; surface/pieces remain aligned through flips and DPR changes.
 
 Visual baselines live beside tests/browser/visual.spec.ts and are generated only in the
